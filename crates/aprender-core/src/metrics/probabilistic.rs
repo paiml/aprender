@@ -149,6 +149,136 @@ pub fn average_precision_score(y_true: &[usize], y_score: &[f32]) -> f32 {
     ap as f32
 }
 
+/// Shared `sklearn.metrics._ranking._binary_clf_curve` for `pos_label = 1`.
+///
+/// Sorts samples by descending score, then at each DISTINCT score value records
+/// the cumulative true-positive (`tps`) and false-positive (`fps`) counts and the
+/// threshold. Returns `(fps, tps, thresholds)` aligned, in descending-threshold
+/// order (tied scores collapse into a single threshold). `fps.last()` is the
+/// total negative count, `tps.last()` the total positive count.
+fn binary_clf_curve(y_true: &[usize], y_score: &[f32]) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let n = y_true.len();
+    let mut idx: Vec<usize> = (0..n).collect();
+    idx.sort_by(|&a, &b| {
+        y_score[b]
+            .partial_cmp(&y_score[a])
+            .unwrap_or(Ordering::Equal)
+    });
+    let (mut fps, mut tps, mut thr) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut tp, mut fp) = (0.0f32, 0.0f32);
+    let mut i = 0;
+    while i < n {
+        let s = y_score[idx[i]];
+        while i < n && y_score[idx[i]] == s {
+            if y_true[idx[i]] == 1 {
+                tp += 1.0;
+            } else {
+                fp += 1.0;
+            }
+            i += 1;
+        }
+        fps.push(fp);
+        tps.push(tp);
+        thr.push(s);
+    }
+    (fps, tps, thr)
+}
+
+/// Receiver-operating-characteristic curve, matching `sklearn.metrics.roc_curve`
+/// (default `drop_intermediate=True`).
+///
+/// Returns `(fpr, tpr, thresholds)`. As in sklearn ≥1.3, an initial point
+/// `(fpr=0, tpr=0, threshold=+∞)` is prepended so the curve starts at the origin,
+/// and collinear intermediate points are dropped (kept iff an endpoint or the
+/// second difference of `fps`/`tps` is non-zero) — this changes the point set but
+/// not the curve the points trace. `y_true`: labels in {0, 1}. `y_score`:
+/// predicted scores (higher ⇒ more likely positive). With only one class present
+/// the corresponding rate is undefined and its axis is filled with `NaN`
+/// (mirroring sklearn's warn-and-nan behaviour).
+///
+/// # Panics
+/// Panics if `y_true` and `y_score` differ in length.
+#[must_use]
+pub fn roc_curve(y_true: &[usize], y_score: &[f32]) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    assert_eq!(
+        y_true.len(),
+        y_score.len(),
+        "roc_curve: y_true/y_score length mismatch"
+    );
+    let (fps, tps, thr) = binary_clf_curve(y_true, y_score);
+    let m = fps.len();
+    // drop_intermediate: keep endpoints + points whose 2nd diff of fps OR tps is
+    // non-zero (i.e. a corner of the ROC step function). Only applied when m > 2,
+    // matching sklearn's guard.
+    let apply_drop = m > 2;
+    let (mut kfps, mut ktps, mut kthr) = (Vec::new(), Vec::new(), Vec::new());
+    for i in 0..m {
+        let keep = !apply_drop
+            || i == 0
+            || i == m - 1
+            || (fps[i + 1] - fps[i]) - (fps[i] - fps[i - 1]) != 0.0
+            || (tps[i + 1] - tps[i]) - (tps[i] - tps[i - 1]) != 0.0;
+        if keep {
+            kfps.push(fps[i]);
+            ktps.push(tps[i]);
+            kthr.push(thr[i]);
+        }
+    }
+    let n_neg = fps.last().copied().unwrap_or(0.0);
+    let n_pos = tps.last().copied().unwrap_or(0.0);
+    let mut fpr = vec![0.0f32];
+    let mut tpr = vec![0.0f32];
+    let mut thresholds = vec![f32::INFINITY];
+    for i in 0..kfps.len() {
+        fpr.push(if n_neg > 0.0 {
+            kfps[i] / n_neg
+        } else {
+            f32::NAN
+        });
+        tpr.push(if n_pos > 0.0 {
+            ktps[i] / n_pos
+        } else {
+            f32::NAN
+        });
+        thresholds.push(kthr[i]);
+    }
+    (fpr, tpr, thresholds)
+}
+
+/// Precision–recall curve, matching `sklearn.metrics.precision_recall_curve`.
+///
+/// Returns `(precision, recall, thresholds)` with `precision.len() ==
+/// recall.len() == thresholds.len() + 1`: thresholds are in ascending order and a
+/// terminal `(precision=1, recall=0)` sentinel point (with no threshold) is
+/// appended, exactly as sklearn does. `y_true`: labels in {0, 1}. `y_score`:
+/// predicted scores (higher ⇒ more likely positive).
+///
+/// # Panics
+/// Panics if `y_true` and `y_score` differ in length.
+#[must_use]
+pub fn precision_recall_curve(y_true: &[usize], y_score: &[f32]) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    assert_eq!(
+        y_true.len(),
+        y_score.len(),
+        "precision_recall_curve: y_true/y_score length mismatch"
+    );
+    let (fps, tps, thr) = binary_clf_curve(y_true, y_score);
+    let n_pos = tps.last().copied().unwrap_or(0.0);
+    let m = fps.len();
+    let mut precision = Vec::with_capacity(m + 1);
+    let mut recall = Vec::with_capacity(m + 1);
+    for i in (0..m).rev() {
+        let denom = tps[i] + fps[i];
+        precision.push(if denom > 0.0 { tps[i] / denom } else { 1.0 });
+        recall.push(if n_pos > 0.0 { tps[i] / n_pos } else { 0.0 });
+    }
+    // Terminal sentinel: precision → 1, recall → 0 (no associated threshold).
+    precision.push(1.0);
+    recall.push(0.0);
+    let thresholds: Vec<f32> = thr.iter().rev().copied().collect();
+    (precision, recall, thresholds)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,5 +347,68 @@ mod tests {
         );
         // Two-element no-positive case (legacy test used .is_nan() here).
         assert_eq!(average_precision_score(&[0, 0], &[0.1, 0.2]), 0.0);
+    }
+
+    fn approx_vec(got: &[f32], want: &[f32], tol: f32, what: &str) {
+        assert_eq!(got.len(), want.len(), "{what}: length {got:?} != {want:?}");
+        for (i, (&g, &w)) in got.iter().zip(want).enumerate() {
+            if w.is_infinite() {
+                assert!(
+                    g.is_infinite() && g.signum() == w.signum(),
+                    "{what}[{i}]: {g} != {w}"
+                );
+            } else {
+                assert!((g - w).abs() < tol, "{what}[{i}]: {g} != {w}");
+            }
+        }
+    }
+
+    /// FT-METRIC-ROCCURVE: matches `sklearn.metrics.roc_curve` (default
+    /// drop_intermediate=True) on the pinned fixture. sklearn 1.9.0 oracle
+    /// (2026-07-04): fpr=[0,0,0,.5,.5,1], tpr=[0,.25,.75,.75,1,1],
+    /// thr=[inf,.9,.7,.4,.35,.1].
+    #[test]
+    fn roc_curve_matches_sklearn() {
+        let (fpr, tpr, thr) = roc_curve(&YT, &YS);
+        approx_vec(&fpr, &[0.0, 0.0, 0.0, 0.5, 0.5, 1.0], 1e-4, "fpr");
+        approx_vec(&tpr, &[0.0, 0.25, 0.75, 0.75, 1.0, 1.0], 1e-4, "tpr");
+        approx_vec(
+            &thr,
+            &[f32::INFINITY, 0.9, 0.7, 0.4, 0.35, 0.1],
+            1e-4,
+            "thresholds",
+        );
+        // A perfectly separable case (sklearn 1.9.0 oracle).
+        let (fpr, tpr, _) = roc_curve(&[0, 0, 1, 1], &[0.1, 0.2, 0.8, 0.9]);
+        approx_vec(&fpr, &[0.0, 0.0, 0.0, 1.0], 1e-4, "sep fpr");
+        approx_vec(&tpr, &[0.0, 0.5, 1.0, 1.0], 1e-4, "sep tpr");
+    }
+
+    /// FT-METRIC-PRCURVE: matches `sklearn.metrics.precision_recall_curve` on the
+    /// pinned fixture. sklearn 1.9.0 oracle (2026-07-04): precision len 9, recall
+    /// len 9, thresholds len 8; ends at the (precision=1, recall=0) sentinel.
+    #[test]
+    fn precision_recall_curve_matches_sklearn() {
+        let (prec, rec, thr) = precision_recall_curve(&YT, &YS);
+        approx_vec(
+            &prec,
+            &[0.5, 0.571_429, 0.666_667, 0.6, 0.75, 1.0, 1.0, 1.0, 1.0],
+            1e-4,
+            "precision",
+        );
+        approx_vec(
+            &rec,
+            &[1.0, 1.0, 1.0, 0.75, 0.75, 0.75, 0.5, 0.25, 0.0],
+            1e-4,
+            "recall",
+        );
+        approx_vec(
+            &thr,
+            &[0.1, 0.2, 0.35, 0.4, 0.55, 0.7, 0.8, 0.9],
+            1e-4,
+            "thresholds",
+        );
+        assert_eq!(prec.len(), rec.len(), "precision/recall length parity");
+        assert_eq!(prec.len(), thr.len() + 1, "sentinel: len(P) == len(thr)+1");
     }
 }

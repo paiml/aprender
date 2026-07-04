@@ -1,0 +1,48 @@
+contract: apr-sklearn-metrics-parity-beat
+metadata:
+  kind: beat-benchmark
+  version: "1.0.0"
+  description: >
+    Pillar-1 (scikit-learn) CORRECTNESS beat: apr's score-based classification
+    metrics are NUMERICALLY EQUAL to scikit-learn on the same inputs. Covers the
+    full probabilistic-metric surface a generic sklearn-style classifier
+    evaluation needs — roc_auc_score, log_loss, average_precision_score, and (new
+    in PMAT-730) the array-returning roc_curve and precision_recall_curve. Each is
+    pinned against a scikit-learn 1.9.0 oracle on a fixed 8-sample fixture and must
+    match within 1e-4 (curves element-wise, including sklearn's +inf leading ROC
+    threshold and the terminal (precision=1, recall=0) PR sentinel). Metric parity
+    is exact (no solver/RNG variance), so this lives in the per-PR BLOCKING gate.
+    This broadens the provable-correctness surface from classifier ACCURACY beats
+    (beat_sklearn_iris, beat_sklearn_gaussiannb_accuracy) to the METRIC layer those
+    classifiers are scored with. Pinned 2026-07-04 via `uv run --with scikit-learn`.
+  references:
+  - "crates/aprender-core/tests/beat_sklearn_metrics_parity.rs (the gate)"
+  - "crates/aprender-core/src/metrics/probabilistic.rs (roc_auc_score, log_loss, average_precision_score, roc_curve, precision_recall_curve)"
+  - "apr-sklearn-gaussiannb-accuracy-beat-v1.yaml (sibling: the classifier-accuracy beat these metrics score)"
+version: 1
+status: enforced
+date: 2026-07-04
+
+# Beat-benchmark parameters (numerical-parity invariant; CI fails if apr diverges
+# from the sklearn oracle by more than tol on any metric).
+beat:
+  pillar: 1
+  incumbent: "scikit-learn 1.9.0 metrics (roc_auc_score, log_loss, average_precision_score, roc_curve, precision_recall_curve)"
+  incumbent_pinned: "2026-07-04 — sklearn 1.9.0 on the 8-sample fixture YT=[0,0,1,1,1,0,1,0], YS=[0.1,0.4,0.35,0.8,0.7,0.2,0.9,0.55]"
+  canonical_task: >
+    Evaluate all five probabilistic classification metrics on the pinned 8-sample
+    binary fixture and compare element-wise to the scikit-learn 1.9.0 output.
+    Scalar oracles: roc_auc_score=0.875, log_loss=0.421605, average_precision_score
+    =0.916667. Curve oracles: roc_curve fpr=[0,0,0,0.5,0.5,1], tpr=[0,0.25,0.75,0.75,
+    1,1], thr=[inf,0.9,0.7,0.4,0.35,0.1]; precision_recall_curve precision=[0.5,
+    0.571429,0.666667,0.6,0.75,1,1,1,1], recall=[1,1,1,0.75,0.75,0.75,0.5,0.25,0],
+    thresholds=[0.1,0.2,0.35,0.4,0.55,0.7,0.8,0.9]. Metric: max absolute
+    element-wise deviation across all five metrics.
+  metric: max_abs_metric_deviation_vs_sklearn
+  direction: lower_is_better
+  baseline_value: 0.0000       # sklearn is the reference — deviation from itself is 0
+  baseline_floor: 0.0000       # exact numerical target
+  beat_threshold: 0.0001       # apr must match every metric element within 1e-4
+  baseline_sourced_date: "2026-07-04"
+  approved_compute: CPU
+  ci_gate_name: "beat_sklearn_metrics_parity"
