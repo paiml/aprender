@@ -47,7 +47,7 @@ name = "realizar"
 trueno = { workspace = true, features = ["gpu"] }
 # CUDA PTX generation and runtime for NVIDIA GPUs (optional, pure Rust, no LLVM/nvcc)
 # v0.4.12: BatchedQ6K, MultiWarp, RopeNeox, FlashDecoding kernels
-trueno-gpu = { version = "0.58.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true, features = ["cuda"] }  # APR-MONO single-source-of-truth
+trueno-gpu = { version = "0.59.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true, features = ["cuda"] }  # APR-MONO single-source-of-truth
 # KV cache storage (for attention caching)
 trueno-db = { workspace = true, optional = true }
 # K-quantization formats (Q4_K, Q5_K, Q6_K) - Toyota Way: ONE source of truth
@@ -61,7 +61,7 @@ renacer-core = { workspace = true }
 
 # ML algorithms and .apr model format (optional for aprender model serving)
 # v0.24.1: chat templates, GGUF tokenizer preservation (local may be newer)
-aprender = { path = "../aprender-core", version = "0.58.0", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.59.0", package = "aprender-core", optional = true }
 
 # Data loading library (optional for data pipeline examples)
 alimentar = { workspace = true, optional = true }

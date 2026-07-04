@@ -96,7 +96,7 @@ trueno-quant = { workspace = true }
 # APR-2231: sovereign `.apr` container leaf. aprender-core From-wraps its
 # AprFormatError into AprenderError and re-exports it (no API break). Leaf has
 # no dependency back on core, so this introduces no publish cycle.
-apr-format = { path = "../apr-format", version = "0.58" }
+apr-format = { path = "../apr-format", version = "0.59" }
 
 # NOTE: trueno-rag (=aprender-rag) removed (APR-MONO self-containment): aprender-rag
 # depends on aprender-core + aprender-serve, so core→rag closed a core→rag→serve→core

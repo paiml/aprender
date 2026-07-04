@@ -1,0 +1,29 @@
+{
+  "ticket": "PMAT-919",
+  "title": "Post-merge release-validation: 7B Q4_K GPU serving on Blackwell with the merged F2 per-position parity gate",
+  "date": "2026-06-24",
+  "host": "gx10 (gx10-a5b5)",
+  "gpu": "NVIDIA GB10 Blackwell sm_121",
+  "cuda": "13.0 (nvcc V13.0.88), driver 590.48.01",
+  "origin_main_head": "1d6139b9a639dd350839a2489508214ec28f0753",
+  "head_commit": "fix(serve): F2 GPU parity gate — per-position argmax+cosine; fp32-Mwv is CORRECT, HwDp4a is degraded (PMAT-919, reconciled) (#2210)",
+  "build": "cargo build --release -p apr-cli --features cuda — EXIT 0, 1m42s (warm)",
+  "worktree": "/tmp/pmat919-postmerge-<ts> (fresh from origin/main, detached, removed after; gx10 dirty MoE tree untouched)",
+  "model": "~/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf (4.68 GB, real 7B)",
+  "prompt": "Write a Python function to compute fibonacci. (--max-tokens 48)",
+  "results": {
+    "a_serves_coherently": true,
+    "a_detail": "Backend: GPU (NVIDIA GB10, 122502 MB VRAM). Manual CUDA graph: 619 kernels (trueno#243). Output = valid Python fibonacci (def fibonacci(n) with n<=0 / n==1 / n==2 base cases). NOT garbage, NOT repetition.",
+    "b_gate_accepts_fp32_mwv": true,
+    "b_accept_detail": "Default (correct fp32-Mwv PMAT-886a path): F2 gate ran (real prompt context, 47 tokens) and CLEAN-accepted — Backend: GPU printed, NO [F2-VALIDATION] reject, NO fallback. No spurious pos0 BOS near-tie false-reject. GPU path USED end-to-end.",
+    "b_gate_rejects_hwdp4a": true,
+    "b_reject_detail": "HW_DP4A_Q4K=1: '[F2-VALIDATION] GPU diverges from CPU at real position 3 (argmax 1851 != 84120, cosine 0.9524); min real-position cosine 0.9524 — HwDp4a-class mid-context degradation, falling back to CPU'. Fail-closed cascade then: wgpu attempt → wgpu parity gate also rejects (cosine 0.7236 < 0.99) → CPU SIMD. Output still coherent via CPU (correctness preserved).",
+    "c_tok_s": "~12 tok/s decode (64 tokens, gate-skipped isolate: 11.48s total incl 6.09s load → ~5.4s/64tok). Gated run adds ~17s one-time F2 probe overhead (CPU+GPU 47-token fp32 prefill compare), not steady-state.",
+    "model_load_s": 6.09
+  },
+  "verdict": "HEADLINE 7B-GPU-SERVING GAP IS CLOSED on shipped main. A user running `apr run --gpu qwen2.5-coder-7b-instruct-q4_k_m.gguf` on Blackwell gets coherent output via the real GPU path. The merged PMAT-919 F2 gate ACCEPTS the correct fp32-Mwv default (no false fallback at pos0 BOS near-tie) and REJECTS the degraded HwDp4a path at pos3 — fail-closed preserved. Reject still yields coherent CPU output.",
+  "residual_notes": [
+    "`apr run --gpu` advertises 'Benchmark mode: output performance metrics (tok/s, latency)' but emits no explicit tok/s line — only total 'Completed in Ns'. Minor UX gap; tok/s must be computed from generated_count + wall. Candidate follow-up.",
+    "F2 gate probe is a one-time ~17s cost on a 47-token prompt at 7B fp32 (CPU+GPU prefill x2). Acceptable for a correctness gate; could be bounded further if it ever bites latency-sensitive callers."
+  ]
+}

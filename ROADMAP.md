@@ -4,10 +4,12 @@ Next Generation Machine Learning in Pure Rust
 
 ## Current status
 
-> **v0.57.0** (2026-07-03) — published to crates.io: `cargo install aprender` → `apr`.
-> **Actively shipping** the four-pillar **BEAT campaign** (below) plus a **QLoRA
-> training-correctness wave** (v0.55–v0.57). The earlier "3-month hiatus" was closed
-> out; development resumed at v0.42 and is ongoing.
+> **v0.59.0** (2026-07-04) — `cargo install aprender` → `apr`.
+> **Actively shipping** the four-pillar **BEAT campaign** (below). v0.55–v0.58 was a
+> **QLoRA training-correctness wave** (now CI-enforced on two silicons); v0.59 is a
+> **Pillar-1 sklearn breadth + provable-parity** release (ROC/PR curves, poly +
+> multi-class SVC, encoder Pipeline — each behind a per-PR falsifiable parity gate).
+> The earlier "3-month hiatus" was closed out; development resumed at v0.42.
 
 Aprender is now an **86-crate monorepo** spanning model **training**, **inference**
 (realizar), **SIMD/GPU compute** (trueno), and a **104-subcommand `apr` CLI** — well
@@ -33,8 +35,9 @@ canonical, issue-linked roadmap is
 | v0.36–v0.41 | ✅ Released | sklearn-parity breadth — model-selection stack, 13 metrics, preprocessing, `datasets` |
 | v0.42–v0.49 | ✅ Released | **Four-pillar BEAT campaign** — CI-gated falsifiable wins vs sklearn / PyTorch / Unsloth / Ollama (below) |
 | v0.50–v0.54 | ✅ Released | Correctness wave — sampling params, Blackwell-GPU coherence, Gemma CPU, APR-format safety, RoPE/LoRA/MCP, `apr-format` leaf extraction (each contract-backed) |
-| **v0.55–v0.57** | ✅ **Current** | **GPU QLoRA training actually works** — a 6-defect cascade fixed (deadlock → loss-window → cross-stream NaN → wrong-model → stale-adapter eval → CPU-only eval), each with a mutation-verified falsifier + contract; runnable `--merge`; rank-aware auto-lr (default no longer diverges) |
-| _in flight_ | 🔧 Hardening | apr-code tool-call flip envelope measurement; promote the cross-silicon CUDA nightly lane to a blocking training-path gate (now green — see below) |
+| v0.55–v0.58 | ✅ Released | **GPU QLoRA training actually works** — a 6-defect cascade fixed (deadlock → loss-window → cross-stream NaN → wrong-model → stale-adapter eval → CPU-only eval), each with a mutation-verified falsifier + contract; runnable `--merge`; rank-aware auto-lr; CI-enforced nightly on two silicons |
+| **v0.59.0** | ✅ **Current** | **Pillar-1 sklearn breadth + provable-parity** — `roc_curve`/`precision_recall_curve` (PMAT-730), polynomial kernel + One-vs-One multi-class SVC (PMAT-735), encoder→estimator Pipeline gate (PMAT-733); each behind a per-PR falsifiable sklearn-parity beat. Closed a gates-or-theater hole (gaussiannb beat was never wired); CUDA lane gains opt-in `cuda-check` PR trigger; roadmap backlog reconciled |
+| _in flight_ | 🔧 Hardening | apr-code tool-call flip envelope measurement; `SVC-SMO-WSS-001` (libsvm 2nd-order WSS so multi-class SVC hits parity at default C=1); promote the cross-silicon CUDA lane from opt-in toward a required training-path gate |
 | _next_ | 📋 Planned | tracked in [`docs/roadmaps/roadmap.yaml`](docs/roadmaps/roadmap.yaml) |
 
 ### 🎯 The mission (north star)
@@ -46,7 +49,7 @@ wedge none of the four have: **provable, contract-gated correctness.**
 
 | Pillar | Incumbent | Signature strength | ✅ WON beat (CI-gated falsifier) |
 |--------|-----------|--------------------|----------------------------------|
-| **P1** | scikit-learn | Classical-ML breadth & ergonomics | LinearRegression **2.0× faster** (LAPACK-free O(nd)), iris-RF accuracy. *(LAPACK-bound Ridge/Lasso/KMeans/PCA honestly conceded.)* |
+| **P1** | scikit-learn | Classical-ML breadth & ergonomics | LinearRegression **2.0× faster** (LAPACK-free O(nd)); **5 per-PR parity gates**: iris-RF + GaussianNB accuracy, metric parity (ROC/PR/AUC/log-loss ≤1e-4), multi-class SVC (ties sklearn 0.98 on Iris), encoder Pipeline (matches `make_pipeline`). *(LAPACK-bound Ridge/Lasso/KMeans/PCA honestly conceded.)* |
 | **P2** | PyTorch | Tensors + autograd + training | Autograd gradients **≡ PyTorch, max\|Δ\|=5e-7**. *(Training speed conceded — ~11× MKL gap; the win is provable gradient correctness.)* |
 | **P3** | Unsloth | Fast low-VRAM PEFT (LoRA/QLoRA) | NF4 quant **≡ bitsandbytes (4.9e-7)** + LoRA-merge forward-**equivalence (1.5e-8)**; **GPU QLoRA training runs correct end-to-end** (6-defect cascade fixed, trains+validates at GPU speed), **CI-enforced nightly on two silicons** (RTX 4090 sm_89 + GB10 Blackwell sm_121, v0.58). *(GPU-Triton tok/s conceded.)* |
 | **P4** | Ollama / llama.cpp | Fast local quantized inference | **Fail-closed correctness** — `apr` rejects 10/10 semantically-broken models that Ollama/llama.cpp silently run; decode **1.2–1.37× on RTX 4090**. |
