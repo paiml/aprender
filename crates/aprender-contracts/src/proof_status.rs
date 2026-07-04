@@ -208,10 +208,17 @@ fn kernel_class_map() -> Vec<(&'static str, &'static str, &'static [&'static str
 
 /// Returns `true` when Lean theorems exist for this contract.
 fn is_lean_proved(contract: &Contract) -> bool {
-    let yaml_proved = contract
-        .verification_summary
-        .as_ref()
-        .is_some_and(|vs| vs.total_obligations > 0 && vs.l4_lean_proved == vs.total_obligations);
+    // A contract is Lean-proved when every obligation is either proved in Lean
+    // OR explicitly marked not-applicable (e.g. runtime-only obligations that
+    // have no algebraic statement to prove). Counting `l4_not_applicable`
+    // toward the total avoids under-reporting partially-N/A contracts that have
+    // in fact discharged every provable obligation (e.g. softmax-kernel-v1 =
+    // 5 proved + 4 N/A of 9).
+    let yaml_proved = contract.verification_summary.as_ref().is_some_and(|vs| {
+        vs.total_obligations > 0
+            && vs.l4_lean_proved + vs.l4_not_applicable == vs.total_obligations
+            && vs.l4_lean_proved > 0
+    });
     if yaml_proved {
         return true;
     }
@@ -262,6 +269,18 @@ pub fn compute_proof_level(contract: &Contract, binding_status: Option<(u32, u32
     ProofLevel::L1
 }
 
+/// Directories scanned (relative to CWD) for sorry-free Lean theorem files,
+/// in priority order. The IN-TREE staging tree is FIRST — it is the
+/// post-APR-MONO source of truth and a superset of the external sibling, so
+/// L4/L5 proof levels are reproducible on a fresh clone / CI without a
+/// co-located `../provable-contracts` checkout. The bare `lean` and the
+/// external sibling are kept as fallbacks for dev machines that still use them.
+pub(crate) const LEAN_THEOREM_BASES: &[&str] = &[
+    "crates/aprender-contracts-staging/lean",
+    "lean",
+    "../provable-contracts/lean",
+];
+
 /// Build a set of all sorry-free Lean theorem names from the Theorems/ directory.
 /// Scans once, caches the result in a thread-local for repeated calls.
 fn lean_theorem_names() -> &'static std::collections::HashSet<String> {
@@ -269,7 +288,7 @@ fn lean_theorem_names() -> &'static std::collections::HashSet<String> {
     static CACHE: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
     CACHE.get_or_init(|| {
         let mut names = std::collections::HashSet::new();
-        for base in &["lean", "../provable-contracts/lean"] {
+        for base in LEAN_THEOREM_BASES {
             let search_dir = std::path::Path::new(base).join("ProvableContracts/Theorems");
             if !search_dir.exists() {
                 continue;

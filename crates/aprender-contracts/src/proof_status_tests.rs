@@ -492,3 +492,57 @@ fn kernel_class_all_bound_false_when_partial() {
         .unwrap();
     assert!(!class_a.all_bound);
 }
+
+/// CI GUARD (Rank #1): the Lean scan must be self-sufficient from the in-tree
+/// staging tree, NOT dependent on a co-located `../provable-contracts` sibling.
+///
+/// Before the scan-path fix, `proof_status.rs` scanned only
+/// `["lean", "../provable-contracts/lean"]`; `./lean` does not exist, so on a
+/// fresh clone / CI (no sibling checkout) every Lean-backed contract silently
+/// collapsed — the 25 L4 dropped to L3 and both L5 to L3. This test fails if the
+/// in-tree tree is removed/emptied or demoted from primary, which is exactly the
+/// condition that would make L4/L5 non-reproducible.
+#[test]
+fn lean_scan_in_tree_is_primary_and_self_sufficient() {
+    // (1) The in-tree staging tree must be the FIRST scan base.
+    assert_eq!(
+        LEAN_THEOREM_BASES[0], "crates/aprender-contracts-staging/lean",
+        "the in-tree staging Lean tree must be the primary scan base so proof \
+         levels are reproducible without the external ../provable-contracts sibling"
+    );
+
+    // (2) That tree must exist and carry a healthy set of sorry-free theorems.
+    let theorems = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/aprender-contracts-staging/lean/ProvableContracts/Theorems");
+    assert!(
+        theorems.is_dir(),
+        "in-tree Lean theorems dir missing: {}",
+        theorems.display()
+    );
+
+    let mut sorry_free = 0usize;
+    let mut stack = vec![theorems.clone()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "lean") {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if !content.contains("sorry") {
+                        sorry_free += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        sorry_free >= 40,
+        "expected the in-tree Lean tree to carry the corpus of sorry-free \
+         theorems (>=40), found {sorry_free} — L4/L5 levels would not be \
+         reproducible on CI"
+    );
+}
