@@ -237,6 +237,10 @@ paiml/aprender/
 Reproduced from [candle-vs-apr](https://github.com/paiml/candle-vs-apr) and
 [ground-truth-apr-ludwig](https://github.com/paiml/ground-truth-apr-ludwig).
 
+## Hugging Face Model Parity
+
+`apr` natively supports running inference on the top trending text-generation models on the Hugging Face Hub. We continuously verify compatibility across various hardware profiles (`lambda-labs` 24GB VRAM, `gx10` 128GB RAM, and `mini` 16GB RAM). For a detailed verification report on the Top 50 models, see the [Hugging Face Parity Report](docs/huggingface-top-50-parity.md) (or the corresponding chapter in the book).
+
 ## Provable contracts
 
 Every CLI command and kernel is bound to a YAML contract with equations,
