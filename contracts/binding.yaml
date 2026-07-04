@@ -550,6 +550,38 @@ bindings:
   function: run
   status: implemented
   notes: Cross-format fingerprint comparison (GGUF/SafeTensors/APR)
+# ── apr-code-harness-ir (Pillar-5): the first L5 contract. Every obligation
+#    maps to a REAL function in crates/aprender-serve/src/harness_ir/mod.rs.
+#    `pv proof-status --binding contracts/binding.yaml --verify-bindings .`
+#    confirms each `function` exists in source before counting it (L5 gate).
+- contract: apr-code-harness-ir-v1.yaml
+  equation: anthropic_roundtrip_exact
+  module_path: realizar::harness_ir::from_anthropic
+  function: from_anthropic
+  signature: 'fn from_anthropic(v: &Value) -> Result<Message, String>'
+  status: implemented
+  notes: 'OBLIG-IR-1 decode side; round-trip proven (proptest prop_anthropic_roundtrip_exact + Lean message_roundtrip)'
+- contract: apr-code-harness-ir-v1.yaml
+  equation: gemini_roundtrip_exact_on_native
+  module_path: realizar::harness_ir::from_gemini
+  function: from_gemini
+  signature: 'fn from_gemini(v: &Value) -> Result<Message, String>'
+  status: implemented
+  notes: 'OBLIG-IR-2 decode side; round-trip proven (proptest prop_gemini_roundtrip_exact + Lean gem_block_roundtrip)'
+- contract: apr-code-harness-ir-v1.yaml
+  equation: cross_harness_semantic_equivalence
+  module_path: realizar::harness_ir::semantic
+  function: semantic
+  signature: 'fn semantic(&self) -> Message'
+  status: implemented
+  notes: 'OBLIG-IR-3 keystone semantic projection; equivalence proven (proptest prop_cross_harness_semantic_equivalence + Lean cross_harness_block)'
+- contract: apr-code-harness-ir-v1.yaml
+  equation: tool_schema_lossless
+  module_path: realizar::harness_ir::tool_to_anthropic
+  function: tool_to_anthropic
+  signature: 'fn tool_to_anthropic(t: &ToolSchema) -> Value'
+  status: implemented
+  notes: 'OBLIG-IR-4 tool schema encode; lossless proven (proptest prop_tool_schema_lossless + Lean tool_anth_roundtrip)'
 critical_path:
 - softmax
 - rmsnorm

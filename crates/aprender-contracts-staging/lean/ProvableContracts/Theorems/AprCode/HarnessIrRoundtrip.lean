@@ -108,7 +108,137 @@ theorem message_roundtrip (m : Message) (h : ∀ b ∈ m.blocks, anthNative b) :
   | mk role blocks =>
       simp only [encMsg, decMsg, list_roundtrip blocks h]
 
+-- ─────────────────────────── Gemini codec (OBLIG-IR-2) ───────────────────────────
+
+/-- Abstract Gemini-wire part. `functionCall`/`functionResponse` carry NO id
+    (Gemini pairs by name), but `functionResponse` DOES carry the tool name —
+    the mirror asymmetry to Anthropic. -/
+inductive GemBlock where
+  | text (s : String)
+  | funcCall (name : String) (args : String)
+  | funcResp (name : String) (resp : String)
+  deriving Repr
+
+/-- Encode a canonical block to the Gemini wire (drops the id). -/
+def encGem : Block → GemBlock
+  | .text s => .text s
+  | .toolCall _id name args => .funcCall name args
+  | .toolResult _id name resp => .funcResp name resp
+
+/-- Decode a Gemini-wire part back to canonical (id = none). -/
+def decGem : GemBlock → Block
+  | .text s => .text s
+  | .funcCall name args => .toolCall none name args
+  | .funcResp name resp => .toolResult none name resp
+
+/-- Gemini-native: no ids present (the shape the Gemini wire represents losslessly). -/
+def gemNative : Block → Prop
+  | .text _ => True
+  | .toolCall id _ _ => id = none
+  | .toolResult id _ _ => id = none
+
+/-- OBLIG-IR-2 (block level): on gemini-native blocks, decode∘encode is the identity. -/
+theorem gem_block_roundtrip (b : Block) (h : gemNative b) :
+    decGem (encGem b) = b := by
+  cases b with
+  | text s => rfl
+  | toolCall id name args => simp only [gemNative] at h; subst h; rfl
+  | toolResult id name resp => simp only [gemNative] at h; subst h; rfl
+
+/-- OBLIG-IR-2 lifted over a list of gemini-native blocks. -/
+theorem gem_list_roundtrip (bs : List Block) (h : ∀ b ∈ bs, gemNative b) :
+    (bs.map encGem).map decGem = bs := by
+  induction bs with
+  | nil => rfl
+  | cons b bs ih =>
+      have hb : gemNative b := h b (List.mem_cons_self b bs)
+      have hbs : ∀ b' ∈ bs, gemNative b' := fun b' hb' =>
+        h b' (List.mem_cons_of_mem b hb')
+      simp only [List.map_cons, gem_block_roundtrip b hb, ih hbs]
+
+-- ─────────────────── Cross-harness equivalence (OBLIG-IR-3, keystone) ───────────────────
+
+/-- The semantic projection: strip Anthropic-only ids (wire bookkeeping the model
+    does not act on). Equivalence is stated modulo this projection. -/
+def semanticBlock : Block → Block
+  | .text s => .text s
+  | .toolCall _id name args => .toolCall none name args
+  | .toolResult _id name resp => .toolResult none name resp
+
+/-- The shared core both wire formats carry identically: text + tool invocation. -/
+def sharedCore : Block → Prop
+  | .text _ => True
+  | .toolCall _ _ _ => True
+  | .toolResult _ _ _ => False
+
+/-- OBLIG-IR-3 (keystone, block level): for a shared-core block, the Anthropic
+    and Gemini wire paths decode to the SAME semantic content — "prompt parity
+    works on either harness" as a formal theorem. -/
+theorem cross_harness_block (b : Block) (h : sharedCore b) :
+    semanticBlock (decBlock (encBlock b)) = semanticBlock (decGem (encGem b)) := by
+  cases b with
+  | text s => rfl
+  | toolCall id name args => rfl
+  | toolResult id name resp => simp only [sharedCore] at h
+
+/-- OBLIG-IR-3 lifted over a list of shared-core blocks. -/
+theorem cross_harness_list (bs : List Block) (h : ∀ b ∈ bs, sharedCore b) :
+    ((bs.map encBlock).map decBlock).map semanticBlock
+      = ((bs.map encGem).map decGem).map semanticBlock := by
+  induction bs with
+  | nil => rfl
+  | cons b bs ih =>
+      have hb : sharedCore b := h b (List.mem_cons_self b bs)
+      have hbs : ∀ b' ∈ bs, sharedCore b' := fun b' hb' =>
+        h b' (List.mem_cons_of_mem b hb')
+      simp only [List.map_cons, cross_harness_block b hb, ih hbs]
+
+-- ─────────────────────────── Tool schema (OBLIG-IR-4) ───────────────────────────
+
+/-- A canonical tool declaration. `parameters` is the opaque JSON-Schema body
+    (carried verbatim by both codecs). -/
+structure ToolSchema where
+  name : String
+  description : String
+  parameters : String
+  deriving DecidableEq, Repr
+
+/-- Anthropic tool entry `(name, description, input_schema)`. -/
+def toolToAnth (t : ToolSchema) : String × String × String :=
+  (t.name, t.description, t.parameters)
+
+/-- Gemini tool entry `(name, description, parameters)`. -/
+def toolToGem (t : ToolSchema) : String × String × String :=
+  (t.name, t.description, t.parameters)
+
+/-- Decode an Anthropic tool entry. -/
+def toolFromAnth (w : String × String × String) : ToolSchema :=
+  ⟨w.1, w.2.1, w.2.2⟩
+
+/-- Decode a Gemini tool entry. -/
+def toolFromGem (w : String × String × String) : ToolSchema :=
+  ⟨w.1, w.2.1, w.2.2⟩
+
+/-- OBLIG-IR-4 (part 1): Anthropic tool-schema round-trip is the identity. -/
+theorem tool_anth_roundtrip (t : ToolSchema) : toolFromAnth (toolToAnth t) = t := by
+  cases t; rfl
+
+/-- OBLIG-IR-4 (part 2): Gemini tool-schema round-trip is the identity. -/
+theorem tool_gem_roundtrip (t : ToolSchema) : toolFromGem (toolToGem t) = t := by
+  cases t; rfl
+
+/-- OBLIG-IR-4 (part 3): the schema body is byte-identical across both wire
+    formats — Anthropic `input_schema` = Gemini `parameters`. -/
+theorem tool_schema_identical (t : ToolSchema) :
+    (toolToAnth t).2.2 = (toolToGem t).2.2 := by rfl
+
 #check @block_roundtrip
 #check @message_roundtrip
+#check @gem_block_roundtrip
+#check @cross_harness_block
+#check @cross_harness_list
+#check @tool_anth_roundtrip
+#check @tool_gem_roundtrip
+#check @tool_schema_identical
 
 end ProvableContracts.AprCode
