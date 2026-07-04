@@ -8,6 +8,7 @@
 import ProvableContracts.Basic
 import ProvableContracts.Defs.AdamW
 import ProvableContracts.Defs.BLAS
+import ProvableContracts.Defs.BatchNorm
 import ProvableContracts.Defs.Cholesky
 import ProvableContracts.Defs.CrossEntropy
 import ProvableContracts.Defs.Elementwise
@@ -27,6 +28,10 @@ import ProvableContracts.Defs.Sparse
 import ProvableContracts.Defs.Transpose
 import ProvableContracts.Theorems.AdamW.WeightDecay
 import ProvableContracts.Theorems.BLAS.SyrkSymmetric
+import ProvableContracts.Theorems.BatchNorm.Centering
+import ProvableContracts.Theorems.BatchNorm.DenominatorPositive
+import ProvableContracts.Theorems.BatchNorm.EvalUsesRunning
+import ProvableContracts.Theorems.BatchNorm.RunningVariance
 import ProvableContracts.Theorems.Cholesky.SPD
 import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
 import ProvableContracts.Theorems.CrossEntropy.NonNegativity
