@@ -6,6 +6,25 @@ metadata:
   references:
   - Draper & Smith (1998) Applied Regression Analysis
   - Hastie, Tibshirani & Friedman (2009) Elements of Statistical Learning
+lean_module: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Metrics/Regression.lean
+verification_summary:
+  total_obligations: 7
+  l2_property_tested: 7
+  l3_kani_proved: 9
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 0
+  lean_proved_obligations:
+  - MSE non-negativity (mse_nonneg — 0 ≤ Σ(yᵢ-ŷᵢ)² over Int)
+  - MAE non-negativity (mae_nonneg — 0 ≤ Σ|yᵢ-ŷᵢ| over Int)
+  - MSE symmetry (mse_symm — MSE(y,ŷ)=MSE(ŷ,y) via residual negation invariance)
+  - RMSE non-negativity (rmse_nonneg — principal √MSE ≥ 0 by IsSqrt definition)
+  lean_core_infeasible:
+  - R² upper bound (Cauchy–Schwarz — needs Mathlib real analysis)
+  - MAE ≤ RMSE ordering (QM–AM / Jensen — needs Mathlib real analysis)
+  - Perfect-prediction identity full conjunct (MSE=MAE=RMSE=0 proved core-only via
+    mse_self_zero/mae_self_zero/rmse_self_zero, but the bundled R²=1 conjunct needs
+    real division with Var(y)>0 — Mathlib follow-up)
 equations:
   r_squared:
     formula: R² = 1 - Σ(yᵢ - ŷᵢ)² / Σ(yᵢ - ȳ)²

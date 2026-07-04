@@ -1,0 +1,177 @@
+metadata:
+  version: 1.0.0
+  created: '2026-07-04'
+  author: PAIML Engineering
+  description: >
+    LoRA merge forward-equivalence (Pillar-3, BEAT Unsloth). Proves that merging
+    a LoRA adapter into the base weight is a forward-equivalent operation via the
+    merge distributivity identity (W + s·(B@A)) x = W x + s·(B (A x)) and the
+    composed-affine identity (W + dW) x + b = W x + dW x + b. All algebraic
+    obligations are proved sorry-free in CORE Lean 4 (no Mathlib) by modeling
+    vectors as `List Int`, matrices as `List (List Int)`, and matvec/matmul as
+    folds, then proving distributivity/associativity by structural induction.
+  references:
+  - 'Hu et al. (2021) LoRA: Low-Rank Adaptation of Large Language Models'
+  - 'Dettmers et al. (2023) QLoRA: Efficient Finetuning of Quantized LLMs'
+  - 'entrenar::lora::LoRALayer::merge — W'' = W + scale·(B@A)'
+equations:
+  merge_distributivity:
+    formula: (W + s·(B@A)) x = W x + s·(B (A x))
+    domain: W ∈ Z^{d_out×d_in}, B ∈ Z^{d_out×r}, A ∈ Z^{r×d_in}, s ∈ Z, x ∈ Z^{d_in}
+    codomain: Z^{d_out}
+    invariants:
+    - 'Matrix-add distributes over matvec: (W + M) x = W x + M x'
+    - 'Scalar factors out of matvec: (s·M) x = s·(M x)'
+    - 'Product associativity against a vector: (B@A) x = B (A x)'
+    - Merging changes storage but not the forward map (inference-equivalent)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Lora
+  composed_affine:
+    formula: (W + dW) x + b = (W x + dW x) + b
+    domain: W, dW ∈ Z^{d_out×d_in}, x ∈ Z^{d_in}, b ∈ Z^{d_out}
+    codomain: Z^{d_out}
+    invariants:
+    - Bias add commutes with the delta-weight decomposition
+    - 'Scaled form holds too: (W + s·dW) x + b = (W x + s·(dW x)) + b'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Lora
+  matvec_matmul_assoc:
+    formula: (B @ A) x = B (A x)
+    domain: B ∈ Z^{d_out×r}, A ∈ Z^{r×d_in}, x ∈ Z^{d_in}
+    codomain: Z^{d_out}
+    invariants:
+    - Row-times-matrix is the linear combination Σ_t b_t · A_t
+    - Bilinearity bridge dot(vecmat b A, x) = dot(b, matvec A x)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Lora
+proof_obligations:
+- type: equivalence
+  property: Merge distributivity — merged weight has the same forward map
+  formal: (W + s·(B@A)) x = W x + s·(B (A x))
+  applies_to: all
+  lean:
+    theorem: Lora.lora_merge_forward_equiv
+    module: ProvableContracts.Lora
+    status: proved
+    depends_on:
+    - Lora.merge_distributes
+    - Lora.matvec_matmul_assoc
+    - Lora.matvec_madd
+    - Lora.matvec_msmul
+    - Lora.dot_vadd_left
+    - Lora.dot_smul_left
+    mathlib_imports: []
+    notes: >
+      CORE-ONLY Lean (no Mathlib). Vectors = List Int, matrices = List (List Int),
+      matvec/matmul are folds. Proved by structural induction from Int.add_mul,
+      Int.mul_assoc and omega. Compiles sorry-free with the standalone `lean`
+      binary.
+- type: equivalence
+  property: Composed-affine identity — delta-weight split preserves the affine map
+  formal: (W + dW) x + b = (W x + dW x) + b
+  applies_to: all
+  lean:
+    theorem: Lora.composed_affine
+    module: ProvableContracts.Lora
+    status: proved
+    depends_on:
+    - Lora.matvec_madd
+    mathlib_imports: []
+    notes: Scaled twin composed_affine_scaled also proved sorry-free.
+- type: equivalence
+  property: Matrix-product associativity against a vector
+  formal: (B @ A) x = B (A x)
+  applies_to: all
+  lean:
+    theorem: Lora.matvec_matmul_assoc
+    module: ProvableContracts.Lora
+    status: proved
+    depends_on:
+    - Lora.dot_vecmat
+    - Lora.dot_vadd_left
+    - Lora.dot_smul_left
+    mathlib_imports: []
+    notes: Reduces the B@A term of the merge identity to B (A x).
+verification_summary:
+  total_obligations: 3
+  l2_property_tested: 3
+  l3_kani_proved: 0
+  l4_lean_proved: 3
+  l4_sorry_count: 0
+  l4_not_applicable: 0
+  lean_file: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Lora/MergeForwardEquiv.lean
+  scope_honesty: >
+    All 3 obligations are ALGEBRAIC forward-equivalence identities and are proved
+    sorry-free in CORE Lean 4 (no Mathlib, no ProvableContracts imports) over
+    List Int, verified with the standalone `lean` binary (exit 0, 0 sorry). The
+    Lean model is exact integer arithmetic; it establishes the exact-arithmetic
+    forward map is invariant under merge, which is the real-number result modulo
+    the fold model. The vs-bitsandbytes NF4 bit-parity beat (FALSIFY-LORA-FWD-004)
+    is DELIBERATELY capped at L2 (a passing falsification test), NOT a proof
+    obligation: bitsandbytes dequantizes through an irrational NF4 lookup table,
+    so bit-exact equivalence is not an algebraic statement and proving it would be
+    theater. It is intentionally excluded from total_obligations.
+falsification_tests:
+- id: FALSIFY-LORA-FWD-001
+  rule: Merge distributivity
+  prediction: (W + s·(B@A)) x == W x + s·(B (A x)) for random integer W, B, A, s, x
+  test: cargo test -p entrenar --lib lora::layer::tests::merge_forward_equivalence
+  if_fails: merge() alters the forward map — B@A ordering or scale application bug
+- id: FALSIFY-LORA-FWD-002
+  rule: Composed-affine identity
+  prediction: (W + dW) x + b == (W x + dW x) + b for random integer inputs
+  test: cargo test -p entrenar --lib lora::layer::tests::composed_affine_equivalence
+  if_fails: Bias add does not commute with the delta-weight decomposition
+- id: FALSIFY-LORA-FWD-003
+  rule: Merge/unmerge round-trip is identity on the base weight
+  prediction: unmerge(merge(W)) == W (bitwise on the stored base weight)
+  test: cargo test -p entrenar --lib lora::layer::tests::merge_unmerge_roundtrip
+  if_fails: merge/unmerge are not exact inverses — scale or sign asymmetry
+- id: FALSIFY-LORA-FWD-004
+  rule: NF4 bit-parity vs bitsandbytes (L2 ONLY — capped, not a proof obligation)
+  prediction: apr QLoRA merged forward matches bitsandbytes within fp tolerance
+  test: cargo test -p entrenar --lib lora::qlora::tests::bnb_merge_forward_within_tol
+  if_fails: NF4 dequant LUT or scale mismatch vs bitsandbytes reference
+  discharge_status: L2_FALSIFICATION_ONLY
+  notes: >
+    Bit-exactness vs bitsandbytes is NOT provable — the NF4 LUT is an irrational
+    approximation of the normal quantile function. This gate stays a numerical
+    falsification test (tolerance-banded), never promoted to a Lean obligation.
+kani_harnesses:
+- id: KANI-LORA-FWD-001
+  obligation: Merge distributivity
+  property: (W + s·(B@A)) x == W x + s·(B (A x)) for bounded integer matrices
+  bound: 4
+  strategy: bounded_int
+  harness: verify_merge_distributivity
+- id: KANI-LORA-FWD-002
+  obligation: Composed-affine identity
+  property: (W + dW) x + b == (W x + dW x) + b for bounded integer inputs
+  bound: 4
+  strategy: bounded_int
+  harness: verify_composed_affine
+- id: KANI-LORA-FWD-003
+  obligation: Matrix-product associativity against a vector
+  property: (B @ A) x == B (A x) for bounded integer matrices
+  bound: 4
+  strategy: bounded_int
+  harness: verify_matvec_matmul_assoc
+qa_gate:
+  id: F-LORA-FWD-001
+  name: LoRA Merge Forward-Equivalence Contract
+  checks:
+  - merge_distributivity
+  - composed_affine
+  - matvec_matmul_associativity
+  pass_criteria: >
+    Lean file compiles sorry-free (3/3 obligations) AND falsification tests 001-003
+    pass. FALSIFY-004 held at L2 (tolerance band), never proved.
+  falsification: >
+    Flip the B@A order to A@B in merge() → FALSIFY-001 must fail and
+    matvec_matmul_assoc must no longer typecheck against the merge identity.
