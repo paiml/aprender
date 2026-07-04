@@ -58,6 +58,16 @@ proof_obligations:
   property: GELU at zero
   formal: GELU(0) = 0
   applies_to: all
+  lean:
+    theorem: Gelu.gelu_zero
+    module: ProvableContracts.Gelu
+    status: proved
+    depends_on: []
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
+    - Mathlib.Analysis.SpecialFunctions.Pow.Real
+    notes: 'GELU(x) = 0.5·x·(1 + tanh …); at x=0 the leading 0.5·x factor is zero, so
+      the product is zero regardless of the tanh argument. Closed by ring.'
 - type: bound
   property: GELU approximation error
   formal: '|GELU_approx(x) - GELU_exact(x)| < ε for |x| < 10'
@@ -67,14 +77,37 @@ proof_obligations:
   property: SiLU at zero
   formal: SiLU(0) = 0
   applies_to: all
+  lean:
+    theorem: Sigmoid.silu_zero
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on: []
+    mathlib_imports: []
+    notes: SiLU(x) = x·σ(x); SiLU(0) = 0·σ(0) = 0 by ring.
 - type: monotonicity
   property: ReLU monotonic
   formal: x ≥ y ⟹ ReLU(x) ≥ ReLU(y)
   applies_to: all
+  lean:
+    theorem: Elementwise.relu_monotone
+    module: ProvableContracts.Elementwise
+    status: proved
+    depends_on:
+    - max_le_max
+    mathlib_imports: []
+    notes: 'relu(x) = max 0 x; x ≤ y ⟹ max 0 x ≤ max 0 y via max_le_max (le_refl 0) h.'
 - type: invariant
   property: ReLU non-negative
   formal: ReLU(x) ≥ 0 for all x
   applies_to: all
+  lean:
+    theorem: Elementwise.relu_nonneg
+    module: ProvableContracts.Elementwise
+    status: proved
+    depends_on:
+    - le_max_left
+    mathlib_imports: []
+    notes: 'relu(x) = max 0 x ≥ 0 by le_max_left 0 x.'
 - type: equivalence
   property: SIMD matches scalar
   tolerance: 4.0
@@ -162,6 +195,29 @@ qa_gate:
   - simd_equivalence
   pass_criteria: All 6 falsification tests pass + Kani verifies ReLU
   falsification: Replace max(0,x) with x to break ReLU non-negativity
+verification_summary:
+  total_obligations: 6
+  l2_property_tested: 6
+  l3_kani_proved: 2
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  notes: |
+    Analytic obligations proved in verified Lean (0 sorry):
+      - GELU at zero     -> Gelu.gelu_zero       (0.5·0·(1+tanh …) = 0)
+      - SiLU at zero     -> Sigmoid.silu_zero     (0·σ(0) = 0)
+      - ReLU monotonic   -> Elementwise.relu_monotone (max_le_max)
+      - ReLU non-negative-> Elementwise.relu_nonneg    (le_max_left)
+    Not applicable (runtime/empirical, no algebraic statement):
+      - SIMD matches scalar (avx2 vs scalar within 4 ULP) -> fast-math ULP
+        equivalence is a hardware/rounding property, not an algebraic identity.
+    Uncovered (analytic but not yet proven — contract stays below strict L4):
+      - GELU approximation error |GELU_approx(x) - GELU_exact(x)| < 1e-4.
+        This is a genuine numerical bound between the tanh approximation and the
+        exact erf-based GELU; closing it in Lean requires interval/erf bounds we
+        have not discharged. Honestly left UNPROVEN rather than marked N/A.
+    Strict leveling: l4_lean_proved(4) + l4_not_applicable(1) = 5 != 6, so this
+    contract is HONESTLY L3 (not L4) until the GELU approximation bound is proven.
 simd_dispatch:
   activation:
     scalar: activation_scalar

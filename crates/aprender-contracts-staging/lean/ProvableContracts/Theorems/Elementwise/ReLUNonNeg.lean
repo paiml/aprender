@@ -32,15 +32,24 @@ theorem relu_of_nonpos (x : ℝ) (hx : x ≤ 0) : relu x = 0 := by
   unfold relu
   exact max_eq_left hx
 
+-- Status: proved
+/-- ReLU is monotone: `x ≤ y ⟹ relu x ≤ relu y`.
+    Both branches of `max 0` are monotone in the second argument. -/
+theorem relu_monotone (x y : ℝ) (h : x ≤ y) : relu x ≤ relu y := by
+  unfold relu
+  exact max_le_max (le_refl 0) h
+
 -- Tests
 #check @relu_nonneg
 #check @relu_of_nonneg
 #check @relu_of_nonpos
+#check @relu_monotone
 
 example : relu 5.0 ≥ 0 := relu_nonneg 5.0
 example : relu (-3.0) ≥ 0 := relu_nonneg (-3.0)
 example : relu 0 ≥ 0 := relu_nonneg 0
 example : relu 5 = 5 := relu_of_nonneg 5 (by norm_num)
 example : relu (-3) = 0 := relu_of_nonpos (-3) (by norm_num)
+example : relu 1 ≤ relu 2 := relu_monotone 1 2 (by norm_num)
 
 end ProvableContracts.Elementwise
