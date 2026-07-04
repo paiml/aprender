@@ -18,6 +18,7 @@ import ProvableContracts.Theorems.Sigmoid.SigmoidSymmetry
 import ProvableContracts.Theorems.Sigmoid.SiluZero
 import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
 import ProvableContracts.Theorems.CrossEntropy.NonNegativity
+import ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
 import ProvableContracts.Theorems.LayerNorm.DenominatorPositive
 import ProvableContracts.Theorems.LayerNorm.ShiftInvariance
 import ProvableContracts.Theorems.Transpose.Involution
