@@ -72,6 +72,17 @@ proof_obligations:
   formal: '|CE(t, x) - (-sum(t_i * log_softmax(x)_i))| < eps'
   tolerance: 1.0e-06
   applies_to: all
+  lean:
+    theorem: ProvableContracts.CrossEntropy.cross_entropy_eq_nll
+    module: ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
+    status: proved
+    mathlib_imports:
+    - Mathlib.Data.Real.Basic
+    notes: >-
+      Exact real-arithmetic identity CE(t,z) = -sum_i t_i * log_softmax(z)_i (rfl).
+      The fused and separate (log_softmax then NLL) evaluations compute the same
+      real expression; the contract's 1e-6 tolerance is the residual float rounding
+      between the two computation orders.
 - type: bound
   property: Finite output for finite inputs
   formal: CE is finite when logits and targets are finite
@@ -90,11 +101,31 @@ proof_obligations:
   tolerance: 1.0e-06
   applies_to: all
   id: F-AUTOGRAD-CE-REDUCTION-001
-  notes: >-
-    Before PMAT-891 the backward unconditionally divided by batch (Mean-only) and
-    read only grad_output[0], so Sum grad was batch× too small and None
-    mis-broadcast the per-sample upstream. Closed-form softmax+NLL gradient is
-    softmax-onehot, requiring no PyTorch reference (Bishop 2006, eq. 4.108).
+  lean:
+    theorem: ProvableContracts.CrossEntropy.cross_entropy_onehot_backward
+    module: ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
+    status: proved
+    depends_on:
+    - CrossEntropy.hasDerivAt_log_exp_add_const
+    - CrossEntropy.ce_onehot_backward
+    - CrossEntropy.cross_entropy_onehot_eq
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Log.Deriv
+    - Mathlib.Analysis.Calculus.Deriv.Comp
+    - Mathlib.Analysis.Calculus.Deriv.Add
+    notes: >-
+      Proves the analytic CORE of F-AUTOGRAD-CE-REDUCTION-001 in Mathlib:
+      d/dz_i CE(onehot k, z) = softmax(z)_i - onehot(k)_i, as a genuine
+      HasDerivAt along the coordinate-i slice (fun t => CE (Function.update z i t))
+      evaluated at the base point z_i, tied back to the contract's cross_entropy
+      via cross_entropy_onehot_eq. Softmax at z_i = exp(z_i)/(exp(z_i)+rest) with
+      rest = sum_{j!=i} exp(z_j); the log-partition derivative is
+      exp(z_i)/(exp(z_i)+rest) and the -z_k term contributes onehot(k)_i.
+      This is the s=1 (Reduction::Sum) Jacobian; the Mean (÷batch) and None
+      (per-sample upstream) reduction scales are the scalar multiple
+      s·(softmax-onehot) via HasDerivAt.const_mul — an algebraic corollary
+      still enforced Rust-side by the F-AUTOGRAD-CE-REDUCTION-001-{SUM,MEAN,NONE}
+      falsification tests (Bishop 2006, eq. 4.108).
 - type: equivalence
   property: Label smoothing distributes eps/C off-target mass (PyTorch parity)
   formal: >-
@@ -114,13 +145,81 @@ proof_obligations:
     (Szegedy et al. 2016, Rethinking the Inception Architecture, eq. label
     smoothing); backward is unaffected because autograd is only recorded when
     label_smoothing == 0.0.
+- type: invariant
+  property: Softmax partition of unity (outputs sum to 1)
+  formal: sum_i softmax(z)_i = 1, i.e. the numerators sum to the denominator Z = sum_j exp(z_j)
+  applies_to: all
+  id: OBLIG-SOFTMAX-PARTITION-OF-UNITY
+  lean:
+    theorem: ProvableContracts.SoftmaxCore.softmax_partition
+    module: ProvableContracts.Theorems.CrossEntropy.CoreSoftmaxInvariants
+    status: proved
+    core_only: true
+    notes: >-
+      Core-only (prelude, no Mathlib). softmax normalizes by exactly Z = sum_j
+      exp(z_j), so the numerator list sums to the denominator; in Z-scaled fixed
+      point the outputs sum to the full scale Z, which is Sum_i w_i/Z = 1.
+- type: bound
+  property: Softmax outputs are strictly positive (lower bound of (0,1])
+  formal: softmax(z)_i > 0 for all i; equivalently the partition function Z > 0
+  applies_to: all
+  id: OBLIG-SOFTMAX-POSITIVE
+  lean:
+    theorem: ProvableContracts.SoftmaxCore.softmax_denom_pos
+    module: ProvableContracts.Theorems.CrossEntropy.CoreSoftmaxInvariants
+    status: proved
+    core_only: true
+    notes: >-
+      Core-only. Z = sum of exp-weights is strictly positive (each exp(z_j) > 0),
+      so softmax(z)_i = w_i/Z > 0. Proved over Int weights with positive head.
+- type: bound
+  property: Softmax outputs are at most one (upper bound of (0,1])
+  formal: softmax(z)_i <= 1 for all i; equivalently each weight w_i <= Z
+  applies_to: all
+  id: OBLIG-SOFTMAX-LE-ONE
+  lean:
+    theorem: ProvableContracts.SoftmaxCore.softmax_num_le_denom
+    module: ProvableContracts.Theorems.CrossEntropy.CoreSoftmaxInvariants
+    status: proved
+    core_only: true
+    notes: >-
+      Core-only. Each exp-weight is one term of the positive sum Z, so w_i <= Z,
+      hence softmax(z)_i = w_i/Z <= 1. Proved by induction over Int weight lists.
+- type: bound
+  property: Softmax outputs are strictly below one when mass exists elsewhere
+  formal: softmax(z)_i < 1 when sum_{j!=i} exp(z_j) > 0; equivalently w_i < Z
+  applies_to: all
+  id: OBLIG-SOFTMAX-LT-ONE
+  lean:
+    theorem: ProvableContracts.SoftmaxCore.softmax_num_lt_denom
+    module: ProvableContracts.Theorems.CrossEntropy.CoreSoftmaxInvariants
+    status: proved
+    core_only: true
+    notes: >-
+      Core-only. With strictly-positive mass in the remaining classes, the head
+      weight is strictly below Z, so softmax(z)_i < 1 (never saturates at 1).
+- type: equivalence
+  property: Log-softmax decomposition (log_softmax = z - logsumexp)
+  formal: log_softmax(z)_i = z_i - lse, with lse = log(sum_j exp(z_j))
+  applies_to: all
+  id: OBLIG-LOG-SOFTMAX-DECOMPOSITION
+  lean:
+    theorem: ProvableContracts.LogSoftmaxCore.log_softmax_decomp
+    module: ProvableContracts.Theorems.CrossEntropy.CoreSoftmaxInvariants
+    status: proved
+    core_only: true
+    notes: >-
+      Core-only definitional identity log_softmax(z)_i = z_i - lse; the companion
+      core theorem log_softmax_nonpos re-proves CE-BND-001 (log_softmax <= 0) over
+      Int from z_i <= lse, independent of the Mathlib proof of the same bound.
 verification_summary:
-  total_obligations: 7
-  l2_property_tested: 6
+  total_obligations: 12
+  l2_property_tested: 11
   l3_kani_proved: 3
-  l4_lean_proved: 2
+  l4_lean_proved: 9
   l4_sorry_count: 0
   l4_not_applicable: 1
+  mathlib_imports: true
 kernel_structure:
   phases:
   - name: find_max
@@ -205,6 +304,31 @@ falsification_tests:
   prediction: 'CrossEntropyLoss(0.0).forward == CrossEntropyLoss::new().forward'
   test: cargo test -p aprender-core --lib test_cross_entropy_label_smoothing_zero_equals_plain
   if_fails: Smoothing branch does not reduce to plain CE at eps=0 (regression)
+- id: FALSIFY-SOFTMAX-PARTITION
+  rule: Softmax partition of unity
+  prediction: sum(softmax(logits)) == 1 within tolerance for all finite logits
+  test: proptest with random finite logits, dim 2..128, assert |sum - 1| < 1e-6
+  if_fails: Normalization uses a denominator other than the sum of exp weights
+- id: FALSIFY-SOFTMAX-POSITIVE
+  rule: Softmax outputs strictly positive
+  prediction: softmax(logits)_i > 0 for all i and all finite logits
+  test: proptest with random finite logits in [-1000, 1000], dim 2..128
+  if_fails: Underflow to zero or a non-positive exp weight in the numerator
+- id: FALSIFY-SOFTMAX-LE-ONE
+  rule: Softmax outputs bounded above by one
+  prediction: softmax(logits)_i <= 1 for all i and all finite logits
+  test: proptest with random finite logits, dim 2..128, assert max(softmax) <= 1
+  if_fails: A single weight exceeds the partition function Z (impossible if Z = sum)
+- id: FALSIFY-SOFTMAX-LT-ONE
+  rule: Softmax strictly below one with mass elsewhere
+  prediction: softmax(logits)_i < 1 when at least one other class has finite logit
+  test: proptest with dim >= 2 random finite logits, assert max(softmax) < 1
+  if_fails: Softmax saturates at exactly 1, dropping mass from the other classes
+- id: FALSIFY-LOG-SOFTMAX-DECOMPOSITION
+  rule: Log-softmax decomposition
+  prediction: '|log_softmax(z)_i - (z_i - logsumexp(z))| < 1e-6 for all i'
+  test: proptest comparing log_softmax vs z_i minus log-sum-exp, dim 2..128
+  if_fails: Log-softmax does not equal z minus the log-sum-exp normalizer
 kani_harnesses:
 - id: KANI-CE-001
   obligation: CE-INV-001
