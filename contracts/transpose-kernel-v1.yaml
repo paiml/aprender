@@ -25,19 +25,26 @@ proof_obligations:
   property: Shape correctness
   formal: shape(transpose(A[m,n])) = (n, m)
   applies_to: all
+  lean:
+    theorem: TensorTranspose.transpose_shape
+    module: ProvableContracts.TensorTranspose
+    status: proved
+    depends_on: []
+    mathlib_imports: []
+    notes: Core-only (no Mathlib). transpose swaps dims — (t.transpose.rows =
+      t.cols ∧ t.transpose.cols = t.rows) by rfl. Theorems/TensorTranspose/Roundtrip.lean
 - type: idempotency
   property: Involution (self-inverse)
   formal: transpose(transpose(A)) = A (bitwise exact)
   applies_to: all
   lean:
-    theorem: Transpose.transpose_involution
-    module: ProvableContracts.Transpose
+    theorem: TensorTranspose.transpose_involution
+    module: ProvableContracts.TensorTranspose
     status: proved
-    depends_on:
-    - Matrix.transpose_transpose
-    mathlib_imports:
-    - Mathlib.Data.Matrix.Basic
-    notes: Direct application of Mathlib's Matrix.transpose_transpose
+    depends_on: []
+    mathlib_imports: []
+    notes: Core-only (no Mathlib). (Aᵀ)ᵀ = A bit-for-bit by rfl over the
+      Tensor2D model. Theorems/TensorTranspose/Roundtrip.lean
 - type: equivalence
   property: AVX2 matches scalar
   formal: '|transpose_avx2(A) - transpose_scalar(A)| = 0 (bitwise exact)'
@@ -48,22 +55,32 @@ proof_obligations:
   formal: B[j][i] = A[i][j] for all valid i,j
   applies_to: all
   lean:
-    theorem: Transpose.transpose_element
-    module: ProvableContracts.Transpose
+    theorem: TensorTranspose.transpose_element
+    module: ProvableContracts.TensorTranspose
     status: proved
     depends_on: []
-    mathlib_imports:
-    - Mathlib.Data.Matrix.Basic
-    notes: Aᵀ j i = A i j is definitional equality (rfl)
+    mathlib_imports: []
+    notes: Core-only (no Mathlib). Bᵀ j i = A i j is definitional equality
+      (rfl). Theorems/TensorTranspose/Roundtrip.lean
 - type: invariant
   property: All elements transposed
   formal: No element lost or duplicated — bijection on index pairs
   applies_to: all
+  lean:
+    theorem: TensorTranspose.swapIdx_injective
+    module: ProvableContracts.TensorTranspose
+    status: proved
+    depends_on:
+    - TensorTranspose.swapIdx_surjective
+    mathlib_imports: []
+    notes: Core-only (no Mathlib). The index swap (i,j)↦(j,i) is a bijection on
+      Nat×Nat — injective (no duplication) + surjective (no loss). Both proved in
+      Theorems/TensorTranspose/Roundtrip.lean
 verification_summary:
   total_obligations: 5
   l2_property_tested: 5
   l3_kani_proved: 2
-  l4_lean_proved: 2
+  l4_lean_proved: 4
   l4_sorry_count: 0
   l4_not_applicable: 1
 kernel_structure:

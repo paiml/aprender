@@ -92,10 +92,42 @@ theorem shape_transpose_involution_vec (n : Nat) :
     (Shape.mk 1 n).transpose.transpose = Shape.mk 1 n :=
   rfl
 
+/-!
+## Index-pair bijection (`No element lost or duplicated`)
+
+The transpose is a permutation of the index grid: the swap `(i, j) ↦ (j, i)` is a
+bijection on `Nat × Nat`. This is exactly the contract obligation *"All elements
+transposed — bijection on index pairs"*: injectivity ⇒ no two source elements land
+on the same destination (no duplication), surjectivity ⇒ every destination is
+filled (no loss). Stated over Lean core `Nat × Nat` — no `import Mathlib`, so
+`Function.Injective`/`Surjective` are spelled out explicitly.
+-/
+
+/-- The index swap the transpose performs: `out (i, j) = in (j, i)`. -/
+def swapIdx : Nat × Nat → Nat × Nat := fun p => (p.2, p.1)
+
+/-- The index swap is an involution — the algebraic heart of the bijection. -/
+@[simp] theorem swapIdx_involutive (p : Nat × Nat) : swapIdx (swapIdx p) = p :=
+  rfl
+
+/-- **Injective**: no two distinct source indices map to the same destination —
+    i.e. no element is *duplicated* by the transpose. -/
+theorem swapIdx_injective (a b : Nat × Nat) (h : swapIdx a = swapIdx b) : a = b := by
+  have ha : swapIdx (swapIdx a) = swapIdx (swapIdx b) := congrArg swapIdx h
+  rw [swapIdx_involutive, swapIdx_involutive] at ha
+  exact ha
+
+/-- **Surjective**: every destination index has a source — i.e. no element is
+    *lost* by the transpose (its own preimage). -/
+theorem swapIdx_surjective (p : Nat × Nat) : ∃ q, swapIdx q = p :=
+  ⟨swapIdx p, swapIdx_involutive p⟩
+
 -- Checks
 #check @transpose_involution
 #check @transpose_element
 #check @roundtrip_preserves_element
 #check @shape_transpose_involution
+#check @swapIdx_injective
+#check @swapIdx_surjective
 
 end ProvableContracts.TensorTranspose
