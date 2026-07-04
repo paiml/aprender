@@ -46,6 +46,8 @@ import ProvableContracts.Theorems.MatMul.Associativity
 import ProvableContracts.Theorems.MatMul.Identity
 import ProvableContracts.Theorems.QR.Orthogonality
 import ProvableContracts.Theorems.Quantization.RoundtripBound
+import ProvableContracts.Theorems.QuantizedDotProduct.BsumDecomposition
+import ProvableContracts.Theorems.QuantizedDotProduct.ErrorBound
 import ProvableContracts.Theorems.RMSNorm.DenominatorPositive
 import ProvableContracts.Theorems.RMSNorm.ScaleInvariance
 import ProvableContracts.Theorems.SVD.NonNegative
