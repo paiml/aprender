@@ -746,7 +746,7 @@ pub use multinomial_nb::MultinomialNB;
 mod linear_svm;
 pub use linear_svm::*;
 mod svc_rbf;
-pub use svc_rbf::SVCRbf;
+pub use svc_rbf::{Kernel, MultiClassSVC, SVCRbf};
 mod sets;
 #[cfg(test)]
 mod svc_rbf_sklearn_fixture;
