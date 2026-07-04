@@ -10,6 +10,7 @@ import ProvableContracts.Defs.AdamW
 import ProvableContracts.Defs.BLAS
 import ProvableContracts.Defs.BatchNorm
 import ProvableContracts.Defs.Cholesky
+import ProvableContracts.Defs.Conv1D
 import ProvableContracts.Defs.CrossEntropy
 import ProvableContracts.Defs.Elementwise
 import ProvableContracts.Defs.FFT
@@ -33,6 +34,11 @@ import ProvableContracts.Theorems.BatchNorm.DenominatorPositive
 import ProvableContracts.Theorems.BatchNorm.EvalUsesRunning
 import ProvableContracts.Theorems.BatchNorm.RunningVariance
 import ProvableContracts.Theorems.Cholesky.SPD
+import ProvableContracts.Theorems.Conv1D.Bound
+import ProvableContracts.Theorems.Conv1D.Linearity
+import ProvableContracts.Theorems.Conv1D.OutputLength
+import ProvableContracts.Theorems.Conv1D.ShiftEquivariance
+import ProvableContracts.Theorems.Conv1D.ZeroInput
 import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
 import ProvableContracts.Theorems.CrossEntropy.NonNegativity
 import ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
