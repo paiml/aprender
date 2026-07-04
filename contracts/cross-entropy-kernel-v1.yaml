@@ -72,6 +72,17 @@ proof_obligations:
   formal: '|CE(t, x) - (-sum(t_i * log_softmax(x)_i))| < eps'
   tolerance: 1.0e-06
   applies_to: all
+  lean:
+    theorem: ProvableContracts.CrossEntropy.cross_entropy_eq_nll
+    module: ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
+    status: proved
+    mathlib_imports:
+    - Mathlib.Data.Real.Basic
+    notes: >-
+      Exact real-arithmetic identity CE(t,z) = -sum_i t_i * log_softmax(z)_i (rfl).
+      The fused and separate (log_softmax then NLL) evaluations compute the same
+      real expression; the contract's 1e-6 tolerance is the residual float rounding
+      between the two computation orders.
 - type: bound
   property: Finite output for finite inputs
   formal: CE is finite when logits and targets are finite
@@ -90,11 +101,31 @@ proof_obligations:
   tolerance: 1.0e-06
   applies_to: all
   id: F-AUTOGRAD-CE-REDUCTION-001
-  notes: >-
-    Before PMAT-891 the backward unconditionally divided by batch (Mean-only) and
-    read only grad_output[0], so Sum grad was batch× too small and None
-    mis-broadcast the per-sample upstream. Closed-form softmax+NLL gradient is
-    softmax-onehot, requiring no PyTorch reference (Bishop 2006, eq. 4.108).
+  lean:
+    theorem: ProvableContracts.CrossEntropy.cross_entropy_onehot_backward
+    module: ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
+    status: proved
+    depends_on:
+    - CrossEntropy.hasDerivAt_log_exp_add_const
+    - CrossEntropy.ce_onehot_backward
+    - CrossEntropy.cross_entropy_onehot_eq
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Log.Deriv
+    - Mathlib.Analysis.Calculus.Deriv.Comp
+    - Mathlib.Analysis.Calculus.Deriv.Add
+    notes: >-
+      Proves the analytic CORE of F-AUTOGRAD-CE-REDUCTION-001 in Mathlib:
+      d/dz_i CE(onehot k, z) = softmax(z)_i - onehot(k)_i, as a genuine
+      HasDerivAt along the coordinate-i slice (fun t => CE (Function.update z i t))
+      evaluated at the base point z_i, tied back to the contract's cross_entropy
+      via cross_entropy_onehot_eq. Softmax at z_i = exp(z_i)/(exp(z_i)+rest) with
+      rest = sum_{j!=i} exp(z_j); the log-partition derivative is
+      exp(z_i)/(exp(z_i)+rest) and the -z_k term contributes onehot(k)_i.
+      This is the s=1 (Reduction::Sum) Jacobian; the Mean (÷batch) and None
+      (per-sample upstream) reduction scales are the scalar multiple
+      s·(softmax-onehot) via HasDerivAt.const_mul — an algebraic corollary
+      still enforced Rust-side by the F-AUTOGRAD-CE-REDUCTION-001-{SUM,MEAN,NONE}
+      falsification tests (Bishop 2006, eq. 4.108).
 - type: equivalence
   property: Label smoothing distributes eps/C off-target mass (PyTorch parity)
   formal: >-
@@ -185,9 +216,10 @@ verification_summary:
   total_obligations: 12
   l2_property_tested: 11
   l3_kani_proved: 3
-  l4_lean_proved: 7
+  l4_lean_proved: 9
   l4_sorry_count: 0
   l4_not_applicable: 1
+  mathlib_imports: true
 kernel_structure:
   phases:
   - name: find_max
