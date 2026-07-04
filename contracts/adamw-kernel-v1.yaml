@@ -92,6 +92,25 @@ proof_obligations:
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
+verification_summary:
+  total_obligations: 11
+  l2_property_tested: 11
+  l3_kani_proved: 0
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  notes: >-
+    4 of the 5 equation invariants are Lean-proved sorry-free in
+    crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/AdamW/
+    {Adam_Moments,Adam_Variance,Bias_Correction,Weight_Update}.lean, each
+    verified with `lake env lean <file>` exit 0. The proofs are Mathlib-backed
+    (real numbers + ring/linarith/nlinarith) but ALGEBRAIC, not deep analysis:
+    adam_moments = convex-combination EMA identity + magnitude bound;
+    adam_variance = second-moment non-negativity; bias_correction =
+    1/(1-beta^t) > 1 for beta in (0,1), t>=1; weight_update = decoupled
+    weight-decay decomposition. The remaining obligations (frame, loop
+    variant, SIMD/ULP equivalence: l4_not_applicable=1 for the runtime-only
+    SIMD equivalence) are Kani- and falsification-covered (L3), not Lean-proved.
 kernel_structure:
   phases:
   - name: update_first_moment
