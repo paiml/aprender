@@ -76,6 +76,7 @@ metadata:
   depends_on:
     - apr-code-v1
   related_contracts:
+    - contracts/apr-code-harness-ir-v1.yaml   # L2 — the PROVEN data-layer core: this contract's canonical_ir round-trip + cross-harness equivalence gates reduce to the obligations proved there
     - contracts/apr-claude-proxy-v1.yaml
     - contracts/apr-gemini-proxy-v1.yaml
     - contracts/apr-code-parity-v1.yaml

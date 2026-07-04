@@ -15,14 +15,16 @@
 #
 # PROOF LADDER (per crates/aprender-contracts/src/proof_status.rs):
 #   * L1 — YAML + equations (this file).
-#   * L2 — falsification tests cover obligations. ACHIEVED: 9 tests (5 unit +
-#          4 proptest) cover 4 obligations, all GREEN, both codec mutations
-#          verified RED (role model->assistant; args->Null both fail the gates).
-#   * L3 — Kani bounded-model-check. PLANNED (kani_harnesses below reference the
-#          harnesses to add) — the round-trip involutions are finite-structure
-#          and BMC-amenable.
-#   * L4/L5 — Lean 4 theorem + verified bindings. Aspirational; the round-trip
-#          + cross-format-equivalence properties are cleanly statable in Lean.
+#   * L2 — falsification tests cover obligations. >>> ACHIEVED <<<: 9 tests
+#          (5 unit + 4 proptest) cover 4 obligations, all GREEN, both codec
+#          mutations verified RED (role model->assistant; args->Null both fail).
+#   * L3 — Kani BMC. DELIBERATELY DEFERRED (see formal_verification_roadmap):
+#          the codecs are over serde_json::Value (heap String/Map), NOT
+#          BMC-amenable. We do NOT declare un-backed Kani harnesses to inflate
+#          the level — that would be theater. This contract honestly reports L2.
+#   * L4 — Lean 4. The REAL formal next rung: the round-trip + cross-format
+#          equivalence are cleanly statable over an algebraic IR (no serde_json).
+#          Planned theorems listed in formal_verification_roadmap.
 #
 # HONEST asymmetries modelled (NOT hidden):
 #   * Anthropic tool_use carries an `id`; Gemini functionCall does not. So ids
@@ -68,7 +70,7 @@ metadata:
 
 name: apr-code-harness-ir
 version: "1.0.0"
-status: ENFORCED   # L2 achieved: obligations covered by real GREEN falsifiers
+status: ENFORCED   # honest L2: obligations covered by real GREEN mutation-verified falsifiers (Kani deferred, Lean L4 planned)
 scope: "the canonical tool/message IR and its Anthropic/Gemini wire codecs in crates/aprender-serve/src/harness_ir/"
 
 # ── Equations (the invariants, informally) ──
@@ -144,22 +146,32 @@ falsification_tests:
     prediction: 'A concrete Edit-tool JSON Schema survives both codecs and is byte-identical across input_schema/parameters.'
     if_fails: 'Anthropic input_schema and Gemini parameters carry different schema bodies.'
 
-# ── Kani harnesses (PLANNED — the L2->L3 rung) ──
-# The round-trip involutions are finite-structure; a bounded harness over a
-# small message (<=N blocks, bounded arg depth) BMC-checks OBLIG-IR-1/2/3.
-kani_harnesses:
-  - id: KANI-IR-ROUNDTRIP
-    obligation: OBLIG-IR-1
-    harness: verify_harness_ir_anthropic_roundtrip
-    status: PLANNED
-    bound: 3
-    note: 'Bounded: role ∈ {User,Assistant}, blocks ≤ 3, scalar args — proves from_anthropic∘to_anthropic = id for all such messages.'
-  - id: KANI-IR-CROSS-HARNESS
-    obligation: OBLIG-IR-3
-    harness: verify_harness_ir_cross_harness_equiv
-    status: PLANNED
-    bound: 3
-    note: 'Bounded cross-format semantic equivalence over the shared core (text + tool call).'
+# ── Formal-verification roadmap (the honest next rungs) ──
+# Deliberately NO `kani_harnesses:` here. Kani (L3) is DEFERRED, not skipped by
+# oversight: the codecs operate over serde_json::Value (heap Strings + Maps),
+# which is not bounded-model-check-amenable — a Kani harness would have to model
+# serde_json's allocator, which is infeasible and would be theater. We do not
+# declare un-implemented Kani harnesses just to inflate the reported level (see
+# the repo-wide "gates or theater" discipline). This contract is therefore an
+# HONEST L2: proof-status counts only the real, GREEN, mutation-verified tests.
+#
+# The correct formal next rung is L4 (Lean 4), NOT L3 (Kani): the round-trip and
+# cross-format-equivalence properties are cleanly statable over an ALGEBRAIC IR
+# (Role, Block, Message as inductive types) with NO serde_json — exactly what
+# Lean models well. Planned Lean theorems (each mirrors an obligation above):
+formal_verification_roadmap:
+  status: L2_ACHIEVED_L4_PLANNED
+  deferred_kani_reason: 'serde_json::Value (heap String/Map) is not BMC-amenable; declaring Kani harnesses would be un-backed theater.'
+  planned_lean_theorems:
+    - name: anthropic_roundtrip_id
+      obligation: OBLIG-IR-1
+      statement: '∀ (m : Message), fromAnthropic (toAnthropic m) = some m'
+    - name: gemini_roundtrip_id_on_native
+      obligation: OBLIG-IR-2
+      statement: '∀ (m : Message), isGeminiNative m → fromGemini (toGemini m) = some m'
+    - name: cross_harness_equiv
+      obligation: OBLIG-IR-3
+      statement: '∀ (m : Message), semantic <$> (fromAnthropic (toAnthropic m)) = semantic <$> (fromGemini (toGemini m))'
 
 # ── Honesty ──
 non_goals:
