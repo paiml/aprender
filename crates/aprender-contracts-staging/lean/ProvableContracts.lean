@@ -55,3 +55,10 @@ import ProvableContracts.Theorems.AdamW.WeightDecay
 -- Discrete Fourier Transform
 import ProvableContracts.Defs.FFT
 import ProvableContracts.Theorems.FFT.Parseval
+-- Conv1d kernel (1-D convolution)
+import ProvableContracts.Defs.Conv1D
+import ProvableContracts.Theorems.Conv1D.Linearity
+import ProvableContracts.Theorems.Conv1D.OutputLength
+import ProvableContracts.Theorems.Conv1D.Bound
+import ProvableContracts.Theorems.Conv1D.ShiftEquivariance
+import ProvableContracts.Theorems.Conv1D.ZeroInput
