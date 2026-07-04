@@ -582,6 +582,36 @@ bindings:
   signature: 'fn tool_to_anthropic(t: &ToolSchema) -> Value'
   status: implemented
   notes: 'OBLIG-IR-4 tool schema encode; lossless proven (proptest prop_tool_schema_lossless + Lean tool_anth_roundtrip)'
+# ── Pillar-4 (BEAT Ollama): tensor-transpose round-trip → L5.
+- contract: tensor-transpose-roundtrip-v1.yaml
+  equation: tensor_transpose_reindex
+  module_path: aprender::format::layout_contract
+  function: should_transpose_gguf
+  signature: 'fn should_transpose_gguf(&self, name: &str) -> bool'
+  status: implemented
+  notes: 'LayoutContract::should_transpose_gguf (layout_contract_specs.rs:216); involution proven in Theorems/TensorTranspose/Roundtrip.lean'
+# ── Pillar-3 (BEAT Unsloth): LoRA merge forward-equivalence → L5 (3 equations).
+- contract: lora-merge-forward-equivalence-v1.yaml
+  equation: merge_distributivity
+  module_path: entrenar::lora::layer::core
+  function: merge
+  signature: 'fn merge(&mut self)'
+  status: implemented
+  notes: 'LoRALayer::merge (core.rs:291); distributivity proven in Theorems/Lora/MergeForwardEquiv.lean'
+- contract: lora-merge-forward-equivalence-v1.yaml
+  equation: composed_affine
+  module_path: entrenar::lora::layer::core
+  function: forward
+  signature: 'fn forward(&self, input: &Tensor) -> Tensor'
+  status: implemented
+  notes: 'LoRALayer::forward (core.rs:249) realizes the composed-affine forward map'
+- contract: lora-merge-forward-equivalence-v1.yaml
+  equation: matvec_matmul_assoc
+  module_path: entrenar::autograd
+  function: matmul
+  signature: 'fn matmul(a: &Tensor, b: &Tensor) -> Tensor'
+  status: implemented
+  notes: 'autograd matmul realizes B@A; associativity proven in Theorems/Lora/MergeForwardEquiv.lean'
 critical_path:
 - softmax
 - rmsnorm
