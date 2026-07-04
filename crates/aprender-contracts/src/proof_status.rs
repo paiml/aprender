@@ -206,24 +206,35 @@ fn kernel_class_map() -> Vec<(&'static str, &'static str, &'static [&'static str
 
 // ── Core computation ──────────────────────────────────────────────
 
-/// Returns `true` when Lean theorems exist for this contract.
+/// Returns `true` when EVERY proof obligation is discharged in Lean.
+///
+/// Strict per-obligation semantics — no fuzzy over-promotion. A contract is
+/// Lean-proved (L4) only when the number of Lean-proved obligations plus the
+/// explicitly not-applicable ones covers ALL proof obligations, and at least
+/// one obligation is genuinely proved. The obligation total is
+/// `proof_obligations.len()` — the SAME total used for L2/L3 — so a
+/// `verification_summary` cannot manufacture L4 by understating the total.
+///
+/// Proof counts come from the contract's `verification_summary` when it makes a
+/// positive claim (`l4_lean_proved > 0`); otherwise from a scan of the in-tree
+/// sorry-free `.lean` theorems. Because the scan can only credit obligations it
+/// resolves, partial coverage (the old "≥1 resolving ref → L4" over-promotion)
+/// now correctly reports L3 instead of a full L4. Contracts with legitimately
+/// N/A obligations (e.g. softmax-kernel-v1 = 5 proved + 4 N/A of 9) MUST declare
+/// that in `verification_summary` — the scan path grants no N/A credit.
 fn is_lean_proved(contract: &Contract) -> bool {
-    // A contract is Lean-proved when every obligation is either proved in Lean
-    // OR explicitly marked not-applicable (e.g. runtime-only obligations that
-    // have no algebraic statement to prove). Counting `l4_not_applicable`
-    // toward the total avoids under-reporting partially-N/A contracts that have
-    // in fact discharged every provable obligation (e.g. softmax-kernel-v1 =
-    // 5 proved + 4 N/A of 9).
-    let yaml_proved = contract.verification_summary.as_ref().is_some_and(|vs| {
-        vs.total_obligations > 0
-            && vs.l4_lean_proved + vs.l4_not_applicable == vs.total_obligations
-            && vs.l4_lean_proved > 0
-    });
-    if yaml_proved {
-        return true;
+    let total = contract.proof_obligations.len() as u32;
+    if total == 0 {
+        return false;
     }
-    // Fallback: scan for actual Lean theorem files
-    count_lean_theorems_for_contract(contract) > 0
+    // A present verification_summary that makes a positive Lean claim is
+    // authoritative (a stale/zero summary falls through to the scan). Otherwise
+    // count resolvable in-tree Lean theorems; the scan grants no N/A credit.
+    let (proved, not_applicable) = match contract.verification_summary.as_ref() {
+        Some(vs) if vs.l4_lean_proved > 0 => (vs.l4_lean_proved, vs.l4_not_applicable),
+        _ => (count_lean_theorems_for_contract(contract), 0),
+    };
+    proved > 0 && proved + not_applicable >= total
 }
 
 /// Returns `true` when all bindings are implemented.
@@ -234,8 +245,10 @@ fn is_fully_bound(binding_status: Option<(u32, u32)>) -> bool {
 /// Compute the proof level for a single contract.
 ///
 /// Derivation rules (highest matching level wins):
-/// - **L5**: all Lean proved AND all bindings implemented
-/// - **L4**: all Lean proved (`verification_summary.l4_lean_proved == total`)
+/// - **L5**: every obligation Lean-proved AND all bindings implemented
+/// - **L4**: every obligation Lean-proved — strict per-obligation coverage,
+///   `proved + not_applicable >= proof_obligations.len()` with `proved > 0`
+///   (partial coverage is NOT L4; see [`is_lean_proved`])
 /// - **L3**: has Kani harnesses AND falsification tests cover obligations
 /// - **L2**: falsification tests count >= obligations count
 /// - **L1**: contract exists with equations
