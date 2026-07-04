@@ -16,6 +16,7 @@ import ProvableContracts.Theorems.RMSNorm.ScaleInvariance
 import ProvableContracts.Theorems.Sigmoid.SigmoidBounded
 import ProvableContracts.Theorems.Sigmoid.SigmoidSymmetry
 import ProvableContracts.Theorems.Sigmoid.SiluZero
+import ProvableContracts.Theorems.Sigmoid.SwigluZero
 import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
 import ProvableContracts.Theorems.CrossEntropy.NonNegativity
 import ProvableContracts.Theorems.LayerNorm.DenominatorPositive

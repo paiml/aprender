@@ -53,6 +53,19 @@ proof_obligations:
   property: Zero preservation
   formal: SwiGLU(0, W, V, 0, 0) = 0
   applies_to: all
+  lean:
+    theorem: Sigmoid.swiglu_zero_preservation
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on:
+    - Sigmoid.silu_zero
+    - Sigmoid.swiglu_gate_zero
+    mathlib_imports: []
+    notes: >-
+      With x=0, b=c=0 both affine projections collapse to 0 (0·W=0, 0·V=0),
+      so each component is SiLU(0)·0 = 0·0 = 0. Reuses silu_zero. The stronger
+      gate-zero lemma swiglu_gate_zero proves the output component is 0 for ANY
+      value pre-activation when the gate pre-activation is 0.
 - type: equivalence
   property: Fused matches unfused
   formal: '|fused_swiglu(x) - (silu(xW+b) * (xV+c))| < eps'
@@ -66,6 +79,39 @@ proof_obligations:
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
+verification_summary:
+  total_obligations: 4
+  l2_property_tested: 4
+  l3_kani_proved: 3
+  l4_lean_proved: 1
+  l4_sorry_count: 0
+  l4_not_applicable: 2
+  honest_level: L3
+  uncovered:
+  - property: Gate output bounded below
+    formal: SiLU(xW+b)_i > -0.279 for all i
+    class: analytic-but-unproven
+    reason: >-
+      The tight global lower bound -0.279 of SiLU(z)=z·σ(z) sits at the
+      transcendental critical point z≈-1.2784 (solving e^z(z-1)=1). Proving the
+      exact constant in Lean requires locating that critical point, which is not
+      closed here. Left honestly UNCOVERED (NOT marked N/A) — this is why the
+      contract's honest maximum is L3, not L4. Matches the silu-kernel-v1
+      sibling, which also leaves this bound unproven.
+  not_applicable_detail:
+  - property: Fused matches unfused
+    reason: >-
+      Floating-point reassociation/parity claim (|fused - reference| < 1e-6):
+      the fused kernel must match the composed reference within tolerance. Over
+      ℝ this is the trivial definitional identity; the obligation's real content
+      is runtime FP behaviour (implementation-parity), an empirical (b)-class
+      property with no non-trivial algebraic statement — analogous to
+      SIMD-within-ULP.
+  - property: SIMD matches scalar within ULP
+    reason: >-
+      Runtime SIMD-vs-scalar numeric equivalence within 8 ULP (applies_to simd).
+      Depends on FMA/reduction order of a concrete backend; no algebraic content
+      over ℝ. Genuine (b)-class not-applicable.
 kernel_structure:
   phases:
   - name: linear_gate
