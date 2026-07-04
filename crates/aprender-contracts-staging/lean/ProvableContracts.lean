@@ -30,6 +30,7 @@ import ProvableContracts.Theorems.BLAS.SyrkSymmetric
 import ProvableContracts.Theorems.Cholesky.SPD
 import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
 import ProvableContracts.Theorems.CrossEntropy.NonNegativity
+import ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
 import ProvableContracts.Theorems.Elementwise.AddCommutative
 import ProvableContracts.Theorems.Elementwise.MulScalarAssoc
 import ProvableContracts.Theorems.Elementwise.ReLUNonNeg

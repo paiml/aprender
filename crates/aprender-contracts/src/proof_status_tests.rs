@@ -126,6 +126,60 @@ fn level_l4_when_bindings_incomplete() {
     assert_eq!(compute_proof_level(&c, Some((0, 1))), ProofLevel::L4);
 }
 
+/// Build a contract with an explicit not-applicable count in its summary.
+fn contract_with_lean_na(total: u32, lean_proved: u32, not_applicable: u32) -> Contract {
+    let mut c = minimal_contract(total as usize, total as usize, total as usize);
+    c.verification_summary = Some(crate::schema::VerificationSummary {
+        total_obligations: total,
+        l2_property_tested: total,
+        l3_kani_proved: total,
+        l4_lean_proved: lean_proved,
+        l4_sorry_count: total - lean_proved - not_applicable,
+        l4_not_applicable: not_applicable,
+    });
+    c
+}
+
+/// STRICT: proved + N/A must cover EVERY obligation. Partial Lean coverage
+/// (the old "≥1 resolving ref → L4" over-promotion) now reports L3, even when
+/// fully bound (which would previously have inflated it to L5). This is the
+/// `lora-algebra`/`attention-kernel` case (4-of-6, 0-of-5, …).
+#[test]
+fn level_strict_partial_coverage_stays_l3_even_when_bound() {
+    let c = contract_with_lean_na(6, 4, 1); // 4 proved + 1 N/A = 5 < 6
+    assert_eq!(compute_proof_level(&c, None), ProofLevel::L3);
+    assert_eq!(compute_proof_level(&c, Some((3, 3))), ProofLevel::L3);
+}
+
+/// STRICT: a contract whose provable obligations are ALL discharged — some
+/// proved, the rest explicitly N/A — is a legitimate L4/L5 (the `softmax-kernel`
+/// case: 5 proved + 4 N/A of 9).
+#[test]
+fn level_strict_full_coverage_with_na_is_l4() {
+    let c = contract_with_lean_na(9, 5, 4); // 5 + 4 == 9
+    assert_eq!(compute_proof_level(&c, None), ProofLevel::L4);
+    assert_eq!(compute_proof_level(&c, Some((1, 1))), ProofLevel::L5);
+}
+
+/// STRICT: `total` is `proof_obligations.len()`, NOT `verification_summary.
+/// total_obligations`, so a summary cannot manufacture L4 by understating the
+/// obligation count. Here the contract has 6 real obligations but the summary
+/// claims a total of 3 (all "proved") — strict measures 3 proved against 6 real
+/// obligations and correctly withholds L4.
+#[test]
+fn level_strict_summary_cannot_understate_total() {
+    let mut c = minimal_contract(6, 6, 6); // 6 real proof_obligations
+    c.verification_summary = Some(crate::schema::VerificationSummary {
+        total_obligations: 3, // understated
+        l2_property_tested: 3,
+        l3_kani_proved: 3,
+        l4_lean_proved: 3,
+        l4_sorry_count: 0,
+        l4_not_applicable: 0,
+    });
+    assert_eq!(compute_proof_level(&c, None), ProofLevel::L3);
+}
+
 #[test]
 fn report_empty_contracts() {
     let report = proof_status_report(&[], None, false);
