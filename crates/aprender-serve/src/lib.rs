@@ -295,6 +295,11 @@ pub mod gpu;
 /// - Token masking for efficient constrained generation
 /// - State machine for tracking grammar state
 pub mod grammar;
+/// Canonical harness IR — the pivot both agentic-coding wire formats (Anthropic
+/// Messages / Gemini generateContent) encode. Provable data-layer core of
+/// Pillar-5 "prompt parity on either harness"
+/// (`contracts/apr-code-harness-ir-v1.yaml`).
+pub mod harness_ir;
 /// HTTP client for real model server benchmarking
 ///
 /// Implements actual HTTP calls to external servers (vLLM, Ollama, llama.cpp).
