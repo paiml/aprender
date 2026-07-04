@@ -725,6 +725,30 @@ proof_obligations:
   property: Transpose shape correctness
   formal: for all 2D tensors, apr_shape[0] == gguf_shape[1] and apr_shape[1] == gguf_shape[0]
   applies_to: all
+  lean:
+    theorem: TensorLayout.transpose_shape_swap
+    module: ProvableContracts.Theorems.TensorLayout.IndexAlgebra
+    status: proved
+    depends_on:
+    - TensorLayout.transpose_size_preserved
+    - TensorLayout.transpose_shape_1d_identity
+    - TensorLayout.idx_lt
+    - TensorLayout.unrow_idx
+    - TensorLayout.uncol_idx
+    - TensorLayout.idx_unrow_uncol
+    - TensorLayout.idx_injective
+    - TensorLayout.transpose_reindex_bijective
+    - TensorLayout.row_stride
+    - TensorLayout.col_stride
+    notes: >-
+      Core-only Lean (no imports), verifies with `lean <file>`. Proves the
+      full row-major index algebra: 2-D transpose swaps the shape pair exactly
+      (apr_shape[0]=gguf_shape[1], apr_shape[1]=gguf_shape[0]), 1-D is identity,
+      element count preserved; and the underlying idx(i,j)=i*ncols+j is a
+      bijection on the valid rectangle (range + two-sided inverse unidx =
+      (·/ncols, ·%ncols) ⇒ injective/surjective), the transpose reindex
+      out[r*cols+c]=in[c*rows+r] is an element-preserving bijection, and strides
+      are contiguous (row=ncols, col=1).
 - type: postcondition
   property: Density enforcement
   formal: for ValidatedEmbedding, zero_pct(data) < 50%; for ValidatedWeight, zero_pct(data) < 80%
@@ -734,6 +758,43 @@ proof_obligations:
   property: Quant dispatch exhaustiveness — no catch-all
   formal: WeightQuantType match has zero wildcard arms across all dispatch sites
   applies_to: all
+verification_summary:
+  total_obligations: 4
+  l2_property_tested: 4
+  l3_kani_proved: 4
+  l4_lean_proved: 1
+  l4_sorry_count: 0
+  l4_not_applicable: 3
+  mathlib_imports: false
+  lean_proved_obligations:
+  - obligation: Transpose shape correctness
+    theorem: TensorLayout.transpose_shape_swap
+    file: ProvableContracts/Theorems/TensorLayout/IndexAlgebra.lean
+  not_applicable_obligations:
+  - obligation: Validated tensor rejects NaN and Inf
+    reason: >-
+      Runtime IEEE-754 property, not an algebraic identity. Lean's ℝ has no
+      NaN/Inf inhabitants, so there is nothing to prove over abstract values.
+      Enforced at construction by ValidatedTensor::new() (rejects any NaN/Inf
+      f32) and bounded-checked by Kani KANI-LAYOUT-001 + FALSIFY-003. Class (b).
+  - obligation: Density enforcement
+    reason: >-
+      Empirical/runtime statistic (zero-fraction of concrete f32 data vs a 50%/
+      80% threshold). No value-algebra content to prove in Lean. Enforced at
+      construction and bounded-checked by Kani KANI-LAYOUT-003 + FALSIFY-001/004.
+      Class (b).
+  - obligation: Quant dispatch exhaustiveness — no catch-all
+    reason: >-
+      Static source-syntax property (zero wildcard `_ =>` arms across dispatch
+      sites), verified by the Rust compiler's exhaustiveness checker + a source
+      lint, not a mathematical statement over values. Bounded-checked by Kani
+      KANI-LAYOUT-004 + FALSIFY-007/008. Class (b) — compile-time-enforced, not
+      Lean-analytic.
+  notes: >-
+    1 of 4 obligations is analytic (Transpose shape correctness) and is proved
+    core-only in Lean 4 (no Mathlib, no `sorry`); the other 3 are genuinely
+    non-analytic runtime/compile-time obligations marked N/A with reasons above.
+    proved(1) + N/A(3) == total(4), proved > 0 ⇒ honest L4.
 kani_harnesses:
 - id: KANI-LAYOUT-001
   obligation: Validated tensor rejects NaN and Inf
