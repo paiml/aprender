@@ -15,7 +15,9 @@ pub use regression::{
     mean_squared_error, mean_squared_log_error, median_absolute_error, r2_score,
 };
 pub mod probabilistic;
-pub use probabilistic::{average_precision_score, log_loss, roc_auc_score};
+pub use probabilistic::{
+    average_precision_score, log_loss, precision_recall_curve, roc_auc_score, roc_curve,
+};
 pub mod drift;
 pub mod evaluator;
 pub mod grad_norm;
