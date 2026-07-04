@@ -1,5 +1,6 @@
 ---
 allowed-tools: Bash(cargo:*), Bash(grep:*), Bash(make:*), Bash(bash:*), Bash(batuta:*), Bash(pmat:*), Bash(git:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(cat:*), Bash(awk:*), Bash(sed:*), Bash(diff:*), Bash(rustup:*), Read, Glob, Grep
+effort: 1
 description: Pre-release QA for apr-cli — runs all gates that prevent crates.io publish breakage
 ---
 

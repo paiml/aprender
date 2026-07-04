@@ -179,12 +179,12 @@ rms_norm_eps: hf_config["rms_norm_eps"]
 ```rust
 pub fn estimate_cost(&self) -> f64 {
     let (prompt_price, completion_price) = match self.model_name.as_str() {
-        m if m.contains("gpt-4-turbo") => (0.01, 0.03),
+        m if m.contains("gpt-4o") => (0.01, 0.03),
         m if m.contains("gpt-4") => (0.03, 0.06),
         m if m.contains("gpt-3.5") => (0.0005, 0.0015),
-        m if m.contains("claude-3-opus") => (0.015, 0.075),
-        m if m.contains("claude-3-sonnet") => (0.003, 0.015),
-        m if m.contains("claude-3-haiku") => (0.00025, 0.00125),
+        m if m.contains("claude-3-7-sonnet") => (0.015, 0.075),
+        m if m.contains("claude-3-5-sonnet") => (0.003, 0.015),
+        m if m.contains("claude-3-5-haiku") => (0.00025, 0.00125),
         m if m.contains("gemini") => (0.00025, 0.0005),
         m if m.contains("mistral") => (0.0002, 0.0006),
         m if m.contains("llama") => (0.0002, 0.0006),
@@ -196,7 +196,7 @@ pub fn estimate_cost(&self) -> f64 {
 
 **Test vs Production:**
 - **Test:** Mock model names ✅
-- **Production:** "gpt-4-turbo-preview" → matches gpt-4 (wrong tier) ❌
+- **Production:** "gpt-4o-preview" → matches gpt-4 (wrong tier) ❌
 
 **Severity:** MEDIUM — Cost estimates off by 10-100x
 

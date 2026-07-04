@@ -1222,7 +1222,12 @@ fn falsify_f32_to_f16_ties_to_even() {
             "tie {v} (bits={bits:#010x}) must round-to-even UP to {want:#06x}, not truncate"
         );
         // Round-toward-zero would have produced want-1; assert we did NOT.
-        assert_ne!(got, want - 1, "round-toward-zero bug would yield {:#06x}", want - 1);
+        assert_ne!(
+            got,
+            want - 1,
+            "round-toward-zero bug would yield {:#06x}",
+            want - 1
+        );
     }
 }
 
