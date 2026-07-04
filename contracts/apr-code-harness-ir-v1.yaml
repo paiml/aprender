@@ -160,17 +160,22 @@ falsification_tests:
 # (Role, Block, Message as inductive types) with NO serde_json — exactly what
 # Lean models well. Planned Lean theorems (each mirrors an obligation above):
 formal_verification_roadmap:
-  status: L2_ACHIEVED_L4_PLANNED
+  status: L2_ACHIEVED_L4_IN_PROGRESS   # OBLIG-IR-1 has a VERIFIED sorry-free Lean 4 proof in-tree
   deferred_kani_reason: 'serde_json::Value (heap String/Map) is not BMC-amenable; declaring Kani harnesses would be un-backed theater.'
-  planned_lean_theorems:
-    - name: anthropic_roundtrip_id
+  lean_theorems:
+    - name: message_roundtrip
       obligation: OBLIG-IR-1
-      statement: '∀ (m : Message), fromAnthropic (toAnthropic m) = some m'
+      status: PROVED   # sorry-free; `lean <file>` exits 0
+      file: 'crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/AprCode/HarnessIrRoundtrip.lean'
+      statement: '∀ (m : Message), (∀ b ∈ m.blocks, anthNative b) → decMsg (encMsg m) = m'
+      note: 'Structural-induction proof over an algebraic model of the IR (Role/Block/Message), modelling the honest tool_result-name asymmetry (anthNative). block_roundtrip + list_roundtrip + message_roundtrip, Lean 4 core only, no Mathlib. NOTE: proof-status still reports the contract at L2 because pv scans the EXTERNAL ../provable-contracts/lean tree, not this in-tree staging tree — a consolidation gap (APR-MONO) tracked separately; the proof itself is real and verified.'
     - name: gemini_roundtrip_id_on_native
       obligation: OBLIG-IR-2
+      status: PLANNED
       statement: '∀ (m : Message), isGeminiNative m → fromGemini (toGemini m) = some m'
     - name: cross_harness_equiv
       obligation: OBLIG-IR-3
+      status: PLANNED
       statement: '∀ (m : Message), semantic <$> (fromAnthropic (toAnthropic m)) = semantic <$> (fromGemini (toGemini m))'
 
 # ── Honesty ──
