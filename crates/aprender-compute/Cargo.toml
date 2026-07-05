@@ -7,7 +7,7 @@
 name = "aprender-compute"
 version.workspace = true
 edition.workspace = true
-rust-version = "1.89"
+rust-version = "1.91"
 authors.workspace = true
 license.workspace = true
 description = "High-performance SIMD compute library with GPU support, LLM inference engine, and GGUF model loading (was: trueno)"

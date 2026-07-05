@@ -2,7 +2,7 @@
 name = "aprender-cgp"
 version.workspace = true
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.91"
 authors = ["Pragmatic AI Labs"]
 license = "MIT"
 description = "Compute-GPU-Profile: Unified performance analysis CLI for scalar, SIMD, wgpu, and CUDA workloads"
