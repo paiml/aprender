@@ -39,11 +39,20 @@ theorem relu_monotone (x y : ℝ) (h : x ≤ y) : relu x ≤ relu y := by
   unfold relu
   exact max_le_max (le_refl 0) h
 
+-- Status: proved
+/-- ReLU is idempotent: `relu (relu x) = relu x`.
+    The output of `relu` is non-negative (`relu_nonneg`), and `relu` acts as the
+    identity on non-negative inputs (`relu_of_nonneg`), so a second application
+    leaves it unchanged. -/
+theorem relu_idempotent (x : ℝ) : relu (relu x) = relu x :=
+  relu_of_nonneg (relu x) (relu_nonneg x)
+
 -- Tests
 #check @relu_nonneg
 #check @relu_of_nonneg
 #check @relu_of_nonpos
 #check @relu_monotone
+#check @relu_idempotent
 
 example : relu 5.0 ≥ 0 := relu_nonneg 5.0
 example : relu (-3.0) ≥ 0 := relu_nonneg (-3.0)
@@ -51,5 +60,6 @@ example : relu 0 ≥ 0 := relu_nonneg 0
 example : relu 5 = 5 := relu_of_nonneg 5 (by norm_num)
 example : relu (-3) = 0 := relu_of_nonpos (-3) (by norm_num)
 example : relu 1 ≤ relu 2 := relu_monotone 1 2 (by norm_num)
+example : relu (relu (-3)) = relu (-3) := relu_idempotent (-3)
 
 end ProvableContracts.Elementwise
