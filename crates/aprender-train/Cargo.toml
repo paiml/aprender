@@ -4,6 +4,7 @@
 name = "aprender-train"
 version.workspace = true
 edition = "2021"
+autobins = false
 rust-version = "1.87"
 authors = ["PAIML <hello@paiml.com>"]
 description = "Training & Optimization library with autograd, LoRA, quantization, and model merging"
@@ -153,15 +154,6 @@ name = "monitor_bench"
 harness = false
 required-features = ["monitor"]
 
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-
-[profile.dev]
-opt-level = 0
-
-# PMAT-545: Legacy binary → example. Use `apr train` instead.
 [[example]]
 name = "aprender-train"
 path = "src/main.rs"

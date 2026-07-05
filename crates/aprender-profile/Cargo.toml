@@ -196,23 +196,6 @@ path = "examples/simd_visualization.rs"
 name = "process_tracer_demo"
 path = "examples/process_tracer_demo.rs"
 
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-strip = true
-
-[profile.dev]
-panic = "abort"
-opt-level = 0
-debug = true
-
-[profile.test]
-opt-level = 0
-debug = true
-
-# Chaos engineering features (Sprint 29 - Red-Team Profile)
-# Following aprender/trueno patterns for feature organization
 [features]
 default = ["otlp"]
 

@@ -1,6 +1,6 @@
 fn main() {
     // Provable-contracts enforcement (CB-1208)
-    let contracts_dir = std::path::Path::new("../provable-contracts/contracts");
+    let contracts_dir = std::path::Path::new("../../provable-contracts/contracts");
     let pkg = env!("CARGO_PKG_NAME");
     let binding = contracts_dir.join(pkg).join("binding.yaml");
     if binding.exists() {

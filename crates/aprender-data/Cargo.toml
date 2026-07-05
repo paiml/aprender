@@ -123,11 +123,6 @@ name = "generate_fixtures"
 name = "alimentar"
 path = "src/lib.rs"
 
-[profile.release]
-lto = true
-codegen-units = 1
-strip = true
-
 [lints.rust]
 unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "warn"
@@ -196,12 +191,3 @@ file = "CHANGELOG.md"
 search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
 
-[profile.dev]
-panic = "abort"
-
-[profile.test]
-opt-level = 1
-
-[profile.bench]
-lto = true
-codegen-units = 1
