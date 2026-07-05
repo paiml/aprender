@@ -12255,3 +12255,75 @@ roadmap:
   - ev-rank-18
   - gates-or-theater
   notes: 'BLOCKED_BY: paiml/.github sovereign-ci reusable workflow (cross-repo change). The >=95% standard is enforced nowhere (vacuous root-facade coverage job, coverage_min unset, coverage-nightly report-mode) — ranked last because the coverage+contracts co-evolution rule makes a naive floor counterproductive without scoped work. Workflow: cross-repo — coordinate with the sovereign-ci owner before edit. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 18.'
+- id: SPEC-DIST-393-GPU-BACKEND
+  github_issue: 393
+  item_type: task
+  title: Heterogeneous distributed training — wire wgpu/CUDA worker backend (Phase-2 CLI landed)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/roadmap-next-wave-2026-07-05.md
+  acceptance_criteria:
+  - Distributed worker gradients are computed on the wgpu/CUDA backend, not the current CPU stub (classify_trainer.rs:1483 `let backend = "cpu"`); --gpu-backend actually dispatches GPU matmul in the data-parallel path.
+  - 'RED-turning mutation: run a distributed worker with --gpu-backend cuda and assert the gradient tensors originate from the GPU path — today they come from the hardcoded CPU stub regardless of the flag.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-2
+  - gpu
+  - distributed
+  - github-393
+  - from-issue-triage-2026-07-05
+  notes: 'Phase-2 distributed CLI wiring (--role/--bind/--coordinator/--expect-workers -> DistributedConfig, TCP AllReduce coordinator/worker) landed via PR #2294 (in #2286). The heterogeneous CUDA+wgpu GPU worker execution and Phase-3 DiLoCo remain. Tracks GitHub #393.'
+- id: M-GPU-MOE-2-WGPU-FORWARD
+  github_issue: 1582
+  item_type: task
+  title: M-GPU-MOE-2.x — wgpu helpers + qwen3-moe forward parity (portable GPU MoE)
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/roadmap-next-wave-2026-07-05.md
+  acceptance_criteria:
+  - qwen3-moe forward runs on the wgpu backend with per-layer cosine >=0.99 vs the CPU oracle; trueno-gpu wgpu QuantizeKernel + GemmKernel authored.
+  - 'RED-turning mutation: run qwen3-moe forward --backend wgpu and assert per-layer cosine >=0.99 vs CPU — today the wgpu MoE path does not exist.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-3
+  - gpu
+  - wgpu
+  - moe
+  - github-1582
+  - from-issue-triage-2026-07-05
+  notes: 'Blocked on trueno-gpu wgpu kernel authoring (large 3-part item). Portable-GPU counterpart to the CUDA qwen3-moe path. Tracks GitHub #1582.'
+- id: M-GPU-MOE-3-Q8K-THROUGHPUT
+  github_issue: 1583
+  item_type: task
+  title: M-GPU-MOE-3 — qwen3-moe GPU throughput >=150 tok/s via CUDA f32->Q8K activation quant
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/roadmap-next-wave-2026-07-05.md
+  acceptance_criteria:
+  - 'CUDA f32->Q8_K activation-quant kernel wired into the expert path + DP4A dispatch; >=150 tok/s on RTX 4090 at VRAM <=95%; flips qwen3-moe-forward-gpu-v1 to ACTIVE_RUNTIME. (Requires the #1749 MoE-aware `apr bench` dispatch fix first.)'
+  - 'RED-turning mutation: `apr bench qwen3-coder-30b-a3b.gguf --device cuda` must report >=150 tok/s (currently the bench path panics on MoE GGUFs, #1749, and the fp32-activation path is below target).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - pillar-3
+  - gpu
+  - cuda
+  - moe
+  - github-1583
+  - github-1838
+  - from-issue-triage-2026-07-05
+  notes: 'Consolidates #1583 (>=150 tok/s throughput target) + #1838 (the CUDA f32->Q8K activation-quant approach to close v1.8.0). The L47 expert-routing argmax-divergence cascade (47/48 layers >=0.99, documented in the #1583 thread) is parked separately as a precision-uplift item. Tracks GitHub #1583 and #1838.'

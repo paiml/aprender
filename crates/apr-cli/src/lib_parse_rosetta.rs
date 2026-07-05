@@ -263,6 +263,7 @@
                 otlp_endpoint: None,
                 context_length: 4096,
                 no_fp8_cache: false,
+                ollama_compat: false,
             },
         };
         let paths = extract_model_paths(&serve_cmd);
