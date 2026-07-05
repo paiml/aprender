@@ -18,7 +18,7 @@ equations:
     preconditions:
     - x.iter().all(|v| v.is_finite())
     - x.len() > 0
-    lean_theorem: Theorems.Dropout_Train
+    lean_theorem: Theorems.Dropout.dropout_train_unbiased
   dropout_eval:
     formula: y = x
     domain: x in R^n
@@ -29,7 +29,7 @@ equations:
     preconditions:
     - x.iter().all(|v| v.is_finite())
     - x.len() > 0
-    lean_theorem: Theorems.Dropout_Eval
+    lean_theorem: Theorems.Dropout.dropout_eval_identity
 proof_obligations:
 - type: invariant
   property: Eval mode is identity
@@ -47,6 +47,24 @@ proof_obligations:
   property: Drop probability in valid range
   formal: p in [0, 1) — p = 1 would cause division by zero
   applies_to: all
+verification_summary:
+  # All 4 obligations are analytic and proved sorry-free in
+  # ProvableContracts/Theorems/Dropout/Inverted.lean (Lean 4 + Mathlib):
+  #   DO-1 eval identity      -> dropout_eval_identity   (y = x)
+  #   DO-2 unbiased E[y]=x     -> dropout_train_unbiased  (E[mask]*x = x via
+  #                               mask_expectation_eq_one; the RNG *draw* /
+  #                               which-elements-dropped is stochastic and is
+  #                               NOT a proof obligation)
+  #   DO-3 shape preserved     -> dropout_shape_preserved (List.map length)
+  #   DO-4 p in [0,1) valid    -> dropout_denominator_pos + dropout_scale_ge_one
+  #                               (1-p>0 so 1/(1-p) well-defined; p=1 excluded)
+  # 0 obligations are runtime/empirical, so l4_not_applicable = 0.
+  total_obligations: 4
+  l2_property_tested: 4
+  l3_kani_proved: 6
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 0
 kernel_structure:
   phases:
   - name: generate_mask
