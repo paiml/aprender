@@ -60,6 +60,53 @@ proof_obligations:
   property: GPU head mapping for non-power-of-2 ratios
   formal: kv_head_idx(q) == q * num_kv_heads / num_heads for all q in [0..num_heads)
   applies_to: cuda
+verification_summary:
+  total_obligations: 8
+  l2_property_tested: 8
+  l3_kani_proved: 9
+  l4_lean_proved: 6
+  l4_sorry_count: 0
+  l4_not_applicable: 2
+  lean_module: ProvableContracts.Theorems.Gqa
+  lean_files:
+  - ProvableContracts/Theorems/Gqa/HeadMapping.lean
+  - ProvableContracts/Theorems/Gqa/Distribution.lean
+  - ProvableContracts/Theorems/Gqa/ConvexBound.lean
+  obligation_classification:
+  - obligation: GQA refines standard MHA (subcontract)
+    class: analytic-proved
+    theorem: kvHead_group_one
+    note: group_size=1 (num_kv_heads=num_heads) makes routing the identity, so GQA=MHA
+  - obligation: Attention weight normalization (invariant)
+    class: analytic-proved
+    theorem: attn_weights_sum_one
+    note: attention weights are softmax over key positions; reuse softmax partition_of_unity
+  - obligation: GQA degenerates to MHA (equivalence)
+    class: analytic-proved
+    theorem: kvHead_group_one
+    note: identity routing when group_size=1
+  - obligation: Output is convex combination of V (bound)
+    class: analytic-proved
+    theorem: gqa_output_convex
+    note: softmax weights nonneg and sum to 1 => min(V) <= output <= max(V)
+  - obligation: KV head broadcasting correctness (invariant)
+    class: analytic-proved
+    theorem: kvHead_group, kvHead_surjective
+    note: heads [g*r,(g+1)*r) share KV head g; map is a surjection onto the KV heads
+  - obligation: SIMD matches scalar within ULP (equivalence, applies_to simd)
+    class: genuine-na
+    note: 8-ULP floating-point accumulation-order equivalence is a runtime numeric
+      property (SIMD-ULP), not an analytic identity — verified by proptest FALSIFY-GQ-005
+  - obligation: GPU PTX matches CPU within cosine >= 0.98 (equivalence, applies_to cuda)
+    class: genuine-na
+    note: GPU-vs-CPU cosine parity is a runtime hardware property, not analytic —
+      verified by CORRECTNESS-011 layer trace (FALSIFY-GQ-007/008)
+  - obligation: GPU head mapping for non-power-of-2 ratios (invariant, applies_to cuda)
+    class: analytic-proved
+    theorem: kvHead_eq_mul_div
+    note: the mapping identity kv_head_idx(q)=q*num_kv_heads/num_heads is a proven
+      integer-arithmetic identity (= q/group_size); hardware PTX div.u32 execution is
+      exercised by FALSIFY-GQ-009 at runtime
 kernel_structure:
   phases:
   - name: kv_broadcast

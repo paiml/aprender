@@ -39,6 +39,9 @@ import ProvableContracts.Theorems.FFT.Parseval
 import ProvableContracts.Theorems.FP8.Interchange
 import ProvableContracts.Theorems.GEMV.Correctness
 import ProvableContracts.Theorems.Gelu.GeluZero
+import ProvableContracts.Theorems.Gqa.HeadMapping
+import ProvableContracts.Theorems.Gqa.Distribution
+import ProvableContracts.Theorems.Gqa.ConvexBound
 import ProvableContracts.Theorems.LU.Existence
 import ProvableContracts.Theorems.LayerNorm.Centering
 import ProvableContracts.Theorems.LayerNorm.DenominatorPositive
