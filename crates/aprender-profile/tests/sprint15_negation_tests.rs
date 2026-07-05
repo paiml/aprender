@@ -5,7 +5,7 @@
 #[test]
 fn test_negation_single_syscall() {
     // Test that trace=!close excludes only the close syscall
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=!close").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -24,7 +24,7 @@ fn test_negation_single_syscall() {
 #[test]
 fn test_negation_multiple_syscalls() {
     // Test that trace=!open,!close excludes both syscalls
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=!open,!close").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -44,7 +44,7 @@ fn test_negation_multiple_syscalls() {
 #[test]
 fn test_negation_syscall_class() {
     // Test that trace=!file excludes all file operations
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=!file").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -66,7 +66,7 @@ fn test_negation_syscall_class() {
 #[test]
 fn test_mixed_positive_negative() {
     // Test that trace=file,!close shows file operations except close
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=file,!close").arg("--").arg("cat").arg("/dev/null");
 
     let output = cmd.output().expect("test");
@@ -85,7 +85,7 @@ fn test_mixed_positive_negative() {
 #[test]
 fn test_negation_with_statistics() {
     // Verify negation works with -c flag
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=!close").arg("-c").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -101,7 +101,7 @@ fn test_negation_with_statistics() {
 #[test]
 fn test_invalid_negation_syntax() {
     // Test that trace=! (empty negation) returns an error
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=!").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -113,7 +113,7 @@ fn test_invalid_negation_syntax() {
 #[test]
 fn test_negation_nonexistent_syscall() {
     // Test that trace=!nonexistent doesn't cause errors
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=!nonexistent_syscall").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");

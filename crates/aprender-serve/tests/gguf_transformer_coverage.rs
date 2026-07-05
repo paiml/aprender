@@ -388,6 +388,7 @@ fn test_cov_inference_scratch_buffer_from_config() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let scratch = InferenceScratchBuffer::from_config(&config);
@@ -422,6 +423,7 @@ fn test_cov_inference_scratch_buffer_reset() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let mut scratch = InferenceScratchBuffer::from_config(&config);
@@ -456,6 +458,7 @@ fn test_cov_inference_scratch_buffer_q8k_buffers() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let scratch = InferenceScratchBuffer::from_config(&config);

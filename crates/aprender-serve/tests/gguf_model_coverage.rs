@@ -1880,6 +1880,7 @@ fn test_cov_gguf_config_struct_fields() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     assert_eq!(config.architecture, "llama");
@@ -1914,6 +1915,7 @@ fn test_cov_gguf_config_gqa_model() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     // Verify GQA ratio
@@ -1939,6 +1941,7 @@ fn test_cov_gguf_config_mha_model() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     // Verify MHA
@@ -1963,6 +1966,7 @@ fn test_cov_gguf_config_head_dim_calculation() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     // head_dim = hidden_dim / num_heads
@@ -1992,6 +1996,7 @@ fn test_cov_gguf_config_clone() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let cloned = config.clone();
@@ -2018,6 +2023,7 @@ fn test_cov_gguf_config_debug() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let debug_str = format!("{config:?}");
@@ -2094,6 +2100,7 @@ fn test_cov_kv_cache_from_config() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let cache = OwnedQuantizedKVCache::from_config(&config, 64);
@@ -2343,6 +2350,7 @@ fn test_cov_contiguous_cache_from_config() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let cache = ContiguousKVCache::from_config(&config, 32);
@@ -2795,6 +2803,7 @@ fn test_cov_scratch_buffer_from_config() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let scratch = OwnedInferenceScratchBuffer::from_config(&config);
@@ -2825,6 +2834,7 @@ fn test_cov_scratch_buffer_reset() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let mut scratch = OwnedInferenceScratchBuffer::from_config(&config);
@@ -2853,6 +2863,7 @@ fn test_cov_scratch_buffer_debug() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let scratch = OwnedInferenceScratchBuffer::from_config(&config);

@@ -7,11 +7,11 @@
 
 #![allow(clippy::missing_panics_doc)]
 
-use apr_qa_gen::{Backend, Format, Modality, ModelId, QaScenario};
-use apr_qa_report::mqs::{CategoryScores, GatewayResult, MqsScore, Penalty};
-use apr_qa_report::popperian::{FalsificationDetail, PopperianScore};
-use apr_qa_report::{generate_evidence_detail, generate_index_entry, generate_rag_markdown};
-use apr_qa_runner::{Evidence, EvidenceCollector};
+use aprender_qa_gen::{Backend, Format, Modality, ModelId, QaScenario};
+use aprender_qa_report::mqs::{CategoryScores, GatewayResult, MqsScore, Penalty};
+use aprender_qa_report::popperian::{FalsificationDetail, PopperianScore};
+use aprender_qa_report::{generate_evidence_detail, generate_index_entry, generate_rag_markdown};
+use aprender_qa_runner::{Evidence, EvidenceCollector};
 
 fn main() {
     // Create sample MQS score

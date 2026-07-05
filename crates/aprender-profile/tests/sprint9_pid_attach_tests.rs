@@ -6,7 +6,7 @@ use predicates::prelude::*;
 #[test]
 fn test_pid_flag_exists() {
     // Test that -p flag is recognized
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--help");
 
     cmd.assert().success().stdout(predicate::str::contains("-p, --pid <PID>"));
@@ -15,7 +15,7 @@ fn test_pid_flag_exists() {
 #[test]
 fn test_pid_and_command_mutual_exclusion() {
     // Test that -p and command cannot both be specified
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-p").arg("1234").arg("--").arg("echo").arg("test");
 
     cmd.assert().failure().stderr(predicate::str::contains("Cannot specify both"));
@@ -24,7 +24,7 @@ fn test_pid_and_command_mutual_exclusion() {
 #[test]
 fn test_invalid_pid() {
     // Test that invalid PID format is rejected
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-p").arg("not_a_number");
 
     cmd.assert().failure().stderr(predicate::str::contains("invalid digit found in string"));
@@ -34,7 +34,7 @@ fn test_invalid_pid() {
 fn test_nonexistent_pid() {
     // Test that non-existent PID is handled gracefully
     // Use PID 99999999 which is very unlikely to exist
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-p").arg("99999999");
 
     cmd.assert().failure().stderr(predicate::str::contains("Failed to attach"));
@@ -43,7 +43,7 @@ fn test_nonexistent_pid() {
 #[test]
 fn test_no_command_no_pid() {
     // Test that either command or PID must be specified
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
 
     cmd.assert()
         .failure()

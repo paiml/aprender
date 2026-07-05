@@ -35,7 +35,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--stats-extended").arg("--").arg(&test_program);
 
     // Should show enhanced statistics with percentiles
@@ -77,7 +77,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--stats-extended").arg("-T").arg("--").arg(&test_program);
 
     cmd.assert()
@@ -112,7 +112,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("-T").arg("--stats-extended").arg("--").arg(&test_program);
 
     // Should show timing statistics with percentiles
@@ -158,7 +158,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--stats-extended").arg("-T").arg("--").arg(&test_program);
 
     // Should detect and flag anomalies
@@ -192,7 +192,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c")
         .arg("--stats-extended")
         .arg("--anomaly-threshold")
@@ -239,7 +239,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c")
         .arg("--stats-extended")
         .arg("-e")
@@ -292,7 +292,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("-c").arg("--stats-extended").arg("--").arg(&test_program);
 
     // Should show aggregated statistics across all processes
@@ -327,7 +327,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c")
         .arg("--stats-extended")
         .arg("-T")
@@ -371,7 +371,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c")
         .arg("--stats-extended")
         .arg("-T")
@@ -417,7 +417,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--stats-extended").arg("-T").arg("--").arg(&test_program);
 
     // Should handle single data point gracefully (stddev = 0)
@@ -449,7 +449,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--stats-extended").arg("--").arg(&test_program);
 
     // Should show count statistics but skip duration percentiles
@@ -481,7 +481,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--stats-extended").arg("-T").arg("--").arg(&test_program);
 
     // Should handle large datasets efficiently with Trueno SIMD
@@ -516,7 +516,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--").arg(&test_program);
 
     // Should NOT show extended statistics without flag

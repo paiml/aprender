@@ -8,7 +8,7 @@
 //! cargo run --example fail_fast_demo -p apr-qa-cli
 //! ```
 
-use apr_qa_runner::{
+use aprender_qa_runner::{
     DiagnosticResult, DiagnosticsBundle, EnvironmentContext, ExecutionConfig, FailFastReport,
     FailFastReporter, FailureDetails, FailurePolicy, ReproductionInfo,
 };
@@ -78,7 +78,7 @@ fn main() {
         environment: EnvironmentContext {
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
-            apr_qa_version: env!("CARGO_PKG_VERSION").to_string(),
+            aprender_qa_version: env!("CARGO_PKG_VERSION").to_string(),
             apr_cli_version: "0.2.12".to_string(),
             git_commit: "abc123".to_string(),
             git_branch: "main".to_string(),

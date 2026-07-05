@@ -11,7 +11,7 @@
 #![allow(clippy::expect_used)]
 #![allow(clippy::unwrap_used)]
 
-use apr_qa_runner::{
+use aprender_qa_runner::{
     compute_playbook_hash, generate_lock_entry, load_lock_file, save_lock_file,
     verify_playbook_integrity, PlaybookLockEntry, PlaybookLockFile,
 };

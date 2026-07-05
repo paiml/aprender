@@ -7,8 +7,8 @@
 
 #![allow(clippy::missing_panics_doc)]
 
-use apr_qa_gen::{Backend, Format, Modality, ModelId, QaScenario};
-use apr_qa_runner::{Evidence, EvidenceCollector, Outcome};
+use aprender_qa_gen::{Backend, Format, Modality, ModelId, QaScenario};
+use aprender_qa_runner::{Evidence, EvidenceCollector, Outcome};
 
 fn main() {
     // Create test scenarios (org, name)

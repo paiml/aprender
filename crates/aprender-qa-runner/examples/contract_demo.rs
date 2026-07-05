@@ -14,7 +14,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::too_many_lines)]
 
-use apr_qa_runner::{
+use aprender_qa_runner::{
     load_format_contract, lookup_tolerance, validate_dtype_bytes, validate_tensor_name,
     ContractTestConfig, InvariantId,
 };

@@ -6,7 +6,7 @@ use predicates::prelude::*;
 #[test]
 fn test_json_output_valid_format() {
     // Test that --format json produces valid JSON
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("json").arg("--").arg("echo").arg("test");
 
     cmd.assert()
@@ -20,7 +20,7 @@ fn test_json_output_valid_format() {
 #[test]
 fn test_json_output_parses() {
     // Test that JSON output is actually valid JSON
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("json").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -40,7 +40,7 @@ fn test_json_output_parses() {
 #[test]
 fn test_json_with_timing() {
     // Test that -T works with JSON output
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("json").arg("-T").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -62,7 +62,7 @@ fn test_json_with_timing() {
 #[test]
 fn test_json_with_filtering() {
     // Test that filtering works with JSON output
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("json").arg("-e").arg("trace=write").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -82,7 +82,7 @@ fn test_json_with_filtering() {
 #[test]
 fn test_json_summary_fields() {
     // Test that summary contains expected fields
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("json").arg("--").arg("true"); // Simple command
 
     let output = cmd.output().expect("test");

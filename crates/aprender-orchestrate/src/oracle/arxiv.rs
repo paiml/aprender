@@ -360,7 +360,7 @@ impl AtomParser {
         if !self.in_entry {
             return;
         }
-        let text = e.unescape().unwrap_or_default().to_string();
+        let text = String::from_utf8_lossy(e.as_ref()).into_owned();
         self.accum.push_text(&self.current_tag, text, self.in_author);
     }
 

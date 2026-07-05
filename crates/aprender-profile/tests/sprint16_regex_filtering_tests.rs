@@ -5,7 +5,7 @@
 #[test]
 fn test_regex_prefix_pattern() {
     // Test that trace=/^open.*/ matches openat but not close or write
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=/^open.*/").arg("--").arg("cat").arg("/dev/null");
 
     let output = cmd.output().expect("test");
@@ -25,7 +25,7 @@ fn test_regex_prefix_pattern() {
 #[test]
 fn test_regex_suffix_pattern() {
     // Test that trace=/.*at$/ matches openat, newfstatat but not open, close
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=/.*at$/").arg("--").arg("cat").arg("/dev/null");
 
     let output = cmd.output().expect("test");
@@ -44,7 +44,7 @@ fn test_regex_suffix_pattern() {
 #[test]
 fn test_regex_or_pattern() {
     // Test that trace=/read|write/ matches both read and write
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=/read|write/").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -66,7 +66,7 @@ fn test_regex_or_pattern() {
 #[test]
 fn test_invalid_regex_error() {
     // Test that trace=/[invalid/ returns an error
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=/[invalid/").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -84,7 +84,7 @@ fn test_invalid_regex_error() {
 #[test]
 fn test_mixed_regex_and_literal() {
     // Test that trace=/^open.*/,close works (regex + literal)
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=/^open.*/,close").arg("--").arg("cat").arg("/dev/null");
 
     let output = cmd.output().expect("test");
@@ -106,7 +106,7 @@ fn test_mixed_regex_and_literal() {
 #[test]
 fn test_regex_with_negation() {
     // Test that trace=/^open.*/,!/openat/ shows open* except openat
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=/^open.*/,!/openat/").arg("--").arg("cat").arg("/dev/null");
 
     let output = cmd.output().expect("test");
@@ -125,7 +125,7 @@ fn test_regex_with_negation() {
 #[test]
 fn test_regex_with_statistics() {
     // Verify regex works with -c flag
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=/^open.*/").arg("-c").arg("--").arg("cat").arg("/dev/null");
 
     let output = cmd.output().expect("test");
@@ -144,7 +144,7 @@ fn test_regex_with_statistics() {
 #[test]
 fn test_regex_case_insensitive() {
     // Test that trace=/(?i)OPEN.*/ matches openat (case-insensitive)
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=/(?i)OPEN.*/").arg("--").arg("cat").arg("/dev/null");
 
     let output = cmd.output().expect("test");
@@ -160,7 +160,7 @@ fn test_regex_case_insensitive() {
 #[test]
 fn test_empty_regex_pattern() {
     // Test that trace=/()/ is handled gracefully
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=/()/").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");

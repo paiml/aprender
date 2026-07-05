@@ -8,7 +8,7 @@ use predicates::prelude::*;
 #[test]
 fn test_cli_requires_command() {
     // Test that running without -- COMMAND or -p PID fails with helpful error
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("Must specify either -p PID or command"));
@@ -17,14 +17,14 @@ fn test_cli_requires_command() {
 #[test]
 fn test_cli_help() {
     // Test that --help works
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--help").assert().success().stdout(predicate::str::contains("Usage"));
 }
 
 #[test]
 fn test_trace_simple_echo() {
     // Test tracing echo command (should show write syscall)
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--")
         .arg("echo")
         .arg("Hello")
@@ -36,7 +36,7 @@ fn test_trace_simple_echo() {
 #[test]
 fn test_trace_shows_write_syscall() {
     // Test that write syscall details are shown
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--")
         .arg("echo")
         .arg("Test")
@@ -49,6 +49,6 @@ fn test_trace_shows_write_syscall() {
 #[test]
 fn test_trace_exit_code_preserved() {
     // Test that traced program's exit code is preserved
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--").arg("sh").arg("-c").arg("exit 42").assert().code(42);
 }

@@ -43,7 +43,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--anomaly-realtime").arg("-T").arg("--").arg(&test_program);
 
     // Should show real-time anomaly alert
@@ -75,7 +75,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--anomaly-realtime")
         .arg("--anomaly-window-size")
         .arg("20")
@@ -112,7 +112,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--anomaly-realtime")
         .arg("-T")
         .arg("-e")
@@ -158,7 +158,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--anomaly-realtime").arg("-T").arg("--").arg(&test_program);
 
     // Should classify anomaly with severity
@@ -195,7 +195,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--anomaly-realtime").arg("-T").arg("--").arg(&test_program);
 
     // Should show both statistics summary and anomaly report
@@ -236,7 +236,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--anomaly-realtime")
         .arg("-e")
         .arg("trace=write")
@@ -285,7 +285,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("--anomaly-realtime").arg("-T").arg("--").arg(&test_program);
 
     // Should detect anomalies across all processes
@@ -321,7 +321,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--anomaly-realtime")
         .arg("-T")
         .arg("--format")
@@ -365,7 +365,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--anomaly-realtime").arg("-T").arg("--").arg(&test_program);
 
     // Should handle zero variance gracefully (no division by zero)
@@ -398,7 +398,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--anomaly-realtime")
         .arg("--anomaly-window-size")
         .arg("50")
@@ -435,7 +435,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-T").arg("--").arg(&test_program);
 
     // Should NOT show any anomaly detection output
@@ -467,7 +467,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c")
         .arg("--stats-extended")
         .arg("--anomaly-threshold")

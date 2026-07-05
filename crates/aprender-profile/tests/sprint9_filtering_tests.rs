@@ -8,7 +8,7 @@ use predicates::prelude::*;
 #[test]
 fn test_filter_single_syscall() {
     // Test filtering to a single syscall
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e")
         .arg("trace=write")
         .arg("--")
@@ -23,7 +23,7 @@ fn test_filter_single_syscall() {
 #[test]
 fn test_filter_multiple_syscalls() {
     // Test filtering to multiple specific syscalls
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e")
         .arg("trace=write,brk")
         .arg("--")
@@ -38,7 +38,7 @@ fn test_filter_multiple_syscalls() {
 #[test]
 fn test_filter_file_class() {
     // Test filtering to file-related syscalls
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e")
         .arg("trace=file")
         .arg("--")
@@ -53,7 +53,7 @@ fn test_filter_file_class() {
 #[test]
 fn test_no_filter_shows_all() {
     // Test that without filter, all syscalls are shown
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--")
         .arg("echo")
         .arg("test")
@@ -67,7 +67,7 @@ fn test_no_filter_shows_all() {
 #[test]
 fn test_filter_network_class() {
     // Test network filter class (won't match echo, but should parse correctly)
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e").arg("trace=network").arg("--").arg("echo").arg("test").assert().success();
     // echo doesn't make network calls, so output should be minimal/empty for syscalls
 }
@@ -75,7 +75,7 @@ fn test_filter_network_class() {
 #[test]
 fn test_filter_mixed_class_and_syscall() {
     // Test combining a class with a specific syscall
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e")
         .arg("trace=file,brk")
         .arg("--")

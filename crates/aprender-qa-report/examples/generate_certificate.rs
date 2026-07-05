@@ -10,10 +10,10 @@
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::unwrap_used)]
 
-use apr_qa_gen::{Backend, Format, Modality, ModelId, QaScenario};
-use apr_qa_report::popperian::PopperianCalculator;
-use apr_qa_report::{CertificateGenerator, MqsCalculator};
-use apr_qa_runner::{Evidence, EvidenceCollector};
+use aprender_qa_gen::{Backend, Format, Modality, ModelId, QaScenario};
+use aprender_qa_report::popperian::PopperianCalculator;
+use aprender_qa_report::{CertificateGenerator, MqsCalculator};
+use aprender_qa_runner::{Evidence, EvidenceCollector};
 
 /// Generate a sample model certification certificate and print it
 fn main() {

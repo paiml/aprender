@@ -186,7 +186,7 @@ fn demo_perfect_model() {
     let temp_path = "/tmp/poka_yoke_demo_perfect.apr";
     let options = SaveOptions::new()
         .with_name("whisper-tiny-perfect")
-        .with_poka_yoke_result(&result);
+        .with_quality_score(result.score);
 
     match save(&model, ModelType::LinearRegression, temp_path, options) {
         Ok(()) => {
@@ -226,7 +226,7 @@ fn demo_partial_model() {
     let temp_path = "/tmp/poka_yoke_demo_partial.apr";
     let options = SaveOptions::new()
         .with_name("whisper-tiny-partial")
-        .with_poka_yoke_result(&result);
+        .with_quality_score(result.score);
 
     match save(&model, ModelType::LinearRegression, temp_path, options) {
         Ok(()) => {
@@ -258,7 +258,7 @@ fn demo_failing_model() {
     let temp_path = "/tmp/poka_yoke_demo_fail.apr";
     let options = SaveOptions::new()
         .with_name("whisper-broken")
-        .with_poka_yoke_result(&result);
+        .with_quality_score(result.score);
 
     println!("\n  🛑 Attempting to save model with quality_score=0...");
     match save(&model, ModelType::LinearRegression, temp_path, options) {
