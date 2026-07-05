@@ -1114,11 +1114,15 @@ fn resolve_model_params_requires_size_or_path() {
 // ── build_distributed_config ────────────────────────────────────────────────
 
 #[test]
-fn build_distributed_config_role_is_unsupported() {
+fn build_distributed_config_coordinator_requires_bind() {
+    // Issue #393 / PR #2294 implemented distributed config: the coordinator role is
+    // now SUPPORTED and validates its params, rather than being rejected as an
+    // "unreleased entrenar" feature. Without --bind it fails with a bind-required
+    // ValidationFailed (the role itself is accepted).
     let err = build_distributed_config(Some("coordinator"), None, None, None).unwrap_err();
     match err {
-        CliError::ValidationFailed(m) => assert!(m.contains("unreleased entrenar")),
-        _ => panic!("expected ValidationFailed when --role is set"),
+        CliError::ValidationFailed(m) => assert!(m.contains("--bind is required")),
+        _ => panic!("expected ValidationFailed when coordinator role lacks --bind"),
     }
 }
 
