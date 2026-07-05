@@ -10322,11 +10322,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: '[GPU-GATED — flag] CPU Q4_K decode parity: implement ggml-style pre-interleaved Q4_K weight layout at APR import (documented root cause, five-whys-16…'
-  status: inprogress
+  status: completed
   priority: low
   assigned_to: null
   created: 2026-06-11 06:26:41+00:00
-  updated: 2026-07-05T09:37:44.005635335+00:00
+  updated: 2026-07-05T10:43:56.195384697+00:00
   spec: null
   acceptance_criteria:
   - 'Parent PMAT-719. Falsifier: `apr bench model.apr --device cpu` 5-iter median >= `llama-cli -n 128 -t <ncores>` on SAME host, 1.5B Q4_K_M. Currently 9.9 vs 81 = 8.2x slower; clearing it is parity, not superiority.'
