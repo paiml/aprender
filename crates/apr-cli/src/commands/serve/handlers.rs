@@ -1317,6 +1317,7 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
                 })),
             )
         });
+    let router = super::ollama::add_ollama_stubs(router);
     super::auth::layer(auth_gate, router)
 }
 

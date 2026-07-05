@@ -439,5 +439,6 @@ fn build_gpu_router(
                 "APR v2 GPU Inference Server - POST /v1/completions, /v1/chat/completions, /api/chat, /api/generate"
             }),
         );
+    let router = super::ollama::add_ollama_stubs(router);
     super::auth::layer(auth_gate, router)
 }
