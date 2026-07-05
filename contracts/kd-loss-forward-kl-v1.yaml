@@ -51,25 +51,102 @@ proof_obligations:
 - type: precondition
   property: Temperature positive, matching finite logit vectors of equal nonzero length
   formal: 'T > 0 ∧ |s| = |t| ∧ |s| > 0 ∧ ∀i: isFinite(s_i) ∧ isFinite(t_i)'
+  l4_not_applicable_reason: >-
+    Runtime input-validation predicate (length equality and IEEE isFinite of
+    the raw logit vectors) — an ASSUMPTION discharged by a runtime guard, not
+    an analytic conclusion. IEEE finiteness (IEEE-Inf/NaN) has no Real-model
+    analogue. Enforced by Kani harness verify_kd_loss_preconditions (KANI-KD-001).
 - type: postcondition
   property: Soft-target KL term is non-negative and uses the teacher distribution as the outer measure
   formal: 'KL_soft ≥ 0 ∧ KL_soft = Σ_i p_t_i·(ln p_t_i − ln p_s_i)'
   requires: KD-PRE-001
+  lean:
+    theorem: ProvableContracts.KLDivergence.kl_soft_nonneg_and_forward
+    module: ProvableContracts.Theorems.KLDivergence.ForwardKL
+    status: proved
+    depends_on:
+    - ProvableContracts.KLDivergence.kl_nonneg
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Log.Basic
+    notes: >-
+      Conjunction KL_soft ≥ 0 ∧ KL_soft = Σ p_t·(log p_t − log p_s): the second
+      conjunct is the definitional FORWARD-KL form (teacher p_t is the outer
+      measure); the first is Gibbs' inequality (kl_nonneg).
 - type: bound
   property: Forward KL is a non-negative divergence (Gibbs inequality)
   formal: 'Σ_i p_t_i·(ln p_t_i − ln p_s_i) ≥ 0'
   applies_to: all
+  lean:
+    theorem: ProvableContracts.KLDivergence.kl_nonneg
+    module: ProvableContracts.Theorems.KLDivergence.ForwardKL
+    status: proved
+    depends_on:
+    - Real.log_le_sub_one_of_pos
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Log.Basic
+    notes: >-
+      Gibbs' inequality for probability distributions p, q (0 < p_i, 0 < q_i,
+      Σp = Σq = 1) via log x ≤ x − 1: p_i·(log p_i − log q_i) ≥ p_i − q_i, so
+      KL(p ‖ q) ≥ Σ(p_i − q_i) = 1 − 1 = 0.
 - type: invariant
   property: Zero soft-target loss exactly when student equals teacher
   formal: 'p_s = p_t ⟹ KL_soft = 0'
   applies_to: all
+  lean:
+    theorem: ProvableContracts.KLDivergence.kl_self_zero
+    module: ProvableContracts.Theorems.KLDivergence.ForwardKL
+    status: proved
+    mathlib_imports:
+    - Mathlib.Algebra.BigOperators.Group.Finset.Basic
+    notes: >-
+      KL(p ‖ p) = 0: each summand p_i·(log p_i − log p_i) = 0. The forward
+      obligation states p_s = p_t ⟹ KL_soft = 0 (identical distributions give
+      zero soft-target loss).
 - type: invariant
   property: Loss / gradient consistency — the logged loss is the antiderivative of the training gradient
   formal: '∂/∂s_j [ T²·KL(p_t ‖ p_s) ] = T·(p_s_j − p_t_j) = kd_logit_gradient KD term'
   applies_to: all
+  lean:
+    theorem: ProvableContracts.KLDivergence.kdSoftLoss_backward
+    module: ProvableContracts.Theorems.KLDivergence.Gradient
+    status: proved
+    depends_on:
+    - ProvableContracts.KLDivergence.hasDerivAt_log_exp_div_add_const
+    - Real.hasDerivAt_log
+    - Real.hasDerivAt_exp
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Log.Deriv
+    - Mathlib.Analysis.Calculus.Deriv.Comp
+    - Mathlib.Analysis.Calculus.Deriv.Add
+    - Mathlib.Analysis.Calculus.Deriv.Mul
+    notes: >-
+      Genuine HasDerivAt along the coordinate-j slice t ↦ kdSoftLoss(update s j t)
+      at the base point s_j: ∂/∂s_j [T²·KL(p_t ‖ softmax(s/T))] = T·(softmax(s/T)_j
+      − p_t_j), i.e. T·(p_s_j − p_t_j). This is exactly kd_logit_gradient's KD term,
+      so the logged T²-scaled forward-KL loss is its antiderivative. Requires
+      Σ p_t = 1. The reverse KL(p_s ‖ p_t) does NOT have this gradient.
 - type: frame
   property: kd_loss reads logits/label/T/alpha and returns a scalar; it mutates no inputs
   formal: modifies(∅) ∧ preserves(s, t, label, T, alpha)
+  l4_not_applicable_reason: >-
+    Frame condition over Rust memory/aliasing (modifies(∅), inputs unmutated) —
+    an operational/borrow-semantics property with no analytic content in the
+    Real model. Enforced by Kani harness verify_kd_loss_frame (KANI-KD-006).
+verification_summary:
+  total_obligations: 6
+  l2_property_tested: 6
+  l3_kani_proved: 6
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 2
+  mathlib_imports: true
+  notes: >-
+    Analytic core proved in verified Lean 4 + Mathlib (0 sorry): KD-POST-001
+    (kl_soft_nonneg_and_forward), KD-BND-001 Gibbs (kl_nonneg), KD-INV-001
+    (kl_self_zero), KD-INV-002 gradient/antiderivative (kdSoftLoss_backward).
+    Two obligations are genuinely non-analytic: KD-PRE-001 (runtime input
+    validation + IEEE isFinite) and KD-FRAME-001 (Rust mutation/frame) — both
+    l4_not_applicable, discharged by Kani (KANI-KD-001, KANI-KD-006). L4.
 enforcement:
   forward_kl_direction:
     description: Soft-target term must be forward KL(teacher || student), not reverse KL(student || teacher)

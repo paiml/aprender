@@ -14,6 +14,7 @@ import ProvableContracts.Defs.Elementwise
 import ProvableContracts.Defs.FFT
 import ProvableContracts.Defs.GEMV
 import ProvableContracts.Defs.Gelu
+import ProvableContracts.Defs.KLDivergence
 import ProvableContracts.Defs.LU
 import ProvableContracts.Defs.LayerNorm
 import ProvableContracts.Defs.MatMul
@@ -32,6 +33,8 @@ import ProvableContracts.Theorems.Cholesky.SPD
 import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
 import ProvableContracts.Theorems.CrossEntropy.NonNegativity
 import ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
+import ProvableContracts.Theorems.KLDivergence.ForwardKL
+import ProvableContracts.Theorems.KLDivergence.Gradient
 import ProvableContracts.Theorems.Elementwise.AddCommutative
 import ProvableContracts.Theorems.Elementwise.MulScalarAssoc
 import ProvableContracts.Theorems.Elementwise.ReLUNonNeg
