@@ -56,6 +56,41 @@ proof_obligations:
   property: Quantized error bounded
   formal: '|q_dot(a,b) - dot(dequant(a), dequant(b))| ≤ bound'
   applies_to: all
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 5
+  l4_lean_proved: 3
+  l4_sorry_count: 0
+  l4_not_applicable: 2
+  notes: >-
+    3 of the 5 proof-obligations are the ANALYTIC matmul-algebra core and are
+    Lean-proved sorry-free in
+    crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/MatMul/,
+    each verified with `lake env lean <file>` exit 0:
+    (1) Output shape correctness — Shape.lean `matmul_output_shape`
+    (shape(A@B)=(rows A,cols B)) + `matmul_output_len` (result buffer length
+    m*n, the contract postcondition), core Lean;
+    (2) Matmul associativity — Associativity.lean `matmul_assoc`
+    ((AB)C = A(BC)), Mathlib `Matrix.mul_assoc` over ℝ;
+    (3) Matmul distributes — Distributivity.lean `matmul_left_distrib` /
+    `matmul_right_distrib` (A(B+C)=AB+AC, (A+B)C=AC+BC), Mathlib
+    `Matrix.mul_add`/`add_mul` over ℝ. The `< ε` tolerances are the
+    floating-point shadow of these EXACT algebraic identities.
+    Additional supporting algebra is proven (not double-counted here):
+    Identity.lean (A·I=A=I·A), TransposeMul.lean ((AB)ᵀ=BᵀAᵀ),
+    MatVecLinearity.lean (A(x+y)=Ax+Ay, A(c·x)=c·Ax).
+    The remaining 2 obligations are l4_not_applicable — genuinely runtime /
+    empirical, NOT analytic:
+    (a) "SIMD matches scalar" (tolerance 4 ULP) is an IEEE-754 FMA-ordering
+    equivalence between the AVX2 and scalar code paths on real hardware — an
+    empirical ULP bound, not an algebraic identity (Kani + FALSIFY-MM-003);
+    (b) "Quantized error bounded" is the int8-quantization ROUNDING bound
+    |q_dot − f32_dot| ≤ bound comparing the quantized dot to the original
+    float dot before quantization — an empirical numerical bound over concrete
+    rounded int8 data (Kani `verify_quantized_dot_bounded` + FALSIFY-MM-004),
+    not provable as a real-number identity.
+    Honest level: 3 Lean-proved + 2 N/A = 5/5 → L4.
 kernel_structure:
   phases:
   - name: tile_partition

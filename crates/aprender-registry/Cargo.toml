@@ -85,15 +85,6 @@ path = "src/lib.rs"
 name = "content_address"
 harness = false
 
-[profile.release]
-lto = true
-codegen-units = 1
-strip = true
-
-[profile.bench]
-inherits = "release"
-debug = true
-
 [lints.rust]
 unsafe_code = "allow"
 # APR-MONO: declare the kani proof cfg (matches the root workspace check-cfg) so
@@ -112,5 +103,3 @@ file = "CHANGELOG.md"
 search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
 
-[profile.dev]
-panic = "abort"

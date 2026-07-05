@@ -63,7 +63,7 @@ fn bench_simple_ls() {
     let strace = bench_tracer("strace", &["-qq", "-o", "/dev/null"], command, iterations, true);
 
     // renacer
-    let renacer = bench_tracer("./target/release/renacer", &[], command, iterations, true);
+    let renacer = bench_tracer("./target/release/aprender-profile", &[], command, iterations, true);
 
     println!("\n=== Benchmark: ls -la /usr/bin (average of {} runs) ===", iterations);
     println!("Baseline (no tracing): {:?}", baseline);
@@ -110,7 +110,7 @@ fn bench_find_command() {
         false,
     );
     let strace = bench_tracer("strace", &["-qq", "-o", "/dev/null"], command, iterations, true);
-    let renacer = bench_tracer("./target/release/renacer", &[], command, iterations, true);
+    let renacer = bench_tracer("./target/release/aprender-profile", &[], command, iterations, true);
 
     println!("\n=== Benchmark: find (file-heavy workload, {} runs) ===", iterations);
     println!("Baseline: {:?}", baseline);
@@ -144,7 +144,7 @@ fn bench_minimal_syscalls() {
 
     let baseline = bench_tracer("echo", &[], &["hello"], iterations, false);
     let strace = bench_tracer("strace", &["-qq", "-o", "/dev/null"], command, iterations, true);
-    let renacer = bench_tracer("./target/release/renacer", &[], command, iterations, true);
+    let renacer = bench_tracer("./target/release/aprender-profile", &[], command, iterations, true);
 
     println!("\n=== Benchmark: echo (minimal syscalls, {} runs) ===", iterations);
     println!("Baseline: {:?}", baseline);
@@ -169,11 +169,17 @@ fn bench_with_filtering() {
     let command = &["ls", "-la", "/usr/bin"];
 
     // renacer without filtering
-    let renacer_all = bench_tracer("./target/release/renacer", &[], command, iterations, true);
+    let renacer_all =
+        bench_tracer("./target/release/aprender-profile", &[], command, iterations, true);
 
     // renacer with filtering (should be faster - less output)
-    let renacer_filtered =
-        bench_tracer("./target/release/renacer", &["-e", "trace=open"], command, iterations, true);
+    let renacer_filtered = bench_tracer(
+        "./target/release/aprender-profile",
+        &["-e", "trace=open"],
+        command,
+        iterations,
+        true,
+    );
 
     println!("\n=== Benchmark: Filtering overhead ({} runs) ===", iterations);
     println!("renacer (all syscalls): {:?}", renacer_all);

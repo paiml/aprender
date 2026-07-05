@@ -46,22 +46,91 @@ proof_obligations:
   formal: '|mean(BN(x)[:, c]) - beta_c| < eps per channel c when gamma=1'
   tolerance: 1.0e-05
   applies_to: all
+  lean:
+    theorem: BatchNorm.batchnorm_centering_unit_gamma
+    module: ProvableContracts.BatchNorm
+    status: proved
+    depends_on:
+    - BatchNorm.batchnorm_output_mean
+    - BatchNorm.sum_centered_zero
+    mathlib_imports:
+    - Mathlib.Algebra.BigOperators.Group.Finset.Basic
+    notes: Σₙ(xₙ-μ_B)=0, so mean(BN(x))=β exactly (any γ); with γ=1 the tolerance
+      band holds for every tol>0.
 - type: bound
   property: Denominator strictly positive
   formal: sqrt(sigma_B^2 + eps) > 0 when eps > 0
   applies_to: all
+  lean:
+    theorem: BatchNorm.bn_denom_pos
+    module: ProvableContracts.BatchNorm
+    status: proved
+    depends_on:
+    - BatchNorm.batchVar_nonneg
+    - Real.sqrt_pos_of_pos
+    mathlib_imports:
+    - Mathlib.Data.Real.Sqrt
+    notes: Batch variance ≥ 0 (sum of squares), so var + ε > 0, and √ of a positive
+      is positive.
 - type: invariant
   property: Running variance non-negative
   formal: sigma_run >= 0 after any number of updates
   applies_to: all
+  lean:
+    theorem: BatchNorm.ema_fold_nonneg
+    module: ProvableContracts.BatchNorm
+    status: proved
+    depends_on:
+    - BatchNorm.ema_step_nonneg
+    mathlib_imports:
+    - Mathlib.Data.Real.Basic
+    notes: Each EMA update (1-m)·prev+m·batch is a convex combination of non-negatives
+      (m∈[0,1]); induction over the update list preserves σ_run ≥ 0.
 - type: equivalence
   property: Eval mode uses running stats
   formal: BN_eval(x) uses mu_run/sigma_run, not batch statistics
   applies_to: all
+  lean:
+    theorem: BatchNorm.batchnorm_eval_ne_train
+    module: ProvableContracts.BatchNorm
+    status: proved
+    depends_on:
+    - BatchNorm.batchVar_nonneg
+    - Real.sqrt_pos_of_pos
+    mathlib_imports:
+    - Mathlib.Data.Real.Sqrt
+    notes: With variance pinned to the batch value (shared denom), μ_run≠μ_B and γ≠0
+      force BN_eval(x)≠BN_train(x) at every index — refutes a mode flag that ignores
+      running stats (FALSIFY-BN-004).
 - type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 3
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  mathlib_imports: true
+  lean_proved_obligations:
+  - obligation: Training output standardized
+    theorem: BatchNorm.batchnorm_centering_unit_gamma
+    file: ProvableContracts/Theorems/BatchNorm/Centering.lean
+  - obligation: Denominator strictly positive
+    theorem: BatchNorm.bn_denom_pos
+    file: ProvableContracts/Theorems/BatchNorm/DenominatorPositive.lean
+  - obligation: Running variance non-negative
+    theorem: BatchNorm.ema_fold_nonneg
+    file: ProvableContracts/Theorems/BatchNorm/RunningVariance.lean
+  - obligation: Eval mode uses running stats
+    theorem: BatchNorm.batchnorm_eval_ne_train
+    file: ProvableContracts/Theorems/BatchNorm/EvalUsesRunning.lean
+  notes: 4 of 5 obligations proved sorry-free in Lean 4 (Mathlib-backed). The
+    remaining obligation (SIMD matches scalar within ULP) is a runtime
+    floating-point/ISA property (implementation-specific, not analytic) and is
+    marked l4_not_applicable — property-tested via FALSIFY-BN-005 only.
 kernel_structure:
   phases:
   - name: compute_batch_stats

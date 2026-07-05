@@ -6,7 +6,7 @@ use predicates::prelude::*;
 #[test]
 fn test_timing_flag_shows_duration() {
     // Test that -T flag adds timing info to each syscall
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-T").arg("--").arg("echo").arg("test");
 
     cmd.assert()
@@ -19,7 +19,7 @@ fn test_timing_flag_shows_duration() {
 fn test_timing_with_statistics_mode() {
     // Test that -T works with -c statistics mode
     // Statistics output goes to stderr (matching strace behavior)
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("-T").arg("--").arg("echo").arg("test");
 
     cmd.assert()
@@ -32,7 +32,7 @@ fn test_timing_with_statistics_mode() {
 #[test]
 fn test_timing_with_filter() {
     // Test that -T works with filtering
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-T").arg("-e").arg("trace=write").arg("--").arg("echo").arg("test");
 
     cmd.assert()
@@ -44,7 +44,7 @@ fn test_timing_with_filter() {
 #[test]
 fn test_timing_format_is_seconds() {
     // Test that timing is displayed in seconds (not microseconds)
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-T").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");

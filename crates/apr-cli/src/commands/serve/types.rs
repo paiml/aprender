@@ -60,6 +60,8 @@ pub struct ServerConfig {
     pub context_length: usize,
     /// GH-286: Skip FP8 weight cache warmup. Saves ~1.5 GB RSS.
     pub no_fp8_cache: bool,
+    /// Ollama compatibility mode
+    pub ollama_compat: bool,
 }
 
 impl Default for ServerConfig {
@@ -82,6 +84,7 @@ impl Default for ServerConfig {
             otlp_endpoint: None,
             context_length: 4096,
             no_fp8_cache: false,
+            ollama_compat: false,
         }
     }
 }

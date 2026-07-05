@@ -278,17 +278,6 @@ name = "text_preprocessing"
 [[example]]
 name = "time_series_forecasting"
 
-[profile.release]
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = "none"
-debug = true  # Enable debug info for flamegraph/profiling
-
-[profile.dev]
-lto = false
-panic = "abort"
-
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--generate-link-to-definition"]

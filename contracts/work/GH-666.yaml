@@ -1,0 +1,16 @@
+# Auto-generated from .pmat-work/GH-666/contract.json
+name: "GH-666"
+metadata:
+  version: "1.0.0"
+  kind: schema
+  description: "Auto-generated work-contract for GH-666"
+  references:
+    - ".pmat-work/GH-666/contract.json"
+surface: work-contract
+verification_summary:
+  target_level: L1
+  current_level: L1
+  total_obligations: 0
+preconditions:
+  - "--offline flag ignored by compare-hf and import: network requests proceed anyway — must not occur after fix"
+  - "No regression in existing apr test suite"

@@ -158,7 +158,7 @@ pub fn to_anthropic(m: &Message) -> Value {
                 o.insert("name".into(), json!(name));
                 o.insert("input".into(), args.clone());
                 Value::Object(o)
-            }
+            },
             Block::ToolResult {
                 tool_call_id,
                 response,
@@ -171,7 +171,7 @@ pub fn to_anthropic(m: &Message) -> Value {
                 }
                 o.insert("content".into(), response.clone());
                 Value::Object(o)
-            }
+            },
         })
         .collect();
     json!({ "role": role, "content": content })
@@ -255,10 +255,10 @@ pub fn to_gemini(m: &Message) -> Value {
             // Gemini functionCall carries NO id — the honest asymmetry.
             Block::ToolCall { name, args, .. } => {
                 json!({ "functionCall": { "name": name, "args": args } })
-            }
+            },
             Block::ToolResult { name, response, .. } => {
                 json!({ "functionResponse": { "name": name, "response": response } })
-            }
+            },
         })
         .collect();
     json!({ "role": role, "parts": parts })

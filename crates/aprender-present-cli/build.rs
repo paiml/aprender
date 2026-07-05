@@ -24,6 +24,8 @@ fn main() {
         .join("..")
         .join("..")
         .join("..")
+        .join("..")
+        .join("..")
         .join("provable-contracts")
         .join("contracts")
         .join("presentar")

@@ -54,30 +54,30 @@ fn main() {
         for c in 0..128 {data[s+16+c]=((sb*3+c*5)%256)as u8;}
     }
     let x_host:Vec<f32>=(0..k).map(|i|((i%11)as f32)*0.1-0.5).collect();
-    let d_dev=DeviceBuffer::from_host(&stream,&data).unwrap();
-    let x_dev=DeviceBuffer::from_host(&stream,&x_host).unwrap();
-    let y_dev=DeviceBuffer::<f32>::zeroed(&stream,m).unwrap();
+    let d_dev=DeviceBuffer::from_host(&stream,&data).expect("upload quantized weights to device");
+    let x_dev=DeviceBuffer::from_host(&stream,&x_host).expect("upload input vector x to device");
+    let y_dev=DeviceBuffer::<f32>::zeroed(&stream,m).expect("allocate zeroed output vector y on device");
     let module=kernels::load(&ctx).expect("load");
     let total=(m*T) as u32;
     module.q4k_matvec_atomic(&stream,LaunchConfig::for_num_elems(total),&d_dev,&x_dev,&y_dev).expect("launch");
-    let y=y_dev.to_host_vec(&stream).unwrap();
+    let y=y_dev.to_host_vec(&stream).expect("copy output vector y back to host for verification");
     let mut errs=0; let mut maxrel=0.0f32;
     let check_rows = m.min(512);
     for row in 0..check_rows { let mut acc=0.0f32; for j in 0..k {acc+=dequant_elem(&data,row*k+j)*x_host[j];}
         let rel=(y[row]-acc).abs()/(acc.abs()+1e-3); if rel>maxrel{maxrel=rel;} if rel>1e-2 {errs+=1;} }
     if errs!=0 { eprintln!("Q4K-MATVEC-ATOMIC FAILED: {} rows (maxrel={:.2e})", errs, maxrel); std::process::exit(1); }
     // warmup
-    for _ in 0..20 { let yz=DeviceBuffer::<f32>::zeroed(&stream,m).unwrap(); module.q4k_matvec_atomic(&stream,LaunchConfig::for_num_elems(total),&d_dev,&x_dev,&yz).expect("w"); let _=yz.to_host_vec(&stream).unwrap(); }
+    for _ in 0..20 { let yz=DeviceBuffer::<f32>::zeroed(&stream,m).expect("allocate warmup output buffer on device"); module.q4k_matvec_atomic(&stream,LaunchConfig::for_num_elems(total),&d_dev,&x_dev,&yz).expect("w"); let _=yz.to_host_vec(&stream).expect("copy warmup output back to host"); }
     // timed: N bare launches, one final sync (median over reps)
     let iters=200u32; let reps=5;
     let mut times=Vec::new();
     for _ in 0..reps {
         let t0=std::time::Instant::now();
         for _ in 0..iters { module.q4k_matvec_atomic(&stream,LaunchConfig::for_num_elems(total),&d_dev,&x_dev,&y_dev).expect("t"); }
-        let _=y_dev.to_host_vec(&stream).unwrap();
+        let _=y_dev.to_host_vec(&stream).expect("sync device by copying output back to host after timed launches");
         times.push(t0.elapsed().as_secs_f64()*1e6/(iters as f64));
     }
-    times.sort_by(|a,b|a.partial_cmp(b).unwrap());
+    times.sort_by(|a,b|a.total_cmp(b));
     let med=times[times.len()/2];
     println!("OXIDE M={} K={} T={} median={:.2} us/launch (reps={:?} maxrel={:.1e})", m, k, T, med, times.iter().map(|t|(t*100.0).round()/100.0).collect::<Vec<_>>(), maxrel);
 }

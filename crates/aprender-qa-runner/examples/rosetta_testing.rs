@@ -7,8 +7,8 @@
 
 #![allow(clippy::missing_panics_doc, clippy::expect_used)]
 
-use apr_qa_gen::{Backend, Format, ModelId};
-use apr_qa_runner::{
+use aprender_qa_gen::{Backend, Format, ModelId};
+use aprender_qa_runner::{
     CommutativityTest, ConversionConfig, IdempotencyTest, InspectResult, RoundTripTest,
 };
 

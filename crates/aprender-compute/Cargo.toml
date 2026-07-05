@@ -152,12 +152,6 @@ presentar-tui = ["presentar-terminal"]
 # Heap profiling via dhat-rs (DHAT viewer: https://nnethercote.github.io/dh_view/dh_view.html)
 dhat-heap = ["dep:dhat"]
 
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-debug = true  # Enable debug symbols for profiling (flamegraph, perf)
-
 [lib]
 name = "trueno"
 path = "src/lib.rs"
@@ -230,9 +224,3 @@ replace = "## [{{version}}] - {{date}}"
 
 # [workspace.dependencies] removed — root workspace handles shared deps
 
-[profile.test]
-opt-level = 1              # Slight optimization for faster test execution
-incremental = true         # Reuse previous builds
-
-[profile.dev]
-panic = "abort"

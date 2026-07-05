@@ -120,6 +120,8 @@ fn emit_presentar_binding_env() {
         .join("..")
         .join("..")
         .join("..")
+        .join("..")
+        .join("..")
         .join("provable-contracts")
         .join("contracts")
         .join("presentar")

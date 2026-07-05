@@ -16,7 +16,7 @@ fn test_environment_context_collect() {
 
     assert!(!ctx.os.is_empty());
     assert!(!ctx.arch.is_empty());
-    assert!(!ctx.apr_qa_version.is_empty());
+    assert!(!ctx.aprender_qa_version.is_empty());
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn test_generate_markdown() {
         environment: EnvironmentContext {
             os: "linux".to_string(),
             arch: "x86_64".to_string(),
-            apr_qa_version: "0.1.0".to_string(),
+            aprender_qa_version: "0.1.0".to_string(),
             apr_cli_version: "0.2.12".to_string(),
             git_commit: "abc123".to_string(),
             git_branch: "main".to_string(),
@@ -146,7 +146,7 @@ fn test_generate_markdown_with_diagnostics() {
         environment: EnvironmentContext {
             os: "linux".to_string(),
             arch: "x86_64".to_string(),
-            apr_qa_version: "0.1.0".to_string(),
+            aprender_qa_version: "0.1.0".to_string(),
             apr_cli_version: "0.2.12".to_string(),
             git_commit: "abc123".to_string(),
             git_branch: "main".to_string(),
@@ -207,7 +207,7 @@ fn test_generate_markdown_successful_check() {
         environment: EnvironmentContext {
             os: "linux".to_string(),
             arch: "x86_64".to_string(),
-            apr_qa_version: "0.1.0".to_string(),
+            aprender_qa_version: "0.1.0".to_string(),
             apr_cli_version: "0.2.12".to_string(),
             git_commit: "abc123".to_string(),
             git_branch: "main".to_string(),
@@ -276,7 +276,7 @@ fn test_fail_fast_report_debug() {
         environment: EnvironmentContext {
             os: "linux".to_string(),
             arch: "x86_64".to_string(),
-            apr_qa_version: "0.1.0".to_string(),
+            aprender_qa_version: "0.1.0".to_string(),
             apr_cli_version: "0.2.12".to_string(),
             git_commit: "abc123".to_string(),
             git_branch: "main".to_string(),

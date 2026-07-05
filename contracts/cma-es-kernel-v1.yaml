@@ -18,7 +18,7 @@ equations:
     preconditions:
     - learning_rate > 0.0
     - params.len() > 0
-    lean_theorem: Theorems.Sample
+    lean_theorem: Theorems.CMAES.StepSizePositive
   mean_update:
     formula: m_{t+1} = sum_{i=1}^{mu} w_i * x_{i:lambda}
     domain: x_{i:lambda} sorted by fitness, w_i > 0, sum(w_i) = 1
@@ -29,7 +29,7 @@ equations:
     preconditions:
     - learning_rate > 0.0
     - params.len() > 0
-    lean_theorem: Theorems.Mean_Update
+    lean_theorem: Theorems.CMAES.WeightsNormalized
   covariance_update:
     formula: C_{t+1} = (1-c1-cmu)*C_t + c1*p_c*p_c^T + cmu*sum(w_i*(x_i-m)*(x_i-m)^T/sigma^2)
     domain: C_t positive definite, c1 >= 0, cmu >= 0, c1+cmu <= 1
@@ -40,7 +40,7 @@ equations:
     preconditions:
     - learning_rate > 0.0
     - params.len() > 0
-    lean_theorem: Theorems.Covariance_Update
+    lean_theorem: Theorems.CMAES.CovarianceSymmetry
 proof_obligations:
 - type: bound
   property: Step size positive
@@ -64,6 +64,55 @@ proof_obligations:
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 4
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  mathlib_imports: true
+  notes: >-
+    4 of the 5 proof obligations are the ANALYTIC core of CMA-ES and are
+    Lean-proved sorry-free in
+    crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/CMAES/
+    {StepSizePositive,WeightsNormalized,CovarianceSymmetry,CovariancePositiveDefinite}.lean,
+    each verified with `lake env lean <file>` exit 0, 0 sorry. The proofs are
+    Mathlib-backed over the reals but ALGEBRAIC, not stochastic-convergence:
+    step-size positivity = sigma*exp(f) > 0 (exp_pos) preserved by induction
+    over generations; weights-sum-to-1 = sum(raw_i/S) = S/S = 1 (sum_div +
+    div_self), plus per-weight nonnegativity (convex combination); covariance
+    symmetry = transpose distributes over the a*C + b*P*Pᵀ + c*Q*Qᵀ update
+    (Gram terms self-symmetric); covariance positive-definiteness proved at the
+    quadratic-form level vᵀC'v = a(vᵀCv) + b(vᵀPPᵀv) + c(vᵀQQᵀv) > 0 for a>0,
+    b,c>=0, reusing the Cholesky PSD lemma for the two Gram terms. The 5th
+    obligation (SIMD-vs-scalar within 8 ULP) is GENUINELY-NOT-APPLICABLE to
+    Lean: it is a runtime floating-point / IEEE-ULP equivalence over an AVX2
+    kernel with no algebraic identity to prove over the reals; it stays
+    Kani/falsification-covered (L3), not Lean-proved.
+  lean_proved_obligations:
+  - obligation: Step size positive
+    theorem: CMAES.stepSizeIterate_pos
+    file: ProvableContracts/Theorems/CMAES/StepSizePositive.lean
+    note: 'sigma*exp(f) > 0 preserved across any number of generations by induction'
+  - obligation: Weights sum to 1
+    theorem: CMAES.weights_sum_one
+    file: ProvableContracts/Theorems/CMAES/WeightsNormalized.lean
+    note: 'sum(raw_i / sum raw) = 1 exactly (sum_div + div_self); tolerance is f32 slack'
+  - obligation: Covariance symmetry
+    theorem: CMAES.covUpdate_symmetric
+    file: ProvableContracts/Theorems/CMAES/CovarianceSymmetry.lean
+    note: 'transpose distributes over a*C + b*P*Pᵀ + c*Q*Qᵀ; symmetric C stays symmetric'
+  - obligation: Covariance positive definite
+    theorem: CMAES.covUpdate_quadForm_pos
+    file: ProvableContracts/Theorems/CMAES/CovariancePositiveDefinite.lean
+    note: 'quadratic form a(vᵀCv)+b(vᵀPPᵀv)+c(vᵀQQᵀv) > 0 for a>0,b,c>=0 (Cholesky PSD reuse)'
+  lean_not_applicable_obligations:
+  - obligation: SIMD matches scalar within ULP
+    reason: runtime floating-point equivalence — a per-lane AVX2-vs-scalar IEEE
+      ULP bound (8 ULP) on the Cholesky/matmul sampling kernel; no algebraic
+      identity over the reals to prove. Covered by Kani + falsification
+      (FALSIFY-CMA-005), not Lean. Stays L3 for this obligation.
 kernel_structure:
   phases:
   - name: sample_population

@@ -99,27 +99,6 @@ jugar-probar = { version = "0.4", default-features = false, features = ["tui"] }
 [lints]
 workspace = true
 
-[profile.dev]
-panic = "abort"
-# Fast incremental compilation for Tier 1 feedback
-opt-level = 0
-
-[profile.test]
-# Optimizations for faster test execution (Tier 2)
-opt-level = 1
-
-[profile.release]
-# Production optimizations (Sovereign AI: maximum performance)
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
-
-[profile.bench]
-# Benchmark optimizations
-lto = true
-codegen-units = 1
-
 [[bench]]
 name = "scheduler_bench"
 harness = false

@@ -4,6 +4,7 @@
 name = "aprender-serve"
 version.workspace = true
 edition = "2021"
+autobins = false
 rust-version = "1.89"
 authors = ["Pragmatic AI Labs <contact@paiml.com>"]
 license = "MIT"
@@ -676,43 +677,6 @@ required-features = ["cuda"]
 [[example]]
 name = "test_apr_quantized_cache"
 required-features = ["cuda"]
-
-[profile.release]
-opt-level = 3
-lto = "fat"           # Link-time optimization for maximum performance
-codegen-units = 1     # Single codegen unit for max optimization
-panic = "abort"       # Smaller binary size
-strip = true          # Remove debug symbols
-
-[profile.profiling]
-inherits = "release"
-strip = false         # Keep symbols for dhat-rs / perf / flamegraph
-debug = 1             # Line tables only (minimal size overhead)
-lto = "thin"          # Faster link than fat LTO
-
-[profile.bench]
-inherits = "release"
-# Note: panic setting cannot be overridden in bench profile (inherits from release)
-
-[profile.dev]
-panic = "abort"
-opt-level = 0         # Fast compilation
-debug = true
-
-# Faster compile times for development
-[profile.dev.package."*"]
-opt-level = 3
-
-# Test profile - optimized for GPU benchmarks (PAR-023)
-# Note: opt-level=3 required for accurate GPU timing measurements
-[profile.test]
-opt-level = 3
-debug = false          # Reduce memory during debug info generation
-lto = false            # Disable LTO for faster compile
-codegen-units = 4      # Balance between speed and optimization
-incremental = true     # Enable incremental compilation
-
-# trueno dependencies now using crates.io versions (0.14.1, 0.4.11)
 
 [package.metadata.release]
 shared-version = true

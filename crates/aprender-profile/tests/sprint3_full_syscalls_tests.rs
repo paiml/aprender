@@ -12,7 +12,7 @@ use tempfile::TempDir;
 #[test]
 fn test_trace_shows_multiple_syscalls() {
     // Test that multiple syscalls are traced (not just write)
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--")
         .arg("ls")
         .arg("-la")
@@ -30,7 +30,7 @@ fn test_trace_file_operations() {
     let test_file = temp_dir.path().join("test.txt");
     fs::write(&test_file, "test content").expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--")
         .arg("cat")
         .arg(&test_file)
@@ -46,7 +46,7 @@ fn test_syscall_names_not_numbers() {
     // Test that syscalls show as names (e.g., "openat"), not numbers (e.g., "257")
     // Note: We verify names are used by checking for common syscall names at start of lines
     // We can't just check for absence of "257" since it may appear in memory addresses
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--")
         .arg("echo")
         .arg("test")
@@ -63,7 +63,7 @@ fn test_trace_shows_syscall_arguments() {
     let test_file = temp_dir.path().join("myfile.txt");
     fs::write(&test_file, "content").expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--")
         .arg("cat")
         .arg(&test_file)
@@ -76,7 +76,7 @@ fn test_trace_shows_syscall_arguments() {
 fn test_unknown_syscalls_show_number() {
     // Test that unknown/unhandled syscalls show their number
     // (This is for future-proofing when new syscalls are added)
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--")
         .arg("true") // Simple program with minimal syscalls
         .assert()

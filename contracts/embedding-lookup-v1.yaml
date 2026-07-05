@@ -19,7 +19,7 @@ equations:
     preconditions:
     - token_ids.iter().all(|&id| (id as usize) < vocab_size)
     - vocab_size > 0
-    lean_theorem: Theorems.Embedding_Lookup
+    lean_theorem: Theorems.Embedding
     postconditions:
     - result.len() == token_ids.len() * embed_dim
     - result.iter().all(|v| v.is_finite())
@@ -40,6 +40,41 @@ proof_obligations:
   property: Finite output
   formal: W[j][k] is finite implies output[i][k] is finite for all i, k
   applies_to: all
+verification_summary:
+  total_obligations: 4
+  l2_property_tested: 4
+  l3_kani_proved: 4
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 0
+  mathlib_imports: true
+  lean_proved_obligations:
+  - obligation: Output shape correctness
+    theorem: ProvableContracts.Embedding.gather_length
+    file: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Embedding/Shape.lean
+  - obligation: Out-of-bounds panic freedom
+    theorem: ProvableContracts.Embedding.gather_inbounds
+    file: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Embedding/Bounds.lean
+  - obligation: Deterministic output
+    theorem: ProvableContracts.Embedding.gather_deterministic
+    file: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Embedding/Determinism.lean
+  - obligation: Finite output
+    theorem: ProvableContracts.Embedding.gather_finite
+    file: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Embedding/Finite.lean
+  notes: >-
+    All 4 obligations proved sorry-free in Lean 4 over the list-gather model
+    (output = ids.map (table.getD · dflt)). gather_length proves length
+    preservation len(out)=len(ids)=seq_len (Output shape); gather_inbounds
+    proves the in-bounds index invariant (bounded id ⇒ table[id]? isSome, no
+    panic); gather_deterministic proves input-congruence (equal inputs ⇒
+    identical output); gather_finite proves value preservation (every output
+    row is a table row or the finite default, so finite-in ⇒ finite-out —
+    gather introduces no NaN/Inf). Supporting: gather_row?/gather_hits_table
+    (per-row correctness out[i]=table[ids[i]]) and gather_scatter_id
+    (gather∘scatter roundtrip). The IEEE bit-level meaning of is_finite() and
+    the byte-layout of the output buffer remain runtime concerns covered by the
+    falsification tests / Kani harnesses; the analytic copy-preservation core is
+    what is proved here.
 kernel_structure:
   phases:
   - name: validate_indices

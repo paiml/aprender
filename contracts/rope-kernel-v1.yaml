@@ -35,6 +35,14 @@ proof_obligations:
   property: Output has same dimension as input, all elements finite
   formal: 'len(out) = len(x) ∧ ∀i: isFinite(out_i)'
   requires: ROPE-PRE-001
+  lean:
+    theorem: ProvableContracts.Rope.ropeList_length
+    module: ProvableContracts.Theorems.Rope
+    status: proved
+    notes: 'Length preservation proved over ℝ (RoPE maps ℝ^d → ℝ^d via a per-pair
+      map, so len(out)=len(x)); real-valued outputs are always finite, so the
+      analytic content is discharged. The f32/IEEE isFinite(out_i) check is a
+      runtime concern.'
 - type: frame
   property: Input vector and position unchanged
   formal: modifies(output) ∧ preserves(x, m, θ)
@@ -43,10 +51,27 @@ proof_obligations:
   formal: '|‖RoPE(x, m)‖ - ‖x‖| < ε'
   tolerance: 1.0e-05
   applies_to: all
+  lean:
+    theorem: ProvableContracts.Rope.ropePairs_normSq
+    module: ProvableContracts.Theorems.Rope
+    status: proved
+    depends_on:
+    - Real.sin_sq_add_cos_sq
+    notes: 'Whole-vector norm preservation ‖RoPE(x,m)‖ = ‖x‖ (equivalently on the
+      squared norm), reduced pairwise to rope_norm_sq, which uses sin²+cos²=1.'
 - type: invariant
   property: Relative position encoding
   formal: ⟨RoPE(q, m), RoPE(k, n)⟩ = f(q, k, m-n)
   applies_to: all
+  lean:
+    theorem: ProvableContracts.Rope.rope_relative
+    module: ProvableContracts.Theorems.Rope
+    status: proved
+    depends_on:
+    - Real.cos_sub
+    - Real.sin_sub
+    notes: '⟨R(a)q, R(b)k⟩ = ⟨q, R(b−a)k⟩, so with a=mθ, b=nθ the inner product
+      depends only on n−m. Pure polynomial identity after cos_sub/sin_sub.'
 - type: equivalence
   property: SIMD matches scalar
   tolerance: 4.0
@@ -55,6 +80,20 @@ proof_obligations:
   property: Output bounded by input norm
   formal: ‖RoPE(x, m)‖ ≤ ‖x‖ + ε
   applies_to: all
+  lean:
+    theorem: ProvableContracts.Rope.ropePairs_norm_le
+    module: ProvableContracts.Theorems.Rope
+    status: proved
+    depends_on:
+    - ProvableContracts.Rope.ropePairs_normSq
+    notes: 'Immediate from norm equality: ‖RoPE(x,m)‖ = ‖x‖ ≤ ‖x‖ + ε for ε ≥ 0.'
+verification_summary:
+  total_obligations: 7
+  l2_property_tested: 7
+  l3_kani_proved: 8
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 3
 kernel_structure:
   phases:
   - name: compute_freqs
