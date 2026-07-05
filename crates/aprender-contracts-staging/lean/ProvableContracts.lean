@@ -6,6 +6,7 @@
 -- AdamW optimizer
 -- Discrete Fourier Transform
 import ProvableContracts.Basic
+import ProvableContracts.Defs.AbsolutePosition
 import ProvableContracts.Defs.AdamW
 import ProvableContracts.Defs.BLAS
 import ProvableContracts.Defs.Cholesky
@@ -25,6 +26,7 @@ import ProvableContracts.Defs.Sigmoid
 import ProvableContracts.Defs.Softmax
 import ProvableContracts.Defs.Sparse
 import ProvableContracts.Defs.Transpose
+import ProvableContracts.Theorems.AbsolutePosition.Core
 import ProvableContracts.Theorems.AdamW.WeightDecay
 import ProvableContracts.Theorems.Attention.ScaledDotProduct
 import ProvableContracts.Theorems.BLAS.SyrkSymmetric
