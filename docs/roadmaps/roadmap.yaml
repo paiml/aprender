@@ -11887,2435 +11887,371 @@ roadmap:
   - sklearn-parity
   - preprocessing
   notes: 'gap-map rank #70 (value 3, effort M); falsified vs sklearn'
-- id: "\e[36mPMAT-498"
+- id: PMAT-CI-PASSGREP-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPMAT-498"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:34:39.262263207+00:00
-  updated: 2026-07-05T09:34:39.262263207+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-504"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-504"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:05.333305061+00:00
-  updated: 2026-07-05T09:35:05.333305061+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-507"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-507"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:05.357566162+00:00
-  updated: 2026-07-05T09:35:05.357566162+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-512"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-512"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:08.137748299+00:00
-  updated: 2026-07-05T09:35:08.137748299+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-513"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-513"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:08.178609206+00:00
-  updated: 2026-07-05T09:35:08.178609206+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-514"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-514"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:08.201105270+00:00
-  updated: 2026-07-05T09:35:08.201105270+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-516"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-516"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:08.242262402+00:00
-  updated: 2026-07-05T09:35:08.242262402+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-517"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-517"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:11.028062399+00:00
-  updated: 2026-07-05T09:35:11.028062399+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-518"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-518"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:11.061682390+00:00
-  updated: 2026-07-05T09:35:11.061682390+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-519"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-519"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:11.098999410+00:00
-  updated: 2026-07-05T09:35:11.098999410+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-520"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-520"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:11.118947320+00:00
-  updated: 2026-07-05T09:35:11.118947320+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-526"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-526"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:11.204748521+00:00
-  updated: 2026-07-05T09:35:11.204748521+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-527"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-527"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:13.986264271+00:00
-  updated: 2026-07-05T09:35:13.986264271+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-528"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-528"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:14.057232352+00:00
-  updated: 2026-07-05T09:35:14.057232352+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-531"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-531"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:14.103366027+00:00
-  updated: 2026-07-05T09:35:14.103366027+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-532"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-532"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:14.142535319+00:00
-  updated: 2026-07-05T09:35:14.142535319+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-536"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-536"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:14.192707787+00:00
-  updated: 2026-07-05T09:35:14.192707787+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-537"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-537"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:17.097196413+00:00
-  updated: 2026-07-05T09:35:17.097196413+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-539"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-539"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:17.160412842+00:00
-  updated: 2026-07-05T09:35:17.160412842+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-541"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-541"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:17.232121769+00:00
-  updated: 2026-07-05T09:35:17.232121769+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-542"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-542"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:17.272156312+00:00
-  updated: 2026-07-05T09:35:17.272156312+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-545"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-545"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:17.299949069+00:00
-  updated: 2026-07-05T09:35:17.299949069+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-547"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-547"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:20.188430050+00:00
-  updated: 2026-07-05T09:35:20.188430050+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-548"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-548"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:20.260284669+00:00
-  updated: 2026-07-05T09:35:20.260284669+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-549"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-549"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:20.282854838+00:00
-  updated: 2026-07-05T09:35:20.282854838+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-554"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-554"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:20.378405135+00:00
-  updated: 2026-07-05T09:35:20.378405135+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-556"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-556"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:20.424350112+00:00
-  updated: 2026-07-05T09:35:20.424350112+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-557"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-557"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:23.322589634+00:00
-  updated: 2026-07-05T09:35:23.322589634+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-558"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-558"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:23.402284916+00:00
-  updated: 2026-07-05T09:35:23.402284916+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-560"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-560"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:23.462376310+00:00
-  updated: 2026-07-05T09:35:23.462376310+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-564"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-564"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:23.497888157+00:00
-  updated: 2026-07-05T09:35:23.497888157+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-566"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-566"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:23.549778891+00:00
-  updated: 2026-07-05T09:35:23.549778891+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-567"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-567"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:26.422980089+00:00
-  updated: 2026-07-05T09:35:26.422980089+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-569"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-569"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:26.522038832+00:00
-  updated: 2026-07-05T09:35:26.522038832+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-570"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-570"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:26.553687411+00:00
-  updated: 2026-07-05T09:35:26.553687411+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-571"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-571"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:26.585399857+00:00
-  updated: 2026-07-05T09:35:26.585399857+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-574"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-574"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:26.628626457+00:00
-  updated: 2026-07-05T09:35:26.628626457+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-576"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-576"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:26.668387254+00:00
-  updated: 2026-07-05T09:35:26.668387254+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-577"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-577"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:29.534809385+00:00
-  updated: 2026-07-05T09:35:29.534809385+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-578"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-578"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:29.624575082+00:00
-  updated: 2026-07-05T09:35:29.624575082+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-580"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-580"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:29.661406694+00:00
-  updated: 2026-07-05T09:35:29.661406694+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-582"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-582"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:29.698501561+00:00
-  updated: 2026-07-05T09:35:29.698501561+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-583"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-583"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:29.862239305+00:00
-  updated: 2026-07-05T09:35:29.862239305+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-584"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-584"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:30.015586902+00:00
-  updated: 2026-07-05T09:35:30.015586902+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-586"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-586"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:30.046691076+00:00
-  updated: 2026-07-05T09:35:30.046691076+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-587"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-587"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:33.037732513+00:00
-  updated: 2026-07-05T09:35:33.037732513+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-590"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-590"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:33.500576856+00:00
-  updated: 2026-07-05T09:35:33.500576856+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-595"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-595"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:33.580716087+00:00
-  updated: 2026-07-05T09:35:33.580716087+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-598"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-598"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:36.747661082+00:00
-  updated: 2026-07-05T09:35:36.747661082+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-603"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-603"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:36.786194883+00:00
-  updated: 2026-07-05T09:35:36.786194883+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-606"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-606"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:36.834127656+00:00
-  updated: 2026-07-05T09:35:36.834127656+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-607"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-607"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:39.745606150+00:00
-  updated: 2026-07-05T09:35:39.745606150+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-616"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-616"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:39.797775425+00:00
-  updated: 2026-07-05T09:35:39.797775425+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-617"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-617"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:42.723472909+00:00
-  updated: 2026-07-05T09:35:42.723472909+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-624"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-624"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:42.770979295+00:00
-  updated: 2026-07-05T09:35:42.770979295+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-628"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-628"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:45.776327482+00:00
-  updated: 2026-07-05T09:35:45.776327482+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-632"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-632"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:45.808576032+00:00
-  updated: 2026-07-05T09:35:45.808576032+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-636"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-636"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:45.847176238+00:00
-  updated: 2026-07-05T09:35:45.847176238+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-638"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-638"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:48.694875655+00:00
-  updated: 2026-07-05T09:35:48.694875655+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-645"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-645"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:48.748021804+00:00
-  updated: 2026-07-05T09:35:48.748021804+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-646"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-646"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:48.795657859+00:00
-  updated: 2026-07-05T09:35:48.795657859+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-647"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-647"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:51.556957748+00:00
-  updated: 2026-07-05T09:35:51.556957748+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-648"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-648"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:51.583449045+00:00
-  updated: 2026-07-05T09:35:51.583449045+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-653"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-653"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:51.831097389+00:00
-  updated: 2026-07-05T09:35:51.831097389+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-657"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-657"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:51.887470876+00:00
-  updated: 2026-07-05T09:35:51.887470876+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-659"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-659"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:54.454142461+00:00
-  updated: 2026-07-05T09:35:54.454142461+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-660"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-660"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:54.653117189+00:00
-  updated: 2026-07-05T09:35:54.653117189+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-661"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-661"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:54.707267700+00:00
-  updated: 2026-07-05T09:35:54.707267700+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-663"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-663"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:54.729085622+00:00
-  updated: 2026-07-05T09:35:54.729085622+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-665"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-665"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:54.807295030+00:00
-  updated: 2026-07-05T09:35:54.807295030+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-666"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-666"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:54.827510415+00:00
-  updated: 2026-07-05T09:35:54.827510415+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-669"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-669"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:57.444014220+00:00
-  updated: 2026-07-05T09:35:57.444014220+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-670"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-670"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:57.542034601+00:00
-  updated: 2026-07-05T09:35:57.542034601+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-671"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-671"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:57.566786669+00:00
-  updated: 2026-07-05T09:35:57.566786669+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-672"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-672"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:57.616306930+00:00
-  updated: 2026-07-05T09:35:57.616306930+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-673"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-673"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:57.703201564+00:00
-  updated: 2026-07-05T09:35:57.703201564+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-675"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-675"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:57.785802189+00:00
-  updated: 2026-07-05T09:35:57.785802189+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-677"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-677"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:35:57.814465611+00:00
-  updated: 2026-07-05T09:35:57.814465611+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-679"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-679"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:00.458134233+00:00
-  updated: 2026-07-05T09:36:00.458134233+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-682"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-682"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:00.800369478+00:00
-  updated: 2026-07-05T09:36:00.800369478+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-683"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-683"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:01.187632083+00:00
-  updated: 2026-07-05T09:36:01.187632083+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-686"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-686"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:01.300843721+00:00
-  updated: 2026-07-05T09:36:01.300843721+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-689"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-689"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:03.659513439+00:00
-  updated: 2026-07-05T09:36:03.659513439+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-690"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-690"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:04.023383579+00:00
-  updated: 2026-07-05T09:36:04.023383579+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-710"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-710"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:04.075027284+00:00
-  updated: 2026-07-05T09:36:04.075027284+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-712"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-712"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:04.176326548+00:00
-  updated: 2026-07-05T09:36:04.176326548+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-715"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-715"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:04.222617765+00:00
-  updated: 2026-07-05T09:36:04.222617765+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-716"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-716"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:06.530377958+00:00
-  updated: 2026-07-05T09:36:06.530377958+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-717"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-717"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:06.899942566+00:00
-  updated: 2026-07-05T09:36:06.899942566+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-720"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-720"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:06.983782713+00:00
-  updated: 2026-07-05T09:36:06.983782713+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-721"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-721"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:07.069871799+00:00
-  updated: 2026-07-05T09:36:07.069871799+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-725"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-725"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:07.102617676+00:00
-  updated: 2026-07-05T09:36:07.102617676+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-726"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-726"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:09.403774319+00:00
-  updated: 2026-07-05T09:36:09.403774319+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-727"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-727"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:09.775979888+00:00
-  updated: 2026-07-05T09:36:09.775979888+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-729"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-729"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:09.848138546+00:00
-  updated: 2026-07-05T09:36:09.848138546+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-731"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-731"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:09.900415856+00:00
-  updated: 2026-07-05T09:36:09.900415856+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-732"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-732"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:09.959669423+00:00
-  updated: 2026-07-05T09:36:09.959669423+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-738"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-738"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:10.029635058+00:00
-  updated: 2026-07-05T09:36:10.029635058+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-739"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-739"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:12.287757487+00:00
-  updated: 2026-07-05T09:36:12.287757487+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPMAT-740"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPMAT-740"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:12.647179323+00:00
-  updated: 2026-07-05T09:36:12.647179323+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-001"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-001"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:12.731713360+00:00
-  updated: 2026-07-05T09:36:12.731713360+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-002"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-002"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:12.765067473+00:00
-  updated: 2026-07-05T09:36:12.765067473+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-003"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-003"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:12.835448003+00:00
-  updated: 2026-07-05T09:36:12.835448003+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-007"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-007"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:12.885025120+00:00
-  updated: 2026-07-05T09:36:12.885025120+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-009"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-009"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:12.921053169+00:00
-  updated: 2026-07-05T09:36:12.921053169+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-010"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-010"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:15.172578481+00:00
-  updated: 2026-07-05T09:36:15.172578481+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-011"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-011"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:15.523685404+00:00
-  updated: 2026-07-05T09:36:15.523685404+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-013"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-013"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:15.616419421+00:00
-  updated: 2026-07-05T09:36:15.616419421+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-014"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-014"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:15.642470787+00:00
-  updated: 2026-07-05T09:36:15.642470787+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-015"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-015"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:15.712075866+00:00
-  updated: 2026-07-05T09:36:15.712075866+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-017"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-017"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:15.769563566+00:00
-  updated: 2026-07-05T09:36:15.769563566+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-018"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-018"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:15.789630144+00:00
-  updated: 2026-07-05T09:36:15.789630144+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-019"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-019"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:15.825169750+00:00
-  updated: 2026-07-05T09:36:15.825169750+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-020"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-020"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:18.065352258+00:00
-  updated: 2026-07-05T09:36:18.065352258+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-021"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-021"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:18.431951424+00:00
-  updated: 2026-07-05T09:36:18.431951424+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-023"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-023"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:18.520808101+00:00
-  updated: 2026-07-05T09:36:18.520808101+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-024"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-024"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:18.557604186+00:00
-  updated: 2026-07-05T09:36:18.557604186+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-026"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-026"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:18.641324638+00:00
-  updated: 2026-07-05T09:36:18.641324638+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-028"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-028"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:18.671658117+00:00
-  updated: 2026-07-05T09:36:18.671658117+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-029"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-029"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:18.715963340+00:00
-  updated: 2026-07-05T09:36:18.715963340+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-030"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-030"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:20.976367451+00:00
-  updated: 2026-07-05T09:36:20.976367451+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-031"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-031"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:21.314114397+00:00
-  updated: 2026-07-05T09:36:21.314114397+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-033"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-033"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:21.428858550+00:00
-  updated: 2026-07-05T09:36:21.428858550+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-034"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-034"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:21.454476838+00:00
-  updated: 2026-07-05T09:36:21.454476838+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-037"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-037"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:21.564710856+00:00
-  updated: 2026-07-05T09:36:21.564710856+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-038"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-038"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:21.595350616+00:00
-  updated: 2026-07-05T09:36:21.595350616+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-039"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-039"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:21.643393085+00:00
-  updated: 2026-07-05T09:36:21.643393085+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-040"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-040"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:23.847945799+00:00
-  updated: 2026-07-05T09:36:23.847945799+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-041"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-041"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:24.181501863+00:00
-  updated: 2026-07-05T09:36:24.181501863+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-042"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-042"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:24.290303094+00:00
-  updated: 2026-07-05T09:36:24.290303094+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-043"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-043"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:24.322774196+00:00
-  updated: 2026-07-05T09:36:24.322774196+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-044"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-044"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:24.345913672+00:00
-  updated: 2026-07-05T09:36:24.345913672+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-045"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-045"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:24.415529365+00:00
-  updated: 2026-07-05T09:36:24.415529365+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-047"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-047"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:24.456364340+00:00
-  updated: 2026-07-05T09:36:24.456364340+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-048"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-048"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:24.481703960+00:00
-  updated: 2026-07-05T09:36:24.481703960+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-049"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-049"
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-07-05T09:36:24.521908719+00:00
-  updated: 2026-07-05T09:36:24.521908719+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-050"
-  github_issue: null
-  item_type: task
-  title: "New task: \e[36mPILLAR1-050"
-  status: inprogress
-  priority: medium
+  title: Anchor the ci.yml compute-step pass check (kill the '10 failed' substring bypass)
+  status: planned
+  priority: critical
   assigned_to: null
-  created: 2026-07-05T09:36:26.713570138+00:00
-  updated: 2026-07-05T09:36:26.713570138+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - 'ci.yml compute step pass check is anchored (e.g. grep -q ''; 0 failed;'' AND requires a ''test result: ok.'' line) so a partial-failure run cannot merge green.'
+  - 'RED-turning mutation: add 10 `assert!(false)` tests to aprender-compute --lib on a scratch branch — workspace-test MUST fail (today it exits 0 because grep ''test result.*0 failed'' substring-matches ''10 failed'').'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-051"
+  labels:
+  - infra
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-01
+  - gates-or-theater
+  notes: 'The per-PR enforcement backbone is bypassable — every other gate''s credibility transits this compute-step pass check; one-line fix. Workflow: ticket -> fix/ci-compute-pass-grep -> PR -> ci/gate (small-CI-edit class, pre-authorized). Source: docs/specifications/fable-architectural-review.md §7b ev_rank 1.'
+- id: PMAT-F2-DECODE-PHASE-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-051"
-  status: inprogress
-  priority: medium
+  title: Extend the GPU first-token probe to multi-step decode through the production prefill mode
+  status: planned
+  priority: high
   assigned_to: null
-  created: 2026-07-05T09:36:27.052440186+00:00
-  updated: 2026-07-05T09:36:27.052440186+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - validate_gpu_first_token is extended with >=8 greedy decode steps executed through the SAME prefill mode production selects, per-step argmax + cosine>=0.95 vs CPU; new FALSIFY-CPU-GPU-007 in apr-cpu-vs-gpu-output-parity-v1.yaml.
+  - 'RED-turning mutation: corrupt the batched-prefill KV scatter (or truncate the cache at decode step 4) — the probe MUST reject; today it accepts because it validates only serial prefill (BATCHED_PREFILL still default on sm_89).'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-052"
+  labels:
+  - pillar-4
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-03
+  - gates-or-theater
+  notes: 'The #1864 remediation probe validates only serial prefill; generate_2.rs:246-268 documents in-code that batched-prefill decode corruption (PMAT-810 ''CertainlyCertainly'') ships through it silently. Workflow: ticket -> branch -> PR -> ci/gate; verify on cuda-nightly both silicon legs. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 3.'
+- id: PMAT-QA-FMTPARITY-DECODE-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-052"
-  status: inprogress
-  priority: medium
+  title: 'Give apr qa format_parity a real decode path (it is currently a #1864 clone)'
+  status: planned
+  priority: high
   assigned_to: null
-  created: 2026-07-05T09:36:27.167971861+00:00
-  updated: 2026-07-05T09:36:27.167971861+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - The format_parity gate greedy-decodes >=64 tokens per format via the cache path with per-step argmax equality (near-tie cosine >=0.98 exemption); qwen-story B2 gains a GGUF leg so the gate actually executes daily.
+  - 'RED-turning mutation: zero the SafeTensors-side KV write at decode step 32 — apr qa MUST exit 5; today it stays green because the gate is one prefill forward + single final-position argmax, zero decode steps.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-054"
+  labels:
+  - pillar-4
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-04
+  - gates-or-theater
+  notes: 'apr qa''s format_parity gate (the tool the doctrine says to reach for FIRST) is a literal #1864 clone; cross-format cached-decode drift is invisible to it. Workflow: ticket -> branch -> PR -> ci/gate. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 4.'
+- id: FALSIFY-CUDA-NF4-TRAIN-TRAJECTORY-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-054"
-  status: inprogress
-  priority: medium
+  title: GPU NF4 training trajectory gate (>=20 optimizer steps vs CPU oracle) — kill the step-0-only asymmetry
+  status: planned
+  priority: high
   assigned_to: null
-  created: 2026-07-05T09:36:27.198309270+00:00
-  updated: 2026-07-05T09:36:27.198309270+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - '>=20 real optimizer steps GPU vs NF4-matched CPU oracle (identical data/lr); per-step |dLoss| within band AND total decrease >= X nats by step 20; wired into cuda-nightly.yml.'
+  - 'RED-turning mutation: freeze the CUDA Adam t counter at 1 — red by step 3; the current step-0 gate (parity_probe.rs:186, no optimizer step ever taken) stays green forever while CPU has an enforced 400-step trajectory (train_to_loss_tests.rs).'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-055"
+  labels:
+  - pillar-3
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-05
+  - gates-or-theater
+  notes: 'GPU training is gated at step 0 only; #2251-class backward/stream bugs are structurally invisible. GROUNDED 2026-07-05: CONFIRMED still actionable (parity_probe.rs is forward-only, no backward/optimizer; 400-step CPU trajectory exists; no GPU trajectory test). Workflow: ticket -> branch -> PR -> ci/gate; nightly proof on both silicon. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 5.'
+- id: PMAT-SERVE-MULTITURN-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-055"
-  status: inprogress
-  priority: medium
+  title: Genuine multi-turn serve gates (3-turn /api/chat + streaming + real template engine)
+  status: planned
+  priority: high
   assigned_to: null
-  created: 2026-07-05T09:36:27.292914562+00:00
-  updated: 2026-07-05T09:36:27.292914562+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - '(a) ollama_http_compat gains a 3-turn /api/chat sequence + a stream:true request asserting >=2 chunks then done:true (per-PR at ci.yml:317); (b) FALSIFY-CHAT-008 rewritten to invoke the real chat_template engine; (c) qwen-story B6b: 2 follow-up requests to the same server.'
+  - 'RED-turning mutation: handler drops all-but-last message -> (a) red; swap two turns pre-render -> (b) red; kill KV reset between requests -> (c) red. Today every serve gate samples one request/one turn and FALSIFY-CHAT-008 is a string tautology that never calls the template engine.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-058"
+  labels:
+  - pillar-4
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-06
+  - gates-or-theater
+  notes: 'Multi-turn KV/template accumulation is the #1864 gibberish vector and has no genuine gate. Workflow: (a)/(b) per-PR; (c) rides qwen-story-daily; ci.yml:317 is ONE physical line — consolidate edits in one PR. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 6.'
+- id: PMAT-DRIFT-GATES-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-058"
-  status: inprogress
-  priority: medium
+  title: Make the claims-as-contract layer actually enforce (README/book/CLI drift caught on the offending PR)
+  status: planned
+  priority: high
   assigned_to: null
-  created: 2026-07-05T09:36:27.355929023+00:00
-  updated: 2026-07-05T09:36:27.355929023+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - check_readme_claims.sh (or an extended readme_contract test) runs per-PR; book.yml + book-contracts.yml triggers extended to crates/apr-cli/src/**; README/CLAUDE.md counts corrected (contracts, ~83.5k tests, 82 crates).
+  - 'RED-turning mutation: PR changing the crates/ dir count without a README edit -> red; PR adding a clap subcommand without a book chapter -> red on THAT PR, not the next book PR. Today the readme-claims checker is in zero workflows despite status:''enforced'', and README 1331 != tree 1460.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-059"
+  labels:
+  - infra
+  - contract
+  - fable-review-2026-07-05
+  - ev-rank-07
+  - gates-or-theater
+  notes: 'The claims-as-contract layer is live-proven theater; the book/CLI parity path is filtered so exactly the drift it exists to catch bypasses it. Workflow: ticket -> branch -> PR -> ci/gate; small-CI-edit class. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 7.'
+- id: APR-ANTHROPIC-MSGS-INTEGRITY-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-059"
-  status: inprogress
+  title: Ship Anthropic-compatible /v1/messages WITH a falsification-gated tool-call-integrity contract
+  status: planned
   priority: medium
   assigned_to: null
-  created: 2026-07-05T09:36:27.400676146+00:00
-  updated: 2026-07-05T09:36:27.400676146+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - 'apr serve exposes an Anthropic-compatible /v1/messages (+ count_tokens); contract apr-anthropic-messages-v1.yaml with a falsifier: tool_call id/structure preserved byte-exact across >=3 turns incl. the #2245 salvage-parser path.'
+  - 'RED-turning mutation: drop the tool_call id remapping on turn 2 -> the falsifier MUST reject.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-060"
+  labels:
+  - pillar-5
+  - beat
+  - fable-review-2026-07-05
+  - ev-rank-09
+  - gates-or-theater
+  notes: 'mistral.rs ships /v1/messages + agent loop with ZERO correctness contracts; P5''s defensible ground is provable tool-call integrity — a beat nobody claims. Feeds APR-ANTIGRAVITY-PARITY-001 already atop the planned queue. Workflow: ticket -> branch -> PR -> ci/gate. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 9.'
+- id: PMAT-GNB-SPEED-DEFENSE-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-060"
-  status: inprogress
+  title: Defend the GaussianNB speed beat (decaying 4.9x -> 2.12x toward its 2.0x gate)
+  status: planned
   priority: medium
   assigned_to: null
-  created: 2026-07-05T09:36:29.578745587+00:00
-  updated: 2026-07-05T09:36:29.578745587+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - Regression bisected to a commit or attributed to environment (sklearn 1.9 speedup / allocator / ln-hoist erosion); margin restored to >=3x measured OR the contract honestly re-pinned with a dated measurement; then 5 consecutive green nightlies.
+  - 'RED-turning mutation: (defensive) the beat-speed-nightly GaussianNB leg must return to a durable green margin; red 07-03/07-04 nightlies are the current RED signal.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-061"
+  labels:
+  - pillar-1
+  - beat
+  - fable-review-2026-07-05
+  - ev-rank-10
+  - gates-or-theater
+  notes: 'A LIVE beat decaying toward its own gate; an untriaged decay becomes a flake, then a deleted gate — five-whys before it flips. Workflow: ticket -> branch -> PR -> ci/gate. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 10.'
+- id: PMAT-CUDA-NIGHTLY-PROBATIVE-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-061"
-  status: inprogress
+  title: Make cuda-nightly greens probative (distinct skip conclusion + GQA-64/AdamW/NF4 falsifiers)
+  status: planned
   priority: medium
   assigned_to: null
-  created: 2026-07-05T09:36:29.916636678+00:00
-  updated: 2026-07-05T09:36:29.916636678+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - Skip nights emit a distinct conclusion (neutral/skipped + weekly skip-rate report, alert >50%); the lane adopts gqa_attention_parity extended to >=64 cached positions, >=10-step AdamW parity, and NF4 double-roundtrip idempotence.
+  - 'RED-turning mutation: stride the GPU cache by q_dim (the PMAT-749 bug) -> red by step 8; freeze bias correction -> red by step 3; perturb absmax on roundtrip 2 -> red. Today gqa horizon=2 positions, gpu_cpu_parity.rs is assertion-free, both unwired.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-063"
+  labels:
+  - pillar-3
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-11
+  - gates-or-theater
+  notes: 'Yield-to-training turns busy-GPU nights into green no-ops (non-probative greens). GROUNDED 2026-07-05: CONFIRMED — 2-position horizon, assertion-free _cuda_model parity test, neither wired into any workflow. Workflow: small-CI-edit class; verify a real (non-skip) run on both legs. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 11.'
+- id: PMAT-CASEFILE-MECH-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-063"
-  status: inprogress
+  title: 'Mechanize the unmechanized case files (#153 format-detection bytes, #1599 apr-cli optional dep)'
+  status: planned
   priority: medium
   assigned_to: null
-  created: 2026-07-05T09:36:30.058459328+00:00
-  updated: 2026-07-05T09:36:30.058459328+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - '#153: a regression test asserting format detection reads <=8 bytes + a bind-before-ready ordering test; #1599: a CI step asserting `cargo tree -p aprender --no-default-features -e normal` contains no apr-cli.'
+  - 'RED-turning mutation: swap the 8-byte read for std::fs::read -> #153 test red; make apr-cli non-optional -> #1599 step red. Today a refactor reintroducing either bug passes every gate.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-064"
+  labels:
+  - cross-cutting
+  - contract
+  - fable-review-2026-07-05
+  - ev-rank-12
+  - gates-or-theater
+  notes: 'Doctrine 7''s corpus claim is overstated: #153 and #1599 are CLOSED-BUT-UNMECHANIZED (zero regression artifacts). Workflow: ticket -> branch -> PR -> ci/gate. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 12.'
+- id: PMAT-MACOS-WGPU-NIGHTLY-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-064"
-  status: inprogress
+  title: Execute macOS/Metal tests in the nightly (currently build-only, T5 competitive gap)
+  status: planned
   priority: medium
   assigned_to: null
-  created: 2026-07-05T09:36:30.079771280+00:00
-  updated: 2026-07-05T09:36:30.079771280+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - nightly.yml macOS aarch64 leg adds a --features wgpu build + `cargo test -p aprender-compute --lib --features gpu`; the macOS METAL assertion (device/mod.rs:500) executes.
+  - 'RED-turning mutation: cfg-gate out Metal backend registration -> the macOS test leg fails.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-065"
+  labels:
+  - infra
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-13
+  - gates-or-theater
+  notes: 'T5: the incumbent''s fastest 2026 platform (Ollama MLX ~2x decode, Gemma4 +90%) vs zero macOS test execution here; the Metal/wgpu path is never compiled on Apple hardware. The nightly macOS lane already exists. Workflow: small-CI-edit class; GitHub-hosted macos-latest, no fleet dependency. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 13.'
+- id: PMAT-MSRV-GATE-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-065"
-  status: inprogress
+  title: Add an MSRV (rust-version=1.89) PR-blocking gate — CI currently builds on stable/1.93
+  status: planned
   priority: medium
   assigned_to: null
-  created: 2026-07-05T09:36:30.179115275+00:00
-  updated: 2026-07-05T09:36:30.179115275+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - 'A PR-blocking job: dtolnay/rust-toolchain@1.89 + `cargo check --workspace`; per-crate overrides reconciled (aprender-train 1.87, aprender-graph 1.75).'
+  - 'RED-turning mutation: use a 1.93-only std API -> the MSRV job fails. Today it merges green and breaks `cargo install aprender` for 1.89 users.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-066"
+  labels:
+  - infra
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-14
+  - gates-or-theater
+  notes: 'rust-version=1.89 is a published contract cargo enforces on every downstream install, but CI never verifies it; 4-line job. Workflow: small-CI-edit class. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 14.'
+- id: PMAT-PUBLISH-POLICY-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-066"
-  status: inprogress
+  title: Reconverge publish doctrine and practice (crates.io 8 versions/14 days behind, release.yml deleted)
+  status: blocked
   priority: medium
   assigned_to: null
-  created: 2026-07-05T09:36:30.223708718+00:00
-  updated: 2026-07-05T09:36:30.223708718+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - 'CLEAN-ROOM GATE FIRST: a `cargo publish --dry-run --no-verify` cascade preflight (per the dev-dep-cycle rules) recorded green; THEN either cascade v0.59.x to crates.io OR a written policy in ROADMAP.md designating GH releases as the channel; CLAUDE.md''s stale ''release.yml: automated releases'' claim fixed either way.'
+  - 'RED-turning mutation: (policy) the preflight artifact must exist before any publish; a publish without it is the RED condition.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-067"
+  labels:
+  - infra
+  - infra
+  - fable-review-2026-07-05
+  - ev-rank-15
+  - gates-or-theater
+  notes: 'BLOCKED_BY: operator decision (publish authorization). T7 fired: doctrine 5 declares clean-room publishability a HARD release gate while crates.io is 8 versions/14 days behind with zero automation. NOTE: publish skipped since v0.51 by operator choice; this item is the deliberately operator-gated one. Workflow: preflight -> operator GO/NO-GO -> cascade; never publish without the preflight artifact. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 15.'
+- id: PMAT-MUTANTS-FULLTREE-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-067"
-  status: inprogress
-  priority: medium
+  title: Weekly full-tree mutation sweep (mutation is currently diff-scoped PR-only)
+  status: planned
+  priority: low
   assigned_to: null
-  created: 2026-07-05T09:36:30.246637690+00:00
-  updated: 2026-07-05T09:36:30.246637690+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - A weekly scheduled sharded `cargo mutants -- --lib` (round-robin N crates/night within a time budget) auto-filing an issue listing surviving mutants; first report produced.
+  - 'RED-turning mutation: the surviving-mutant list IS the RED signal; a week with new survivors outside any diff is the failure the sweep exists to surface.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-069"
+  labels:
+  - infra
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-16
+  - gates-or-theater
+  notes: 'Mutation is diff-scoped PR-only; full-tree has never been re-sampled since the push-to-main run was removed — mutation debt outside diffs compounds silently. Workflow: small-CI-edit class; clean-room runners. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 16.'
+- id: PMAT-THEATER-TRIAGE-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-069"
-  status: inprogress
-  priority: medium
+  title: Triage the ~595 unexecuted integration-test files (wire / lib-twin-verify / archive-label)
+  status: planned
+  priority: low
   assigned_to: null
-  created: 2026-07-05T09:36:30.268012857+00:00
-  updated: 2026-07-05T09:36:30.268012857+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - A committed classification manifest (wire / lib-twin-verified / archive-labeled) for all crates/*/tests files; assertion-free tests completed or deleted (gpu_cpu_parity.rs _cuda_model never compared); top-10 falsifiers wired into cuda-nightly or ci.yml:317 in ONE consolidated PR.
+  - 'RED-turning mutation: the manifest itself is the artifact; a crates/*/tests file that is neither wired, lib-twin-verified, nor archive-labeled is the RED item.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
-- id: "\e[36mPILLAR1-070"
+  labels:
+  - infra
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-17
+  - gates-or-theater
+  notes: 'BLOCKED_BY: PMAT-CUDA-NIGHTLY-PROBATIVE-001 (shares the lane). ~595 unexecuted integration-test files (incl. the falsify_*/parity corpus and the assertion-free gpu_cpu_parity.rs) read as coverage but enforce nothing. Workflow: consolidate ALL ci.yml:317 edits into one PR to avoid merge-queue conflicts (single-physical-line constraint). Source: docs/specifications/fable-architectural-review.md §7b ev_rank 17.'
+- id: PMAT-COVERAGE-FLOOR-001
   github_issue: null
   item_type: task
-  title: "New task: \e[36mPILLAR1-070"
-  status: inprogress
-  priority: medium
+  title: Enforce the >=95% coverage floor (currently enforced nowhere)
+  status: blocked
+  priority: low
   assigned_to: null
-  created: 2026-07-05T09:36:32.461770430+00:00
-  updated: 2026-07-05T09:36:32.461770430+00:00
-  spec: null
-  acceptance_criteria: []
+  created: 2026-07-05 00:00:00+00:00
+  updated: 2026-07-05 00:00:00+00:00
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - sovereign-ci coverage_min + test_workspace set for aprender (or coverage-nightly promoted to fail below a committed baseline).
+  - 'RED-turning mutation: delete a tested module''s tests -> the coverage job goes red.'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
+  labels:
+  - infra
+  - gate
+  - fable-review-2026-07-05
+  - ev-rank-18
+  - gates-or-theater
+  notes: 'BLOCKED_BY: paiml/.github sovereign-ci reusable workflow (cross-repo change). The >=95% standard is enforced nowhere (vacuous root-facade coverage job, coverage_min unset, coverage-nightly report-mode) — ranked last because the coverage+contracts co-evolution rule makes a naive floor counterproductive without scoped work. Workflow: cross-repo — coordinate with the sovereign-ci owner before edit. Source: docs/specifications/fable-architectural-review.md §7b ev_rank 18.'
