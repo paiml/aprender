@@ -6,6 +6,41 @@ metadata:
   references:
   - 'Scikit-learn: Preprocessing data (StandardScaler, MinMaxScaler)'
   - Bishop (2006) Pattern Recognition and Machine Learning, §1.1
+lean_module: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Preprocessing/Normalization.lean
+verification_summary:
+  total_obligations: 6
+  l2_property_tested: 6
+  l3_kani_proved: 8
+  l4_lean_proved: 5
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  mathlib_imports: true
+  mathlib_note: >-
+    5 analytic obligations proved sorry-free WITH Mathlib over ℝ / Finset sums
+    in Preprocessing/Normalization.lean (standardization z = (x-μ)/σ modelled on
+    an index Finset s, μ = mean s x, σ > 0). Verify from
+    crates/aprender-contracts-staging/lean:
+    `lake env lean ProvableContracts/Theorems/Preprocessing/Normalization.lean`
+    (exit 0, zero `sorry`). The 6th obligation OBLIG-SCALER-F64-ACCUM is an IEEE-754
+    f64-vs-f32 accumulator-drift (catastrophic-cancellation) claim — a runtime
+    floating-point-precision property that is not an analytic identity over ℝ and
+    cannot be stated in Lean; it is marked l4_not_applicable and stays enforced by
+    the runtime falsifier FALSIFY-PP-007.
+  lean_proved_obligations:
+  - StandardScaler zero mean (standardize_mean_zero — mean(z)=0 via Σ(xᵢ-μ)=Σxᵢ-n·μ=0,
+    Finset.sum_sub_distrib + sum_const; standardize_sum_centered_zero) [mathlib]
+  - StandardScaler unit variance (standardize_variance_one — Var(z)=(Σzᵢ²)/n=Var(x)/σ²=1
+    when σ²=Var(x), using mean(z)=0 then Σ((xᵢ-μ)/σ)²=(Σ(xᵢ-μ)²)/σ²=n) [mathlib]
+  - StandardScaler inverse (standardize_roundtrip — ((x-μ)/σ)·σ+μ = x exact roundtrip,
+    left-inverse of the affine transform for σ≠0) [mathlib]
+  - MinMaxScaler extremes (minmax_scale_min: scale(xmin)=lo numerator-vanishes;
+    minmax_scale_max: scale(xmax)=hi ratio=1 for xmax≠xmin) [mathlib]
+  - MinMaxScaler bounded (minmax_scale_bounded — xmin≤x≤xmax, xmin<xmax, lo≤hi ⟹
+    t=(x-xmin)/(xmax-xmin)∈[0,1], scale=t·(hi-lo)+lo ∈ [lo,hi]) [mathlib]
+  lean_not_applicable_obligations:
+  - 'OBLIG-SCALER-F64-ACCUM: f64-vs-f32 accumulator drift under catastrophic
+    cancellation (~1e6 magnitude, sub-unit variance) — IEEE-754 runtime floating-point
+    precision, not an analytic identity over ℝ; enforced by FALSIFY-PP-007'
 equations:
   standard_scaler:
     formula: z = (x - μ) / σ where μ = mean(X), σ = std(X)
