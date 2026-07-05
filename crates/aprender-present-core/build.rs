@@ -119,7 +119,10 @@ fn emit_presentar_binding_env() {
     let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("..").join("..").join("..").join("provable-contracts")
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("provable-contracts")
         .join("contracts")
         .join("presentar")
         .join("binding.yaml");

@@ -271,7 +271,10 @@ fn main() {
 fn emit_contract_bindings() {
     // Re-run if binding.yaml changes
     let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..").join("..").join("..").join("provable-contracts")
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("provable-contracts")
         .join("contracts")
         .join("realizar")
         .join("binding.yaml");
@@ -490,7 +493,10 @@ fn find_binding_note<'a>(bindings: &'a BindingFile, var_name: &str) -> &'a str {
 /// PMAT-228: Read architecture-requirements-v1.yaml and generate `arch_requirements.rs`.
 fn generate_arch_requirements_file() {
     let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..").join("..").join("..").join("provable-contracts")
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("provable-contracts")
         .join("contracts")
         .join("architecture-requirements-v1.yaml");
 
@@ -573,7 +579,10 @@ struct ArchEntry {
 /// GH-323: Read arch-constraints-v1.yaml and generate `arch_constraints_generated.rs`.
 fn generate_arch_constraints_file() {
     let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..").join("..").join("..").join("provable-contracts")
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("provable-contracts")
         .join("contracts")
         .join("arch-constraints-v1.yaml");
 
@@ -790,7 +799,10 @@ fn generate_tensor_names_file() {
     // For now, always use the fallback file.
     // YAML-to-codegen pipeline from tensor-names-v1.yaml is planned (GH-311).
     let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..").join("..").join("..").join("provable-contracts")
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("provable-contracts")
         .join("contracts")
         .join("tensor-names-v1.yaml");
 

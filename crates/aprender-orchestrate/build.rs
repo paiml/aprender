@@ -20,7 +20,10 @@ struct Binding {
 
 fn main() {
     let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..").join("..").join("..").join("provable-contracts")
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("provable-contracts")
         .join("contracts")
         .join("batuta")
         .join("binding.yaml");
