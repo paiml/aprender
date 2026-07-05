@@ -18,7 +18,16 @@ equations:
     preconditions:
     - indices.iter().all(|&i| i < vocab_size)
     - indices.len() > 0
-    lean_theorem: Theorems.Absolute_Position_Add
+    lean_theorem: Theorems.AbsolutePosition.Core
+  sinusoidal_position:
+    formula: PE(pos, 2i) = sin(pos / 10000^(2i/d)); PE(pos, 2i+1) = cos(pos / 10000^(2i/d))
+    domain: pos in R, i in {0, ..., d/2 - 1}, d even
+    codomain: PE(pos, j) in [-1, 1]
+    invariants:
+    - -1 <= PE(pos, j) <= 1 for all pos, j (sin/cos range)
+    - PE(0, 2i) = 0 and PE(0, 2i+1) = 1 (known zero-position value)
+    - PE(pos+k) is a linear rotation of PE(pos) by angle k*omega(i) (angle addition)
+    lean_theorem: Theorems.AbsolutePosition.Core
 proof_obligations:
 - type: invariant
   property: Shape preservation
@@ -36,6 +45,18 @@ proof_obligations:
   property: Finite output
   formal: is_finite(token_embed[t]) and is_finite(pos_embed[t]) implies is_finite(output[t])
   applies_to: all
+- type: bound
+  property: Sinusoidal component bound
+  formal: -1 <= PE(pos, j) <= 1 for all pos, j (Real.sin/cos range)
+  applies_to: sinusoidal_position
+- type: invariant
+  property: Zero-position value
+  formal: PE(0, 2i) = 0 and PE(0, 2i+1) = 1
+  applies_to: sinusoidal_position
+- type: linearity
+  property: Relative-position rotation
+  formal: PE(pos+k) = R(k*omega(i)) . PE(pos) — linear rotation via angle addition (sin_add/cos_add)
+  applies_to: sinusoidal_position
 kernel_structure:
   phases:
   - name: lookup_position_embedding
@@ -83,6 +104,21 @@ falsification_tests:
   prediction: output is finite for all finite inputs
   test: proptest with random finite token_embed and pos_embed values
   if_fails: Float addition producing NaN or Inf from finite inputs
+- id: FALSIFY-AP-005
+  rule: Sinusoidal component bound
+  prediction: every PE(pos, j) component lies in [-1, 1]
+  test: proptest with random pos and dimension index, assert component in [-1, 1]
+  if_fails: Sinusoidal encoding produces a component outside sin/cos range
+- id: FALSIFY-AP-006
+  rule: Zero-position value
+  prediction: PE(0, 2i) = 0 and PE(0, 2i+1) = 1
+  test: proptest over dimension indices at pos = 0, assert even = 0 and odd = 1
+  if_fails: Zero-position encoding is not (0, 1) per even/odd component
+- id: FALSIFY-AP-007
+  rule: Relative-position rotation
+  prediction: PE(pos+k) equals the angle-addition rotation of PE(pos) by k*omega(i)
+  test: proptest with random pos, k, i; assert sin_add/cos_add rotation identity holds
+  if_fails: Shifted encoding is not a linear rotation of the base encoding
 kani_harnesses:
 - id: KANI-AP-001
   obligation: AP-INV-001
@@ -129,3 +165,23 @@ qa_gate:
   - finite_output
   pass_criteria: All 4 falsification tests pass + Kani harnesses verify
   falsification: Replace addition with multiplication to break additive identity
+verification_summary:
+  total_obligations: 7
+  l2_property_tested: 7
+  l3_kani_proved: 4
+  l4_lean_proved: 5
+  l4_sorry_count: 0
+  l4_not_applicable: 2
+# L4 leveling justification (strict per-obligation, proved + N/A == total):
+#   PROVED in Lean (ProvableContracts.Theorems.AbsolutePosition.Core, sorry-free,
+#   verified via `lake env lean` exit 0):
+#     1. Shape preservation      -> abs_add_shape   (elementwise, Fin n preserved)
+#     2. Additive identity       -> abs_add_identity (add_zero)
+#     3. Sinusoidal comp. bound  -> pe_even_bound / pe_odd_bound (Real.sin/cos in [-1,1])
+#     4. Zero-position value     -> pe_even_at_zero / pe_odd_at_zero (sin 0 = 0, cos 0 = 1)
+#     5. Relative-pos. rotation  -> pe_even_rotation / pe_odd_rotation (sin_add/cos_add)
+#   GENUINELY NOT APPLICABLE (runtime/IEEE — no analytic identity to prove):
+#     6. Max position bound  -> caller-supplied index precondition, enforced by a
+#        runtime `assert!(seq_len <= max_pos)`; constrains inputs, not an operation identity.
+#     7. Finite output       -> IEEE-754 f32 semantics (finite + finite may overflow to Inf);
+#        vacuous over Real (all reals finite), so no analytic theorem exists.

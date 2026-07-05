@@ -6,6 +6,7 @@
 -- AdamW optimizer
 -- Discrete Fourier Transform
 import ProvableContracts.Basic
+import ProvableContracts.Defs.AbsolutePosition
 import ProvableContracts.Defs.AdamW
 import ProvableContracts.Defs.Alibi
 import ProvableContracts.Defs.BLAS
@@ -31,8 +32,10 @@ import ProvableContracts.Defs.Sigmoid
 import ProvableContracts.Defs.Softmax
 import ProvableContracts.Defs.Sparse
 import ProvableContracts.Defs.Transpose
+import ProvableContracts.Theorems.AbsolutePosition.Core
 import ProvableContracts.Theorems.AdamW.WeightDecay
 import ProvableContracts.Theorems.Alibi.Basic
+import ProvableContracts.Theorems.Alibi.Slopes
 import ProvableContracts.Theorems.Attention.ScaledDotProduct
 import ProvableContracts.Theorems.Attention.Scaling
 import ProvableContracts.Theorems.BLAS.SyrkSymmetric
@@ -54,6 +57,7 @@ import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
 import ProvableContracts.Theorems.CrossEntropy.NonNegativity
 import ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
 import ProvableContracts.Theorems.Elementwise.AddCommutative
+import ProvableContracts.Theorems.Elementwise.LeakyReLU
 import ProvableContracts.Theorems.Elementwise.MulScalarAssoc
 import ProvableContracts.Theorems.Elementwise.ReLUNonNeg
 import ProvableContracts.Theorems.Embedding.Bounds
@@ -67,6 +71,7 @@ import ProvableContracts.Theorems.FP8.Interchange
 import ProvableContracts.Theorems.GEMV.Correctness
 import ProvableContracts.Theorems.Gelu.GeluMono
 import ProvableContracts.Theorems.Gelu.GeluSign
+import ProvableContracts.Theorems.Gelu.GeluBounds
 import ProvableContracts.Theorems.Gelu.GeluZero
 import ProvableContracts.Theorems.Gqa.ConvexBound
 import ProvableContracts.Theorems.Gqa.Distribution
@@ -93,6 +98,9 @@ import ProvableContracts.Theorems.Sigmoid.SigmoidBounded
 import ProvableContracts.Theorems.Sigmoid.SigmoidSymmetry
 import ProvableContracts.Theorems.Sigmoid.SiluZero
 import ProvableContracts.Theorems.Sigmoid.SwigluZero
+import ProvableContracts.Theorems.Sigmoid.SiluLowerBound
+import ProvableContracts.Theorems.Sigmoid.SiluMonotone
+import ProvableContracts.Theorems.Sigmoid.SwigluGating
 import ProvableContracts.Theorems.Softmax.Bounded
 import ProvableContracts.Theorems.Softmax.Monotonicity
 import ProvableContracts.Theorems.Softmax.NonNegativity
