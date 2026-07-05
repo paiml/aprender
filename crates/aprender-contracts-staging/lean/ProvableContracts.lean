@@ -31,6 +31,7 @@ import ProvableContracts.Defs.Sparse
 import ProvableContracts.Defs.Transpose
 import ProvableContracts.Theorems.AdamW.WeightDecay
 import ProvableContracts.Theorems.Attention.ScaledDotProduct
+import ProvableContracts.Theorems.Attention.Scaling
 import ProvableContracts.Theorems.BLAS.SyrkSymmetric
 import ProvableContracts.Theorems.BatchNorm.Centering
 import ProvableContracts.Theorems.BatchNorm.DenominatorPositive

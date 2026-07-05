@@ -21,7 +21,7 @@ equations:
     preconditions:
     - a.len() > 0
     - b.len() > 0
-    lean_theorem: Theorems.Scaled_Dot_Product
+    lean_theorem: Theorems.Attention
   variance_preservation:
     formula: Var(score_ij) ≈ 1 when Q,K ~ N(0,1)
     domain: Entries of Q and K i.i.d. standard normal
@@ -32,7 +32,7 @@ equations:
     preconditions:
     - q.len() > 0
     - k.len() == v.len()
-    lean_theorem: Theorems.Variance_Preservation
+    lean_theorem: Theorems.Attention
   softmax_saturation:
     formula: entropy(softmax(scores)) → 0 as max(scores) → ∞
     domain: Pre-softmax attention scores
@@ -54,7 +54,7 @@ equations:
     preconditions:
     - input.iter().all(|v| v.is_finite())
     - input.len() > 0
-    lean_theorem: Theorems.Score_Bound_With_Qknorm
+    lean_theorem: Theorems.Attention
   attention_entropy:
     formula: H(attn_i) = -Σ_j attn_ij * log(attn_ij)
     domain: Entropy of attention distribution for query i
@@ -65,7 +65,7 @@ equations:
     preconditions:
     - q.len() > 0
     - k.len() == v.len()
-    lean_theorem: Theorems.Attention_Entropy
+    lean_theorem: Theorems.Attention
   numerical_stability:
     formula: softmax(x - max(x)) = softmax(x)
     domain: Max-subtraction trick for numerical stability
@@ -76,7 +76,7 @@ equations:
     preconditions:
     - q.len() > 0
     - k.len() == v.len()
-    lean_theorem: Theorems.Numerical_Stability
+    lean_theorem: Theorems.Attention
 proof_obligations:
 - type: invariant
   property: Score shape correctness
@@ -207,3 +207,18 @@ qa_gate:
   - numerical_stability
   pass_criteria: All 7 falsification tests pass
   falsification: Remove 1/√d_k scaling to trigger softmax saturation
+verification_summary:
+  total_obligations: 7
+  l2_property_tested: 7
+  l3_kani_proved: 0
+  l4_lean_proved: 6
+  l4_sorry_count: 0
+  l4_not_applicable: 0
+  # Honest ceiling: 6/7 analytic obligations discharged in verified Lean
+  # (crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Attention/Scaling.lean,
+  # zero `sorry`). The 7th obligation, "Scaling prevents saturation"
+  # (H(softmax(QKᵀ/√d_k)) > H(softmax(QKᵀ)) for large d_k), is a genuine analytic
+  # claim (strict monotonicity of softmax entropy in temperature, dH/dT>0) that is
+  # left UNCOVERED (analytic-unproven), NOT marked N/A. Because
+  # l4_lean_proved(6) + l4_not_applicable(0) < total(7), the contract honestly
+  # remains L3 — a truthful L3, not a manufactured L4.
