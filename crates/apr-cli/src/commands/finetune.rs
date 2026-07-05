@@ -1384,27 +1384,64 @@ fn build_distributed_config(
     bind: Option<&str>,
     coordinator: Option<&str>,
     expect_workers: Option<usize>,
-) -> Result<()> {
-    if role.is_some() {
-        return Err(CliError::ValidationFailed(
-            "Distributed training (--role) requires unreleased entrenar APIs. \
-             Use single-machine training for now."
-                .to_string(),
-        ));
+) -> Result<Option<entrenar::finetune::DistributedConfig>> {
+    let Some(role_str) = role else {
+        // GH-523: Warn when distributed flags are provided without --role
+        if bind.is_some() {
+            eprintln!("Warning: --bind requires --role for distributed training. Flag ignored.");
+        }
+        if coordinator.is_some() {
+            eprintln!(
+                "Warning: --coordinator requires --role for distributed training. Flag ignored."
+            );
+        }
+        if expect_workers.is_some() {
+            eprintln!(
+                "Warning: --expect-workers requires --role for distributed training. Flag ignored."
+            );
+        }
+        return Ok(None);
+    };
+
+    match role_str.to_lowercase().as_str() {
+        "coordinator" => {
+            let bind_addr = bind
+                .ok_or_else(|| {
+                    CliError::ValidationFailed(
+                        "--bind is required for coordinator role".to_string(),
+                    )
+                })?
+                .parse()
+                .map_err(|e| CliError::ValidationFailed(format!("Invalid bind address: {e}")))?;
+            let expected = expect_workers.ok_or_else(|| {
+                CliError::ValidationFailed(
+                    "--expect-workers is required for coordinator role".to_string(),
+                )
+            })?;
+            Ok(Some(entrenar::finetune::DistributedConfig::coordinator(
+                bind_addr, expected,
+            )))
+        }
+        "worker" => {
+            let coord_addr = coordinator
+                .ok_or_else(|| {
+                    CliError::ValidationFailed(
+                        "--coordinator is required for worker role".to_string(),
+                    )
+                })?
+                .parse()
+                .map_err(|e| {
+                    CliError::ValidationFailed(format!("Invalid coordinator address: {e}"))
+                })?;
+            Ok(Some(entrenar::finetune::DistributedConfig::worker(
+                coord_addr,
+            )))
+        }
+        _ => Err(CliError::ValidationFailed(format!(
+            "Invalid role '{}'. Expected 'coordinator' or 'worker'.",
+            role_str
+        ))),
     }
-    // GH-523: Warn when distributed flags are provided without --role
-    if bind.is_some() {
-        eprintln!("Warning: --bind requires --role for distributed training. Flag ignored.");
-    }
-    if coordinator.is_some() {
-        eprintln!("Warning: --coordinator requires --role for distributed training. Flag ignored.");
-    }
-    if expect_workers.is_some() {
-        eprintln!(
-            "Warning: --expect-workers requires --role for distributed training. Flag ignored."
-        );
-    }
-    Ok(())
 }
 
 // =============================================================================
@@ -1579,8 +1616,8 @@ fn run_classify(
         );
     }
 
-    // Validate no distributed flags were passed (unsupported in entrenar 0.7.5)
-    build_distributed_config(role, bind, coordinator, expect_workers)?;
+    // Build distributed training config if requested
+    let distributed_config = build_distributed_config(role, bind, coordinator, expect_workers)?;
 
     if !json_output {
         display_distributed_info();
@@ -1643,6 +1680,7 @@ fn run_classify(
         checkpoint_dir: output_dir.clone(),
         seed: 42,
         log_interval: 1,
+        distributed: distributed_config,
         ..TrainingConfig::default()
     };
 

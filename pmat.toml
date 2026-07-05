@@ -27,4 +27,4 @@ warn_on_missing_docs = true
 include = ["src/**/*.rs", "crates/**/*.rs"]
 
 # Exclude patterns (generated files, build artifacts, demo code)
-exclude = ["target/**", "benches/**", "book/**", "examples/**"]
+exclude = ["target/**", "benches/**", "book/**", "examples/**", ".lake/**"]

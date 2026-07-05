@@ -1,0 +1,13 @@
+# Auto-generated from .pmat-work/__36mPMAT-604/contract.json
+name: "PMAT-604"
+metadata:
+  version: "1.0.0"
+  kind: schema
+  description: "Auto-generated work-contract for PMAT-604"
+  references:
+    - ".pmat-work/__36mPMAT-604/contract.json"
+surface: work-contract
+verification_summary:
+  target_level: L1
+  current_level: L1
+  total_obligations: 47
