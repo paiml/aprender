@@ -38,7 +38,7 @@ equations:
     - temperature.is_finite()
     postconditions:
     - output tokens are non-empty for valid prompt
-    lean_theorem: Theorems.TemperatureBounds
+    lean_theorem: Theorems.TemperatureScaling
 
   top_k_top_p_interaction:
     formula: |
@@ -62,7 +62,7 @@ equations:
     - 0.0 < top_p <= 1.0
     postconditions:
     - sampled token_id < vocab_size
-    lean_theorem: Theorems.TopKTopPInteraction
+    lean_theorem: Theorems.TopK
 
   seed_determinism:
     formula: |
@@ -140,50 +140,94 @@ proof_obligations:
   formal: 'temperature >= 0.0'
   applies_to: temperature_bounds
   lean:
-    theorem: Theorems.TemperatureBounds
-    status: sorry
+    theorem: Theorems.TemperatureScaling
+    module: ProvableContracts.Theorems.Sampling.TemperatureScaling
+    status: proved
+    notes: >
+      ANALYTIC-PROVED. tempScale_monotone / tempScale_mono_le / tempScale_preserves_argmax /
+      valid_temperature_nonneg: for a valid temperature t > 0, dividing logits by t is an
+      order-preserving rescaling, so it preserves the pairwise ordering and the argmax —
+      exactly why t -> 0+ recovers greedy decoding and why any t > 0 leaves the sampled-from
+      set intact. `valid_temperature_nonneg` records the guard `temperature >= 0.0`. Verified:
+      lake env lean ProvableContracts/Theorems/Sampling/TemperatureScaling.lean (exit 0, 0 sorry).
 - type: invariant
   property: Top-K 0 disables filtering
   formal: 'top_k == 0 => all tokens considered'
   applies_to: top_k_top_p_interaction
   lean:
-    theorem: Theorems.TopKTopPInteraction
-    status: sorry
+    theorem: Theorems.TopK
+    module: ProvableContracts.Theorems.Sampling.TopK
+    status: proved
+    notes: >
+      ANALYTIC-PROVED (structural). topk_separates: every kept token strictly dominates every
+      dropped token (top-k keeps the k largest logits, modelled by its cutoff threshold).
+      topk_zero_keeps_all: a cutoff at/below the minimum (the top_k=0 sentinel) keeps every
+      token — filtering disabled. topk_one_is_argmax: cutoff at the max keeps exactly the
+      argmax, so top_k=1 == greedy. Verified: lake env lean
+      ProvableContracts/Theorems/Sampling/TopK.lean (exit 0, 0 sorry).
 - type: invariant
   property: Same seed produces identical output
   formal: 'generate(p, s) == generate(p, s)'
   applies_to: seed_determinism
   lean:
     theorem: Theorems.SeedDeterminism
-    status: sorry
+    status: not-applicable
+    notes: >
+      GENUINE-NA (runtime/empirical). Bit-identical generation across separate process runs
+      with no external entropy leakage is a property of the concrete RNG + I/O + threading
+      pipeline, not a real-number identity. A Lean `f x = f x` reflexivity would prove nothing
+      about the runtime claim (theater), so this stays outside the Lean layer and is enforced
+      by falsification test FALSIFY-SAMP-003.
 - type: invariant
   property: Temperature must be finite (NaN/inf rejected)
   formal: '!temperature.is_finite() => Err(_)'
   applies_to: temperature_bounds
   lean:
     theorem: Theorems.TemperatureBounds
-    status: sorry
+    status: not-applicable
+    notes: >
+      GENUINE-NA (IEEE-754). The obligation is about detecting NaN / +-inf, which Lean's ℝ
+      does not model (ℝ has no NaN or infinities). `NaN <= 0.0` being false under IEEE
+      unordered semantics is precisely an IEEE-754 float fact, not a real-number theorem.
+      Enforced by falsification test FALSIFY-SAMP-007.
 - type: invariant
   property: RNG draw value is in [0, 1)
   formal: '0.0 <= lcg_state_to_unit_f32(s) < 1.0 for all s: u64'
   applies_to: seed_determinism
   lean:
     theorem: Theorems.SeedDeterminism
-    status: sorry
+    status: not-applicable
+    notes: >
+      GENUINE-NA (IEEE-754 f32 rounding). The entire content of this obligation is f32
+      round-to-nearest behaviour: the naive (state>>33)/(1<<31) maps 2^31-1 UP to 2^31 (=1.0),
+      while (state>>40)/(1<<24) keeps the numerator exact in f32 so the quotient is strictly
+      < 1.0. Lean's ℝ has no f32 rounding, so a real-number proof would NOT capture the actual
+      concern. Enforced by falsification test FALSIFY-SAMP-008.
 - type: invariant
   property: Penalty 1.0 is identity
   formal: 'apply_penalty(logits, _, 1.0, _) == logits'
   applies_to: repeat_penalty
   lean:
     theorem: Theorems.RepeatPenalty
-    status: sorry
+    module: ProvableContracts.Theorems.Sampling.RepeatPenalty
+    status: proved
+    notes: >
+      ANALYTIC-PROVED. penalty_one_identity: applyPenalty l 1 = l for every logit l (all three
+      sign branches collapse via l/1 = l, l*1 = l). penalty_reduces_positive /
+      penalty_reduces_negative strengthen it: any p >= 1 never increases a repeated token's
+      logit. Verified: lake env lean ProvableContracts/Theorems/Sampling/RepeatPenalty.lean
+      (exit 0, 0 sorry).
 - type: invariant
   property: Error results never exit 0
   formal: 'Err(_) => exit_code != 0'
   applies_to: exit_code_on_failure
   lean:
     theorem: Theorems.ExitCodeOnFailure
-    status: sorry
+    status: not-applicable
+    notes: >
+      GENUINE-NA (runtime CLI behaviour). This is a property of the real process exit code
+      emitted by the `apr` binary on error paths, not a mathematical identity. Enforced by
+      falsification tests FALSIFY-SAMP-005 / FALSIFY-SAMP-006.
 
 falsification_tests:
 - id: FALSIFY-SAMP-001
@@ -278,3 +322,22 @@ qa_gate:
   - validation
   - falsification
   pass_criteria: All 6 falsification tests pass
+
+# Level 4 (Lean-proved) climb — HONEST classification.
+#   3 ANALYTIC obligations proved in verified Lean (0 sorry):
+#     - Temperature non-negative / scaling preserves argmax (Theorems.Sampling.TemperatureScaling)
+#     - Top-K structural: keeps k largest, top_k=0 no-filter, top_k=1 = argmax (Theorems.Sampling.TopK)
+#     - Repeat-penalty 1.0 identity (Theorems.Sampling.RepeatPenalty)
+#   4 GENUINELY-NOT-APPLICABLE obligations (runtime / IEEE-754, no real-number core):
+#     - Seed bit-determinism across process runs (runtime/empirical)
+#     - Finite-temperature (NaN/inf) rejection (IEEE-754; ℝ has no NaN/inf)
+#     - RNG unit draw in [0,1) (IEEE-754 f32 rounding exactness)
+#     - Error paths exit non-zero (runtime CLI process behaviour)
+# proved (3) + not_applicable (4) == total_obligations (7); proved > 0 => L4.
+verification_summary:
+  total_obligations: 7
+  l2_property_tested: 7
+  l3_kani_proved: 5
+  l4_lean_proved: 3
+  l4_sorry_count: 0
+  l4_not_applicable: 4
