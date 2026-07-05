@@ -18,7 +18,7 @@ equations:
     preconditions:
     - indices.iter().all(|&i| i < vocab_size)
     - indices.len() > 0
-    lean_theorem: Theorems.Alibi_Bias
+    lean_theorem: Theorems.Alibi
   alibi_slopes:
     formula: m_h = 2^(-8h/H)
     domain: h in {0, ..., H - 1}, H >= 1
@@ -30,7 +30,7 @@ equations:
     preconditions:
     - indices.iter().all(|&i| i < vocab_size)
     - indices.len() > 0
-    lean_theorem: Theorems.Alibi_Slopes
+    lean_theorem: Theorems.Alibi
 proof_obligations:
 - type: bound
   property: Negative bias
@@ -52,6 +52,21 @@ proof_obligations:
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 4
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  notes: >-
+    4 of 5 obligations proved analytically in verified Lean 4
+    (ProvableContracts.Theorems.Alibi.Basic, imports Mathlib): Negative bias
+    (alibi_bias_nonpos), Slope positivity (alibi_slope_pos), Head-monotonic
+    slopes (alibi_slope_antitone), Causal consistency (alibi_causal_masks_future,
+    masking future positions to -inf = EReal bottom). Obligation 5 (SIMD matches
+    scalar within 8 ULP) is an empirical floating-point/runtime property, not an
+    analytic identity, hence l4_not_applicable.
 kernel_structure:
   phases:
   - name: compute_slopes

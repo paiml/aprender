@@ -7,8 +7,10 @@
 -- Discrete Fourier Transform
 import ProvableContracts.Basic
 import ProvableContracts.Defs.AdamW
+import ProvableContracts.Defs.Alibi
 import ProvableContracts.Defs.BLAS
 import ProvableContracts.Defs.BatchNorm
+import ProvableContracts.Defs.CMAES
 import ProvableContracts.Defs.Cholesky
 import ProvableContracts.Defs.Conv1D
 import ProvableContracts.Defs.CrossEntropy
@@ -30,6 +32,7 @@ import ProvableContracts.Defs.Softmax
 import ProvableContracts.Defs.Sparse
 import ProvableContracts.Defs.Transpose
 import ProvableContracts.Theorems.AdamW.WeightDecay
+import ProvableContracts.Theorems.Alibi.Basic
 import ProvableContracts.Theorems.Attention.ScaledDotProduct
 import ProvableContracts.Theorems.Attention.Scaling
 import ProvableContracts.Theorems.BLAS.SyrkSymmetric
@@ -37,6 +40,10 @@ import ProvableContracts.Theorems.BatchNorm.Centering
 import ProvableContracts.Theorems.BatchNorm.DenominatorPositive
 import ProvableContracts.Theorems.BatchNorm.EvalUsesRunning
 import ProvableContracts.Theorems.BatchNorm.RunningVariance
+import ProvableContracts.Theorems.CMAES.StepSizePositive
+import ProvableContracts.Theorems.CMAES.WeightsNormalized
+import ProvableContracts.Theorems.CMAES.CovarianceSymmetry
+import ProvableContracts.Theorems.CMAES.CovariancePositiveDefinite
 import ProvableContracts.Theorems.Cholesky.SPD
 import ProvableContracts.Theorems.Conv1D.Bound
 import ProvableContracts.Theorems.Conv1D.Linearity
@@ -54,12 +61,16 @@ import ProvableContracts.Theorems.Embedding.Determinism
 import ProvableContracts.Theorems.Embedding.Finite
 import ProvableContracts.Theorems.Embedding.Rows
 import ProvableContracts.Theorems.Embedding.Shape
+import ProvableContracts.Theorems.Embedding.Algebra
 import ProvableContracts.Theorems.FFT.Parseval
 import ProvableContracts.Theorems.FP8.Interchange
 import ProvableContracts.Theorems.GEMV.Correctness
 import ProvableContracts.Theorems.Gelu.GeluMono
 import ProvableContracts.Theorems.Gelu.GeluSign
 import ProvableContracts.Theorems.Gelu.GeluZero
+import ProvableContracts.Theorems.Gqa.ConvexBound
+import ProvableContracts.Theorems.Gqa.Distribution
+import ProvableContracts.Theorems.Gqa.HeadMapping
 import ProvableContracts.Theorems.LU.Existence
 import ProvableContracts.Theorems.LayerNorm.Centering
 import ProvableContracts.Theorems.LayerNorm.DenominatorPositive
