@@ -104,13 +104,14 @@ fn dispatch_serve(
     otlp_endpoint: &Option<String>,
     context_length: usize,
     no_fp8_cache: bool,
+    ollama_compat: bool,
 ) -> Result<(), CliError> {
     if let Some(ref endpoint) = otlp_endpoint {
         eprintln!("OTLP tracing enabled → {endpoint}");
         eprintln!("  Spans exported as W3C Trace Context (PMAT-485)");
     }
     let config = serve::ServerConfig {
-        port,
+        port: if ollama_compat && port == 8080 { 11434 } else { port },
         host: host.to_owned(),
         cors: !no_cors,
         metrics: !no_metrics,
@@ -125,6 +126,7 @@ fn dispatch_serve(
         otlp_endpoint: otlp_endpoint.clone(),
         context_length,
         no_fp8_cache,
+        ollama_compat,
         ..Default::default()
     };
     serve::run(file, &config)
@@ -163,6 +165,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             otlp_endpoint,
             context_length,
             no_fp8_cache,
+            ollama_compat,
         } => crate::error::resolve_model_path(file).and_then(|r| {
             dispatch_serve(
                 &r,
@@ -181,6 +184,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
                 otlp_endpoint,
                 *context_length,
                 *no_fp8_cache,
+                *ollama_compat,
             )
         }),
     }
