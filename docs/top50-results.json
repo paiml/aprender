@@ -1,0 +1,202 @@
+{
+  "antirez/deepseek-v4-gguf": {
+    "status": "fail",
+    "file": "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf"
+  },
+  "mixedbread-ai/mxbai-embed-large-v1": {
+    "status": "skip",
+    "file": null
+  },
+  "ggml-org/embeddinggemma-300M-GGUF": {
+    "status": "fail",
+    "file": "embeddinggemma-300M-Q8_0.gguf"
+  },
+  "HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive": {
+    "status": "fail (download/gated)",
+    "file": "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
+  },
+  "unsloth/Qwen3.6-27B-MTP-GGUF": {
+    "status": "fail",
+    "file": "Qwen3.6-27B-Q4_K_M.gguf"
+  },
+  "Andycurrent/Gemma-3-1B-it-GLM-4.7-Flash-Heretic-Uncensored-Thinking_GGUF": {
+    "status": "fail",
+    "file": "Gemma-3-1B-it-GLM-4.7-Flash-Heretic-Uncensored-Thinking_Q4_k_m.gguf"
+  },
+  "empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF": {
+    "status": "fail",
+    "file": "Qwythos-9B-Claude-Mythos-5-1M-MTP-Q4_K_M.gguf"
+  },
+  "unsloth/gemma-4-26B-A4B-it-GGUF": {
+    "status": "fail",
+    "file": "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"
+  },
+  "unsloth/gemma-4-12b-it-GGUF": {
+    "status": "fail",
+    "file": "gemma-4-12b-it-Q4_K_M.gguf"
+  },
+  "unsloth/Qwen3.5-4B-GGUF": {
+    "status": "fail",
+    "file": "Qwen3.5-4B-Q4_K_M.gguf"
+  },
+  "unsloth/Qwen3.5-9B-GGUF": {
+    "status": "fail",
+    "file": "Qwen3.5-9B-Q4_K_M.gguf"
+  },
+  "unsloth/gemma-4-26B-A4B-it-qat-GGUF": {
+    "status": "fail (download/gated)",
+    "file": "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf"
+  },
+  "rippertnt/HyperCLOVAX-SEED-Text-Instruct-1.5B-Q4_K_M-GGUF": {
+    "status": "fail",
+    "file": "hyperclovax-seed-text-instruct-1.5b-q4_k_m.gguf"
+  },
+  "unsloth/Qwen3-VL-2B-Instruct-GGUF": {
+    "status": "fail",
+    "file": "Qwen3-VL-2B-Instruct-Q4_K_M.gguf"
+  },
+  "unsloth/Qwen3.6-35B-A3B-GGUF": {
+    "status": "fail",
+    "file": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
+  },
+  "lmstudio-community/gemma-4-E4B-it-GGUF": {
+    "status": "fail",
+    "file": "gemma-4-E4B-it-Q4_K_M.gguf"
+  },
+  "lmg-anon/vntl-llama3-8b-v2-gguf": {
+    "status": "fail",
+    "file": "vntl-llama3-8b-v2-hf-q5_k_m.gguf"
+  },
+  "PaddlePaddle/PaddleOCR-VL-1.6-GGUF": {
+    "status": "fail",
+    "file": "PaddleOCR-VL-1.6-GGUF-mmproj.gguf"
+  },
+  "unsloth/Qwen3.6-35B-A3B-MTP-GGUF": {
+    "status": "fail",
+    "file": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
+  },
+  "lmstudio-community/gemma-4-12B-it-QAT-GGUF": {
+    "status": "fail",
+    "file": "gemma-4-12B-it-QAT-Q4_0.gguf"
+  },
+  "ggml-org/models-moved": {
+    "status": "fail",
+    "file": "mistral-7b-v0.2-iq3_s-imat.gguf"
+  },
+  "SulphurAI/Sulphur-2-base": {
+    "status": "skip",
+    "file": null
+  },
+  "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF": {
+    "status": "fail",
+    "file": "gemma4-coding-Q4_K_M.gguf"
+  },
+  "speakleash/Bielik-11B-v3.0-Instruct-awq": {
+    "status": "skip",
+    "file": null
+  },
+  "unsloth/gemma-4-E4B-it-GGUF": {
+    "status": "fail",
+    "file": "gemma-4-E4B-it-Q4_K_M.gguf"
+  },
+  "unsloth/gemma-4-E2B-it-GGUF": {
+    "status": "fail",
+    "file": "gemma-4-E2B-it-Q4_K_M.gguf"
+  },
+  "unsloth/gemma-4-31B-it-GGUF": {
+    "status": "fail",
+    "file": "gemma-4-31B-it-Q4_K_M.gguf"
+  },
+  "unsloth/Qwen3.6-27B-GGUF": {
+    "status": "fail (download/gated)",
+    "file": "Qwen3.6-27B-Q4_K_M.gguf"
+  },
+  "huihui-ai/Huihui-DeepSeek-V4-Flash-abliterated-ds4-GGUF": {
+    "status": "fail",
+    "file": "Huihui-DeepSeek-V4-Flash-BF16-abliterated-ds4-Q2_K.gguf"
+  },
+  "hugging-quants/Llama-3.2-1B-Instruct-Q8_0-GGUF": {
+    "status": "fail",
+    "file": "llama-3.2-1b-instruct-q8_0.gguf"
+  },
+  "google/gemma-4-12B-it-qat-q4_0-gguf": {
+    "status": "fail",
+    "file": "gemma-4-12b-it-qat-q4_0.gguf"
+  },
+  "HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive": {
+    "status": "fail",
+    "file": "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
+  },
+  "unsloth/gemma-4-12B-it-qat-GGUF": {
+    "status": "fail",
+    "file": "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"
+  },
+  "HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive": {
+    "status": "fail",
+    "file": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
+  },
+  "DavidAU/Qwen3.6-40B-Claude-4.6-Opus-Deckard-Heretic-Uncensored-Thinking-NEO-CODE-Di-IMatrix-MAX-GGUF": {
+    "status": "fail (download/gated)",
+    "file": "Qwen3.6-40B-Deck-Opus-NEO-CODE-HERE-2T-OT-Q4_K_M.gguf"
+  },
+  "HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive": {
+    "status": "fail (download/gated)",
+    "file": "Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q2_K_P.gguf"
+  },
+  "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF": {
+    "status": "skip",
+    "file": null
+  },
+  "ggml-org/gemma-4-26B-A4B-it-GGUF": {
+    "status": "skip",
+    "file": null
+  },
+  "bartowski/Llama-3.2-1B-Instruct-GGUF": {
+    "status": "fail",
+    "file": "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+  },
+  "unsloth/gemma-4-31B-it-qat-GGUF": {
+    "status": "fail",
+    "file": "gemma-4-31B-it-qat-UD-Q4_K_XL.gguf"
+  },
+  "unsloth/gpt-oss-20b-GGUF": {
+    "status": "fail",
+    "file": "gpt-oss-20b-Q4_K_M.gguf"
+  },
+  "deepreinforce-ai/Ornith-1.0-35B-GGUF": {
+    "status": "fail",
+    "file": "ornith-1.0-35b-Q4_K_M.gguf"
+  },
+  "lmstudio-community/Qwen3.5-9B-GGUF": {
+    "status": "fail",
+    "file": "Qwen3.5-9B-Q4_K_M.gguf"
+  },
+  "unsloth/Qwen2.5-VL-7B-Instruct-GGUF": {
+    "status": "fail",
+    "file": "Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"
+  },
+  "Qwen/Qwen3-4B-GGUF": {
+    "status": "fail",
+    "file": "Qwen3-4B-Q4_K_M.gguf"
+  },
+  "DeepBeepMeep/Wan2.1": {
+    "status": "skip",
+    "file": null
+  },
+  "Snowflake/snowflake-arctic-embed-m-v1.5": {
+    "status": "skip",
+    "file": null
+  },
+  "yuxinlu1/gemma-4-12B-agentic-fable5-composer2.5-v2-3.5x-tau2-GGUF": {
+    "status": "fail",
+    "file": "gemma4-v2-Q4_K_M.gguf"
+  },
+  "deepreinforce-ai/Ornith-1.0-9B-GGUF": {
+    "status": "fail",
+    "file": "ornith-1.0-9b-Q4_K_M.gguf"
+  },
+  "google/gemma-4-E2B-it-qat-q4_0-gguf": {
+    "status": "fail",
+    "file": "gemma-4-E2B_q4_0-it.gguf"
+  }
+}
