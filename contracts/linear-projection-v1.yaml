@@ -50,6 +50,40 @@ proof_obligations:
   property: SIMD matches scalar within ULP
   tolerance: 4.0
   applies_to: simd
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 7
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  notes: |
+    Analytic obligations proved in verified Lean (0 sorry), Mathlib-backed over
+    ℝ matrices (reuses Matrix.mul / Matrix.transpose distributivity, same core
+    as the MatMul contract). Files:
+      crates/aprender-contracts-staging/lean/ProvableContracts/Defs/LinearProjection.lean
+      crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/LinearProjection/Algebra.lean
+    Verified with `lake build ProvableContracts.Theorems.LinearProjection.Algebra`
+    (exit 0, sorry-free grep clean):
+      - Output shape / element correctness -> element_formula
+        (linearForward x W b i k = (∑ j, x i j * W k j) + b k; the dependent
+        Matrix (Fin batch) (Fin d_out) ℝ type witnesses the (batch, d_out) shape
+        and this pins every valid element, so no out-of-shape index is produced)
+      - Homogeneity without bias           -> homogeneity   ((c • x) Wᵀ = c • (x Wᵀ), Matrix.smul_mul)
+      - Bias additivity                    -> bias_additivity (linearForward = linearNoBias + biasBroadcast, rfl)
+      - Zero input produces bias           -> zero_input_bias (0 · Wᵀ + b = b, Matrix.zero_mul + zero_add)
+    Supporting linear-map lemmas also proved sorry-free: additivity
+    ((x+x')Wᵀ = xWᵀ + x'Wᵀ, Matrix.add_mul), zero_no_bias (0·Wᵀ = 0), and
+    composition_is_projection ((xWᵀ)Vᵀ = x(VW)ᵀ, Matrix.transpose_mul + mul_assoc).
+    Not applicable (runtime/empirical, no algebraic statement — l4_not_applicable=1):
+      - SIMD matches scalar within 4 ULP (linear_forward_avx2 vs linear_forward_scalar):
+        an IEEE-754 FMA accumulation-order / rounding property of the hardware,
+        not an algebraic identity over ℝ. Falsification-covered (FALSIFY-LP-005),
+        not Lean-provable.
+    Strict leveling: l4_lean_proved(4) + l4_not_applicable(1) = 5 = total_obligations,
+    l4_lean_proved > 0 => genuine L4 (unbound: bindings live in
+    aprender::format::lp_001_005 but binding.yaml is not edited by this climb, so
+    L5 is not claimed).
 kernel_structure:
   phases:
   - name: matmul
