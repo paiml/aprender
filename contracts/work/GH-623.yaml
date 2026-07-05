@@ -1,0 +1,13 @@
+# Auto-generated from .pmat-work/GH-623/contract.json
+name: "GH-623"
+metadata:
+  version: "1.0.0"
+  kind: schema
+  description: "Auto-generated work-contract for GH-623"
+  references:
+    - ".pmat-work/GH-623/contract.json"
+surface: work-contract
+verification_summary:
+  target_level: L1
+  current_level: L1
+  total_obligations: 47

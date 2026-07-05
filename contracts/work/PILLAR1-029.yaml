@@ -1,0 +1,13 @@
+# Auto-generated from .pmat-work/__36mPILLAR1-029/contract.json
+name: "PILLAR1-029"
+metadata:
+  version: "1.0.0"
+  kind: schema
+  description: "Auto-generated work-contract for PILLAR1-029"
+  references:
+    - ".pmat-work/__36mPILLAR1-029/contract.json"
+surface: work-contract
+verification_summary:
+  target_level: L1
+  current_level: L1
+  total_obligations: 47

@@ -1,0 +1,13 @@
+# Auto-generated from .pmat-work/__36mBEAT-OLLAMA-DECODE-CI-001__0m/contract.json
+name: "BEAT-OLLAMA-DECODE-CI-001"
+metadata:
+  version: "1.0.0"
+  kind: schema
+  description: "Auto-generated work-contract for BEAT-OLLAMA-DECODE-CI-001"
+  references:
+    - ".pmat-work/__36mBEAT-OLLAMA-DECODE-CI-001__0m/contract.json"
+surface: work-contract
+verification_summary:
+  target_level: L1
+  current_level: L1
+  total_obligations: 47
