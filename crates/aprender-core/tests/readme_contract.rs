@@ -93,6 +93,44 @@ fn test_readme_crate_count_matches_workspace() {
     );
 }
 
+/// FALSIFY-README-007: Contract count in README matches `find contracts/ -name '*.yaml'`.
+///
+/// The "**M** provable contracts" claim was previously checked ONLY by
+/// `scripts/check_readme_claims.sh`, which is executable but wired into NO
+/// workflow (`grep -rn check_readme_claims .github/workflows` = 0 hits). So the
+/// count drifted freely: README said **1331** while the tree held **1766**
+/// (Fable rank-7, PMAT-DRIFT-GATES-001). This test rides the already-wired
+/// `cargo test` job, so the claim can no longer drift without failing a PR.
+/// Counts `*.yaml` recursively to match the canonical script method.
+#[test]
+fn test_readme_contract_count_matches_workspace() {
+    let readme = read_readme();
+    let contracts_dir = workspace_root().join("contracts");
+
+    fn count_yaml(dir: &Path) -> usize {
+        let mut n = 0;
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    n += count_yaml(&path);
+                } else if path.extension().is_some_and(|ext| ext == "yaml") {
+                    n += 1;
+                }
+            }
+        }
+        n
+    }
+
+    let contract_count = count_yaml(&contracts_dir);
+    let count_str = format!("**{contract_count}** provable contracts");
+    assert!(
+        readme.contains(&count_str),
+        "FALSIFY-README-007: README lacks `**{contract_count}** provable contracts` \
+         matching `find contracts/ -name '*.yaml'` — update the README claims table row"
+    );
+}
+
 /// FALSIFY-SVG-002: Hero SVG is accessible
 #[test]
 fn test_hero_svg_accessible() {
