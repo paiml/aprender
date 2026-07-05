@@ -26,6 +26,7 @@ import ProvableContracts.Defs.Softmax
 import ProvableContracts.Defs.Sparse
 import ProvableContracts.Defs.Transpose
 import ProvableContracts.Theorems.AdamW.WeightDecay
+import ProvableContracts.Theorems.Alibi.Slopes
 import ProvableContracts.Theorems.Attention.ScaledDotProduct
 import ProvableContracts.Theorems.BLAS.SyrkSymmetric
 import ProvableContracts.Theorems.Cholesky.SPD
