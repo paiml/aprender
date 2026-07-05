@@ -33,11 +33,13 @@ import ProvableContracts.Theorems.CrossEntropy.LogSoftmaxBound
 import ProvableContracts.Theorems.CrossEntropy.NonNegativity
 import ProvableContracts.Theorems.CrossEntropy.SoftmaxBackward
 import ProvableContracts.Theorems.Elementwise.AddCommutative
+import ProvableContracts.Theorems.Elementwise.LeakyReLU
 import ProvableContracts.Theorems.Elementwise.MulScalarAssoc
 import ProvableContracts.Theorems.Elementwise.ReLUNonNeg
 import ProvableContracts.Theorems.FFT.Parseval
 import ProvableContracts.Theorems.FP8.Interchange
 import ProvableContracts.Theorems.GEMV.Correctness
+import ProvableContracts.Theorems.Gelu.GeluBounds
 import ProvableContracts.Theorems.Gelu.GeluZero
 import ProvableContracts.Theorems.LU.Existence
 import ProvableContracts.Theorems.LayerNorm.Centering

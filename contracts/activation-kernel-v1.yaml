@@ -108,6 +108,72 @@ proof_obligations:
     - le_max_left
     mathlib_imports: []
     notes: 'relu(x) = max 0 x ≥ 0 by le_max_left 0 x.'
+- type: invariant
+  property: ReLU idempotent
+  formal: ReLU(ReLU(x)) = ReLU(x)
+  applies_to: all
+  lean:
+    theorem: Elementwise.relu_idempotent
+    module: ProvableContracts.Elementwise
+    status: proved
+    depends_on:
+    - relu_nonneg
+    - relu_of_nonneg
+    mathlib_imports: []
+    notes: 'relu output is non-negative (relu_nonneg) and relu is the identity on
+      non-negative inputs (relu_of_nonneg), so relu(relu x) = relu x.'
+- type: invariant
+  property: Leaky-ReLU identity on non-negative inputs
+  formal: x ≥ 0 ⟹ LeakyReLU(α, x) = x
+  applies_to: all
+  lean:
+    theorem: Elementwise.leaky_relu_of_nonneg
+    module: ProvableContracts.Elementwise
+    status: proved
+    depends_on: []
+    mathlib_imports: []
+    notes: 'leaky_relu(α,x) = if x ≥ 0 then x else α·x; the non-negative branch is the
+      identity, closed by if_pos. Matches Rust nn::functional::leaky_relu (x>0 ⟹ x).'
+- type: invariant
+  property: Leaky-ReLU negative-slope branch
+  formal: x < 0 ⟹ LeakyReLU(α, x) = α · x
+  applies_to: all
+  lean:
+    theorem: Elementwise.leaky_relu_of_neg
+    module: ProvableContracts.Elementwise
+    status: proved
+    depends_on: []
+    mathlib_imports: []
+    notes: 'leaky_relu(α,x) = if x ≥ 0 then x else α·x; for x < 0 the else-branch gives
+      α·x, closed by if_neg (not_le.mpr hx).'
+- type: bound
+  property: GELU non-negative on non-negative inputs
+  formal: x ≥ 0 ⟹ GELU(x) ≥ 0
+  applies_to: all
+  lean:
+    theorem: Gelu.gelu_nonneg_of_nonneg
+    module: ProvableContracts.Gelu
+    status: proved
+    depends_on:
+    - Real.neg_one_lt_tanh
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
+    notes: 'GELU(x) = 0.5·x·(1 + tanh a); for x ≥ 0 the factor 0.5·x ≥ 0 and 1 + tanh a
+      > 0 since tanh a > -1 (Real.neg_one_lt_tanh), so the product is ≥ 0.'
+- type: bound
+  property: GELU bounded by identity on non-negative inputs
+  formal: x ≥ 0 ⟹ GELU(x) ≤ x
+  applies_to: all
+  lean:
+    theorem: Gelu.gelu_le_self_of_nonneg
+    module: ProvableContracts.Gelu
+    status: proved
+    depends_on:
+    - Real.tanh_lt_one
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
+    notes: 'GELU(x) = 0.5·x·(1 + tanh a); since tanh a < 1 (Real.tanh_lt_one) the factor
+      1 + tanh a ≤ 2, and 0.5·x·2 = x for x ≥ 0, so GELU(x) ≤ x.'
 - type: equivalence
   property: SIMD matches scalar
   tolerance: 4.0
@@ -143,6 +209,31 @@ falsification_tests:
   prediction: x1 <= x2 => ReLU(x1) <= ReLU(x2)
   test: proptest with random x1 <= x2 pairs
   if_fails: ReLU implementation not monotonic
+- id: FALSIFY-ACT-007
+  rule: ReLU idempotent
+  prediction: ReLU(ReLU(x)) == ReLU(x) for all x
+  test: proptest with random x
+  if_fails: ReLU not idempotent (double application changes output)
+- id: FALSIFY-ACT-008
+  rule: Leaky-ReLU non-negative branch
+  prediction: x >= 0 => LeakyReLU(alpha, x) == x
+  test: proptest with random x >= 0 and random alpha
+  if_fails: Leaky-ReLU alters non-negative inputs
+- id: FALSIFY-ACT-009
+  rule: Leaky-ReLU negative branch
+  prediction: x < 0 => LeakyReLU(alpha, x) == alpha * x
+  test: proptest with random x < 0 and random alpha
+  if_fails: Leaky-ReLU negative slope not applied
+- id: FALSIFY-ACT-010
+  rule: GELU non-negative on non-negative inputs
+  prediction: x >= 0 => GELU(x) >= 0
+  test: proptest with random x >= 0
+  if_fails: GELU dips below zero for a non-negative input
+- id: FALSIFY-ACT-011
+  rule: GELU bounded by identity on non-negative inputs
+  prediction: x >= 0 => GELU(x) <= x
+  test: proptest with random x >= 0
+  if_fails: GELU exceeds the identity envelope for a non-negative input
 kani_harnesses:
 - id: KANI-ACT-001
   obligation: ACT-INV-001
@@ -196,18 +287,23 @@ qa_gate:
   pass_criteria: All 6 falsification tests pass + Kani verifies ReLU
   falsification: Replace max(0,x) with x to break ReLU non-negativity
 verification_summary:
-  total_obligations: 6
+  total_obligations: 11
   l2_property_tested: 6
   l3_kani_proved: 2
-  l4_lean_proved: 4
+  l4_lean_proved: 9
   l4_sorry_count: 0
   l4_not_applicable: 1
   notes: |
     Analytic obligations proved in verified Lean (0 sorry):
-      - GELU at zero     -> Gelu.gelu_zero       (0.5·0·(1+tanh …) = 0)
-      - SiLU at zero     -> Sigmoid.silu_zero     (0·σ(0) = 0)
-      - ReLU monotonic   -> Elementwise.relu_monotone (max_le_max)
-      - ReLU non-negative-> Elementwise.relu_nonneg    (le_max_left)
+      - GELU at zero                 -> Gelu.gelu_zero                (0.5·0·(1+tanh …) = 0)
+      - SiLU at zero                 -> Sigmoid.silu_zero             (0·σ(0) = 0)
+      - ReLU monotonic               -> Elementwise.relu_monotone     (max_le_max)
+      - ReLU non-negative            -> Elementwise.relu_nonneg       (le_max_left)
+      - ReLU idempotent (relu∘relu)  -> Elementwise.relu_idempotent   (relu_of_nonneg ∘ relu_nonneg)
+      - Leaky-ReLU nonneg branch     -> Elementwise.leaky_relu_of_nonneg (if_pos)
+      - Leaky-ReLU negative branch   -> Elementwise.leaky_relu_of_neg    (if_neg)
+      - GELU ≥ 0 for x ≥ 0           -> Gelu.gelu_nonneg_of_nonneg    (tanh a > -1)
+      - GELU ≤ x for x ≥ 0           -> Gelu.gelu_le_self_of_nonneg   (tanh a < 1)
     Not applicable (runtime/empirical, no algebraic statement):
       - SIMD matches scalar (avx2 vs scalar within 4 ULP) -> fast-math ULP
         equivalence is a hardware/rounding property, not an algebraic identity.
@@ -216,8 +312,13 @@ verification_summary:
         This is a genuine numerical bound between the tanh approximation and the
         exact erf-based GELU; closing it in Lean requires interval/erf bounds we
         have not discharged. Honestly left UNPROVEN rather than marked N/A.
-    Strict leveling: l4_lean_proved(4) + l4_not_applicable(1) = 5 != 6, so this
-    contract is HONESTLY L3 (not L4) until the GELU approximation bound is proven.
+    Strict leveling: l4_lean_proved(9) + l4_not_applicable(1) = 10 != 11, so this
+    contract is HONESTLY L3 (not L4). The sole blocker is the GELU approximation
+    error bound (hard transcendental / interval reasoning). Every other analytic
+    obligation — including the wave-3 additions relu∘relu idempotency, both
+    Leaky-ReLU branches, and the GELU 0 ≤ GELU(x) ≤ x envelope on x ≥ 0 — is
+    machine-checked in Lean with 0 sorry. A truthful L3 with a hardened analytic
+    core, not a faked L4.
 simd_dispatch:
   activation:
     scalar: activation_scalar
