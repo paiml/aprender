@@ -81,6 +81,78 @@ kernel_structure:
   - name: normalize
     description: Single pass computing weights[j] = exp(scores[j] - m) / d
     invariant: Each weight computed from final (m, d) state
+verification_summary:
+  total_obligations: 10
+  l2_property_tested: 10
+  l3_kani_proved: 10
+  l4_lean_proved: 9
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  honest_level: L4
+  lean_file: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/OnlineSoftmax.lean
+  lean_theorems:
+  - obligation: Running max tracks true max of elements seen
+    theorems:
+    - ProvableContracts.OnlineSoftmax.foldl_max_ge
+    - ProvableContracts.OnlineSoftmax.foldl_max_mem
+    note: >-
+      Running max m_i ≥ start and ≥ every element seen (foldl_max_mem), and
+      dominates the accumulator (foldl_max_ge); together m_i = max(x_1..x_i).
+  - obligation: Running sum_exp is correct partial sum
+    theorems:
+    - ProvableContracts.OnlineSoftmax.foldl_step_snd
+    - ProvableContracts.OnlineSoftmax.scan_denom
+    note: >-
+      The scan's running denominator equals Σ_{j≤i} exp(x_j − m_i) exactly
+      (denom l M), proved by induction over the whole fold.
+  - obligation: Remaining elements decreases each iteration
+    theorems:
+    - ProvableContracts.OnlineSoftmax.loop_variant_decreases
+    note: >-
+      Variant V(i)=n−i is ≥0 and strictly decreasing while i<n (elementary Nat
+      arithmetic); the scan terminates in exactly n steps.
+  - obligation: Normalizer update preserves equivalence to full recomputation
+    theorems:
+    - ProvableContracts.OnlineSoftmax.denom_rescale
+    - ProvableContracts.OnlineSoftmax.online_update_denom
+    note: >-
+      One recurrence step d_i = d_{i-1}·exp(m_{i-1}−m_i)+exp(x_i−m_i) equals the
+      full shifted recomputation denom(prefix++[x_i]) m_i, for ALL m_{i-1},m_i.
+  - obligation: Online matches standard softmax
+    theorems:
+    - ProvableContracts.OnlineSoftmax.online_eq_standard
+    - ProvableContracts.OnlineSoftmax.softmax_sub_const
+    note: >-
+      HEADLINE. Over ℝ online == standard EXACTLY (not merely within ε): both the
+      online-max and standard-max shifted quotients equal softmax(x)_i, because
+      subtracting any constant before exp cancels (softmax_sub_const). The ε=1e-5
+      in the obligation is the FP realization of this exact identity (FALSIFY-OSM-001).
+  - obligation: Output sums to 1
+    theorems:
+    - ProvableContracts.OnlineSoftmax.softmax_sum_one
+    note: 'Σ_i softmax(x)_i = Z/Z = 1 exactly (Z = Σ exp(x_j) > 0).'
+  - obligation: All outputs strictly positive
+    theorems:
+    - ProvableContracts.OnlineSoftmax.softmax_pos
+    - ProvableContracts.OnlineSoftmax.softmax_denom_pos
+    note: 'exp(x_i) > 0 and Z > 0 ⟹ softmax(x)_i = exp(x_i)/Z > 0.'
+  - obligation: Order preservation
+    theorems:
+    - ProvableContracts.OnlineSoftmax.softmax_strict_mono
+    note: 'x_i > x_j ⟹ softmax(x)_i > softmax(x)_j (shared Z>0, exp strictly monotone).'
+  - obligation: Shift invariance
+    theorems:
+    - ProvableContracts.OnlineSoftmax.softmax_shift_invariant
+    note: 'softmax(x+c)=softmax(x): corollary of softmax_sub_const with m=−c.'
+  not_applicable_detail:
+  - obligation: Two-pass (not three)
+    class: genuine-na
+    reason: >-
+      "Reads scores array exactly twice" is a memory-access / source-structure
+      claim about the concrete loop implementation (a (b)-class runtime property,
+      analogous to byte-layout or source-syntax), with NO algebraic content over
+      ℝ. It is verified by the deterministic falsification test FALSIFY-OSM
+      (kernel_structure phases) and the reference impl, not by a Lean theorem.
 falsification_tests:
 - id: FALSIFY-OSM-001
   rule: Equivalence to standard softmax

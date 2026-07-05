@@ -57,6 +57,7 @@ import ProvableContracts.Theorems.SVD.NonNegative
 import ProvableContracts.Theorems.Sigmoid.SigmoidBounded
 import ProvableContracts.Theorems.Sigmoid.SigmoidSymmetry
 import ProvableContracts.Theorems.Sigmoid.SiluZero
+import ProvableContracts.Theorems.OnlineSoftmax
 import ProvableContracts.Theorems.Sigmoid.SwigluZero
 import ProvableContracts.Theorems.Softmax.Bounded
 import ProvableContracts.Theorems.Softmax.Monotonicity
