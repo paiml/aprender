@@ -83,12 +83,8 @@ fn beat_sklearn_pipeline_encoder() {
     .expect("fit matrix");
     let mut oh = OneHotEncoder::new();
     oh.fit(&full).expect("fit OHE");
-    let fixture = Matrix::from_vec(
-        4,
-        3,
-        vec![0., 0., 0., 1., 2., 1., 2., 1., 2., 0., 1., 0.],
-    )
-    .expect("fixture");
+    let fixture = Matrix::from_vec(4, 3, vec![0., 0., 0., 1., 2., 1., 2., 1., 2., 0., 1., 0.])
+        .expect("fixture");
     let out = oh.transform(&fixture).expect("transform");
     // sklearn OneHotEncoder(handle_unknown='ignore') dense oracle (width 9).
     let oracle = [
@@ -110,7 +106,11 @@ fn beat_sklearn_pipeline_encoder() {
 
     // --- (2) Pipeline(OneHotEncoder → LogisticRegression) composition accuracy ---
     let (xtr, ytr, xte, yte) = categorical_split();
-    assert_eq!((ytr.len(), yte.len()), (81, 27), "deterministic split shape");
+    assert_eq!(
+        (ytr.len(), yte.len()),
+        (81, 27),
+        "deterministic split shape"
+    );
     let mut pipe = Pipeline::new(
         vec![Box::new(OneHotEncoder::new())],
         Box::new(LogisticRegression::new().with_max_iter(1000)),
