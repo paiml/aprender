@@ -338,5 +338,38 @@ mod tests {
             );
         }
     }
+
+    // ----- GH-153: bounded (8-byte) format detection -----
+
+    /// GH-153 regression: `detect_format` must be decidable from the first 8 bytes
+    /// alone. Live callers (apr serve/qa/hex/benchmark, the gpu-isolation probe) read
+    /// exactly 8 bytes via `read_exact(&mut [0u8; 8])` rather than loading the whole
+    /// multi-GB file — sound ONLY if bytes past index 7 never change the verdict.
+    /// RED-turning mutation: make any `try_detect_*` helper read a byte at index >= 8
+    /// and the 8-byte-prefix verdict diverges from the full-buffer verdict (or the
+    /// prefix read panics out of range) — this assertion turns the mutant RED.
+    #[test]
+    fn detect_format_decidable_from_first_8_bytes_gh153() {
+        let magics: [&[u8]; 3] = [
+            b"APR\0",                     // APR magic + version byte 0 (bytes 0..4)
+            b"GGUF",                      // GGUF magic (bytes 0..4)
+            &[100, 0, 0, 0, 0, 0, 0, 0],  // SafeTensors: LE u64 header length = 100
+        ];
+        for magic in magics {
+            let mut prefix = [0u8; 8];
+            let n = magic.len().min(8);
+            prefix[..n].copy_from_slice(&magic[..n]);
+            let from_prefix = detect_format(&prefix)
+                .expect("an 8-byte prefix must be sufficient to classify a known format");
+            // Same 8-byte prefix + arbitrary trailing bytes → identical verdict.
+            let mut full = prefix.to_vec();
+            full.extend(std::iter::repeat(0xAB_u8).take(4096));
+            assert_eq!(
+                detect_format(&full).expect("full buffer must classify"),
+                from_prefix,
+                "detection must not depend on any byte past the first 8 (GH-153)",
+            );
+        }
+    }
 include!("format_detect_apr.rs");
 }
