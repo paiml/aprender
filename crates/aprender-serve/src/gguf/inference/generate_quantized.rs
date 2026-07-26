@@ -154,7 +154,15 @@ impl OwnedQuantizedModel {
         // Get top-k indices
         let mut indexed: Vec<(usize, f32)> = scaled.iter().copied().enumerate().collect();
         indexed.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-        indexed.truncate(top_k);
+        // `top_k == 0` means "disabled" in llama.cpp and Ollama, and both the
+        // Ollama-compat and OpenAI-compat surfaces pass it straight through. An
+        // unguarded `truncate(0)` empties `indexed`, so `probs` is empty and the
+        // inverse-CDF loop below falls through to `probs.last().map_or(0, ..)` —
+        // returning token 0 on EVERY step (`!!!!!!`). Guard exactly as the live
+        // MoE sampler does (infer/qwen3_moe_generate.rs:104).
+        if top_k > 0 && top_k < indexed.len() {
+            indexed.truncate(top_k);
+        }
 
         // Softmax over top-k
         let max_val = indexed.first().map_or(0.0, |(_, v)| *v);

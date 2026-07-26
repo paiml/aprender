@@ -23,6 +23,8 @@ mod attention_flash_tests;
 #[cfg(test)]
 mod attention_gqa_tests;
 #[cfg(test)]
+mod generate_quantized_topk_tests;
+#[cfg(test)]
 mod generation_tests;
 #[cfg(test)]
 mod matmul_tests;
