@@ -120,7 +120,7 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/paiml/aprender"
 authors = ["Noah Gift <noah@paiml.com>"]
-rust-version = "1.89"
+rust-version = "1.91"
 keywords = ["machine-learning", "inference", "training", "gpu", "simd"]
 categories = ["science", "algorithms"]
 homepage = "https://github.com/paiml/aprender"
@@ -476,7 +476,7 @@ semicolon_if_nothing_returned = "allow"  # Style preference
 name = "aprender"
 version = "0.60.0"
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.91"
 authors = ["Noah Gift <noah@paiml.com>"]
 license = "MIT"
 description = "Next-generation ML framework in pure Rust — `cargo install aprender` for the `apr` CLI"
@@ -506,7 +506,7 @@ required-features = ["cli"]
 # aprender` still works because `cli` is in default features. See GH-1599.
 apr-cli = { path = "crates/apr-cli", version = "0.60.0", default-features = true, optional = true }
 # Core ML library (lib name = "aprender")
-aprender_ml = { path = "crates/aprender-core", version = ">=0.29", package = "aprender-core" }
+aprender_ml = { path = "crates/aprender-core", version = "0.60.0", package = "aprender-core" }
 
 [features]
 default = ["cli"]
