@@ -360,7 +360,30 @@ jobs:
   # sovereign-ci registry. Pure text check; runs on the clean-room pool.
   guard-runner-labels:
     runs-on: [self-hosted, X64, Linux, clean-room]
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
     steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Same guard as workspace-test (:92) and mutants (:435). This job was
+        # the ONLY clean-room job missing it, and that asymmetry took main red
+        # on 2026-07-06 (run 28776891625): a hard-killed docker job left
+        # root-owned target/.rustc_info.json + target/package/ in the runner
+        # checkout, so this job's actions/checkout `git clean -ffdx` failed
+        # with EACCES before a single step ran. Because `gate` hard-requires
+        # guard-runner-labels (:379), a checkout-level EACCES here reads as a
+        # required-check failure and blocks every merge — the andon stays red
+        # until someone manually `ssh intel sudo rm`s the leftovers.
+        # Cached-image gate is sound: leftovers can only exist if a previous
+        # docker job ran on this runner, which implies the image is already in
+        # the local cache. So "image not cached ⟹ no leftovers" and skipping is
+        # safe (and keeps this step tolerant of a registry outage).
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
