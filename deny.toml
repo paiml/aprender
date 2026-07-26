@@ -56,6 +56,13 @@ ignore = [
     # core2 0.4.0 — unmaintained, all versions yanked. Transitive via bitstream-io
     # (image/media decoding stack). Surfaced 2026-05-22 blocking ALL in-flight PRs.
     { id = "RUSTSEC-2026-0105", reason = "core2: yanked + unmaintained, transitive via bitstream-io; waiting for upstream migration off core2" },
+    # ttf-parser 0.25.1 + rustybuzz 0.20.1 — both UNMAINTAINED-only (no CVE, no
+    # patched release exists). Reviewed 2026-07-26. Both enter through the SVG
+    # rendering stack only: resvg -> usvg -> {fontdb, rustybuzz} -> ttf-parser.
+    # No direct usage anywhere in the workspace; nothing to bump to. Re-review if
+    # a maintained fork appears or resvg migrates off them.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser 0.25.1: unmaintained, transitive via resvg->usvg->{fontdb,rustybuzz}; no patched release exists" },
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz 0.20.1: unmaintained, transitive via resvg->usvg; no patched release exists" },
 ]
 
 [licenses]
