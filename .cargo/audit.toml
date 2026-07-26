@@ -49,4 +49,11 @@ ignore = [
     # is a 0.37->0.41 API break deferred past v0.57.0.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",  # quick-xml NsReader namespace-alloc DoS — same not-affected path as -0194
+
+    # SVG rendering stack — UNMAINTAINED only (no CVE, no patched release exists).
+    # Both enter solely via resvg -> usvg -> {fontdb, rustybuzz} -> ttf-parser;
+    # no direct usage in the workspace. Reviewed 2026-07-26. Re-review if a
+    # maintained fork appears or resvg migrates off them.
+    "RUSTSEC-2026-0192",  # ttf-parser 0.25.1 unmaintained
+    "RUSTSEC-2026-0206",  # rustybuzz 0.20.1 unmaintained
 ]
