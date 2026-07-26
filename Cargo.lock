@@ -263,6 +263,7 @@ dependencies = [
  "aprender-contracts",
  "aprender-core",
  "aprender-data",
+ "aprender-explain",
  "aprender-mcp",
  "aprender-orchestrate",
  "aprender-present-core",
@@ -314,7 +315,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",
- "trueno-explain",
  "unicode-normalization",
  "ureq 2.12.1",
  "which 7.0.3",
@@ -14734,23 +14734,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "trueno-explain"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d342a4c0eb322f9b339255de442e1b09f5391b2c5e1ba7f4e49e2353aee2702d"
-dependencies = [
- "clap",
- "colored 2.2.0",
- "crossterm 0.28.1",
- "ratatui",
- "regex",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "trueno-gpu",
-]
-
-[[package]]
 name = "trueno-gemm-codegen"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14759,16 +14742,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
-]
-
-[[package]]
-name = "trueno-gpu"
-version = "0.4.36"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a7a4f3a053376a54fa47fc4c745c177407a9b04afecbd14aa4aa3e8e5b70469"
-dependencies = [
- "batuta-common",
- "thiserror 2.0.18",
 ]
 
 [[package]]
