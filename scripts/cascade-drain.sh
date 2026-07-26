@@ -62,14 +62,34 @@ TOTAL=$(printf '%s\n' "$CRATES" | grep -c .)
 [ "$TOTAL" -gt 0 ] || { echo "ERROR: no crates parsed from TIERS[]" >&2; exit 2; }
 
 # Count how many tiered crates are live on crates.io at $TARGET.
-# UA/TARGET are passed via the environment rather than spliced into the
+#
+# Uses the SPARSE INDEX (index.crates.io), never the JSON API. During the v0.61.0
+# cascade the API rate-limited us: 12-way parallel polling every pass made
+# /api/v1/crates/<name> return EMPTY for all 70 crates. count_pub then read 0,
+# and the drain aborted with "STUCK: no progress (58 -> 0)/70" while 60 crates
+# were in fact published — a false failure on an append-only registry, which is
+# the single most dangerous thing this script can report (see the STUCK guard
+# below: the documented response to STUCK is "this is not a transient"). The
+# sparse index is a static CDN, is what cargo itself resolves against, and is not
+# subject to that rate limit.
+#
+# Index path layout: 1-char -> 1/n, 2-char -> 2/n, 3-char -> 3/<c1>/n,
+# else <c1c2>/<c3c4>/n. The last NDJSON line is the newest version.
+#
+# UA/TARGET pass via the environment rather than being spliced into the
 # single-quoted body: the old '"$UA"' splicing was unparseable (bashrs SC1078)
-# and broke on any character needing quoting. max_version is extracted with
-# sed so this needs no python in the hot loop.
+# and broke on any character needing quoting.
 count_pub() {
-    printf '%s\n' "$CRATES" | DRAIN_UA="$UA" DRAIN_TARGET="$TARGET" xargs -P 12 -I{} bash -c '
+    printf '%s\n' "$CRATES" | DRAIN_UA="$UA" DRAIN_TARGET="$TARGET" xargs -P 8 -I{} bash -c '
         crate="$1"
-        v=$(curl -s -H "User-Agent: ${DRAIN_UA}" "https://crates.io/api/v1/crates/${crate}" 2>/dev/null | sed -n "s/.*\"max_version\":\"\([^\"]*\)\".*/\1/p")
+        n=${#crate}
+        if   [ "$n" -eq 1 ]; then p="1/${crate}"
+        elif [ "$n" -eq 2 ]; then p="2/${crate}"
+        elif [ "$n" -eq 3 ]; then p="3/${crate:0:1}/${crate}"
+        else p="${crate:0:2}/${crate:2:2}/${crate}"
+        fi
+        v=$(curl -s --retry 3 --retry-delay 2 -H "User-Agent: ${DRAIN_UA}" "https://index.crates.io/${p}" 2>/dev/null \
+            | grep -v "^[[:space:]]*$" | tail -1 | sed -n "s/.*\"vers\":\"\([^\"]*\)\".*/\1/p")
         [ "$v" = "${DRAIN_TARGET}" ] && echo ok
     ' _ {} | grep -c ok
 }
