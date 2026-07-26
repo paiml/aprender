@@ -478,8 +478,8 @@ fn test_sample_topk_seeded_same_seed_is_deterministic() {
 
     let mut rng_a = StdRng::seed_from_u64(12345);
     let mut rng_b = StdRng::seed_from_u64(12345);
-    let a = OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, &mut rng_a);
-    let b = OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, &mut rng_b);
+    let a = OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, 1.0, &mut rng_a);
+    let b = OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, 1.0, &mut rng_b);
     assert_eq!(
         a, b,
         "same seed must produce the same token (OpenAI seed contract)"
@@ -487,10 +487,10 @@ fn test_sample_topk_seeded_same_seed_is_deterministic() {
 
     // And the whole stream is reproducible, not just the first draw.
     let seq_a: Vec<u32> = (0..16)
-        .map(|_| OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, &mut rng_a))
+        .map(|_| OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, 1.0, &mut rng_a))
         .collect();
     let seq_b: Vec<u32> = (0..16)
-        .map(|_| OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, &mut rng_b))
+        .map(|_| OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, 1.0, &mut rng_b))
         .collect();
     assert_eq!(seq_a, seq_b, "the full seeded stream must be reproducible");
 }
@@ -508,7 +508,7 @@ fn test_sample_topk_seeded_different_seeds_can_diverge() {
     let stream = |seed: u64| -> Vec<u32> {
         let mut rng = StdRng::seed_from_u64(seed);
         (0..16)
-            .map(|_| OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, &mut rng))
+            .map(|_| OwnedQuantizedModel::sample_topk_seeded(&logits, 1.5, 50, 1.0, &mut rng))
             .collect()
     };
     assert_ne!(

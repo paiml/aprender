@@ -29,7 +29,7 @@ fn topk_zero_is_disabled_not_empty() {
     // A single unlucky draw therefore cannot explain a failure here.
     for seed in 0..64u64 {
         let mut rng = StdRng::seed_from_u64(seed);
-        let tok = OwnedQuantizedModel::sample_topk_seeded(&LOGITS, 0.7, 0, &mut rng);
+        let tok = OwnedQuantizedModel::sample_topk_seeded(&LOGITS, 0.7, 0, 1.0, &mut rng);
         assert_eq!(
             tok, ARGMAX,
             "FALSIFY-SAMPLE-TOPK-ZERO-001: top_k=0 (llama.cpp/Ollama 'disabled') \
@@ -48,8 +48,9 @@ fn topk_zero_matches_topk_full_vocab() {
     for seed in 0..64u64 {
         let mut rng_zero = StdRng::seed_from_u64(seed);
         let mut rng_full = StdRng::seed_from_u64(seed);
-        let a = OwnedQuantizedModel::sample_topk_seeded(&LOGITS, 1.0, 0, &mut rng_zero);
-        let b = OwnedQuantizedModel::sample_topk_seeded(&LOGITS, 1.0, LOGITS.len(), &mut rng_full);
+        let a = OwnedQuantizedModel::sample_topk_seeded(&LOGITS, 1.0, 0, 1.0, &mut rng_zero);
+        let b =
+            OwnedQuantizedModel::sample_topk_seeded(&LOGITS, 1.0, LOGITS.len(), 1.0, &mut rng_full);
         assert_eq!(
             a, b,
             "FALSIFY-SAMPLE-TOPK-ZERO-001: top_k=0 must behave as 'disabled' \
@@ -63,7 +64,7 @@ fn topk_zero_matches_topk_full_vocab() {
 #[test]
 fn topk_larger_than_vocab_is_safe() {
     let mut rng = StdRng::seed_from_u64(7);
-    let tok = OwnedQuantizedModel::sample_topk_seeded(&LOGITS, 0.7, 9999, &mut rng);
+    let tok = OwnedQuantizedModel::sample_topk_seeded(&LOGITS, 0.7, 9999, 1.0, &mut rng);
     assert_eq!(tok, ARGMAX, "top_k > vocab_len must clamp harmlessly");
 }
 
@@ -73,7 +74,7 @@ fn topk_larger_than_vocab_is_safe() {
 fn topk_one_is_still_greedy() {
     for seed in 0..16u64 {
         let mut rng = StdRng::seed_from_u64(seed);
-        let tok = OwnedQuantizedModel::sample_topk_seeded(&LOGITS, 1.0, 1, &mut rng);
+        let tok = OwnedQuantizedModel::sample_topk_seeded(&LOGITS, 1.0, 1, 1.0, &mut rng);
         assert_eq!(tok, ARGMAX, "top_k=1 must always return the argmax");
     }
 }
