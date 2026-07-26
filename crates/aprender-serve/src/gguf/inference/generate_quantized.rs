@@ -74,7 +74,7 @@ impl OwnedQuantizedModel {
                 Self::argmax(&logits)
             } else {
                 // Temperature + top-k sampling (seeded for reproducibility)
-                Self::sample_topk_seeded(&logits, config.temperature, config.top_k, &mut rng)
+                Self::sample_topk_seeded(&logits, config.temperature, config.top_k, config.top_p, &mut rng)
             };
 
             // Check stop condition
@@ -147,7 +147,13 @@ impl OwnedQuantizedModel {
     /// Pure: the only source of randomness is the caller-supplied `r`. This lets both the
     /// entropy-seeded [`Self::sample_topk`] and the seeded [`Self::sample_topk_seeded`]
     /// share one inverse-CDF implementation, so a seeded RNG fully determines the token.
-    fn sample_topk_with_draw(logits: &[f32], temperature: f32, top_k: usize, r: f32) -> u32 {
+    fn sample_topk_with_draw(
+        logits: &[f32],
+        temperature: f32,
+        top_k: usize,
+        top_p: f32,
+        r: f32,
+    ) -> u32 {
         // Apply temperature
         let scaled: Vec<f32> = logits.iter().map(|&x| x / temperature).collect();
 
@@ -164,7 +170,38 @@ impl OwnedQuantizedModel {
             indexed.truncate(top_k);
         }
 
-        // Softmax over top-k
+        // Top-p (nucleus): keep the smallest prefix whose cumulative softmax mass
+        // reaches `top_p`. Ported from the live MoE sampler
+        // (infer/qwen3_moe_generate.rs:109), which is where the only working
+        // implementation lived — the dense path accepted `top_p` in
+        // QuantizedGenerateConfig and then silently discarded it, so
+        // `--top-p 0.001` was byte-identical to `--top-p 1.0` on every
+        // /v1/chat/completions, /api/chat, /api/generate and `apr run` request.
+        //
+        // The `top_p > 0.0 && top_p < 1.0` guard is what keeps this a BIT-EXACT
+        // no-op at the default 1.0: the branch is not entered at all, so the
+        // candidate set and the inverse-CDF draw below are unchanged. That
+        // matters because the default config sets top_p = 1.0 (runtime.rs:51) —
+        // every existing caller must keep its current output token-for-token.
+        if top_p > 0.0 && top_p < 1.0 {
+            let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
+            let exp_vals: Vec<f32> = indexed.iter().map(|(_, v)| (v - max_val).exp()).collect();
+            let total: f32 = exp_vals.iter().sum();
+            if total > 0.0 {
+                let mut cumulative = 0.0;
+                let mut cutoff = indexed.len();
+                for (i, &ev) in exp_vals.iter().enumerate() {
+                    cumulative += ev / total;
+                    if cumulative >= top_p {
+                        cutoff = i + 1;
+                        break;
+                    }
+                }
+                indexed.truncate(cutoff);
+            }
+        }
+
+        // Softmax over the filtered set
         let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
         let exp_sum: f32 = indexed.iter().map(|(_, v)| (v - max_val).exp()).sum();
         let probs: Vec<(usize, f32)> = indexed
@@ -191,7 +228,9 @@ impl OwnedQuantizedModel {
     /// [`Self::sample_topk_seeded`].
     pub fn sample_topk(logits: &[f32], temperature: f32, top_k: usize) -> u32 {
         let r: f32 = rand::rng().random();
-        Self::sample_topk_with_draw(logits, temperature, top_k, r)
+        // top_p = 1.0 => the nucleus branch is skipped entirely: bit-exact no-op,
+        // so this public signature stays source-compatible for existing callers.
+        Self::sample_topk_with_draw(logits, temperature, top_k, 1.0, r)
     }
 
     /// Top-k sampling with temperature, drawing from a caller-owned seeded RNG.
@@ -207,10 +246,11 @@ impl OwnedQuantizedModel {
         logits: &[f32],
         temperature: f32,
         top_k: usize,
+        top_p: f32,
         rng: &mut StdRng,
     ) -> u32 {
         let r: f32 = rng.random();
-        Self::sample_topk_with_draw(logits, temperature, top_k, r)
+        Self::sample_topk_with_draw(logits, temperature, top_k, top_p, r)
     }
 
     /// Generate tokens using KV cache for efficient autoregressive decoding (IMP-101)
@@ -347,6 +387,7 @@ impl OwnedQuantizedModel {
                     &logits,
                     config.temperature,
                     config.top_k,
+                    config.top_p,
                     &mut rng,
                 )
             };
@@ -535,6 +576,7 @@ impl OwnedQuantizedModel {
                     &logits,
                     config.temperature,
                     config.top_k,
+                    config.top_p,
                     &mut rng,
                 )
             };

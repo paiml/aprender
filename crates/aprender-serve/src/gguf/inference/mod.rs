@@ -25,6 +25,8 @@ mod attention_gqa_tests;
 #[cfg(test)]
 mod generate_quantized_topk_tests;
 #[cfg(test)]
+mod generate_quantized_topp_tests;
+#[cfg(test)]
 mod generation_tests;
 #[cfg(test)]
 mod matmul_tests;
