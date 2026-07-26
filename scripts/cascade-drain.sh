@@ -16,7 +16,7 @@
 # Usage:
 #   scripts/cascade-drain.sh                  # target = workspace version
 #   scripts/cascade-drain.sh --target 0.61.0
-#   scripts/cascade-drain.sh --passes 8
+#   scripts/cascade-drain.sh --passes 30    # default is 20
 #
 # Exit codes: 0 drained | 2 stuck (no progress) | 3 passes exhausted
 set -uo pipefail
@@ -25,11 +25,21 @@ REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO_ROOT" || exit 2
 
 TARGET=""
-PASSES=6
+# 20, not 6. TIERS[] in cascade-publish.sh is NOT a topological order — there are
+# 44 dependency edges pointing into the same or a later tier (e.g. aprender-core
+# in T2 depends on aprender-data in T8; apr-cli T10 -> aprender-registry T13).
+# cascade-publish.sh does exactly ONE retry round and then exits 1, so each drain
+# pass only resolves roughly one dependency layer. Simulation against the real
+# dep graph converges in ~15 passes; the old default of 6 exhausted first and
+# exited 3, which reads as a FAILED release while the cascade was in fact still
+# making forward progress. Cheap to over-provision: a pass with nothing left to
+# publish is one crates.io census (~seconds), and the loop exits 0 the moment it
+# reaches N/N.
+PASSES=20
 while [ $# -gt 0 ]; do
     case "$1" in
         --target) TARGET="${2:-}"; shift 2 ;;
-        --passes) PASSES="${2:-6}"; shift 2 ;;
+        --passes) PASSES="${2:-20}"; shift 2 ;;
         -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
