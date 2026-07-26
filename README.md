@@ -41,7 +41,7 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **82** workspace crates | `ls crates/` |
-| Provable contracts | **1331** provable contracts | `find contracts/ -name '*.yaml'` |
+| Provable contracts | **1766** provable contracts | `find contracts/ -name '*.yaml'` |
 | CLI commands | **103** CLI commands | `apr --help` |
 | Book CLI chapters | **103** chapters | `ls book/src/cli/*.md` (parity with CLI) |
 | Book lib chapters | **69** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
@@ -253,7 +253,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1158 contracts across inference, training, quantization, attention, FFN,
+1766 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates

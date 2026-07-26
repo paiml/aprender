@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Aprender is a next-generation ML framework in pure Rust — **monorepo with 80 workspace crates**. Install: `cargo install aprender` → `apr` binary (103 subcommands). 25,300+ tests, 1148 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec. **v0.34.0 SHIPPED 2026-05-18: MODEL-2 §88 stack-existence-proof, paiml/albor-370m-v1 LIVE on HF Hub.**
+Aprender is a next-generation ML framework in pure Rust — **monorepo with 82 workspace crates**. Install: `cargo install aprender` → `apr` binary (103 subcommands). 25,300+ tests, 1766 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec. **v0.34.0 SHIPPED 2026-05-18: MODEL-2 §88 stack-existence-proof, paiml/albor-370m-v1 LIVE on HF Hub.**
 
 ## Git Workflow (Branch Protection)
 
@@ -58,11 +58,11 @@ When using `/loop`, treat fallback wakeups as cheap and merge events as primary.
 ## Build Commands
 
 ```bash
-cargo build --release              # Optimized build (all 80 crates)
+cargo build --release              # Optimized build (all 82 crates)
 cargo test --workspace --lib       # Full workspace lib tests (25,300+)
 cargo test -p aprender-core --lib  # Core ML library only (12,975)
 cargo test -p apr-cli --lib        # CLI tests only (4,158)
-cargo check --workspace            # Type-check all 80 crates
+cargo check --workspace            # Type-check all 82 crates
 cargo fmt --check                  # Check formatting
 cargo clippy -- -D warnings        # Strict linting
 
@@ -131,7 +131,7 @@ TraceSteps: `Tokenize`, `Embed`, `LayerNorm`, `Attention`, `FFN`, `TransformerBl
 2. **Backend Agnostic** - CPU (SIMD), GPU, WASM via Trueno
 3. **Three-Tier API**: High (`Estimator` trait), Mid (`Optimizer`/`Loss`/`Regularizer`), Low (Trueno primitives)
 
-**Monorepo layout** (70 crates, flat `crates/aprender-*` per Polars/Burn/Nushell pattern):
+**Monorepo layout** (82 crates, flat `crates/aprender-*` per Polars/Burn/Nushell pattern):
 - `crates/aprender-core/` — ML library ([lib] name = "aprender")
 - `crates/aprender-compute/` — SIMD/GPU (was trueno, [lib] name = "trueno")
 - `crates/aprender-serve/` — inference server (was realizar, [lib] name = "realizar")
@@ -310,7 +310,7 @@ Key: `unsafe_code = "forbid"`, `clippy::all + pedantic = "warn"`, ML-specific al
 - `crates/aprender-core/src/text/chat_template.rs` - Chat template engine
 - `crates/apr-cli/` - CLI logic (82 commands)
 - `src/bin/apr.rs` - Root binary entry point (`cargo install aprender`)
-- `contracts/` - 1134 provable contracts (merged from all 20 repos)
+- `contracts/` - 1766 provable contracts (merged from all 20 repos)
 - `docs/specifications/aprender-monorepo-consolidation.md` - Monorepo spec
 
 ## APR CLI (`cargo install aprender`)
