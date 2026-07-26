@@ -96,7 +96,7 @@ training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "
 training-gpu = ["training"]
 whisper = ["whisper-apr"]
 dhat-heap = ["dep:dhat"]
-full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code", "xet"]
+full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code", "xet", "trueno-explain"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -208,8 +208,14 @@ trueno-zram-core = { workspace = true, optional = true }
 # Model registry and caching (Ollama-like model management)
 pacha = { workspace = true }
 
-# PTX analysis and bug detection (trueno-explain: PtxAnalyzer + PtxBugAnalyzer)
-trueno-explain = { version = "0.2.2", optional = true }
+# PTX analysis and bug detection (PtxAnalyzer + PtxBugAnalyzer).
+# Points at the IN-TREE crate, which ships `[lib] name = "trueno_explain"` — the
+# same aliasing pattern as aprender-compute -> trueno. This was previously
+# `{ version = "0.2.2" }` from crates.io, which both (a) reintroduced the
+# published-crate dependency cycle the APR-MONO consolidation removed, and
+# (b) was never actually linked, so every `trueno_explain::` path in
+# commands/ptx_explain.rs failed to resolve.
+trueno-explain = { path = "../aprender-explain", version = "0.61.0", package = "aprender-explain", optional = true }
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
 entrenar-lora = { workspace = true, optional = true }
