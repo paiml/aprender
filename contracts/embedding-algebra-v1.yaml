@@ -17,7 +17,7 @@ equations:
     preconditions:
     - indices.iter().all(|&i| i < vocab_size)
     - indices.len() > 0
-    lean_theorem: Theorems.Embedding_Lookup
+    lean_theorem: Theorems.Embedding.onehot_select
   unembedding_projection:
     formula: logits = h @ W_u^T where W_u ∈ R^{V × d_model}
     domain: h = final hidden state, shape [seq_len, d_model]
@@ -27,7 +27,7 @@ equations:
     preconditions:
     - indices.iter().all(|&i| i < vocab_size)
     - indices.len() > 0
-    lean_theorem: Theorems.Unembedding_Projection
+    lean_theorem: Theorems.Embedding.unembed_apply
   tied_weights:
     formula: W_u = W_e (weight tying)
     domain: Shared embedding matrix for input and output
@@ -37,7 +37,7 @@ equations:
     preconditions:
     - indices.iter().all(|&i| i < vocab_size)
     - indices.len() > 0
-    lean_theorem: Theorems.Tied_Weights
+    lean_theorem: Theorems.Embedding.tied_row_eq
   vocabulary_bounds:
     formula: 0 <= token_id < V
     domain: V = vocabulary size (e.g., 151936 for Qwen)
@@ -48,7 +48,7 @@ equations:
     preconditions:
     - 'input.len() > 0'
     - vocab_size > 0
-    lean_theorem: Theorems.Vocabulary_Bounds
+    lean_theorem: Theorems.Embedding.token_lt_vocab
   embedding_norm:
     formula: '||embed(t)||_2 for t ∈ [0, V)'
     domain: L2 norm of each embedding vector
@@ -58,7 +58,7 @@ equations:
     preconditions:
     - input.iter().all(|v| v.is_finite())
     - input.len() > 0
-    lean_theorem: Theorems.Embedding_Norm
+    lean_theorem: 'N/A — non-degeneracy is a loaded-weight property, not an analytic identity'
   logit_temperature:
     formula: logits_T = logits / T for temperature T > 0
     domain: Temperature scaling before softmax
@@ -69,7 +69,7 @@ equations:
     preconditions:
     - indices.iter().all(|&i| i < vocab_size)
     - indices.len() > 0
-    lean_theorem: Theorems.Logit_Temperature
+    lean_theorem: Theorems.Embedding.temp_identity
 proof_obligations:
 - type: invariant
   property: Embedding lookup shape
@@ -197,3 +197,23 @@ qa_gate:
   - logit_temperature
   pass_criteria: All 7 falsification tests pass
   falsification: Use token_id = V to trigger out-of-bounds
+verification_summary:
+  total_obligations: 7
+  l2_property_tested: 7
+  l3_kani_proved: 9
+  l4_lean_proved: 5
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+  lean_module: ProvableContracts.Theorems.Embedding.Algebra
+  proved_obligations:
+  - Embedding lookup shape        # onehot_select + embed_dim
+  - Unembedding output shape      # unembed_apply + unembed_shape
+  - Tied weight identity          # tied_row_eq + tied_apply
+  - Token ID bounds               # token_lt_vocab + token_nonneg
+  - Temperature identity          # temp_identity
+  not_applicable_obligations:
+  - property: Embedding non-degeneracy
+    reason: '||embed(t)||_2 > 0 depends on actual loaded weight values (a zero row is representable for an arbitrary table); runtime/actual-weight-load class, not an algebraic identity'
+  uncovered_obligations:
+  - property: Temperature scaling effect
+    reason: 'entropy(softmax(z/T)) monotonic in T is a genuine analytic inequality (dH/dbeta = -beta*Var_p(z) <= 0) but is NOT YET proven in Lean; classified analytic-but-unproven, so the contract honestly remains L3 (not marked N/A)'

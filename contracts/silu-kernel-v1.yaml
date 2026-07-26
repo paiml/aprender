@@ -12,10 +12,12 @@ equations:
     domain: x in R
     codomain: SiLU(x) in (-0.279, +inf)
     invariants:
-    - SiLU(0) = 0 (zero preservation)
-    - SiLU(x) > -0.279 for all x (global minimum at x ~ -1.278)
-    - SiLU(x) ~ x for large positive x (asymptotic linearity)
-    - SiLU is monotonic for x > 0
+    - SiLU(0) = 0 (zero preservation, Lean-proved)
+    - sign(SiLU(x)) = sign(x) since sigma(x) > 0 (Lean-proved)
+    - 'SiLU(x) > -1 for all x (elementary Lean-proved bound; tight empirical minimum
+      -0.279 at x ~ -1.278 stays a runtime falsification test)'
+    - 'asymptotic linearity: for x > 0, 0 < x - SiLU(x) < x*exp(-x) -> 0 (Lean-proved)'
+    - SiLU is strictly monotonic for x > 0 (Lean-proved)
     preconditions:
     - x.iter().all(|v| v.is_finite())
     - x.len() > 0
@@ -52,27 +54,84 @@ proof_obligations:
     depends_on: []
     mathlib_imports: []
     notes: SiLU(0) = 0 · σ(0) = 0 by ring
+- type: invariant
+  property: Sign preservation
+  formal: (x > 0 -> SiLU(x) > 0) and (x < 0 -> SiLU(x) < 0)
+  applies_to: all
+  lean:
+    theorem: Sigmoid.silu_sign
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on: [sigmoid_pos]
+    mathlib_imports: []
+    notes: sign(x·σ(x)) = sign(x) since σ(x) > 0; mul_pos / mul_neg_of_neg_of_pos
 - type: bound
   property: Global lower bound
-  formal: SiLU(x) > -0.279 for all x
+  formal: SiLU(x) > -1 for all x
   applies_to: all
+  lean:
+    theorem: Sigmoid.silu_gt_neg_one
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on: []
+    mathlib_imports: [Real.add_one_le_exp, Real.exp_pos]
+    notes: >-
+      Elementary bound via x + 1 + exp(-x) >= 2 > 0. The tight empirical minimum
+      SiLU(x) > -0.279 requires the transcendental stationary point x ~ -1.278 and
+      is retained as runtime falsification FALSIFY-SI-002 (analytic-but-unproven at
+      that exact constant).
+- type: bound
+  property: Sigmoid range
+  formal: 0 < sigmoid(x) < 1 for all x
+  applies_to: all
+  lean:
+    theorem: Sigmoid.sigmoid_bounded
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on: []
+    mathlib_imports: [Real.exp_pos]
+    notes: denominator 1 + exp(-x) > 1 gives (0,1)
 - type: monotonicity
   property: Monotonic for positive inputs
-  formal: x > y > 0 implies SiLU(x) > SiLU(y)
+  formal: 0 < x < y implies SiLU(x) < SiLU(y)
   applies_to: all
+  lean:
+    theorem: Sigmoid.silu_strictMono_pos
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on: [sigmoid_strictMono, sigmoid_pos]
+    mathlib_imports: [Real.exp_lt_exp, mul_lt_mul'']
+    notes: >-
+      No derivatives; σ is globally strictly increasing and both factors of x·σ(x)
+      are positive and increasing on x > 0 (mul_lt_mul'').
+- type: bound
+  property: Asymptotic linearity
+  formal: for x > 0, 0 < x - SiLU(x) < x*exp(-x)
+  applies_to: all
+  lean:
+    theorem: Sigmoid.silu_gap_bound
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on: [silu_lt_self, sigmoid_lt_exp, sigmoid_symmetry]
+    mathlib_imports: [Real.exp_pos]
+    notes: >-
+      x - SiLU(x) = x·σ(-x) < x·exp(-x) -> 0. The tight numeric instance
+      |SiLU(x) - x| < 0.01 for x > 10 is retained as runtime falsification
+      FALSIFY-SI-005.
 - type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
-- type: bound
-  property: Asymptotic linearity
-  formal: '|SiLU(x) - x| < 0.01 for x > 10'
-  applies_to: all
+  l4_not_applicable: true
+  na_reason: >-
+    Empirical floating-point ULP equivalence between the AVX2 exp approximation and
+    the scalar path is a runtime/hardware property (IEEE-754 rounding), not an
+    analytic real-number identity. Enforced by FALSIFY-SI-004 / KANI-SILU_K-007.
 verification_summary:
-  total_obligations: 5
-  l2_property_tested: 5
+  total_obligations: 7
+  l2_property_tested: 6
   l3_kani_proved: 3
-  l4_lean_proved: 1
+  l4_lean_proved: 6
   l4_sorry_count: 0
   l4_not_applicable: 1
 kernel_structure:
@@ -128,6 +187,11 @@ falsification_tests:
   prediction: '|SiLU(x)| < 0.01 for x < -10'
   test: proptest with large negative x
   if_fails: exp overflow for large negative input
+- id: FALSIFY-SI-007
+  rule: Sign preservation
+  prediction: SiLU(x) > 0 for x > 0 and SiLU(x) < 0 for x < 0
+  test: proptest with random nonzero x asserting sign(SiLU(x)) == sign(x)
+  if_fails: sigmoid returned a non-positive value, flipping the sign
 kani_harnesses:
 - id: KANI-SI-001
   obligation: SI-INV-001

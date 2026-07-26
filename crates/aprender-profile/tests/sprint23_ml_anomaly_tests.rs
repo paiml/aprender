@@ -34,7 +34,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("-T").arg("--").arg(&test_program);
 
     // Should accept the flag and run ML analysis
@@ -72,7 +72,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("-c").arg("-T").arg("--").arg(&test_program);
 
     // Should show ML cluster analysis in stderr
@@ -104,7 +104,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("--ml-clusters").arg("5").arg("-T").arg("--").arg(&test_program);
 
     // Should accept custom cluster count
@@ -143,7 +143,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("-c").arg("-T").arg("--").arg(&test_program);
 
     // Should show silhouette score in stderr
@@ -183,7 +183,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("--ml-compare").arg("-c").arg("-T").arg("--").arg(&test_program);
 
     // Should show comparison between ML and z-score in stderr
@@ -221,7 +221,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--ml-anomaly").arg("-T").arg("--").arg(&test_program);
 
     // Should show both statistics and ML analysis
@@ -258,7 +258,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("-e").arg("trace=write").arg("-T").arg("--").arg(&test_program);
 
     // Should only analyze filtered syscalls
@@ -300,7 +300,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("--ml-anomaly").arg("-T").arg("--").arg(&test_program);
 
     // Should analyze all processes together
@@ -332,7 +332,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("-T").arg("--format").arg("json").arg("--").arg(&test_program);
 
     // JSON should include ml_analysis field
@@ -371,7 +371,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("-e").arg("trace=write").arg("-T").arg("--").arg(&test_program);
 
     // Should handle gracefully (no crash, maybe warning)
@@ -381,7 +381,7 @@ int main() {
 #[test]
 fn test_ml_clusters_invalid_value() {
     // Test invalid cluster count is rejected
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly")
         .arg("--ml-clusters")
         .arg("1") // Invalid: must be >= 2
@@ -417,7 +417,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("--ml-clusters").arg("2").arg("-T").arg("--").arg(&test_program);
 
     // Should work with minimum cluster count
@@ -449,7 +449,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("-T").arg("--").arg(&test_program);
 
     // Should NOT show any ML analysis output
@@ -498,7 +498,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("-c").arg("-T").arg("--").arg(&test_program);
 
     // Should identify outlier cluster
@@ -539,7 +539,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("-c").arg("-T").arg("--").arg(&test_program);
 
     // Should cluster multiple syscall types
@@ -575,7 +575,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--ml-anomaly").arg("--anomaly-realtime").arg("-T").arg("--").arg(&test_program);
 
     // Should support both methods simultaneously

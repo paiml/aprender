@@ -46,7 +46,7 @@ fn main() {
 
     let (_temp_dir, bin_file) = compile_test_program(code, 0);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--source") // New flag to enable source correlation
         .arg("--")
         .arg(&bin_file)
@@ -68,7 +68,7 @@ fn main() {
 
     let (_temp_dir, bin_file) = compile_test_program(code, 1);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--source")
         .arg("--")
         .arg(&bin_file)
@@ -93,7 +93,7 @@ fn main() {
 
     let (_temp_dir, bin_file) = compile_test_program(code, 0);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--source")
         .arg("--")
         .arg(&bin_file)
@@ -114,7 +114,7 @@ fn main() {
 
     let (_temp_dir, bin_file) = compile_test_program(code, 0);
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--")
         .arg(&bin_file)
         .assert()
@@ -141,7 +141,7 @@ fn test_dwarf_no_debug_info_graceful_fallback() {
         .status()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--source").arg("--").arg(&bin_file).assert().success(); // Should not crash
                                                                      // Output should just be normal (no source info)
 }

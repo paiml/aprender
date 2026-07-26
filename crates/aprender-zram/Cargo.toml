@@ -39,16 +39,4 @@ adaptive = ["dep:trueno-zram-adaptive"]
 [lints]
 workspace = true
 
-[profile.release]
-lto = true
-codegen-units = 1
-panic = "abort"
-
-[profile.bench]
-lto = true
-codegen-units = 1
-
-[profile.dev]
-panic = "abort"
-
 # Old [[workspace.metadata.release]] removed — root workspace handles releases

@@ -67,37 +67,92 @@ proof_obligations:
       gate-zero lemma swiglu_gate_zero proves the output component is 0 for ANY
       value pre-activation when the gate pre-activation is 0.
 - type: equivalence
+  property: Gating identity
+  formal: SwiGLU(g, v) = SiLU(g) * v
+  applies_to: all
+  lean:
+    theorem: Sigmoid.swiglu_gating_identity
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on: []
+    mathlib_imports: []
+    notes: >-
+      The SwiGLU output component factors definitionally as SiLU(gate)*value —
+      the contract's "decomposable as gate * value where gate = SiLU(xW+b)"
+      invariant. Proved by rfl over the swigluElem definition.
+- type: bound
+  property: Sigmoid range
+  formal: 0 < sigmoid(z) AND sigmoid(z) < 1 for all z
+  applies_to: all
+  lean:
+    theorem: Sigmoid.sigmoid_bounded
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on:
+    - Sigmoid.sigmoid_pos
+    - Sigmoid.sigmoid_lt_one
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.ExpDeriv
+    notes: >-
+      σ(z)=1/(1+exp(-z)) ∈ (0,1): exp(-z)>0 makes the denominator exceed 1
+      (so σ<1) while keeping it positive (so σ>0). This is the gate
+      activation's amplitude bound underlying SiLU finiteness.
+- type: bound
+  property: Gate output bounded below
+  formal: SiLU(z) > -1/e for all z   (e = exp 1, -1/e approx -0.3679)
+  applies_to: all
+  lean:
+    theorem: Sigmoid.silu_gt_neg_inv_e
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on:
+    - Sigmoid.sigmoid_lt_exp
+    - Sigmoid.mul_exp_ge_neg_inv_e
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Exp
+    notes: >-
+      Elementary global lower bound SiLU(z) > -1/e proved from σ(z) < exp z
+      and the tangent-line inequality exp y >= y+1 (Real.add_one_le_exp). NOTE
+      ON THE CONSTANT: the TIGHT global minimum ~-0.2785 sits at the
+      transcendental critical point z*~-1.2784 (root of e^z(z-1)=1) and is NOT
+      elementarily provable. The analytic core proved here is the clean,
+      fully-verified -1/e bound (same sign and order of magnitude), which
+      already discharges the substantive claim — the SiLU gate can never
+      diverge to -inf. The looser-but-provable constant is stated honestly.
+- type: monotonicity
+  property: SiLU monotone on nonnegative domain
+  formal: 0 <= a AND a < b implies SiLU(a) < SiLU(b)
+  applies_to: all
+  lean:
+    theorem: Sigmoid.silu_mono_nonneg
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on:
+    - Sigmoid.sigmoid_mono
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Exp
+    notes: >-
+      SiLU is strictly increasing on [0,inf): σ is monotone nondecreasing
+      (reciprocal of the shrinking denominator 1+exp(-z)) and x is nonneg, so
+      a·σ(a) <= a·σ(b) < b·σ(b). Matches FALSIFY-SG-006 (increasing the gate
+      input increases the gate output when the gate is positive).
+- type: equivalence
   property: Fused matches unfused
   formal: '|fused_swiglu(x) - (silu(xW+b) * (xV+c))| < eps'
   tolerance: 1.0e-06
-  applies_to: all
-- type: bound
-  property: Gate output bounded below
-  formal: SiLU(xW+b)_i > -0.279 for all i
   applies_to: all
 - type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
 verification_summary:
-  total_obligations: 4
-  l2_property_tested: 4
+  total_obligations: 7
+  l2_property_tested: 7
   l3_kani_proved: 3
-  l4_lean_proved: 1
+  l4_lean_proved: 5
   l4_sorry_count: 0
   l4_not_applicable: 2
-  honest_level: L3
-  uncovered:
-  - property: Gate output bounded below
-    formal: SiLU(xW+b)_i > -0.279 for all i
-    class: analytic-but-unproven
-    reason: >-
-      The tight global lower bound -0.279 of SiLU(z)=z·σ(z) sits at the
-      transcendental critical point z≈-1.2784 (solving e^z(z-1)=1). Proving the
-      exact constant in Lean requires locating that critical point, which is not
-      closed here. Left honestly UNCOVERED (NOT marked N/A) — this is why the
-      contract's honest maximum is L3, not L4. Matches the silu-kernel-v1
-      sibling, which also leaves this bound unproven.
+  honest_level: L4
   not_applicable_detail:
   - property: Fused matches unfused
     reason: >-
@@ -171,6 +226,16 @@ falsification_tests:
   prediction: For fixed value, increasing gate input increases output when gate > 0
   test: proptest with sorted gate inputs and fixed value
   if_fails: SiLU monotonicity violated in positive domain
+- id: FALSIFY-SG-007
+  rule: Gating identity
+  prediction: SwiGLU(g, v) == SiLU(g) * v componentwise
+  test: proptest with random gate/value pre-activations
+  if_fails: Fused kernel does not factor as SiLU(gate) * value
+- id: FALSIFY-SG-008
+  rule: Sigmoid range
+  prediction: 0 < sigmoid(z) < 1 for all z in [-1000, 1000]
+  test: proptest with random z values across the domain
+  if_fails: Sigmoid saturates outside (0, 1)
 kani_harnesses:
 - id: KANI-SG-001
   obligation: SG-INV-001

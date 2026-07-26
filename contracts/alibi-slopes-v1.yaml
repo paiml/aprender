@@ -29,14 +29,74 @@ proof_obligations:
   property: Head-zero slope equals m0
   formal: m[0] = 2^(-8/n) and in particular m[0] = 0.5 when n = 8
   applies_to: all
+  lean:
+    theorem: Alibi.alibi_head_zero
+    module: ProvableContracts.Theorems.Alibi.Slopes
+    status: proved
+    depends_on:
+    - Real.rpow
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Pow.Real
+    notes: 'alibiSlope n 0 = alibiM0 n = 2^(-8/n) (the (h+1) offset collapses to 1);
+      concrete alibi_head_zero_eight proves alibiSlope 8 0 = 1/2 via Real.rpow_neg_one.'
 - type: bound
   property: Slopes are below one
   formal: m[h] = 2^(-8(h+1)/n) < 1 for all h in {0, ..., n-1}, n >= 1
   applies_to: all
+  lean:
+    theorem: Alibi.alibi_slope_lt_one
+    module: ProvableContracts.Theorems.Alibi.Slopes
+    status: proved
+    depends_on:
+    - Real.rpow_lt_one_of_one_lt_of_neg
+    - div_neg_of_neg_of_pos
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Pow.Real
+    notes: 'Exponent -8(h+1)/n < 0 for h >= 0, n > 0; base 2 > 1 so 2^(neg) < 1.
+      Companion alibi_slope_pos proves 0 < m[h] (strictly positive geometric sequence).'
 - type: equivalence
   property: Matches ggml reference exponent
   formal: m[h] = m0^(h+1) with m0 = 2^(-8/n) (llama.cpp soft_max_ext)
   applies_to: all
+  lean:
+    theorem: Alibi.alibi_slope_ggml
+    module: ProvableContracts.Theorems.Alibi.Slopes
+    status: proved
+    depends_on:
+    - Real.rpow_mul
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Pow.Real
+    notes: 'alibiSlope n h = (alibiM0 n)^(h+1) via (x^y)^z = x^(y*z) (Real.rpow_mul);
+      alibi_slope_strict_anti additionally proves m[0] > m[1] > ... (strictly decreasing).'
+verification_summary:
+  total_obligations: 3
+  l2_property_tested: 3
+  l3_kani_proved: 3
+  l4_lean_proved: 3
+  l4_sorry_count: 0
+  l4_not_applicable: 0
+  mathlib_imports: true
+  lean_proved_obligations:
+  - obligation: Head-zero slope equals m0
+    theorem: Alibi.alibi_head_zero
+    file: ProvableContracts/Theorems/Alibi/Slopes.lean
+    note: 'alibiSlope n 0 = alibiM0 n = 2^(-8/n) (the (h+1) offset collapses to 1);
+      alibi_head_zero_eight proves alibiSlope 8 0 = 1/2 via Real.rpow_neg_one.'
+  - obligation: Slopes are below one
+    theorem: Alibi.alibi_slope_lt_one
+    file: ProvableContracts/Theorems/Alibi/Slopes.lean
+    note: 'exponent -8(h+1)/n < 0 for h>=0, n>0, and base 2>1, so 2^(neg) < 1
+      (Real.rpow_lt_one_of_one_lt_of_neg). alibi_slope_pos additionally proves 0 < m[h].'
+  - obligation: Matches ggml reference exponent
+    theorem: Alibi.alibi_slope_ggml
+    file: ProvableContracts/Theorems/Alibi/Slopes.lean
+    note: 'alibiSlope n h = (alibiM0 n)^(h+1) via (x^y)^z = x^(y*z) (Real.rpow_mul),
+      matching llama.cpp soft_max_ext.'
+  notes: 'All 3 obligations proved sorry-free in Lean 4 over the reals (Mathlib
+    Real.rpow). Zero N/A — the contract is fully analytic. Slopes are a positive,
+    strictly-decreasing geometric sequence: alibi_slope_pos (m[h]>0) and
+    alibi_slope_strict_anti (m[0]>m[1]>...>m[n-1]) additionally proved. Verified via
+    lake env lean ProvableContracts/Theorems/Alibi/Slopes.lean (exit 0, 0 sorry).'
 kernel_structure:
   phases:
   - name: compute_slopes

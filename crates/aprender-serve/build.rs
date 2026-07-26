@@ -272,6 +272,8 @@ fn emit_contract_bindings() {
     // Re-run if binding.yaml changes
     let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
+        .join("..")
+        .join("..")
         .join("provable-contracts")
         .join("contracts")
         .join("realizar")
@@ -492,6 +494,8 @@ fn find_binding_note<'a>(bindings: &'a BindingFile, var_name: &str) -> &'a str {
 fn generate_arch_requirements_file() {
     let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
+        .join("..")
+        .join("..")
         .join("provable-contracts")
         .join("contracts")
         .join("architecture-requirements-v1.yaml");
@@ -567,12 +571,16 @@ struct ArchEntry {
     has_bias: bool,
     tied_embeddings: bool,
     has_qk_norm: bool,
+    #[serde(default)]
+    is_moe: bool,
     default_eps: f64,
 }
 
 /// GH-323: Read arch-constraints-v1.yaml and generate `arch_constraints_generated.rs`.
 fn generate_arch_constraints_file() {
     let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
         .join("..")
         .join("provable-contracts")
         .join("contracts")
@@ -713,6 +721,7 @@ fn emit_arch_arm(out: &mut String, comment: &str, pattern: &str, entry: &ArchEnt
          \x20           has_bias: {},\n\
          \x20           tied_embeddings: {},\n\
          \x20           has_qk_norm: {},\n\
+         \x20           is_moe: {},\n\
          \x20           default_eps: {},\n\
          \x20       }},\n",
         map_norm_type(&entry.norm_type),
@@ -723,6 +732,7 @@ fn emit_arch_arm(out: &mut String, comment: &str, pattern: &str, entry: &ArchEnt
         entry.has_bias,
         entry.tied_embeddings,
         entry.has_qk_norm,
+        entry.is_moe,
         format_eps(entry.default_eps),
     );
 }
@@ -789,6 +799,8 @@ fn generate_tensor_names_file() {
     // For now, always use the fallback file.
     // YAML-to-codegen pipeline from tensor-names-v1.yaml is planned (GH-311).
     let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
         .join("..")
         .join("provable-contracts")
         .join("contracts")

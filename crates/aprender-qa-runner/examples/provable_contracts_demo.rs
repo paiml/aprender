@@ -97,7 +97,7 @@ fn show_bindings(binding_path: &Path) {
 fn show_embedded_contract() {
     println!("--- Embedded Format Contract (Runtime) ---\n");
 
-    let embedded = apr_qa_runner::load_format_contract().expect("load embedded contract");
+    let embedded = aprender_qa_runner::load_format_contract().expect("load embedded contract");
     println!("  version:    {}", embedded.version);
     println!("  invariants: {}", embedded.invariants.len());
     for inv in &embedded.invariants {

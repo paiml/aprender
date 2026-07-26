@@ -1,0 +1,13 @@
+# Auto-generated from .pmat-work/__36mPMAT-CLAUDE-PROXY-001__0m/contract.json
+name: "PMAT-CLAUDE-PROXY-001"
+metadata:
+  version: "1.0.0"
+  kind: schema
+  description: "Auto-generated work-contract for PMAT-CLAUDE-PROXY-001"
+  references:
+    - ".pmat-work/__36mPMAT-CLAUDE-PROXY-001__0m/contract.json"
+surface: work-contract
+verification_summary:
+  target_level: L1
+  current_level: L1
+  total_obligations: 47

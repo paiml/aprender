@@ -42,19 +42,118 @@ equations:
     - 'AprQ4 export -> Err (unchanged)'
     - 'layout-identical dtypes (F32/F16/Q4K/Q6K) still export successfully'
     - 'symmetric with the import-side rejection of GGUF Q8_0'
-    lean_theorem: Theorems.Layout_Compatible_Export
+    lean_theorem: Theorems.GgufExportSymmetry.Roundtrip
 
 proof_obligations:
-- type: classification
-  property: APR-native quant export rejected
+# ── ANALYTIC (Lean-proved, core-only, no Mathlib) ──────────────────────────
+- id: GES-DTYPE-ROUNDTRIP-001
+  type: roundtrip
+  property: 'importDtype ∘ exportDtype = id on the compatible subset (dtype preserved)'
+  formal: |
+    For every APR dtype d the exporter accepts (exportDtype d = some g), the
+    importer restores it exactly: importDtype g = some d. The compatible subset
+    is exactly {F32,F16,Q4K,Q6K} — whose numeric ids 0,1,12,14 are shared byte
+    for byte with GGML.
+  applies_to: all
+  lean:
+    theorem: GgufExportSymmetry.dtype_roundtrip
+    module: ProvableContracts.GgufExportSymmetry
+    file: lean/ProvableContracts/Theorems/GgufExportSymmetry/Roundtrip.lean
+    status: proved
+    core_only: true
+    mathlib_imports: []
+    notes: >-
+      Also `dtype_roundtrip_section` proves the reverse composition
+      exportDtype ∘ importDtype = id on the compatible GGML subset. rfl per case.
+- id: GES-REJECT-SYM-001
+  type: classification
+  property: 'APR-native quants rejected, symmetrically with import-side Q8_0 refusal'
+  formal: |
+    exportDtype AprQ8 = none and exportDtype AprQ4 = none (rejected, NEVER
+    relabeled as Q8_0), and importDtype Q8_0 = none (APR cannot represent the
+    per-32-block Q8_0 layout exactly).
+  applies_to: all
+  lean:
+    theorem: GgufExportSymmetry.export_rejects_aprq8
+    module: ProvableContracts.GgufExportSymmetry
+    file: lean/ProvableContracts/Theorems/GgufExportSymmetry/Roundtrip.lean
+    status: proved
+    core_only: true
+    mathlib_imports: []
+    notes: >-
+      Companion theorems export_rejects_aprq4 and import_rejects_q8_0 in the
+      same file — all rfl.
+- id: GES-SHAPE-PRESERVE-001
+  type: invariant
+  property: 'a successful export copies the tensor shape verbatim (shape preserved)'
+  formal: |
+    exportTensor t = some gt → gt.shape = t.shape. The export path copies dims
+    unchanged; the mapped GGML label carries the same shape.
+  applies_to: all
+  lean:
+    theorem: GgufExportSymmetry.export_preserves_shape
+    module: ProvableContracts.GgufExportSymmetry
+    file: lean/ProvableContracts/Theorems/GgufExportSymmetry/Roundtrip.lean
+    status: proved
+    core_only: true
+    mathlib_imports: []
+- id: GES-PAYLOAD-INVOL-001
+  type: idempotency
+  property: 'full-tensor round trip importTensor ∘ exportTensor = id (dtype+shape+bytes preserved bit-for-bit)'
+  formal: |
+    exportTensor t = some gt → importTensor gt = some t. On the exportable
+    subset the raw byte payload, shape, and dtype are all restored exactly —
+    the export/import involution on the tensor payload.
+  applies_to: all
+  lean:
+    theorem: GgufExportSymmetry.export_import_roundtrip
+    module: ProvableContracts.GgufExportSymmetry
+    file: lean/ProvableContracts/Theorems/GgufExportSymmetry/Roundtrip.lean
+    status: proved
+    core_only: true
+    mathlib_imports: []
+# ── GENUINELY-NOT-APPLICABLE (runtime file-IO / string / GgufReader — L2) ───
+- id: GES-RUNTIME-REJECT-ERRMSG-001
+  type: classification
+  property: 'runtime: export_apr_to_gguf_raw returns Err whose message names "AprQ8"'
   formal: |
     export_apr_to_gguf_raw on an APR file containing an AprQ8 tensor returns
-    Err whose message names "AprQ8".
-- type: invariant
-  property: layout-identical dtypes still export
+    Err whose message names "AprQ8". (Runtime file-IO + error-string content —
+    NOT an algebraic identity; the analytic core exportDtype AprQ8 = none is
+    proved by GES-REJECT-SYM-001. Verified at L2 by FT-APRQ8-001.)
+  applies_to: all
+- id: GES-RUNTIME-GGUF-PARSE-001
+  type: invariant
+  property: 'runtime: an all-F32 APR exports to a GGUF the GgufReader can parse'
   formal: |
     An APR file of F32 (and Q4K/Q6K) tensors still exports to a valid GGUF the
-    GgufReader can parse.
+    GgufReader can parse. (Runtime file-IO + on-disk byte-layout / reader
+    behaviour — NOT an algebraic identity; the analytic core
+    importDtype∘exportDtype = id + shape/payload preservation is proved by
+    GES-DTYPE-ROUNDTRIP-001 / GES-SHAPE-PRESERVE-001 / GES-PAYLOAD-INVOL-001.
+    Verified at L2 by FT-APRQ8-002.)
+  applies_to: all
+
+verification_summary:
+  total_obligations: 6
+  l2_property_tested: 6
+  l3_kani_proved: 1
+  l4_lean_proved: 4
+  l4_sorry_count: 0
+  l4_not_applicable: 2
+  lean_file: crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/GgufExportSymmetry/Roundtrip.lean
+  lean_standalone_verified: true
+  notes: >-
+    4 analytic obligations (dtype roundtrip involution, symmetric APR-native
+    rejection, shape preservation, full-tensor payload round-trip identity)
+    proved sorry-free by the standalone `lean` binary (no Mathlib, core-only).
+    4 proved + 2 genuinely-N/A == 6 total → L4. The 2 N/A obligations are
+    RUNTIME facts (export_apr_to_gguf_raw error-message string; GgufReader
+    parsing an on-disk GGUF) — file-IO / byte-layout / string content with no
+    algebraic identity; proving them in Lean would be theater. They are
+    verified at L2 by FT-APRQ8-001 / FT-APRQ8-002 (+ KANI-APRQ8-001 dtype-map
+    exhaustiveness). L5 additionally requires the equation binding to
+    apr_dtype_to_ggml be recorded as implemented in contracts/binding.yaml.
 
 falsification_tests:
 - id: FT-APRQ8-001
@@ -69,6 +168,26 @@ falsification_tests:
   prediction: 'an all-F32 APR exports to a GGUF that GgufReader parses (3 tensors).'
   if_fails: 'the reject arm is over-broad and now blocks valid F32/Q4K/Q6K export.'
   evidence: cargo test -p aprender-core --lib test_export_apr_to_gguf_raw_round_trip
+- id: FT-GES-DTYPE-ROUNDTRIP
+  rule: importDtype ∘ exportDtype = id on the compatible subset (dtype preserved)
+  prediction: 'exportDtype d = some g implies importDtype g = some d for all d.'
+  test: Lean theorem GgufExportSymmetry.dtype_roundtrip proved sorry-free (core-only)
+  if_fails: 'the export/import dtype maps disagree — a round-tripped dtype would change.'
+- id: FT-GES-REJECT-SYM
+  rule: AprQ8/AprQ4 export to none, Q8_0 imports to none (symmetric rejection)
+  prediction: 'exportDtype AprQ8 = none, exportDtype AprQ4 = none, importDtype Q8_0 = none.'
+  test: Lean theorems export_rejects_aprq8 / export_rejects_aprq4 / import_rejects_q8_0 (rfl)
+  if_fails: 'an APR-native quant maps to a byte-incompatible GGML type — corrupt GGUF.'
+- id: FT-GES-SHAPE-PRESERVE
+  rule: a successful export copies the tensor shape verbatim
+  prediction: 'exportTensor t = some gt implies gt.shape = t.shape.'
+  test: Lean theorem GgufExportSymmetry.export_preserves_shape proved sorry-free
+  if_fails: 'export drops or reorders tensor dims — GgufReader would misread the tensor.'
+- id: FT-GES-PAYLOAD-INVOL
+  rule: full-tensor round trip importTensor ∘ exportTensor = id (dtype+shape+bytes)
+  prediction: 'exportTensor t = some gt implies importTensor gt = some t (bit-for-bit).'
+  test: Lean theorem GgufExportSymmetry.export_import_roundtrip proved sorry-free
+  if_fails: 'a round-tripped tensor differs from the original — payload lost or corrupted.'
 
 kani_harnesses:
 - id: KANI-APRQ8-001

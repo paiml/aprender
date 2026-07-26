@@ -31,7 +31,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--otlp-endpoint").arg("http://localhost:4317").arg("--").arg(&test_program);
 
     // Should accept the flag (may fail to connect, but flag should be accepted)
@@ -61,7 +61,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--").arg(&test_program);
 
     // Should work without OTLP
@@ -93,7 +93,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--otlp-endpoint").arg("http://localhost:4317").arg("--").arg(&test_program);
 
     cmd.assert().success();
@@ -122,7 +122,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317")
         .arg("--otlp-service-name")
@@ -156,7 +156,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--otlp-endpoint").arg("invalid://endpoint").arg("--").arg(&test_program);
 
     // Should still trace, but may log warning about export failure
@@ -188,7 +188,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-T").arg("--otlp-endpoint").arg("http://localhost:4317").arg("--").arg(&test_program);
 
     cmd.assert().success();
@@ -218,7 +218,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-s") // Enable source correlation
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -253,7 +253,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-e")
         .arg("trace=write")
         .arg("--otlp-endpoint")
@@ -287,7 +287,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--").arg(&test_program);
 
     // Should work exactly as before
@@ -317,7 +317,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317") // gRPC port
         .arg("--")
@@ -349,7 +349,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4318") // HTTP port
         .arg("--")
@@ -383,7 +383,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--otlp-endpoint").arg("http://localhost:4317").arg("--").arg(&test_program);
 
     cmd.assert().success();

@@ -5,7 +5,7 @@
 #[test]
 fn test_function_time_flag_accepted() {
     // Test that --function-time flag is accepted by CLI
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--function-time").arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");
@@ -19,7 +19,7 @@ fn test_function_time_flag_accepted() {
 #[test]
 fn test_function_time_output_format() {
     // Test that function profiling output appears when --function-time is used
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--function-time").arg("--").arg("echo").arg("hello");
 
     let output = cmd.output().expect("test");
@@ -39,7 +39,7 @@ fn test_function_time_output_format() {
 #[test]
 fn test_function_time_with_filter() {
     // Test that --function-time works with filtering
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--function-time").arg("-e").arg("trace=write").arg("--").arg("echo").arg("hello");
 
     let output = cmd.output().expect("test");
@@ -59,7 +59,7 @@ fn test_function_time_with_filter() {
 #[test]
 fn test_function_time_without_flag_no_profiling() {
     // Test that without --function-time, no profiling summary appears
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--").arg("echo").arg("test");
 
     let output = cmd.output().expect("test");

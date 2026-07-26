@@ -48,7 +48,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis")
         .arg("-c") // Statistics mode to see HPU summary
         .arg("--")
@@ -87,7 +87,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis").arg("-c").arg("--").arg(&test_program);
 
     // Should show correlation matrix with high correlation between open-write-close
@@ -135,7 +135,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis").arg("-c").arg("--").arg(&test_program);
 
     // Should show clustering results with 2+ clusters
@@ -172,7 +172,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis").arg("-c").arg("--").arg(&test_program);
 
     // Should show HPU backend used (GPU or CPU fallback)
@@ -204,7 +204,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis")
         .arg("--hpu-cpu-only") // Force CPU backend
         .arg("-c")
@@ -244,7 +244,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c").arg("--hpu-analysis").arg("--").arg(&test_program);
 
     // Should show both statistics AND HPU analysis
@@ -286,7 +286,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis")
         .arg("-c")
         .arg("-e")
@@ -327,7 +327,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis")
         .arg("-c") // Statistics mode needed for HPU report
         .arg("--function-time")
@@ -376,7 +376,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis").arg("--format").arg("json").arg("--").arg(&test_program);
 
     let output = cmd.output().expect("test");
@@ -425,7 +425,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis").arg("-c").arg("--").arg(&test_program);
 
     // Should handle large traces efficiently
@@ -457,7 +457,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis").arg("-c").arg("--").arg(&test_program);
 
     // Should handle gracefully (no crash, informative message)
@@ -490,7 +490,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-c") // Statistics without HPU
         .arg("--")
         .arg(&test_program);
@@ -541,7 +541,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--hpu-analysis")
         .arg("-c")
         .arg("-T") // Timing for hotspot detection

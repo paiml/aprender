@@ -66,19 +66,19 @@ fn main() {
         for c in 0..128 { data[s+16+c] = ((sb*3 + c*5) % 256) as u8; }
     }
     let x_host: Vec<f32> = (0..K).map(|i| ((i % 11) as f32) * 0.1 - 0.5).collect();
-    let d_dev = DeviceBuffer::from_host(&stream, &data).unwrap();
-    let x_dev = DeviceBuffer::from_host(&stream, &x_host).unwrap();
-    let mut y_dev = DeviceBuffer::<f32>::zeroed(&stream, M).unwrap();
+    let d_dev = DeviceBuffer::from_host(&stream, &data).expect("upload Q4K weights to device");
+    let x_dev = DeviceBuffer::from_host(&stream, &x_host).expect("upload x vector to device");
+    let mut y_dev = DeviceBuffer::<f32>::zeroed(&stream, M).expect("allocate y output buffer on device");
     let module = kernels::load(&ctx).expect("load");
     module.q4k_matvec(&stream, LaunchConfig::for_num_elems(M as u32), &d_dev, &x_dev, &mut y_dev).expect("launch");
-    let y = y_dev.to_host_vec(&stream).unwrap();
+    let y = y_dev.to_host_vec(&stream).expect("copy y result to host");
     // ---- timed throughput (after correctness) ----
     let iters = 3000u32;
     for _ in 0..50 { module.q4k_matvec(&stream, LaunchConfig::for_num_elems(M as u32), &d_dev, &x_dev, &mut y_dev).expect("warm"); }
-    let _ = y_dev.to_host_vec(&stream).unwrap();
+    let _ = y_dev.to_host_vec(&stream).expect("sync after warm-up");
     let t0 = std::time::Instant::now();
     for _ in 0..iters { module.q4k_matvec(&stream, LaunchConfig::for_num_elems(M as u32), &d_dev, &x_dev, &mut y_dev).expect("timed"); }
-    let _ = y_dev.to_host_vec(&stream).unwrap();
+    let _ = y_dev.to_host_vec(&stream).expect("sync after timed loop");
     let us = t0.elapsed().as_secs_f64() * 1e6 / (iters as f64);
     println!("Q4K-MATVEC TIMING: {:.2} us/launch ({}x{} Q4K matvec) on GB10 via cuda-oxide", us, M, K);
     let mut errs = 0; let mut maxdiff = 0.0f32;

@@ -51,20 +51,6 @@ harness = false
 # Mutation testing
 # Note: cargo-mutants is installed as a cargo subcommand
 
-[profile.test]
-# Optimizations for faster test execution
-opt-level = 1
-
-[profile.release]
-# Production optimizations
-lto = true
-codegen-units = 1
-panic = "abort"
-
-[profile.bench]
-# Benchmark optimizations
-lto = true
-
 [package.metadata.release]
 shared-version = true
 
@@ -77,5 +63,3 @@ replace = "## [{{version}}] - {{date}}"
 all-features = true
 rustdoc-args = ["--generate-link-to-definition"]
 
-[profile.dev]
-panic = "abort"

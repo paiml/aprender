@@ -90,7 +90,7 @@ fn test_generate_markdown_no_stderr() {
         environment: EnvironmentContext {
             os: "linux".to_string(),
             arch: "x86_64".to_string(),
-            apr_qa_version: "0.1.0".to_string(),
+            aprender_qa_version: "0.1.0".to_string(),
             apr_cli_version: "0.2.12".to_string(),
             git_commit: "abc123".to_string(),
             git_branch: "main".to_string(),
@@ -131,7 +131,7 @@ fn test_generate_markdown_empty_stderr() {
         environment: EnvironmentContext {
             os: "linux".to_string(),
             arch: "x86_64".to_string(),
-            apr_qa_version: "0.1.0".to_string(),
+            aprender_qa_version: "0.1.0".to_string(),
             apr_cli_version: "0.2.12".to_string(),
             git_commit: "abc123".to_string(),
             git_branch: "main".to_string(),
@@ -174,7 +174,7 @@ fn test_failure_details_no_exit_code() {
         environment: EnvironmentContext {
             os: "linux".to_string(),
             arch: "x86_64".to_string(),
-            apr_qa_version: "0.1.0".to_string(),
+            aprender_qa_version: "0.1.0".to_string(),
             apr_cli_version: "0.2.12".to_string(),
             git_commit: "abc123".to_string(),
             git_branch: "main".to_string(),
@@ -220,7 +220,7 @@ fn test_generate_markdown_explain_empty_stdout() {
         environment: EnvironmentContext {
             os: "linux".to_string(),
             arch: "x86_64".to_string(),
-            apr_qa_version: "0.1.0".to_string(),
+            aprender_qa_version: "0.1.0".to_string(),
             apr_cli_version: "0.2.12".to_string(),
             git_commit: "abc123".to_string(),
             git_branch: "main".to_string(),

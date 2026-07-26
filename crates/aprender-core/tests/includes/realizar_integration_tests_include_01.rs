@@ -32,7 +32,7 @@ fn s21_load_time_target() {
     // Target: < 10s for Qwen2-0.5B via mmap
     // Verified via architectural audit: mmap is used for models > 50MB
     // mmap is documented in run.rs and implemented in realizar
-    let run_rs = include_str!("../../crates/apr-cli/src/commands/run.rs");
+    let run_rs = include_str!("../../../../crates/apr-cli/src/commands/run.rs");
     assert!(
         run_rs.contains("mmap"),
         "S21: Code must document mmap path"
@@ -60,7 +60,7 @@ fn s23_cpu_decode_target() {
 fn integration_realizar_linkage_verification() {
     // This test ensures we aren't just using stubs
     // We check the binary linkage if it exists, otherwise check build config
-    let cargo_toml = include_str!("../../crates/apr-cli/Cargo.toml");
+    let cargo_toml = include_str!("../../../../crates/apr-cli/Cargo.toml");
     assert!(
         cargo_toml.contains("realizar") && cargo_toml.contains("optional = true"),
         "Integration: realizar must be an optional dependency in apr-cli"

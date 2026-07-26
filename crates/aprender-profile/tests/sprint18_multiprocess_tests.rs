@@ -50,7 +50,7 @@ int main() {
         .expect("Failed to compile test program");
 
     // Run with -f flag
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("--").arg(&test_program);
 
     // Should trace syscalls from both parent and child
@@ -94,7 +94,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("--").arg(&test_program);
 
     // Should trace fork and potentially execve in child
@@ -140,7 +140,7 @@ int main() {
         .expect("test");
 
     // Run WITHOUT -f flag
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--").arg(&test_program);
 
     // Should only see parent's syscalls, not child's
@@ -193,7 +193,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("--").arg(&test_program);
 
     // Should trace all 4 processes (parent + 3 children)
@@ -238,7 +238,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("-e").arg("trace=write").arg("--").arg(&test_program);
 
     // Should show write syscalls from both parent and child, but filter out others
@@ -270,7 +270,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("-c").arg("--").arg(&test_program);
 
     // Should show statistics aggregated across all processes (goes to stderr)
@@ -306,7 +306,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("--format").arg("json").arg("--").arg(&test_program);
 
     // JSON output should include syscalls from all processes
@@ -342,7 +342,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("--format").arg("csv").arg("--").arg(&test_program);
 
     // CSV output should include header and syscalls from all processes
@@ -385,7 +385,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("--").arg(&test_program);
 
     // Should handle child that exits quickly without crashing
@@ -426,7 +426,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("--").arg(&test_program);
 
     // Should handle vfork() as well as fork()
@@ -465,7 +465,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("-f").arg("--").arg(&test_program);
 
     // Should handle clone() syscall (threads)

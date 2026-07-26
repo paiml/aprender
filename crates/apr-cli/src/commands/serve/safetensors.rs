@@ -169,7 +169,7 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
         // drop-in Ollama HTTP replacement (non-streaming coalesced bodies today).
         let tags_model = model_path_str.clone();
         let inference_routes: Router = if inference_enabled {
-            Router::new()
+            let r = Router::new()
                 .route(
                     "/v1/chat/completions",
                     post(safetensors_chat_completions_handler),
@@ -183,8 +183,8 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
                         let model = tags_model.clone();
                         async move { Json(super::ollama::ollama_tags_body(&model)) }
                     }),
-                )
-                .with_state(state)
+                );
+            super::ollama::add_ollama_stubs(r).with_state(state)
         } else {
             Router::new()
         };
@@ -364,7 +364,7 @@ pub(crate) fn start_sharded_safetensors_server(
         // PMAT-923: Ollama endpoints reuse the same backend (drop-in Ollama).
         let tags_model = model_path_str.clone();
         let inference_routes: Router = if inference_enabled {
-            Router::new()
+            let r = Router::new()
                 .route(
                     "/v1/chat/completions",
                     post(safetensors_chat_completions_handler),
@@ -378,8 +378,8 @@ pub(crate) fn start_sharded_safetensors_server(
                         let model = tags_model.clone();
                         async move { Json(super::ollama::ollama_tags_body(&model)) }
                     }),
-                )
-                .with_state(state)
+                );
+            super::ollama::add_ollama_stubs(r).with_state(state)
         } else {
             Router::new()
         };

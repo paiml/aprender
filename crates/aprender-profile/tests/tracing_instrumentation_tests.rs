@@ -5,7 +5,7 @@
 use std::process::Command;
 
 fn get_binary_path() -> String {
-    env!("CARGO_BIN_EXE_renacer").to_string()
+    env!("CARGO_BIN_EXE_aprender-profile").to_string()
 }
 
 #[test]

@@ -8,9 +8,9 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::cast_sign_loss)]
 
-use apr_qa_gen::{Backend, Format, Modality, ModelId, QaScenario};
-use apr_qa_report::MqsCalculator;
-use apr_qa_runner::{Evidence, EvidenceCollector};
+use aprender_qa_gen::{Backend, Format, Modality, ModelId, QaScenario};
+use aprender_qa_report::MqsCalculator;
+use aprender_qa_runner::{Evidence, EvidenceCollector};
 
 fn main() {
     let model_id = "meta-llama/Llama-3.2-1B-Instruct";
@@ -63,7 +63,7 @@ fn main() {
             println!();
 
             // Calculate Popperian score for philosophical context
-            let popperian_calc = apr_qa_report::popperian::PopperianCalculator::new();
+            let popperian_calc = aprender_qa_report::popperian::PopperianCalculator::new();
             let popperian = popperian_calc.calculate(model_id, &collector);
 
             println!("Popperian Analysis:");

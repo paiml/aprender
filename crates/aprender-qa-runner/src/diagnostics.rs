@@ -46,7 +46,7 @@ pub struct EnvironmentContext {
     /// CPU architecture (e.g., "x86_64", "aarch64")
     pub arch: String,
     /// apr-qa version
-    pub apr_qa_version: String,
+    pub aprender_qa_version: String,
     /// apr CLI version
     pub apr_cli_version: String,
     /// Git commit hash (short form)
@@ -67,7 +67,7 @@ impl EnvironmentContext {
         Self {
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
-            apr_qa_version: env!("CARGO_PKG_VERSION").to_string(),
+            aprender_qa_version: env!("CARGO_PKG_VERSION").to_string(),
             apr_cli_version: get_apr_version(),
             git_commit: get_git_commit(),
             git_branch: get_git_branch(),

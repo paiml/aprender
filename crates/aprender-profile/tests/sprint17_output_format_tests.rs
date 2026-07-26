@@ -12,7 +12,7 @@ use tempfile::TempDir;
 #[test]
 fn test_csv_basic_output() {
     // Test basic CSV output format with --format csv
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("csv").arg("--").arg("echo").arg("test");
 
     cmd.assert()
@@ -24,7 +24,7 @@ fn test_csv_basic_output() {
 #[test]
 fn test_csv_with_timing() {
     // Test CSV output with -T flag includes duration column
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("csv").arg("-T").arg("--").arg("echo").arg("test");
 
     cmd.assert()
@@ -57,7 +57,7 @@ fn main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("csv").arg("--source").arg("--").arg(&test_program);
 
     cmd.assert()
@@ -89,7 +89,7 @@ fn main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("csv").arg("-T").arg("--source").arg("--").arg(&test_program);
 
     cmd.assert()
@@ -100,7 +100,7 @@ fn main() {
 #[test]
 fn test_csv_with_filtering() {
     // Test CSV output works with syscall filtering
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("csv").arg("-e").arg("trace=write").arg("--").arg("echo").arg("test");
 
     cmd.assert()
@@ -113,7 +113,7 @@ fn test_csv_with_filtering() {
 #[test]
 fn test_csv_escaping() {
     // Test CSV properly escapes special characters (commas, quotes)
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("csv").arg("--").arg("echo").arg("test,with,commas");
 
     cmd.assert()
@@ -130,7 +130,7 @@ fn test_csv_escaping() {
 #[test]
 fn test_json_with_timing() {
     // Test JSON output includes duration_us field when -T is used
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("json").arg("-T").arg("--").arg("echo").arg("test");
 
     cmd.assert()
@@ -163,7 +163,7 @@ fn main() {
         .output()
         .expect("test");
 
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("json").arg("--source").arg("--").arg(&test_program);
 
     // JSON should be valid and contain syscalls (source info is optional per syscall)
@@ -176,7 +176,7 @@ fn main() {
 #[test]
 fn test_json_array_format() {
     // Test JSON output is valid and has correct structure
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("json").arg("--").arg("echo").arg("test");
 
     cmd.assert()
@@ -191,7 +191,7 @@ fn test_json_array_format() {
 #[test]
 fn test_invalid_format_error() {
     // Test that invalid format returns error
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("invalid").arg("--").arg("echo").arg("test");
 
     cmd.assert()
@@ -206,13 +206,13 @@ fn test_invalid_format_error() {
 #[test]
 fn test_csv_with_statistics_mode() {
     // Test CSV output with -c flag shows statistics summary
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("csv").arg("-c").arg("--").arg("echo").arg("test");
 
     cmd.assert().success().stdout(predicate::str::contains("syscall,calls,errors"));
 
     // Test with timing mode adds total_time column
-    let mut cmd_timing = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd_timing = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd_timing.arg("--format").arg("csv").arg("-c").arg("-T").arg("--").arg("echo").arg("test");
 
     cmd_timing
@@ -224,7 +224,7 @@ fn test_csv_with_statistics_mode() {
 #[test]
 fn test_json_with_statistics_mode() {
     // Test JSON output with -c flag shows statistics in summary
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("renacer");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--format").arg("json").arg("-c").arg("--").arg("echo").arg("test");
 
     cmd.assert()

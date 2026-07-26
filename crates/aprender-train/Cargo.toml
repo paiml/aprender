@@ -4,6 +4,7 @@
 name = "aprender-train"
 version.workspace = true
 edition = "2021"
+autobins = false
 rust-version = "1.87"
 authors = ["PAIML <hello@paiml.com>"]
 description = "Training & Optimization library with autograd, LoRA, quantization, and model merging"
@@ -78,9 +79,9 @@ provable-contracts-macros = { version = "0.2" }
 # Core PAIML stack
 ndarray = "0.16"
 trueno = { workspace = true, features = ["parallel"] }
-trueno-gpu = { version = "0.59.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
+trueno-gpu = { version = "0.60.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
 realizar = { workspace = true, optional = true }
-aprender = { path = "../aprender-core", version = "0.59.0", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
+aprender = { path = "../aprender-core", version = "0.60.0", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
 trueno-viz = { workspace = true, features = ["terminal"] }
 batuta-common = { workspace = true, optional = true }  # WithDimensions trait for `viz` feature (APR-MONO §S #1978)
 presentar-terminal = { workspace = true, optional = true }
@@ -153,15 +154,6 @@ name = "monitor_bench"
 harness = false
 required-features = ["monitor"]
 
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-
-[profile.dev]
-opt-level = 0
-
-# PMAT-545: Legacy binary → example. Use `apr train` instead.
 [[example]]
 name = "aprender-train"
 path = "src/main.rs"

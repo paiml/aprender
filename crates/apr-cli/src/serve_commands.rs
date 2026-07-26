@@ -85,5 +85,8 @@ pub enum ServeCommands {
         /// GH-286: Skip FP8 weight cache warmup. Saves ~1.5 GB RSS.
         #[arg(long)]
         no_fp8_cache: bool,
+        /// Enable Ollama compatibility mode (port 11434, added endpoints)
+        #[arg(long)]
+        ollama_compat: bool,
     },
 }

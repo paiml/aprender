@@ -36,7 +36,7 @@ impl FailFastReporter {
             "| OS | {} {} |",
             report.environment.os, report.environment.arch
         );
-        let _ = writeln!(md, "| apr-qa | {} |", report.environment.apr_qa_version);
+        let _ = writeln!(md, "| apr-qa | {} |", report.environment.aprender_qa_version);
         let _ = writeln!(md, "| apr-cli | {} |", report.environment.apr_cli_version);
         let _ = writeln!(
             md,

@@ -19,7 +19,7 @@ use std::path::Path;
 /// FALSIFICATION: No mention of sovereign AI or long-term vision in docs
 #[test]
 fn p1_long_term_philosophy_documented() {
-    let claude_md = include_str!("../CLAUDE.md");
+    let claude_md = include_str!("../../../CLAUDE.md");
 
     // Should mention sovereign AI or long-term architecture decisions
     let has_architecture_docs = claude_md.contains("Sovereign")
@@ -192,7 +192,7 @@ fn p6_standardized_tasks_makefile() {
 /// FALSIFICATION: No build commands in CLAUDE.md
 #[test]
 fn p6b_cargo_workflows_documented() {
-    let claude_md = include_str!("../CLAUDE.md");
+    let claude_md = include_str!("../../../CLAUDE.md");
 
     let has_cargo_docs = claude_md.contains("cargo build")
         || claude_md.contains("cargo test")

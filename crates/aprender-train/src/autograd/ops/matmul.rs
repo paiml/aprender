@@ -357,7 +357,13 @@ pub fn matmul_compute(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec
     {
         // KAIZEN-004: Skip per-op wgpu when batched forward pass is active.
         // Attention matmuls use CPU SIMD instead — equally fast, no buffer overhead.
-        if !WGPU_BATCH_MODE.load(std::sync::atomic::Ordering::Relaxed) && m * k * n > 32_768 {
+        // Also skip vector-matrix operations (m=1 or n=1) since they are entirely bandwidth-bound
+        // and copying them to the GPU on every op causes catastrophic overhead (Issue #751).
+        if !WGPU_BATCH_MODE.load(std::sync::atomic::Ordering::Relaxed)
+            && m * k * n > 32_768
+            && m > 1
+            && n > 1
+        {
             if let Some(result) = wgpu_matmul(a, b, m, k, n) {
                 return result;
             }

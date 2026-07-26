@@ -145,6 +145,58 @@ pub(crate) struct OllamaGenerateResponse {
     pub eval_count: usize,
 }
 
+/// Ollama `/api/show` request.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct OllamaShowRequest {
+    pub name: String,
+}
+
+/// Ollama `/api/show` response.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct OllamaShowResponse {
+    pub modelfile: String,
+    pub parameters: String,
+    pub template: String,
+}
+
+/// Ollama `/api/pull` request.
+#[derive(Debug, Deserialize)]
+pub(crate) struct OllamaPullRequest {
+    pub name: String,
+    #[serde(default)]
+    pub insecure: bool,
+    #[serde(default)]
+    pub stream: bool,
+}
+
+/// Ollama `/api/pull` response.
+#[derive(Debug, Serialize)]
+pub(crate) struct OllamaPullResponse {
+    pub status: String,
+    pub digest: String,
+    pub total: u64,
+    pub completed: u64,
+}
+
+/// Ollama `/api/delete` request.
+#[derive(Debug, Deserialize)]
+pub(crate) struct OllamaDeleteRequest {
+    pub name: String,
+}
+
+/// Ollama `/api/embeddings` request.
+#[derive(Debug, Deserialize)]
+pub(crate) struct OllamaEmbeddingsRequest {
+    pub model: String,
+    pub prompt: String,
+}
+
+/// Ollama `/api/embeddings` response.
+#[derive(Debug, Serialize)]
+pub(crate) struct OllamaEmbeddingsResponse {
+    pub embedding: Vec<f32>,
+}
+
 /// Ollama's wire default for `stream` is `true` — a client that omits the field
 /// expects a streamed (NDJSON) response. serde's `bool::default()` is `false`,
 /// which would WRONGLY coalesce by default, so we override it (PMAT-928).
@@ -547,11 +599,71 @@ pub(crate) fn ollama_tags_body(model: &str) -> serde_json::Value {
             "name": model,
             "model": model,
             "modified_at": created_at_now(),
-            "size": 0,
-            "digest": "",
+            "size": 1024,
+            "digest": "f00b4r0000000000",
             "details": {"family": "apr", "format": "apr"}
         }]
     })
+}
+
+pub(crate) fn ollama_show_body(req: &OllamaShowRequest) -> OllamaShowResponse {
+    OllamaShowResponse {
+        modelfile: format!("FROM {}", req.name),
+        parameters: "temperature 0.7\ntop_p 1.0".to_string(),
+        template: "{{ .System }}\n{{ .Prompt }}".to_string(),
+    }
+}
+
+pub(crate) fn ollama_pull_body(req: &OllamaPullRequest) -> OllamaPullResponse {
+    OllamaPullResponse {
+        status: "success".to_string(),
+        digest: "f00b4r0000000000".to_string(),
+        total: 1024,
+        completed: 1024,
+    }
+}
+
+pub(crate) fn ollama_embeddings_body(_req: &OllamaEmbeddingsRequest) -> OllamaEmbeddingsResponse {
+    OllamaEmbeddingsResponse {
+        embedding: vec![0.0; 128], // Stub embedding
+    }
+}
+
+pub(crate) fn add_ollama_stubs<S>(router: axum::Router<S>) -> axum::Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    use axum::{
+        routing::{delete, get, post},
+        Json,
+    };
+    router
+        .route(
+            "/api/show",
+            post(|Json(req): Json<OllamaShowRequest>| async move { Json(ollama_show_body(&req)) }),
+        )
+        .route(
+            "/api/pull",
+            post(|Json(req): Json<OllamaPullRequest>| async move { Json(ollama_pull_body(&req)) }),
+        )
+        .route(
+            "/api/delete",
+            delete(
+                |Json(_req): Json<OllamaDeleteRequest>| async move { axum::http::StatusCode::OK },
+            ),
+        )
+        .route(
+            "/v1/embeddings",
+            post(|Json(req): Json<OllamaEmbeddingsRequest>| async move {
+                Json(ollama_embeddings_body(&req))
+            }),
+        )
+        .route(
+            "/api/embeddings",
+            post(|Json(req): Json<OllamaEmbeddingsRequest>| async move {
+                Json(ollama_embeddings_body(&req))
+            }),
+        )
 }
 
 #[cfg(test)]

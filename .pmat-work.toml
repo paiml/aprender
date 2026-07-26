@@ -1,0 +1,20 @@
+[contract]
+min_coverage_pct = 95.0
+max_tdg_regression = 0.0
+max_function_complexity = 20
+max_file_lines = 500
+min_spec_score = 95
+
+[contract.enforcement]
+manifest_integrity = "block"
+coverage_gaming = "block"
+differential_coverage = "block"
+absolute_coverage = "block"
+tdg_regression = "block"
+complexity_regression = "block"
+file_size_regression = "warn"
+spec_quality = "block"
+roadmap_update = "block"
+github_sync = "block"
+supply_chain = "block"
+meta_check = "block"

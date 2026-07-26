@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-07-06
+
+The **provable-correctness deepening + gate-integrity** release. The proof corpus
+climbs several kernels to strict **L4** and attention / Pillar-1 metrics / the
+Pillar-2 cross-entropy backward gradient to **L5** (Lean/Mathlib-verified), and the
+L4/L5 leveling is made reproducible on a fresh clone/CI. A 14-agent **Fable
+architectural review** audits every quality gate for *theater* — gates that look
+enforced but aren't — and turns the findings into an EV-ranked, falsifiable backlog,
+fixing the first holes (a CI pass-check that merged failing runs green) and deleting
+scaffold that never compiled.
+
+### Added
+
+- **Proof-corpus L4/L5 climb** (#2282, #2284, #2287, #2288) — 10 kernels raised to
+  strict L4; attention, Pillar-1 metrics, and the Pillar-2 cross-entropy backward
+  gradient proved to **L5** against Lean/Mathlib (prebuilt oleans via `lake env lean`).
+- **Fable architectural review** (#2292) — a 14-agent audit producing a verified
+  claims ledger, a gate-integrity assessment, and an 18-item EV-ranked falsifiable
+  backlog (`docs/specifications/fable-architectural-review.md`).
+- **apr code parity for Claude Code _or_ Google Antigravity** (#2277) — Pillar-5
+  prompt parity across either agentic coding host.
+
+### Fixed
+
+- **CI pass-check substring bypass** (#2298, PMAT-CI-PASSGREP-001) — the
+  aprender-compute gate grepped `"test result.*0 failed"`, which substring-matches
+  "10 failed", so a 10-failure run merged **green**. Anchored to require
+  `test result: ok.` and the absence of `test result: FAILED`.
+- **Proof-status over-promotion** (#2285, #2281, #2283) — strict per-obligation
+  L4/L5 leveling, reproducible on a fresh clone by scanning the in-tree Lean tree;
+  honesty sweeps credit lost proofs and correct dangling-tag / L1→L2 levels.
+
+### Removed
+
+- **186 orphan contract-scaffold modules** (#2302, PMAT-THEATER-TRIAGE-001) —
+  `crates/aprender-core/src/format/*_NNN_NNN.rs` files never reached via
+  `mod`/`include!` (never compiled → dead `#[test]`s = enforcement theater).
+  Build- and test-neutral; honest-ifies the reported test count.
+
 ## [0.59.0] - 2026-07-04
 
 The **Pillar-1 (scikit-learn) breadth + provable-parity** release. Three sklearn
