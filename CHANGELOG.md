@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-07-26
+
+The **release-integrity** release. Every change here fixes something that was
+either silently broken or silently false: a publish cascade that would have
+stranded half the workspace mid-publish, a CI gate that took `main` red and
+could not self-heal, a documented contract count that had drifted by 435, an
+advisory the security job had not seen in 20 days, and a declared MSRV that was
+never true. Cut after a 22-agent adversarial show-stopper hunt in which every
+finding was independently refuted before being accepted.
+
+### Fixed
+
+- **Publish cascade stranded 2 of 70 crates** (#2308, PMAT-PUBLISH-POLICY-001) —
+  `scripts/cascade-publish.sh` omitted `apr-format` and `aprender-rag-cli` from
+  its `TIERS[]`. `apr-format` is a hard dependency of `aprender-core`, so the
+  cascade would abort at Tier 2 and leave ~20 downstream crates unpublished on an
+  append-only registry. Verified by set-difference: publishable members vs tiered
+  crates is now 70/70 with no omissions and no non-publishable entries. This also
+  explains why `aprender-rag-cli` was stranded at 0.1.5 — it was never tiered.
+- **`guard-runner-labels` could not self-heal, taking `main` red** (#2311,
+  PMAT-CI-EACCES-GUARD-001) — it was the only clean-room job lacking the
+  "Pre-checkout ownership restore (EACCES self-heal)" step that `workspace-test`
+  and `mutants` both carry. A hard-killed docker job leaves root-owned
+  `target/.rustc_info.json`, so the next run's `git clean -ffdx` fails with
+  `EACCES` before any step executes. Because `gate` hard-requires this job, that
+  blocked every merge until someone manually cleaned the runner by hand.
+- **RUSTSEC-2026-0204: `crossbeam-epoch` 0.9.18 -> 0.9.20** (#2312,
+  SEC-RUSTSEC-2026-0204) — an invalid pointer dereference in the `fmt::Pointer`
+  impl for `Atomic`/`Shared`. Reached `main` because the last CI run predated the
+  advisory and a `--failed`-only rerun never re-executed `ci / security`. Waivers
+  for `ttf-parser` (RUSTSEC-2026-0192) and `rustybuzz` (RUSTSEC-2026-0206) are
+  documented in both `deny.toml` and `.cargo/audit.toml`; both are
+  unmaintained-only with no patched release, transitive via `resvg -> usvg`.
+- **Declared MSRV was false** (SEC-MSRV-HONESTY-001) — `rust-version = "1.89"`
+  while the committed lockfile pins `pmcp` 2.9.0 and `wasmtime` 43.0.2, both
+  requiring 1.91.0. `cargo install aprender` could not succeed on the toolchain we
+  advertised. Corrected to 1.91.
+- **`cargo set-version --workspace` aborted mid-bump** — the non-exact
+  `version = ">=0.29"` requirement on the `aprender_ml` alias caused an abort
+  *after* 7 manifests had already been rewritten, leaving a half-bumped tree.
+
+### Added
+
+- **README contract count is now CI-enforced against the live tree** (#2304,
+  PMAT-DRIFT-GATES-001, `FALSIFY-README-007`) — the claim had drifted from a real
+  count of **1766** through three different published figures (1331, 1134/1148,
+  1460). The new test computes the number from `contracts/**/*.yaml` at test time
+  and rides an already-wired `workspace-test` binary, so it cannot be pinned wrong
+  again. Mutation-verified: reverting the count turns the gate red.
+- **`scripts/cascade-drain.sh`** (#2308) — the multi-pass drain that finished the
+  v0.60.0 cascade previously lived *outside* the repo with `TARGET=0.60.0`
+  hardcoded. Run unmodified against a later release it would count crates at the
+  wrong version, report `DRAIN COMPLETE`, and publish nothing. Now in-tree,
+  defaulting to the workspace version, with `--target`/`--passes`.
+
+### Changed
+
+- `deny.toml` and `.cargo/audit.toml` are reconciled; the stale root `audit.toml`
+  (a wasmtime-27-era mirror read by no workflow, script, or Makefile target) is
+  deleted.
+
 ## [0.60.0] - 2026-07-06
 
 The **provable-correctness deepening + gate-integrity** release. The proof corpus

@@ -74,7 +74,7 @@ trueno = { workspace = true }
 
 # Machine learning for anomaly detection (Sprint 23)
 # GH-581: Use path dep to avoid trueno version skew with local workspace
-aprender = { path = "../aprender-core", version = "0.60.0", package = "aprender-core" }
+aprender = { path = "../aprender-core", version = "0.61.0", package = "aprender-core" }
 
 # Lock-free data structures for ring buffer (Sprint 40)
 crossbeam = { version = "0.8", default-features = false, features = ["crossbeam-channel", "crossbeam-queue", "std"] }
@@ -112,7 +112,7 @@ crossterm = "0.28"
 
 # SIMD-accelerated visualization primitives (sister project)
 # NOTE: `monitor` feature removed upstream (#1979); this crate uses only viz primitives.
-trueno-viz = { version = "0.60.0", path = "../aprender-viz", package = "aprender-viz", default-features = false }
+trueno-viz = { version = "0.61.0", path = "../aprender-viz", package = "aprender-viz", default-features = false }
 
 # OpenTelemetry for distributed tracing (Sprint 30)
 opentelemetry = { version = "0.31.0", optional = true }

@@ -13,7 +13,7 @@ name = "pv"
 path = "src/main.rs"
 
 [dependencies]
-aprender-contracts = { path = "../aprender-contracts", version = "0.60.0" }
+aprender-contracts = { path = "../aprender-contracts", version = "0.61.0" }
 clap = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }

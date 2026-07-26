@@ -64,7 +64,7 @@ fastembed = { version = "5", optional = true }
 
 # NVIDIA Embed Nemotron 8B via realizar GGUF infrastructure (GH-3)
 # Large model (~4-32GB depending on quantization), requires GGUF file
-realizar = { version = "0.60.0", path = "../aprender-serve", package = "aprender-serve", default-features = false, optional = true }
+realizar = { version = "0.61.0", path = "../aprender-serve", package = "aprender-serve", default-features = false, optional = true }
 
 # Speech-to-text via whisper-apr (Whisper ASR, .apr model format)
 # Sovereign stack: whisper-apr + aprender + trueno for pure-Rust transcription
