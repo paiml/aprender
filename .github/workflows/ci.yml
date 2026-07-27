@@ -389,6 +389,13 @@ jobs:
           fetch-depth: 1
       - name: Every self-hosted job must pin a discriminating label
         run: bash scripts/check_runner_labels.sh
+      # Poka-yoke: a beat that no workflow executes reads as enforcement, is
+      # counted as enforcement, and proves nothing. The Pillar-4 marquee decode
+      # beat sat in ZERO workflows while being quoted as an enforced win (#2319).
+      # Pure text check, no build, so it belongs in this job rather than paying
+      # for its own runner.
+      - name: Every beat must be executed by some workflow
+        run: bash scripts/check_beats_gated.sh
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
