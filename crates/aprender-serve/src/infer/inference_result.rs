@@ -464,6 +464,21 @@ fn log_cpu_backend(verbose: bool, is_legacy: bool) {
 /// there are no positions ≥1 to validate, so the gate is a no-op (returns true) —
 /// the load-time `parity_gate` is the primary defense in that case.
 /// Skip entirely with SKIP_PARITY_GATE=1 (same env var as the cosine parity gate).
+/// Diagnostic for a GPU forward failure during F2 first-token validation.
+///
+/// Pure + string-returning so it can be unit-tested without a GPU (CI has none).
+/// FALSIFY-CUDA-SILENT-FALLBACK-001 asserts this names the failing position and
+/// carries the underlying error, so the user is never left inferring a silent 20x
+/// backend downgrade from a throughput number alone.
+pub(crate) fn gpu_forward_failure_msg(pos: usize, probe_len: usize, err: &dyn std::fmt::Display) -> String {
+    format!(
+        "[F2-VALIDATION] GPU forward FAILED at probe position {pos}/{probe_len}: {err} \
+— rejecting the CUDA path and falling back (fail-closed). This is NOT a decode \
+regression: throughput measured after this point reflects the fallback backend, \
+not CUDA."
+    )
+}
+
 #[cfg(feature = "cuda")]
 fn validate_gpu_first_token(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
@@ -534,8 +549,33 @@ fn validate_gpu_first_token(
     for (pos, &tok) in probe.iter().enumerate() {
         match cuda_model.forward_gpu_resident(tok, &mut gpu_cache, pos) {
             Ok(logits) => gpu_logits_per_pos.push(logits),
-            Err(_) => {
+            Err(e) => {
                 cuda_model.executor.reset_kv_cache_gpu();
+                // FALSIFY-CUDA-SILENT-FALLBACK-001: never discard this error.
+                //
+                // Every OTHER rejection in this validator explains itself (see the
+                // F2 divergence branch below, and the BOS-unknown skip above), but
+                // this one used `Err(_)` and returned a bare `false`. The caller
+                // (gguf_gpu_generate.rs:303) can only turn that into
+                // `Err(Box::new(model))` for CPU fallback — the reason has nowhere
+                // to go and is lost.
+                //
+                // Observed 2026-07-27 on an RTX 4090: CUDA initialises fine and the
+                // run still ends on CPU, with the only clue being the backend
+                // cascade —
+                //     Backend: GPU (NVIDIA GeForce RTX 4090, 24045 MB VRAM)
+                //     Backend: wgpu (Vulkan)
+                //     Backend: CPU (wgpu unavailable: cosine 0.884 < 0.99)
+                // ~20 tok/s instead of ~400, with no stated cause even under
+                // --verbose. A silent 20x downgrade is indistinguishable from a
+                // decode regression, and it makes any throughput measured through
+                // it a fabrication (the Pillar-4 beat reports 0.070x and a
+                // BEAT-REGRESSION panic off exactly this state).
+                //
+                // Unconditional, not verbose-gated: the user is about to silently
+                // receive a 20x slower backend, which they need to know regardless
+                // of verbosity.
+                eprintln!("{}", gpu_forward_failure_msg(pos, probe.len(), &e));
                 return false; // GPU forward failed — fail closed.
             },
         }
@@ -1041,5 +1081,51 @@ mod pmat742_parity_gate_tests {
     fn out_of_range_gpu_token_is_rejected() {
         // A garbage token id outside the logit vector must never be accepted.
         assert!(!gpu_probe_token_acceptable(&NEAR_FLAT, 0, 9999));
+    }
+}
+
+#[cfg(test)]
+mod cuda_silent_fallback_tests {
+    use super::gpu_forward_failure_msg;
+
+    /// FALSIFY-CUDA-SILENT-FALLBACK-001: a GPU forward failure during F2 validation
+    /// must explain itself.
+    ///
+    /// The rejection used `Err(_)` and returned a bare `false`. Its caller
+    /// (gguf_gpu_generate.rs:303) can only convert that into `Err(Box::new(model))`
+    /// for CPU fallback, so the reason had nowhere to go. Observed on an RTX 4090:
+    /// CUDA initialises, the run silently ends on CPU at ~20 tok/s instead of ~400,
+    /// and nothing says why even under --verbose.
+    ///
+    /// That matters beyond ergonomics: throughput measured after a silent fallback
+    /// is a fabrication. The Pillar-4 decode beat reports `ratio_median=0.070x` and
+    /// a BEAT-REGRESSION panic off exactly this state — a 14x "regression" with
+    /// nothing wrong in the decode path.
+    ///
+    /// CI has no GPU, so the diagnostic is a pure function and this asserts its
+    /// content directly.
+    #[test]
+    fn gpu_forward_failure_is_explained_not_swallowed() {
+        let msg = gpu_forward_failure_msg(3, 17, &"CUDA_ERROR_ILLEGAL_ADDRESS");
+
+        assert!(
+            msg.contains("CUDA_ERROR_ILLEGAL_ADDRESS"),
+            "FALSIFY-CUDA-SILENT-FALLBACK-001: the underlying error must survive into \
+             the message — discarding it is the defect. Got: {msg}"
+        );
+        assert!(
+            msg.contains('3') && msg.contains("17"),
+            "must name the failing probe position and probe length. Got: {msg}"
+        );
+        assert!(
+            msg.to_lowercase().contains("fallback") || msg.to_lowercase().contains("falling back"),
+            "must state that a fallback is happening, so a 20x slower backend is never \
+             silent. Got: {msg}"
+        );
+        assert!(
+            msg.contains("NOT a decode regression"),
+            "must inoculate against the fabricated-regression reading: any throughput \
+             measured after this point reflects the fallback backend. Got: {msg}"
+        );
     }
 }
