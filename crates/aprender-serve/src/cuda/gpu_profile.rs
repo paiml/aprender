@@ -151,9 +151,15 @@ impl GpuProfile {
     /// activations, so it is immune. On-device sweep (gx10 GB10, 2026-06-16):
     /// HwDp4a gate cosine 0.9817 (FAILs deeper models) → MWV_Q4K 0.9939 (PASS,
     /// argmax matches). Defaulting Blackwell Q4K to fp32 MWV restores CPU/GPU
-    /// parity and unblocks GPU serving of quantized models there. Discrete GPUs
-    /// (RTX 4090 sm_89, etc.) keep the fast HwDp4a path unchanged — their
-    /// DP4A activation quant is reliable for these models.
+    /// parity and unblocks GPU serving of quantized models there.
+    ///
+    /// FALSIFY-Q4K-ADA-PARITY-001 (2026-07-27) EXTENDS that default to ALL GPUs.
+    /// PMAT-806's remaining assumption — "discrete GPUs (RTX 4090 sm_89, etc.)
+    /// keep the fast HwDp4a path, their DP4A activation quant is reliable for
+    /// these models" — was measured FALSE on an RTX 4090 running the very model
+    /// it named: HwDp4a cosine 0.9186 (F2 REJECT) vs MWV 0.9937 (ACCEPT) on
+    /// qwen2.5-coder-1.5B Q4_K_M. Compute capability was never the discriminator;
+    /// the INT8 Q8_1 activation quant is. HwDp4a is now opt-in via HW_DP4A_Q4K.
     /// Contract: contracts/apr-cpu-vs-gpu-output-parity-v1.yaml (FALSIFY-CPU-GPU-008).
     fn detect_q4k(has_dp4a: bool, cc: u32) -> Q4kVariant {
         // Env var overrides (for experimentation only) take precedence over the
@@ -183,20 +189,39 @@ impl GpuProfile {
 
     /// PMAT-806: Pure auto-detection mapping (no env vars) for the Q4K variant.
     ///
-    /// Blackwell (cc≥120) → fp32 MWV (INT8 DP4A activation quant mis-estimates
-    /// massive-activation channels → CPU/GPU parity-gate failure on quantized
-    /// models). DP4A-capable discrete GPUs (sm_75+, cc<120) → HwDp4a. Otherwise
-    /// → MWV. Extracted as a pure fn so the cc-gating is unit-testable without a
-    /// device and independent of process env.
+    /// ALL GPUs → fp32 MWV. HwDp4a is opt-in only (`HW_DP4A_Q4K=1`).
+    ///
+    /// FALSIFY-Q4K-ADA-PARITY-001. PMAT-806 defaulted Blackwell (cc≥120) to MWV
+    /// because HwDp4a's INT8 Q8_1 *activation* quantization mis-estimates
+    /// massive-activation channels. It left discrete GPUs on HwDp4a, asserting
+    /// "their DP4A activation quant is reliable for these models".
+    ///
+    /// MEASURED FALSE on 2026-07-27, RTX 4090 (sm_89, cc=89, driver 570.207),
+    /// on qwen2.5-coder-1.5B Q4_K_M — the very model that claim named:
+    ///
+    ///   HwDp4a (old default): [F2-VALIDATION] GPU diverges from CPU at real
+    ///       position 1 (argmax 198 != 40, cosine 0.9186) — REJECTED
+    ///   MWV (this change):    all 42 real positions match, min cosine 0.9937
+    ///       — ACCEPTED
+    ///
+    /// 0.9186 is below the F2 floor (0.95) and below even the 0.9817 that
+    /// PMAT-806 recorded as failing on Blackwell. So the degradation is not
+    /// Blackwell-specific; cc≥120 was never the discriminator, the DP4A
+    /// activation quant itself is.
+    ///
+    /// The cost of getting this wrong is NOT "slightly worse tokens" — the F2
+    /// gate is fail-closed, so a rejected CUDA path falls to wgpu, which fails
+    /// its own parity gate (cosine 0.884 < 0.99), and then to CPU: ~20 tok/s
+    /// instead of ~400 on the most common discrete GPU there is. HwDp4a's speed
+    /// advantage is worth nothing when the gate refuses to let it serve a token.
+    ///
+    /// Kept as a pure fn so the policy is unit-testable without a device.
     #[must_use]
     pub(crate) fn auto_q4k(has_dp4a: bool, cc: u32) -> Q4kVariant {
-        if cc >= 120 {
-            Q4kVariant::Mwv
-        } else if has_dp4a {
-            Q4kVariant::HwDp4a
-        } else {
-            Q4kVariant::Mwv
-        }
+        // `has_dp4a`/`cc` retained: the signature is the policy's seam, and a
+        // future per-arch carve-out belongs here rather than at the call site.
+        let _ = (has_dp4a, cc);
+        Q4kVariant::Mwv
     }
 
     /// Q6K variant: env var override, else HwDp4a on sm_75+, else Mwv.
@@ -328,26 +353,58 @@ mod pmat806_q4k_variant_tests {
         );
     }
 
-    /// PMAT-806: Discrete DP4A GPUs (RTX 4090 sm_89=89, Ampere sm_80, Turing
-    /// sm_75) MUST keep the fast HwDp4a path — their DP4A activation quant is
-    /// reliable for these models, so the fix is a strict no-op there.
+    /// FALSIFY-Q4K-ADA-PARITY-001 — SUPERSEDES the previous
+    /// `discrete_dp4a_gpus_keep_hwdp4a` assertion.
+    ///
+    /// That test encoded PMAT-806's claim that discrete DP4A GPUs "keep the fast
+    /// HwDp4a path — their DP4A activation quant is reliable for these models".
+    /// That claim was MEASURED FALSE on 2026-07-27, on an RTX 4090 (sm_89,
+    /// driver 570.207), running qwen2.5-coder-1.5B Q4_K_M — the exact model it
+    /// named:
+    ///
+    ///   HwDp4a: GPU diverges from CPU at real position 1
+    ///           (argmax 198 != 40, cosine 0.9186) -> F2 REJECTS
+    ///   MWV:    all 42 real positions match, min cosine 0.9937 -> ACCEPTED
+    ///
+    /// 0.9186 is under the F2 floor (0.95) and under the 0.9817 PMAT-806 itself
+    /// recorded as failing on Blackwell — so compute capability was never the
+    /// real discriminator; the INT8 Q8_1 activation quant is.
+    ///
+    /// Consequence of the old default: the fail-closed F2 gate rejects CUDA, the
+    /// run falls to wgpu (which fails its own 0.99 parity gate), then to CPU —
+    /// ~20 tok/s instead of ~400 on the most common discrete GPU there is.
     #[test]
-    fn discrete_dp4a_gpus_keep_hwdp4a() {
-        assert_eq!(
-            GpuProfile::auto_q4k(true, 89),
-            Q4kVariant::HwDp4a,
-            "RTX 4090 sm_89"
-        );
-        assert_eq!(
-            GpuProfile::auto_q4k(true, 80),
-            Q4kVariant::HwDp4a,
-            "A100 sm_80"
-        );
-        assert_eq!(
-            GpuProfile::auto_q4k(true, 75),
-            Q4kVariant::HwDp4a,
-            "Turing sm_75"
-        );
+    fn discrete_dp4a_gpus_default_to_mwv_not_hwdp4a() {
+        for (cc, name) in [
+            (89u32, "RTX 4090 sm_89"),
+            (80, "A100 sm_80"),
+            (75, "Turing sm_75"),
+        ] {
+            assert_eq!(
+                GpuProfile::auto_q4k(true, cc),
+                Q4kVariant::Mwv,
+                "FALSIFY-Q4K-ADA-PARITY-001: {name} must default to fp32 MWV. HwDp4a \
+                 measured cosine 0.9186 vs CPU on sm_89 (F2 floor 0.95), so the gate \
+                 rejects it and decode silently degrades to CPU."
+            );
+        }
+    }
+
+    /// No GPU may default to the degraded path, at any compute capability.
+    /// Guards against a future carve-out reintroducing HwDp4a as a default;
+    /// it stays reachable only via explicit `HW_DP4A_Q4K=1` opt-in.
+    #[test]
+    fn no_compute_capability_defaults_to_hwdp4a() {
+        for cc in [0u32, 60, 70, 75, 80, 86, 89, 90, 100, 119, 120, 121, 130] {
+            for has_dp4a in [false, true] {
+                assert_ne!(
+                    GpuProfile::auto_q4k(has_dp4a, cc),
+                    Q4kVariant::HwDp4a,
+                    "cc={cc} has_dp4a={has_dp4a} must not DEFAULT to the degraded \
+                     HwDp4a path (opt-in via HW_DP4A_Q4K only)"
+                );
+            }
+        }
     }
 
     /// Non-DP4A GPUs (sm<7.5) keep MWV (pre-existing behavior, unchanged).
