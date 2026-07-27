@@ -391,3 +391,68 @@ fn tokenize_import_hf_subcommand_registered() {
         );
     }
 }
+
+/// FALSIFY-BACKEND-CUDA-HONESTY-001: `--backend cuda` must not silently serve wgpu/CPU.
+///
+/// The CUDA generate path lives behind `#[cfg(feature = "cuda")]`
+/// (aprender-serve/src/infer/gguf_gpu_generate.rs). On a build without that feature the
+/// block vanishes, control falls through to the GH-559 wgpu fallback, and the run prints
+/// `Backend override: cuda` followed by `Backend: wgpu (Vulkan)` — accepting the flag and
+/// then ignoring it. wgpu fails its own cpu-parity gate and degrades again, so the user
+/// gets ~20 tok/s where CUDA gives ~400.
+///
+/// Measured 2026-07-27 on an RTX 4090 with nvcc 12.8 installed, so this is not a
+/// missing-hardware case: it is a binary that cannot honour the flag reporting success.
+/// Any throughput measured through it is meaningless — the Pillar-4 decode beat run
+/// against such a build reports `ratio_median=0.070x` and a BEAT-REGRESSION panic, a
+/// fabricated 14x regression with nothing actually wrong in apr's decode path.
+///
+/// This test runs on the default (non-cuda) test build, so it exercises exactly that
+/// case. RED-on-bug: without the guard in dispatch.rs the process proceeds and does not
+/// report the refusal.
+#[test]
+fn backend_cuda_on_non_cuda_build_refuses_instead_of_falling_back() {
+    if cfg!(feature = "cuda") {
+        // A CUDA-capable build is allowed to proceed; the guard is build-capability only.
+        return;
+    }
+
+    let output = apr_binary()
+        .args([
+            "run",
+            "/nonexistent-model-path-for-backend-guard.gguf",
+            "--prompt",
+            "hi",
+            "--max-tokens",
+            "1",
+            "--backend",
+            "cuda",
+        ])
+        .output()
+        .expect("failed to run apr");
+
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        !output.status.success(),
+        "FALSIFY-BACKEND-CUDA-HONESTY-001: `--backend cuda` exited 0 on a build with no \
+         CUDA compiled in. It must refuse rather than silently serve wgpu/CPU (~20x slower).\n\
+         Output:\n{combined}"
+    );
+    assert!(
+        combined.contains("built WITHOUT the `cuda` feature"),
+        "FALSIFY-BACKEND-CUDA-HONESTY-001: expected an explicit refusal naming the missing \
+         `cuda` feature, so the user is not left to infer it from a throughput number.\n\
+         Output:\n{combined}"
+    );
+    assert!(
+        !combined.contains("Backend: wgpu"),
+        "FALSIFY-BACKEND-CUDA-HONESTY-001: `--backend cuda` fell through to the wgpu \
+         backend — this is the exact silent-downgrade this gate exists to prevent.\n\
+         Output:\n{combined}"
+    );
+}
