@@ -67,29 +67,65 @@ fn test_readme_no_stale_install_refs() {
     }
 }
 
-/// FALSIFY-README-005: Crate count in README matches `ls crates/`.
+/// FALSIFY-README-005: the README's workspace-crate count matches CARGO.
 ///
-/// Superseded by `contracts/readme-claims-v1.yaml` + `scripts/check_readme_claims.sh`
-/// (FALSIFY-README-001). Kept as a belt-and-braces integration assertion:
-/// if the new shell-script gate and the Rust test ever disagree, both
-/// signal drift. Counts directory entries under `crates/` to match the
-/// canonical script contract — not `cargo metadata`, which returns more
-/// packages than directories (some crates define multiple [package]s).
+/// PREVIOUSLY THIS GATE PROVED THE WRONG PROPOSITION. It counted directory
+/// entries under `crates/` (82) and asserted the README contained `**82**`.
+/// The README duly said "82 workspace crates" and the gate went green — while
+/// `cargo metadata --no-deps` reports **78** packages. Four `crates/` entries
+/// are `exclude`d in the root Cargo.toml (old workspace-root shells
+/// aprender-viz-ttop / aprender-present / aprender-test, plus the dev-only
+/// aprender-train-canary), and a fifth (aprender-contracts-staging) has no
+/// Cargo.toml at all. A directory is not a workspace crate.
+///
+/// The old comment justified the choice as "not `cargo metadata`, which returns
+/// MORE packages than directories" — the opposite of the truth.
+///
+/// Hand-rolled counting cannot be made to agree with cargo. Four methods, four
+/// answers, measured 2026-07-27:
+///     ls crates/                    -> 82   (directories, incl. a non-crate)
+///     members + root                -> 84
+///     members - exclude + root      -> 81
+///     cargo metadata --no-deps      -> 78   <- the only authoritative one
+/// So this asks cargo, via the $CARGO the harness already sets for us.
+///
+/// It also now asserts the SPECIFIC claims-table row rather than a bare
+/// `**78**` occurring anywhere in the file: the old form would have been
+/// satisfied by any unrelated bold number.
 #[test]
 fn test_readme_crate_count_matches_workspace() {
     let readme = read_readme();
-    let crates_dir = workspace_root().join("crates");
 
-    let crate_count = std::fs::read_dir(&crates_dir)
-        .expect("read crates/")
-        .filter_map(Result::ok)
-        .filter(|e| e.path().is_dir())
-        .count();
-
-    let count_str = format!("**{crate_count}**");
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let out = std::process::Command::new(cargo)
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(workspace_root())
+        .output()
+        .expect("run cargo metadata");
     assert!(
-        readme.contains(&count_str),
-        "FALSIFY-README-005: README lacks `**{crate_count}**` matching `ls crates/`"
+        out.status.success(),
+        "FALSIFY-README-005: `cargo metadata` failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let json = String::from_utf8_lossy(&out.stdout);
+
+    // Count `"name":` keys inside the top-level "packages" array. --no-deps
+    // means packages == workspace members exactly.
+    let packages_start = json.find("\"packages\":").expect("metadata has packages");
+    let crate_count = json[packages_start..].matches("\"manifest_path\":").count();
+    assert!(
+        crate_count > 1,
+        "FALSIFY-README-005: parsed {crate_count} packages from cargo metadata — parser is wrong"
+    );
+
+    let expected_row = format!("| Workspace crates | **{crate_count}** workspace crates |");
+    assert!(
+        readme.contains(&expected_row),
+        "FALSIFY-README-005: README claims-table row does not match cargo.\n\
+         expected: {expected_row}\n\
+         `cargo metadata --no-deps` reports {crate_count} workspace packages. Note that\n\
+         `ls crates/` is NOT the same number — some crates/ entries are `exclude`d in the\n\
+         root Cargo.toml and one has no Cargo.toml at all. A directory is not a crate."
     );
 }
 
