@@ -159,3 +159,46 @@ jobs:
         if: steps.decide.outputs.proceed == 'true'
         run: |
           nice -n 19 cargo test -p aprender-train --features cuda --lib --release cuda_loss_window
+
+      # Pillar-4 marquee: apr decode throughput vs a resident ollama.
+      #
+      # This beat needs a GPU *and* a resident ollama daemon *and* the Q4_K_M
+      # GGUF, which is why it is `#[ignore]`d. It was previously "wired" into the
+      # per-PR chained gate in ci.yml WITHOUT `--ignored`, where it executed zero
+      # tests and passed unconditionally (see scripts/check_beats_gated.sh rule
+      # 1b, which now makes that a build failure). Here it actually runs.
+      #
+      # ada-4090 only: the 1.10x ceiling and the ~300 tok/s ollama baseline were
+      # pinned on sm_89. GB10 has different decode characteristics and defaults
+      # to serial prefill, so running it there would compare against a baseline
+      # that was never measured on that silicon.
+      - name: Pillar-4 - apr vs ollama decode throughput beat (ada-4090 only)
+        if: steps.decide.outputs.proceed == 'true' && matrix.name == 'ada-4090'
+        env:
+          # The beat's built-in APR_BIN default points at a hand-built artifact
+          # (/mnt/nvme-raid0/targets/...) that goes stale SILENTLY - on
+          # 2026-07-28 it was a day behind #2323, which changed the very Q4K
+          # kernel this beat measures. Always measure a binary built from the
+          # commit under test.
+          APR_BIN: ${{ github.workspace }}/target/release/apr
+          APR_GGUF: ${{ vars.APR_DECODE_GGUF || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_DECODE_MODEL || 'qwen2.5-coder:1.5b-instruct-q4_K_M' }}
+        run: |
+          set -euo pipefail
+          # Fail loudly on a provisioning gap. Skipping here would restore the
+          # exact silence this whole change exists to remove.
+          command -v ollama >/dev/null 2>&1 || {
+            echo "::error::ollama not installed on ada-4090 - the Pillar-4 decode beat cannot measure its incumbent"
+            exit 1
+          }
+          if [ ! -f "$APR_GGUF" ]; then
+            echo "::error::APR_GGUF not found on ada-4090: $APR_GGUF"
+            exit 1
+          fi
+          ollama list | grep -q "$OLLAMA_MODEL" || {
+            echo "::error::ollama model not pulled: $OLLAMA_MODEL"
+            exit 1
+          }
+          nice -n 19 cargo build --release --features cuda --bin apr
+          nice -n 19 cargo test -p aprender-serve --release \
+            --test beat_ollama_decode_throughput_speed -- --ignored --nocapture

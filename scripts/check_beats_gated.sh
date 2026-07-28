@@ -61,6 +61,53 @@ while IFS= read -r f; do
     fi
 done < <(find crates -path '*/tests/beat_*.rs' -not -path '*/src/*' 2>/dev/null | sort)
 
+# ---- population 1b: a REFERENCE is not an EXECUTION --------------------------
+#
+# Rule 1 only asks "does some workflow name this beat?". That is satisfiable by
+# an invocation that runs NOTHING. If the beat function is `#[ignore]`d - which
+# is how every beat needing a GPU, a daemon or a model is written - then
+#
+#     cargo test -p <crate> --test <name>
+#
+# compiles the target, runs 0 of the ignored tests, prints
+# "test result: ok. N passed; 0 failed; 1 ignored", and exits 0. Green forever,
+# regardless of the claim.
+#
+# This is not hypothetical. #2319 wired beat_ollama_decode_throughput_speed -
+# the Pillar-4 marquee "1.371x faster decode than Ollama" - into the per-PR
+# chained gate at ci.yml WITHOUT `--ignored`. Measured on 2026-07-28:
+#
+#     test result: ok. 6 passed; 0 failed; 1 ignored
+#
+# The 6 that ran are the file's parsing helpers (median_*, parse_generated_*);
+# the beat itself was the 1 ignored. So the gate asserted that a median function
+# works, not that apr beats Ollama - and rule 1 above certified it as "wired",
+# because a reference is all rule 1 could see. An anti-theater gate satisfied by
+# theater is the exact failure mode this script exists to prevent, so it has to
+# check for EXECUTION, not mention.
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    grep -q '#\[ignore' "$f" || continue
+    name=$(basename "$f" .rs)
+    # Workflows chain many invocations onto ONE physical line with `&&`, so the
+    # `--ignored` must be in the SAME segment - a sibling command's `--ignored`
+    # does not run this beat. Split on `&&` and keep only segments naming it.
+    segs=$(grep -hE -- "--test[[:space:]]+${name}([^A-Za-z0-9_]|$)" "$WORKFLOWS"/*.yml 2>/dev/null \
+           | sed 's/&&/\n/g' \
+           | grep -E -- "--test[[:space:]]+${name}([^A-Za-z0-9_]|$)")
+    if [ -n "$segs" ] && ! printf '%s\n' "$segs" | grep -qE -- '--ignored|--include-ignored'; then
+        echo "✗ VACUOUSLY GATED BEAT: $f"
+        echo "    A workflow names it, so rule 1 is satisfied - but the beat is"
+        echo "    \`#[ignore]\`d and NO invocation passes \`--ignored\`, so the run"
+        echo "    executes 0 of its ignored tests and exits 0 unconditionally."
+        echo "    It is counted as enforcement and proves nothing."
+        echo "    Fix: either add \`-- --ignored\` (only where the host actually has"
+        echo "    the GPU/daemon/model it needs - usually a nightly lane), or drop"
+        echo "    the reference so rule 1 reports it as UNGATED and honest."
+        fail=1
+    fi
+done < <(find crates -path '*/tests/beat_*.rs' -not -path '*/src/*' 2>/dev/null | sort)
+
 # ---- population 2: lib beats must be reachable via a `mod` --------------------
 while IFS= read -r f; do
     [ -n "$f" ] || continue
