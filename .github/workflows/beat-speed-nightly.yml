@@ -8,6 +8,26 @@
 #
 # Additive: a brand-new workflow that does NOT touch per-PR `ci.yml` / the merge
 # gate. A red run here flags a real speed regression; it never blocks PRs.
+#
+# OBSERVABILITY INVARIANT (added after the 2026-07-27/28 blackout). Steps here
+# are siblings, not a pipeline: each beat times a DIFFERENT estimator against a
+# DIFFERENT incumbent, so a failure in one says nothing about the next. With
+# default fail-fast semantics, though, the first red step aborted the job and
+# the remaining nine never ran — and a step that never ran reports no
+# measurement, which reads exactly like a step that ran and passed. That is how
+# a broken scikit-learn baseline in the LinReg leg (a poisoned `uv` env cache —
+# see scripts/check_beat_baseline_env.sh) silently took the ENTIRE Pillar-1
+# speed lane off the air while the GaussianNB beat was actively breaching its
+# ceiling (2026-07-03 ratio 0.563 and 07-04 ratio 0.520, both over the 0.50
+# gate) with nobody watching.
+#
+# So this workflow now enforces two rules:
+#   1. Every beat runs, even if an earlier beat failed (`!cancelled()`), so one
+#      broken leg can never hide the other nine.
+#   2. A MISSING measurement is a FAILURE, not a pass. The final step asserts
+#      that every expected `BEAT-*` marker line actually appeared in the log.
+#      Silence is treated as red, because silence is what the blackout looked
+#      like.
 name: BEAT Speed (nightly)
 
 on:
@@ -23,6 +43,9 @@ jobs:
   beat-speed:
     runs-on: [self-hosted, X64, Linux, clean-room]
     timeout-minutes: 45
+    env:
+      # Every beat step tees here; the final step audits it for completeness.
+      BEAT_LOG: ${{ runner.temp }}/beat-speed-measurements.log
     steps:
       - uses: actions/checkout@v7
 
@@ -36,15 +59,26 @@ jobs:
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           fi
 
+      # A speed beat is a RATIO against the incumbent. If the incumbent will not
+      # import, the beat measures nothing — so prove it imports before timing
+      # anything, and self-heal the known poisoned-uv-cache fault in place.
+      - name: Preflight — scikit-learn/numpy baseline must be importable
+        id: preflight
+        run: bash scripts/check_beat_baseline_env.sh
+
       - name: Pillar-1 — apr vs scikit-learn LinearRegression speed beat
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
+          set -o pipefail
           cargo test -p aprender-core --release \
-            --test beat_sklearn_linreg_speed -- --ignored --nocapture
+            --test beat_sklearn_linreg_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
 
       - name: Pillar-1 — apr vs scikit-learn GaussianNB speed beat
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
+          set -o pipefail
           cargo test -p aprender-core --release \
-            --test beat_sklearn_gaussiannb_speed -- --ignored --nocapture
+            --test beat_sklearn_gaussiannb_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
 
       # NOTE: StandardScaler / MinMaxScaler speed beats REMOVED (PMAT-733). Elementwise scalers have
       # no algorithmic edge over numpy — they "won" only on a fast dev box; on the canonical Intel CI
@@ -53,41 +87,63 @@ jobs:
       # across hosts. See memory: verify beats on the CI host, not just the dev box.
 
       - name: Pillar-1 — apr vs scikit-learn ComplementNB speed beat
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
+          set -o pipefail
           cargo test -p aprender-core --release \
-            --test beat_sklearn_complementnb_speed -- --ignored --nocapture
+            --test beat_sklearn_complementnb_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
 
       - name: Pillar-1 — apr vs scikit-learn BernoulliNB speed beat
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
+          set -o pipefail
           cargo test -p aprender-core --release \
-            --test beat_sklearn_bernoullinb_speed -- --ignored --nocapture
+            --test beat_sklearn_bernoullinb_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
 
       - name: Pillar-1 — apr vs scikit-learn MultinomialNB speed beat
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
+          set -o pipefail
           cargo test -p aprender-core --release \
-            --test beat_sklearn_multinomialnb_speed -- --ignored --nocapture
+            --test beat_sklearn_multinomialnb_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
 
       - name: Pillar-1 — apr vs scikit-learn GaussianMixture (GMM) speed beat
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
+          set -o pipefail
           cargo test -p aprender-core --release \
-            --test beat_sklearn_gmm_speed -- --ignored --nocapture
+            --test beat_sklearn_gmm_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
 
       - name: Pillar-2 — apr vs PyTorch one-shot cold-start training speed beat
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
+          set -o pipefail
           cargo test -p aprender-core --release \
-            --test beat_pytorch_coldstart_speed -- --ignored --nocapture
+            --test beat_pytorch_coldstart_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
 
       - name: Pillar-3 — apr vs Unsloth one-shot cold-start LoRA-adapter speed beat
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
+          set -o pipefail
           cargo test -p aprender-train --release \
-            --test beat_unsloth_coldstart_speed -- --ignored --nocapture
+            --test beat_unsloth_coldstart_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
 
       - name: Pillar-1 — apr vs scikit-learn one-shot cold-start speed beat
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
+          set -o pipefail
           cargo test -p aprender-core --release \
-            --test beat_sklearn_coldstart_speed -- --ignored --nocapture
+            --test beat_sklearn_coldstart_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
 
       - name: Pillar-4 — apr vs HuggingFace transformers one-shot inference cold-start speed beat
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
+          set -o pipefail
           cargo test -p aprender-core --release \
-            --test beat_hf_inference_coldstart_speed -- --ignored --nocapture
+            --test beat_hf_inference_coldstart_speed -- --ignored --nocapture 2>&1 | tee -a "$BEAT_LOG"
+
+      # Fail-closed observability: a beat that produced no measurement line did
+      # not "pass quietly", it went dark. Assert all ten reported.
+      - name: Every beat must have reported a measurement
+        if: ${{ !cancelled() }}
+        run: bash scripts/check_beat_measurements.sh "$BEAT_LOG"
