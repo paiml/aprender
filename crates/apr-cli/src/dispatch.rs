@@ -89,6 +89,45 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     eprintln!("Backend override: {b}");
                 }
             }
+            // FALSIFY-BACKEND-CUDA-HONESTY-001: refuse `--backend cuda` on a build
+            // that has no CUDA compiled in, instead of silently serving wgpu/CPU.
+            //
+            // The CUDA generate path is behind `#[cfg(feature = "cuda")]`
+            // (aprender-serve/src/infer/gguf_gpu_generate.rs:356). On a build without
+            // that feature the whole block VANISHES, control falls through to the
+            // GH-559 wgpu fallback, and the run prints:
+            //     Backend override: cuda
+            //     Backend: wgpu (Vulkan)
+            // wgpu then fails its own cpu-parity gate (cosine 0.884 < 0.99) and
+            // degrades again — ~20 tok/s where CUDA gives ~400. Measured 2026-07-27
+            // on an RTX 4090 with nvcc 12.8 present, so this is NOT a
+            // missing-hardware case; it is a build that cannot honour the flag
+            // reporting success anyway.
+            //
+            // This silently invalidates any measurement taken through it. The
+            // Pillar-4 decode beat run against such a binary reports
+            // `ratio_median=0.070x` and a BEAT-REGRESSION panic — a fabricated 14x
+            // regression with nothing wrong in apr's decode path.
+            //
+            // A 20x silent downgrade is never what the caller asked for. Fail.
+            //
+            // NOTE: this checks build capability only. When CUDA *is* compiled in
+            // but fails at runtime (e.g. the Blackwell sm_121 JIT), the GH-559
+            // wgpu fallback is deliberate and stays.
+            if backend.as_deref() == Some("cuda") && !cfg!(feature = "cuda") {
+                return Some(Err(CliError::ValidationFailed(
+                    "--backend cuda requested, but this `apr` was built WITHOUT the \
+`cuda` feature, so the CUDA backend does not exist in this binary. \
+Refusing to silently fall back to wgpu/CPU: that path is ~20x slower \
+(~20 tok/s vs ~400) and makes any throughput measurement taken through it \
+meaningless. Rebuild the ROOT facade with CUDA: `cargo build --release \
+--features cuda` (build the root, not `-p apr-cli`: BOTH packages define a \
+binary named `apr`, and only the root's cuda = [\"cli\", \"apr-cli/cuda\"] \
+chain enables this path). To run on this build anyway, pass `--backend cpu` \
+or drop `--backend`."
+                        .to_string(),
+                )));
+            }
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu {
                 false
