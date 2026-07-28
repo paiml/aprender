@@ -274,10 +274,26 @@ else
 endif
 COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 
-# Coverage: Two-phase pattern (tests + deferred report)
-# Phase 1: Run tests with --no-report (keeps profraw, ~90s)
-# Phase 2: Single report pass for summary + threshold check (~90s)
-# HTML/LCOV generated separately via coverage-html (skipped for speed)
+# Coverage: SINGLE-phase (tests instrument AND write the report in one invocation).
+#
+# This was a two-phase pattern (`test --no-report`, then a separate `report`) and it
+# silently measured NOTHING: every run reported "TOTAL: 0/0 lines covered (0%)".
+#
+# Why: `cargo llvm-cov report` takes its package scope from the CURRENT package, and it
+# does NOT accept --workspace/--exclude ("--workspace is specific to [test,nextest,...]
+# and not supported for subcommand 'report'"). Phase 1 instrumented
+# `--workspace --exclude aprender-gpu`, phase 2 then reported on the ROOT package - which
+# is a facade with no code - so the LCOV came out empty and COV_PCT computed to 0. Same
+# facade trap .github/workflows/ci.yml:60-64 already documents for sovereign-ci.
+#
+# Verified on a multi-package run (aprender-common + aprender-bench-compute), in the
+# SHARED target dir this Makefile uses:
+#   two-phase, unscoped report  -> LH=0   LF=0    (empty)
+#   report --summary-only -p A -p B -> LH=686 LF=737  (93.08%)
+#   single-phase --lcov --output-path -> LH=686 LF=737  (93.08%)
+# Single-phase is chosen over an explicit -p list because the invocation that selects the
+# scope is the one that writes the report, so the two cannot drift apart again. profraw
+# survive it (31 present afterwards), so coverage-html still has data to work from.
 coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@echo "📊 Running coverage ($(COV_THRESHOLD)%+ threshold)..."
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
@@ -287,10 +303,11 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	if [ -n "$$COVDIR" ]; then find "$$COVDIR" -name '*.profraw' -delete 2>/dev/null || true; fi
 	@mkdir -p target/coverage
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
-	@echo "🧪 Phase 1: Tests with instrumentation (CB-127-A: cargo llvm-cov test, not nextest)..."
+	@echo "🧪 Tests with instrumentation + report in ONE invocation (CB-127-A: cargo llvm-cov test, not nextest)..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
-		$(COV_CARGO_ENV) cargo llvm-cov test --no-report \
+		$(COV_CARGO_ENV) cargo llvm-cov test \
 		--workspace --exclude aprender-gpu --lib \
+		--lcov --output-path target/coverage/lcov.info \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip h12_ --skip j2_ \
 		   --skip falsification --skip chaos --skip disconnect --skip benchmark_parity \
@@ -298,8 +315,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 		   --skip spec_checklist_w --skip spec_checklist_u --skip verify_audio --skip g9_roofline \
 		   --skip cuda --skip gpu_ \
 		|| { test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml; exit 1; }
-	@echo "📊 Phase 2: Coverage report (LCOV → lightweight)..."
-	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --ignore-filename-regex "$$(cat target/coverage/.exclude-re)" > target/coverage/lcov.info
+	@echo "📊 Parsing LCOV for the threshold check..."
 	@# Parse LCOV for line coverage (LH=lines hit, LF=lines found)
 	@LH=$$(awk -F: '/^LH:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
 	LF=$$(awk -F: '/^LF:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
@@ -318,6 +334,11 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 coverage-fast: coverage
 
 # HTML + LCOV reports (run after 'make coverage' to generate browseable report)
+# KNOWN DEFECT (same root cause as `coverage` above, NOT yet fixed): both `report` calls
+# below are unscoped, so they report the root facade and produce an EMPTY html/lcov. They
+# need either an explicit `-p <pkg>` list or to be folded into the instrumenting run, the
+# way `coverage` now is. Left as-is here because it is report-only cosmetics and does not
+# gate anything - unlike `coverage`, whose 0% fed the >=95% threshold check.
 coverage-html: ## Generate HTML + LCOV reports from last coverage run
 	@echo "📊 Generating HTML + LCOV reports..."
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
