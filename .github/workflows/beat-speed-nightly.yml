@@ -45,7 +45,14 @@ jobs:
     timeout-minutes: 45
     env:
       # Every beat step tees here; the final step audits it for completeness.
-      BEAT_LOG: ${{ runner.temp }}/beat-speed-measurements.log
+      #
+      # NOT `runner.temp`: the `runner` context does not exist in a JOB-level env
+      # block (it is only available to steps), and using it there does not warn -
+      # it makes the whole workflow unparseable, so `workflow_dispatch` fails with
+      # "Unrecognized named-value: 'runner'" and the lane cannot run at all. That
+      # is exactly the blackout this file exists to prevent, reintroduced by the
+      # fix for it (#2326). `github` IS a valid context at job level.
+      BEAT_LOG: ${{ github.workspace }}/beat-speed-measurements.log
     steps:
       - uses: actions/checkout@v7
 
