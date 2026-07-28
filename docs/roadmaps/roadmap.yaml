@@ -109,7 +109,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Wire beat_ollama_decode_throughput_speed into a GPU-nightly (developer-verified -> CI-enforced)
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-07-04 00:00:00+00:00
@@ -10362,7 +10362,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: '[GPU-GATED — multi-week stretch] Drive GPU 1.5B Q4_K_M from 1.32x to 1.5x Ollama via FUSION-004 DP4A Q8_1 (only un-falsified lever; FUSION-003 alread…'
-  status: planned
+  status: cancelled
   priority: low
   assigned_to: null
   created: 2026-06-11 06:26:41+00:00
@@ -11891,7 +11891,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: Anchor the ci.yml compute-step pass check (kill the '10 failed' substring bypass)
-  status: planned
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-07-05 00:00:00+00:00
