@@ -2,7 +2,7 @@
 name = "apr-format"
 version.workspace = true
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.91"
 description = "Sovereign `.apr` model container format (read + write, v1 APRN + v2 APR\\0) — zero ML/GPU/tokenizer dependencies"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/paiml/aprender"

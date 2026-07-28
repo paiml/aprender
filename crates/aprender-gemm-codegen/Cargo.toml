@@ -2,7 +2,7 @@
 name = "aprender-gemm-codegen"
 version.workspace = true
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.91"
 authors = ["Pragmatic AI Labs"]
 license = "MIT"
 description = "Compile-time GEMM microkernel code generation for trueno (sovereign, no external BLAS)"
