@@ -250,8 +250,14 @@ impl OwnedQuantizedModelCuda {
         // to a single repeated token (measured: CPU/serial-prefill emit
         // "Certainly! Below is a Rust function that", batched prefill emits
         // "CertainlyCertainlyCertainly..."). The decode-path parity probe
-        // (PMAT-806 / F2-VALIDATION) only checks the FIRST token, so it accepts
-        // the model and the corruption ships silently. The bug is structural to
+        // (PMAT-806 / F2-VALIDATION) accepts the model and the corruption ships
+        // silently. NOTE the reason is not the one this comment used to give:
+        // since PMAT-919 the probe checks EVERY prompt position, not just the
+        // first. It still cannot see this bug for a different and more basic
+        // reason - it executes ZERO decode steps and never calls run_prefill at
+        // all, so it exercises neither the batched prefill kernels nor any
+        // cached decode. Extending it is PMAT-F2-DECODE-PHASE-001. The bug is
+        // structural to
         // batched prefill on Blackwell (it reproduces with FP8_PREFILL=0 / HGEMM
         // too, so it is NOT the PMAT-806 activation-quant outlier), while serial
         // prefill (per-token forward_gpu_resident, the PMAT-806 fp32-MWV decode
