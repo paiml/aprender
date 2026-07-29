@@ -116,7 +116,7 @@ falsification_tests:
   - id: FALSIFY-QWEN-STORY-007
     rule: "Bashrs lints clean"
     prediction: "bashrs lint reports 0 errors on the story script"
-    test: "bashrs lint scripts/qwen-story.sh 2>&1 | grep -qE '0 error'"
+    test: "bashrs lint scripts/qwen-story.sh 2>&1 | grep -qE '(^|[^0-9])0 error'"
     if_fails: "Shell script quality regression — could shell-inject in CI"
 
   - id: FALSIFY-QWEN-STORY-008

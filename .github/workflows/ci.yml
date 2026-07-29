@@ -396,6 +396,12 @@ jobs:
       # for its own runner.
       - name: Every beat must be executed by some workflow
         run: bash scripts/check_beats_gated.sh
+      # Poka-yoke: PMAT-CI-PASSGREP-001 killed ONE `grep "0 failed"` that also
+      # matched "10 failed". Two more instances of the same class survived that
+      # fix, one of them a live contract falsifier. Probe every zero-count
+      # pass-grep against an all-failing line instead of trusting review.
+      - name: Every zero-count pass-grep must reject a failing line
+        run: bash scripts/check_pass_grep_anchored.sh
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".

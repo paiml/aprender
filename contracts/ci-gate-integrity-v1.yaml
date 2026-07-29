@@ -1,0 +1,97 @@
+metadata:
+  version: 1.0.0
+  created: '2026-07-29'
+  author: PAIML Engineering
+  description: "Gate integrity — the property that a CI check can actually turn RED. A gate that cannot fail on a real regression is worth negative EV: it consumes runner time, is counted as enforcement in every audit, and licenses the claim it was supposed to test. This contract owns the class of defects where a pass-detector matches a failing line."
+  kind: pattern
+  references:
+    - "scripts/check_pass_grep_anchored.sh — the ratchet"
+    - ".github/workflows/ci.yml — wired per-PR in guard-runner-labels (gate depends on it)"
+    - "PMAT-CI-PASSGREP-001 (#2298) — the first instance: `grep -q \"test result.*0 failed\"` matched \"10 failed\""
+    - "docs/specifications/roadmap-next-wave-2026-07-05.md — enforcement-integrity ranks above adding beats"
+
+five_whys:
+  symptom: "ci.yml's aprender-compute gate used `grep -q \"test result.*0 failed\"`. A summary reading 'test result: FAILED. 90 passed; 10 failed' CONTAINS the substring '0 failed', so runs with 10, 20, 30, ... failures merged GREEN. aprender-compute is excluded from the main nextest, so this grep was the sole gate for its lib failures."
+  why_1: "The pass-detector was written as a substring match against a decimal count, and no decimal count is a safe substring: every count ending in 0 contains '0'."
+  why_2: "The check was never run against a failing input. It was reviewed by reading, and reading a regex is exactly the activity a substring bug defeats."
+  why_3: "PMAT-CI-PASSGREP-001 fixed the one instance it found by inspection. Nothing scanned for siblings, so two more survived — including FALSIFY-QWEN-STORY-007, a contract falsifier, where the failure is invisible because the contract reports itself as passing."
+  why_4: "There is no mechanized notion of 'this gate demonstrably turns red'. Gates are added with a green run as evidence, and a green run is equally consistent with a correct gate and a vacuous one."
+  why_5: "Enforcement was audited by counting gates rather than by falsifying them."
+  root_cause: "Pass-detection was trusted on inspection instead of probed. The remedy is empirical: extract every zero-count pass-grep in the tree and run it against a line in which every count is non-zero. A pass-detector that matches an all-failing line fails open by definition — no reasoning about anchors, word boundaries or leading spaces is required."
+
+equations:
+  pass_grep_rejects_failure:
+    formula: "for every zero-count pass-grep P in the tree: match(P, all_failing_probe) == false"
+    domain: "grep patterns extracted from .github/workflows, contracts/, scripts/, Makefile that assert a zero count of error|fail|warn|issue|violation|problem"
+    codomain: "boolean per pattern; exit 1 if any pattern matches the probe"
+    invariants:
+      - "The probe carries a non-zero count for every keyword the extractor recognises"
+      - "A pattern that matches the probe cannot turn RED on that failure mode — it is reported with file:line"
+      - "Comment lines are out of scope: a commented-out grep is not a gate"
+      - "The checker excludes itself — its header quotes the historical bad patterns as documentation"
+
+  checker_is_not_vacuous:
+    formula: "checked_pattern_count >= MIN_EXPECTED"
+    domain: "the count of in-scope patterns the extractor located on this tree"
+    codomain: "exit code of scripts/check_pass_grep_anchored.sh"
+    invariants:
+      - "A checker that silently examines nothing prints the same OK as one that examined everything"
+      - "If the extraction regex rots or the search paths move, the check goes RED rather than reporting success on an empty set"
+      - "MIN_EXPECTED is overridable by environment only so the self-test can scan a one-file fixture"
+
+proof_obligations:
+  - type: invariant
+    property: "No pass-grep in the tree matches an all-failing line"
+    formal: "scripts/check_pass_grep_anchored.sh exits 0"
+    applies_to: pass_grep_rejects_failure
+  - type: invariant
+    property: "The checker can turn RED"
+    formal: "Given the pre-#2298 ci.yml pattern, the checker exits non-zero"
+    applies_to: pass_grep_rejects_failure
+  - type: invariant
+    property: "The checker is not vacuous"
+    formal: "The checker fails when it locates fewer than MIN_EXPECTED in-scope patterns"
+    applies_to: checker_is_not_vacuous
+  - type: invariant
+    property: "The checker is enforced per-PR, not merely present"
+    formal: "ci.yml invokes the checker in a job that `gate` depends on"
+    applies_to: pass_grep_rejects_failure
+
+falsification_tests:
+  - id: FALSIFY-CI-GATE-INTEGRITY-001
+    rule: "The ratchet exists and is executable"
+    prediction: "scripts/check_pass_grep_anchored.sh is a regular file with the execute bit set"
+    test: "test -x scripts/check_pass_grep_anchored.sh"
+    if_fails: "The ratchet was deleted or unmarked — the pass-grep class is unguarded again"
+
+  - id: FALSIFY-CI-GATE-INTEGRITY-002
+    rule: "No zero-count pass-grep in the tree matches an all-failing line"
+    prediction: "The ratchet exits 0 on the current tree"
+    test: "bash scripts/check_pass_grep_anchored.sh"
+    if_fails: "A pass-detector matches a line in which every count is non-zero — it cannot turn RED on that failure mode. The report names the file:line and the pattern."
+
+  - id: FALSIFY-CI-GATE-INTEGRITY-003
+    rule: "The ratchet demonstrably turns RED (mutation-verified, not merely green)"
+    prediction: "Fed the exact pattern that shipped in ci.yml before PMAT-CI-PASSGREP-001, the ratchet exits non-zero"
+    test: "bash scripts/check_pass_grep_anchored.sh --self-test"
+    if_fails: "The ratchet has itself become vacuous — it accepts the very pattern that merged 10 test failures GREEN"
+
+  - id: FALSIFY-CI-GATE-INTEGRITY-004
+    rule: "The ratchet is wired into the per-PR gate, not merely present in the tree"
+    prediction: "ci.yml invokes check_pass_grep_anchored.sh in guard-runner-labels, which `gate` lists in its needs"
+    test: "grep -q 'check_pass_grep_anchored.sh' .github/workflows/ci.yml"
+    if_fails: "A reference is not an execution — the ratchet would sit unexecuted while being counted as enforcement (the #2327 defect class)"
+
+  - id: FALSIFY-CI-GATE-INTEGRITY-005
+    rule: "The ratchet fails closed when it finds nothing to check"
+    prediction: "With MIN_EXPECTED set above the number of patterns present, the ratchet exits non-zero"
+    test: "! MIN_EXPECTED=9999 bash scripts/check_pass_grep_anchored.sh >/dev/null 2>&1"
+    if_fails: "The ratchet would report OK on an empty set — a blind checker is indistinguishable from a clean tree"
+
+qa_gate:
+  id: F-CI-GATE-INTEGRITY-001
+  name: "CI gate integrity — every pass-detector must be able to fail"
+  description: "Probes every zero-count pass-grep in the workflow, contract, script and Makefile surface against a line in which every count is non-zero. Empirical rather than syntactic: the probe settles whether a pattern can turn red, so no heuristic about regex anchoring is needed."
+  checks:
+    - "pass_grep_rejects_failure"
+    - "checker_is_not_vacuous"
