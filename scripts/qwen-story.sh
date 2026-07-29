@@ -27,6 +27,18 @@ trap '[ -n "$TMPDIR_STORY" ] && [ "$TMPDIR_STORY" != "/" ] && rm -rf "$TMPDIR_ST
 # -- Model registry ------------------------------------------------------------
 M_05B_ST="$MODELS_DIR/qwen2.5-coder-0.5b-instruct-safetensors/model.safetensors"
 M_15B_APR="$MODELS_DIR/qwen2.5-coder-1.5b-instruct-q4k.apr"
+# The format_parity gate peeks the primary's magic bytes and SKIPs anything that
+# isn't GGUF, so no .apr leg can ever exercise it. This is the only clean
+# GGUF + matching-SafeTensors pair on the runner (auto-discovery resolves the
+# reference out of the HF cache, so no --safetensors-path is needed).
+M_15B_GGUF="$MODELS_DIR/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+# Pinned explicitly rather than left to auto-discovery. On this runner
+# auto-discovery resolves to the HF cache snapshot, whose
+# layers.0.ffn_down_weight reads back 100% zeros and trips F-DATA-QUALITY-001
+# during conversion - so the gate would FAIL on a bad reference instead of
+# comparing anything. A gate must not depend on which of several copies a
+# search heuristic happens to find first.
+M_15B_ST="$MODELS_DIR/qwen2.5-coder-1.5b-instruct-safetensors/model.safetensors"
 M_7B_GGUF="$MODELS_DIR/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
 M_30B_MOE="$MODELS_DIR/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
 
@@ -90,6 +102,47 @@ beat1_discover() {
   pmat_hunt "registry list" crates/apr-cli/src/commands/list.rs crates/apr-cli/src/commands/pull.rs
 }
 
+# The GGUF leg of Beat 2. Deliberately NOT named beat<N>_* - the story has
+# exactly 8 beats (FALSIFY-QWEN-STORY-002) and this is a second assertion within
+# Beat 2, not a ninth beat.
+#
+# Why it exists: `run_format_parity_gate` peeks the primary's magic bytes and
+# returns SKIP for anything that isn't GGUF. Beat 2's other leg passes the .apr,
+# so format_parity has SKIPped on every scheduled run since the cron was added -
+# and a SKIP sets passed:true, so `apr qa` still printed ALL GATES PASSED. The
+# cross-format gate the doctrine says to reach for FIRST has never once executed
+# in CI.
+#
+# The assertion is on the JSON gate object, NOT on the ALL GATES PASSED banner,
+# precisely because that banner cannot distinguish "ran and passed" from
+# "skipped". It is also independent of `apr qa`'s exit code: unrelated gates
+# (ollama_parity, perf regression) legitimately fail on some hosts, and this
+# check is about format_parity specifically.
+check_format_parity_gguf() {
+  if [ ! -f "$M_15B_GGUF" ] || [ ! -f "$M_15B_ST" ]; then
+    emit_fail "B2 format_parity" "GGUF ($M_15B_GGUF) or SafeTensors reference ($M_15B_ST) absent - the cross-format gate cannot run. Provision the models rather than skipping: a silent skip is what hid this gate for months."
+    return
+  fi
+  run_cmd 900 apr qa "$M_15B_GGUF" --safetensors-path "$M_15B_ST" --json
+  FP=$(printf '%s\n' "$RC_OUT" \
+    | jq -r '.gates[]? | select(.name=="format_parity") | "\(.skipped) \(.passed) \(.value) \(.threshold)"' 2>/dev/null \
+    | tail -1)
+  case "$FP" in
+    "false true "*)
+      emit_pass "B2 format_parity (GGUF vs SafeTensors, executed: $FP)"
+      ;;
+    "true "*)
+      emit_fail "B2 format_parity" "gate SKIPped - it must EXECUTE on a GGUF primary"
+      ;;
+    "false false "*)
+      emit_fail "B2 format_parity" "cross-format decode DIVERGED: $(printf '%s\n' "$RC_OUT" | jq -r '.gates[]? | select(.name=="format_parity") | .message' 2>/dev/null | tail -1)"
+      ;;
+    *)
+      emit_fail "B2 format_parity" "no format_parity gate found in --json output (got: '$FP', apr qa exit=$RC_EC)"
+      ;;
+  esac
+}
+
 # -- Beat 2: Trust (0.5B safetensors) ------------------------------------------
 beat2_trust() {
   printf -- '-- Beat 2: Trust (QA gates) --\n'
@@ -105,6 +158,8 @@ beat2_trust() {
     emit_fail "B2 apr qa" "no 'ALL GATES PASSED' line"
     return
   fi
+  check_format_parity_gguf
+
   run_cmd 60 apr validate "$M_15B_APR" --quality
   if [ "$RC_EC" -eq 0 ]; then
     emit_pass "B2 apr validate --quality"

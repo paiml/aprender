@@ -11937,7 +11937,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Give apr qa format_parity a real decode path (it is currently a #1864 clone)'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-07-05 00:00:00+00:00

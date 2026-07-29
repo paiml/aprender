@@ -54,6 +54,25 @@ equations:
     - "An EXPLICIT --safetensors-path that does not exist still FAILs (user requested a specific reference)"
     - "A reference that IS present but whose outputs diverge still FAILs — the SKIP never swallows a real bug"
 
+  format_parity_compares_decode_not_one_prefill:
+    formula: |
+      apr qa GGUF_MODEL with a usable SafeTensors reference:
+        steps_compared >= 64
+        AND every step is produced by the PRODUCTION cache entry point
+            (forward_single_with_cache / forward_with_cache)
+        AND both sides are teacher-forced with the SAME token each step
+        AND top-1 must agree at every step, except where
+            cosine(logits_gguf, logits_st) >= 0.98 (near-tie exemption)
+    domain: "apr qa format_parity gate, GGUF primary with a convertible SafeTensors reference"
+    codomain: "GateResult { value = steps agreed, threshold = steps compared }"
+    invariants:
+    - "At least 64 decode steps are compared - the gate this replaced ran ONE prefill forward and compared a single final-position argmax, so a divergence appearing at decode step 32 was structurally invisible to it"
+    - "--max-tokens cannot shrink the comparison below the 64-step floor; a smaller request is raised to the floor, a larger one is honored"
+    - "Both formats are driven through the SAME cache path production uses, so a KV-cache indexing or write defect is inside the system under test rather than bypassed by re-prefilling"
+    - "Teacher forcing keeps both sides on one shared sequence: without it the first disagreement would put the two formats on different sequences and every later step would compare unrelated distributions"
+    - "A top-1 disagreement whose logit vectors are cosine >= 0.98 is a floating-point near-tie, not a structural divergence, and is exempted - without this the gate flakes on tied logits while proving nothing about the cache"
+    - "A structural divergence FAILs the gate and names the step, so the failure is actionable"
+
   json_validity:
     formula: |
       forall cmd in JSON_COMMANDS:
@@ -199,6 +218,18 @@ falsification_tests:
   test: "cargo test -p apr-cli --lib resolve_safetensors_explicit_path_is_honored_not_skipped"
   if_fails: "the absent-reference SKIP swallowed a real format divergence"
 
+- id: FALSIFY-QA-013
+  rule: "format_parity compares at least 64 DECODE steps, not one prefill argmax (PMAT-QA-FMTPARITY-DECODE-001)"
+  prediction: "the decode floor is >= 64 and --max-tokens cannot lower it"
+  test: "cargo test -p apr-cli --lib -- format_parity_decode_floor_is_at_least_64_steps max_tokens_cannot_shrink_decode_below_the_floor"
+  if_fails: "the gate has reverted to the single-forward shape - a cached-decode divergence at step 32 becomes invisible again while the gate still reports itself as cross-format parity"
+
+- id: FALSIFY-QA-014
+  rule: "a divergence appearing only after many decode steps FAILs the gate (PMAT-QA-FMTPARITY-DECODE-001)"
+  prediction: "a report whose first divergence is at step 32 yields passed=false, skipped=false, and a message naming the step"
+  test: "cargo test -p apr-cli --lib -- decode_parity_late_divergence_fails_the_gate decode_parity_all_steps_agreed_passes decode_parity_near_ties_do_not_fail_the_gate"
+  if_fails: "late divergence is swallowed - exactly the class (PMAT-810 batched-prefill decode corruption, GH-1864) the gate exists to catch"
+
 proof_obligations:
 - type: invariant
   property: "all 58 commands exit 0 on --help"
@@ -208,6 +239,8 @@ proof_obligations:
   property: "JSON output is always valid"
 - type: invariant
   property: "format_parity SKIPs on a genuinely absent SafeTensors reference, FAILs on a present-but-diverging one (PMAT-815)"
+- type: invariant
+  property: "format_parity compares >= 64 greedy decode steps through the production cache path, teacher-forced, with a cosine >= 0.98 near-tie exemption (PMAT-QA-FMTPARITY-DECODE-001)"
 
 kani_harnesses:
 - id: KH-QA-001
