@@ -51,10 +51,28 @@ fn dd3_no_phone_home_urls() {
     }
 }
 
+/// Workspace root, resolved from this crate's manifest dir.
+///
+/// Integration tests run with CWD = the PACKAGE root
+/// (`crates/aprender-core/`), not the workspace root. Several assertions in
+/// this file were written when aprender-core WAS the repo root, so bare
+/// relative paths like `.github/workflows/ci.yml` silently stopped resolving
+/// when APR-MONO moved the crate under `crates/`. Nothing noticed, because this
+/// whole target has not compiled since that move.
+fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from CARGO_MANIFEST_DIR")
+}
+
 /// DD5: License allows air-gap deployment
 #[test]
 fn dd5_license_allows_airgap() {
-    let license = include_str!("../../LICENSE");
+    // `../../` from tests/includes/ was the repo root before APR-MONO moved
+    // aprender-core under crates/. It now resolves to crates/aprender-core/,
+    // which has no LICENSE - so this target has not compiled since the move.
+    let license = include_str!("../../../../LICENSE");
 
     assert!(
         license.contains("MIT") || license.contains("Apache"),
@@ -178,9 +196,10 @@ fn cc4_version_documented() {
         "CC4 FALSIFIED: No version in Cargo.toml"
     );
 
-    let has_changelog = std::path::Path::new("CHANGELOG.md").exists()
-        || std::path::Path::new("CHANGES.md").exists()
-        || std::path::Path::new("docs/CHANGELOG.md").exists();
+    let root = workspace_root();
+    let has_changelog = root.join("CHANGELOG.md").exists()
+        || root.join("CHANGES.md").exists()
+        || root.join("docs/CHANGELOG.md").exists();
 
     if !has_changelog {
         eprintln!("CC4 WARNING: No CHANGELOG.md found - consider adding one");
@@ -240,7 +259,7 @@ fn cc3_block_size_gguf_compatible() {
 /// CC5: CI tests cross-repo compatibility
 #[test]
 fn cc5_cross_repo_testing_documented() {
-    let ci_path = std::path::Path::new(".github/workflows/ci.yml");
+    let ci_path = workspace_root().join(".github/workflows/ci.yml");
     assert!(
         ci_path.exists(),
         "CC5: No CI configuration found at .github/workflows/ci.yml"
@@ -322,7 +341,7 @@ fn dd4_audit_log_capability() {
 
     let has_error_handling = cargo_toml.contains("thiserror");
 
-    let has_cli_audit = std::path::Path::new("crates/apr-cli").exists();
+    let has_cli_audit = workspace_root().join("crates/apr-cli").exists();
 
     assert!(
         has_logging_crate || has_error_handling || has_cli_audit,
@@ -341,7 +360,10 @@ fn dd7_cryptographic_verification_capability() {
         || cargo_toml.contains("md5")
         || cargo_toml.contains("digest");
 
-    let v2_rs = include_str!("../../src/format/v2/mod.rs");
+    // src/format/v2/mod.rs no longer exists anywhere in the tree; the APR v2
+    // checksum implementation lives in src/format/core_io.rs. Pointing at a
+    // file that is gone made this assertion uncompilable rather than false.
+    let v2_rs = include_str!("../../src/format/core_io.rs");
     let has_checksum_impl = v2_rs.contains("checksum") || v2_rs.contains("crc");
 
     assert!(
