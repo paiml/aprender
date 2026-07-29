@@ -75,7 +75,7 @@ make tier1                   # Fast feedback (<1s): fmt, clippy, check
 make tier2                   # Pre-commit (<5s): tests + strict clippy
 make tier3                   # Pre-push (1-5min): full validation + coverage
 make tier4                   # CI/CD: includes pmat analysis
-make coverage                # Coverage report (target ≥95%)
+make coverage                # Coverage report (enforced floor 88%, target ≥95%)
 ```
 
 ## Debugging: Use apr Tools First (MANDATORY)
@@ -269,14 +269,14 @@ Required: `set -euo pipefail`, no `ls` for iteration, quoted variables, explicit
 
 ## Testing
 
-Target: 60% unit, 30% property, 10% integration. Coverage: 96.35% line (target ≥95%).
+Target: 60% unit, 30% property, 10% integration. Coverage: **88.78% line** (786448/885829, measured 2026-07-29 by coverage-nightly on 95145584f; target ≥95%, enforced floor 88% via COV_FLOOR). The long-quoted "96.35%" predates the measurement ever working - the pipeline reported 0/0 until #2333.
 
 ```bash
 cargo test                    # All tests (12,974 lib + 4,599 integration)
 cargo test --lib              # Unit only
 cargo test --test integration # Integration
 cargo test --doc              # Doctests
-make coverage                 # Coverage report (disables mold linker, two-phase llvm-cov)
+make coverage                 # Coverage report (disables mold linker, single-phase llvm-cov)
 ```
 
 Mutation testing: `cargo mutants --no-times --timeout 300 --in-place -- --all-features` (or via CI).
@@ -330,7 +330,7 @@ apr qa model.gguf --assert-tps 100 --json
 
 ## PMAT Quality Analysis (v3.10.0)
 
-**Scores:** Project 124/134 (A+), TDG 95.2/100 (A+), Coverage 96.35%, Mutation 85.3%
+**Scores:** Project 124/134 (A+), TDG 95.2/100 (A+), Coverage 88.78% (measured 2026-07-29), Mutation 85.3%
 **Thresholds:** Coverage ≥95%, Complexity ≤10/fn, SATD 0, TDG ≥95, Mutation ≥85%, 0 unwrap()
 
 ```bash
