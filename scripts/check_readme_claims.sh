@@ -8,7 +8,7 @@
 #   bash scripts/check_readme_claims.sh --regen             # print new numbers for manual README edit
 #
 # Claims:
-#   crate_count        → `ls crates/ | wc -l` == README "N workspace crates"
+#   crate_count        → `cargo metadata --no-deps` members == README "N workspace crates"
 #   contract_count     → `find contracts/ -name '*.yaml' | wc -l` == README "M provable contracts"
 #   cli_command_count  → `apr --help` subcmd count == README "K CLI commands"
 #   cookbook_link      → README.md mentions `apr-cookbook`
@@ -26,7 +26,20 @@ fi
 # --- measurements (authoritative, from filesystem / live apr binary) ---
 
 measured_crate_count() {
-  find "$REPO_ROOT/crates" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' '
+  # `cargo metadata --no-deps` - the WORKSPACE members, which is what
+  # "workspace crates" means. NOT `find crates/ -type d`.
+  #
+  # Those two numbers genuinely differ, and the directory count is the wrong
+  # one: 82 directories, 81 with a Cargo.toml, 78 workspace members (4 are
+  # `exclude`d from the workspace, 1 has no manifest). README.md:43 documents
+  # the correct method AND warns against the directory count in the same
+  # sentence - this function was using exactly the method the README told it
+  # not to, so it reported the README as drifted while the README was right.
+  # Wiring it in that state would have forced README to claim 82 workspace
+  # crates, which is false. A gate that enforces the wrong answer is worse
+  # than no gate.
+  (cd "$REPO_ROOT" && cargo metadata --no-deps --format-version 1 2>/dev/null) \
+    | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["packages"]))'
 }
 
 measured_contract_count() {
@@ -40,9 +53,17 @@ measured_cli_command_count() {
   #
   # Use `cargo run --quiet -p apr-cli --bin apr` so the number tracks
   # the committed source. Slow on cold build; fast after dev-profile warm.
+  #
+  # `help` is EXCLUDED. clap generates it automatically; it is not one of
+  # apr's commands, has no chapter, no contract and no implementation in
+  # crates/apr-cli/src/commands/. Counting it made this check report 104
+  # against a README claiming 103 - the README was right and this function
+  # was off by exactly clap's freebie.
   local subcmd_line_re='^  [a-z][-a-z0-9]* '
   (cd "$REPO_ROOT" && cargo run --quiet -p apr-cli --bin apr -- --help 2>&1) \
-    | grep -cE "$subcmd_line_re" | tr -d ' '
+    | grep -E "$subcmd_line_re" \
+    | grep -vE '^  help( |$)' \
+    | wc -l | tr -d ' '
 }
 
 measured_cookbook_link_present() {
@@ -88,7 +109,7 @@ check_crate_count() {
     return 1
   fi
   if [[ "$measured" != "$claimed" ]]; then
-    echo "FAIL FALSIFY-README-001 crate_count: README claims $claimed, filesystem has $measured" >&2
+    echo "FAIL FALSIFY-README-001 crate_count: README claims $claimed, cargo metadata --no-deps has $measured workspace members" >&2
     return 1
   fi
   echo "PASS FALSIFY-README-001 crate_count: $measured"
@@ -149,7 +170,7 @@ done
 
 case "$mode" in
   regen)
-    echo "crates/ count:         $(measured_crate_count)"
+    echo "workspace members:     $(measured_crate_count)"
     echo "contracts/ *.yaml:     $(measured_contract_count)"
     if cli=$(measured_cli_command_count 2>/dev/null); then
       echo "apr --help subcmds:    $cli"
