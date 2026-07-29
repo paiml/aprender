@@ -90,7 +90,7 @@ fi
 # ---------------------------------------------------------------------------
 step "Phase 4: contract validity"
 if pv validate contracts/apr-book-completeness-v1.yaml > /tmp/dogfood-pv.log 2>&1; then
-  if grep -q "0 error(s), 0 warning(s)" /tmp/dogfood-pv.log; then
+  if grep -qE '(^|[^0-9])0 error\(s\), 0 warning\(s\)' /tmp/dogfood-pv.log; then
     pass "pv validate apr-book-completeness-v1.yaml: clean"
   else
     warn "pv validate has warnings (non-blocking)"
