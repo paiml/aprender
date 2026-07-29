@@ -232,8 +232,197 @@ fn compute_argmax(logits: &[f32]) -> Option<u32> {
         .map(|(idx, _)| idx as u32)
 }
 
+/// Minimum decode steps the cross-format parity gate must compare.
+///
+/// PMAT-QA-FMTPARITY-DECODE-001. The gate previously ran ONE prefill forward per
+/// format and compared a single final-position argmax, so every cached-decode
+/// divergence — the class that actually ships (PMAT-810 'CertainlyCertainly',
+/// GH-1864) — was structurally invisible to it. 64 is the roadmap floor, chosen
+/// because cache-indexing bugs typically surface tens of tokens in, not at
+/// step 0.
+#[cfg(feature = "inference")]
+const FORMAT_PARITY_MIN_DECODE_STEPS: usize = 64;
+
+/// Cosine similarity of two logit vectors.
+///
+/// Used only to exempt NEAR-TIES: when the two formats' top-1 differ but the
+/// full distributions are essentially the same vector, the disagreement is
+/// floating-point noise between two legitimately-close candidates rather than a
+/// structural divergence. Without this the gate would flake on models with tied
+/// logits while telling us nothing about cache correctness.
+#[cfg(feature = "inference")]
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let mut dot = 0.0f64;
+    let mut na = 0.0f64;
+    let mut nb = 0.0f64;
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        dot += f64::from(x) * f64::from(y);
+        na += f64::from(x) * f64::from(x);
+        nb += f64::from(y) * f64::from(y);
+    }
+    if na <= 0.0 || nb <= 0.0 {
+        return 0.0;
+    }
+    (dot / (na.sqrt() * nb.sqrt())) as f32
+}
+
+/// Cosine floor above which a top-1 disagreement counts as a near-tie.
+#[cfg(feature = "inference")]
+const FORMAT_PARITY_NEAR_TIE_COSINE: f32 = 0.98;
+
+/// Outcome of a lockstep cross-format decode comparison.
+#[cfg(feature = "inference")]
+struct DecodeParityReport {
+    /// Decode steps actually compared (excludes prefill).
+    steps: usize,
+    /// Steps whose top-1 agreed outright.
+    agreed: usize,
+    /// Steps whose top-1 differed but whose logit vectors were near-identical.
+    near_ties: usize,
+    /// First structural divergence: (step, gguf_argmax, st_argmax, cosine).
+    first_divergence: Option<(usize, u32, u32, f32)>,
+}
+
+/// Greedy-decode both formats in lockstep through their PRODUCTION cache paths
+/// and compare top-1 at every step.
+///
+/// Two design points that decide whether this proves anything:
+///
+/// 1. **Teacher forcing.** Both sides are fed the SAME next token (the GGUF
+///    argmax) rather than each following its own. If each free-ran, the first
+///    disagreement would put them on different sequences and every later step
+///    would compare unrelated distributions — the comparison would degrade into
+///    noise exactly when it matters most. Teacher forcing keeps all N steps on
+///    one shared sequence, so a divergence at step k is attributable to step k.
+///
+/// 2. **The cache path, not a re-prefill.** Both sides use the same
+///    single-token-plus-cache entry point production uses
+///    (`forward_single_with_cache` / `forward_with_cache`), so a KV-cache
+///    indexing or write bug is inside the system under test. Re-running a full
+///    prefill per step would be simpler and would test the wrong thing.
+#[cfg(feature = "inference")]
+fn lockstep_decode_parity(
+    gguf: &realizar::gguf::OwnedQuantizedModel,
+    st: &realizar::ValidatedAprTransformer,
+    prompt_tokens: &[u32],
+    steps: usize,
+) -> Result<DecodeParityReport> {
+    use realizar::apr_transformer::AprKVCache;
+    use realizar::gguf::OwnedQuantizedKVCache;
+
+    let max_seq = prompt_tokens.len() + steps + 1;
+
+    // from_config (not ::new) — it derives kv_dim as num_kv_heads * head_dim.
+    // Passing hidden_dim would over-allocate and mis-stride on any GQA model,
+    // and Qwen2.5-1.5B (12 query heads, 2 KV heads) is exactly that.
+    let mut gguf_cache = OwnedQuantizedKVCache::from_config(gguf.config(), max_seq);
+    let mut st_cache = AprKVCache::new(&st.config);
+
+    let mut gguf_logits = Vec::new();
+    let mut st_logits = Vec::new();
+
+    // Prefill: feed the prompt one token at a time so both caches are populated
+    // by the same code path that will serve the decode steps.
+    for (pos, &tok) in prompt_tokens.iter().enumerate() {
+        gguf_logits = gguf
+            .forward_single_with_cache(tok, &mut gguf_cache, pos)
+            .map_err(|e| {
+                CliError::ValidationFailed(format!("GGUF prefill failed at pos {pos}: {e}"))
+            })?;
+        st_logits = st
+            .forward_with_cache(tok, &mut st_cache, pos)
+            .map_err(|e| {
+                CliError::ValidationFailed(format!("SafeTensors prefill failed at pos {pos}: {e}"))
+            })?;
+    }
+
+    let mut report = DecodeParityReport {
+        steps: 0,
+        agreed: 0,
+        near_ties: 0,
+        first_divergence: None,
+    };
+
+    for step in 0..steps {
+        let Some(g_tok) = compute_argmax(&gguf_logits) else {
+            return Err(CliError::ValidationFailed(format!(
+                "GGUF produced no argmax at decode step {step}"
+            )));
+        };
+        let Some(s_tok) = compute_argmax(&st_logits) else {
+            return Err(CliError::ValidationFailed(format!(
+                "SafeTensors produced no argmax at decode step {step}"
+            )));
+        };
+
+        report.steps += 1;
+        if g_tok == s_tok {
+            report.agreed += 1;
+        } else {
+            let cos = cosine_similarity(&gguf_logits, &st_logits);
+            if cos >= FORMAT_PARITY_NEAR_TIE_COSINE {
+                report.near_ties += 1;
+            } else if report.first_divergence.is_none() {
+                report.first_divergence = Some((step, g_tok, s_tok, cos));
+            }
+        }
+
+        // Teacher-force both sides with the same token (see doc comment).
+        let pos = prompt_tokens.len() + step;
+        gguf_logits = gguf
+            .forward_single_with_cache(g_tok, &mut gguf_cache, pos)
+            .map_err(|e| {
+                CliError::ValidationFailed(format!("GGUF decode failed at step {step}: {e}"))
+            })?;
+        st_logits = st
+            .forward_with_cache(g_tok, &mut st_cache, pos)
+            .map_err(|e| {
+                CliError::ValidationFailed(format!("SafeTensors decode failed at step {step}: {e}"))
+            })?;
+    }
+
+    Ok(report)
+}
+
+/// Turn a lockstep decode comparison into the gate verdict.
+#[cfg(feature = "inference")]
+fn compare_decode_parity(report: &DecodeParityReport, duration: Duration) -> GateResult {
+    let matched = report.agreed + report.near_ties;
+    let total = report.steps as f64;
+
+    if let Some((step, g_tok, s_tok, cos)) = report.first_divergence {
+        return GateResult::failed(
+            "format_parity",
+            &format!(
+                "Cross-format decode DIVERGED at step {step}/{}: GGUF argmax={g_tok} != SafeTensors argmax={s_tok} (cosine={cos:.4} < {FORMAT_PARITY_NEAR_TIE_COSINE}). \
+                 {} of {} steps agreed ({} near-tie). A divergence this far into decode implicates the KV cache path, not the weights.",
+                report.steps, matched, report.steps, report.near_ties
+            ),
+            Some(matched as f64),
+            Some(total),
+            duration,
+        );
+    }
+
+    GateResult::passed(
+        "format_parity",
+        &format!(
+            "Cross-format parity VERIFIED over {} greedy decode steps through the cache path \
+             ({} exact top-1 matches, {} near-tie exemptions at cosine >= {FORMAT_PARITY_NEAR_TIE_COSINE})",
+            report.steps, report.agreed, report.near_ties
+        ),
+        Some(matched as f64),
+        Some(total),
+        duration,
+    )
+}
+
 /// Compare argmax values from GGUF and SafeTensors forward passes and produce
 /// the appropriate `GateResult`.
+#[allow(dead_code)]
 fn compare_argmax_results(
     gguf_argmax: Option<u32>,
     st_argmax: Option<u32>,
@@ -383,20 +572,13 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
         let prompt_tokens: Vec<u32> = gguf.encode(prompt).unwrap_or_else(|| vec![bos, 9707]);
 
-        // Run GGUF forward pass to get logits
-        let gguf_logits = {
-            let mapped = MappedGGUFModel::from_path(path)
-                .map_err(|e| CliError::ValidationFailed(format!("GGUF map failed: {e}")))?;
-            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                .map_err(|e| CliError::ValidationFailed(format!("GGUF model failed: {e}")))?;
-            model
-                .forward(&prompt_tokens)
-                .map_err(|e| CliError::ValidationFailed(format!("GGUF forward failed: {e}")))?
-        };
+        let mapped = MappedGGUFModel::from_path(path)
+            .map_err(|e| CliError::ValidationFailed(format!("GGUF map failed: {e}")))?;
+        let gguf_model = OwnedQuantizedModel::from_mapped(&mapped)
+            .map_err(|e| CliError::ValidationFailed(format!("GGUF model failed: {e}")))?;
 
-        // Run SafeTensors forward pass to get logits
-        let st_logits = match run_safetensors_forward(&safetensors_path, &prompt_tokens) {
-            Ok(logits) => logits,
+        let st_model = match load_safetensors_transformer(&safetensors_path) {
+            Ok(m) => m,
             Err(ForwardError::ConversionFailed(path)) => {
                 return Ok(GateResult::failed(
                     "format_parity",
@@ -409,12 +591,14 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             Err(ForwardError::Cli(e)) => return Err(e),
         };
 
-        let duration = start.elapsed();
-        Ok(compare_argmax_results(
-            compute_argmax(&gguf_logits),
-            compute_argmax(&st_logits),
-            duration,
-        ))
+        // At least FORMAT_PARITY_MIN_DECODE_STEPS regardless of --max-tokens:
+        // the contract's claim is about decode-depth coverage, so a smaller
+        // --max-tokens must not be able to quietly shrink the gate back into the
+        // single-forward shape this replaced.
+        let steps = config.max_tokens.max(FORMAT_PARITY_MIN_DECODE_STEPS);
+        let report = lockstep_decode_parity(&gguf_model, &st_model, &prompt_tokens, steps)?;
+
+        Ok(compare_decode_parity(&report, start.elapsed()))
     }
 
     #[cfg(not(feature = "inference"))]
@@ -435,12 +619,15 @@ enum ForwardError {
     Cli(CliError),
 }
 
-/// Run SafeTensors forward pass, handling sharded and single-file models.
+/// Load the reference SafeTensors model, handling sharded and single-file layouts.
+///
+/// Split out of the old `run_safetensors_forward` so the caller can drive a
+/// multi-step cached decode against the SAME transformer instead of paying the
+/// (multi-second, multi-gigabyte) conversion once per forward pass.
 #[cfg(feature = "inference")]
-fn run_safetensors_forward(
+fn load_safetensors_transformer(
     safetensors_path: &Path,
-    prompt_tokens: &[u32],
-) -> std::result::Result<Vec<f32>, ForwardError> {
+) -> std::result::Result<realizar::ValidatedAprTransformer, ForwardError> {
     use realizar::safetensors_infer::SafetensorsToAprConverter;
     use realizar::{SafetensorsConfig, ShardedSafeTensorsModel};
 
@@ -457,8 +644,8 @@ fn run_safetensors_forward(
         SafetensorsToAprConverter::convert(safetensors_path)
     };
 
-    let model = match transformer {
-        Ok(t) => t,
+    match transformer {
+        Ok(t) => Ok(t),
         Err(e) => {
             // PMAT-743: ANY failure to load/convert the REFERENCE SafeTensors means
             // the parity comparison cannot run — that is a graceful GATE failure with
@@ -469,15 +656,12 @@ fn run_safetensors_forward(
             // whole `apr qa` run (exit 5). The diagnostic tool must survive a bad
             // reference and report it, not die. The error detail is preserved so the
             // user knows WHY (missing tensor, unsupported arch, corrupt weights, …).
-            return Err(ForwardError::ConversionFailed(format!(
+            Err(ForwardError::ConversionFailed(format!(
                 "{} ({e})",
                 safetensors_path.display()
-            )));
+            )))
         }
-    };
-
-    model.forward(prompt_tokens)
-        .map_err(|e| ForwardError::Cli(CliError::ValidationFailed(format!("SafeTensors forward failed: {e}"))))
+    }
 }
 
 fn check_ollama_available() -> bool {

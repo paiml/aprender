@@ -370,4 +370,125 @@ mod forward_error_tests {
             ),
         }
     }
+
+    // ========================================================================
+    // PMAT-QA-FMTPARITY-DECODE-001 — the gate must compare DECODE, not one
+    // prefill argmax.
+    // ========================================================================
+
+    /// The anti-theater assertion. The gate this replaced ran one forward per
+    /// format and compared a single final-position argmax; a cached-decode
+    /// divergence at step 32 was structurally invisible to it. If this floor is
+    /// ever lowered, the gate silently reverts to that shape while continuing
+    /// to report itself as cross-format parity.
+    #[test]
+    #[cfg(feature = "inference")]
+    fn format_parity_decode_floor_is_at_least_64_steps() {
+        assert!(
+            super::FORMAT_PARITY_MIN_DECODE_STEPS >= 64,
+            "the cross-format gate must compare at least 64 decode steps; \
+             found {}. Below this the gate cannot observe the cache-path \
+             divergence class it exists to catch.",
+            super::FORMAT_PARITY_MIN_DECODE_STEPS
+        );
+    }
+
+    /// `--max-tokens` must not be able to shrink the gate back below the floor.
+    #[test]
+    #[cfg(feature = "inference")]
+    fn max_tokens_cannot_shrink_decode_below_the_floor() {
+        for max_tokens in [0usize, 1, 8, 32, 63] {
+            let steps = max_tokens.max(super::FORMAT_PARITY_MIN_DECODE_STEPS);
+            assert!(
+                steps >= 64,
+                "--max-tokens {max_tokens} shrank the parity decode to {steps} steps"
+            );
+        }
+        // …but a LARGER request is still honored.
+        assert_eq!(128usize.max(super::FORMAT_PARITY_MIN_DECODE_STEPS), 128);
+    }
+
+    #[test]
+    #[cfg(feature = "inference")]
+    fn cosine_similarity_identical_vectors_is_one() {
+        let v = vec![0.5f32, -1.25, 3.0, 0.0];
+        let c = super::cosine_similarity(&v, &v);
+        assert!((c - 1.0).abs() < 1e-6, "expected 1.0, got {c}");
+    }
+
+    #[test]
+    #[cfg(feature = "inference")]
+    fn cosine_similarity_orthogonal_vectors_is_zero() {
+        let a = vec![1.0f32, 0.0];
+        let b = vec![0.0f32, 1.0];
+        assert!(super::cosine_similarity(&a, &b).abs() < 1e-6);
+    }
+
+    #[test]
+    #[cfg(feature = "inference")]
+    fn cosine_similarity_mismatched_lengths_is_zero_not_panic() {
+        assert_eq!(super::cosine_similarity(&[1.0, 2.0], &[1.0]), 0.0);
+        assert_eq!(super::cosine_similarity(&[], &[]), 0.0);
+    }
+
+    /// A clean run over the full step budget passes, and reports the budget as
+    /// the threshold so the summary table shows N/N rather than a token id.
+    #[test]
+    #[cfg(feature = "inference")]
+    fn decode_parity_all_steps_agreed_passes() {
+        let report = super::DecodeParityReport {
+            steps: 64,
+            agreed: 64,
+            near_ties: 0,
+            first_divergence: None,
+        };
+        let gate = super::compare_decode_parity(&report, Duration::from_millis(1));
+        assert!(gate.passed, "message was: {}", gate.message);
+        assert!(!gate.skipped);
+        assert_eq!(gate.value, Some(64.0));
+        assert_eq!(gate.threshold, Some(64.0));
+    }
+
+    /// A near-tie is an exemption, not a failure: the top-1 differed but the
+    /// distributions were the same vector to within FP noise.
+    #[test]
+    #[cfg(feature = "inference")]
+    fn decode_parity_near_ties_do_not_fail_the_gate() {
+        let report = super::DecodeParityReport {
+            steps: 64,
+            agreed: 61,
+            near_ties: 3,
+            first_divergence: None,
+        };
+        let gate = super::compare_decode_parity(&report, Duration::from_millis(1));
+        assert!(gate.passed, "message was: {}", gate.message);
+        assert_eq!(gate.value, Some(64.0));
+    }
+
+    /// The RED-turning case, and the whole point of the change: a divergence
+    /// that appears only after many decode steps must FAIL. The single-argmax
+    /// gate this replaced would have passed this scenario, because step 0
+    /// agreed.
+    #[test]
+    #[cfg(feature = "inference")]
+    fn decode_parity_late_divergence_fails_the_gate() {
+        let report = super::DecodeParityReport {
+            steps: 64,
+            agreed: 32,
+            near_ties: 0,
+            first_divergence: Some((32, 100, 200, 0.41)),
+        };
+        let gate = super::compare_decode_parity(&report, Duration::from_millis(1));
+        assert!(
+            !gate.passed,
+            "a divergence at decode step 32 MUST fail the gate; got PASS with: {}",
+            gate.message
+        );
+        assert!(!gate.skipped, "a divergence is a FAIL, never a SKIP");
+        assert!(
+            gate.message.contains("step 32"),
+            "the message must name the diverging step so the failure is actionable; got: {}",
+            gate.message
+        );
+    }
 }
