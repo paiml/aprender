@@ -104,7 +104,7 @@ CF-4-signature gates (one point of a temporal/compounding system):
   type: gate
   ev_rank: 3
   ev_rationale: The #1864 remediation probe validates only serial prefill; generate_2.rs:246-268 documents in-code that batched-prefill decode corruption (PMAT-810) ships through it silently, and BATCHED_PREFILL is still default on sm_89.
-  definition_of_done: "validate_gpu_first_token extended with ≥8 greedy decode steps executed through the SAME prefill mode production selects, per-step argmax + cosine≥0.95 vs CPU; new FALSIFY-CPU-GPU-007 in apr-cpu-vs-gpu-output-parity-v1.yaml. Mutation that must turn RED: corrupt the batched-prefill KV scatter (or truncate cache at decode step 4) — probe must reject; today it accepts."
+  definition_of_done: "validate_gpu_first_token extended with ≥8 greedy decode steps executed through the SAME prefill mode production selects, per-step argmax + cosine≥0.95 vs CPU; new FALSIFY-CPU-GPU-012 in apr-cpu-vs-gpu-output-parity-v1.yaml (NOT 007 - ids 001-011 are all taken; 007 is PMAT-742, the no-false-positive falsifier for this very function). Mutation that must turn RED: corrupt the batched-prefill KV scatter (or truncate cache at decode step 4) — probe must reject; today it accepts."
   blocked_by: none
   artifact_on_completion: falsifier + pv_contract amendment
   workflow_note: ticket → branch → PR → `ci / gate`; verify on cuda-nightly both silicon legs
