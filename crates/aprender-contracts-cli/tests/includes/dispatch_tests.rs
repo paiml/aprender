@@ -85,6 +85,7 @@ fn dispatch_proof_status() {
         format: "text".to_string(),
         table: false,
         kind: None,
+        verify_bindings: None,
     });
     assert!(result.is_ok());
 }
@@ -97,6 +98,7 @@ fn dispatch_proof_status_json() {
         format: "json".to_string(),
         table: false,
         kind: None,
+        verify_bindings: None,
     });
     assert!(result.is_ok());
 }
@@ -109,6 +111,7 @@ fn dispatch_proof_status_directory() {
         format: "text".to_string(),
         table: false,
         kind: None,
+        verify_bindings: None,
     });
     assert!(result.is_ok());
 }
@@ -123,6 +126,7 @@ fn dispatch_proof_status_with_binding() {
         format: "json".to_string(),
         table: false,
         kind: None,
+        verify_bindings: None,
     });
     assert!(result.is_ok());
 }
@@ -375,6 +379,7 @@ fn dispatch_proof_status_markdown() {
         format: "markdown".to_string(),
         table: false,
         kind: None,
+        verify_bindings: None,
     });
     assert!(result.is_ok());
 }
@@ -418,7 +423,7 @@ fn dispatch_roofline_invalid_hw() {
 #[test]
 fn dispatch_pipeline_text() {
     let pipeline_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../contracts/pipelines/inference-forward-v1.yaml");
+        .join("../aprender-contracts-staging/contracts/pipelines/inference-forward-v1.yaml");
     let result = run_command(Commands::Pipeline {
         pipeline: pipeline_path,
         format: "text".to_string(),
@@ -429,7 +434,7 @@ fn dispatch_pipeline_text() {
 #[test]
 fn dispatch_pipeline_json() {
     let pipeline_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../contracts/pipelines/inference-forward-v1.yaml");
+        .join("../aprender-contracts-staging/contracts/pipelines/inference-forward-v1.yaml");
     let result = run_command(Commands::Pipeline {
         pipeline: pipeline_path,
         format: "json".to_string(),
