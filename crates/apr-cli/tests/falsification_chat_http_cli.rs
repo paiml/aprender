@@ -380,35 +380,87 @@ fn falsify_chat_007_session_jsonl_roundtrip() {
     );
 }
 
-/// FALSIFY-CHAT-008: Template application preserves multi-turn ordering.
-/// ChatML format must maintain chronological order of system → user → assistant turns.
+/// FALSIFY-CHAT-008: the REAL template engine preserves multi-turn ordering.
+///
+/// The previous version of this test was a tautology and is worth describing,
+/// because the shape recurs. It built the ChatML string itself with
+/// `format!("<|im_start|>{role}\n{content}<|im_end|>\n")` in a loop over
+/// `turns`, then verified ordering by searching for that same `format!` output
+/// in that same order over that same vector. Producer and verifier were the
+/// same expression over the same data, so the assertion reduced to
+/// `ordered(concat(map(f, t))) == ordered(t)` — true for ANY permutation, by
+/// construction of `push_str`. It never imported the template engine at all.
+///
+/// Measured, not argued: swapping the `user`/`assistant` turns — precisely the
+/// mutation this test claims to catch — left it PASSING.
+///
+/// This version calls `ChatMLTemplate::format_conversation`, the engine the
+/// serving path uses, and asserts on ITS output. The turn order is now a
+/// property of production code rather than of the test body.
 #[test]
 fn falsify_chat_008_chatml_multiturn_ordering() {
-    let turns = vec![
+    use aprender::text::{ChatMLTemplate, ChatMessage, ChatTemplateEngine};
+
+    let turns = [
         ("system", "You are helpful."),
         ("user", "Hello"),
         ("assistant", "Hi!"),
         ("user", "Fix auth.rs"),
         ("assistant", "I'll read the file first."),
     ];
+    let messages: Vec<ChatMessage> = turns
+        .iter()
+        .map(|(role, content)| ChatMessage::new(*role, *content))
+        .collect();
 
-    // Build ChatML formatted conversation
-    let mut formatted = String::new();
+    let engine = ChatMLTemplate::new();
+    let rendered = engine
+        .format_conversation(&messages)
+        .expect("FALSIFY-CHAT-008: the template engine must render a valid conversation");
+
+    // Every turn's CONTENT must appear in the rendered output, in order.
+    // Searching content (not a role+content marker we minted ourselves) keeps
+    // the assertion independent of the engine's exact delimiter syntax while
+    // still being sensitive to reordering.
+    let mut cursor = 0usize;
     for (role, content) in &turns {
-        formatted.push_str(&format!("<|im_start|>{role}\n{content}<|im_end|>\n"));
+        let found = rendered[cursor..].find(content).unwrap_or_else(|| {
+            panic!(
+                "FALSIFY-CHAT-008: {role} turn {content:?} missing or out of order \
+                 after byte {cursor} of the ENGINE-rendered conversation.\n\
+                 Rendered:\n{rendered}"
+            )
+        });
+        cursor += found + content.len();
     }
 
-    // Verify ordering: each turn appears after the previous one
-    let mut last_pos = 0;
-    for (role, content) in &turns {
-        let marker = format!("<|im_start|>{role}\n{content}");
-        let pos = formatted[last_pos..]
-            .find(&marker)
-            .expect(&format!(
-                "FALSIFY-CHAT-008: {role} turn with '{content}' must be found after position {last_pos}"
-            ));
-        last_pos += pos + marker.len();
+    // Sensitivity check, in-test: the same assertion applied to a conversation
+    // the engine rendered from SWAPPED turns must fail. Without this, a future
+    // refactor that made `rendered` order-insensitive would leave the loop
+    // above passing and nobody would notice - which is exactly how the
+    // tautology survived.
+    let mut swapped = messages.clone();
+    swapped.swap(1, 2);
+    let swapped_render = engine
+        .format_conversation(&swapped)
+        .expect("FALSIFY-CHAT-008: engine must render the swapped conversation too");
+    let mut cursor = 0usize;
+    let mut still_ordered = true;
+    for (_, content) in &turns {
+        match swapped_render[cursor..].find(content) {
+            Some(found) => cursor += found + content.len(),
+            None => {
+                still_ordered = false;
+                break;
+            }
+        }
     }
+    assert!(
+        !still_ordered,
+        "FALSIFY-CHAT-008: swapping two turns did NOT change the engine's rendered order — \
+         this assertion cannot detect reordering and is therefore vacuous.\n\
+         Original:\n{rendered}\nSwapped:\n{swapped_render}"
+    );
 }
 
 // ═══ Contract: cli-dispatch-v1 — GAP CLOSURE (PMAT-190) ═══

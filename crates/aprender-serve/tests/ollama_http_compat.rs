@@ -120,3 +120,69 @@ async fn api_generate_is_routed_and_returns_ollama_shape() {
     );
     assert_eq!(json["model"], "apr");
 }
+
+/// PMAT-SERVE-MULTITURN-001: a 3-turn /api/chat conversation must reach the
+/// model in full — not just its last message.
+///
+/// The two tests above are ROUTING/SHAPE falsifiers: one request, one message,
+/// and assertions on `done`/`message.role`/the presence of `message.content`.
+/// They cannot see a conversation bug, and they are weaker than they look:
+/// `chat_response_to_parts` folds an upstream error INTO `message.content`, so
+/// the handler still answers 200 with `done:true` when generation fails
+/// outright. Every assertion in those tests is satisfied by total failure.
+///
+/// So this one does not assert on shape. It uses `prompt_eval_count` — the
+/// count of PROMPT tokens the backend actually consumed — as an oracle:
+/// a 3-turn conversation must consume strictly more prompt tokens than its
+/// last turn alone. That is a property of the whole pipeline (handler →
+/// `to_chat_request` → template → tokenizer), and it is exactly what breaks if
+/// the handler ever drops all-but-last, which is the RED-turning mutation the
+/// roadmap names.
+#[tokio::test]
+async fn api_chat_three_turn_conversation_reaches_the_model_in_full() {
+    let last_turn_only = serde_json::json!({
+        "model": "apr",
+        "messages": [{"role": "user", "content": "And what is the third?"}],
+        "stream": false
+    });
+    let three_turns = serde_json::json!({
+        "model": "apr",
+        "messages": [
+            {"role": "user",      "content": "What is the first letter of the alphabet?"},
+            {"role": "assistant", "content": "The first letter of the alphabet is A."},
+            {"role": "user",      "content": "And what is the third?"}
+        ],
+        "stream": false
+    });
+
+    async fn prompt_tokens(body: serde_json::Value) -> (u64, serde_json::Value) {
+        let app = create_test_app();
+        let resp = app.oneshot(json_post("/api/chat", body)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("Ollama JSON body");
+        let n = json["prompt_eval_count"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("prompt_eval_count must be present and numeric: {json}"));
+        (n, json)
+    }
+
+    let (single, single_json) = prompt_tokens(last_turn_only).await;
+    let (multi, multi_json) = prompt_tokens(three_turns).await;
+
+    // Guard the oracle itself: if the backend reports 0 prompt tokens for both,
+    // the comparison below is vacuous and would pass no matter what the handler
+    // did with the message list.
+    assert!(
+        multi > 0,
+        "prompt_eval_count is 0 for a 3-turn conversation — the oracle is not \
+         measuring anything, so this test cannot detect a dropped turn.\n{multi_json}"
+    );
+
+    assert!(
+        multi > single,
+        "a 3-turn conversation consumed {multi} prompt tokens but its LAST TURN ALONE \
+         consumed {single} — the earlier turns never reached the model.\n\
+         3-turn: {multi_json}\nlast-only: {single_json}"
+    );
+}

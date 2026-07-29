@@ -307,7 +307,7 @@ Key: `unsafe_code = "forbid"`, `clippy::all + pedantic = "warn"`, ML-specific al
 - `crates/aprender-core/src/traits.rs` - Core traits (Estimator, UnsupervisedEstimator, Transformer)
 - `crates/aprender-core/src/primitives/` - Vector/Matrix with Cholesky solver
 - `crates/aprender-core/src/format/` - APR format, validation, lint, converter, export
-- `crates/aprender-core/src/text/chat_template.rs` - Chat template engine
+- `crates/aprender-core/src/text/chat_template/` - Chat template engine (a DIRECTORY: mod.rs + template.rs/raw_template.rs/ship_008.rs via include!)
 - `crates/apr-cli/` - CLI logic (103 commands)
 - `src/bin/apr.rs` - Root binary entry point (`cargo install aprender`)
 - `contracts/` - 1767 provable contracts (merged from all 20 repos)
