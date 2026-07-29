@@ -61,6 +61,20 @@ run_cmd() {
   RC_TAIL=$(echo "$RC_OUT" | tail -1)
 }
 
+# Print the captured output of the last run_cmd, indented, so it survives into
+# the story log (and therefore into the `story-log` CI artifact).
+#
+# run_cmd deliberately captures into a variable rather than letting output
+# stream, which is what makes the OUT=$(cmd); EC=$? methodology work - but it
+# also means nothing a command printed was ever retained. The qa gate table in
+# particular has never reached an artifact: a downloaded story-log contains
+# "PASS  B2 apr qa" and not one word about which gates ran, skipped or failed.
+# A verdict with no evidence behind it cannot be audited after the fact.
+emit_evidence() {
+  printf '    -- captured output (%s) --\n' "$1"
+  printf '%s\n' "$RC_OUT" | sed 's/^/    /'
+}
+
 # Run pmat full audit on a list of command module patterns. Outputs a compact
 # manifest (top 3 high-risk untested functions, top 3 churn, top 3 faults).
 pmat_hunt() {
@@ -152,6 +166,12 @@ beat2_trust() {
   fi
   # Use 1.5B APR (apr qa Golden Output gate works on this; 7B has #1864).
   run_cmd 180 apr qa "$M_15B_APR"
+  # Retain the per-gate table regardless of verdict - it is the only record of
+  # which gates actually executed versus SKIPped, and `apr qa` prints
+  # "ALL GATES PASSED" even when gates skipped (GateResult::skipped sets
+  # passed:true). The grep below therefore cannot distinguish "everything ran
+  # and passed" from "half of it skipped".
+  emit_evidence "apr qa $M_15B_APR"
   if echo "$RC_OUT" | grep -q "ALL GATES PASSED"; then
     emit_pass "B2 apr qa"
   else

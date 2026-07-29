@@ -64,10 +64,25 @@ jobs:
       - name: Run scripts/qwen-story.sh
         id: story
         continue-on-error: true
+        # `$?` after a pipeline is the LAST command's status - tee's - not the
+        # script's. GitHub's DEFAULT shell is `bash -e {0}`, WITHOUT pipefail
+        # (only an explicit `shell: bash` yields `-eo pipefail`), and `set +e`
+        # above disables even errexit. So this step reported exit_code=0 for
+        # every run since the cron was added: the "Fail the job" step at the
+        # bottom and the issue-filing step were both unreachable, and three
+        # consecutive green runs proved nothing.
+        #
+        # ${PIPESTATUS[0]} reads the FIRST pipeline element's status directly
+        # and does not depend on any shell default. `set -o pipefail` is kept
+        # as belt-and-braces so the step is correct under either reading.
+        # This is the same pipe-then-$? defect scripts/qwen-story.sh:17-18
+        # already warns about in its own header.
+        shell: bash
         run: |
           set +e
+          set -o pipefail
           bash scripts/qwen-story.sh 2>&1 | tee /tmp/story.log
-          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Extract pmat bug-hunt manifest
         id: manifest

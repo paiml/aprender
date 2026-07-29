@@ -119,6 +119,18 @@ falsification_tests:
     test: "bashrs lint scripts/qwen-story.sh 2>&1 | grep -qE '(^|[^0-9])0 error'"
     if_fails: "Shell script quality regression — could shell-inject in CI"
 
+  - id: FALSIFY-QWEN-STORY-009
+    rule: "The daily cron reports the STORY's exit code, not the pipeline's last element"
+    prediction: "qwen-story-daily.yml captures ${PIPESTATUS[0]}, never a bare $? after the tee pipeline"
+    test: "grep -qF 'exit_code=${PIPESTATUS[0]}' .github/workflows/qwen-story-daily.yml"
+    if_fails: "The cron captures tee's status instead of the story's. exit_code is then permanently 0, the 'Fail the job' step and the issue-filing step are both unreachable, and every run is green regardless of how many beats FAILed - the story becomes a daily light that cannot turn red."
+
+  - id: FALSIFY-QWEN-STORY-010
+    rule: "The exit-code idiom is semantically correct under GitHub's DEFAULT shell"
+    prediction: "Under `bash -e` with `set +e` - what a run: step without an explicit `shell:` key gets - reading ${PIPESTATUS[0]} after `(exit 2) | tee` yields 2, whereas a bare $? yields 0"
+    test: "[ \"$(bash -e -c 'set +e; (exit 2) | tee /dev/null >/dev/null; echo ${PIPESTATUS[0]}')\" = '2' ] && [ \"$(bash -e -c 'set +e; (exit 2) | tee /dev/null >/dev/null; echo $?')\" = '0' ]"
+    if_fails: "The premise behind FALSIFY-QWEN-STORY-009 no longer holds on this bash - re-derive which idiom propagates the status before trusting the cron's verdict."
+
   - id: FALSIFY-QWEN-STORY-008
     rule: "Beat 7 doesn't run apr qa on 7B (known #1864 regression)"
     prediction: "Beat 7 calls profile/gpu/serve plan but NOT apr qa on the 7B model"
