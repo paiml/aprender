@@ -176,6 +176,27 @@ falsification_tests:
   prediction: Previous messages unchanged after adding new turn
   test: Record history hash after turn 3, add turn 4, verify hash unchanged
   if_fails: New turn modifies or reorders previous messages
+# 006-008 existed only as test-function IDs under a "GAP CLOSURE (PMAT-190)"
+# banner in crates/apr-cli/tests/falsification_chat_http_cli.rs and were never
+# written back here - so this contract's qa_gate still read "All 5
+# falsification tests pass" while three more claimed to enforce it. Declared
+# now, with runnable `test:` commands, and the test file is wired into
+# ci.yml:317 (it previously ran in NO workflow).
+- id: FALSIFY-CHAT-006
+  rule: KV-cache token growth is observable per turn
+  prediction: Successive turns report monotonically growing prompt-token counts
+  test: cargo test -p apr-cli --test falsification_chat_http_cli -- falsify_chat_006_kv_cache_token_growth
+  if_fails: Turn-over-turn cache growth is invisible, so unbounded growth cannot be detected
+- id: FALSIFY-CHAT-007
+  rule: Session JSONL roundtrips without loss
+  prediction: Writing then reading a session preserves every message and tool call
+  test: cargo test -p apr-cli --test falsification_chat_http_cli -- falsify_chat_007_session_jsonl_roundtrip
+  if_fails: Session persistence silently drops messages or tool_calls
+- id: FALSIFY-CHAT-008
+  rule: The REAL template engine preserves multi-turn ordering
+  prediction: ChatMLTemplate::format_conversation renders system/user/assistant turns in chronological order, and rendering a SWAPPED message list demonstrably changes that order
+  test: cargo test -p apr-cli --test falsification_chat_http_cli -- falsify_chat_008_chatml_multiturn_ordering
+  if_fails: Turn order is not preserved by the template engine, or the assertion has gone order-insensitive and is vacuous
 
 kani_harnesses:
 - id: KANI-CHAT-001
@@ -216,4 +237,4 @@ qa_gate:
   checks:
   - validation
   - falsification
-  pass_criteria: All 5 falsification tests pass
+  pass_criteria: All 8 falsification tests pass
