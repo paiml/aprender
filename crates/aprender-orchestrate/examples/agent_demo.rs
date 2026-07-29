@@ -983,6 +983,10 @@ fn run_mcp_demos(rt: &tokio::runtime::Runtime) {
     #[cfg(feature = "agents-mcp")]
     {
         use batuta::agent::manifest::McpTransport;
+        // AgentManifest is imported in a SIBLING demo fn's scope (line 25), not
+        // this one - so this demo has not compiled under `--features agents-mcp`
+        // since the feature landed.
+        use batuta::agent::AgentManifest;
 
         println!("--- Demo 16: MCP Manifest Configuration ---");
         println!();

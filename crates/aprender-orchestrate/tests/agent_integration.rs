@@ -735,6 +735,8 @@ async fn test_runtime_mcp_privacy_sovereign_blocks_sse() {
         command: vec![],
         url: Some("https://api.example.com/mcp".into()),
         capabilities: vec!["*".into()],
+        // SSE transport does not spawn a subprocess, so env is inert here.
+        env: Default::default(),
     }];
 
     let driver = MockDriver::single_response("should not reach here");
@@ -766,6 +768,8 @@ async fn test_runtime_mcp_privacy_sovereign_allows_stdio() {
         command: vec!["node".into(), "server.js".into()],
         url: None,
         capabilities: vec!["*".into()],
+        // Empty map = inherit the parent env unchanged (PMAT-CODE-MCP-ENV-001).
+        env: Default::default(),
     }];
 
     let driver = MockDriver::single_response("stdio is fine");
