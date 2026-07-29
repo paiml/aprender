@@ -263,6 +263,19 @@ COVERAGE_EXCLUDE_REGEX := \.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_trace
 # Coverage threshold (enforced: fail if below)
 COV_THRESHOLD := 95
 
+# Enforced RATCHET floor, distinct from the aspirational target above.
+#
+# Measured 2026-07-29 by the nightly on 95145584f (the commit that fixed the
+# measurement itself): TOTAL: 786448/885829 lines covered = 88.78%. The 95%
+# target is real but is NOT where the tree is, so gating on 95 today would paint
+# the nightly permanently red and train everyone to ignore it - the exact
+# "gate that cannot turn red usefully" failure this repo keeps finding.
+#
+# So the enforced condition is "do not regress below what we actually have".
+# Raise this number whenever a run comes in higher; never lower it to make red
+# go away. Integer truncation gives ~0.78pt of headroom before 88 becomes 87.
+COV_FLOOR := 88
+
 # NVMe target dir (mirrors cargo() shell function that sets CARGO_TARGET_DIR)
 # Without this, Make's subshell bypasses the function and uses ./target/ instead
 # of /mnt/nvme-raid0/targets/aprender, causing profraw/binary mismatch.
@@ -323,9 +336,16 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	echo "TOTAL: $$LH/$$LF lines covered ($${COV_PCT}%)"; \
 	echo "TOTAL $$LH $$LF $${COV_PCT}%" > target/coverage/summary.txt; \
 	test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true; \
-	if [ "$$COV_PCT" -lt "$(COV_THRESHOLD)" ]; then \
-		echo "❌ Coverage $${COV_PCT}% is below threshold $(COV_THRESHOLD)%"; \
+	if [ "$$COV_PCT" -lt "$(COV_FLOOR)" ]; then \
+		echo "❌ REGRESSION: coverage $${COV_PCT}% fell below the enforced floor $(COV_FLOOR)%"; \
+		echo "   The floor is the last measured value, so this means coverage went DOWN."; \
+		echo "   Add tests for what you changed, or justify and lower COV_FLOOR deliberately."; \
 		exit 1; \
+	elif [ "$$COV_PCT" -lt "$(COV_THRESHOLD)" ]; then \
+		echo "✅ Coverage $${COV_PCT}% holds the floor $(COV_FLOOR)% (target is $(COV_THRESHOLD)%, not yet reached)"; \
+		if [ "$$COV_PCT" -gt "$(COV_FLOOR)" ]; then \
+			echo "   ⬆  Above the floor - raise COV_FLOOR to $${COV_PCT} to lock the gain in."; \
+		fi; \
 	else \
 		echo "✅ Coverage $${COV_PCT}% meets threshold $(COV_THRESHOLD)%"; \
 	fi

@@ -9,8 +9,16 @@ name: Coverage Nightly
 # analysis CLAUDE.md mandates), and keeps a single tracking issue up to date so
 # the autonomous loop can fix the top gaps as small `test(...)` PRs.
 #
-# Report-mode by design: never fails the nightly on a coverage dip or a transient
-# tooling hiccup. Promote to a ratchet/hard gate later once it's proven stable.
+# RATCHET MODE (promoted 2026-07-29, as this header always intended). The step
+# below no longer ends in `|| true`. It enforces COV_FLOOR - the last MEASURED
+# value - so red means coverage REGRESSED, not that the 95% target is unmet.
+#
+# It could not be armed before now because the measurement was broken: every run
+# reported `TOTAL: 0/0 lines covered (0%)` (phase 2 scoped its report to the root
+# facade - fixed in #2333). Arming on top of that would have pinned the nightly
+# red forever. First real number, 2026-07-29 on 95145584f:
+# 786448/885829 = 88.78%, NOT the 96.35% that had been quoted since before the
+# measurement ever worked.
 
 on:
   schedule:
@@ -56,7 +64,11 @@ jobs:
           # Makefile's `which cargo-llvm-cov` short-circuits.
           export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
           command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked || true
-          make coverage COV_TARGET_DIR= 2>&1 | tee /tmp/cov.log || true
+          # ARMED (was `|| true`). `make coverage` now enforces a RATCHET floor
+          # (COV_FLOOR, the last measured value) rather than the aspirational 95%
+          # target, so a red here means coverage went DOWN - not that we have not
+          # reached 95% yet. set -o pipefail above makes the tee transparent.
+          make coverage COV_TARGET_DIR= 2>&1 | tee /tmp/cov.log
           pct="$(grep -oE 'TOTAL: [0-9]+/[0-9]+ lines covered \([0-9]+%\)' /tmp/cov.log | tail -1 | grep -oE '[0-9]+%' || true)"
           echo "pct=${pct:-unknown}" >> "$GITHUB_OUTPUT"
 
