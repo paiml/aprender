@@ -30,6 +30,12 @@ use agent_helpers::{
     build_driver, build_guard, build_memory, build_tool_registry, detect_model_format,
     register_inference_tool, register_spawn_tool,
 };
+// register_mcp_tools is itself `#[cfg(feature = "agents-mcp")]`, so its
+// re-export must carry the same gate. It was simply omitted from the list
+// above, which is why agent_tests_extended.rs's
+// test_register_mcp_tools_no_servers has never compiled under that feature.
+#[cfg(all(test, feature = "agents-mcp"))]
+use agent_helpers::register_mcp_tools;
 #[cfg(test)]
 use agent_pool_cmds::{cmd_agent_pool, cmd_agent_status};
 #[cfg(test)]
