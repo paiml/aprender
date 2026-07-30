@@ -8,12 +8,47 @@
 //! cargo test -p aprender-core --test beat_sklearn_linreg_speed -- --ignored --nocapture
 //! ```
 //!
-//! ## Why a ratio, measured same-host/same-run
-//! Absolute wall-clock thresholds are flaky across CI hosts. This beat instead
-//! times apr AND scikit-learn `LinearRegression` fit+predict on the SAME
-//! generated data, on the SAME host, in the SAME run, and gates the **ratio**
-//! `apr_ms / sklearn_ms`. A relative comparison cancels machine-speed variance,
-//! so a slow runner slows both sides proportionally and the ratio holds. The
+//! ## Why a ratio, and why the workload is large
+//! This beat times apr AND scikit-learn `LinearRegression` fit+predict on the
+//! SAME generated data, on the SAME host, in the SAME run, and gates the
+//! **ratio** `apr_ms / sklearn_ms`.
+//!
+//! This file used to claim that "a relative comparison cancels machine-speed
+//! variance, so a slow runner slows both sides proportionally and the ratio
+//! holds". **That is false, and the nightly falsified it.** Two runs an hour
+//! apart on the same host at 10_000x20:
+//!
+//! ```text
+//!   apr=2.289ms sklearn=9.770ms ratio=0.234   PASS
+//!   apr=5.798ms sklearn=5.556ms ratio=1.044   FAIL   (ceiling 0.90)
+//! ```
+//!
+//! The two sides did not move proportionally - they moved in OPPOSITE
+//! directions. At 10_000x20 apr's fit+predict is ~1.2ms, so one scheduler
+//! preemption (~1ms) is an ~80% perturbation while sklearn's ~4.5ms absorbs it.
+//! The ratio was measuring the host, not the algorithms.
+//!
+//! The workload is therefore 200_000x50 (~50x the work): apr ~120ms, sklearn
+//! ~220ms, where millisecond jitter is ~1% rather than ~80%. Measured on
+//! lambda-vector (Threadripper 7960X):
+//!
+//! ```text
+//!   10_000x20   idle 0.255-0.339 | cpu 0.128-0.189 | mem 0.253-0.362 | CI 0.234..1.044
+//!   200_000x50  idle 0.494-0.582 | cpu 0.593-0.636
+//! ```
+//!
+//! The large workload spans 0.49-0.64 across every locally inducible
+//! condition; the small one spanned 8x on CI.
+//!
+//! TWO HONEST CAVEATS. (1) The headline win SHRINKS with size: apr is ~3.6x
+//! faster at 10_000x20 but ~1.7x at 200_000x50. The smaller number is the one
+//! that can be measured reliably, and a gate that measures reliably is worth
+//! more than a gate that flatters. (2) The CI failure mode - apr itself slowing
+//! 2.5x - could NOT be reproduced locally under either CPU or memory-bandwidth
+//! pressure, so this rests on the stability comparison above, not on a
+//! reproduction of the exact mechanism.
+//!
+//! The
 //! gate (`contracts/beat-sklearn-linreg-speed-v1.yaml`, beat_threshold 0.90)
 //! requires apr to stay ≥ ~1.11× faster — a large margin below the measured
 //! ~1.78× (commit 34d61a608), so CI noise cannot trip it but a real regression
@@ -28,10 +63,10 @@ use std::time::Instant;
 use aprender::datasets::make_regression;
 use aprender::prelude::*;
 
-const N_SAMPLES: usize = 10_000;
-const N_FEATURES: usize = 20;
+const N_SAMPLES: usize = 200_000;
+const N_FEATURES: usize = 50;
 const SEED: u64 = 42;
-const RUNS: usize = 5;
+const RUNS: usize = 9;
 /// apr must be at least this much faster than sklearn (ratio = apr/sklearn).
 /// Matches contracts/beat-sklearn-linreg-speed-v1.yaml beat_threshold.
 const RATIO_CEILING: f64 = 0.90;
