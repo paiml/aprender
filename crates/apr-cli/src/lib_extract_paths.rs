@@ -87,6 +87,7 @@
             offline: false,
             include: vec![],
             output: None,
+            verify: false,
         };
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Pull is a diagnostic command (exempt)");

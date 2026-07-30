@@ -452,6 +452,17 @@ pub enum Commands {
         /// Force re-download even if cached
         #[arg(long)]
         force: bool,
+        /// Verify an already-cached model by re-hashing every file against the
+        /// BLAKE3 checksums recorded in `.apr-manifest.json` at download time.
+        ///
+        /// `apr pull` has always RECORDED those hashes and never checked them:
+        /// the only integrity check in the tree compares file SIZE. Size cannot
+        /// see a same-length corruption (a 7.1 GB SafeTensors blob was found
+        /// with 27 of 339 tensors zeroed, byte-length exactly correct). This
+        /// costs O(bytes) by design, which is why it is opt-in. Performs no
+        /// network I/O.
+        #[arg(long)]
+        verify: bool,
         /// CRUX-A-01: resolve short name to canonical URL and exit without
         /// performing any network I/O.
         #[arg(long)]
