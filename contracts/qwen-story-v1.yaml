@@ -131,6 +131,12 @@ falsification_tests:
     test: "[ \"$(bash -e -c 'set +e; (exit 2) | tee /dev/null >/dev/null; echo ${PIPESTATUS[0]}')\" = '2' ] && [ \"$(bash -e -c 'set +e; (exit 2) | tee /dev/null >/dev/null; echo $?')\" = '0' ]"
     if_fails: "The premise behind FALSIFY-QWEN-STORY-009 no longer holds on this bash - re-derive which idiom propagates the status before trusting the cron's verdict."
 
+  - id: FALSIFY-QWEN-STORY-011
+    rule: "The cron runs the apr it just built, not whatever PATH happens to resolve"
+    prediction: "The install step prepends $HOME/.cargo/bin to GITHUB_PATH and asserts `apr --version` contains the workspace version from Cargo.toml"
+    test: "grep -q 'GITHUB_PATH' .github/workflows/qwen-story-daily.yml && grep -q 'STALE apr' .github/workflows/qwen-story-daily.yml"
+    if_fails: "cargo install writes to ~/.cargo/bin but ~/.local/bin precedes it in PATH on the cuda runner, which held a 24-day-old apr 0.60.0. Without the guard the story installs a fresh binary and validates a stale one - every beat, silently. Detected when format_parity reported its OLD result shape (17/17, a token id) on a commit whose source reports 64/64 decode steps."
+
   - id: FALSIFY-QWEN-STORY-008
     rule: "Beat 7 doesn't run apr qa on 7B (known #1864 regression)"
     prediction: "Beat 7 calls profile/gpu/serve plan but NOT apr qa on the 7B model"

@@ -57,9 +57,38 @@ jobs:
           fetch-depth: 1
 
       - name: Install apr from HEAD
+        shell: bash
         run: |
+          set -euo pipefail
           cargo install --path crates/apr-cli --force --features cuda 2>&1 | tail -5
-          apr --version
+
+          # `cargo install` writes to ~/.cargo/bin. On this runner ~/.local/bin
+          # comes FIRST in PATH and held a 24-day-old apr, so every previous run
+          # of this story installed a fresh binary and then executed a stale one:
+          #
+          #   /home/noah/.local/bin/apr   0.60.0             2026-07-06  <- won
+          #   /home/noah/.cargo/bin/apr   0.61.0 (e514cc5ed) 2026-07-30
+          #
+          # Detected because the format_parity gate reported its OLD result
+          # shape (value/threshold 17/17, a token id) on a commit whose source
+          # reports 64/64 decode steps. Put the freshly built binary first.
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+
+          # Fail closed on staleness. A path fix alone would silently rot again
+          # the next time PATH changes; this asserts that the apr the story is
+          # about to run IS the one just built from this checkout.
+          WANT=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          GOT=$(apr --version)
+          echo "workspace version: $WANT"
+          echo "apr --version:     $GOT  ($(command -v apr))"
+          case "$GOT" in
+            *"$WANT"*) echo "apr binary is fresh" ;;
+            *)
+              echo "::error::STALE apr: workspace is $WANT but PATH resolves to '$GOT' at $(command -v apr). The story would validate code that is not this commit."
+              exit 1
+              ;;
+          esac
 
       - name: Run scripts/qwen-story.sh
         id: story
