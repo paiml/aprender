@@ -18,6 +18,14 @@
 
 set -uo pipefail
 
+# Resolve `apr` and PROVE it was built from this commit. Sourcing this exports
+# $APR and hard-fails on a stale binary. Without it a bare `apr` resolves via
+# PATH, and on the cuda runner ~/.local/bin held a 24-day-old build that
+# shadowed the freshly installed one - so every beat below validated stale code
+# while reporting green. Set APR_BIN to override which binary is used.
+# shellcheck source=scripts/apr_bin.sh
+. "$(dirname "${BASH_SOURCE[0]}")/apr_bin.sh"
+
 MODELS_DIR="${MODELS_DIR:-$HOME/models}"
 PMAT_HUNT="${PMAT_HUNT:-1}"  # 1 = run pmat full audit per beat
 TMPDIR_STORY="${TMPDIR_STORY:-/tmp/qwen-story-$$}"
@@ -57,6 +65,9 @@ emit_skip(){ SKIP=$((SKIP+1)); printf '○ SKIP  %s  -  %s\n' "$1" "$2"; }
 # Sets globals: RC_EC, RC_OUT, RC_TAIL
 run_cmd() {
   local t="$1"; shift
+  # Route a bare `apr` through the resolved, freshness-asserted binary so every
+  # call site is pinned without having to touch all 16 of them.
+  if [ "${1:-}" = "apr" ]; then shift; set -- "$APR" "$@"; fi
   RC_OUT=$(timeout "$t" "$@" 2>&1); RC_EC=$?
   RC_TAIL=$(echo "$RC_OUT" | tail -1)
 }
@@ -299,7 +310,7 @@ beat6_serve() {
     return
   fi
   local port=$((20000 + RANDOM % 10000))
-  apr serve run "$M_15B_APR" --port "$port" > "$TMPDIR_STORY/serve.log" 2>&1 &
+  "$APR" serve run "$M_15B_APR" --port "$port" > "$TMPDIR_STORY/serve.log" 2>&1 &
   local pid=$!
   # Wait up to 60s for /health to come up.
   local up=0

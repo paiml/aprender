@@ -402,6 +402,12 @@ jobs:
       # pass-grep against an all-failing line instead of trusting review.
       - name: Every zero-count pass-grep must reject a failing line
         run: bash scripts/check_pass_grep_anchored.sh
+      # Poka-yoke: a bare `apr` runs whatever PATH resolves. qwen-story-daily
+      # installed 0.61.0 to ~/.cargo/bin and then executed a 24-day-old 0.60.0
+      # from ~/.local/bin, so every beat validated stale code while reporting
+      # green. Text-only check, no build.
+      - name: Every CI-surface `apr` invocation must be pinned
+        run: bash scripts/check_apr_bin_pinned.sh
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".

@@ -131,6 +131,24 @@ falsification_tests:
     test: "[ \"$(bash -e -c 'set +e; (exit 2) | tee /dev/null >/dev/null; echo ${PIPESTATUS[0]}')\" = '2' ] && [ \"$(bash -e -c 'set +e; (exit 2) | tee /dev/null >/dev/null; echo $?')\" = '0' ]"
     if_fails: "The premise behind FALSIFY-QWEN-STORY-009 no longer holds on this bash - re-derive which idiom propagates the status before trusting the cron's verdict."
 
+  - id: FALSIFY-QWEN-STORY-011
+    rule: "The cron runs the apr it just built, not whatever PATH happens to resolve"
+    prediction: "The install step prepends $HOME/.cargo/bin to GITHUB_PATH and asserts `apr --version` contains the workspace version from Cargo.toml"
+    test: "grep -q 'GITHUB_PATH' .github/workflows/qwen-story-daily.yml && grep -q 'STALE apr' .github/workflows/qwen-story-daily.yml"
+    if_fails: "cargo install writes to ~/.cargo/bin but ~/.local/bin precedes it in PATH on the cuda runner, which held a 24-day-old apr 0.60.0. Without the guard the story installs a fresh binary and validates a stale one - every beat, silently. Detected when format_parity reported its OLD result shape (17/17, a token id) on a commit whose source reports 64/64 decode steps."
+
+  - id: FALSIFY-QWEN-STORY-012
+    rule: "No CI surface may invoke a bare `apr`"
+    prediction: "scripts/check_apr_bin_pinned.sh exits 0: every apr invocation in .github/workflows and in workflow-referenced scripts goes through $APR, an explicit path, or cargo run --bin apr"
+    test: "bash scripts/check_apr_bin_pinned.sh"
+    if_fails: "A bare `apr` runs whatever PATH resolves. That is how a 24-day-old 0.60.0 in ~/.local/bin shadowed a freshly installed 0.61.0 and validated every beat against stale code while reporting green."
+
+  - id: FALSIFY-QWEN-STORY-013
+    rule: "The apr resolver proves the binary was built from HEAD"
+    prediction: "scripts/apr_bin.sh exports $APR and exits non-zero when the binary's embedded git SHA (apr-version-traceability-v1) differs from git rev-parse --short HEAD"
+    test: "grep -q 'rev-parse --short HEAD' scripts/apr_bin.sh && grep -q 'STALE apr BINARY' scripts/apr_bin.sh"
+    if_fails: "Freshness is asserted by version string alone or not at all; a rebuilt-but-not-reinstalled binary would pass."
+
   - id: FALSIFY-QWEN-STORY-008
     rule: "Beat 7 doesn't run apr qa on 7B (known #1864 regression)"
     prediction: "Beat 7 calls profile/gpu/serve plan but NOT apr qa on the 7B model"
