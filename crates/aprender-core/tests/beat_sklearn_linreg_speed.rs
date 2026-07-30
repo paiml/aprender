@@ -40,6 +40,31 @@
 //! The large workload spans 0.49-0.64 across every locally inducible
 //! condition; the small one spanned 8x on CI.
 //!
+//! VALIDATED ON THE HOST THAT FAILED. Dispatched twice onto the clean-room
+//! pool at 200_000x50:
+//!
+//! ```text
+//!   apr=265.473ms sklearn=337.106ms ratio=0.788
+//!   apr=252.463ms sklearn=313.446ms ratio=0.805
+//! ```
+//!
+//! 2.2% spread, where the 10_000x20 configuration swung 0.234 -> 1.044 (346%)
+//! on that same pool. The stability goal is met.
+//!
+//! But read the LEVEL, not just the spread: on that host apr is ~1.25x faster,
+//! NOT the ~1.85x measured on lambda-vector, leaving only ~11% headroom under
+//! the 0.90 ceiling. apr is penalised more than sklearn by that host (2.3x vs
+//! 1.55x slower than lambda-vector). Do NOT "fix" a future failure here by
+//! enlarging the workload again - apr's advantage SHRINKS with size
+//! (0.26 at 10_000x20 -> 0.54 at 200_000x50 locally), so a bigger problem
+//! makes the ratio worse, not better.
+//!
+//! OPEN, not resolved here: the contract records baseline_floor 0.56, which
+//! describes neither this host (0.79-0.81) nor the old size (0.26). Whether
+//! that gap is slower CI hardware or a real apr regression cannot be settled
+//! without historical CI data at this size, and is deliberately not asserted
+//! either way.
+//!
 //! TWO HONEST CAVEATS. (1) The headline win SHRINKS with size: apr is ~3.6x
 //! faster at 10_000x20 but ~1.7x at 200_000x50. The smaller number is the one
 //! that can be measured reliably, and a gate that measures reliably is worth
