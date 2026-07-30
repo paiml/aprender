@@ -125,6 +125,7 @@ pub(crate) mod ptx_map;
 pub(crate) mod publish;
 pub(crate) mod pull;
 pub(crate) mod pull_scheme;
+pub(crate) mod pull_verify;
 pub(crate) mod qa;
 pub(crate) mod qa_capability;
 pub(crate) mod qualify;

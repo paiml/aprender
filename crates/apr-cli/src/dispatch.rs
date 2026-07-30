@@ -814,6 +814,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             offline,
             include,
             output,
+            verify,
         } => {
             // SHIP-TWO-001 §26.8: when first positional is the literal
             // "dataset", treat the second positional as the HF dataset
@@ -836,6 +837,11 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                         "apr pull dataset <REPO>: REPO argument required".to_string(),
                     )),
                 }
+            } else if *verify {
+                // Verify-only: no network I/O, no download. Resolves the cache
+                // directory for the reference and re-hashes what is on disk.
+                crate::commands::pull::resolve_cache_dir_for_ref(model_ref)
+                    .and_then(|dir| crate::commands::pull_verify::run_verify(&dir))
             } else {
                 pull::run(model_ref, *force, *dry_run, revision.as_deref(), *offline)
             }

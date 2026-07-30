@@ -91,6 +91,28 @@ falsification_tests:
     parse_gguf_shard_name mishandles prefixes containing digits/dashes. Check
     the rsplit_once('-') prefix split.
   evidence: cargo test -p apr-cli --lib sharded_gguf_tests::detects_three_part_with_quant_prefix
+- id: FT-SHGGUF-020
+  rule: a same-size content corruption is REJECTED by --verify
+  prediction: |
+    apr pull <dir> --verify exits 5 when a cached shard has the recorded byte
+    length but different content. This is the case size-only checking cannot
+    see: validate::validate_shard_manifest documents itself as "an
+    O(1)-per-file check (stat syscall only, no hashing)", so the BLAKE3 that
+    pull already records was never compared to anything.
+  if_fails: |
+    --verify has regressed to a size check and a corrupt-but-right-length model
+    passes. Measured motivating case: a 7.1 GB SafeTensors blob, fully
+    allocated, exact byte length, 27 of 339 tensors reading back as -0.0.
+  evidence: cargo test -p apr-cli --lib pull_verify_tests::same_size_different_content_is_caught
+- id: FT-SHGGUF-021
+  rule: --verify fails closed on an empty or absent manifest
+  prediction: |
+    A manifest naming zero files exits non-zero rather than printing success,
+    and an absent .apr-manifest.json is an error, not a pass.
+  if_fails: |
+    --verify would report "verified" having verified nothing - the same
+    vacuous-gate defect the command exists to expose.
+  evidence: cargo test -p apr-cli --lib -- pull_verify_tests::empty_manifest_fails_rather_than_reporting_success pull_verify_tests::absent_manifest_is_an_error_not_a_pass
 - id: FT-SHGGUF-003
   rule: single non-sharded GGUF is not treated as sharded
   prediction: detect_gguf_shards on one model.gguf returns None.

@@ -426,6 +426,33 @@ fn run_sharded_gguf(
     Ok(())
 }
 
+/// Resolve the on-disk cache directory for a model reference, without any
+/// network I/O.
+///
+/// Used by `apr pull --verify`, which inspects an already-downloaded model.
+/// Accepts `hf://org/repo`, `org/repo`, or a bare path to a cache directory.
+pub(crate) fn resolve_cache_dir_for_ref(model_ref: &str) -> Result<std::path::PathBuf> {
+    // An explicit directory wins - lets the operator verify any cache layout.
+    let as_path = std::path::Path::new(model_ref);
+    if as_path.is_dir() {
+        return Ok(as_path.to_path_buf());
+    }
+    let trimmed = model_ref
+        .trim_start_matches("hf://")
+        .trim_start_matches("https://huggingface.co/")
+        .trim_matches('/');
+    let mut parts = trimmed.splitn(2, '/');
+    match (parts.next(), parts.next()) {
+        (Some(org), Some(repo)) if !org.is_empty() && !repo.is_empty() => {
+            resolve_shard_cache_dir(org, repo)
+        }
+        _ => Err(CliError::ValidationFailed(format!(
+            "Cannot resolve a cache directory from '{model_ref}'. \
+             Expected `org/repo`, `hf://org/repo`, or an existing directory."
+        ))),
+    }
+}
+
 /// Resolve the cache directory for a sharded model.
 fn resolve_shard_cache_dir(org: &str, repo: &str) -> Result<std::path::PathBuf> {
     Ok(dirs::home_dir()

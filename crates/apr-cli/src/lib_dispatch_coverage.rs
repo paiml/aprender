@@ -40,6 +40,7 @@
             offline: false,
             include: vec![],
             output: None,
+            verify: false,
         });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Pull should be handled by dispatch_model_commands");
