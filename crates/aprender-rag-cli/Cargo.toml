@@ -1,6 +1,6 @@
 [package]
 name = "aprender-rag-cli"
-version = "0.61.0"
+version = "0.62.0"
 edition = "2021"
 authors = ["Pragmatic AI Labs"]
 description = "CLI for Trueno-RAG pipeline"
