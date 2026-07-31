@@ -408,6 +408,15 @@ jobs:
       # green. Text-only check, no build.
       - name: Every CI-surface `apr` invocation must be pinned
         run: bash scripts/check_apr_bin_pinned.sh
+      # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
+      # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
+      # `set -uo pipefail` deliberately (it must run every beat and tally the
+      # failures). The leak turned errexit on underneath it and the nightly
+      # story died after six lines inside an ADVISORY pmat hunt. Both files read
+      # correctly on their own - only the combination is wrong, which is why
+      # this is mechanical rather than a review note. Text-only, no build.
+      - name: Sourced libraries must not mutate the caller's shell options
+        run: bash scripts/check_sourced_libs_option_neutral.sh --self-test
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".

@@ -16,6 +16,9 @@
 # Each beat uses OUT=$(cmd); EC=$? to avoid the pipe-then-$? methodology
 # defect documented in memory/feedback_test_methodology_can_fake_bugs.md.
 
+# NOTE the deliberate absence of `-e`. This script's contract is to run EVERY
+# beat and tally the results (emit_fail / FAILED_BEATS / exit 2), so a failing
+# beat must not abort the run. Anything sourced below must not turn errexit on.
 set -uo pipefail
 
 # Resolve `apr` and PROVE it was built from this commit. Sourcing this exports
@@ -23,8 +26,12 @@ set -uo pipefail
 # PATH, and on the cuda runner ~/.local/bin held a 24-day-old build that
 # shadowed the freshly installed one - so every beat below validated stale code
 # while reporting green. Set APR_BIN to override which binary is used.
+#
+# The explicit `|| exit 1` is what makes a stale binary fatal. apr_bin.sh used
+# to get that effect by doing `set -euo pipefail` at its own file scope, which
+# leaked errexit into THIS script and killed the nightly run six lines in.
 # shellcheck source=scripts/apr_bin.sh
-. "$(dirname "${BASH_SOURCE[0]}")/apr_bin.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/apr_bin.sh" || exit 1
 
 MODELS_DIR="${MODELS_DIR:-$HOME/models}"
 PMAT_HUNT="${PMAT_HUNT:-1}"  # 1 = run pmat full audit per beat
@@ -86,6 +93,32 @@ emit_evidence() {
   printf '%s\n' "$RC_OUT" | sed 's/^/    /'
 }
 
+# Extract rows from one `pmat query`, tolerating BOTH shapes pmat can return.
+#
+# A function query returns a JSON ARRAY of function records, but when nothing
+# matches semantically pmat falls back to a document search and returns
+# `{"documents":[...]}` instead. The original filter ran `.[] | \(.function)`
+# unconditionally: on the fallback shape `.[]` yields the documents ARRAY, and
+# interpolating `.function` from an array raises "Cannot index array with
+# function" - jq exits 5. Under `pipefail` the whole assignment then returned
+# 5, which is what killed the nightly story once errexit leaked in from
+# apr_bin.sh. Guarding on `type == "array"` makes the no-match case yield an
+# empty string instead of an error.
+#
+# `|| true` is deliberate and load-bearing: this manifest is ADVISORY. It
+# annotates the story, and must never be able to fail it - not via pmat's exit
+# status, not via jq, not via SIGPIPE from `head`.
+#
+# Args: <jq-output-filter> <pmat query args...>
+pmat_rows() {
+  local filter="$1"; shift
+  pmat query "$@" --format json 2>/dev/null \
+    | jq -r "if type == \"array\" then .[] else empty end
+             | select(.function != null)
+             | $filter" 2>/dev/null \
+    | head -3 || true
+}
+
 # Run pmat full audit on a list of command module patterns. Outputs a compact
 # manifest (top 3 high-risk untested functions, top 3 churn, top 3 faults).
 pmat_hunt() {
@@ -96,17 +129,18 @@ pmat_hunt() {
   printf '    -- pmat bug-hunt manifest (%s) --\n' "$beat"
   for q in "$@"; do
     local gaps churn faults
-    gaps=$(pmat query --coverage-gaps --path "$q" --rank-by impact --limit 3 \
-      --format json 2>/dev/null | jq -r '.[] | "        gap   \(.function) (impact=\(.impact_score // "?"))"' 2>/dev/null | head -3)
-    churn=$(pmat query "$beat" --path "$q" --churn --max-complexity 30 --limit 3 \
-      --format json 2>/dev/null | jq -r '.[] | "        churn \(.function) (commits=\(.churn.commit_count // "?"))"' 2>/dev/null | head -3)
-    faults=$(pmat query "$beat" --path "$q" --faults --exclude-tests --limit 3 \
-      --format json 2>/dev/null | jq -r '.[] | "        fault \(.function) (\(.faults | join(\",\")))"' 2>/dev/null | head -3)
+    gaps=$(pmat_rows '"        gap   \(.function) (impact=\(.impact_score // "?"))"' \
+      --coverage-gaps --path "$q" --rank-by impact --limit 3)
+    churn=$(pmat_rows '"        churn \(.function) (commits=\(.churn.commit_count // "?"))"' \
+      "$beat" --path "$q" --churn --max-complexity 30 --limit 3)
+    faults=$(pmat_rows '"        fault \(.function) (\(.faults | join(",")))"' \
+      "$beat" --path "$q" --faults --exclude-tests --limit 3)
     [ -n "$gaps" ]   && printf '%s\n' "$gaps"
     [ -n "$churn" ]  && printf '%s\n' "$churn"
     [ -n "$faults" ] && printf '%s\n' "$faults"
   done
   printf '\n'
+  return 0
 }
 
 # -- Beat 1: Discover (0.5B SafeTensors) --------------------------------------─

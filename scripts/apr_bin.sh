@@ -18,8 +18,20 @@
 # already embeds the build-time git SHA (contract apr-version-traceability-v1,
 # F-VERSION-001..004): `apr --version` prints e.g. `apr 0.61.0 (e514cc5ed)`.
 # So "was this binary built from HEAD?" is a string comparison, not a guess.
-
-set -euo pipefail
+#
+# DELIBERATELY NO `set -euo pipefail` AT FILE SCOPE. This file is SOURCED, and
+# `set` in a sourced file mutates the CALLER's shell. The first version of this
+# script did `set -euo pipefail` here; qwen-story.sh sources it and had chosen
+# `set -uo pipefail` WITHOUT `-e` on purpose - the whole script is built around
+# running every beat and counting failures (emit_fail/FAILED_BEATS). Turning
+# errexit on under it meant the first non-zero command anywhere killed the run:
+# the nightly story died after SIX LINES, inside Beat 1's advisory pmat hunt,
+# and reported nothing about why. A sourceable library must be option-neutral.
+#
+# Fail-closed is preserved explicitly instead: the bottom of this file returns
+# non-zero when the binary is stale, so callers use
+#     . scripts/apr_bin.sh || exit 1
+# which fails the same way errexit would, without seizing the caller's shell.
 
 apr_bin_die() {
     printf '%s\n' "$*" >&2
@@ -86,8 +98,20 @@ apr_bin_assert_fresh() {
     return 1
 }
 
-APR=$(apr_bin_resolve) || apr_bin_die "apr_bin: no apr binary found (build one: cargo install --path crates/apr-cli --force)"
-apr_bin_assert_fresh "$APR"
+# Fail-closed without errexit. At the top level of a SOURCED file `return N`
+# ends the source with that status, so `. apr_bin.sh || exit 1` behaves exactly
+# as it did under `set -e`. When this file is EXECUTED instead, top-level
+# `return` is an error, and the `||` falls through to `exit`. One line covers
+# both entry points.
+if ! APR=$(apr_bin_resolve); then
+    apr_bin_die "apr_bin: no apr binary found (build one: cargo install --path crates/apr-cli --force)"
+    return 1 2>/dev/null || exit 1
+fi
+
+if ! apr_bin_assert_fresh "$APR"; then
+    return 1 2>/dev/null || exit 1
+fi
+
 export APR
 
 # When executed rather than sourced, print the resolved path.
