@@ -34,6 +34,24 @@ ignore = [
     # cranelift cluster above. Availability bug, not RCE. Published
     # 2026-04-30; surfaced first on 2026-05-01 CI runs.
     "RUSTSEC-2026-0114",
+    # wasmtime 43.0.2 — "Stores can mix up type indices between engines",
+    # severity 3.8 LOW. Published 2026-07-31 and broke the security gate the
+    # same day, blocking the v0.62.0 release.
+    #
+    # NOT taken on faith from the cluster above — the "test-only, not
+    # production" claim was re-verified for this one:
+    #   cargo tree -p aprender                        -> 0 wasmtime paths
+    #   cargo tree -p aprender --no-default-features  -> 0 wasmtime paths
+    # wasmtime is optional and gated behind aprender-test-lib's `runtime`
+    # feature, which NOTHING in the workspace enables (its only consumer,
+    # aprender-qa-runner, takes `features = ["llm-types"]`). It appears here
+    # solely because Cargo.lock records optional dependencies, so cargo-audit
+    # sees it while no shipped artifact ever links it.
+    #
+    # The fix is a real upgrade, not this line: 43 -> >=46.0.2,<47 or >=47.0.3,
+    # a four-major jump on a test-only dep. Tracked separately; revisit before
+    # anything starts enabling `runtime`.
+    "RUSTSEC-2026-0222",
 
     # rustls-webpki 0.101.7 — transitive via aws-smithy-http-client (rustls 0.21).
     # Direct 0.103.x path already bumped to >=0.103.12. The 0.101.7 pin lives
