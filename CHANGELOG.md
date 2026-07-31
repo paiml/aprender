@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-07-31
+
+The **gate-integrity** release. v0.61.0 fixed things that were silently broken or
+silently false; this one goes after the machinery that was supposed to catch them.
+Almost every entry below is a gate that could not fail, or a number that was not
+true. The pattern repeated often enough to be worth naming: *every one of these
+was green beforehand.* A substring pass-grep matched its own failure text, a
+pipeline reported `tee`'s exit code instead of the test's, a parity gate compared
+one token, a `skipped` result set `passed: true`, a coverage job measured a facade
+and reported 0%, 547 integration targets were never executed by any workflow, and
+the nightly regression story died six lines in while its own alerting path had
+never once worked.
+
+Three published speed claims were re-measured and did not survive: GaussianNB's
+"4.9x", LinearRegression's ratio, and the headline "apr beats ollama GPU decode
+1.371x". The last is **withdrawn** rather than re-explained — it was measured under
+a Q4K kernel default that no longer exists and cannot be reproduced. Under-claiming
+is also a reporting failure, so the replacement numbers are stated with the host,
+the spread, and the remaining headroom.
+
+### Fixed — gates that could not fail
+
+- The entire nightly speed lane was dark; one broken leg hid all 10 beats (#2326)
+- The anti-theater beat gate was satisfied by theater — a reference is not an
+  execution (#2327)
+- `PMAT-CI-PASSGREP-001` closed one instance of a class; two more were live, one of
+  them a contract falsifier failing open while reporting itself green (#2335)
+- `qwen-story-daily` could not fail: it captured `tee`'s exit code, not the story's.
+  GitHub's default `run:` shell is `bash -e {0}` — **without** pipefail (#2336)
+- `apr qa` format_parity compared ONE token; it now runs 64 teacher-forced decode
+  steps through the cache path (#2337)
+- A 3-turn serve gate that can actually fail, a falsifier that stopped being a
+  tautology, and 30 tests that were never run (#2340)
+- Two test targets had not compiled in months — found by running the suite CI never
+  runs (#2341)
+- The `pv` dispatch tests did not compile, and two pointed at a moved directory (#2342)
+- The nightly Qwen story died after six lines, and every path meant to report it was
+  broken: a sourced `set -euo pipefail` leaking errexit into the caller, a manifest
+  grep off by four spaces, labels that never existed, and a verdict step gated behind
+  a cosmetic notifier by an implicit `success()` (#2347)
+- Coverage measured a facade and reported 0% for everything (#2333)
+
+### Fixed — claims that were not true
+
+- "82 workspace crates" is false; it is 78, and the gate proved the wrong
+  proposition (#2325)
+- The GaussianNB "4.9x" was a dev-box number — re-pinned to the host that actually
+  runs it, with the phase split needed to tell contention from regression (#2328)
+- The readme-claims checker was wrong on 2 of 4; the README was right (#2339)
+- The LinReg speed beat was measuring the host, not the algorithms (#2345), and now
+  records what the CI host actually measures (#2346)
+- **Withdrawn:** the ollama GPU-decode "1.371x". Measured reality on sm_89 is
+  1.015–1.109x — parity, not a win. The gate is re-pinned to a no-collapse floor and
+  the beat claim is retracted until it is earned back (#2348)
+- MSRV reconciled 1.89 → 1.91 with a verification gate (#2303)
+
+### Fixed — correctness
+
+- `--backend cuda` must refuse, not silently serve wgpu/CPU (#2321)
+- Stop swallowing the CUDA forward failure that silently drops to CPU (#2322)
+- Default Q4K to fp32 MWV on all GPUs — HwDp4a is numerically degraded and was
+  making the product 20x slower on the most common discrete GPU (#2323)
+- `top_p` was a silent no-op on the dense CPU decode path (#2317)
+- `top_k=0` no longer emits token 0 forever (#2314)
+- `--features full` did not compile (#2316)
+
+### Added
+
+- `apr pull --verify` — re-hash cached model files against the BLAKE3 that `pull`
+  already records but never compared. Motivated by a 7.1 GB SafeTensors blob whose
+  byte length was exactly right and whose content was 27 tensors of `-0.0` (#2343)
+- Coverage ratchet armed — and the real number is 88.78%, not 96.35% (#2334)
+- Poka-yoke: every beat must be executed by some workflow (#2324)
+- Validation of the top 50 HuggingFace models (#2299)
+- `aarch64-unknown-linux-gnu` nightly target (#2300)
+
+### Security
+
+- RUSTSEC-2026-0222 (wasmtime 43, 3.8 low, published on release day). Verified not
+  present in any shipped path — `cargo tree -p aprender` resolves zero wasmtime
+  paths with and without default features — and ignored with that proof rather than
+  by inheriting the existing justification (#2351)
+
 ## [0.61.0] - 2026-07-26
 
 The **release-integrity** release. Every change here fixes something that was
