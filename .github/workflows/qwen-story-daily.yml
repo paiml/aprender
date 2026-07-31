@@ -115,10 +115,20 @@ jobs:
 
       - name: Extract pmat bug-hunt manifest
         id: manifest
+        shell: bash
         run: |
           # Pull the pmat hunt lines out of the log into a structured artifact.
+          #
+          # The pattern used to be '^(    gap|    churn|    fault)' - FOUR
+          # leading spaces - while qwen-story.sh emits these rows with EIGHT
+          # (see the pmat_rows filters). So it matched nothing, on every run:
+          # pmat-manifest.txt was 0 lines even on nights when the story log
+          # plainly contained `        churn ...` rows, which in turn pinned
+          # `growth` at 0 forever and made the "manifest grew by >5" alert
+          # branch below unreachable. Anchor on leading whitespace instead of a
+          # hardcoded indent so the two files cannot drift apart again.
           mkdir -p /tmp/qwen-story-artifacts
-          grep -E '^(    gap|    churn|    fault)' /tmp/story.log \
+          grep -E '^[[:space:]]+(gap|churn|fault)[[:space:]]' /tmp/story.log \
             > /tmp/qwen-story-artifacts/pmat-manifest.txt || true
           LINES=$(wc -l < /tmp/qwen-story-artifacts/pmat-manifest.txt)
           echo "manifest_lines=$LINES" >> "$GITHUB_OUTPUT"
@@ -148,14 +158,31 @@ jobs:
           path: /tmp/story.log
           retention-days: 30
 
+      # NOTE `continue-on-error`. This step NOTIFIES; it does not judge. When it
+      # was allowed to fail it took the real verdict down with it: on 2026-07-31
+      # it died with "could not add label: 'qwen-story-daily' not found", which
+      # (a) made the job's error message about labels instead of about the story
+      # and (b) skipped "Fail the job" below, because a step `if:` without a
+      # status function carries an implicit `success()`. Notification failures
+      # must never be able to mask or fake the story's own result.
       - name: File / update tracking issue on failure
+        continue-on-error: true
         if: |
           (steps.story.outputs.exit_code != '0' ||
            fromJson(steps.manifest.outputs.growth || '0') > 5) &&
           (github.event.inputs.file_issue != 'false')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
+          set -uo pipefail
+          # Neither `qwen-story-daily` nor `regression` existed in this repo, so
+          # `gh issue create --label qwen-story-daily,regression` had never once
+          # succeeded - the alerting path was dead from the day it was written.
+          # Create them idempotently rather than assuming a human did.
+          for L in qwen-story-daily regression; do
+            gh label create "$L" --description "Filed by qwen-story-daily" --force >/dev/null 2>&1 || true
+          done
           TITLE="qwen-story-daily: story exit=${{ steps.story.outputs.exit_code }} manifest_growth=${{ steps.manifest.outputs.growth }}"
           # Look for an existing open issue with the qwen-story-daily label.
           EXISTING=$(gh issue list --label qwen-story-daily --state open --limit 1 \
@@ -187,8 +214,29 @@ jobs:
               --body-file /tmp/issue-body.md
           fi
 
+      # `always() &&` is load-bearing. Without a status function GitHub prepends
+      # an implicit `success()`, so ANY earlier step failing skips this one -
+      # including the purely cosmetic issue-filing step above. That is exactly
+      # what happened on 2026-07-31: the story really had failed, this step was
+      # skipped, and the job's only error was about a missing label. The
+      # authoritative verdict must not be conditional on the notifier's health.
       - name: Fail the job if the story failed
-        if: steps.story.outputs.exit_code != '0'
+        if: always() && steps.story.outputs.exit_code != '0'
         run: |
           echo "::error::Qwen story exited with code ${{ steps.story.outputs.exit_code }}. See artifact 'story-log' for details."
           exit 1
+
+      # Fail closed on a MISSING verdict. `exit_code` is written by the story
+      # step; if that step is itself skipped or dies before the redirect, the
+      # output is the empty string, `'' != '0'` is true, and the step above
+      # already fails. This one covers the opposite hole: a story step that
+      # somehow reports success without ever having produced a verdict.
+      - name: The story must have produced a verdict
+        if: always()
+        run: |
+          EC='${{ steps.story.outputs.exit_code }}'
+          if [ -z "$EC" ]; then
+            echo "::error::qwen-story.sh produced NO exit_code output - the run cannot be called green."
+            exit 1
+          fi
+          echo "story verdict: exit_code=$EC"

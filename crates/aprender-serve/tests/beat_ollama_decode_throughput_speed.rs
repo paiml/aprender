@@ -7,24 +7,56 @@
 //! gate is MANUAL/operator-gated (lambda-vector RTX 4090 or gx10 GB10), exactly
 //! like the cuda-oxide throughput beat. The CPU unit tests below DO run in CI.
 //!
-//! ## VERDICT: PROMOTED to ENFORCED (re-measure-first honesty — task step 1)
-//! A real ~1.3x CLEAN-decode advantage EXISTS and is now NON-FLAKY. The blocker
-//! for the prior TRACKING verdict was apr's ~1-in-6 CATASTROPHIC DECODE STALL (a
-//! run takes ~36s and stops early — the known FUSION-003 "1-in-6 CUDA_ERROR"
-//! class), which made a median gate flake. That stall is FIXED by #2049 (the
-//! FP8-warmup OOB read that poisoned the CUDA context). Re-measured on RTX 4090
-//! with #2049 (+ #2060 layout/elementwise kernel-arg fix) applied:
-//!   apr 128/384 differential [458.0, 411.2, 430.4, 421.3, 369.9, 413.4, 384.3,
-//!   402.1] tok/s, median 412.3, worst 369.9; ollama median ~300.7 tok/s;
-//!   median ratio 1.371x; worst single run 1.230x; 0 stalls / 8 trials.
-//! Every single run cleared 1.10x, and a median-of-7 >= 1.10x gate bootstraps to a
-//! ~0% false-FAIL rate. So this harness now asserts the ENFORCED gate:
-//! apr MEDIAN-OF-7 decode tok/s >= ollama median x 1.10.
+//! ## VERDICT 2026-07-31: the 1.371x BEAT CLAIM IS WITHDRAWN. This is now a
+//! ## NO-COLLAPSE PARITY FLOOR, not a beat. apr does not currently win here.
 //!
-//! ## DEPENDENCY (task step 5): this gate's no-stall premise needs #2049 on main
-//! The ENFORCED 1.10x assertion is only non-flaky because the FP8-warmup OOB stall
-//! is fixed. If #2049 is reverted/absent, the ~1-in-6 stall returns and the median
-//! can flake — do NOT enforce without #2049.
+//! The old header asserted "median ratio 1.371x, worst single run 1.230x, every
+//! single run clears 1.10x, bootstrapped ~0% false-FAIL". That claim is not
+//! reproducible on this host and has been removed rather than re-explained.
+//!
+//! FOUR INDEPENDENT MEASUREMENTS, one host (lambda RTX 4090 sm_89):
+//!   date        apr median   ollama median   ratio    source
+//!   2026-06-15    412.3         300.7        1.371x   promotion claim (#2067)
+//!   2026-07-29    332.7         299.9        1.109x   cuda-nightly (PASSED)
+//!   2026-07-31    342.4         328.6        1.042x   cuda-nightly (FAILED)
+//!   2026-07-31    318.2         313.5        1.015x   idle box, this harness
+//!
+//! Read the OLLAMA column first: 300.7 / 299.9 / 328.6 / 313.5 over six weeks.
+//! The incumbent is reproducible, so the drift is not the measuring rig. apr's
+//! own column moved 412 -> ~303-342. The 2026-07-29 "PASS" at 1.109x was already
+//! this regression squeaking past a threshold with 0.8% headroom; nobody looked
+//! because it was green.
+//!
+//! WHAT CHANGED: #2323 (2026-07-27) made `auto_q4k` return Mwv on every device.
+//! The previous default on sm_89 was HwDp4a, whose INT8 Q8_1 activation quant is
+//! numerically degraded (F2 first-token cosine 0.9186 < the 0.95 floor). The
+//! 412.3 figure was measured under that old default.
+//!
+//! DO NOT read that as "#2323 cost us 23%" — that is NOT what was measured. Re-run
+//! today with the surviving opt-in, `HW_DP4A_Q4K=1`, and the differential is
+//! **20.3 tok/s**, not 412: HwDp4a is F2-REJECTED, wgpu then fails its own 0.99
+//! gate, and the run finishes on CPU SIMD. That is precisely the ~20 tok/s
+//! collapse #2323 was written to fix. So the honest statement is narrow: the
+//! 1.371x number was taken under a kernel default that no longer exists and can
+//! no longer be reproduced here. A correct 318 tok/s is worth far more than a
+//! degraded kernel the F2 gate refuses to let serve a token.
+//!
+//! WHY THE FLOOR IS 0.90 AND NOT 1.10. Keeping 1.10 asserts a win apr does not
+//! currently have; it would fail ~every other night and teach people to ignore
+//! this gate. Lowering it to ~1.00 would quietly redefine "beat" as "tie". So the
+//! assertion is renamed to what it can actually prove: apr must not COLLAPSE.
+//! 0.90 sits 12% under the worst observed median (1.015) so it does not flake,
+//! and still catches the failure class that matters — the CPU-fallback collapse
+//! is ratio ~0.065, a 14x violation.
+//!
+//! RECOVERING THE BEAT is tracked separately: either restore DP4A-class decode
+//! speed with activation quant that clears F2, or make Mwv faster. Until apr
+//! measures >= 1.10x on this host again, Pillar-4 must NOT claim a GPU decode
+//! win over ollama on sm_89.
+//!
+//! ## DEPENDENCY: the median premise still needs #2049 on main
+//! The ~1-in-6 catastrophic decode stall is fixed by #2049 (FP8-warmup OOB read).
+//! If #2049 is reverted/absent the stall returns and any median gate here flakes.
 //!
 //! ## What it measures (be honest about scope)
 //! STEADY-STATE GPU DECODE throughput only — the marginal token-generation rate
@@ -59,12 +91,16 @@
 use std::path::Path;
 use std::process::Command;
 
-/// ENFORCED gate threshold (mirrors the contract's `beat_threshold`): apr's
-/// MEDIAN-OF-7 clean decode must beat ollama's median by at least this factor. The
-/// re-measured median is 1.37x with worst single run 1.23x, so 1.10x is a wide
-/// safety margin (bootstrapped ~0% false-FAIL). This is asserted at runtime now
-/// that the #2049 FP8 stall fix makes the median non-flaky. See the contract VERDICT.
-const ENFORCED_THRESHOLD: f64 = 1.10;
+/// NO-COLLAPSE FLOOR (mirrors the contract's `beat_threshold`). apr's MEDIAN-OF-7
+/// decode must stay within this factor of ollama's median.
+///
+/// This is NOT a beat threshold. It was 1.10 while the harness believed apr ran
+/// at 1.371x; the three post-#2323 measurements are 1.109 / 1.042 / 1.015, so 1.10
+/// now fails about every other night for a reason the gate cannot fix. 0.90 sits
+/// 12% below the worst observed median — it will not flake — while still catching
+/// the collapse that actually costs users: an F2-rejected GPU path falling to CPU
+/// SIMD measures ratio ~0.065, violating this floor by 14x. See the header.
+const ENFORCED_THRESHOLD: f64 = 0.90;
 
 /// Forced token counts for the differential apr measurement (amortizes fixed cost).
 const N_LOW: u32 = 128;
@@ -257,17 +293,25 @@ fn beat_ollama_decode_throughput_speed() {
          beat-ollama-decode-throughput-speed-v1.yaml)."
     );
 
-    // ENFORCED assertion: apr's MEDIAN-OF-7 clean decode must beat ollama's median
-    // by >= 1.10x. The re-measured 1.37x median with worst single run 1.23x and 0
-    // stalls makes this a wide, non-flaky margin. A real regression (apr losing its
-    // decode advantage, or the #2049 stall fix being absent) fails the build.
+    // NO-COLLAPSE assertion. Deliberately NOT "apr beats ollama" - see the header:
+    // that claim was withdrawn on 2026-07-31 because it is not reproducible. What
+    // this still proves is that apr is serving decode on the GPU at all.
+    //
+    // The old message offered two diagnoses ("apr's advantage regressed, OR #2049
+    // is missing") and BOTH were wrong when it finally fired on 2026-07-31 - the
+    // cause was #2323 changing the default Q4K kernel. A failure message that
+    // confidently names the wrong cause is worse than one that names none, so this
+    // one reports the measurement and points at the checks that discriminate.
     assert!(
         ratio_med >= ENFORCED_THRESHOLD,
-        "BEAT-REGRESSION beat-ollama-decode-throughput: apr median-of-{APR_MEDIAN_N} decode \
-         {apr_med:.1} tok/s no longer beats ollama median {ollama_med:.1} tok/s by {ENFORCED_THRESHOLD:.2}x \
-         (ratio_median {ratio_med:.3} < {ENFORCED_THRESHOLD:.2}) — apr's clean-decode advantage \
-         regressed, OR the #2049 FP8 stall fix is missing from this binary so the median is \
-         stall-flaky (contract beat-ollama-decode-throughput-speed-v1.yaml DEPENDENCY)"
+        "DECODE-COLLAPSE beat-ollama-decode-throughput: apr median-of-{APR_MEDIAN_N} decode \
+         {apr_med:.1} tok/s is below {ENFORCED_THRESHOLD:.2}x ollama's median {ollama_med:.1} tok/s \
+         (ratio_median {ratio_med:.3}). This floor is NOT a beat threshold - at this depth apr is \
+         very likely not decoding on the GPU at all. Check, in order: (1) is the F2 first-token \
+         gate REJECTING the CUDA path (look for 'GPU diverges from CPU' / cosine < 0.95)? A \
+         rejected CUDA path falls to wgpu, then to CPU SIMD, and measures ~20 tok/s - ratio ~0.065. \
+         (2) is APR_BIN built --features cuda? (3) is HW_DP4A_Q4K set, re-selecting the degraded \
+         kernel #2323 removed as the default? (contract beat-ollama-decode-throughput-speed-v1.yaml)"
     );
 }
 

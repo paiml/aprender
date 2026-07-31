@@ -9,14 +9,31 @@ metadata:
     than ollama" observation (PMAT-742, 2026-06-13) from TRACKING into a
     falsifiable GATED beat.
 
-    VERDICT (2026-06-15, RE-MEASURED with the #2049 FP8 stall fix applied):
-    PROMOTED to status=enforced. The ~1.3x clean-decode advantage is REAL and is
-    now NON-FLAKY because the ~1-in-6 catastrophic decode stall (the old variance
-    blocker) is GONE once #2049's FP8-warmup OOB fix is on the decode path. The
-    enforced gate is apr median-of-7 decode tok/s >= ollama median x 1.10 — a wide
-    safety margin under the measured 1.37x median, with a bootstrapped ~0% false-
-    FAIL rate. It stays a MANUAL/GPU gate (#[ignore], NVIDIA host only) because
-    there is NO NVIDIA CI runner — same caveat as the cuda-oxide throughput gate.
+    VERDICT SUPERSEDED 2026-07-31 — THE 1.371x BEAT CLAIM IS WITHDRAWN.
+    This is now a NO-COLLAPSE PARITY FLOOR, not a beat. apr does not currently
+    win GPU decode against ollama on sm_89.
+
+    Four independent measurements on the same host (lambda RTX 4090 sm_89):
+      2026-06-15  apr 412.3  ollama 300.7  1.371x  promotion claim (#2067)
+      2026-07-29  apr 332.7  ollama 299.9  1.109x  cuda-nightly, PASSED
+      2026-07-31  apr 342.4  ollama 328.6  1.042x  cuda-nightly, FAILED
+      2026-07-31  apr 318.2  ollama 313.5  1.015x  idle box, this harness
+    The OLLAMA column reproduces across six weeks (300.7/299.9/328.6/313.5), so
+    the drift is not the measuring rig. The 2026-07-29 PASS at 1.109x was already
+    this regression clearing the gate by 0.8%; it went unexamined because green.
+
+    #2323 (2026-07-27) made auto_q4k return Mwv on every device; sm_89 previously
+    defaulted to HwDp4a, whose INT8 activation quant fails the F2 first-token
+    cosine floor (0.9186 < 0.95). The 412.3 figure predates that change. This is
+    NOT "#2323 cost 23%": re-running today with HW_DP4A_Q4K=1 measures 20.3 tok/s,
+    because HwDp4a is F2-rejected and the run ends on CPU SIMD. The claim is
+    withdrawn as unreproducible, not reattributed.
+
+    The floor is 0.90: 12% under the worst observed median so it does not flake,
+    while still catching the class that matters (CPU fallback ~= ratio 0.065).
+    Restoring a >= 1.10x win is tracked separately; until then Pillar-4 must not
+    claim a GPU decode win over ollama on sm_89. Still a MANUAL/GPU gate
+    (#[ignore], NVIDIA host only).
 
     SCOPE: STEADY-STATE GPU DECODE only — marginal token-generation rate with
     model load + FP8-weight-cache build + CUDA-graph capture + prefill amortized
@@ -62,8 +79,8 @@ version: 2
 status: enforced
 date: 2026-06-15
 
-# Beat-benchmark parameters. baseline_value records the RE-MEASURED CLEAN-decode
-# ratio (1.371x); beat_threshold (1.10) is the ENFORCED gate threshold the
+# Beat-benchmark parameters. baseline_value records the WORST reproducible
+# post-#2323 ratio (1.015x); beat_threshold (0.90) is the no-collapse floor the
 # median-of-7 harness asserts on an NVIDIA host.
 beat:
   pillar: 4
@@ -81,9 +98,12 @@ beat:
     ollama_median_eval_tps. NOT one-shot cold wall-clock (conceded).
   metric: decode_tps_ratio_apr_over_ollama
   direction: higher_is_better
-  baseline_value: 1.3710      # RE-MEASURED CLEAN-decode median ratio apr/ollama (412.3 / 300.7), #2049+#2060 applied
-  baseline_floor: 1.2300      # WORST single re-measured run (369.9 / 300.7); every single run clears the 1.10x gate
-  beat_threshold: 1.1000      # the ENFORCED gate threshold: apr median-of-7 decode tok/s >= ollama median x 1.10
+  baseline_value: 1.0150      # WITHDRAWN 2026-07-31: the 1.371x (412.3/300.7, 2026-06-15) is NOT reproducible.
+                              # Measured post-#2323 on the same host: 1.109 (07-29), 1.042 (07-31), 1.015 (idle).
+                              # Pinned to the WORST of the three, not the best.
+  baseline_floor: 0.9000      # NO-COLLAPSE floor, 12% under the worst observed median (1.015). Not a beat floor.
+  beat_threshold: 0.9000      # no-collapse gate: apr median-of-7 >= ollama median x 0.90. 1.10 asserted a win
+                              # apr does not currently have and failed ~every other night. Recovery tracked separately.
   baseline_sourced_date: "2026-06-15"
   approved_compute: GPU       # RTX 4090 (sm_89) steady-state decode; needs apr --features cuda + ollama
   ci_gate_name: "beat_ollama_decode_throughput_speed"
