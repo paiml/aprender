@@ -10,7 +10,7 @@ aprender ships with two [Claude Code skills](https://docs.anthropic.com/en/docs/
 
 ## Available Skills
 
-### `/dogfood` — Daily Development Loop
+### `/apr-dogfood` — Daily Development Loop
 
 **When to use:** After making changes, before picking up the next ticket.
 
@@ -33,7 +33,7 @@ Rebuilds `apr-cli` from source, exercises it against real model files, runs qual
 
 **Verdicts:** GO (all pass) / WARN (soft issues, binary works) / FAIL (blocking issues)
 
-**For debugging contributions:** Run `/dogfood` after your fix. Gate 2 exercises `apr` commands against real models — if your fix breaks model handling, this catches it. Gate 5 runs 3,800+ tests to catch regressions.
+**For debugging contributions:** Run `/apr-dogfood` after your fix. Gate 2 exercises `apr` commands against real models — if your fix breaks model handling, this catches it. Gate 5 runs 3,800+ tests to catch regressions.
 
 ---
 
@@ -72,7 +72,7 @@ If you're investigating a bug in aprender:
 
 1. **Reproduce** — Use `apr qa <model>` to get a falsifiable failure
 2. **Fix** — Make your code changes
-3. **Verify** — Run `/dogfood` to rebuild, exercise the binary, and run tests
+3. **Verify** — Run `/apr-dogfood` to rebuild, exercise the binary, and run tests
 4. **Pre-publish** — If touching packaging or deps, run `/pre-release`
 
 ### Example: Debugging a Model Import Issue

@@ -4,7 +4,7 @@
 
 **Spec**: SPEC-SHIP-TWO-001 §88 (compute-bounded ship target) + §89 (distillation epic deferred).
 **Contract**: `contracts/apr-cli-qa-v1.yaml` + 5 companion contracts (silent-fallback, metamorphic, coverage, chaos, differential).
-**Skill**: `.claude/skills/dogfood/SKILL.md` (12 gates + P1-P12 protocols).
+**Skill**: `.claude/skills/apr-dogfood/SKILL.md` (12 gates + P1-P12 protocols).
 
 ---
 
@@ -128,7 +128,7 @@ Verify:
 
 ## 6. /dogfood skill (apr-cookbook 12-protocol sweep)
 
-Per `.claude/skills/dogfood/SKILL.md`:
+Per `.claude/skills/apr-dogfood/SKILL.md`:
 
 ```bash
 # Run from inside a Claude session with the model path argument

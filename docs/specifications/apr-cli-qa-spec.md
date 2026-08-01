@@ -10,7 +10,7 @@
 - `contracts/apr-qa-differential-v1.yaml` — ollama parity, tokenizer fidelity, concurrent serve (5 tests)
 - `contracts/apr-qa-chaos-v1.yaml` — memory budget, OOM, signals, disk, overwrite protection (5 tests)
 - `contracts/apr-qa-coverage-v1.yaml` — category coverage, SATD zero, complexity gate (5 tests)
-**Skill**: `.claude/skills/dogfood/SKILL.md`
+**Skill**: `.claude/skills/apr-dogfood/SKILL.md`
 **Source**: Extended from `apr-cookbook/.claude/skills/qa/SKILL.md`
 **arXiv**: 1807.10453, 2207.11976, 2505.03096, 2603.23611, 2103.13630, 2102.05351
 
@@ -280,7 +280,7 @@ Contract: `apr-qa-coverage-v1.yaml`
 
 ## Claude Code Skill
 
-`.claude/skills/dogfood/SKILL.md` — invoked via `/dogfood`:
+`.claude/skills/apr-dogfood/SKILL.md` — invoked via `/apr-dogfood`:
 - 12 gates (G1-G7 structural, G8-G12 v2.0)
 - 18 sub-checks (S1-S5, M2-M3, V1+V3, C2-C3, D1-D3)
 - GO/WARN/FAIL verdict
