@@ -91,7 +91,7 @@ MoE GGUF. Every beat is a falsifier in
 [`contracts/qwen-story-v1.yaml`](contracts/qwen-story-v1.yaml); the runnable
 form is [`scripts/qwen-story.sh`](scripts/qwen-story.sh); nightly cron is
 [`.github/workflows/qwen-story-daily.yml`](.github/workflows/qwen-story-daily.yml);
-the dogfood gate is `/dogfood` Gate 18.
+the dogfood gate is `/apr-dogfood` Gate 18.
 
 ```bash
 # Reproduce locally (uses ~/models cache; ~3-5 min on RTX 4090):

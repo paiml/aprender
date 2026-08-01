@@ -1,4 +1,12 @@
 ---
+# EXPLICIT name (#2332). Without this, the skill takes its name from the
+# directory, and `dogfood` collides with a personal user-scope skill at
+# ~/.claude/skills/dogfood/. On any machine where both exist the USER one
+# wins and this file NEVER APPEARS in the session's skill listing at all —
+# it cannot be invoked and nothing warns. That is worse than a missing
+# skill: edits here look effective and change nothing that runs, which is
+# exactly what happened when #2357 hardened Gates 1 and 13 below.
+name: apr-dogfood
 allowed-tools: Bash(cargo:*), Bash(apr:*), Bash(pmat:*), Bash(gh:*), Bash(git:*), Bash(find:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(grep:*), Bash(diff:*), Bash(timeout:*), Bash(jq:*), Bash(python3:*), Bash(echo:*), Bash(cat:*), Bash(rm:*), Bash(ssh:*), Read, Glob, Grep, Agent
 description: Dogfood apr-cli — rebuild, install, exercise all commands against real models, check quality, find next work
 ---
