@@ -41,11 +41,23 @@ Run ALL gates below. For each gate, run the check, report PASS/FAIL/SKIP with ev
 
 ```bash
 cargo install --path crates/apr-cli --force 2>&1 | tail -5
-apr --version
+# Resolve the binary through the guard, NEVER a bare `apr`. Sourcing exports
+# $APR and hard-fails when it was not built from HEAD.
+. scripts/apr_bin.sh || exit 1
+APR_BIN_STRICT=1 "$APR" --version
 git rev-parse --short HEAD
 ```
 
 PASS if version string contains the HEAD commit hash. FAIL if build errors or mismatch.
+
+> **Why `$APR` and not `apr`.** The previous version of this gate installed to
+> `$CARGO_HOME/bin` and then invoked a **bare `apr`**, which PATH resolves
+> independently. On the machine that runs this protocol `~/.local/bin/apr`
+> preceded `~/.cargo/bin/apr` and held a 26-day-old 0.60.0 build, so Gate 1
+> installed a fresh binary and then version-checked a stale one. That is the
+> exact defect #2344 fixed in `qwen-story-daily`, and it survived here — in the
+> protocol that certifies releases. A dogfood run is worthless if it exercised a
+> binary other than the one being shipped.
 
 ## Gate 2: Full Command Grid (FALSIFY-QA-001, FALSIFY-QA-009)
 
@@ -538,16 +550,29 @@ reporting a stale commit hash in git worktrees because `build.rs` watches a
 hardcoded `../../.git/HEAD` path that doesn't exist in a worktree layout.
 
 ```bash
-# After cargo install, apr --version SHA MUST match git rev-parse --short HEAD.
+# After cargo install, the SHA MUST match git rev-parse --short HEAD.
 # Run this from inside the source checkout (or worktree) you just built from.
-APR_SHA=$(apr --version 2>&1 | grep -oE '\([a-f0-9]{7,}\)' | tr -d '()')
+. scripts/apr_bin.sh || exit 1
+APR_SHA=$("$APR" --version 2>&1 | grep -oE '\([a-f0-9]{7,}\)' | tr -d '()')
 HEAD_SHA=$(git rev-parse --short HEAD)
 if [ -n "$APR_SHA" ] && [ "$APR_SHA" = "$HEAD_SHA" ]; then
-  echo "G13 PASS: apr --version SHA ($APR_SHA) matches HEAD"
+  echo "G13 PASS: $APR SHA ($APR_SHA) matches HEAD"
 elif [ -z "$APR_SHA" ]; then
-  echo "G13 SKIP: apr --version has no embedded SHA (likely crates.io install)"
+  # NOT a SKIP. A binary with no embedded SHA cannot be shown to be the code
+  # under test, and "cannot prove" must never read as "fine". This branch used
+  # to SKIP for "likely crates.io install" — and the binary that wins PATH
+  # resolution on this machine is `~/.local/bin/apr`, which reports exactly
+  # `apr 0.60.0 (v0.60.0+no-git)`. So the one stale artifact most likely to be
+  # executed was also the one that made the protocol's ONLY freshness gate
+  # excuse itself. If you are deliberately dogfooding a published crates.io
+  # build, say so explicitly with DOGFOOD_ALLOW_UNPINNED=1.
+  if [ "${DOGFOOD_ALLOW_UNPINNED:-0}" = "1" ]; then
+    echo "G13 SKIP (explicitly allowed): $APR has no embedded SHA"
+  else
+    echo "G13 FAIL: $APR has NO embedded SHA — cannot prove it is HEAD. Set DOGFOOD_ALLOW_UNPINNED=1 only for a deliberate crates.io dogfood."
+  fi
 else
-  echo "G13 FAIL: apr --version SHA=$APR_SHA but HEAD=$HEAD_SHA (#1862)"
+  echo "G13 FAIL: $APR SHA=$APR_SHA but HEAD=$HEAD_SHA (#1862)"
 fi
 ```
 
