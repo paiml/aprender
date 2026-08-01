@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-08-01
+
+The **provenance** release. v0.62.0 fixed gates that could not fail; this one
+answers a narrower and more uncomfortable question: *was the thing we validated
+the thing we ship?*
+
+Four `apr` binaries were found coexisting on one machine — `0.60.0` twice (one
+with no embedded git SHA at all), `0.61.0` and `0.62.0`. A bare `apr` resolved to
+the 26-day-old copy. That single fact had already cost three separate incidents:
+the nightly regression story validated 24-day-old code while reporting green, a
+v0.62.0 release smoke-test read a five-hour-old binary and reported a meaningless
+pass, and a real product finding stayed hidden for 24 days because the nightly
+was running a pre-change binary.
+
+The through-line, again: **every one of these surfaces was green beforehand.**
+
+### Fixed — you can no longer validate a binary you are not shipping
+
+- Binary resolution now **asks cargo** (`cargo metadata`) instead of searching
+  `$CARGO_HOME/bin` and `PATH`. Every strategy that *searches* eventually finds
+  the wrong one. This matters because `.cargo/config.toml` redirects cargo's
+  target-dir and is gitignored while its tracked siblings make the directory look
+  version-controlled — so the main checkout and a fresh worktree build to
+  different places and **no absolute path is correct in both** (#2357)
+- Hardcoded absolute `apr` paths are now a build failure. The old guard treated
+  `/mnt/.../target/release/apr` as "pinned" because it *ends* in
+  `target/release/apr` — so the one path that was six days and two minor versions
+  stale sailed straight through (#2357)
+- `APR_BIN_STRICT=1` makes "not a git checkout" a refusal. It previously returned
+  **0** with "freshness not asserted" — fail-*open* in a script whose only job is
+  refusing unproven binaries (#2357)
+- The dogfood protocol certified releases with an unpinned binary: Gate 1 ran
+  `cargo install --path` and then a **bare `apr`**, and Gate 13 — its only
+  freshness assertion — **SKIPPED** when the binary had no embedded SHA, which is
+  exactly what the stale copy reports (#2357)
+- `scripts/apr_bin.sh` derived the checkout from `${BASH_SOURCE[0]}`, a bash-only
+  variable. Sourced from zsh it resolved a *different workspace's* target dir.
+  Now uses `git rev-parse --show-toplevel` (#2359)
+- The ollama decode beat defaulted `APR_BIN` to a directory **nothing in the repo
+  writes**. `APR_BIN` is now required, with no default to go stale (#2360)
+
+### Fixed — the release's own verification
+
+- `make publish`'s POST-PUBLISH VERIFICATION **could not detect a broken
+  published crate**. `INSTALL_STATUS=$?` after `cargo install … | tee` captured
+  *tee's* status, so it was always 0 and the `FATAL: cargo install FAILED` branch
+  was unreachable. It also "verified" by echoing `apr --version` and printing
+  PASSED without comparing it to anything (#2360)
+- `check_apr_bin_pinned.sh` never scanned the Makefile — which is precisely why
+  the two defects above survived a guard written to prevent them. `make coverage`
+  is a CI surface and `make publish` is *the* release surface (#2360)
+- The repo's dogfood skill was **invisible**: no `name:` frontmatter meant it took
+  its directory name and collided with a user-scope skill, so it never appeared in
+  the skill listing and could not be invoked. Renamed to `apr-dogfood` with an
+  explicit name. A shadowed skill is worse than a missing one — edits to it look
+  effective and change nothing (#2361, closes #2332)
+
+### Fixed — a gate that asserted on a coin flip
+
+- `apr qa`'s Golden Output used a bare `"Hello"` and asserted on the exact greedy
+  continuation. Measured across five prompts on one binary: the same evasive
+  completion appears on **CPU** too, just for `"Hi"` instead of `"Hello"`. Both
+  backends answer bare one-word greetings on a knife edge and merely disagree
+  about which one tips over; substantive prompts agree on both. F2 (full prefill
+  parity) passed throughout at cosine 0.9937 with zero argmax mismatches — there
+  was never a numerical defect. Replaced with wide-margin prompts verified
+  identical on CPU and CUDA, and the gate now runs three cases instead of two
+  (#2359)
+
+### Ratchets added
+
+Each is mutation-verified — the RED-turning change was demonstrated, not assumed:
+
+- absolute-`apr`-path detection (`ABS-APR`), anchored at the path start after a
+  first draft flagged correct relative paths
+- Makefile scanning — whose first mutation test **failed**, revealing the scanner
+  was blind to `\t@apr …`, the most common Makefile form
+- `golden_prompts_are_not_bare_one_word_messages`, rejecting knife-edge goldens
+- sourced libraries may not mutate the caller's shell options
+
 ## [0.62.0] - 2026-07-31
 
 The **gate-integrity** release. v0.61.0 fixed things that were silently broken or
