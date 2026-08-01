@@ -186,9 +186,13 @@ tier2:
 	@echo "Running Tier 2: Pre-commit checks..."
 	@PROPTEST_CASES=5 QUICKCHECK_TESTS=5 cargo test --lib
 	@cargo clippy -- -D warnings
-	@if [ -d tests/golden ] && command -v apr >/dev/null 2>&1; then \
-		echo "Running probar golden regression..."; \
-		apr probar tests/golden/model.apr --golden tests/golden/ --assert --tolerance 0.98 2>/dev/null || true; \
+	@if [ -d tests/golden ]; then \
+		if . scripts/apr_bin.sh 2>/dev/null; then \
+			echo "Running probar golden regression... ($$APR)"; \
+			"$$APR" probar tests/golden/model.apr --golden tests/golden/ --assert --tolerance 0.98 2>/dev/null || true; \
+		else \
+			echo "Skipping probar golden regression: no apr built from HEAD (scripts/apr_bin.sh)"; \
+		fi; \
 	fi
 	@echo "Tier 2: PASSED"
 
@@ -206,9 +210,13 @@ tier3:
 	@bash scripts/check_build_rs_paths.sh
 	@echo "Checking self-hosted CI jobs pin a discriminating runner label..."
 	@bash scripts/check_runner_labels.sh
-	@if [ -d tests/golden ] && command -v apr >/dev/null 2>&1; then \
-		echo "Running probar golden regression with profiling..."; \
-		apr probar tests/golden/model.apr --golden tests/golden/ --assert --tolerance 0.98 2>/dev/null || true; \
+	@if [ -d tests/golden ]; then \
+		if . scripts/apr_bin.sh 2>/dev/null; then \
+			echo "Running probar golden regression with profiling... ($$APR)"; \
+			"$$APR" probar tests/golden/model.apr --golden tests/golden/ --assert --tolerance 0.98 2>/dev/null || true; \
+		else \
+			echo "Skipping probar golden regression: no apr built from HEAD (scripts/apr_bin.sh)"; \
+		fi; \
 	fi
 	@echo "Tier 3: PASSED"
 
@@ -908,7 +916,7 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 	if [ "$$CRATE" = "apr-cli" ]; then \
 		echo "Verifying: cargo install apr-cli --force ..."; \
 		cargo install apr-cli --force 2>&1 | tee /tmp/publish-verify-$$CRATE.log; \
-		INSTALL_STATUS=$$?; \
+		INSTALL_STATUS=$${PIPESTATUS[0]}; \
 		if [ $$INSTALL_STATUS -ne 0 ]; then \
 			echo ""; \
 			echo "FATAL: cargo install apr-cli FAILED after publish!"; \
@@ -917,13 +925,20 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 			exit 1; \
 		fi; \
 		echo "Verifying apr --version..."; \
-		VERSION=$$(apr --version 2>&1); \
-		echo "  $$VERSION"; \
-		echo "POST-PUBLISH VERIFICATION: PASSED"; \
+		WANT=$$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/'); \
+		APR_BIN_PATH="$${CARGO_HOME:-$$HOME/.cargo}/bin/apr"; \
+		GOT=$$("$$APR_BIN_PATH" --version 2>&1); \
+		echo "  expected $$WANT, $$APR_BIN_PATH reports: $$GOT"; \
+		case "$$GOT" in \
+			*"$$WANT"*) echo "POST-PUBLISH VERIFICATION: PASSED" ;; \
+			*) echo "FATAL: published apr reports '$$GOT' but this tree is $$WANT."; \
+			   echo "The publish did not produce the binary we think it did."; \
+			   exit 1 ;; \
+		esac; \
 	else \
 		echo "Verifying: cargo install apr-cli --force (depends on $$CRATE)..."; \
 		cargo install apr-cli --force 2>&1 | tee /tmp/publish-verify-$$CRATE.log; \
-		INSTALL_STATUS=$$?; \
+		INSTALL_STATUS=$${PIPESTATUS[0]}; \
 		if [ $$INSTALL_STATUS -ne 0 ]; then \
 			echo ""; \
 			echo "FATAL: cargo install apr-cli FAILED after publishing $$CRATE!"; \
