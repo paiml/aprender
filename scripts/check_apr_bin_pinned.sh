@@ -54,7 +54,10 @@ scanned=0
 # Two earlier drafts got this wrong in opposite directions - one missed
 # `- run: apr qa` entirely, the next flagged ten step names. Both were caught
 # by the case table below, not by reading.
-BARE_APR='(^|[;&|]|&&|\|\||run:)[[:space:]]*apr[[:space:]]+[a-z]'
+# `@?` covers Makefile recipe lines, which start with a TAB and usually make's
+# silent-prefix `@`. Without it a recipe `\t@apr qa model.apr` slipped straight
+# through — caught by mutation-testing the Makefile scan, not by reading it.
+BARE_APR='(^|[;&|]|&&|\|\||run:)[[:space:]]*@?[[:space:]]*apr[[:space:]]+[a-z]'
 
 # An absolute path whose last component is `apr`. Anchored on a leading `/`,
 # `~/` or `$HOME/` so relative `target/release/apr` (correct inside a checkout)
@@ -142,6 +145,17 @@ while IFS= read -r s; do
     [ -n "$s" ] || continue
     check_file "$s"
 done < <(ci_scripts)
+
+# The Makefile is a CI surface: coverage-nightly.yml invokes `make coverage`, and
+# `make publish` runs the POST-PUBLISH RELEASE VERIFICATION. Leaving it unscanned
+# is how that verification came to run a bare `apr --version`, print it, and
+# declare "POST-PUBLISH VERIFICATION: PASSED" without comparing it to anything —
+# on a machine where a bare `apr` resolved to a 26-day-old build. A guard that
+# does not scan the surface where the release decision is made is theater,
+# however correct it is elsewhere.
+for f in Makefile; do
+    [ -f "$f" ] && check_file "$f"
+done
 
 if [ "$violations" -gt 0 ]; then
     printf '\n%s bare `apr` invocation(s) on CI surfaces (%s file(s) scanned).\n' \

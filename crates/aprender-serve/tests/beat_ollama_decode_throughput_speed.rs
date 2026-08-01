@@ -231,7 +231,28 @@ fn ollama_eval_tps_once(model: &str) -> Option<f64> {
 #[ignore = "ENFORCED manual/GPU gate: needs NVIDIA GPU + apr --features cuda (incl. #2049 FP8 \
             stall fix) + ollama + Q4_K_M model (no NVIDIA CI runner; status=enforced, see contract)"]
 fn beat_ollama_decode_throughput_speed() {
-    let apr_bin = env_or("APR_BIN", "/mnt/nvme-raid0/targets/aprender/release/apr");
+    // APR_BIN is REQUIRED — there is deliberately no default path.
+    //
+    // This used to default to /mnt/nvme-raid0/targets/aprender/release/apr. That
+    // directory is ORPHANED: nothing in the repo writes it (`git grep target-dir`
+    // finds no producer), so it is hand-maintained convention that goes stale by
+    // construction. On 2026-08-01 it held 0.60.0 while HEAD was 0.62.0 — six days
+    // and two minor versions behind — and a beat measuring a stale binary reports
+    // a number about code nobody is shipping. cuda-nightly.yml already overrides
+    // APR_BIN for exactly this reason; the default only ever served whoever forgot.
+    //
+    // There is also no correct path to substitute: `.cargo/config.toml` redirects
+    // cargo's target-dir and is gitignored, so the main checkout and a worktree
+    // build to different places. Callers must resolve it — `scripts/apr_bin.sh`
+    // asks cargo and proves the binary's embedded SHA matches HEAD.
+    let apr_bin = std::env::var("APR_BIN").unwrap_or_else(|_| {
+        panic!(
+            "APR_BIN must be set to the apr binary under test. There is no default: \
+             any hardcoded path is stale in some checkout and right in another. \
+             Resolve it with `. scripts/apr_bin.sh` (exports $APR, asserts SHA == HEAD), \
+             then re-run with APR_BIN=\"$APR\"."
+        )
+    });
     let gguf = env_or(
         "APR_GGUF",
         &format!(
