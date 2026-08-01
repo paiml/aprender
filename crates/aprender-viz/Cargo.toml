@@ -14,7 +14,7 @@ categories = ["visualization", "graphics", "science", "wasm"]
 
 [dependencies]
 # Core SIMD/GPU acceleration
-trueno = { version = "0.62.0", path = "../aprender-compute", package = "aprender-compute", default-features = false }
+trueno = { version = "0.63.0", path = "../aprender-compute", package = "aprender-compute", default-features = false }
 
 # Shared Batuta stack utilities (display traits, formatting)
 batuta-common = { workspace = true }
@@ -29,10 +29,10 @@ base64 = "0.22"
 thiserror = "2.0"
 
 # Optional: ML integration
-aprender = { path = "../aprender-core", version = "0.62.0", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.63.0", package = "aprender-core", optional = true }
 
 # Optional: Graph integration
-trueno-graph = { version = "0.62.0", path = "../aprender-graph", package = "aprender-graph", default-features = false, optional = true }
+trueno-graph = { version = "0.63.0", path = "../aprender-graph", package = "aprender-graph", default-features = false, optional = true }
 
 # Optional: Database integration
 trueno-db = { workspace = true, optional = true }

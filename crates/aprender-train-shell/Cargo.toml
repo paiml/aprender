@@ -20,7 +20,7 @@ workspace = true
 
 [dependencies]
 entrenar = { workspace = true }
-entrenar-common = { version = "0.62.0", path = "../aprender-train-common", package = "aprender-train-common" }
+entrenar-common = { version = "0.63.0", path = "../aprender-train-common", package = "aprender-train-common" }
 clap = { version = "4.5", features = ["derive"] }
 rustyline = "14"
 serde = { version = "1.0", features = ["derive"] }
