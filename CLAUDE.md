@@ -281,6 +281,61 @@ bashrs gate --strict .             # Full quality gate
 
 Required: `set -euo pipefail`, no `ls` for iteration, quoted variables, explicit error handling.
 
+**Exception — a SOURCED library must be option-neutral.** `set` in a sourced file
+mutates the *caller's* shell. `scripts/apr_bin.sh` opened with `set -euo pipefail`;
+`qwen-story.sh` sources it and had deliberately chosen no `-e` so it could run every
+beat and tally failures. The leak killed the nightly six lines in. Sourceable
+libraries fail by **return status** instead: `. scripts/lib.sh || exit 1`. Enforced by
+`scripts/check_sourced_libs_option_neutral.sh`.
+
+## Verification Discipline (MANDATORY — read before reporting any result)
+
+These are not style notes. Each cost real time, and in every case the general
+principle was known and the specific instance still went wrong.
+
+**1. Never read `$?` through a pipe.** It is the LAST command's status.
+```bash
+cmd > /tmp/out.log 2>&1; rc=$?               # correct
+cmd | tee /tmp/out.log; rc=${PIPESTATUS[0]}  # correct (bash)
+cmd | grep -E "^error"; echo "exit=$?"       # WRONG — that is grep's status
+```
+This shipped twice — `qwen-story-daily` captured `tee`'s status so its fail-the-job
+step was unreachable and three green runs proved nothing (#2336); `make publish`'s
+POST-PUBLISH VERIFICATION did the same, so it could never report a broken published
+crate (#2360). **When a result looks good, check how it was measured.**
+
+**2. Never label a run by intent — prove the mechanism engaged.** A repro harness
+printed `device: GPU` while built without `--features cuda`; three findings were
+reported from CPU runs. `CUDA_VISIBLE_DEVICES` says what is *visible*, never what was
+*used*. Cite a trace line, a version+SHA, or a behaviour delta.
+
+**3. Pin the binary.** Never a bare `apr`, never a hardcoded absolute path — see
+Step 0 above. Four `apr` binaries once coexisted here and a bare `apr` resolved to a
+26-day-old one.
+
+**4. Extending a guard's SCOPE requires re-mutating in the new scope.** The old proof
+does not transfer. Extending `check_apr_bin_pinned.sh` to the Makefile found real
+violations *and* was still blind to `\t@apr …`, the most common Makefile form — caught
+only by re-running the RED-turning mutation there (#2360).
+
+**5. A guard that does not scan the surface where the DECISION is made is theater.**
+Enumerate the decision surfaces — release, publish, certify, gate — then check
+coverage. Covering "CI" is not covering "the release".
+
+**6. One failing input is an anecdote.** Vary it before naming a cause, and
+especially before blocking a release. Four neighbouring prompts once inverted a
+diagnosis from "GPU correctness defect" to "the gate sampled a near-tie" (#2359).
+
+**7. Guard regexes ship a case table.** The `apr`-invocation patterns were wrong five
+times; every one was caught by a must-match/must-not-match table, none by review.
+Re-run the table rather than re-reading the pattern.
+
+**8. A shadowed artifact is worse than a missing one** — edits look effective and
+change nothing. `~/.local/bin/apr` shadowed a fresh install; `~/.claude/skills/dogfood/`
+shadowed the repo's release-certifying skill so hardening it edited a file that never
+ran (#2361). When a fix seems to have no effect, ask what else claims that name
+(`type -aP <cmd>`; user-scope vs repo-scope skills; always set an explicit `name:`).
+
 ## Testing
 
 Target: 60% unit, 30% property, 10% integration. Coverage: **88.78% line** (786448/885829, measured 2026-07-29 by coverage-nightly on 95145584f; target ≥95%, enforced floor 88% via COV_FLOOR). The long-quoted "96.35%" predates the measurement ever working - the pipeline reported 0/0 until #2333.
