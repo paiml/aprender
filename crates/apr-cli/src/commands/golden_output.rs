@@ -77,15 +77,55 @@ fn golden_output_gguf_cpu(
 /// Runs the model with a known prompt and verifies the output contains expected patterns.
 /// Uses verify_output() for structured validation (PMAT-QA-PROTOCOL-001 §7.4).
 /// Golden test cases: ChatML prompt + expected output patterns.
+///
+/// SELECTION RULE (#2350): a golden prompt must have a WIDE argmax margin, so its
+/// greedy continuation is the same on every backend. These assert on exact
+/// generated content under `temperature 0.0 / top_k 1`, which turns any near-tie
+/// into a coin flip — and CPU and CUDA kernels legitimately differ by small
+/// numerics well inside tolerance (F2 measures full prefill parity at cosine
+/// 0.9937 with zero argmax mismatches on this model).
+///
+/// The removed case was `"Hello"` alone, expecting a greeting back. Measured on
+/// one binary, one model, `max_tokens 512`, greedy:
+///
+///   prompt                                   CPU                        CUDA
+///   ---------------------------------------  -------------------------  -------------------------
+///   "Hello"                                  "Hello! How can I ..."     "I'm sorry, but I'm not
+///                                                                        sure what you're asking"
+///   "Hi"                                     "I'm sorry, but I'm not    "I'm here to help! ..."
+///                                             sure what you're asking"
+///   "What is 2+2?"                           "2+2 equals 4."            "2 + 2 equals 4."
+///   "Hello there, how are you doing today    "Hello! I'm doing well,    same
+///    my friend?"                              thank you."
+///   "What is the capital of France?"         "The capital of France     same
+///                                             is Paris."
+///
+/// The decisive row is the second: the SAME evasive completion appears on **CPU**,
+/// just for `"Hi"` rather than `"Hello"`. Both backends answer bare one-word
+/// greetings evasively; they only disagree about which one tips over. So the old
+/// case was not detecting a GPU defect — it was sampling a knife-edge, and it
+/// flipped when #2323 made the CUDA path reachable on sm_89.
+///
+/// The three cases below were all verified to produce identical continuations on
+/// CPU and CUDA. Keep it that way: if you add a case, run it on both backends
+/// first (`crates/apr-cli/tests/golden_prompt_tokenization.rs` is the harness).
 fn golden_test_cases() -> Vec<(&'static str, Vec<&'static str>)> {
     vec![
         (
             "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n",
             vec!["4"],
         ),
+        // Replaces the bare "Hello". Still exercises a conversational turn, but
+        // with enough context that the first generated token is not a near-tie.
         (
-            "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n",
-            vec!["Hello", "Hi", "hey", "hello", "!"],
+            "<|im_start|>user\nHello there, how are you doing today my friend?<|im_end|>\n<|im_start|>assistant\n",
+            vec!["Hello", "Hi", "hey", "hello", "well", "!"],
+        ),
+        // Factual recall: a wide-margin argmax and a check that the model is
+        // actually reasoning over its weights rather than emitting boilerplate.
+        (
+            "<|im_start|>user\nWhat is the capital of France?<|im_end|>\n<|im_start|>assistant\n",
+            vec!["Paris"],
         ),
     ]
 }
@@ -520,6 +560,39 @@ mod golden_output_tests {
         assert_eq!(a.len(), b.len());
         for ((pa, _), (pb, _)) in a.iter().zip(b.iter()) {
             assert_eq!(pa, pb);
+        }
+    }
+
+    /// Poka-yoke for #2350: no golden prompt may be a bare one-or-two-word user
+    /// message.
+    ///
+    /// These cases assert on exact greedy-decoded content, so a prompt whose
+    /// first generated token is a near-tie flips between backends. The removed
+    /// case was a single word ("Hello") and produced
+    /// "Hello! How can I assist you today?" on CPU but
+    /// "I'm sorry, but I'm not sure what you're asking" on CUDA — while "Hi"
+    /// produced the evasive answer on CPU instead. The model answers bare
+    /// greetings on a knife edge; the backends merely disagree about which side.
+    ///
+    /// Word count is a crude proxy for "wide argmax margin", but it is the one
+    /// that is checkable without a GPU in CI, and it blocks the specific shape
+    /// that actually cost 24 days of a red nightly.
+    #[test]
+    fn golden_prompts_are_not_bare_one_word_messages() {
+        for (prompt, _) in golden_test_cases() {
+            let user_msg = prompt
+                .split("<|im_start|>user\n")
+                .nth(1)
+                .and_then(|s| s.split("<|im_end|>").next())
+                .unwrap_or("");
+            let words = user_msg.split_whitespace().count();
+            assert!(
+                words >= 3,
+                "golden prompt user message {user_msg:?} has {words} word(s). \
+                 Bare greetings sit on a near-tie under greedy decoding and flip \
+                 between CPU and CUDA (#2350) — use a prompt with a wide argmax \
+                 margin and verify it on BOTH backends before adding it."
+            );
         }
     }
 }

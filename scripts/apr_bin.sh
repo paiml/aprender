@@ -58,8 +58,23 @@ apr_bin_die() {
 # silently wrong in the other - which is how a release smoke-test came to read a
 # five-hour-old binary and report a meaningless pass.
 apr_bin_target_dir() {
+    # Locate the checkout via git, NOT via the script's own path.
+    #
+    # This used to derive the directory from `${BASH_SOURCE[0]}`, which is a
+    # BASH-ONLY variable. Sourcing this file from zsh — the interactive shell on
+    # the dev box — left it empty, so `dirname ""` gave `.`, the `cd ..` landed
+    # outside the checkout, and `cargo metadata` reported a DIFFERENT workspace's
+    # target dir (observed: /mnt/nvme-raid0/targets/aprender, the orphaned one).
+    # A resolver that silently resolves against the wrong workspace is the exact
+    # failure mode this file exists to prevent, so it must not depend on which
+    # shell sourced it.
+    #
+    # `git rev-parse --show-toplevel` is portable, and correct under worktrees
+    # (it returns the worktree root, not the main checkout). Freshness already
+    # requires a git checkout, so this adds no new constraint.
     local here
-    here=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+    here=$(git rev-parse --show-toplevel 2>/dev/null) || here=$(pwd)
+    [ -n "$here" ] || here=$(pwd)
     (cd "$here" && cargo metadata --no-deps --format-version 1 2>/dev/null) \
         | jq -r '.target_directory // empty' 2>/dev/null
 }
