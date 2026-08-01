@@ -84,19 +84,33 @@ make coverage                # Coverage report (enforced floor 88%, target ≥95
 
 GH-202 lesson: we read code instead of running `apr qa` which would have instantly shown the failure.
 
+**Step 0 — pin the binary, ALWAYS.** Never invoke a bare `apr`, and never hardcode
+an absolute path to one. Four `apr` binaries were found coexisting on the dev box
+(0.60.0 ×2, 0.61.0, 0.62.0); a bare `apr` resolved to a **26-day-old** copy, and
+the path this file used to call "canonical" was two minor versions stale. There is
+no correct path to hardcode — `.cargo/config.toml` redirects cargo's target-dir and
+is gitignored, so the main checkout and a fresh worktree build to different places.
+
+```bash
+. scripts/apr_bin.sh || exit 1   # exports $APR, proves it was built from HEAD
+```
+
+Everything below uses `"$APR"`. A diagnostic run against the wrong binary is worse
+than no diagnostic: it produces a confident answer about code you are not running.
+
 ```bash
 # Step 1: ALWAYS start here (catches 80% of issues)
-apr qa model.apr
+"$APR" qa model.apr
 
 # Step 2: Check tensor shapes/stats
-apr tensors model.apr | head -20
+"$APR" tensors model.apr | head -20
 
 # Step 3: Diff against known-good model
-apr diff model.apr reference.gguf
+"$APR" diff model.apr reference.gguf
 
 # Step 4: Format/metadata integrity
-apr validate model.apr --quality
-apr lint model.apr
+"$APR" validate model.apr --quality
+"$APR" lint model.apr
 
 # Step 5: ONLY NOW read code
 ```
