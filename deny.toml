@@ -64,6 +64,11 @@ ignore = [
     # a maintained fork appears or resvg migrates off them.
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser 0.25.1: unmaintained, transitive via resvg->usvg->{fontdb,rustybuzz}; no patched release exists" },
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz 0.20.1: unmaintained, transitive via resvg->usvg; no patched release exists" },
+    # rkyv 0.7.46 — 0 paths in `cargo tree --workspace --all-features`. Enters via
+    # aprender-db -> duckdb -> rust_decimal, but duckdb is optional (competitive-benchmarks)
+    # and rust_decimal's own rkyv dep is optional and never enabled; Cargo.lock records it
+    # anyway. Fix is rkyv >=0.8.17, unavailable: rust_decimal 1.42.1 (newest) still needs 0.7.
+    { id = "RUSTSEC-2026-0235", reason = "rkyv 0.7.46: unreachable optional transitive (duckdb->rust_decimal, rkyv feature never enabled); rust_decimal 1.42.1 has no 0.8 release yet" },
 ]
 
 [licenses]
