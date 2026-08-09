@@ -306,6 +306,7 @@ fn detect_simd() -> SimdWidth {
         return SimdWidth::WasmSimd128;
     }
 
+    #[allow(unreachable_code)]
     SimdWidth::Scalar
 }
 

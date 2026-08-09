@@ -11,6 +11,7 @@ mod avx2;
 #[cfg(target_arch = "x86_64")]
 mod avx512;
 
+#[allow(unused_imports)]
 use super::{SUPER_BLOCK_BYTES, SUPER_BLOCK_SIZE};
 
 // Re-export public API (preserves exact public surface)
@@ -202,6 +203,7 @@ fn matmul_q4k_f32_parallel(
 
 /// Fallback for non-x86_64
 #[cfg(not(target_arch = "x86_64"))]
+#[allow(dead_code)]
 fn matmul_q4k_f32_parallel(
     q4k_data: &[u8],
     input: &[f32],

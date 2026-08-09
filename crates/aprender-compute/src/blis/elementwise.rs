@@ -151,6 +151,7 @@ unsafe fn relu_avx512(input: &[f32], output: &mut [f32]) {
 /// Prefetch distance in bytes. 8 cache lines (512 bytes = 128 f32) ahead.
 /// Tuned for Zen 4 L1→L2 latency (~4ns) and L2→L3 latency (~12ns).
 /// At ~1 iteration/ns throughput, 512B ahead hides ~12ns L2 latency.
+#[allow(dead_code)]
 const PREFETCH_DISTANCE: usize = 512;
 
 /// NT store threshold (bytes). Use non-temporal stores when total working set
@@ -158,6 +159,7 @@ const PREFETCH_DISTANCE: usize = 512;
 /// Zen 4 L2 = 1MB/core. For add: 3 × data_bytes. NT is beneficial when
 /// data_bytes > ~333KB. Use 512KB for safety margin + alignment effects.
 /// Below this, data fits in L2 and cached stores are faster.
+#[allow(dead_code)]
 const NT_STORE_THRESHOLD_BYTES: usize = 512 * 1024; // 512KB output = 128K f32
 
 #[cfg(target_arch = "x86_64")]

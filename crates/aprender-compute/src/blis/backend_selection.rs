@@ -124,6 +124,7 @@ impl BackendCostModel {
             {
                 return ComputeBackend::Cpu;
             }
+            #[allow(unreachable_code)]
             ComputeBackend::Scalar
         }
     }

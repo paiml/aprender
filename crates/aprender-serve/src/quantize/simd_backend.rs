@@ -44,6 +44,7 @@ pub fn detect_simd_backend() -> SimdBackend {
     }
 
     // pmat-ignore: hardware-path (scalar fallback never reached when SIMD available)
+    #[allow(unreachable_code)]
     SimdBackend::Scalar
 }
 

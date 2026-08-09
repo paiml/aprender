@@ -23,6 +23,7 @@
 /// (stride=N*4 bytes between rows) which is TLB-unfriendly at large N.
 /// Measured: vecmat 4096×4096: tiled 9.3 GFLOPS vs axpy predicts better.
 /// 4096 path benchmarks to use axpy. c[] still fits L1 at N=8192 (32KB).
+#[allow(dead_code)]
 const GEMV_TILE_THRESHOLD: usize = 8192;
 
 /// AVX2 GEMV using axpy pattern: c += a[k] * B[k,:] for each k

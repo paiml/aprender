@@ -128,6 +128,7 @@ pub fn generate(
 
     // Decode: generate tokens one at a time
     let mut pos = prompt_tokens.len();
+    #[allow(clippy::explicit_counter_loop)]
     for _ in 0..max_tokens {
         let token = sample_token(&last_logits, params, &mut rng);
 

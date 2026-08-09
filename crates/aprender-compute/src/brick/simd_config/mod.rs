@@ -85,6 +85,7 @@ impl LazySimdConfig {
             // NEON is always available on aarch64
             return ComputeBackend::Neon;
         }
+        #[allow(unreachable_code)]
         ComputeBackend::Scalar
     }
 

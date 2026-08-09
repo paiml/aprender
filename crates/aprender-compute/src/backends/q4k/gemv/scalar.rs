@@ -189,6 +189,7 @@ pub fn matmul_q4k_f32(q4k_data: &[u8], input: &[f32], out_dim: usize, in_dim: us
 }
 
 /// Scalar chunk processor for parallel dispatch.
+#[allow(dead_code)]
 pub(crate) fn compute_chunk_q4k_scalar(
     q4k_data: &[u8],
     input: &[f32],

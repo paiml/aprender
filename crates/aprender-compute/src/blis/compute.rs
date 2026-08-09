@@ -91,8 +91,8 @@ fn dispatch_microkernel(
     a_panel: &[f32],
     b_panel: &[f32],
     c_micro: &mut [f32],
-    mr_block: usize,
-    nr_block: usize,
+    _mr_block: usize,
+    _nr_block: usize,
 ) {
     #[cfg(target_arch = "x86_64")]
     {
@@ -1220,6 +1220,7 @@ unsafe fn gemm_blis_avx512_bcast_b(
 /// Generic A-packing: column-major panels with arbitrary MR.
 /// Packs A[row_start..row_start+rows][col_start..col_start+cols] into
 /// panels of MR×cols (column-major within each panel).
+#[allow(dead_code)]
 fn pack_a_block_generic(
     a: &[f32],
     lda: usize,
@@ -1417,6 +1418,7 @@ pub(super) unsafe fn avx512_microkernel_8x32_rowmajor(
 
 /// Pack B block with NR=16 row-major panels for AVX-512.
 /// Each panel is KC × 16, stored as kc_block × nr contiguous.
+#[allow(dead_code)]
 pub(super) fn pack_b_block_nr16(
     b: &[f32],
     ldb: usize,

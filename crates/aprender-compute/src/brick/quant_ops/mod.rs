@@ -216,7 +216,7 @@ impl ComputeOp for DotQ5KOp {
         "dot_q5k"
     }
 
-    fn execute(&self, input: Self::Input, backend: Backend) -> Result<Self::Output, TruenoError> {
+    fn execute(&self, input: Self::Input, _backend: Backend) -> Result<Self::Output, TruenoError> {
         let (blocks, x) = input;
 
         if blocks.is_empty() || x.is_empty() {
@@ -315,7 +315,7 @@ impl ComputeOp for DotQ6KOp {
         "dot_q6k"
     }
 
-    fn execute(&self, input: Self::Input, backend: Backend) -> Result<Self::Output, TruenoError> {
+    fn execute(&self, input: Self::Input, _backend: Backend) -> Result<Self::Output, TruenoError> {
         let (blocks, x) = input;
 
         if blocks.is_empty() || x.is_empty() {

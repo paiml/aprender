@@ -452,11 +452,7 @@ fn parse_size_block(name: &str, block: &str, path: &Path) -> SizeData {
     let vocab_size = get_usize(block, "vocab_size").unwrap_or(0);
     let max_pos = get_usize(block, "max_position_embeddings").unwrap_or(0);
     let head_dim = get_usize(block, "head_dim").unwrap_or_else(|| {
-        if num_heads > 0 {
-            hidden_dim / num_heads
-        } else {
-            0
-        }
+        hidden_dim.checked_div(num_heads).unwrap_or(0)
     });
     let rope_theta = get_f64(block, "rope_theta").unwrap_or(0.0);
     let norm_eps = get_f64(block, "rms_norm_eps")

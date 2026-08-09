@@ -42,6 +42,7 @@
 
 #![allow(unsafe_code)] // GH-386: documented AVX2 fast path; runtime-gated.
 
+#[allow(unused_imports)]
 use crate::format::quantize::BLOCK_SIZE;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

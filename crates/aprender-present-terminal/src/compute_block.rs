@@ -90,6 +90,7 @@ impl SimdInstructionSet {
             return Self::WasmSimd128;
         }
 
+        #[allow(unreachable_code)]
         Self::Scalar
     }
 

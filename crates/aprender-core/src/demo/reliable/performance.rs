@@ -123,6 +123,7 @@ pub fn detect_backend() -> String {
     {
         return "NEON".to_string();
     }
+    #[allow(unreachable_code)]
     "Scalar".to_string()
 }
 
