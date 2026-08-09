@@ -225,6 +225,28 @@ proof_obligations:
       OLLAMA-API-ROUTED-ON-APR-SERVE non-streaming shape (no-regression). On a
       backend error the stream still terminates with a well-formed `done:true`
       object, never a bare error object lacking `done`.
+  - type: invariant
+    property: >
+      OLLAMA-CREATED-AT-IS-RFC3339: every Ollama-wire timestamp apr emits —
+      `created_at` on the coalesced `/api/chat` and `/api/generate` bodies, on
+      EVERY NDJSON stream chunk (intermediate and terminal), and `modified_at`
+      in the `/api/tags` model list — is a real RFC 3339 UTC instant with
+      nanosecond precision (`2026-08-09T16:55:33.983535246Z`), NOT a bare Unix
+      epoch with a `Z` appended (`1786293998.000000000Z`). This is a HARD
+      requirement, not cosmetic: ollama's own Go client declares these fields
+      as `time.Time` (api.ChatResponse.CreatedAt, api.GenerateResponse.CreatedAt,
+      api.ListModelResponse.ModifiedAt), so the value is decoded by
+      `time.Time.UnmarshalJSON`, which accepts RFC 3339 and nothing else. A
+      value it cannot parse makes `encoding/json` abandon the WHOLE object, so
+      the client observes an empty message, `done:false` and zeroed counts —
+      the response is dropped in its entirety, not merely mis-timestamped, and
+      a streaming client loop watching `done` never terminates. The timestamp
+      must also denote the current instant (UTC offset zero), so a decoding
+      client gets a usable time rather than the zero value. Holds for BOTH
+      implementations of the helper: the apr-cli adapter that `apr serve`
+      mounts (crates/apr-cli/src/commands/serve/ollama.rs::created_at_now) and
+      the realizar-side handlers any caller mounting create_router gets
+      (crates/aprender-serve/src/api/ollama_handlers.rs::created_at_now).
 
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
@@ -323,3 +345,15 @@ falsification_tests:
     test_harness: 'cargo test -p apr-cli --test ollama_ndjson_streaming api_chat_stream_false_is_single_coalesced_object'
     expected_output: "test result: ok"
     if_fails: 'POST /api/chat with explicit stream:false no longer returns a single coalesced object (it streams NDJSON), breaking the OLLAMA-API-ROUTED-ON-APR-SERVE non-streaming wire shape — the stream flag is not honored.'
+  - id: FALSIFY-OLLAMA-CREATED-AT-RFC3339-CLI
+    name: commands::serve::ollama::tests
+    prediction: 'On the apr-cli adapter apr serve mounts: created_at_now() parses with chrono::DateTime::parse_from_rfc3339, denotes the current instant (within 60s) at UTC offset 0; the serialized coalesced /api/chat and /api/generate bodies, EVERY line of the NDJSON stream (token chunks + terminal done:true), and /api/tags modified_at all parse as RFC 3339. The oracle is proven discriminating by a companion test asserting the old shape "1786293998.000000000Z" is REJECTED by the same parser. RED on the pre-fix format!("{secs}.000000000Z") — 4 tests fail with `input contains invalid characters`; GREEN on chrono::Utc::now().to_rfc3339_opts(Nanos, true).'
+    test_harness: 'cargo test -p apr-cli --lib commands::serve::ollama'
+    expected_output: "test result: ok"
+    if_fails: 'apr serve emits a non-RFC-3339 created_at/modified_at, so ollama Go clients decoding into time.Time drop the ENTIRE response (empty message, done:false, zero counts) on /api/chat, /api/generate, every NDJSON chunk, and /api/tags — the apr 0.63.0 behaviour.'
+  - id: FALSIFY-OLLAMA-CREATED-AT-RFC3339-REALIZAR
+    name: api::ollama_handlers::tests
+    prediction: 'On the realizar-side handlers mounted by create_router: created_at_now() parses with chrono::DateTime::parse_from_rfc3339, denotes the current instant (within 60s) at UTC offset 0, and the serialized OllamaChatResponse / OllamaGenerateResponse created_at fields parse as RFC 3339, with the same bare-epoch-rejection oracle test. RED on the pre-fix epoch string — 3 tests fail with `input contains invalid characters`.'
+    test_harness: 'cargo test -p aprender-serve --lib api::ollama_handlers'
+    expected_output: "test result: ok"
+    if_fails: 'A caller mounting realizar create_router serves a non-RFC-3339 created_at, so an ollama Go client discards the whole /api/chat or /api/generate response.'
