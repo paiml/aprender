@@ -243,7 +243,7 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
                 "unexpected end of input at offset".to_string(),
             ));
         }
-        let offset = std::ptr::read_unaligned(ip as *const u16) as usize;
+        let offset = std::ptr::read_unaligned(ip.cast::<u16>()) as usize;
         ip = ip.add(2);
 
         if offset == 0 {
@@ -300,7 +300,7 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
                 let mut dst = op;
                 let end = op.add(match_len);
                 while dst.add(8) <= end {
-                    std::ptr::write_unaligned(dst as *mut u64, pattern);
+                    std::ptr::write_unaligned(dst.cast::<u64>(), pattern);
                     dst = dst.add(8);
                 }
                 while dst < end {
@@ -314,8 +314,8 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
             let mut dst = op;
             let end = op.add(match_len);
             while dst.add(8) <= end {
-                let val = std::ptr::read_unaligned(src as *const u64);
-                std::ptr::write_unaligned(dst as *mut u64, val);
+                let val = std::ptr::read_unaligned(src.cast::<u64>());
+                std::ptr::write_unaligned(dst.cast::<u64>(), val);
                 dst = dst.add(8);
                 src = src.add(8);
             }
