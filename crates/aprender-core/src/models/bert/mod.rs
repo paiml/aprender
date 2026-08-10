@@ -35,7 +35,7 @@ pub mod encoder;
 pub mod layer;
 pub mod load;
 
-pub use config::BertConfig;
+pub use config::{BertConfig, BertConfigError};
 pub use cross_encoder::CrossEncoder;
 pub use embeddings::BertEmbeddings;
 pub use encoder::BertEncoder;

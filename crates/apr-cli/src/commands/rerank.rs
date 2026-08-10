@@ -228,17 +228,6 @@ pub(crate) fn run(
     raw_logit: bool,
     json: bool,
 ) -> Result<()> {
-    // Load model once — reused across all passages in batch mode.
-    let model_bytes = std::fs::read(model).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to read {}: {e}", model.display()))
-    })?;
-    let reader = AprV2Reader::from_bytes(&model_bytes).map_err(|e| {
-        CliError::ValidationFailed(format!(
-            "Failed to parse APR v2 at {}: {e:?}",
-            model.display()
-        ))
-    })?;
-
     let config = BertConfig {
         hidden_dim,
         num_layers,
@@ -251,15 +240,81 @@ pub(crate) fn run(
         pad_token_id: 0,
     };
 
+    // `CrossEncoder::new` builds `MultiHeadAttention`, which *asserts*
+    // `hidden_dim % num_heads == 0`. `--hidden-dim` / `--num-heads` are
+    // user-facing override flags, so reject bad combinations here instead of
+    // aborting the process with a library panic. Checked before the model is
+    // read so a bad flag costs no I/O.
+    config
+        .validate()
+        .map_err(|e| CliError::ValidationFailed(format!("invalid BERT config: {e}")))?;
+
+    // Single-pair mode: resolve and check the (input_ids, token_type_ids)
+    // pair BEFORE the model is read, so a bad id also costs no I/O.
+    let single_pair = if passages.is_empty() {
+        let (input_ids, token_type_ids) =
+            match (input_ids_str, token_type_ids_str, query, passage, vocab) {
+                (Some(id_str), Some(tt_str), None, None, None) => {
+                    let input_ids = parse_id_list(id_str, "input-ids")?;
+                    let token_type_ids = parse_id_list(tt_str, "token-type-ids")?;
+                    (input_ids, token_type_ids)
+                }
+                (None, None, Some(q), Some(p), Some(vp)) => tokenize_query_passage(q, p, vp)?,
+                _ => {
+                    return Err(CliError::ValidationFailed(
+                        "apr rerank requires EITHER \
+                     (--input-ids AND --token-type-ids) \
+                     OR (--query AND --passage AND --vocab) \
+                     OR (--query AND --passages... AND --vocab)"
+                            .to_string(),
+                    ));
+                }
+            };
+
+        if input_ids.is_empty() {
+            return Err(CliError::ValidationFailed(
+                "--input-ids must be non-empty".to_string(),
+            ));
+        }
+        if input_ids.len() != token_type_ids.len() {
+            return Err(CliError::ValidationFailed(format!(
+                "--input-ids ({}) and --token-type-ids ({}) must have the same length",
+                input_ids.len(),
+                token_type_ids.len()
+            )));
+        }
+        // `BertEmbeddings::forward` slices the embedding tables unchecked, so
+        // an id past the end of a table aborts the process. Reject it here.
+        config
+            .validate_ids(&input_ids, &token_type_ids)
+            .map_err(|e| CliError::ValidationFailed(format!("invalid tokens: {e}")))?;
+        Some((input_ids, token_type_ids))
+    } else {
+        None
+    };
+
+    // Load model once — reused across all passages in batch mode.
+    let model_bytes = std::fs::read(model).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to read {}: {e}", model.display()))
+    })?;
+    let reader = AprV2Reader::from_bytes(&model_bytes).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "Failed to parse APR v2 at {}: {e:?}",
+            model.display()
+        ))
+    })?;
+
     let mut cross_encoder = CrossEncoder::new(&config, num_labels, with_pooler);
     cross_encoder
         .load_from_reader(&reader, &config)
         .map_err(|e| CliError::ValidationFailed(format!("BERT weight loading failed: {e}")))?;
 
-    // Phase 5 batch mode: `--query` + repeated `--passages` + `--vocab`.
-    if !passages.is_empty() {
+    // No single pair resolved ⟹ Phase 5 batch mode: `--query` + repeated
+    // `--passages` + `--vocab`, each passage tokenised and checked in turn.
+    let Some((input_ids, token_type_ids)) = single_pair else {
         return run_batch(
             &cross_encoder,
+            &config,
             model,
             query,
             passages,
@@ -269,40 +324,7 @@ pub(crate) fn run(
             raw_logit,
             json,
         );
-    }
-
-    // Single-pair mode: resolve the (input_ids, token_type_ids) pair.
-    let (input_ids, token_type_ids) =
-        match (input_ids_str, token_type_ids_str, query, passage, vocab) {
-            (Some(id_str), Some(tt_str), None, None, None) => {
-                let input_ids = parse_id_list(id_str, "input-ids")?;
-                let token_type_ids = parse_id_list(tt_str, "token-type-ids")?;
-                (input_ids, token_type_ids)
-            }
-            (None, None, Some(q), Some(p), Some(vp)) => tokenize_query_passage(q, p, vp)?,
-            _ => {
-                return Err(CliError::ValidationFailed(
-                    "apr rerank requires EITHER \
-                 (--input-ids AND --token-type-ids) \
-                 OR (--query AND --passage AND --vocab) \
-                 OR (--query AND --passages... AND --vocab)"
-                        .to_string(),
-                ));
-            }
-        };
-
-    if input_ids.is_empty() {
-        return Err(CliError::ValidationFailed(
-            "--input-ids must be non-empty".to_string(),
-        ));
-    }
-    if input_ids.len() != token_type_ids.len() {
-        return Err(CliError::ValidationFailed(format!(
-            "--input-ids ({}) and --token-type-ids ({}) must have the same length",
-            input_ids.len(),
-            token_type_ids.len()
-        )));
-    }
+    };
 
     let logit_tensor = cross_encoder.forward(&input_ids, &token_type_ids);
     let logits: &[f32] = logit_tensor.data();
@@ -355,6 +377,7 @@ pub(crate) fn run(
 #[allow(clippy::too_many_arguments)]
 fn run_batch(
     cross_encoder: &CrossEncoder,
+    config: &BertConfig,
     model: &Path,
     query: Option<&str>,
     passages: &[String],
@@ -376,6 +399,11 @@ fn run_batch(
     let mut scored: Vec<(usize, f32, f32)> = Vec::with_capacity(passages.len());
     for (i, p) in passages.iter().enumerate() {
         let (input_ids, token_type_ids) = tokenize_query_passage(query, p, vocab)?;
+        config
+            .validate_ids(&input_ids, &token_type_ids)
+            .map_err(|e| {
+                CliError::ValidationFailed(format!("invalid tokens for passage {i}: {e}"))
+            })?;
         let logit_tensor = cross_encoder.forward(&input_ids, &token_type_ids);
         let logit = logit_tensor.data()[0];
         let score = 1.0 / (1.0 + (-logit).exp());
@@ -439,6 +467,109 @@ fn run_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Invoke `run` in `--input-ids` mode with MiniLM-L-6 defaults, allowing
+    /// individual overrides. The model path is deliberately bogus: every
+    /// argument-validation failure must be reported *before* the model is
+    /// read, so a returned "Failed to read" means the guard did not fire.
+    fn run_ids_mode(
+        ids: &str,
+        token_type_ids: &str,
+        hidden_dim: usize,
+        num_heads: usize,
+    ) -> Result<()> {
+        run(
+            Path::new("/nonexistent/rerank-guard.apr"),
+            Some(ids),
+            Some(token_type_ids),
+            None,
+            None,
+            &[],
+            false,
+            0,
+            None,
+            hidden_dim,
+            6,
+            num_heads,
+            1536,
+            30522,
+            512,
+            2,
+            1,
+            true,
+            false,
+            false,
+        )
+    }
+
+    fn validation_message(res: Result<()>) -> String {
+        match res.expect_err("must be rejected") {
+            CliError::ValidationFailed(msg) => msg,
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    /// Regression (dogfood 0.63.0): `apr rerank … --hidden-dim 999` aborted
+    /// with `thread 'main' panicked at nn/transformer/mod.rs:124: embed_dim
+    /// (999) must be divisible by num_heads (12)` and exit 101. It must now
+    /// return a validation error naming both flag values.
+    #[test]
+    fn rerank_rejects_hidden_dim_not_divisible_by_num_heads() {
+        let msg = validation_message(run_ids_mode("101,2024,102", "0,0,0", 999, 12));
+        assert!(msg.contains("999") && msg.contains("12"), "{msg}");
+        assert!(msg.contains("divisible"), "{msg}");
+        assert!(
+            !msg.contains("Failed to read"),
+            "flags must be checked before the model is read: {msg}"
+        );
+    }
+
+    /// Same defect reached through `--num-heads`: 384 % 7 != 0.
+    #[test]
+    fn rerank_rejects_num_heads_not_dividing_hidden_dim() {
+        let msg = validation_message(run_ids_mode("101,2024,102", "0,0,0", 384, 7));
+        assert!(msg.contains("384") && msg.contains("7"), "{msg}");
+    }
+
+    /// Regression (dogfood 0.63.0): `--input-ids 101,999999,102` aborted with
+    /// `range start index 383999616 out of range for slice of length 11720448`
+    /// from the unchecked embedding-table slice, exit 101.
+    #[test]
+    fn rerank_rejects_input_id_beyond_vocab_size() {
+        let msg = validation_message(run_ids_mode("101,999999,102", "0,0,0", 384, 12));
+        assert!(msg.contains("999999") && msg.contains("30522"), "{msg}");
+        assert!(msg.contains("input_ids[1]"), "{msg}");
+    }
+
+    /// Same panic class via `--token-type-ids` (table has 2 rows).
+    #[test]
+    fn rerank_rejects_token_type_id_beyond_type_vocab_size() {
+        let msg = validation_message(run_ids_mode("101,2024,102", "0,7,0", 384, 12));
+        assert!(msg.contains("token_type_ids[1]"), "{msg}");
+        assert!(msg.contains('7'), "{msg}");
+    }
+
+    /// Regression: a 600-token pair aborted with `sequence length 600 exceeds
+    /// max_position_embeddings 512`.
+    #[test]
+    fn rerank_rejects_sequence_longer_than_position_table() {
+        let ids = vec!["101"; 600].join(",");
+        let tt = vec!["0"; 600].join(",");
+        let msg = validation_message(run_ids_mode(&ids, &tt, 384, 12));
+        assert!(msg.contains("600") && msg.contains("512"), "{msg}");
+    }
+
+    /// The guard must not reject legitimate input: with in-range ids and a
+    /// valid config, `run` gets past argument validation and fails on the
+    /// (deliberately missing) model file instead.
+    #[test]
+    fn rerank_accepts_in_range_ids_and_proceeds_to_model_load() {
+        let msg = validation_message(run_ids_mode("101,2024,102,3456,102", "0,0,0,1,1", 384, 12));
+        assert!(
+            msg.contains("Failed to read"),
+            "valid arguments must reach the model load, got: {msg}"
+        );
+    }
 
     #[test]
     fn parse_id_list_accepts_commas_and_spaces() {
