@@ -76,12 +76,15 @@ pub fn list(json: bool, quiet: bool) -> Result<()> {
 
     // Contract: apr-list-quiet-wiring-v1 F-LIST-QUIET-001 (paiml/aprender#623).
     // Quiet mode: one identifier per line, no decoration, no help text.
+    // #2401: `emitln!` bypasses the crate-wide `--quiet` stdout gate. This IS
+    // the quiet output F-LIST-QUIET-001 requires, so it must survive the gate
+    // that silences ordinary reporting.
     if quiet {
         for m in &models {
-            println!("{}", m.name);
+            emitln!("{}", m.name);
         }
         for o in &orphans {
-            println!("{}", o.name);
+            emitln!("{}", o.name);
         }
         return Ok(());
     }

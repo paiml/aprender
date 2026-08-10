@@ -1,0 +1,117 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-10'
+  author: PAIML Engineering
+  description: "apr --quiet / --verbose global wiring contract — the two clap globals advertised in all 104 subcommands' --help MUST materially affect output, via one process-wide latch rather than a per-command parameter. Generalizes apr-list-quiet-wiring-v1 from `list` to every subcommand."
+  references:
+    - "paiml/aprender#2401 (dogfood-0.63.0: --quiet/--verbose byte-for-byte no-ops on 14 of 16 sampled commands)"
+    - "paiml/aprender#2373 (dogfood-0.63.0 audit epic)"
+    - "contracts/apr-list-quiet-wiring-v1.yaml (the single-command ancestor; its why_5 predicted this)"
+  registry: true
+  kind: kernel
+  tags:
+    - cli
+    - quiet
+    - verbose
+    - silent-flag
+    - five-whys
+
+five_whys:
+  symptom: "cmp -s <(apr inspect m.apr) <(apr inspect m.apr --quiet) reports IDENTICAL on 14 of 16 sampled commands; apr hex m.apr --quiet still writes 303972 bytes and apr gbnf-lint -q still prints the full PASS report"
+  why_1: "execute_command never read cli.quiet or cli.verbose at all — the parsed values were dropped on the floor"
+  why_2: "Reading them meant threading a `quiet: bool` parameter into every command's signature; only `list` and `lint` ever received one, so only those two honoured the flag"
+  why_3: "apr-list-quiet-wiring-v1 fixed the ONE command it was written for, leaving the same forwarding hazard on the other 103"
+  why_4: "A per-command parameter makes correctness opt-in: a new command is born ignoring --quiet, and nothing goes red"
+  why_5: "The control had no single decision point, so there was nothing a contract could bind to — exactly the gap apr-list-quiet-wiring-v1's own why_5 named and did not close"
+  root_cause: "Global output level was modelled as a per-command parameter instead of a process-wide latch consulted by the crate's print macros; a command could disarm it by forgetting to plumb an argument."
+
+equations:
+  quiet_materiality:
+    formula: "∀ cmd ∈ apr subcommands: stdout(cmd --quiet) = ∅ ∨ cmd ∈ OptOut"
+    domain: "any apr subcommand that produces user-facing stdout"
+    codomain: "stdout bytes"
+    invariants:
+      - "--quiet suppresses ordinary stdout for every command, without the command being aware of the flag"
+      - "--quiet leaves stderr and the process exit code untouched, so `Quiet mode (errors only)` is literally true"
+      - "--quiet does not suppress --json: the JSON document is the payload a script asked for"
+      - "OptOut = {list, lint} — commands with richer quiet semantics of their own, which emit via emitln!/emit!"
+  verbose_materiality:
+    formula: "∀ cmd ∈ apr subcommands: stdout(cmd --verbose) ≠ stdout(cmd)"
+    domain: "any apr subcommand dispatched through execute_command"
+    codomain: "stdout bytes"
+    invariants:
+      - "--verbose reports the dispatcher's own resolution: the model paths extracted and the contract-gate decision"
+      - "The three contract-gate outcomes (enforced, skipped via --skip-contract, not applicable) are distinguishable"
+      - "--verbose is additive: commands that already had verbose detail (check, oracle, trace) keep it"
+  precedence:
+    formula: "level(quiet, verbose) = Quiet if quiet else Verbose if verbose else Normal"
+    domain: "the two boolean clap globals"
+    codomain: "{Quiet, Normal, Verbose}"
+    invariants:
+      - "`-q -v` together was previously accepted with no error and no effect; --quiet now wins"
+      - "The latch never resets to Normal, so an in-process second command cannot un-quiet a quiet run"
+
+proof_obligations:
+  - type: invariant
+    property: "quiet empties stdout on a command that never receives the flag"
+    formal: "stdout(apr gbnf-lint --observation-file f --quiet) = ∅"
+    applies_to: quiet_materiality
+  - type: invariant
+    property: "quiet preserves errors and exit codes on stderr"
+    formal: "stderr(cmd --quiet) = stderr(cmd) ∧ exit(cmd --quiet) = exit(cmd)"
+    applies_to: quiet_materiality
+  - type: invariant
+    property: "json survives quiet"
+    formal: "stdout_suppressed(Quiet, json=true) = false"
+    applies_to: quiet_materiality
+  - type: invariant
+    property: "verbose is not a byte-for-byte no-op"
+    formal: "stdout(cmd --verbose) ≠ stdout(cmd)"
+    applies_to: verbose_materiality
+  - type: invariant
+    property: "quiet dominates verbose"
+    formal: "resolve(true, true) = Quiet"
+    applies_to: precedence
+
+falsification_tests:
+  - id: FALSIFY-VERBOSITY-001
+    rule: "--quiet empties stdout on a command that never receives the flag as a parameter"
+    prediction: "apr gbnf-lint --observation-file f --quiet prints zero bytes to stdout while the unflagged run prints its report"
+    test: "crates/apr-cli/src/verbosity.rs::tests::quiet_and_verbose_reach_a_command_that_never_receives_them"
+    if_fails: "The latch is not set in execute_command, or the crate-wide println! shadow is not in scope — --quiet is inert again"
+  - id: FALSIFY-VERBOSITY-002
+    rule: "--verbose changes stdout on the same command"
+    prediction: "stdout(gbnf-lint --verbose) != stdout(gbnf-lint), compared byte-for-byte over the same observation file"
+    test: "crates/apr-cli/src/verbosity.rs::tests::quiet_and_verbose_reach_a_command_that_never_receives_them"
+    if_fails: "--verbose is a no-op again, as it was on 13 of 16 commands in v0.63.0"
+  - id: FALSIFY-VERBOSITY-003
+    rule: "the three contract-gate outcomes are distinguishable under --verbose"
+    prediction: "preamble_lines reports enforced / skipped / not-applicable as three different texts"
+    test: "crates/apr-cli/src/verbosity.rs::tests::preamble_reports_the_gate_decision_not_a_fixed_string"
+    if_fails: "--verbose prints a fixed banner that carries no information, which is theater not detail"
+  - id: FALSIFY-VERBOSITY-004
+    rule: "--json --quiet still emits the JSON document"
+    prediction: "stdout_suppressed() is false whenever --json is in effect"
+    test: "crates/apr-cli/src/verbosity.rs::tests::json_survives_quiet"
+    if_fails: "Scripts asking for machine-readable output get nothing"
+  - id: FALSIFY-VERBOSITY-005
+    rule: "--quiet wins over --verbose"
+    prediction: "resolve(true, true) = Quiet"
+    test: "crates/apr-cli/src/verbosity.rs::tests::quiet_wins_over_verbose"
+    if_fails: "The contradictory pair is accepted with an undefined outcome, as in v0.63.0"
+
+kani_harnesses:
+  - id: KANI-VERBOSITY-001
+    obligation: "quiet dominates verbose"
+    bound: 4
+    strategy: bounded_int
+
+qa_gate:
+  id: F-VERBOSITY-001
+  name: "apr global --quiet/--verbose wiring contract"
+  description: "The two clap globals advertised on all 104 subcommands must materially affect output through a single process-wide latch, not a per-command parameter that a command can forget to forward"
+  checks:
+    - "quiet_materiality"
+    - "verbose_materiality"
+    - "precedence"
+  pass_criteria: "FALSIFY-VERBOSITY-{001,002,003,004,005} all PASS"

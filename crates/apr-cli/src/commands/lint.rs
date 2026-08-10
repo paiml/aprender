@@ -19,6 +19,18 @@ use std::path::Path;
     equation = "side_effect_classification"
 )]
 pub(crate) fn run(file: &Path, json: bool, quiet: bool) -> Result<()> {
+    // #2401: `apr lint` already had richer quiet semantics than "print
+    // nothing" — GH-685 filters the issue table down to errors. Opt this
+    // command out of the crate-wide stdout gate so that behaviour survives;
+    // the `quiet` parameter below stays the thing that shapes the report.
+    let _verbosity = crate::verbosity::scope(
+        if crate::verbosity::is_verbose() {
+            crate::verbosity::Level::Verbose
+        } else {
+            crate::verbosity::Level::Normal
+        },
+        json,
+    );
     contract_pre_apr_model_validity!();
     contract_pre_lint_model_conventions!();
     // Validate input exists
