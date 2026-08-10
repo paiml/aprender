@@ -1,15 +1,48 @@
 
     // === chrono_timestamp Tests ===
 
+    /// The timestamp must be the real UTC date, not a hardcoded literal.
+    ///
+    /// This test used to assert `ts.starts_with("2026-01-12T")`, which locked
+    /// the defect in place: the implementation spliced a live time-of-day into
+    /// a string-literal date, so every report was stamped seven months stale
+    /// and the test happily agreed.
+    ///
+    /// Bracketing the call with a before/after date makes the assertion immune
+    /// to a UTC midnight rollover landing between the two `now()` reads.
+    fn utc_dates_bracketing<T>(f: impl FnOnce() -> T) -> (String, T, String) {
+        let before = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let value = f();
+        let after = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        (before, value, after)
+    }
+
     #[test]
-    fn test_chrono_timestamp_format() {
-        let ts = chrono_timestamp();
-        // Should be in ISO 8601-like format: 2026-01-12THH:MM:SSZ
-        assert!(ts.starts_with("2026-01-12T") || ts == "unknown");
-        if ts != "unknown" {
-            assert!(ts.ends_with('Z'));
-            assert_eq!(ts.len(), 20); // "2026-01-12THH:MM:SSZ"
-        }
+    fn test_chrono_timestamp_is_current_utc_date() {
+        let (before, ts, after) = utc_dates_bracketing(chrono_timestamp);
+        assert!(
+            ts.starts_with(&before) || ts.starts_with(&after),
+            "timestamp {ts} carries neither {before} nor {after} — the real UTC date"
+        );
+        assert!(ts.ends_with('Z'));
+        assert_eq!(ts.len(), 20); // "YYYY-MM-DDTHH:MM:SSZ"
+    }
+
+    /// The simulated headless report must carry the same real UTC date, and it
+    /// must be the same helper — two hardcoded date literals on the two
+    /// headless paths meant one run could stamp two different days.
+    #[test]
+    fn test_simulated_report_timestamp_is_current_utc_date() {
+        let mut pipeline = PipelineState::new();
+        pipeline.update_demo();
+        let (before, report, after) = utc_dates_bracketing(|| {
+            generate_headless_report_simulated("ts", &pipeline, &CbtopConfig::default())
+        });
+        assert!(
+            report.timestamp.starts_with(&before) || report.timestamp.starts_with(&after),
+            "report timestamp {} carries neither {before} nor {after}",
+            report.timestamp
+        );
     }
 
     // === get_cpu_info Tests ===

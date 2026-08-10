@@ -446,19 +446,12 @@ fn score_to_grade(score: u32) -> String {
     .to_string()
 }
 
-/// Get ISO 8601 timestamp
+/// Get ISO 8601 UTC timestamp for a report.
+///
+/// Both headless paths call this so a single run cannot stamp two different
+/// dates. It formats the real current UTC date — the previous implementation
+/// spliced the correct time-of-day into a hardcoded date literal, so every
+/// report claimed to have been produced in January 2026.
 fn chrono_timestamp() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or_else(
-        |_| "unknown".to_string(),
-        |d| {
-            let secs = d.as_secs();
-            format!(
-                "2026-01-12T{:02}:{:02}:{:02}Z",
-                (secs / 3600) % 24,
-                (secs / 60) % 60,
-                secs % 60
-            )
-        },
-    )
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
