@@ -1,23 +1,21 @@
 
-/// Scan the pacha cache directory for model files that are on disk but may not be
-/// tracked in the manifest (e.g., downloaded before pacha GH-162 added manifest
-/// persistence, or via direct writes outside the fetcher).
+/// Enumerate every model file sitting in the pacha cache directory.
 ///
-/// Contract: apr-list-disk-reconciliation-v1 F-LIST-DISK-001 (paiml/aprender#602).
-fn scan_cache_dir_for_orphans(
-    cache_dir: &Path,
-    known_paths: &HashSet<std::path::PathBuf>,
-) -> Vec<DiskModelEntry> {
+/// This is the single source of truth for "what is in the cache": `apr list`
+/// prints it and `apr rm` resolves against it (RM-NS-001). The pacha
+/// manifest is only an annotation on top of it — it can never be complete,
+/// because files land in this directory from the streaming pull path, from
+/// `apr convert`, and from plain file copies, none of which go through the
+/// fetcher. The directory always is complete, so it is the namespace both
+/// commands share.
+fn scan_cache_dir(cache_dir: &Path) -> Vec<DiskModelEntry> {
     let Ok(read_dir) = std::fs::read_dir(cache_dir) else {
         return Vec::new();
     };
-    let mut orphans = Vec::new();
+    let mut found = Vec::new();
     for entry in read_dir.flatten() {
         let path = entry.path();
         if !path.is_file() {
-            continue;
-        }
-        if known_paths.contains(&path) {
             continue;
         }
         let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
@@ -35,14 +33,29 @@ fn scan_cache_dir_for_orphans(
             .and_then(|s| s.to_str())
             .unwrap_or("unknown")
             .to_string();
-        orphans.push(DiskModelEntry {
+        found.push(DiskModelEntry {
             name,
             size_bytes,
             format,
             path: path.clone(),
         });
     }
-    orphans
+    found
+}
+
+/// Scan the pacha cache directory for model files that are on disk but may not be
+/// tracked in the manifest (e.g., downloaded before pacha GH-162 added manifest
+/// persistence, or via direct writes outside the fetcher).
+///
+/// Contract: apr-list-disk-reconciliation-v1 F-LIST-DISK-001 (paiml/aprender#602).
+fn scan_cache_dir_for_orphans(
+    cache_dir: &Path,
+    known_paths: &HashSet<std::path::PathBuf>,
+) -> Vec<DiskModelEntry> {
+    scan_cache_dir(cache_dir)
+        .into_iter()
+        .filter(|e| !known_paths.contains(&e.path))
+        .collect()
 }
 
 struct DiskModelEntry {
