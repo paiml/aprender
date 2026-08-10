@@ -279,6 +279,61 @@ mod tests {
         assert_eq!(metadata["num_layers"], 1);
     }
 
+    /// A weight-tied export writes the LM head with its full shape and ZERO
+    /// bytes — the embedding matrix IS the head. Selecting that placeholder
+    /// handed matmul an empty buffer, so `apr run` / `apr serve` / `apr code`
+    /// died on the qwen2.5-coder-0.5b APR with HTTP 500 "matmul weight has
+    /// EMPTY data buffer ... likely a MoE per-expert tensor" — on a dense
+    /// model, which sends the reader after entirely the wrong thing.
+    #[test]
+    fn test_from_apr_ties_lm_head_to_embedding_when_head_is_zero_length() {
+        use std::io::Write as _;
+
+        let (mut model, _) = build_model_via_gguf_roundtrip();
+        let hidden_dim = model.config.hidden_dim;
+        let vocab_size = model.config.vocab_size;
+
+        // Reproduce the export: `output.weight` keeps its shape, loses its data.
+        model.lm_head_weight.data.clear();
+        let apr_bytes = model.to_apr_bytes().expect("to_apr_bytes");
+
+        let mut tmp = tempfile::NamedTempFile::new().expect("create tmp");
+        tmp.write_all(&apr_bytes).expect("write");
+        tmp.flush().expect("flush");
+
+        let mapped = crate::apr::MappedAprModel::from_path(tmp.path()).expect("map");
+        let reloaded = OwnedQuantizedModel::from_apr(&mapped)
+            .expect("a tied-embedding APR must load, not trip over the empty head");
+
+        assert!(
+            !reloaded.lm_head_weight.data.is_empty(),
+            "lm_head must fall back to the embedding matrix, not stay empty"
+        );
+
+        // Behaviour, not shape: the head projection has to actually run — this
+        // is the call that returned InvalidShape("matmul weight has EMPTY data
+        // buffer") — AND every logit must equal the dot product of the hidden
+        // state with that token's embedding row. A transposed or misaligned
+        // tie still produces finite numbers, so asserting finiteness alone
+        // would let the wrong orientation through.
+        let hidden_state: Vec<f32> =
+            (0..hidden_dim).map(|i| 0.01 + (i % 7) as f32 * 0.003).collect();
+        let logits = reloaded
+            .fused_matmul(&hidden_state, &reloaded.lm_head_weight)
+            .expect("lm_head matmul must succeed for a tied-embedding model");
+        assert_eq!(logits.len(), vocab_size, "one logit per vocab entry");
+        for token in 0..vocab_size {
+            let row = &reloaded.token_embedding[token * hidden_dim..(token + 1) * hidden_dim];
+            let expected: f32 =
+                row.iter().zip(hidden_state.iter()).map(|(w, x)| w * x).sum();
+            assert!(
+                (logits[token] - expected).abs() <= 1e-3 * expected.abs().max(1.0),
+                "logit[{token}] = {} but the tied head must give <hidden, embed[{token}]> = {expected}",
+                logits[token]
+            );
+        }
+    }
+
     #[test]
     fn test_to_apr_bytes_roundtrip_loadable() {
         let (model, _) = build_model_via_gguf_roundtrip();

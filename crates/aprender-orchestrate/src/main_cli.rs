@@ -411,7 +411,11 @@ pub(crate) enum Commands {
         resume: Option<Option<String>>,
 
         /// Initial prompt (non-interactive if provided with -p).
-        #[arg(trailing_var_arg = true)]
+        ///
+        /// NOT `trailing_var_arg` — see the same note on `apr code`: it made
+        /// every option written after the prompt (including `--model`) get
+        /// absorbed into the prompt with no diagnostic. A prompt that
+        /// genuinely starts with `-` needs `--` before it.
         prompt: Vec<String>,
 
         /// Non-interactive: print response and exit.

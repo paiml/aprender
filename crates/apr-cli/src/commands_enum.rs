@@ -715,8 +715,14 @@ pub enum Commands {
         #[arg(short, long)]
         print: bool,
 
-        /// Prompt text (positional, for -p mode)
-        #[arg(trailing_var_arg = true)]
+        /// Prompt text (positional, for -p mode).
+        ///
+        /// NOT `trailing_var_arg`: that made clap absorb everything after the
+        /// first prompt word into the prompt, so `apr code -p "hi" --model X`
+        /// silently discarded `--model` and ran whatever auto-discovery found
+        /// — a wrong-model execution with no diagnostic — and typo'd flags
+        /// produced no parse error at all. Options are now parsed in any
+        /// position; a prompt that genuinely starts with `-` needs `--`.
         prompt: Vec<String>,
 
         /// Max turns before stopping
