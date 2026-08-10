@@ -68,6 +68,31 @@ ignore = [
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",  # quick-xml NsReader namespace-alloc DoS — same not-affected path as -0194
 
+    # rkyv 0.7.46 — published 2026-08-09 and broke the security gate the same
+    # day, blocking every open PR (main was green on the commit before it).
+    #
+    # Reachability re-verified rather than assumed, the same way the wasmtime
+    # 43.0.2 entry above was. (Deliberately no bare advisory id in this prose:
+    # CI builds its --ignore list by grepping every RUSTSEC-dddd-dddd token out
+    # of this file, comments included, so naming one here would silently exempt
+    # it.) Checks run on this branch:
+    #   cargo tree --workspace --all-features | grep -c rkyv   -> 0
+    #   cargo tree -p aprender                                 -> 0
+    #   cargo tree -p aprender --no-default-features           -> 0
+    #   cargo tree -p aprender --features full                 -> 0
+    #   cargo tree -p aprender-db --all-features               -> 0
+    # ZERO paths, even with --all-features. The chain is
+    # aprender-db -> duckdb -> rust_decimal -> rkyv, but duckdb is optional
+    # (gated behind aprender-db's `competitive-benchmarks`) AND rust_decimal's
+    # own `rkyv` dependency is optional and never enabled. It appears here only
+    # because Cargo.lock records optional dependencies, so cargo-audit sees it
+    # while nothing in the workspace can link it.
+    #
+    # The advisory's fix is rkyv >=0.8.17. We cannot take it: rust_decimal
+    # 1.42.1 is the newest published version and it still requires rkyv 0.7.
+    # Drop this line the moment rust_decimal ships a 0.8-based release.
+    "RUSTSEC-2026-0235",
+
     # SVG rendering stack — UNMAINTAINED only (no CVE, no patched release exists).
     # Both enter solely via resvg -> usvg -> {fontdb, rustybuzz} -> ttf-parser;
     # no direct usage in the workspace. Reviewed 2026-07-26. Re-review if a
