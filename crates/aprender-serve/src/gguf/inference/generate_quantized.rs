@@ -1,4 +1,34 @@
 impl OwnedQuantizedModel {
+    /// How many tokens this request may actually generate, bounded by the context.
+    ///
+    /// Every generate entry point sizes the KV cache as `prompt.len() + max_tokens`
+    /// (`OwnedQuantizedKVCache::from_config`). `max_tokens` arrives straight from an
+    /// unauthenticated HTTP body, so without a bound the allocation is
+    /// caller-controlled and unbounded: `{"max_tokens":999999999}` asked the
+    /// allocator for 1,024,000,000,000 bytes and Rust's allocation-error handler
+    /// **aborted the whole server process** — one request, no reply, port dead
+    /// (aprender#2376 finding 9).
+    ///
+    /// A model cannot emit tokens past its own context window, so an over-large
+    /// `max_tokens` is clamped to what remains rather than rejected: every request
+    /// that worked before still works, and the KV cache can never exceed
+    /// `context_length` entries no matter what a client sends.
+    ///
+    /// # Errors
+    ///
+    /// [`RealizarError::ContextLimitExceeded`] when the PROMPT alone exceeds the
+    /// context window (GH-167) — that one is unsatisfiable, and callers map it to
+    /// HTTP 400 because it is determined entirely by the request.
+    fn effective_max_tokens(&self, prompt_len: usize, requested: usize) -> Result<usize> {
+        if prompt_len > self.config.context_length {
+            return Err(RealizarError::ContextLimitExceeded {
+                provided: prompt_len,
+                maximum: self.config.context_length,
+            });
+        }
+        Ok(requested.min(self.config.context_length - prompt_len))
+    }
+
     /// Get most likely next token
     ///
     /// # Errors
@@ -39,23 +69,19 @@ impl OwnedQuantizedModel {
             });
         }
 
-        // GH-167: Check context length before GPU dispatch to avoid cryptic CUDA errors
-        if prompt.len() > self.config.context_length {
-            return Err(RealizarError::ContextLimitExceeded {
-                provided: prompt.len(),
-                maximum: self.config.context_length,
-            });
-        }
+        // GH-167 + aprender#2376(9): the KV cache is sized prompt + max_tokens, so
+        // the budget is bounded by the context window before anything is allocated.
+        let max_tokens = self.effective_max_tokens(prompt.len(), config.max_tokens)?;
 
         let mut tokens = prompt.to_vec();
-        let max_len = prompt.len() + config.max_tokens;
+        let max_len = prompt.len() + max_tokens;
         // PMAT-819: seed the sampler RNG from config.seed so the OpenAI `seed`
         // API contract holds (same prompt+seed+params => same tokens). Greedy
         // (temperature==0 || top_k==1) never touches the RNG, so the default
         // config is byte-for-byte unchanged.
         let mut rng = StdRng::seed_from_u64(config.seed);
 
-        for _ in 0..config.max_tokens {
+        for _ in 0..max_tokens {
             // Forward pass with fused Q4_K ops (1.37x faster)
             let mut logits = self.forward(&tokens)?;
 
@@ -277,15 +303,11 @@ impl OwnedQuantizedModel {
             });
         }
 
-        // GH-167: Check context length before processing to avoid cryptic CUDA errors
-        if prompt.len() > self.config.context_length {
-            return Err(RealizarError::ContextLimitExceeded {
-                provided: prompt.len(),
-                maximum: self.config.context_length,
-            });
-        }
+        // GH-167 + aprender#2376(9): the KV cache is sized prompt + max_tokens, so
+        // the budget is bounded by the context window before anything is allocated.
+        let max_tokens = self.effective_max_tokens(prompt.len(), config.max_tokens)?;
 
-        let max_seq_len = prompt.len() + config.max_tokens;
+        let max_seq_len = prompt.len() + max_tokens;
         let mut cache = OwnedQuantizedKVCache::from_config(&self.config, max_seq_len);
         let mut tokens = prompt.to_vec();
         // PMAT-819: seeded sampler RNG (OpenAI `seed` determinism). This is the
@@ -311,7 +333,7 @@ impl OwnedQuantizedModel {
             eprintln!(
                 "[TRACE-CACHE] Prefill: {} tokens, max_gen={}",
                 prompt.len(),
-                config.max_tokens
+                max_tokens
             );
         }
 
@@ -341,7 +363,7 @@ impl OwnedQuantizedModel {
 
         // Generate new tokens
         // First iteration uses logits from prefill, subsequent use logits from forward pass
-        for gen_idx in 0..config.max_tokens {
+        for gen_idx in 0..max_tokens {
             let token_start = std::time::Instant::now();
             // DEBUG: Print logits info for first generated token
             if gen_idx == 0 && std::env::var("REALIZAR_DEBUG_LOGITS").is_ok() {
@@ -497,15 +519,11 @@ impl OwnedQuantizedModel {
             });
         }
 
-        // GH-167: Check context length before processing to avoid cryptic CUDA errors
-        if prompt.len() > self.config.context_length {
-            return Err(RealizarError::ContextLimitExceeded {
-                provided: prompt.len(),
-                maximum: self.config.context_length,
-            });
-        }
+        // GH-167 + aprender#2376(9): the KV cache is sized prompt + max_tokens, so
+        // the budget is bounded by the context window before anything is allocated.
+        let max_tokens = self.effective_max_tokens(prompt.len(), config.max_tokens)?;
 
-        let max_seq_len = prompt.len() + config.max_tokens;
+        let max_seq_len = prompt.len() + max_tokens;
         let mut cache = OwnedQuantizedKVCache::from_config(&self.config, max_seq_len);
         let mut tokens = prompt.to_vec();
         // PMAT-819: seeded sampler RNG (OpenAI `seed` determinism, streaming dense path).
@@ -530,7 +548,7 @@ impl OwnedQuantizedModel {
             eprintln!(
                 "[TRACE-CACHE] Prefill: {} tokens, max_gen={}",
                 prompt.len(),
-                config.max_tokens
+                max_tokens
             );
         }
 
@@ -558,7 +576,7 @@ impl OwnedQuantizedModel {
         }
 
         // Generate new tokens with streaming
-        for gen_idx in 0..config.max_tokens {
+        for gen_idx in 0..max_tokens {
             let token_start = std::time::Instant::now();
             // PMAT-814: apply repetition penalty in place over the recent context
             // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).

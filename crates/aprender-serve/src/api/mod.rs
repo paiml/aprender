@@ -206,6 +206,41 @@ impl crate::audit::AuditSink for InMemorySinkWrapper {
     }
 }
 
+/// HTTP status for a model/tokenizer resolution failure.
+///
+/// One server-side condition must map to one status code. Before this existed the
+/// identical `"Model registry error: No model available"` came back as 404 from
+/// `/tokenize`, `/stream/generate` and `/realize/embed` but as 500 from
+/// `/batch/tokenize` and `/batch/generate`, so a client retry policy keyed on
+/// status treated the same failure as permanent on one route and as a server bug
+/// on the next (aprender#2376 finding 5).
+///
+/// * [`RealizarError::ModelNotFound`] — the client named a model this server does
+///   not have: 404, the route and request are fine.
+/// * [`RealizarError::RegistryError`] — the server has no usable model at all.
+///   That is a server-side condition, so 503 (the shape `/metrics/dispatch`
+///   already uses), never 404: the resource exists, the server cannot serve it.
+pub(crate) fn model_resolution_status(err: &RealizarError) -> StatusCode {
+    match err {
+        RealizarError::ModelNotFound(_) => StatusCode::NOT_FOUND,
+        RealizarError::RegistryError(_) => StatusCode::SERVICE_UNAVAILABLE,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+/// HTTP status for a generation failure.
+///
+/// A prompt or `max_tokens` that does not fit the model's context window is fully
+/// determined by the request, so it is a client error. Reporting it as 500 tells
+/// the caller the server broke and invites a retry of the identical request
+/// (aprender#2376 findings 9 and 11).
+pub(crate) fn generation_error_status(err: &RealizarError) -> StatusCode {
+    match err {
+        RealizarError::ContextLimitExceeded { .. } => StatusCode::BAD_REQUEST,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
 include!("mod_app_state_gpu.rs");
 include!("mod_create_demo.rs");
 include!("router.rs");

@@ -305,10 +305,14 @@ async fn test_invalid_strategy_generate() {
         .await
         .expect("test value should be present");
     // Should return BAD_REQUEST for invalid strategy
-    assert!(
-        response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
+    // aprender#2376(5): the shared test state has NO model, so this condition is
+    // deterministic — a server with no usable model answers 503 on every route.
+    // The old assertion accepted a SET of statuses that included the defect, so it
+    // could not fail and held the 404-here/500-there split in place.
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "no model is resident: expected 503"
     );
 }
 

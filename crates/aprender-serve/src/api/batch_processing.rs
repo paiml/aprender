@@ -365,8 +365,11 @@ pub async fn models_handler(
                 id: "default".to_string(),
                 name: "Default Model".to_string(),
                 description: "Single model deployment".to_string(),
-                format: "unknown".to_string(),
-                loaded: true,
+                // aprender#2376(6): was the literal "unknown" while /realize/model
+                // hardcoded "gguf" — two endpoints on one server contradicting each
+                // other about one model. Both now read the resident backend.
+                format: state.model_format().to_string(),
+                loaded: state.model_loaded(),
             }],
         }))
     }
@@ -377,9 +380,12 @@ pub async fn tokenize_handler(
     State(state): State<AppState>,
     Json(request): Json<TokenizeRequest>,
 ) -> Result<Json<TokenizeResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let (_model, tokenizer) = state.get_model(request.model_id.as_deref()).map_err(|e| {
+    // aprender#2376(1): tokenizing needs a tokenizer, not the dense f32 Model.
+    // Asking get_model() for one made this route unreachable on every
+    // `apr serve run model.gguf`, where the weights are in `quantized_model`.
+    let tokenizer = state.get_tokenizer(request.model_id.as_deref()).map_err(|e| {
         (
-            StatusCode::NOT_FOUND,
+            super::model_resolution_status(&e),
             Json(ErrorResponse {
                 error: e.to_string(),
             }),

@@ -260,7 +260,15 @@ async fn test_tokenize_with_model_id_more_cov() {
         .expect("test");
 
     let status = response.status();
-    assert!(status == StatusCode::OK || status == StatusCode::NOT_FOUND);
+    // aprender#2376(5): the shared test state has NO model, so this condition is
+    // deterministic — a server with no usable model answers 503 on every route.
+    // The old assertion accepted a SET of statuses that included the defect, so it
+    // could not fail and held the 404-here/500-there split in place.
+    assert_eq!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "no model is resident: expected 503"
+    );
 }
 
 #[tokio::test]
@@ -307,7 +315,15 @@ async fn test_realize_embed_with_model_more_cov() {
         .expect("test");
 
     let status = response.status();
-    assert!(status == StatusCode::OK || status == StatusCode::NOT_FOUND);
+    // aprender#2376(5): the shared test state has NO model, so this condition is
+    // deterministic — a server with no usable model answers 503 on every route.
+    // The old assertion accepted a SET of statuses that included the defect, so it
+    // could not fail and held the 404-here/500-there split in place.
+    assert_eq!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "no model is resident: expected 503"
+    );
 }
 
 #[test]
