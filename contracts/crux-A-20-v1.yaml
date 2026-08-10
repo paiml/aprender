@@ -152,9 +152,26 @@ falsification_tests:
     grep -qiE 'cache|not.?found|missing' "$LOG" || { echo "FAIL: no cache-miss keyword" >&2; exit 1; }
     grep -qi 'gpt2\|config.json' "$LOG" || { echo "FAIL: error does not name missing repo/file" >&2; exit 1; }
   if_fails: "offline cache miss lacked non-zero exit or actionable message"
-  # No algorithm-level sub-claim: this gate requires a real cache layer +
-  # populated/empty cache states + actual pull path execution. Discharge
-  # deferred to the follow-up network-gated harness.
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/src/commands/offline.rs
+    tests:
+    - pull_run_refuses_uncached_model_when_offline
+    - pull_dataset_refuses_listing_when_offline
+    - resolve_model_refuses_uncached_model_when_caller_forgot_the_flag
+    - import_step_refuses_download_when_offline
+    classifier: crates/apr-cli/src/commands/offline.rs
+    scope: >
+      Command-level discharge of the "hard error, no silent network
+      fallback" invariant on the REAL pull path (not the dry-run path):
+      `pull::run(offline=true)`, `pull::run_dataset`, `run::resolve_model`
+      and the showcase import step each return a non-zero `NetworkError`
+      naming `--offline mode` on an uncached repo, before any request is
+      constructed. Prior to this the `--offline` parameter was read only
+      inside `pull`'s `--dry-run` branch, so `apr pull --offline
+      hf://org/repo` downloaded 3.9 MB and exited 0.
+      NOT YET DISCHARGED: strace-verified zero non-loopback TCP connects,
+      and the byte-for-byte cache-hit parity of FALSIFY-CRUX-A-20-005.
 
 - id: FALSIFY-CRUX-A-20-004
   rule: --offline flag is equivalent to APR_OFFLINE=1
@@ -220,7 +237,7 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 3  # FALSIFY-001/002/004 at PARTIAL_ALGORITHM_LEVEL
+  tested: 4  # FALSIFY-001/002/003/004 at PARTIAL_ALGORITHM_LEVEL
   status: partial
   evidence:
     rust_tests: crates/apr-cli/tests/falsification_crux_a_20.rs
@@ -237,6 +254,10 @@ verification_summary:
     - falsify-004: falsify_crux_a_20_algo_001_dry_run_offline_flag_accepted
     - falsify-004: falsify_crux_a_20_algo_001_dry_run_offline_is_deterministic
     - algo-005: falsify_crux_a_20_algo_005_default_offline_is_false
+    - falsify-003: pull_run_refuses_uncached_model_when_offline
+    - falsify-003: pull_dataset_refuses_listing_when_offline
+    - falsify-003: resolve_model_refuses_uncached_model_when_caller_forgot_the_flag
+    - falsify-003: import_step_refuses_download_when_offline
   scope_honesty: >
     FALSIFY-CRUX-A-20-001/002/004 are discharged at PARTIAL_ALGORITHM_LEVEL
     — the Rust harness proves the offline sub-claims (CLI flag / env var
@@ -245,8 +266,11 @@ verification_summary:
     sub-claims (strace-verified zero non-loopback TCP connect() syscalls,
     DNS suppression) remain TODO and require a separate strace-gated
     harness with a primed cache. FALSIFY-CRUX-A-20-003 (cache-miss hard
-    error) and FALSIFY-CRUX-A-20-005 (huggingface_hub byte parity) are
-    NOT yet discharged — both need cache-layer + real pull-path wiring.
+    error) is now discharged at command level on the real pull path — the
+    refusal is asserted for `pull`, `pull dataset`, `resolve_model`
+    (the `chat`/`run` entry) and the showcase import step — but its
+    strace half is still open. FALSIFY-CRUX-A-20-005 (huggingface_hub
+    byte parity) is NOT yet discharged; it needs cache-layer wiring.
     Contract stays `status: partial`.
 
 pmat_work_tracking:

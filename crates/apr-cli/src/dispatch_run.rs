@@ -332,6 +332,12 @@ fn dispatch_rosetta(action: &RosettaCommands, global_json: bool) -> Result<(), C
 /// Execute the CLI command and return the result.
 pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
     contract_pre_contract_gate_enforcement!();
+    // CRUX-A-20: record `--offline` once, here, for the whole process. Every
+    // outbound-network helper consults `commands::offline::guard`, so no
+    // command can disarm the control by forgetting to forward a parameter.
+    // `--offline` is a clap global, so it is seen in either position
+    // (`apr --offline pull ...` and `apr pull --offline ...`).
+    crate::commands::offline::latch(cli.offline);
     // PMAT-237: Contract gate — refuse to operate on corrupt models
     if !cli.skip_contract {
         let paths = extract_model_paths(&cli.command);

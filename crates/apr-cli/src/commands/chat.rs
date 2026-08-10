@@ -123,7 +123,11 @@ pub(crate) fn run(
         _ => hf_uri,
     };
     let model_source = crate::commands::run::ModelSource::parse(&fully_resolved_source)?;
-    let actual_path = crate::commands::run::resolve_model(&model_source, false, false)?;
+    // CRUX-A-20: this argument was a hardcoded `false`, which is why
+    // `apr --offline chat hf://org/repo` downloaded the model instead of
+    // refusing. Read the offline decision from the process-wide latch.
+    let offline = crate::commands::offline::network_forbidden();
+    let actual_path = crate::commands::run::resolve_model(&model_source, false, offline)?;
     let path = actual_path.as_path();
 
     // Validate file exists
