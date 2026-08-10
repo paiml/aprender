@@ -48,7 +48,7 @@ pub(crate) fn run(
     } else if let Some(t) = tensor {
         explain_tensor(t, resolved_file.as_deref(), json);
     } else if let Some(ref f) = resolved_file {
-        explain_file(f, json);
+        explain_file(f, json)?;
     } else {
         eprintln!("Please provide an error code, model file path, or --tensor/--kernel");
         eprintln!();
@@ -696,14 +696,12 @@ fn count_layers(tensor_names: &[String]) -> usize {
 
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
-fn explain_file(path: &Path, json: bool) {
+fn explain_file(path: &Path, json: bool) -> Result<()> {
     if !path.exists() {
         print_not_found(path, json);
-        return;
+        return Err(crate::error::CliError::FileNotFound(path.to_path_buf()));
     }
-    let Some(report) = inspect_or_report(path, json) else {
-        return;
-    };
+    let report = inspect_or_report(path, json)?;
     let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
     let (arch, examples) = detect_architecture(&tensor_names);
     let n_layers = count_layers(&tensor_names);
@@ -712,15 +710,25 @@ fn explain_file(path: &Path, json: bool) {
     } else {
         print_text_summary(path, &report, arch, examples, n_layers);
     }
+    Ok(())
 }
 
+/// Report a missing model file.
+///
+/// This used to `println!` on STDOUT, where it was indistinguishable from a
+/// successful explanation to anything reading the command's output — and the
+/// caller then returned `Ok(())`, so the process exited 0 as well.
+///
+/// In text mode this now emits nothing: the `CliError::FileNotFound` the caller
+/// returns already renders as `error: File not found: <path>` on stderr, and
+/// printing it here too would duplicate it. In JSON mode the error object stays
+/// on stdout, because a `--json` consumer parses stdout and a machine-readable
+/// error object is a legitimate result there.
 #[allow(clippy::disallowed_methods)]
 fn print_not_found(path: &Path, json: bool) {
     if json {
         let err = serde_json::json!({ "error": format!("File not found: {}", path.display()) });
         println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
-    } else {
-        println!("File not found: {}", path.display());
     }
 }
 
@@ -728,22 +736,26 @@ fn print_not_found(path: &Path, json: bool) {
 fn inspect_or_report(
     path: &Path,
     json: bool,
-) -> Option<aprender::format::rosetta::InspectionReport> {
+) -> Result<aprender::format::rosetta::InspectionReport> {
     let rosetta = aprender::format::rosetta::RosettaStone::new();
     match rosetta.inspect(path) {
-        Ok(r) => Some(r),
+        Ok(r) => Ok(r),
         Err(e) => {
             if json {
                 let err = serde_json::json!({ "error": format!("Failed to inspect model: {e}") });
                 println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
             } else {
-                println!("Failed to inspect model: {e}");
-                println!(
+                // The message itself is carried by the returned CliError; only
+                // the follow-up hint is additive.
+                eprintln!(
                     "Run `apr validate {0}` for format diagnostics.",
                     path.display()
                 );
             }
-            None
+            Err(crate::error::CliError::ValidationFailed(format!(
+                "failed to inspect {}: {e}",
+                path.display()
+            )))
         }
     }
 }
@@ -873,16 +885,25 @@ mod tests {
     // File/Model Explanation Tests
     // ========================================================================
 
+    // These two used to assert `is_ok()` on paths that do not exist, which is
+    // how the exit-0-on-missing-file defect stayed green: the tests asserted
+    // the shape of the call, not the behaviour, and so encoded the bug.
     #[test]
     fn test_explain_file() {
         let result = run_default(None, Some(PathBuf::from("/path/to/model.apr")), None);
-        assert!(result.is_ok());
+        assert!(
+            result.is_err(),
+            "a nonexistent .apr must be an error, not a silent success"
+        );
     }
 
     #[test]
     fn test_explain_file_with_gguf_extension() {
         let result = run_default(None, Some(PathBuf::from("model.gguf")), None);
-        assert!(result.is_ok());
+        assert!(
+            result.is_err(),
+            "a nonexistent .gguf must be an error, not a silent success"
+        );
     }
 
     // ========================================================================
@@ -952,5 +973,60 @@ mod tests {
             true,
         );
         assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Exit-code discipline (dogfood 0.63.0)
+    // ========================================================================
+    //
+    // `apr explain /nonexistent/model.apr` printed "File not found: ..." on
+    // STDOUT and exited 0. Every CI wrapper and shell script that branches on
+    // `$?` read that as a successful explanation. `explain_file` returned `()`,
+    // so there was no way for the failure to reach the process exit code.
+
+    #[test]
+    fn missing_model_file_is_an_error_not_a_success() {
+        let missing = PathBuf::from("/nonexistent/dogfood-explain-missing.apr");
+        assert!(!missing.exists(), "fixture path must not exist");
+
+        let result = run_default(None, Some(missing.clone()), None);
+
+        assert!(
+            result.is_err(),
+            "apr explain on a missing file must fail; returning Ok makes the \
+             process exit 0 and a missing model reads as success"
+        );
+        assert!(
+            matches!(result, Err(crate::error::CliError::FileNotFound(_))),
+            "expected FileNotFound (exit code 3), got {result:?}"
+        );
+    }
+
+    #[test]
+    fn missing_model_file_is_an_error_in_json_mode_too() {
+        let missing = PathBuf::from("/nonexistent/dogfood-explain-missing.apr");
+        let result = run(None, Some(missing), None, false, true, false, false);
+        assert!(
+            result.is_err(),
+            "--json must not turn a missing file into exit 0"
+        );
+    }
+
+    #[test]
+    fn unreadable_model_file_is_an_error_not_a_success() {
+        // A file that exists but is not a model: inspect() fails, and that
+        // used to be swallowed the same way.
+        let dir = std::env::temp_dir().join("apr-dogfood-explain-bogus");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let bogus = dir.join("not-a-model.apr");
+        std::fs::write(&bogus, b"this is not a model file").expect("write fixture");
+
+        let result = run_default(None, Some(bogus.clone()), None);
+        let _ = std::fs::remove_file(&bogus);
+
+        assert!(
+            result.is_err(),
+            "apr explain on an unreadable model must fail, not exit 0"
+        );
     }
 }
