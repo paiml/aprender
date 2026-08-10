@@ -18,4 +18,5 @@ include!("lib_execute_export_convert.rs");
 include!("lib_verbose_inheritance_parse.rs");
 include!("lib_parse_serve.rs");
 include!("lib_dispatch_coverage.rs");
+include!("lib_dogfood_2392.rs");
 }

@@ -87,7 +87,8 @@
             density: 0.2,
             seed: 42,
             plan: false,
-        });
+                force: true,
+            });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Merge should be handled by dispatch_model_commands");
         // merge with nonexistent files should error
@@ -109,7 +110,8 @@
             density: 0.2,
             seed: 42,
             plan: true,
-        });
+                force: true,
+            });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Merge plan should be handled by dispatch_model_commands");
     }
@@ -541,7 +543,8 @@
             batch: None,
             json: false,
             plan: false,
-        });
+                force: true,
+            });
         let result = dispatch_inspection_commands(&cli);
         assert!(result.is_none(), "Export should NOT be handled by inspection dispatcher");
     }
@@ -660,7 +663,8 @@
             batch: None,
             json: false,
             plan: false,
-        });
+                force: true,
+            });
         let result = dispatch_format_commands(&cli);
         assert!(result.is_some(), "Export should be handled by format dispatcher");
     }

@@ -580,9 +580,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             file,
             max_shard_size,
             output,
-        } => dispatch_shard(file, max_shard_size, output, cli.json),
+            force,
+        } => dispatch_shard(file, max_shard_size, output, *force, cli.json),
 
-        ExtendedCommands::Unshard { input, output } => dispatch_unshard(input, output, cli.json),
+        ExtendedCommands::Unshard {
+            input,
+            output,
+            force,
+        } => dispatch_unshard(input, output, *force, cli.json),
 
         ExtendedCommands::Diagnose {
             checkpoint_dir,
@@ -607,8 +612,13 @@ fn dispatch_shard(
     file: &std::path::Path,
     max_shard_size: &str,
     output: &std::path::Path,
+    force: bool,
     json: bool,
 ) -> Result<(), CliError> {
+    // #2392 finding 4: a shard set is identified by its weight-map index. Writing
+    // a second set into the same directory silently replaces the index (and the
+    // shards it names) — refuse unless the user asked for it.
+    crate::error::refuse_overwrite(&output.join("model.safetensors.index.json"), force)?;
     match commands::shard::run_shard(file, max_shard_size, output) {
         Ok(report) => {
             if json {
@@ -653,8 +663,10 @@ fn dispatch_shard(
 fn dispatch_unshard(
     input: &std::path::Path,
     output: &std::path::Path,
+    force: bool,
     json: bool,
 ) -> Result<(), CliError> {
+    crate::error::refuse_overwrite(output, force)?;
     match commands::shard::run_unshard(input, output) {
         Ok(report) => {
             if json {

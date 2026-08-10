@@ -87,6 +87,31 @@ impl From<aprender::error::AprenderError> for CliError {
     }
 }
 
+/// Refuse to clobber an existing output artifact unless `--force` was given.
+///
+/// #2392 (dogfood 0.63.0, finding 4): `apr convert` and `apr quantize` already
+/// refused with exit 5 and "Use --force to overwrite", but `apr export`,
+/// `apr merge`, `apr shard` and `apr unshard` wrote straight over whatever was
+/// at the output path and exited 0 — and none of them even *had* a `--force`
+/// flag, so the guarded behaviour was unreachable. A 9-byte file handed to
+/// `apr export -o precious.safetensors` came back as 9717255 bytes of model with
+/// no warning. Every write-a-file command now routes its overwrite decision
+/// through this one function so the policy cannot drift again.
+///
+/// # Errors
+///
+/// Returns [`CliError::ValidationFailed`] (exit 5) when `path` exists and
+/// `force` is false.
+pub fn refuse_overwrite(path: &std::path::Path, force: bool) -> std::result::Result<(), CliError> {
+    if path.exists() && !force {
+        return Err(CliError::ValidationFailed(format!(
+            "Output file '{}' already exists. Use --force to overwrite.",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
 /// Resolve a model path: if given a directory, look for common model files inside.
 ///
 /// HuggingFace models are stored as directories containing `model.safetensors`,

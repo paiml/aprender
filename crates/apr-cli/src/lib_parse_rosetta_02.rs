@@ -149,7 +149,8 @@
             batch: None,
             json: false,
             plan: false,
-        };
+                force: true,
+            };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
     }

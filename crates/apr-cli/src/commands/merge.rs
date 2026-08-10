@@ -235,6 +235,7 @@ pub(crate) fn run(
     seed: u64,
     json_output: bool,
     plan: bool,
+    force: bool,
 ) -> Result<()> {
     contract_pre_merge_tensor_shape!();
     contract_pre_merge_weight_conservation!(files);
@@ -255,6 +256,10 @@ pub(crate) fn run(
     let output = output.ok_or_else(|| {
         CliError::ValidationFailed("--output is required for merge execution".into())
     })?;
+
+    // #2392 finding 4: merge used to write straight over an existing file and
+    // exit 0, with no --force flag to opt into the guard convert already had.
+    crate::error::refuse_overwrite(output, force)?;
 
     validate_merge_inputs(files)?;
 

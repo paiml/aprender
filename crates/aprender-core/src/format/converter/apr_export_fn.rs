@@ -44,7 +44,24 @@ pub fn apr_export<P: AsRef<Path>>(
     }
 
     let provenance = load_model_tensors_provenance(input_path)?;
-    let original_size = calculate_tensor_size(provenance.as_map());
+    // #2392 (dogfood 0.63.0, finding 2): `original_size` is printed directly
+    // beside `exported_size`, which is an on-disk file size, so it must be one
+    // too. It used to be `calculate_tensor_size()` — the sum of DEQUANTIZED F32
+    // tensor bytes — which is a property of the model's parameter count, not of
+    // the input file: it reported an identical 9714528 for five different input
+    // APRs spanning 1.37 MB to 30.5 MB on disk. A true 30.5 MB -> 9.7 MB shrink
+    // was reported as slight growth, and a real 55 MB -> 90 MB growth was hidden.
+    // The same command's `--plan` mode already reports the file size correctly as
+    // `input_size`, and the raw APR->GGUF passthrough path
+    // (`export_apr_to_gguf_raw`) already uses the file size, so this also makes
+    // the two export paths agree.
+    let original_size = if input_path.is_dir() {
+        dir_total_size(input_path)
+    } else {
+        fs::metadata(input_path)
+            .map(|m| m.len() as usize)
+            .unwrap_or_else(|_| calculate_tensor_size(provenance.as_map()))
+    };
     let tensors = provenance.into_map();
 
     // PMAT-260: Capture original dtypes from SafeTensors source for round-trip preservation.

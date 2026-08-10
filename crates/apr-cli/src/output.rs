@@ -273,6 +273,23 @@ pub(crate) fn table(headers: &[&str], rows: &[Vec<String>]) -> String {
 }
 
 /// Render a key-value table (two columns: Key, Value)
+///
+/// #2392 (dogfood 0.63.0, finding 5): a key-value table has **no header row** —
+/// every record is a data pair. `tabled`'s `Style::rounded()` draws a horizontal
+/// rule after record 0 (its header separator) and a bottom border only once at
+/// least one record follows it. With a single pair — `apr convert … --quantize
+/// int8` prints exactly one config pair — the table rendered as
+///
+/// ```text
+/// ╭──────────────┬──────╮
+/// │ Quantization │ Int8 │
+/// ├──────────────┼──────┤        <- header separator, then nothing
+/// ```
+///
+/// an unterminated box, on every single-pair call site in the CLI. Multi-pair
+/// tables only looked right by accident: the first pair was being drawn as a
+/// header it never was. `remove_horizontals()` drops the header rule, so the box
+/// closes for one pair and reads as a uniform key/value list for many.
 pub(crate) fn kv_table(pairs: &[(&str, String)]) -> String {
     if pairs.is_empty() {
         return String::new();
@@ -282,7 +299,7 @@ pub(crate) fn kv_table(pairs: &[(&str, String)]) -> String {
         builder.push_record([*key, value.as_str()]);
     }
     let mut tbl = builder.build();
-    tbl.with(Style::rounded())
+    tbl.with(Style::rounded().remove_horizontals())
         .with(Modify::new(Columns::first()).with(Alignment::right()));
     tbl.to_string()
 }

@@ -258,10 +258,11 @@ pub use validation::{fail_no_validation_rules, Gate, PokaYoke, PokaYokeResult};
 
 // Re-export converter types (spec §13 - Import/Convert Pipeline)
 pub use converter::{
-    apr_convert, apr_export, apr_import, apr_merge, streaming_quantize_peak_estimate, AprConverter,
-    Architecture, ConvertOptions, ConvertReport, EvolutionaryMergeConfig, EvolutionaryMergeResult,
-    ExportFormat, ExportOptions, ExportReport, ImportError, ImportOptions, MergeOptions,
-    MergeReport, MergeStrategy, QuantizationType, Source, TensorExpectation, ValidationConfig,
+    apr_convert, apr_export, apr_import, apr_merge, q4k_output_size_estimate,
+    streaming_quantize_peak_estimate, AprConverter, Architecture, ConvertOptions, ConvertReport,
+    EvolutionaryMergeConfig, EvolutionaryMergeResult, ExportFormat, ExportOptions, ExportReport,
+    ImportError, ImportOptions, MergeOptions, MergeReport, MergeStrategy, QuantizationType, Source,
+    TensorExpectation, ValidationConfig,
 };
 
 // Re-export lint types (spec §4.11 - Best Practices & Conventions)

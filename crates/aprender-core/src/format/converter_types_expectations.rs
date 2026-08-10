@@ -349,6 +349,22 @@ impl std::fmt::Display for ImportError {
                 write!(f, "Missing required tensor: {name}")
             }
             // GH-129: Actionable error messages
+            //
+            // #2392 (dogfood 0.63.0, finding 6): `status` is the HTTP status of a
+            // Hub lookup, and `resolve_local_source` sets it to 0 to mean "this
+            // was a filesystem path, no request was made". That distinction was
+            // never read, so `apr import /nonexistent.safetensors` advised the
+            // user to "verify the model name exists on huggingface.co/models" —
+            // a remedy that cannot apply to an absolute local path. The sibling
+            // commands (`apr convert`, `apr export`) already say "File not found"
+            // for the same input.
+            Self::NotFound { resource, status } if *status == 0 => {
+                write!(
+                    f,
+                    "File not found: {resource}. \
+                     Fix: check the path, or use hf://org/repo to import from the Hub"
+                )
+            }
             Self::NotFound { resource, status } => {
                 write!(
                     f,

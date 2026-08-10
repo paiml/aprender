@@ -491,6 +491,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             batch,
             json,
             plan,
+            force,
         } => {
             match file
                 .as_ref()
@@ -506,6 +507,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     batch.as_deref(),
                     *json || cli.json,
                     *plan,
+                    *force,
                 ),
                 Err(e) => Err(e),
             }
@@ -659,6 +661,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             density,
             seed,
             plan,
+            force,
         } => {
             let resolved: std::result::Result<Vec<std::path::PathBuf>, _> = files
                 .iter()
@@ -676,6 +679,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     *seed,
                     cli.json,
                     *plan,
+                    *force,
                 ),
                 Err(e) => Err(e),
             }

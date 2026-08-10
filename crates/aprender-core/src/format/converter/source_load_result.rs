@@ -243,16 +243,44 @@ const CONFIG_ALIASES_MAX_POS: &[&str] = &["max_position_embeddings", "n_position
 /// GH-278: LLaMA/Qwen use "rms_norm_eps", GPT-2/BERT use "layer_norm_epsilon".
 const CONFIG_ALIASES_NORM_EPS: &[&str] = &["rms_norm_eps", "layer_norm_epsilon", "layer_norm_eps"];
 
+/// Locate the `config.json` belonging to `model_path`.
+///
+/// #2392 (dogfood 0.63.0, finding 6, second half): this used to accept only a
+/// bare sibling `config.json`. The Pacha cache stores everything for one model
+/// under a shared hash stem — `<hash>.safetensors`, `<hash>.tokenizer.json`,
+/// `<hash>.config.json` — and `tokenizer_loader.rs` in this same binary
+/// explicitly understands that layout ("[BUG-TOK-002] Found tokenizer at Pacha
+/// cache path"). The config loader did not, so `apr convert` on a Pacha model
+/// silently fell back to shape inference and produced an APR with no
+/// `num_heads`/`num_kv_heads`/`rope_theta` — which `apr run` then rejected with
+/// "C-03: APR model missing 'num_heads' metadata" even though every one of those
+/// values was sitting in a file next to the weights.
+fn find_config_json(model_path: &Path) -> Option<PathBuf> {
+    let standard = model_path.with_file_name("config.json");
+    if standard.exists() {
+        return Some(standard);
+    }
+    // Pacha cache layout: `<stem>.config.json`, same stem rule the tokenizer
+    // loader uses (strip trailing extensions like `.converted` from the stem).
+    let stem = model_path.file_stem()?.to_str()?;
+    let base_stem = stem.split('.').next().unwrap_or(stem);
+    let pacha = model_path.with_file_name(format!("{base_stem}.config.json"));
+    if pacha.exists() {
+        eprintln!(
+            "[#2392] Found model config at Pacha cache path: {}",
+            pacha.display()
+        );
+        return Some(pacha);
+    }
+    None
+}
+
 /// Load model config from config.json alongside the model file (PMAT-098)
 ///
 /// This is the preferred way to get model config for SafeTensors models.
 /// Falls back to shape inference if config.json is not found.
 pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModelConfig> {
-    // Look for config.json alongside the model file
-    let config_path = model_path.with_file_name("config.json");
-    if !config_path.exists() {
-        return None;
-    }
+    let config_path = find_config_json(model_path)?;
 
     let content = fs::read_to_string(&config_path).ok()?;
     let sanitized = sanitize_hf_json(&content);

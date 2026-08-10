@@ -418,3 +418,86 @@ fn test_pipeline_stage_all_statuses() {
     pipeline_stage("Export", StageStatus::Failed);
     pipeline_stage("Optional", StageStatus::Skipped);
 }
+
+// ==================== #2392 finding 5: unterminated single-row kv_table ======
+
+/// Does the rendered table close with a bottom border?
+fn closes_the_box(rendered: &str) -> bool {
+    rendered
+        .lines()
+        .last()
+        .is_some_and(|last| last.starts_with('╰') && last.ends_with('╯'))
+}
+
+/// #2392 finding 5: `apr convert model.safetensors --quantize int8` prints a
+/// single-pair config table, and it rendered as
+///
+/// ```text
+/// ╭──────────────┬──────╮
+/// │ Quantization │ Int8 │
+/// ├──────────────┼──────┤
+/// ```
+///
+/// — top border, one row, a header separator, then nothing. The box never
+/// closed. It reproduced for all four quantization schemes and at every
+/// single-pair `kv_table` call site in the CLI; adding `--compress` gave a
+/// second row and the box closed, which is what identified row count (not
+/// content) as the discriminator.
+#[test]
+fn kv_table_single_pair_closes_its_box() {
+    let rendered = kv_table(&[("Quantization", "Int8".to_string())]);
+    assert!(
+        closes_the_box(&rendered),
+        "#2392 finding 5: a one-pair kv_table must terminate with ╰───┴───╯.\nGot:\n{rendered}"
+    );
+}
+
+/// The same must hold at every row count — the shipped behaviour was correct
+/// for 2+ pairs only by accident of the first pair being drawn as a header.
+#[test]
+fn kv_table_closes_its_box_at_every_row_count() {
+    let all: Vec<(&str, String)> = vec![
+        ("Input", "model.safetensors".to_string()),
+        ("Output", "model.apr".to_string()),
+        ("Quantization", "Int8".to_string()),
+        ("Compression", "ZstdDefault".to_string()),
+    ];
+    for n in 1..=all.len() {
+        let rendered = kv_table(&all[..n]);
+        assert!(
+            closes_the_box(&rendered),
+            "#2392 finding 5: kv_table with {n} pair(s) left the box open.\nGot:\n{rendered}"
+        );
+    }
+}
+
+/// A key-value table has no header, so it must not draw a header separator that
+/// implies the first pair is one. This is the specific rule the fix installs;
+/// without it the single-pair case cannot close.
+#[test]
+fn kv_table_draws_no_header_separator() {
+    let rendered = kv_table(&[
+        ("Quantization", "None (copy)".to_string()),
+        ("Compression", "ZstdDefault".to_string()),
+    ]);
+    assert!(
+        !rendered.contains('├'),
+        "#2392 finding 5: kv_table pairs are all data — none is a header.\nGot:\n{rendered}"
+    );
+}
+
+/// Guard the honest negative: `table()` DOES have a real header row and must
+/// keep its separator. A blanket `remove_horizontals()` would break it.
+#[test]
+fn table_with_real_headers_keeps_its_header_separator() {
+    let rows = vec![vec!["a".to_string(), "b".to_string()]];
+    let rendered = table(&["Col1", "Col2"], &rows);
+    assert!(
+        rendered.contains('├'),
+        "a headed table must still separate its header from the body.\nGot:\n{rendered}"
+    );
+    assert!(
+        closes_the_box(&rendered),
+        "and must still close.\nGot:\n{rendered}"
+    );
+}
