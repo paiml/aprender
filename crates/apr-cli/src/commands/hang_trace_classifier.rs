@@ -22,11 +22,21 @@ pub const F14_TIMEOUT_EXIT_CODE: i32 = 124;
 /// Outcome of `classify_timeout_dump`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HangTimeoutOutcome {
-    Ok { ranks_seen: usize },
+    Ok {
+        ranks_seen: usize,
+    },
+    /// `world_size == 0`: the gate has nothing to assert, so it cannot pass.
+    WorldSizeZero,
     DirEmpty,
-    MissingRank { rank: usize },
-    EmptyFile { rank: usize },
-    UnexpectedFilename { name: String },
+    MissingRank {
+        rank: usize,
+    },
+    EmptyFile {
+        rank: usize,
+    },
+    UnexpectedFilename {
+        name: String,
+    },
 }
 
 /// Outcome of `classify_empty_on_success`.
@@ -71,9 +81,11 @@ pub fn classify_timeout_dump(
     world_size: usize,
 ) -> HangTimeoutOutcome {
     if world_size == 0 {
-        // Degenerate: zero ranks expected => any contents is fine,
-        // but a missing dir would be a different problem; treat as Ok.
-        return HangTimeoutOutcome::Ok { ranks_seen: 0 };
+        // A timeout dump with zero expected ranks asserts nothing. Treating
+        // it as Ok made an EMPTY trace dir pass, so a CI job whose
+        // `--world-size` came from an env var that resolved to empty got a
+        // green gate on no evidence at all. Unknown is not a pass.
+        return HangTimeoutOutcome::WorldSizeZero;
     }
     if listing.names.is_empty() {
         return HangTimeoutOutcome::DirEmpty;
@@ -209,6 +221,30 @@ mod tests {
             HangTimeoutOutcome::UnexpectedFilename { name } => assert_eq!(name, "scratchpad.txt"),
             other => panic!("expected UnexpectedFilename, got {other:?}"),
         }
+    }
+
+    // Dogfood 0.63.0 #2377 finding 4: `--world-size 0` short-circuited to
+    // `Ok { ranks_seen: 0 }`, so an EMPTY trace dir passed the timeout gate.
+    // A CI job whose world_size came from an env var that resolved to empty
+    // got a green gate on no evidence at all.
+    #[test]
+    fn timeout_dump_world_size_zero_does_not_pass_on_empty_dir() {
+        let pairs: Vec<(String, u64)> = vec![];
+        let listing = listing_view(&pairs);
+        assert_eq!(
+            classify_timeout_dump(&listing, 0),
+            HangTimeoutOutcome::WorldSizeZero
+        );
+    }
+
+    #[test]
+    fn timeout_dump_world_size_zero_does_not_pass_on_populated_dir() {
+        let pairs = vec![("rank0.py.txt".to_string(), 256u64)];
+        let listing = listing_view(&pairs);
+        assert_eq!(
+            classify_timeout_dump(&listing, 0),
+            HangTimeoutOutcome::WorldSizeZero
+        );
     }
 
     #[test]

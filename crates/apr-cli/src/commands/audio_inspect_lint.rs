@@ -107,4 +107,39 @@ mod cov_tests {
         let f = w("{}");
         let _ = run(f.path(), None, None, true);
     }
+
+    /// Dogfood 0.63.0 #2377 finding 5 at the command surface: the body says
+    /// 4294983296, the pre-fix report said `Ok { rate: 16000 }` and exited 0.
+    #[test]
+    fn out_of_range_sample_rate_fails_the_command() {
+        let f = w(r#"{"min":-0.5,"max":0.5,"sample_rate":4294983296,"channels":1,"samples":100}"#);
+        let err = run(f.path(), None, None, false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)), "{err:?}");
+        let msg = err.to_string();
+        assert!(msg.contains("4294983296"), "must echo the input: {msg}");
+        assert!(!msg.contains("16000"), "must not invent a rate: {msg}");
+    }
+
+    /// The explicit assertion path was fooled identically: wrapped, the value
+    /// equalled the `--expected-sample-rate` the user asked for.
+    #[test]
+    fn out_of_range_sample_rate_fails_even_with_expected_rate() {
+        let f = w(r#"{"min":-0.5,"max":0.5,"sample_rate":4294983296,"channels":1,"samples":100}"#);
+        let err = run(f.path(), Some(16_000), None, false).unwrap_err();
+        assert!(err.to_string().contains("4294983296"), "{err}");
+    }
+
+    #[test]
+    fn out_of_range_channel_count_fails_the_command() {
+        let f =
+            w(r#"{"min":-0.5,"max":0.5,"sample_rate":16000,"channels":4294967297,"samples":100}"#);
+        let err = run(f.path(), None, None, false).unwrap_err();
+        assert!(err.to_string().contains("4294967297"), "{err}");
+    }
+
+    #[test]
+    fn a_well_formed_body_still_passes() {
+        let f = w(r#"{"min":-0.5,"max":0.5,"sample_rate":16000,"channels":1,"samples":100}"#);
+        assert!(run(f.path(), Some(16_000), Some(1), false).is_ok());
+    }
 }

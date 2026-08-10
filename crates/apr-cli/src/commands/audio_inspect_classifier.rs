@@ -42,22 +42,50 @@ pub enum AudioBoundsOutcome {
 /// Outcome of `classify_sample_rate`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AudioSampleRateOutcome {
-    Ok { rate: u32 },
+    Ok {
+        rate: u32,
+    },
     MissingSampleRate,
-    SampleRateNotPositive { got: i64 },
-    ExpectedRateMismatch { got: u32, expected: u32 },
-    NonCanonicalRate { got: u32 },
+    SampleRateNotPositive {
+        got: i64,
+    },
+    /// Value does not fit in `u32`. Reported with the ORIGINAL `i64` so the
+    /// report never prints a number the observation did not contain.
+    SampleRateOutOfRange {
+        got: i64,
+    },
+    ExpectedRateMismatch {
+        got: u32,
+        expected: u32,
+    },
+    NonCanonicalRate {
+        got: u32,
+    },
 }
 
 /// Outcome of `classify_channel_shape`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AudioChannelShapeOutcome {
-    Ok { channels: u32, samples: u64 },
+    Ok {
+        channels: u32,
+        samples: u64,
+    },
     MissingChannels,
     MissingSamples,
-    ChannelsNotPositive { got: i64 },
-    SamplesNotPositive { got: i64 },
-    ExpectedChannelsMismatch { got: u32, expected: u32 },
+    ChannelsNotPositive {
+        got: i64,
+    },
+    /// Channel count does not fit in `u32` (reported with the original `i64`).
+    ChannelsOutOfRange {
+        got: i64,
+    },
+    SamplesNotPositive {
+        got: i64,
+    },
+    ExpectedChannelsMismatch {
+        got: u32,
+        expected: u32,
+    },
 }
 
 /// FALSIFY-CRUX-H-13-001: amplitude bounds + finite.
@@ -103,7 +131,12 @@ pub fn classify_sample_rate(body: &Value, expected: Option<u32>) -> AudioSampleR
     if raw <= 0 {
         return AudioSampleRateOutcome::SampleRateNotPositive { got: raw };
     }
-    let rate = raw as u32;
+    // A `raw as u32` here WRAPS: 4_294_983_296 (2^32 + 16000) would alias to
+    // 16000 and PASS the canonical-set check while the report printed a rate
+    // the observation never contained.
+    let Ok(rate) = u32::try_from(raw) else {
+        return AudioSampleRateOutcome::SampleRateOutOfRange { got: raw };
+    };
     if let Some(exp) = expected {
         if rate != exp {
             return AudioSampleRateOutcome::ExpectedRateMismatch {
@@ -136,7 +169,11 @@ pub fn classify_channel_shape(
     if raw_s <= 0 {
         return AudioChannelShapeOutcome::SamplesNotPositive { got: raw_s };
     }
-    let channels = raw_c as u32;
+    // `raw_c as u32` WRAPS: 4_294_967_297 (2^32 + 1) would alias to 1 and the
+    // report would print `channels: 1` for an input that said 4294967297.
+    let Ok(channels) = u32::try_from(raw_c) else {
+        return AudioChannelShapeOutcome::ChannelsOutOfRange { got: raw_c };
+    };
     let samples = raw_s as u64;
     if let Some(exp) = expected_channels {
         if channels != exp {
@@ -306,6 +343,93 @@ mod tests {
             classify_channel_shape(&body, None),
             AudioChannelShapeOutcome::SamplesNotPositive { got: 0 }
         ));
+    }
+
+    // ── wrapping-cast falsifiers (dogfood 0.63.0 #2377 finding 5) ────────
+    //
+    // `raw as u32` silently aliases anything >= 2^32 into the canonical set.
+    // These assert BEHAVIOUR: an out-of-range value must be rejected, and the
+    // reported value must be the one the observation actually contained.
+
+    #[test]
+    fn sample_rate_rejects_value_above_u32_that_aliases_to_16k() {
+        // 2^32 + 16000: `as u32` yields exactly 16000, a canonical rate.
+        let mut body = good_body();
+        body["sample_rate"] = json!(4_294_983_296i64);
+        assert_eq!(
+            classify_sample_rate(&body, None),
+            AudioSampleRateOutcome::SampleRateOutOfRange { got: 4_294_983_296 }
+        );
+    }
+
+    #[test]
+    fn sample_rate_out_of_range_is_not_rescued_by_expected_rate() {
+        // The explicit --expected-sample-rate path must not be fooled either:
+        // wrapped, 4294983296 == 16000 == expected.
+        let mut body = good_body();
+        body["sample_rate"] = json!(4_294_983_296i64);
+        assert_eq!(
+            classify_sample_rate(&body, Some(16_000)),
+            AudioSampleRateOutcome::SampleRateOutOfRange { got: 4_294_983_296 }
+        );
+    }
+
+    #[test]
+    fn sample_rate_at_exactly_2_pow_32_reports_the_input_not_zero() {
+        // `as u32` yields 0 here, so the pre-fix code reported
+        // `NonCanonicalRate { got: 0 }` — a value never present in the input.
+        let mut body = good_body();
+        body["sample_rate"] = json!(4_294_967_296i64);
+        assert_eq!(
+            classify_sample_rate(&body, None),
+            AudioSampleRateOutcome::SampleRateOutOfRange { got: 4_294_967_296 }
+        );
+    }
+
+    #[test]
+    fn sample_rate_at_u32_max_is_in_range_and_merely_non_canonical() {
+        // Boundary: u32::MAX still fits, so it must reach the canonical-set
+        // check rather than the range check.
+        let mut body = good_body();
+        body["sample_rate"] = json!(4_294_967_295i64);
+        assert_eq!(
+            classify_sample_rate(&body, None),
+            AudioSampleRateOutcome::NonCanonicalRate { got: 4_294_967_295 }
+        );
+    }
+
+    #[test]
+    fn channel_shape_rejects_channels_above_u32_that_aliases_to_1() {
+        // 2^32 + 1: `as u32` yields 1, a perfectly valid mono count.
+        let mut body = good_body();
+        body["channels"] = json!(4_294_967_297i64);
+        assert_eq!(
+            classify_channel_shape(&body, None),
+            AudioChannelShapeOutcome::ChannelsOutOfRange { got: 4_294_967_297 }
+        );
+    }
+
+    #[test]
+    fn channel_shape_out_of_range_is_not_rescued_by_expected_channels() {
+        let mut body = good_body();
+        body["channels"] = json!(4_294_967_297i64);
+        assert_eq!(
+            classify_channel_shape(&body, Some(1)),
+            AudioChannelShapeOutcome::ChannelsOutOfRange { got: 4_294_967_297 }
+        );
+    }
+
+    #[test]
+    fn channel_shape_at_u32_max_is_in_range() {
+        let mut body = good_body();
+        body["channels"] = json!(4_294_967_295i64);
+        assert_eq!(
+            classify_channel_shape(&body, None),
+            AudioChannelShapeOutcome::Ok {
+                channels: 4_294_967_295,
+                samples: 48_000
+            }
+        );
     }
 
     #[test]

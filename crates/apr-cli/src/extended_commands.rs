@@ -1013,6 +1013,8 @@ pub enum ExtendedCommands {
     },
     /// Lint a typical-p sampling observation (CRUX-C-22)
     TypicalPLint {
+        /// Path to captured typical-p observation JSON, with any of the
+        /// sections range/identity/mass/sort/renorm
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
@@ -1045,6 +1047,8 @@ pub enum ExtendedCommands {
     },
     /// Lint a captured /v1/embeddings observation (CRUX-C-13)
     EmbeddingsLint {
+        /// Path to captured /v1/embeddings observation JSON, with any of the
+        /// sections shape/determinism/usage/flag
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },

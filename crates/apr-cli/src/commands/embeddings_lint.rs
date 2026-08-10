@@ -114,7 +114,47 @@ pub fn run(args: EmbeddingsLintArgs) -> Result<(), String> {
     Ok(())
 }
 
+/// The three fields the shape gate reasons over must all be present and of
+/// the right JSON type. Anything else is unknown evidence, not a pass.
+fn require_shape_fields(v: &Value) -> Result<(), String> {
+    if !v.is_object() {
+        return Err(format!("`shape` is not an object: {v}"));
+    }
+    for field in ["input_len", "hidden_size"] {
+        match v.get(field) {
+            None => return Err(format!("missing `{field}`")),
+            Some(x) if x.as_u64().is_none() => {
+                return Err(format!("`{field}` is not a non-negative integer: {x}"))
+            }
+            Some(_) => {}
+        }
+    }
+    match v.get("data") {
+        None => Err("missing `data`".to_string()),
+        Some(x) if !x.is_array() => Err(format!("`data` is not an array: {x}")),
+        Some(_) => Ok(()),
+    }
+}
+
 fn run_shape_gate(v: &Value) -> (GateReport, Option<String>) {
+    // `{"shape": {}}` used to default input_len/hidden_size to 0 and `data`
+    // to the empty vector, so 0 == 0 and the gate reported
+    // `Ok { n_rows: 0 }` — a verdict about evidence that was never present.
+    if let Err(why) = require_shape_fields(v) {
+        let desc = format!("shape evidence unreadable: {why}");
+        let err = Some(format!(
+            "FALSIFY-CRUX-C-13-001 shape gate could not be evaluated: {desc}"
+        ));
+        return (
+            GateReport {
+                gate: "shape",
+                falsify_id: "FALSIFY-CRUX-C-13-001",
+                outcome: desc,
+                passed: false,
+            },
+            err,
+        );
+    }
     let input_len = v.get("input_len").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
     let hidden_size = v.get("hidden_size").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
 
@@ -370,6 +410,50 @@ mod tests {
     #[test]
     fn flag_gate_disabled_default_passes() {
         let f = write_obs(r#"{"flag": {"argv": ["apr", "serve"], "expected": "disabled"}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    // ── shape gate: an empty section is unknown, not Ok ───────────────────
+    //
+    // Dogfood 0.63.0 #2377 finding 4: `{"shape": {}}` defaulted input_len,
+    // hidden_size and data to 0/0/[] and reported `Ok { n_rows: 0 }`.
+
+    #[test]
+    fn shape_gate_empty_section_is_unreadable_not_ok() {
+        let f = write_obs(r#"{"shape": {}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(
+            err.contains("could not be evaluated"),
+            "an empty shape section must fail the gate, got: {err}"
+        );
+    }
+
+    #[test]
+    fn shape_gate_missing_data_is_unreadable() {
+        let f = write_obs(r#"{"shape": {"input_len": 0, "hidden_size": 4}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("missing `data`"), "got: {err}");
+    }
+
+    #[test]
+    fn shape_gate_scalar_section_is_unreadable() {
+        let f = write_obs(r#"{"shape": "nonsense"}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not an object"), "got: {err}");
+    }
+
+    #[test]
+    fn shape_gate_wrong_typed_input_len_is_unreadable() {
+        let f = write_obs(r#"{"shape": {"input_len": "2", "hidden_size": 3, "data": []}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("input_len"), "got: {err}");
+    }
+
+    #[test]
+    fn shape_gate_explicit_zero_rows_still_passes() {
+        // A genuine empty-input response is still a pass — the fix rejects
+        // absent evidence, not a legitimately empty one.
+        let f = write_obs(r#"{"shape": {"input_len": 0, "hidden_size": 4, "data": []}}"#);
         assert!(run(args_for(&f)).is_ok());
     }
 
