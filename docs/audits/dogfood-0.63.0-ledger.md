@@ -6,6 +6,22 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 
 201 findings across 37 root-cause clusters.
 
+## Reading the PR column
+
+`#NNNN` is the pull request that addresses the finding; `✅` means it has merged to `main`.
+Several PRs against one finding means its cluster took more than one pass. A blank cell
+means no PR has claimed that finding yet.
+
+All 37 clusters have at least one PR. Several are deliberately partial and say so in their
+own bodies — `Refs #2374 (partial) — remaining: 4, 9, 10, 12` — rather than claiming a
+clean sweep. An issue closes only when its LAST finding is covered, which is why merged
+PRs outnumber closed issues.
+
+Verified against binaries built from `main` and SHA-matched via `apr --version`:
+`--offline`, `validate`, SSE streaming, `rosetta`, the native serve routes and the remote
+abort, and MCP `apr.serve`. The SHA match matters — the workspace target dir is shared
+across every worktree, so an "after" binary can silently be another worktree's build.
+
 | Sev | Surface | Target | Cluster | Issue | Fixed by | Defect |
 |---|---|---|---|---|---|---|
 | P0 | mcp | `apr mcp (all subprocess-backed tools)` | bare-apr-path-resolution | #2384 | #2424 | MCP server executes a bare `apr` resolved from PATH — every tool ran a DIFFERENT (0.60.0) binary while apr.version reported 0.63.0 |
