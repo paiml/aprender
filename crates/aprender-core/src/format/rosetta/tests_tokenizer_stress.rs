@@ -253,3 +253,6 @@ fn gh175_validation_report_display() {
 
 #[path = "tests_pygmy.rs"]
 mod tests_pygmy;
+
+#[path = "tests_unreadable_tensor.rs"]
+mod tests_unreadable_tensor;

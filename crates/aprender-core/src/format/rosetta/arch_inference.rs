@@ -536,15 +536,22 @@ impl RosettaStone {
 
         for name in &tensor_names {
             // Use GgufReader's dequantization (handles Q4K, Q6K, etc.)
-            if let Ok((f32_data, _shape)) = reader.get_tensor_f32(name) {
-                let tv = self.compute_tensor_validation(name, &f32_data);
+            match reader.get_tensor_f32(name) {
+                Ok((f32_data, _shape)) => {
+                    let tv = self.compute_tensor_validation(name, &f32_data);
 
-                total_nan += tv.nan_count;
-                total_inf += tv.inf_count;
-                if tv.is_all_zeros() {
-                    all_zero_tensors.push(name.clone());
+                    total_nan += tv.nan_count;
+                    total_inf += tv.inf_count;
+                    if tv.is_all_zeros() {
+                        all_zero_tensors.push(name.clone());
+                    }
+                    tensors.push(tv);
                 }
-                tensors.push(tv);
+                // A tensor the reader cannot decode is a validation FAILURE, not a
+                // tensor to omit from the count. The two guards above catch a
+                // truncated FILE; this catches a single tensor whose declared extent
+                // overruns it. See `unreadable_tensor_validation`.
+                Err(e) => tensors.push(Self::unreadable_tensor_validation(name, &e.to_string())),
             }
         }
 
@@ -579,15 +586,20 @@ impl RosettaStone {
 
         for name in mapped.tensor_names() {
             // get_tensor returns Result<Vec<f32>, String>
-            if let Ok(f32_data) = mapped.get_tensor(name) {
-                let tv = self.compute_tensor_validation(name, &f32_data);
+            match mapped.get_tensor(name) {
+                Ok(f32_data) => {
+                    let tv = self.compute_tensor_validation(name, &f32_data);
 
-                total_nan += tv.nan_count;
-                total_inf += tv.inf_count;
-                if tv.is_all_zeros() {
-                    all_zero_tensors.push(name.to_string());
+                    total_nan += tv.nan_count;
+                    total_inf += tv.inf_count;
+                    if tv.is_all_zeros() {
+                        all_zero_tensors.push(name.to_string());
+                    }
+                    tensors.push(tv);
                 }
-                tensors.push(tv);
+                // Same rule as the GGUF and APR paths: unreadable is a failure,
+                // not an omission. See `unreadable_tensor_validation`.
+                Err(e) => tensors.push(Self::unreadable_tensor_validation(name, &e.to_string())),
             }
         }
 

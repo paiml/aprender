@@ -70,13 +70,21 @@ fn resolve_hf_token() -> Option<String> {
 }
 
 /// Build an authenticated ureq request if HF token is available.
-fn hf_get(url: &str) -> ureq::Request {
+///
+/// CRUX-A-20: this is the single place every HuggingFace request in the
+/// `pull` family (model API lookup, single-file streaming, shard index,
+/// dataset listing, dataset file download) is constructed, so it is where
+/// `--offline` is enforced. Returning `Result` rather than a bare `Request`
+/// is deliberate: a future call site cannot reach the network without first
+/// acknowledging that the request may be refused.
+fn hf_get(url: &str) -> Result<ureq::Request> {
+    crate::commands::offline::guard(&format!("fetch {url}"))?;
     let req = ureq::get(url);
-    if let Some(token) = resolve_hf_token() {
+    Ok(if let Some(token) = resolve_hf_token() {
         req.set("Authorization", &format!("Bearer {token}"))
     } else {
         req
-    }
+    })
 }
 
 /// GH-355: Format a user-friendly error for HTTP 401 from HuggingFace gated models.
@@ -102,7 +110,7 @@ fn format_gated_model_error_inner(url: &str, has_token: bool) -> String {
 }
 
 fn download_file(url: &str, path: &Path) -> Result<()> {
-    let response = hf_get(url).call().map_err(|e| match &e {
+    let response = hf_get(url)?.call().map_err(|e| match &e {
         ureq::Error::Status(404, _) => {
             CliError::HttpNotFound(format!("HTTP 404: {url}"))
         }
@@ -124,7 +132,7 @@ fn download_file(url: &str, path: &Path) -> Result<()> {
 /// Returns a `FileChecksum` with the downloaded size and BLAKE3 hash.
 /// Verifies that downloaded bytes match Content-Length when available.
 fn download_file_with_progress(url: &str, path: &Path) -> Result<FileChecksum> {
-    let response = hf_get(url).call().map_err(|e| match &e {
+    let response = hf_get(url)?.call().map_err(|e| match &e {
         ureq::Error::Status(401, _) => {
             CliError::NetworkError(format_gated_model_error(url))
         }

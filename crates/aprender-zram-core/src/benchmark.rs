@@ -397,11 +397,19 @@ mod tests {
 
     #[test]
     fn test_f058_entropy_overhead_minimal() {
-        // F058: Entropy calculation overhead should be minimal
-        // Note: Debug builds are ~10x slower than release builds; on a busy
-        // self-hosted CI runner the debug budget needs extra headroom to avoid
-        // flakes. 500us still catches real regressions (release target is <1us,
-        // so this is a 500x safety margin).
+        // F058: same-fill detection must not be dramatically worse than the
+        // naive scan it replaces.
+        //
+        // This used to assert an ABSOLUTE `per_page_ns < 500_000`. That budget
+        // had already been widened once "to avoid flakes on a busy self-hosted
+        // CI runner" and it flaked again anyway, at 557us, when 16 CI jobs
+        // shared the box. Widening an absolute wall-clock bound is a treadmill:
+        // the number it measures is how loaded the machine is.
+        //
+        // The ratio below is load-immune because both measurements are taken in
+        // the same process, microseconds apart, under whatever load exists. It
+        // still catches the regression that matters — an implementation that
+        // has become pathologically worse than a byte-by-byte scan.
         use crate::samefill::detect_same_fill;
 
         let page = [0xCDu8; PAGE_SIZE];
@@ -413,10 +421,26 @@ mod tests {
         }
         let elapsed = start.elapsed();
 
+        let baseline_start = std::time::Instant::now();
+        let mut sink = 0usize;
+        for _ in 0..iterations {
+            sink += usize::from(page.iter().all(|&b| b == page[0]));
+        }
+        let baseline = baseline_start.elapsed();
+        assert_eq!(sink, iterations, "baseline scan disagreed with the fixture");
+
         let per_page_ns = elapsed.as_nanos() as f64 / iterations as f64;
+        let baseline_ns = baseline.as_nanos() as f64 / iterations as f64;
+        let ratio = per_page_ns / baseline_ns.max(1.0);
+        println!(
+            "F058: same-fill {per_page_ns:.1}ns/page vs naive scan {baseline_ns:.1}ns/page \
+             (ratio {ratio:.2}x)"
+        );
         assert!(
-            per_page_ns < 500_000.0,
-            "Same-fill detection {per_page_ns:.1}ns exceeds 500us debug/CI target"
+            ratio < 20.0,
+            "Same-fill detection is {ratio:.2}x the naive scan \
+             ({per_page_ns:.1}ns vs {baseline_ns:.1}ns per page) - expected it to be at \
+             worst comparable, so this is an algorithmic regression, not CI noise"
         );
     }
 
@@ -523,25 +547,37 @@ mod tests {
             compressed.push(lz4::compress(page).unwrap());
         }
 
-        // Decompress using SIMD dispatch (should use AVX-512)
+        // Decompress using SIMD dispatch (should use AVX-512) and check every
+        // page round-trips. THAT is what this test's own first line claims to
+        // verify ("AVX-512 SIMD path is correctly selected when available") and
+        // it is a property of the code, not of how busy the machine is.
         let start = std::time::Instant::now();
-        for comp in &compressed {
+        for (i, comp) in compressed.iter().enumerate() {
             let mut output = [0u8; PAGE_SIZE];
-            let _ = lz4::decompress_simd(comp, &mut output).unwrap();
+            let n = lz4::decompress_simd(comp, &mut output).unwrap();
+            assert_eq!(
+                n, PAGE_SIZE,
+                "F053: page {i} decompressed to {n} bytes, expected {PAGE_SIZE}"
+            );
+            assert_eq!(
+                output.as_slice(),
+                pages[i].as_slice(),
+                "F053: page {i} did not round-trip through the SIMD decompressor"
+            );
         }
         let elapsed = start.elapsed();
 
         let bytes = pages.len() * PAGE_SIZE;
         let throughput_gbps = (bytes as f64) / elapsed.as_secs_f64() / 1_000_000_000.0;
 
-        println!("F053: AVX-512 decompression throughput: {throughput_gbps:.2} GB/s");
-
-        // Debug builds are ~50-100x slower due to no optimizations
-        // In release mode, this should achieve >5 GB/s
-        // In debug mode with coverage instrumentation, we allow >10 MB/s
-        assert!(
-            throughput_gbps > 0.01,
-            "AVX-512 decompression throughput {throughput_gbps:.2} GB/s below 10 MB/s debug baseline"
+        // Reported, deliberately NOT asserted. The previous gate was
+        // `throughput_gbps > 0.01` and it failed on a saturated CI runner at
+        // exactly 0.01 GB/s, taking ~10k unrelated tests down with it. An
+        // absolute wall-clock bound inside a REQUIRED check measures runner
+        // contention, not this crate. Throughput belongs in a benchmark that
+        // records a trend on a quiet box. See #2421.
+        println!(
+            "F053: AVX-512 decompression throughput: {throughput_gbps:.2} GB/s (informational)"
         );
     }
 }

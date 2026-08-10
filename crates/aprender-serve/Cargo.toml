@@ -16,7 +16,7 @@ readme = "README.md"
 keywords = ["machine-learning", "inference", "model-serving", "gguf", "transformer"]
 categories = ["science", "web-programming::http-server"]
 exclude = [
-    "artifacts/", "models/", "docs/", "tests/", "benches/", "book/",
+    "artifacts/", "models/", "docs/", "/tests/", "benches/", "book/",
     "target/", ".pmat/", ".pmat-work/", ".vscode/", ".idea/",
     "*.profraw", "*.profdata", "proptest-regressions/",
 ]

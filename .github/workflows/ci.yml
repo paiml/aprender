@@ -417,6 +417,15 @@ jobs:
       # this is mechanical rather than a review note. Text-only, no build.
       - name: Sourced libraries must not mutate the caller's shell options
         run: bash scripts/check_sourced_libs_option_neutral.sh --self-test
+      # Poka-yoke: a Cargo `exclude` entry is a gitignore pattern, so a bare
+      # `"tests/"` is NOT anchored to the package root - it matches at every
+      # depth. CB-510 was the same bug with `"models/"` hiding `src/models/`.
+      # In v0.63.0 it dropped 443 files from the published aprender-serve and
+      # left 11 (serve) + 18 (train) `mod tests;` declarations pointing at
+      # directories that are not in the tarball, so neither published crate can
+      # compile its own test suite. Text-only check, no build.
+      - name: No exclude pattern may swallow a src/ directory
+        run: bash scripts/check_exclude_anchored.sh
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".

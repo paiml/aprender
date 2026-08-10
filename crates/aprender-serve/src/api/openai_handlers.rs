@@ -475,14 +475,22 @@ fn sse_event(value: &impl serde::Serialize) -> Option<Result<Event, Infallible>>
         .map(|data| Ok(Event::default().data(data)))
 }
 
-/// Decode a token and optionally clean the output, returning the text if non-empty.
-fn decode_token(tokenizer: &BPETokenizer, token_id: u32, clean: bool) -> Option<String> {
+/// Decode a single streamed token, returning the text if non-empty.
+///
+/// The decode is deliberately RAW. `clean_chat_output()` must never be applied
+/// per token: it opens with `text.trim_start()` and closes with `.trim()`, so
+/// running it on one token at a time deletes the leading space or newline that
+/// BPE carries on the token itself (`"Ġquick"` -> `" quick"` -> `"quick"`).
+/// Concatenating the deltas then yields `"Thequickbrownfox"` while the
+/// non-streaming response for the same prompt reads `"The quick brown fox"`.
+/// Its other jobs cannot work per-token either: stop sequences and the
+/// `Human:`/`Assistant:` turn markers span several tokens, so a single-token
+/// `find()` never matches them. Whole-response cleaning belongs to the
+/// non-streaming path, which already does it.
+///
+/// This mirrors the same removal PMAT-759 made on `pregenerated_sse_response`.
+fn decode_token(tokenizer: &BPETokenizer, token_id: u32) -> Option<String> {
     let text = tokenizer.decode(&[token_id]).ok()?;
-    let text = if clean {
-        clean_chat_output(&text)
-    } else {
-        text
-    };
     if text.is_empty() {
         None
     } else {
@@ -526,6 +534,11 @@ fn pregenerated_sse_response(
 }
 
 /// Build a true-streaming SSE response with keep-alive (tokens arrive via channel).
+///
+/// Deltas are raw per-token decodes — see `decode_token`. The `clean` parameter
+/// this function used to take is gone on purpose: two of its three call sites
+/// passed `true`, and per-token cleaning silently deleted every space and
+/// newline from the stream.
 // serde_json::json!() uses infallible unwrap
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn true_streaming_sse_response(
@@ -535,7 +548,6 @@ pub(crate) fn true_streaming_sse_response(
     model_name: String,
     metrics: Arc<crate::metrics::MetricsCollector>,
     start: Instant,
-    clean: bool,
 ) -> Response {
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_stream::StreamExt;
@@ -553,7 +565,7 @@ pub(crate) fn true_streaming_sse_response(
             match result {
                 Ok(token_id) => {
                     completion_tokens += 1;
-                    if let Some(text) = decode_token(&tokenizer, token_id, clean) {
+                    if let Some(text) = decode_token(&tokenizer, token_id) {
                         let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
                         if let Some(evt) = sse_event(&chunk) {
                             yield evt;
