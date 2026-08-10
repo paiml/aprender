@@ -84,14 +84,14 @@
     fn qa_config_clone_with_safetensors_path() {
         let config = QaConfig {
             safetensors_path: Some(std::path::PathBuf::from("/deep/clone/test.safetensors")),
-            min_tps: 42.0,
+            min_tps: Some(42.0),
             json: true,
             verbose: true,
             ..Default::default()
         };
         let cloned = config.clone();
         assert_eq!(cloned.safetensors_path, config.safetensors_path);
-        assert!((cloned.min_tps - 42.0).abs() < f64::EPSILON);
+        assert_eq!(cloned.min_tps, Some(42.0));
         assert!(cloned.json);
         assert!(cloned.verbose);
     }
@@ -427,12 +427,12 @@
         let min_speedup: Option<f64> = None;
         let min_gpu_speedup: Option<f64> = None;
         let config = QaConfig {
-            min_tps: min_tps.unwrap_or(100.0),
+            min_tps,
             min_speedup: min_speedup.unwrap_or(0.2),
             min_gpu_speedup: min_gpu_speedup.unwrap_or(2.0),
             ..Default::default()
         };
-        assert!((config.min_tps - 100.0).abs() < f64::EPSILON);
+        assert_eq!(config.min_tps, None, "no --assert-tps means no user-set floor");
         assert!((config.min_speedup - 0.2).abs() < f64::EPSILON);
         assert!((config.min_gpu_speedup - 2.0).abs() < f64::EPSILON);
     }

@@ -1,4 +1,27 @@
 
+/// The throughput floor the gate applies, in tok/s.
+///
+/// An explicit `--assert-tps N` IS the threshold, verbatim. The format-aware
+/// numbers are a DEFAULT, and a default may only apply when the user asserted
+/// nothing.
+///
+/// This used to read `Gguf => 10.0.max(config.min_tps / 10.0)` with
+/// `Apr | SafeTensors => 1.0` — the user's assertion divided by ten for GGUF
+/// and discarded outright for the other two formats. `apr qa --assert-tps
+/// 100000` therefore passed at 4.1 tok/s and exited 0: the project's own
+/// release gate could not fail. It is a free function so the decision can be
+/// tested without a model on disk.
+#[cfg(feature = "inference")]
+fn throughput_threshold(asserted: Option<f64>, format: realizar::format::ModelFormat) -> f64 {
+    use realizar::format::ModelFormat;
+    asserted.unwrap_or(match format {
+        // Quantized GGUF on GPU is ~100x faster than F32 CPU, so an unasserted
+        // run holds each format to what that format can actually do.
+        ModelFormat::Gguf => 10.0,
+        ModelFormat::Apr | ModelFormat::SafeTensors => 1.0, // F32 CPU: 1 tok/s minimum
+    })
+}
+
 /// Gate 2: Throughput Falsification
 ///
 /// Runs a benchmark and asserts minimum tokens per second.
@@ -48,12 +71,7 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
 
         let duration = start.elapsed();
 
-        // Format-aware thresholds: quantized GGUF on GPU is ~100x faster than F32 CPU.
-        // Comparing unquantized F32 models against a quantized GPU target is meaningless.
-        let threshold = match format {
-            ModelFormat::Gguf => 10.0_f64.max(config.min_tps / 10.0),
-            ModelFormat::Apr | ModelFormat::SafeTensors => 1.0, // F32 CPU: 1 tok/s minimum
-        };
+        let threshold = throughput_threshold(config.min_tps, format);
 
         if tps >= threshold {
             Ok(GateResult::passed(
@@ -444,5 +462,79 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             "gpu_speedup",
             "Requires 'inference' and 'cuda' features",
         ))
+    }
+}
+
+// ============================================================================
+// Throughput-threshold falsifiers (dogfood 0.63.0)
+// ============================================================================
+//
+// `apr qa --assert-tps 100000` measured 4.1 tok/s, reported
+// "4.1 tok/s >= 1 tok/s threshold", passed the gate and exited 0. On GGUF the
+// assertion was divided by ten (floored at 10); on APR and SafeTensors it was
+// discarded and replaced with 1.0. `apr qa` is the project's own release gate
+// and its throughput assertion could not fail.
+#[cfg(all(test, feature = "inference"))]
+mod assert_tps_tests {
+    use super::throughput_threshold;
+    use realizar::format::ModelFormat;
+
+    const ALL_FORMATS: [ModelFormat; 3] = [
+        ModelFormat::Gguf,
+        ModelFormat::Apr,
+        ModelFormat::SafeTensors,
+    ];
+
+    #[test]
+    fn an_asserted_threshold_is_used_verbatim_for_every_format() {
+        for format in ALL_FORMATS {
+            for asserted in [1.0_f64, 50.0, 100.0, 100_000.0] {
+                let got = throughput_threshold(Some(asserted), format);
+                assert!(
+                    (got - asserted).abs() < f64::EPSILON,
+                    "--assert-tps {asserted} on {format:?} became {got}; the user's \
+                     assertion must be the threshold, not a suggestion"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_shipped_0_63_0_repro_now_fails_the_gate() {
+        // The exact numbers from the dogfood run: 4.1 tok/s measured against
+        // --assert-tps 100000 on an APR model, which reported PASS at a
+        // substituted threshold of 1.0.
+        let measured = 4.050_120_237_944_564_f64;
+        let threshold = throughput_threshold(Some(100_000.0), ModelFormat::Apr);
+        assert!(
+            measured < threshold,
+            "4.1 tok/s must not satisfy --assert-tps 100000 (threshold was {threshold})"
+        );
+
+        // And the GGUF case: 15.9 tok/s measured against --assert-tps 50,
+        // which passed at a substituted threshold of 10.
+        let measured_gguf = 15.881_003_639_727_522_f64;
+        let threshold_gguf = throughput_threshold(Some(50.0), ModelFormat::Gguf);
+        assert!(
+            measured_gguf < threshold_gguf,
+            "15.9 tok/s must not satisfy --assert-tps 50 (threshold was {threshold_gguf})"
+        );
+    }
+
+    #[test]
+    fn no_assertion_keeps_the_format_aware_defaults() {
+        // Unasserted behaviour is unchanged, so this fix introduces no new
+        // failures for runs that never asked for a floor.
+        assert!((throughput_threshold(None, ModelFormat::Gguf) - 10.0).abs() < f64::EPSILON);
+        assert!((throughput_threshold(None, ModelFormat::Apr) - 1.0).abs() < f64::EPSILON);
+        assert!((throughput_threshold(None, ModelFormat::SafeTensors) - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn an_assertion_below_the_default_still_binds() {
+        // The old code floored GGUF at 10, so a deliberately lax
+        // `--assert-tps 2` was silently tightened to 10. An assertion is an
+        // assertion in both directions.
+        assert!((throughput_threshold(Some(2.0), ModelFormat::Gguf) - 2.0).abs() < f64::EPSILON);
     }
 }

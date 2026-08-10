@@ -6,7 +6,7 @@
     #[test]
     fn test_qa_config_default() {
         let config = QaConfig::default();
-        assert!((config.min_tps - 100.0).abs() < f64::EPSILON);
+        assert_eq!(config.min_tps, None, "default asserts no throughput floor");
         assert!((config.min_speedup - 0.2).abs() < f64::EPSILON);
         assert!((config.min_gpu_speedup - 2.0).abs() < f64::EPSILON);
         assert!(!config.skip_golden);
@@ -35,12 +35,12 @@
     #[test]
     fn test_qa_config_clone() {
         let config = QaConfig {
-            min_tps: 50.0,
+            min_tps: Some(50.0),
             skip_golden: true,
             ..Default::default()
         };
         let cloned = config.clone();
-        assert!((cloned.min_tps - 50.0).abs() < f64::EPSILON);
+        assert_eq!(cloned.min_tps, Some(50.0));
         assert!(cloned.skip_golden);
     }
 
