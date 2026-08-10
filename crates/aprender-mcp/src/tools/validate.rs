@@ -10,6 +10,7 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::tools::args::require_str;
 use crate::tools::subprocess::run_apr;
 use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
 
@@ -41,8 +42,9 @@ pub fn validate_tool_definition() -> ToolDefinition {
 /// Execute `apr.validate` by spawning `apr validate <model_path> --json`.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
+    let model_path = match require_str(args, "model_path") {
+        Ok(p) => p,
+        Err(e) => return e,
     };
     run_apr(&["validate", model_path, "--json"])
 }
@@ -84,9 +86,20 @@ mod tests {
         assert!(result.content[0].text.contains("model_path"));
     }
 
+    /// #2419: this test used to assert only `is_error`, which the defect
+    /// satisfied — the tool answered "Missing required argument: model_path"
+    /// for an argument that was present. The message is the behaviour the
+    /// caller acts on, so the message is what is asserted.
     #[test]
-    fn nonstring_model_path_returns_error() {
+    fn nonstring_model_path_is_reported_as_a_type_error_not_as_missing() {
         let result = call(&serde_json::json!({ "model_path": 42 }));
         assert_eq!(result.is_error, Some(true));
+        let text = &result.content[0].text;
+        assert!(
+            !text.contains("Missing"),
+            "model_path WAS supplied; reporting it as missing sends the caller \
+             to fix the wrong thing. got: {text}"
+        );
+        assert_eq!(text, "Invalid model_path: expected string, got number 42");
     }
 }

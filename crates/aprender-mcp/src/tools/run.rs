@@ -17,6 +17,7 @@
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
 use crate::server::NotificationSink;
+use crate::tools::args::{opt_f64, opt_str, opt_u64, require_str};
 use crate::tools::subprocess::{run_apr_cancellable, spawn_streaming, CANCEL_GRACE_MS};
 use crate::types::{InputSchema, JsonRpcNotification, ToolCallResult, ToolDefinition};
 use std::sync::mpsc::Receiver;
@@ -82,8 +83,27 @@ pub fn call_with_sink(
     sink: Option<&NotificationSink>,
     progress_token: Option<serde_json::Value>,
 ) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
+    let model_path = match require_str(args, "model_path") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    // #2419: `max_tokens: "eight"` used to be dropped, and the caller got the
+    // default 32 tokens back while believing it had capped the generation.
+    let prompt = match opt_str(args, "prompt") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let max_tokens = match opt_u64(args, "max_tokens") {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    let temperature = match opt_f64(args, "temperature") {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let top_p = match opt_f64(args, "top_p") {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     let streaming = sink.is_some() && progress_token.is_some();
@@ -98,21 +118,21 @@ pub fn call_with_sink(
         owned.push("--json".to_string());
     }
 
-    if let Some(prompt) = args.get("prompt").and_then(|v| v.as_str()) {
+    if let Some(prompt) = prompt {
         if !prompt.is_empty() {
             owned.push("--prompt".to_string());
             owned.push(prompt.to_string());
         }
     }
-    if let Some(n) = args.get("max_tokens").and_then(serde_json::Value::as_u64) {
+    if let Some(n) = max_tokens {
         owned.push("--max-tokens".to_string());
         owned.push(n.to_string());
     }
-    if let Some(t) = args.get("temperature").and_then(serde_json::Value::as_f64) {
+    if let Some(t) = temperature {
         owned.push("--temperature".to_string());
         owned.push(t.to_string());
     }
-    if let Some(p) = args.get("top_p").and_then(serde_json::Value::as_f64) {
+    if let Some(p) = top_p {
         owned.push("--top-p".to_string());
         owned.push(p.to_string());
     }
@@ -194,5 +214,40 @@ mod tests {
         let result = call(&serde_json::json!({}), &rx);
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("model_path"));
+    }
+
+    /// #2419: `max_tokens:"eight"` was dropped and the run proceeded with the
+    /// default 32 — a caller asking for 8 got 4x the generation it requested
+    /// with no diagnostic. The tool must refuse before spawning anything.
+    #[test]
+    fn non_integer_max_tokens_is_rejected_before_the_subprocess_runs() {
+        let (_tx, rx) = std::sync::mpsc::channel::<()>();
+        let result = call(
+            &serde_json::json!({
+                "model_path": "/nonexistent/model.gguf",
+                "prompt": "hi",
+                "max_tokens": "eight",
+            }),
+            &rx,
+        );
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            result.content[0].text,
+            "Invalid max_tokens: expected a non-negative integer, got string \"eight\""
+        );
+    }
+
+    #[test]
+    fn non_numeric_temperature_is_rejected() {
+        let (_tx, rx) = std::sync::mpsc::channel::<()>();
+        let result = call(
+            &serde_json::json!({
+                "model_path": "/nonexistent/model.gguf",
+                "temperature": "hot",
+            }),
+            &rx,
+        );
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("Invalid temperature"));
     }
 }

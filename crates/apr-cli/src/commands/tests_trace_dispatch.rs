@@ -168,33 +168,41 @@
     #[test]
     fn test_trace_gguf_detects_layers() {
         let file = build_test_gguf();
-        let (format_name, layers, total_params) =
-            detect_and_trace(file.path(), None, false).expect("detect_and_trace GGUF");
+        let traced = detect_and_trace(file.path(), None, false).expect("detect_and_trace GGUF");
         assert!(
-            format_name.contains("GGUF"),
-            "format should be GGUF, got: {format_name}"
+            traced.format_name.contains("GGUF"),
+            "format should be GGUF, got: {}",
+            traced.format_name
         );
         // Should detect at least the embedding and one transformer block
         assert!(
-            !layers.is_empty(),
+            !traced.layers.is_empty(),
             "GGUF trace must produce at least one layer"
         );
+        assert!(
+            traced.notes.is_empty(),
+            "an unfiltered trace has nothing to caveat, got: {:?}",
+            traced.notes
+        );
         // BUG-TRACE-001 FIX: total_params should be computed from tensor shapes
-        assert!(total_params > 0, "total_params should be > 0 for GGUF");
+        assert!(
+            traced.total_params > 0,
+            "total_params should be > 0 for GGUF"
+        );
     }
 
     #[test]
     fn test_trace_safetensors_detects_layers() {
         let file = build_test_safetensors();
-        let (format_name, layers, total_params) =
+        let traced =
             detect_and_trace(file.path(), None, false).expect("detect_and_trace SafeTensors");
-        assert_eq!(format_name, "SafeTensors");
+        assert_eq!(traced.format_name, "SafeTensors");
         assert!(
-            !layers.is_empty(),
+            !traced.layers.is_empty(),
             "SafeTensors trace must produce at least one layer"
         );
         // BUG-TRACE-001 FIX: total_params should be computed
-        let _ = total_params; // May be 0 for test file
+        let _ = traced.total_params; // May be 0 for test file
     }
 
     // ========================================================================

@@ -58,6 +58,14 @@ pub enum CliError {
     /// HTTP 404 Not Found (GH-356: distinguish from other network errors)
     #[error("HTTP 404 Not Found: {0}")]
     HttpNotFound(String),
+
+    /// An advertised option exists but its implementation does not.
+    ///
+    /// #2407: `apr trace --reference` printed a stub string and exited 0, so
+    /// every caller — including the MCP wrapper — read "did nothing" as
+    /// "succeeded". An unimplemented option must fail, not report success.
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
 }
 
 impl CliError {
@@ -77,6 +85,7 @@ impl CliError {
             Self::FeatureDisabled(_) => ExitCode::from(9),
             Self::NetworkError(_) => ExitCode::from(10),
             Self::HttpNotFound(_) => ExitCode::from(11),
+            Self::NotImplemented(_) => ExitCode::from(12),
         }
     }
 }
@@ -226,6 +235,16 @@ mod tests {
     fn test_feature_disabled_exit_code() {
         let err = CliError::FeatureDisabled("test".to_string());
         assert_eq!(err.exit_code(), ExitCode::from(9));
+    }
+
+    /// #2407: an unimplemented option must exit non-zero — a stub that exits
+    /// 0 is read by every caller as "it worked".
+    #[test]
+    fn test_not_implemented_exit_code_is_nonzero() {
+        let err = CliError::NotImplemented("comparison".to_string());
+        assert_eq!(err.exit_code(), ExitCode::from(12));
+        assert_ne!(err.exit_code(), ExitCode::SUCCESS);
+        assert_eq!(err.to_string(), "Not implemented: comparison");
     }
 
     #[test]

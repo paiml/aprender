@@ -172,8 +172,8 @@ tools:
   - name: apr.trace
     shipped_in: 'PR #867 (M2 slice 5)'
     source: crates/aprender-mcp/src/tools/trace.rs
-    description: "Layer-by-layer tensor trace with per-layer stats. Wraps `apr trace <model> --json`."
-    cli_mapping: "apr trace <model_path> --json [--layer <pat>] [--reference <path>]"
+    description: "Layer skeleton read from model metadata (stats_source=metadata-only; no forward pass, so per-layer stats are null). Wraps `apr trace <model> --json`."
+    cli_mapping: "apr trace <model_path> --json [--layer <pat>]"
     args:
       - name: model_path
         type: string
@@ -183,10 +183,6 @@ tools:
         type: string
         required: false
         description: "Filter layers by name pattern (substring match)"
-      - name: reference
-        type: string
-        required: false
-        description: "Reference model to diff against (path)"
     required:
       - model_path
 

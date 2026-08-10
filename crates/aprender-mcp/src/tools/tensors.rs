@@ -4,6 +4,7 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::tools::args::{opt_bool, opt_str, require_str};
 use crate::tools::subprocess::run_apr;
 use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
 
@@ -35,19 +36,25 @@ pub fn tensors_tool_definition() -> ToolDefinition {
 /// Execute `apr.tensors` by spawning `apr tensors <model> --json [...flags]`.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
+    let model_path = match require_str(args, "model_path") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    // #2419: `stats: "yes"` used to read as false, producing a report with no
+    // statistics and no way for the caller to tell why.
+    let stats = match opt_bool(args, "stats") {
+        Ok(b) => b,
+        Err(e) => return e,
+    };
+    let filter = match opt_str(args, "filter") {
+        Ok(f) => f.unwrap_or(""),
+        Err(e) => return e,
     };
 
     let mut argv: Vec<&str> = vec!["tensors", model_path, "--json"];
-    if args
-        .get("stats")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-    {
+    if stats {
         argv.push("--stats");
     }
-    let filter = args.get("filter").and_then(|v| v.as_str()).unwrap_or("");
     if !filter.is_empty() {
         argv.push("--filter");
         argv.push(filter);
@@ -93,5 +100,30 @@ mod tests {
         let result = call(&serde_json::json!({}));
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("model_path"));
+    }
+
+    /// #2419: `stats:"yes"` returned a success payload with no mean/std/min/max
+    /// and no diagnostic — the caller believed statistics had been checked.
+    #[test]
+    fn non_boolean_stats_is_rejected_rather_than_read_as_false() {
+        let result = call(&serde_json::json!({
+            "model_path": "/nonexistent/model.gguf",
+            "stats": "yes",
+        }));
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            result.content[0].text,
+            "Invalid stats: expected boolean true or false, got string \"yes\""
+        );
+    }
+
+    #[test]
+    fn non_string_filter_is_rejected() {
+        let result = call(&serde_json::json!({
+            "model_path": "/nonexistent/model.gguf",
+            "filter": 7,
+        }));
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("Invalid filter"));
     }
 }
