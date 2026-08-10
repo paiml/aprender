@@ -518,13 +518,57 @@ fn configure_parent_death_signal(_cmd: &mut Command) {
     // on graceful exit). The point of this stub is to keep the crate building on those targets.
 }
 
-/// Find the `apr` binary on PATH.
+/// Environment variable that overrides `apr` binary resolution.
+pub(crate) const APR_BIN_ENV: &str = "APR_BIN";
+
+/// Resolve the `apr` binary that `apr code` launches as its inference backend.
+///
+/// #2384: this used to be a bare `which::which("apr")`. That made `apr code`
+/// serve its answers from whatever `apr` happened to be first on `$PATH` —
+/// a freshly installed 0.63.0 silently started a 0.60.0 backend — and it fails
+/// outright for anyone who runs the binary by path without installing it on
+/// `$PATH`. When the running executable *is* `apr`, launch **itself**.
+///
+/// `$PATH` is still the last resort, so a host process that is not `apr`
+/// (tests, embedders of the `batuta` library) keeps working.
 fn find_apr_binary() -> Result<PathBuf, AgentError> {
-    which::which("apr").map_err(|_| {
+    resolve_apr_binary(std::env::var_os(APR_BIN_ENV), std::env::current_exe().ok(), || {
+        which::which("apr").ok()
+    })
+    .ok_or_else(|| {
         AgentError::Driver(DriverError::InferenceFailed(
-            "apr binary not found on PATH. Install: cargo install apr-cli".into(),
+            "apr binary not found: this process is not `apr`, and no `apr` is on PATH. \
+             Install: cargo install aprender"
+                .into(),
         ))
     })
+}
+
+/// Pure core of [`find_apr_binary`], parameterised over the process state it
+/// reads so the resolution policy is testable without mutating `$PATH` or the
+/// environment of the running test process.
+fn resolve_apr_binary<F>(
+    override_var: Option<std::ffi::OsString>,
+    current_exe: Option<PathBuf>,
+    path_lookup: F,
+) -> Option<PathBuf>
+where
+    F: FnOnce() -> Option<PathBuf>,
+{
+    if let Some(explicit) = override_var {
+        if !explicit.is_empty() {
+            return Some(PathBuf::from(explicit));
+        }
+    }
+    if let Some(exe) = current_exe {
+        // Exact stem match only: `apr-cli` and `batuta-<hash>` test harnesses
+        // are not the `apr` CLI, and launching them with `serve run …` would
+        // be worse than falling back to `$PATH`.
+        if exe.file_stem().is_some_and(|stem| stem == "apr") {
+            return Some(exe);
+        }
+    }
+    path_lookup()
 }
 
 #[cfg(test)]

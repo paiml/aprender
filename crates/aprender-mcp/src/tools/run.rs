@@ -120,7 +120,11 @@ pub fn call_with_sink(
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     match (streaming, sink, progress_token) {
-        (true, Some(sink), Some(token)) => stream_with_sink("apr", &argv, sink, &token),
+        (true, Some(sink), Some(token)) => {
+            // #2384: the streaming path must target the same self-resolved
+            // binary as the non-streaming path, not a `$PATH` lookup.
+            stream_with_sink(crate::apr_bin::apr_binary(), &argv, sink, &token)
+        }
         _ => run_apr_cancellable(&argv, cancel_rx, CANCEL_GRACE_MS),
     }
 }
@@ -134,8 +138,8 @@ pub fn call_with_sink(
 /// is the aggregated stdout (same shape as `run_apr_cancellable`'s success
 /// body) so non-streaming consumers get the full payload too.
 #[must_use]
-pub fn stream_with_sink(
-    program: &str,
+pub fn stream_with_sink<P: AsRef<std::ffi::OsStr>>(
+    program: P,
     args: &[&str],
     sink: &NotificationSink,
     progress_token: &serde_json::Value,

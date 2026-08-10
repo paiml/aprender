@@ -128,7 +128,25 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
         },
     };
 
-    spawn_and_confirm("apr", &serve_argv(model_path, port), port, READY_TIMEOUT)
+    // Both halves of this line were defects, fixed in two different PRs:
+    //
+    //   #2388 (via main) — the argv was `apr serve <model>`, which the CLI
+    //     rejects with "unrecognized subcommand"; the child died instantly and
+    //     the tool still returned {pid,url}. `serve_argv` puts `run` in, and
+    //     `spawn_and_confirm` refuses to report success for a dead child.
+    //   #2384 (this branch) — the program was the literal "apr", resolved
+    //     through $PATH, so `apr mcp` from 0.63.0 started whatever older `apr`
+    //     came first (0.60.0 on the dev box) and failed outright when the
+    //     install dir was not on $PATH.
+    //
+    // The merge must keep BOTH: the corrected argv AND the resolved binary.
+    // Passing "apr" here again would silently restore the $PATH lookup.
+    spawn_and_confirm(
+        &crate::apr_bin::apr_binary().to_string_lossy(),
+        &serve_argv(model_path, port),
+        port,
+        READY_TIMEOUT,
+    )
 }
 
 /// Spawn `program <args...>` as a background HTTP daemon on `port` and wait

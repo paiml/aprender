@@ -11,7 +11,9 @@
 //! cancellation is signalled. The non-cancellable [`run_apr`] is kept as a
 //! thin wrapper for tools that don't support cancellation yet.
 
+use crate::apr_bin::apr_binary;
 use crate::types::ToolCallResult;
+use std::ffi::OsStr;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -36,11 +38,20 @@ const POLL_INTERVAL: Duration = Duration::from_millis(10);
 /// - Spawn failure → `error("Failed to spawn apr ...: <io-err>")`
 #[must_use]
 pub fn run_apr(args: &[&str]) -> ToolCallResult {
-    let output = match Command::new("apr").args(args).output() {
+    run_program(apr_binary(), args)
+}
+
+/// Generic-over-program variant of [`run_apr`]. [`run_apr`] binds `program`
+/// to [`crate::apr_bin::apr_binary`] — the running `apr` executable — so the
+/// version the user launched is the version that answers.
+#[must_use]
+pub fn run_program<P: AsRef<OsStr>>(program: P, args: &[&str]) -> ToolCallResult {
+    let program = program.as_ref();
+    let cmd_display = display_cmd(program, args);
+    let output = match Command::new(program).args(args).output() {
         Ok(o) => o,
         Err(e) => {
-            let cmd = format!("apr {}", args.join(" "));
-            return ToolCallResult::error(format!("Failed to spawn `{cmd}`: {e}"));
+            return ToolCallResult::error(format!("Failed to spawn `{cmd_display}`: {e}"));
         }
     };
 
@@ -49,8 +60,7 @@ pub fn run_apr(args: &[&str]) -> ToolCallResult {
 
     if output.status.success() {
         if stdout.trim().is_empty() {
-            let cmd = format!("apr {}", args.join(" "));
-            ToolCallResult::error(format!("`{cmd}` produced no output"))
+            ToolCallResult::error(format!("`{cmd_display}` produced no output"))
         } else {
             ToolCallResult::success(stdout)
         }
@@ -61,9 +71,13 @@ pub fn run_apr(args: &[&str]) -> ToolCallResult {
         } else {
             stderr
         };
-        let cmd = format!("apr {}", args.join(" "));
-        ToolCallResult::error(format!("`{cmd}` failed (exit {code}): {detail}"))
+        ToolCallResult::error(format!("`{cmd_display}` failed (exit {code}): {detail}"))
     }
+}
+
+/// Render `program args...` for user-facing error messages.
+fn display_cmd(program: &OsStr, args: &[&str]) -> String {
+    format!("{} {}", program.to_string_lossy(), args.join(" "))
 }
 
 /// Spawn `apr <args...>` cancellable via `cancel_rx`.
@@ -82,19 +96,21 @@ pub fn run_apr_cancellable(
     cancel_rx: &Receiver<()>,
     grace_ms: u64,
 ) -> ToolCallResult {
-    spawn_cancellable("apr", args, cancel_rx, grace_ms)
+    spawn_cancellable(apr_binary(), args, cancel_rx, grace_ms)
 }
 
-/// Test-visible generic over the binary name. `run_apr_cancellable` is the
-/// `"apr"`-bound wrapper clients should use in production code.
+/// Generic over the binary. `run_apr_cancellable` binds `program` to
+/// [`crate::apr_bin::apr_binary`] — the running `apr` executable — which is
+/// what production code should use.
 #[must_use]
-pub fn spawn_cancellable(
-    program: &str,
+pub fn spawn_cancellable<P: AsRef<OsStr>>(
+    program: P,
     args: &[&str],
     cancel_rx: &Receiver<()>,
     grace_ms: u64,
 ) -> ToolCallResult {
-    let cmd_display = format!("{program} {}", args.join(" "));
+    let program = program.as_ref();
+    let cmd_display = display_cmd(program, args);
 
     let mut child = match Command::new(program)
         .args(args)
@@ -252,17 +268,22 @@ pub fn run_apr_streaming<F>(args: &[&str], on_line: F) -> ToolCallResult
 where
     F: FnMut(&str),
 {
-    spawn_streaming("apr", args, on_line)
+    spawn_streaming(apr_binary(), args, on_line)
 }
 
-/// Generic-over-program variant of [`run_apr_streaming`] used by tests that
-/// need to inject a mock subprocess.
+/// Generic-over-program variant of [`run_apr_streaming`]. Production callers
+/// pass [`crate::apr_bin::apr_binary`]; tests use it to inject a mock.
 #[must_use]
-pub fn spawn_streaming<F>(program: &str, args: &[&str], mut on_line: F) -> ToolCallResult
+pub fn spawn_streaming<P: AsRef<OsStr>, F>(
+    program: P,
+    args: &[&str],
+    mut on_line: F,
+) -> ToolCallResult
 where
     F: FnMut(&str),
 {
-    let cmd_display = format!("{program} {}", args.join(" "));
+    let program = program.as_ref();
+    let cmd_display = display_cmd(program, args);
 
     let mut child = match Command::new(program)
         .args(args)
@@ -347,6 +368,65 @@ mod tests {
     fn spawn_failure_maps_to_tool_error() {
         let result = run_apr(&["this-subcommand-does-not-exist"]);
         assert_eq!(result.is_error, Some(true));
+    }
+
+    /// FALSIFIER (#2384): `run_apr` must execute the *resolved* `apr` binary,
+    /// not a hard-coded `Command::new("apr")` that the OS looks up on `$PATH`.
+    ///
+    /// The field defect: `apr mcp` shipped in 0.63.0 returned results produced
+    /// by a 0.60.0 binary that happened to be first on `$PATH`, while
+    /// `apr.version` kept answering 0.63.0.
+    ///
+    /// Here we designate a specific binary via `$APR_BIN` and assert its
+    /// marker output comes back as the tool payload. Before the fix, `run_apr`
+    /// ignored resolution entirely and this returned whatever `apr` `$PATH`
+    /// produced — never the marker.
+    ///
+    /// The shim mirrors the real CLI's exit semantics (unknown subcommand →
+    /// exit 2) so it is compatible with `spawn_failure_maps_to_tool_error`
+    /// should the two overlap while `$APR_BIN` is set.
+    #[test]
+    #[cfg(unix)]
+    fn falsify_2384_run_apr_executes_the_resolved_binary() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+
+        // Unique per process: a fixed path lets two concurrent runs of this
+        // test binary delete each other's shim mid-flight.
+        let dir =
+            std::env::temp_dir().join(format!("aprender-mcp-2384-run-apr-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mkdir scratch");
+        let shim = dir.join("apr");
+        {
+            let mut f = std::fs::File::create(&shim).expect("create shim");
+            writeln!(f, "#!/bin/sh").expect("shebang");
+            writeln!(f, "if [ \"$1\" = \"validate\" ]; then").expect("if");
+            writeln!(f, "  echo '{{\"marker\":\"APR-BIN-RESOLVED-SHIM\"}}'").expect("body");
+            writeln!(f, "  exit 0").expect("ok");
+            writeln!(f, "fi").expect("fi");
+            writeln!(f, "exit 2").expect("unknown subcommand");
+            f.sync_all().expect("sync");
+        }
+        let mut perms = std::fs::metadata(&shim).expect("stat").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&shim, perms).expect("chmod");
+
+        // Edition 2021 — `set_var` is safe here.
+        std::env::set_var(crate::apr_bin::APR_BIN_ENV, &shim);
+        let result = run_apr(&["validate", "/dev/null", "--json"]);
+        std::env::remove_var(crate::apr_bin::APR_BIN_ENV);
+
+        assert!(
+            result.is_error.is_none(),
+            "resolved shim should succeed, got: {}",
+            result.content[0].text
+        );
+        assert!(
+            result.content[0].text.contains("APR-BIN-RESOLVED-SHIM"),
+            "run_apr must execute the resolved binary; got: {}",
+            result.content[0].text
+        );
     }
 
     /// Cancellable path: a never-firing receiver lets the subprocess run to
