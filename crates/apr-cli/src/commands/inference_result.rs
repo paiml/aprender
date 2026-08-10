@@ -389,11 +389,31 @@ fn print_conversion_summary(report: &ConversionReport) {
     }
 }
 
+/// RFC 8259 has no `inf`/`nan` literal, so a hand-rolled `{}` of an f32 produces a
+/// document that strict parsers (python `json`, `serde_json`) reject outright while
+/// lenient ones (jq) silently rewrite to `f64::MAX`. Non-finite values become `null`.
+pub(crate) fn json_number(value: f32) -> serde_json::Value {
+    if value.is_finite() {
+        serde_json::Number::from_f64(f64::from(value)).map_or(serde_json::Value::Null, |n| {
+            serde_json::Value::Number(n)
+        })
+    } else {
+        serde_json::Value::Null
+    }
+}
+
+/// Build the `rosetta verify --json` document.
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn verification_json(report: &VerificationReport) -> serde_json::Value {
+    serde_json::json!({
+        "is_equivalent": report.is_equivalent,
+        "max_diff": json_number(report.max_diff),
+        "mean_diff": json_number(report.mean_diff),
+        "failed_tensors": report.failed_tensors.len(),
+    })
+}
+
 fn print_verification_json(report: &VerificationReport) {
-    println!("{{");
-    println!("  \"is_equivalent\": {},", report.is_equivalent);
-    println!("  \"max_diff\": {},", report.max_diff);
-    println!("  \"mean_diff\": {},", report.mean_diff);
-    println!("  \"failed_tensors\": {}", report.failed_tensors.len());
-    println!("}}");
+    println!("{:#}", verification_json(report));
 }
