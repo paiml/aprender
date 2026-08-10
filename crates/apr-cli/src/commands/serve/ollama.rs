@@ -208,14 +208,19 @@ fn default_stream() -> bool {
 // Conversion helpers (pure — unit-tested)
 // ============================================================================
 
-/// RFC-3339-style timestamp for `created_at` (Ollama wire format).
+/// RFC 3339 timestamp for `created_at` / `modified_at` (Ollama wire format).
+///
+/// Ollama's own client declares these fields as a Go `time.Time`
+/// (`api.ChatResponse.CreatedAt`, `api.GenerateResponse.CreatedAt`,
+/// `api.ListModelResponse.ModifiedAt`), so the value goes through
+/// `time.Time.UnmarshalJSON`, which accepts RFC 3339 and nothing else. A bare
+/// epoch with a `Z` glued on (`"1786293998.000000000Z"`) fails that parse and
+/// `encoding/json` then discards the WHOLE object — message, `done`, counts —
+/// not merely the timestamp. For the NDJSON stream that means every chunk
+/// decodes empty with `done:false`, so a client loop never terminates. Emit
+/// UTC with nanosecond precision, the shape real ollama puts on the wire.
 fn created_at_now() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    // Clients only require a string field, not strict parsing.
-    format!("{secs}.000000000Z")
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
 }
 
 /// Default model label when the request omits `model`.
@@ -900,5 +905,110 @@ mod tests {
         );
         let obj: serde_json::Value = serde_json::from_str(lines[0]).expect("json");
         assert_eq!(obj["done"], true);
+    }
+
+    // ------------------------------------------------------------------
+    // `created_at` / `modified_at` must be RFC 3339 (PMAT-923 follow-up).
+    //
+    // Ollama's Go client decodes these into a `time.Time`. A value it cannot
+    // parse makes `encoding/json` abandon the WHOLE object, so the client sees
+    // an empty message and `done:false` — not just a bad clock.
+    // ------------------------------------------------------------------
+
+    /// The oracle used below has to discriminate: the shape apr 0.63.0 emitted
+    /// (a bare epoch with a `Z` glued on) MUST fail it, otherwise the
+    /// assertions that follow would pass on the defect too.
+    #[test]
+    fn rfc3339_oracle_rejects_the_bare_epoch_shape() {
+        chrono::DateTime::parse_from_rfc3339("1786293998.000000000Z")
+            .expect_err("a bare epoch string is not RFC 3339 — oracle is not discriminating");
+    }
+
+    #[test]
+    fn created_at_now_is_rfc3339_utc_at_the_current_instant() {
+        let s = created_at_now();
+        let parsed = chrono::DateTime::parse_from_rfc3339(&s)
+            .unwrap_or_else(|e| panic!("created_at {s:?} must parse as RFC 3339: {e}"));
+
+        // Parseable is not enough: it must denote *now*, so a decoding client
+        // gets a usable instant rather than the zero time.
+        let now = chrono::Utc::now().timestamp();
+        let skew = (parsed.timestamp() - now).abs();
+        assert!(skew <= 60, "created_at {s:?} is {skew}s away from now");
+        assert_eq!(parsed.offset().local_minus_utc(), 0, "must be UTC: {s:?}");
+    }
+
+    /// The coalesced (`stream:false`) bodies of BOTH endpoints, as serialized.
+    #[test]
+    fn coalesced_chat_and_generate_created_at_are_client_decodable() {
+        let chat = serde_json::to_value(OllamaChatResponse {
+            model: "apr".to_string(),
+            created_at: created_at_now(),
+            message: OllamaMessage {
+                role: "assistant".to_string(),
+                content: "hello".to_string(),
+            },
+            done: true,
+            prompt_eval_count: 1,
+            eval_count: 2,
+        })
+        .expect("serialize");
+        let generate = serde_json::to_value(OllamaGenerateResponse {
+            model: "apr".to_string(),
+            created_at: created_at_now(),
+            response: "hi".to_string(),
+            done: true,
+            prompt_eval_count: 0,
+            eval_count: 1,
+        })
+        .expect("serialize");
+
+        for (endpoint, body) in [("/api/chat", &chat), ("/api/generate", &generate)] {
+            let s = body["created_at"].as_str().expect("created_at is a string");
+            chrono::DateTime::parse_from_rfc3339(s).unwrap_or_else(|e| {
+                panic!("{endpoint} created_at {s:?} must parse as RFC 3339: {e}")
+            });
+        }
+    }
+
+    /// `GET /api/tags` feeds `modified_at` from the same helper, and ollama's
+    /// `api.ListModelResponse.ModifiedAt` is a `time.Time` too — an
+    /// unparseable value empties the model list a client enumerates on startup.
+    #[test]
+    fn tags_modified_at_is_client_decodable() {
+        let body = ollama_tags_body("model.gguf");
+        let s = body["models"][0]["modified_at"]
+            .as_str()
+            .expect("modified_at is a string");
+        chrono::DateTime::parse_from_rfc3339(s)
+            .unwrap_or_else(|e| panic!("/api/tags modified_at {s:?} must parse as RFC 3339: {e}"));
+    }
+
+    /// Every NDJSON line carries its own `created_at` and the client parses
+    /// each one, so a bad timestamp empties every chunk — including the
+    /// terminal `done:true` object that ends the client's streaming loop.
+    #[tokio::test]
+    async fn ndjson_stream_created_at_is_client_decodable_on_every_line() {
+        use axum::body::to_bytes;
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(8);
+        for t in ["Hello", ", ", "world"] {
+            tx.send(Ok(t.to_string())).await.expect("send");
+        }
+        drop(tx);
+
+        let resp = ollama_ndjson_stream(OllamaStreamKind::Chat, "m".to_string(), 2, rx);
+        let bytes = to_bytes(resp.into_body(), 64 * 1024).await.expect("body");
+        let text = String::from_utf8(bytes.to_vec()).expect("utf8");
+        let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 4, "3 token chunks + 1 terminal. body={text}");
+
+        for line in lines {
+            let obj: serde_json::Value = serde_json::from_str(line).expect("json");
+            let s = obj["created_at"].as_str().expect("created_at is a string");
+            chrono::DateTime::parse_from_rfc3339(s).unwrap_or_else(|e| {
+                panic!("NDJSON chunk created_at {s:?} must parse as RFC 3339: {e}")
+            });
+        }
     }
 }
