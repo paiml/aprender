@@ -43,13 +43,13 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         trace_output: Option<PathBuf>,
         /// Trace detail level (none, basic, layer, payload)
-        #[arg(long, value_name = "LEVEL", default_value = "basic")]
+        #[arg(long, value_name = "LEVEL", default_value = "basic", value_parser = TRACE_LEVEL_VALUES)]
         trace_level: String,
         /// Enable inline Roofline profiling (PMAT-SHOWCASE-METHODOLOGY-001)
         #[arg(long)]
         profile: bool,
         /// PMAT-488: Compute backend override (cuda, cpu, wgpu)
-        #[arg(long, value_name = "BACKEND")]
+        #[arg(long, value_name = "BACKEND", value_parser = BACKEND_VALUES)]
         backend: Option<String>,
     },
     /// Benchmark throughput (spec H12: >= 10 tok/s)

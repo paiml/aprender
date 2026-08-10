@@ -299,6 +299,119 @@ fn print_gguf_verbose_info(
     eprintln!("Model loaded in {:.1}ms", load_ms);
 }
 
+/// The measured facts a `--trace-output` document is built from.
+///
+/// Grouped into one struct so [`build_gguf_trace_json`] is a pure function of
+/// plain values and can be asserted on directly in a unit test without
+/// constructing a full `GGUFConfig`.
+#[derive(Debug, Clone, Copy)]
+struct GgufTraceFacts<'a> {
+    model_path: &'a str,
+    num_layers: usize,
+    hidden_dim: usize,
+    vocab_size: usize,
+    num_heads: usize,
+    input_token_count: usize,
+    generated_token_count: usize,
+    load_ms: f64,
+    inference_ms: f64,
+    tps: f64,
+    used_gpu: bool,
+}
+
+/// Build the `--trace-output` JSON document for a GGUF run.
+///
+/// # Why this exists
+///
+/// The document used to be assembled with `format!` and ended in a hardcoded
+/// `"events": []`, so **every** `--trace-output FILE` — at every
+/// `--trace-level` — wrote a file whose event list was empty. A consumer that
+/// scripted `--trace-output` got a well-formed file that said nothing had
+/// happened. Two defects came out of that one string:
+///
+/// 1. `events` was a literal empty array, never populated from the run.
+/// 2. The model path was interpolated raw into a JSON string literal, so a path
+///    containing `"` or `\` emitted a file that is not parseable JSON.
+///
+/// Both are fixed by building a `serde_json::Value` and filling `events` from
+/// the timings the run actually measured.
+///
+/// # What goes in `events`
+///
+/// Only measured spans. `model_load` and `generate` are wall-clock timings
+/// taken around the real work (`load_ms` / `inference_ms`), expressed as
+/// chrome-tracing-compatible complete events (`ph: "X"`, µs timestamps) so the
+/// file can be read by the same tooling as `--trace-level chrome`. Per-brick
+/// and per-layer spans are deliberately NOT synthesised here: the brick
+/// profiler owns those and inventing a split from the total would be the same
+/// class of defect this function is fixing.
+fn build_gguf_trace_json(facts: &GgufTraceFacts<'_>) -> serde_json::Value {
+    let GgufTraceFacts {
+        model_path,
+        num_layers,
+        hidden_dim,
+        vocab_size,
+        num_heads,
+        input_token_count,
+        generated_token_count,
+        load_ms,
+        inference_ms,
+        tps,
+        used_gpu,
+    } = *facts;
+    let load_us = (load_ms * 1000.0).round() as u64;
+    let infer_us = (inference_ms * 1000.0).round() as u64;
+    let events = serde_json::json!([
+        {
+            "name": "model_load",
+            "cat": "lifecycle",
+            "ph": "X",
+            "ts": 0,
+            "dur": load_us,
+            "pid": 1,
+            "tid": 1,
+            "args": { "path": model_path, "format": "GGUF" }
+        },
+        {
+            "name": "generate",
+            "cat": "inference",
+            "ph": "X",
+            "ts": load_us,
+            "dur": infer_us,
+            "pid": 1,
+            "tid": 1,
+            "args": {
+                "input_tokens": input_token_count,
+                "generated_tokens": generated_token_count,
+                "tok_per_sec": tps,
+                "used_gpu": used_gpu
+            }
+        }
+    ]);
+
+    serde_json::json!({
+        "version": "1.0",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "model": {
+            "path": model_path,
+            "format": "GGUF",
+            "num_layers": num_layers,
+            "hidden_dim": hidden_dim,
+            "vocab_size": vocab_size,
+            "num_heads": num_heads,
+        },
+        "inference": {
+            "input_tokens": input_token_count,
+            "generated_tokens": generated_token_count,
+            "load_ms": load_ms,
+            "inference_ms": inference_ms,
+            "tok_per_sec": tps,
+            "used_gpu": used_gpu,
+        },
+        "events": events,
+    })
+}
+
 /// Write GGUF trace output if requested (PMAT-SHOWCASE-METHODOLOGY-001)
 fn write_gguf_trace(
     config: &InferenceConfig,
@@ -314,42 +427,21 @@ fn write_gguf_trace(
         Some(ref p) => p,
         None => return,
     };
-    let trace_json = format!(
-        r#"{{
-  "version": "1.0",
-  "timestamp": "{}",
-  "model": {{
-    "path": "{}",
-    "format": "GGUF",
-    "num_layers": {},
-    "hidden_dim": {},
-    "vocab_size": {},
-    "num_heads": {}
-  }},
-  "inference": {{
-    "input_tokens": {},
-    "generated_tokens": {},
-    "load_ms": {:.2},
-    "inference_ms": {:.2},
-    "tok_per_sec": {:.2},
-    "used_gpu": {}
-  }},
-  "events": []
-}}
-"#,
-        chrono::Utc::now().to_rfc3339(),
-        config.model_path.display(),
-        model_config.num_layers,
-        model_config.hidden_dim,
-        model_config.vocab_size,
-        model_config.num_heads,
+    let model_path = config.model_path.display().to_string();
+    let trace_json = serde_json::to_string_pretty(&build_gguf_trace_json(&GgufTraceFacts {
+        model_path: &model_path,
+        num_layers: model_config.num_layers,
+        hidden_dim: model_config.hidden_dim,
+        vocab_size: model_config.vocab_size,
+        num_heads: model_config.num_heads,
         input_token_count,
         generated_token_count,
         load_ms,
         inference_ms,
         tps,
-        used_gpu
-    );
+        used_gpu,
+    }))
+    .unwrap_or_default();
     if let Err(e) = std::fs::write(trace_path, trace_json) {
         eprintln!(
             "Warning: Failed to write trace output to {}: {}",
@@ -1127,5 +1219,76 @@ mod cuda_silent_fallback_tests {
             "must inoculate against the fabricated-regression reading: any throughput \
              measured after this point reflects the fallback backend. Got: {msg}"
         );
+    }
+}
+
+#[cfg(test)]
+mod trace_output_events_tests {
+    use super::{build_gguf_trace_json, GgufTraceFacts};
+
+    fn facts(path: &str) -> GgufTraceFacts<'_> {
+        GgufTraceFacts {
+            model_path: path,
+            num_layers: 28,
+            hidden_dim: 1536,
+            vocab_size: 151_936,
+            num_heads: 12,
+            input_token_count: 9,
+            generated_token_count: 3,
+            load_ms: 120.5,
+            inference_ms: 640.25,
+            tps: 4.7,
+            used_gpu: false,
+        }
+    }
+
+    /// FALSIFIER: `--trace-output FILE` must not write an empty event list.
+    ///
+    /// The document was assembled by `format!` and ended in a hardcoded
+    /// `"events": []`, so every `--trace-output` at every `--trace-level`
+    /// produced a file that said nothing had happened. Shape alone is not
+    /// enough here — asserting that `events` is an array passes on the bug — so
+    /// this asserts the events exist AND carry the run's measured durations.
+    #[test]
+    fn trace_output_events_are_populated_from_measured_timings() {
+        let v = build_gguf_trace_json(&facts("/models/qwen.gguf"));
+        let events = v["events"].as_array().expect("events must be an array");
+        assert!(
+            !events.is_empty(),
+            "trace-output must carry events, got an empty list: {v}"
+        );
+
+        let load = events
+            .iter()
+            .find(|e| e["name"] == "model_load")
+            .unwrap_or_else(|| panic!("no model_load event in {v}"));
+        assert_eq!(
+            load["dur"].as_u64(),
+            Some(120_500),
+            "model_load duration must be the MEASURED load_ms in microseconds"
+        );
+
+        let generate = events
+            .iter()
+            .find(|e| e["name"] == "generate")
+            .unwrap_or_else(|| panic!("no generate event in {v}"));
+        assert_eq!(
+            generate["dur"].as_u64(),
+            Some(640_250),
+            "generate duration must be the MEASURED inference_ms in microseconds"
+        );
+        assert_eq!(generate["args"]["generated_tokens"], 3);
+        assert_eq!(generate["args"]["input_tokens"], 9);
+    }
+
+    /// A model path containing a quote used to be interpolated raw into a JSON
+    /// string literal, so the "trace" file was not parseable JSON at all.
+    #[test]
+    fn trace_output_is_valid_json_for_a_path_with_a_quote() {
+        let v = build_gguf_trace_json(&facts(r#"/models/we"ird\path.gguf"#));
+        let text = serde_json::to_string(&v).expect("serialise");
+        let round: serde_json::Value = serde_json::from_str(&text)
+            .unwrap_or_else(|e| panic!("trace output must be parseable JSON: {e}\n{text}"));
+        assert_eq!(round["model"]["path"], r#"/models/we"ird\path.gguf"#);
     }
 }

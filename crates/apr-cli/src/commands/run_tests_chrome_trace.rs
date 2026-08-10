@@ -8,76 +8,10 @@
     // the function does not panic with various inputs.
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// Helper to build a trace JSON structure in-memory (mirrors print_chrome_trace logic)
-    /// for content verification without touching the filesystem.
-    fn build_chrome_trace_events(
-        result: &RunResult,
-        source: &str,
-        max_tokens: usize,
-        include_profile: bool,
-    ) -> serde_json::Value {
-        let mut events = Vec::new();
-        let mut ts_us: u64 = 0;
-
-        let load_dur = (result.duration_secs * 1_000_000.0) as u64;
-        events.push(serde_json::json!({
-            "name": "model_load", "cat": "lifecycle", "ph": "X",
-            "ts": 0, "dur": load_dur / 10, "pid": 1, "tid": 1,
-            "args": {"source": source, "max_tokens": max_tokens}
-        }));
-        ts_us = load_dur / 10;
-
-        let tokenize_dur = load_dur / 100;
-        events.push(serde_json::json!({
-            "name": "tokenize", "cat": "tokenize", "ph": "X",
-            "ts": ts_us, "dur": tokenize_dur, "pid": 1, "tid": 1,
-            "args": {"source": source}
-        }));
-        ts_us += tokenize_dur;
-
-        let embed_dur = load_dur / 100;
-        events.push(serde_json::json!({
-            "name": "embed", "cat": "embed", "ph": "X",
-            "ts": ts_us, "dur": embed_dur, "pid": 1, "tid": 1
-        }));
-        ts_us += embed_dur;
-
-        if let Some(count) = result.tokens_generated {
-            let gen_dur = load_dur - ts_us;
-            let per_token = if count > 0 { gen_dur / count as u64 } else { gen_dur };
-            for i in 0..count {
-                let token_start = ts_us + (i as u64 * per_token);
-                let layer_dur = per_token * 9 / 10;
-                events.push(serde_json::json!({
-                    "name": format!("layer_{}", i % 28), "cat": "layer", "ph": "X",
-                    "ts": token_start, "dur": layer_dur, "pid": 1, "tid": 1,
-                    "args": {"token_idx": i, "layer": i % 28}
-                }));
-                events.push(serde_json::json!({
-                    "name": "sample", "cat": "sample", "ph": "X",
-                    "ts": token_start + layer_dur, "dur": per_token - layer_dur,
-                    "pid": 1, "tid": 1, "args": {"token_idx": i}
-                }));
-                events.push(serde_json::json!({
-                    "name": format!("token_{}", i), "cat": "decode", "ph": "X",
-                    "ts": token_start, "dur": per_token, "pid": 1, "tid": 1,
-                    "args": {"token_idx": i}
-                }));
-            }
-        }
-
-        serde_json::json!({
-            "traceEvents": events,
-            "displayTimeUnit": "ms",
-            "metadata": {
-                "source": source,
-                "tool": "apr run --trace --trace-level chrome",
-                "max_tokens": max_tokens,
-                "tok_per_sec": result.tok_per_sec,
-                "include_profile": include_profile
-            }
-        })
-    }
+    /// These tests used to assert against a hand-maintained COPY of
+    /// `print_chrome_trace`'s body kept here in the test file, which could only
+    /// ever prove the copy agreed with itself. They now call the real builder.
+    use super::build_chrome_trace as build_chrome_trace_events;
 
     #[test]
     fn test_chrome_trace_event_categories() {
@@ -89,6 +23,7 @@
             tok_per_sec: Some(1.5),
             used_gpu: Some(false),
             generated_tokens: None,
+            token_texts: None,
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 16, true);
@@ -118,6 +53,7 @@
             tok_per_sec: None,
             used_gpu: None,
             generated_tokens: None,
+            token_texts: None,
         };
 
         let json = build_chrome_trace_events(&result, "empty.gguf", 0, false);
@@ -136,6 +72,7 @@
             tok_per_sec: None,
             used_gpu: None,
             generated_tokens: None,
+            token_texts: None,
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -154,6 +91,7 @@
             tok_per_sec: Some(10.0),
             used_gpu: Some(true),
             generated_tokens: None,
+            token_texts: None,
         };
 
         let json = build_chrome_trace_events(&result, "my-model.gguf", 64, true);
@@ -172,6 +110,7 @@
             tok_per_sec: Some(2.0),
             used_gpu: Some(false),
             generated_tokens: None,
+            token_texts: None,
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -200,6 +139,7 @@
             tok_per_sec: Some(2.0),
             used_gpu: Some(false),
             generated_tokens: None,
+            token_texts: None,
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -218,6 +158,7 @@
             tok_per_sec: Some(1.0),
             used_gpu: None,
             generated_tokens: None,
+            token_texts: None,
         };
         let json = build_chrome_trace_events(&result, "m.gguf", 1, false);
         assert_eq!(json["displayTimeUnit"], "ms");
@@ -236,9 +177,51 @@
             tok_per_sec: Some(5.0),
             used_gpu: Some(false),
             generated_tokens: None,
+            token_texts: None,
         };
         // Just ensure no panic; file creation is best-effort
-        print_chrome_trace(&result, "test-model.gguf", 32, false);
+        print_chrome_trace(&result, "test-model.gguf", 32, false, None);
+    }
+
+    /// `--trace-level chrome --trace-output FILE` must put the chrome trace in
+    /// FILE.
+    ///
+    /// Before the fix the chrome writer ignored `--trace-output` entirely: it
+    /// wrote `trace-<epoch>.json` into the process CWD, and the path the user
+    /// named was left holding the summary stub written by the inference layer.
+    /// A scripted consumer read the file it asked for and found no
+    /// `traceEvents` at all.
+    #[test]
+    fn chrome_trace_honours_requested_output_path() {
+        let dir = std::env::temp_dir().join(format!(
+            "apr-chrome-trace-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        std::fs::create_dir_all(&dir).expect("tempdir");
+        let target = dir.join("requested.json");
+
+        let result = RunResult {
+            text: "Hello world".to_string(),
+            duration_secs: 1.0,
+            cached: false,
+            tokens_generated: Some(3),
+            tok_per_sec: Some(3.0),
+            used_gpu: Some(false),
+            generated_tokens: None,
+            token_texts: None,
+        };
+        print_chrome_trace(&result, "test-model.gguf", 32, false, Some(&target));
+
+        let body = std::fs::read_to_string(&target)
+            .unwrap_or_else(|e| panic!("chrome trace must be written to {}: {e}", target.display()));
+        let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
+        let events = v["traceEvents"].as_array().expect("traceEvents array");
+        assert!(
+            !events.is_empty(),
+            "chrome trace at the requested path must carry events, got: {body}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -255,6 +238,7 @@
             tok_per_sec: Some(50.0),
             used_gpu: Some(false),
             generated_tokens: None,
+            token_texts: None,
         };
         print_benchmark_results(&result, "model.gguf", "text", 100);
     }
@@ -269,6 +253,7 @@
             tok_per_sec: Some(50.0),
             used_gpu: Some(false),
             generated_tokens: None,
+            token_texts: None,
         };
         print_benchmark_results(&result, "model.gguf", "json", 50);
     }
@@ -283,6 +268,7 @@
             tok_per_sec: None,
             used_gpu: None,
             generated_tokens: None,
+            token_texts: None,
         };
         print_benchmark_results(&result, "model.gguf", "text", 10);
     }

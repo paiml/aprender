@@ -231,6 +231,7 @@
             tok_per_sec: None,
             used_gpu: None,
             generated_tokens: None,
+            token_texts: None,
         };
         let result_zero = RunResult {
             text: String::new(),
@@ -240,6 +241,7 @@
             tok_per_sec: None,
             used_gpu: None,
             generated_tokens: None,
+            token_texts: None,
         };
         assert_ne!(
             result_none.tokens_generated, result_zero.tokens_generated,
@@ -259,6 +261,7 @@
             tok_per_sec: Some(100.0),
             used_gpu: Some(true),
             generated_tokens: Some(vec![10, 20, 30]),
+            token_texts: None,
         };
         assert_eq!(result.text, "output");
         assert!((result.duration_secs - 1.234).abs() < f64::EPSILON);
