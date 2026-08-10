@@ -77,6 +77,22 @@ pub fn run(
     println!("{}", "=== APR Pull ===".cyan().bold());
     println!();
 
+    // CRUX-A-20: the `offline` parameter used to be read ONLY inside the
+    // `dry_run` branch above, so `apr pull --offline hf://org/repo` performed
+    // a full download and exited 0 — a compliance control that controlled
+    // nothing. Feed it into the same enforcement point every download helper
+    // consults; `hf_get` then refuses every outbound request.
+    //
+    // A cache hit still succeeds offline when the URI names the file
+    // (`hf://org/repo/model.safetensors` → `run_single_file_streaming` returns
+    // from the cache before any request). A bare `hf://org/repo` cannot: the
+    // filename is only knowable from the Hub API, so offline it is refused
+    // rather than guessed.
+    //
+    // The scope is established before `resolve_hf_model` below, which is the
+    // first thing on this path that can reach the network.
+    let _offline_scope = super::offline::scope(offline);
+
     // GH-213: Resolve HuggingFace URI — detect single vs sharded models
     let resolved = resolve_hf_model(model_ref)?;
 
@@ -245,6 +261,10 @@ fn download_single_model(
     fetcher: &mut ModelFetcher,
     model_ref: &str,
 ) -> Result<pacha::fetcher::FetchResult> {
+    // CRUX-A-20: the pacha fetcher opens its own sockets, so it does not pass
+    // through `hf_get`. The cache-hit path above already returned, so reaching
+    // here means a real download is about to start.
+    super::offline::guard(&format!("download {model_ref}"))?;
     println!();
     println!("{}", "Downloading...".yellow());
 

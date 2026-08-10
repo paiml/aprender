@@ -291,6 +291,11 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
 ///
 /// Per Section 9.2 (Sovereign AI): "apr run --offline is mandatory for production"
 pub(crate) fn resolve_model(source: &ModelSource, force: bool, offline: bool) -> Result<PathBuf> {
+    // CRUX-A-20: `chat` called this with a hardcoded `offline = false`, so
+    // `apr --offline chat hf://org/repo` downloaded the model. Consult the
+    // process-wide offline latch as well as the parameter, so a caller that
+    // forgets to forward the flag cannot re-enable the network.
+    let offline = offline || crate::commands::offline::network_forbidden();
     match source {
         ModelSource::Local(path) => Ok(path.clone()),
         ModelSource::HuggingFace { org, repo, file } => {
@@ -303,7 +308,24 @@ pub(crate) fn resolve_model(source: &ModelSource, force: bool, offline: bool) ->
             }
 
             if offline {
-                // OFFLINE MODE: Reject any network access attempt
+                // OFFLINE MODE: Reject any network access attempt.
+                //
+                // CRUX-A-20: a BARE `hf://org/repo` gets a different message,
+                // because "not cached" would be a claim we cannot support. The
+                // caller reached here having asked the Hub API which file the
+                // repo means (`run_model` → `resolve_hf_model`) and been
+                // refused, so `file` is None and the pacha cache — keyed on the
+                // full `hf://org/repo/<file>` — cannot be probed at all. The
+                // file may well be cached under a name we cannot name.
+                if file.is_none() {
+                    return Err(CliError::ValidationFailed(format!(
+                        "OFFLINE MODE: cannot resolve hf://{org}/{repo} to a file. \
+                         Which file a bare repo means is only knowable from the \
+                         HuggingFace API, and network access is disabled. Name the \
+                         file (e.g. hf://{org}/{repo}/model.safetensors), pass a \
+                         local path, or cache it first with: apr import hf://{org}/{repo}"
+                    )));
+                }
                 return Err(CliError::ValidationFailed(format!(
                     "OFFLINE MODE: Model hf://{org}/{repo} not cached. \
                      Network access is disabled. Cache the model first with: \

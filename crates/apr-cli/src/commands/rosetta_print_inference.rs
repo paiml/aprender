@@ -1,4 +1,44 @@
 
+/// Build the one-line verdict at the bottom of the inference comparison report.
+///
+/// `total_tokens == 0` is its own verdict. It used to fall through to the
+/// `mismatches == 0` arm and print "RESULT: INFERENCE MATCH (100%)" — in the same
+/// report that had already printed "NO TOKENS CAPTURED" and, below the box, two
+/// completely different model outputs.
+fn inference_result_line(total_tokens: usize, mismatches: usize, tolerance: f32) -> String {
+    if total_tokens == 0 {
+        return "RESULT: VACUOUS - 0 TOKEN PAIRS COMPARED, NOTHING WAS VERIFIED"
+            .red()
+            .bold()
+            .to_string();
+    }
+
+    let match_rate = 1.0 - (mismatches as f32 / total_tokens as f32);
+
+    if mismatches == 0 {
+        "RESULT: INFERENCE MATCH (100%)".green().bold().to_string()
+    } else if match_rate >= (1.0 - tolerance) {
+        format!(
+            "RESULT: PARTIAL MATCH ({:.0}% within tolerance {:.0}%)",
+            match_rate * 100.0,
+            tolerance * 100.0
+        )
+        .yellow()
+        .bold()
+        .to_string()
+    } else {
+        format!(
+            "RESULT: INFERENCE MISMATCH ({}/{} tokens = {:.0}%)",
+            mismatches,
+            total_tokens,
+            match_rate * 100.0
+        )
+        .red()
+        .bold()
+        .to_string()
+    }
+}
+
 /// Print diagnosis section for inference comparison (extracted for complexity reduction).
 fn print_inference_diagnosis(
     total_tokens: usize,
@@ -70,36 +110,10 @@ fn print_inference_diagnosis(
         "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
 
-    // Result
-    let match_rate = if total_tokens > 0 {
-        1.0 - (mismatches as f32 / total_tokens as f32)
-    } else {
-        0.0
-    };
-
-    let result_text = if mismatches == 0 {
-        "RESULT: INFERENCE MATCH (100%)".green().bold().to_string()
-    } else if match_rate >= (1.0 - tolerance) {
-        format!(
-            "RESULT: PARTIAL MATCH ({:.0}% within tolerance {:.0}%)",
-            match_rate * 100.0,
-            tolerance * 100.0
-        )
-        .yellow()
-        .bold()
-        .to_string()
-    } else {
-        format!(
-            "RESULT: INFERENCE MISMATCH ({}/{} tokens = {:.0}%)",
-            mismatches,
-            total_tokens,
-            match_rate * 100.0
-        )
-        .red()
-        .bold()
-        .to_string()
-    };
-    println!("║ {:<76} ║", result_text);
+    println!(
+        "║ {:<76} ║",
+        inference_result_line(total_tokens, mismatches, tolerance)
+    );
     println!(
         "{}",
         "╚══════════════════════════════════════════════════════════════════════════════╝".cyan()

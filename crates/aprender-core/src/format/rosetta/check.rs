@@ -235,6 +235,58 @@ impl Default for ConversionOptions {
     }
 }
 
+impl ConversionOptions {
+    /// Copy of these options with quantization removed.
+    ///
+    /// Used for the intermediate hop of a multi-step conversion: quantizing at the
+    /// intermediate step *and* at the final export would quantize the weights twice.
+    #[must_use]
+    pub fn without_quantization(&self) -> Self {
+        Self {
+            quantization: None,
+            tokenizer_path: self.tokenizer_path.clone(),
+            ..*self
+        }
+    }
+}
+
+/// The `--quantize` values `apr rosetta convert` accepts, in the order shown to users.
+pub const SUPPORTED_QUANTIZATIONS: &[&str] = &[
+    "int4", "int8", "fp16", "f16", "q4_k", "q4_k_m", "q6_k", "q8_0",
+];
+
+/// Parse a `ConversionOptions::quantization` string into a concrete quantization type.
+///
+/// An unrecognised value is rejected. Previously the mapping was an `and_then` that
+/// returned `None` for anything it did not know, so `--quantize BOGUS_XYZ` was
+/// indistinguishable from no flag at all: exit 0, no diagnostic, unquantized output.
+///
+/// # Errors
+///
+/// Returns [`AprenderError::FormatError`] if `quantization` is not one of
+/// [`SUPPORTED_QUANTIZATIONS`].
+pub fn parse_quantization(
+    quantization: Option<&str>,
+) -> Result<Option<crate::format::converter::QuantizationType>> {
+    use crate::format::converter::QuantizationType;
+
+    let Some(raw) = quantization else {
+        return Ok(None);
+    };
+    // Note: Q6_K maps to Q4K since that's what realizar's inference supports.
+    match raw.to_lowercase().as_str() {
+        "q4_k" | "q4_k_m" | "int4" | "q6_k" => Ok(Some(QuantizationType::Q4K)),
+        "int8" | "q8_0" => Ok(Some(QuantizationType::Int8)),
+        "fp16" | "f16" => Ok(Some(QuantizationType::Fp16)),
+        other => Err(AprenderError::FormatError {
+            message: format!(
+                "Unknown quantization {other:?}. Supported values: {}",
+                SUPPORTED_QUANTIZATIONS.join(", ")
+            ),
+        }),
+    }
+}
+
 // ============================================================================
 // Rosetta Stone Converter
 // ============================================================================

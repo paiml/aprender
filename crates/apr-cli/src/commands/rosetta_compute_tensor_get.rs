@@ -407,7 +407,7 @@
         let fps_a = vec![make_fingerprint("tensor_a", 0.5, 1.0, 0, 0)];
         let fps_b = vec![make_fingerprint("tensor_a", 10.0, 1.0, 0, 0)];
         let result = print_fingerprint_diff(&fps_a, &fps_b, false, true);
-        assert!(result.is_ok());
+        assert!(result.is_err(), "--json must not mask an anomalous diff");
     }
 
     #[test]
@@ -423,7 +423,7 @@
         let fps_a = vec![make_fingerprint("tensor_a", 0.5, 1.0, 0, 0)];
         let fps_b = vec![make_fingerprint("tensor_a", 20.0, 1.0, 5, 0)];
         let result = print_fingerprint_diff(&fps_a, &fps_b, true, false);
-        assert!(result.is_ok());
+        assert!(result.is_err(), "--verbose must not mask an anomalous diff");
     }
 
     #[test]
@@ -431,7 +431,7 @@
         let fps_a = vec![make_fingerprint("only_in_a", 0.5, 1.0, 0, 0)];
         let fps_b: Vec<TensorFingerprint> = vec![];
         let result = print_fingerprint_diff(&fps_a, &fps_b, false, true);
-        assert!(result.is_ok());
+        assert!(result.is_err(), "--json must not mask a missing tensor");
     }
 
     #[test]
