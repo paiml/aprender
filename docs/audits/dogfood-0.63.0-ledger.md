@@ -4,12 +4,11 @@ Every defect found by dogfooding `cargo install aprender` 0.63.0 from crates.io,
 GitHub issue that tracks it. Epic: #2373. Full report:
 https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 
-211 findings across 37 root-cause clusters.
+202 findings across 37 root-cause clusters.
 
 | Sev | Surface | Target | Cluster | Issue | Fixed by | Defect |
 |---|---|---|---|---|---|---|
 | P0 | mcp | `apr mcp (all subprocess-backed tools)` | bare-apr-path-resolution | #2384 | — | MCP server executes a bare `apr` resolved from PATH — every tool ran a DIFFERENT (0.60.0) binary while apr.version reported 0.63.0 |
-| P0 | mcp | `apr.version / all 8 subprocess-backed tools` | bare-apr-path-resolution | #2384 | — | The MCP server delegates every tool to a PATH-resolved bare `apr`, not to itself — apr 0.63.0's `apr mcp` executed a stale apr 0.60.0, while apr.version still reports 0.63.0 |
 | P0 | cli | `code` | bare-apr-path-resolution | #2384 | — | `apr code` runs inference through a PATH-resolved `apr` binary, not itself — the pinned 0.63.0 binary silently executed a 0.60.0 backend |
 | P0 | cli | `chat` | cli:chat | #2387 | #2413 | `apr chat <local model path>` is unusable: every path containing a slash is rewritten to hf://<path> and fetched from HuggingFace |
 | P0 | cli | `data decontaminate` | cli:data | #2381 | — | `apr data decontaminate --ngram 0` panics (exit 101) instead of validating the flag |
@@ -81,13 +80,9 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P1 | cli | `train plan / train apply (--task classify, the DEFAULT)` | cli:train-family | #2374 | — | The default task of `apr train plan` and `apr train apply` always fails, with an error claiming a dependency is unpublished that the shipped binary already links at 0.63.0 |
 | P1 | cli | `tune -r/--rank` | cli:train-family | #2374 | — | `apr tune --rank` has no effect on the recommended configuration; the tool prints the requested rank and then discards it |
 | P1 | http | `POST /generate` | http:native | #2376 | — | Documented GenerateRequest fields `strategy`, `top_p` and `seed` are silently ignored on the quantized-GGUF path — `strategy:"greedy"` still samples, and seed=1 and seed=2 give byte-identical output |
-| P1 | http | `POST /stream/generate, POST /batch/generate` | http:native | #2376 | — | Startup banner advertises /stream/generate and /batch/generate, but both always fail with "No model available" while /health reports model_loaded:true |
 | P1 | http | `POST /api/chat, POST /api/generate` | http:ollama | #2396 | #2371 | Ollama created_at is a raw unix epoch ("1786289584.000000000Z"), not RFC3339 — the real Ollama Go client fails to unmarshal the whole response |
-| P1 | http | `POST /api/chat, POST /api/generate` | http:ollama | #2396 | #2371 | Ollama-compat created_at is a bare epoch string ('1786290493.000000000Z'), not RFC3339 — the real ollama Go client cannot decode the response |
 | P1 | http | `POST /api/chat, POST /api/generate (stream:true)` | http:ollama | #2396 | — | Ollama /api/chat and /api/generate accept and then silently discard "stream":true — always one buffered JSON object, never NDJSON |
-| P1 | http | `POST /v1/chat/completions (stream:true)` | http:openai | #2375 | #2367 | SSE streaming deltas have all leading whitespace/newlines stripped per token, so client-accumulated text has no spaces |
 | P1 | http | `POST /v1/chat/completions (stream:true)` | http:openai | #2375 | — | Streaming finish_reason is hardcoded "stop" even when max_tokens truncated the output; the non-streaming path on the same request correctly returns "length" |
-| P1 | http | `POST /v1/chat/completions/stream, POST /v1/embeddings` | http:openai | #2375 | — | Registered routes /v1/chat/completions/stream and /v1/embeddings always fail with 404 "Model registry error: No model available" even though a model is loaded and serving |
 | P1 | http | `POST /v1/completions (stream:true)` | http:openai | #2375 | — | /v1/completions ignores stream:true — returns content-type application/json with a full text_completion object instead of an SSE stream |
 | P1 | http | `POST /v1/completions, POST /api/chat, POST /api/generate` | http:openai | #2375 | — | stream:true is silently ignored on /v1/completions and both Ollama endpoints — a single application/json body is returned instead of SSE / NDJSON |
 | P1 | http | `POST /v1/embeddings, POST /v1/chat/completions/stream` | http:openai | #2375 | — | /v1/embeddings and /v1/chat/completions/stream are registered and advertised but always 404 "No model available" even with a model loaded |
@@ -119,7 +114,6 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P1 | cli | `unified-search-lint` | lint-passes-on-bad-obs | #2389 | — | `unified-search-lint` prints `[PASS] offline … expected_count_ok=false sources_ok=0` and exits 0 — a gate marked PASS whose own outcome string reports its criterion as false |
 | P1 | mcp | `apr mcp (stdio read loop)` | mcp:apr mcp | #2393 | — | A single invalid UTF-8 byte on stdin terminates the whole MCP server (exit 1); all subsequent requests on the session are dropped |
 | P1 | mcp | `apr mcp / initialize` | mcp:apr mcp | #2393 | — | initialize hard-errors (-32602) on any protocolVersion other than the exact string 2024-11-05, instead of replying with the version the server supports |
-| P1 | mcp | `apr mcp / tools/call` | mcp:apr mcp | #2393 | — | Every tools/call response is silently dropped when stdin reaches EOF — server exits 0 having never answered a request that carried an id |
 | P1 | mcp | `apr.finetune` | mcp:apr.finetune | #2417 | — | apr.finetune cannot fine-tune a .safetensors base model though its schema advertises .safetensors — fails with "No model path or --model-size provided" while a path WAS provided |
 | P1 | mcp | `apr.qa (generic run_apr wrapper: subprocess.rs:57-66)` | mcp:apr.qa | #2418 | — | On any non-zero CLI exit the tool discards the full JSON report on stdout and returns only the one-line stderr — apr.qa gate detail is unreachable from MCP |
 | P1 | mcp | `apr.run / apr.bench / apr.qa / apr.tensors / apr.trace / apr` | mcp:apr.run | #2403 | — | Wrong-typed optional arguments are silently dropped instead of rejected — including apr.qa's assert_tps, which disarms the throughput gate without any warning |
@@ -160,7 +154,6 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P2 | cli | `rerank` | cli:embed-rerank | #2383 | — | `apr rerank --passage` + `--passages` is documented as mutually exclusive but is silently accepted, and one of the two inputs is discarded |
 | P2 | cli | `explain` | cli:explain | #2386 | — | `apr explain <unknown>` exits 0 while saying it did not recognise the input, and the documented "family name (auto-detected)" form is not accepted |
 | P2 | cli | `11 of 16 lints (--json)` | cli:lint-family | #2377 | — | `--json` emits Rust `Debug` formatting inside string values instead of structured fields, and the family ships two mutually incompatible JSON envelopes |
-| P2 | cli | `dry-sampling-lint, gbnf-lint, gpu-memtrace-lint, audio-inspe` | cli:lint-family | #2377 | — | A malformed JSON *observation* file is reported as "Invalid APR format" — these commands never touch an APR model, so the error names the wrong thing |
 | P2 | cli | `imatrix-lint, embeddings-lint, hang-trace-lint` | cli:lint-family | #2377 | — | A present-but-degenerate section satisfies the "observation has content" guard and then passes trivially — imatrix-lint prints `[PASS] leakage: disjoint (/calib/=0, /eval/=0)` for a body whose leakage value is the string "nonsense" |
 | P2 | cli | `kv-timeline-lint,nccl-diag-lint,ollama-chat-lint,ollama-tool` | cli:lint-family | #2377 | — | A malformed JSON observation file is reported as `error: Invalid APR format:` — these commands never read an APR model, and the message sends users to the wrong file |
 | P2 | cli | `nf4-lint,registry-quota-lint,rm-gc-lint,shared-cache-lint,un` | cli:lint-family | #2377 | — | The 16-command lint family splits into two incompatible exit-code dialects: missing file is 3 for eleven commands and 1 for five; bad JSON is 4, 5, or 1 depending on which you called |
@@ -194,7 +187,6 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P2 | http | `POST /generate (malformed body) / POST /v1/predict` | http:native | #2376 | — | Error bodies are inconsistently shaped — JSON {"error":...} on most failures but bare text/plain on 400/415 — and the 400 leaks raw serde parser internals that the 422 sanitizer was added to prevent |
 | P2 | http | `POST /generate (oversized prompt)` | http:native | #2376 | — | An oversized-prompt client error is returned as HTTP 500, after ~172 s of server CPU, with a hint naming a CLI flag that does not exist on the HTTP API |
 | P2 | http | `GET /api/tags, GET /api/show, POST /api/embeddings` | http:ollama | #2396 | — | Ollama model-discovery endpoints (/api/tags, /api/show, /api/embeddings) are absent although the server banner advertises "Ollama-Parity Endpoints" |
-| P2 | http | `GET /api/tags, POST /api/show, GET /api/version` | http:ollama | #2396 | — | Ollama model-discovery endpoints (/api/tags, /api/show, /api/version) are absent, so ollama-compatible clients cannot enumerate or select a model |
 | P2 | http | `GET /v1/metrics` | http:openai | #2375 | — | /v1/metrics reports latency_p50/p95/p99 as 0.0 and model_name "N/A" while /metrics shows 2119ms average latency for the same requests |
 | P2 | http | `GET /v1/metrics` | http:openai | #2375 | — | /v1/metrics reports latency_p50/p95/p99 = 0.0 ms while /metrics on the same process at the same instant reports avg_latency_ms 626.79; model_name is always "N/A" |
 | P2 | http | `POST /v1/chat/completions` | http:openai | #2375 | — | OpenAI `n` parameter is accepted and silently ignored — always exactly one choice is returned |
@@ -218,4 +210,3 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P2 | cli | `all 16 lint commands (-q/--quiet, -v/--verbose)` | offline-fails-open | #2379 | — | -q/--quiet ('Quiet mode (errors only)') and -v/--verbose are advertised in every lint's --help but are completely inert — output is byte-identical |
 | P2 | cli | `kv-timeline-lint,nf4-lint,prometheus-lint,typical-p-lint (al` | offline-fails-open | #2379 | — | `-q/--quiet` ("Quiet mode (errors only)") and `-v/--verbose` are advertised on all 16 lint commands and have no effect on any of them |
 | P2 | cli | `run` | offline-fails-open | #2379 | #2416 | `apr run --offline` reports "(downloaded)" for a model it loaded from cache with the network disabled |
-| P2 | cli | `all 16 lint commands (and the wider CLI)` | quiet-verbose-inert | #2401 | — | `-v/--verbose` and `-q/--quiet` are advertised on every command in the slice but produce byte-identical output |
