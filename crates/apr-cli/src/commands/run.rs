@@ -219,11 +219,18 @@ pub(crate) struct RunResult {
     pub generated_tokens: Option<Vec<u32>>,
 }
 
-/// Run the model on input
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
-pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult> {
-    let start = Instant::now();
-
+/// Resolve a user-supplied model argument into a [`ModelSource`].
+///
+/// This is the single source of truth for "is this a local file, an `hf://`
+/// repo, or a URL?" — every command that accepts a model argument must use it
+/// rather than re-deriving the rules. `apr chat` used to carry a copy that
+/// omitted the local-path guards and rewrote every argument containing a slash
+/// to `hf://<arg>`, so an absolute path became `hf:///home/...` and 404'd.
+///
+/// `offline` suppresses the HuggingFace API probe that picks the best file in a
+/// repo; the caller's own offline handling in [`resolve_model`] then reports a
+/// cache miss instead of reaching the network.
+pub(crate) fn resolve_model_source(source: &str, offline: bool) -> Result<ModelSource> {
     // Resolve alias if applicable
     let resolved_source =
         crate::commands::aliases::resolve_short_name(source).unwrap_or_else(|| source.to_string());
@@ -239,14 +246,30 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         resolved_source
     };
 
-    // GH-213: Actually query HF to find the best GGUF file
-    let fully_resolved_source = match crate::commands::pull::resolve_hf_model(&hf_uri) {
-        Ok(crate::commands::pull::ResolvedModel::SingleFile(uri)) => uri,
-        _ => hf_uri,
+    // GH-213: Actually query HF to find the best GGUF file.
+    // Only for something that is already an hf:// reference: `resolve_hf_model`
+    // normalizes any slash-bearing, scheme-less argument back into `hf://<arg>`
+    // (`normalize_hf_uri`), which would undo the local-path decision above and
+    // turn an existing `models/tiny.gguf` into the repo `hf://models/tiny.gguf`.
+    // Skipped offline as well — it is a network call.
+    let fully_resolved_source = if offline || !hf_uri.starts_with("hf://") {
+        hf_uri
+    } else {
+        match crate::commands::pull::resolve_hf_model(&hf_uri) {
+            Ok(crate::commands::pull::ResolvedModel::SingleFile(uri)) => uri,
+            _ => hf_uri,
+        }
     };
 
-    // Parse source
-    let model_source = ModelSource::parse(&fully_resolved_source)?;
+    ModelSource::parse(&fully_resolved_source)
+}
+
+/// Run the model on input
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
+pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult> {
+    let start = Instant::now();
+
+    let model_source = resolve_model_source(source, options.offline)?;
 
     // Resolve model path (download if needed, respecting offline mode)
     let model_path = resolve_model(&model_source, options.force, options.offline)?;

@@ -308,6 +308,7 @@
         let path = Path::new("/nonexistent/model.gguf");
         let result = run(
             path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+            false, // offline
         );
         assert!(result.is_err());
         match result {
@@ -336,6 +337,7 @@
             Some(PathBuf::from("/tmp/trace.json")),
             "debug",
             true,
+            false, // offline
         );
         assert!(result.is_err());
     }
