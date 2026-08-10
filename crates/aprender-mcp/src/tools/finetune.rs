@@ -85,8 +85,10 @@ pub fn call_with_sink(
     sink: Option<&NotificationSink>,
     progress_token: Option<serde_json::Value>,
 ) -> ToolCallResult {
-    let Some(base_model) = args.get("base_model").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: base_model");
+    // FALSIFY-MCP-013: distinguish absent from wrong-typed.
+    let base_model = match crate::tools::require_str(args, "base_model") {
+        Ok(value) => value,
+        Err(message) => return ToolCallResult::error(message),
     };
 
     let mut owned: Vec<String> = vec![

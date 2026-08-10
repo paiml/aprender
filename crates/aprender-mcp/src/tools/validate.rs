@@ -41,8 +41,10 @@ pub fn validate_tool_definition() -> ToolDefinition {
 /// Execute `apr.validate` by spawning `apr validate <model_path> --json`.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
+    // FALSIFY-MCP-013: distinguish absent from wrong-typed.
+    let model_path = match crate::tools::require_str(args, "model_path") {
+        Ok(value) => value,
+        Err(message) => return ToolCallResult::error(message),
     };
     run_apr(&["validate", model_path, "--json"])
 }
@@ -84,9 +86,23 @@ mod tests {
         assert!(result.content[0].text.contains("model_path"));
     }
 
+    /// FALSIFY-MCP-013 (tool surface): this test used to assert only
+    /// `is_error == Some(true)`, which is shape, not behaviour — it passed
+    /// while the server told the client `"Missing required argument:
+    /// model_path"` about an argument the client had demonstrably sent.
+    /// Assert the message instead.
     #[test]
-    fn nonstring_model_path_returns_error() {
+    fn nonstring_model_path_reports_the_type_not_absence() {
         let result = call(&serde_json::json!({ "model_path": 42 }));
         assert_eq!(result.is_error, Some(true));
+        let text = &result.content[0].text;
+        assert!(
+            !text.contains("Missing"),
+            "model_path WAS supplied; it must not be reported as missing, got: {text}"
+        );
+        assert!(
+            text.contains("number"),
+            "message must name the type actually received, got: {text}"
+        );
     }
 }

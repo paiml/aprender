@@ -112,8 +112,10 @@ pub fn serve_tool_definition() -> ToolDefinition {
 /// all look like. See this module's header for the terminal states.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
+    // FALSIFY-MCP-013: distinguish absent from wrong-typed.
+    let model_path = match crate::tools::require_str(args, "model_path") {
+        Ok(value) => value,
+        Err(message) => return ToolCallResult::error(message),
     };
 
     let port: u16 = match args.get("port") {

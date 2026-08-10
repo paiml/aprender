@@ -18,11 +18,21 @@
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
 use crate::types::{
-    JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, ToolCallResult, ToolDefinition,
+    json_type_name, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, ToolCallResult,
+    ToolDefinition,
 };
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
+
+/// JSON-RPC 2.0 `-32700`: the payload was not valid JSON.
+pub const PARSE_ERROR: i64 = -32700;
+/// JSON-RPC 2.0 `-32600`: valid JSON, but not a valid Request object.
+pub const INVALID_REQUEST: i64 = -32600;
+/// JSON-RPC 2.0 `-32601`: the method does not exist.
+pub const METHOD_NOT_FOUND: i64 = -32601;
+/// JSON-RPC 2.0 `-32603`: internal server error.
+pub const INTERNAL_ERROR: i64 = -32603;
 
 /// Callback used by tools to emit `notifications/progress` messages back to
 /// the MCP client while a long-running `tools/call` is still in flight.
@@ -81,17 +91,16 @@ impl AprMcpServer {
     /// [`Self::handle_request_with_sink`] to drive FALSIFY-MCP-PROGRESS-001
     /// in tests.
     ///
-    /// The dispatcher enforces two protocol-level invariants before routing:
+    /// The dispatcher enforces one protocol-level invariant before routing:
     /// FALSIFY-MCP-005 (`jsonrpc` must be exactly `"2.0"` or the response is
-    /// `-32600 Invalid Request`) and FALSIFY-MCP-007 (an `initialize` whose
-    /// `params.protocolVersion` mismatches ours returns `-32602 Invalid Params`
-    /// instead of advancing to tools/list).
+    /// `-32600 Invalid Request`). Version negotiation is handled inside
+    /// [`Self::handle_initialize`] per FALSIFY-MCP-007.
     #[must_use]
     pub fn handle_request(&mut self, request: &JsonRpcRequest) -> JsonRpcResponse {
         if request.jsonrpc != "2.0" {
             return JsonRpcResponse::error(
                 request.id.clone(),
-                -32600,
+                INVALID_REQUEST,
                 format!(
                     "Invalid Request: jsonrpc must be \"2.0\", got \"{}\"",
                     request.jsonrpc
@@ -103,36 +112,30 @@ impl AprMcpServer {
             "initialize" => self.handle_initialize(request),
             "tools/list" => self.handle_tools_list(request),
             "tools/call" => self.handle_tools_call_sync(request),
+            // FALSIFY-MCP-010: `ping` is part of the MCP *base* protocol —
+            // it is not gated on any advertised capability, and the receiver
+            // must reply promptly with an empty result. Answering -32601 made
+            // every client that polls for liveness conclude the server was
+            // dead and restart it.
+            "ping" => JsonRpcResponse::success(request.id.clone(), serde_json::json!({})),
             other => JsonRpcResponse::error(
                 request.id.clone(),
-                -32601,
+                METHOD_NOT_FOUND,
                 format!("Method not found: {other}"),
             ),
         }
     }
 
     fn handle_initialize(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
-        // FALSIFY-MCP-007: if the client advertises a protocolVersion, it must
-        // match ours. Missing field is permitted (some clients omit it on the
-        // very first handshake); only a *mismatch* is rejected.
-        if let Some(client_version) = request
-            .params
-            .get("protocolVersion")
-            .and_then(|v| v.as_str())
-        {
-            if client_version != crate::PROTOCOL_VERSION {
-                return JsonRpcResponse::error(
-                    request.id.clone(),
-                    -32602,
-                    format!(
-                        "Unsupported protocolVersion: client requested \"{}\", server speaks \"{}\"",
-                        client_version,
-                        crate::PROTOCOL_VERSION
-                    ),
-                );
-            }
-        }
-
+        // FALSIFY-MCP-007: version negotiation, NOT a version gate. The MCP
+        // lifecycle says: if the server supports the requested version it
+        // echoes that version; otherwise it responds with a version it DOES
+        // support and lets the client decide whether to proceed. Returning
+        // -32602 (as 0.63.0 did) aborts the handshake, so every client that
+        // negotiates a newer dated version — Claude Code, Cursor and Cline all
+        // negotiate 2025-03-26 or 2025-06-18 — could never connect at all.
+        // We always answer with `crate::PROTOCOL_VERSION`; the client sees the
+        // mismatch in the result and disconnects itself if it cannot cope.
         JsonRpcResponse::success(
             request.id.clone(),
             serde_json::json!({
@@ -188,7 +191,7 @@ impl AprMcpServer {
         if request.jsonrpc != "2.0" {
             return Some(JsonRpcResponse::error(
                 request.id.clone(),
-                -32600,
+                INVALID_REQUEST,
                 format!(
                     "Invalid Request: jsonrpc must be \"2.0\", got \"{}\"",
                     request.jsonrpc
@@ -272,11 +275,26 @@ impl AprMcpServer {
     /// Run the server over stdio (blocking).
     ///
     /// Reads one JSON-RPC message per line from stdin. `initialize`,
-    /// `tools/list`, and unknown methods dispatch inline. `tools/call`
-    /// spawns a worker thread so a subsequent `notifications/cancelled`
-    /// message can flow through the main loop and signal the worker's
-    /// cancel channel. Workers write their responses directly to stdout
-    /// (guarded by a mutex) so the main loop never has to wait on them.
+    /// `tools/list`, `ping`, and unknown methods dispatch inline.
+    /// `tools/call` spawns a worker thread so a subsequent
+    /// `notifications/cancelled` message can flow through the main loop and
+    /// signal the worker's cancel channel. Workers write their responses
+    /// directly to stdout (guarded by a mutex) so the main loop never has to
+    /// wait on them.
+    ///
+    /// Two transport-level invariants this loop owns:
+    ///
+    /// * **FALSIFY-MCP-011** — a line is read as raw BYTES and decoded
+    ///   lossily. `BufRead::lines()` surfaces the first non-UTF-8 byte as an
+    ///   `io::Error`, and 0.63.0 propagated it straight out of this function:
+    ///   one stray `0xFF` terminated the whole server with exit 1 and every
+    ///   later request on the session was lost. A malformed line must cost
+    ///   one `-32700`, not the session.
+    /// * **FALSIFY-MCP-012** — every spawned `tools/call` worker is joined
+    ///   before returning. 0.63.0 returned as soon as stdin hit EOF, so the
+    ///   worker's response was never written: `printf ... | apr mcp` exited 0
+    ///   having answered `initialize` and `tools/list` but silently dropped
+    ///   every tool result.
     ///
     /// # Errors
     /// Returns an error if stdin/stdout I/O fails.
@@ -286,21 +304,37 @@ impl AprMcpServer {
 
         let stdin = io::stdin();
         let stdout = Arc::new(Mutex::new(io::stdout()));
+        let mut reader = stdin.lock();
+        let mut workers: Vec<std::thread::JoinHandle<()>> = Vec::new();
+        let mut raw: Vec<u8> = Vec::new();
 
-        for line in stdin.lock().lines() {
-            let line = line?;
+        loop {
+            raw.clear();
+            // FALSIFY-MCP-011: read_until over lines() — a decode failure
+            // must not be able to reach the `?` below. Only a genuine I/O
+            // error can, and that one really is fatal.
+            if reader.read_until(b'\n', &mut raw)? == 0 {
+                break; // EOF
+            }
+            let decoded = String::from_utf8_lossy(&raw);
+            let line = decoded.trim_end_matches(['\n', '\r']);
             if line.trim().is_empty() {
                 continue;
             }
 
-            let parsed: Result<JsonRpcRequest, _> = serde_json::from_str(&line);
-            match parsed {
-                Ok(req) => self.route_stdio_message(req, &stdout)?,
-                Err(e) => {
-                    let resp = JsonRpcResponse::error(None, -32700, format!("Parse error: {e}"));
-                    write_response(&stdout, &resp)?;
-                }
+            match parse_request_line(line) {
+                Ok(req) => self.route_stdio_message(req, &stdout, &mut workers)?,
+                Err(resp) => write_response(&stdout, &resp)?,
             }
+
+            // Keep the handle list from growing without bound on a long
+            // session; joining finished workers here is free.
+            workers.retain(|handle| !handle.is_finished());
+        }
+
+        // FALSIFY-MCP-012: EOF is not permission to abandon in-flight work.
+        for worker in workers {
+            let _ = worker.join();
         }
 
         Ok(())
@@ -313,12 +347,13 @@ impl AprMcpServer {
         &mut self,
         req: JsonRpcRequest,
         stdout: &Arc<Mutex<std::io::Stdout>>,
+        workers: &mut Vec<std::thread::JoinHandle<()>>,
     ) -> anyhow::Result<()> {
         // FALSIFY-MCP-005: jsonrpc field gate runs before method dispatch.
         if req.jsonrpc != "2.0" {
             let resp = JsonRpcResponse::error(
                 req.id.clone(),
-                -32600,
+                INVALID_REQUEST,
                 format!(
                     "Invalid Request: jsonrpc must be \"2.0\", got \"{}\"",
                     req.jsonrpc
@@ -339,7 +374,7 @@ impl AprMcpServer {
                 // Client handshake ack — no response, no state change.
                 Ok(())
             }
-            "tools/call" => self.spawn_tools_call_worker(req, stdout),
+            "tools/call" => self.spawn_tools_call_worker(req, stdout, workers),
             // Fast inline paths.
             _ => {
                 // FALSIFY-MCP-009: JSON-RPC 2.0 §4.1 — a Request object
@@ -365,13 +400,17 @@ impl AprMcpServer {
         &mut self,
         req: JsonRpcRequest,
         stdout: &Arc<Mutex<std::io::Stdout>>,
+        workers: &mut Vec<std::thread::JoinHandle<()>>,
     ) -> anyhow::Result<()> {
         // Notifications would arrive with id = None; tools/call must have
         // an id per JSON-RPC. Defensive: if it's missing, respond inline
         // with an error so the client sees the failure immediately.
         let Some(id) = req.id.clone() else {
-            let resp =
-                JsonRpcResponse::error(None, -32600, "Invalid Request: tools/call requires an id");
+            let resp = JsonRpcResponse::error(
+                None,
+                INVALID_REQUEST,
+                "Invalid Request: tools/call requires an id",
+            );
             return write_response(stdout, &resp);
         };
 
@@ -410,14 +449,20 @@ impl AprMcpServer {
         });
 
         match spawn_result {
-            Ok(_handle) => Ok(()),
+            Ok(handle) => {
+                // FALSIFY-MCP-012: retain the handle so `run_stdio` can join
+                // it on EOF. Dropping it here is what silently lost every
+                // tool result in 0.63.0.
+                workers.push(handle);
+                Ok(())
+            }
             Err(e) => {
                 // Failed to spawn — clean up the registry entry we just
                 // inserted and report the failure inline.
                 Self::deregister_in_flight(&self.in_flight, &id);
                 let resp = JsonRpcResponse::error(
                     Some(id),
-                    -32603,
+                    INTERNAL_ERROR,
                     format!("Internal error: failed to spawn worker thread: {e}"),
                 );
                 write_response(stdout, &resp)
@@ -430,6 +475,112 @@ impl AprMcpServer {
     pub fn in_flight_handle(&self) -> InFlight {
         Arc::clone(&self.in_flight)
     }
+}
+
+/// Parse one stdio line into a [`JsonRpcRequest`], or into the JSON-RPC
+/// error response the client should receive.
+///
+/// FALSIFY-MCP-011. 0.63.0 deserialized straight into `JsonRpcRequest` and
+/// mapped *every* serde failure to `-32700 Parse error` with `id: null`.
+/// That is wrong on three counts, all of which a client sees:
+///
+/// * `-32700` means "not valid JSON". A syntactically valid object that is
+///   merely missing `jsonrpc` or `method` is `-32600 Invalid Request`. The
+///   server already got this right when `jsonrpc` had the wrong *value*, so
+///   the two neighbouring cases disagreed with each other.
+/// * The id was thrown away, so a client could not correlate the failure
+///   with the request that caused it. We echo whatever id was supplied.
+/// * A JSON-RPC batch array produced serde's internal
+///   "invalid type: map, expected a string at line 1 column 1" — an attempt
+///   to read the first array element as the `jsonrpc` field. It named
+///   neither arrays nor batching, and pointed at a `[` that is valid JSON.
+///
+/// Batching stays unsupported (it is optional for a 2024-11-05 server), but
+/// it is now *declined*, not mis-parsed.
+fn parse_request_line(line: &str) -> Result<JsonRpcRequest, JsonRpcResponse> {
+    let value: serde_json::Value = match serde_json::from_str(line) {
+        Ok(value) => value,
+        // Genuinely not JSON — this is the one true -32700.
+        Err(e) => return Err(JsonRpcResponse::error(None, PARSE_ERROR, format!("Parse error: {e}"))),
+    };
+
+    if value.is_array() {
+        return Err(JsonRpcResponse::error(
+            None,
+            INVALID_REQUEST,
+            "Invalid Request: JSON-RPC batch arrays are not supported; \
+             send one request per line",
+        ));
+    }
+
+    let Some(object) = value.as_object() else {
+        return Err(JsonRpcResponse::error(
+            None,
+            INVALID_REQUEST,
+            format!(
+                "Invalid Request: expected a JSON object, got {}",
+                json_type_name(&value)
+            ),
+        ));
+    };
+
+    // Echo the id on every shape error so the client can correlate. An
+    // explicit `"id": null` is indistinguishable from absent per JSON-RPC.
+    let id = object.get("id").filter(|v| !v.is_null()).cloned();
+
+    let jsonrpc = match object.get("jsonrpc") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(other) => {
+            return Err(JsonRpcResponse::error(
+                id,
+                INVALID_REQUEST,
+                format!(
+                    "Invalid Request: jsonrpc must be a string, got {}",
+                    json_type_name(other)
+                ),
+            ))
+        }
+        None => {
+            return Err(JsonRpcResponse::error(
+                id,
+                INVALID_REQUEST,
+                "Invalid Request: missing required field `jsonrpc`",
+            ))
+        }
+    };
+
+    let method = match object.get("method") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(other) => {
+            return Err(JsonRpcResponse::error(
+                id,
+                INVALID_REQUEST,
+                format!(
+                    "Invalid Request: method must be a string, got {}",
+                    json_type_name(other)
+                ),
+            ))
+        }
+        None => {
+            return Err(JsonRpcResponse::error(
+                id,
+                INVALID_REQUEST,
+                "Invalid Request: missing required field `method`",
+            ))
+        }
+    };
+
+    let params = object
+        .get("params")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    Ok(JsonRpcRequest {
+        jsonrpc,
+        id,
+        method,
+        params,
+    })
 }
 
 /// Shared tool-call dispatch logic used by both the sync and stdio paths.
@@ -700,6 +851,145 @@ mod tests {
             !signalled_again,
             "cancelling an already-removed id is a no-op"
         );
+    }
+
+    /// FALSIFY-MCP-007 (unit): a client asking for a NEWER protocol version
+    /// must complete the handshake, receiving the version the server does
+    /// speak. 0.63.0 returned -32602 here and no MCP client could connect.
+    #[test]
+    fn initialize_answers_unsupported_version_with_the_supported_one() {
+        let mut server = AprMcpServer::new();
+        for client_version in ["2025-06-18", "2025-03-26", "2024-10-07", "latest"] {
+            let req = make_request(
+                "initialize",
+                serde_json::json!({ "protocolVersion": client_version }),
+            );
+            let resp = server.handle_request(&req);
+            assert!(
+                resp.error.is_none(),
+                "initialize must not error on protocolVersion {client_version}: {:?}",
+                resp.error
+            );
+            let result = resp.result.expect("result present");
+            assert_eq!(
+                result["protocolVersion"],
+                crate::PROTOCOL_VERSION,
+                "server must advertise its own version to a {client_version} client"
+            );
+        }
+    }
+
+    /// FALSIFY-MCP-010 (unit): `ping` is a base-protocol method and answers
+    /// with an empty result. 0.63.0 returned -32601, which liveness-polling
+    /// clients read as a dead server.
+    #[test]
+    fn ping_returns_empty_result() {
+        let mut server = AprMcpServer::new();
+        let resp = server.handle_request(&make_request("ping", serde_json::json!({})));
+        assert!(resp.error.is_none(), "ping must not error: {:?}", resp.error);
+        assert_eq!(resp.result.expect("result present"), serde_json::json!({}));
+    }
+
+    /// FALSIFY-MCP-011 (unit): a syntactically valid JSON object that is not
+    /// a valid Request object is -32600 with its id echoed — NOT -32700 with
+    /// a null id, which is what serde's missing-field error produced.
+    #[test]
+    fn parse_request_line_missing_field_is_invalid_request_with_id() {
+        for line in [
+            r#"{"id":1,"method":"tools/list"}"#,
+            r#"{"jsonrpc":"2.0","id":1}"#,
+        ] {
+            let err = parse_request_line(line).expect_err("must be rejected");
+            let detail = err.error.expect("error present");
+            assert_eq!(
+                detail.code, INVALID_REQUEST,
+                "{line} must be -32600 Invalid Request, got {}",
+                detail.code
+            );
+            assert_eq!(
+                err.id,
+                Some(serde_json::json!(1)),
+                "{line} must echo the request id so the client can correlate"
+            );
+        }
+    }
+
+    /// FALSIFY-MCP-011 (unit): a wrong-TYPED envelope field is also -32600,
+    /// and the message names the type actually received.
+    #[test]
+    fn parse_request_line_wrong_typed_field_names_the_type() {
+        let err = parse_request_line(r#"{"jsonrpc":2.0,"id":9,"method":"tools/list"}"#)
+            .expect_err("numeric jsonrpc must be rejected");
+        let detail = err.error.expect("error present");
+        assert_eq!(detail.code, INVALID_REQUEST);
+        assert!(
+            detail.message.contains("number"),
+            "message must name the received type, got: {}",
+            detail.message
+        );
+    }
+
+    /// FALSIFY-MCP-011 (unit): a batch array is declined by name. 0.63.0
+    /// emitted serde's "invalid type: map, expected a string at line 1
+    /// column 1", which names neither arrays nor batching.
+    #[test]
+    fn parse_request_line_batch_array_is_declined_by_name() {
+        let line = r#"[{"jsonrpc":"2.0","id":1,"method":"tools/list"}]"#;
+        let err = parse_request_line(line).expect_err("batch must be rejected");
+        let detail = err.error.expect("error present");
+        assert_eq!(detail.code, INVALID_REQUEST);
+        assert!(
+            detail.message.contains("batch"),
+            "message must name batching, got: {}",
+            detail.message
+        );
+        assert!(
+            !detail.message.contains("invalid type"),
+            "message must not leak serde internals, got: {}",
+            detail.message
+        );
+    }
+
+    /// FALSIFY-MCP-011 (unit): genuinely malformed JSON keeps -32700 — the
+    /// fix must not blur the two codes in the other direction.
+    #[test]
+    fn parse_request_line_malformed_json_is_still_parse_error() {
+        let err = parse_request_line("{not json").expect_err("malformed JSON must be rejected");
+        let detail = err.error.expect("error present");
+        assert_eq!(detail.code, PARSE_ERROR);
+        assert!(err.id.is_none(), "an unparseable line has no recoverable id");
+    }
+
+    /// A well-formed request round-trips through the validator unchanged,
+    /// including a string id and an absent `params`.
+    #[test]
+    fn parse_request_line_accepts_well_formed_request() {
+        let req = parse_request_line(r#"{"jsonrpc":"2.0","id":"req-42","method":"tools/list"}"#)
+            .expect("well-formed request must parse");
+        assert_eq!(req.jsonrpc, "2.0");
+        assert_eq!(req.method, "tools/list");
+        assert_eq!(req.id, Some(serde_json::json!("req-42")));
+        assert!(req.params.is_null(), "absent params defaults to null");
+    }
+
+    /// A wrong `jsonrpc` VALUE still parses (the dispatcher's -32600 gate
+    /// owns that case) — proving the two neighbouring checks now agree on
+    /// the code and on echoing the id.
+    #[test]
+    fn wrong_jsonrpc_value_and_missing_jsonrpc_agree_on_code_and_id() {
+        let parsed = parse_request_line(r#"{"jsonrpc":"1.0","id":5,"method":"tools/list"}"#)
+            .expect("wrong value still parses as a request envelope");
+        let mut server = AprMcpServer::new();
+        let wrong_value = server.handle_request(&parsed);
+        let missing = parse_request_line(r#"{"id":5,"method":"tools/list"}"#)
+            .expect_err("missing jsonrpc is rejected");
+
+        assert_eq!(
+            wrong_value.error.expect("error").code,
+            missing.error.expect("error").code,
+            "wrong-value and missing-field must map to the same JSON-RPC code"
+        );
+        assert_eq!(wrong_value.id, missing.id, "both must echo id 5");
     }
 
     /// FALSIFY-MCP-006 (unit): cancelling an unknown id is a safe no-op.

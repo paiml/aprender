@@ -8,6 +8,25 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Human-readable JSON type name, for diagnostics that must tell a client
+/// what it actually sent.
+///
+/// Used by the request-shape validator in [`crate::server`] and by
+/// [`crate::tools::require_str`]. Both previously reported a wrong-typed
+/// value as if it were absent, which sends a client (or an LLM) off to
+/// re-send a key it already supplied.
+#[must_use]
+pub fn json_type_name(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
 /// JSON-RPC 2.0 request envelope.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {

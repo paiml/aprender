@@ -135,27 +135,49 @@ fn falsify_mcp_005_invalid_jsonrpc_version_is_minus_32600() {
     assert_eq!(resp.id, Some(serde_json::json!(40)), "id echoed back");
 }
 
-/// FALSIFY-MCP-007: an `initialize` whose `params.protocolVersion` does not
-/// match the server's supported version must be rejected with `-32602 Invalid
-/// Params`. The server must not advance the connection — subsequent
-/// `tools/list` from the same client would also need to fail until a compatible
-/// version is negotiated, but here we only assert the negotiation-phase error.
+/// FALSIFY-MCP-007: `initialize` NEGOTIATES a protocol version — it does not
+/// gate on one. Per the MCP lifecycle, a server that does not support the
+/// requested version responds with a version it DOES support and lets the
+/// client decide whether to proceed or disconnect.
+///
+/// This test previously asserted the opposite (`-32602 Invalid Params` on any
+/// mismatch) and so held the defect in place: `apr` 0.63.0 rejected every
+/// `protocolVersion` other than the literal `"2024-11-05"` — including OLDER
+/// dated versions, so it was not a floor check either — which meant Claude
+/// Code, Cursor and Cline, all of which negotiate 2025-03-26 or 2025-06-18,
+/// could never complete a handshake with `apr mcp`. The assertion was
+/// inverted, not deleted: the negotiation-phase behaviour is still pinned,
+/// now to the behaviour the spec actually requires.
 #[test]
-fn falsify_mcp_007_protocol_version_mismatch_is_minus_32602() {
+fn falsify_mcp_007_unsupported_version_is_negotiated_not_rejected() {
     let mut server = AprMcpServer::new();
-    let resp = server.handle_request(&request(
-        50,
-        "initialize",
-        serde_json::json!({ "protocolVersion": "1999-01-01" }),
-    ));
 
-    assert!(resp.result.is_none(), "must not return success");
-    let err = resp.error.expect("error present");
-    assert_eq!(err.code, -32602, "must be Invalid Params");
+    for client_version in ["2025-06-18", "2025-03-26", "2024-10-07", "1999-01-01"] {
+        let resp = server.handle_request(&request(
+            50,
+            "initialize",
+            serde_json::json!({ "protocolVersion": client_version }),
+        ));
+
+        assert!(
+            resp.error.is_none(),
+            "initialize must not abort the handshake for client version \
+             {client_version}, got error: {:?}",
+            resp.error
+        );
+        let result = resp.result.expect("result present");
+        assert_eq!(
+            result["protocolVersion"], PROTOCOL_VERSION,
+            "server must reply with the version it supports so the client can \
+             decide; client asked for {client_version}"
+        );
+    }
+
+    // Negotiation must actually advance: the same server keeps serving.
+    let list = server.handle_request(&request(51, "tools/list", serde_json::json!({})));
     assert!(
-        err.message.contains("protocolVersion"),
-        "message should mention protocolVersion, got: {}",
-        err.message
+        list.error.is_none(),
+        "a client that negotiated a newer version must be able to use the server"
     );
 }
 
