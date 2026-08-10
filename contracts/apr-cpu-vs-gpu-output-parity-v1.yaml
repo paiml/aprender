@@ -166,7 +166,7 @@ falsification_tests:
     apr run <broken-gpu-model> --prompt 'What is 2+2?' --max-tokens 1
       --temperature 0.0
     SHOULD emit on stderr (without --verbose):
-      [apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, attempting fallback: <error>
+      warning: GPU (CUDA) path rejected, attempting fallback: <error>
     AND ideally also:
       (a) error out cleanly, OR
       (b) fall back to a backend that produces correct output.
@@ -181,7 +181,8 @@ falsification_tests:
   - "Empirical 2026-05-03 with `apr -v run` on canonical 7B teacher: gate's GPU forward errors with `CUDA_ERROR_ILLEGAL_ADDRESS (code: 700)` during forward_all_layers_gpu_to_logits_graphed, surfaced via verbose-only line `Backend: CPU (GPU unavailable: Inference error: PARITY-GATE: GPU forward failed: ...)` — see findings-v6"
   - "User-visible regression: pre-fix the verbose-only log meant default `apr run` on the broken canonical teacher produced wgpu-gibberish output with NO stderr signal that GPU had been rejected"
   - "Fix wired in this revision: `gguf_gpu_generate.rs:487-494` now emits one unconditional eprintln tagged with this contract ID when CUDA init/parity rejects the path, so users always see the fallback decision"
-  - "Drift-prevention: regression test should grep stderr for the `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected` tag on a deliberately broken or non-CUDA host"
+  - "Drift-prevention: regression test should grep stderr for the `warning: GPU (CUDA) path rejected` tag on a deliberately broken or non-CUDA host"
+  - "2026-08-10 (#2405): the jidoka tag was reworded from the contract ID `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected` to prose `warning: GPU (CUDA) path rejected`. The property this falsifier buys — the user sees WHICH backend was rejected, unconditionally, without --verbose — is unchanged; only the wording is. The drift-prevention tests now assert that property (`cuda_fallback_log_prefix_warns_the_user_in_prose`) instead of the contract filename, which a user could never act on. Historical discharge records below quote the pre-#2405 wording verbatim and are left as recorded."
   - "FALSIFY-CPU-GPU-005 wgpu parity-gate companion landed 2026-05-03 (PR #1442) and live-discharged 2026-05-04 (PR #1445), so wgpu-gibberish no longer slips through after CUDA fallback — the visibility loophole this falsifier was authored to close is now closed at both backends."
   - "LIVE DISCHARGE 2026-05-04 on noah-Lambda-Vector (RTX 4090): default-mode `apr run` (no --verbose) on canonical 7B teacher emitted `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, attempting fallback: ...PARITY-GATE FAILED... Cosine similarity: -0.005190 ... CPU argmax: 334 | GPU argmax: 8127` as line 1 of the GPU-rejection block. The parity_gate ran (it produced the cosine value), the user saw the rejection without --verbose, and fallback proceeded through wgpu → CPU to deliver correct output. All three of the falsifier's predictions verified empirically. Evidence: evidence/cpu-gpu-005-live-discharge-2026-05-04/{wgpu-smoke.log,findings.md}."
 
@@ -220,14 +221,14 @@ falsification_tests:
       (b) wgpu init runs a one-token CPU-vs-wgpu cosine check on the
           BOS token. If cosine < 0.99 OR argmax mismatch, return None
           → fall through to CPU. Tagged stderr line:
-          `[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: <reason>`
+          `warning: GPU (wgpu) path rejected, attempting fallback: <reason>`
   test: |
     apr run <broken-gpu-model.apr> --prompt 'What is 2+2?' --max-tokens 1
       --temperature 0.0 2>&1 | tee /tmp/run.log
     SHOULD show:
-      [apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected, ...   (existing FALSIFY-CPU-GPU-003)
+      warning: GPU (CUDA) path rejected, ...                       (existing FALSIFY-CPU-GPU-003)
       Backend: wgpu (Vulkan)                                       (NEW: visible without -v)
-      [apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, ...   (NEW: parity gate)
+      warning: GPU (wgpu) path rejected, ...                       (NEW: parity gate)
       Backend: CPU (correct output follows)
     AND the final stdout output should be the CPU-produced "2 + 2 equals 4." (or equivalent), NOT wgpu's gibberish.
   if_fails: "Even after the CUDA jidoka log, wgpu can still ship silent gibberish — the loophole is not closed"
@@ -259,7 +260,7 @@ falsification_tests:
     APR_WGPU_PARITY_STEPS=3 apr run /path/to/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
         "What is 2+2?" --max-tokens 8 2>&1 | tee /tmp/run.log
     SHOULD show:
-      [apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected, attempting fallback: cosine vs CPU = <c> (< 0.99) at step <k>/3
+      warning: GPU (wgpu) path rejected, attempting fallback: cosine vs CPU = <c> (< 0.99) at step <k>/3
     AND final stdout MUST be the CPU output (e.g. "2 + 2 equals 4."), NOT
     "ampiezza\nampiezza" or any other gibberish.
 

@@ -134,15 +134,23 @@ falsification_tests:
 - id: FT-Q4K-TEACHER-001
   rule: CudaTrainerTeacher::for_inference does NOT dequantize Q4K teacher weights at load
   prediction: |
-    apr distill with a Q4K teacher logs no "[PMAT-333] Dequantizing N layers" line.
+    apr distill with a Q4K teacher logs no dequantize-to-F32 line.
     The presence of this line in evidence/distill-7b-teacher-loadtest-gx10/launch.log
     is the current-state falsifier — post-fix that line must be absent.
+
+    2026-08-10 (#2405): the line was reworded from
+    "[PMAT-333] Dequantizing N layers (hidden=..., heads=..., intermediate=...)"
+    to "Preparing GPU weights: dequantizing N layers to F32". The grep below MUST
+    match both spellings, otherwise this falsifier silently becomes a pass-grep
+    that cannot fail — the old pattern "PMAT-333.*Dequantizing" now returns 0 on
+    a log that DOES contain the dequant line.
   if_fails: |
     Cuda backend's load path still ran dequantize_q4k_to_f32. Likely the teacher_mode
     detection didn't trigger; check CudaTransformerTrainer::for_inference branch.
   evidence: |
-    grep -c "PMAT-333.*Dequantizing" evidence/distill-7b-teacher-loadtest-gx10/launch-after-fix-b.log
-    Expected: 0 (current pre-fix log has 1 occurrence)
+    grep -ciE "(PMAT-333.*Dequantizing|dequantizing [0-9]+ layers)" \
+      evidence/distill-7b-teacher-loadtest-gx10/launch-after-fix-b.log
+    Expected: 0 (pre-fix log has 1 occurrence, under either spelling)
 - id: FT-Q4K-TEACHER-002
   rule: 7B Q4K teacher GPU memory footprint <= 6 GB
   prediction: |
