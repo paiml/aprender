@@ -133,6 +133,26 @@ pub struct OllamaGenerateResponse {
     pub eval_count: usize,
 }
 
+/// Ollama `/api/embeddings` request.
+///
+/// Ollama names the text field `prompt` (not `input`), and the response is a
+/// single flat vector — this is the shape `OllamaEmbeddings` and Open WebUI send.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OllamaEmbeddingsRequest {
+    /// Model tag. Optional — defaults to the loaded model.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Text to embed.
+    pub prompt: String,
+}
+
+/// Ollama `/api/embeddings` response: one flat vector, no envelope.
+#[derive(Debug, Clone, Serialize)]
+pub struct OllamaEmbeddingsResponse {
+    /// The embedding vector (length == the model's hidden size).
+    pub embedding: Vec<f32>,
+}
+
 // ============================================================================
 // Conversion helpers (pure — unit-tested)
 // ============================================================================
@@ -300,6 +320,35 @@ pub async fn ollama_generate_handler(
         eval_count,
     })
     .into_response()
+}
+
+/// `POST /api/embeddings` — Ollama embedding endpoint.
+///
+/// aprender#2396 finding 2: the startup banner advertises "Ollama-Parity
+/// Endpoints" and every Ollama embedding client (Open WebUI's knowledge base,
+/// LangChain `OllamaEmbeddings`, LlamaIndex) posts here — but the route was not
+/// mounted at all, so they got the router's 404 and no embeddings.
+///
+/// Ollama's wire shape is a single `prompt` in and a single flat `embedding` out;
+/// the numbers come from the SAME [`embed_inputs`](super::realize_handlers::embed_inputs)
+/// path as `/realize/embed` and `/v1/embeddings`, so the three routes cannot
+/// disagree about the same text on the same server.
+pub async fn ollama_embeddings_handler(
+    State(state): State<AppState>,
+    Json(request): Json<OllamaEmbeddingsRequest>,
+) -> Result<Json<OllamaEmbeddingsResponse>, (StatusCode, Json<super::ErrorResponse>)> {
+    let input = super::EmbeddingInput::Single(request.prompt);
+    let (embeddings, _prompt_tokens) = super::realize_handlers::embed_inputs(
+        &state,
+        request.model.as_deref(),
+        &input,
+        "/api/embeddings",
+    )?;
+
+    Ok(Json(OllamaEmbeddingsResponse {
+        // Exactly one input went in, so exactly one vector comes back.
+        embedding: embeddings.into_iter().next().unwrap_or_default(),
+    }))
 }
 
 #[cfg(test)]

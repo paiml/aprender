@@ -47,9 +47,11 @@ impl Default for RouterConfig {
 /// serves this list itself, and `test_advertised_routes_are_all_mounted` probes
 /// every entry so the list cannot drift into a second false advertisement.
 const NATIVE_ROUTES: &[(&str, &str)] = &[
+    ("GET", "/"),
     ("GET", "/health"),
     ("GET", "/health/live"),
     ("GET", "/health/ready"),
+    ("GET", "/ready"),
     ("GET", "/metrics"),
     ("GET", "/metrics/dispatch"),
     ("POST", "/metrics/dispatch/reset"),
@@ -82,6 +84,7 @@ const OPENAI_ROUTES: &[(&str, &str)] = &[
     ("GET", "/v1/metrics"),
     ("POST", "/api/chat"),
     ("POST", "/api/generate"),
+    ("POST", "/api/embeddings"),
 ];
 
 /// Routes mounted only in CUDA builds (realizr#191).
@@ -116,11 +119,33 @@ pub fn create_router(state: AppState) -> Router {
 /// * `state` - Application state with model and tokenizer
 /// * `config` - Router configuration (controls which route groups are enabled)
 pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Router {
+    // aprender#2376(8): `GET /` and `GET /ready` are registered by the two OTHER
+    // routers in this repo (apr-cli `commands/serve/routes.rs`, `serve_run_model.rs`)
+    // and 404'd here, so which of three route surfaces you got depended on the
+    // format of the file you passed to `apr serve run`. `/` now answers with the
+    // route table this router actually mounted — the one thing a client needs to
+    // discover the surface it landed on — and `/ready` is the conventional
+    // readiness path, an alias of `/health/ready`.
+    let index_routes = route_index(config.openai_api);
     let mut router = Router::new()
+        .route(
+            "/",
+            get(move || {
+                let routes = index_routes.clone();
+                async move {
+                    Json(serde_json::json!({
+                        "service": "apr serve",
+                        "version": env!("CARGO_PKG_VERSION"),
+                        "routes": routes,
+                    }))
+                }
+            }),
+        )
         // Health and metrics (CRUX-C-34: /health, /health/live, /health/ready)
         .route("/health", get(health_handler))
         .route("/health/live", get(health_live_handler))
         .route("/health/ready", get(health_ready_handler))
+        .route("/ready", get(health_ready_handler))
         .route("/metrics", get(metrics_handler))
         .route("/metrics/dispatch", get(dispatch_metrics_handler))
         .route("/metrics/dispatch/reset", post(dispatch_reset_handler))
@@ -167,7 +192,10 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
             // a drop-in Ollama HTTP replacement. Both delegate to the OpenAI chat
             // generation path. Discharges OBLIG-OLLAMA-API-CHAT-GENERATE-ROUTED.
             .route("/api/chat", post(ollama_chat_handler))
-            .route("/api/generate", post(ollama_generate_handler));
+            .route("/api/generate", post(ollama_generate_handler))
+            // aprender#2396(2): every Ollama embedding client posts here; the route
+            // did not exist, so they got the 404 fallback.
+            .route("/api/embeddings", post(ollama_embeddings_handler));
     }
 
     // realizr#191: Logprobs + perplexity endpoints (CUDA only, F-QUALITY-01)
@@ -205,30 +233,87 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
     router.layer(cors).with_state(state)
 }
 
-/// GH-649: Middleware that intercepts axum's 422 JSON rejection responses and replaces
-/// the body with a generic error message, preventing internal serde error details from
-/// leaking to API clients.
+/// The client-safe replacement body for an error response that is not already JSON.
+///
+/// Returns `None` for statuses we have no better wording for than the status line
+/// itself would give — those still get an envelope, just a generic message.
+fn sanitized_error_message(status: StatusCode) -> String {
+    match status {
+        // Axum `JsonSyntaxError`: the default body is
+        // "Failed to parse the request body as JSON: key must be a string at line 1
+        // column 2" — a serde parser position, which is exactly what the GH-649
+        // sanitizer was added to stop leaking.
+        StatusCode::BAD_REQUEST => {
+            "Invalid request body. Expected a JSON object matching this endpoint's schema."
+                .to_string()
+        },
+        StatusCode::UNSUPPORTED_MEDIA_TYPE => {
+            "Expected request with Content-Type: application/json.".to_string()
+        },
+        StatusCode::PAYLOAD_TOO_LARGE => "Request body is too large.".to_string(),
+        StatusCode::METHOD_NOT_ALLOWED => {
+            "Method not allowed for this route. See the `allow` header.".to_string()
+        },
+        StatusCode::UNPROCESSABLE_ENTITY => {
+            "Invalid request body. Check that the JSON structure matches the expected schema."
+                .to_string()
+        },
+        other => format!(
+            "Request failed with status {} {}.",
+            other.as_u16(),
+            other.canonical_reason().unwrap_or("Error")
+        ),
+    }
+}
+
+/// GH-649 + aprender#2376(7): give every failure the same `{"error": "..."}`
+/// envelope, and never let a parser's internals reach a client.
+///
+/// The original sanitizer intercepted `422` only, so axum's own `400`
+/// (`JsonSyntaxError`) and `415` (`MissingJsonContentType`) rejections sailed
+/// through as `text/plain` — the 400 still quoting the serde error position that
+/// the 422 branch existed to hide. A client could not parse failures uniformly:
+/// most were JSON, two were bare text.
+///
+/// Responses that already carry `content-type: application/json` are passed
+/// through untouched, so every handler-authored message survives verbatim. The
+/// original headers are preserved as well — notably `allow` on a 405, which a
+/// rebuilt response would have dropped.
 async fn sanitize_json_rejection(
     request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    use axum::response::IntoResponse;
-
     let response = next.run(request).await;
 
-    // Axum returns 422 Unprocessable Entity for JSON deserialization failures.
-    // Replace the body to avoid leaking serde error internals.
-    if response.status() == StatusCode::UNPROCESSABLE_ENTITY {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(ErrorResponse {
-                error: "Invalid request body. Check that the JSON structure matches the expected schema.".to_string(),
-            }),
-        )
-            .into_response();
+    let status = response.status();
+    if !(status.is_client_error() || status.is_server_error()) {
+        return response;
     }
 
-    response
+    let already_json = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|ct| ct.starts_with("application/json"));
+    if already_json {
+        return response;
+    }
+
+    let body = serde_json::to_vec(&ErrorResponse {
+        error: sanitized_error_message(status),
+    })
+    .unwrap_or_else(|_| br#"{"error":"Request failed."}"#.to_vec());
+
+    // Keep the original head (status, `allow`, `retry-after`, …) and swap only the
+    // representation — rebuilding the response from scratch would silently drop
+    // headers a client depends on.
+    let (mut parts, _discarded) = response.into_parts();
+    parts.headers.remove(axum::http::header::CONTENT_LENGTH);
+    parts.headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/json"),
+    );
+    axum::response::Response::from_parts(parts, axum::body::Body::from(body))
 }
 
 /// Process-wide server start instant.

@@ -10,13 +10,18 @@
 /// Falls back to pooling over ALL tokens if every token was special (so we never
 /// return a zero vector for an all-special input).
 fn mean_pool_hidden_states(
-    hidden: &crate::tensor::Tensor<f32>,
+    data: &[f32],
     token_ids: &[u32],
     hidden_dim: usize,
     tokenizer: &crate::tokenizer::BPETokenizer,
 ) -> Vec<f32> {
-    let data = hidden.data();
-    let seq_len = token_ids.len();
+    // Never index past the rows we were actually given: `data` is
+    // `[seq_len, hidden_dim]` and the caller's `token_ids` must align with it.
+    let seq_len = if hidden_dim == 0 {
+        0
+    } else {
+        token_ids.len().min(data.len() / hidden_dim)
+    };
 
     let mut sum = vec![0.0f32; hidden_dim];
     let mut counted = 0usize;
@@ -52,49 +57,111 @@ fn mean_pool_hidden_states(
     sum
 }
 
-/// Native Realizar embedding handler (/realize/embed)
+/// Which backend answers an embedding request, resolved once per request.
 ///
-/// PMAT-803: returns REAL model-backed embeddings. The vector is the mean-pooled
-/// final-layer hidden state (the residual-stream output that `lm_head` consumes),
-/// L2-normalized, with dimension == the model's `hidden_dim`. Two semantically
-/// similar inputs therefore have higher cosine similarity than two dissimilar ones
-/// — a property the prior positional token-hash could not satisfy.
-pub async fn realize_embed_handler(
-    State(state): State<AppState>,
-    Json(request): Json<EmbeddingRequest>,
-) -> Result<Json<EmbeddingResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let model_id = request.model.as_deref();
-    // aprender#2376(5): the dense f32 Model is genuinely required here —
-    // `forward_hidden` (the residual stream `lm_head` consumes) exists only on it,
-    // and the quantized backend does not expose hidden states. But "this server
-    // has no dense model" is a server-side condition, so 503 with a message that
-    // says which backend is missing — not 404 "No model available" on a server
-    // whose /health says model_loaded:true.
-    let (model, tokenizer) = state.get_model(model_id).map_err(|e| {
-        let status = super::model_resolution_status(&e);
-        let error = if status == StatusCode::SERVICE_UNAVAILABLE {
-            format!("{e}: /realize/embed needs a dense (.apr / .safetensors) model; this server has a quantized model loaded")
-        } else {
-            e.to_string()
-        };
-        (status, Json(ErrorResponse { error }))
-    })?;
+/// aprender#2376 finding 1 (seventh route): the embedding path resolved the dense
+/// f32 [`Model`](crate::layers::Model) and nothing else, because `forward_hidden`
+/// lived only there. On the standard `apr serve run model.gguf` path that model is
+/// always `None` — the weights are quantized — so `/realize/embed`, `/v1/embeddings`
+/// and every client of them failed on a server whose `/generate` was answering and
+/// whose `/health` said `model_loaded:true`. The quantized backend now supplies the
+/// same quantity via `forward_hidden_states`, so both backends can serve embeddings.
+enum EmbedBackend {
+    /// Dense f32 transformer (.apr / .safetensors).
+    Dense(std::sync::Arc<crate::layers::Model>),
+    /// Quantized GGUF weights — what `apr serve run model.gguf` loads.
+    Quantized(std::sync::Arc<crate::gguf::OwnedQuantizedModel>),
+}
 
-    // PMAT-802 × PMAT-803 (stacked): OpenAI `/v1/embeddings` accepts `input` as a single
-    // string OR an array of strings, returning one embedding per input in request order
-    // (PMAT-802 batch loop). EACH input is embedded via the REAL model-backed path
-    // (PMAT-803): forward_hidden → mean-pool over non-special tokens → hidden_dim vector →
-    // L2-normalize — NOT the prior positional token-hash. So a batch of N inputs yields N
-    // real model-backed embeddings with `data[i].index == i` and dim == model hidden_size.
+impl EmbedBackend {
+    /// Hidden width of the embedding vectors this backend produces.
+    fn hidden_dim(&self) -> usize {
+        match self {
+            Self::Dense(m) => m.config().hidden_dim,
+            Self::Quantized(m) => m.config.hidden_dim,
+        }
+    }
 
-    // Dimension == model hidden_size (NOT a hardcoded 384). Constant across inputs, so
-    // hoist it out of the per-input loop.
-    let hidden_dim = model.config().hidden_dim;
+    /// Final-layer hidden states for `token_ids`, row-major `[seq_len, hidden_dim]`.
+    fn hidden_states(&self, token_ids: &[u32]) -> crate::error::Result<Vec<f32>> {
+        match self {
+            Self::Dense(m) => {
+                let usize_ids: Vec<usize> = token_ids.iter().map(|&t| t as usize).collect();
+                Ok(m.forward_hidden(&usize_ids)?.data().to_vec())
+            },
+            Self::Quantized(m) => m.forward_hidden_states(token_ids),
+        }
+    }
+}
 
-    let mut data = Vec::with_capacity(request.input.len());
+/// Resolve the backend + tokenizer that will answer an embedding request.
+///
+/// Dense first (registry mode selects by `model_id` there), quantized second. Only
+/// when neither is resident is this a server-side condition, and then it is 503 —
+/// not the 404 "No model available" the route used to answer.
+fn resolve_embed_backend(
+    state: &AppState,
+    model_id: Option<&str>,
+    route: &str,
+) -> Result<(EmbedBackend, std::sync::Arc<crate::tokenizer::BPETokenizer>), RErr> {
+    match state.get_model(model_id) {
+        Ok((model, tokenizer)) => return Ok((EmbedBackend::Dense(model), tokenizer)),
+        // An unknown `model_id` in registry mode is a CLIENT error and must stay a
+        // 404 — falling through to the resident quantized model would silently
+        // embed the caller's text with a model they did not ask for.
+        Err(e @ crate::error::RealizarError::ModelNotFound(_)) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: e.to_string(),
+                }),
+            ))
+        },
+        Err(_) => {},
+    }
+    if let Some(quantized) = state.quantized_model() {
+        let tokenizer = state.get_tokenizer(model_id).map_err(|e| {
+            (
+                super::model_resolution_status(&e),
+                Json(ErrorResponse {
+                    error: e.to_string(),
+                }),
+            )
+        })?;
+        return Ok((EmbedBackend::Quantized(quantized.clone()), tokenizer));
+    }
+    Err((
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(ErrorResponse {
+            error: format!("No model available: {route} needs a loaded model"),
+        }),
+    ))
+}
+
+/// Embed each input into one L2-normalized, mean-pooled vector.
+///
+/// Shared by `/realize/embed`, `/v1/embeddings` and `/api/embeddings` so all three
+/// return the same numbers for the same text on the same server.
+///
+/// Returns the embeddings in request order plus the total prompt-token count.
+pub(super) fn embed_inputs(
+    state: &AppState,
+    model_id: Option<&str>,
+    inputs: &EmbeddingInput,
+    route: &str,
+) -> Result<(Vec<Vec<f32>>, usize), RErr> {
+    let (backend, tokenizer) = resolve_embed_backend(state, model_id, route)?;
+
+    // PMAT-802 × PMAT-803 (stacked): `input` may be a single string OR an array of
+    // strings, and each element is embedded via the REAL model-backed path —
+    // hidden states → mean-pool over non-special tokens → L2-normalize — NOT a
+    // positional token-hash. Dimension is the model's hidden size, never a constant.
+    let hidden_dim = backend.hidden_dim();
+
+    let mut out = Vec::with_capacity(inputs.len());
     let mut prompt_tokens = 0usize;
 
-    for (index, text) in request.input.iter().enumerate() {
+    for (index, text) in inputs.iter().enumerate() {
         let token_ids = tokenizer.encode(text);
         if token_ids.is_empty() {
             return Err((
@@ -106,16 +173,16 @@ pub async fn realize_embed_handler(
         }
         prompt_tokens += token_ids.len();
 
-        // Model-backed embedding: run the forward pass and take the final-layer hidden
-        // state (pre-lm_head). The model's forward expects usize token IDs.
-        let usize_ids: Vec<usize> = token_ids.iter().map(|&t| t as usize).collect();
-        let hidden = model.forward_hidden(&usize_ids).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Embedding forward pass failed: {e}"),
-                }),
-            )
+        let hidden = backend.hidden_states(&token_ids).map_err(|e| {
+            // A sequence longer than the context window is fully determined by the
+            // request, so it is a client error — not a 500.
+            let status = super::generation_error_status(&e);
+            let error = if status == StatusCode::BAD_REQUEST {
+                e.to_string()
+            } else {
+                format!("Embedding forward pass failed: {e}")
+            };
+            (status, Json(ErrorResponse { error }))
         })?;
 
         // Mean-pool over non-special tokens, then L2-normalize.
@@ -127,13 +194,39 @@ pub async fn realize_embed_handler(
                 *v /= norm;
             }
         }
+        out.push(embedding);
+    }
 
-        data.push(EmbeddingData {
+    Ok((out, prompt_tokens))
+}
+
+/// Native Realizar embedding handler (/realize/embed)
+///
+/// PMAT-803: returns REAL model-backed embeddings. The vector is the mean-pooled
+/// final-layer hidden state (the residual-stream output that `lm_head` consumes),
+/// L2-normalized, with dimension == the model's `hidden_dim`. Two semantically
+/// similar inputs therefore have higher cosine similarity than two dissimilar ones
+/// — a property the prior positional token-hash could not satisfy.
+pub async fn realize_embed_handler(
+    State(state): State<AppState>,
+    Json(request): Json<EmbeddingRequest>,
+) -> Result<Json<EmbeddingResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let (embeddings, prompt_tokens) = embed_inputs(
+        &state,
+        request.model.as_deref(),
+        &request.input,
+        "/realize/embed",
+    )?;
+
+    let data = embeddings
+        .into_iter()
+        .enumerate()
+        .map(|(index, embedding)| EmbeddingData {
             object: "embedding".to_string(),
             index,
             embedding,
-        });
-    }
+        })
+        .collect();
 
     Ok(Json(EmbeddingResponse {
         object: "list".to_string(),
