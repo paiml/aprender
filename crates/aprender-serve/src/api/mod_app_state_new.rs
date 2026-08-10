@@ -133,6 +133,66 @@ impl AppState {
         Ok((model, tokenizer))
     }
 
+    /// Resolve just the tokenizer, without requiring a dense `Model`.
+    ///
+    /// [`Self::get_model`] can only answer with the dense f32 [`Model`], which is
+    /// `None` for every `apr serve run model.gguf` — the weights live in
+    /// `quantized_model` instead. Handlers that need nothing but the tokenizer
+    /// (`/tokenize`, `/batch/tokenize`) used to call `get_model()` and were
+    /// therefore dead on the standard serve path, answering
+    /// `"Model registry error: No model available"` on a server whose `/generate`
+    /// was working and whose `/health` reported `model_loaded:true`
+    /// (aprender#2376 findings 1 and 10).
+    ///
+    /// Registry mode still resolves through the registry so a `model_id` selects
+    /// that model's tokenizer.
+    ///
+    /// # Errors
+    ///
+    /// [`RealizarError::ModelNotFound`] if a registry `model_id` is unknown, or
+    /// [`RealizarError::RegistryError`] if no tokenizer is resident at all.
+    pub(crate) fn get_tokenizer(
+        &self,
+        model_id: Option<&str>,
+    ) -> Result<Arc<BPETokenizer>, RealizarError> {
+        if let Some(registry) = &self.registry {
+            let id = model_id
+                .or(self.default_model_id.as_deref())
+                .ok_or_else(|| RealizarError::RegistryError("No model ID specified".to_string()))?;
+            return registry.get(id).map(|(_, tokenizer)| tokenizer);
+        }
+
+        self.tokenizer
+            .clone()
+            .ok_or_else(|| RealizarError::RegistryError("No tokenizer available".to_string()))
+    }
+
+    /// The on-disk format of the resident model, as proven by which backend loaded it.
+    ///
+    /// Single source of truth for `GET /models` and `GET /realize/model`, which
+    /// used to hardcode two different literals — `"unknown"` and `"gguf"` — and so
+    /// contradicted each other about the same model (aprender#2376 finding 6).
+    ///
+    /// Returns `"unknown"` for the dense f32 transformer: it is built from either
+    /// a `.apr` or a `.safetensors` file and does not retain which, and a
+    /// confident wrong answer is worse than an honest unknown.
+    #[must_use]
+    pub fn model_format(&self) -> &'static str {
+        // Every GGUF-derived backend: quantized K-quant weights or a live mmap.
+        if self.quantized_model.is_some() || self.mapped_gguf_model.is_some() {
+            return "gguf";
+        }
+        #[cfg(feature = "gpu")]
+        if self.gpu_model.is_some() || self.cached_model.is_some() {
+            return "gguf";
+        }
+        #[cfg(feature = "cuda")]
+        if self.cuda_model.is_some() {
+            return "gguf";
+        }
+        "unknown"
+    }
+
     /// Create application state with model caching enabled
     ///
     /// # Arguments

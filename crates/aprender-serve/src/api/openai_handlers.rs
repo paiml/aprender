@@ -724,7 +724,8 @@ fn try_cached_backend(
         .generate_with_cache(&prompt_ids, &q_config)
     {
         Ok(g) => g,
-        Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
+        // aprender#2376(9): context-budget rejections are 400, not 500.
+        Err(e) => return Some(fail_response(state, super::generation_error_status(&e), e)),
     };
 
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();

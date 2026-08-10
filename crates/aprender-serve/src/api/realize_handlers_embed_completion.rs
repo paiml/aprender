@@ -64,13 +64,20 @@ pub async fn realize_embed_handler(
     Json(request): Json<EmbeddingRequest>,
 ) -> Result<Json<EmbeddingResponse>, (StatusCode, Json<ErrorResponse>)> {
     let model_id = request.model.as_deref();
+    // aprender#2376(5): the dense f32 Model is genuinely required here —
+    // `forward_hidden` (the residual stream `lm_head` consumes) exists only on it,
+    // and the quantized backend does not expose hidden states. But "this server
+    // has no dense model" is a server-side condition, so 503 with a message that
+    // says which backend is missing — not 404 "No model available" on a server
+    // whose /health says model_loaded:true.
     let (model, tokenizer) = state.get_model(model_id).map_err(|e| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: e.to_string(),
-            }),
-        )
+        let status = super::model_resolution_status(&e);
+        let error = if status == StatusCode::SERVICE_UNAVAILABLE {
+            format!("{e}: /realize/embed needs a dense (.apr / .safetensors) model; this server has a quantized model loaded")
+        } else {
+            e.to_string()
+        };
+        (status, Json(ErrorResponse { error }))
     })?;
 
     // PMAT-802 × PMAT-803 (stacked): OpenAI `/v1/embeddings` accepts `input` as a single
@@ -152,8 +159,11 @@ pub async fn realize_model_handler(
             id: "default".to_string(),
             name: "Default Model".to_string(),
             description: "Single model deployment".to_string(),
-            format: "gguf".to_string(),
-            loaded: true,
+            // aprender#2376(6): was the literal "gguf" while GET /models hardcoded
+            // "unknown". Both endpoints now read the resident backend, so they
+            // cannot contradict each other about the same model.
+            format: state.model_format().to_string(),
+            loaded: state.model_loaded(),
         })
     };
 
@@ -434,11 +444,11 @@ async fn try_cached_completions(
     let generated = if let Some(metrics) = state.dispatch_metrics() {
         cached_model
             .generate_with_cache_adaptive(&prompt_ids, &q_config, metrics)
-            .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?
+            .map_err(|e| rerr(state, super::generation_error_status(&e), e))?
     } else {
         cached_model
             .generate_with_cache(&prompt_ids, &q_config)
-            .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?
+            .map_err(|e| rerr(state, super::generation_error_status(&e), e))?
     };
 
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
@@ -502,9 +512,11 @@ fn try_quantized_completions(
             ..Default::default()
     };
 
+    // aprender#2376(9): a context-budget rejection is a client error (400), not a
+    // server failure — same classification as /generate.
     let generated = quantized_model
         .generate_with_cache(&prompt_ids, &q_config)
-        .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| rerr(state, super::generation_error_status(&e), e))?;
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
     let completion_tokens = token_ids.len();
     let text = tokenizer
