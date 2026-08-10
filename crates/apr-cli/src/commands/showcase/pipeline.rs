@@ -26,6 +26,17 @@ pub(super) fn run_import(config: &ShowcaseConfig) -> Result<bool> {
         return Ok(true);
     }
 
+    // CRUX-A-20: `apr showcase --step import --offline` downloaded 491 MB —
+    // the dispatcher never forwarded `--offline` and this step never asked.
+    // The download is a `huggingface-cli` subprocess, so it bypasses every
+    // in-process HTTP helper; ask the enforcement point directly. Placed
+    // after the `gguf_path.exists()` check so an already-imported model is
+    // still usable offline.
+    crate::commands::offline::guard(&format!(
+        "download {} from HuggingFace",
+        config.tier.model_path()
+    ))?;
+
     // Ensure model directory exists
     std::fs::create_dir_all(&config.model_dir)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model dir: {e}")))?;
@@ -487,4 +498,41 @@ pub(super) fn run_apr_inference(config: &ShowcaseConfig) -> Result<bool> {
     }
 
     Ok(true)
+}
+
+#[cfg(test)]
+mod offline_enforcement_tests {
+    use super::*;
+    use crate::commands::offline;
+
+    /// `apr showcase --step import --offline` downloaded 491 MB in v0.63.0:
+    /// `dispatch_analysis.rs` never bound or forwarded `offline`, and the
+    /// import step shells out to `huggingface-cli`, so it bypassed every
+    /// in-process HTTP helper. `run_import` now asks the enforcement point
+    /// directly, so the missing dispatcher plumbing can no longer disarm it.
+    ///
+    /// Asserts the refusal, not the shape: without the guard this call
+    /// spawns `huggingface-cli` and returns `Ok`, so the assertion fails.
+    #[test]
+    fn import_step_refuses_download_when_offline() {
+        let dir = std::env::temp_dir().join("apr-showcase-offline-falsifier");
+        std::fs::remove_dir_all(&dir).ok();
+        let config = ShowcaseConfig {
+            tier: ModelTier::Tiny,
+            model_dir: dir.clone(),
+            ..Default::default()
+        };
+
+        let _s = offline::scope(true);
+        let err = run_import(&config).expect_err("showcase import must refuse while offline");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--offline mode"),
+            "showcase import must be refused offline, got: {msg}"
+        );
+        assert!(
+            !dir.exists(),
+            "showcase import must not create the model dir while offline"
+        );
+    }
 }
