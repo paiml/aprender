@@ -766,8 +766,9 @@ pub enum ExtendedCommands {
         /// Path to captured /api/chat response (JSON object, or NDJSON if --stream)
         #[arg(long, value_name = "FILE")]
         response_file: PathBuf,
-        /// Optional captured request JSON — enables tool-name allowlist gate
-        /// (every called tool name must appear in request.tools[*].function.name)
+        /// Captured request JSON, required unless --stream — supplies the
+        /// tool-name allowlist (every called tool name must appear in
+        /// request.tools[*].function.name)
         #[arg(long, value_name = "FILE")]
         request_file: Option<PathBuf>,
         /// Treat input as NDJSON stream (one frame per line)
@@ -972,7 +973,10 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FRACTION", default_value_t = 0.95)]
         preempt_threshold: f64,
     },
-    /// Lint a captured OTLP/JSON ExportTraceServiceRequest body (CRUX-K-08)
+    /// Lint a captured OTLP/JSON ExportTraceServiceRequest body (CRUX-K-08).
+    ///
+    /// At least one gate flag is required: every check is opt-in, so a bare
+    /// invocation would check nothing and exit 0 for any parseable JSON.
     OtlpLint {
         /// Path to captured OTLP/JSON export body
         #[arg(long, value_name = "FILE")]

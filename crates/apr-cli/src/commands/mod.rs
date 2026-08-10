@@ -83,6 +83,7 @@ pub(crate) mod kernel_explain;
 pub(crate) mod kv_timeline_classifier;
 pub(crate) mod kv_timeline_lint;
 pub(crate) mod lint;
+pub(crate) mod lint_vacuity;
 pub(crate) mod manifest;
 pub(crate) mod mcp;
 pub(crate) mod merge;

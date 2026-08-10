@@ -27,7 +27,11 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::commands::dry_sampling_classifier as clf;
+use crate::commands::lint_vacuity::{assert_not_vacuous, skipped_label, SectionRun};
 use crate::error::{CliError, Result};
+
+/// Each classifier reads exactly one top-level section of the same name.
+static SECTION_NAMES: [&str; 5] = ["params", "identity", "match_len", "penalty", "monotone"];
 
 pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
     if !observation_file.exists() {
@@ -48,7 +52,7 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
     let penalty = classify_penalty(&obs);
     let monotone = classify_monotone(&obs);
 
-    let fail_reasons: Vec<String> = [
+    let mut fail_reasons: Vec<String> = [
         params.as_ref().and_then(params_fail_reason),
         identity.as_ref().and_then(identity_fail_reason),
         match_len.as_ref().and_then(match_len_fail_reason),
@@ -61,6 +65,7 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
 
     print_report(
         observation_file,
+        &obs,
         params.as_ref(),
         identity.as_ref(),
         match_len.as_ref(),
@@ -68,6 +73,29 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
         monotone.as_ref(),
         json,
     );
+
+    // An all-skipped run asserts nothing about DRY sampling. Note this also
+    // catches the case where `params.base = 0.5` (a real violation) was hidden
+    // because an unrelated sibling field carried the wrong JSON type.
+    let ran = [
+        params.is_some(),
+        identity.is_some(),
+        match_len.is_some(),
+        penalty.is_some(),
+        monotone.is_some(),
+    ];
+    let sections: Vec<SectionRun> = SECTION_NAMES
+        .iter()
+        .zip(ran)
+        .map(|(name, ran)| SectionRun {
+            name,
+            keys: std::slice::from_ref(name),
+            ran,
+        })
+        .collect();
+    if let Err(reason) = assert_not_vacuous("FALSIFY-CRUX-C-23", &obs, &sections) {
+        fail_reasons.push(reason);
+    }
 
     if fail_reasons.is_empty() {
         Ok(())
@@ -243,6 +271,7 @@ fn monotone_fail_reason(o: &clf::MonotonicityOutcome) -> Option<String> {
 #[allow(clippy::too_many_arguments)]
 fn print_report(
     path: &Path,
+    obs: &Value,
     params: Option<&clf::DryParamOutcome>,
     identity: Option<&clf::IdentityOutcome>,
     match_len: Option<&MatchLenOutcome>,
@@ -265,18 +294,43 @@ fn print_report(
         );
     } else {
         println!("dry-sampling-lint report for {}", path.display());
-        print_line("  params:    ", params.map(|o| format!("{o:?}")));
-        print_line("  identity:  ", identity.map(|o| format!("{o:?}")));
-        print_line("  match_len: ", match_len.map(|o| format!("{o:?}")));
-        print_line("  penalty:   ", penalty.map(|o| format!("{o:?}")));
-        print_line("  monotone:  ", monotone.map(|o| format!("{o:?}")));
+        print_line(
+            "  params:    ",
+            params.map(|o| format!("{o:?}")),
+            obs,
+            "params",
+        );
+        print_line(
+            "  identity:  ",
+            identity.map(|o| format!("{o:?}")),
+            obs,
+            "identity",
+        );
+        print_line(
+            "  match_len: ",
+            match_len.map(|o| format!("{o:?}")),
+            obs,
+            "match_len",
+        );
+        print_line(
+            "  penalty:   ",
+            penalty.map(|o| format!("{o:?}")),
+            obs,
+            "penalty",
+        );
+        print_line(
+            "  monotone:  ",
+            monotone.map(|o| format!("{o:?}")),
+            obs,
+            "monotone",
+        );
     }
 }
 
-fn print_line(prefix: &str, v: Option<String>) {
+fn print_line(prefix: &str, v: Option<String>, obs: &Value, key: &str) {
     match v {
         Some(s) => println!("{prefix}{s}"),
-        None => println!("{prefix}(missing fields — classifier skipped)"),
+        None => println!("{prefix}{}", skipped_label(obs, &[key])),
     }
 }
 
@@ -306,11 +360,59 @@ mod tests {
         assert!(matches!(err, CliError::InvalidFormat(_)));
     }
 
+    // This test asserted `is_ok()` on `{}` and its comment ("no fail reasons →
+    // Ok") documented the defect as intended behaviour. A run in which no
+    // classifier reached a verdict has checked nothing.
     #[test]
-    fn empty_object_passes_with_no_gates() {
-        // No recognized sections → no fail reasons → Ok.
+    fn falsifier_empty_object_is_rejected() {
         let f = write_obs("{}");
-        assert!(run(f.path(), false).is_ok());
+        let err = run(f.path(), false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(
+                msg.contains("has none of params/identity/match_len/penalty/monotone"),
+                "{msg}"
+            ),
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn falsifier_unrelated_body_is_rejected() {
+        let f = write_obs(r#"{"unrelated": 123, "nonsense": "hello"}"#);
+        assert!(matches!(
+            run(f.path(), false).unwrap_err(),
+            CliError::ValidationFailed(_)
+        ));
+    }
+
+    // `base: 0.5` violates the DRY contract in all three bodies below. Only
+    // the well-typed one used to be caught; a wrong-typed *sibling* field
+    // suppressed the whole gate.
+    #[test]
+    fn falsifier_wrong_typed_sibling_does_not_suppress_a_real_violation() {
+        let ok_types =
+            write_obs(r#"{"params": {"multiplier": 0.8, "base": 0.5, "allowed_length": 2}}"#);
+        match run(ok_types.path(), false).unwrap_err() {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("base=0.5 < 1.0"), "control: {msg}");
+            }
+            other => panic!("control: expected ValidationFailed, got {other:?}"),
+        }
+
+        for body in [
+            r#"{"params": {"multiplier": 0.8, "base": 0.5, "allowed_length": "2"}}"#,
+            r#"{"params": {"multiplier": 0.8, "base": 0.5, "allowed_length": -2}}"#,
+            r#"{"params": {"multiplier": "oops", "base": 0.5, "allowed_length": 2}}"#,
+        ] {
+            let f = write_obs(body);
+            match run(f.path(), false).unwrap_err() {
+                CliError::ValidationFailed(msg) => {
+                    assert!(msg.contains("present but unusable"), "{body}: {msg}");
+                    assert!(msg.contains("params"), "{body}: {msg}");
+                }
+                other => panic!("{body}: expected ValidationFailed, got {other:?}"),
+            }
+        }
     }
 
     #[test]

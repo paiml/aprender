@@ -6,7 +6,7 @@
 //! ```jsonc
 //! {
 //!   "codebook": {
-//!     "expected": [ -1.0, -0.6961..., ..., 1.0 ]   // 16 entries, bnb canonical
+//!     "expected": [ -1.0, -0.6961..., ..., 1.0 ]   // REQUIRED: 16 entries, bnb canonical
 //!   },
 //!   "roundtrip": {
 //!     "weights":    [f32, ...],
@@ -29,6 +29,7 @@
 //! Any missing top-level key is skipped. Non-zero exit + FALSIFY-CRUX-B-10
 //! stderr stamp on any failing gate.
 
+use crate::commands::lint_vacuity::{json_type, verdict_tag, Verdict};
 use crate::commands::nf4_classifier::{
     expected_nf4_storage_bytes, nearest_codebook_index, nf4_dequantize_block, nf4_quantize_block,
     rel_l2_error, NF4_CODEBOOK, NF4_DEFAULT_BLOCK_SIZE, NF4_MAX_REL_L2_ERROR_SYNTHETIC,
@@ -113,7 +114,7 @@ pub fn run(args: Nf4LintArgs) -> Result<(), String> {
         println!("{}", serde_json::to_string_pretty(&payload).unwrap());
     } else {
         for r in &reports {
-            let tag = if r.passed { "PASS" } else { "FAIL" };
+            let tag = verdict_tag(r.passed, &r.outcome);
             println!("[{tag}] {} ({}): {}", r.gate, r.falsify_id, r.outcome);
         }
     }
@@ -134,28 +135,85 @@ fn read_f32_array(v: &Value) -> Vec<f32> {
         .unwrap_or_default()
 }
 
-fn run_codebook_gate(v: &Value) -> (GateReport, Option<String>) {
-    let expected = v.get("expected").map(read_f32_array).unwrap_or_default();
-    let passed = if expected.is_empty() {
-        NF4_CODEBOOK.len() == 16
-    } else if expected.len() != NF4_CODEBOOK.len() {
-        false
-    } else {
-        expected
-            .iter()
-            .zip(NF4_CODEBOOK.iter())
-            .all(|(e, c)| (*e - *c).abs() < 1e-6)
-    };
-    let desc = if passed {
-        format!("codebook matches ({} entries)", NF4_CODEBOOK.len())
-    } else {
+/// Read the observation's `expected` codebook.
+///
+/// 0.63.0 funnelled "absent", "empty", "wrong type" and "misspelled key" into
+/// one empty `Vec`, whose branch then asserted `NF4_CODEBOOK.len() == 16` — a
+/// tautology over a compile-time constant. The gate printed "codebook matches
+/// (16 entries)" having compared nothing.
+fn parse_expected_codebook(v: &Value) -> Result<Vec<f32>, String> {
+    let obj = v.as_object().ok_or_else(|| {
         format!(
+            "codebook section must be a JSON object, got {}",
+            json_type(v)
+        )
+    })?;
+    let Some(expected) = obj.get("expected").filter(|e| !e.is_null()) else {
+        let keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+        return Err(format!(
+            "VACUOUS: codebook section supplies no \"expected\" array (keys present: {keys:?}), \
+             so the NF4 codebook was compared against nothing"
+        ));
+    };
+    let arr = expected.as_array().ok_or_else(|| {
+        format!(
+            "codebook.expected must be an array of {} numbers, got {}",
+            NF4_CODEBOOK.len(),
+            json_type(expected)
+        )
+    })?;
+    if arr.is_empty() {
+        return Err(
+            "VACUOUS: codebook.expected is an empty array, so no entry was compared".to_string(),
+        );
+    }
+    arr.iter()
+        .enumerate()
+        .map(|(i, n)| {
+            n.as_f64().map(|f| f as f32).ok_or_else(|| {
+                format!(
+                    "codebook.expected[{i}] must be a number, got {}",
+                    json_type(n)
+                )
+            })
+        })
+        .collect()
+}
+
+fn compare_codebook(v: &Value) -> Result<String, String> {
+    let expected = parse_expected_codebook(v)?;
+    if expected.len() != NF4_CODEBOOK.len() {
+        return Err(format!(
             "codebook divergence (expected_len={}, got_len={})",
             expected.len(),
             NF4_CODEBOOK.len()
-        )
+        ));
+    }
+    if let Some((i, (e, c))) = expected
+        .iter()
+        .zip(NF4_CODEBOOK.iter())
+        .enumerate()
+        .find(|(_, (e, c))| (**e - **c).abs() >= 1e-6)
+        .map(|(i, pair)| (i, pair))
+    {
+        return Err(format!(
+            "codebook divergence at index {i}: expected {e}, got {c}"
+        ));
+    }
+    Ok(format!(
+        "supplied codebook compared entry-by-entry against the built-in NF4 table and matched \
+         ({} entries)",
+        NF4_CODEBOOK.len()
+    ))
+}
+
+fn run_codebook_gate(v: &Value) -> (GateReport, Option<String>) {
+    let result = compare_codebook(v);
+    let verdict = Verdict::of(&result);
+    let desc = match result {
+        Ok(msg) | Err(msg) => msg,
     };
-    let err = if passed {
+    let err = if verdict == Verdict::Pass {
         None
     } else {
         Some(format!(
@@ -167,7 +225,7 @@ fn run_codebook_gate(v: &Value) -> (GateReport, Option<String>) {
             gate: "codebook",
             falsify_id: "FALSIFY-CRUX-B-10-001",
             outcome: desc,
-            passed,
+            passed: verdict == Verdict::Pass,
         },
         err,
     )
@@ -351,11 +409,60 @@ mod tests {
         assert!(err.contains("none of codebook/roundtrip/storage/parity"));
     }
 
+    /// Was `codebook_default_passes_when_empty_expected`, asserting `is_ok()`
+    /// on `{"codebook": {}}` with the comment "gate checks
+    /// NF4_CODEBOOK.len()==16, which passes" — the test encoded the tautology
+    /// as intended behaviour and so held the defect in place.
     #[test]
-    fn codebook_default_passes_when_empty_expected() {
-        // Empty `expected` → gate checks NF4_CODEBOOK.len()==16, which passes.
-        let f = write_obs(r#"{"codebook": {}}"#);
-        assert!(run(args_for(&f)).is_ok());
+    fn falsifier_codebook_with_nothing_supplied_is_vacuous() {
+        for body in [
+            r#"{"codebook": {}}"#,                     // section present, empty
+            r#"{"codebook": {"expected": []}}"#,       // empty array
+            r#"{"codebook": {"expcted": [0.0,1.0]}}"#, // key misspelled
+        ] {
+            let f = write_obs(body);
+            let err = run(args_for(&f)).unwrap_err();
+            assert!(err.contains("VACUOUS"), "{body}: {err}");
+            assert!(err.contains("FALSIFY-CRUX-B-10-001"), "{body}: {err}");
+            assert!(
+                !err.contains("codebook matches"),
+                "{body}: must not claim a comparison happened: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn falsifier_wrong_typed_codebook_is_a_schema_error() {
+        for (body, want) in [
+            (
+                r#"{"codebook": {"expected": "oops"}}"#,
+                "codebook.expected must be an array",
+            ),
+            (
+                r#"{"codebook": {"expected": [0.0, "x"]}}"#,
+                "codebook.expected[1] must be a number",
+            ),
+            (
+                r#"{"codebook": "oops"}"#,
+                "codebook section must be a JSON object",
+            ),
+        ] {
+            let f = write_obs(body);
+            let err = run(args_for(&f)).unwrap_err();
+            assert!(err.contains(want), "{body}: expected {want:?}, got {err}");
+        }
+    }
+
+    /// A 16-entry codebook that differs in one entry must be caught — the
+    /// length check alone would wave it through.
+    #[test]
+    fn falsifier_codebook_with_one_wrong_entry_fails() {
+        let mut expected: Vec<f32> = NF4_CODEBOOK.to_vec();
+        expected[7] += 0.25;
+        let obs = serde_json::json!({ "codebook": { "expected": expected } });
+        let f = write_obs(&obs.to_string());
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("codebook divergence at index 7"), "{err}");
     }
 
     #[test]
@@ -427,7 +534,7 @@ mod tests {
     #[test]
     fn json_mode_renders_all_gates_ok() {
         let obs = serde_json::json!({
-            "codebook": {},
+            "codebook": { "expected": NF4_CODEBOOK.to_vec() },
             "parity": { "target": 1.0, "expected_index": 15 }
         });
         let f = write_obs(&obs.to_string());
