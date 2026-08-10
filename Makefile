@@ -206,6 +206,8 @@ tier3:
 	@bash scripts/check_include_files.sh
 	@echo "Checking publish safety (symlinks, companion lookups)..."
 	@bash scripts/check_publish_safety.sh
+	@echo "Checking exclude patterns are root-anchored (CB-510 class)..."
+	@bash scripts/check_exclude_anchored.sh
 	@echo "Checking build.rs crate-root escapes (v0.31.1 yank class)..."
 	@bash scripts/check_build_rs_paths.sh
 	@echo "Checking self-hosted CI jobs pin a discriminating runner label..."

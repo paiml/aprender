@@ -131,6 +131,14 @@ pub(crate) fn run(
     contract_pre_temperature_bounds!();
     contract_pre_session_state_machine!();
 
+    // Take this branch's resolver, which strictly supersedes main's inline
+    // block: `resolve_chat_model` already carries main's FileNotFound fast-fail
+    // for absolute/./../ paths verbatim, AND threads `offline` through
+    // (#2416's concern), AND fixes the defect this branch exists for — main's
+    // block still rewrites every path containing a slash to
+    // `format!("hf://{resolved_source}")`, which is what turned
+    // /home/noah/models/x.apr into hf:///home. Keeping main's version would
+    // re-ship that P0.
     let actual_path = resolve_chat_model(path_arg, offline)?;
     let path = actual_path.as_path();
 

@@ -125,7 +125,7 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
         );
 
         // GH-355: Use hf_get() for auth — ureq::get() bypassed gated model tokens
-        match hf_get(&url).call() {
+        match hf_get(&url)?.call() {
             Ok(response) => {
                 let mut body = Vec::new();
                 response.into_reader().read_to_end(&mut body).map_err(|e| {
@@ -298,7 +298,7 @@ fn select_best_gguf(gguf_files: &[&str], org: &str, repo: &str) -> ResolvedModel
 fn resolve_sharded_safetensors(org: &str, repo: &str) -> Result<ResolvedModel> {
     let index_url =
         format!("https://huggingface.co/{org}/{repo}/resolve/main/model.safetensors.index.json");
-    let index_response = hf_get(&index_url)
+    let index_response = hf_get(&index_url)?
         .call()
         .map_err(|e| CliError::NetworkError(format!("Failed to download model index: {e}")))?;
 
@@ -375,7 +375,7 @@ pub(crate) fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
     let repo = parts[1];
 
     let api_url = format!("https://huggingface.co/api/models/{org}/{repo}");
-    let response = hf_get(&api_url).call().map_err(|e| match &e {
+    let response = hf_get(&api_url)?.call().map_err(|e| match &e {
         ureq::Error::Status(401, _) => {
             CliError::NetworkError(format_gated_model_error(&api_url))
         }

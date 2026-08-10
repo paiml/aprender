@@ -222,8 +222,8 @@ tools:
   - name: apr.serve
     shipped_in: 'PR #872 (M2 slice 7)'
     source: crates/aprender-mcp/src/tools/serve.rs
-    description: "Start an `apr serve` inference daemon in the background. Returns {pid, url}; kill the pid via OS to stop. Cancel-token lifecycle (SIGTERM) is a post-M3 follow-up; apr.run already honours notifications/cancelled."
-    cli_mapping: "apr serve <model_path> --port <port>"
+    description: "Start an `apr serve run` inference daemon in the background. Waits for the daemon to bind its port, then returns {pid, url, ready}; kill the pid via OS to stop. Returns isError if the daemon exits during startup (bad model path, port in use). Cancel-token lifecycle (SIGTERM) is a post-M3 follow-up; apr.run already honours notifications/cancelled."
+    cli_mapping: "apr serve run <model_path> --port <port>"
     args:
       - name: model_path
         type: string

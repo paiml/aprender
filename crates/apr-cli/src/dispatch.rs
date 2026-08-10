@@ -816,6 +816,12 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             output,
             verify,
         } => {
+            // CRUX-A-20: `pull` declares its OWN `--offline` in addition to the
+            // clap global, and the dataset / `--verify` branches below never
+            // enter `pull::run`. Arm the enforcement scope here, around all
+            // three branches, from the variant's own flag — so the refusal does
+            // not depend on clap continuing to populate the global as well.
+            let _offline_scope = crate::commands::offline::scope(*offline);
             // SHIP-TWO-001 §26.8: when first positional is the literal
             // "dataset", treat the second positional as the HF dataset
             // repo and dispatch to the dataset puller. Otherwise fall

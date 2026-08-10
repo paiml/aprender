@@ -102,16 +102,23 @@ fn p083b_conversion_options_quantization_variants() {
     }
 }
 
-/// P084b: ConversionOptions with unknown quantization (maps to None in convert_internal)
+/// P084b: ConversionOptions with unknown quantization is rejected, not silently dropped.
+///
+/// This test used to assert only that the struct stores the string, and its comment
+/// recorded the defect as intended behaviour ("would map to None"). Mapping an
+/// unrecognised value to None is precisely what made `--quantize BOGUS_XYZ` exit 0
+/// and produce an unquantized file.
 #[test]
 fn p084b_conversion_options_unknown_quantization() {
     let opts = ConversionOptions {
         quantization: Some("unknown_quant".to_string()),
         ..Default::default()
     };
-    // The ConversionOptions struct itself just stores the string
-    // The mapping happens in convert_internal - "unknown_quant" would map to None
     assert_eq!(opts.quantization, Some("unknown_quant".to_string()));
+    assert!(
+        parse_quantization(opts.quantization.as_deref()).is_err(),
+        "an unrecognised quantization must be an error, not a silent no-op"
+    );
 }
 
 // ========================================================================
@@ -366,3 +373,6 @@ fn test_bug_212_convert_sharded_nonexistent() {
 
 #[path = "tests_gh346.rs"]
 mod tests_gh346;
+
+#[path = "tests_quantize_flag.rs"]
+mod tests_quantize_flag;

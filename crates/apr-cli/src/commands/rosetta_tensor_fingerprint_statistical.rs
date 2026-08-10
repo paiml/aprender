@@ -83,10 +83,12 @@
 
     #[test]
     fn test_print_fingerprint_diff_with_anomaly() {
+        // Was `assert!(result.is_ok())`, which is exactly what let a diff report
+        // anomalies and still exit 0.
         let fps_a = vec![make_fingerprint("tensor_a", 0.5, 1.0, 0, 0)];
         let fps_b = vec![make_fingerprint("tensor_a", 10.0, 1.0, 0, 0)];
         let result = print_fingerprint_diff(&fps_a, &fps_b, false, false);
-        assert!(result.is_ok());
+        assert!(result.is_err(), "a 9.5-sigma mean shift must fail the diff");
     }
 
     #[test]
@@ -94,7 +96,10 @@
         let fps_a = vec![make_fingerprint("only_in_a", 0.5, 1.0, 0, 0)];
         let fps_b: Vec<TensorFingerprint> = vec![];
         let result = print_fingerprint_diff(&fps_a, &fps_b, false, false);
-        assert!(result.is_ok());
+        assert!(
+            result.is_err(),
+            "a tensor absent from model B must fail the diff, not be dropped"
+        );
     }
 
     #[test]
@@ -118,7 +123,7 @@
         let fps_a = vec![make_fingerprint("tensor_a", 0.5, 1.0, 0, 0)];
         let fps_b = vec![make_fingerprint("tensor_a", 0.5, 1.0, 5, 0)];
         let result = print_fingerprint_diff(&fps_a, &fps_b, false, false);
-        assert!(result.is_ok());
+        assert!(result.is_err(), "NaNs appearing only in B must fail the diff");
     }
 
     #[test]
