@@ -4,7 +4,7 @@ Every defect found by dogfooding `cargo install aprender` 0.63.0 from crates.io,
 GitHub issue that tracks it. Epic: #2373. Full report:
 https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 
-202 findings across 37 root-cause clusters.
+201 findings across 37 root-cause clusters.
 
 | Sev | Surface | Target | Cluster | Issue | Fixed by | Defect |
 |---|---|---|---|---|---|---|
@@ -28,9 +28,7 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P0 | http | `/tokenize, /batch/tokenize, /batch/generate, /realize/batch,` | http:native | #2376 | — | Seven native routes — including the startup-banner-advertised /stream/generate and /batch/generate — always fail with "No model available" on the standard `apr serve run model.gguf` path, while /generate on the same server works |
 | P0 | http | `POST /generate, POST /v1/completions` | http:native | #2376 | — | A single unauthenticated request with a large max_tokens aborts the whole server process (KV cache allocated as prompt_len+max_tokens with no clamp) |
 | P0 | http | `POST /v1/chat/completions (stream:true)` | http:openai | #2375 | #2367 | SSE streaming deltas have ALL leading whitespace stripped per token — concatenated stream text loses every space and newline |
-| P0 | http | `POST /v1/explain` | http:openai | #2375 | — | /v1/explain returns fabricated, model-independent SHAP values and a hardcoded prediction of 0.95 with HTTP 200 |
 | P0 | mcp | `apr mcp (stdio transport, all tools/call)` | mcp:apr mcp | #2393 | — | tools/call responses are silently DROPPED when stdin reaches EOF — server exits 0 having answered initialize and tools/list but not the tool call |
-| P0 | mcp | `apr.serve` | mcp:apr.serve | #2388 | — | apr.serve never starts a server — it spawns `apr serve <model>` (invalid CLI form) and reports success for a child that is already dead |
 | P0 | mcp | `apr.serve` | mcp:apr.serve | #2388 | — | apr.serve builds an argv the 0.63.0 CLI rejects (`apr serve <model>` needs a subcommand) — child dies with clap exit 2, tool returns SUCCESS with a pid+url that is already dead |
 | P0 | cli | `pull` | offline-fails-open | #2379 | #2416 | `apr pull --offline` performs network I/O and downloads files — all four documented offline mechanisms are inert |
 | P0 | cli | `pull` | offline-fails-open | #2379 | #2416 | `--offline` ("Disable network access, Sovereign AI compliance") is completely ignored by `apr pull` — it downloads from HuggingFace and exits 0 |
@@ -46,12 +44,12 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P1 | cli | `diff` | cli:diag-misc | #2394 | — | apr diff --quant-roundtrip fails a file compared against ITSELF (exit 5) because all-zero bias tensors are scored cosine=0.000000 despite rmse=0 and max_abs=0 |
 | P1 | cli | `hex` | cli:diag-misc | #2394 | — | apr hex --tensor prints a "Hex dump" whose bytes are not the bytes in the file for any non-F32 dtype — BF16 tensors are widened to F32 and the fabricated bytes are shown under the tensor's real file offset |
 | P1 | cli | `inspect` | cli:diag-misc | #2394 | — | apr inspect reports "valid": true / "checksum_valid": true / 291 tensors / physics 20-of-20 on a 200-byte truncated APR file, exit 0, while validate and tensors reject the same file |
+| P1 | cli | `validate` | cli:diag-misc | #2394 | — | validate --quality --min-score is a gate that cannot fail on GGUF/SafeTensors: no score is computed, no advisory is printed, and --min-score 100 still exits 0 |
 | P1 | cli | `embed --normalize / rerank --with-pooler` | cli:embed-rerank | #2383 | #2412 | `--normalize false` and `--with-pooler false` are documented in --help but rejected by the parser, and the 'off' state is unreachable |
 | P1 | cli | `attn-parity-lint, attn-viz-lint, audio-inspect-lint, check-f` | cli:lint-family | #2377 | — | 8 of the 16 commands in this slice document a producer command in `apr --help` and their own `--help` that the shipped binary does not have |
 | P1 | cli | `awq-lint, gptq-lint, imatrix-lint, embeddings-lint` | cli:lint-family | #2377 | — | The "CLI flag accepted" gates report PASS for argv that the shipped `apr quantize` / `apr serve run` parser rejects with exit 2 |
 | P1 | cli | `profile` | cli:profile | #2395 | — | `apr profile --warmup N --measure N` are silently ignored — always 3 warmup / 10 measurement passes |
 | P1 | cli | `profile` | cli:profile | #2395 | — | `apr profile --warmup`, `--measure` and `--tokens` are documented, parsed, and then silently discarded -- --measure 1 and --measure 100 take identical wall time |
-| P1 | cli | `profile` | cli:profile | #2395 | — | `apr profile --format json` writes human progress lines to stdout before the JSON, so piping to a JSON parser fails |
 | P1 | cli | `profile --focus` | cli:profile | #2395 | — | `apr profile --focus mlp` drops 3 of the 4 FFN operations and then reports the survivor as "100.0%"; `--focus matmul` returns an empty table with exit 0 |
 | P1 | cli | `ptx` | cli:ptx | #2399 | — | `apr ptx` is advertised in top-level --help but every invocation fails with "requires --features full" in the build `cargo install aprender` produces |
 | P1 | cli | `probar tensor` | cli:qa-bench | #2380 | — | `apr probar tensor` lists "Generated files" ending in .png that do not exist — it writes Netpbm .pgm; `--format png` never produces a PNG, and an invalid --format value is silently accepted |
@@ -94,6 +92,7 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P1 | cli | `check` | json-flag-emits-text | #2390 | — | `apr check --json` exits 0 when stages FAIL; the same command without --json exits 5 |
 | P1 | cli | `code` | json-flag-emits-text | #2390 | #2411 | `apr code --json` is advertised in `apr code --help` but emits plain text; only the separate `--output-format json` works |
 | P1 | cli | `hex` | json-flag-emits-text | #2390 | #2411 | apr hex --json is ignored in 7 of 8 display modes and entirely on SafeTensors — emits human-formatted tables on stdout instead of JSON |
+| P1 | cli | `hex` | json-flag-emits-text | #2390 | #2411 | apr hex --json on GGUF prints a human banner to stdout before the JSON array, making stdout unparseable |
 | P1 | cli | `import` | json-flag-emits-text | #2390 | #2411 | apr import --json emits the human-readable table on stdout and no JSON at all; --quiet is likewise ignored |
 | P1 | cli | `profile` | json-flag-emits-text | #2390 | #2411 | `apr profile --json` is ignored entirely, and `--format json` prefixes stdout with human progress lines so the output does not parse as JSON |
 | P1 | cli | `profile` | json-flag-emits-text | #2390 | #2411 | `apr profile --json` is listed in its own --help but is silently ignored (emits human output), unlike every other command in this slice |
@@ -107,7 +106,6 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P1 | cli | `nf4-lint` | lint-passes-on-bad-obs | #2389 | — | `nf4-lint` codebook falsifier prints "codebook matches (16 entries)" and exits 0 when the observation supplies NO codebook at all (empty, wrong-typed, or mistyped field) |
 | P1 | cli | `ollama-tools-lint` | lint-passes-on-bad-obs | #2389 | — | `--request-file` is documented as "Optional … enables tool-name allowlist gate", but the allowlist gate runs unconditionally and NO input passes without it |
 | P1 | cli | `otlp-lint` | lint-passes-on-bad-obs | #2389 | — | otlp-lint with no gate flags runs zero checks and exits 0 on any valid JSON, printing a header that reads as a clean PASS report |
-| P1 | cli | `otlp-lint` | lint-passes-on-bad-obs | #2389 | — | `apr otlp-lint` with no gate flag validates nothing and exits 0 for ANY parseable JSON — including `123`, `"hello"` and `null` |
 | P1 | cli | `tool-use-lint` | lint-passes-on-bad-obs | #2389 | — | `tool-use-lint` exits 0 on an empty or mistyped observation, reporting all three gates as "classifier skipped" |
 | P1 | cli | `typical-p-lint, tool-use-lint` | lint-passes-on-bad-obs | #2389 | — | typical-p-lint / tool-use-lint exit 0 on present-but-wrong-typed fields and mislabel them '(missing fields — classifier skipped)'; exit 0 when zero classifiers ran |
 | P1 | cli | `unified-search-lint` | lint-passes-on-bad-obs | #2389 | — | unified-search-lint prints [PASS] and exits 0 while its own output line says expected_count_ok=false — string-typed expectations silently disarm the gate |
@@ -119,7 +117,6 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P1 | mcp | `apr.run / apr.bench / apr.qa / apr.tensors / apr.trace / apr` | mcp:apr.run | #2403 | — | Wrong-typed optional arguments are silently dropped instead of rejected — including apr.qa's assert_tps, which disarms the throughput gate without any warning |
 | P1 | mcp | `apr.trace` | mcp:apr.trace | #2407 | — | apr.trace `reference` is advertised in the inputSchema but unimplemented, and returns a NON-error success result whose entire body is a stub string |
 | P1 | cli | `attn-parity-lint, attn-viz-lint, ddp-metrics-lint, explain-t` | nan-threshold-disarms | #2391 | — | Passing `nan` (or a negative value) to any tolerance/threshold flag turns a hard-failing gate into `Ok` with exit 0 — and the report prints `Ok` next to the violating number |
-| P1 | cli | `attn-parity-lint, attn-viz-lint, explain-token-lint, ddp-met` | nan-threshold-disarms | #2391 | — | Passing `nan` to any tolerance/floor flag silently disarms the gate — the report prints "Ok" for a known-bad observation and the command exits 0 |
 | P1 | cli | `kv-timeline-lint` | nan-threshold-disarms | #2391 | — | `--preempt-threshold NaN` (or `=-1`) silently disarms the preemption gate: the same body that FAILS at 0.95, 99 and inf reports `preemption_trigger : Ok` and exits 0 |
 | P1 | cli | `typical-p-lint` | nan-threshold-disarms | #2391 | — | `typical-p-lint` silently skips a classifier when its section is mistyped or wrong-typed and exits 0 — and is internally inconsistent about it (`mass` rejects a bad type, `range` swallows it) |
 | P1 | cli | `chat` | offline-fails-open | #2379 | #2416 | `apr chat --offline` is ignored — the command still performs a network download (Sovereign AI offline contract violated) |
@@ -146,6 +143,9 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P2 | cli | `gpu` | cli:diag-misc | #2394 | — | `apr gpu` reports gpu_present=true and 20879 MB reservable from a build with no CUDA support, while `apr profile` on the same box reports Backend=CPU |
 | P2 | cli | `hex` | cli:diag-misc | #2394 | — | apr hex with no mode flag takes 105 s / 2.0 GB RSS on a 533 MB GGUF and 221 s / 3.1 GB on a 1.0 GB GGUF, where apr tensors reads the same file in 0.6 s |
 | P2 | cli | `inspect` | cli:diag-misc | #2394 | — | apr inspect --vocab and --weights are stubs on APR files that redirect the user to `apr tensors`, which shows neither vocabulary nor weight statistics |
+| P2 | cli | `inspect` | cli:diag-misc | #2394 | — | inspect's "Quantization" field reports the embedding tensor's dtype, mislabelling a Q4_K_M model as Q6_K and contradicting the general.file_type it prints in the same output |
+| P2 | cli | `inspect` | cli:diag-misc | #2394 | — | inspect given a directory silently picks one model inside it and never names the file in human output |
+| P2 | cli | `inspect,validate` | cli:diag-misc | #2394 | — | inspect --quality and validate --quality report two different 0-100 scores for the same model (60/100 vs 3/100) |
 | P2 | cli | `trace` | cli:diag-misc | #2394 | — | `apr trace` reports "Layers: 1 / No layer information in metadata" for .apr files -- its own help calls .apr the expected input, and sibling commands read 24 layers from the same file |
 | P2 | cli | `trace --diff` | cli:diag-misc | #2394 | — | `apr trace --diff` without `--reference` prints "Diff mode requires --reference" and then runs a normal trace anyway, exiting 0 |
 | P2 | cli | `tree` | cli:diag-misc | #2394 | — | apr tree --format accepts any invalid value and silently falls back to ascii with exit 0 |
@@ -187,7 +187,6 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 | P2 | http | `POST /generate (malformed body) / POST /v1/predict` | http:native | #2376 | — | Error bodies are inconsistently shaped — JSON {"error":...} on most failures but bare text/plain on 400/415 — and the 400 leaks raw serde parser internals that the 422 sanitizer was added to prevent |
 | P2 | http | `POST /generate (oversized prompt)` | http:native | #2376 | — | An oversized-prompt client error is returned as HTTP 500, after ~172 s of server CPU, with a hint naming a CLI flag that does not exist on the HTTP API |
 | P2 | http | `GET /api/tags, GET /api/show, POST /api/embeddings` | http:ollama | #2396 | — | Ollama model-discovery endpoints (/api/tags, /api/show, /api/embeddings) are absent although the server banner advertises "Ollama-Parity Endpoints" |
-| P2 | http | `GET /v1/metrics` | http:openai | #2375 | — | /v1/metrics reports latency_p50/p95/p99 as 0.0 and model_name "N/A" while /metrics shows 2119ms average latency for the same requests |
 | P2 | http | `GET /v1/metrics` | http:openai | #2375 | — | /v1/metrics reports latency_p50/p95/p99 = 0.0 ms while /metrics on the same process at the same instant reports avg_latency_ms 626.79; model_name is always "N/A" |
 | P2 | http | `POST /v1/chat/completions` | http:openai | #2375 | — | OpenAI `n` parameter is accepted and silently ignored — always exactly one choice is returned |
 | P2 | http | `POST /v1/predict` | http:openai | #2375 | — | /v1/predict says "No APR model loaded" while the server is serving an .apr file, and leaks the internal Rust API name AppState::demo() to HTTP clients |
