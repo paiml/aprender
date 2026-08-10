@@ -89,7 +89,8 @@ pub(crate) use realize_handlers::{
 pub(crate) use realize_handlers::{logprobs_handler, perplexity_handler};
 // Public exports for tests
 pub use realize_handlers::{
-    CompletionChoice, CompletionRequest, CompletionResponse, ContextWindowConfig,
+    CompletionChoice, CompletionRequest, CompletionResponse, CompletionWireRequest,
+    ContextWindowConfig,
     ContextWindowManager, EmbeddingData, EmbeddingInput, EmbeddingRequest, EmbeddingResponse,
     EmbeddingUsage, ModelLineage, ModelMetadataResponse, ReloadRequest, ReloadResponse,
 };

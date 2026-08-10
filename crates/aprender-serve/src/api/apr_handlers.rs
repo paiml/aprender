@@ -18,6 +18,55 @@ use super::{
 // APR-Specific API Handlers (spec §15.1)
 // ============================================================================
 
+/// 503 for "this endpoint needs a tabular APR estimator and none is resident".
+///
+/// The pre-fix message was `"No APR model loaded. Use AppState::demo() or load a
+/// .apr model."`. It was wrong twice over: it was emitted verbatim while the
+/// server was serving a `.apr` file (the startup banner even logs `Detected
+/// format: APR / APR loaded: 339 tensors`), and it told an HTTP client to call
+/// `AppState::demo()` — an internal Rust constructor no client can reach. The
+/// real condition is narrower: `/v1/predict` and `/v1/explain` serve tabular
+/// estimators (a `weights`/`output` vector), and a language model loaded from
+/// `.apr`/GGUF is not one. Say that, and point at the endpoint that does serve it.
+fn no_estimator_error(state: &AppState, endpoint: &str) -> (StatusCode, Json<ErrorResponse>) {
+    let hint = if state.model_loaded() {
+        " The loaded model is a language model; use /v1/chat/completions or /v1/completions instead."
+    } else {
+        " Start the server with a tabular .apr estimator to enable it."
+    };
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(ErrorResponse {
+            error: format!(
+                "{endpoint} serves tabular APR estimator models (a 'weights' or 'output' \
+                 tensor); no such model is loaded.{hint}"
+            ),
+        }),
+    )
+}
+
+/// Exact Shapley values for the linear estimator `/v1/predict` evaluates.
+///
+/// `/v1/predict` computes `f(x) = Σ wᵢ·xᵢ` from the model's `weights`/`output`
+/// tensor. For a linear model against an all-zero baseline the Shapley value of
+/// feature `i` is exactly `φᵢ = wᵢ·xᵢ` (Lundberg & Lee 2017, §4.1 "Linear SHAP"),
+/// with `base_value = f(0) = 0`, so local accuracy `Σφᵢ + base_value == f(x)`
+/// holds by construction — and the returned `prediction` is the SAME number
+/// `/v1/predict` returns for the same features.
+///
+/// This replaces a hardcoded `0.1 - i*0.02` ramp and a literal `prediction: 0.95`
+/// that were a pure function of the feature INDEX: three wildly different feature
+/// vectors produced byte-identical SHAP values and the same 0.95, with HTTP 200.
+pub(crate) fn linear_shap_attributions(features: &[f32], weights: &[f32]) -> (Vec<f32>, f32) {
+    let shap_values: Vec<f32> = features
+        .iter()
+        .zip(weights.iter())
+        .map(|(x, w)| x * w)
+        .collect();
+    let prediction = shap_values.iter().sum();
+    (shap_values, prediction)
+}
+
 /// APR prediction handler (/v1/predict)
 ///
 /// Handles classification and regression predictions for APR models.
@@ -44,15 +93,10 @@ pub(crate) async fn apr_predict_handler(
     }
 
     // Get APR model from state
-    let apr_model = state.apr_model.as_ref().ok_or_else(|| {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ErrorResponse {
-                error: "No APR model loaded. Use AppState::demo() or load a .apr model."
-                    .to_string(),
-            }),
-        )
-    })?;
+    let apr_model = state
+        .apr_model
+        .as_ref()
+        .ok_or_else(|| no_estimator_error(&state, "/v1/predict"))?;
 
     // Log request to audit trail
     let model_name = apr_model
@@ -175,11 +219,14 @@ pub(crate) async fn apr_predict_handler(
 
 /// APR explanation handler (/v1/explain)
 ///
-/// Returns SHAP-based feature importance explanations for APR models.
+/// Returns SHAP feature attributions computed FROM the loaded APR estimator —
+/// `φᵢ = wᵢ·xᵢ` against a zero baseline, the exact Shapley values for the linear
+/// model `/v1/predict` evaluates. When no such estimator is resident the endpoint
+/// fails closed with 503, exactly like its sibling `/v1/predict`.
 // serde_json::json!() uses infallible unwrap
 #[allow(clippy::disallowed_methods)]
 pub(crate) async fn apr_explain_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(request): Json<ExplainRequest>,
 ) -> Result<Json<ExplainResponse>, (StatusCode, Json<ErrorResponse>)> {
     let start = std::time::Instant::now();
@@ -208,19 +255,56 @@ pub(crate) async fn apr_explain_handler(
         ));
     }
 
-    // Demo SHAP values (in production, would use ShapExplainer)
-    let shap_values: Vec<f32> = request
-        .features
-        .iter()
-        .enumerate()
-        .map(|(i, _)| 0.1 - (i as f32 * 0.02))
-        .collect();
+    // Only "shap" is implemented. `method` was previously parsed and then dropped
+    // on the floor, so `method: "lime"` returned the same numbers relabelled as a
+    // LIME explanation. Reject what we cannot compute rather than mislabel it.
+    if request.method != "shap" {
+        return Err((
+            StatusCode::NOT_IMPLEMENTED,
+            Json(ErrorResponse {
+                error: format!(
+                    "Explanation method '{}' is not implemented; only 'shap' is supported.",
+                    request.method
+                ),
+            }),
+        ));
+    }
+
+    // Fail closed when there is no estimator to attribute to — the sibling
+    // /v1/predict already 503s under exactly this condition.
+    let apr_model = state
+        .apr_model
+        .as_ref()
+        .ok_or_else(|| no_estimator_error(&state, "/v1/explain"))?;
+
+    // Same tensor lookup /v1/predict uses, so both endpoints explain the SAME model.
+    let weights = apr_model
+        .get_tensor_f32("weights")
+        .or_else(|_| apr_model.get_tensor_f32("output"))
+        .map_err(|_| no_estimator_error(&state, "/v1/explain"))?;
+
+    if weights.len() != request.features.len() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!(
+                    "Feature count ({}) must match the model's weight count ({})",
+                    request.features.len(),
+                    weights.len()
+                ),
+            }),
+        ));
+    }
+
+    let (shap_values, predicted) = linear_shap_attributions(&request.features, &weights);
 
     let explanation = ShapExplanation {
+        // f(0) = 0 for the linear estimator /v1/predict evaluates, so local
+        // accuracy (Σφᵢ + base_value == prediction) holds exactly.
         base_value: 0.0,
         shap_values: shap_values.clone(),
         feature_names: request.feature_names.clone(),
-        prediction: 0.95,
+        prediction: predicted,
     };
 
     // Build summary from top features
@@ -258,8 +342,10 @@ pub(crate) async fn apr_explain_handler(
     Ok(Json(ExplainResponse {
         request_id,
         model: request.model.unwrap_or_else(|| "default".to_string()),
-        prediction: serde_json::json!(0.95),
-        confidence: Some(0.95),
+        prediction: serde_json::json!(predicted),
+        // No calibrated confidence exists for a regression output. The old literal
+        // 0.95 was indistinguishable from a real one to any consumer; omit it.
+        confidence: None,
         explanation,
         summary,
         latency_ms,

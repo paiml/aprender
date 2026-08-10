@@ -459,6 +459,28 @@ pub struct CompletionRequest {
     pub stop: Option<Vec<String>>,
 }
 
+/// Wire form of a `POST /v1/completions` body: a [`CompletionRequest`] plus the
+/// OpenAI `stream` flag.
+///
+/// `CompletionRequest` carried no `stream` field at all, so serde silently dropped
+/// `{"stream": true}` and the handler always answered with one `application/json`
+/// `text_completion` object. `openai.completions.create(..., stream=True)` expects
+/// an SSE iterator and raises on that body — while `/v1/chat/completions` on the
+/// SAME server honoured `stream: true` correctly.
+///
+/// The flag lives here rather than on `CompletionRequest` because that type is
+/// public API with construction sites throughout the crate; this keeps the wire
+/// contract complete without a breaking struct change.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompletionWireRequest {
+    /// The completion parameters proper.
+    #[serde(flatten)]
+    pub request: CompletionRequest,
+    /// Whether to stream the completion as `text/event-stream`.
+    #[serde(default)]
+    pub stream: bool,
+}
+
 /// OpenAI-compatible completions response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionResponse {

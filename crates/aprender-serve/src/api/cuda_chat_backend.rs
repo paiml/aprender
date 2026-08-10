@@ -160,6 +160,7 @@ async fn try_cuda_backend(
             request.model.clone(),
             state.metrics.clone(),
             start,
+            max_tokens,
         ));
     }
 
@@ -280,6 +281,7 @@ fn try_quantized_backend(
             request.model.clone(),
             state.metrics.clone(),
             start,
+            max_tokens,
         ));
     }
 
@@ -360,6 +362,7 @@ fn registry_fallback(
     let prompt_tokens = prompt_ids.len();
     let prompt: Vec<usize> = prompt_ids.iter().map(|&id| id as usize).collect();
     let config = build_gen_config(request);
+    let max_tokens = request.max_tokens.unwrap_or(256);
 
     let generated = match model.generate(&prompt, &config) {
         Ok(g) => g,
@@ -384,6 +387,7 @@ fn registry_fallback(
             request_id.to_string(),
             request.model.clone(),
             request.stop.as_deref(),
+            max_tokens,
         );
     }
 
@@ -395,7 +399,6 @@ fn registry_fallback(
     let duration = start.elapsed();
     state.metrics.record_success(completion_tokens, duration);
 
-    let max_tokens = request.max_tokens.unwrap_or(256);
     build_chat_response(
         request_id.to_string(),
         request.model.clone(),
@@ -588,6 +591,12 @@ pub async fn openai_chat_completions_handler(
             "[VERBOSE] POST /v1/chat/completions model={} messages={} last={:?}",
             request.model, msg_count, last_msg
         );
+    }
+
+    // `n` is parsed by the request struct; honouring it requires multi-completion
+    // generation that no backend implements. Reject rather than silently return one.
+    if let Some(msg) = reject_unsupported_n(request.n) {
+        return fail_response(&state, StatusCode::BAD_REQUEST, msg);
     }
 
     let trace_level = headers
@@ -789,6 +798,7 @@ fn try_qwen3_moe_backend(
             request.model.clone(),
             state.metrics.clone(),
             start,
+            max_tokens,
         ));
     }
 

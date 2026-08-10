@@ -468,6 +468,53 @@ fn build_chat_response(
     .into_response()
 }
 
+/// OpenAI's `n` selects how many completions land in `choices[]`. Every backend
+/// here generates exactly one, and the field was parsed and dropped: `n: 3`
+/// returned a single choice with HTTP 200, so best-of-n / self-consistency clients
+/// silently degraded to `n = 1` with no signal at all. Until multi-completion
+/// generation exists, reject what we cannot honour.
+///
+/// Returns the error message for an unsupported `n`, or `None` when `n` is servable.
+fn reject_unsupported_n(n: usize) -> Option<String> {
+    if n == 1 {
+        return None;
+    }
+    Some(format!(
+        "Unsupported value for 'n': {n}. This server generates a single completion per \
+         request; only n=1 is supported."
+    ))
+}
+
+#[cfg(test)]
+mod openai_n_parameter_tests {
+    use super::reject_unsupported_n;
+
+    /// FALSIFIER: `n: 3` used to be accepted with 200 and one choice. It must be
+    /// rejected instead — silently returning fewer choices than requested is the defect.
+    #[test]
+    fn n_greater_than_one_is_rejected() {
+        let msg = reject_unsupported_n(3).expect("n=3 must be rejected, not silently ignored");
+        assert!(msg.contains("'n'"), "message must name the offending field: {msg}");
+        assert!(msg.contains('3'), "message must echo the requested value: {msg}");
+        assert!(reject_unsupported_n(2).is_some());
+        assert!(reject_unsupported_n(100).is_some());
+    }
+
+    /// `n: 0` asks for zero completions and is equally unservable.
+    #[test]
+    fn n_zero_is_rejected() {
+        assert!(reject_unsupported_n(0).is_some());
+    }
+
+    /// Regression guard: the default (`n: 1`, and every request that omits `n`)
+    /// must remain accepted, so no existing client is broken.
+    #[test]
+    fn n_one_is_accepted() {
+        assert!(reject_unsupported_n(1).is_none());
+        assert!(reject_unsupported_n(super::super::default_n()).is_none());
+    }
+}
+
 /// Serialize a value to an SSE event, returning `None` if serialization fails.
 fn sse_event(value: &impl serde::Serialize) -> Option<Result<Event, Infallible>> {
     serde_json::to_string(value)
@@ -511,8 +558,12 @@ fn pregenerated_sse_response(
     request_id: String,
     model_name: String,
     stops: Option<&[String]>,
+    max_tokens: usize,
 ) -> Response {
     let deltas = streaming_text_deltas(&tokenizer, &token_ids, stops);
+    // The terminal chunk must report the reason this generation actually ended
+    // (see `streaming_finish_reason`); it used to be the literal "stop".
+    let finish_reason = streaming_finish_reason(token_ids.len(), max_tokens);
     let stream = async_stream::stream! {
         if let Some(evt) = sse_event(&ChatCompletionChunk::initial(&request_id, &model_name)) {
             yield evt;
@@ -525,12 +576,68 @@ fn pregenerated_sse_response(
             }
         }
 
-        if let Some(evt) = sse_event(&ChatCompletionChunk::done(&request_id, &model_name)) {
+        if let Some(evt) = sse_event(&ChatCompletionChunk::done_with_reason(&request_id, &model_name, finish_reason)) {
             yield evt;
         }
         yield Ok::<_, Infallible>(Event::default().data("[DONE]".to_string()));
     };
     Sse::new(stream).into_response()
+}
+
+/// PMAT-795 (streaming half): the `finish_reason` of a streaming chat completion's
+/// terminal chunk.
+///
+/// `"length"` when the token budget was exhausted, else `"stop"` — the same rule the
+/// non-streaming path applies via `finalize_chat_text`, and the same rule the
+/// `/v1/completions` backends apply via `completion_finish_reason`. Every SSE builder
+/// previously emitted the literal `"stop"`, so `max_tokens: 6` on a long prompt
+/// streamed `"stop"` while the identical non-streaming request answered `"length"`.
+///
+/// Pure, so the divergence is falsifiable without a model.
+fn streaming_finish_reason(completion_tokens: usize, max_tokens: usize) -> &'static str {
+    if completion_tokens >= max_tokens {
+        "length"
+    } else {
+        "stop"
+    }
+}
+
+#[cfg(test)]
+mod streaming_finish_reason_tests {
+    use super::streaming_finish_reason;
+
+    /// FALSIFIER: the terminal SSE chunk hardcoded "stop". A generation that spent
+    /// its whole token budget must report "length", matching the non-streaming path.
+    #[test]
+    fn budget_exhausted_is_length() {
+        assert_eq!(streaming_finish_reason(6, 6), "length");
+        assert_eq!(streaming_finish_reason(256, 256), "length");
+        // Defensive: over budget is still "length", never "stop".
+        assert_eq!(streaming_finish_reason(7, 6), "length");
+    }
+
+    /// Regression guard: a stream that ended naturally (EOS before the budget)
+    /// still reports "stop", so the common case is unchanged.
+    #[test]
+    fn natural_termination_is_stop() {
+        assert_eq!(streaming_finish_reason(3, 6), "stop");
+        assert_eq!(streaming_finish_reason(0, 256), "stop");
+    }
+
+    /// The streaming rule must agree with the non-streaming rule the same server
+    /// applies to the same request — that disagreement WAS the defect.
+    #[test]
+    fn agrees_with_non_streaming_path() {
+        use super::finalize_chat_text;
+        for (tokens, max) in [(6usize, 6usize), (3, 6), (256, 256), (10, 256)] {
+            let (_, non_streaming) = finalize_chat_text("text".to_string(), None, tokens, max);
+            assert_eq!(
+                streaming_finish_reason(tokens, max),
+                non_streaming,
+                "streaming and non-streaming finish_reason diverged at {tokens}/{max}"
+            );
+        }
+    }
 }
 
 /// Build a true-streaming SSE response with keep-alive (tokens arrive via channel).
@@ -548,6 +655,7 @@ pub(crate) fn true_streaming_sse_response(
     model_name: String,
     metrics: Arc<crate::metrics::MetricsCollector>,
     start: Instant,
+    max_tokens: usize,
 ) -> Response {
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_stream::StreamExt;
@@ -581,7 +689,9 @@ pub(crate) fn true_streaming_sse_response(
             }
         }
 
-        if let Some(evt) = sse_event(&ChatCompletionChunk::done(&request_id, &model_name)) {
+        // Reason derived from the tokens the stream actually delivered, not a literal.
+        let finish_reason = streaming_finish_reason(completion_tokens, max_tokens);
+        if let Some(evt) = sse_event(&ChatCompletionChunk::done_with_reason(&request_id, &model_name, finish_reason)) {
             yield evt;
         }
 
@@ -670,6 +780,7 @@ fn try_gpu_backend(
             request_id.to_string(),
             request.model.clone(),
             request.stop.as_deref(),
+            max_tokens,
         ));
     }
 
@@ -752,6 +863,7 @@ fn try_cached_backend(
             request_id.to_string(),
             request.model.clone(),
             request.stop.as_deref(),
+            max_tokens,
         ));
     }
 

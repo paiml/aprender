@@ -323,7 +323,167 @@ async fn try_cuda_gguf_completions(
     )))
 }
 
+/// A single `text_completion` SSE chunk.
+///
+/// OpenAI's streaming `/v1/completions` wire form: the same `object:
+/// "text_completion"` envelope as the non-streaming response, carrying an
+/// incremental `choices[0].text`, no `usage`, and a `finish_reason` only on the
+/// terminal chunk — followed by a literal `data: [DONE]`.
+#[derive(Debug, Clone, serde::Serialize)]
+struct CompletionStreamChunk {
+    id: String,
+    object: &'static str,
+    created: u64,
+    model: String,
+    choices: Vec<CompletionStreamChoice>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct CompletionStreamChoice {
+    text: String,
+    index: usize,
+    logprobs: Option<serde_json::Value>,
+    finish_reason: Option<String>,
+}
+
+impl CompletionStreamChunk {
+    fn new(id: &str, model: &str, text: String, finish_reason: Option<&str>) -> Self {
+        Self {
+            id: id.to_string(),
+            object: "text_completion",
+            created: epoch_secs(),
+            model: model.to_string(),
+            choices: vec![CompletionStreamChoice {
+                text,
+                index: 0,
+                logprobs: None,
+                finish_reason: finish_reason.map(str::to_string),
+            }],
+        }
+    }
+}
+
+/// Split a finished completion into the SSE frames an OpenAI client expects.
+///
+/// The text frames carry the completion; the terminal frame carries ONLY the
+/// `finish_reason`, taken verbatim from the response the non-streaming path built
+/// for the same request — so `stream: true` and `stream: false` can never disagree
+/// about why the generation ended (the mistake the chat SSE path made by
+/// hardcoding `"stop"`).
+///
+/// Pure, so the wire contract is falsifiable without a model.
+fn completion_sse_frames(text: String, finish_reason: &str) -> (Vec<String>, String) {
+    let chunks = if text.is_empty() {
+        Vec::new()
+    } else {
+        vec![text]
+    };
+    (chunks, finish_reason.to_string())
+}
+
+#[cfg(test)]
+mod completions_stream_tests {
+    use super::{completion_sse_frames, CompletionStreamChunk};
+
+    /// FALSIFIER: `stream: true` on `/v1/completions` used to return
+    /// `content-type: application/json` with a complete `text_completion` object.
+    /// The streamed frames must carry the completion text and terminate with a
+    /// reason-only frame.
+    #[test]
+    fn frames_carry_text_then_reason() {
+        let (chunks, reason) = completion_sse_frames(" Paris".to_string(), "stop");
+        assert_eq!(chunks, vec![" Paris".to_string()]);
+        assert_eq!(reason, "stop");
+    }
+
+    /// The streamed reason is the non-streaming reason, never rewritten. A
+    /// truncated completion must stream "length" so continuation clients trigger.
+    #[test]
+    fn finish_reason_is_preserved_verbatim() {
+        for reason in ["length", "stop", "content_filter"] {
+            let (_, streamed) = completion_sse_frames("abc".to_string(), reason);
+            assert_eq!(
+                streamed, reason,
+                "streamed finish_reason must equal the non-streaming one"
+            );
+        }
+    }
+
+    /// An empty completion emits no text frame — a `data:` frame with empty text
+    /// would be indistinguishable from a real token to a concatenating client.
+    #[test]
+    fn empty_completion_emits_no_text_frame() {
+        let (chunks, _) = completion_sse_frames(String::new(), "stop");
+        assert!(chunks.is_empty());
+    }
+
+    /// The serialized frame must be the OpenAI `text_completion` envelope: an SDK
+    /// keys off `object` and reads `choices[0].text`.
+    #[test]
+    fn chunk_serializes_as_text_completion_envelope() {
+        let chunk = CompletionStreamChunk::new("cmpl-1", "default", " hi".to_string(), None);
+        let json = serde_json::to_string(&chunk).expect("serialize");
+        assert!(json.contains(r#""object":"text_completion""#), "{json}");
+        assert!(json.contains(r#""text":" hi""#), "{json}");
+        // finish_reason is present-but-null on non-terminal chunks, never absent.
+        assert!(json.contains(r#""finish_reason":null"#), "{json}");
+
+        let done = CompletionStreamChunk::new("cmpl-1", "default", String::new(), Some("length"));
+        let json = serde_json::to_string(&done).expect("serialize");
+        assert!(json.contains(r#""finish_reason":"length""#), "{json}");
+    }
+}
+
+/// `POST /v1/completions` — OpenAI text completions, streaming or not.
 pub async fn openai_completions_handler(
+    State(state): State<AppState>,
+    Json(wire): Json<CompletionWireRequest>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    let stream = wire.stream;
+    let request = wire.request;
+    let model_name = request.model.clone();
+
+    let completed = complete_once(State(state), Json(request)).await;
+
+    if !stream {
+        return match completed {
+            Ok(json) => json.into_response(),
+            Err(e) => e.into_response(),
+        };
+    }
+
+    let response = match completed {
+        Ok(Json(r)) => r,
+        // An error before any frame is written is still an HTTP error, not a stream.
+        Err(e) => return e.into_response(),
+    };
+
+    let choice = response.choices.into_iter().next();
+    let text = choice.as_ref().map(|c| c.text.clone()).unwrap_or_default();
+    let reason = choice.map_or_else(|| "stop".to_string(), |c| c.finish_reason);
+    let (frames, finish_reason) = completion_sse_frames(text, &reason);
+    let id = response.id;
+
+    let sse = async_stream::stream! {
+        for frame in frames {
+            let chunk = CompletionStreamChunk::new(&id, &model_name, frame, None);
+            if let Ok(data) = serde_json::to_string(&chunk) {
+                yield Ok::<_, std::convert::Infallible>(axum::response::sse::Event::default().data(data));
+            }
+        }
+        let done = CompletionStreamChunk::new(&id, &model_name, String::new(), Some(&finish_reason));
+        if let Ok(data) = serde_json::to_string(&done) {
+            yield Ok(axum::response::sse::Event::default().data(data));
+        }
+        yield Ok(axum::response::sse::Event::default().data("[DONE]"));
+    };
+
+    axum::response::sse::Sse::new(sse).into_response()
+}
+
+async fn complete_once(
     State(state): State<AppState>,
     Json(request): Json<CompletionRequest>,
 ) -> Result<Json<CompletionResponse>, RErr> {

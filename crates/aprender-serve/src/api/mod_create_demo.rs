@@ -584,9 +584,16 @@ impl ChatCompletionChunk {
         Self::new(id, model, Some(text.to_string()), None)
     }
 
-    /// Create final chunk with finish reason
-    fn done(id: &str, model: &str) -> Self {
-        Self::new(id, model, None, Some("stop".to_string()))
+    /// Create the terminal chunk, carrying the finish reason the generation
+    /// actually produced.
+    ///
+    /// The previous `done(id, model)` hardcoded `"stop"`, so a stream truncated
+    /// by `max_tokens` reported `"stop"` while the non-streaming path on the very
+    /// same request reported `"length"`. Clients that implement continuation
+    /// ("if finish_reason == 'length', ask for more") therefore never triggered
+    /// and silently truncated.
+    fn done_with_reason(id: &str, model: &str, finish_reason: &str) -> Self {
+        Self::new(id, model, None, Some(finish_reason.to_string()))
     }
 }
 

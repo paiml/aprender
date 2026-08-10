@@ -73,36 +73,41 @@ fn resolve_stream_generation_config(
 }
 
 /// OpenAI-compatible /v1/chat/completions streaming endpoint (SSE)
+///
+/// This route is registered unconditionally (router.rs) but reads ONLY the
+/// `Model`+`BPETokenizer` registry via `state.get_model`. `apr serve run <model>`
+/// never populates that registry — it loads a `quantized_model` / `cuda_model` /
+/// `apr_transformer` — so the route answered `404 {"error":"Model registry error:
+/// No model available"}` for every real deployment while `/v1/chat/completions`
+/// on the SAME server returned a 200 completion. When the registry is empty we now
+/// delegate to the main chat handler with `stream` forced on, which runs the same
+/// backend dispatch (quantized/cuda/gpu/apr/moe) and emits the same SSE wire format.
 pub async fn openai_chat_completions_stream_handler(
     State(state): State<AppState>,
     Json(request): Json<ChatCompletionRequest>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, Json<ErrorResponse>)> {
+) -> Response {
     let model_id = if request.model == "default" || request.model.is_empty() {
         None
     } else {
         Some(request.model.as_str())
     };
 
-    let (model, tokenizer) = state.get_model(model_id).map_err(|e| {
-        state.metrics.record_failure();
-        (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: e.to_string(),
-            }),
+    let Ok((model, tokenizer)) = state.get_model(model_id) else {
+        // No registry model — serve it through the backend that DOES hold the model.
+        let mut streamed = request;
+        streamed.stream = true;
+        return openai_chat_completions_handler(
+            State(state),
+            axum::http::HeaderMap::new(),
+            Json(streamed),
         )
-    })?;
+        .await;
+    };
 
     let prompt_text = format_chat_messages(&request.messages, Some(&request.model));
     let prompt_ids = tokenizer.encode(&prompt_text);
     if prompt_ids.is_empty() {
-        state.metrics.record_failure();
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "Messages cannot be empty".to_string(),
-            }),
-        ));
+        return fail_response(&state, StatusCode::BAD_REQUEST, "Messages cannot be empty");
     }
 
     let prompt_len = prompt_ids.len();
@@ -124,15 +129,10 @@ pub async fn openai_chat_completions_stream_handler(
             .unwrap_or(0)
     );
 
-    let generated = model.generate(&prompt, &config).map_err(|e| {
-        state.metrics.record_failure();
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: e.to_string(),
-            }),
-        )
-    })?;
+    let generated = match model.generate(&prompt, &config) {
+        Ok(g) => g,
+        Err(e) => return fail_response(&state, StatusCode::INTERNAL_SERVER_ERROR, e),
+    };
 
     let token_ids: Vec<u32> = generated
         .iter()
@@ -148,6 +148,8 @@ pub async fn openai_chat_completions_stream_handler(
     // ignored request.stop entirely. All tokens are already generated here, so we can decode
     // cumulatively and emit only complete-char, pre-stop deltas.
     let deltas = streaming_text_deltas(&tokenizer, &generated_ids, request.stop.as_deref());
+    // Terminal chunk reports the reason this generation actually ended (was a literal "stop").
+    let finish_reason = streaming_finish_reason(generated_ids.len(), max_tokens);
 
     let stream = async_stream::stream! {
         // PMAT-753: pass ONLY the JSON payload to Event::data() — axum's Sse adds the
@@ -163,14 +165,15 @@ pub async fn openai_chat_completions_stream_handler(
             yield Ok(Event::default().data(data));
         }
 
-        let done = ChatCompletionChunk::done(&request_id_clone, &model_name);
+        let done =
+            ChatCompletionChunk::done_with_reason(&request_id_clone, &model_name, finish_reason);
         let data = serde_json::to_string(&done).unwrap_or_default();
         yield Ok(Event::default().data(data));
 
-        yield Ok(Event::default().data("[DONE]"));
+        yield Ok::<_, Infallible>(Event::default().data("[DONE]"));
     };
 
-    Ok(Sse::new(stream))
+    Sse::new(stream).into_response()
 }
 
 #[cfg(test)]
