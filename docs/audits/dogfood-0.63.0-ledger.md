@@ -6,6 +6,36 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 
 201 findings across 37 root-cause clusters.
 
+## How this count is kept honest
+
+This ledger has said 190, 211, 202 and 201. Every correction was downward and had one
+cause: **re-running a probe slice produces findings that restate defects already recorded,
+in different words.** Nineteen such restatements have been collapsed. Matching on a title
+prefix cannot see a re-wording, so it kept letting them in.
+
+The rule the ledger is now maintained by, so a future audit does not re-inflate it:
+
+> Two findings are the same defect when they share a **surface** and a **primary command**,
+> and their titles match at `SequenceMatcher >= 0.42` after normalisation (inline code
+> spans and punctuation stripped, lowercased, whitespace collapsed). Keep the record with
+> more evidence — longer repro, observed, expected and variations.
+
+Anything in the 0.42–0.62 band gets read by a human before collapsing, because that band
+contains real pairs that merely *sound* alike. The ones deliberately kept apart so far:
+
+| kept as two | why |
+|---|---|
+| `rerank --input-ids` vs `--hidden-dim` | two different panics, different frames |
+| `apr.trace` null layer stats vs unimplemented `reference` | different failures of the same tool |
+| `hex --tensor` wrong bytes vs `hex --json` | different output paths |
+| `validate` APR "3/100 points" vs its out-of-bounds tensor drop | different gates |
+
+**No issue has ever lost coverage to this process.** Only duplicate rows disappear; every
+finding still appears in exactly one cluster issue, and any issue whose finding set changed
+was refreshed.
+
+The count is a floor regardless: it is what 700+ invocations found, not what exists.
+
 | Sev | Surface | Target | Cluster | Issue | Fixed by | Defect |
 |---|---|---|---|---|---|---|
 | P0 | mcp | `apr mcp (all subprocess-backed tools)` | bare-apr-path-resolution | #2384 | — | MCP server executes a bare `apr` resolved from PATH — every tool ran a DIFFERENT (0.60.0) binary while apr.version reported 0.63.0 |
