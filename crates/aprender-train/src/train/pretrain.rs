@@ -611,9 +611,17 @@ impl<S: StepFn, V: ValFn> PretrainLoop<S, V> {
 
     /// Run one epoch: `steps_per_epoch` train steps, then validation +
     /// divergence check + epoch artifact.
+    ///
+    /// The epoch is **clamped to the global `total_steps` budget**: the last
+    /// epoch runs only the steps that remain. Without the clamp a run asking
+    /// for `--num-steps 3` at the default `steps_per_epoch = 100` executed a
+    /// full 100 steps — the config block printed `Total steps: 3` and the
+    /// result block printed `Steps recorded: 100` for the same run, and a
+    /// budget of 250 spent 300 steps of compute.
     pub fn run_epoch(&mut self, epoch: usize) -> Result<EpochArtifact, PretrainAbort> {
         let first_step = (epoch * self.config.steps_per_epoch) as u64;
-        let last_step = first_step + self.config.steps_per_epoch as u64;
+        let last_step =
+            (first_step + self.config.steps_per_epoch as u64).min(self.config.total_steps as u64);
 
         let t0 = Instant::now();
         let mut epoch_loss_sum = 0.0_f32;
@@ -1151,6 +1159,46 @@ mod tests {
                 assert_eq!(field, "train_loss");
             }
             other => panic!("INV-TRAIN-007 did not fire: {other:?}"),
+        }
+    }
+
+    /// `--num-steps N` is a BUDGET, not a lower bound. The loop must execute
+    /// exactly N train steps even when N is not a whole multiple of
+    /// `steps_per_epoch`.
+    ///
+    /// Before the clamp in `run_epoch`, `apr pretrain --num-steps 3` at the
+    /// default `steps_per_epoch = 100` ran 100 steps: the same run printed
+    /// `Total steps: 3` and `Steps recorded: 100`. `--num-steps 250` ran 300.
+    #[test]
+    fn num_steps_is_a_budget_not_rounded_up_to_a_whole_epoch() {
+        // (total_steps, steps_per_epoch) — the CLI default spe is 100.
+        for (total, spe) in [(3usize, 100usize), (250, 100), (7, 5), (10, 10), (1, 64)] {
+            let tmp = TempDir::new().expect("tempdir");
+            let cfg = PretrainConfig {
+                total_steps: total,
+                steps_per_epoch: spe,
+                warmup_steps: 1,
+                // Never early-stop / converge out of the run: we are counting steps.
+                target_val_loss: 0.0,
+                min_epochs_before_early_stop: usize::MAX,
+                patience_epochs: usize::MAX,
+                ..test_config(tmp.path())
+            };
+            let step_fn =
+                LinearDecaySynthetic { start_loss: 3.0, decay_per_step: 0.0, grad_norm: 0.5 };
+            let val_fn = ScriptedVal { sequence: vec![3.0; total.div_ceil(spe) + 2] };
+            let mut loop_ = PretrainLoop::new(cfg, step_fn, val_fn);
+            let _ = loop_.run();
+
+            assert_eq!(
+                loop_.step_metrics().len(),
+                total,
+                "requested {total} steps at steps_per_epoch={spe}, executed {}",
+                loop_.step_metrics().len()
+            );
+            // Step indices must be exactly 0..total — no step beyond the budget.
+            let last = loop_.step_metrics().last().map(|m| m.step);
+            assert_eq!(last, Some(total as u64 - 1), "last step index past the budget");
         }
     }
 
