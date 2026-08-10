@@ -21,11 +21,7 @@ fn write_tabular_dataset(dir: &TempDir, rows: usize, width: usize) -> std::path:
                 (0..width).map(|j| format!("{:.4}", (i + j) as f32 * 0.01)).collect();
             let target: Vec<String> =
                 (0..width).map(|j| format!("{:.4}", (i + j) as f32 * 0.02)).collect();
-            format!(
-                "{{\"input\":[{}],\"target\":[{}]}}",
-                input.join(","),
-                target.join(",")
-            )
+            format!("{{\"input\":[{}],\"target\":[{}]}}", input.join(","), target.join(","))
         })
         .collect();
     let path = dir.path().join("train.json");

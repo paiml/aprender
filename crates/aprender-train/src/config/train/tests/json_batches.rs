@@ -50,14 +50,8 @@ fn test_load_json_batches_invalid_format() {
     let err = load_json_batches(temp_file.path(), 4)
         .expect_err("unparseable training data must be rejected");
     let msg = err.to_string();
-    assert!(
-        msg.contains("Could not parse training data"),
-        "unexpected error: {msg}"
-    );
-    assert!(
-        msg.contains("\"examples\""),
-        "error must quote the expected schema: {msg}"
-    );
+    assert!(msg.contains("Could not parse training data"), "unexpected error: {msg}");
+    assert!(msg.contains("\"examples\""), "error must quote the expected schema: {msg}");
 }
 
 #[test]

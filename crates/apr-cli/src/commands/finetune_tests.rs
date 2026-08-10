@@ -1787,6 +1787,14 @@ fn classify_load_rejects_a_non_apr_file_instead_of_scanning_its_directory() {
     let msg = classify_load_error(&st, &cfg).to_string();
     let _ = std::fs::remove_dir_all(&dir);
 
+    // Assert the NEW wording, not merely "the path appears somewhere": under the
+    // old parent-dir scan the path appeared too (it was the file that got
+    // scanned), so a contains-the-path assertion alone would stay green with
+    // the defect restored.
+    assert!(
+        msg.contains("Cannot fine-tune from"),
+        "a bare non-.apr file must be refused outright, not scanned: {msg}"
+    );
     assert!(
         msg.contains("safetensors"),
         "the error must name the format: {msg}"
