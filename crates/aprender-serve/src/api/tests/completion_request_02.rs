@@ -52,10 +52,12 @@ fn test_model_metadata_response_with_lineage() {
     let response = ModelMetadataResponse {
         id: "test-model".to_string(),
         name: "Test Model".to_string(),
-        format: "GGUF".to_string(),
-        size_bytes: 4_000_000_000,
+        format: Some("GGUF".to_string()),
+        size_bytes: Some(4_000_000_000),
         quantization: Some("Q4_K_M".to_string()),
-        context_length: 8192,
+        context_length: Some(8192),
+        model_max_context_length: None,
+        architecture: None,
         lineage: Some(lineage),
         loaded: true,
     };
@@ -74,18 +76,20 @@ fn test_model_metadata_response_large_size() {
     let response = ModelMetadataResponse {
         id: "large-model".to_string(),
         name: "Large Model".to_string(),
-        format: "SafeTensors".to_string(),
-        size_bytes: 70_000_000_000, // 70GB
+        format: Some("SafeTensors".to_string()),
+        size_bytes: Some(70_000_000_000), // 70GB
         quantization: None,
-        context_length: 32768,
+        context_length: Some(32768),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: false,
     };
 
     let json = serde_json::to_string(&response).expect("serialize");
     let parsed: ModelMetadataResponse = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(parsed.size_bytes, 70_000_000_000);
-    assert_eq!(parsed.context_length, 32768);
+    assert_eq!(parsed.size_bytes, Some(70_000_000_000));
+    assert_eq!(parsed.context_length, Some(32768));
 }
 
 #[test]
@@ -93,10 +97,12 @@ fn test_model_metadata_response_clone() {
     let response = ModelMetadataResponse {
         id: "test".to_string(),
         name: "Test".to_string(),
-        format: "GGUF".to_string(),
-        size_bytes: 1000,
+        format: Some("GGUF".to_string()),
+        size_bytes: Some(1000),
         quantization: Some("Q4_0".to_string()),
-        context_length: 2048,
+        context_length: Some(2048),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: true,
     };
@@ -111,10 +117,12 @@ fn test_model_metadata_response_debug() {
     let response = ModelMetadataResponse {
         id: "debug".to_string(),
         name: "Debug".to_string(),
-        format: "APR".to_string(),
-        size_bytes: 0,
+        format: Some("APR".to_string()),
+        size_bytes: Some(0),
         quantization: None,
-        context_length: 512,
+        context_length: Some(512),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: false,
     };

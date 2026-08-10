@@ -400,10 +400,12 @@ fn test_model_metadata_response_serialization() {
     let response = ModelMetadataResponse {
         id: "model-001".to_string(),
         name: "Test Model".to_string(),
-        format: "GGUF".to_string(),
-        size_bytes: 1024 * 1024 * 100,
+        format: Some("GGUF".to_string()),
+        size_bytes: Some(1024 * 1024 * 100),
         quantization: Some("Q4_K_M".to_string()),
-        context_length: 4096,
+        context_length: Some(4096),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: true,
     };
@@ -423,10 +425,12 @@ fn test_model_metadata_response_without_optional_fields() {
     let response = ModelMetadataResponse {
         id: "model-002".to_string(),
         name: "Minimal Model".to_string(),
-        format: "APR".to_string(),
-        size_bytes: 1000,
+        format: Some("APR".to_string()),
+        size_bytes: Some(1000),
         quantization: None,
-        context_length: 2048,
+        context_length: Some(2048),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: false,
     };

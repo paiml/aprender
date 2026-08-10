@@ -62,6 +62,12 @@ pub struct ServerConfig {
     pub no_fp8_cache: bool,
     /// Ollama compatibility mode
     pub ollama_compat: bool,
+    /// Path of the model being served, recorded by `serve::run`.
+    ///
+    /// The metadata endpoints (`/realize/model`, `/api/tags`, `/api/show`)
+    /// measure size/format from this file. Before it existed they reported
+    /// constants — `size_bytes: 0`, `format: "gguf"` — for every model.
+    pub model_path: Option<std::path::PathBuf>,
 }
 
 impl Default for ServerConfig {
@@ -85,6 +91,7 @@ impl Default for ServerConfig {
             context_length: 4096,
             no_fp8_cache: false,
             ollama_compat: false,
+            model_path: None,
         }
     }
 }

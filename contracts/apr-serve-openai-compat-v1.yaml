@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.15.0"
+  version: "1.16.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -248,6 +248,59 @@ proof_obligations:
       the realizar-side handlers any caller mounting create_router gets
       (crates/aprender-serve/src/api/ollama_handlers.rs::created_at_now).
 
+  - type: invariant
+    property: >
+      OLLAMA-COMPAT-ON-THE-REALIZAR-ROUTER (dogfood 0.63.0, #2396): the Ollama
+      surface obligations above are stated for the apr-cli APR-CPU router.
+      `apr serve run <GGUF>` mounts a DIFFERENT router — realizar
+      create_router, via apr-cli run_cpu_server — and 0.63.0 shipped that one
+      unfixed: `stream:true` was parsed and discarded (one buffered
+      application/json object with content-length 181), and /api/tags,
+      /api/show and /api/version answered 404 while the startup banner
+      advertised "Ollama-Parity Endpoints". On the realizar router,
+      `stream:true` now responds application/x-ndjson with NO content-length:
+      a sequence of `{...,done:false}` objects whose content/response
+      fragments CONCATENATE to the full generation, terminated by exactly one
+      `{...,done:true,done_reason:"stop",prompt_eval_count,eval_count}`.
+      Non-terminal objects omit the counts rather than sending zeros.
+      `stream:false` is unchanged (one application/json object). NOTE ON
+      SCOPE: this router's chat backend has no token callback, so the
+      fragments are produced from the finished generation — the WIRE PROTOCOL
+      is correct and clients no longer freeze, but time-to-first-object is
+      unchanged. /api/tags, /api/show and /api/version are routed.
+  - type: invariant
+    property: >
+      MODEL-METADATA-MEASURED-OR-ABSENT (dogfood 0.63.0, #2402): every field
+      the metadata endpoints (/realize/model, /api/tags, /api/show) report is
+      either MEASURED or ABSENT from the JSON. There is no defaulted value.
+      0.63.0 returned `size_bytes: 0`, `quantization: "Q4_K_M"`,
+      `context_length: 4096`, `format: "gguf"` and
+      `content_hash: "blake3:0".repeat(16)` as constants for every model — on a
+      1.04 GiB Q4_K GGUF served with `--context-length 128` against a
+      32768-context model, all five were wrong. The content_hash is the worst
+      of them: a 128-character string shaped exactly like a BLAKE3 digest,
+      which a consumer cannot distinguish from a real one and will store and
+      compare as provenance. `lineage` is therefore emitted ONLY when a hash
+      was actually computed over the model bytes. Measured values come from
+      api/model_source.rs::ModelSourceInfo: size and container format from the
+      FILE (magic bytes, not the extension), quantization from the qtype of
+      the loaded projection tensors (not GGUF's advisory general.file_type),
+      architecture from the loader. The context the server was CONFIGURED with
+      (`--context-length`) and the model's own advertised maximum are reported
+      as two SEPARATE fields; conflating them is what produced the 4096.
+  - type: invariant
+    property: >
+      ERROR-MESSAGES-NAME-A-REAL-REMEDY (dogfood 0.63.0, #2402): an error body
+      that tells the caller how to fix the problem must name a remedy that
+      exists. POST /realize/reload without registry mode answers 501; 0.63.0's
+      body said "Start server with --registry flag", and `apr serve run
+      --registry <FILE>` is rejected by clap with exit 2 (no such flag on
+      `apr serve run` or on `apr serve`), so the endpoint was unreachable by
+      any documented invocation. The message now states that the CLI does not
+      expose registry mode, names the embedder API that does
+      (AppState::with_registry), and gives the working alternative (restart
+      with `apr serve run <MODEL>`).
+
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
     name: pmat754_stop_truncation_tests
@@ -357,3 +410,27 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib api::ollama_handlers'
     expected_output: "test result: ok"
     if_fails: 'A caller mounting realizar create_router serves a non-RFC-3339 created_at, so an ollama Go client discards the whole /api/chat or /api/generate response.'
+  - id: FALSIFY-OLLAMA-REALIZAR-ROUTER-NDJSON-2396
+    name: api_chat_with_stream_true_returns_ndjson_terminated_by_done
+    prediction: 'On the router `apr serve run <GGUF>` actually mounts (realizar create_router, reached via apr-cli run_cpu_server — NOT the apr-cli APR-CPU router PMAT-928 fixed), POST /api/chat and POST /api/generate with stream:true answer Content-Type application/x-ndjson with NO content-length header, and a body of newline-delimited JSON objects in which only the LAST carries done:true (plus done_reason, prompt_eval_count, eval_count); the non-terminal objects omit the counts entirely. stream:false still returns exactly one application/json object (no-regression). RED on 0.63.0, where the realizar handlers hardcoded stream:false and answered application/json with content-length 181 for a stream:true request.'
+    test_harness: 'cargo test -p aprender-serve --lib api::tests::ollama_compat_http'
+    expected_output: "test result: ok"
+    if_fails: 'A stream:true /api/chat or /api/generate request against the GGUF serve path returns one buffered application/json object, so every Ollama-compatible UI (ollama CLI, Open WebUI, continue.dev) shows a frozen cursor for the whole generation — the shipped 0.63.0 behaviour on the realizar router.'
+  - id: FALSIFY-OLLAMA-REALIZAR-ROUTER-DISCOVERY-2396
+    name: api_tags_is_routed_and_lists_a_model_the_client_can_ask_for
+    prediction: 'GET /api/tags, POST /api/show and GET /api/version are ROUTED on realizar create_router — each answers 200 with its own body, never the axum not_found fallback (`{"error":"not_found"}`). /api/tags lists exactly one model whose `name` is an addressable `model:tag` echoed in `model`; /api/show carries `details` and a `capabilities` list containing "completion"; /api/version returns a semver-shaped string. RED on 0.63.0, where all three returned HTTP 404 while the startup banner advertised "Ollama-Parity Endpoints".'
+    test_harness: 'cargo test -p aprender-serve --lib api::tests::ollama_compat_http'
+    expected_output: "test result: ok"
+    if_fails: 'The Ollama discovery routes are unwired on the router apr serve mounts for GGUF, so `ollama list`, Open WebUI, LangChain ChatOllama and LlamaIndex cannot enumerate the model and never issue a chat request at all.'
+  - id: FALSIFY-MODEL-METADATA-MEASURED-OR-ABSENT-2402
+    name: realize_model_never_emits_a_synthetic_content_hash
+    prediction: 'GET /realize/model, GET /api/tags and POST /api/show emit a field ONLY when the loader measured it. With no ModelSourceInfo attached, size_bytes / context_length / quantization / format and the whole `lineage` block are ABSENT from the JSON, and the body contains no "blake3:0blake3:0" substring. With a ModelSourceInfo built from a real file, size_bytes equals the file size, format comes from the magic bytes (an APR file reports "apr", not "gguf"), and `context_length` (what --context-length set) and `model_max_context_length` (the model''s own advertised maximum) are reported as SEPARATE values. RED on 0.63.0, which hardcoded size_bytes:0, quantization:"Q4_K_M", context_length:4096, format:"gguf" and content_hash:"blake3:0".repeat(16).'
+    test_harness: 'cargo test -p aprender-serve --lib api::tests::ollama_compat_http'
+    expected_output: "test result: ok"
+    if_fails: 'A metadata endpoint substitutes a plausible-looking constant for an unmeasured field. The content_hash case is the worst: a 128-character string shaped exactly like a BLAKE3 digest is indistinguishable to a consumer from a real one, so fabricated provenance gets stored and compared as if it were measured.'
+  - id: FALSIFY-RELOAD-501-NAMES-A-REAL-REMEDY-2402
+    name: realize_reload_501_does_not_advertise_a_nonexistent_flag
+    prediction: 'POST /realize/reload without registry mode answers 501 with an error body that does NOT contain "Start server with --registry flag", DOES state that the CLI does not expose registry mode, and DOES name the working alternative (`apr serve run`). RED on 0.63.0, whose 501 body pointed at a --registry flag that clap rejects with exit 2 on both `apr serve run` and `apr serve`.'
+    test_harness: 'cargo test -p aprender-serve --lib realize_reload_501_does_not_advertise_a_nonexistent_flag'
+    expected_output: "test result: ok"
+    if_fails: 'The 501 tells the caller to pass a flag that does not exist, so the endpoint is unreachable by any documented invocation and the error message sends users down a dead end.'

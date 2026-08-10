@@ -140,9 +140,21 @@ pub async fn realize_embed_handler(
 }
 
 /// Native Realizar model metadata handler (/realize/model)
+///
+/// **Every field is measured or absent.** 0.63.0 shipped this handler with
+/// `size_bytes: 0`, `context_length: 4096`, `quantization: "Q4_K_M"`,
+/// `format: "gguf"` and `content_hash: "blake3:0".repeat(16)` — a 128-character
+/// string shaped exactly like a BLAKE3 digest that a consumer would store and
+/// compare as provenance. Those were constants, not observations: the same
+/// server reported 4096 while running with `--context-length 128` against a
+/// 32768-context 1.04 GiB GGUF. Values now come from
+/// [`super::ModelSourceInfo`], and anything the loader did not measure is
+/// omitted from the JSON entirely.
 pub async fn realize_model_handler(
     State(state): State<AppState>,
 ) -> Result<Json<ModelMetadataResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let source = state.model_source();
+
     // Get default model info
     let model_info = if let Some(registry) = &state.registry {
         let models = registry.list();
@@ -152,7 +164,12 @@ pub async fn realize_model_handler(
             id: "default".to_string(),
             name: "Default Model".to_string(),
             description: "Single model deployment".to_string(),
-            format: "gguf".to_string(),
+            // Detected from the file's magic bytes when a path was recorded.
+            // Empty means "unknown" and is reported as an ABSENT field below.
+            format: source
+                .and_then(crate::api::ModelSourceInfo::format)
+                .unwrap_or_default()
+                .to_string(),
             loaded: true,
         })
     };
@@ -166,28 +183,61 @@ pub async fn realize_model_handler(
         )
     })?;
 
+    // Lineage is emitted ONLY when a content hash was actually computed over
+    // the model bytes. There is deliberately no synthetic fallback: a client
+    // cannot distinguish a fabricated digest from a real one, so a fabricated
+    // one is worse than none.
+    let lineage = source
+        .and_then(crate::api::ModelSourceInfo::content_hash)
+        .map(|hash| ModelLineage {
+            uri: format!("file://{}", source.and_then(crate::api::ModelSourceInfo::path).unwrap_or_default()),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            recipe: None,
+            parent: None,
+            content_hash: hash.to_string(),
+        });
+
     Ok(Json(ModelMetadataResponse {
         id: info.id.clone(),
         name: info.name,
-        format: info.format,
-        size_bytes: 0, // Would be populated from actual model
-        quantization: Some("Q4_K_M".to_string()),
-        context_length: 4096,
-        lineage: Some(ModelLineage {
-            uri: format!("pacha://{}:latest", info.id),
-            version: "1.0.0".to_string(),
-            recipe: None,
-            parent: None,
-            content_hash: "blake3:0".repeat(16),
-        }),
+        format: Some(info.format).filter(|f| !f.is_empty()),
+        size_bytes: source.and_then(crate::api::ModelSourceInfo::size_bytes),
+        quantization: source
+            .and_then(crate::api::ModelSourceInfo::quantization)
+            .map(str::to_string),
+        context_length: source.and_then(crate::api::ModelSourceInfo::context_length),
+        model_max_context_length: source
+            .and_then(crate::api::ModelSourceInfo::model_max_context_length),
+        architecture: source
+            .and_then(crate::api::ModelSourceInfo::architecture)
+            .map(str::to_string),
+        lineage,
         loaded: info.loaded,
     }))
 }
+
+/// Body returned by `/realize/reload` when the server is not in registry mode.
+///
+/// Must not name a CLI flag: `apr serve run` has none that enables registry
+/// mode. Stating the actual situation is more useful than inventing a remedy.
+pub(crate) const REGISTRY_MODE_UNAVAILABLE: &str =
+    "Hot-reload requires multi-model registry mode, which this server is not running. \
+     The apr CLI does not expose registry mode (there is no --registry flag on `apr serve run`); \
+     it is available only to embedders that build AppState via AppState::with_registry. \
+     To serve a different model, restart: apr serve run <MODEL>.";
 
 /// Native Realizar hot-reload handler (/realize/reload)
 ///
 /// Performs atomic model hot-reload via the ModelRegistry.
 /// Requires registry mode (multi-model serving) to be enabled.
+///
+/// **Error-message contract.** When registry mode is off this returns 501, and
+/// the body must NOT name a remedy that does not exist. 0.63.0 answered
+/// "Start server with --registry flag" — `apr serve run` has no `--registry`
+/// flag (clap rejects it with exit 2), and neither does `apr serve`, so the
+/// advice sent every caller down a dead end. Registry mode is reached by
+/// embedding this crate and calling `AppState::with_registry`; the CLI does
+/// not expose it, and the message now says exactly that.
 pub async fn realize_reload_handler(
     State(state): State<AppState>,
     Json(request): Json<ReloadRequest>,
@@ -201,8 +251,7 @@ pub async fn realize_reload_handler(
         (
             StatusCode::NOT_IMPLEMENTED,
             Json(ErrorResponse {
-                error: "Hot-reload requires registry mode. Start server with --registry flag."
-                    .to_string(),
+                error: REGISTRY_MODE_UNAVAILABLE.to_string(),
             }),
         )
     })?;

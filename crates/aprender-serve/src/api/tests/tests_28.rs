@@ -371,10 +371,12 @@ fn test_model_metadata_response_serde() {
     let resp = ModelMetadataResponse {
         id: "model-1".to_string(),
         name: "Test Model".to_string(),
-        format: "gguf".to_string(),
-        size_bytes: 1_000_000,
+        format: Some("gguf".to_string()),
+        size_bytes: Some(1_000_000),
         quantization: Some("Q4_K_M".to_string()),
-        context_length: 4096,
+        context_length: Some(4096),
+        model_max_context_length: None,
+        architecture: None,
         lineage: Some(ModelLineage {
             uri: "pacha://model:latest".to_string(),
             version: "1.0.0".to_string(),
@@ -396,10 +398,12 @@ fn test_model_metadata_response_no_lineage() {
     let resp = ModelMetadataResponse {
         id: "model-2".to_string(),
         name: "Simple Model".to_string(),
-        format: "apr".to_string(),
-        size_bytes: 500_000,
+        format: Some("apr".to_string()),
+        size_bytes: Some(500_000),
         quantization: None,
-        context_length: 2048,
+        context_length: Some(2048),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: false,
     };
