@@ -40,18 +40,39 @@ use std::time::Duration;
 /// machine — every request here is answered without touching disk.
 const SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Locate the workspace-built `apr`, building it on demand when the test
-/// crate is exercised in isolation. Same approach as
-/// `tests/falsify_mcp_dogfood_001.rs`.
+/// Build, then locate, the workspace `apr`.
+///
+/// The build is UNCONDITIONAL and that is the point. `apr` belongs to the
+/// root `aprender` package, not to `aprender-mcp`, so `cargo test -p
+/// aprender-mcp` never rebuilds it — `assert_cmd::cargo::cargo_bin` only
+/// hands back a path. A "build only when the file is missing" fallback
+/// therefore covers the absent case and misses the far more dangerous stale
+/// one: a leftover binary from an earlier tree would let both falsifiers
+/// below pass green while exercising code nobody in this checkout wrote.
+/// `cargo build` is a no-op when the binary is current, so paying for it
+/// every run costs nothing and removes the trap.
+///
+/// The profile is matched to this test's own profile; a `--release` test run
+/// resolves `cargo_bin` to `target/release/apr`, so building the debug bin
+/// here would leave that stale binary in place — the exact failure this
+/// function exists to prevent.
 fn apr_binary() -> PathBuf {
-    let candidate = assert_cmd::cargo::cargo_bin("apr");
-    if candidate.is_file() {
-        return candidate;
-    }
+    // One build per test binary. The tests in this file run concurrently in
+    // one process; without this, each would spawn its own `cargo build` and
+    // they would serialise on the target-directory lock instead.
+    static APR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    APR.get_or_init(build_apr_binary).clone()
+}
+
+fn build_apr_binary() -> PathBuf {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let pkg_spec = format!("aprender@{}", env!("CARGO_PKG_VERSION"));
+    let mut args = vec!["build", "--bin", "apr", "-p", &pkg_spec, "--quiet"];
+    if !cfg!(debug_assertions) {
+        args.push("--release");
+    }
     let status = Command::new(&cargo)
-        .args(["build", "--bin", "apr", "-p", &pkg_spec, "--quiet"])
+        .args(&args)
         .status()
         .expect("invoke `cargo build --bin apr`");
     assert!(

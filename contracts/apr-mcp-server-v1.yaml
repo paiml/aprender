@@ -64,8 +64,8 @@ spec: docs/specifications/apr-mcp-server-spec.md
 
 description: |
   End-to-end contract covering the full `aprender-mcp` MCP server surface.
-  This contract promotes the 8 falsification gates from the server spec
-  (FALSIFY-MCP-001 through FALSIFY-MCP-008) to ACTIVE/ENFORCED status by
+  This contract promotes the 13 falsification gates from the server spec
+  (FALSIFY-MCP-001 through FALSIFY-MCP-013) to ACTIVE/ENFORCED status by
   mapping each one to a shipped Rust test in `crates/aprender-mcp/`.
 
   Each gate is enforceable locally via:
@@ -74,9 +74,10 @@ description: |
 
   The integration test
   `crates/aprender-contracts/tests/apr_mcp_server_contract.rs` reads this
-  YAML, verifies all 8 IDs are present, and asserts every `test_file`
-  referenced below exists on disk. A missing file, a renamed test, or an
-  ignored test breaks the workspace suite loudly — no silent false-pass.
+  YAML, verifies all 13 IDs are present, and asserts every `test_file`
+  referenced below exists on disk AND that the named `test_name` actually
+  appears in it. A missing file, a renamed test, or an ignored test breaks
+  the workspace suite loudly — no silent false-pass.
 
 # ── Enforced falsification gates ──
 # Each entry binds a spec gate ID to the exact Rust test that enforces it.
@@ -150,11 +151,18 @@ falsification_conditions:
 
   - id: FALSIFY-MCP-007
     description: >
-      An `initialize` whose `params.protocolVersion` does not match the
-      server's supported version is rejected with JSON-RPC error code
-      -32602 (Invalid Params); the negotiation must not advance.
+      `initialize` NEGOTIATES a protocol version; it does not gate on one.
+      Per the MCP lifecycle, a server that does not support the requested
+      `params.protocolVersion` responds with a version it DOES support and
+      lets the client decide whether to proceed or disconnect. The handshake
+      must complete for every version string, and the session must remain
+      usable afterwards. This gate previously asserted the opposite (-32602
+      Invalid Params on any mismatch) and thereby held a defect in place:
+      `apr` 0.63.0 rejected every value other than the literal "2024-11-05",
+      including OLDER dated versions, so Claude Code / Cursor / Cline — all
+      of which negotiate 2025-03-26 or 2025-06-18 — could never connect.
     test_file: crates/aprender-mcp/tests/falsify_m1.rs
-    test_name: falsify_mcp_007_protocol_version_mismatch_is_minus_32602
+    test_name: falsify_mcp_007_unsupported_version_is_negotiated_not_rejected
     status: ENFORCED
 
   - id: FALSIFY-MCP-008
@@ -183,14 +191,66 @@ falsification_conditions:
     test_name: falsify_mcp_009_no_reply_to_notification
     status: ENFORCED
 
+  - id: FALSIFY-MCP-010
+    description: >
+      `ping` is part of the MCP BASE protocol — it is not gated on any
+      advertised capability — so the receiver must answer promptly with an
+      empty result `{}`. `apr` 0.63.0 answered `-32601 Method not found`,
+      which a client polling for liveness reads as a dead connection.
+    test_file: crates/aprender-mcp/tests/falsify_mcp_transport.rs
+    test_name: falsify_mcp_007_010_newer_version_client_completes_handshake_and_pings
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-011
+    description: >
+      A malformed stdio line costs ONE line, not the session, and carries the
+      correct JSON-RPC taxonomy. `apr` 0.63.0 read stdin with
+      `BufRead::lines()`, which surfaces the first non-UTF-8 byte as an
+      io::Error, and propagated it out of `run_stdio`: one stray 0xFF killed
+      the server (exit 1) and every later request was lost. The same gate
+      pins the error codes the read loop owns — a syntactically valid object
+      missing `jsonrpc` or `method` is -32600 Invalid Request with its id
+      echoed (0.63.0 said -32700 with id null), a JSON-RPC batch array is
+      declined by name rather than via serde's "invalid type: map, expected a
+      string", and genuinely unparseable JSON is still -32700.
+    test_file: crates/aprender-mcp/tests/falsify_mcp_transport.rs
+    test_name: falsify_mcp_011_malformed_line_does_not_kill_the_server
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-012
+    description: >
+      Every request carrying an `id` is answered, including across stdin EOF.
+      `tools/call` is dispatched on a worker thread; `apr` 0.63.0 dropped the
+      JoinHandle and returned from `run_stdio` the moment stdin closed, so the
+      worker's response was never written. The canonical scripted form
+      `printf ... | apr mcp` exited 0 having answered `initialize` and
+      `tools/list` while silently discarding the tool result — indistinguishable
+      from a tool that produced no output.
+    test_file: crates/aprender-mcp/tests/falsify_mcp_transport.rs
+    test_name: falsify_mcp_012_tools_call_response_survives_stdin_eof
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-013
+    description: >
+      A required tool argument supplied with the WRONG JSON type must be
+      distinguishable from one that is absent. Every wrapper used
+      `args.get(name).and_then(|v| v.as_str())`, collapsing both failures into
+      "Missing required argument: <name>", so `{"model_path": 123}` — present,
+      but a number where the declared inputSchema says {"type":"string"} —
+      produced the byte-identical message used for `{}`. A client (or an LLM)
+      told "missing" retries by adding a key it already sent.
+    test_file: crates/aprender-mcp/src/tools/mod.rs
+    test_name: wrong_typed_argument_is_not_reported_as_missing
+    status: ENFORCED
+
 # ── Acceptance gate ──
-# Promoting this contract out of ACTIVE requires all 9 conditions above to
+# Promoting this contract out of ACTIVE requires all 13 conditions above to
 # hold simultaneously on a clean checkout with `cargo test -p aprender-mcp`.
 
 qa_gate:
   id: F-MCP-SERVER-GATE
   name: "apr mcp end-to-end contract"
-  pass_criteria: "All 9 FALSIFY-MCP-* tests listed in falsification_conditions pass"
+  pass_criteria: "All 13 FALSIFY-MCP-* tests listed in falsification_conditions pass"
   run: "cargo test -p aprender-mcp --no-fail-fast"
   falsification: >
     Rename or delete any referenced test_file / test_name and the
@@ -199,9 +259,14 @@ qa_gate:
 
 toyota_way_principles:
   jidoka: >
-    "Automation with a human touch" — every protocol gate (001, 005, 007,
-    009) rejects malformed or unanswerable traffic BEFORE dispatching to any
-    tool handler; 009 in particular drops JSON-RPC notifications silently.
+    "Automation with a human touch" — the protocol gates (001, 005, 009,
+    011) reject malformed or unanswerable traffic BEFORE dispatching to any
+    tool handler; 009 in particular drops JSON-RPC notifications silently,
+    and 011 confines a malformed line's blast radius to that one line so a
+    bad byte can never take the session down. 007 and 010 are the mirror
+    image: traffic that is merely UNFAMILIAR (a newer protocol version, a
+    base-protocol `ping`) must be answered, not refused. 012 closes the
+    loop — a request that carried an id is never abandoned unanswered.
     Schema gates (002, 008) meta-validate at test time so drift cannot
     ship. Cancellation (006) halts in-flight work within a bounded grace
     window — the subprocess cannot outlive the client's notification.
