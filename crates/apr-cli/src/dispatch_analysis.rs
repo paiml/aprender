@@ -859,7 +859,7 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
                 model_size,
                 model_path.as_deref(),
                 *num_classes,
-                output,
+                output.as_deref(),
                 strategy,
                 *budget,
                 *scout,
@@ -1101,9 +1101,14 @@ fn dispatch_tune_command(
             json,
         )
     } else {
+        // `--method bogus` used to `unwrap_or(Auto)`: TuneMethod::from_str already
+        // produced a perfectly good "Unknown method: … Use: auto, full, lora,
+        // qlora" and it was thrown away, so a typo silently planned a DIFFERENT
+        // method and the banner confirmed the typo back to the user.
+        let method: tune::TuneMethod = method.parse().map_err(CliError::ValidationFailed)?;
         tune::run(
             file,
-            method.parse().unwrap_or(tune::TuneMethod::Auto),
+            method,
             rank,
             vram,
             plan,

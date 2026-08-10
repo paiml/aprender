@@ -106,15 +106,47 @@ impl LoraOptimizer {
         self
     }
 
-    /// Find optimal configuration for the given method.
+    /// Find optimal configuration for the given method, auto-selecting the rank.
+    ///
+    /// # Errors
+    ///
+    /// Propagates a rank-search failure from [`Self::find_optimal_rank`].
     pub fn optimize(&self, method: Method) -> Result<OptimalConfig> {
+        self.optimize_with_rank(method, None)
+    }
+
+    /// Find an optimal configuration, honouring an explicitly requested rank.
+    ///
+    /// `requested_rank = Some(r)` pins the rank to `r` and derives everything
+    /// else — alpha, trainable params, memory, utilization, learning rate —
+    /// from it, so the reported plan describes the configuration the user
+    /// asked for. `None` auto-selects as before.
+    ///
+    /// This exists because `apr tune --rank` used to print "Requested rank: 8"
+    /// and then report a recommended rank of 256 anyway: the flag was accepted,
+    /// echoed, and discarded, and the recommendation was a pure function of
+    /// `--vram`.
+    ///
+    /// # Errors
+    ///
+    /// Propagates a rank-search failure from [`Self::find_optimal_rank`] when
+    /// no rank was requested.
+    pub fn optimize_with_rank(
+        &self,
+        method: Method,
+        requested_rank: Option<u32>,
+    ) -> Result<OptimalConfig> {
         let method = if method == Method::Auto {
             self.select_method()
         } else {
             method
         };
 
-        let rank = self.find_optimal_rank(method)?;
+        // Full fine-tuning has no adapter, so it has no rank to honour.
+        let rank = match requested_rank {
+            Some(r) if method != Method::Full => r,
+            _ => self.find_optimal_rank(method)?,
+        };
         let planner = MemoryPlanner::new(self.model_params);
         let memory = planner.estimate(method, rank);
 
@@ -272,6 +304,77 @@ pub struct MethodComparison {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ─── Requested rank (dogfood 0.63.0, issue #2374 finding 6) ─────────────
+    //
+    // `apr tune --rank R` echoed "Requested rank: R" and then reported
+    // recommended_rank 256 for every R in {4, 8, 16, 64, 256, 1024} at a fixed
+    // --vram: the recommendation was a pure function of VRAM alone.
+
+    #[test]
+    fn test_requested_rank_is_honoured_not_discarded() {
+        let optimizer = LoraOptimizer::new(1_500_000_000, 16.0);
+        // Every requested rank must come back as itself.
+        for requested in [4_u32, 8, 16, 64, 256, 1024] {
+            let config = optimizer
+                .optimize_with_rank(Method::LoRA, Some(requested))
+                .expect("config should be valid");
+            assert_eq!(
+                config.rank, requested,
+                "--rank {requested} must survive planning, got {}",
+                config.rank
+            );
+        }
+    }
+
+    #[test]
+    fn test_requested_rank_moves_the_derived_plan() {
+        // A pinned rank must actually change the plan, not just the printed
+        // number: alpha, trainable params and the learning rate all derive
+        // from it.
+        let optimizer = LoraOptimizer::new(1_500_000_000, 16.0);
+        let small = optimizer
+            .optimize_with_rank(Method::QLoRA, Some(8))
+            .expect("rank 8 should plan");
+        let large = optimizer
+            .optimize_with_rank(Method::QLoRA, Some(256))
+            .expect("rank 256 should plan");
+        assert!(
+            small.trainable_params < large.trainable_params,
+            "rank 8 must train fewer params than rank 256: {} vs {}",
+            small.trainable_params,
+            large.trainable_params
+        );
+        assert!(small.alpha < large.alpha, "alpha derives from rank");
+        assert!(
+            small.learning_rate > large.learning_rate,
+            "the rank-aware LR must be hotter at rank 8 than at rank 256"
+        );
+    }
+
+    #[test]
+    fn test_no_requested_rank_still_auto_selects() {
+        // The auto path must be unchanged: None means "pick for me".
+        let optimizer = LoraOptimizer::new(1_500_000_000, 16.0);
+        let auto = optimizer
+            .optimize_with_rank(Method::LoRA, None)
+            .expect("auto should plan");
+        let legacy = optimizer
+            .optimize(Method::LoRA)
+            .expect("legacy should plan");
+        assert_eq!(auto.rank, legacy.rank);
+        assert!(auto.rank > 0, "auto-selected LoRA rank must be non-zero");
+    }
+
+    #[test]
+    fn test_full_finetuning_ignores_requested_rank() {
+        // Full fine-tuning has no adapter; rank 0 is the honest answer.
+        let optimizer = LoraOptimizer::new(1_500_000_000, 80.0);
+        let config = optimizer
+            .optimize_with_rank(Method::Full, Some(64))
+            .expect("full should plan");
+        assert_eq!(config.rank, 0, "full fine-tuning has no LoRA rank");
+    }
 
     #[test]
     fn test_optimizer_selects_qlora_for_small_vram() {

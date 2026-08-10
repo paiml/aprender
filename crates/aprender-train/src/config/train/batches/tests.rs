@@ -89,10 +89,13 @@ fn test_load_training_batches_nonexistent_file() {
         publish: None,
     };
 
-    let result = load_training_batches(&spec);
-    assert!(result.is_ok());
-    let batches = result.expect("operation should succeed");
-    assert!(!batches.is_empty()); // Should return demo batches
+    // Previously asserted is_ok() + non-empty "demo batches" — i.e. the test
+    // encoded the defect. A dataset that is not there must be a hard error.
+    let err = load_training_batches(&spec).expect_err("missing dataset must be rejected");
+    assert!(
+        err.to_string().contains("/nonexistent/path/data.parquet"),
+        "error must name the dataset: {err}"
+    );
 }
 
 #[test]
@@ -132,10 +135,12 @@ fn test_load_training_batches_unsupported_format() {
         publish: None,
     };
 
-    let result = load_training_batches(&spec);
-    assert!(result.is_ok());
-    let batches = result.expect("operation should succeed");
-    assert!(!batches.is_empty()); // Should return demo batches
+    // Previously asserted is_ok() + non-empty "demo batches" — i.e. the test
+    // encoded the defect. An unreadable format must be a hard error.
+    let err = load_training_batches(&spec).expect_err("unsupported format must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("xyz"), "error must name the offending extension: {msg}");
+    assert!(msg.contains("json"), "error must name a supported format: {msg}");
 }
 
 #[test]
@@ -189,11 +194,12 @@ fn test_load_json_batches_invalid_format() {
     writeln!(temp_file, r#"{{"some": "other", "format": true}}"#)
         .expect("file write should succeed");
 
-    let result = load_json_batches(temp_file.path(), 2);
-    assert!(result.is_ok());
-    // Should fall back to demo batches
-    let batches = result.expect("operation should succeed");
-    assert!(!batches.is_empty());
+    // Previously asserted is_ok() + demo-batch fallback. Unparseable training
+    // data must be a hard error that quotes the expected schema.
+    let err = load_json_batches(temp_file.path(), 2).expect_err("bad JSON must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("Could not parse training data"), "unexpected error: {msg}");
+    assert!(msg.contains("\"examples\""), "error must quote the expected schema: {msg}");
 }
 
 #[test]

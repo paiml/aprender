@@ -15,7 +15,7 @@
 use crate::error::CliError;
 use crate::output;
 use colored::Colorize;
-use entrenar_lora::{plan, MemoryPlanner, Method};
+use entrenar_lora::{plan_with_rank, MemoryPlanner, Method};
 use std::path::Path;
 
 /// Tuning method selection
@@ -106,8 +106,10 @@ pub fn run(
         println!();
     }
 
-    // Plan optimal configuration using entrenar-lora
-    let config = plan(model_params, vram_gb, method.into())
+    // Plan optimal configuration using entrenar-lora. `rank` is threaded through
+    // rather than dropped: the flag used to be echoed as "Requested rank" and then
+    // discarded, so the recommendation was a pure function of --vram.
+    let config = plan_with_rank(model_params, vram_gb, method.into(), rank)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to plan tuning config: {e}")))?;
 
     if json_output {

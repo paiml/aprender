@@ -43,12 +43,20 @@ pub(crate) fn run_plan(
     _manual_batch_size: Option<usize>,
     _val_data: Option<&std::path::Path>,
     _test_data: Option<&std::path::Path>,
-    _format: &str,
+    format: &str,
     json_output: bool,
 ) -> Result<()> {
     contract_pre_training_plan_apply_semantics!();
+    // `--format` used to be `_format`: declared, documented, and never read, so
+    // text/json/yaml/garbage all produced byte-identical text with exit 0.
+    let format = PlanFormat::parse(format)?;
+    let format = if json_output {
+        PlanFormat::Json
+    } else {
+        format
+    };
     let result = match task {
-        "pretrain" | "causal_lm" => run_plan_pretrain(config_path, json_output),
+        "pretrain" | "causal_lm" => run_plan_pretrain(config_path, format),
         "classify" => Err(classify_not_available()),
         _ => Err(CliError::ValidationFailed(format!(
             "Unknown task type: {task}. Supported: classify, pretrain"
@@ -60,8 +68,68 @@ pub(crate) fn run_plan(
     result
 }
 
+/// The rendering `apr train plan --format` selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlanFormat {
+    /// Human-readable table (the default).
+    Text,
+    /// Pretty-printed JSON manifest.
+    Json,
+    /// YAML manifest — the same fields as [`PlanFormat::Json`].
+    Yaml,
+}
+
+impl PlanFormat {
+    /// Parse a `--format` value, rejecting anything that is not a real format.
+    ///
+    /// An unrecognised value used to be accepted silently and rendered as text.
+    fn parse(raw: &str) -> Result<Self> {
+        match raw.trim().to_lowercase().as_str() {
+            "text" | "" => Ok(Self::Text),
+            "json" => Ok(Self::Json),
+            "yaml" | "yml" => Ok(Self::Yaml),
+            other => Err(CliError::ValidationFailed(format!(
+                "Unknown --format '{other}'. Supported: text, json, yaml"
+            ))),
+        }
+    }
+}
+
+/// Build the serializable plan manifest shared by the JSON and YAML renderings.
+fn pretrain_plan_manifest(
+    config_path: &std::path::Path,
+    spec: &entrenar::config::TrainSpec,
+) -> serde_json::Value {
+    serde_json::json!({
+        "task": "pretrain",
+        "config": config_path.display().to_string(),
+        "model": {
+            "path": spec.model.path.display().to_string(),
+            "mode": format!("{:?}", spec.model.mode),
+        },
+        "data": {
+            "train": spec.data.train.display().to_string(),
+            "batch_size": spec.data.batch_size,
+            "seq_len": spec.data.seq_len,
+        },
+        "optimizer": {
+            "name": spec.optimizer.name,
+            "lr": spec.optimizer.lr,
+        },
+        "training": {
+            "epochs": spec.training.epochs,
+            "mode": format!("{:?}", spec.training.mode),
+            "warmup_steps": spec.training.warmup_steps,
+            "gradient_accumulation": spec.training.gradient_accumulation,
+            "mixed_precision": spec.training.mixed_precision,
+            "output_dir": spec.training.output_dir.display().to_string(),
+        },
+        "verdict": "ready",
+    })
+}
+
 /// Plan for causal LM pre-training from YAML config (ALB-009).
-fn run_plan_pretrain(config_path: Option<&std::path::Path>, json_output: bool) -> Result<()> {
+fn run_plan_pretrain(config_path: Option<&std::path::Path>, format: PlanFormat) -> Result<()> {
     let config_path = config_path.ok_or_else(|| {
         CliError::ValidationFailed("--config <yaml> is required for --task pretrain".to_string())
     })?;
@@ -78,36 +146,18 @@ fn run_plan_pretrain(config_path: Option<&std::path::Path>, json_output: bool) -
         .map_err(|e| CliError::ValidationFailed(format!("Validation error: {e}")))?;
 
     // Display the pre-training plan
-    if json_output {
-        let plan = serde_json::json!({
-            "task": "pretrain",
-            "config": config_path.display().to_string(),
-            "model": {
-                "path": spec.model.path.display().to_string(),
-                "mode": format!("{:?}", spec.model.mode),
-            },
-            "data": {
-                "train": spec.data.train.display().to_string(),
-                "batch_size": spec.data.batch_size,
-                "seq_len": spec.data.seq_len,
-            },
-            "optimizer": {
-                "name": spec.optimizer.name,
-                "lr": spec.optimizer.lr,
-            },
-            "training": {
-                "epochs": spec.training.epochs,
-                "mode": format!("{:?}", spec.training.mode),
-                "warmup_steps": spec.training.warmup_steps,
-                "gradient_accumulation": spec.training.gradient_accumulation,
-                "mixed_precision": spec.training.mixed_precision,
-            },
-            "verdict": "ready",
-        });
+    if format == PlanFormat::Json {
+        let plan = pretrain_plan_manifest(config_path, &spec);
         println!(
             "{}",
             serde_json::to_string_pretty(&plan).unwrap_or_default()
         );
+    } else if format == PlanFormat::Yaml {
+        let plan = pretrain_plan_manifest(config_path, &spec);
+        let rendered = serde_yaml::to_string(&plan).map_err(|e| {
+            CliError::ValidationFailed(format!("Could not render plan as YAML: {e}"))
+        })?;
+        print!("{rendered}");
     } else {
         output::header("apr train plan — Pre-training Plan (Causal LM)");
         println!();
@@ -158,7 +208,7 @@ pub(crate) fn run_apply(
     _model_size: &str,
     _model_path: Option<&std::path::Path>,
     _num_classes: usize,
-    _output_dir: &std::path::Path,
+    output_dir: Option<&std::path::Path>,
     _strategy: &str,
     _budget: usize,
     _scout: bool,
@@ -177,6 +227,7 @@ pub(crate) fn run_apply(
     match task {
         "pretrain" | "causal_lm" => run_apply_pretrain(
             config_path,
+            output_dir,
             json_output,
             distributed,
             world_size,
@@ -225,6 +276,7 @@ fn build_distributed_yaml(
 /// Patch a YAML training config with CLI overrides (distributed, deterministic, seed).
 fn patch_yaml_config(
     config_path: &std::path::Path,
+    output_dir: Option<&std::path::Path>,
     distributed: bool,
     world_size: Option<usize>,
     rank: Option<usize>,
@@ -242,6 +294,14 @@ fn patch_yaml_config(
         .ok_or_else(|| CliError::ValidationFailed("Missing 'training' section".into()))?;
 
     if let serde_yaml::Value::Mapping(training_map) = training {
+        // -o/--output overrides training.output_dir. Until this existed the flag
+        // was accepted, documented, and silently discarded.
+        if let Some(dir) = output_dir {
+            training_map.insert(
+                serde_yaml::Value::String("output_dir".into()),
+                serde_yaml::Value::String(dir.display().to_string()),
+            );
+        }
         if distributed {
             let dist = build_distributed_yaml(world_size, rank, coordinator_addr);
             training_map.insert(serde_yaml::Value::String("distributed".into()), dist);
@@ -318,6 +378,7 @@ fn print_pretrain_header(
 #[allow(clippy::too_many_arguments)]
 fn run_apply_pretrain(
     config_path: Option<&std::path::Path>,
+    output_dir: Option<&std::path::Path>,
     json_output: bool,
     distributed: bool,
     world_size: Option<usize>,
@@ -346,11 +407,12 @@ fn run_apply_pretrain(
         );
     }
 
-    let needs_patch = distributed || deterministic || seed.is_some();
+    let needs_patch = distributed || deterministic || seed.is_some() || output_dir.is_some();
 
     if needs_patch {
         let temp_path = patch_yaml_config(
             config_path,
+            output_dir,
             distributed,
             world_size,
             rank,
@@ -709,6 +771,35 @@ fn capture_gpu_state() -> serde_json::Value {
 
 // ── Hyperparameter Sweep (R-027 Rust replacement) ───────────────────────────
 
+/// The search `apr train sweep --strategy` selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SweepStrategy {
+    /// Deterministic grid over the hyperparameter axes.
+    Grid,
+    /// Seeded random sampling.
+    Random,
+}
+
+impl std::fmt::Display for SweepStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Grid => "grid",
+            Self::Random => "random",
+        })
+    }
+}
+
+/// Parse a `--strategy` value, rejecting anything that is not a real strategy.
+pub(crate) fn parse_sweep_strategy(raw: &str) -> Result<SweepStrategy> {
+    match raw.trim().to_lowercase().as_str() {
+        "grid" => Ok(SweepStrategy::Grid),
+        "random" => Ok(SweepStrategy::Random),
+        other => Err(CliError::ValidationFailed(format!(
+            "Unknown sweep strategy '{other}'. Supported: grid, random"
+        ))),
+    }
+}
+
 /// Run `apr train sweep` — generate hyperparameter sweep configs.
 ///
 /// Creates N training configs with varied hyperparameters (grid or random).
@@ -721,6 +812,12 @@ pub(crate) fn run_sweep(
     seed: u64,
     json_output: bool,
 ) -> Result<()> {
+    // Reject an unknown strategy BEFORE writing anything. `--strategy gird` used
+    // to fall through the `"random" | _` arm to a RANDOM search, print
+    // "Strategy: gird" back as though it were real, and write the sweep files —
+    // so a user who believed they had a grid search had a random one.
+    let strategy = parse_sweep_strategy(strategy)?;
+
     if !config_path.exists() {
         return Err(CliError::FileNotFound(config_path.to_path_buf()));
     }
@@ -737,15 +834,15 @@ pub(crate) fn run_sweep(
         output::header("apr train sweep — Hyperparameter Sweep Generator");
         println!();
         output::kv("  Base config", config_path.display().to_string());
-        output::kv("  Strategy", strategy);
+        output::kv("  Strategy", strategy.to_string());
         output::kv("  Configs", num_configs.to_string());
         output::kv("  Output", output_dir.display().to_string());
         println!();
     }
 
     let configs = match strategy {
-        "grid" => generate_grid_configs(&base, num_configs),
-        "random" | _ => generate_random_configs(&base, num_configs, seed),
+        SweepStrategy::Grid => generate_grid_configs(&base, num_configs),
+        SweepStrategy::Random => generate_random_configs(&base, num_configs, seed),
     };
 
     let mut results = Vec::new();
@@ -787,7 +884,7 @@ pub(crate) fn run_sweep(
 
     if json_output {
         let output = serde_json::json!({
-            "strategy": strategy,
+            "strategy": strategy.to_string(),
             "configs_generated": configs.len(),
             "output_dir": output_dir.display().to_string(),
             "configs": results,

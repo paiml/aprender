@@ -1,8 +1,7 @@
 //! Main batch loading entry point
 
-use super::super::demo::create_demo_batches;
 use crate::config::schema::TrainSpec;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::train::Batch;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -10,18 +9,36 @@ use super::json::load_json_batches;
 #[cfg(all(not(target_arch = "wasm32"), feature = "parquet"))]
 use super::parquet::load_parquet_batches;
 
-/// Load training batches from data file using alimentar
+/// The documented on-disk schema for `--task pretrain` JSON training data.
 ///
-/// Supports parquet, JSON, and CSV formats via alimentar.
-/// Falls back to demo data if the file doesn't exist (for testing).
+/// Quoted verbatim in every load failure so the user is never left guessing
+/// what the loader wanted.
+pub(crate) const JSON_SCHEMA_HINT: &str = "expected JSON of the form \
+     {\"examples\":[{\"input\":[f32,..],\"target\":[f32,..]}, ..]} \
+     or a bare array [{\"input\":[..],\"target\":[..]}, ..]";
+
+/// Load training batches from the dataset named by the config.
+///
+/// Supported formats: JSON (see [`JSON_SCHEMA_HINT`]) and, when the `parquet`
+/// feature is enabled, Parquet via alimentar.
+///
+/// # Errors
+///
+/// Returns [`Error::ConfigError`] when the dataset is missing, is in a format
+/// this build cannot read, or cannot be parsed. It NEVER substitutes synthetic
+/// data for a dataset it failed to read: a training run that silently trains on
+/// fabricated examples and reports success is worse than one that refuses to
+/// start.
 pub fn load_training_batches(spec: &TrainSpec) -> Result<Vec<Batch>> {
     let data_path = &spec.data.train;
     let batch_size = spec.data.batch_size;
 
     // Check if data file exists
     if !data_path.exists() {
-        eprintln!("Warning: Training data not found at '{}', using demo data", data_path.display());
-        return Ok(create_demo_batches(batch_size));
+        return Err(Error::ConfigError(format!(
+            "Training data not found at '{}'. Training cannot proceed without it.",
+            data_path.display()
+        )));
     }
 
     // Load data using alimentar (only on non-WASM)
@@ -33,23 +50,39 @@ pub fn load_training_batches(spec: &TrainSpec) -> Result<Vec<Batch>> {
             #[cfg(feature = "parquet")]
             "parquet" => load_parquet_batches(data_path, batch_size),
             #[cfg(not(feature = "parquet"))]
-            "parquet" => {
-                eprintln!(
-                    "Warning: Parquet support requires the 'parquet' feature, using demo data"
-                );
-                Ok(create_demo_batches(batch_size))
-            }
+            "parquet" => Err(Error::ConfigError(format!(
+                "Cannot read Parquet training data '{}': this build lacks the 'parquet' feature. \
+                 Rebuild with --features parquet, or convert the dataset to JSON ({JSON_SCHEMA_HINT}).",
+                data_path.display()
+            ))),
             "json" => load_json_batches(data_path, batch_size),
-            _ => {
-                eprintln!("Warning: Unsupported data format '{ext}', using demo data");
-                Ok(create_demo_batches(batch_size))
-            }
+            _ => Err(Error::ConfigError(format!(
+                "Unsupported training data format '{ext}' for '{}'. Supported: {}. \
+                 Convert the dataset to JSON — {JSON_SCHEMA_HINT}.",
+                data_path.display(),
+                supported_formats()
+            ))),
         }
     }
 
     #[cfg(target_arch = "wasm32")]
     {
-        eprintln!("Warning: Data loading not available in WASM, using demo data");
-        Ok(create_demo_batches(batch_size))
+        let _ = batch_size;
+        Err(Error::ConfigError(
+            "Data loading is not available in WASM builds; training cannot proceed.".to_string(),
+        ))
+    }
+}
+
+/// Human-readable list of the dataset formats this build can actually read.
+#[cfg(not(target_arch = "wasm32"))]
+fn supported_formats() -> &'static str {
+    #[cfg(feature = "parquet")]
+    {
+        "json, parquet"
+    }
+    #[cfg(not(feature = "parquet"))]
+    {
+        "json"
     }
 }

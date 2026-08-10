@@ -168,6 +168,46 @@ fn loss_trend_arrow(data: &[f64]) -> &'static str {
     }
 }
 
+// ─── Status filtering ───────────────────────────────────────────────────────
+
+/// The status names `apr runs ls --status` accepts, mapped to the stored
+/// [`entrenar::storage::RunStatus`] variant they select.
+///
+/// The filter used to stringify the enum variant and compare it verbatim, so
+/// the one non-trivial value `--help` advertises — `completed` — could never
+/// match a row (the variant is `Success`), and an empty table with exit 0 was
+/// indistinguishable from "you have no completed runs".
+const STATUS_ALIASES: &[(&str, &str)] = &[
+    ("pending", "Pending"),
+    ("running", "Running"),
+    ("active", "Running"),
+    ("completed", "Success"),
+    ("complete", "Success"),
+    ("succeeded", "Success"),
+    ("success", "Success"),
+    ("failed", "Failed"),
+    ("failure", "Failed"),
+    ("cancelled", "Cancelled"),
+    ("canceled", "Cancelled"),
+];
+
+/// Resolve a user-supplied `--status` value to the stored variant name.
+///
+/// `Ok(None)` means "no filtering" (`all`). An unrecognised value is a hard
+/// error: silently returning zero rows for a typo is worse than refusing.
+fn resolve_status_filter(status_filter: &str) -> Result<Option<&'static str>> {
+    let needle = status_filter.trim().to_lowercase();
+    if needle == "all" {
+        return Ok(None);
+    }
+    if let Some((_, variant)) = STATUS_ALIASES.iter().find(|(alias, _)| *alias == needle) {
+        return Ok(Some(variant));
+    }
+    Err(CliError::ValidationFailed(format!(
+        "Unknown run status '{status_filter}'. Supported: all, pending, running, completed, failed, cancelled"
+    )))
+}
+
 // ─── Commands ───────────────────────────────────────────────────────────────
 
 /// List experiment runs from SQLite DB
@@ -182,6 +222,10 @@ pub(crate) fn run_ls(
     json: bool,
     limit: usize,
 ) -> Result<()> {
+    // Reject an unknown status BEFORE touching the store, so a typo fails the
+    // same way whether or not the user happens to have a database.
+    let wanted_status = resolve_status_filter(status_filter)?;
+
     let store = open_store(dir, global)?;
 
     let experiments = store
@@ -213,11 +257,8 @@ pub(crate) fn run_ls(
     }
 
     // Filter by status
-    if status_filter != "all" {
-        all_runs.retain(|(_, run)| {
-            let run_status = format!("{:?}", run.status).to_lowercase();
-            run_status == status_filter.to_lowercase()
-        });
+    if let Some(variant) = wanted_status {
+        all_runs.retain(|(_, run)| format!("{:?}", run.status) == variant);
     }
 
     // Sort by start time descending (most recent first)
@@ -985,6 +1026,89 @@ fn param_display(pv: &entrenar::storage::ParameterValue) -> String {
 #[cfg(test)]
 mod runs_tests {
     use super::*;
+
+    // ─── --status filtering (dogfood 0.63.0, issue #2374 finding 8) ─────────
+    //
+    // `apr runs ls --status completed` — the one non-trivial value --help
+    // advertised — matched 0 of 2941 completed runs, because the filter
+    // stringified the stored variant (`Success`) and compared it verbatim.
+    // `--status bogusvalue` returned an empty table with exit 0, which a user
+    // cannot distinguish from "nothing has finished".
+
+    #[test]
+    fn test_status_completed_selects_the_success_variant() {
+        // The documented spelling must select the variant that is actually stored.
+        assert_eq!(
+            resolve_status_filter("completed").expect("'completed' is documented"),
+            Some("Success")
+        );
+    }
+
+    #[test]
+    fn test_status_matches_the_debug_spelling_of_the_stored_variant() {
+        // Guards the comparison itself: whatever resolve_status_filter returns
+        // is compared against `format!("{:?}", run.status)`, so it must equal
+        // that spelling exactly — not a lowercased one.
+        let stored = format!("{:?}", entrenar::storage::RunStatus::Success);
+        assert_eq!(
+            resolve_status_filter("completed").expect("'completed' is documented"),
+            Some(stored.as_str())
+        );
+        let running = format!("{:?}", entrenar::storage::RunStatus::Running);
+        assert_eq!(
+            resolve_status_filter("running").expect("'running' is documented"),
+            Some(running.as_str())
+        );
+    }
+
+    #[test]
+    fn test_status_all_disables_filtering() {
+        assert_eq!(
+            resolve_status_filter("all").expect("'all' is the default"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_every_documented_status_resolves() {
+        // --help promises these; none may silently return nothing.
+        for name in [
+            "all",
+            "pending",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+        ] {
+            assert!(
+                resolve_status_filter(name).is_ok(),
+                "--help advertises --status {name}, so it must resolve"
+            );
+        }
+    }
+
+    #[test]
+    fn test_unknown_status_is_rejected_not_silently_empty() {
+        let err = resolve_status_filter("bogusvalue")
+            .expect_err("an unknown status must not quietly return zero rows");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("bogusvalue"),
+            "error must echo the bad value: {msg}"
+        );
+        assert!(
+            msg.contains("completed"),
+            "error must list the supported values: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_status_is_case_insensitive_and_trimmed() {
+        assert_eq!(
+            resolve_status_filter(" COMPLETED ").expect("case-insensitive"),
+            Some("Success")
+        );
+    }
 
     #[test]
     fn test_sparkline_empty() {

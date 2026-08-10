@@ -49,8 +49,11 @@ pub(crate) fn run(
 
     let body = std::fs::read_to_string(history_file)?;
 
+    // NOT InvalidFormat: that variant's Display is "Invalid APR format", and a
+    // grad-norm history is a JSON telemetry file, not a model. The old wording
+    // sent users hunting for a corrupt .apr that was never involved.
     let raw: Vec<RawRecord> = serde_json::from_str(&body).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr grad-norm: failed to parse JSON records from {}: {e}",
             history_file.display()
         ))
@@ -130,5 +133,61 @@ fn print_report(report: &HistoryReport, path: &Path, cap: Option<f64>, json: boo
             report.clipping_non_expansive
         );
         println!("  max_exceeds_cap:        {}", report.max_exceeds_cap);
+    }
+}
+
+// ─── Error wording (dogfood 0.63.0, issue #2374 finding 15) ──────────────────
+//
+// `apr grad-norm --history-file bad.json` reported a malformed JSON telemetry
+// file as "Invalid APR format", sending users hunting for a corrupt model that
+// this command never touches.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Write `body` to a scratch file and run `grad-norm` against it.
+    fn run_on(body: &str, name: &str) -> Result<()> {
+        let path =
+            std::env::temp_dir().join(format!("apr-2374-gn-{}-{name}.json", std::process::id()));
+        std::fs::write(&path, body).expect("scratch write should succeed");
+        let outcome = run(&path, None, 5, 3.0, true);
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    #[test]
+    fn malformed_history_does_not_blame_the_apr_format() {
+        let err = run_on("not json", "bare").expect_err("malformed JSON must be rejected");
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("APR"),
+            "grad-norm never reads a model; the error must not mention APR: {msg}"
+        );
+        assert!(
+            msg.contains("failed to parse JSON records"),
+            "the accurate inner message must survive: {msg}"
+        );
+    }
+
+    #[test]
+    fn malformed_history_keeps_exit_code_4() {
+        // The class of failure is unchanged — only the artifact named. Users
+        // and CI scripts keying on exit 4 must not break.
+        let err =
+            run_on("{ this is not json", "trunc").expect_err("malformed JSON must be rejected");
+        assert_eq!(err.exit_code(), std::process::ExitCode::from(4));
+    }
+
+    #[test]
+    fn well_formed_but_empty_history_is_still_a_validation_failure() {
+        // Guards against over-broadening: a parseable-but-empty history keeps
+        // its own distinct error, it is not swept into the parse failure.
+        let err = run_on("[]", "empty").expect_err("an empty history must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("zero records"), "unexpected error: {msg}");
+        assert!(
+            !msg.contains("failed to parse"),
+            "an empty array parses fine: {msg}"
+        );
     }
 }
