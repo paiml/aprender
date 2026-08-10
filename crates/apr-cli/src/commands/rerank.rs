@@ -540,4 +540,83 @@ mod tests {
             _ => panic!("expected ValidationFailed"),
         }
     }
+
+    // ── `apr rerank --with-pooler` CLI surface ───────────────────────
+    //
+    // `--help` documents "Cross-encoders that skip the pooler should
+    // pass `--with-pooler false`". A bare `bool` field derives a SetTrue
+    // switch, so `default_value_t = true` pinned the pooler ON and the
+    // documented `false` was rejected by the parser (exit 2), making
+    // pooler-less cross-encoders unloadable.
+
+    /// Parse a full `apr rerank …` argv and return the `with_pooler`
+    /// field. `Err` carries clap's rendered error (what the user sees).
+    fn parse_rerank_with_pooler(extra: &[&str]) -> std::result::Result<bool, String> {
+        let extra: Vec<String> = extra.iter().map(|s| (*s).to_string()).collect();
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                use clap::Parser;
+                let mut argv: Vec<String> = vec![
+                    "apr".to_string(),
+                    "rerank".to_string(),
+                    "/tmp/_rerank_pooler/model.apr".to_string(),
+                    "--vocab".to_string(),
+                    "/tmp/_rerank_pooler/vocab.txt".to_string(),
+                    "--query".to_string(),
+                    "q".to_string(),
+                    "--passages".to_string(),
+                    "p".to_string(),
+                ];
+                argv.extend(extra);
+                match crate::Cli::try_parse_from(&argv) {
+                    Ok(cli) => match *cli.command {
+                        crate::Commands::Extended(crate::ExtendedCommands::Rerank {
+                            with_pooler,
+                            ..
+                        }) => Ok(with_pooler),
+                        other => panic!("expected ExtendedCommands::Rerank, got {other:?}"),
+                    },
+                    Err(e) => Err(e.to_string()),
+                }
+            })
+            .expect("spawn parse thread")
+            .join()
+            .expect("parse thread must not panic")
+    }
+
+    #[test]
+    fn rerank_with_pooler_defaults_to_on_when_omitted() {
+        assert_eq!(parse_rerank_with_pooler(&[]), Ok(true));
+    }
+
+    #[test]
+    fn rerank_with_pooler_bare_flag_is_on() {
+        assert_eq!(parse_rerank_with_pooler(&["--with-pooler"]), Ok(true));
+    }
+
+    #[test]
+    fn rerank_with_pooler_space_separated_false_turns_it_off() {
+        // Before the fix: "unexpected argument 'false' found" (exit 2).
+        assert_eq!(
+            parse_rerank_with_pooler(&["--with-pooler", "false"]),
+            Ok(false),
+            "`--with-pooler false` is documented in --help and MUST reach the handler as false"
+        );
+    }
+
+    #[test]
+    fn rerank_with_pooler_equals_false_turns_it_off() {
+        assert_eq!(
+            parse_rerank_with_pooler(&["--with-pooler=false"]),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn rerank_with_pooler_rejects_non_boolean_value() {
+        let err = parse_rerank_with_pooler(&["--with-pooler", "sometimes"])
+            .expect_err("non-boolean value must be rejected");
+        assert!(err.contains("sometimes"), "{err}");
+    }
 }

@@ -1190,7 +1190,18 @@ pub enum ExtendedCommands {
         num_labels: usize,
         /// Load the optional BERT pooler dense layer (default: true).
         /// Cross-encoders that skip the pooler should pass `--with-pooler false`.
-        #[arg(long, default_value_t = true)]
+        ///
+        /// Takes an optional value: `--with-pooler` (bare) and an omitted flag
+        /// both mean true; `--with-pooler false` / `--with-pooler=false` turn
+        /// the pooler off. A bare `bool` here would compile to a SetTrue switch
+        /// and make the documented `false` unreachable.
+        #[arg(
+            long,
+            num_args = 0..=1,
+            default_value_t = true,
+            default_missing_value = "true",
+            action = clap::ArgAction::Set,
+        )]
         with_pooler: bool,
         /// Emit the raw logit instead of the sigmoid-mapped relevance score.
         #[arg(long)]
@@ -1235,7 +1246,22 @@ pub enum ExtendedCommands {
         /// L2-normalise the output embedding. Default: true (matches
         /// sentence-transformers convention). Pass `--normalize false`
         /// to keep raw magnitudes.
-        #[arg(long, default_value_t = true)]
+        ///
+        /// Takes an optional value: `--normalize` (bare) and an omitted flag
+        /// both mean true; `--normalize false` / `--normalize=false` keep the
+        /// raw magnitudes. A bare `bool` here would compile to a SetTrue switch
+        /// and make the documented `false` unreachable.
+        ///
+        /// Because the value is optional, do not place a bare `--normalize`
+        /// immediately before the MODEL positional — write
+        /// `apr embed MODEL --normalize` or `--normalize=true MODEL`.
+        #[arg(
+            long,
+            num_args = 0..=1,
+            default_value_t = true,
+            default_missing_value = "true",
+            action = clap::ArgAction::Set,
+        )]
         normalize: bool,
         /// Override hidden_dim (default: 384 / MiniLM).
         #[arg(long, default_value_t = 384)]
