@@ -51,6 +51,18 @@ pub(crate) fn run(
         ));
     }
 
+    // The provenance license fields are the same fields `apr validate-manifest`
+    // enforces SPDX on (FALSIFY-PM-004). Validate before writing: a bad
+    // identifier baked into an artifact is only discovered at publish time,
+    // by which point the .apr is already distributed (issue #2391).
+    for (flag, value) in [("--license", license), ("--data-license", data_license)] {
+        if let Some(v) = value {
+            if let Some(why) = crate::commands::spdx::reject_reason(flag, v) {
+                return Err(CliError::ValidationFailed(format!("apr stamp: {why}")));
+            }
+        }
+    }
+
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }
@@ -130,30 +142,22 @@ pub(crate) fn run(
             input.len(),
             stamped.len(),
         );
-        println!("  license:         {:?}", verify_reader.metadata().license);
-        println!(
-            "  data_source:     {:?}",
-            verify_reader.metadata().data_source
-        );
-        println!(
-            "  data_license:    {:?}",
-            verify_reader.metadata().data_license
-        );
-        println!(
-            "  hf_architecture: {:?}",
-            verify_reader.metadata().hf_architecture
-        );
-        println!(
-            "  hf_model_type:   {:?}",
-            verify_reader.metadata().hf_model_type
-        );
-        println!(
-            "  architecture:    {:?}",
-            verify_reader.metadata().architecture
-        );
+        // `{:?}` on Option<String> printed `Some("Apache-2.0")` at users.
+        let m = verify_reader.metadata();
+        println!("  license:         {}", show(m.license.as_deref()));
+        println!("  data_source:     {}", show(m.data_source.as_deref()));
+        println!("  data_license:    {}", show(m.data_license.as_deref()));
+        println!("  hf_architecture: {}", show(m.hf_architecture.as_deref()));
+        println!("  hf_model_type:   {}", show(m.hf_model_type.as_deref()));
+        println!("  architecture:    {}", show(m.architecture.as_deref()));
     }
 
     Ok(())
+}
+
+/// Render an optional stamped field: the value, or `(unset)`.
+fn show(v: Option<&str>) -> String {
+    v.map_or_else(|| "(unset)".to_string(), ToString::to_string)
 }
 
 /// PMAT-690 P3-C-prep defect 1: load tokenizer files from a directory.
@@ -369,6 +373,101 @@ mod tests {
             reader.metadata().data_license.as_deref(),
             Some("Apache-2.0")
         );
+    }
+
+    /// FALSIFY-STAMP-SPDX-001 — `apr stamp` must not bake a license into an
+    /// artifact that `apr validate-manifest` (FALSIFY-PM-004) then rejects.
+    /// 0.63.0 accepted `NOT-A-LICENSE-!!` and exited 0 (issue #2391).
+    #[test]
+    fn stamp_rejects_non_spdx_license_and_writes_nothing() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("input.apr");
+        let output = dir.path().join("output.apr");
+        write_unpopulated_apr(&input);
+
+        for bad in ["NOT-A-LICENSE-!!", "Apache2", "MIT License", "whatever"] {
+            let err = run(
+                &input,
+                Some(bad),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                &output,
+                true,
+                true,
+            )
+            .expect_err(&format!("--license {bad:?} must be rejected"));
+            assert!(
+                format!("{err}").contains("SPDX"),
+                "rejection must say why: {err}"
+            );
+            assert!(
+                !output.exists(),
+                "a rejected --license {bad:?} still wrote {}",
+                output.display()
+            );
+        }
+    }
+
+    #[test]
+    fn stamp_rejects_non_spdx_data_license() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("input.apr");
+        let output = dir.path().join("output.apr");
+        write_unpopulated_apr(&input);
+        let err = run(
+            &input,
+            None,
+            None,
+            Some("NOT-A-LICENSE"),
+            None,
+            None,
+            None,
+            None,
+            &output,
+            true,
+            true,
+        )
+        .expect_err("--data-license must be validated too");
+        assert!(format!("{err}").contains("SPDX"), "got: {err}");
+    }
+
+    /// Control: the identifiers `validate-manifest` accepts must still stamp,
+    /// including the lower-case spelling the Hub uses.
+    #[test]
+    fn stamp_still_accepts_every_valid_spdx_identifier() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("input.apr");
+        write_unpopulated_apr(&input);
+        for ok in ["Apache-2.0", "mit", "CC-BY-4.0", "llama3.1"] {
+            let output = dir.path().join(format!("out-{ok}.apr"));
+            let r = run(
+                &input,
+                Some(ok),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                &output,
+                true,
+                true,
+            );
+            assert!(r.is_ok(), "{ok} must still be stampable: {r:?}");
+        }
+    }
+
+    /// The report line printed `license: Some("Apache-2.0")` — Rust Debug on
+    /// `Option<String>` reaching a user-facing report.
+    #[test]
+    fn show_renders_value_or_unset_without_debug_option() {
+        assert_eq!(show(Some("Apache-2.0")), "Apache-2.0");
+        assert_eq!(show(None), "(unset)");
+        assert!(!show(Some("MIT")).contains("Some("));
     }
 
     #[test]

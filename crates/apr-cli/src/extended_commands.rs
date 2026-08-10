@@ -825,7 +825,7 @@ pub enum ExtendedCommands {
         #[arg(long)]
         require_doc_link: bool,
     },
-    /// Lint a captured `apr agent --trace` ReAct loop trace (CRUX-I-06)
+    /// Lint an externally captured ReAct loop trace JSON (CRUX-I-06 — no apr producer yet)
     ReactTraceLint {
         /// Path to captured trace JSON
         #[arg(long, value_name = "FILE")]
@@ -855,7 +855,7 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "I32")]
         expected_exit_code: Option<i32>,
     },
-    /// Lint two captured `apr finetune --parallel ddp --json` outputs (N=1, N=k) (CRUX-D-11)
+    /// Lint two externally captured DDP metrics JSONs, N=1 and N=k (CRUX-D-11 — no apr producer yet)
     DdpMetricsLint {
         /// Path to N=1 metrics JSON
         #[arg(long, value_name = "FILE")]
@@ -873,7 +873,7 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "F", default_value_t = 0.01)]
         loss_tolerance: f64,
     },
-    /// Lint a captured `apr dataset audio-inspect --format json` body (CRUX-H-13)
+    /// Lint an externally captured audio-inspect JSON body (CRUX-H-13 — no apr producer yet)
     AudioInspectLint {
         /// Path to captured JSON body
         #[arg(long, value_name = "FILE")]
@@ -887,10 +887,10 @@ pub enum ExtendedCommands {
     },
     /// Lint captured flash-attn2 parity + provenance JSON outputs (CRUX-L-02)
     AttnParityLint {
-        /// Path to captured `apr kernel parity --impl flash2 --ref naive --json` body
+        /// Path to an externally captured flash2-vs-naive parity JSON body (no apr producer yet)
         #[arg(long, value_name = "FILE")]
         parity_file: Option<PathBuf>,
-        /// Path to captured `apr run --attn flash2 --json` body for provenance check
+        /// Path to an externally captured flash2 provenance JSON body (no apr producer yet)
         #[arg(long, value_name = "FILE")]
         provenance_file: Option<PathBuf>,
         /// Path to captured head_dim error JSON
@@ -903,7 +903,7 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "F", default_value_t = 0.9999)]
         tol_cos: f64,
     },
-    /// Lint a captured `apr attn-viz` attention dump (CRUX-F-17)
+    /// Lint an externally captured attention dump (CRUX-F-17 — no apr producer yet)
     AttnVizLint {
         /// Path to attention dump in JSON form (4-D [layers][heads][rows][cols] floats)
         #[arg(long, value_name = "FILE")]
@@ -921,19 +921,19 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "F64", default_value_t = 1e-9)]
         epsilon: f64,
     },
-    /// Lint a captured `apr trace --check-finite` error JSON and/or `--list` coverage JSON (CRUX-F-11)
+    /// Lint an externally captured check-finite error and/or coverage JSON (CRUX-F-11 — no apr producer yet)
     CheckFiniteLint {
-        /// Captured stderr JSON from `apr trace --check-finite` on a poisoned model
+        /// Externally captured check-finite stderr JSON from a poisoned model
         #[arg(long, value_name = "FILE")]
         error_file: Option<PathBuf>,
-        /// Captured stdout JSON from `apr trace --check-finite --list`
+        /// Externally captured check-finite layer-coverage JSON
         #[arg(long, value_name = "FILE")]
         list_file: Option<PathBuf>,
         /// Minimum layer-coverage count when `--list-file` is supplied (default 100)
         #[arg(long, value_name = "N", default_value_t = 100)]
         min_layers: usize,
     },
-    /// Lint a captured `apr debug embed-viz` CSV (CRUX-F-18)
+    /// Lint an externally captured embedding-projection CSV (CRUX-F-18 — no apr producer yet)
     EmbedVizLint {
         /// Path to captured embed-viz CSV (token_id,token_str,x,y)
         #[arg(long, value_name = "FILE")]
@@ -945,7 +945,7 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         csv_file_b: Option<PathBuf>,
     },
-    /// Lint a captured `apr explain --format jsonl` token-selection trace (CRUX-F-19)
+    /// Lint an externally captured token-selection JSONL trace (CRUX-F-19 — no apr producer yet)
     ExplainTokenLint {
         /// Path to captured JSONL body (one sampled-token record per line)
         #[arg(long, value_name = "FILE")]
@@ -959,13 +959,13 @@ pub enum ExtendedCommands {
     },
     /// Lint a captured GPU memory Chrome Trace Event Format JSON (CRUX-F-07)
     GpuMemtraceLint {
-        /// Path to captured Chrome Trace JSON from `apr profile --gpu-memory-trace`
+        /// Path to an externally captured GPU-memory Chrome Trace JSON (no apr producer yet)
         #[arg(long, value_name = "FILE")]
         trace_file: PathBuf,
     },
     /// Lint a captured KV-cache utilization timeline (CRUX-F-06)
     KvTimelineLint {
-        /// Path to captured `apr profile --kv-timeline --json` body
+        /// Path to an externally captured KV-cache timeline JSON body (no apr producer yet)
         #[arg(long, value_name = "FILE")]
         timeline_file: PathBuf,
         /// Preemption threshold (default 0.95, vLLM canonical)
@@ -1054,7 +1054,7 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
-    /// Lint a captured `apr rm` / `apr gc` blob-GC observation (CRUX-A-25)
+    /// Lint a captured `apr rm` / externally captured gc blob-GC observation (CRUX-A-25)
     RmGcLint {
         /// Path to captured rm/gc observation JSON
         #[arg(long, value_name = "FILE")]

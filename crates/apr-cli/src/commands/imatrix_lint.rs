@@ -45,6 +45,15 @@ pub struct ImatrixLintArgs {
     pub json: bool,
 }
 
+/// Falsify id of the calibration/eval leakage invariant.
+///
+/// It used to share `FALSIFY-CRUX-B-07-001` with the perplexity-improvement
+/// gate, so a `--json` consumer keying on `falsify_id` could not tell the two
+/// apart — and a leakage failure was filed under the improvement test's id.
+/// Every sibling envelope-B lint (awq, gptq, fp8, embeddings) already stamps a
+/// distinct id per gate; contracts/crux-B-07-v1.yaml now carries -004.
+const LEAKAGE_FALSIFY_ID: &str = "FALSIFY-CRUX-B-07-004";
+
 #[derive(Debug, Clone, serde::Serialize)]
 struct GateReport {
     gate: &'static str,
@@ -69,6 +78,38 @@ pub fn run(args: ImatrixLintArgs) -> Result<(), String> {
     let obs: Value = serde_json::from_str(&raw)
         .map_err(|e| format!("FALSIFY-CRUX-B-07: observation is not valid JSON: {e}"))?;
 
+    let (reports, failures) = build_reports(&obs);
+
+    if reports.is_empty() {
+        return Err(
+            "FALSIFY-CRUX-B-07: observation has none of improvement/leakage/flags/provenance"
+                .into(),
+        );
+    }
+
+    if args.json {
+        let payload = serde_json::json!({
+            "contract": "CRUX-B-07",
+            "gates": reports,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload).unwrap());
+    } else {
+        for r in &reports {
+            let tag = if r.passed { "PASS" } else { "FAIL" };
+            println!("[{tag}] {} ({}): {}", r.gate, r.falsify_id, r.outcome);
+        }
+    }
+
+    if !failures.is_empty() {
+        return Err(failures.join("\n"));
+    }
+    Ok(())
+}
+
+/// Dispatch every gate present in the observation, returning the reports and
+/// the failure strings. Split out of [`run`] so tests can assert on the
+/// `falsify_id` stamps directly instead of scraping stdout.
+fn build_reports(obs: &Value) -> (Vec<GateReport>, Vec<String>) {
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
 
@@ -101,30 +142,7 @@ pub fn run(args: ImatrixLintArgs) -> Result<(), String> {
         }
     }
 
-    if reports.is_empty() {
-        return Err(
-            "FALSIFY-CRUX-B-07: observation has none of improvement/leakage/flags/provenance"
-                .into(),
-        );
-    }
-
-    if args.json {
-        let payload = serde_json::json!({
-            "contract": "CRUX-B-07",
-            "gates": reports,
-        });
-        println!("{}", serde_json::to_string_pretty(&payload).unwrap());
-    } else {
-        for r in &reports {
-            let tag = if r.passed { "PASS" } else { "FAIL" };
-            println!("[{tag}] {} ({}): {}", r.gate, r.falsify_id, r.outcome);
-        }
-    }
-
-    if !failures.is_empty() {
-        return Err(failures.join("\n"));
-    }
-    Ok(())
+    (reports, failures)
 }
 
 fn run_improvement_gate(v: &Value) -> (GateReport, Option<String>) {
@@ -197,13 +215,13 @@ fn run_leakage_gate(v: &Value) -> (GateReport, Option<String>) {
         None
     } else {
         Some(format!(
-            "FALSIFY-CRUX-B-07-001 leakage invariant violated: {desc}"
+            "{LEAKAGE_FALSIFY_ID} leakage invariant violated: {desc}"
         ))
     };
     (
         GateReport {
             gate: "leakage",
-            falsify_id: "FALSIFY-CRUX-B-07-001",
+            falsify_id: LEAKAGE_FALSIFY_ID,
             outcome: desc,
             passed: disjoint,
         },
@@ -370,8 +388,53 @@ mod tests {
         let f =
             write_obs(r#"{"leakage": {"calib_hashes": ["a", "b"], "eval_hashes": ["b", "c"]}}"#);
         let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-B-07-001"));
+        assert!(err.contains("FALSIFY-CRUX-B-07-004"), "got: {err}");
         assert!(err.contains("leakage"));
+    }
+
+    /// FALSIFY-CRUX-B-07-004 — the four gates must be distinguishable by
+    /// `falsify_id`. `improvement` and `leakage` both stamped -001, so a
+    /// consumer keying on the id could not tell which invariant broke.
+    #[test]
+    fn every_gate_carries_a_distinct_falsify_id() {
+        let obs: Value = serde_json::from_str(
+            r#"{"improvement": {"ppl_naive": 100.0, "ppl_calib": 90.0},
+                "leakage": {"calib_hashes": ["a"], "eval_hashes": ["b"]},
+                "flags": {"argv": ["quantize"], "expected_path": null},
+                "provenance": {"expected_sha256": "ab", "recorded": "ab"}}"#,
+        )
+        .expect("obs parses");
+        let (reports, failures) = build_reports(&obs);
+        assert_eq!(reports.len(), 4, "all four gates must run");
+        assert!(failures.is_empty(), "all-pass body: {failures:?}");
+        let ids: BTreeSet<&str> = reports.iter().map(|r| r.falsify_id).collect();
+        assert_eq!(
+            ids.len(),
+            reports.len(),
+            "duplicate falsify_id across gates: {:?}",
+            reports
+                .iter()
+                .map(|r| (r.gate, r.falsify_id))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// The id a failing leakage gate stamps must be the leakage id, not the
+    /// perplexity-improvement one: they fail for unrelated reasons.
+    #[test]
+    fn leakage_failure_is_not_filed_under_the_improvement_id() {
+        let obs: Value =
+            serde_json::from_str(r#"{"leakage": {"calib_hashes": ["a"], "eval_hashes": ["a"]}}"#)
+                .expect("obs parses");
+        let (reports, failures) = build_reports(&obs);
+        assert_eq!(reports[0].falsify_id, "FALSIFY-CRUX-B-07-004");
+        assert!(!reports[0].passed);
+        assert_eq!(failures.len(), 1);
+        assert!(
+            !failures[0].contains("FALSIFY-CRUX-B-07-001"),
+            "leakage failure filed under the improvement id: {}",
+            failures[0]
+        );
     }
 
     #[test]

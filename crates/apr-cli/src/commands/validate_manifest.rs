@@ -39,35 +39,10 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-/// SPDX identifiers accepted without question. Not exhaustive; extend as
-/// new licenses appear in provenance chains.
-const SPDX_ALLOWLIST: &[&str] = &[
-    "Apache-2.0",
-    "MIT",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "MPL-2.0",
-    "LGPL-2.1",
-    "LGPL-2.1-only",
-    "LGPL-3.0",
-    "LGPL-3.0-only",
-    "GPL-2.0",
-    "GPL-2.0-only",
-    "GPL-3.0",
-    "GPL-3.0-only",
-    "CC-BY-4.0",
-    "CC-BY-SA-4.0",
-    "CC-BY-NC-4.0",
-    "CC0-1.0",
-    "Unlicense",
-    "ISC",
-    "Apache-2.0 WITH LLVM-exception",
-    "llama2",
-    "llama3",
-    "llama3.1",
-    "gemma",
-    "custom",
-];
+// The SPDX table lives in `commands::spdx` so the commands that WRITE a
+// license (`apr stamp`, `apr publish`) validate against exactly what this
+// gate enforces — they used to accept anything (issue #2391).
+use crate::commands::spdx::is_accepted as spdx_accepted;
 
 // Field names authoritative per contracts/publish-manifest-v1.yaml §schema.
 const REQUIRED_TOP: &[&str] = &[
@@ -427,7 +402,7 @@ fn check_spdx(top: &serde_yaml::Mapping, prov: Option<&serde_yaml::Mapping>) -> 
         if val.is_empty() {
             continue;
         }
-        if SPDX_ALLOWLIST.iter().any(|a| a.eq_ignore_ascii_case(val)) {
+        if spdx_accepted(val) {
             valid += 1;
         } else {
             invalid.push(format!("{field}={val}"));

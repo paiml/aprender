@@ -792,3 +792,72 @@ fn test_safetensors_needing_alias_no_safetensors_skips_alias() {
     ];
     assert!(super::safetensors_needing_alias(&paths).is_none());
 }
+
+// =========================================================================
+// FALSIFY-PUBLISH-SPDX-001 — `--license` must agree with validate-manifest
+// =========================================================================
+
+/// 0.63.0 lower-cased `--license 'NOT-A-LICENSE'` straight into the model
+/// card's YAML front matter, where the Hub ignores an unrecognised value,
+/// while `apr validate-manifest` FALSIFY-PM-004 fails closed on the same
+/// string (issue #2391).
+#[test]
+fn execute_rejects_non_spdx_license_before_any_io() {
+    let temp_dir = std::env::temp_dir().join("apr_pub_spdx_reject");
+    let _ = fs::create_dir_all(&temp_dir);
+
+    for bad in ["NOT-A-LICENSE", "NOT-A-LICENSE-!!", "Apache2", "whatever"] {
+        let result = execute(
+            &temp_dir,
+            "paiml/x",
+            None,
+            bad,
+            "text-generation",
+            None,
+            &[],
+            None,
+            true, // dry_run — must still refuse
+            false,
+            None,
+            &[],
+        );
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("SPDX"), "must say why: {msg}");
+                assert!(msg.contains(bad), "must echo the value: {msg}");
+            }
+            other => panic!("--license {bad:?} must be rejected, got {other:?}"),
+        }
+    }
+}
+
+/// Control: the shipped default and the identifiers validate-manifest accepts
+/// must get past this guard (they fail later, on the empty directory).
+#[test]
+fn execute_accepts_valid_spdx_identifiers() {
+    let temp_dir = std::env::temp_dir().join("apr_pub_spdx_accept");
+    let _ = fs::create_dir_all(&temp_dir);
+
+    for ok in ["mit", "MIT", "Apache-2.0", "llama3.1", "custom"] {
+        let result = execute(
+            &temp_dir,
+            "paiml/x",
+            None,
+            ok,
+            "text-generation",
+            None,
+            &[],
+            None,
+            true,
+            false,
+            None,
+            &[],
+        );
+        if let Err(CliError::ValidationFailed(msg)) = &result {
+            assert!(
+                !msg.contains("SPDX"),
+                "{ok} must not be rejected as non-SPDX: {msg}"
+            );
+        }
+    }
+}

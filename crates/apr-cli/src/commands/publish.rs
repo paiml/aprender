@@ -285,6 +285,14 @@ pub fn execute(
     manifest: Option<&Path>,
     extra_files: &[std::path::PathBuf],
 ) -> Result<(), CliError> {
+    // `--license` lands verbatim (lower-cased) in the model card's YAML front
+    // matter, where the Hub ignores an unrecognised value — and it is the same
+    // field `apr validate-manifest` FALSIFY-PM-004 fails closed on. Reject it
+    // here rather than after the upload (issue #2391).
+    if let Some(why) = crate::commands::spdx::reject_reason("--license", license) {
+        return Err(CliError::ValidationFailed(format!("apr publish: {why}")));
+    }
+
     // When --manifest is provided, the manifest declares the single artifact
     // being shipped for this invocation. We restrict `files` to just that
     // artifact (F-PUBLISH-EXTRA-001::manifest_upload_roundtrip step 4) so

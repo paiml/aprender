@@ -154,6 +154,7 @@ pub(crate) mod shared_cache;
 pub(crate) mod shared_cache_lint;
 pub(crate) mod showcase;
 pub(crate) mod sign_artifacts;
+pub(crate) mod spdx;
 pub(crate) mod stamp;
 pub(crate) mod stop_op;
 pub(crate) mod tensors;
