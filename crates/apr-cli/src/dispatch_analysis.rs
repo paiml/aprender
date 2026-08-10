@@ -1115,6 +1115,21 @@ fn dispatch_tune_command(
     }
 }
 
+/// What `apr ptx` says when this binary was built without the PTX analyzer.
+///
+/// `cargo install aprender` builds default features, which do not include
+/// `trueno-explain`, so every `apr ptx` invocation fails while `apr --help`
+/// still advertises the command (#2399 finding 1). The old text — "ptx command
+/// requires --features full" — named a compile flag rather than something the
+/// user of an installed binary can act on, and pointed at `full`, which drags
+/// in CUDA and training rather than the one crate `ptx` actually needs.
+#[cfg(not(feature = "trueno-explain"))]
+fn ptx_unavailable_message() -> String {
+    "apr ptx needs the PTX analyzer, which this build does not include. \
+     Reinstall with it: cargo install aprender --features ptx"
+        .to_string()
+}
+
 /// Dispatch profiling and QA commands (profile, bench, eval, qa, parity, ptx, ptx-map, tune).
 ///
 /// Returns `None` if the command is not a profiling command, allowing the caller
@@ -1357,31 +1372,32 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             json,
             verbose,
         } => {
-            match file
-                .as_ref()
-                .map(|f| crate::error::resolve_model_path(f))
-                .transpose()
+            // #2399 finding 1: the feature check must come FIRST. It used to run
+            // after path resolution, so on a default build `apr ptx missing.ptx`
+            // answered "File not found" (exit 3) — a user could spend a long time
+            // fixing a path for a command this binary cannot run at all.
+            #[cfg(not(feature = "trueno-explain"))]
             {
-                Ok(resolved) => {
-                    #[cfg(feature = "full")]
-                    {
-                        commands::ptx_explain::run(
-                            resolved.as_deref(),
-                            kernel.as_deref(),
-                            *strict,
-                            *bugs,
-                            *json || cli.json,
-                            *verbose || cli.verbose,
-                        )
-                    }
-                    #[cfg(not(feature = "full"))]
-                    {
-                        Err(CliError::Aprender(
-                            "ptx command requires --features full".into(),
-                        ))
-                    }
+                let _ = (file, kernel, strict, bugs, json, verbose);
+                Err(CliError::FeatureDisabled(ptx_unavailable_message()))
+            }
+            #[cfg(feature = "trueno-explain")]
+            {
+                match file
+                    .as_ref()
+                    .map(|f| crate::error::resolve_model_path(f))
+                    .transpose()
+                {
+                    Ok(resolved) => commands::ptx_explain::run(
+                        resolved.as_deref(),
+                        kernel.as_deref(),
+                        *strict,
+                        *bugs,
+                        *json || cli.json,
+                        *verbose || cli.verbose,
+                    ),
+                    Err(e) => Err(e),
                 }
-                Err(e) => Err(e),
             }
         }
 
