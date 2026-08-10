@@ -163,9 +163,14 @@ async fn test_openai_embeddings_endpoint_basic() {
         .expect("test value should be present");
 
     let status = response.status();
-    assert!(
-        status == StatusCode::OK || status == StatusCode::NOT_FOUND,
-        "Unexpected status: {status}"
+    // aprender#2376(5): the shared test state has NO model, so this condition is
+    // deterministic — a server with no usable model answers 503 on every route.
+    // The old assertion accepted a SET of statuses that included the defect, so it
+    // could not fail and held the 404-here/500-there split in place.
+    assert_eq!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "no model is resident: expected 503"
     );
 }
 
@@ -190,9 +195,14 @@ async fn test_openai_embeddings_without_model() {
         .expect("test value should be present");
 
     let status = response.status();
-    assert!(
-        status == StatusCode::OK || status == StatusCode::NOT_FOUND,
-        "Unexpected status: {status}"
+    // aprender#2376(5): the shared test state has NO model, so this condition is
+    // deterministic — a server with no usable model answers 503 on every route.
+    // The old assertion accepted a SET of statuses that included the defect, so it
+    // could not fail and held the 404-here/500-there split in place.
+    assert_eq!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "no model is resident: expected 503"
     );
 }
 
@@ -218,9 +228,14 @@ async fn test_openai_embeddings_long_text() {
         .expect("test value should be present");
 
     let status = response.status();
-    assert!(
-        status == StatusCode::OK || status == StatusCode::NOT_FOUND,
-        "Unexpected status: {status}"
+    // aprender#2376(5): the shared test state has NO model, so this condition is
+    // deterministic — a server with no usable model answers 503 on every route.
+    // The old assertion accepted a SET of statuses that included the defect, so it
+    // could not fail and held the 404-here/500-there split in place.
+    assert_eq!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "no model is resident: expected 503"
     );
 }
 

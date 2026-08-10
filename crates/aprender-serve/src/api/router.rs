@@ -54,6 +54,67 @@ impl Default for RouterConfig {
     }
 }
 
+/// Routes mounted unconditionally by [`create_router_with_config`], as (method, path).
+///
+/// aprender#2376(12): the 404 body told clients "See /health for available
+/// endpoints", and `/health` returns five status fields and no route list — so
+/// following the instruction in the error message yielded nothing. The 404 now
+/// serves this list itself, and `test_advertised_routes_are_all_mounted` probes
+/// every entry so the list cannot drift into a second false advertisement.
+const NATIVE_ROUTES: &[(&str, &str)] = &[
+    ("GET", "/health"),
+    ("GET", "/health/live"),
+    ("GET", "/health/ready"),
+    ("GET", "/metrics"),
+    ("GET", "/metrics/dispatch"),
+    ("POST", "/metrics/dispatch/reset"),
+    ("GET", "/models"),
+    ("POST", "/tokenize"),
+    ("POST", "/generate"),
+    ("POST", "/batch/tokenize"),
+    ("POST", "/batch/generate"),
+    ("POST", "/stream/generate"),
+    ("POST", "/realize/generate"),
+    ("POST", "/realize/batch"),
+    ("POST", "/realize/embed"),
+    ("GET", "/realize/model"),
+    ("POST", "/realize/reload"),
+];
+
+/// Routes mounted only when `RouterConfig::openai_api` is set (the default).
+const OPENAI_ROUTES: &[(&str, &str)] = &[
+    ("GET", "/v1/models"),
+    ("POST", "/v1/completions"),
+    ("POST", "/v1/chat/completions"),
+    ("POST", "/v1/chat/completions/stream"),
+    ("POST", "/v1/embeddings"),
+    ("POST", "/v1/predict"),
+    ("POST", "/v1/explain"),
+    ("GET", "/v1/audit/:request_id"),
+    ("POST", "/v1/gpu/warmup"),
+    ("GET", "/v1/gpu/status"),
+    ("POST", "/v1/batch/completions"),
+    ("GET", "/v1/metrics"),
+    ("POST", "/api/chat"),
+    ("POST", "/api/generate"),
+];
+
+/// Routes mounted only in CUDA builds (realizr#191).
+#[cfg(feature = "cuda")]
+const CUDA_ROUTES: &[(&str, &str)] = &[("POST", "/v1/logprobs"), ("POST", "/v1/perplexity")];
+
+/// The routes this router mounts, as `"METHOD /path"` strings for the 404 body.
+fn route_index(openai_api: bool) -> Vec<String> {
+    let fmt = |(method, path): &(&str, &str)| format!("{method} {path}");
+    let mut routes: Vec<String> = NATIVE_ROUTES.iter().map(fmt).collect();
+    if openai_api {
+        routes.extend(OPENAI_ROUTES.iter().map(fmt));
+    }
+    #[cfg(feature = "cuda")]
+    routes.extend(CUDA_ROUTES.iter().map(fmt));
+    routes
+}
+
 /// Create the API router with default options (OpenAI API enabled)
 ///
 /// # Arguments
@@ -139,14 +200,21 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
     }
 
     // GH-672: Return JSON error body for unmatched routes (not empty 404)
-    router = router.fallback(|| async {
-        (
-            axum::http::StatusCode::NOT_FOUND,
-            Json(serde_json::json!({
-                "error": "not_found",
-                "message": "Route not found. See /health for available endpoints."
-            })),
-        )
+    // aprender#2376(12): serve the route list here instead of pointing clients at
+    // /health, which does not have one.
+    let routes = route_index(config.openai_api);
+    router = router.fallback(move || {
+        let routes = routes.clone();
+        async move {
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "not_found",
+                    "message": "Route not found. Available routes are listed in `routes`.",
+                    "routes": routes,
+                })),
+            )
+        }
     });
 
     // GH-649: Sanitize axum deserialization errors to avoid leaking internals to clients.
