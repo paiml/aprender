@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 keywords = ["verification", "formal-methods", "kani", "contracts", "ml-kernels"]
 categories = ["development-tools::testing", "mathematics"]
-exclude = ["tests/", "benches/"]
+exclude = ["/tests/", "benches/"]
 
 [features]
 default = []

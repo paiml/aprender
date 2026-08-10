@@ -12,7 +12,7 @@ keywords = ["strace", "tracing", "syscall", "debugging", "profiling"]
 exclude = [
     "book/",
     "docs/",
-    "tests/",
+    "/tests/",
     ".pmat/",
     ".pmat-metrics/",
     ".pmat-work/",

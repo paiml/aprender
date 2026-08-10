@@ -1,5 +1,5 @@
 [package]
-exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
+exclude = ["/tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
 name = "aprender-distribute"
 version.workspace = true
 edition = "2021"

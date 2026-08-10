@@ -50,4 +50,5 @@ mod tests_27; // T-COV-95 Generative Falsification: Proptest API Request Assault
 mod tests_28; // Coverage: realize_handlers pure functions, ContextWindow, clean_chat, build_trace_data, serde
 mod chat_template_contract; // PMAT-187: chat-template-v1.yaml contract enforcement (FALSIFY-CT-002)
 mod embeddings_pmat803; // PMAT-803: model-backed embeddings (semantic-similarity falsifier, dim==hidden_size)
+mod sse_stream_whitespace; // Dogfood 0.63.0: SSE deltas must reassemble with whitespace intact
 mod native_routes_2376; // aprender#2376: native routes on a quantized server, KV-cache budget, sampling fields
