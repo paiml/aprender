@@ -70,7 +70,10 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
         },
     };
 
-    let spawn_result = Command::new("apr")
+    // #2384: spawn the running `apr` executable, never a `$PATH` lookup —
+    // otherwise `apr mcp` from 0.63.0 starts whatever older `apr` is first on
+    // `$PATH`, and fails outright when the install dir is not on `$PATH`.
+    let spawn_result = Command::new(crate::apr_bin::apr_binary())
         .arg("serve")
         .arg(model_path)
         .arg("--port")

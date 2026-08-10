@@ -37,6 +37,7 @@
 //! real-model end-to-end; M5 ports the dispatcher to `pmcp = "2.3"` and
 //! extends cancellation to `apr.serve`.
 
+pub mod apr_bin;
 pub mod server;
 pub mod tools;
 pub mod types;
