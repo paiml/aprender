@@ -26,8 +26,8 @@ pub struct ServerConfig {
     pub port: u16,
     /// Host to bind to
     pub host: String,
-    /// Enable CORS (accepted but not yet implemented - GH-80)
-    #[allow(dead_code)]
+    /// Emit permissive CORS headers. `--no-cors` clears this, which removes the
+    /// `CorsLayer` from the router so no `access-control-*` header is sent.
     pub cors: bool,
     /// Request timeout in seconds (accepted but not yet implemented - GH-80)
     #[allow(dead_code)]
@@ -35,7 +35,8 @@ pub struct ServerConfig {
     /// Maximum concurrent requests (accepted but not yet implemented - GH-80)
     #[allow(dead_code)]
     pub max_concurrent: usize,
-    /// Enable Prometheus metrics endpoint
+    /// Expose the Prometheus metrics endpoint. `--no-metrics` clears this,
+    /// which unregisters `/metrics*` so it returns the 404 fallback.
     pub metrics: bool,
     /// Disable GPU acceleration (accepted but not yet implemented - GH-80)
     #[allow(dead_code)]
@@ -90,6 +91,20 @@ impl Default for ServerConfig {
 }
 
 impl ServerConfig {
+    /// Translate the operator-facing hardening flags into realizar's
+    /// [`RouterConfig`](realizar::api::RouterConfig).
+    ///
+    /// Every serve path builds its router through this, so `--no-cors` and
+    /// `--no-metrics` reach the router instead of stopping at the banner.
+    #[cfg(feature = "inference")]
+    pub(crate) fn router_config(&self) -> realizar::api::RouterConfig {
+        realizar::api::RouterConfig {
+            openai_api: true,
+            cors: self.cors,
+            metrics: self.metrics,
+        }
+    }
+
     /// Create config with custom port (builder pattern, used in tests)
     #[cfg(test)]
     pub(crate) fn with_port(mut self, port: u16) -> Self {

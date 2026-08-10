@@ -351,10 +351,16 @@ pub fn create_router_with_auth(
     state: Arc<ServerState>,
     auth_gate: super::auth::AuthGate,
 ) -> axum::Router {
-    let router = Router::new()
+    // --no-metrics must withhold telemetry here too (SafeTensors inspection
+    // server), not merely suppress the startup banner line.
+    let metrics_enabled = state.config.metrics;
+    let mut router = Router::new()
         .route("/", get(root_handler))
-        .route("/health", get(health_handler))
-        .route("/metrics", get(metrics_handler))
+        .route("/health", get(health_handler));
+    if metrics_enabled {
+        router = router.route("/metrics", get(metrics_handler));
+    }
+    let router = router
         .route("/predict", post(predict_handler))
         .route("/generate", post(generate_handler))
         .route("/transcribe", post(transcribe_handler))
