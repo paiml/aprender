@@ -20,6 +20,8 @@
             false, // callgraph
             false, // fail_on_naive
             None,  // output_path
+            3,     // warmup passes
+            10,    // measure passes
             32,    // tokens
             false, // ollama
             true,  // no_gpu
@@ -45,6 +47,8 @@
             false,
             false,
             None,
+            3,
+            10,
             32,
             false,
             true,
@@ -71,6 +75,8 @@
             false,
             false,
             None,
+            3,
+            10,
             32,
             false,
             true,
@@ -97,6 +103,8 @@
             false,
             false,
             None,
+            3,
+            10,
             32,
             false,
             true,
@@ -123,6 +131,8 @@
             false,
             false,
             None,
+            3,
+            10,
             32,
             false,
             true,
@@ -149,6 +159,8 @@
             false,
             false,
             None,
+            3,
+            10,
             32,
             false,
             true,

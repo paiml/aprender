@@ -253,11 +253,77 @@ pub enum Bottleneck {
     Compute,
 }
 
+/// Map a raw x86 `vendor_id` to a human-readable vendor name.
+fn normalize_cpu_vendor(raw: &str) -> String {
+    match raw.trim() {
+        "GenuineIntel" => "Intel".to_string(),
+        "AuthenticAMD" => "AMD".to_string(),
+        "" => "Unknown".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Parse `(vendor, model)` out of `/proc/cpuinfo` contents.
+///
+/// GH-2395: `detect_cpu` hardcoded `vendor: "Unknown", model: "Unknown"`, so the
+/// roofline block of `apr profile` reported `Hardware: Unknown Unknown (24 cores, …)`
+/// while the peak GFLOPS and bandwidth printed beside it — the basis for the
+/// MEMORY BOUND verdict — claimed to describe that machine.
+///
+/// Split out from the filesystem read so it is testable without `/proc`. Handles
+/// the x86 layout (`vendor_id` / `model name`) and the aarch64 layout
+/// (`CPU implementer` / `Model`, with no `model name` on many kernels).
+pub fn parse_cpuinfo(contents: &str) -> (Option<String>, Option<String>) {
+    let mut vendor = None;
+    let mut model = None;
+    for line in contents.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        match key {
+            "vendor_id" if vendor.is_none() => vendor = Some(normalize_cpu_vendor(value)),
+            "model name" | "Model" if model.is_none() => model = Some(value.to_string()),
+            // aarch64 has no vendor_id; implementer 0x41 is ARM Ltd.
+            "CPU implementer" if vendor.is_none() => {
+                vendor = Some(match value {
+                    "0x41" => "ARM".to_string(),
+                    "0x51" => "Qualcomm".to_string(),
+                    "0x4e" => "NVIDIA".to_string(),
+                    other => other.to_string(),
+                });
+            }
+            _ => {}
+        }
+    }
+    (vendor, model)
+}
+
+/// Read CPU vendor/model from the OS, falling back to `"Unknown"`.
+fn detect_cpu_identity() -> (String, String) {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(contents) = fs::read_to_string("/proc/cpuinfo") {
+            let (vendor, model) = parse_cpuinfo(&contents);
+            return (
+                vendor.unwrap_or_else(|| "Unknown".to_string()),
+                model.unwrap_or_else(|| "Unknown".to_string()),
+            );
+        }
+    }
+    ("Unknown".to_string(), "Unknown".to_string())
+}
+
 /// Detect CPU capabilities
 fn detect_cpu() -> CpuCapability {
     let simd = detect_simd();
     let cores = num_cpus::get_physical();
     let threads = num_cpus::get();
+    let (vendor, model) = detect_cpu_identity();
 
     // Estimate frequency (fallback to 3.0 GHz if unknown)
     let base_freq_ghz = 3.0;
@@ -269,8 +335,8 @@ fn detect_cpu() -> CpuCapability {
     let memory_bw_gbps = 80.0; // Conservative estimate
 
     CpuCapability {
-        vendor: "Unknown".to_string(),
-        model: "Unknown".to_string(),
+        vendor,
+        model,
         cores,
         threads,
         simd,

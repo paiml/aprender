@@ -26,12 +26,13 @@ pub(crate) fn run(
     callgraph: bool,
     fail_on_naive: bool,
     output_path: Option<&Path>,
+    warmup_passes: usize,
+    measure_passes: usize,
     tokens: usize,
     ollama: bool,
     no_gpu: bool,
 ) -> Result<(), CliError> {
     // GH-517: Warn on unimplemented profiler flags (suppress unused warnings)
-    let _ = naive_threshold;
     if compare_hf.is_some() {
         eprintln!("Warning: --compare-hf is not yet implemented. Flag ignored.");
     }
@@ -41,9 +42,10 @@ pub(crate) fn run(
     if callgraph {
         eprintln!("Warning: --callgraph is not yet implemented. Flag ignored.");
     }
-    if fail_on_naive {
-        eprintln!("Warning: --fail-on-naive is not yet implemented. Flag ignored.");
-    }
+    // GH-2395: --fail-on-naive used to print "not yet implemented. Flag ignored."
+    // and return 0 unconditionally, so a CI job gating on it could never fail.
+    // It now runs the detection (implying --detect-naive) and exits non-zero.
+    let detect_naive = detect_naive || fail_on_naive;
 
     // Validate file exists
     if !path.exists() {
@@ -87,7 +89,7 @@ pub(crate) fn run(
             let gpu_result = std::thread::Builder::new()
                 .name("gpu-profile".into())
                 .stack_size(16 * 1024 * 1024)
-                .spawn(move || profile_gpu_generation(&path_owned, tokens, 3, 10))
+                .spawn(move || profile_gpu_generation(&path_owned, tokens, warmup_passes, measure_passes))
                 .map_err(|e| CliError::ValidationFailed(format!("Failed to spawn profiling thread: {e}")))?
                 .join()
                 .map_err(|_| CliError::ValidationFailed("GPU profiling thread panicked".into()))?;
@@ -110,12 +112,13 @@ pub(crate) fn run(
         if let Some(r) = gpu_fallback_result {
             r
         } else {
-            profile_real_inference_cpu(path, 3, 10)?
+            profile_real_inference_cpu(path, warmup_passes, measure_passes)?
         }
     };
 
     #[cfg(not(feature = "inference"))]
     let mut results = {
+        let _ = (warmup_passes, measure_passes);
         output::warn("Inference feature not enabled. Cannot run real profiling.");
         output::warn("Build with: cargo build --features inference");
         return Err(CliError::ValidationFailed(
@@ -124,6 +127,19 @@ pub(crate) fn run(
     };
 
     let profile_time = start.elapsed();
+
+    // GH-2395: --tokens drives multi-token generation on the GPU path and the
+    // ollama comparison only. The CPU per-operation path measures one forward
+    // pass per measurement pass, so say so instead of discarding the value in
+    // silence and reporting numbers the user did not ask for.
+    #[cfg(feature = "inference")]
+    if tokens != 1 && results.backend == "cpu" {
+        eprintln!(
+            "Warning: --tokens {tokens} has no effect on the CPU per-operation profiler, \
+             which measures one forward pass per measurement pass. Use --measure to change \
+             the number of samples."
+        );
+    }
 
     // Compute roofline analysis
     #[cfg(feature = "inference")]
@@ -134,8 +150,10 @@ pub(crate) fn run(
     // GH-173: Apply focus filtering to results (PMAT-182)
     let filtered_results = filter_results_by_focus(&results, focus);
 
-    // Show focus filter if applied
-    if !matches!(focus, ProfileFocus::All) {
+    // Show focus filter if applied. GH-2395: only in Human mode — this used to
+    // print unconditionally, so `--format json --focus mlp` put "  Focus filter: Mlp"
+    // on stdout ahead of the JSON body.
+    if !matches!(focus, ProfileFocus::All) && matches!(format, OutputFormat::Human) {
         output::kv("Focus filter", format!("{:?}", focus));
         println!();
     }
@@ -153,10 +171,30 @@ pub(crate) fn run(
         granular,
         perf_grade,
         detect_naive,
+        naive_threshold,
         ollama_baseline.as_ref(),
         output_path,
         profile_time,
-    )
+    )?;
+
+    // GH-2395: the exit-code contract `--fail-on-naive` advertises. Evaluated on
+    // the UNFILTERED results — `--focus` narrows the report, not the verdict.
+    if fail_on_naive {
+        let suspicions = detect_naive_implementations(&results, naive_threshold);
+        if !suspicions.is_empty() {
+            return Err(CliError::ValidationFailed(format!(
+                "naive implementation detected ({} signal(s)): {}",
+                suspicions.len(),
+                suspicions
+                    .iter()
+                    .map(|s| s.reason.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -166,13 +204,14 @@ fn print_profile_output(
     granular: bool,
     perf_grade: bool,
     detect_naive: bool,
+    naive_threshold: f64,
     ollama_baseline: Option<&OllamaBaseline>,
     output_path: Option<&Path>,
     profile_time: std::time::Duration,
 ) -> Result<(), CliError> {
     match format {
         OutputFormat::Human => {
-            print_human_results(results, granular, perf_grade, detect_naive)?;
+            print_human_results(results, granular, perf_grade, detect_naive, naive_threshold)?;
             if let Some(baseline) = ollama_baseline {
                 print_ollama_comparison(results, baseline);
             }

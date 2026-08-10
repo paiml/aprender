@@ -9,7 +9,7 @@ fn profile_safetensors_real(
     // Check sibling GGUF/APR for real inference profiling
     let gguf_path = path.with_extension("gguf");
     if gguf_path.exists() {
-        output::info(&format!(
+        output::info_stderr(&format!(
             "Found sibling GGUF: {}. Profiling that instead.",
             gguf_path.display()
         ));
@@ -17,7 +17,7 @@ fn profile_safetensors_real(
     }
     let apr_path = path.with_extension("apr");
     if apr_path.exists() {
-        output::info(&format!(
+        output::info_stderr(&format!(
             "Found sibling APR: {}. Profiling that instead.",
             apr_path.display()
         ));
@@ -25,7 +25,7 @@ fn profile_safetensors_real(
     }
 
     // Static analysis fallback via Rosetta Stone
-    output::info("SafeTensors: running static analysis profile (no inference engine needed)");
+    output::info_stderr("SafeTensors: running static analysis profile (no inference engine needed)");
     let rosetta = aprender::format::rosetta::RosettaStone::new();
     let report = rosetta
         .inspect(path)
@@ -85,7 +85,10 @@ fn profile_gguf_real(
     measure_passes: usize,
 ) -> Result<RealProfileResults, CliError> {
     // Load the model
-    println!("{}", "Loading model...".dimmed());
+    // GH-2395: progress is status, not data. It used to go to stdout, so
+    // `apr profile M --format json` emitted three human progress lines ahead of
+    // the JSON body and nothing downstream could parse the stream.
+    eprintln!("{}", "Loading model...".dimmed());
     let mapped = MappedGGUFModel::from_path(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
 
@@ -124,7 +127,7 @@ fn profile_gguf_real(
     };
 
     // Warmup passes (discard timing)
-    println!(
+    eprintln!(
         "{}",
         format!("Running {} warmup passes...", warmup_passes).dimmed()
     );
@@ -133,7 +136,7 @@ fn profile_gguf_real(
     }
 
     // Measurement passes with per-operation profiler
-    println!(
+    eprintln!(
         "{}",
         format!(
             "Running {} measurement passes (per-op instrumented)...",
@@ -144,7 +147,12 @@ fn profile_gguf_real(
 
     let mut profiler = BrickProfiler::new();
     profiler.set_num_layers(num_layers);
-    profiler.set_tokens(tokens_per_pass * measure_passes);
+    // GH-2395: `tokens_processed` means DECODED tokens — the gpu-decode-profiling-v1
+    // TOKEN_ACCOUNTING contract asserts LmHead fires exactly once per decoded token.
+    // Each measurement pass runs one profiled forward and so decodes exactly one
+    // token; feeding it prompt_len * passes made every single profile run emit
+    // "LmHead.count=10 != tokens_processed=20", training users to ignore the warning.
+    profiler.set_tokens(measure_passes);
 
     let mut forward_times: Vec<f64> = Vec::new();
 
@@ -172,10 +180,9 @@ fn profile_gguf_real(
             let has_inf = logits.iter().any(|x| x.is_infinite());
 
             if has_nan || has_inf {
-                output::warn(&format!(
-                    "Forward pass produced invalid logits: NaN={}, Inf={}",
-                    has_nan, has_inf
-                ));
+                eprintln!(
+                    "Warning: forward pass produced invalid logits: NaN={has_nan}, Inf={has_inf}"
+                );
             }
         }
     }
@@ -271,7 +278,8 @@ fn profile_gguf_real(
         latency_max_ms: sorted_times.last().copied().unwrap_or(0.0),
         prefill_tok_s: 0.0, // CPU path doesn't separate prefill/decode
         decode_tok_s: tps,
-        total_tokens_generated: tokens_per_pass * measure_passes,
+        // One profiled forward pass per measurement pass => one decoded token each.
+        total_tokens_generated: measure_passes,
         kernel_launch_overhead_pct: 0.0, // CPU path: no kernel launches
         kernel_launch_overhead_us: 0.0,
     })
@@ -287,7 +295,8 @@ fn profile_apr_real(
     use realizar::apr_transformer::AprTransformer;
 
     // Load the model using AprTransformer
-    println!("{}", "Loading APR model...".dimmed());
+    // GH-2395: progress to stderr — see `profile_gguf_real`.
+    eprintln!("{}", "Loading APR model...".dimmed());
     let model = AprTransformer::from_apr_file(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
 
@@ -312,7 +321,7 @@ fn profile_apr_real(
     let tokens_per_pass = test_tokens.len();
 
     // Warmup
-    println!(
+    eprintln!(
         "{}",
         format!("Running {} warmup passes...", warmup_passes).dimmed()
     );
@@ -321,14 +330,19 @@ fn profile_apr_real(
     }
 
     // Measurement
-    println!(
+    eprintln!(
         "{}",
         format!("Running {} measurement passes...", measure_passes).dimmed()
     );
 
     let mut profiler = BrickProfiler::new();
     profiler.set_num_layers(num_layers);
-    profiler.set_tokens(tokens_per_pass * measure_passes);
+    // GH-2395: `tokens_processed` means DECODED tokens — the gpu-decode-profiling-v1
+    // TOKEN_ACCOUNTING contract asserts LmHead fires exactly once per decoded token.
+    // Each measurement pass runs one profiled forward and so decodes exactly one
+    // token; feeding it prompt_len * passes made every single profile run emit
+    // "LmHead.count=10 != tokens_processed=20", training users to ignore the warning.
+    profiler.set_tokens(measure_passes);
 
     let mut forward_times: Vec<f64> = Vec::new();
 
@@ -356,10 +370,9 @@ fn profile_apr_real(
             let has_inf = logits.iter().any(|x| x.is_infinite());
 
             if has_nan || has_inf {
-                output::warn(&format!(
-                    "Forward pass produced invalid logits: NaN={}, Inf={}",
-                    has_nan, has_inf
-                ));
+                eprintln!(
+                    "Warning: forward pass produced invalid logits: NaN={has_nan}, Inf={has_inf}"
+                );
             }
         }
     }
@@ -420,7 +433,8 @@ fn profile_apr_real(
         latency_max_ms: sorted_times.last().copied().unwrap_or(0.0),
         prefill_tok_s: 0.0,
         decode_tok_s: tps,
-        total_tokens_generated: tokens_per_pass * measure_passes,
+        // One profiled forward pass per measurement pass => one decoded token each.
+        total_tokens_generated: measure_passes,
         kernel_launch_overhead_pct: 0.0, // APR CPU: no kernel launches
         kernel_launch_overhead_us: 0.0,
     })
@@ -440,7 +454,8 @@ fn load_tokenizer_for_profile(model_path: &Path) -> Option<aprender::text::bpe::
     let sibling = model_path.with_file_name(format!("{stem}.tokenizer.json"));
     if sibling.exists() {
         if let Ok(tok) = BpeTokenizer::from_huggingface(&sibling) {
-            println!(
+            // GH-2395: progress to stderr — see `profile_gguf_real`.
+            eprintln!(
                 "{}",
                 format!("Loaded tokenizer from {}", sibling.display()).dimmed()
             );
@@ -453,7 +468,7 @@ fn load_tokenizer_for_profile(model_path: &Path) -> Option<aprender::text::bpe::
         let tokenizer_json = parent.join("tokenizer.json");
         if tokenizer_json.exists() {
             if let Ok(tok) = BpeTokenizer::from_huggingface(&tokenizer_json) {
-                println!(
+                eprintln!(
                     "{}",
                     format!("Loaded tokenizer from {}", tokenizer_json.display()).dimmed()
                 );
@@ -471,6 +486,7 @@ fn print_human_results(
     granular: bool,
     show_perf_grade: bool,
     detect_naive: bool,
+    naive_threshold_gflops: f64,
 ) -> Result<(), CliError> {
     print_profile_model_header(results);
     print_hotspot_table(results, granular);
@@ -479,7 +495,7 @@ fn print_human_results(
     print_per_layer_timing(results, granular);
     print_roofline_section(results);
     print_perf_grade_section(results, show_perf_grade);
-    print_naive_detection(results, detect_naive);
+    print_naive_detection(results, detect_naive, naive_threshold_gflops);
     print_generation_performance(results);
     print_latency_percentiles(results);
     print_profile_summary(results);

@@ -88,6 +88,17 @@ pub(crate) fn info(msg: &str) {
     println!("{} {}", "[INFO]".blue(), msg);
 }
 
+/// Print an info message on stderr.
+///
+/// GH-2395: progress and provenance notes are status, not data. Emitting them on
+/// stdout put human text ahead of the JSON body of `apr profile --format json`,
+/// so the stream could not be parsed at all. Any command with a machine-readable
+/// output mode must route its chatter here.
+#[allow(dead_code)]
+pub(crate) fn info_stderr(msg: &str) {
+    eprintln!("{} {}", "[INFO]".blue(), msg);
+}
+
 /// Print an error message
 #[allow(dead_code)]
 pub(crate) fn error(msg: &str) {

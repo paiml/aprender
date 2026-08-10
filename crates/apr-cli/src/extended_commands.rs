@@ -139,22 +139,22 @@ pub enum ExtendedCommands {
         /// Detect naive implementations
         #[arg(long)]
         detect_naive: bool,
-        /// GFLOPS threshold for naive detection
+        /// Achieved-GFLOPS floor below which the run is reported as naive
         #[arg(long, default_value = "10.0")]
         threshold: f64,
-        /// Compare against HuggingFace baseline
+        /// [NOT IMPLEMENTED — accepted and ignored] Compare against HuggingFace baseline
         #[arg(long)]
         compare_hf: Option<String>,
-        /// Measure energy consumption (requires RAPL)
+        /// [NOT IMPLEMENTED — accepted and ignored] Measure energy consumption (requires RAPL)
         #[arg(long)]
         energy: bool,
         /// Compute performance grade (vs Ollama baseline)
         #[arg(long)]
         perf_grade: bool,
-        /// Show call graph
+        /// [NOT IMPLEMENTED — accepted and ignored] Show call graph
         #[arg(long)]
         callgraph: bool,
-        /// Exit non-zero if naive implementation detected
+        /// Exit non-zero if naive implementation detected (implies --detect-naive)
         #[arg(long)]
         fail_on_naive: bool,
         /// Output file path for flamegraph SVG (GH-174, PMAT-182)
@@ -180,7 +180,8 @@ pub enum ExtendedCommands {
         /// Measurement passes (default: 10)
         #[arg(long, default_value = "10")]
         measure: usize,
-        /// Number of tokens to generate per measurement pass (default: 32)
+        /// Tokens generated per measurement pass — GPU and --ollama paths only;
+        /// the CPU per-operation profiler measures one forward pass per pass
         #[arg(long, default_value = "32")]
         tokens: usize,
         /// Compare against Ollama baseline (runs ollama for comparison)
