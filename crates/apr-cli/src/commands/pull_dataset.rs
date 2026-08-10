@@ -133,7 +133,7 @@ fn list_dataset_repo_files(repo: &str, revision: &str) -> Result<Vec<String>> {
     let mut paths = Vec::new();
     let mut next_url: Option<String> = Some(initial_url.clone());
     while let Some(url) = next_url.take() {
-        let response = hf_get(&url).call().map_err(|e| match &e {
+        let response = hf_get(&url)?.call().map_err(|e| match &e {
             ureq::Error::Status(404, _) => CliError::HttpNotFound(format!(
                 "Dataset {repo} not found at revision {revision}"
             )),

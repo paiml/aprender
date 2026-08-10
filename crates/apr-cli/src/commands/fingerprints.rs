@@ -201,14 +201,34 @@ fn print_diff_row(
     );
 }
 
+/// Anomaly `field` marker for a tensor of model A that has no counterpart in B.
+const FIELD_MISSING_IN_B: &str = "missing_in_b";
+/// Anomaly `field` marker for a tensor of model B that has no counterpart in A.
+const FIELD_MISSING_IN_A: &str = "missing_in_a";
+
+/// Count anomalies of a given `field` kind.
+fn count_field(anomalies: &[StatisticalAnomaly], field: &str) -> usize {
+    anomalies.iter().filter(|a| a.field == field).count()
+}
+
 /// Print the diff summary (JSON or text).
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
 fn print_diff_summary(total: usize, anomalies: &[StatisticalAnomaly], json: bool) {
+    let missing_in_b = count_field(anomalies, FIELD_MISSING_IN_B);
+    let missing_in_a = count_field(anomalies, FIELD_MISSING_IN_A);
+
     if json {
-        println!("{{");
-        println!("  \"total_tensors\": {},", total);
-        println!("  \"anomalies\": {},", anomalies.len());
-        println!("  \"passed\": {}", anomalies.is_empty());
-        println!("}}");
+        println!(
+            "{:#}",
+            serde_json::json!({
+                "total_tensors": total,
+                "anomalies": anomalies.len(),
+                "missing_in_b": missing_in_b,
+                "missing_in_a": missing_in_a,
+                "passed": anomalies.is_empty(),
+            })
+        );
     } else if anomalies.is_empty() {
         println!(
             "║ {} ║",
@@ -217,10 +237,26 @@ fn print_diff_summary(total: usize, anomalies: &[StatisticalAnomaly], json: bool
     } else {
         println!(
             "║ {} ║",
-            format!("✗ {} ANOMALIES DETECTED", anomalies.len())
-                .red()
-                .bold()
+            format!(
+                "✗ {} ANOMALIES DETECTED ({} missing in B, {} missing in A)",
+                anomalies.len(),
+                missing_in_b,
+                missing_in_a
+            )
+            .red()
+            .bold()
         );
+    }
+}
+
+/// Build an anomaly for a tensor present in one model and absent from the other.
+fn missing_tensor_anomaly(name: &str, field: &'static str) -> StatisticalAnomaly {
+    StatisticalAnomaly {
+        tensor: name.to_string(),
+        field: field.to_string(),
+        expected: 0.0,
+        actual: 0.0,
+        deviation_sigma: f32::INFINITY,
     }
 }
 
@@ -251,9 +287,15 @@ fn print_fingerprint_diff(
         );
     }
 
+    let mut matched_in_b: std::collections::HashSet<String> = std::collections::HashSet::new();
+
     for fp_a in fps_a {
         let norm_name_a = normalize_tensor_name(&fp_a.name);
         let Some(fp_b) = map_b.get(&norm_name_a) else {
+            // A tensor that model B does not have at all is the maximum possible
+            // anomaly. It used to be printed and then dropped on the floor, so a
+            // diff where every tensor was missing still reported "No statistical
+            // anomalies detected" / "passed": true and exited 0.
             if !json {
                 println!(
                     "║ {} {:<72} ║",
@@ -262,8 +304,10 @@ fn print_fingerprint_diff(
                 );
                 println!("║   Missing in Model B ║");
             }
+            anomalies.push(missing_tensor_anomaly(&fp_a.name, FIELD_MISSING_IN_B));
             continue;
         };
+        matched_in_b.insert(norm_name_a);
 
         let (mean_diff, has_anomaly) = fingerprint_anomaly(fp_a, fp_b);
 
@@ -283,8 +327,35 @@ fn print_fingerprint_diff(
         }
     }
 
+    // Tensors that exist only in model B are just as much a difference as tensors
+    // that exist only in model A; the walker above can never see them.
+    for fp_b in fps_b {
+        let norm_name_b = normalize_tensor_name(&fp_b.name);
+        if !matched_in_b.contains(&norm_name_b) {
+            if !json {
+                println!(
+                    "║ {} {:<72} ║",
+                    "+".red(),
+                    truncate_path(fp_b.name.clone(), 72)
+                );
+                println!("║   Missing in Model A ║");
+            }
+            anomalies.push(missing_tensor_anomaly(&fp_b.name, FIELD_MISSING_IN_A));
+        }
+    }
+
     print_diff_summary(fps_a.len(), &anomalies, json);
-    Ok(())
+
+    if anomalies.is_empty() {
+        return Ok(());
+    }
+    Err(CliError::ValidationFailed(format!(
+        "{} statistical anomalies detected between the two models \
+         ({} tensors missing in B, {} missing in A)",
+        anomalies.len(),
+        count_field(&anomalies, FIELD_MISSING_IN_B),
+        count_field(&anomalies, FIELD_MISSING_IN_A),
+    )))
 }
 
 /// Convert fingerprints to JSON

@@ -294,7 +294,9 @@ pub fn run_fingerprint(
     }
 
     let fingerprints_a = compute_fingerprints(model, filter)?;
-    run_fingerprint_body(&fingerprints_a, model_b, filter, verbose, json)?;
+    // Deliberately not `?`: a failing diff must still write --output and close the
+    // report box, but it must still be the exit status of the command.
+    let diff_result = run_fingerprint_body(&fingerprints_a, model_b, filter, verbose, json);
 
     if let Some(output_path) = output {
         let json_content = fingerprints_to_json(&fingerprints_a);
@@ -314,7 +316,7 @@ pub fn run_fingerprint(
         );
     }
 
-    Ok(())
+    diff_result
 }
 
 /// Run the rosetta validate-stats subcommand (PMAT-202)
@@ -354,6 +356,42 @@ fn resolve_reference_fingerprints(
 }
 
 /// Print validation anomalies as JSON.
+///
+/// Built with serde rather than hand-rolled `println!`: `deviation` is `f32::INFINITY`
+/// for nan/inf-count anomalies, and a bare `inf` literal is not valid JSON.
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn validate_stats_json(
+    model: &Path,
+    threshold: f32,
+    strict: bool,
+    total_tensors: usize,
+    anomalies: &[StatisticalAnomaly],
+) -> serde_json::Value {
+    let details: Vec<serde_json::Value> = anomalies
+        .iter()
+        .map(|a| {
+            serde_json::json!({
+                "tensor": a.tensor,
+                "field": a.field,
+                "expected": json_number(a.expected),
+                "actual": json_number(a.actual),
+                "deviation": json_number(a.deviation_sigma),
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "model": model.display().to_string(),
+        "threshold": json_number(threshold),
+        "strict": strict,
+        "total_tensors": total_tensors,
+        "anomalies": anomalies.len(),
+        "anomaly_details": details,
+        "passed": anomalies.is_empty(),
+    })
+}
+
 fn print_validate_stats_json(
     model: &Path,
     threshold: f32,
@@ -361,25 +399,10 @@ fn print_validate_stats_json(
     total_tensors: usize,
     anomalies: &[StatisticalAnomaly],
 ) {
-    println!("{{");
-    println!("  \"model\": \"{}\",", model.display());
-    println!("  \"threshold\": {},", threshold);
-    println!("  \"strict\": {},", strict);
-    println!("  \"total_tensors\": {},", total_tensors);
-    println!("  \"anomalies\": {},", anomalies.len());
-    if !anomalies.is_empty() {
-        println!("  \"anomaly_details\": [");
-        for (i, anomaly) in anomalies.iter().enumerate() {
-            let comma = if i < anomalies.len() - 1 { "," } else { "" };
-            println!(
-                "    {{\"tensor\": \"{}\", \"field\": \"{}\", \"expected\": {:.6}, \"actual\": {:.6}, \"deviation\": {:.2}}}{}",
-                anomaly.tensor, anomaly.field, anomaly.expected, anomaly.actual, anomaly.deviation_sigma, comma
-            );
-        }
-        println!("  ],");
-    }
-    println!("  \"passed\": {}", anomalies.is_empty());
-    println!("}}");
+    println!(
+        "{:#}",
+        validate_stats_json(model, threshold, strict, total_tensors, anomalies)
+    );
 }
 
 /// Print validation anomalies as formatted text.

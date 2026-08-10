@@ -137,14 +137,16 @@ pub struct OllamaGenerateResponse {
 // Conversion helpers (pure — unit-tested)
 // ============================================================================
 
-/// RFC-3339-style timestamp for `created_at` (Ollama wire format).
+/// RFC 3339 timestamp for `created_at` (Ollama wire format).
+///
+/// Ollama's own client declares `CreatedAt` as a Go `time.Time`, so the value
+/// goes through `time.Time.UnmarshalJSON`, which accepts RFC 3339 and nothing
+/// else. A bare epoch with a `Z` glued on (`"1786293998.000000000Z"`) fails
+/// that parse and `encoding/json` then discards the WHOLE response — message,
+/// `done`, counts — not merely the timestamp. Emit UTC with nanosecond
+/// precision, the shape real ollama puts on the wire.
 fn created_at_now() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    // Clients only require a string field, not strict parsing.
-    format!("{secs}.000000000Z")
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
 }
 
 /// Default model label when the request omits `model`.
@@ -397,5 +399,75 @@ mod tests {
         assert_eq!(json["response"], "hi");
         assert_eq!(json["done"], true);
         assert!(json.get("message").is_none(), "generate uses flat response");
+    }
+
+    // ------------------------------------------------------------------
+    // `created_at` must be RFC 3339 (PMAT-923 follow-up).
+    //
+    // Ollama's Go client decodes `created_at` into a `time.Time`. A value it
+    // cannot parse makes `encoding/json` abandon the WHOLE object, so the
+    // client sees an empty message and `done:false` — not just a bad clock.
+    // ------------------------------------------------------------------
+
+    /// The oracle used below has to discriminate: the shape apr 0.63.0 emitted
+    /// (a bare epoch with a `Z` glued on) MUST fail it, otherwise the
+    /// assertions that follow would pass on the defect too.
+    #[test]
+    fn rfc3339_oracle_rejects_the_bare_epoch_shape() {
+        chrono::DateTime::parse_from_rfc3339("1786293998.000000000Z")
+            .expect_err("a bare epoch string is not RFC 3339 — oracle is not discriminating");
+    }
+
+    #[test]
+    fn created_at_now_is_rfc3339_utc_at_the_current_instant() {
+        let s = created_at_now();
+        let parsed = chrono::DateTime::parse_from_rfc3339(&s)
+            .unwrap_or_else(|e| panic!("created_at {s:?} must parse as RFC 3339: {e}"));
+
+        // Parseable is not enough: it must denote *now*, so a decoding client
+        // gets a usable instant rather than the zero time.
+        let now = chrono::Utc::now().timestamp();
+        let skew = (parsed.timestamp() - now).abs();
+        assert!(skew <= 60, "created_at {s:?} is {skew}s away from now");
+        assert_eq!(parsed.offset().local_minus_utc(), 0, "must be UTC: {s:?}");
+    }
+
+    /// The value that actually reaches the wire for `/api/chat`.
+    #[test]
+    fn chat_response_created_at_is_client_decodable() {
+        let resp = OllamaChatResponse {
+            model: "apr".to_string(),
+            created_at: created_at_now(),
+            message: OllamaMessage {
+                role: "assistant".to_string(),
+                content: "hello".to_string(),
+            },
+            done: true,
+            prompt_eval_count: 1,
+            eval_count: 2,
+        };
+        let json = serde_json::to_value(&resp).expect("serialize");
+        let created_at = json["created_at"].as_str().expect("created_at is a string");
+        chrono::DateTime::parse_from_rfc3339(created_at).unwrap_or_else(|e| {
+            panic!("/api/chat created_at {created_at:?} must parse as RFC 3339: {e}")
+        });
+    }
+
+    /// The value that actually reaches the wire for `/api/generate`.
+    #[test]
+    fn generate_response_created_at_is_client_decodable() {
+        let resp = OllamaGenerateResponse {
+            model: "apr".to_string(),
+            created_at: created_at_now(),
+            response: "hi".to_string(),
+            done: true,
+            prompt_eval_count: 0,
+            eval_count: 1,
+        };
+        let json = serde_json::to_value(&resp).expect("serialize");
+        let created_at = json["created_at"].as_str().expect("created_at is a string");
+        chrono::DateTime::parse_from_rfc3339(created_at).unwrap_or_else(|e| {
+            panic!("/api/generate created_at {created_at:?} must parse as RFC 3339: {e}")
+        });
     }
 }

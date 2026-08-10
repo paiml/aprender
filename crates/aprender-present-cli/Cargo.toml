@@ -1,5 +1,5 @@
 [package]
-exclude = ["tests/", "benches/", "docs/", ".github/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
+exclude = ["/tests/", "benches/", "docs/", ".github/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
 name = "aprender-present-cli"
 description = "CLI for Presentar WASM apps - serve and bundle"
 version.workspace = true

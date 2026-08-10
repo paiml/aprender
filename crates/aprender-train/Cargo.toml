@@ -16,7 +16,7 @@ exclude = [
     "book/",
     "docs/",
     "examples/",
-    "tests/",
+    "/tests/",
     "scripts/",
     ".pmat/",
     ".pmat-work/",

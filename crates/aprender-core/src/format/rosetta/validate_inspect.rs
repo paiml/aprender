@@ -69,6 +69,13 @@ impl RosettaStone {
                     all_zero_tensors.push(name.to_string());
                 }
                 tensors.push(tv);
+            } else {
+                // A tensor the reader cannot decode is a validation FAILURE, not a
+                // tensor to omit from the count. See `unreadable_tensor_validation`.
+                tensors.push(Self::unreadable_tensor_validation(
+                    name,
+                    "APR reader returned no data (shape/offset may exceed the file)",
+                ));
             }
         }
 
@@ -87,6 +94,38 @@ impl RosettaStone {
             tensors,
             duration_ms: 0,
         })
+    }
+
+    /// Build a FAILING `TensorValidation` for a tensor the reader could not decode.
+    ///
+    /// A tensor that cannot be read is the strongest possible signal that a file is
+    /// corrupt, and it used to be the one signal `validate` threw away: all three
+    /// `validate_*` paths wrote `if let Ok(data) = reader.get_tensor(..)` and silently
+    /// dropped the tensor on the else branch, then reported
+    /// `tensor_count: tensors.len()` — the number that survived. On a GGUF whose
+    /// `output_norm.weight` extent overruns EOF that produced
+    /// `VALID: 338 tensors checked, 0 contract violations` with exit 0, while
+    /// `apr tensors` counted 339 on the same file and `inspect`, `debug`, `tree` and
+    /// `diff` all rejected it outright. The gate was arithmetically incapable of
+    /// failing on that corruption class, because the evidence was removed from the
+    /// denominator before the comparison.
+    ///
+    /// Recording the failure as a tensor keeps `tensor_count` equal to the number the
+    /// file declares, so a dropped tensor can no longer be invisible.
+    pub(crate) fn unreadable_tensor_validation(name: &str, reason: &str) -> TensorValidation {
+        TensorValidation {
+            name: name.to_string(),
+            is_valid: false,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 0,
+            element_count: 0,
+            min: 0.0,
+            max: 0.0,
+            mean: 0.0,
+            std: 0.0,
+            failures: vec![format!("tensor data could not be read: {reason}")],
+        }
     }
 
     /// Build an empty (valid) `TensorValidation` for tensors with no elements.

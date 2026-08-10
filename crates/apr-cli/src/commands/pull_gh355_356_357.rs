@@ -81,8 +81,11 @@
         std::env::set_var("HF_TOKEN", "hf_test_auth");
 
         // hf_get returns a ureq::Request — we can't inspect headers directly,
-        // but we can verify it doesn't panic with a token set
-        let _req = hf_get("https://example.com/test");
+        // but we can verify it doesn't panic with a token set.
+        // CRUX-A-20: hf_get now returns Result (it refuses while offline);
+        // discard it rather than unwrap, so this stays a panic check and does
+        // not start failing under APR_OFFLINE=1.
+        let _ = hf_get("https://example.com/test");
 
         match saved {
             Some(t) => std::env::set_var("HF_TOKEN", t),
@@ -96,7 +99,7 @@
         let saved = std::env::var("HF_TOKEN").ok();
         std::env::remove_var("HF_TOKEN");
 
-        let _req = hf_get("https://example.com/test");
+        let _ = hf_get("https://example.com/test");
 
         if let Some(t) = saved {
             std::env::set_var("HF_TOKEN", t);
