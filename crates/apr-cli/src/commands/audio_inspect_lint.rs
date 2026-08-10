@@ -27,7 +27,7 @@ pub(crate) fn run(
     }
     let body_text = std::fs::read_to_string(json_file)?;
     let body: Value = serde_json::from_str(&body_text).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr audio-inspect-lint: failed to parse JSON from {}: {e}",
             json_file.display()
         ))
@@ -100,7 +100,7 @@ mod cov_tests {
     fn invalid_json_is_invalid_format() {
         let f = w("nope");
         let err = run(f.path(), None, None, false).unwrap_err();
-        assert!(matches!(err, CliError::InvalidFormat(_)));
+        assert!(matches!(err, CliError::InvalidInput(_)));
     }
     #[test]
     fn empty_object_runs() {

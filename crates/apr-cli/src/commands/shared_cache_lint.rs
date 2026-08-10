@@ -25,6 +25,7 @@
 //! Any missing top-level key is skipped. Non-zero exit + FALSIFY-CRUX-A-21
 //! stderr stamp on any failing gate.
 
+use super::lint_error::{load_json_observation, LintError};
 use crate::commands::shared_cache::{
     blob_path_for, classify_pull_permission_outcome, resolve_registry_root, PullPermissionOutcome,
 };
@@ -47,21 +48,8 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: SharedCacheLintArgs) -> Result<(), String> {
-    let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-A-21: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-A-21: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-A-21: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-A-21: observation is not valid JSON: {e}"))?;
+pub fn run(args: SharedCacheLintArgs) -> Result<(), LintError> {
+    let obs: Value = load_json_observation(&args.observation_file, "FALSIFY-CRUX-A-21")?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -82,7 +70,9 @@ pub fn run(args: SharedCacheLintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err("FALSIFY-CRUX-A-21: observation has none of dedup/permission".into());
+        return Err(LintError::unusable(
+            "FALSIFY-CRUX-A-21: observation has none of dedup/permission",
+        ));
     }
 
     if args.json {
@@ -99,7 +89,7 @@ pub fn run(args: SharedCacheLintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(LintError::gate_failed(failures.join("\n")));
     }
     Ok(())
 }
@@ -318,29 +308,31 @@ mod tests {
             observation_file: "/no/such/cache.json".to_string(),
             json: false,
         };
-        let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-A-21"));
-        assert!(err.contains("not found"));
+        let err = run(args).unwrap_err().to_string();
+        // The whole *-lint family reports a missing input identically:
+        // "File not found: <path>" with exit 3 (commands::lint_error).
+        assert!(err.contains("File not found"), "got: {err}");
+        assert!(err.contains("/no/such/cache.json"), "got: {err}");
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs(" ");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("observation file is empty"));
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("@@@");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("not valid JSON"));
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("none of dedup/permission"));
     }
 
@@ -362,7 +354,7 @@ mod tests {
                 "home": "/home/user",
                 "expected_root": "/somewhere/else"}}"#,
         );
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-21-001"));
     }
 
@@ -377,7 +369,7 @@ mod tests {
     #[test]
     fn permission_gate_unknown_kind_fails() {
         let f = write_obs(r#"{"permission": {"kind": "banana"}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-21-002"));
     }
 
@@ -385,7 +377,7 @@ mod tests {
     fn permission_gate_outcome_mismatch_fails() {
         let f =
             write_obs(r#"{"permission": {"kind": "permission_denied", "expected_outcome": "ok"}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-21-002"));
     }
 

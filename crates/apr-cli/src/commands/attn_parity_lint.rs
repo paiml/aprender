@@ -89,7 +89,7 @@ fn load_json(path: &Path) -> Result<Value> {
     }
     let body_text = std::fs::read_to_string(path)?;
     serde_json::from_str(&body_text).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr attn-parity-lint: failed to parse JSON from {}: {e}",
             path.display()
         ))

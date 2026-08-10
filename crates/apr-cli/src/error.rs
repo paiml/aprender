@@ -24,6 +24,18 @@ pub enum CliError {
     #[error("Invalid APR format: {0}")]
     InvalidFormat(String),
 
+    /// Input the user supplied could not be parsed, and it is *not* an APR
+    /// model file — e.g. a captured JSON observation handed to an
+    /// `apr *-lint` command.
+    ///
+    /// Shares exit code 4 with `InvalidFormat` because they are one error
+    /// class — "the input could not be parsed" — differing only in the
+    /// diagnostic; `FileNotFound`/`NotAFile` already share 3 the same way.
+    /// The point of the separate variant is that it does not claim the input
+    /// was ever meant to be an APR model.
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -66,17 +78,27 @@ impl CliError {
         contract_pre_exit_code_semantics!();
         contract_pre_error_mapping!();
         contract_pre_exit_code_on_error!();
+        ExitCode::from(self.exit_code_value())
+    }
+
+    /// The numeric exit code this error maps to.
+    ///
+    /// `exit_code()` returns a `std::process::ExitCode`, which is opaque — it
+    /// has no accessor and no `PartialEq`, so a test cannot assert on it. This
+    /// is the same mapping as a plain `u8` so the exit-code convention is
+    /// testable in-process.
+    pub fn exit_code_value(&self) -> u8 {
         match self {
-            Self::FileNotFound(_) | Self::NotAFile(_) => ExitCode::from(3),
-            Self::InvalidFormat(_) => ExitCode::from(4),
-            Self::Io(_) => ExitCode::from(7),
-            Self::ValidationFailed(_) => ExitCode::from(5),
-            Self::Aprender(_) => ExitCode::from(1),
-            Self::ModelLoadFailed(_) => ExitCode::from(6),
-            Self::InferenceFailed(_) => ExitCode::from(8),
-            Self::FeatureDisabled(_) => ExitCode::from(9),
-            Self::NetworkError(_) => ExitCode::from(10),
-            Self::HttpNotFound(_) => ExitCode::from(11),
+            Self::FileNotFound(_) | Self::NotAFile(_) => 3,
+            Self::InvalidFormat(_) | Self::InvalidInput(_) => 4,
+            Self::Io(_) => 7,
+            Self::ValidationFailed(_) => 5,
+            Self::Aprender(_) => 1,
+            Self::ModelLoadFailed(_) => 6,
+            Self::InferenceFailed(_) => 8,
+            Self::FeatureDisabled(_) => 9,
+            Self::NetworkError(_) => 10,
+            Self::HttpNotFound(_) => 11,
         }
     }
 }

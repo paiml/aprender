@@ -1013,6 +1013,7 @@ pub enum ExtendedCommands {
     },
     /// Lint a typical-p sampling observation (CRUX-C-22)
     TypicalPLint {
+        /// Path to captured typical-p sampling observation JSON
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },

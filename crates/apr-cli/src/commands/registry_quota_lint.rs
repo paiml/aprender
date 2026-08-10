@@ -18,6 +18,7 @@
 //! Any missing top-level key is skipped. Non-zero exit + FALSIFY-CRUX-A-22
 //! stderr stamp on any failing gate.
 
+use super::lint_error::{load_json_observation, LintError};
 use crate::commands::registry_quota::{
     classify_pull_against_quota, render_quota_error_json, QuotaOutcome,
 };
@@ -39,21 +40,8 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: RegistryQuotaLintArgs) -> Result<(), String> {
-    let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-A-22: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-A-22: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-A-22: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-A-22: observation is not valid JSON: {e}"))?;
+pub fn run(args: RegistryQuotaLintArgs) -> Result<(), LintError> {
+    let obs: Value = load_json_observation(&args.observation_file, "FALSIFY-CRUX-A-22")?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -81,7 +69,9 @@ pub fn run(args: RegistryQuotaLintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err("FALSIFY-CRUX-A-22: observation has none of quota/atomic/ceiling".into());
+        return Err(LintError::unusable(
+            "FALSIFY-CRUX-A-22: observation has none of quota/atomic/ceiling",
+        ));
     }
 
     if args.json {
@@ -98,7 +88,7 @@ pub fn run(args: RegistryQuotaLintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(LintError::gate_failed(failures.join("\n")));
     }
     Ok(())
 }
@@ -321,29 +311,31 @@ mod tests {
             observation_file: "/no/such/quota.json".to_string(),
             json: false,
         };
-        let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-A-22"));
-        assert!(err.contains("not found"));
+        let err = run(args).unwrap_err().to_string();
+        // The whole *-lint family reports a missing input identically:
+        // "File not found: <path>" with exit 3 (commands::lint_error).
+        assert!(err.contains("File not found"), "got: {err}");
+        assert!(err.contains("/no/such/quota.json"), "got: {err}");
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs("");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("observation file is empty"));
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("not json at all");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("not valid JSON"));
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("none of quota/atomic/ceiling"));
     }
 
@@ -362,14 +354,14 @@ mod tests {
         let f = write_obs(
             r#"{"quota": {"quota": 1000, "used": 600, "incoming": 401, "expected_outcome": "allow"}}"#,
         );
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-22-001"));
     }
 
     #[test]
     fn quota_parse_error_fails() {
         let f = write_obs(r#"{"quota": {"used": 600, "incoming": 401}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-22-001"));
         assert!(err.contains("parse error"));
     }
@@ -396,7 +388,7 @@ mod tests {
         let f = write_obs(
             r#"{"ceiling": {"quota": 1000, "used": 200, "incoming": 300, "expected_outcome": "allow", "expected_post_used_le_quota": false}}"#,
         );
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-22-003"));
     }
 

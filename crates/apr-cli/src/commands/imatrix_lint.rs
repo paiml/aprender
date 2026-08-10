@@ -29,6 +29,7 @@
 //! Any missing top-level key is skipped. Non-zero exit + FALSIFY-CRUX-B-07
 //! stderr stamp on any failing gate.
 
+use super::lint_error::{load_json_observation, LintError};
 use crate::commands::imatrix_classifier::{
     calibration_eval_disjoint, classify_imatrix_improvement, compute_provenance_sha256,
     parse_imatrix_flag, validate_recorded_provenance, ImprovementOutcome, ProvenanceOutcome,
@@ -53,21 +54,8 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: ImatrixLintArgs) -> Result<(), String> {
-    let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-B-07: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-B-07: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-B-07: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-B-07: observation is not valid JSON: {e}"))?;
+pub fn run(args: ImatrixLintArgs) -> Result<(), LintError> {
+    let obs: Value = load_json_observation(&args.observation_file, "FALSIFY-CRUX-B-07")?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -102,10 +90,9 @@ pub fn run(args: ImatrixLintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err(
-            "FALSIFY-CRUX-B-07: observation has none of improvement/leakage/flags/provenance"
-                .into(),
-        );
+        return Err(LintError::unusable(
+            "FALSIFY-CRUX-B-07: observation has none of improvement/leakage/flags/provenance",
+        ));
     }
 
     if args.json {
@@ -122,7 +109,7 @@ pub fn run(args: ImatrixLintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(LintError::gate_failed(failures.join("\n")));
     }
     Ok(())
 }
@@ -318,29 +305,31 @@ mod tests {
             observation_file: "/no/such/im.json".to_string(),
             json: false,
         };
-        let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-B-07"));
-        assert!(err.contains("not found"));
+        let err = run(args).unwrap_err().to_string();
+        // The whole *-lint family reports a missing input identically:
+        // "File not found: <path>" with exit 3 (commands::lint_error).
+        assert!(err.contains("File not found"), "got: {err}");
+        assert!(err.contains("/no/such/im.json"), "got: {err}");
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs("  ");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("observation file is empty"));
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("##");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("not valid JSON"));
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("none of improvement/leakage/flags/provenance"));
     }
 
@@ -354,7 +343,7 @@ mod tests {
     #[test]
     fn improvement_gate_no_gain_fails() {
         let f = write_obs(r#"{"improvement": {"ppl_naive": 100.0, "ppl_calib": 100.0}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-07-001"));
     }
 
@@ -369,7 +358,7 @@ mod tests {
     fn leakage_gate_overlap_fails() {
         let f =
             write_obs(r#"{"leakage": {"calib_hashes": ["a", "b"], "eval_hashes": ["b", "c"]}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-07-001"));
         assert!(err.contains("leakage"));
     }
@@ -392,7 +381,7 @@ mod tests {
     #[test]
     fn flags_gate_mismatch_fails() {
         let f = write_obs(r#"{"flags": {"argv": ["quantize"], "expected_path": "calib.jsonl"}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-07-002"));
     }
 
@@ -412,14 +401,14 @@ mod tests {
             "provenance": { "expected_sha256": "a".repeat(64), "recorded": "b".repeat(64) }
         });
         let f = write_obs(&obs.to_string());
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-07-003"));
     }
 
     #[test]
     fn provenance_gate_missing_input_fails() {
         let f = write_obs(r#"{"provenance": {}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-07-003"));
     }
 

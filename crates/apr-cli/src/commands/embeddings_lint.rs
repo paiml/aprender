@@ -18,6 +18,7 @@
 //! and stamps the FALSIFY id in stderr so CI log scrapers can pinpoint
 //! the violation.
 
+use super::lint_error::{load_json_observation, LintError};
 use crate::commands::embeddings_classifier::{
     classify_determinism, classify_embeddings_response_shape, classify_usage_tokens,
     parse_embeddings_flag, DeterminismOutcome, EmbeddingRow, EmbeddingsFlagOutcome,
@@ -41,21 +42,8 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: EmbeddingsLintArgs) -> Result<(), String> {
-    let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-C-13: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-C-13: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-C-13: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-C-13: observation is not valid JSON: {e}"))?;
+pub fn run(args: EmbeddingsLintArgs) -> Result<(), LintError> {
+    let obs: Value = load_json_observation(&args.observation_file, "FALSIFY-CRUX-C-13")?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -90,9 +78,9 @@ pub fn run(args: EmbeddingsLintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err(
-            "FALSIFY-CRUX-C-13: observation has none of shape/determinism/usage/flag".to_string(),
-        );
+        return Err(LintError::unusable(
+            "FALSIFY-CRUX-C-13: observation has none of shape/determinism/usage/flag",
+        ));
     }
 
     if args.json {
@@ -109,7 +97,7 @@ pub fn run(args: EmbeddingsLintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(LintError::gate_failed(failures.join("\n")));
     }
     Ok(())
 }
@@ -294,29 +282,31 @@ mod tests {
             observation_file: "/no/such/emb.json".to_string(),
             json: false,
         };
-        let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-C-13"));
-        assert!(err.contains("not found"));
+        let err = run(args).unwrap_err().to_string();
+        // The whole *-lint family reports a missing input identically:
+        // "File not found: <path>" with exit 3 (commands::lint_error).
+        assert!(err.contains("File not found"), "got: {err}");
+        assert!(err.contains("/no/such/emb.json"), "got: {err}");
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs("  ");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("observation file is empty"));
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("][");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("not valid JSON"));
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("none of shape/determinism/usage/flag"));
     }
 
@@ -336,7 +326,7 @@ mod tests {
             r#"{"shape": {"input_len": 5, "hidden_size": 3,
                 "data": [{"index": 0, "embedding": [0.1, 0.2, 0.3]}]}}"#,
         );
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-C-13-001"));
     }
 
@@ -355,7 +345,7 @@ mod tests {
     #[test]
     fn usage_gate_mismatch_fails() {
         let f = write_obs(r#"{"usage": {"prompt": 8, "total": 9}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-C-13-003"));
     }
 

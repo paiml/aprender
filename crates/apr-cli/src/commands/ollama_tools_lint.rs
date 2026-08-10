@@ -45,7 +45,7 @@ pub(crate) fn run(
 
 fn run_non_streaming(body: &str, path: &Path, declared: &[String], json: bool) -> Result<()> {
     let response: Value = serde_json::from_str(body).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr ollama-tools-lint: failed to parse JSON from {}: {e}",
             path.display()
         ))
@@ -76,7 +76,7 @@ fn run_stream(body: &str, path: &Path, json: bool) -> Result<()> {
             continue;
         }
         let frame: Value = serde_json::from_str(trimmed).map_err(|e| {
-            CliError::InvalidFormat(format!(
+            CliError::InvalidInput(format!(
                 "apr ollama-tools-lint: invalid NDJSON at line {} of {}: {e}",
                 idx + 1,
                 path.display()
@@ -100,7 +100,7 @@ fn load_declared_tool_names(path: &Path) -> Result<Vec<String>> {
     }
     let body = std::fs::read_to_string(path)?;
     let req: Value = serde_json::from_str(&body).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr ollama-tools-lint: failed to parse request JSON from {}: {e}",
             path.display()
         ))

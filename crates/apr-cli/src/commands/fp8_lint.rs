@@ -17,6 +17,7 @@
 //! Any missing top-level key is skipped. The CLI exits non-zero on any
 //! failing gate and stamps the FALSIFY id in stderr.
 
+use super::lint_error::{load_json_observation, LintError};
 use crate::commands::fp8_classifier::{
     classify_frobenius_error, classify_sm_capability, CapabilityOutcome, FrobeniusOutcome,
     FP8_MAX_FROBENIUS_REL_ERR,
@@ -39,21 +40,8 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: Fp8LintArgs) -> Result<(), String> {
-    let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-B-11: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-B-11: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-B-11: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-B-11: observation is not valid JSON: {e}"))?;
+pub fn run(args: Fp8LintArgs) -> Result<(), LintError> {
+    let obs: Value = load_json_observation(&args.observation_file, "FALSIFY-CRUX-B-11")?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -74,7 +62,9 @@ pub fn run(args: Fp8LintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err("FALSIFY-CRUX-B-11: observation has neither frobenius nor capability".into());
+        return Err(LintError::unusable(
+            "FALSIFY-CRUX-B-11: observation has neither frobenius nor capability",
+        ));
     }
 
     if args.json {
@@ -91,7 +81,7 @@ pub fn run(args: Fp8LintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(LintError::gate_failed(failures.join("\n")));
     }
     Ok(())
 }
@@ -186,29 +176,31 @@ mod tests {
             observation_file: "/no/such/fp8.json".to_string(),
             json: false,
         };
-        let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-B-11"));
-        assert!(err.contains("not found"));
+        let err = run(args).unwrap_err().to_string();
+        // The whole *-lint family reports a missing input identically:
+        // "File not found: <path>" with exit 3 (commands::lint_error).
+        assert!(err.contains("File not found"), "got: {err}");
+        assert!(err.contains("/no/such/fp8.json"), "got: {err}");
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs("");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("observation file is empty"));
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("nope");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("not valid JSON"));
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("neither frobenius nor capability"));
     }
 
@@ -225,7 +217,7 @@ mod tests {
         let f = write_obs(
             r#"{"frobenius": {"original": [1.0, 2.0, 3.0], "reconstructed": [10.0, 20.0, 30.0]}}"#,
         );
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-11-001"));
     }
 
@@ -238,7 +230,7 @@ mod tests {
     #[test]
     fn capability_gate_old_arch_fails() {
         let f = write_obs(r#"{"capability": {"sm": 80}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-11-002"));
     }
 

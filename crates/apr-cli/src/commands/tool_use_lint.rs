@@ -42,7 +42,7 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
 
     let body = std::fs::read_to_string(observation_file)?;
     let obs: Value = serde_json::from_str(&body).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr tool-use-lint: failed to parse JSON from {}: {e}",
             observation_file.display()
         ))
@@ -256,7 +256,7 @@ mod tests {
     fn invalid_json_is_invalid_format() {
         let f = write_obs("not json");
         let err = run(f.path(), false).unwrap_err();
-        assert!(matches!(err, CliError::InvalidFormat(_)));
+        assert!(matches!(err, CliError::InvalidInput(_)));
     }
 
     #[test]

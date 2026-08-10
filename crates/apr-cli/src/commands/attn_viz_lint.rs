@@ -38,7 +38,7 @@ pub(crate) fn run(
             }
             let body_text = std::fs::read_to_string(p)?;
             let body: Value = serde_json::from_str(&body_text).map_err(|e| {
-                CliError::InvalidFormat(format!(
+                CliError::InvalidInput(format!(
                     "apr attn-viz-lint: failed to parse JSON from {}: {e}",
                     p.display()
                 ))
