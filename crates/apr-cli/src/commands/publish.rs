@@ -74,6 +74,147 @@ fn format_upload_route(_size_bytes: u64) -> &'static str {
     "[? hf-hub feature off]"
 }
 
+/// One file the dry run would upload.
+#[derive(Debug)]
+pub(crate) struct PlannedFile {
+    pub(crate) path: String,
+    pub(crate) size_bytes: u64,
+    /// `artifact`, `extra-file`, or `manifest`.
+    pub(crate) kind: &'static str,
+    pub(crate) route: &'static str,
+}
+
+/// What `apr publish --dry-run` would do, separated from how it is rendered.
+///
+/// Resolution and rendering are kept apart so that the exact bytes written to
+/// stdout in JSON mode are [`DryRunPlan::to_json`] — a unit test over that
+/// string tests what a consumer will parse.
+#[derive(Debug)]
+pub(crate) struct DryRunPlan {
+    pub(crate) repo_id: String,
+    pub(crate) files: Vec<PlannedFile>,
+    /// `None` when a manifest supplies provenance and README generation is suppressed.
+    pub(crate) readme: Option<String>,
+}
+
+impl DryRunPlan {
+    /// The complete stdout of `apr publish --dry-run`, in whichever mode was
+    /// asked for. Under `--json` that is exactly one JSON document — note that
+    /// the generated model card lands in the `readme` string field, where it
+    /// cannot corrupt the document the way the raw YAML front-matter did.
+    pub(crate) fn stdout(&self, json: bool) -> String {
+        if json {
+            self.to_json()
+        } else {
+            self.to_human()
+        }
+    }
+
+    // serde_json::json!() uses infallible unwrap internally
+    #[allow(clippy::disallowed_methods)]
+    fn to_json(&self) -> String {
+        let files: Vec<serde_json::Value> = self
+            .files
+            .iter()
+            .map(|f| {
+                serde_json::json!({
+                    "path": f.path,
+                    "size_bytes": f.size_bytes,
+                    "kind": f.kind,
+                    "route": f.route,
+                })
+            })
+            .collect();
+        let doc = serde_json::json!({
+            "repo_id": self.repo_id,
+            "mode": "dry-run",
+            "files": files,
+            "readme": self.readme,
+        });
+        serde_json::to_string_pretty(&doc).unwrap_or_default()
+    }
+
+    fn to_human(&self) -> String {
+        use std::fmt::Write as _;
+        let mut out = format!("=== DRY RUN: Would publish to {} ===\n\n", self.repo_id);
+        out.push_str("Files to upload:\n");
+        for f in &self.files {
+            // The manifest line keeps its own KB rendering and carries no upload
+            // route, exactly as before — only the JSON mode is new here.
+            let _ = match f.kind {
+                "manifest" => writeln!(
+                    out,
+                    "  - {} ({:.1} KB) [manifest]",
+                    f.path,
+                    f.size_bytes as f64 / 1_000.0
+                ),
+                "artifact" => writeln!(
+                    out,
+                    "  - {} ({:.1} MB) {}",
+                    f.path,
+                    f.size_bytes as f64 / 1_000_000.0,
+                    f.route
+                ),
+                other => writeln!(
+                    out,
+                    "  - {} ({:.1} MB) [{}] {}",
+                    f.path,
+                    f.size_bytes as f64 / 1_000_000.0,
+                    other,
+                    f.route
+                ),
+            };
+        }
+        match &self.readme {
+            Some(readme) => {
+                let _ = write!(out, "\nGenerated README.md:\n\n{readme}\n");
+            }
+            None => out.push_str(
+                "\n(README.md auto-generation suppressed: manifest provides provenance)\n",
+            ),
+        }
+        out.push_str("\n=== DRY RUN COMPLETE ===");
+        out
+    }
+}
+
+pub(crate) fn build_dry_run_plan(
+    repo_id: &str,
+    files: &[std::path::PathBuf],
+    extra_files: &[std::path::PathBuf],
+    manifest: Option<&Path>,
+    readme_content: &str,
+) -> DryRunPlan {
+    let mut planned = Vec::new();
+    let mut push = |path: &Path, kind: &'static str| {
+        let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        planned.push(PlannedFile {
+            path: path.display().to_string(),
+            size_bytes: size,
+            kind,
+            route: format_upload_route(size),
+        });
+    };
+    for f in files {
+        push(f, "artifact");
+    }
+    for ef in extra_files {
+        push(ef, "extra-file");
+    }
+    if let Some(m) = manifest {
+        push(m, "manifest");
+    }
+    DryRunPlan {
+        repo_id: repo_id.to_string(),
+        files: planned,
+        readme: if manifest.is_some() {
+            None
+        } else {
+            Some(readme_content.to_string())
+        },
+    }
+}
+
 /// Upload model files, sidecars, and either the manifest (when provided) or an
 /// auto-generated README to HuggingFace Hub. Extends `upload_to_hub` for
 /// F-PUBLISH-EXTRA-001: iterates extra_files and uploads manifest.yaml verbatim.
@@ -284,6 +425,7 @@ pub fn execute(
     verbose: bool,
     manifest: Option<&Path>,
     extra_files: &[std::path::PathBuf],
+    json: bool,
 ) -> Result<(), CliError> {
     // When --manifest is provided, the manifest declares the single artifact
     // being shipped for this invocation. We restrict `files` to just that
@@ -376,39 +518,8 @@ pub fn execute(
     };
 
     if dry_run {
-        println!("=== DRY RUN: Would publish to {} ===\n", repo_id);
-        println!("Files to upload:");
-        for f in &files {
-            let size = fs::metadata(f).map(|m| m.len()).unwrap_or(0);
-            println!(
-                "  - {} ({:.1} MB) {}",
-                f.display(),
-                size as f64 / 1_000_000.0,
-                format_upload_route(size)
-            );
-        }
-        for ef in extra_files {
-            let size = fs::metadata(ef).map(|m| m.len()).unwrap_or(0);
-            println!(
-                "  - {} ({:.1} MB) [extra-file] {}",
-                ef.display(),
-                size as f64 / 1_000_000.0,
-                format_upload_route(size)
-            );
-        }
-        if let Some(m) = manifest {
-            let size = fs::metadata(m).map(|meta| meta.len()).unwrap_or(0);
-            println!(
-                "  - {} ({:.1} KB) [manifest]",
-                m.display(),
-                size as f64 / 1_000.0
-            );
-            println!("\n(README.md auto-generation suppressed: manifest provides provenance)");
-        } else {
-            println!("\nGenerated README.md:\n");
-            println!("{}", readme_content);
-        }
-        println!("\n=== DRY RUN COMPLETE ===");
+        let plan = build_dry_run_plan(repo_id, &files, extra_files, manifest, &readme_content);
+        println!("{}", plan.stdout(json));
         return Ok(());
     }
 

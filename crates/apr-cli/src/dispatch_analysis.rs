@@ -1549,6 +1549,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             cli.verbose,
             None,
             &[],
+            cli.json,
         ),
 
         ExtendedCommands::Tools(ToolCommands::Encrypt {

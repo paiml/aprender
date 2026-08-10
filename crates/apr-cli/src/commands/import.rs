@@ -26,6 +26,7 @@ pub(crate) fn run(
     tokenizer: Option<&PathBuf>,
     enforce_provenance: bool,
     allow_no_config: bool,
+    json: bool,
 ) -> Result<()> {
     contract_pre_format_conversion_roundtrip!();
     contract_pre_import_format_detection!();
@@ -60,7 +61,7 @@ pub(crate) fn run(
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"))
         {
-            return run_q4k_import(source_path, output);
+            return run_q4k_import(source_path, output, json);
         }
     }
 
@@ -78,18 +79,21 @@ pub(crate) fn run(
     let parsed_source = Source::parse(source)
         .map_err(|e| CliError::ValidationFailed(format!("Invalid source: {e}")))?;
 
-    output::header("APR Import Pipeline");
-
     let source_desc = describe_source(&parsed_source);
 
-    println!(
-        "{}",
-        output::kv_table(&[
-            ("Source", source_desc),
-            ("Output", output.display().to_string()),
-        ])
-    );
-    println!();
+    // `--json` promises a machine-readable stdout: the banner and the aligned
+    // key/value tables are human decoration and must not precede the document.
+    if !json {
+        output::header("APR Import Pipeline");
+        println!(
+            "{}",
+            output::kv_table(&[
+                ("Source", source_desc.clone()),
+                ("Output", output.display().to_string()),
+            ])
+        );
+        println!();
+    }
 
     // Build import options
     let architecture = parse_architecture(arch)?;
@@ -108,11 +112,20 @@ pub(crate) fn run(
         allow_no_config,
     };
 
-    print_import_config(&options);
+    if !json {
+        print_import_config(&options);
+        output::pipeline_stage("Importing", output::StageStatus::Running);
+    }
+    let describe = ImportDescription {
+        source: source_desc,
+        output: output.display().to_string(),
+        architecture: format!("{:?}", options.architecture),
+        validation: format!("{:?}", options.validation),
+        quantize: options.quantize.as_ref().map(|q| format!("{q:?}")),
+    };
 
     // Run import pipeline
-    output::pipeline_stage("Importing", output::StageStatus::Running);
-    let result = print_import_result(apr_import(source, output, options));
+    let result = print_import_result(apr_import(source, output, options), &describe, json);
     contract_post_format_conversion_roundtrip!(&());
     contract_post_import_format_detection!(&());
     contract_post_import_integrity!(&());
@@ -188,15 +201,63 @@ fn print_import_config(options: &ImportOptions) {
     println!();
 }
 
+/// What the import resolved before running, so the `--json` document can echo
+/// the same facts the human key/value tables show.
+pub(crate) struct ImportDescription {
+    pub(crate) source: String,
+    pub(crate) output: String,
+    pub(crate) architecture: String,
+    pub(crate) validation: String,
+    pub(crate) quantize: Option<String>,
+}
+
+/// The complete stdout of a successful `apr import --json`.
+///
+/// Rendering is kept separate from the pipeline so a unit test can assert the
+/// exact string a consumer parses.
+// serde_json::json!() uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn import_json_stdout(
+    describe: &ImportDescription,
+    score: u8,
+    grade: &str,
+    passed: bool,
+) -> String {
+    let doc = serde_json::json!({
+        "source": describe.source,
+        "output": describe.output,
+        "architecture": describe.architecture,
+        "validation": describe.validation,
+        "quantize": describe.quantize,
+        "score": score,
+        "grade": grade,
+        "status": if passed { "ok" } else { "warnings" },
+    });
+    serde_json::to_string_pretty(&doc).unwrap_or_default()
+}
+
 /// Print import result with validation report.
 fn print_import_result(
     result: std::result::Result<aprender::format::ValidationReport, aprender::error::AprenderError>,
+    describe: &ImportDescription,
+    json: bool,
 ) -> Result<()> {
     match result {
         Ok(report) => {
+            let grade = report.grade();
+            let passed = report.passed(95);
+
+            if json {
+                // Exactly one JSON document on stdout, nothing else.
+                println!(
+                    "{}",
+                    import_json_stdout(describe, report.total_score, grade, passed)
+                );
+                return Ok(());
+            }
+
             println!();
             output::subheader("Validation Report");
-            let grade = report.grade();
             println!(
                 "{}",
                 output::kv_table(&[
@@ -206,7 +267,7 @@ fn print_import_result(
             );
             println!();
 
-            if report.passed(95) {
+            if passed {
                 println!("  {}", output::badge_pass("Import successful"));
             } else {
                 println!("  {}", output::badge_warn("Import completed with warnings"));
@@ -215,8 +276,13 @@ fn print_import_result(
             Ok(())
         }
         Err(e) => {
-            println!();
-            println!("  {}", output::badge_fail("Import failed"));
+            // Under `--json` the diagnostic travels on stderr and the exit code
+            // carries the outcome, so a consumer parsing stdout sees a whole
+            // document or nothing at all — never a half-written one.
+            if !json {
+                println!();
+                println!("  {}", output::badge_fail("Import failed"));
+            }
             Err(CliError::ValidationFailed(e.to_string()))
         }
     }
@@ -239,29 +305,66 @@ fn parse_quantize(
     }
 }
 
+/// The complete stdout of a successful `apr import --preserve-q4k --json`.
+// serde_json::json!() uses infallible unwrap internally
+#[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn q4k_import_json_stdout(
+    source: &str,
+    output: &str,
+    stats: &realizar::convert::Q4KConversionStats,
+) -> String {
+    let doc = serde_json::json!({
+        "source": source,
+        "output": output,
+        "mode": "q4k",
+        "tensor_count": stats.tensor_count,
+        "q4k_tensor_count": stats.q4k_tensor_count,
+        "total_bytes": stats.total_bytes,
+        "architecture": stats.architecture,
+        "num_layers": stats.num_layers,
+        "hidden_size": stats.hidden_size,
+        "status": "ok",
+    });
+    serde_json::to_string_pretty(&doc).unwrap_or_default()
+}
+
 /// PMAT-103: Import GGUF file to APR with Q4K quantization preserved
 ///
 /// This uses realizar's `GgufToAprQ4KConverter` to create an APR file
 /// that preserves raw Q4K bytes for fused kernel inference.
 #[cfg(feature = "inference")]
-fn run_q4k_import(source: &Path, output: &Path) -> Result<()> {
+fn run_q4k_import(source: &Path, output: &Path, json: bool) -> Result<()> {
     use humansize::{format_size, BINARY};
     use realizar::convert::GgufToAprQ4KConverter;
 
-    output::header("APR Q4K Import (Fused Kernel)");
-    println!(
-        "{}",
-        output::kv_table(&[
-            ("Source", format!("{} (GGUF)", source.display())),
-            ("Output", format!("{} (APR with Q4K)", output.display())),
-        ])
-    );
-    println!();
-    output::pipeline_stage("Preserving Q4K quantization", output::StageStatus::Running);
+    if !json {
+        output::header("APR Q4K Import (Fused Kernel)");
+        println!(
+            "{}",
+            output::kv_table(&[
+                ("Source", format!("{} (GGUF)", source.display())),
+                ("Output", format!("{} (APR with Q4K)", output.display())),
+            ])
+        );
+        println!();
+        output::pipeline_stage("Preserving Q4K quantization", output::StageStatus::Running);
+    }
 
     // Use realizar's Q4K converter
     match GgufToAprQ4KConverter::convert(source, output) {
         Ok(stats) => {
+            if json {
+                println!(
+                    "{}",
+                    q4k_import_json_stdout(
+                        &source.display().to_string(),
+                        &output.display().to_string(),
+                        &stats,
+                    )
+                );
+                return Ok(());
+            }
             println!();
             output::subheader("Q4K Import Report");
             println!(
@@ -284,8 +387,10 @@ fn run_q4k_import(source: &Path, output: &Path) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            println!();
-            println!("  {}", output::badge_fail("Q4K import failed"));
+            if !json {
+                println!();
+                println!("  {}", output::badge_fail("Q4K import failed"));
+            }
             Err(CliError::ValidationFailed(e.to_string()))
         }
     }
