@@ -12,7 +12,7 @@
         let fps_a = vec![make_fingerprint("tensor_a", 0.5, 1.0, 0, 0)];
         let fps_b = vec![make_fingerprint("tensor_a", 0.5, 1.0, 0, 5)];
         let result = print_fingerprint_diff(&fps_a, &fps_b, false, false);
-        assert!(result.is_ok());
+        assert!(result.is_err(), "infinities only in B must fail the diff");
     }
 
     #[test]
@@ -27,7 +27,10 @@
             make_fingerprint("t2", 50.0, 1.0, 3, 0), // anomaly
         ];
         let result = print_fingerprint_diff(&fps_a, &fps_b, true, false);
-        assert!(result.is_ok());
+        assert!(
+            result.is_err(),
+            "one anomalous tensor and one missing tensor must fail the diff"
+        );
     }
 
     // ====================================================================

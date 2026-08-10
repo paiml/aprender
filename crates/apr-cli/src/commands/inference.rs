@@ -38,6 +38,8 @@ pub fn run_verify(source: &Path, intermediate: &str, tolerance: f32, json: bool)
         .verify_roundtrip(source, intermediate_format)
         .map_err(|e| CliError::ValidationFailed(format!("Verification failed: {e}")))?;
 
+    let passed = report.passes_with_tolerance(tolerance);
+
     if json {
         print_verification_json(&report);
     } else {
@@ -56,14 +58,34 @@ pub fn run_verify(source: &Path, intermediate: &str, tolerance: f32, json: bool)
         }
 
         println!();
-        if report.passes_with_tolerance(tolerance) {
+        if passed {
             println!("{}", "Round-trip verification PASSED".green().bold());
         } else {
             println!("{}", "Round-trip verification FAILED".red().bold());
         }
     }
 
-    Ok(())
+    verify_outcome(&report, tolerance)
+}
+
+/// Turn a round-trip verification report into the command's exit status.
+///
+/// A verification command that prints "Round-trip verification FAILED" must not
+/// exit 0: a `set -e` pipeline would otherwise treat a broken round-trip as a pass,
+/// and the exit status of `rosetta verify` would carry no information at all.
+fn verify_outcome(report: &VerificationReport, tolerance: f32) -> Result<()> {
+    if report.passes_with_tolerance(tolerance) {
+        return Ok(());
+    }
+    let detail = if report.failed_tensors.is_empty() {
+        String::new()
+    } else {
+        format!(" Failed tensors: {}.", report.failed_tensors.join(", "))
+    };
+    Err(CliError::ValidationFailed(format!(
+        "Round-trip verification FAILED: is_equivalent={}, max_diff={:.2e} exceeds tolerance {:.2e}.{}",
+        report.is_equivalent, report.max_diff, tolerance, detail
+    )))
 }
 
 /// Print the header box for inference comparison report
@@ -99,6 +121,20 @@ fn print_compare_header(model_a: &Path, model_b: &Path, prompt: &str) {
     );
 }
 
+/// Did the inference comparison pass?
+///
+/// A run that compared zero token pairs never passes: `passed` must not be derived
+/// from `mismatches == 0` when there was nothing to mismatch. That is how
+/// `compare-inference` used to report `"passed": true` / "MATCH (100%)" for two
+/// models that produced completely different text.
+fn compare_passed(total_tokens: usize, mismatches: usize, tolerance: f32) -> bool {
+    if total_tokens == 0 {
+        return false;
+    }
+    let match_rate = 1.0 - (mismatches as f32 / total_tokens as f32);
+    mismatches == 0 || (1.0 - match_rate) <= tolerance
+}
+
 /// Print JSON output for inference comparison
 #[allow(clippy::too_many_arguments)]
 fn print_compare_json(
@@ -117,6 +153,8 @@ fn print_compare_json(
         0.0
     };
 
+    let passed = compare_passed(total_tokens, mismatches, tolerance);
+
     println!("{{");
     println!("  \"model_a\": \"{}\",", model_a.display());
     println!("  \"model_b\": \"{}\",", model_b.display());
@@ -126,14 +164,17 @@ fn print_compare_json(
     println!("  \"match_rate\": {:.4},", match_rate);
     println!("  \"text_a\": {:?},", text_a);
     println!("  \"text_b\": {:?},", text_b);
-    println!(
-        "  \"passed\": {}",
-        mismatches == 0 || (1.0 - match_rate as f32) <= tolerance
-    );
+    println!("  \"passed\": {}", passed);
     println!("}}");
 }
 
 /// Validate that tokens were captured from both models (GH-188)
+///
+/// Called only when zero token pairs were captured. Every path here is a failure:
+/// a comparison that compared nothing is vacuous, not successful. Previously the
+/// function returned `Ok(())` whenever both models happened to emit *some* text,
+/// which let `compare-inference` report "INFERENCE MATCH (100%)" and exit 0 while
+/// the two models had produced completely different output.
 fn validate_captured_tokens(text_a: &str, text_b: &str) -> Result<()> {
     let a_empty = text_a.is_empty() || text_a.contains("tok/s");
     let b_empty = text_b.is_empty() || text_b.contains("tok/s");
@@ -154,7 +195,13 @@ fn validate_captured_tokens(text_a: &str, text_b: &str) -> Result<()> {
             text_a
         )));
     }
-    Ok(())
+    Err(CliError::ValidationFailed(format!(
+        "VACUOUS COMPARISON: 0 token pairs were captured, so no tokens were compared. \
+         The verification is vacuous, not successful. \
+         Both models emitted text (A: {:?}, B: {:?}) but APR_TRACE_LOGITS produced no \
+         per-token logits to compare.",
+        text_a, text_b
+    )))
 }
 
 /// Run the rosetta compare-inference subcommand (PMAT-114)

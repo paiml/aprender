@@ -170,9 +170,19 @@ impl RosettaStone {
                 None
             }
         });
+        // Sharded SafeTensors are unquantized, so --quantize applies to the APR write.
+        // Rejects an unrecognised value here too, before any work is done.
+        let parsed_quantize = parse_quantization(opts.quantization.as_deref())?;
+        // Multi-hop conversions quantize at the final export, not at the temp APR.
+        let import_quantize = if target_format == FormatType::Apr {
+            parsed_quantize
+        } else {
+            None
+        };
         let import_opts = ImportOptions {
             tokenizer_path: effective_tokenizer,
             allow_no_config: true, // Sharded models may have config.json; let import warn
+            quantize: import_quantize,
             ..ImportOptions::default()
         };
 
@@ -215,21 +225,23 @@ impl RosettaStone {
         // GH-205 FIX: Map ConversionOptions.quantization to ExportOptions.quantize
         // Previously opts was ignored, causing F32 GGUF export even when quantization requested.
         // Note: Q6_K maps to Q4K since that's what realizar's inference supports.
-        let export_quantize =
-            opts.quantization
-                .as_ref()
-                .and_then(|q| match q.to_lowercase().as_str() {
-                    "q4_k" | "q4_k_m" | "int4" | "q6_k" => Some(QuantizationType::Q4K),
-                    "int8" | "q8_0" => Some(QuantizationType::Int8),
-                    "fp16" | "f16" => Some(QuantizationType::Fp16),
-                    _ => None,
-                });
+        // An unrecognised value is an error, not a silent no-op: `--quantize BOGUS_XYZ`
+        // used to be accepted with exit 0 and produce an unquantized file.
+        let export_quantize = parse_quantization(opts.quantization.as_deref())?;
 
         match (source_format, target_format) {
             // GGUF/SafeTensors → APR (same conversion path via apr_import)
             // GH-196: Default ImportOptions are permissive (strict=false),
             // so format conversion proceeds with warnings for unverified architectures.
             (FormatType::Gguf | FormatType::SafeTensors, FormatType::Apr) => {
+                if source_format == FormatType::Gguf && export_quantize.is_some() {
+                    return Err(AprenderError::FormatError {
+                        message: "Cannot re-quantize a GGUF source: its tensors are already \
+                                  quantized, and requantizing them would compound the error. \
+                                  Drop --quantize, or start from an unquantized SafeTensors model."
+                            .to_string(),
+                    });
+                }
                 let source_str = source.to_string_lossy();
                 let effective_tokenizer = opts.tokenizer_path.clone().or_else(|| {
                     let sibling = source.with_file_name("tokenizer.json");
@@ -242,6 +254,9 @@ impl RosettaStone {
                 let import_opts = ImportOptions {
                     tokenizer_path: effective_tokenizer,
                     allow_no_config: true,
+                    // Previously left at ImportOptions::default() (None), so every
+                    // `--quantize` value was a no-op for APR targets.
+                    quantize: export_quantize,
                     ..ImportOptions::default()
                 };
                 apr_import(&source_str, target, import_opts)?;
@@ -268,6 +283,14 @@ impl RosettaStone {
 
             // APR → SafeTensors
             (FormatType::Apr, FormatType::SafeTensors) => {
+                if export_quantize.is_some() {
+                    return Err(AprenderError::FormatError {
+                        message: "SafeTensors export does not support --quantize; \
+                                  SafeTensors carries no k-quant block layout. \
+                                  Convert to .gguf or .apr instead."
+                            .to_string(),
+                    });
+                }
                 apr_export(
                     source,
                     target,
@@ -282,7 +305,16 @@ impl RosettaStone {
             // GGUF → SafeTensors (via APR)
             (FormatType::Gguf, FormatType::SafeTensors) => {
                 let temp_apr = std::env::temp_dir().join("rosetta_temp.apr");
-                self.convert_internal(source, &temp_apr, FormatType::Gguf, FormatType::Apr, opts)?;
+                // Quantization belongs to the final hop only; quantizing the temp APR
+                // as well would quantize the same weights twice.
+                let hop_opts = opts.without_quantization();
+                self.convert_internal(
+                    source,
+                    &temp_apr,
+                    FormatType::Gguf,
+                    FormatType::Apr,
+                    &hop_opts,
+                )?;
                 self.convert_internal(
                     &temp_apr,
                     target,
@@ -297,12 +329,13 @@ impl RosettaStone {
             // SafeTensors → GGUF (via APR)
             (FormatType::SafeTensors, FormatType::Gguf) => {
                 let temp_apr = std::env::temp_dir().join("rosetta_temp.apr");
+                let hop_opts = opts.without_quantization();
                 self.convert_internal(
                     source,
                     &temp_apr,
                     FormatType::SafeTensors,
                     FormatType::Apr,
-                    opts,
+                    &hop_opts,
                 )?;
                 self.convert_internal(&temp_apr, target, FormatType::Apr, FormatType::Gguf, opts)?;
                 let _ = std::fs::remove_file(temp_apr);
