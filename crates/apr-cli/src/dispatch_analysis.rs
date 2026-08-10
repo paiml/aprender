@@ -771,6 +771,11 @@ fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Res
             threshold,
             json: json_flag,
         } => data::run_decontaminate(file, reference, *ngram, *threshold, *json_flag || json),
+        DataCommands::Dedup {
+            file,
+            output,
+            json: json_flag,
+        } => data::run_dedup(file, output, *json_flag || json),
     }
 }
 
