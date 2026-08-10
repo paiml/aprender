@@ -28,7 +28,18 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         output::header("APR Quality Assurance");
         let config_pairs = vec![
             ("Model", path.display().to_string()),
-            ("Min TPS", format!("{:.0} tok/s", config.min_tps)),
+            // Report the threshold the gate will actually apply. The banner
+            // used to print the raw `--assert-tps` value while the gate ran
+            // against a tenth of it, so the header contradicted the gate
+            // directly beneath it ("Min TPS 100 tok/s" over
+            // "FAIL Throughput 4.5 tok/s < 10 tok/s threshold").
+            (
+                "Min TPS",
+                match config.min_tps {
+                    Some(asserted) => format!("{asserted:.0} tok/s (--assert-tps)"),
+                    None => "10 tok/s (GGUF default)".to_string(),
+                },
+            ),
             ("Min Speedup", format!("{:.1}x Ollama", config.min_speedup)),
         ];
         println!("{}", output::kv_table(&config_pairs));

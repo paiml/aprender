@@ -6,12 +6,12 @@
         let min_speedup: Option<f64> = Some(1.5);
         let min_gpu_speedup: Option<f64> = Some(3.0);
         let config = QaConfig {
-            min_tps: min_tps.unwrap_or(100.0),
+            min_tps,
             min_speedup: min_speedup.unwrap_or(0.2),
             min_gpu_speedup: min_gpu_speedup.unwrap_or(2.0),
             ..Default::default()
         };
-        assert!((config.min_tps - 50.0).abs() < f64::EPSILON);
+        assert_eq!(config.min_tps, Some(50.0));
         assert!((config.min_speedup - 1.5).abs() < f64::EPSILON);
         assert!((config.min_gpu_speedup - 3.0).abs() < f64::EPSILON);
     }

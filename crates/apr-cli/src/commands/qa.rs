@@ -139,8 +139,14 @@ mod brick_tracer_shim {
 /// QA configuration
 #[derive(Debug, Clone)]
 pub struct QaConfig {
-    /// Minimum throughput in tok/s (default: 100 for GPU, 10 for CPU)
-    pub min_tps: f64,
+    /// Throughput floor asserted by the user via `--assert-tps`, in tok/s.
+    ///
+    /// `None` means the user asserted nothing, and the throughput gate picks a
+    /// format-aware default instead (see `speedup.rs`). This has to stay an
+    /// `Option`: collapsing it to a plain `f64` with a default is what let the
+    /// gate confuse "the user demanded 100 tok/s" with "nobody said anything",
+    /// and then quietly substitute its own much lower number for both.
+    pub min_tps: Option<f64>,
     /// Minimum speedup vs Ollama (default: 2.0x)
     pub min_speedup: f64,
     /// Minimum GPU vs CPU speedup (default: 2.0x) - F-PERF-042
@@ -190,7 +196,7 @@ pub struct QaConfig {
 impl Default for QaConfig {
     fn default() -> Self {
         Self {
-            min_tps: 100.0,       // GPU target
+            min_tps: None,        // no assertion; the gate picks a format-aware default
             min_speedup: 0.2, // Ollama uses llama.cpp optimized kernels; 0.2x is realistic floor
             min_gpu_speedup: 2.0, // GPU must be 2x faster than CPU (F-PERF-042)
             skip_golden: false,
@@ -401,7 +407,7 @@ pub fn run(
 ) -> Result<()> {
     contract_pre_qa_gate_composition!();
     let config = QaConfig {
-        min_tps: min_tps.unwrap_or(100.0),
+        min_tps,
         min_speedup: min_speedup.unwrap_or(0.2), // Ollama uses llama.cpp optimized kernels
         min_gpu_speedup: min_gpu_speedup.unwrap_or(2.0), // GPU must be 2x faster (F-PERF-042)
         skip_golden,
