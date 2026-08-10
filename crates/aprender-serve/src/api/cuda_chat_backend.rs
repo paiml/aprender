@@ -160,7 +160,6 @@ async fn try_cuda_backend(
             request.model.clone(),
             state.metrics.clone(),
             start,
-            false,
         ));
     }
 
@@ -281,7 +280,6 @@ fn try_quantized_backend(
             request.model.clone(),
             state.metrics.clone(),
             start,
-            true,
         ));
     }
 
@@ -791,7 +789,6 @@ fn try_qwen3_moe_backend(
             request.model.clone(),
             state.metrics.clone(),
             start,
-            true,
         ));
     }
 
