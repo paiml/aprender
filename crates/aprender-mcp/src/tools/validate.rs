@@ -10,6 +10,7 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::tools::args::{self, try_arg};
 use crate::tools::subprocess::run_apr;
 use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
 
@@ -41,9 +42,7 @@ pub fn validate_tool_definition() -> ToolDefinition {
 /// Execute `apr.validate` by spawning `apr validate <model_path> --json`.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
-    };
+    let model_path = try_arg!(args::required_str(args, "model_path"));
     run_apr(&["validate", model_path, "--json"])
 }
 

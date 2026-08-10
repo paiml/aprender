@@ -239,6 +239,19 @@ fn execute_inference(
     }
 }
 
+/// Map a realizar inference failure onto `CliError::InferenceFailed`.
+///
+/// #2403: the variant already renders as `"Inference failed: {0}"`
+/// (`error.rs:45`), so wrapping the payload in another `"Inference failed: "`
+/// printed the context twice — `apr run` on an unsupported architecture
+/// emitted `error: Inference failed: Inference failed: Format error: ...`,
+/// which is what MCP clients relayed verbatim. The payload must carry the
+/// underlying diagnosis only.
+#[cfg(feature = "inference")]
+fn inference_error<E: std::fmt::Display>(e: E) -> CliError {
+    CliError::InferenceFailed(e.to_string())
+}
+
 /// Execute inference using realizar engine
 ///
 /// Per spec APR-CLI-DELEGATE-001: All inference delegates to realizar's
@@ -295,8 +308,7 @@ fn execute_with_realizar(
     }
 
     // Run inference via realizar
-    let result = run_inference(&config)
-        .map_err(|e| CliError::InferenceFailed(format!("Inference failed: {e}")))?;
+    let result = run_inference(&config).map_err(inference_error)?;
 
     // Report performance if benchmarking
     if options.benchmark {
@@ -376,4 +388,31 @@ fn execute_with_whisper(
         used_gpu: Some(false),
         generated_tokens: None,
     })
+}
+
+#[cfg(all(test, feature = "inference"))]
+mod tests_2403 {
+    use super::inference_error;
+
+    /// #2403 — `apr run` on a qwen3.5 GGUF emitted
+    /// `error: Inference failed: Inference failed: Format error: ...`, and MCP
+    /// relayed that doubled prefix verbatim. The context belongs to the error
+    /// variant's Display, not to the payload.
+    #[test]
+    fn inference_context_appears_exactly_once() {
+        let rendered = inference_error(
+            "Format error: Architecture 'qwen35' uses SSM/Gated Delta Net layers",
+        )
+        .to_string();
+
+        assert_eq!(
+            rendered.matches("Inference failed:").count(),
+            1,
+            "context applied more than once: {rendered}"
+        );
+        assert_eq!(
+            rendered,
+            "Inference failed: Format error: Architecture 'qwen35' uses SSM/Gated Delta Net layers"
+        );
+    }
 }

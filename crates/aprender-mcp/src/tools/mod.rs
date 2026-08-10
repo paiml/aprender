@@ -9,6 +9,7 @@
 //!   see FALSIFY-MCP-PROGRESS-001) + `notifications/cancelled` →
 //!   SIGTERM→SIGKILL for `apr.run` (FALSIFY-MCP-006).
 
+pub mod args;
 pub mod bench;
 pub mod finetune;
 pub mod qa;

@@ -347,6 +347,26 @@ fn build_instruct_config(
 ///   4. Fix: Use InstructPipeline::from_apr() + InstructTrainer::train()
 ///
 /// Contract: qlora-training-loop-v1 (frozen_base, lora_forward, response_only_loss)
+/// #2417: reject a base model the training pipeline cannot open, naming the
+/// actual limitation and the command that fixes it.
+///
+/// `apr.finetune`'s `inputSchema` advertises `.apr`, `.gguf` and
+/// `.safetensors`; only `.apr` can currently be trained from. Saying so is the
+/// difference between a usable diagnostic and "Invalid magic: e00a0000".
+#[cfg(feature = "training")]
+fn ensure_apr_base_model(model_path: &Path) -> Result<()> {
+    if super::model_config::is_apr_file(model_path) {
+        return Ok(());
+    }
+    Err(CliError::ValidationFailed(format!(
+        "Fine-tuning requires an APR base model; '{}' is not one. \
+         The LoRA/QLoRA training pipeline reads .apr only. \
+         Convert first: `apr convert {} -o base.apr`, then fine-tune base.apr.",
+        model_path.display(),
+        model_path.display(),
+    )))
+}
+
 #[cfg(feature = "training")]
 fn execute_training(
     model_path: &Path,
@@ -363,6 +383,13 @@ fn execute_training(
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::InstructPipeline;
     use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
+
+    // 0. #2417: every training path below ends in `InstructPipeline::from_apr`,
+    // which reads APR only. A .safetensors or .gguf base used to reach that
+    // call and fail as "Failed to open APR file '<model>.safetensors': Invalid
+    // magic" — a message naming a format the caller never mentioned, after a
+    // full plan had already been printed. Reject it here, actionably.
+    ensure_apr_base_model(model_path)?;
 
     // 1. Resolve model config from APR metadata (GH-376: pass model_size for GGUF files)
     let model_config =
@@ -2239,3 +2266,64 @@ mod contract_tests;
 #[cfg(test)]
 #[path = "finetune_display_tests.rs"]
 mod display_tests;
+
+#[cfg(all(test, feature = "training"))]
+mod tests_2417 {
+    use super::ensure_apr_base_model;
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("apr-2417-ft-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create scratch dir");
+        dir
+    }
+
+    /// #2417 — a .safetensors base reached `InstructPipeline::from_apr` and
+    /// died as "Failed to open APR file '<model>.safetensors': Invalid magic:
+    /// e00a0000", after printing a full training plan. The rejection must name
+    /// the real limitation and the command that fixes it.
+    #[test]
+    fn safetensors_base_is_rejected_with_an_actionable_message() {
+        let dir = scratch("st");
+        let model = dir.join("base.safetensors");
+        // Real safetensors: 8-byte little-endian header length, then JSON.
+        let header = br#"{"__metadata__":{"format":"pt"}}"#;
+        let mut bytes = (header.len() as u64).to_le_bytes().to_vec();
+        bytes.extend_from_slice(header);
+        std::fs::write(&model, &bytes).expect("write model");
+
+        let err = ensure_apr_base_model(&model).expect_err("safetensors cannot be trained from");
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("Invalid magic"),
+            "message leaks the loader's internals: {msg}"
+        );
+        assert!(msg.contains("base.safetensors"), "{msg}");
+        assert!(
+            msg.contains("apr convert"),
+            "message must say how to proceed: {msg}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The positive control: an APR v2 header passes the preflight untouched,
+    /// so the check cannot break the one format that does work.
+    #[test]
+    fn apr_base_passes_the_preflight() {
+        let dir = scratch("apr");
+        let model = dir.join("base.apr");
+        let mut bytes = b"APR\0".to_vec();
+        bytes.resize(128, 0);
+        std::fs::write(&model, &bytes).expect("write model");
+
+        ensure_apr_base_model(&model).expect("an APR base must be accepted");
+
+        // v1 "APRN" is accepted too — the preflight must not narrow support.
+        let v1 = dir.join("legacy.apr");
+        let mut bytes = b"APRN".to_vec();
+        bytes.resize(128, 0);
+        std::fs::write(&v1, &bytes).expect("write v1 model");
+        ensure_apr_base_model(&v1).expect("an APR v1 base must be accepted");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

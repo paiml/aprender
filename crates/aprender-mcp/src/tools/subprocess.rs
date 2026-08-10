@@ -10,8 +10,16 @@
 //! SIGTERM → (grace window) → SIGKILL on the spawned subprocess when a
 //! cancellation is signalled. The non-cancellable [`run_apr`] is kept as a
 //! thin wrapper for tools that don't support cancellation yet.
+//!
+//! #2418: the failure path used to pick *either* stderr *or* stdout — stdout
+//! only when stderr was empty. `apr qa` writes its JSON gate report to stdout
+//! and a one-line summary to stderr, so every failing QA run (the tool's
+//! primary use case) reached the client as a single line with the >3 KB
+//! report thrown away. [`failure_result`] now keeps the summary as the first
+//! content block and attaches the report as a second one, so a failing gate
+//! is as inspectable as a passing one.
 
-use crate::types::ToolCallResult;
+use crate::types::{ContentBlock, ToolCallResult};
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -27,6 +35,56 @@ pub const CANCEL_GRACE_MS: u64 = 30_000;
 /// Poll interval when waiting for subprocess exit / cancel signal.
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
+/// Render one argv element so the echoed command can actually be re-run.
+///
+/// `format!("apr {}", args.join(" "))` produced `--prompt What is 2+2?`, which
+/// is a different command from the one that ran (#2403). Anything outside the
+/// POSIX-safe set is single-quoted, with embedded quotes escaped the shell way.
+fn quote_arg(arg: &str) -> String {
+    let safe = !arg.is_empty()
+        && arg
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"@%+=:,./-_".contains(&b));
+    if safe {
+        arg.to_string()
+    } else {
+        format!("'{}'", arg.replace('\'', r"'\''"))
+    }
+}
+
+/// Render `program args...` as a copy-pasteable shell command.
+pub(crate) fn display_command(program: &str, args: &[&str]) -> String {
+    let mut out = quote_arg(program);
+    for a in args {
+        out.push(' ');
+        out.push_str(&quote_arg(a));
+    }
+    out
+}
+
+/// Build the `isError` result for a subprocess that exited non-zero.
+///
+/// The first content block is the one-line summary the client already relied
+/// on. When the command wrote to BOTH streams the stdout payload is attached
+/// as a second block instead of being discarded (#2418).
+fn failure_result(cmd_display: &str, code: i32, stdout: &str, stderr: &str) -> ToolCallResult {
+    let summary = if stderr.trim().is_empty() {
+        stdout.to_string()
+    } else {
+        stderr.to_string()
+    };
+    let mut content = vec![ContentBlock::text(format!(
+        "`{cmd_display}` failed (exit {code}): {summary}"
+    ))];
+    if !stderr.trim().is_empty() && !stdout.trim().is_empty() {
+        content.push(ContentBlock::text(stdout.to_string()));
+    }
+    ToolCallResult {
+        content,
+        is_error: Some(true),
+    }
+}
+
 /// Spawn `apr <args...>` and wait synchronously. Shorthand for the
 /// non-cancellable path used by every tool except `apr.run`.
 ///
@@ -36,10 +94,10 @@ const POLL_INTERVAL: Duration = Duration::from_millis(10);
 /// - Spawn failure → `error("Failed to spawn apr ...: <io-err>")`
 #[must_use]
 pub fn run_apr(args: &[&str]) -> ToolCallResult {
+    let cmd = display_command("apr", args);
     let output = match Command::new("apr").args(args).output() {
         Ok(o) => o,
         Err(e) => {
-            let cmd = format!("apr {}", args.join(" "));
             return ToolCallResult::error(format!("Failed to spawn `{cmd}`: {e}"));
         }
     };
@@ -49,20 +107,13 @@ pub fn run_apr(args: &[&str]) -> ToolCallResult {
 
     if output.status.success() {
         if stdout.trim().is_empty() {
-            let cmd = format!("apr {}", args.join(" "));
             ToolCallResult::error(format!("`{cmd}` produced no output"))
         } else {
             ToolCallResult::success(stdout)
         }
     } else {
         let code = output.status.code().unwrap_or(-1);
-        let detail = if stderr.trim().is_empty() {
-            stdout
-        } else {
-            stderr
-        };
-        let cmd = format!("apr {}", args.join(" "));
-        ToolCallResult::error(format!("`{cmd}` failed (exit {code}): {detail}"))
+        failure_result(&cmd, code, &stdout, &stderr)
     }
 }
 
@@ -94,7 +145,7 @@ pub fn spawn_cancellable(
     cancel_rx: &Receiver<()>,
     grace_ms: u64,
 ) -> ToolCallResult {
-    let cmd_display = format!("{program} {}", args.join(" "));
+    let cmd_display = display_command(program, args);
 
     let mut child = match Command::new(program)
         .args(args)
@@ -147,12 +198,7 @@ pub fn spawn_cancellable(
                 }
             } else {
                 let code = status.code().unwrap_or(-1);
-                let detail = if stderr.trim().is_empty() {
-                    stdout
-                } else {
-                    stderr
-                };
-                ToolCallResult::error(format!("`{cmd_display}` failed (exit {code}): {detail}"))
+                failure_result(&cmd_display, code, &stdout, &stderr)
             }
         }
         Err(CancelReason::Signalled) => {
@@ -262,7 +308,7 @@ pub fn spawn_streaming<F>(program: &str, args: &[&str], mut on_line: F) -> ToolC
 where
     F: FnMut(&str),
 {
-    let cmd_display = format!("{program} {}", args.join(" "));
+    let cmd_display = display_command(program, args);
 
     let mut child = match Command::new(program)
         .args(args)
@@ -340,6 +386,106 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use std::thread;
+
+    /// #2418 — a failing `apr qa` writes its JSON gate report to stdout and a
+    /// one-line summary to stderr. The report is the whole point of the tool;
+    /// it must survive the failure path, not be replaced by the summary.
+    #[test]
+    fn failure_keeps_the_stdout_report_when_stderr_also_spoke() {
+        let report = r#"{"passed":false,"gates":[{"name":"ollama_parity","passed":false}]}"#;
+        let result = failure_result(
+            "apr qa m.gguf --json",
+            5,
+            report,
+            "error: Validation failed",
+        );
+
+        assert_eq!(result.is_error, Some(true));
+        let whole: String = result
+            .content
+            .iter()
+            .map(|b| b.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            whole.contains("ollama_parity"),
+            "gate report must reach the client, got: {whole}"
+        );
+        assert!(
+            whole.contains("failed (exit 5)"),
+            "summary line must survive too, got: {whole}"
+        );
+    }
+
+    /// End-to-end through a real subprocess that writes to BOTH streams and
+    /// exits non-zero — the exact shape of a failing `apr qa`.
+    ///
+    /// The report is asserted on the SECOND content block specifically. The
+    /// first block echoes the command, and the command here IS the script
+    /// text, so an `any()` over all blocks passed even with the report
+    /// discarded — that is how the first draft of this test survived its own
+    /// mutation check.
+    #[test]
+    fn cancellable_failure_carries_both_streams() {
+        let (_tx, rx) = mpsc::channel::<()>();
+        let result = spawn_cancellable(
+            "sh",
+            &[
+                "-c",
+                "printf '{\"gates\":\"REP\"}\\nORT\\n'; echo SUMMARY >&2; exit 5",
+            ],
+            &rx,
+            CANCEL_GRACE_MS,
+        );
+        assert_eq!(result.is_error, Some(true));
+        assert!(
+            result.content[0].text.contains("SUMMARY"),
+            "stderr dropped: {}",
+            result.content[0].text
+        );
+        assert_eq!(
+            result.content.len(),
+            2,
+            "stdout report dropped, only got: {:?}",
+            result.content
+        );
+        assert!(
+            result.content[1].text.contains("{\"gates\":\"REP\"}\nORT"),
+            "stdout report mangled: {}",
+            result.content[1].text
+        );
+    }
+
+    /// A failure with nothing on stderr still reports stdout in the summary,
+    /// and does not emit a redundant duplicate block.
+    #[test]
+    fn failure_with_empty_stderr_reports_stdout_once() {
+        let result = failure_result("apr qa m.gguf", 1, "only-stdout", "   \n");
+        assert_eq!(result.content.len(), 1);
+        assert!(result.content[0].text.contains("only-stdout"));
+    }
+
+    /// #2403 (secondary) — the echoed reproduction command must be
+    /// copy-pasteable. `--prompt What is 2+2?` is a different command from the
+    /// one that ran.
+    #[test]
+    fn echoed_command_is_shell_quoted() {
+        let cmd = display_command("apr", &["run", "m.gguf", "--prompt", "What is 2+2?"]);
+        assert_eq!(cmd, "apr run m.gguf --prompt 'What is 2+2?'");
+    }
+
+    /// Quoting must be idempotent for safe argv elements (no needless noise)
+    /// and must survive an embedded single quote.
+    #[test]
+    fn quoting_leaves_safe_args_alone_and_escapes_quotes() {
+        assert_eq!(quote_arg("--max-tokens"), "--max-tokens");
+        assert_eq!(
+            quote_arg("/home/noah/models/a.gguf"),
+            "/home/noah/models/a.gguf"
+        );
+        assert_eq!(quote_arg(""), "''");
+        assert_eq!(quote_arg("it's"), r"'it'\''s'");
+    }
 
     /// Spawning `apr` with an unrecognised subcommand yields a tool error
     /// (non-zero exit), not a panic.

@@ -4,6 +4,7 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::tools::args::{self, try_arg};
 use crate::tools::subprocess::run_apr;
 use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
 
@@ -32,26 +33,35 @@ pub fn tensors_tool_definition() -> ToolDefinition {
     }
 }
 
+/// Build the `apr tensors ...` argv from `tools/call` arguments.
+///
+/// # Errors
+/// Returns the client-facing message when an argument is present but not
+/// usable at its declared type.
+pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
+    let model_path = args::required_str(args, "model_path")?;
+
+    let mut argv: Vec<String> = vec![
+        "tensors".to_string(),
+        model_path.to_string(),
+        "--json".to_string(),
+    ];
+    if args::opt_bool(args, "stats")?.unwrap_or(false) {
+        argv.push("--stats".to_string());
+    }
+    let filter = args::opt_str(args, "filter")?.unwrap_or("");
+    if !filter.is_empty() {
+        argv.push("--filter".to_string());
+        argv.push(filter.to_string());
+    }
+    Ok(argv)
+}
+
 /// Execute `apr.tensors` by spawning `apr tensors <model> --json [...flags]`.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
-    };
-
-    let mut argv: Vec<&str> = vec!["tensors", model_path, "--json"];
-    if args
-        .get("stats")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-    {
-        argv.push("--stats");
-    }
-    let filter = args.get("filter").and_then(|v| v.as_str()).unwrap_or("");
-    if !filter.is_empty() {
-        argv.push("--filter");
-        argv.push(filter);
-    }
+    let owned = try_arg!(build_argv(args));
+    let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     run_apr(&argv)
 }
@@ -93,5 +103,21 @@ mod tests {
         let result = call(&serde_json::json!({}));
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("model_path"));
+    }
+
+    /// #2403 — `stats: "true"` used to drop `--stats`, so the caller got a
+    /// bare listing back and no indication its request was ignored.
+    #[test]
+    fn string_stats_still_asks_for_stats() {
+        let argv = build_argv(&serde_json::json!({ "model_path": "m.gguf", "stats": "true" }))
+            .expect("\"true\" is a usable boolean");
+        assert!(argv.contains(&"--stats".to_string()), "{argv:?}");
+    }
+
+    #[test]
+    fn unusable_stats_is_an_error_not_a_dropped_flag() {
+        let result = call(&serde_json::json!({ "model_path": "m.gguf", "stats": 1 }));
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("stats"));
     }
 }

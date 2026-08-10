@@ -37,6 +37,7 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::tools::args::{self, try_arg};
 use crate::types::{ContentBlock, InputSchema, ToolCallResult, ToolDefinition};
 use std::io::Read;
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
@@ -112,17 +113,15 @@ pub fn serve_tool_definition() -> ToolDefinition {
 /// all look like. See this module's header for the terminal states.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
-    };
+    let model_path = try_arg!(args::required_str(args, "model_path"));
 
-    let port: u16 = match args.get("port") {
+    let port: u16 = match try_arg!(args::opt_u64(args, "port")) {
         None => DEFAULT_PORT,
-        Some(v) => match v.as_u64().and_then(|n| u16::try_from(n).ok()) {
-            Some(n) => n,
-            None => {
+        Some(n) => match u16::try_from(n) {
+            Ok(p) => p,
+            Err(_) => {
                 return ToolCallResult::error(format!(
-                    "Invalid port: expected integer 0..=65535, got {v}"
+                    "Invalid port: expected integer 0..=65535, got {n}"
                 ));
             }
         },

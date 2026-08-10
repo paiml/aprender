@@ -48,13 +48,38 @@ pub(crate) fn read_apr_architecture(
     )
 }
 
+/// Whether `path` starts with an APR magic (`APR\0` v2 or `APRN` v1).
+///
+/// #2417: the LoRA training pipeline is `InstructPipeline::from_apr` — APR
+/// only. A `.safetensors` base used to travel the whole way to that call and
+/// surface as `Failed to open APR file '<model>.safetensors': Invalid magic`,
+/// naming a format the caller never mentioned. Callers use this to reject an
+/// unsupported base up front, with an actionable message.
+pub(crate) fn is_apr_file(path: &Path) -> bool {
+    use aprender::format::v2::MAGIC_V2;
+    use std::io::Read;
+
+    const MAGIC_V1: [u8; 4] = *b"APRN";
+
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut magic = [0u8; 4];
+    if file.read_exact(&mut magic).is_err() {
+        return false;
+    }
+    magic == MAGIC_V2 || magic == MAGIC_V1
+}
+
 /// Resolve TransformerConfig from .apr metadata, HF config.json, or --model-size fallback.
 ///
 /// Precedence:
 ///   1. `.apr` file metadata (provable, validated at import)
-///   2. HuggingFace `config.json` in model directory
-///   3. `--model-size` string match (legacy fallback, no .apr file)
-///   4. Error (refuse to silently degrade to tiny)
+///   2. HuggingFace `config.json` beside the model file (#2417)
+///   3. HuggingFace `config.json` in model directory
+///   4. `--model-size` string match (legacy fallback, no .apr file)
+///   5. Error naming the path that was actually supplied (refuse to silently
+///      degrade to tiny, and refuse to claim no path was given when one was)
 pub(crate) fn resolve_transformer_config(
     model_path: Option<&Path>,
     model_size: Option<&str>,
@@ -64,21 +89,88 @@ pub(crate) fn resolve_transformer_config(
         if let Some(config) = read_apr_architecture(path) {
             return Ok(config);
         }
+        // Attempt 2: a .safetensors / .gguf checkout ships its architecture in
+        // a sibling config.json. Before #2417 this was only consulted when the
+        // model path was a DIRECTORY, so `apr finetune model.safetensors`
+        // could never resolve an architecture even with the config.json
+        // sitting right next to the weights.
+        if let Some(config) = read_sibling_hf_config(path) {
+            return Ok(config);
+        }
         eprintln!(
-            "[GH-376] WARNING: could not read architecture from .apr metadata, \
-             falling back to --model-size"
+            "[GH-376] WARNING: could not read architecture from '{}' \
+             (not APR v2 metadata, and no sibling config.json), \
+             falling back to --model-size",
+            path.display()
         );
     }
 
-    // Attempt 2: Read architecture from HuggingFace config.json in model directory
+    // Attempt 3: Read architecture from HuggingFace config.json in model directory
     if let Some(path) = model_path.filter(|p| p.is_dir()) {
         if let Some(config) = read_hf_config_json(path) {
             return Ok(config);
         }
     }
 
-    // Attempt 3: Legacy --model-size string matching
+    // Attempt 4: Legacy --model-size string matching.
+    //
+    // #2417: when no --model-size was given the legacy message was
+    // "No model path or --model-size provided" even though a path WAS the
+    // first positional argument and the CLI had just read tensors out of it.
+    // Report what actually happened instead.
+    if model_size.is_none() {
+        if let Some(path) = model_path {
+            return Err(CliError::ValidationFailed(
+                unresolvable_architecture_message(path),
+            ));
+        }
+    }
     resolve_transformer_config_by_size(model_size)
+}
+
+/// The accurate diagnostic for "a model path was supplied but no architecture
+/// could be derived from it".
+fn unresolvable_architecture_message(path: &Path) -> String {
+    let kind = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map_or_else(|| "file".to_string(), |e| format!(".{e} file"));
+    format!(
+        "Cannot determine architecture from '{}': the {kind} carries no APR v2 \
+         architecture metadata and no HuggingFace config.json was found beside it \
+         (looked for {}). Convert it with `apr convert`, place the model's \
+         config.json alongside the weights, or pass --model-size.",
+        path.display(),
+        sibling_config_candidates(path)
+            .iter()
+            .map(|p| format!("'{}'", p.display()))
+            .collect::<Vec<_>>()
+            .join(" and "),
+    )
+}
+
+/// Where a `config.json` for `file` may live: the pacha cache writes
+/// `<hash>.config.json` next to `<hash>.safetensors`, while a HuggingFace
+/// checkout puts a plain `config.json` in the same directory.
+fn sibling_config_candidates(file: &Path) -> Vec<std::path::PathBuf> {
+    let Some(dir) = file.parent() else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    if let Some(stem) = file.file_stem() {
+        let mut name = stem.to_os_string();
+        name.push(".config.json");
+        candidates.push(dir.join(name));
+    }
+    candidates.push(dir.join("config.json"));
+    candidates
+}
+
+/// Read TransformerConfig from a `config.json` sitting beside a model file.
+fn read_sibling_hf_config(file: &Path) -> Option<entrenar::transformer::TransformerConfig> {
+    sibling_config_candidates(file)
+        .iter()
+        .find_map(|c| read_hf_config_file(c))
 }
 
 /// Read TransformerConfig from a HuggingFace `config.json` in a model directory.
@@ -86,8 +178,12 @@ pub(crate) fn resolve_transformer_config(
 /// Parses the standard HF model config format used by Qwen, LLaMA, Mistral, etc.
 /// Returns None if config.json doesn't exist or required fields are missing.
 fn read_hf_config_json(dir: &Path) -> Option<entrenar::transformer::TransformerConfig> {
-    let config_path = dir.join("config.json");
-    let data = std::fs::read_to_string(&config_path).ok()?;
+    read_hf_config_file(&dir.join("config.json"))
+}
+
+/// Parse one HuggingFace `config.json` file into a `TransformerConfig`.
+fn read_hf_config_file(config_path: &Path) -> Option<entrenar::transformer::TransformerConfig> {
+    let data = std::fs::read_to_string(config_path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&data).ok()?;
 
     let hidden_size = json.get("hidden_size")?.as_u64()? as usize;
@@ -248,4 +344,94 @@ fn transformer_config_from_apr_metadata(
         hf_model_type: None,
         tie_word_embeddings: false,
     })
+}
+
+#[cfg(test)]
+mod tests_2417 {
+    use super::*;
+
+    const QWEN_CONFIG: &str = r#"{
+        "hidden_size": 896,
+        "num_attention_heads": 14,
+        "num_key_value_heads": 2,
+        "intermediate_size": 4864,
+        "num_hidden_layers": 24,
+        "vocab_size": 151936
+    }"#;
+
+    fn tmpdir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("apr-2417-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    /// #2417 — `apr finetune model.safetensors` reported "No model path or
+    /// --model-size provided" while a model path WAS the first positional
+    /// argument. The message named a condition that was false.
+    #[test]
+    fn safetensors_without_config_reports_the_path_it_was_given() {
+        let dir = tmpdir("nocfg");
+        let model = dir.join("weights.safetensors");
+        std::fs::write(&model, b"not-an-apr-file").expect("write model");
+
+        let err = resolve_transformer_config(Some(&model), None)
+            .expect_err("architecture is genuinely underivable here");
+        let msg = err.to_string();
+
+        assert!(
+            !msg.contains("No model path"),
+            "message still claims no path was provided: {msg}"
+        );
+        assert!(
+            msg.contains("weights.safetensors"),
+            "message must name the path it was given: {msg}"
+        );
+        assert!(
+            !msg.contains(".apr metadata"),
+            "message must not cite .apr metadata for a .safetensors input: {msg}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// With no path AND no --model-size, the original message is still the
+    /// accurate one.
+    #[test]
+    fn no_path_and_no_size_keeps_the_original_message() {
+        let err = resolve_transformer_config(None, None).expect_err("nothing to go on");
+        assert!(err.to_string().contains("No model path or --model-size"));
+    }
+
+    /// #2417 — a HuggingFace checkout keeps `config.json` beside the weights.
+    /// Resolution used to consult it only when the model path was a DIRECTORY,
+    /// so pointing at the .safetensors file itself could never work.
+    #[test]
+    fn safetensors_resolves_from_sibling_config_json() {
+        let dir = tmpdir("hf");
+        let model = dir.join("model.safetensors");
+        std::fs::write(&model, b"not-an-apr-file").expect("write model");
+        std::fs::write(dir.join("config.json"), QWEN_CONFIG).expect("write config");
+
+        let config = resolve_transformer_config(Some(&model), None)
+            .expect("architecture comes from the sibling config.json");
+        assert_eq!(config.hidden_size, 896);
+        assert_eq!(config.num_hidden_layers, 24);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The pacha cache stores `<hash>.safetensors` and `<hash>.config.json`
+    /// side by side — the exact fixture layout the audit used.
+    #[test]
+    fn safetensors_resolves_from_hash_prefixed_sibling_config() {
+        let dir = tmpdir("pacha");
+        let model = dir.join("064a3693fa1ea02c.safetensors");
+        std::fs::write(&model, b"not-an-apr-file").expect("write model");
+        std::fs::write(dir.join("064a3693fa1ea02c.config.json"), QWEN_CONFIG)
+            .expect("write config");
+
+        let config = resolve_transformer_config(Some(&model), None)
+            .expect("architecture comes from <stem>.config.json");
+        assert_eq!(config.num_attention_heads, 14);
+        assert_eq!(config.num_kv_heads, 2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

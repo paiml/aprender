@@ -4,6 +4,7 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::tools::args::{self, try_arg};
 use crate::tools::subprocess::run_apr;
 use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
 
@@ -31,12 +32,13 @@ pub fn trace_tool_definition() -> ToolDefinition {
     }
 }
 
-/// Execute `apr.trace` by spawning `apr trace <model> --json [...flags]`.
-#[must_use]
-pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
-    };
+/// Build the `apr trace ...` argv from `tools/call` arguments.
+///
+/// # Errors
+/// Returns the client-facing message when an argument is present but not
+/// usable at its declared type.
+pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
+    let model_path = args::required_str(args, "model_path")?;
 
     let mut owned: Vec<String> = vec![
         "trace".to_string(),
@@ -44,18 +46,25 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
         "--json".to_string(),
     ];
 
-    if let Some(pat) = args.get("layer").and_then(|v| v.as_str()) {
+    if let Some(pat) = args::opt_str(args, "layer")? {
         if !pat.is_empty() {
             owned.push("--layer".to_string());
             owned.push(pat.to_string());
         }
     }
-    if let Some(ref_path) = args.get("reference").and_then(|v| v.as_str()) {
+    if let Some(ref_path) = args::opt_str(args, "reference")? {
         if !ref_path.is_empty() {
             owned.push("--reference".to_string());
             owned.push(ref_path.to_string());
         }
     }
+    Ok(owned)
+}
+
+/// Execute `apr.trace` by spawning `apr trace <model> --json [...flags]`.
+#[must_use]
+pub fn call(args: &serde_json::Value) -> ToolCallResult {
+    let owned = try_arg!(build_argv(args));
 
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
     run_apr(&argv)
@@ -101,5 +110,40 @@ mod tests {
         let result = call(&serde_json::json!({}));
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("model_path"));
+    }
+
+    /// #2403 — `{"layer": 7, "reference": 42}` dropped BOTH flags and traced
+    /// the whole model against nothing, reported as a success.
+    #[test]
+    fn integer_layer_and_reference_are_errors_not_dropped_flags() {
+        let result = call(&serde_json::json!({ "model_path": "m.gguf", "layer": 7 }));
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("layer"));
+
+        let result = call(&serde_json::json!({ "model_path": "m.gguf", "reference": 42 }));
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("reference"));
+    }
+
+    #[test]
+    fn string_layer_and_reference_reach_the_cli() {
+        let argv = build_argv(&serde_json::json!({
+            "model_path": "m.gguf",
+            "layer": "blk.7",
+            "reference": "ref.gguf"
+        }))
+        .expect("strings are usable");
+        assert_eq!(
+            argv,
+            vec![
+                "trace",
+                "m.gguf",
+                "--json",
+                "--layer",
+                "blk.7",
+                "--reference",
+                "ref.gguf"
+            ]
+        );
     }
 }
