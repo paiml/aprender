@@ -77,7 +77,12 @@ pub enum ExtendedCommands {
         brick: Option<String>,
         /// Comma-separated latency percentile points for JSON output
         /// (CRUX-E-07). Default: `50,95,99`. Values must be in (0, 100].
-        #[arg(long, value_delimiter = ',', default_value = "50,95,99")]
+        #[arg(
+            long,
+            value_delimiter = ',',
+            default_value = "50,95,99",
+            value_parser = crate::commands::bench::parse_percentile
+        )]
         percentiles: Vec<f64>,
     },
     /// Evaluate model perplexity (spec H13: PPL <= 20) or classification metrics
@@ -112,8 +117,9 @@ pub enum ExtendedCommands {
         /// Generate HuggingFace model card (README.md) in checkpoint dir
         #[arg(long)]
         generate_card: bool,
-        /// Device for inference: "cpu" (default) or "cuda" (GPU-accelerated, ALB-089)
-        #[arg(long, default_value = "cpu")]
+        /// Device for inference: "cpu" (default) or "cuda" (GPU-accelerated, ALB-089).
+        /// Applies to --task humaneval/mbpp; perplexity evaluation is CPU-only.
+        #[arg(long, default_value = "cpu", value_parser = ["cpu", "cuda"])]
         device: String,
         /// Number of samples per problem for pass@k (ALB-088, default: 1)
         #[arg(long, default_value = "1")]

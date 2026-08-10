@@ -235,23 +235,40 @@ fn print_summary(
     }
 }
 
-fn print_generated_files(format: ExportFormat, output_dir: &Path, layers: &[LayerSnapshot]) {
-    println!();
-    println!("{}", "Generated files:".white().bold());
+/// The artifacts `export_by_format` writes for `format`.
+///
+/// This is the single source of truth for both the export and the printed
+/// manifest: the two used to disagree (`.png` printed, `.pgm` written), so a
+/// CI step copying the listed paths failed with ENOENT.
+fn generated_file_paths(
+    format: ExportFormat,
+    output_dir: &Path,
+    layers: &[LayerSnapshot],
+) -> Vec<std::path::PathBuf> {
+    let mut paths = Vec::new();
 
     if matches!(format, ExportFormat::Json | ExportFormat::Both) {
-        println!("  - {}/manifest.json", output_dir.display());
+        paths.push(output_dir.join("manifest.json"));
     }
 
     if matches!(format, ExportFormat::Png | ExportFormat::Both) {
         for layer in layers {
-            println!(
-                "  - {}/layer_{:03}_{}.png",
-                output_dir.display(),
-                layer.index,
-                layer.name
+            paths.push(output_dir.join(format!("layer_{:03}_{}.png", layer.index, layer.name)));
+            paths.push(
+                output_dir.join(format!("layer_{:03}_{}.meta.json", layer.index, layer.name)),
             );
         }
+    }
+
+    paths
+}
+
+fn print_generated_files(format: ExportFormat, output_dir: &Path, layers: &[LayerSnapshot]) {
+    println!();
+    println!("{}", "Generated files:".white().bold());
+
+    for path in generated_file_paths(format, output_dir, layers) {
+        println!("  - {}", path.display());
     }
 }
 
@@ -412,14 +429,18 @@ fn export_png(layers: &[LayerSnapshot], output_dir: &Path) -> Result<(), CliErro
             }
         }
 
-        // Write as simple PGM (portable graymap) - easy to convert to PNG
-        // For now, write as .pgm which can be viewed in most image viewers
-        let pgm_path = output_dir.join(format!("layer_{:03}_{}.pgm", layer.index, layer.name));
-        let mut file = File::create(&pgm_path)?;
-        writeln!(file, "P5")?;
-        writeln!(file, "{width} {height}")?;
-        writeln!(file, "255")?;
-        file.write_all(&pixels)?;
+        // Write a real PNG. `print_generated_files` advertises `.png`, so this
+        // must actually be one: writing Netpbm here made every listed path a
+        // file that did not exist.
+        let png_bytes =
+            super::png_encode::encode_grayscale(width, height, &pixels).ok_or_else(|| {
+                CliError::InvalidFormat(format!(
+                    "failed to encode {width}x{height} histogram for layer '{}' as PNG",
+                    layer.name
+                ))
+            })?;
+        let mut file = File::create(&png_path)?;
+        file.write_all(&png_bytes)?;
 
         // Create a metadata sidecar JSON
         let meta_path =
@@ -439,10 +460,6 @@ fn export_png(layers: &[LayerSnapshot], output_dir: &Path) -> Result<(), CliErro
 
         let mut meta_file = File::create(&meta_path)?;
         meta_file.write_all(meta_json.as_bytes())?;
-
-        // Note: In production, use image crate or similar to generate actual PNG
-        // For now, PGM format works for development/testing
-        let _ = png_path; // Suppress unused warning
     }
 
     Ok(())

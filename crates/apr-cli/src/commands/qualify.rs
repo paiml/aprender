@@ -121,6 +121,53 @@ where
     }
 }
 
+/// Repo-relative location of the tensor-layout contract audited by the
+/// `standard` and `full` tiers.
+const TENSOR_LAYOUT_CONTRACT: &str = "contracts/aprender/tensor-layout-v1.yaml";
+
+/// Resolve a repo-relative contract path without assuming the caller's working
+/// directory *is* the aprender checkout.
+///
+/// Search order:
+/// 1. `override_dir` (from `APR_CONTRACTS_DIR`), joined with the path after the
+///    leading `contracts/` component, so the env var points at a contracts dir.
+/// 2. `start` and each of its ancestors — finds the checkout root from any
+///    subdirectory of it.
+///
+/// Returns `None` when the contract is nowhere to be found; the caller must
+/// then SKIP the gate rather than report the missing file as an audit failure.
+fn locate_contract_from(
+    start: &Path,
+    override_dir: Option<&Path>,
+    rel: &str,
+) -> Option<std::path::PathBuf> {
+    if let Some(dir) = override_dir {
+        let tail = rel.strip_prefix("contracts/").unwrap_or(rel);
+        let candidate = dir.join(tail);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    let mut cursor = Some(start);
+    while let Some(dir) = cursor {
+        let candidate = dir.join(rel);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        cursor = dir.parent();
+    }
+
+    None
+}
+
+/// `locate_contract_from` wired to the process environment.
+fn locate_contract(rel: &str) -> Option<std::path::PathBuf> {
+    let override_dir = std::env::var_os("APR_CONTRACTS_DIR").map(std::path::PathBuf::from);
+    let cwd = std::env::current_dir().ok()?;
+    locate_contract_from(&cwd, override_dir.as_deref(), rel)
+}
+
 /// Run an external tool gate (shell out). Skips gracefully if binary not on PATH.
 fn run_external_gate(
     name: &str,
@@ -439,13 +486,27 @@ pub fn run(
     // ── Phase 2: Contract Audit (standard or full tier) ────────────────
 
     if (tier == "standard" || tier == "full") && !skip_set.contains("contract_audit") {
-        let gate = run_external_gate(
-            "contract_audit",
-            "Contract Audit (pv)",
-            "pv",
-            &["audit", "contracts/aprender/tensor-layout-v1.yaml"],
-            timeout,
-        );
+        let gate = match locate_contract(TENSOR_LAYOUT_CONTRACT) {
+            Some(contract) => run_external_gate(
+                "contract_audit",
+                "Contract Audit (pv)",
+                "pv",
+                &["audit", &contract.display().to_string()],
+                timeout,
+            ),
+            // The contract ships with the aprender source tree, not with the
+            // installed binary. Not finding it is a missing input, not a
+            // failed audit — report it as such instead of a false FAIL.
+            None => GateResult {
+                name: "contract_audit".to_string(),
+                display_name: "Contract Audit (pv)".to_string(),
+                status: GateStatus::Skip,
+                message: format!(
+                    "{TENSOR_LAYOUT_CONTRACT} not found — set APR_CONTRACTS_DIR or run from an aprender checkout"
+                ),
+                duration_ms: 0,
+            },
+        };
         print_gate_result(&gate, json);
         gates.push(gate);
     }
@@ -640,6 +701,61 @@ mod tests {
         let gate = run_gate("ok_test", "OK Test", 5, false, || Ok(()));
         assert_eq!(gate.status, GateStatus::Pass);
         assert_eq!(gate.message, "OK");
+    }
+
+    // ── Contract location (the Contract Audit gate's input) ──────────────
+    //
+    // The gate used to pass the literal relative path
+    // "contracts/aprender/tensor-layout-v1.yaml" to `pv`, so it resolved
+    // against the CALLER's cwd: PASS inside the aprender checkout, FAIL with
+    // "Failed to read contract file" everywhere else.
+
+    #[test]
+    fn test_locate_contract_finds_it_from_a_subdirectory() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let contract = root.path().join(TENSOR_LAYOUT_CONTRACT);
+        std::fs::create_dir_all(contract.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&contract, "kind: KernelContract\n").expect("write");
+
+        let deep = root.path().join("crates/apr-cli/src");
+        std::fs::create_dir_all(&deep).expect("mkdir deep");
+
+        let found = locate_contract_from(&deep, None, TENSOR_LAYOUT_CONTRACT)
+            .expect("must walk up to the checkout root");
+        assert_eq!(
+            std::fs::canonicalize(found).expect("canon"),
+            std::fs::canonicalize(&contract).expect("canon"),
+        );
+    }
+
+    #[test]
+    fn test_locate_contract_honours_explicit_contracts_dir() {
+        let elsewhere = tempfile::tempdir().expect("tempdir");
+        let contracts = elsewhere.path().join("contracts");
+        std::fs::create_dir_all(contracts.join("aprender")).expect("mkdir");
+        let contract = contracts.join("aprender/tensor-layout-v1.yaml");
+        std::fs::write(&contract, "kind: KernelContract\n").expect("write");
+
+        // Start from a directory that has no contracts/ anywhere above it.
+        let bare = tempfile::tempdir().expect("tempdir");
+        let found = locate_contract_from(bare.path(), Some(&contracts), TENSOR_LAYOUT_CONTRACT)
+            .expect("override dir must be searched");
+        assert_eq!(
+            std::fs::canonicalize(found).expect("canon"),
+            std::fs::canonicalize(&contract).expect("canon"),
+        );
+    }
+
+    #[test]
+    fn test_locate_contract_returns_none_off_tree() {
+        // A user who installed `apr` from crates.io and ran it from their home
+        // directory has no contracts/ anywhere: the gate must SKIP, and that
+        // decision is driven by this returning None.
+        let bare = tempfile::tempdir().expect("tempdir");
+        assert!(
+            locate_contract_from(bare.path(), None, TENSOR_LAYOUT_CONTRACT).is_none(),
+            "must not invent a path that does not exist"
+        );
     }
 
     #[test]

@@ -1,4 +1,48 @@
 
+/// Decode an 8-bit grayscale PNG whose IDAT uses stored DEFLATE blocks.
+/// Deliberately independent of the encoder's own test helpers so this asserts
+/// the file's bytes, not the encoder's view of them.
+fn decode_grayscale_png(png: &[u8]) -> Vec<u8> {
+    let mut idat = Vec::new();
+    let (mut width, mut height) = (0usize, 0usize);
+    let mut i = 8; // skip signature
+    while i + 8 <= png.len() {
+        let len = u32::from_be_bytes([png[i], png[i + 1], png[i + 2], png[i + 3]]) as usize;
+        let kind = &png[i + 4..i + 8];
+        let data = &png[i + 8..i + 8 + len];
+        if kind == b"IHDR" {
+            width = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+            height = u32::from_be_bytes([data[4], data[5], data[6], data[7]]) as usize;
+            assert_eq!(data[8], 8, "bit depth");
+            assert_eq!(data[9], 0, "grayscale color type");
+        } else if kind == b"IDAT" {
+            idat.extend_from_slice(data);
+        }
+        i += 8 + len + 4;
+    }
+
+    // Inflate stored blocks (zlib header is 2 bytes, Adler-32 trailer is 4).
+    let mut raw = Vec::new();
+    let mut j = 2;
+    loop {
+        let header = idat[j];
+        let blen = u16::from_le_bytes([idat[j + 1], idat[j + 2]]) as usize;
+        raw.extend_from_slice(&idat[j + 5..j + 5 + blen]);
+        j += 5 + blen;
+        if header & 1 == 1 {
+            break;
+        }
+    }
+
+    assert_eq!(raw.len(), height * (width + 1), "scanline count");
+    let mut pixels = Vec::with_capacity(width * height);
+    for row in raw.chunks_exact(width + 1) {
+        assert_eq!(row[0], 0, "filter type None");
+        pixels.extend_from_slice(&row[1..]);
+    }
+    pixels
+}
+
 #[test]
 fn test_export_png_histogram_normalization() {
     let output_dir = tempdir().expect("create output dir");
@@ -21,18 +65,15 @@ fn test_export_png_histogram_normalization() {
 
     export_png(&layers, output_dir.path()).expect("export png");
 
-    // Read the PGM and verify pixel data
-    let content = fs::read(output_dir.path().join("layer_000_spike.pgm")).expect("read pgm");
-    // Find start of pixel data (after 3rd newline)
-    let header_end = content
-        .windows(1)
-        .enumerate()
-        .filter(|(_, w)| w[0] == b'\n')
-        .nth(2)
-        .map(|(i, _)| i + 1)
-        .expect("find header end");
-
-    let pixels = &content[header_end..];
+    // Read the PNG back and verify pixel data. This used to read a `.pgm`,
+    // which is exactly the file the command claimed it had NOT written.
+    let content = fs::read(output_dir.path().join("layer_000_spike.png")).expect("read png");
+    assert_eq!(
+        &content[0..8],
+        b"\x89PNG\r\n\x1a\n",
+        "export_png must write a real PNG"
+    );
+    let pixels = decode_grayscale_png(&content);
     // Column 128 should have a black bar (value 0), other columns should be white (255)
     // Check bottom pixel of column 0 (should be white - no bar)
     let bottom_row = 99; // height - 1
@@ -84,12 +125,12 @@ fn test_export_by_format_json_creates_manifest_only() {
     .expect("export");
 
     assert!(output_dir.path().join("manifest.json").exists());
-    // PNG/PGM should NOT exist
-    assert!(!output_dir.path().join("layer_000_l.pgm").exists());
+    // PNG should NOT exist
+    assert!(!output_dir.path().join("layer_000_l.png").exists());
 }
 
 #[test]
-fn test_export_by_format_png_creates_pgm_only() {
+fn test_export_by_format_png_creates_png_only() {
     let output_dir = tempdir().expect("create output dir");
     let layers = vec![LayerSnapshot {
         name: "x".to_string(),
@@ -114,7 +155,17 @@ fn test_export_by_format_png_creates_pgm_only() {
     export_by_format(ExportFormat::Png, &manifest, &layers, output_dir.path()).expect("export");
 
     assert!(!output_dir.path().join("manifest.json").exists());
-    assert!(output_dir.path().join("layer_000_x.pgm").exists());
+    let png = output_dir.path().join("layer_000_x.png");
+    assert!(png.exists(), "the path printed to the user must exist");
+    assert_eq!(
+        &fs::read(&png).expect("read png")[0..8],
+        b"\x89PNG\r\n\x1a\n",
+        "and it must actually be a PNG"
+    );
+    assert!(
+        !output_dir.path().join("layer_000_x.pgm").exists(),
+        "no stray Netpbm file"
+    );
 }
 
 #[test]
@@ -143,7 +194,47 @@ fn test_export_by_format_both_creates_all() {
     export_by_format(ExportFormat::Both, &manifest, &layers, output_dir.path()).expect("export");
 
     assert!(output_dir.path().join("manifest.json").exists());
-    assert!(output_dir.path().join("layer_000_y.pgm").exists());
+    assert!(output_dir.path().join("layer_000_y.png").exists());
+}
+
+#[test]
+fn test_every_listed_generated_file_actually_exists() {
+    // The defect: `Generated files:` printed `.png` paths while `export_png`
+    // wrote `.pgm`, so a consumer copying the listed paths hit ENOENT.
+    for format in [ExportFormat::Json, ExportFormat::Png, ExportFormat::Both] {
+        let output_dir = tempdir().expect("create output dir");
+        let layers = vec![LayerSnapshot {
+            name: "block_0".to_string(),
+            index: 0,
+            histogram: vec![7; 256],
+            mean: 0.0,
+            std: 1.0,
+            min: -1.0,
+            max: 1.0,
+            heatmap: None,
+            heatmap_width: None,
+            heatmap_height: None,
+        }];
+        let manifest = ProbarManifest {
+            source_model: "m.apr".to_string(),
+            timestamp: "t".to_string(),
+            format: "APR".to_string(),
+            layers: layers.clone(),
+            golden_reference: None,
+        };
+
+        export_by_format(format, &manifest, &layers, output_dir.path()).expect("export");
+
+        let listed = generated_file_paths(format, output_dir.path(), &layers);
+        assert!(!listed.is_empty(), "{format:?} must list something");
+        for path in listed {
+            assert!(
+                path.exists(),
+                "{format:?}: listed {} but it was never written",
+                path.display()
+            );
+        }
+    }
 }
 
 // ========================================================================

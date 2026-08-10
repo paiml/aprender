@@ -275,7 +275,7 @@ impl GateResult {
         }
     }
 
-    fn skipped(name: &str, reason: &str) -> Self {
+    pub(crate) fn skipped(name: &str, reason: &str) -> Self {
         Self {
             name: name.to_string(),
             passed: true, // Skipped gates don't fail
