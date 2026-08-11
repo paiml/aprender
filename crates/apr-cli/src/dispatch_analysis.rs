@@ -1208,6 +1208,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 *ollama,
                 *no_gpu,
                 compare.as_deref(),
+                cli.json,
             )
         }),
 

@@ -429,8 +429,12 @@ fn dispatch_profile(
     ollama: bool,
     no_gpu: bool,
     compare: Option<&Path>,
+    json: bool,
 ) -> Result<(), CliError> {
-    let output_format = format.parse().unwrap_or(profile::OutputFormat::Human);
+    // GH-2395: `--json` is a global flag that `apr profile` parsed and ignored, and
+    // an unparseable `--format` silently degraded to the human table. See
+    // `commands/profile_options.rs`.
+    let output_format = profile::resolve_output_format(format, json)?;
 
     // PMAT-192: CI mode takes precedence
     if ci || assert_throughput.is_some() || assert_p99.is_some() || assert_p50.is_some() {
@@ -461,9 +465,10 @@ fn dispatch_profile(
             ))
         }
     } else {
-        let profile_focus = focus
-            .and_then(|f| f.parse().ok())
-            .unwrap_or(profile::ProfileFocus::All);
+        // An unrecognised --focus used to silently degrade to the full unfiltered
+        // report with exit 0, so a typo produced a report that answered a different
+        // question than the one asked.
+        let profile_focus = profile::resolve_focus(focus)?;
         profile::run(
             file,
             granular,
@@ -477,6 +482,8 @@ fn dispatch_profile(
             callgraph,
             fail_on_naive,
             output,
+            warmup,
+            measure,
             tokens,
             ollama,
             no_gpu,

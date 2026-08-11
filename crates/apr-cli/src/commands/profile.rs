@@ -151,6 +151,23 @@ impl CiProfileReport {
         // Convert us to ms for latency
         let latency_ms = results.total_inference_us / 1000.0;
 
+        // GH-2395: the measurement passes DO produce a latency distribution
+        // (`latency_p50_ms` / `latency_p99_ms` are real percentiles over the
+        // per-pass forward times). CI mode used the mean for both, so p99 always
+        // equalled p50 and `--assert-p99` asserted on the mean, not the tail —
+        // a tail-only regression could never fail the gate. Fall back to the mean
+        // only when no percentiles were recorded (e.g. static-analysis backend).
+        let p50_ms = if results.latency_p50_ms > 0.0 {
+            results.latency_p50_ms
+        } else {
+            latency_ms
+        };
+        let p99_ms = if results.latency_p99_ms > 0.0 {
+            results.latency_p99_ms
+        } else {
+            latency_ms
+        };
+
         // Check throughput assertion
         if let Some(min_tps) = assertions.min_throughput {
             let passed = results.throughput_tok_s >= min_tps;
@@ -165,30 +182,30 @@ impl CiProfileReport {
             });
         }
 
-        // Check p99 assertion (using avg as proxy since we don't have percentiles yet)
+        // Check p99 assertion against the real tail
         if let Some(max_p99) = assertions.max_p99_ms {
-            let passed = latency_ms <= max_p99;
+            let passed = p99_ms <= max_p99;
             if !passed {
                 all_passed = false;
             }
             assertion_results.push(AssertionResult {
                 name: "latency_p99".to_string(),
                 expected: format!("<= {:.1} ms", max_p99),
-                actual: format!("{:.2} ms", latency_ms),
+                actual: format!("{:.2} ms", p99_ms),
                 passed,
             });
         }
 
         // Check p50 assertion
         if let Some(max_p50) = assertions.max_p50_ms {
-            let passed = latency_ms <= max_p50;
+            let passed = p50_ms <= max_p50;
             if !passed {
                 all_passed = false;
             }
             assertion_results.push(AssertionResult {
                 name: "latency_p50".to_string(),
                 expected: format!("<= {:.1} ms", max_p50),
-                actual: format!("{:.2} ms", latency_ms),
+                actual: format!("{:.2} ms", p50_ms),
                 passed,
             });
         }
@@ -197,8 +214,8 @@ impl CiProfileReport {
             model_path: results.model_path.clone(),
             passed: all_passed,
             throughput_tok_s: results.throughput_tok_s,
-            latency_p50_ms: latency_ms,
-            latency_p99_ms: latency_ms, // Using same value for now
+            latency_p50_ms: p50_ms,
+            latency_p99_ms: p99_ms,
             assertions: assertion_results,
         }
     }
@@ -447,6 +464,7 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     }
 }
 
+include!("profile_options.rs");
 include!("diff_benchmark_report.rs");
 include!("profile_pct_change_classify.rs");
 include!("kernel.rs");
