@@ -109,8 +109,8 @@ pub use types::{default_max_tokens, default_top_k};
 pub(crate) use types::{default_strategy, default_temperature, default_top_p};
 pub use types::{
     BatchGenerateRequest, BatchGenerateResponse, BatchTokenizeRequest, BatchTokenizeResponse,
-    ErrorResponse, GenerateRequest, GenerateResponse, HealthResponse, ModelsResponse,
-    StreamDoneEvent, StreamTokenEvent, TokenizeRequest, TokenizeResponse,
+    ChoiceCount, ErrorResponse, FinishReason, GenerateRequest, GenerateResponse, HealthResponse,
+    ModelsResponse, StreamDoneEvent, StreamTokenEvent, TokenizeRequest, TokenizeResponse,
 };
 
 /// Application state shared across handlers

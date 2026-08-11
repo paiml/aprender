@@ -141,7 +141,7 @@ fn test_chat_completion_request_minimal() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: crate::api::ChoiceCount::ONE,
         stream: false,
         stop: None,
         user: None,
@@ -182,7 +182,7 @@ fn test_chat_completion_request_full() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: crate::api::ChoiceCount::ONE,
         stream: true,
         stop: Some(vec!["stop".to_string()]),
         user: Some("test-user".to_string()),
@@ -362,7 +362,7 @@ fn test_chat_completion_chunk_content() {
 
 #[test]
 fn test_chat_completion_chunk_done() {
-    let chunk = ChatCompletionChunk::done("chatcmpl-123", "test-model");
+    let chunk = ChatCompletionChunk::done("chatcmpl-123", "test-model", crate::api::FinishReason::Stop);
 
     assert_eq!(chunk.choices.len(), 1);
     assert_eq!(chunk.choices[0].delta.role, None);

@@ -250,16 +250,91 @@ async fn sanitize_json_rejection(
     // Axum returns 422 Unprocessable Entity for JSON deserialization failures.
     // Replace the body to avoid leaking serde error internals.
     if response.status() == StatusCode::UNPROCESSABLE_ENTITY {
+        let (_, body) = response.into_parts();
+        let bytes = axum::body::to_bytes(body, usize::MAX)
+            .await
+            .unwrap_or_default();
+        let error = client_visible_reason(&String::from_utf8_lossy(&bytes)).unwrap_or_else(|| {
+            "Invalid request body. Check that the JSON structure matches the expected schema."
+                .to_string()
+        });
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
-            Json(ErrorResponse {
-                error: "Invalid request body. Check that the JSON structure matches the expected schema.".to_string(),
-            }),
+            Json(ErrorResponse { error }),
         )
             .into_response();
     }
 
     response
+}
+
+/// Marker a validator puts in front of a message that is MEANT for the client.
+///
+/// GH-649 sanitizes every 422 body so raw serde internals (Rust type paths,
+/// field offsets) never reach an API client. That is right for accidental
+/// errors and wrong for deliberate ones: aprender#2375(9) rejects `n > 1` at
+/// deserialization, and without this marker the caller was told only "Invalid
+/// request body" — refused, but with no way to learn which field was refused.
+/// A validator prefixes its message with this marker to opt into being shown.
+pub(crate) const CLIENT_VISIBLE_MARKER: &str = "[request] ";
+
+/// Recover an authored, client-visible reason out of an axum rejection body.
+///
+/// Returns `None` for anything unmarked, so unauthored serde text stays hidden.
+fn client_visible_reason(rejection_body: &str) -> Option<String> {
+    let reason = rejection_body.split(CLIENT_VISIBLE_MARKER).nth(1)?;
+    let reason = reason.split('\n').next().unwrap_or(reason);
+    // serde_json appends " at line L column C" to a custom error; that offset is
+    // about our parse position, not about the caller's mistake.
+    let reason = reason
+        .split(" at line ")
+        .next()
+        .unwrap_or(reason)
+        .trim_end_matches(['"', ' ', '.']);
+    (!reason.is_empty()).then(|| reason.to_string())
+}
+
+#[cfg(test)]
+mod client_visible_reason_tests {
+    use super::client_visible_reason;
+
+    #[test]
+    fn unmarked_serde_text_stays_hidden() {
+        // GH-649: raw axum/serde text must never reach the client.
+        assert_eq!(
+            client_visible_reason(
+                "Failed to deserialize the JSON body into the target type: \
+                 missing field `messages` at line 1 column 42"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn marked_reason_is_extracted_without_the_serde_frame() {
+        let extracted = client_visible_reason(
+            "Failed to deserialize the JSON body into the target type: n: \
+             [request] n must be 1: this server returns exactly one choice per request",
+        )
+        .expect("marked reason is surfaced");
+        assert!(extracted.starts_with("n must be 1"));
+        assert!(
+            !extracted.contains("deserialize"),
+            "the serde frame must be stripped: {extracted}"
+        );
+    }
+
+    #[test]
+    fn serde_position_suffix_is_stripped() {
+        // Observed on the live server: serde_json appends its parse position to
+        // a custom error, which means nothing to the caller.
+        let extracted = client_visible_reason(
+            "Failed to deserialize the JSON body into the target type: n: \
+             [request] n must be 1: send 3 requests instead at line 1 column 84",
+        )
+        .expect("marked reason is surfaced");
+        assert_eq!(extracted, "n must be 1: send 3 requests instead");
+    }
 }
 
 /// Process-wide server start instant.

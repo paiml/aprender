@@ -126,6 +126,8 @@ fn test_reload_response_clone_debug_cov() {
 #[test]
 fn test_completion_request_full_cov2() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "gpt-3.5-turbo".to_string(),
         prompt: "Once upon a time".to_string(),
         max_tokens: Some(100),
@@ -142,6 +144,8 @@ fn test_completion_request_full_cov2() {
 #[test]
 fn test_completion_request_minimal_cov() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: None,

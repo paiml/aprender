@@ -378,7 +378,7 @@ fn test_chat_completion_chunk_methods_ext_cov() {
     let chunk3 = ChatCompletionChunk::content("id3", "m", "hello");
     assert_eq!(chunk3.choices[0].delta.content, Some("hello".to_string()));
 
-    let chunk4 = ChatCompletionChunk::done("id4", "m");
+    let chunk4 = ChatCompletionChunk::done("id4", "m", crate::api::FinishReason::Stop);
     assert_eq!(chunk4.choices[0].finish_reason, Some("stop".to_string()));
 }
 

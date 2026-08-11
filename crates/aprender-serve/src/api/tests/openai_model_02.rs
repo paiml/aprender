@@ -425,7 +425,7 @@ fn test_chat_completion_request_serde() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: crate::api::ChoiceCount::ONE,
         stream: false,
         stop: Some(vec!["END".to_string()]),
         user: Some("test-user".to_string()),

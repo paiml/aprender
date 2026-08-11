@@ -306,7 +306,7 @@ fn test_chat_completion_request_minimal() {
     let request: ChatCompletionRequest = serde_json::from_str(json).expect("should deserialize");
     assert_eq!(request.model, "gpt-4");
     assert_eq!(request.messages.len(), 1);
-    assert_eq!(request.n, 1); // default
+    assert_eq!(request.n.get(), 1); // default
     assert!(!request.stream); // default
 }
 
@@ -337,7 +337,7 @@ fn test_chat_completion_request_full() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 2,
+        n: realizar::api::ChoiceCount::ONE,
         stream: true,
         stop: Some(vec!["STOP".to_string()]),
         user: Some("user-id".to_string()),
@@ -352,7 +352,8 @@ fn test_chat_completion_request_full() {
     assert_eq!(deserialized.model, "gpt-4");
     assert_eq!(deserialized.messages.len(), 2);
     assert_eq!(deserialized.max_tokens, Some(256));
-    assert_eq!(deserialized.n, 2);
+    // aprender#2375(9): `n` round-trips as the only supported value, 1.
+    assert_eq!(deserialized.n.get(), 1);
     assert!(deserialized.stream);
 }
 
@@ -811,6 +812,8 @@ fn test_embedding_response_serialization() {
 #[test]
 fn test_completion_request_serialization() {
     let request = CompletionRequest {
+        stream: false,
+        n: realizar::api::ChoiceCount::ONE,
         model: "gpt-3.5-turbo".to_string(),
         prompt: "Once upon a time".to_string(),
         max_tokens: Some(50),
@@ -1792,7 +1795,7 @@ fn test_chat_completion_request_with_stop() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: realizar::api::ChoiceCount::ONE,
         stream: false,
         stop: Some(vec!["STOP".to_string(), "END".to_string()]),
         user: None,
@@ -1816,7 +1819,7 @@ fn test_chat_completion_request_with_user() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: realizar::api::ChoiceCount::ONE,
         stream: false,
         stop: None,
         user: Some("user-12345".to_string()),
@@ -2701,6 +2704,8 @@ fn test_completion_request_all_optional_none() {
 #[test]
 fn test_completion_request_with_multiple_stop_sequences() {
     let request = CompletionRequest {
+        stream: false,
+        n: realizar::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "Once upon".to_string(),
         max_tokens: Some(100),
@@ -2832,7 +2837,7 @@ fn test_chat_completion_request_n_multiple() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 5, // Request 5 completions
+        n: realizar::api::ChoiceCount::ONE, // Request 5 completions
         stream: false,
         stop: None,
         user: None,
@@ -2856,7 +2861,7 @@ fn test_chat_completion_request_streaming() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: realizar::api::ChoiceCount::ONE,
         stream: true,
         stop: None,
         user: None,
@@ -3041,7 +3046,7 @@ fn test_predict_request_default_include_confidence() {
 fn test_chat_completion_request_default_n() {
     let json = r#"{"model": "test", "messages": []}"#;
     let request: ChatCompletionRequest = serde_json::from_str(json).expect("should deserialize");
-    assert_eq!(request.n, 1); // default value
+    assert_eq!(request.n.get(), 1); // default value
 }
 
 #[test]
@@ -3464,7 +3469,7 @@ fn test_chat_completion_request_with_stop_sequences() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: realizar::api::ChoiceCount::ONE,
         stream: false,
         stop: Some(vec!["END".to_string(), "STOP".to_string()]),
         user: Some("user-123".to_string()),
@@ -3738,6 +3743,8 @@ fn test_usage_various_sizes() {
 #[test]
 fn test_completion_request_with_all_params() {
     let request = CompletionRequest {
+        stream: false,
+        n: realizar::api::ChoiceCount::ONE,
         model: "gpt-3.5-turbo-instruct".to_string(),
         prompt: "Once upon a time".to_string(),
         max_tokens: Some(256),
@@ -4245,7 +4252,7 @@ fn test_chat_completion_request_all_optional_fields() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 3,
+        n: realizar::api::ChoiceCount::ONE,
         stream: true,
         stop: Some(vec![
             "END".to_string(),
@@ -4260,7 +4267,7 @@ fn test_chat_completion_request_all_optional_fields() {
     let json = serde_json::to_string(&request).expect("serialize");
     let deserialized: ChatCompletionRequest = serde_json::from_str(&json).expect("deserialize");
 
-    assert_eq!(deserialized.n, 3);
+    assert_eq!(deserialized.n.get(), 1);
     assert!(deserialized.stream);
     assert_eq!(deserialized.stop.as_ref().unwrap().len(), 3);
     assert_eq!(deserialized.user, Some("user-abc123".to_string()));
@@ -4341,6 +4348,8 @@ fn test_gpu_batch_request_temperature_variations() {
 fn test_completion_request_stop_sequences() {
     // No stop sequences
     let no_stop = CompletionRequest {
+        stream: false,
+        n: realizar::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: None,
@@ -4353,6 +4362,8 @@ fn test_completion_request_stop_sequences() {
 
     // Multiple stop sequences
     let multi_stop = CompletionRequest {
+        stream: false,
+        n: realizar::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: Some(100),
@@ -4717,7 +4728,7 @@ fn test_chat_completion_request_clone() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: realizar::api::ChoiceCount::ONE,
         stream: false,
         stop: None,
         user: None,

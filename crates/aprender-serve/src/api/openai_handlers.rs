@@ -22,7 +22,7 @@ use futures::stream::Stream;
 use super::{
     build_trace_data, clean_chat_output, format_chat_messages, AppState, ChatChoice,
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse,
-    OpenAIModel, OpenAIModelsResponse, Usage,
+    FinishReason, OpenAIModel, OpenAIModelsResponse, Usage,
 };
 use crate::generate::{GenerationConfig, SamplingStrategy};
 use crate::tokenizer::BPETokenizer;
@@ -222,7 +222,7 @@ mod pmat821_chat_handler_threading_tests {
             repeat_penalty: None,
             repeat_last_n: None,
             seed: None,
-            n: 1,
+            n: crate::api::ChoiceCount::ONE,
             stream: false,
             stop: None,
             user: None,
@@ -511,8 +511,14 @@ fn pregenerated_sse_response(
     request_id: String,
     model_name: String,
     stops: Option<&[String]>,
+    max_tokens: usize,
 ) -> Response {
-    let deltas = streaming_text_deltas(&tokenizer, &token_ids, stops);
+    let completion_tokens = token_ids.len();
+    let StreamedText { deltas, stopped } = streaming_text_deltas(&tokenizer, &token_ids, stops);
+    // #2375(6): `max_tokens` is a parameter so this path CANNOT emit a finish
+    // reason without knowing the budget it was generated under. The terminal
+    // chunk now agrees with the non-streaming body for the same request.
+    let finish = FinishReason::from_generation(stopped, completion_tokens, max_tokens);
     let stream = async_stream::stream! {
         if let Some(evt) = sse_event(&ChatCompletionChunk::initial(&request_id, &model_name)) {
             yield evt;
@@ -525,7 +531,7 @@ fn pregenerated_sse_response(
             }
         }
 
-        if let Some(evt) = sse_event(&ChatCompletionChunk::done(&request_id, &model_name)) {
+        if let Some(evt) = sse_event(&ChatCompletionChunk::done(&request_id, &model_name, finish)) {
             yield evt;
         }
         yield Ok::<_, Infallible>(Event::default().data("[DONE]".to_string()));
@@ -548,6 +554,7 @@ pub(crate) fn true_streaming_sse_response(
     model_name: String,
     metrics: Arc<crate::metrics::MetricsCollector>,
     start: Instant,
+    max_tokens: usize,
 ) -> Response {
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_stream::StreamExt;
@@ -581,7 +588,10 @@ pub(crate) fn true_streaming_sse_response(
             }
         }
 
-        if let Some(evt) = sse_event(&ChatCompletionChunk::done(&request_id, &model_name)) {
+        // #2375(6): a token stream that delivered the whole budget was cut off at
+        // `max_tokens`; anything shorter ended on a stop/EOS token.
+        let finish = FinishReason::from_generation(false, completion_tokens, max_tokens);
+        if let Some(evt) = sse_event(&ChatCompletionChunk::done(&request_id, &model_name, finish)) {
             yield evt;
         }
 
@@ -670,6 +680,7 @@ fn try_gpu_backend(
             request_id.to_string(),
             request.model.clone(),
             request.stop.as_deref(),
+            max_tokens,
         ));
     }
 
@@ -753,6 +764,7 @@ fn try_cached_backend(
             request_id.to_string(),
             request.model.clone(),
             request.stop.as_deref(),
+            max_tokens,
         ));
     }
 

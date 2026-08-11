@@ -246,7 +246,7 @@ fn test_chunk_content_no_role() {
 
 #[test]
 fn test_chunk_done_has_finish_reason() {
-    let chunk = ChatCompletionChunk::done("test-id", "test-model");
+    let chunk = ChatCompletionChunk::done("test-id", "test-model", crate::api::FinishReason::Stop);
     assert_eq!(chunk.choices[0].finish_reason.as_ref().expect("test value should be present"), "stop");
 }
 

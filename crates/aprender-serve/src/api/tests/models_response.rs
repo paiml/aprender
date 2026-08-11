@@ -62,7 +62,7 @@ fn test_chat_completion_request_full_cov() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 2,
+        n: crate::api::ChoiceCount::ONE,
         stream: true,
         stop: Some(vec!["###".to_string()]),
         user: Some("user-123".to_string()),
@@ -72,7 +72,7 @@ fn test_chat_completion_request_full_cov() {
     let json = serde_json::to_string(&req).expect("serialize");
     let parsed: ChatCompletionRequest = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(parsed.model, "gpt-4");
-    assert_eq!(parsed.n, 2);
+    assert_eq!(parsed.n.get(), 1);
     assert!(parsed.stream);
 }
 

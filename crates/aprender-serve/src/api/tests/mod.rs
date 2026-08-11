@@ -54,3 +54,4 @@ mod sse_stream_whitespace; // Dogfood 0.63.0: SSE deltas must reassemble with wh
 mod native_routes_2376; // aprender#2376: native routes on a quantized server, KV-cache budget, sampling fields
 mod router_flags; // --no-cors / --no-metrics must change HTTP behaviour, not just the banner
 mod ollama_compat_http; // Dogfood 0.63.0 (#2396/#2402): /api/tags|show|version routed, stream:true is NDJSON, /realize/* stops fabricating
+mod openai_compat_2375; // Dogfood 0.63.0 (#2375): /v1/completions streams, finish_reason is measured, `n` is honoured or refused, /v1/predict stops lying
