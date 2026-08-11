@@ -8,7 +8,7 @@
 //! - **Concurrency**: Stream overlap (simulated)
 
 use super::context::CudaContext;
-use super::memory::GpuBuffer;
+use super::memory::{device_bytes_outstanding, device_memory_exclusive, GpuBuffer};
 use crate::GpuError;
 use proptest::prelude::*;
 

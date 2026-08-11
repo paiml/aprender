@@ -9,6 +9,45 @@ fn test_buffer_requires_cuda_feature() {
     assert!(true);
 }
 
+/// GPU-ORD-4 falsifier: `device_memory_exclusive()` must actually exclude.
+///
+/// Two tests that each try to consume the whole card, or that set the
+/// process-wide `MANAGED_MEMORY` variable, invalidate each other's premise.
+/// Black box, and needs no GPU: while one holder is alive, a second acquisition
+/// on another thread must not complete.
+#[test]
+fn test_device_memory_exclusive_actually_excludes() {
+    use crate::driver::device_memory_exclusive;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let acquired = Arc::new(AtomicBool::new(false));
+    let acquired_bg = Arc::clone(&acquired);
+
+    let held = device_memory_exclusive();
+
+    let bg = std::thread::spawn(move || {
+        let _second = device_memory_exclusive();
+        acquired_bg.store(true, Ordering::SeqCst);
+    });
+
+    for _ in 0..50 {
+        assert!(
+            !acquired.load(Ordering::SeqCst),
+            "a second device_memory_exclusive() was granted while one was held — \
+             capacity claims and MANAGED_MEMORY mutations can still overlap"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+
+    drop(held);
+    bg.join().expect("second acquirer must not panic");
+    assert!(
+        acquired.load(Ordering::SeqCst),
+        "device_memory_exclusive() never became available after release"
+    );
+}
+
 #[test]
 fn test_size_bytes_calculation() {
     // Test size calculation logic (doesn't require CUDA)
@@ -480,8 +519,13 @@ mod cuda_tests {
         // FT-ALLOC-DISPATCH-004: MANAGED_MEMORY=1 forces managed even on
         // ClassicDevice classification. Verifies the env override path is
         // preserved (no regression from PMAT-394).
+        ///
+        /// GPU-ORD-4: `MANAGED_MEMORY` is process-wide and the allocator reads
+        /// it on every allocation, so setting it steers *other* tests' buffers
+        /// too. `device_memory_exclusive()` keeps the window closed.
         #[test]
         fn env_override_managed_forced() {
+            let _exclusive = crate::driver::device_memory_exclusive();
             let ctx = cuda_ctx!();
             std::env::set_var("MANAGED_MEMORY", "1");
             let buf: GpuBuffer<f32> = GpuBuffer::new(&ctx, 1024).unwrap();
@@ -495,8 +539,11 @@ mod cuda_tests {
 
         // FT-ALLOC-DISPATCH-005: MANAGED_MEMORY=0 forces device-only allocation
         // even on UnifiedMemory devices. Diagnostics escape hatch.
+        /// Takes `device_memory_exclusive()` for the same reason as
+        /// `env_override_managed_forced` — see GPU-ORD-4 there.
         #[test]
         fn env_override_device_only() {
+            let _exclusive = crate::driver::device_memory_exclusive();
             let ctx = cuda_ctx!();
             std::env::set_var("MANAGED_MEMORY", "0");
             let buf: GpuBuffer<f32> = GpuBuffer::new(&ctx, 1024).unwrap();
@@ -505,6 +552,115 @@ mod cuda_tests {
             // Falsifier strengthens on Grace by allocating > dGPU partition and
             // expecting OOM with MANAGED_MEMORY=0.
             assert_eq!(buf.len(), 1024);
+        }
+    }
+
+    /// GPU-ORD-4 falsifier: another thread's allocations must not appear in
+    /// this thread's outstanding-bytes measurement.
+    ///
+    /// This is the failure as it presented — `test_raii_cleanup_single_buffer`
+    /// bracketed a 100MB allocation with device-global free memory and read
+    /// `before=20583415808, during=21017526272`, i.e. *more* free memory after
+    /// allocating, because a neighbour had released 400MB inside the window.
+    /// Black box: the assertion only concerns what this thread allocated.
+    #[test]
+    fn test_device_accounting_is_not_polluted_by_other_threads() {
+        let ctx = cuda_ctx!();
+
+        let mine = 1024usize;
+        let mine_bytes = (mine * std::mem::size_of::<f32>()) as u64;
+        let before = device_bytes_outstanding();
+        let _held: GpuBuffer<f32> = GpuBuffer::new(&ctx, mine).expect("alloc");
+        let with_mine = device_bytes_outstanding();
+        assert_eq!(with_mine, before + mine_bytes);
+
+        // A neighbour allocating 256MB and *holding* it across our reading —
+        // holding matters, because a neighbour that allocated and freed again
+        // would leave even a shared counter back where it started and the
+        // assertion would pass for the wrong reason.
+        let (started_tx, started_rx) = std::sync::mpsc::channel::<bool>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let neighbour = std::thread::spawn(move || {
+            let Ok(ctx) = CudaContext::new(0) else {
+                let _ = started_tx.send(false);
+                return;
+            };
+            let Ok(big) = GpuBuffer::<f32>::new(&ctx, 64_000_000) else {
+                let _ = started_tx.send(false);
+                return;
+            };
+            let _ = started_tx.send(true);
+            let _ = release_rx.recv();
+            drop(big);
+        });
+
+        let neighbour_allocated = started_rx.recv().expect("neighbour must report");
+        if neighbour_allocated {
+            assert_eq!(
+                device_bytes_outstanding(),
+                with_mine,
+                "another thread's live 256MB allocation appeared in this \
+                 thread's outstanding byte count"
+            );
+        }
+        let _ = release_tx.send(());
+        neighbour.join().expect("neighbour thread must not panic");
+    }
+
+    /// GPU-ORD-9 falsifier: a *synchronous* upload must be visible to work
+    /// issued on a `CudaStream`.
+    ///
+    /// `copy_from_host` is documented synchronous, but `cuMemcpyHtoD` out of
+    /// pageable host memory returns once the bytes reach CUDA's staging
+    /// buffer, with the DMA to device memory still queued on the legacy
+    /// default stream. Every `CudaStream` this crate creates is
+    /// `CU_STREAM_NON_BLOCKING` and so is *not* ordered against that stream —
+    /// the readback below could observe the buffer before the upload landed,
+    /// with every CUDA call returning success.
+    ///
+    /// Black-box: nothing here inspects the transfer implementation, it only
+    /// asserts that what was written is what comes back. Each round uploads a
+    /// payload no other round produces, so a stale read is caught whether the
+    /// device memory holds zeros or a recycled previous buffer.
+    ///
+    /// Measured pre-fix hazard was 15 stale reads in 200 rounds (7.5%), so
+    /// 128 rounds turns RED with probability 1 - 0.925^128 > 0.99996.
+    #[test]
+    fn test_sync_upload_visible_to_nonblocking_stream() {
+        use crate::driver::CudaStream;
+
+        let ctx = cuda_ctx!();
+        let stream = CudaStream::new(&ctx).expect("stream creation");
+        const N: usize = 1024;
+
+        for round in 0..128u32 {
+            // A payload unique to this round: a stale read of the *previous*
+            // round's recycled device memory is a mismatch, not a false pass.
+            let data: Vec<f32> = (0..N)
+                .map(|i| (round * 100_000 + i as u32) as f32)
+                .collect();
+            let buffer = GpuBuffer::from_host(&ctx, &data).expect("synchronous upload");
+
+            let mut back = vec![f32::NAN; N];
+            // SAFETY: `back` outlives the stream synchronization below.
+            unsafe {
+                buffer
+                    .copy_to_host_async(&mut back, &stream)
+                    .expect("async readback");
+            }
+            stream.synchronize().expect("stream sync");
+
+            if let Some(i) = (0..N).find(|&i| back[i] != data[i]) {
+                let stale = back[i..].iter().filter(|v| **v == 0.0).count();
+                panic!(
+                    "round {round}: the stream observed the buffer before the synchronous \
+                     upload landed — element {i} is {} but {} was uploaded \
+                     ({stale} of the remaining {} elements are zero)",
+                    back[i],
+                    data[i],
+                    N - i
+                );
+            }
         }
     }
 }
