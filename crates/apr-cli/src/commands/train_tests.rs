@@ -257,15 +257,80 @@ mod tests {
     // classify_not_available
     // ========================================================================
 
+    /// This test used to assert the message mentioned "entrenar", which locked
+    /// in a claim that was false in the binary printing it: entrenar is the
+    /// in-tree `crates/aprender-train` built at the workspace version, so
+    /// "requires entrenar >= 0.8 (not yet published)" named a blocker that
+    /// could not exist. The message must instead route the user to the command
+    /// that does implement classification.
     #[test]
-    fn classify_not_available_returns_validation_failed() {
+    fn classify_not_available_names_the_command_that_works() {
         let err = classify_not_available();
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(msg.contains("classify"), "Should mention classify");
-                assert!(msg.contains("entrenar"), "Should mention entrenar dep");
+                assert!(
+                    msg.contains("apr finetune"),
+                    "must point at the command that implements classification: {msg}"
+                );
+                assert!(
+                    !msg.contains("not yet published"),
+                    "claims an unpublished dependency that this binary already links: {msg}"
+                );
+                assert!(
+                    !msg.contains("entrenar >= 0.8"),
+                    "names a version blocker that does not exist: {msg}"
+                );
             }
             _ => panic!("Expected ValidationFailed"),
+        }
+    }
+
+    /// The DEFAULT task of `apr train plan` / `apr train apply` must be one
+    /// that can succeed. It was `classify`, so the documented bare invocation
+    /// `apr train plan --data <file>` always exited 5.
+    /// Parse `apr train <sub>` argv through clap and return the `--task` value.
+    /// Runs on a wide-stack thread: the full `Cli` enum overflows the default
+    /// 2 MiB test-thread stack in a debug build (same pattern as
+    /// `parse_pretrain_device`).
+    fn parse_train_task(sub: &str) -> String {
+        let sub = sub.to_string();
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                use clap::Parser;
+                let argv = vec![
+                    "apr".to_string(),
+                    "train".to_string(),
+                    sub,
+                    "--config".to_string(),
+                    "/nonexistent/c.yaml".to_string(),
+                ];
+                let cli = crate::Cli::try_parse_from(&argv).expect("clap parse must succeed");
+                match *cli.command {
+                    crate::Commands::Extended(crate::ExtendedCommands::Train { command }) => {
+                        match command {
+                            crate::TrainCommands::Plan { task, .. }
+                            | crate::TrainCommands::Apply { task, .. } => task,
+                            _ => panic!("expected train plan/apply"),
+                        }
+                    }
+                    _ => panic!("expected ExtendedCommands::Train"),
+                }
+            })
+            .expect("spawn parse thread")
+            .join()
+            .expect("parse thread must not panic")
+    }
+
+    #[test]
+    fn train_plan_and_apply_default_to_a_task_that_can_run() {
+        for sub in ["plan", "apply"] {
+            let task = parse_train_task(sub);
+            assert_eq!(
+                task, "pretrain",
+                "`apr train {sub}` defaults to `{task}`, a task this command cannot run"
+            );
         }
     }
 
@@ -638,6 +703,7 @@ mod tests {
             weight_decay: 0.01,
             warmup_steps: 100,
             eliminated_round: None,
+            last_failure: None,
         };
         let other = HalvingEntry {
             path: dir.join("sweep-001.yaml"),
@@ -646,6 +712,7 @@ mod tests {
             weight_decay: 0.0,
             warmup_steps: 50,
             eliminated_round: Some(0),
+            last_failure: None,
         };
         let results = vec![winner, other];
         // μTransfer scales the LR by source/target width.
@@ -883,5 +950,107 @@ mod tests {
         assert_eq!(v["total_bytes"].as_u64(), Some(7));
         assert!(out.join("model.bin").exists());
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ========================================================================
+    // train halving — a WINNER requires evidence (#2374 finding 10)
+    // ========================================================================
+
+    fn halving_entry(name: &str, best_ppl: f64, failure: Option<&str>) -> HalvingEntry {
+        HalvingEntry {
+            path: std::path::PathBuf::from(name),
+            best_ppl,
+            lr: 5.0e-4,
+            weight_decay: 0.01,
+            warmup_steps: 100,
+            eliminated_round: None,
+            last_failure: failure.map(str::to_string),
+        }
+    }
+
+    /// A trial process that exited non-zero produced no evidence. It must be
+    /// reported as FAILED, not silently scored — `Command::output()` returning
+    /// `Ok` only means the process spawned.
+    #[test]
+    fn classify_trial_nonzero_exit_is_a_failure_not_a_score() {
+        let combined = "Loading JSON: d.json\nerror: Validation failed: Training failed: \
+                        I/O error: No such file or directory (os error 2)\n";
+        match classify_trial(false, Some(5), combined) {
+            TrialOutcome::Failed(reason) => {
+                assert!(reason.contains("exit 5"), "reason lost the exit code: {reason}");
+                assert!(
+                    reason.contains("No such file or directory"),
+                    "reason lost the trial's own error: {reason}"
+                );
+            }
+            TrialOutcome::Scored(p) => panic!("failed trial scored {p}"),
+            TrialOutcome::NoEval => panic!("failed trial reported as a clean no-eval"),
+        }
+    }
+
+    /// A trial that exits 0 but prints no val_ppl is "no eval" — distinct from
+    /// a failure, and still not a score.
+    #[test]
+    fn classify_trial_clean_exit_without_eval_is_no_eval() {
+        assert!(matches!(
+            classify_trial(true, Some(0), "Training complete\n"),
+            TrialOutcome::NoEval
+        ));
+    }
+
+    /// A trial that exits 0 and reports val_ppl keeps the BEST (lowest) value.
+    #[test]
+    fn classify_trial_scores_best_val_ppl_on_clean_exit() {
+        let out = "[eval] step=1 val_loss=2.0 val_ppl=7.39\n[eval] step=2 val_loss=1.5 val_ppl=4.48\n";
+        match classify_trial(true, Some(0), out) {
+            TrialOutcome::Scored(p) => assert!((p - 4.48).abs() < 1e-9, "got {p}"),
+            other => panic!("clean scored trial misclassified: {:?}", match other {
+                TrialOutcome::Failed(r) => r,
+                _ => "no-eval".to_string(),
+            }),
+        }
+    }
+
+    /// The defect: three trials each exited 5, every best_ppl stayed infinite,
+    /// and halving still printed `═══ WINNER ═══ sweep-000.yaml` with a
+    /// μTransfer LR and exited 0. With no finite score there is no winner.
+    #[test]
+    fn select_halving_winner_refuses_to_crown_all_failed_trials() {
+        let results = vec![
+            halving_entry("sweep-000.yaml", f64::INFINITY, Some("exit 5: I/O error")),
+            halving_entry("sweep-001.yaml", f64::INFINITY, Some("exit 5: I/O error")),
+            halving_entry("sweep-002.yaml", f64::INFINITY, Some("exit 5: I/O error")),
+        ];
+        let err = select_halving_winner(&results, &[0, 1, 2])
+            .expect_err("all-failed trials must not produce a winner");
+        let msg = err.to_string();
+        assert!(msg.contains("no halving winner"), "unhelpful error: {msg}");
+        assert!(msg.contains("sweep-000.yaml"), "error names no failing config: {msg}");
+        assert!(msg.contains("exit 5"), "error drops the trial exit status: {msg}");
+    }
+
+    /// All trials exiting 0 with no eval line is also not a result.
+    #[test]
+    fn select_halving_winner_refuses_when_no_trial_printed_a_val_ppl() {
+        let results = vec![
+            halving_entry("sweep-000.yaml", f64::INFINITY, None),
+            halving_entry("sweep-001.yaml", f64::INFINITY, None),
+        ];
+        let err = select_halving_winner(&results, &[0, 1]).expect_err("no scores ⇒ no winner");
+        assert!(err.to_string().contains("val_ppl"), "{err}");
+    }
+
+    /// The healthy path still works: the surviving entry with a finite score
+    /// wins, and an infinite-scored survivor ahead of it is skipped.
+    #[test]
+    fn select_halving_winner_picks_the_scored_survivor() {
+        let results = vec![
+            halving_entry("sweep-000.yaml", f64::INFINITY, Some("exit 5: boom")),
+            halving_entry("sweep-001.yaml", 12.5, None),
+        ];
+        assert_eq!(
+            select_halving_winner(&results, &[0, 1]).expect("a scored survivor exists"),
+            1
+        );
     }
 }
