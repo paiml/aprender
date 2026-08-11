@@ -1,16 +1,39 @@
 
+/// Share of total inference time to print for each hotspot row.
+///
+/// GH-2395: this used to be `time_us / sum(time_us of the rows being printed)`.
+/// After `--focus mlp` dropped every row but one, that denominator was the single
+/// survivor, so the table reported "100.0%" for an operation the same tool's own
+/// Category Summary put at 23.2% — a fabricated number of exactly the kind that
+/// gets pasted into an optimisation ticket. `Hotspot::percent` is recorded against
+/// TOTAL inference time when the hotspot is built, so use it; the local sum is
+/// only a fallback for results that carry no recorded percentages at all.
+fn hotspot_display_percents(hotspots: &[Hotspot]) -> Vec<f64> {
+    let recorded_total: f64 = hotspots.iter().map(|h| h.percent).sum();
+    if recorded_total > 0.0 {
+        return hotspots.iter().map(|h| h.percent).collect();
+    }
+    let total_time: f64 = hotspots.iter().map(|h| h.time_us).sum();
+    hotspots
+        .iter()
+        .map(|h| {
+            if total_time > 0.0 {
+                (h.time_us / total_time) * 100.0
+            } else {
+                0.0
+            }
+        })
+        .collect()
+}
+
 fn print_hotspot_table(results: &RealProfileResults, granular: bool) {
     output::subheader("Per-Operation Hotspots (ungraphed — SKIP_CUDA_GRAPH=1)");
     println!();
 
-    let total_time = results.hotspots.iter().map(|h| h.time_us).sum::<f64>();
+    let percents = hotspot_display_percents(&results.hotspots);
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (i, hotspot) in results.hotspots.iter().enumerate() {
-        let percent = if total_time > 0.0 {
-            (hotspot.time_us / total_time) * 100.0
-        } else {
-            0.0
-        };
+        let percent = percents[i];
         let bar = output::progress_bar(percent as usize, 100, 20);
         let bottleneck_str = hotspot.bottleneck.as_deref().unwrap_or("-");
         let mut row = vec![
@@ -251,30 +274,74 @@ fn print_perf_grade_section(results: &RealProfileResults, show: bool) {
     println!();
 }
 
-fn print_naive_detection(results: &RealProfileResults, detect: bool) {
+/// One reason the model looks naively implemented.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NaiveSuspicion {
+    /// Human-readable reason, printed under `--detect-naive`.
+    pub(crate) reason: String,
+}
+
+/// Decide whether a profile looks naively implemented, at a GFLOPS `threshold`.
+///
+/// GH-2395: `--threshold <GFLOPS>` is documented as "GFLOPS threshold for naive
+/// detection" but nothing read it — `run()` did `let _ = naive_threshold;` and the
+/// only heuristic was "one op takes over half of total time". `--threshold 100000`
+/// on a run achieving 22.1 GFLOPS therefore still reported "No obvious naive
+/// implementations detected". Both signals now feed the verdict, and the verdict is
+/// what `--fail-on-naive` exits on.
+///
+/// Returns an empty vector when nothing is suspicious.
+fn detect_naive_implementations(
+    results: &RealProfileResults,
+    threshold_gflops: f64,
+) -> Vec<NaiveSuspicion> {
+    let mut suspicions = Vec::new();
+
+    // Signal 1: achieved compute throughput below the floor the user asked for.
+    if let Some(ref r) = results.roofline {
+        if threshold_gflops > 0.0 && r.achieved_gflops < threshold_gflops {
+            suspicions.push(NaiveSuspicion {
+                reason: format!(
+                    "achieved {:.1} GFLOPS < --threshold {:.1} GFLOPS",
+                    r.achieved_gflops, threshold_gflops
+                ),
+            });
+        }
+    }
+
+    // Signal 2: a single operation dominating the forward pass, which is the
+    // classic shape of a scalar fallback inside one kernel.
+    for h in &results.hotspots {
+        if h.count > 0 && h.avg_us > results.total_inference_us * 0.5 {
+            suspicions.push(NaiveSuspicion {
+                reason: format!(
+                    "{} takes {:.1}% of total time ({:.0}µs avg) — check for scalar fallback",
+                    h.name, h.percent, h.avg_us
+                ),
+            });
+        }
+    }
+
+    suspicions
+}
+
+fn print_naive_detection(results: &RealProfileResults, detect: bool, threshold_gflops: f64) {
     if !detect {
         return;
     }
     output::subheader("Naive Implementation Detection");
     println!();
-    let mut found = false;
-    for h in &results.hotspots {
-        if h.count > 0 && h.avg_us > results.total_inference_us * 0.5 {
-            println!(
-                "  {} {} takes {:.1}% of total time ({:.0}µs avg) — check for scalar fallback",
-                output::badge_warn("NAIVE?"),
-                h.name,
-                h.percent,
-                h.avg_us
-            );
-            found = true;
-        }
-    }
-    if !found {
+    let suspicions = detect_naive_implementations(results, threshold_gflops);
+    if suspicions.is_empty() {
         println!(
-            "  {} No obvious naive implementations detected",
-            output::badge_pass("OK")
+            "  {} No obvious naive implementations detected (threshold {:.1} GFLOPS)",
+            output::badge_pass("OK"),
+            threshold_gflops
         );
+    } else {
+        for s in &suspicions {
+            println!("  {} {}", output::badge_warn("NAIVE?"), s.reason);
+        }
     }
     println!();
 }

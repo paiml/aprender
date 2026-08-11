@@ -1,10 +1,40 @@
 
-/// Remove a model from cache
-pub fn remove(model_ref: &str) -> Result<()> {
-    println!("{}", "=== APR Remove ===".cyan().bold());
-    println!();
-    println!("Model: {}", model_ref.cyan());
+/// The complete stdout of `apr rm`, in whichever mode was asked for.
+///
+/// `None` means "write nothing to stdout": the not-found case under `--json`.
+/// That keeps the convention the already-correct JSON commands use
+/// (`apr validate --json`, `apr stamp --json`) — on failure the diagnostic goes
+/// to stderr and the exit code carries the outcome, so a consumer that parses
+/// stdout only ever sees a whole JSON document or nothing at all.
+// serde_json::json!() uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn remove_stdout(model_ref: &str, removed: bool, json: bool) -> Option<String> {
+    if json {
+        if !removed {
+            return None;
+        }
+        let doc = serde_json::json!({
+            "model": model_ref,
+            "removed": true,
+        });
+        return Some(serde_json::to_string_pretty(&doc).unwrap_or_default());
+    }
 
+    let outcome = if removed {
+        format!("{} Model removed from cache", "✓".green())
+    } else {
+        format!("{} Model not found in cache", "⚠".yellow())
+    };
+    Some(format!(
+        "{}\n\nModel: {}\n{}",
+        "=== APR Remove ===".cyan().bold(),
+        model_ref.cyan(),
+        outcome
+    ))
+}
+
+/// Remove a model from cache
+pub fn remove(model_ref: &str, json: bool) -> Result<()> {
     let mut fetcher = ModelFetcher::new().map_err(|e| {
         CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
     })?;
@@ -13,13 +43,116 @@ pub fn remove(model_ref: &str) -> Result<()> {
         .remove(model_ref)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to remove model: {e}")))?;
 
+
     if removed {
-        println!("{} Model removed from cache", "✓".green());
-        Ok(())
-    } else {
-        // GH-601: rm of nonexistent model must exit non-zero (like unix rm).
-        println!("{} Model not found in cache", "⚠".yellow());
-        Err(CliError::FileNotFound(std::path::PathBuf::from(model_ref)))
+        if let Some(out) = remove_stdout(model_ref, true, json) {
+            println!("{out}");
+        }
+        return Ok(());
+    }
+
+    // RM-NS-001: the pacha manifest is not the cache. `apr pull`'s streaming
+    // path, `apr convert` and plain file copies all write straight into the
+    // cache directory, so a manifest lookup misses almost everything `apr list`
+    // prints — every name it showed was rejected here. Resolve against the same
+    // enumeration `apr list` uses before giving up.
+    //
+    // The path is folded into the single `remove_stdout` call rather than
+    // printed separately: under `--json` a stray `Path: ...` line would sit
+    // outside the JSON document and break every consumer parsing stdout.
+    if let Some(path) = remove_from_cache_dir(fetcher.cache_dir(), model_ref)? {
+        if let Some(out) = remove_stdout(model_ref, true, json) {
+            println!("{out}");
+            if !json {
+                println!("  Path: {}", path.display());
+            }
+        }
+        return Ok(());
+    }
+
+    // GH-601: rm of nonexistent model must exit non-zero (like unix rm).
+    if let Some(out) = remove_stdout(model_ref, false, json) {
+        println!("{out}");
+    }
+    Err(CliError::FileNotFound(std::path::PathBuf::from(model_ref)))
+}
+
+/// RM-NS-001: `blake3(uri)[..16]` — the stem `apr pull` gives a cached file
+/// (`build_single_cache_path`), so `apr rm hf://org/repo/model.gguf` can find
+/// what `apr pull hf://org/repo/model.gguf` wrote.
+fn cache_stem_for_ref(model_ref: &str) -> String {
+    let hash = blake3::hash(model_ref.as_bytes()).to_hex().to_string();
+    hash[..16].to_string()
+}
+
+/// RM-NS-001: does `model_ref` name this cached model file?
+///
+/// Accepts every form the user can plausibly have in hand: the identifier
+/// `apr list` prints (the file stem), the file name, a path to the file, and
+/// the `hf://` reference that was pulled.
+fn cache_entry_matches_ref(entry: &DiskModelEntry, model_ref: &str) -> bool {
+    if model_ref.is_empty() {
+        return false;
+    }
+    if entry.name == model_ref {
+        return true;
+    }
+    if entry.path.file_name().and_then(|s| s.to_str()) == Some(model_ref) {
+        return true;
+    }
+    let as_path = std::path::Path::new(model_ref);
+    if as_path == entry.path {
+        return true;
+    }
+    if let (Ok(given), Ok(cached)) = (as_path.canonicalize(), entry.path.canonicalize()) {
+        if given == cached {
+            return true;
+        }
+    }
+    entry.name == cache_stem_for_ref(model_ref)
+        || entry.name == cache_stem_for_ref(&normalize_hf_uri(model_ref))
+}
+
+/// RM-NS-001: resolve `model_ref` against the cache directory `apr list` enumerates.
+///
+/// Returns every matching model file so the caller can refuse an ambiguous
+/// reference rather than delete an arbitrary one.
+fn resolve_cached_model_files(cache_dir: &Path, model_ref: &str) -> Vec<std::path::PathBuf> {
+    scan_cache_dir(cache_dir)
+        .into_iter()
+        .filter(|entry| cache_entry_matches_ref(entry, model_ref))
+        .map(|entry| entry.path)
+        .collect()
+}
+
+/// RM-NS-001: delete the cached model file named by `model_ref`.
+///
+/// `Ok(None)` means nothing in the cache directory answers to that name — the
+/// caller turns that into GH-601's non-zero "not found". An ambiguous reference
+/// (same stem, several formats) is an error and deletes nothing.
+fn remove_from_cache_dir(cache_dir: &Path, model_ref: &str) -> Result<Option<std::path::PathBuf>> {
+    let mut matches = resolve_cached_model_files(cache_dir, model_ref);
+    match matches.len() {
+        0 => Ok(None),
+        1 => {
+            let path = matches.remove(0);
+            std::fs::remove_file(&path).map_err(|e| {
+                CliError::ValidationFailed(format!("Failed to remove {}: {e}", path.display()))
+            })?;
+            Ok(Some(path))
+        }
+        _ => {
+            matches.sort();
+            let candidates = matches
+                .iter()
+                .map(|p| format!("  {}", p.display()))
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(CliError::ValidationFailed(format!(
+                "'{model_ref}' matches {} cached models — pass the file name to pick one:\n{candidates}",
+                matches.len()
+            )))
+        }
     }
 }
 
@@ -515,6 +648,149 @@ fn find_brace_content(text: &str) -> Option<&str> {
         }
     }
     None
+}
+
+/// RM-NS-001: `apr rm` must be able to remove what `apr list` prints.
+///
+/// Every test here drives `remove_from_cache_dir` against a throwaway cache
+/// directory and asserts on the FILE — present or gone — not on a return shape.
+#[cfg(test)]
+mod rm_list_namespace_tests {
+    use super::{cache_stem_for_ref, remove_from_cache_dir, resolve_cached_model_files};
+    use std::path::{Path, PathBuf};
+
+    fn temp_cache(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "apr-rm-ns-{}-{}-{:?}",
+            tag,
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).expect("mkdir temp cache");
+        dir
+    }
+
+    fn touch(dir: &Path, name: &str) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, b"not-a-real-model").expect("write fixture");
+        path
+    }
+
+    /// FT-RMNS-001: the identifier `apr list` prints (the file stem) removes the
+    /// file. This is the exact repro: `apr list` showed `064a3693fa1ea02c` and
+    /// `apr rm 064a3693fa1ea02c` left it on disk.
+    #[test]
+    fn removes_by_the_name_list_prints() {
+        let dir = temp_cache("stem");
+        let model = touch(&dir, "064a3693fa1ea02c.safetensors");
+
+        let removed = remove_from_cache_dir(&dir, "064a3693fa1ea02c").expect("no error");
+
+        assert_eq!(removed.as_deref(), Some(model.as_path()));
+        assert!(
+            !model.exists(),
+            "FT-RMNS-001: the model file must be gone after rm, found it still at {}",
+            model.display()
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// FT-RMNS-002: the file name and an absolute path also remove the file.
+    #[test]
+    fn removes_by_filename_and_by_absolute_path() {
+        let dir = temp_cache("forms");
+        let by_name = touch(&dir, "aaaaaaaaaaaaaaaa.gguf");
+        remove_from_cache_dir(&dir, "aaaaaaaaaaaaaaaa.gguf").expect("no error");
+        assert!(!by_name.exists(), "FT-RMNS-002: file name form must delete");
+
+        let by_path = touch(&dir, "bbbbbbbbbbbbbbbb.apr");
+        let arg = by_path.display().to_string();
+        remove_from_cache_dir(&dir, &arg).expect("no error");
+        assert!(!by_path.exists(), "FT-RMNS-002: path form must delete");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// FT-RMNS-003: the `hf://` reference that was pulled removes the file
+    /// `apr pull` wrote for it (pull names it `blake3(uri)[..16]`).
+    #[test]
+    fn removes_by_the_hf_reference_that_was_pulled() {
+        let dir = temp_cache("hfref");
+        let uri = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+        let model = touch(&dir, &format!("{}.gguf", cache_stem_for_ref(uri)));
+
+        remove_from_cache_dir(&dir, uri).expect("no error");
+
+        assert!(
+            !model.exists(),
+            "FT-RMNS-003: rm of the pulled hf:// ref must delete {}",
+            model.display()
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// FT-RMNS-004 (GH-601 preserved): a genuine miss removes nothing and
+    /// reports nothing removed, so the caller still exits non-zero.
+    #[test]
+    fn unknown_reference_removes_nothing() {
+        let dir = temp_cache("miss");
+        let other = touch(&dir, "cccccccccccccccc.gguf");
+
+        let removed = remove_from_cache_dir(&dir, "definitely-not-a-model").expect("no error");
+
+        assert!(
+            removed.is_none(),
+            "FT-RMNS-004: an unknown ref must not report a removal"
+        );
+        assert!(
+            other.exists(),
+            "FT-RMNS-004: an unknown ref must not delete an unrelated model"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// FT-RMNS-005: an ambiguous stem (same model cached in two formats) is
+    /// refused and deletes NEITHER file — rm must never guess.
+    #[test]
+    fn ambiguous_stem_deletes_nothing() {
+        let dir = temp_cache("ambig");
+        let st = touch(&dir, "dddddddddddddddd.safetensors");
+        let apr = touch(&dir, "dddddddddddddddd.apr");
+
+        let err = remove_from_cache_dir(&dir, "dddddddddddddddd")
+            .expect_err("FT-RMNS-005: ambiguous ref must be an error");
+        assert!(
+            format!("{err}").contains("matches 2 cached models"),
+            "FT-RMNS-005: error must name the ambiguity, got: {err}"
+        );
+        assert!(st.exists() && apr.exists(), "FT-RMNS-005: nothing deleted");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// FT-RMNS-006: non-model files in the cache dir (manifest, companion
+    /// sidecars) are not removable through `apr rm` — it only ever deletes what
+    /// `apr list` enumerates.
+    #[test]
+    fn non_model_files_are_not_removable() {
+        let dir = temp_cache("sidecar");
+        let manifest = touch(&dir, "manifest.json");
+        let companion = touch(&dir, "eeeeeeeeeeeeeeee.config.json");
+
+        assert!(resolve_cached_model_files(&dir, "manifest.json").is_empty());
+        assert!(remove_from_cache_dir(&dir, "manifest.json")
+            .expect("no error")
+            .is_none());
+        assert!(remove_from_cache_dir(&dir, "eeeeeeeeeeeeeeee.config.json")
+            .expect("no error")
+            .is_none());
+        assert!(
+            manifest.exists() && companion.exists(),
+            "FT-RMNS-006: rm must not touch non-model files"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
 
 #[cfg(test)]

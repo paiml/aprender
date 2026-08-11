@@ -65,8 +65,10 @@ pub(crate) fn resolve_transformer_config(
             return Ok(config);
         }
         eprintln!(
-            "[GH-376] WARNING: could not read architecture from .apr metadata, \
-             falling back to --model-size"
+            "[GH-376] WARNING: could not read architecture metadata from '{}' (format: {}), \
+             falling back to --model-size",
+            path.display(),
+            describe_format(path)
         );
     }
 
@@ -77,8 +79,35 @@ pub(crate) fn resolve_transformer_config(
         }
     }
 
-    // Attempt 3: Legacy --model-size string matching
+    // Attempt 3: Legacy --model-size string matching.
+    //
+    // When a model path WAS given, the failure is "this file carries no
+    // readable architecture", not "you gave me no model". The old wording —
+    // "No model path or --model-size provided. Cannot determine architecture."
+    // — asserted the opposite of what the user did, so the obvious next move
+    // (re-pass the path) could not possibly help.
+    if model_size.is_none() {
+        if let Some(path) = model_path {
+            return Err(CliError::ValidationFailed(format!(
+                "Could not read the model architecture from '{}' (format: {}). \
+                 Pass --model-size to state it explicitly \
+                 (known sizes: 0.5B, 1.5B, 7B, 9B, 13B).",
+                path.display(),
+                describe_format(path)
+            )));
+        }
+    }
+
     resolve_transformer_config_by_size(model_size)
+}
+
+/// Name a model file's format for an error message, from its extension.
+fn describe_format(path: &Path) -> String {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) if !ext.is_empty() => ext.to_ascii_lowercase(),
+        _ if path.is_dir() => "directory".to_string(),
+        _ => "unknown".to_string(),
+    }
 }
 
 /// Read TransformerConfig from a HuggingFace `config.json` in a model directory.
@@ -248,4 +277,87 @@ fn transformer_config_from_apr_metadata(
         hf_model_type: None,
         tie_word_embeddings: false,
     })
+}
+
+// ─── Architecture-resolution errors (dogfood 0.63.0, issue #2374 finding 14) ──
+//
+// `apr finetune <model>.safetensors --task classify` replied "No model path or
+// --model-size provided. Cannot determine architecture." — asserting the exact
+// opposite of what the user had just done. The path was the first positional
+// argument and was never echoed.
+#[cfg(test)]
+mod arch_resolution_tests {
+    use super::*;
+
+    /// A real file on disk whose architecture cannot be read (empty, wrong format).
+    fn unreadable_model(ext: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("apr-2374-arch-{}.{ext}", std::process::id()));
+        std::fs::write(&path, b"not a model").expect("scratch write should succeed");
+        path
+    }
+
+    #[test]
+    fn unreadable_model_error_does_not_claim_no_path_was_given() {
+        let path = unreadable_model("safetensors");
+        let err = resolve_transformer_config(Some(&path), None)
+            .expect_err("an unreadable architecture must be an error");
+        let msg = err.to_string();
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            !msg.contains("No model path"),
+            "a path WAS provided; the error must not claim otherwise: {msg}"
+        );
+        assert!(
+            msg.contains(&path.display().to_string()),
+            "the error must echo the path the user passed: {msg}"
+        );
+        assert!(
+            msg.contains("safetensors"),
+            "the error must name the format that could not be read: {msg}"
+        );
+        assert!(
+            msg.contains("--model-size"),
+            "the error must name the actual workaround: {msg}"
+        );
+    }
+
+    #[test]
+    fn gguf_gets_the_same_actionable_message() {
+        // Two of the three formats CLAUDE.md promises reach classify only via
+        // --model-size; both must say so plainly.
+        let path = unreadable_model("gguf");
+        let err = resolve_transformer_config(Some(&path), None)
+            .expect_err("an unreadable architecture must be an error");
+        let msg = err.to_string();
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            msg.contains("gguf"),
+            "the error must name the format: {msg}"
+        );
+        assert!(!msg.contains("No model path"), "a path WAS provided: {msg}");
+    }
+
+    #[test]
+    fn no_path_and_no_size_still_says_no_path_was_given() {
+        // Guards against over-correcting: when the user really did pass
+        // nothing, the original wording is the accurate one.
+        let err = resolve_transformer_config(None, None)
+            .expect_err("no path and no size must be an error");
+        assert!(
+            err.to_string().contains("No model path"),
+            "with genuinely no input the message must say so: {err}"
+        );
+    }
+
+    #[test]
+    fn explicit_model_size_still_wins_when_metadata_is_unreadable() {
+        let path = unreadable_model("safetensors");
+        let config = resolve_transformer_config(Some(&path), Some("0.5B"))
+            .expect("--model-size must still rescue an unreadable file");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            config.hidden_size, 896,
+            "0.5B is qwen2-0.5b: hidden size 896"
+        );
+    }
 }

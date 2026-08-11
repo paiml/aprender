@@ -407,9 +407,132 @@
         assert!(json.starts_with('{'));
         assert!(json.ends_with('}'));
 
-        // CI thresholds with no thresholds set
-        assert!(check_ci_thresholds(&report, &config));
+        // With no explicit thresholds the gate must still follow the report's
+        // own verdict. This assertion used to be a bare `assert!(...)`, which
+        // encoded the defect: it demanded a PASS from a report that may well
+        // say `Status: FAIL | CI: red`.
+        assert_eq!(
+            check_ci_thresholds(&report, &config),
+            report.ci_result == "green",
+            "CI gate disagreed with the report it was handed ({} / {})",
+            report.status,
+            report.ci_result
+        );
 
         // Text output should not panic
         print_report_text(&report);
+    }
+
+    // ========================================================================
+    // Dogfood 0.63.0 (#2397) falsifiers
+    // ========================================================================
+
+    /// Build a report whose bricks are all inside budget (`green`).
+    fn green_report() -> HeadlessReport {
+        HeadlessReport {
+            model: "gate".to_string(),
+            timestamp: "2026-01-12T00:00:00Z".to_string(),
+            hardware: HardwareInfo {
+                gpu: "test".to_string(),
+                cpu: "test".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 900.0,
+                ttft_ms: 1.0,
+                cv_percent: 1.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![BrickScore {
+                name: "RmsNorm".to_string(),
+                score: 100,
+                grade: "A".to_string(),
+                budget_us: 1.5,
+                actual_us: 1.2,
+                gap_factor: 0.8,
+            }],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 100,
+                grade: "A".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 7,
+                passed: 7,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        }
+    }
+
+    /// #2397 finding 2: `--ci` must fail on a report that says `CI: red`, even
+    /// when the caller passed no explicit --throughput / --brick-score number.
+    #[test]
+    fn test_ci_gate_fails_on_red_report_without_explicit_thresholds() {
+        let mut report = green_report();
+        report.status = "FAIL".to_string();
+        report.ci_result = "red".to_string();
+        report.falsification = FalsificationSummary {
+            total_points: 7,
+            passed: 4,
+            failed: 3,
+            blocked: 0,
+        };
+
+        let config = CbtopConfig {
+            ci: true,
+            ..Default::default()
+        };
+
+        assert!(
+            !check_ci_thresholds(&report, &config),
+            "cbtop --ci returned pass for a report it had already judged FAIL/red"
+        );
+    }
+
+    /// The converse: a green report with no thresholds must still pass, so the
+    /// fix above is a gate and not a blanket failure.
+    #[test]
+    fn test_ci_gate_passes_on_green_report_without_explicit_thresholds() {
+        let config = CbtopConfig {
+            ci: true,
+            ..Default::default()
+        };
+        assert!(check_ci_thresholds(&green_report(), &config));
+    }
+
+    /// #2397 finding 1: zero measurement iterations must be refused, not
+    /// turned into a perfect 100/A report from zero samples.
+    #[test]
+    fn test_run_rejects_zero_iterations() {
+        let config = CbtopConfig {
+            headless: true,
+            simulated: true,
+            iterations: 0,
+            ..Default::default()
+        };
+        let err = run(config).expect_err("cbtop accepted --iterations 0");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("iteration"),
+            "unexpected rejection message: {msg}"
+        );
+    }
+
+    /// The guard must discriminate on the value, not reject every run: one
+    /// iteration is the smallest honest measurement and must still be served.
+    #[test]
+    fn test_run_accepts_one_iteration() {
+        let config = CbtopConfig {
+            headless: true,
+            simulated: true,
+            iterations: 1,
+            ..Default::default()
+        };
+        run(config).expect("cbtop rejected the smallest honest run, --iterations 1");
     }

@@ -527,6 +527,10 @@ visualization = ["cli", "apr-cli/visualization"]
 zram = ["cli", "apr-cli/zram"]
 xet = ["cli", "apr-cli/xet"]
 whisper = ["cli", "apr-cli/whisper"]
+# `apr ptx` (PTX analysis). Advertised in --help on every build, so the remedy
+# for a default install has to exist and has to be cheap: this pulls only the
+# analyzer + PTX emitter, not the CUDA/training stack that `full` implies (#2399).
+ptx = ["cli", "apr-cli/trueno-explain"]
 full = ["cli", "apr-cli/full"]
 
 [lib]

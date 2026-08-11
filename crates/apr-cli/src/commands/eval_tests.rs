@@ -297,6 +297,7 @@ fn test_run_unknown_dataset() {
         None,
         None,
         None,
+        "cpu",
         false,
     );
 
@@ -317,6 +318,7 @@ fn test_run_file_not_found() {
         None,
         None,
         None,
+        "cpu",
         false,
     );
 
@@ -332,6 +334,7 @@ fn test_run_custom_without_text() {
         None, // Missing text for custom dataset
         None,
         None,
+        "cpu",
         false,
     );
 

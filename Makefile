@@ -587,7 +587,13 @@ showcase-headless: ## Run cbtop in headless mode with JSON output (simulated dat
 	@cargo run --release -p apr-cli -- cbtop --headless --simulated --json --output target/showcase-results.json --iterations 100
 	@echo "✅ Results saved to target/showcase-results.json"
 
-showcase-ci: ## Run showcase benchmark in CI mode with threshold check
+# NOTE (#2397): `cbtop --ci` now honours the report's own FAIL/red verdict, not
+# just the explicit --throughput number. The --simulated pipeline jitters each
+# brick +/-20% around its budget, so roughly half land over budget and this
+# target exits non-zero. That is the true state of the simulated data; it used
+# to print "CI validation passed" over a report that read "Status: FAIL | CI:
+# red" only because the exit path never consulted the verdict.
+showcase-ci: ## Run showcase benchmark in CI mode with threshold check (RED on simulated data — see #2397)
 	@echo "🔍 Running showcase CI validation (throughput >= 100 tok/s)..."
 	@cargo run --release -p apr-cli -- cbtop --headless --simulated --ci --throughput 100 --iterations 100
 	@echo "✅ CI validation passed"

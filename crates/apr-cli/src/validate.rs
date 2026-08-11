@@ -310,6 +310,40 @@ fn dispatch_cbtop(
     })
 }
 
+/// The `--step` values `apr showcase` accepts, in the order `--help` lists them.
+const SHOWCASE_STEPS: &[(&str, showcase::ShowcaseStep)] = &[
+    ("import", showcase::ShowcaseStep::Import),
+    ("gguf", showcase::ShowcaseStep::GgufInference),
+    ("convert", showcase::ShowcaseStep::Convert),
+    ("apr", showcase::ShowcaseStep::AprInference),
+    ("brick", showcase::ShowcaseStep::BrickDemo),
+    ("bench", showcase::ShowcaseStep::Benchmark),
+    ("chat", showcase::ShowcaseStep::Chat),
+    ("visualize", showcase::ShowcaseStep::Visualize),
+    ("zram", showcase::ShowcaseStep::ZramDemo),
+    ("cuda", showcase::ShowcaseStep::CudaDemo),
+    ("all", showcase::ShowcaseStep::All),
+];
+
+/// Resolve a `--step` value, naming the offending input when it is unknown.
+///
+/// An unrecognised step used to map to `None`, which is the same state as
+/// "no `--step` given" — so `--step bogus` reported "No step specified", a
+/// message that contradicts the command line the user typed.
+fn parse_showcase_step(s: &str) -> Result<showcase::ShowcaseStep, CliError> {
+    SHOWCASE_STEPS
+        .iter()
+        .find(|(name, _)| *name == s)
+        .map(|(_, step)| *step)
+        .ok_or_else(|| {
+            let names: Vec<&str> = SHOWCASE_STEPS.iter().map(|(name, _)| *name).collect();
+            CliError::ValidationFailed(format!(
+                "unknown step '{s}'; available: {}",
+                names.join(", ")
+            ))
+        })
+}
+
 /// Dispatch `apr showcase` — extracted to reduce cognitive complexity of `execute_command`
 #[allow(clippy::too_many_arguments)]
 fn dispatch_showcase(
@@ -325,20 +359,7 @@ fn dispatch_showcase(
     verbose: bool,
     quiet: bool,
 ) -> Result<(), CliError> {
-    let step = step.and_then(|s| match s {
-        "import" => Some(showcase::ShowcaseStep::Import),
-        "gguf" => Some(showcase::ShowcaseStep::GgufInference),
-        "convert" => Some(showcase::ShowcaseStep::Convert),
-        "apr" => Some(showcase::ShowcaseStep::AprInference),
-        "bench" => Some(showcase::ShowcaseStep::Benchmark),
-        "chat" => Some(showcase::ShowcaseStep::Chat),
-        "visualize" => Some(showcase::ShowcaseStep::Visualize),
-        "zram" => Some(showcase::ShowcaseStep::ZramDemo),
-        "cuda" => Some(showcase::ShowcaseStep::CudaDemo),
-        "brick" => Some(showcase::ShowcaseStep::BrickDemo),
-        "all" => Some(showcase::ShowcaseStep::All),
-        _ => None,
-    });
+    let step = step.map(parse_showcase_step).transpose()?;
 
     let tier = match tier {
         "tiny" => showcase::ModelTier::Tiny,
@@ -408,8 +429,12 @@ fn dispatch_profile(
     ollama: bool,
     no_gpu: bool,
     compare: Option<&Path>,
+    json: bool,
 ) -> Result<(), CliError> {
-    let output_format = format.parse().unwrap_or(profile::OutputFormat::Human);
+    // GH-2395: `--json` is a global flag that `apr profile` parsed and ignored, and
+    // an unparseable `--format` silently degraded to the human table. See
+    // `commands/profile_options.rs`.
+    let output_format = profile::resolve_output_format(format, json)?;
 
     // PMAT-192: CI mode takes precedence
     if ci || assert_throughput.is_some() || assert_p99.is_some() || assert_p50.is_some() {
@@ -440,9 +465,10 @@ fn dispatch_profile(
             ))
         }
     } else {
-        let profile_focus = focus
-            .and_then(|f| f.parse().ok())
-            .unwrap_or(profile::ProfileFocus::All);
+        // An unrecognised --focus used to silently degrade to the full unfiltered
+        // report with exit 0, so a typo produced a report that answered a different
+        // question than the one asked.
+        let profile_focus = profile::resolve_focus(focus)?;
         profile::run(
             file,
             granular,
@@ -456,6 +482,8 @@ fn dispatch_profile(
             callgraph,
             fail_on_naive,
             output,
+            warmup,
+            measure,
             tokens,
             ollama,
             no_gpu,

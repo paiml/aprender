@@ -94,13 +94,7 @@ fn validate_convert_inputs(file: &Path, output: &Path, force: bool) -> Result<()
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }
-    if output.exists() && !force {
-        return Err(CliError::ValidationFailed(format!(
-            "Output file '{}' already exists. Use --force to overwrite.",
-            output.display()
-        )));
-    }
-    Ok(())
+    crate::error::refuse_overwrite(output, force)
 }
 
 fn print_convert_banner(

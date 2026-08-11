@@ -2043,3 +2043,56 @@ fn test_load_lm_batches_from_parquet_missing_column() {
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("No text column found"));
 }
+
+// ─── Tabular shape validation (dogfood 0.63.0, issue #2374 finding 2) ────────
+//
+// `apr train apply --task pretrain` used to ABORT the process (exit 101) on any
+// tabular dataset whose input width differed from its target width — a 3-feature
+// / 1-target regression set, the commonest tabular shape there is — via a raw
+// `assert_eq!` inside `MSELoss::forward`, after "Starting training..." had
+// already printed.
+
+/// Build one batch with `batch_size` rows of `in_w` inputs and `tgt_w` targets.
+fn shaped_batch(batch_size: usize, in_w: usize, tgt_w: usize) -> crate::train::Batch {
+    crate::train::Batch::new(
+        crate::Tensor::from_vec(vec![0.5_f32; batch_size * in_w], false),
+        crate::Tensor::from_vec(vec![0.25_f32; batch_size * tgt_w], false),
+    )
+}
+
+#[test]
+fn test_tabular_shapes_accept_equal_widths() {
+    let batches = vec![shaped_batch(8, 4, 4)];
+    validate_tabular_batch_shapes(&batches, 8).expect("equal widths must be accepted");
+}
+
+#[test]
+fn test_tabular_shapes_reject_three_features_one_target() {
+    // The exact shape that aborted with exit 101: left 24, right 8.
+    let batches = vec![shaped_batch(8, 3, 1)];
+    let err = validate_tabular_batch_shapes(&batches, 8)
+        .expect_err("3 features / 1 target must be rejected, not aborted");
+    let msg = err.to_string();
+    assert!(msg.contains("24"), "error must report the input value count: {msg}");
+    assert!(
+        msg.contains("input width 3") && msg.contains("target width 1"),
+        "error must name both widths so the user can act on it: {msg}"
+    );
+}
+
+#[test]
+fn test_tabular_shapes_reject_wider_target_than_input() {
+    // (1, 2): left 8, right 16 — the mirror case.
+    let batches = vec![shaped_batch(8, 1, 2)];
+    let err = validate_tabular_batch_shapes(&batches, 8)
+        .expect_err("target wider than input must be rejected");
+    assert!(err.to_string().contains("input width 1"), "error must name the input width: {err}");
+}
+
+#[test]
+fn test_tabular_shapes_name_the_offending_batch_index() {
+    // A mismatch in a LATER batch must still be caught before training starts.
+    let batches = vec![shaped_batch(8, 2, 2), shaped_batch(8, 2, 2), shaped_batch(8, 3, 1)];
+    let err = validate_tabular_batch_shapes(&batches, 8).expect_err("batch 2 must be rejected");
+    assert!(err.to_string().contains("batch 2"), "error must name the batch: {err}");
+}

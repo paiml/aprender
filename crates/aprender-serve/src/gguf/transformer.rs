@@ -60,6 +60,35 @@ pub struct QuantizedGGUFTransformerLayer {
     pub post_ffw_norm_weight: Option<Vec<f32>>,
 }
 
+/// Reason this GGUF cannot be run by the quantized transformer path, or `None`.
+///
+/// GH-704 put the SSM (Gated Delta Net) refusal inline in
+/// [`QuantizedGGUFTransformer::from_gguf`], so it only fired for callers that
+/// actually built a transformer. Every other tool reading the same file was free
+/// to invent a story about it — `apr ptx-map` printed a full dense-transformer
+/// kernel sequence, exit 0, for a Qwen3.5 GGUF that `apr check` refuses to load
+/// (dogfood-0.63.0, issue #2399 finding 2). Both surfaces now ask this one
+/// function, so they cannot drift.
+///
+/// Takes tensor names rather than a `GGUFModel` so the predicate is directly
+/// testable and callable from any crate that has already parsed the header.
+pub fn unsupported_architecture_reason<'n>(
+    architecture: &str,
+    tensor_names: impl IntoIterator<Item = &'n str>,
+) -> Option<String> {
+    let has_ssm = tensor_names
+        .into_iter()
+        .any(|name| name.contains("ssm_") || name.contains("ssm."));
+    if has_ssm {
+        return Some(format!(
+            "Architecture '{architecture}' uses SSM/Gated Delta Net layers which are not yet \
+             supported for inference. Use a standard transformer model (e.g., Qwen2.5, \
+             LLaMA, Mistral) or wait for SSM support in a future release."
+        ));
+    }
+    None
+}
+
 /// Quantized GGUF Transformer for fused inference
 ///
 /// Per Williams et al. (2009) roofline model, LLM inference is memory-bound.
@@ -128,19 +157,13 @@ impl<'a> QuantizedGGUFTransformer<'a> {
 
         // GH-704: Detect hybrid SSM architectures (Qwen3.5 Gated Delta Net) early.
         // These require a dedicated SSM inference path not yet implemented.
-        let has_ssm = model
-            .tensors
-            .iter()
-            .any(|t| t.name.contains("ssm_") || t.name.contains("ssm."));
-        if has_ssm {
-            let arch = &config.architecture;
-            return Err(crate::RealizarError::FormatError {
-                reason: format!(
-                    "Architecture '{arch}' uses SSM/Gated Delta Net layers which are not yet \
-                     supported for inference. Use a standard transformer model (e.g., Qwen2.5, \
-                     LLaMA, Mistral) or wait for SSM support in a future release."
-                ),
-            });
+        // The predicate lives in `unsupported_architecture_reason` so read-only
+        // tools (apr ptx-map) refuse the same files with the same words (#2399).
+        if let Some(reason) = unsupported_architecture_reason(
+            &config.architecture,
+            model.tensors.iter().map(|t| t.name.as_str()),
+        ) {
+            return Err(crate::RealizarError::FormatError { reason });
         }
 
         // M32b: refuse Mixture-of-Experts architectures with a structured,
@@ -697,6 +720,59 @@ mod tensor_byte_size_tests {
         assert!(
             res.is_err(),
             "Q3_K is intentionally not loadable (no CPU forward kernel)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod unsupported_architecture_tests {
+    use super::unsupported_architecture_reason;
+
+    // dogfood-0.63.0 #2399 finding 2: the SSM refusal must be answerable from
+    // tensor names alone, so read-only tools get the same verdict `from_gguf`
+    // gives. Qwen3.5 names its Gated Delta Net weights `blk.N.ssm_*`.
+    #[test]
+    fn qwen35_gated_delta_net_tensors_are_refused() {
+        let reason = unsupported_architecture_reason(
+            "qwen35",
+            [
+                "token_embd.weight",
+                "blk.0.ssm_conv1d.weight",
+                "blk.0.attn_q.weight",
+            ],
+        )
+        .expect("a GGUF carrying ssm_ tensors must be refused");
+        assert!(
+            reason.contains("qwen35") && reason.contains("SSM/Gated Delta Net"),
+            "refusal must name the architecture and the reason, got: {reason}"
+        );
+    }
+
+    // The dotted spelling (`blk.0.ssm.a`) is the other form seen in the wild.
+    #[test]
+    fn dotted_ssm_tensor_names_are_refused() {
+        assert!(
+            unsupported_architecture_reason("qwen35", ["blk.0.ssm.a"]).is_some(),
+            "`ssm.` spelling must be refused too"
+        );
+    }
+
+    // A plain transformer must NOT be refused — a predicate that says "no" to
+    // everything would pass the two tests above while breaking every model.
+    #[test]
+    fn standard_transformer_tensors_are_accepted() {
+        assert_eq!(
+            unsupported_architecture_reason(
+                "qwen2",
+                [
+                    "token_embd.weight",
+                    "blk.0.attn_q.weight",
+                    "blk.0.ffn_down.weight",
+                    "output.weight",
+                ],
+            ),
+            None,
+            "a dense transformer must load"
         );
     }
 }

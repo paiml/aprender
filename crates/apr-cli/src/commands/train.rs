@@ -1,9 +1,8 @@
 //! `apr train` — Training commands (plan, apply, watch, sweep).
 //!
-//! Classification fine-tuning (plan/apply for --task classify) requires
-//! entrenar >= 0.8 which has not yet been published. Those subcommands
-//! return a clear error. Pre-training (--task pretrain), sweep, and watch
-//! work with the current entrenar 0.7.x release.
+//! `apr train` implements causal-LM **pre-training** (`--task pretrain`, the
+//! default), plus sweep and watch. Classification fine-tuning is NOT part of
+//! this command — it is implemented by `apr finetune --task classify`.
 
 use colored::Colorize;
 
@@ -11,11 +10,19 @@ use crate::{error::CliError, output};
 
 type Result<T> = std::result::Result<T, CliError>;
 
-/// Error returned when classify fine-tuning APIs are invoked.
+/// Error returned when `apr train --task classify` is invoked.
+///
+/// The previous text — "requires entrenar >= 0.8 (not yet published)" — was
+/// false in the artifact that printed it: entrenar is the in-tree crate
+/// `crates/aprender-train`, built at the workspace version, so every shipped
+/// `apr` already links a version far past 0.8. It named a blocker that does
+/// not exist and pointed nowhere. Classification fine-tuning IS implemented,
+/// by a different command, so say which one.
 fn classify_not_available() -> CliError {
     CliError::ValidationFailed(
-        "apr train (classify) requires entrenar >= 0.8 (not yet published). \
-         Use --task pretrain for causal LM pre-training."
+        "apr train does not implement classification — it trains causal LMs \
+         (--task pretrain, the default). For classification fine-tuning use: \
+         apr finetune <model> --task classify --data <file.jsonl> --num-classes <N>"
             .to_string(),
     )
 }
@@ -43,15 +50,23 @@ pub(crate) fn run_plan(
     _manual_batch_size: Option<usize>,
     _val_data: Option<&std::path::Path>,
     _test_data: Option<&std::path::Path>,
-    _format: &str,
+    format: &str,
     json_output: bool,
 ) -> Result<()> {
     contract_pre_training_plan_apply_semantics!();
+    // `--format` used to be `_format`: declared, documented, and never read, so
+    // text/json/yaml/garbage all produced byte-identical text with exit 0.
+    let format = PlanFormat::parse(format)?;
+    let format = if json_output {
+        PlanFormat::Json
+    } else {
+        format
+    };
     let result = match task {
-        "pretrain" | "causal_lm" => run_plan_pretrain(config_path, json_output),
+        "pretrain" | "causal_lm" => run_plan_pretrain(config_path, format),
         "classify" => Err(classify_not_available()),
         _ => Err(CliError::ValidationFailed(format!(
-            "Unknown task type: {task}. Supported: classify, pretrain"
+            "Unknown task type: {task}. Supported: pretrain (classification fine-tuning is `apr finetune --task classify`)"
         ))),
     };
     if let Ok(ref r) = result {
@@ -60,8 +75,68 @@ pub(crate) fn run_plan(
     result
 }
 
+/// The rendering `apr train plan --format` selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlanFormat {
+    /// Human-readable table (the default).
+    Text,
+    /// Pretty-printed JSON manifest.
+    Json,
+    /// YAML manifest — the same fields as [`PlanFormat::Json`].
+    Yaml,
+}
+
+impl PlanFormat {
+    /// Parse a `--format` value, rejecting anything that is not a real format.
+    ///
+    /// An unrecognised value used to be accepted silently and rendered as text.
+    fn parse(raw: &str) -> Result<Self> {
+        match raw.trim().to_lowercase().as_str() {
+            "text" | "" => Ok(Self::Text),
+            "json" => Ok(Self::Json),
+            "yaml" | "yml" => Ok(Self::Yaml),
+            other => Err(CliError::ValidationFailed(format!(
+                "Unknown --format '{other}'. Supported: text, json, yaml"
+            ))),
+        }
+    }
+}
+
+/// Build the serializable plan manifest shared by the JSON and YAML renderings.
+fn pretrain_plan_manifest(
+    config_path: &std::path::Path,
+    spec: &entrenar::config::TrainSpec,
+) -> serde_json::Value {
+    serde_json::json!({
+        "task": "pretrain",
+        "config": config_path.display().to_string(),
+        "model": {
+            "path": spec.model.path.display().to_string(),
+            "mode": format!("{:?}", spec.model.mode),
+        },
+        "data": {
+            "train": spec.data.train.display().to_string(),
+            "batch_size": spec.data.batch_size,
+            "seq_len": spec.data.seq_len,
+        },
+        "optimizer": {
+            "name": spec.optimizer.name,
+            "lr": spec.optimizer.lr,
+        },
+        "training": {
+            "epochs": spec.training.epochs,
+            "mode": format!("{:?}", spec.training.mode),
+            "warmup_steps": spec.training.warmup_steps,
+            "gradient_accumulation": spec.training.gradient_accumulation,
+            "mixed_precision": spec.training.mixed_precision,
+            "output_dir": spec.training.output_dir.display().to_string(),
+        },
+        "verdict": "ready",
+    })
+}
+
 /// Plan for causal LM pre-training from YAML config (ALB-009).
-fn run_plan_pretrain(config_path: Option<&std::path::Path>, json_output: bool) -> Result<()> {
+fn run_plan_pretrain(config_path: Option<&std::path::Path>, format: PlanFormat) -> Result<()> {
     let config_path = config_path.ok_or_else(|| {
         CliError::ValidationFailed("--config <yaml> is required for --task pretrain".to_string())
     })?;
@@ -78,36 +153,18 @@ fn run_plan_pretrain(config_path: Option<&std::path::Path>, json_output: bool) -
         .map_err(|e| CliError::ValidationFailed(format!("Validation error: {e}")))?;
 
     // Display the pre-training plan
-    if json_output {
-        let plan = serde_json::json!({
-            "task": "pretrain",
-            "config": config_path.display().to_string(),
-            "model": {
-                "path": spec.model.path.display().to_string(),
-                "mode": format!("{:?}", spec.model.mode),
-            },
-            "data": {
-                "train": spec.data.train.display().to_string(),
-                "batch_size": spec.data.batch_size,
-                "seq_len": spec.data.seq_len,
-            },
-            "optimizer": {
-                "name": spec.optimizer.name,
-                "lr": spec.optimizer.lr,
-            },
-            "training": {
-                "epochs": spec.training.epochs,
-                "mode": format!("{:?}", spec.training.mode),
-                "warmup_steps": spec.training.warmup_steps,
-                "gradient_accumulation": spec.training.gradient_accumulation,
-                "mixed_precision": spec.training.mixed_precision,
-            },
-            "verdict": "ready",
-        });
+    if format == PlanFormat::Json {
+        let plan = pretrain_plan_manifest(config_path, &spec);
         println!(
             "{}",
             serde_json::to_string_pretty(&plan).unwrap_or_default()
         );
+    } else if format == PlanFormat::Yaml {
+        let plan = pretrain_plan_manifest(config_path, &spec);
+        let rendered = serde_yaml::to_string(&plan).map_err(|e| {
+            CliError::ValidationFailed(format!("Could not render plan as YAML: {e}"))
+        })?;
+        print!("{rendered}");
     } else {
         output::header("apr train plan — Pre-training Plan (Causal LM)");
         println!();
@@ -158,7 +215,7 @@ pub(crate) fn run_apply(
     _model_size: &str,
     _model_path: Option<&std::path::Path>,
     _num_classes: usize,
-    _output_dir: &std::path::Path,
+    output_dir: Option<&std::path::Path>,
     _strategy: &str,
     _budget: usize,
     _scout: bool,
@@ -177,6 +234,7 @@ pub(crate) fn run_apply(
     match task {
         "pretrain" | "causal_lm" => run_apply_pretrain(
             config_path,
+            output_dir,
             json_output,
             distributed,
             world_size,
@@ -187,7 +245,7 @@ pub(crate) fn run_apply(
         ),
         "classify" => Err(classify_not_available()),
         _ => Err(CliError::ValidationFailed(format!(
-            "Unknown task type: {task}. Supported: classify, pretrain"
+            "Unknown task type: {task}. Supported: pretrain (classification fine-tuning is `apr finetune --task classify`)"
         ))),
     }
 }
@@ -225,6 +283,7 @@ fn build_distributed_yaml(
 /// Patch a YAML training config with CLI overrides (distributed, deterministic, seed).
 fn patch_yaml_config(
     config_path: &std::path::Path,
+    output_dir: Option<&std::path::Path>,
     distributed: bool,
     world_size: Option<usize>,
     rank: Option<usize>,
@@ -242,6 +301,14 @@ fn patch_yaml_config(
         .ok_or_else(|| CliError::ValidationFailed("Missing 'training' section".into()))?;
 
     if let serde_yaml::Value::Mapping(training_map) = training {
+        // -o/--output overrides training.output_dir. Until this existed the flag
+        // was accepted, documented, and silently discarded.
+        if let Some(dir) = output_dir {
+            training_map.insert(
+                serde_yaml::Value::String("output_dir".into()),
+                serde_yaml::Value::String(dir.display().to_string()),
+            );
+        }
         if distributed {
             let dist = build_distributed_yaml(world_size, rank, coordinator_addr);
             training_map.insert(serde_yaml::Value::String("distributed".into()), dist);
@@ -318,6 +385,7 @@ fn print_pretrain_header(
 #[allow(clippy::too_many_arguments)]
 fn run_apply_pretrain(
     config_path: Option<&std::path::Path>,
+    output_dir: Option<&std::path::Path>,
     json_output: bool,
     distributed: bool,
     world_size: Option<usize>,
@@ -346,11 +414,12 @@ fn run_apply_pretrain(
         );
     }
 
-    let needs_patch = distributed || deterministic || seed.is_some();
+    let needs_patch = distributed || deterministic || seed.is_some() || output_dir.is_some();
 
     if needs_patch {
         let temp_path = patch_yaml_config(
             config_path,
+            output_dir,
             distributed,
             world_size,
             rank,
@@ -709,6 +778,35 @@ fn capture_gpu_state() -> serde_json::Value {
 
 // ── Hyperparameter Sweep (R-027 Rust replacement) ───────────────────────────
 
+/// The search `apr train sweep --strategy` selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SweepStrategy {
+    /// Deterministic grid over the hyperparameter axes.
+    Grid,
+    /// Seeded random sampling.
+    Random,
+}
+
+impl std::fmt::Display for SweepStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Grid => "grid",
+            Self::Random => "random",
+        })
+    }
+}
+
+/// Parse a `--strategy` value, rejecting anything that is not a real strategy.
+pub(crate) fn parse_sweep_strategy(raw: &str) -> Result<SweepStrategy> {
+    match raw.trim().to_lowercase().as_str() {
+        "grid" => Ok(SweepStrategy::Grid),
+        "random" => Ok(SweepStrategy::Random),
+        other => Err(CliError::ValidationFailed(format!(
+            "Unknown sweep strategy '{other}'. Supported: grid, random"
+        ))),
+    }
+}
+
 /// Run `apr train sweep` — generate hyperparameter sweep configs.
 ///
 /// Creates N training configs with varied hyperparameters (grid or random).
@@ -721,6 +819,12 @@ pub(crate) fn run_sweep(
     seed: u64,
     json_output: bool,
 ) -> Result<()> {
+    // Reject an unknown strategy BEFORE writing anything. `--strategy gird` used
+    // to fall through the `"random" | _` arm to a RANDOM search, print
+    // "Strategy: gird" back as though it were real, and write the sweep files —
+    // so a user who believed they had a grid search had a random one.
+    let strategy = parse_sweep_strategy(strategy)?;
+
     if !config_path.exists() {
         return Err(CliError::FileNotFound(config_path.to_path_buf()));
     }
@@ -737,15 +841,15 @@ pub(crate) fn run_sweep(
         output::header("apr train sweep — Hyperparameter Sweep Generator");
         println!();
         output::kv("  Base config", config_path.display().to_string());
-        output::kv("  Strategy", strategy);
+        output::kv("  Strategy", strategy.to_string());
         output::kv("  Configs", num_configs.to_string());
         output::kv("  Output", output_dir.display().to_string());
         println!();
     }
 
     let configs = match strategy {
-        "grid" => generate_grid_configs(&base, num_configs),
-        "random" | _ => generate_random_configs(&base, num_configs, seed),
+        SweepStrategy::Grid => generate_grid_configs(&base, num_configs),
+        SweepStrategy::Random => generate_random_configs(&base, num_configs, seed),
     };
 
     let mut results = Vec::new();
@@ -787,7 +891,7 @@ pub(crate) fn run_sweep(
 
     if json_output {
         let output = serde_json::json!({
-            "strategy": strategy,
+            "strategy": strategy.to_string(),
             "configs_generated": configs.len(),
             "output_dir": output_dir.display().to_string(),
             "configs": results,
@@ -1213,6 +1317,91 @@ struct HalvingEntry {
     weight_decay: f64,
     warmup_steps: u64,
     eliminated_round: Option<usize>,
+    /// Why the most recent trial for this config produced no score, if it
+    /// failed outright. `None` means the trial process exited 0.
+    last_failure: Option<String>,
+}
+
+/// Outcome of one halving trial.
+///
+/// A trial that exits non-zero produced NO evidence: it must not contribute a
+/// score and its failure must be surfaced. `apr train halving` used to call
+/// `Command::output()` and treat `Ok(_)` — which only means the process
+/// *spawned* — as a completed trial, so three trials that each exited 5 were
+/// reported as "no eval" and the first of three infinities was crowned WINNER
+/// with a recommended μTransfer learning rate.
+enum TrialOutcome {
+    /// Process exited 0 and printed a finite `val_ppl=`.
+    Scored(f64),
+    /// Process exited 0 but printed no `val_ppl=` line.
+    NoEval,
+    /// Process failed to spawn or exited non-zero. Carries the reason.
+    Failed(String),
+}
+
+/// Classify one trial from its exit status and combined stdout+stderr.
+///
+/// Pure so the ranking policy is falsifiable without spawning a process.
+fn classify_trial(success: bool, exit_code: Option<i32>, combined: &str) -> TrialOutcome {
+    if !success {
+        let detail = combined
+            .lines()
+            .rev()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("no output")
+            .to_string();
+        let code = exit_code.map_or_else(|| "signal".to_string(), |c| c.to_string());
+        return TrialOutcome::Failed(format!("exit {code}: {detail}"));
+    }
+    let ppl = parse_best_ppl(combined);
+    if ppl.is_finite() {
+        TrialOutcome::Scored(ppl)
+    } else {
+        TrialOutcome::NoEval
+    }
+}
+
+/// Pick the winning entry index, or explain why there is no winner.
+///
+/// Successive halving ranks by `val_ppl`. When not a single trial produced a
+/// finite `val_ppl` there is nothing to rank, and naming a "winner" — plus a
+/// μTransfer LR derived from its LR — invents a result out of failures.
+fn select_halving_winner(results: &[HalvingEntry], survivors: &[usize]) -> Result<usize> {
+    let winner = survivors
+        .iter()
+        .copied()
+        .find(|&i| results.get(i).is_some_and(|e| e.best_ppl.is_finite()));
+    if let Some(idx) = winner {
+        return Ok(idx);
+    }
+
+    let failures: Vec<String> = results
+        .iter()
+        .filter_map(|e| {
+            e.last_failure.as_ref().map(|f| {
+                format!(
+                    "{}: {f}",
+                    e.path.file_name().unwrap_or_default().to_string_lossy()
+                )
+            })
+        })
+        .collect();
+    let detail = if failures.is_empty() {
+        "every trial exited 0 but none printed a val_ppl= line".to_string()
+    } else {
+        format!(
+            "{} trial(s) failed — {}",
+            failures.len(),
+            failures.join("; ")
+        )
+    };
+    Err(CliError::ValidationFailed(format!(
+        "no halving winner: not one of the {} trials produced a finite val_ppl. {detail}. \
+         Re-run a single config directly to see the full error: \
+         `apr train apply --task pretrain --config <sweep-NNN.yaml>`",
+        results.len()
+    )))
 }
 
 /// Run `apr train halving` — successive halving HPO (C-HPO-001).
@@ -1255,6 +1444,13 @@ pub(crate) fn run_halving(
     let mut results = parse_sweep_config_params(&configs)?;
     let mut survivors: Vec<usize> = (0..configs.len()).collect();
     let apr_path = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("apr"));
+    // Patched trial configs live beside the results file, never in sweep_dir
+    // (a `sweep-*.yaml` written there would be picked up as an extra config).
+    let trials_dir = output_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("halving-trials");
 
     for round_idx in 0..rounds {
         survivors = run_halving_round(
@@ -1263,6 +1459,7 @@ pub(crate) fn run_halving(
             &survivors,
             round_idx,
             steps_per_round * (1 << round_idx),
+            &trials_dir,
             json_output,
         );
     }
@@ -1320,6 +1517,7 @@ fn parse_sweep_config_params(configs: &[std::path::PathBuf]) -> Result<Vec<Halvi
             weight_decay: yaml["optimizer"]["weight_decay"].as_f64().unwrap_or(0.0),
             warmup_steps: yaml["training"]["warmup_steps"].as_u64().unwrap_or(0),
             eliminated_round: None,
+            last_failure: None,
         });
     }
     Ok(entries)
@@ -1352,6 +1550,7 @@ fn run_halving_round(
     survivors: &[usize],
     round_idx: usize,
     steps: usize,
+    trials_dir: &std::path::Path,
     json_output: bool,
 ) -> Vec<usize> {
     use std::process::Command;
@@ -1367,7 +1566,13 @@ fn run_halving_round(
         println!();
     }
 
-    // Update max_steps in each survivor config
+    // Materialise the per-round trial config as a COPY. Halving used to patch
+    // `max_steps` / `output_dir` into the user's own sweep-*.yaml in place, so
+    // a second run with a different --steps-per-round trained against inputs
+    // the first run had silently rewritten.
+    let _ = std::fs::create_dir_all(trials_dir);
+    let mut trial_paths: std::collections::HashMap<usize, std::path::PathBuf> =
+        std::collections::HashMap::new();
     for &idx in survivors {
         let path = &results[idx].path;
         let content = std::fs::read_to_string(path).unwrap_or_default();
@@ -1377,7 +1582,10 @@ fn run_halving_round(
             let out_dir = format!("./checkpoints/halving-{stem}");
             yaml["training"]["output_dir"] = serde_yaml::Value::String(out_dir);
             if let Ok(s) = serde_yaml::to_string(&yaml) {
-                let _ = std::fs::write(path, s);
+                let dest = trials_dir.join(format!("round{round_idx}-{stem}.yaml"));
+                if std::fs::write(&dest, s).is_ok() {
+                    trial_paths.insert(idx, dest);
+                }
             }
         }
     }
@@ -1387,6 +1595,7 @@ fn run_halving_round(
     for &idx in survivors {
         let entry = &results[idx];
         let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
+        let config_arg = trial_paths.get(&idx).unwrap_or(&entry.path).clone();
 
         if !json_output {
             print!("  Running {name} (lr={:.2e})...", entry.lr);
@@ -1397,16 +1606,27 @@ fn run_halving_round(
         let start = std::time::Instant::now();
         let cmd_output = Command::new(apr_path)
             .args(["train", "apply", "--task", "pretrain", "--config"])
-            .arg(&entry.path)
+            .arg(&config_arg)
             .output();
 
         let elapsed = start.elapsed().as_secs();
-        let mut best_ppl = f64::INFINITY;
-        if let Ok(out) = cmd_output {
-            let combined = String::from_utf8_lossy(&out.stdout).to_string()
-                + &String::from_utf8_lossy(&out.stderr);
-            best_ppl = parse_best_ppl(&combined);
-        }
+        let outcome = match cmd_output {
+            Ok(out) => {
+                let combined = String::from_utf8_lossy(&out.stdout).to_string()
+                    + &String::from_utf8_lossy(&out.stderr);
+                classify_trial(out.status.success(), out.status.code(), &combined)
+            }
+            Err(e) => TrialOutcome::Failed(format!("could not run trial: {e}")),
+        };
+
+        let best_ppl = match &outcome {
+            TrialOutcome::Scored(p) => *p,
+            TrialOutcome::NoEval | TrialOutcome::Failed(_) => f64::INFINITY,
+        };
+        results[idx].last_failure = match &outcome {
+            TrialOutcome::Failed(reason) => Some(reason.clone()),
+            _ => None,
+        };
 
         if best_ppl < results[idx].best_ppl {
             results[idx].best_ppl = best_ppl;
@@ -1414,10 +1634,10 @@ fn run_halving_round(
         round_scores.push((idx, best_ppl));
 
         if !json_output {
-            if best_ppl.is_finite() {
-                println!(" val_ppl={best_ppl:.2} ({elapsed}s)");
-            } else {
-                println!(" no eval ({elapsed}s)");
+            match &outcome {
+                TrialOutcome::Scored(p) => println!(" val_ppl={p:.2} ({elapsed}s)"),
+                TrialOutcome::NoEval => println!(" no eval ({elapsed}s)"),
+                TrialOutcome::Failed(reason) => println!(" FAILED ({elapsed}s) — {reason}"),
             }
         }
     }
@@ -1466,7 +1686,9 @@ fn emit_halving_results(
     output_path: &std::path::Path,
     json_output: bool,
 ) -> Result<()> {
-    let winner = &results[survivors[0]];
+    // A winner must have EVIDENCE. `results[survivors[0]]` crowned whichever
+    // config sorted first among equal infinities when every trial had failed.
+    let winner = &results[select_halving_winner(results, survivors)?];
     let target_lr = winner.lr * (source_width as f64 / target_width as f64);
     let winner_name = winner
         .path

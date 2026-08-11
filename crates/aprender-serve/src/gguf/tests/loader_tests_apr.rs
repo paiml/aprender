@@ -504,3 +504,140 @@ fn test_pmat888_non_gemma2_apr_has_no_post_attn_norm() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+// ============================================================================
+// #2309 / #2441: tied word embeddings — 0-byte lm_head placeholder
+// ============================================================================
+
+/// Raw bytes of a named tensor in an APR file, straight out of the mapped model.
+fn apr_tensor_bytes(mapped: &crate::apr::MappedAprModel, name: &str) -> Vec<u8> {
+    let t = mapped
+        .find_tensor(name)
+        .unwrap_or_else(|| panic!("fixture must contain {name}"));
+    let start = mapped.data_offset() as usize + t.offset as usize;
+    mapped.data()[start..start + t.size as usize].to_vec()
+}
+
+/// #2309 RED→GREEN falsifier: `apr run` on a tied-embedding `.apr` must decode.
+///
+/// A `tie_word_embeddings=true` checkpoint converts to an `.apr` whose
+/// `lm_head.weight` descriptor carries the full `[vocab, hidden]` shape but ZERO
+/// bytes of data — the matrix lives once, under `model.embed_tokens.weight`.
+/// `OwnedQuantizedModel::from_apr` registered that descriptor verbatim, so the
+/// output projection was an `OwnedQuantizedTensor` with an empty `data` buffer and
+/// EVERY decode died in `fused_matmul`:
+///
+///   Inference failed: Invalid shape: matmul weight has EMPTY data buffer
+///   (in_dim=896, out_dim=151936, qtype=0)
+///
+/// (The error's MoE/#1789 hypothesis is a red herring — the model is not MoE.)
+///
+/// RED before the fix: `forward` returns that error. GREEN after: the loader ties
+/// the head to the embedding matrix and the forward pass produces real logits.
+#[test]
+fn test_2309_tied_lm_head_placeholder_decodes() {
+    let apr_bytes = crate::apr::test_factory::build_executable_pygmy_apr_tied_lm_head_placeholder();
+    let dir = std::env::temp_dir();
+    let path = dir.join("test_2309_tied_lm_head_placeholder.apr");
+    std::fs::write(&path, &apr_bytes).expect("should write file");
+
+    let mapped = crate::apr::MappedAprModel::from_path(&path).expect("should load apr");
+
+    // The fixture must actually BE the defect shape, or this test proves nothing.
+    let lm = mapped
+        .find_tensor("lm_head.weight")
+        .expect("fixture must declare lm_head.weight");
+    assert_eq!(lm.size, 0, "fixture's lm_head must be a 0-byte placeholder");
+    assert_eq!(
+        lm.shape,
+        vec![10, 8],
+        "the placeholder still carries the full [vocab, hidden] shape"
+    );
+
+    let model =
+        OwnedQuantizedModel::from_apr(&mapped).expect("#2309: a tied-embedding .apr must load");
+
+    // Behaviour first: the forward pass that used to die on the empty buffer.
+    let logits = model
+        .forward(&[1u32])
+        .expect("#2309: decode must not fail with 'matmul weight has EMPTY data buffer'");
+    assert_eq!(logits.len(), 10, "one logit per vocab entry");
+    assert!(
+        logits.iter().all(|v| v.is_finite()),
+        "tied lm_head must produce finite logits, got {logits:?}"
+    );
+    assert!(
+        logits.iter().any(|v| *v != 0.0),
+        "tied lm_head must produce non-degenerate logits (an all-zero head would \
+         also 'succeed'), got {logits:?}"
+    );
+
+    // And it must be the RIGHT matrix: the output projection IS the embedding,
+    // byte for byte, shaped in_dim=hidden / out_dim=vocab for the logits matmul.
+    let embed_bytes = apr_tensor_bytes(&mapped, "model.embed_tokens.weight");
+    assert_eq!(
+        model.lm_head_weight.data, embed_bytes,
+        "#2309: the tied lm_head must be the embedding matrix, byte for byte"
+    );
+    assert_eq!(model.lm_head_weight.in_dim, 8);
+    assert_eq!(model.lm_head_weight.out_dim, 10);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// #2309, second tie spelling: an `.apr` that OMITS `lm_head.weight` entirely.
+///
+/// GGUF-derived and explicitly-tied conversions drop the descriptor rather than
+/// writing a 0-byte one. That spelling used to fail earlier and louder —
+/// "APR: tensor not found (tried: lm_head.weight, output.weight)" — so the quantized
+/// loader could not load a tied model under either spelling.
+#[test]
+fn test_2309_omitted_lm_head_ties_to_embeddings() {
+    let apr_bytes = crate::apr::test_factory::build_executable_pygmy_apr_embed_tied();
+    let dir = std::env::temp_dir();
+    let path = dir.join("test_2309_omitted_lm_head.apr");
+    std::fs::write(&path, &apr_bytes).expect("should write file");
+
+    let mapped = crate::apr::MappedAprModel::from_path(&path).expect("should load apr");
+    assert!(
+        mapped.find_tensor("lm_head.weight").is_none(),
+        "fixture must omit lm_head.weight for this test to bite"
+    );
+
+    let model = OwnedQuantizedModel::from_apr(&mapped)
+        .expect("#2309: an .apr with no lm_head descriptor is tied, not broken");
+    let logits = model.forward(&[1u32]).expect("#2309: tied decode must work");
+    assert_eq!(logits.len(), 10);
+    assert!(logits.iter().all(|v| v.is_finite()));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// #2309 negative control: a model with a REAL lm_head must keep its own weights.
+///
+/// Guards the fix from being over-broad — "always tie" would silently replace a
+/// genuinely separate output projection with the embedding matrix and change what
+/// the model emits.
+#[test]
+fn test_2309_untied_lm_head_is_not_replaced_by_embeddings() {
+    let apr_bytes = crate::apr::test_factory::build_executable_pygmy_apr();
+    let dir = std::env::temp_dir();
+    let path = dir.join("test_2309_untied_lm_head_control.apr");
+    std::fs::write(&path, &apr_bytes).expect("should write file");
+
+    let mapped = crate::apr::MappedAprModel::from_path(&path).expect("should load apr");
+    let lm_bytes = apr_tensor_bytes(&mapped, "lm_head.weight");
+    let embed_bytes = apr_tensor_bytes(&mapped, "model.embed_tokens.weight");
+    assert_ne!(
+        lm_bytes, embed_bytes,
+        "fixture must have a genuinely different lm_head for this control to bite"
+    );
+
+    let model = OwnedQuantizedModel::from_apr(&mapped).expect("untied .apr must load");
+    assert_eq!(
+        model.lm_head_weight.data, lm_bytes,
+        "#2309: an untied lm_head must keep its OWN weights, not the embeddings"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}

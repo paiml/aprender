@@ -12,7 +12,7 @@ pub enum TrainCommands {
     ///
     /// Analogous to `forjar plan` — shows what will happen before committing GPU time.
     Plan {
-        /// Path to training data (JSONL) — required for --task classify
+        /// Path to training data (JSONL). Only read by `apr finetune --task classify`.
         #[arg(long, value_name = "FILE")]
         data: Option<PathBuf>,
         /// Model size: "0.5B", "9B", "7B", "13B"
@@ -24,8 +24,9 @@ pub enum TrainCommands {
         /// Number of output classes
         #[arg(long, default_value = "5")]
         num_classes: usize,
-        /// Task type: classify, pretrain
-        #[arg(long, default_value = "classify")]
+        /// Task type: pretrain (causal LM). Classification fine-tuning is
+        /// `apr finetune --task classify`, not this command.
+        #[arg(long, default_value = "pretrain")]
         task: String,
         /// YAML training config (for --task pretrain)
         #[arg(long, value_name = "FILE")]
@@ -81,8 +82,9 @@ pub enum TrainCommands {
         #[arg(long, value_name = "FILE")]
         config: Option<PathBuf>,
 
-        /// Task type: classify, pretrain
-        #[arg(long, default_value = "classify")]
+        /// Task type: pretrain (causal LM). Classification fine-tuning is
+        /// `apr finetune --task classify`, not this command.
+        #[arg(long, default_value = "pretrain")]
         task: String,
 
         // ── Inline plan params (used when no --plan file is given) ─────
@@ -98,9 +100,13 @@ pub enum TrainCommands {
         /// Number of output classes
         #[arg(long, default_value = "5")]
         num_classes: usize,
-        /// Output directory for checkpoints and leaderboard
-        #[arg(short, long, default_value = "/tmp/training-output")]
-        output: PathBuf,
+        /// Output directory for checkpoints and leaderboard.
+        ///
+        /// When given it OVERRIDES `training.output_dir` in the YAML config.
+        /// When omitted, the config's `training.output_dir` is used (default
+        /// `./checkpoints`). The directory is created if it does not exist.
+        #[arg(short, long, value_name = "DIR")]
+        output: Option<PathBuf>,
         /// HPO strategy: tpe, grid, random, manual
         #[arg(long, default_value = "tpe")]
         strategy: String,

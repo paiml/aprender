@@ -399,7 +399,7 @@ fn infer_intermediate_size_from_tensors(
 /// LLaMA, Mistral, Phi all use `model.layers`. Now uses Qwen2-specific signals:
 /// - Qwen2 has attention bias (`self_attn.q_proj.bias`) — LLaMA/Mistral do not.
 /// - Qwen2 sometimes has fused `qkv_proj.weight`.
-fn infer_architecture_from_names(
+pub(super) fn infer_architecture_from_names(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
 ) -> Option<String> {
     let has_model_layers = tensors.keys().any(|k| k.contains("model.layers"));

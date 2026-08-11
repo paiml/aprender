@@ -88,6 +88,31 @@ struct EvalResult {
     pub threshold: f32,
 }
 
+/// The device perplexity evaluation actually runs on.
+///
+/// There is no GPU path here — the only readers of `device` are the
+/// humaneval/mbpp code-eval paths — so this is always `"cpu"`. It exists so the
+/// answer is stated rather than assumed.
+pub(crate) fn perplexity_device(_requested: &str) -> &'static str {
+    "cpu"
+}
+
+/// Notice to emit when `--device` cannot be honoured in perplexity mode.
+///
+/// `--device cuda` used to run byte-identically to `--device cpu` with no
+/// mention of a device anywhere in the output, so an operator who typo'd
+/// `--device cude` (or asked for a GPU this build has no kernels for) believed
+/// the run was GPU-accelerated.
+pub(crate) fn perplexity_device_notice(requested: &str) -> Option<String> {
+    if perplexity_device(requested) == requested {
+        return None;
+    }
+    Some(format!(
+        "⚠ --device {requested} requested, but perplexity evaluation is CPU-only — running on cpu \
+         (--device applies to --task humaneval/mbpp)"
+    ))
+}
+
 /// Run the eval command
 #[provable_contracts_macros::contract(
     "apr-cli-operations-v1",
@@ -99,8 +124,13 @@ pub(crate) fn run(
     text: Option<&str>,
     max_tokens: Option<usize>,
     threshold: Option<f32>,
+    device: &str,
     json: bool,
 ) -> Result<()> {
+    if let Some(notice) = perplexity_device_notice(device) {
+        eprintln!("{notice}");
+    }
+
     let dataset_enum: Dataset = dataset
         .parse()
         .map_err(|e: String| CliError::ValidationFailed(e))?;
@@ -114,6 +144,8 @@ pub(crate) fn run(
 
     if !json {
         print_header(path, &config);
+        output::kv("Device", perplexity_device(device));
+        println!();
     }
 
     // Run evaluation
@@ -121,7 +153,7 @@ pub(crate) fn run(
 
     // GH-248: JSON output mode
     if json {
-        return print_json_results(path, &config, &result);
+        return print_json_results(path, &config, &result, device);
     }
 
     // Print results
@@ -141,10 +173,16 @@ pub(crate) fn run(
 /// GH-248: JSON output mode for eval results
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
-fn print_json_results(path: &Path, config: &EvalConfig, result: &EvalResult) -> Result<()> {
+fn print_json_results(
+    path: &Path,
+    config: &EvalConfig,
+    result: &EvalResult,
+    device: &str,
+) -> Result<()> {
     let output = serde_json::json!({
         "model": path.display().to_string(),
         "dataset": format!("{:?}", config.dataset),
+        "device": perplexity_device(device),
         "perplexity": result.perplexity,
         "cross_entropy": result.cross_entropy,
         "tokens_evaluated": result.tokens_evaluated,

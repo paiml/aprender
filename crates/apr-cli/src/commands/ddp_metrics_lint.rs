@@ -15,6 +15,7 @@ use super::ddp_metrics_classifier::{
     DdpAllreduceOutcome, DdpLossParityOutcome, DdpScalingOutcome, D11_DEFAULT_LOSS_TOLERANCE,
     D11_DEFAULT_SCALING_FLOOR,
 };
+use super::threshold_arg;
 use crate::error::{CliError, Result};
 
 pub(crate) fn run(
@@ -25,6 +26,11 @@ pub(crate) fn run(
     loss_tolerance: f64,
     json: bool,
 ) -> Result<()> {
+    // Fail closed before any gate runs: with a NaN floor/tolerance the
+    // scaling-efficiency and loss-parity comparisons are false, so the report
+    // would assert `Ok { efficiency: 0.0025 }` for a run that fails outright.
+    threshold_arg::guard("--scaling-floor", scaling_floor, threshold_arg::FRACTION)?;
+    threshold_arg::guard("--loss-tolerance", loss_tolerance, threshold_arg::TOLERANCE)?;
     let body_1 = load_json(metrics_1gpu_file)?;
     let body_n = load_json(metrics_ngpu_file)?;
 
@@ -144,6 +150,56 @@ mod cov_tests {
         .unwrap_err();
         assert!(matches!(err, CliError::FileNotFound(_)));
     }
+    /// 0.63.0 printed `scaling_efficiency : Ok { efficiency: 0.0025 }` — a
+    /// positive assertion that 0.25% DDP scaling is acceptable — whenever the
+    /// floor was NaN or negative, because `efficiency < floor` is false there.
+    #[test]
+    fn nan_or_negative_floor_cannot_disarm_the_ddp_gates() {
+        let a = w(r#"{"tokens_per_sec":1000.0,"final_loss":2.0}"#);
+        let b = w(r#"{"tokens_per_sec":10.0,"final_loss":9.9,
+                "ddp_metrics":{"allreduce_bandwidth_gbps":[12.5]}}"#);
+
+        // Control: the shipped defaults reject this pair on scaling efficiency.
+        let err = run(
+            a.path(),
+            b.path(),
+            4,
+            DDP_METRICS_DEFAULT_SCALING_FLOOR,
+            DDP_METRICS_DEFAULT_LOSS_TOLERANCE,
+            false,
+        )
+        .unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("scaling-efficiency"), "got: {msg}");
+            }
+            other => panic!("expected the scaling gate to fire, got {other:?}"),
+        }
+
+        for (floor, tol, flag) in [
+            (
+                f64::NAN,
+                DDP_METRICS_DEFAULT_LOSS_TOLERANCE,
+                "--scaling-floor",
+            ),
+            (-1.0, DDP_METRICS_DEFAULT_LOSS_TOLERANCE, "--scaling-floor"),
+            (
+                DDP_METRICS_DEFAULT_SCALING_FLOOR,
+                f64::NAN,
+                "--loss-tolerance",
+            ),
+            (DDP_METRICS_DEFAULT_SCALING_FLOOR, -1.0, "--loss-tolerance"),
+        ] {
+            let err = run(a.path(), b.path(), 4, floor, tol, false).unwrap_err();
+            match err {
+                CliError::ValidationFailed(msg) => {
+                    assert!(msg.contains(flag), "expected {flag} named; got: {msg}");
+                }
+                other => panic!("({floor}, {tol}) must fail closed, got {other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn invalid_json_is_invalid_format() {
         let a = w("xx");

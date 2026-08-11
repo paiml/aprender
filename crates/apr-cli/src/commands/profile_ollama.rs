@@ -318,12 +318,14 @@ fn roofline_hardware_specs(is_gpu: bool) -> (f64, f64, f64, String) {
             hw.cpu.peak_gflops,
             hw.cpu.memory_bw_gbps,
             hw.roofline.cpu_arithmetic_intensity,
-            format!(
-                "{} {} ({} cores, {})",
-                hw.cpu.vendor,
-                hw.cpu.model,
+            // GH-2395: this read `Unknown Unknown (24 cores, 512)` — vendor and
+            // model unresolved, and the SIMD width printed as a bare "512" with no
+            // unit, in the same parenthesis as a core count.
+            cpu_hardware_label(
+                &hw.cpu.vendor,
+                &hw.cpu.model,
                 hw.cpu.cores,
-                hw.cpu.simd.bits()
+                hw.cpu.simd.bits(),
             ),
         )
     }

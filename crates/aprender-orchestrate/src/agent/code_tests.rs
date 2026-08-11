@@ -205,6 +205,57 @@ fn test_check_invalid_apr_returns_false_on_empty_dirs() {
     let _ = result;
 }
 
+/// `--resume <unknown-id>` used to start a FRESH session and exit 0, so a
+/// typo'd id left the operator believing a conversation was being continued
+/// that the model had no history of. It must fail, and name the id.
+///
+/// The unreadable `--manifest` is a tripwire: it is the next thing `cmd_code`
+/// would hit, so if the resume check is removed this test fails on the wrong
+/// message in milliseconds instead of launching a model.
+#[test]
+fn test_cmd_code_rejects_unknown_resume_session_id() {
+    let id = "no-such-session-2398-falsifier";
+    let err = cmd_code(
+        None,
+        std::path::PathBuf::from("."),
+        Some(Some(id.to_string())),
+        vec!["hi".to_string()],
+        true,
+        50,
+        Some(std::path::PathBuf::from("/nonexistent/manifest-2398.toml")),
+        None,
+        "text",
+        "text",
+    )
+    .expect_err("an unknown --resume id must be an error, not a silent fresh session");
+    let msg = err.to_string();
+    assert!(msg.contains("no such session"), "must say the session is unknown; got: {msg}");
+    assert!(msg.contains(id), "must name the id the operator typed; got: {msg}");
+}
+
+/// `--project /typo` used to be ignored, running the agent against the CURRENT
+/// directory while the operator believed it was scoped elsewhere.
+#[test]
+fn test_cmd_code_rejects_nonexistent_project_dir() {
+    let dir = "/nonexistent-project-dir-2398";
+    let err = cmd_code(
+        None,
+        std::path::PathBuf::from(dir),
+        None,
+        vec!["hi".to_string()],
+        true,
+        50,
+        Some(std::path::PathBuf::from("/nonexistent/manifest-2398.toml")),
+        None,
+        "text",
+        "text",
+    )
+    .expect_err("a --project path that is not a directory must be an error");
+    let msg = err.to_string();
+    assert!(msg.contains("--project"), "must name the flag; got: {msg}");
+    assert!(msg.contains(dir), "must name the path; got: {msg}");
+}
+
 #[test]
 fn test_cmd_code_signature_matches_spec() {
     // Verify the public API signature exists and is callable

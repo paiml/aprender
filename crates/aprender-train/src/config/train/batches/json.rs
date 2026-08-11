@@ -1,6 +1,5 @@
 //! JSON batch loading
 
-use super::super::demo::create_demo_batches;
 use crate::error::{Error, Result};
 use crate::train::Batch;
 use crate::Tensor;
@@ -61,6 +60,12 @@ pub fn load_json_batches(path: &Path, batch_size: usize) -> Result<Vec<Batch>> {
         return Ok(batches);
     }
 
-    eprintln!("Warning: Could not parse JSON data format, using demo data");
-    Ok(create_demo_batches(batch_size))
+    // NEVER substitute synthetic data for a dataset we failed to parse — a run
+    // that trains on fabricated examples and exits 0 is worse than one that
+    // refuses to start.
+    Err(Error::ConfigError(format!(
+        "Could not parse training data '{}': {}",
+        path.display(),
+        super::loader::JSON_SCHEMA_HINT
+    )))
 }

@@ -361,3 +361,103 @@
         let result = discover_sibling_subdir(tmp.path(), "nonexistent");
         assert!(result.is_none());
     }
+
+    // ====================================================================
+    // PTX Parity gate: zero comparisons is not a pass
+    // ====================================================================
+
+    /// Without the `cuda` feature `validate_all_kernel_pairs` returns an empty
+    /// report. `all_passed()` is `failed == 0`, vacuously true when nothing was
+    /// compared, so the gate reported "0/0 kernel pairs passed PTX parity" as
+    /// PASS — a gate that could not fail by construction.
+    #[cfg(feature = "inference")]
+    #[test]
+    fn ptx_gate_skips_when_no_kernel_pairs_were_compared() {
+        let empty = realizar::ptx_parity::PtxParityReport {
+            results: Vec::new(),
+            total: 0,
+            passed: 0,
+            failed: 0,
+        };
+        assert!(
+            empty.all_passed(),
+            "precondition: an empty report still claims all_passed()"
+        );
+
+        let gate = ptx_gate_result(&empty, std::time::Duration::from_millis(1));
+        assert!(gate.skipped, "0/0 comparisons must be reported as SKIP");
+        assert!(
+            !gate.message.contains("0/0 kernel pairs passed"),
+            "must not claim a pass it did not earn, got: {}",
+            gate.message
+        );
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn ptx_gate_still_judges_real_comparisons() {
+        let ok = realizar::ptx_parity::PtxParityReport {
+            results: Vec::new(),
+            total: 6,
+            passed: 6,
+            failed: 0,
+        };
+        let gate = ptx_gate_result(&ok, std::time::Duration::from_millis(1));
+        assert!(!gate.skipped, "real comparisons must produce a verdict");
+        assert!(gate.passed, "6/6 must PASS");
+
+        let bad = realizar::ptx_parity::PtxParityReport {
+            results: Vec::new(),
+            total: 6,
+            passed: 5,
+            failed: 1,
+        };
+        let gate = ptx_gate_result(&bad, std::time::Duration::from_millis(1));
+        assert!(!gate.skipped);
+        assert!(!gate.passed, "1 failing kernel pair must FAIL");
+    }
+
+    // ====================================================================
+    // Capability Match gate: no GPU claims from a build with no GPU backend
+    // ====================================================================
+
+    /// On a build without `cuda`, the gate asserted "all N required ops
+    /// supported by GPU" — a claim about kernels the binary cannot reach.
+    #[cfg(all(feature = "inference", not(feature = "cuda")))]
+    #[test]
+    fn capability_gate_makes_no_gpu_claim_without_cuda() {
+        // A GGUF carrying general.architecture — without it the gate short
+        // circuits on "missing architecture metadata" and never reaches the
+        // GPU claim, so the test would prove nothing.
+        let mut tmp = NamedTempFile::new().expect("tempfile");
+        tmp.write_all(b"GGUF").expect("magic");
+        tmp.write_all(&3u32.to_le_bytes()).expect("version");
+        tmp.write_all(&0u64.to_le_bytes()).expect("tensor count");
+        tmp.write_all(&1u64.to_le_bytes()).expect("kv count");
+        let key = b"general.architecture";
+        tmp.write_all(&(key.len() as u64).to_le_bytes())
+            .expect("key len");
+        tmp.write_all(key).expect("key");
+        tmp.write_all(&8u32.to_le_bytes()).expect("STRING type tag");
+        let value = b"qwen2";
+        tmp.write_all(&(value.len() as u64).to_le_bytes())
+            .expect("value len");
+        tmp.write_all(value).expect("value");
+        tmp.flush().expect("flush");
+
+        let config = QaConfig::default();
+        let gate = crate::commands::qa_capability::run_capability_gate(tmp.path(), &config)
+            .expect("gate runs");
+        assert!(
+            !gate.message.contains("supported by GPU"),
+            "a CPU-only build must not assert GPU support, got: {}",
+            gate.message
+        );
+        // Proves the fixture got past architecture extraction — otherwise the
+        // gate short circuits earlier and the assertion above is vacuous.
+        assert!(
+            gate.skipped && gate.message.contains("Requires 'inference' and 'cuda'"),
+            "expected the cuda-feature SKIP, got: {}",
+            gate.message
+        );
+    }

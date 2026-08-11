@@ -87,7 +87,8 @@
             density: 0.2,
             seed: 42,
             plan: false,
-        });
+                force: true,
+            });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Merge should be handled by dispatch_model_commands");
         // merge with nonexistent files should error
@@ -109,7 +110,8 @@
             density: 0.2,
             seed: 42,
             plan: true,
-        });
+                force: true,
+            });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Merge plan should be handled by dispatch_model_commands");
     }
@@ -269,6 +271,115 @@
         assert!(result.is_some(), "Diagnose should be handled by analysis dispatcher");
     }
 
+    // ── apr showcase --step ─────────────────────────────────────────────
+
+    /// `--step bogus` used to map to `None`, indistinguishable from "no --step
+    /// given", so the CLI answered "No step specified" to a command line that
+    /// plainly specified one.
+    #[test]
+    fn test_showcase_unknown_step_names_the_offending_value() {
+        let err = parse_showcase_step("bogus").expect_err("unknown step must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("bogus"),
+            "error must quote what the user typed, got: {msg}"
+        );
+        assert!(
+            !msg.contains("No step specified"),
+            "must not claim no step was specified, got: {msg}"
+        );
+        for expected in ["import", "gguf", "convert", "apr", "all"] {
+            assert!(
+                msg.contains(expected),
+                "error should list '{expected}', got: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_showcase_every_documented_step_parses() {
+        // The list printed by `print_available_steps`, plus `chat`.
+        for name in [
+            "import",
+            "gguf",
+            "convert",
+            "apr",
+            "brick",
+            "bench",
+            "chat",
+            "visualize",
+            "zram",
+            "cuda",
+            "all",
+        ] {
+            assert!(
+                parse_showcase_step(name).is_ok(),
+                "'{name}' is advertised and must parse"
+            );
+        }
+    }
+
+    #[test]
+    fn test_showcase_step_typo_is_rejected_not_silently_ignored() {
+        // A near-miss is the realistic case: `--step ggug` for `gguf`.
+        assert!(parse_showcase_step("ggug").is_err());
+        assert!(parse_showcase_step("GGUF").is_err(), "matching is exact");
+        assert!(parse_showcase_step("").is_err());
+    }
+
+    /// `apr probar tensor --format bogus` used to be silently rewritten to
+    /// `both` by `.unwrap_or(ExportFormat::Both)`, so a typo produced a
+    /// different export than requested and exited 0.
+    #[test]
+    fn test_dispatch_analysis_probar_rejects_unknown_format() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
+            command: ProbarSubcommand::Tensor {
+                file: PathBuf::from("/tmp/nonexistent_probar_model.apr"),
+                output: PathBuf::from("/tmp/nonexistent_probar_out"),
+                format: "bogus".to_string(),
+                golden: None,
+                layer: None,
+                assert: false,
+                tolerance: 0.98,
+            },
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        let err = result
+            .expect("Probar should be handled by analysis dispatcher")
+            .expect_err("unknown --format must be rejected, not silently defaulted");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Unknown format") && msg.contains("bogus"),
+            "error must name the rejected value, got: {msg}"
+        );
+    }
+
+    /// The valid values must still reach probar (which then fails on the
+    /// missing model, not on the format).
+    #[test]
+    fn test_dispatch_analysis_probar_accepts_known_formats() {
+        for format in ["json", "png", "both", "all"] {
+            let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
+                command: ProbarSubcommand::Tensor {
+                    file: PathBuf::from("/tmp/nonexistent_probar_model.apr"),
+                    output: PathBuf::from("/tmp/nonexistent_probar_out"),
+                    format: format.to_string(),
+                    golden: None,
+                    layer: None,
+                    assert: false,
+                    tolerance: 0.98,
+                },
+            }));
+            let err = dispatch_analysis_commands(&cli)
+                .expect("handled")
+                .expect_err("missing model file still errors");
+            assert!(
+                !err.to_string().contains("Unknown format"),
+                "'{format}' must be accepted, got: {err}"
+            );
+        }
+    }
+
     #[test]
     fn test_dispatch_analysis_compare_hf_offline_rejected() {
         let mut cli = make_cli(Commands::Extended(ExtendedCommands::CompareHf {
@@ -315,6 +426,66 @@
         }));
         let result = dispatch_profiling_commands(&cli);
         assert!(result.is_none(), "Chat should not be handled by profiling dispatcher");
+    }
+
+    // ── ptx: dead command on a default `cargo install aprender` (#2399 f1) ──
+
+    /// On a build without the PTX analyzer, `apr ptx <file>` must say the
+    /// command is unavailable and how to get it — not report the file.
+    ///
+    /// The feature check used to run AFTER path resolution, so
+    /// `apr ptx /nonexistent.ptx` exited 3 with "File not found", sending the
+    /// user off to fix a path for a command this binary can never run.
+    #[cfg(not(feature = "trueno-explain"))]
+    #[test]
+    fn ptx_without_analyzer_reports_the_feature_not_the_path() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Ptx {
+            file: Some(PathBuf::from("/nonexistent_ptx_source_xyz.ptx")),
+            kernel: None,
+            strict: false,
+            bugs: false,
+            json: false,
+            verbose: false,
+        }));
+        let err = dispatch_profiling_commands(&cli)
+            .expect("Ptx must be handled by the profiling dispatcher")
+            .expect_err("ptx must fail when the analyzer is not compiled in");
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("File not found"),
+            "the missing path is not the reason ptx failed, got: {msg}"
+        );
+        assert!(
+            msg.contains("cargo install aprender --features ptx"),
+            "the error must name a remedy the user of an installed binary can run, got: {msg}"
+        );
+        assert!(
+            matches!(err, crate::error::CliError::FeatureDisabled(_)),
+            "an unavailable command must not exit as if the input were missing \
+             (FileNotFound is exit 3); got {err:?}"
+        );
+    }
+
+    /// Same message with no file argument at all — the two shapes a user tries.
+    #[cfg(not(feature = "trueno-explain"))]
+    #[test]
+    fn ptx_without_analyzer_reports_remedy_for_kernel_form_too() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Ptx {
+            file: None,
+            kernel: Some("Q4KGemv".to_string()),
+            strict: false,
+            bugs: false,
+            json: false,
+            verbose: false,
+        }));
+        let err = dispatch_profiling_commands(&cli)
+            .expect("Ptx must be handled by the profiling dispatcher")
+            .expect_err("ptx must fail when the analyzer is not compiled in");
+        assert!(
+            err.to_string()
+                .contains("cargo install aprender --features ptx"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -525,6 +696,7 @@
     fn test_dispatch_inspection_routes_lint() {
         let cli = make_cli(Commands::Lint {
             file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+                strict: false,
         });
         let result = dispatch_inspection_commands(&cli);
         assert!(result.is_some(), "Lint should be handled by inspection dispatcher");
@@ -541,7 +713,8 @@
             batch: None,
             json: false,
             plan: false,
-        });
+                force: true,
+            });
         let result = dispatch_inspection_commands(&cli);
         assert!(result.is_none(), "Export should NOT be handled by inspection dispatcher");
     }
@@ -660,7 +833,8 @@
             batch: None,
             json: false,
             plan: false,
-        });
+                force: true,
+            });
         let result = dispatch_format_commands(&cli);
         assert!(result.is_some(), "Export should be handled by format dispatcher");
     }

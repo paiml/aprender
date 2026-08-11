@@ -29,6 +29,7 @@ fn test_run_insufficient_files() {
         42,
         false,
         false,
+        true, // #2392: force — these tests predate the overwrite guard
     );
     // Debug: unreachable (panicked above). Release: must be a rejection, not a successful merge.
     #[cfg(not(debug_assertions))]
@@ -54,6 +55,7 @@ fn test_run_empty_files() {
         42,
         false,
         false,
+        true, // #2392: force — these tests predate the overwrite guard
     );
     // Debug: unreachable (panicked above). Release: must be a rejection, not a successful merge.
     #[cfg(not(debug_assertions))]
@@ -80,6 +82,7 @@ fn test_run_file_not_found() {
         42,
         false,
         false,
+        true, // #2392: force — these tests predate the overwrite guard
     );
     assert!(result.is_err());
     match result {
@@ -106,6 +109,7 @@ fn test_run_second_file_not_found() {
         42,
         false,
         false,
+        true, // #2392: force — these tests predate the overwrite guard
     );
     assert!(result.is_err());
     match result {
@@ -130,6 +134,7 @@ fn test_run_unknown_strategy() {
         42,
         false,
         false,
+        true, // #2392: force — these tests predate the overwrite guard
     );
     assert!(result.is_err());
     match result {
@@ -156,6 +161,7 @@ fn test_run_ties_without_base_model() {
         42,
         false,
         false,
+        true, // #2392: force — these tests predate the overwrite guard
     );
     assert!(result.is_err());
     match result {
@@ -184,6 +190,7 @@ fn test_run_dare_without_base_model() {
         42,
         false,
         false,
+        true, // #2392: force — these tests predate the overwrite guard
     );
     assert!(result.is_err());
     match result {
@@ -217,6 +224,7 @@ fn test_run_slerp_with_three_models() {
         42,
         false,
         false,
+        true, // #2392: force — these tests predate the overwrite guard
     );
     assert!(result.is_err());
 }
@@ -286,6 +294,7 @@ fn test_run_invalid_apr_files() {
         42,
         false,
         false,
+        true, // #2392: force — these tests predate the overwrite guard
     );
     // Should fail because files are not valid APR
     assert!(result.is_err());
@@ -310,6 +319,7 @@ fn test_run_with_weights() {
         42,
         false,
         false,
+        true, // #2392: force — these tests predate the overwrite guard
     );
     // Will fail at actual merge, but tests weight parsing path
     assert!(result.is_err());

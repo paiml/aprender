@@ -165,6 +165,7 @@
             },
             Commands::Lint {
                 file: PathBuf::from("m.apr"),
+                strict: false,
             },
             Commands::Extended(ExtendedCommands::Qa {
                 file: PathBuf::from("m.apr"),
@@ -344,7 +345,8 @@
             density: 0.2,
             seed: 42,
             plan: false,
-        };
+                force: true,
+            };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths.len(), 3);
     }

@@ -43,13 +43,13 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         trace_output: Option<PathBuf>,
         /// Trace detail level (none, basic, layer, payload)
-        #[arg(long, value_name = "LEVEL", default_value = "basic")]
+        #[arg(long, value_name = "LEVEL", default_value = "basic", value_parser = TRACE_LEVEL_VALUES)]
         trace_level: String,
         /// Enable inline Roofline profiling (PMAT-SHOWCASE-METHODOLOGY-001)
         #[arg(long)]
         profile: bool,
         /// PMAT-488: Compute backend override (cuda, cpu, wgpu)
-        #[arg(long, value_name = "BACKEND")]
+        #[arg(long, value_name = "BACKEND", value_parser = BACKEND_VALUES)]
         backend: Option<String>,
     },
     /// Benchmark throughput (spec H12: >= 10 tok/s)
@@ -77,7 +77,12 @@ pub enum ExtendedCommands {
         brick: Option<String>,
         /// Comma-separated latency percentile points for JSON output
         /// (CRUX-E-07). Default: `50,95,99`. Values must be in (0, 100].
-        #[arg(long, value_delimiter = ',', default_value = "50,95,99")]
+        #[arg(
+            long,
+            value_delimiter = ',',
+            default_value = "50,95,99",
+            value_parser = crate::commands::bench::parse_percentile
+        )]
         percentiles: Vec<f64>,
     },
     /// Evaluate model perplexity (spec H13: PPL <= 20) or classification metrics
@@ -112,8 +117,9 @@ pub enum ExtendedCommands {
         /// Generate HuggingFace model card (README.md) in checkpoint dir
         #[arg(long)]
         generate_card: bool,
-        /// Device for inference: "cpu" (default) or "cuda" (GPU-accelerated, ALB-089)
-        #[arg(long, default_value = "cpu")]
+        /// Device for inference: "cpu" (default) or "cuda" (GPU-accelerated, ALB-089).
+        /// Applies to --task humaneval/mbpp; perplexity evaluation is CPU-only.
+        #[arg(long, default_value = "cpu", value_parser = ["cpu", "cuda"])]
         device: String,
         /// Number of samples per problem for pass@k (ALB-088, default: 1)
         #[arg(long, default_value = "1")]
@@ -139,22 +145,22 @@ pub enum ExtendedCommands {
         /// Detect naive implementations
         #[arg(long)]
         detect_naive: bool,
-        /// GFLOPS threshold for naive detection
+        /// Achieved-GFLOPS floor below which the run is reported as naive
         #[arg(long, default_value = "10.0")]
         threshold: f64,
-        /// Compare against HuggingFace baseline
+        /// [NOT IMPLEMENTED — accepted and ignored] Compare against HuggingFace baseline
         #[arg(long)]
         compare_hf: Option<String>,
-        /// Measure energy consumption (requires RAPL)
+        /// [NOT IMPLEMENTED — accepted and ignored] Measure energy consumption (requires RAPL)
         #[arg(long)]
         energy: bool,
         /// Compute performance grade (vs Ollama baseline)
         #[arg(long)]
         perf_grade: bool,
-        /// Show call graph
+        /// [NOT IMPLEMENTED — accepted and ignored] Show call graph
         #[arg(long)]
         callgraph: bool,
-        /// Exit non-zero if naive implementation detected
+        /// Exit non-zero if naive implementation detected (implies --detect-naive)
         #[arg(long)]
         fail_on_naive: bool,
         /// Output file path for flamegraph SVG (GH-174, PMAT-182)
@@ -180,7 +186,8 @@ pub enum ExtendedCommands {
         /// Measurement passes (default: 10)
         #[arg(long, default_value = "10")]
         measure: usize,
-        /// Number of tokens to generate per measurement pass (default: 32)
+        /// Tokens generated per measurement pass — GPU and --ollama paths only;
+        /// the CPU per-operation profiler measures one forward pass per pass
         #[arg(long, default_value = "32")]
         tokens: usize,
         /// Compare against Ollama baseline (runs ollama for comparison)
@@ -303,7 +310,17 @@ pub enum ExtendedCommands {
         prefill: bool,
     },
     /// PTX analysis and bug detection (register pressure, roofline)
-    #[command(name = "ptx")]
+    ///
+    /// #2399 finding 1: on a build without the analyzer this line is the only
+    /// thing a user sees before running the command, so it has to say so.
+    #[cfg_attr(feature = "trueno-explain", command(name = "ptx"))]
+    #[cfg_attr(
+        not(feature = "trueno-explain"),
+        command(
+            name = "ptx",
+            about = "PTX analysis and bug detection [unavailable in this build: cargo install aprender --features ptx]"
+        )
+    )]
     Ptx {
         /// Path to a PTX source file
         #[arg(value_name = "FILE")]
@@ -434,12 +451,12 @@ pub enum ExtendedCommands {
         #[arg(long)]
         headless: bool,
         /// Output JSON format (requires --headless)
-        #[arg(long)]
+        #[arg(long, requires = "headless")]
         json: bool,
         /// Output file path (requires --headless)
-        #[arg(long, value_name = "FILE")]
+        #[arg(long, value_name = "FILE", requires = "headless")]
         output: Option<PathBuf>,
-        /// CI mode: exit with code 1 if thresholds not met
+        /// CI mode: exit non-zero if thresholds are not met or the report status is FAIL
         #[arg(long)]
         ci: bool,
         /// Minimum throughput threshold in tok/s (for --ci)
@@ -451,8 +468,8 @@ pub enum ExtendedCommands {
         /// Number of warmup iterations before measurement
         #[arg(long, default_value = "10")]
         warmup: usize,
-        /// Number of measurement iterations
-        #[arg(long, default_value = "100")]
+        /// Number of measurement iterations (must be >= 1)
+        #[arg(long, default_value = "100", value_parser = parse_cbtop_iterations)]
         iterations: usize,
         /// PAR-100: Enable speculative decoding benchmark
         #[arg(long)]
@@ -766,8 +783,9 @@ pub enum ExtendedCommands {
         /// Path to captured /api/chat response (JSON object, or NDJSON if --stream)
         #[arg(long, value_name = "FILE")]
         response_file: PathBuf,
-        /// Optional captured request JSON — enables tool-name allowlist gate
-        /// (every called tool name must appear in request.tools[*].function.name)
+        /// Captured request JSON, required unless --stream — supplies the
+        /// tool-name allowlist (every called tool name must appear in
+        /// request.tools[*].function.name)
         #[arg(long, value_name = "FILE")]
         request_file: Option<PathBuf>,
         /// Treat input as NDJSON stream (one frame per line)
@@ -867,10 +885,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "N")]
         world_size: i64,
         /// Scaling-efficiency floor (default 0.85, PyTorch DDP convention)
-        #[arg(long, value_name = "F", default_value_t = 0.85)]
+        #[arg(long, value_name = "F", default_value_t = 0.85,
+              value_parser = commands::threshold_arg::parse_fraction)]
         scaling_floor: f64,
         /// Loss-parity relative tolerance (default 0.01)
-        #[arg(long, value_name = "F", default_value_t = 0.01)]
+        #[arg(long, value_name = "F", default_value_t = 0.01,
+              value_parser = commands::threshold_arg::parse_tolerance)]
         loss_tolerance: f64,
     },
     /// Lint a captured `apr dataset audio-inspect --format json` body (CRUX-H-13)
@@ -897,10 +917,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         head_dim_error_file: Option<PathBuf>,
         /// Max absolute diff tolerance (default 5e-3, FlashAttention-2 bound)
-        #[arg(long, value_name = "F", default_value_t = 5e-3)]
+        #[arg(long, value_name = "F", default_value_t = 5e-3,
+              value_parser = commands::threshold_arg::parse_tolerance)]
         tol_abs: f64,
         /// Min cosine similarity floor (default 0.9999)
-        #[arg(long, value_name = "F", default_value_t = 0.9999)]
+        #[arg(long, value_name = "F", default_value_t = 0.9999,
+              value_parser = commands::threshold_arg::parse_cosine)]
         tol_cos: f64,
     },
     /// Lint a captured `apr attn-viz` attention dump (CRUX-F-17)
@@ -915,10 +937,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "N", default_value_t = 1)]
         expected_heatmaps: usize,
         /// Row-softmax normalization tolerance (default 1e-5)
-        #[arg(long, value_name = "F64", default_value_t = 1e-5)]
+        #[arg(long, value_name = "F64", default_value_t = 1e-5,
+              value_parser = commands::threshold_arg::parse_tolerance)]
         tolerance: f64,
         /// Causal-mask zero epsilon (default 1e-9)
-        #[arg(long, value_name = "F64", default_value_t = 1e-9)]
+        #[arg(long, value_name = "F64", default_value_t = 1e-9,
+              value_parser = commands::threshold_arg::parse_tolerance)]
         epsilon: f64,
     },
     /// Lint a captured `apr trace --check-finite` error JSON and/or `--list` coverage JSON (CRUX-F-11)
@@ -951,7 +975,8 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         jsonl_file: PathBuf,
         /// Tolerance for `Σ post_prob ≈ 1.0` (default 1e-5)
-        #[arg(long, value_name = "F64", default_value_t = 1e-5)]
+        #[arg(long, value_name = "F64", default_value_t = 1e-5,
+              value_parser = commands::threshold_arg::parse_tolerance)]
         tolerance: f64,
         /// Assert greedy decoding: sampled_id must equal argmax(pre_prob)
         #[arg(long)]
@@ -969,10 +994,14 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         timeline_file: PathBuf,
         /// Preemption threshold (default 0.95, vLLM canonical)
-        #[arg(long, value_name = "FRACTION", default_value_t = 0.95)]
+        #[arg(long, value_name = "FRACTION", default_value_t = 0.95,
+              value_parser = commands::threshold_arg::parse_fraction)]
         preempt_threshold: f64,
     },
-    /// Lint a captured OTLP/JSON ExportTraceServiceRequest body (CRUX-K-08)
+    /// Lint a captured OTLP/JSON ExportTraceServiceRequest body (CRUX-K-08).
+    ///
+    /// At least one gate flag is required: every check is opt-in, so a bare
+    /// invocation would check nothing and exit 0 for any parseable JSON.
     OtlpLint {
         /// Path to captured OTLP/JSON export body
         #[arg(long, value_name = "FILE")]
@@ -1013,6 +1042,8 @@ pub enum ExtendedCommands {
     },
     /// Lint a typical-p sampling observation (CRUX-C-22)
     TypicalPLint {
+        /// Path to captured typical-p observation JSON, with any of the
+        /// sections range/identity/mass/sort/renorm
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
@@ -1045,6 +1076,8 @@ pub enum ExtendedCommands {
     },
     /// Lint a captured /v1/embeddings observation (CRUX-C-13)
     EmbeddingsLint {
+        /// Path to captured /v1/embeddings observation JSON, with any of the
+        /// sections shape/determinism/usage/flag
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
@@ -1093,6 +1126,9 @@ pub enum ExtendedCommands {
         /// Output directory for shards + model.safetensors.index.json
         #[arg(short, long, value_name = "DIR")]
         output: PathBuf,
+        /// #2392: Overwrite an existing shard set in the output directory
+        #[arg(short, long)]
+        force: bool,
     },
     /// Reconstruct a single safetensors file from a sharded directory (CRUX-B-05)
     Unshard {
@@ -1102,6 +1138,9 @@ pub enum ExtendedCommands {
         /// Output single-file safetensors path
         #[arg(short, long, value_name = "FILE")]
         output: PathBuf,
+        /// #2392: Overwrite an existing output file (refused without it)
+        #[arg(short, long)]
+        force: bool,
     },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
@@ -1190,7 +1229,18 @@ pub enum ExtendedCommands {
         num_labels: usize,
         /// Load the optional BERT pooler dense layer (default: true).
         /// Cross-encoders that skip the pooler should pass `--with-pooler false`.
-        #[arg(long, default_value_t = true)]
+        ///
+        /// Takes an optional value: `--with-pooler` (bare) and an omitted flag
+        /// both mean true; `--with-pooler false` / `--with-pooler=false` turn
+        /// the pooler off. A bare `bool` here would compile to a SetTrue switch
+        /// and make the documented `false` unreachable.
+        #[arg(
+            long,
+            num_args = 0..=1,
+            default_value_t = true,
+            default_missing_value = "true",
+            action = clap::ArgAction::Set,
+        )]
         with_pooler: bool,
         /// Emit the raw logit instead of the sigmoid-mapped relevance score.
         #[arg(long)]
@@ -1235,7 +1285,22 @@ pub enum ExtendedCommands {
         /// L2-normalise the output embedding. Default: true (matches
         /// sentence-transformers convention). Pass `--normalize false`
         /// to keep raw magnitudes.
-        #[arg(long, default_value_t = true)]
+        ///
+        /// Takes an optional value: `--normalize` (bare) and an omitted flag
+        /// both mean true; `--normalize false` / `--normalize=false` keep the
+        /// raw magnitudes. A bare `bool` here would compile to a SetTrue switch
+        /// and make the documented `false` unreachable.
+        ///
+        /// Because the value is optional, do not place a bare `--normalize`
+        /// immediately before the MODEL positional — write
+        /// `apr embed MODEL --normalize` or `--normalize=true MODEL`.
+        #[arg(
+            long,
+            num_args = 0..=1,
+            default_value_t = true,
+            default_missing_value = "true",
+            action = clap::ArgAction::Set,
+        )]
         normalize: bool,
         /// Override hidden_dim (default: 384 / MiniLM).
         #[arg(long, default_value_t = 384)]
@@ -1276,7 +1341,7 @@ pub enum RunsCommands {
         /// Read from global experiment registry (~/.entrenar/experiments.db)
         #[arg(long)]
         global: bool,
-        /// Filter by status: running, completed, failed, all
+        /// Filter by status: all, pending, running, completed, failed, cancelled
         #[arg(long, default_value = "all")]
         status: String,
         /// Output as JSON
@@ -1392,4 +1457,24 @@ pub enum ProbarSubcommand {
         #[arg(long, default_value = "0.98")]
         tolerance: f32,
     },
+}
+
+/// Parse `apr cbtop --iterations`, rejecting 0.
+///
+/// With zero measurement iterations every brick keeps zero samples, so its
+/// measured time is 0.0µs, its gap factor is 0.00x and it scores a perfect
+/// 100/A — a green report attesting to measurements that never ran. Reject the
+/// value where the user typed it rather than emitting the fabricated report.
+fn parse_cbtop_iterations(s: &str) -> std::result::Result<usize, String> {
+    let n: usize = s
+        .parse()
+        .map_err(|_| format!("`{s}` is not a valid iteration count"))?;
+    if n == 0 {
+        return Err(
+            "must be at least 1 — a zero-iteration run measures nothing and would report every \
+             brick as a perfect 100/A from zero samples"
+                .to_string(),
+        );
+    }
+    Ok(n)
 }

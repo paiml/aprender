@@ -447,7 +447,7 @@ fn start_gguf_server_cuda(
     mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
     config: &ServerConfig,
 ) -> Result<()> {
-    use realizar::api::{create_router, AppState, BatchConfig};
+    use realizar::api::{create_router_with_config, AppState, BatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
     println!(
@@ -517,7 +517,7 @@ fn start_gguf_server_cuda(
             #[cfg(not(feature = "cuda-batch"))]
             let state = state.with_verbose(config.verbose);
 
-            let app = create_router(state);
+            let app = create_router_with_config(state, config.router_config());
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")
         }
         Err(e) => {

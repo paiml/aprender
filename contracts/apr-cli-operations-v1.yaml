@@ -243,6 +243,21 @@ falsification_tests:
   prediction: No input produces more than 4x tokens (BPE worst case)
   test: Encode adversarial strings (single-byte tokens), verify count <= 4 * len
   if_fails: Token explosion — unbounded memory usage
+- id: FALSIFY-OPS-008
+  rule: A --ci gate exits non-zero whenever the report it printed says FAIL
+  prediction: apr cbtop --headless --simulated --ci exits non-zero when the report reads "Status FAIL | CI red", with no explicit --throughput or --brick-score threshold set
+  test: commands::cbtop::tests::test_ci_gate_fails_on_red_report_without_explicit_thresholds
+  if_fails: The CI gate ignores its own verdict and cannot fail the build it exists to fail
+- id: FALSIFY-OPS-009
+  rule: A benchmark refuses to report measurements it never took
+  prediction: apr cbtop --iterations 0 is rejected at parse time rather than producing a report scoring every brick a perfect 100/A from zero samples
+  test: tests::test_parse_cbtop_rejects_zero_iterations
+  if_fails: Appending --iterations 0 turns any cbtop --ci gate unconditionally green
+- id: FALSIFY-OPS-010
+  rule: Report timestamps carry the real UTC date
+  prediction: The timestamp in a cbtop report matches the UTC date at the moment it was generated, on both headless paths
+  test: commands::cbtop::tests::test_chrono_timestamp_is_current_utc_date
+  if_fails: Persisted CI provenance is stamped with a stale hardcoded date
 kani_harnesses:
 - id: KANI-OPS-001
   obligation: ReadOnly commands have no side effects
@@ -297,7 +312,7 @@ qa_gate:
   - progress_reporting
   - concurrent_model_access
   - tokenizer_consistency
-  pass_criteria: All 7 falsification tests pass
+  pass_criteria: All 10 falsification tests pass
   falsification: >
     Run read-only command with filesystem watcher to detect mutations.
     Force inference error and measure GPU memory leak.

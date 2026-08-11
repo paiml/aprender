@@ -130,6 +130,7 @@ fn test_run_unknown_architecture() {
         None,  // tokenizer
         false, // enforce_provenance
         false, // allow_no_config
+        false, // json
     );
 
     assert!(result.is_err());
@@ -155,6 +156,7 @@ fn test_run_with_whisper_arch() {
         None,  // tokenizer
         false, // enforce_provenance
         false, // allow_no_config
+        false, // json
     );
 
     // Will fail at network stage, not architecture parsing
@@ -174,6 +176,7 @@ fn test_run_with_llama_arch() {
         None,  // tokenizer
         false, // enforce_provenance
         false, // allow_no_config
+        false, // json
     );
 
     // Will fail at network stage, not architecture parsing
@@ -193,6 +196,7 @@ fn test_run_with_bert_arch() {
         None,  // tokenizer
         false, // enforce_provenance
         false, // allow_no_config
+        false, // json
     );
 
     // Will fail at network stage, not architecture parsing
@@ -212,6 +216,7 @@ fn test_run_with_qwen2_arch() {
         None,  // tokenizer
         false, // enforce_provenance
         false, // allow_no_config
+        false, // json
     );
 
     // Will fail at network stage, not architecture parsing
@@ -231,6 +236,7 @@ fn test_run_with_auto_arch() {
         None,  // tokenizer
         false, // enforce_provenance
         false, // allow_no_config
+        false, // json
     );
 
     // Will fail at network stage, not architecture parsing
@@ -250,6 +256,7 @@ fn test_run_with_quantize_option() {
         None,  // tokenizer
         false, // enforce_provenance
         false, // allow_no_config
+        false, // json
     );
 
     // Will fail at network stage, not quantize parsing
@@ -269,6 +276,7 @@ fn test_run_with_force_flag() {
         None,  // tokenizer
         false, // enforce_provenance
         false, // allow_no_config
+        false, // json
     );
 
     // Will fail at network stage
@@ -288,6 +296,7 @@ fn test_run_invalid_source() {
         None,
         false, // enforce_provenance
         false, // allow_no_config
+        false, // json
     );
 
     assert!(result.is_err());
@@ -309,6 +318,7 @@ fn t_f_gt_001_enforce_provenance_rejects_gguf_source() {
         None,
         true,  // enforce_provenance = ON
         false, // allow_no_config
+        false, // json
     );
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
@@ -335,6 +345,7 @@ fn t_f_gt_001_enforce_provenance_rejects_gguf_hub_pattern() {
         None,
         true,  // enforce_provenance = ON
         false, // allow_no_config
+        false, // json
     );
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
@@ -358,6 +369,7 @@ fn t_f_gt_001_no_provenance_allows_gguf() {
         None,
         false, // enforce_provenance = OFF
         false, // allow_no_config
+        false, // json
     );
     // Should fail (file doesn't exist) but NOT with F-GT-001
     if let Err(e) = &result {
@@ -382,6 +394,7 @@ fn t_f_gt_001_enforce_provenance_allows_safetensors() {
         None,
         true,  // enforce_provenance = ON
         false, // allow_no_config
+        false, // json
     );
     // Should fail (file doesn't exist) but NOT with F-GT-001
     if let Err(e) = &result {
@@ -477,6 +490,104 @@ fn t_gh267_not_pytorch_gguf() {
 fn t_gh267_not_pytorch_apr() {
     let magic = *b"APR\0";
     assert!(!is_pytorch_magic(&magic));
+}
+
+// =========================================================================
+// `--json` must emit JSON, not human-formatted text.
+//
+// apr 0.63.0 (from crates.io) never forwarded the global `--json` flag into
+// `import::run`, so `apr import model.safetensors -o out.apr --json` printed
+// the "APR Import Pipeline" banner and the aligned key/value tables, and a
+// consumer piping it to a parser got
+// `json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)`.
+// =========================================================================
+
+fn import_description_fixture() -> ImportDescription {
+    ImportDescription {
+        source: "Local file: model.safetensors".to_string(),
+        output: "out.apr".to_string(),
+        architecture: "Qwen2".to_string(),
+        validation: "Basic".to_string(),
+        quantize: None,
+    }
+}
+
+#[test]
+fn test_import_json_stdout_parses_as_json() {
+    let stdout = import_json_stdout(&import_description_fixture(), 97, "A", true);
+
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+        panic!(
+            "`apr import --json` must write parseable JSON to stdout, but a consumer \
+             got {e}. Actual stdout was:\n{stdout}"
+        )
+    });
+    assert_eq!(parsed["output"], "out.apr");
+    assert_eq!(parsed["architecture"], "Qwen2");
+    assert_eq!(parsed["score"], 97);
+    assert_eq!(parsed["grade"], "A");
+    assert_eq!(parsed["status"], "ok");
+    assert_eq!(parsed["quantize"], serde_json::Value::Null);
+}
+
+#[test]
+fn test_import_json_stdout_carries_no_human_decoration() {
+    let stdout = import_json_stdout(&import_description_fixture(), 60, "D", false);
+
+    // These are the strings apr 0.63.0 put on stdout ahead of any document.
+    for leak in [
+        "APR Import Pipeline",
+        "Validation Report",
+        "Import successful",
+        "Import completed with warnings",
+    ] {
+        assert!(
+            !stdout.contains(leak),
+            "human decoration {leak:?} leaked into `--json` stdout:\n{stdout}"
+        );
+    }
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("warning path must still be one JSON document");
+    assert_eq!(parsed["status"], "warnings");
+}
+
+#[test]
+fn test_import_json_stdout_reports_quantization_when_requested() {
+    let mut describe = import_description_fixture();
+    describe.quantize = Some("Int8".to_string());
+    let stdout = import_json_stdout(&describe, 91, "A", true);
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("quantized import must still be one JSON document");
+    assert_eq!(parsed["quantize"], "Int8");
+}
+
+#[cfg(feature = "inference")]
+#[test]
+fn test_q4k_import_json_stdout_parses_as_json() {
+    let stats = realizar::convert::Q4KConversionStats {
+        tensor_count: 291,
+        q4k_tensor_count: 197,
+        total_bytes: 1_073_741_824,
+        architecture: "qwen2".to_string(),
+        num_layers: 28,
+        hidden_size: 1536,
+    };
+    let stdout = q4k_import_json_stdout("model.gguf", "model.apr", &stats);
+
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+        panic!(
+            "`apr import --preserve-q4k --json` must write parseable JSON to stdout, \
+             but a consumer got {e}. Actual stdout was:\n{stdout}"
+        )
+    });
+    assert_eq!(parsed["mode"], "q4k");
+    assert_eq!(parsed["q4k_tensor_count"], 197);
+    assert_eq!(parsed["architecture"], "qwen2");
+    assert!(
+        !stdout.contains("Q4K Import Report"),
+        "human subheader leaked into `--json` stdout:\n{stdout}"
+    );
 }
 
 include!("import_tests_include_01.rs");

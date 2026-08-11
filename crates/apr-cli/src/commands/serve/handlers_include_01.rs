@@ -11,7 +11,7 @@ fn start_apr_server_gpu(
     model_path: &Path,
     config: &ServerConfig,
 ) -> Result<()> {
-    use realizar::api::create_router;
+    use realizar::api::create_router_with_config;
 
     // #170: Q4K inference thread disabled — produces garbage output.
     // All APR models route through OwnedQuantizedModel::from_apr → OwnedQuantizedModelCuda
@@ -81,7 +81,7 @@ fn start_apr_server_gpu(
     .with_verbose(false) // with_batch_config deferred until realizar API stabilizes
     .with_verbose(config.verbose);
 
-    let app = create_router(state);
+    let app = create_router_with_config(state, config.router_config());
     run_server_async(app, &config.bind_addr(), "APR GPU (fused Q4K kernels)")
 }
 
@@ -97,7 +97,7 @@ fn start_apr_q4k_server_gpu(
     model_path: &Path,
     config: &ServerConfig,
 ) -> Result<()> {
-    use realizar::api::{apr_q4k_scheduler, create_router, AppState};
+    use realizar::api::{apr_q4k_scheduler, create_router_with_config, AppState};
     use realizar::apr::AprV2Model;
 
     eprintln!("[GH-471] Entering Q4K GPU path for {}", model_path.display());
@@ -139,7 +139,7 @@ fn start_apr_q4k_server_gpu(
 
     println!("{}", "Q4K GPU inference ready (ALB-095)".green());
 
-    let app = create_router(state);
+    let app = create_router_with_config(state, config.router_config());
     run_server_async(app, &config.bind_addr(), "APR GPU (Q4K CUDA — ALB-095)")
 }
 
@@ -169,7 +169,7 @@ fn start_safetensors_server_gpu(
 ) -> Result<()> {
     use aprender::format::{ImportOptions, QuantizationType};
     use realizar::apr::MappedAprModel;
-    use realizar::api::{create_router, AppState, BatchConfig};
+    use realizar::api::{create_router_with_config, AppState, BatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
     println!("{}", "Converting SafeTensors → Q4K (one-time)...".dimmed());
@@ -235,7 +235,7 @@ fn start_safetensors_server_gpu(
     .with_verbose(false) // with_batch_config deferred until realizar API stabilizes
     .with_verbose(config.verbose);
 
-    let app = create_router(state);
+    let app = create_router_with_config(state, config.router_config());
     run_server_async(app, &config.bind_addr(), "SafeTensors GPU (fused Q4K kernels)")
 }
 

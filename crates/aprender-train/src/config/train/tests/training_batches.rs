@@ -22,11 +22,11 @@ fn test_load_training_batches_missing_file() {
         publish: None,
     };
 
-    // Should fall back to demo batches
-    let result = load_training_batches(&spec);
-    assert!(result.is_ok());
-    let batches = result.expect("operation should succeed");
-    assert!(!batches.is_empty());
+    // A dataset that is not there is a hard error, never demo data.
+    // (This test previously asserted is_ok(), locking the fabricated-data defect in.)
+    let err = load_training_batches(&spec).expect_err("missing dataset must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("/nonexistent/data.parquet"), "error must name the dataset: {msg}");
 }
 
 #[test]
@@ -49,9 +49,12 @@ fn test_load_training_batches_unsupported_extension() {
         publish: None,
     };
 
-    // Should fall back to demo batches for unsupported format
-    let result = load_training_batches(&spec);
-    assert!(result.is_ok());
+    // An unreadable format is a hard error naming the format and the alternatives.
+    // (This test previously asserted is_ok(), locking the fabricated-data defect in.)
+    let err = load_training_batches(&spec).expect_err("unsupported format must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("txt"), "error must name the offending extension: {msg}");
+    assert!(msg.contains("json"), "error must name a supported format: {msg}");
 }
 
 #[test]

@@ -829,12 +829,15 @@ fn run_and_report<S: StepFn, V: ValFn>(
     checkpoint_fn: Option<Box<dyn CheckpointFn>>,
     json_output: bool,
 ) -> Result<RunStatus> {
+    // Captured before `config` moves into the loop: the terminal verdict has to
+    // compare the final val_loss against the target the user actually asked for.
+    let target_val_loss = config.target_val_loss;
     let mut loop_ = PretrainLoop::new(config, step_fn, val_fn);
     if let Some(ckpt) = checkpoint_fn {
         loop_ = loop_.with_checkpoint_fn(ckpt);
     }
     let status = loop_.run();
-    report(&status, &loop_, json_output)?;
+    report(&status, &loop_, target_val_loss, json_output)?;
     Ok(status)
 }
 
@@ -876,13 +879,31 @@ fn print_header(cfg: &PretrainConfig) {
     println!();
 }
 
+/// Did the run reach the target val_loss the user asked for?
+///
+/// `None` for an aborted run — there is no final loss to compare.
+///
+/// Until this existed, `RunStatus::Ok` printed the literal string "CONVERGED"
+/// without ever looking at `target_val_loss`: a run that finished at 3.0000
+/// against a target of 0.001 reported CONVERGED with exit 0, and the JSON
+/// report carried neither the target nor a verdict, so a machine consumer
+/// could not recover it either.
+pub(crate) fn reached_target(status: &RunStatus, target_val_loss: f32) -> Option<bool> {
+    match status {
+        RunStatus::Ok { final_val_loss, .. } => Some(*final_val_loss <= target_val_loss),
+        RunStatus::EarlyStop { best_val_loss, .. } => Some(*best_val_loss <= target_val_loss),
+        RunStatus::Aborted(_) => None,
+    }
+}
+
 fn report<S: entrenar::train::pretrain::StepFn, V: entrenar::train::pretrain::ValFn>(
     status: &RunStatus,
     loop_: &PretrainLoop<S, V>,
+    target_val_loss: f32,
     json_output: bool,
 ) -> Result<()> {
     if json_output {
-        let report = PretrainReport::from(status, loop_);
+        let report = PretrainReport::from(status, loop_, target_val_loss);
         let json = serde_json::to_string_pretty(&report)
             .map_err(|e| CliError::InvalidFormat(e.to_string()))?;
         println!("{json}");
@@ -895,21 +916,33 @@ fn report<S: entrenar::train::pretrain::StepFn, V: entrenar::train::pretrain::Va
             final_val_loss,
             epochs_completed,
         } => {
-            println!(
-                "  {} CONVERGED  final val_loss={:.4} after {} epoch(s)",
-                "OK".green().bold(),
-                final_val_loss,
-                epochs_completed
-            );
+            if *final_val_loss <= target_val_loss {
+                println!(
+                    "  {} CONVERGED  final val_loss={:.4} <= target {:.4} after {} epoch(s)",
+                    "OK".green().bold(),
+                    final_val_loss,
+                    target_val_loss,
+                    epochs_completed
+                );
+            } else {
+                println!(
+                    "  {} NOT_CONVERGED  final val_loss={:.4} > target {:.4} after {} epoch(s)",
+                    "OK".yellow().bold(),
+                    final_val_loss,
+                    target_val_loss,
+                    epochs_completed
+                );
+            }
         }
         RunStatus::EarlyStop {
             best_val_loss,
             epochs_completed,
         } => {
             println!(
-                "  {} EARLY_STOP  best val_loss={:.4} after {} epoch(s)",
+                "  {} EARLY_STOP  best val_loss={:.4} (target {:.4}) after {} epoch(s)",
                 "OK".yellow().bold(),
                 best_val_loss,
+                target_val_loss,
                 epochs_completed
             );
         }
@@ -931,6 +964,13 @@ struct PretrainReport {
     status: String,
     detail: Option<String>,
     final_val_loss: Option<f32>,
+    /// The `--target-val-loss` the run was asked to reach.
+    target_val_loss: f32,
+    /// `final_val_loss <= target_val_loss`. `None` for an aborted run.
+    ///
+    /// Without this a machine consumer could not tell a run that hit its
+    /// target from one that missed it by 1.8x — both reported status "OK".
+    converged: Option<bool>,
     epochs_completed: usize,
     steps_recorded: usize,
     val_loss_history: Vec<f32>,
@@ -950,6 +990,7 @@ impl PretrainReport {
     fn from<S: entrenar::train::pretrain::StepFn, V: entrenar::train::pretrain::ValFn>(
         status: &RunStatus,
         loop_: &PretrainLoop<S, V>,
+        target_val_loss: f32,
     ) -> Self {
         let (status_name, detail, final_val_loss, epochs_completed) = match status {
             RunStatus::Ok {
@@ -981,6 +1022,8 @@ impl PretrainReport {
             status: status_name,
             detail,
             final_val_loss,
+            target_val_loss,
+            converged: reached_target(status, target_val_loss),
             epochs_completed,
             steps_recorded: loop_.step_metrics().len(),
             val_loss_history: loop_.val_loss_history().to_vec(),
@@ -993,6 +1036,86 @@ impl PretrainReport {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    // ─── Convergence verdict (dogfood 0.63.0, issue #2374 finding 11) ────────
+    //
+    // `apr pretrain` printed "OK CONVERGED" for every non-diverging run: at
+    // --target-val-loss 0.001 it reported CONVERGED with a final val_loss of
+    // 3.0000, and across five targets spanning four orders of magnitude the
+    // verdict text never changed. The target was never compared against.
+
+    #[test]
+    fn missing_the_target_is_not_convergence() {
+        // The exact reported case: target 0.001, final 3.0000.
+        let status = RunStatus::Ok {
+            final_val_loss: 3.0,
+            epochs_completed: 1,
+        };
+        assert_eq!(
+            reached_target(&status, 0.001),
+            Some(false),
+            "final 3.0000 against target 0.001 is NOT converged"
+        );
+    }
+
+    #[test]
+    fn hitting_the_target_is_convergence() {
+        let status = RunStatus::Ok {
+            final_val_loss: 1.5,
+            epochs_completed: 3,
+        };
+        assert_eq!(reached_target(&status, 2.2), Some(true));
+    }
+
+    #[test]
+    fn the_verdict_moves_with_the_target() {
+        // The defect was that it did NOT: five targets, one verdict. Sweep the
+        // same reported final loss across the targets from the repro.
+        let status = RunStatus::Ok {
+            final_val_loss: 3.0,
+            epochs_completed: 1,
+        };
+        let verdicts: Vec<Option<bool>> = [0.001_f32, 2.2, 3.5, 5.0]
+            .iter()
+            .map(|t| reached_target(&status, *t))
+            .collect();
+        assert_eq!(
+            verdicts,
+            vec![Some(false), Some(false), Some(true), Some(true)],
+            "the verdict must track the target, not be constant"
+        );
+    }
+
+    #[test]
+    fn exactly_on_target_counts_as_converged() {
+        let status = RunStatus::Ok {
+            final_val_loss: 2.2,
+            epochs_completed: 1,
+        };
+        assert_eq!(
+            reached_target(&status, 2.2),
+            Some(true),
+            "<= is the boundary"
+        );
+    }
+
+    #[test]
+    fn early_stop_is_judged_on_its_best_loss() {
+        let status = RunStatus::EarlyStop {
+            best_val_loss: 4.0,
+            epochs_completed: 2,
+        };
+        assert_eq!(reached_target(&status, 2.2), Some(false));
+        assert_eq!(reached_target(&status, 4.5), Some(true));
+    }
+
+    #[test]
+    fn an_aborted_run_has_no_convergence_verdict() {
+        // Divergence already has its own hard failure; it must not be reported
+        // as "not converged" as though it merely fell short.
+        let status = RunStatus::Aborted(PretrainAbort::DivergenceAtEpochZero { val_loss: 18.0 });
+        assert_eq!(reached_target(&status, 2.2), None);
+    }
 
     /// SPEC §82 P0-H: when `--init` is absent, fall back to historical defaults
     /// so from-scratch 370M pretrain still produces `llama-370m-pretrain` /

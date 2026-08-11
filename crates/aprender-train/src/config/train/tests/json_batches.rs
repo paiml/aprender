@@ -44,9 +44,14 @@ fn test_load_json_batches_invalid_format() {
     let mut temp_file = NamedTempFile::new().expect("temp file creation should succeed");
     temp_file.write_all(json.as_bytes()).expect("file write should succeed");
 
-    // Should fall back to demo data
-    let result = load_json_batches(temp_file.path(), 4);
-    assert!(result.is_ok());
+    // Previously asserted is_ok() on a JSON object the loader cannot read —
+    // i.e. the test encoded the defect, locking in the demo-data substitution.
+    // Training data that cannot be parsed is a hard error.
+    let err = load_json_batches(temp_file.path(), 4)
+        .expect_err("unparseable training data must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("Could not parse training data"), "unexpected error: {msg}");
+    assert!(msg.contains("\"examples\""), "error must quote the expected schema: {msg}");
 }
 
 #[test]

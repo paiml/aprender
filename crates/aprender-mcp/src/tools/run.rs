@@ -82,8 +82,9 @@ pub fn call_with_sink(
     sink: Option<&NotificationSink>,
     progress_token: Option<serde_json::Value>,
 ) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
+    let model_path = match crate::tools::args::require_str(args, "model_path") {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     let streaming = sink.is_some() && progress_token.is_some();

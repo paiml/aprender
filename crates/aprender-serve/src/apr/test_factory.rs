@@ -294,6 +294,109 @@ pub fn build_executable_pygmy_apr_gguf_names() -> Vec<u8> {
     build_apr_from_tensor_defs(metadata_bytes, metadata_padded_size, &tensor_defs)
 }
 
+/// Build a Pygmy APR whose `lm_head.weight` is a ZERO-BYTE placeholder (#2309, #2441).
+///
+/// This is the shape real converters emit for `tie_word_embeddings=true`
+/// checkpoints, and what `/home/noah/models/qwen2.5-coder-0.5b-instruct.apr`
+/// contains: an `lm_head.weight` descriptor carrying the full `[vocab, hidden]`
+/// shape but **zero bytes** of data, because the matrix it names is already
+/// stored as `model.embed_tokens.weight`.
+///
+/// Distinct from `build_executable_pygmy_apr_embed_tied`, which OMITS the
+/// descriptor entirely — a loader can miss the placeholder case while handling
+/// the omitted case.
+pub fn build_executable_pygmy_apr_tied_lm_head_placeholder() -> Vec<u8> {
+    let hidden_size = 8;
+    let num_layers = 1;
+    let num_heads = 2;
+    let num_kv_heads = 2;
+    let vocab_size = 10;
+    let intermediate_size = 16;
+
+    let metadata = format!(
+        r#"{{
+        "architecture": "llama",
+        "hidden_size": {hidden_size},
+        "num_layers": {num_layers},
+        "num_heads": {num_heads},
+        "num_kv_heads": {num_kv_heads},
+        "vocab_size": {vocab_size},
+        "intermediate_size": {intermediate_size},
+        "max_position_embeddings": 512,
+        "rms_norm_eps": 1e-6,
+        "tie_word_embeddings": true
+    }}"#
+    );
+    let metadata_bytes = metadata.as_bytes();
+    let metadata_padded_size = metadata_bytes.len().div_ceil(64) * 64;
+
+    let tensor_defs: Vec<(&str, Vec<u64>, usize)> = vec![
+        (
+            "model.embed_tokens.weight",
+            vec![vocab_size as u64, hidden_size as u64],
+            vocab_size * hidden_size * 4,
+        ),
+        (
+            "model.layers.0.input_layernorm.weight",
+            vec![hidden_size as u64],
+            hidden_size * 4,
+        ),
+        (
+            "model.layers.0.self_attn.q_proj.weight",
+            vec![hidden_size as u64, hidden_size as u64],
+            hidden_size * hidden_size * 4,
+        ),
+        (
+            "model.layers.0.self_attn.k_proj.weight",
+            vec![hidden_size as u64, hidden_size as u64],
+            hidden_size * hidden_size * 4,
+        ),
+        (
+            "model.layers.0.self_attn.v_proj.weight",
+            vec![hidden_size as u64, hidden_size as u64],
+            hidden_size * hidden_size * 4,
+        ),
+        (
+            "model.layers.0.self_attn.o_proj.weight",
+            vec![hidden_size as u64, hidden_size as u64],
+            hidden_size * hidden_size * 4,
+        ),
+        (
+            "model.layers.0.post_attention_layernorm.weight",
+            vec![hidden_size as u64],
+            hidden_size * 4,
+        ),
+        (
+            "model.layers.0.mlp.gate_proj.weight",
+            vec![intermediate_size as u64, hidden_size as u64],
+            hidden_size * intermediate_size * 4,
+        ),
+        (
+            "model.layers.0.mlp.up_proj.weight",
+            vec![intermediate_size as u64, hidden_size as u64],
+            hidden_size * intermediate_size * 4,
+        ),
+        (
+            "model.layers.0.mlp.down_proj.weight",
+            vec![hidden_size as u64, intermediate_size as u64],
+            hidden_size * intermediate_size * 4,
+        ),
+        (
+            "model.norm.weight",
+            vec![hidden_size as u64],
+            hidden_size * 4,
+        ),
+        // The defect fixture: full shape, ZERO bytes.
+        (
+            "lm_head.weight",
+            vec![vocab_size as u64, hidden_size as u64],
+            0,
+        ),
+    ];
+
+    build_apr_from_tensor_defs(metadata_bytes, metadata_padded_size, &tensor_defs)
+}
+
 /// Build a Pygmy APR with explicit weight tying (embed_tokens.weight used as lm_head)
 ///
 /// This simulates a model where the embedding table is explicitly tied to the

@@ -31,16 +31,27 @@ pub(crate) fn run(
         return Err(CliError::FileNotFound(PathBuf::from(response_file)));
     }
     let body = std::fs::read_to_string(response_file)?;
-    let declared: Vec<String> = match request_file {
-        Some(p) => load_declared_tool_names(p)?,
-        None => Vec::new(),
-    };
 
     if stream {
-        run_stream(&body, response_file, json)
-    } else {
-        run_non_streaming(&body, response_file, &declared, json)
+        // The streaming gate never consults the allowlist.
+        return run_stream(&body, response_file, json);
     }
+
+    // The allowlist gate runs unconditionally in non-streaming mode, so
+    // without a request file it compares every call against an empty declared
+    // set: a response WITH tool calls got `NoDeclaredTools` and one WITHOUT
+    // got `MissingToolCalls`. No response could pass, and the help text called
+    // the flag "Optional". It is required here.
+    let Some(request_file) = request_file else {
+        return Err(CliError::ValidationFailed(
+            "apr ollama-tools-lint: --request-file is required in non-streaming mode — the \
+             tool-name allowlist gate has nothing to check a response against without the \
+             request that declared the tools."
+                .to_string(),
+        ));
+    };
+    let declared = load_declared_tool_names(request_file)?;
+    run_non_streaming(&body, response_file, &declared, json)
 }
 
 fn run_non_streaming(body: &str, path: &Path, declared: &[String], json: bool) -> Result<()> {
@@ -207,10 +218,75 @@ mod cov_tests {
         );
         assert!(err.is_err());
     }
+    /// Was `run(f.path(), None, false, false)`, which passed for the wrong
+    /// reason once the missing-request-file check landed ahead of the parse.
     #[test]
     fn malformed_response_errors() {
         let f = w("not a json response");
-        let err = run(f.path(), None, false, false);
-        assert!(err.is_err());
+        let req = w(r#"{"tools":[]}"#);
+        let err = run(f.path(), Some(req.path()), false, false).unwrap_err();
+        assert!(matches!(err, CliError::InvalidFormat(_)));
+    }
+
+    const RESP_ONE_CALL: &str = r#"{"model":"q","created_at":"t","done":true,"message":
+        {"role":"assistant","content":"","tool_calls":
+        [{"function":{"name":"get_weather","arguments":{"city":"Paris"}}}]}}"#;
+
+    /// No response at all could pass `apr ollama-tools-lint --response-file X`:
+    /// with tool calls it was `NoDeclaredTools`, without them
+    /// `MissingToolCalls`. The command now says which flag is missing.
+    #[test]
+    fn falsifier_non_streaming_without_request_file_names_the_missing_flag() {
+        let two_calls = r#"{"model":"q","created_at":"t","done":true,"message":
+            {"role":"assistant","content":"","tool_calls":
+            [{"function":{"name":"a","arguments":{}}},{"function":{"name":"b","arguments":{}}}]}}"#;
+        let no_calls = r#"{"model":"q","created_at":"t","done":true,"message":
+            {"role":"assistant","content":"hello"}}"#;
+
+        for body in [RESP_ONE_CALL, two_calls, no_calls] {
+            let resp = w(body);
+            let err = run(resp.path(), None, false, false).unwrap_err();
+            match err {
+                CliError::ValidationFailed(msg) => {
+                    assert!(msg.contains("--request-file is required"), "{msg}");
+                    assert!(!msg.contains("NoDeclaredTools"), "{msg}");
+                }
+                other => panic!("expected ValidationFailed, got {other:?}"),
+            }
+        }
+    }
+
+    /// With the flag the gate is still a real gate in both directions.
+    #[test]
+    fn allowlist_gate_still_passes_and_still_catches_a_hallucinated_name() {
+        let resp = w(RESP_ONE_CALL);
+        let matching = w(r#"{"model":"q","tools":[{"type":"function",
+            "function":{"name":"get_weather","parameters":{}}}]}"#);
+        assert!(run(resp.path(), Some(matching.path()), false, false).is_ok());
+
+        let other = w(r#"{"model":"q","tools":[{"type":"function",
+            "function":{"name":"get_stock","parameters":{}}}]}"#);
+        let err = run(resp.path(), Some(other.path()), false, false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("Hallucinated"), "{msg}"),
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    /// Streaming mode does not use the allowlist, so it must stay usable
+    /// without the flag.
+    #[test]
+    fn stream_mode_does_not_require_request_file() {
+        let ndjson = w(concat!(
+            r#"{"model":"q","message":{"role":"assistant","content":"","tool_calls":"#,
+            r#"[{"function":{"name":"get_weather","arguments":{}}}]},"done":false}"#,
+            "\n",
+            r#"{"model":"q","message":{"role":"assistant","content":""},"done":true}"#,
+        ));
+        let res = run(ndjson.path(), None, true, false);
+        assert!(
+            !matches!(&res, Err(CliError::ValidationFailed(m)) if m.contains("--request-file")),
+            "stream mode must not demand --request-file: {res:?}"
+        );
     }
 }

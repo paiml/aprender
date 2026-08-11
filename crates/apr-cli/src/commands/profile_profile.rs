@@ -147,7 +147,7 @@
             backend: "cpu".to_string(),
             ..Default::default()
         };
-        let result = print_human_results(&results, false, false, false);
+        let result = print_human_results(&results, false, false, false, 10.0);
         assert!(result.is_ok());
     }
 
@@ -185,7 +185,7 @@
             backend: "cpu".to_string(),
             ..Default::default()
         };
-        let result = print_human_results(&results, true, false, false);
+        let result = print_human_results(&results, true, false, false, 10.0);
         assert!(result.is_ok());
     }
 
@@ -210,7 +210,7 @@
             backend: "cpu".to_string(),
             ..Default::default()
         };
-        let result = print_human_results(&results, false, false, false);
+        let result = print_human_results(&results, false, false, false, 10.0);
         assert!(result.is_ok());
     }
 
@@ -248,7 +248,7 @@
             backend: "cpu".to_string(),
             ..Default::default()
         };
-        let result = print_human_results(&results, false, false, false);
+        let result = print_human_results(&results, false, false, false, 10.0);
         assert!(result.is_ok());
     }
 
@@ -289,7 +289,7 @@
             backend: "cpu".to_string(),
             ..Default::default()
         };
-        let result = print_human_results(&results, true, false, false);
+        let result = print_human_results(&results, true, false, false, 10.0);
         assert!(result.is_ok());
     }
 
@@ -314,7 +314,7 @@
             backend: "cpu".to_string(),
             ..Default::default()
         };
-        let result = print_human_results(&results, true, false, false);
+        let result = print_human_results(&results, true, false, false, 10.0);
         assert!(result.is_ok());
     }
 

@@ -439,10 +439,12 @@ fn test_model_metadata_response_serde() {
     let resp = ModelMetadataResponse {
         id: "m1".to_string(),
         name: "Test Model".to_string(),
-        format: "GGUF".to_string(),
-        size_bytes: 1024,
+        format: Some("GGUF".to_string()),
+        size_bytes: Some(1024),
         quantization: Some("Q4_K_M".to_string()),
-        context_length: 2048,
+        context_length: Some(2048),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: true,
     };

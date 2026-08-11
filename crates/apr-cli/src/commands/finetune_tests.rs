@@ -1720,3 +1720,102 @@ fn falsify_apr_merge_runnable_004b_entrenar_adapter_merges_gguf_named_base() {
         "merged blk.0.attn_q.weight must differ from base — GGUF→HF projection map broken"
     );
 }
+
+// ─── classify weight loading (dogfood 0.63.0, issue #2374 finding 1) ─────────
+//
+// `apr finetune <model>.apr --task classify` discarded the file the user named
+// and handed its PARENT DIRECTORY to from_pretrained(), which scans the dir for
+// any SafeTensors it can find. Dropping one unrelated 4.6 MB safetensors next
+// to a 0.5B .apr — changing nothing else about the command — flipped the run
+// from "No SafeTensors files found" to loading the SIBLING's 27 tensors. Had
+// the sibling's dims matched it would have fine-tuned the WRONG WEIGHTS and
+// exited 0 while the header printed the named model's config.
+
+/// `expect_err` needs `T: Debug`; `ClassifyPipeline` is not. Unwrap the error by hand.
+fn classify_load_error(
+    path: &std::path::Path,
+    cfg: &entrenar::transformer::TransformerConfig,
+) -> CliError {
+    let classify = entrenar::finetune::classify_pipeline::ClassifyConfig::default();
+    match load_classify_pipeline(Some(path), cfg, classify) {
+        Ok(_) => panic!("expected a load failure for {}", path.display()),
+        Err(e) => e,
+    }
+}
+
+/// A scratch dir holding `model.apr` plus one unrelated `.safetensors` sibling.
+fn dir_with_apr_and_unrelated_sibling(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("apr-2374-cls-{}-{tag}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    std::fs::write(dir.join("model.apr"), b"APR\0stub").expect("scratch apr");
+    std::fs::write(dir.join("UNRELATED_SIBLING.safetensors"), b"stub").expect("scratch sibling");
+    dir
+}
+
+#[test]
+fn classify_load_never_falls_back_to_a_sibling_safetensors() {
+    // The .apr here is a stub, so loading must fail — but it must fail on the
+    // FILE THE USER NAMED, never by having gone looking at the sibling.
+    let dir = dir_with_apr_and_unrelated_sibling("sibling");
+    let apr = dir.join("model.apr");
+    let cfg = entrenar::transformer::TransformerConfig::qwen2_0_5b();
+    let msg = classify_load_error(&apr, &cfg).to_string();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        msg.contains("model.apr"),
+        "the failure must name the file the user passed: {msg}"
+    );
+    assert!(
+        !msg.contains("UNRELATED_SIBLING"),
+        "the sibling must never be opened: {msg}"
+    );
+    assert!(
+        !msg.contains("No SafeTensors files found"),
+        "the parent directory must never be scanned: {msg}"
+    );
+}
+
+#[test]
+fn classify_load_rejects_a_non_apr_file_instead_of_scanning_its_directory() {
+    // Naming a .safetensors FILE used to scan its directory too. Now it is a
+    // clear error that names the path and the format.
+    let dir = dir_with_apr_and_unrelated_sibling("nonapr");
+    let st = dir.join("UNRELATED_SIBLING.safetensors");
+    let cfg = entrenar::transformer::TransformerConfig::qwen2_0_5b();
+    let msg = classify_load_error(&st, &cfg).to_string();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    // Assert the NEW wording, not merely "the path appears somewhere": under the
+    // old parent-dir scan the path appeared too (it was the file that got
+    // scanned), so a contains-the-path assertion alone would stay green with
+    // the defect restored.
+    assert!(
+        msg.contains("Cannot fine-tune from"),
+        "a bare non-.apr file must be refused outright, not scanned: {msg}"
+    );
+    assert!(
+        msg.contains("safetensors"),
+        "the error must name the format: {msg}"
+    );
+    assert!(
+        msg.contains(&st.display().to_string()),
+        "the error must echo the path: {msg}"
+    );
+}
+
+#[test]
+fn classify_load_still_accepts_a_directory_of_safetensors() {
+    // Guards against over-correcting: a DIRECTORY argument is a legitimate
+    // from_pretrained source and must keep working.
+    let dir = dir_with_apr_and_unrelated_sibling("dir");
+    let cfg = entrenar::transformer::TransformerConfig::qwen2_0_5b();
+    let msg = classify_load_error(&dir, &cfg).to_string();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        msg.contains("Failed to load pretrained model"),
+        "a directory must still go down the from_pretrained path: {msg}"
+    );
+}

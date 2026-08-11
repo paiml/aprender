@@ -85,20 +85,10 @@ fn generate_headless_report_simulated(
     pipeline: &PipelineState,
     _config: &CbtopConfig,
 ) -> HeadlessReport {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or_else(
-        |_| "unknown".to_string(),
-        |d| {
-            let secs = d.as_secs();
-            format!(
-                "2026-01-11T{:02}:{:02}:{:02}Z",
-                (secs / 3600) % 24,
-                (secs / 60) % 60,
-                secs % 60
-            )
-        },
-    );
+    // The date must be the real UTC date. A string-literal date with a
+    // computed time-of-day stamped every report ever written — including
+    // files persisted with --output for CI provenance — with the wrong day.
+    let timestamp = chrono_timestamp();
 
     let brick_scores: Vec<BrickScore> = pipeline.bricks.iter().map(score_brick).collect();
 

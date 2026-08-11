@@ -41,10 +41,30 @@ pub fn cmd_code(
     output_format: &str,
     input_format: &str,
 ) -> anyhow::Result<()> {
-    // --project: change working directory for project instructions
-    if project.as_os_str() != "." && project.is_dir() {
+    // --project: change working directory for project instructions.
+    // A path that is not a directory used to be skipped silently, so
+    // `--project /typo` ran the agent against the CURRENT directory while the
+    // operator believed it was scoped to another tree. Fail closed instead.
+    if project.as_os_str() != "." {
+        if !project.is_dir() {
+            anyhow::bail!("--project: not a directory: {}", project.display());
+        }
         std::env::set_current_dir(&project)?;
     }
+
+    // --resume <id>: resolve the session BEFORE any model is launched.
+    // An unknown id used to be discarded without a word: `-p` mode returned
+    // from the non-interactive branch below without ever reading `resume`,
+    // and the REPL only printed a warning — so a typo'd id left the user
+    // believing a conversation was being continued that the model had no
+    // history of. Fail closed, and name the id.
+    let resumed_store = match resume {
+        Some(Some(ref id)) => Some(
+            crate::agent::session::SessionStore::resume(id)
+                .map_err(|e| anyhow::anyhow!("--resume: no such session {id:?} ({e})"))?,
+        ),
+        _ => None,
+    };
 
     // Load manifest or build default. When `--manifest` is set it short-
     // circuits the settings ladder (the manifest is treated as a complete
@@ -193,6 +213,10 @@ pub fn cmd_code(
         } else {
             prompt.join(" ")
         };
+        // `--resume <id> -p ...` used to run with an EMPTY history — the
+        // resumed session was accepted and then ignored, so the reply looked
+        // plausible while the model had no idea what came before. Restore the
+        // stored messages and append this turn back to the same session.
         let code = run_single_prompt(
             &manifest,
             driver.as_ref(),
@@ -201,6 +225,7 @@ pub fn cmd_code(
             &prompt_text,
             emit_trace.as_deref(),
             output_format,
+            resumed_store,
         );
         drop(driver); // Kill apr serve subprocess before exit
         std::process::exit(code);
@@ -209,6 +234,8 @@ pub fn cmd_code(
     // --resume: load previous session
     // PMAT-165: auto-resume prompt when recent session exists (spec §6.3)
     let resume_session_id = match resume {
+        // Already proven to exist above (`resumed_store`); a bad id never
+        // reaches here.
         Some(Some(id)) => Some(id), // --resume=<session-id>
         Some(None) => {
             // --resume (no ID): find most recent for cwd
@@ -689,6 +716,11 @@ fn register_web_tools(tools: &mut ToolRegistry, manifest: &AgentManifest) {
 pub use super::code_prompts::exit_code;
 
 /// Run a single prompt (non-interactive). PMAT-172: cap iterations at 10.
+///
+/// `resumed` is `Some` when `--resume <id>` named an existing session: its
+/// stored messages become this turn's history, and the messages produced here
+/// are appended back to it. Without this the flag was accepted and dropped.
+#[allow(clippy::too_many_arguments)]
 fn run_single_prompt(
     manifest: &AgentManifest,
     driver: &dyn LlmDriver,
@@ -698,6 +730,7 @@ fn run_single_prompt(
     emit_trace: Option<&std::path::Path>,
     // PMAT-CODE-OUTPUT-FORMAT-001: "text" (default) or "json".
     output_format: &str,
+    resumed: Option<crate::agent::session::SessionStore>,
 ) -> i32 {
     let mut single_manifest = manifest.clone();
     single_manifest.resources.max_iterations = single_manifest.resources.max_iterations.min(10);
@@ -719,17 +752,40 @@ fn run_single_prompt(
 
     let started = std::time::Instant::now();
 
+    // History is empty unless `--resume <id>` named a session, in which case
+    // the stored messages are replayed so this turn actually continues the
+    // conversation (run_agent_loop is exactly this call with an empty vec).
+    let mut resumed = resumed;
+    let mut history = match resumed {
+        Some(ref store) => store.load_messages().unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let prior_len = history.len();
+    if let Some(ref store) = resumed {
+        eprintln!("✓ Resumed session {} ({prior_len} messages)", store.id());
+    }
+
     // PMAT-197: Use non-nudge loop for -p mode. The nudge ("Use a tool!") forces
     // small models to make tool calls even for simple questions like "What is 2+2?"
     // which causes stuck loops. Let the model decide whether to use tools.
-    let result = rt.block_on(crate::agent::runtime::run_agent_loop(
+    let result = rt.block_on(crate::agent::runtime::run_agent_turn(
         &single_manifest,
+        &mut history,
         prompt,
         driver,
         tools,
         memory,
         None,
     ));
+
+    // Persist this turn back into the resumed session so a follow-up
+    // `--resume` sees it.
+    if let Some(ref mut store) = resumed {
+        if history.len() > prior_len {
+            let _ = store.append_messages(&history[prior_len..]);
+        }
+        let _ = store.record_turn();
+    }
 
     match result {
         Ok(r) => {

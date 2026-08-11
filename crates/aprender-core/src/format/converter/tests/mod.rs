@@ -26,3 +26,6 @@ mod pure_functions;
 mod sharded_import;
 mod tokenizer_parse;
 mod coverage_gap_quantized_save;
+/// #2392 — falsifiers for the convert/quantize/export defects found by
+/// dogfooding the crates.io 0.63.0 binary.
+mod dogfood_2392;

@@ -4,12 +4,9 @@ fn print_kernel_table(steps: &[KernelStep], kernel_filter: Option<&str>) {
     print_table_header();
 
     for step in steps {
-        // Apply kernel filter
+        // Apply kernel filter (same predicate `validate_kernel_filter` checks)
         if let Some(filter) = kernel_filter {
-            let filter_lower = filter.to_lowercase();
-            if !step.name.to_lowercase().contains(&filter_lower)
-                && !step.role.to_lowercase().contains(&filter_lower)
-            {
+            if !step_matches_filter(step, &filter.to_lowercase(), true) {
                 continue;
             }
         }
@@ -25,6 +22,39 @@ fn print_kernel_table(steps: &[KernelStep], kernel_filter: Option<&str>) {
             batched_marker,
         );
     }
+}
+
+/// Does this step match a user-supplied filter?
+///
+/// `match_role` mirrors the two call sites: the `--kernel` table filter matches
+/// kernel name OR role, `--reverse` matches kernel name only.
+fn step_matches_filter(step: &KernelStep, needle_lower: &str, match_role: bool) -> bool {
+    step.name.to_lowercase().contains(needle_lower)
+        || (match_role && step.role.to_lowercase().contains(needle_lower))
+}
+
+/// Reject a filter that matches no kernel in the map.
+///
+/// `--kernel BOGUSKERNEL` used to print an empty table and exit 0, which reads
+/// as "this model launches no kernels" rather than "you mistyped a name"
+/// (dogfood-0.63.0, issue #2399 finding 2). Listing the available kernels makes
+/// the error actionable.
+fn validate_kernel_filter(steps: &[KernelStep], filter: &str, match_role: bool) -> Result<()> {
+    let needle = filter.to_lowercase();
+    if steps
+        .iter()
+        .any(|s| step_matches_filter(s, &needle, match_role))
+    {
+        return Ok(());
+    }
+    let mut names: Vec<&str> = steps.iter().map(|s| s.name).collect();
+    names.sort_unstable();
+    names.dedup();
+    Err(CliError::ValidationFailed(format!(
+        "No kernel matches '{}' in this model's kernel map. Available kernels: {}",
+        filter,
+        names.join(", ")
+    )))
 }
 
 /// Truncate a shape string to fit column width
@@ -136,6 +166,14 @@ pub fn run(
         } else {
             build_decode_sequence(&info)
         };
+
+        // A filter that names no kernel is a user error in every mode (#2399).
+        if let Some(filter) = kernel_filter {
+            validate_kernel_filter(&steps, filter, true)?;
+        }
+        if let Some(kernel_name) = reverse {
+            validate_kernel_filter(&steps, kernel_name, false)?;
+        }
 
         // JSON output
         if json {
@@ -256,61 +294,110 @@ st.global.f32 [%r3], %f2;
         assert_eq!(stats.global_stores, 0);
     }
 
-    #[test]
-    fn test_source_location_known_kernels() {
-        assert_eq!(
-            source_location("VectorizedRmsNormKernel"),
-            "trueno-gpu/src/kernels/layernorm.rs"
-        );
-        assert_eq!(
-            source_location("Q4KGemvKernel"),
-            "trueno-gpu/src/kernels/quantize/q4k/"
-        );
-        assert_eq!(
-            source_location("RopeKernel"),
-            "trueno-gpu/src/kernels/rope.rs"
-        );
-        assert_eq!(
-            source_location("IncrementalAttentionKernel"),
-            "trueno-gpu/src/kernels/attention/mod.rs"
-        );
-        assert_eq!(
-            source_location("ResidualAddKernel"),
-            "trueno-gpu/src/kernels/elementwise/residual.rs"
-        );
-        assert_eq!(
-            source_location("SwigluKernel"),
-            "trueno-gpu/src/kernels/activation.rs"
-        );
+    /// Workspace root, from this crate's manifest dir (`crates/apr-cli`).
+    fn workspace_root() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("crates/apr-cli always has a workspace root two levels up")
+            .to_path_buf()
     }
 
+    fn sample_info() -> ModelInfo {
+        ModelInfo {
+            name: "table-check".to_string(),
+            quant: "Q4_K".to_string(),
+            num_layers: 28,
+            hidden_dim: 3584,
+            intermediate_dim: 18944,
+            num_heads: 28,
+            num_kv_heads: 4,
+            head_dim: 128,
+        }
+    }
+
+    /// Every path the Source column prints must open, and must be the file that
+    /// defines that kernel.
+    ///
+    /// dogfood-0.63.0, issue #2399 finding 3: the whole table pointed into
+    /// `trueno-gpu/src/kernels/...`, a tree the APR-MONO consolidation removed,
+    /// and 3 of 6 leaf paths were wrong on top of that (`layernorm.rs` is a
+    /// directory, rope lives under `elementwise/rope/`, `activation.rs` never
+    /// existed). The previous tests here asserted those exact dead strings, so
+    /// they were green the entire time the column was useless — they are
+    /// replaced by this check against the working tree.
     #[test]
-    fn test_source_location_batched_variants() {
-        assert_eq!(
-            source_location("BatchedVectorizedRmsNormKernel"),
-            source_location("VectorizedRmsNormKernel")
+    fn source_paths_resolve_to_the_defining_file() {
+        let root = workspace_root();
+        assert!(
+            root.join("crates/aprender-gpu/src/kernels").is_dir(),
+            "kernel tree missing at {} — this test cannot prove anything",
+            root.display()
         );
-        assert_eq!(
-            source_location("BatchedQ4KGemvKernel"),
-            source_location("Q4KGemvKernel")
-        );
-        assert_eq!(
-            source_location("BatchedRopeKernel"),
-            source_location("RopeKernel")
-        );
-        assert_eq!(
-            source_location("BatchedResidualAddKernel"),
-            source_location("ResidualAddKernel")
-        );
-        assert_eq!(
-            source_location("BatchedSwigluKernel"),
-            source_location("SwigluKernel")
-        );
+
+        let info = sample_info();
+        let mut names: Vec<&str> = build_decode_sequence(&info)
+            .iter()
+            .chain(build_prefill_sequence(&info).iter())
+            .map(|s| s.name)
+            .collect();
+        // Kernels reachable through the table but not in the 12-step sequences.
+        names.extend([
+            "Q6KGemvKernel",
+            "BatchedQ6KGemvKernel",
+            "TensorCoreQ4KGemmKernel",
+            "KvCacheScatterKernel",
+            "ArgMaxKernel",
+        ]);
+        names.sort_unstable();
+        names.dedup();
+
+        for name in names {
+            let rel = source_location(name);
+            assert_ne!(rel, "unknown", "{name} has no source location");
+            let path = root.join(rel);
+            assert!(
+                path.is_file(),
+                "{name}: source column points at {rel}, which does not exist"
+            );
+            let src = std::fs::read_to_string(&path).expect("kernel source must be readable");
+            assert!(
+                src.contains(&format!("struct {name}")),
+                "{name}: {rel} exists but does not define `struct {name}`"
+            );
+        }
     }
 
     #[test]
     fn test_source_location_unknown() {
         assert_eq!(source_location("FakeKernel"), "unknown");
+    }
+
+    /// `--kernel BOGUSKERNEL` printed an empty table and exited 0, which reads
+    /// as "this model launches no kernels" (#2399 finding 2, rider b).
+    #[test]
+    fn unknown_kernel_filter_is_rejected_and_lists_alternatives() {
+        let steps = build_decode_sequence(&sample_info());
+        let err = validate_kernel_filter(&steps, "BOGUSKERNEL", true)
+            .expect_err("a filter matching no kernel must be an error, not an empty table");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("BOGUSKERNEL") && msg.contains("Q4KGemvKernel"),
+            "error must echo the bad filter and list real kernels, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn real_kernel_and_role_filters_are_accepted() {
+        let steps = build_decode_sequence(&sample_info());
+        validate_kernel_filter(&steps, "Q4KGemv", true).expect("kernel-name filter must be valid");
+        validate_kernel_filter(&steps, "gate proj", true).expect("role filter must be valid");
+        // --reverse matches names only, so a role must NOT satisfy it.
+        validate_kernel_filter(&steps, "Q4KGemv", false).expect("reverse by kernel name is valid");
+        assert!(
+            validate_kernel_filter(&steps, "gate proj", false).is_err(),
+            "--reverse takes a kernel name, not a role"
+        );
     }
 
     #[test]

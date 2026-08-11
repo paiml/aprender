@@ -38,6 +38,7 @@
             tok_per_sec: None,
             used_gpu: None,
             generated_tokens: None,
+            token_texts: None,
         };
         let _debug = format!("{:?}", result);
         assert_eq!(result.tokens_generated, Some(5));
@@ -189,6 +190,7 @@
             tok_per_sec: None,
             used_gpu: None,
             generated_tokens: None,
+            token_texts: None,
         };
         let cloned = result.clone();
         assert_eq!(result.text, cloned.text);

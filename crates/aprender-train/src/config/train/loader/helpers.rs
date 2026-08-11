@@ -903,6 +903,40 @@ fn save_config_and_metadata(
     Ok(())
 }
 
+/// Reject a tabular dataset the trainer cannot consume, BEFORE any training runs.
+///
+/// Tabular mode drives the generic `Trainer` with an identity forward
+/// (`predictions = inputs`), so `MSELoss` requires the target width to equal the
+/// input width. Until this check existed, a 3-feature / 1-target regression set —
+/// the most common tabular shape there is — reached `MSELoss::forward`'s
+/// `assert_eq!` and aborted the process with exit 101 mid-epoch, after the
+/// batches had already been built and "Starting training..." printed.
+pub(crate) fn validate_tabular_batch_shapes(
+    batches: &[crate::train::Batch],
+    batch_size: usize,
+) -> Result<()> {
+    for (idx, batch) in batches.iter().enumerate() {
+        let n_in = batch.inputs.data().len();
+        let n_tgt = batch.targets.data().len();
+        if n_in == n_tgt {
+            continue;
+        }
+        let n = batch_size.max(1);
+        let widths = if n_in % n == 0 && n_tgt % n == 0 {
+            format!(" — input width {} vs target width {}", n_in / n, n_tgt / n)
+        } else {
+            String::new()
+        };
+        return Err(Error::ConfigError(format!(
+            "Tabular training cannot run on this dataset: batch {idx} has {n_in} input values \
+             but {n_tgt} target values{widths}. Tabular mode scores predictions against targets \
+             elementwise, so every example's target must be exactly as wide as its input. \
+             Use model.mode: transformer for a model that projects inputs to a different width."
+        )));
+    }
+    Ok(())
+}
+
 /// Train a tabular model (regression/classification) from spec
 ///
 /// Uses generic Trainer with MSELoss for regression tasks.
@@ -950,6 +984,7 @@ fn train_tabular_from_spec(spec: &TrainSpec) -> Result<()> {
     println!("Loading training data...");
     let batches = load_training_batches(spec)?;
     println!("✓ {} batches created", batches.len());
+    validate_tabular_batch_shapes(&batches, spec.data.batch_size)?;
     println!();
 
     // Training loop
@@ -967,7 +1002,15 @@ fn train_tabular_from_spec(spec: &TrainSpec) -> Result<()> {
     println!("  Best loss: {:.6}", trainer.metrics.best_loss().unwrap_or(0.0));
     println!();
 
-    // Save the trained model
+    // Save the trained model. Create the destination FIRST: a missing output
+    // directory used to discard a completed run at the save step with a bare
+    // "No such file or directory (os error 2)".
+    std::fs::create_dir_all(&spec.training.output_dir).map_err(|e| {
+        Error::ConfigError(format!(
+            "Cannot create output directory '{}': {e}",
+            spec.training.output_dir.display()
+        ))
+    })?;
     let output_path = spec.training.output_dir.join("final_model.json");
     println!("Saving model to {}...", output_path.display());
 

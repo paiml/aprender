@@ -54,10 +54,9 @@ pub fn run(
     dry_run: bool,
     revision: Option<&str>,
     offline: bool,
+    json: bool,
 ) -> Result<()> {
     contract_pre_pull_cache_integrity!();
-    println!("{}", "=== APR Pull ===".cyan().bold());
-    println!();
 
     // CRUX-A-01 FALSIFY-CRUX-A-01-001: --dry-run resolves short name to
     // canonical URL and exits with zero network I/O.
@@ -65,9 +64,18 @@ pub fn run(
     // supplied (or the default "main") and validates its local form.
     // CRUX-A-20 ALGO-001..005: --dry-run also echoes the resolved offline
     // mode so callers can assert CLI-flag / env-var equivalence offline.
+    //
+    // The banner lives inside the dry-run renderer rather than out here so
+    // that `--json` suppresses it only on the path that actually replaces it
+    // with a document. The download path below still prints progress and
+    // usage hints and is knowingly not JSON-clean yet; half-suppressing its
+    // banner would only make unparseable output look intentional.
     if dry_run {
-        return run_dry_run(model_ref, revision, offline);
+        return run_dry_run(model_ref, revision, offline, json);
     }
+
+    println!("{}", "=== APR Pull ===".cyan().bold());
+    println!();
 
     // CRUX-A-20: the `offline` parameter used to be read ONLY inside the
     // `dry_run` branch above, so `apr pull --offline hf://org/repo` performed
@@ -80,6 +88,9 @@ pub fn run(
     // from the cache before any request). A bare `hf://org/repo` cannot: the
     // filename is only knowable from the Hub API, so offline it is refused
     // rather than guessed.
+    //
+    // The scope is established before `resolve_hf_model` below, which is the
+    // first thing on this path that can reach the network.
     let _offline_scope = super::offline::scope(offline);
 
     // GH-213: Resolve HuggingFace URI — detect single vs sharded models
@@ -694,7 +705,80 @@ fn write_shard_manifest(
 ///
 /// CRUX-A-20 ALGO-001..005: the effective offline signal (CLI flag OR
 /// `APR_OFFLINE` OR `HF_HUB_OFFLINE` truthy) is echoed too.
-fn run_dry_run(model_ref: &str, revision: Option<&str>, offline_flag: bool) -> Result<()> {
+fn run_dry_run(
+    model_ref: &str,
+    revision: Option<&str>,
+    offline_flag: bool,
+    json: bool,
+) -> Result<()> {
+    let report = build_dry_run_report(model_ref, revision, offline_flag)?;
+    println!("{}", report.stdout(json));
+    Ok(())
+}
+
+/// The facts `apr pull --dry-run` resolves, separated from how they are rendered.
+///
+/// Keeping resolution and rendering apart is what makes `--json` honest: the
+/// exact string written to stdout in JSON mode is [`DryRunReport::to_json`],
+/// so a unit test over that string tests the bytes a consumer will parse.
+#[derive(Debug)]
+pub(crate) struct DryRunReport {
+    pub(crate) model: String,
+    pub(crate) resolved: String,
+    pub(crate) revision: String,
+    pub(crate) revision_kind: String,
+    pub(crate) offline: bool,
+}
+
+impl DryRunReport {
+    /// The complete stdout of `apr pull --dry-run`, in whichever mode was asked
+    /// for. Under `--json` that is exactly one JSON document and nothing else.
+    pub(crate) fn stdout(&self, json: bool) -> String {
+        if json {
+            self.to_json()
+        } else {
+            self.to_human()
+        }
+    }
+
+    // serde_json::json!() uses infallible unwrap internally
+    #[allow(clippy::disallowed_methods)]
+    fn to_json(&self) -> String {
+        let doc = serde_json::json!({
+            "model": self.model,
+            "resolved": self.resolved,
+            "revision": self.revision,
+            "revision_kind": self.revision_kind,
+            "offline": self.offline,
+            "mode": "dry-run",
+        });
+        serde_json::to_string_pretty(&doc).unwrap_or_default()
+    }
+
+    fn to_human(&self) -> String {
+        let offline = if self.offline {
+            "true".green()
+        } else {
+            "false".yellow()
+        };
+        format!(
+            "{}\n\nModel:    {}\nResolved: {}\nRevision: {} ({})\nOffline:  {}\nMode:     {} (no network I/O)",
+            "=== APR Pull ===".cyan().bold(),
+            self.model.cyan(),
+            self.resolved.green(),
+            self.revision.green(),
+            self.revision_kind,
+            offline,
+            "dry-run".yellow(),
+        )
+    }
+}
+
+pub(crate) fn build_dry_run_report(
+    model_ref: &str,
+    revision: Option<&str>,
+    offline_flag: bool,
+) -> Result<DryRunReport> {
     use super::aliases;
     use super::offline;
     use super::revision as rev;
@@ -718,19 +802,13 @@ fn run_dry_run(model_ref: &str, revision: Option<&str>, offline_flag: bool) -> R
         env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let is_offline = offline::is_offline(offline_flag, env_borrowed.iter().copied());
 
-    println!("Model:    {}", model_ref.cyan());
-    println!("Resolved: {}", resolved.green());
-    println!("Revision: {} ({:?})", rev_spec.green(), rev_kind);
-    println!(
-        "Offline:  {}",
-        if is_offline {
-            "true".green()
-        } else {
-            "false".yellow()
-        }
-    );
-    println!("Mode:     {} (no network I/O)", "dry-run".yellow());
-    Ok(())
+    Ok(DryRunReport {
+        model: model_ref.to_string(),
+        resolved,
+        revision: rev_spec.to_string(),
+        revision_kind: format!("{rev_kind:?}"),
+        offline: is_offline,
+    })
 }
 
 /// CRUX-A-01 FALSIFY-CRUX-A-01-003: build an error carrying a did-you-mean

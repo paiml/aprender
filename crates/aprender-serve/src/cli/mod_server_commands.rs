@@ -648,7 +648,10 @@ mod server_commands {
         };
 
         // GH-148: Create router with OpenAI API flag
-        let router_config = crate::api::RouterConfig { openai_api };
+        let router_config = crate::api::RouterConfig {
+            openai_api,
+            ..crate::api::RouterConfig::default()
+        };
         let app = crate::api::create_router_with_config(state, router_config);
 
         // Parse and validate address
@@ -712,7 +715,10 @@ mod server_commands {
         eprintln!("Starting Realizar inference server (demo mode)...");
 
         let state = crate::api::AppState::demo()?;
-        let router_config = crate::api::RouterConfig { openai_api };
+        let router_config = crate::api::RouterConfig {
+            openai_api,
+            ..crate::api::RouterConfig::default()
+        };
         let app = crate::api::create_router_with_config(state, router_config);
 
         let addr: SocketAddr = format!("{host}:{port}").parse().map_err(|e| {

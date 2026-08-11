@@ -16,7 +16,8 @@
 use crate::error::{CliError, Result};
 use crate::output;
 use aprender::format::{
-    apr_convert, streaming_quantize_peak_estimate, ConvertOptions, QuantizationType,
+    apr_convert, q4k_output_size_estimate, streaming_quantize_peak_estimate, ConvertOptions,
+    QuantizationType,
 };
 use humansize::{format_size, BINARY};
 use std::path::Path;
@@ -68,12 +69,40 @@ fn estimate_memory(file_size: u64, scheme: QuantScheme) -> (u64, u64, f64) {
     let input_size = file_size;
     // Assume input is F32 (32 bits/weight)
     let output_size = (file_size as f64 * bits_per_weight / 32.0) as u64;
-    let reduction = if output_size > 0 {
+    let reduction = ratio(input_size, output_size);
+    (input_size, output_size, reduction)
+}
+
+/// Reduction ratio input/output, guarding division by zero.
+fn ratio(input_size: u64, output_size: u64) -> f64 {
+    if output_size > 0 {
         input_size as f64 / output_size as f64
     } else {
         1.0
-    };
-    (input_size, output_size, reduction)
+    }
+}
+
+/// #2392 (dogfood 0.63.0, finding 3): size estimate for `--plan`.
+///
+/// For Q4K the flat bits-per-weight model is not merely imprecise, it is
+/// structurally wrong — it produced the same 7.111x ratio for a 4.8 MB model, an
+/// 87 MB model and a 992 MB model, and was 4.34x optimistic on the middle one.
+/// Q4K skips whole classes of tensor (embeddings, norms, biases, scales, and
+/// anything under one super-block) and pads each row up to a multiple of 256, so
+/// the answer depends on the tensor inventory. Ask the shape-aware estimator
+/// first and only fall back to the flat model when the input's tensor index
+/// cannot be read.
+///
+/// The other three schemes are left on the flat model: measured against real
+/// conversions they are accurate (int8 4.0x plan vs 3.98x actual, fp16 2.0x vs
+/// 2.0x, int4 8.0x vs 7.05x), so there is nothing to fix there.
+fn estimate_sizes(file: &Path, file_size: u64, scheme: QuantScheme) -> (u64, u64, f64) {
+    if matches!(scheme, QuantScheme::Q4K) {
+        if let Some(payload) = q4k_output_size_estimate(file) {
+            return (file_size, payload, ratio(file_size, payload));
+        }
+    }
+    estimate_memory(file_size, scheme)
 }
 
 /// Run the quantize command
@@ -135,13 +164,7 @@ pub(crate) fn run(
 
 /// F-CONV-064: Overwrite protection check.
 fn check_overwrite_protection(output_path: &Path, force: bool) -> Result<()> {
-    if output_path.exists() && !force {
-        return Err(CliError::ValidationFailed(format!(
-            "Output file '{}' already exists. Use --force to overwrite.",
-            output_path.display()
-        )));
-    }
-    Ok(())
+    crate::error::refuse_overwrite(output_path, force)
 }
 
 /// Print header for quantize command (no-op in JSON mode).
@@ -263,7 +286,7 @@ fn run_plan(
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read model file: {e}")))?
         .len();
 
-    let (input_size, output_size, reduction) = estimate_memory(file_size, scheme);
+    let (input_size, output_size, reduction) = estimate_sizes(file, file_size, scheme);
     let output_format = format.unwrap_or("apr");
 
     // GH-434 / ALB-093: Large APR+Q4K uses the streaming path — peak is bounded
@@ -352,7 +375,7 @@ fn run_batch_plan(
             .iter()
             .zip(parsed.iter())
             .map(|(name, scheme)| {
-                let (input_size, output_size, reduction) = estimate_memory(file_size, *scheme);
+                let (input_size, output_size, reduction) = estimate_sizes(file, file_size, *scheme);
                 serde_json::json!({
                     "scheme": name,
                     "input_size": input_size,
@@ -381,7 +404,7 @@ fn run_batch_plan(
         println!();
 
         for (name, scheme) in scheme_list.iter().zip(parsed.iter()) {
-            let (_input_size, output_size, reduction) = estimate_memory(file_size, *scheme);
+            let (_input_size, output_size, reduction) = estimate_sizes(file, file_size, *scheme);
             println!(
                 "  {name:<8} → {}  ({reduction:.2}x reduction, peak memory: {})",
                 format_size(output_size, BINARY),

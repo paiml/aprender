@@ -28,11 +28,30 @@ use crate::error::{CliError, Result};
 /// the qtype enum on disk.
 const QUANT_VOLATILE_KEYS: &[&str] = &["general.quantization_version", "general.file_type"];
 
+/// Longest verbatim rendering of a single metadata value kept in a divergence
+/// entry. Beyond this the value is summarised.
+///
+/// GGUF tokenizer metadata is not small: `tokenizer.ggml.merges` on a Qwen
+/// vocab renders to 4.8 MB and `tokenizer.ggml.tokens` to 4.4 MB via `Debug`.
+/// Emitting those verbatim produced a 13 MB, 19-line report (14.9 MB under
+/// `--json`) that wedged terminals and blew CI log budgets, burying the
+/// actionable one-line scalar divergences on either side of it.
+pub const DIFF_VALUE_MAX_CHARS: usize = 200;
+
+/// Characters of the verbatim rendering retained as a head sample when a
+/// value is summarised.
+const DIFF_VALUE_HEAD_CHARS: usize = 96;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DiffEntry {
     pub key: String,
     pub reference: String,
     pub requant: String,
+    /// Where the two values first differ, when that is computable (same array
+    /// variant on both sides). `None` for scalars and cross-type divergences,
+    /// where the rendered values already show the difference.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_difference: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,8 +118,9 @@ pub fn classify_preservation(
                 if !values_equal(ref_val, req_val) {
                     let entry = DiffEntry {
                         key: key.clone(),
-                        reference: format!("{ref_val:?}"),
-                        requant: format!("{req_val:?}"),
+                        reference: render_value_bounded(ref_val),
+                        requant: render_value_bounded(req_val),
+                        first_difference: describe_first_difference(ref_val, req_val),
                     };
                     if prefix_general {
                         general_diverged.push(entry);
@@ -168,6 +188,127 @@ fn values_equal(a: &GgufValue, b: &GgufValue) -> bool {
     format!("{a:?}") == format!("{b:?}")
 }
 
+/// Variant name of a `GgufValue`, used as the label of a summarised value.
+fn value_kind(v: &GgufValue) -> &'static str {
+    match v {
+        GgufValue::Uint8(_) => "Uint8",
+        GgufValue::Int8(_) => "Int8",
+        GgufValue::Uint16(_) => "Uint16",
+        GgufValue::Int16(_) => "Int16",
+        GgufValue::Uint32(_) => "Uint32",
+        GgufValue::Int32(_) => "Int32",
+        GgufValue::Float32(_) => "Float32",
+        GgufValue::Bool(_) => "Bool",
+        GgufValue::String(_) => "String",
+        GgufValue::Uint64(_) => "Uint64",
+        GgufValue::Int64(_) => "Int64",
+        GgufValue::Float64(_) => "Float64",
+        GgufValue::ArrayUint32(_) => "ArrayUint32",
+        GgufValue::ArrayInt32(_) => "ArrayInt32",
+        GgufValue::ArrayFloat32(_) => "ArrayFloat32",
+        GgufValue::ArrayString(_) => "ArrayString",
+    }
+}
+
+/// Element count for array-valued metadata; `None` for scalars.
+fn array_len(v: &GgufValue) -> Option<usize> {
+    match v {
+        GgufValue::ArrayUint32(a) => Some(a.len()),
+        GgufValue::ArrayInt32(a) => Some(a.len()),
+        GgufValue::ArrayFloat32(a) => Some(a.len()),
+        GgufValue::ArrayString(a) => Some(a.len()),
+        _ => None,
+    }
+}
+
+/// Hex sha256 of the canonical rendering, truncated to 16 chars — enough to
+/// tell two vocabularies apart in a log line without reproducing either.
+fn digest16(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let full = Sha256::digest(bytes);
+    full.iter().take(8).map(|b| format!("{b:02x}")).collect()
+}
+
+/// Render a metadata value for a divergence report, bounded in size.
+///
+/// Short values (every scalar, and small arrays) are rendered verbatim — the
+/// `general.architecture :: String("qwen35") → String("qwen2")` form is
+/// exactly what a reader needs. Anything longer than
+/// [`DIFF_VALUE_MAX_CHARS`] is replaced by a summary carrying the element
+/// count (or character count), a content digest, and a head sample.
+pub fn render_value_bounded(v: &GgufValue) -> String {
+    let full = format!("{v:?}");
+    if full.chars().count() <= DIFF_VALUE_MAX_CHARS {
+        return full;
+    }
+    let digest = digest16(full.as_bytes());
+    let head: String = full.chars().take(DIFF_VALUE_HEAD_CHARS).collect();
+    match array_len(v) {
+        Some(n) => format!("{}(len={n}, sha256={digest}, head={head}…)", value_kind(v)),
+        None => format!(
+            "{}(chars={}, sha256={digest}, head={head}…)",
+            value_kind(v),
+            full.chars().count()
+        ),
+    }
+}
+
+/// For two arrays of the same variant, the index of the first element that
+/// differs (or the point at which one ran out). `None` when the values are
+/// not a same-variant array pair.
+pub fn describe_first_difference(a: &GgufValue, b: &GgufValue) -> Option<String> {
+    fn locate<T: PartialEq>(x: &[T], y: &[T]) -> String {
+        match x.iter().zip(y.iter()).position(|(p, q)| p != q) {
+            Some(i) => format!(
+                "first differing element: index {i} (len {} vs {})",
+                x.len(),
+                y.len()
+            ),
+            None => format!(
+                "common prefix identical; lengths differ: {} vs {}",
+                x.len(),
+                y.len()
+            ),
+        }
+    }
+    match (a, b) {
+        (GgufValue::ArrayUint32(x), GgufValue::ArrayUint32(y)) => Some(locate(x, y)),
+        (GgufValue::ArrayInt32(x), GgufValue::ArrayInt32(y)) => Some(locate(x, y)),
+        (GgufValue::ArrayString(x), GgufValue::ArrayString(y)) => Some(locate(x, y)),
+        (GgufValue::ArrayFloat32(x), GgufValue::ArrayFloat32(y)) => {
+            let pos = x
+                .iter()
+                .zip(y.iter())
+                .position(|(p, q)| p.to_bits() != q.to_bits());
+            Some(match pos {
+                Some(i) => format!(
+                    "first differing element: index {i} (len {} vs {})",
+                    x.len(),
+                    y.len()
+                ),
+                None => format!(
+                    "common prefix identical; lengths differ: {} vs {}",
+                    x.len(),
+                    y.len()
+                ),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// One divergence line, plus an indented locator line when we could compute
+/// where two arrays first differ.
+fn push_diff_entry(out: &mut String, e: &DiffEntry) {
+    out.push_str(&format!(
+        "    {} :: {} → {}\n",
+        e.key, e.reference, e.requant
+    ));
+    if let Some(loc) = &e.first_difference {
+        out.push_str(&format!("      {loc}\n"));
+    }
+}
+
 /// Render the report as a human-readable summary.
 pub fn render_text(report: &PreservationReport) -> String {
     let mut out = String::new();
@@ -191,19 +332,13 @@ pub fn render_text(report: &PreservationReport) -> String {
     if !report.general_keys_diverged.is_empty() {
         out.push_str("  diverged general.*:\n");
         for e in &report.general_keys_diverged {
-            out.push_str(&format!(
-                "    {} :: {} → {}\n",
-                e.key, e.reference, e.requant
-            ));
+            push_diff_entry(&mut out, e);
         }
     }
     if !report.tokenizer_keys_diverged.is_empty() {
         out.push_str("  diverged tokenizer.*:\n");
         for e in &report.tokenizer_keys_diverged {
-            out.push_str(&format!(
-                "    {} :: {} → {}\n",
-                e.key, e.reference, e.requant
-            ));
+            push_diff_entry(&mut out, e);
         }
     }
     out.push_str(&format!(
@@ -418,5 +553,111 @@ mod tests {
             report.tokenizer_keys_added_in_requant,
             vec!["tokenizer.ggml.merges"]
         );
+    }
+
+    // ── bounded divergence reporting (dogfood 0.63.0 #2377 findings 1+7) ──
+    //
+    // Two diverging tokenizer vocabularies produced a 13 MB, 19-line text
+    // report (14.9 MB under --json) with a single 4.8 MB line, because every
+    // diverged value was stored as the untruncated `Debug` of the whole GGUF
+    // array. These assert the SIZE of the emitted report, not its shape.
+
+    /// A vocab-sized array is the realistic worst case: 151936 tokens.
+    fn big_vocab(seed: &str, n: usize) -> GgufValue {
+        GgufValue::ArrayString((0..n).map(|i| format!("{seed}-token-{i}")).collect())
+    }
+
+    #[test]
+    fn diverging_vocabularies_do_not_produce_a_multi_megabyte_report() {
+        let reference = meta_kv(&[("tokenizer.ggml.tokens", big_vocab("ref", 151_936))]);
+        let requant = meta_kv(&[("tokenizer.ggml.tokens", big_vocab("req", 151_936))]);
+        let report = classify_preservation(&reference, &requant, "r.gguf".into(), "q.gguf".into());
+        assert!(!report.passed, "divergent vocabularies must be VIOLATED");
+
+        let text = render_text(&report);
+        assert!(
+            text.len() < 4096,
+            "divergence report must stay bounded; got {} bytes:\n{}",
+            text.len(),
+            &text[..text.len().min(400)]
+        );
+        // Every line must be readable in a terminal and a CI log.
+        let longest = text.lines().map(str::len).max().unwrap_or(0);
+        assert!(longest < 512, "longest line is {longest} chars");
+
+        let json = serde_json::to_string(&report).expect("serialize");
+        assert!(json.len() < 4096, "--json payload is {} bytes", json.len());
+    }
+
+    #[test]
+    fn summarised_value_names_the_length_and_a_digest_not_the_contents() {
+        let big = big_vocab("ref", 151_936);
+        let rendered = render_value_bounded(&big);
+        assert!(rendered.contains("len=151936"), "got: {rendered}");
+        assert!(rendered.contains("sha256="), "got: {rendered}");
+        assert!(
+            rendered.chars().count() < 400,
+            "summary is {} chars",
+            rendered.chars().count()
+        );
+    }
+
+    #[test]
+    fn two_different_vocabularies_summarise_to_different_digests() {
+        // A digest that collided would make the summary useless.
+        let a = render_value_bounded(&big_vocab("ref", 8_000));
+        let b = render_value_bounded(&big_vocab("req", 8_000));
+        assert_ne!(a, b, "distinct vocabularies must not summarise identically");
+    }
+
+    #[test]
+    fn short_scalar_divergences_are_still_rendered_verbatim() {
+        // The actionable one-line signals must not be summarised away.
+        let reference = meta_kv(&[
+            (
+                "general.architecture",
+                GgufValue::String("qwen35".to_string()),
+            ),
+            ("tokenizer.ggml.eos_token_id", GgufValue::Uint32(248_046)),
+        ]);
+        let requant = meta_kv(&[
+            (
+                "general.architecture",
+                GgufValue::String("qwen2".to_string()),
+            ),
+            ("tokenizer.ggml.eos_token_id", GgufValue::Uint32(151_645)),
+        ]);
+        let text = render_text(&classify_preservation(
+            &reference,
+            &requant,
+            "r.gguf".into(),
+            "q.gguf".into(),
+        ));
+        assert!(
+            text.contains(r#"general.architecture :: String("qwen35") → String("qwen2")"#),
+            "got:\n{text}"
+        );
+        assert!(
+            text.contains("tokenizer.ggml.eos_token_id :: Uint32(248046) → Uint32(151645)"),
+            "got:\n{text}"
+        );
+    }
+
+    #[test]
+    fn array_divergence_reports_the_first_differing_index() {
+        let reference = meta_kv(&[(
+            "tokenizer.ggml.token_type",
+            GgufValue::ArrayInt32(vec![1; 4096]),
+        )]);
+        let mut changed = vec![1i32; 4096];
+        changed[2047] = 4;
+        let requant = meta_kv(&[("tokenizer.ggml.token_type", GgufValue::ArrayInt32(changed))]);
+        let report = classify_preservation(&reference, &requant, "r.gguf".into(), "q.gguf".into());
+        let entry = &report.tokenizer_keys_diverged[0];
+        assert_eq!(
+            entry.first_difference.as_deref(),
+            Some("first differing element: index 2047 (len 4096 vs 4096)")
+        );
+        assert!(render_text(&report).contains("index 2047"));
     }
 }

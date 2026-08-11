@@ -465,4 +465,94 @@ mod tests {
         assert!(stats.contains_key("op1"));
         assert!(stats.contains_key("op2"));
     }
+
+    // =========================================================================
+    // gpu-decode-profiling-v1 TOKEN_ACCOUNTING falsifiers
+    //
+    // Every `apr run --trace` printed
+    //   [CONTRACT WARN] ... LmHead.count=10 != tokens_processed=11
+    // and the gap was always exactly 1 (10/11, 11/12, 12/13, 16/17, 37/38).
+    // That is the generation loop, not a defect: the final sampled token is
+    // never fed back through a forward pass, so LmHead never fires for it.
+    // =========================================================================
+
+    /// Build a report whose LmHead/RmsNorm satisfy the other invariants, so
+    /// only TOKEN_ACCOUNTING is under test.
+    fn token_accounting_report(lm_head_count: usize, tokens_processed: usize) -> ProfileReport {
+        let mut ops = std::collections::HashMap::new();
+
+        let mut lm = OpStats::default();
+        lm.count = lm_head_count;
+        lm.total_us = 900.0;
+        lm.avg_us = 300.0;
+        ops.insert("LmHead".to_string(), lm);
+
+        let mut rms = OpStats::default();
+        rms.count = tokens_processed;
+        rms.total_us = 100.0;
+        rms.avg_us = 1.0;
+        ops.insert("RmsNorm".to_string(), rms);
+
+        ProfileReport {
+            operations: ops,
+            total_inference_us: 1000.0,
+            tokens_processed,
+            num_layers: 28,
+            throughput_tok_s: 100.0,
+            is_real_data: true,
+        }
+    }
+
+    fn token_accounting_violation(report: &ProfileReport) -> Option<String> {
+        report
+            .validate_contracts()
+            .into_iter()
+            .map(|(_, msg)| msg)
+            .find(|msg| msg.contains("TOKEN_ACCOUNTING"))
+    }
+
+    /// The exact shape observed on every healthy CPU run: 9 prefill + 2 decode
+    /// = 11 tokens processed, 10 LmHead calls. Must NOT warn.
+    #[test]
+    fn token_accounting_silent_when_last_token_is_never_fed_back() {
+        let report = token_accounting_report(10, 11);
+        assert_eq!(
+            token_accounting_violation(&report),
+            None,
+            "LmHead.count == tokens_processed - 1 is the normal generation loop \
+             (the final sampled token is never forwarded) and must not warn"
+        );
+    }
+
+    /// The GPU/graph path where every processed token was forwarded must also
+    /// stay silent.
+    #[test]
+    fn token_accounting_silent_when_every_token_was_forwarded() {
+        let report = token_accounting_report(11, 11);
+        assert_eq!(token_accounting_violation(&report), None);
+    }
+
+    /// Real miscounting — instrumentation missing from a code path — must
+    /// still be reported. This is what the contract exists to catch.
+    #[test]
+    fn token_accounting_warns_when_lm_head_is_undercounted() {
+        let report = token_accounting_report(1, 11);
+        let msg = token_accounting_violation(&report)
+            .expect("LmHead.count=1 for 11 tokens is real miscounting and must warn");
+        assert!(msg.contains("LmHead.count=1"), "must quote the count: {msg}");
+        assert!(
+            msg.contains("tokens_processed=11"),
+            "must quote the expectation: {msg}"
+        );
+    }
+
+    /// LmHead firing MORE than once per token is also a defect.
+    #[test]
+    fn token_accounting_warns_when_lm_head_is_overcounted() {
+        let report = token_accounting_report(22, 11);
+        assert!(
+            token_accounting_violation(&report).is_some(),
+            "two LmHead calls per token must warn"
+        );
+    }
 }

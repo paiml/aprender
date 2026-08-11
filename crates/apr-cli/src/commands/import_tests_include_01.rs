@@ -71,6 +71,7 @@ fn t_gh267_run_rejects_pytorch_bin() {
         None,
         false,
         false,
+        false, // json
     );
     // Should fail with GH-267 PyTorch error (not file-not-found or other errors)
     assert!(result.is_err());

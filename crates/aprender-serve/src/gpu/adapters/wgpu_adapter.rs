@@ -3,9 +3,47 @@
 //! Converts Q4K/Q6K quantized weights to F32 and uploads to trueno's
 //! WgslForwardPass for inference on AMD/Intel/Apple GPUs via Vulkan/Metal/WebGPU.
 
+use crate::dev_trace::dev_trace_enabled;
 use crate::error::{RealizarError, Result};
 use crate::gguf::OwnedQuantizedModel;
 use crate::quantize::{dequantize_q4_k, dequantize_q5_k, dequantize_q6_k};
+
+/// The line the user sees when the wgpu path starts dequantizing weights.
+///
+/// Dequantizing a 1.5B Q4K model to F32 takes seconds and allocates gigabytes,
+/// so the user is told it is happening — but in English. The model geometry
+/// (`hidden=`, `heads=`, `intermediate=`) means nothing without the source and
+/// is held back for `APR_DEV_TRACE`.
+#[must_use]
+fn dequant_start_message(
+    num_layers: usize,
+    hidden: usize,
+    num_heads: usize,
+    num_kv_heads: usize,
+    intermediate: usize,
+    dev_trace: bool,
+) -> String {
+    if dev_trace {
+        format!(
+            "Preparing GPU weights: dequantizing {num_layers} layers to F32 \
+             (hidden={hidden}, heads={num_heads}/{num_kv_heads}, intermediate={intermediate})"
+        )
+    } else {
+        format!("Preparing GPU weights: dequantizing {num_layers} layers to F32")
+    }
+}
+
+/// The line the user sees when dequantization finishes.
+///
+/// The F32 footprint is genuinely useful — it is why the machine just spent
+/// several GB of RAM — so it stays unconditional.
+#[must_use]
+fn dequant_done_message(weight_count: usize, total_bytes: usize) -> String {
+    format!(
+        "GPU weights ready: {weight_count} tensors, {:.1} MB F32",
+        total_bytes as f64 / 1e6
+    )
+}
 
 /// PMAT-333: Dequantize all model weights to F32 for WGPU upload.
 ///
@@ -26,8 +64,15 @@ pub fn dequant_model_weights(
     let mut weights = Vec::new();
 
     eprintln!(
-        "[PMAT-333] Dequantizing {} layers (hidden={}, heads={}/{}, intermediate={})",
-        num_layers, hidden, num_heads, num_kv_heads, intermediate,
+        "{}",
+        dequant_start_message(
+            num_layers,
+            hidden,
+            num_heads,
+            num_kv_heads,
+            intermediate,
+            dev_trace_enabled(),
+        )
     );
 
     for (i, layer) in model.layers().iter().enumerate() {
@@ -158,11 +203,7 @@ pub fn dequant_model_weights(
     // Previous transpose was WRONG — it double-transposed, causing garbled output.
 
     let total_bytes: usize = weights.iter().map(|(_, d, _, _)| d.len() * 4).sum();
-    eprintln!(
-        "[PMAT-333] Dequantized {} weights, {:.1} MB F32",
-        weights.len(),
-        total_bytes as f64 / 1e6,
-    );
+    eprintln!("{}", dequant_done_message(weights.len(), total_bytes));
 
     Ok(weights)
 }
@@ -257,5 +298,63 @@ pub fn dequant_tensor_public(tensor: &crate::gguf::OwnedQuantizedTensor) -> Resu
         other => Err(RealizarError::FormatError {
             reason: format!("Unsupported quantization type {} for WGPU dequant", other),
         }),
+    }
+}
+
+#[cfg(test)]
+mod ticket_free_output_tests {
+    use super::{dequant_done_message, dequant_start_message};
+
+    /// A bracketed token such as `[PMAT-333]` or
+    /// `[apr-cpu-vs-gpu-output-parity-v1]` is an internal ticket, not something
+    /// a user can act on.
+    fn has_ticket_tag(line: &str) -> bool {
+        line.contains("PMAT-")
+            || line.contains("GH-")
+            || line.contains("PAR-")
+            || line.contains('[')
+    }
+
+    /// The defect: every `apr run` that took the wgpu path opened with
+    /// `[PMAT-333] Dequantizing 28 layers (hidden=1536, heads=12/2,
+    /// intermediate=8960)`. The user is told what is happening, in English,
+    /// with no ticket number and no model geometry.
+    #[test]
+    fn dequant_start_line_is_english_and_ticket_free() {
+        let line = dequant_start_message(28, 1536, 12, 2, 8960, false);
+        assert!(
+            !has_ticket_tag(&line),
+            "start line still addresses the user in ticket numbers: {line}"
+        );
+        assert_eq!(line, "Preparing GPU weights: dequantizing 28 layers to F32");
+        for geometry in ["hidden=", "heads=", "intermediate="] {
+            assert!(
+                !line.contains(geometry),
+                "developer geometry {geometry:?} leaked into default output: {line}"
+            );
+        }
+    }
+
+    /// Gating must not delete the diagnostic: the geometry is still available,
+    /// it just has to be asked for.
+    #[test]
+    fn dequant_start_line_keeps_geometry_under_dev_trace() {
+        let line = dequant_start_message(28, 1536, 12, 2, 8960, true);
+        assert!(line.contains("hidden=1536"), "{line}");
+        assert!(line.contains("heads=12/2"), "{line}");
+        assert!(line.contains("intermediate=8960"), "{line}");
+        assert!(!has_ticket_tag(&line.replace(['(', ')'], "")), "{line}");
+    }
+
+    /// The defect: `[PMAT-333] Dequantized 337 weights, 6174.9 MB F32`. The
+    /// footprint is worth keeping; the ticket number is not.
+    #[test]
+    fn dequant_done_line_is_english_and_ticket_free() {
+        let line = dequant_done_message(337, 6_174_900_000);
+        assert!(
+            !has_ticket_tag(&line),
+            "done line still addresses the user in ticket numbers: {line}"
+        );
+        assert_eq!(line, "GPU weights ready: 337 tensors, 6174.9 MB F32");
     }
 }

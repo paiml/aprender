@@ -276,9 +276,9 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             validate_manifest::run(file, artifact.as_deref(), cli.json, live_check)
         }
 
-        Commands::Lint { file } => {
-            let (j, q) = (cli.json, cli.quiet);
-            crate::pipe::with_stdin_support(file, |p| lint::run(p, j, q))
+        Commands::Lint { file, strict } => {
+            let (j, q, st) = (cli.json, cli.quiet, *strict);
+            crate::pipe::with_stdin_support(file, |p| lint::run(p, j, q, st))
         }
 
         Commands::BeatRun { contract, measured } => {
@@ -491,6 +491,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             batch,
             json,
             plan,
+            force,
         } => {
             match file
                 .as_ref()
@@ -506,6 +507,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     batch.as_deref(),
                     *json || cli.json,
                     *plan,
+                    *force,
                 ),
                 Err(e) => Err(e),
             }
@@ -542,6 +544,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 tokenizer.as_ref(),
                 *enforce_provenance,
                 *allow_no_config,
+                cli.json,
             )
         }
         Commands::Convert {
@@ -659,6 +662,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             density,
             seed,
             plan,
+            force,
         } => {
             let resolved: std::result::Result<Vec<std::path::PathBuf>, _> = files
                 .iter()
@@ -676,6 +680,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     *seed,
                     cli.json,
                     *plan,
+                    *force,
                 ),
                 Err(e) => Err(e),
             }
@@ -849,12 +854,19 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 crate::commands::pull::resolve_cache_dir_for_ref(model_ref)
                     .and_then(|dir| crate::commands::pull_verify::run_verify(&dir))
             } else {
-                pull::run(model_ref, *force, *dry_run, revision.as_deref(), *offline)
+                pull::run(
+                    model_ref,
+                    *force,
+                    *dry_run,
+                    revision.as_deref(),
+                    *offline,
+                    cli.json,
+                )
             }
         }
         Commands::Registry { command } => crate::commands::registry::run(command.clone()),
         Commands::List => pull::list(cli.json, cli.quiet),
-        Commands::Rm { model_ref } => pull::remove(model_ref),
+        Commands::Rm { model_ref } => pull::remove(model_ref, cli.json),
         Commands::Tui { file } => tui::run(file.clone()),
         Commands::Mcp {} => mcp::run(),
 

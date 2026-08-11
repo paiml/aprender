@@ -51,6 +51,67 @@ fn test_cpu_info_detect() {
     assert!(!cpu.model.is_empty());
 }
 
+/// The regression that turned Coverage Nightly red on 2026-08-11.
+///
+/// `threads` is `available_parallelism()` — cgroup- and affinity-aware, so it reports
+/// what this process may use. `cores` was read from `/proc/cpuinfo`, which describes
+/// the whole machine and ignores every restriction. On a CI host running 16 concurrent
+/// jobs the two disagree badly; measured on the box that failed:
+///
+/// ```text
+/// $ awk -F: '/^physical id/{p=$2} /^core id/{print p"-"$2}' /proc/cpuinfo | sort -u | wc -l
+/// 24                       # machine-wide physical cores
+/// $ taskset -c 0,1 nproc
+/// 2                        # what a restricted process may use
+/// ```
+///
+/// so `test_cpu_info_detect`'s `threads >= cores` became `2 >= 24` and panicked,
+/// failing the whole run after 7451 passing tests.
+///
+/// These cases drive the reconciliation directly, so the invariant is falsifiable
+/// without needing to actually restrict the test process's CPUs.
+#[test]
+fn usable_cores_never_exceeds_available_parallelism() {
+    // The exact failing shape: a 24-core machine seen by a 2-CPU-restricted process.
+    assert_eq!(
+        CpuInfo::usable_cores(Some(24), 2),
+        2,
+        "a process allowed 2 CPUs must not report 24 usable physical cores"
+    );
+
+    // Unrestricted hyperthreaded host: physical count stands, nothing is clamped.
+    assert_eq!(CpuInfo::usable_cores(Some(24), 48), 24);
+
+    // Exactly-equal case (hyperthreading off) is not a restriction.
+    assert_eq!(CpuInfo::usable_cores(Some(16), 16), 16);
+
+    // /proc/cpuinfo unreadable (non-Linux, container without procfs): fall back to
+    // the one figure we do trust.
+    assert_eq!(CpuInfo::usable_cores(None, 8), 8);
+
+    // Degenerate inputs must still produce a usable core count, never 0.
+    assert_eq!(CpuInfo::usable_cores(Some(0), 4), 1);
+    assert_eq!(CpuInfo::usable_cores(None, 0), 1);
+}
+
+/// The invariant `test_cpu_info_detect` asserts, stated over the whole input space
+/// rather than over whatever the current host happens to look like.
+#[test]
+fn usable_cores_upholds_the_cores_le_threads_invariant() {
+    for physical in [None, Some(1), Some(2), Some(8), Some(24), Some(128)] {
+        for threads in [0u32, 1, 2, 4, 24, 48, 256] {
+            let cores = CpuInfo::usable_cores(physical, threads);
+            assert!(cores >= 1, "cores must be >= 1, got {cores} for {physical:?}/{threads}");
+            assert!(
+                cores <= threads.max(1),
+                "cores ({cores}) must never exceed usable threads ({}) — \
+                 physical={physical:?}",
+                threads.max(1)
+            );
+        }
+    }
+}
+
 #[test]
 fn test_gpu_info_new() {
     let gpu = GpuInfo::new("NVIDIA RTX 4090", 24 * 1024 * 1024 * 1024);

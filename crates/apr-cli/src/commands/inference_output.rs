@@ -179,6 +179,11 @@ struct InferenceOutput {
     used_gpu: Option<bool>,
     /// GH-250: Generated token IDs for parity checking
     generated_tokens: Option<Vec<u32>>,
+    /// Decoded text for each entry of `generated_tokens`, in the same order.
+    ///
+    /// Populated only when `--stream` asked for it (see
+    /// [`decode_token_pieces`]) — every other mode renders the whole `text`.
+    token_texts: Option<Vec<String>>,
 }
 
 /// Execute inference on model
@@ -235,8 +240,48 @@ fn execute_inference(
             tok_per_sec: None,
             used_gpu: None,
             generated_tokens: None,
+            token_texts: None,
         })
     }
+}
+
+/// Decode each generated token id to its own text piece, using the model's own
+/// tokenizer.
+///
+/// # Why
+///
+/// `apr run --stream` emitted one NDJSON event per token whose `text` field was
+/// **always** the empty string — the token ids were right (the terminal `final`
+/// event decoded them into the full reply) but the per-token decode was simply
+/// never done. A consumer rendering `text` as events arrive saw nothing at all
+/// until the run finished, which is the entire point of the flag.
+///
+/// Single-token decode is the same thing the HTTP streaming path does
+/// (`decode_token(&tokenizer, token_id, clean)` in the SSE handler), so a
+/// `--stream` consumer and an SSE consumer see the same pieces. A multi-byte
+/// character split across two tokens decodes to a replacement char in the piece
+/// that carries only part of it; the `final` event always carries the
+/// authoritative full text.
+///
+/// Returns `None` when no tokenizer can be resolved for the model — the caller
+/// then leaves `text` empty rather than inventing pieces.
+#[cfg(feature = "inference")]
+fn decode_token_pieces(model_path: &Path, ids: &[u32]) -> Option<Vec<String>> {
+    if ids.is_empty() {
+        return Some(Vec::new());
+    }
+
+    // GGUF carries its vocabulary inside the file.
+    if let Ok(mapped) = realizar::gguf::MappedGGUFModel::from_path(model_path) {
+        return Some(ids.iter().map(|&id| mapped.model.decode(&[id])).collect());
+    }
+
+    // APR / SafeTensors: sibling tokenizer.json (hash-prefixed or plain).
+    if let Some(tok) = realizar::apr::AprV2Model::load_tokenizer(model_path) {
+        return Some(ids.iter().map(|&id| tok.decode(&[id])).collect());
+    }
+
+    None
 }
 
 /// Execute inference using realizar engine
@@ -317,6 +362,15 @@ fn execute_with_realizar(
     } else {
         Some(Vec::new())
     };
+    // Only `--stream` renders per-token text, and resolving the tokenizer costs
+    // a second open of the model file — so do not pay it on every run.
+    let token_texts = if options.stream {
+        generated_tokens
+            .as_deref()
+            .and_then(|ids| decode_token_pieces(model_path, ids))
+    } else {
+        None
+    };
     Ok(InferenceOutput {
         text: result.text,
         tokens_generated: Some(result.generated_token_count),
@@ -324,6 +378,7 @@ fn execute_with_realizar(
         tok_per_sec: Some(result.tok_per_sec),
         used_gpu: Some(result.used_gpu),
         generated_tokens,
+        token_texts,
     })
 }
 
@@ -375,5 +430,6 @@ fn execute_with_whisper(
         tok_per_sec: Some(word_count as f64 / duration.as_secs_f64()),
         used_gpu: Some(false),
         generated_tokens: None,
+        token_texts: None,
     })
 }

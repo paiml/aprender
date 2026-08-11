@@ -77,6 +77,38 @@ impl Default for ChatConfig {
     }
 }
 
+/// Resolve the model argument of `apr chat` to a concrete file on disk.
+///
+/// Delegates to the same resolver `apr run` uses
+/// ([`crate::commands::run::resolve_model_source`]) so that a local path is a
+/// local path in both commands. `chat` previously carried its own copy that
+/// rewrote *any* argument containing a slash to `hf://<arg>`, which turned
+/// `/home/me/model.apr` into `hf:///home/me/model.apr` and then 404'd against
+/// huggingface.co — and it hard-coded `offline = false`, so `--offline` could
+/// not stop the request either.
+fn resolve_chat_model(path_arg: &Path, offline: bool) -> Result<std::path::PathBuf, CliError> {
+    // If path_arg looks like a filesystem path (absolute or starts with ./, ../)
+    // and doesn't exist on disk, fail fast with the original path in the error
+    // — don't run it through HF alias resolution, which would mangle the
+    // FileNotFound payload (regression test: test_run_file_not_found,
+    // test_run_nonexistent_path_without_trace).
+    let source_str = path_arg.to_string_lossy();
+    let looks_like_path =
+        path_arg.is_absolute() || source_str.starts_with("./") || source_str.starts_with("../");
+    if looks_like_path && !path_arg.exists() {
+        return Err(CliError::FileNotFound(path_arg.to_path_buf()));
+    }
+
+    let model_source = crate::commands::run::resolve_model_source(&source_str, offline)?;
+    let actual_path = crate::commands::run::resolve_model(&model_source, false, offline)?;
+
+    // Validate file exists
+    if !actual_path.exists() {
+        return Err(CliError::FileNotFound(actual_path));
+    }
+    Ok(actual_path)
+}
+
 /// Run the chat command with optional inference tracing (APR-TRACE-001)
 #[allow(clippy::too_many_arguments)]
 #[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
@@ -94,46 +126,21 @@ pub(crate) fn run(
     trace_output: Option<std::path::PathBuf>,
     trace_level: &str,
     profile: bool,
+    offline: bool,
 ) -> Result<(), CliError> {
     contract_pre_temperature_bounds!();
     contract_pre_session_state_machine!();
 
-    // If path_arg looks like a filesystem path (absolute or starts with ./, ../)
-    // and doesn't exist on disk, fail fast with the original path in the error
-    // — don't run it through HF alias resolution, which would mangle the
-    // FileNotFound payload (regression test: test_run_file_not_found,
-    // test_run_nonexistent_path_without_trace).
-    let source_str = path_arg.to_string_lossy();
-    let looks_like_path =
-        path_arg.is_absolute() || source_str.starts_with("./") || source_str.starts_with("../");
-    if looks_like_path && !path_arg.exists() {
-        return Err(CliError::FileNotFound(path_arg.to_path_buf()));
-    }
-
-    // Resolve alias/hf like `apr run`
-    let resolved_source = crate::commands::aliases::resolve_short_name(&source_str)
-        .unwrap_or_else(|| source_str.to_string());
-    let hf_uri = if !resolved_source.contains("://") && resolved_source.contains('/') {
-        format!("hf://{resolved_source}")
-    } else {
-        resolved_source
-    };
-    let fully_resolved_source = match crate::commands::pull::resolve_hf_model(&hf_uri) {
-        Ok(crate::commands::pull::ResolvedModel::SingleFile(uri)) => uri,
-        _ => hf_uri,
-    };
-    let model_source = crate::commands::run::ModelSource::parse(&fully_resolved_source)?;
-    // CRUX-A-20: this argument was a hardcoded `false`, which is why
-    // `apr --offline chat hf://org/repo` downloaded the model instead of
-    // refusing. Read the offline decision from the process-wide latch.
-    let offline = crate::commands::offline::network_forbidden();
-    let actual_path = crate::commands::run::resolve_model(&model_source, false, offline)?;
+    // Take this branch's resolver, which strictly supersedes main's inline
+    // block: `resolve_chat_model` already carries main's FileNotFound fast-fail
+    // for absolute/./../ paths verbatim, AND threads `offline` through
+    // (#2416's concern), AND fixes the defect this branch exists for — main's
+    // block still rewrites every path containing a slash to
+    // `format!("hf://{resolved_source}")`, which is what turned
+    // /home/noah/models/x.apr into hf:///home. Keeping main's version would
+    // re-ship that P0.
+    let actual_path = resolve_chat_model(path_arg, offline)?;
     let path = actual_path.as_path();
-
-    // Validate file exists
-    if !path.exists() {
-        return Err(CliError::FileNotFound(actual_path));
-    }
 
     // GH-520: Warn on unimplemented trace/profile flags for chat mode
     if trace_steps.is_some() {
@@ -300,16 +307,40 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
         }
     }
 
-    Err(CliError::InvalidFormat(
-        "No Qwen tokenizer found. Searched:\n\
-         1. Pacha cache ({stem}.tokenizer.json alongside model)\n\
-         2. Model directory (tokenizer.json)\n\
-         3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n\
-         4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\n\
+    Err(CliError::InvalidFormat(no_qwen_tokenizer_message(
+        model_path,
+    )))
+}
+
+/// The "no tokenizer" message for `model_path`, with every search location
+/// spelled out as a concrete path.
+///
+/// This message used to print the literal text `{stem}.tokenizer.json` — the
+/// format placeholder was written inside a plain string, so it was never
+/// substituted and the user was shown a template instead of the filename `apr`
+/// actually looked for. Naming the real paths is the difference between "go
+/// find out what apr means by stem" and "create this file".
+fn no_qwen_tokenizer_message(model_path: &Path) -> String {
+    let dir = model_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map_or_else(|| ".".to_string(), |p| p.display().to_string());
+    let stem = model_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("<model>");
+    let home = dirs::home_dir().map_or_else(|| "~".to_string(), |h| h.display().to_string());
+
+    format!(
+        "No Qwen tokenizer found for {model}. Searched:\n\
+         1. Pacha cache:       {dir}/{stem}.tokenizer.json\n\
+         2. Model directory:   {dir}/tokenizer.json\n\
+         3. HuggingFace cache: {home}/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json\n\
+         4. APR cache:         {home}/.apr/tokenizers/qwen2/tokenizer.json\n\n\
          To fix: Download a Qwen model with tokenizer:\n\
-           apr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF"
-            .to_string(),
-    ))
+           apr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+        model = model_path.display(),
+    )
 }
 
 /// Normalize repeated punctuation (max 3 repeats of `!`, `?`, `.`).

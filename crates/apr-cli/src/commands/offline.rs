@@ -275,6 +275,7 @@ mod tests {
             false,
             None,
             true,
+            false, // json — added by #2390; irrelevant to this falsifier
         )
         .expect_err("pull --offline must refuse an uncached model");
         let msg = err.to_string();

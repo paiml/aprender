@@ -6,6 +6,8 @@
 //! - Visualization: Make problems visible
 
 pub(crate) mod aliases;
+pub(crate) mod threshold_arg;
+
 pub(crate) mod attn_parity_classifier;
 pub(crate) mod attn_parity_lint;
 pub(crate) mod attn_viz_classifier;
@@ -83,6 +85,7 @@ pub(crate) mod kernel_explain;
 pub(crate) mod kv_timeline_classifier;
 pub(crate) mod kv_timeline_lint;
 pub(crate) mod lint;
+pub(crate) mod lint_vacuity;
 pub(crate) mod manifest;
 pub(crate) mod mcp;
 pub(crate) mod merge;
@@ -109,6 +112,7 @@ pub(crate) mod otlp_classifier;
 pub(crate) mod otlp_lint;
 pub(crate) mod parity;
 pub(crate) mod pipeline;
+pub(crate) mod png_encode;
 pub(crate) mod ppl;
 #[cfg(feature = "training")]
 pub(crate) mod pretrain;
@@ -119,7 +123,10 @@ pub(crate) mod prometheus_classifier;
 pub(crate) mod prometheus_lint;
 pub(crate) mod prune;
 pub(crate) mod ps_schema;
-#[cfg(feature = "full")]
+// #2399: gated on the crate it actually needs (aprender-explain, aliased
+// `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
+// user does not have to pull CUDA + training to analyze a .ptx file.
+#[cfg(feature = "trueno-explain")]
 pub(crate) mod ptx_explain;
 pub(crate) mod ptx_map;
 pub(crate) mod publish;

@@ -527,7 +527,18 @@ impl CudaExecutor {
 
         // PAR-058-DEBUG: Trace attention parameters for layer 0 (only first 3 tokens)
         // PAR-054-FIX: Skip during graph capture to avoid sync breaking capture
-        if !skip_debug && layer_idx == 0 && new_len <= 3 {
+        //
+        // #2405: gated behind APR_DEV_TRACE. This trace dumped raw tensor floats
+        // under a `[PAR-058-ATTN]` ticket number on every GPU `apr run`, and to
+        // produce them it synchronized the compute stream and copied Q, K, V and
+        // both KV caches back to the host — inside the decode path. The gate is
+        // evaluated first so none of that happens by default.
+        if crate::dev_trace::should_trace_attention(
+            crate::dev_trace::dev_trace_enabled(),
+            skip_debug,
+            layer_idx,
+            new_len,
+        ) {
             let k_key = format!("kv_{}_k", layer_idx);
             let v_key = format!("kv_{}_v", layer_idx);
             let num_kv_heads = self.kv_num_kv_heads;

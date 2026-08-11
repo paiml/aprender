@@ -4,6 +4,32 @@ use crate::config::train::train_from_yaml;
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
 
+/// Write a real tabular training set and return its path.
+///
+/// The tabular tests below used to point `data.train` at a `train.parquet` that
+/// did not exist and assert the whole run succeeded — they passed only because
+/// `load_training_batches` silently substituted fabricated demo batches (issue
+/// #2374 finding 3). An unreadable dataset is now a hard error, so these tests
+/// supply the data they always claimed to be training on.
+///
+/// Tabular mode scores predictions against targets elementwise, so input and
+/// target widths must match.
+fn write_tabular_dataset(dir: &TempDir, rows: usize, width: usize) -> std::path::PathBuf {
+    let examples: Vec<String> = (0..rows)
+        .map(|i| {
+            let input: Vec<String> =
+                (0..width).map(|j| format!("{:.4}", (i + j) as f32 * 0.01)).collect();
+            let target: Vec<String> =
+                (0..width).map(|j| format!("{:.4}", (i + j) as f32 * 0.02)).collect();
+            format!("{{\"input\":[{}],\"target\":[{}]}}", input.join(","), target.join(","))
+        })
+        .collect();
+    let path = dir.path().join("train.json");
+    std::fs::write(&path, format!("{{\"examples\":[{}]}}", examples.join(",")))
+        .expect("dataset write should succeed");
+    path
+}
+
 #[test]
 fn test_train_from_yaml_nonexistent() {
     let result = train_from_yaml("/nonexistent/config.yaml");
@@ -13,6 +39,8 @@ fn test_train_from_yaml_nonexistent() {
 #[test]
 fn test_train_from_yaml_success() {
     let output_dir = TempDir::new().expect("temp file creation should succeed");
+    let data_dir = TempDir::new().expect("temp file creation should succeed");
+    let data_path = write_tabular_dataset(&data_dir, 32, 4);
     let yaml = format!(
         r#"
 model:
@@ -20,7 +48,7 @@ model:
   layers: []
 
 data:
-  train: train.parquet
+  train: "{}"
   batch_size: 8
 
 optimizer:
@@ -31,6 +59,7 @@ training:
   epochs: 2
   output_dir: "{}"
 "#,
+        data_path.display(),
         output_dir.path().display()
     );
 
@@ -48,6 +77,8 @@ training:
 #[test]
 fn test_train_from_yaml_with_grad_clip() {
     let output_dir = TempDir::new().expect("temp file creation should succeed");
+    let data_dir = TempDir::new().expect("temp file creation should succeed");
+    let data_path = write_tabular_dataset(&data_dir, 16, 4);
     let yaml = format!(
         r#"
 model:
@@ -55,7 +86,7 @@ model:
   layers: []
 
 data:
-  train: train.parquet
+  train: "{}"
   batch_size: 4
 
 optimizer:
@@ -67,6 +98,7 @@ training:
   grad_clip: 1.0
   output_dir: "{}"
 "#,
+        data_path.display(),
         output_dir.path().display()
     );
 
@@ -80,6 +112,8 @@ training:
 #[test]
 fn test_train_from_yaml_with_lora() {
     let output_dir = TempDir::new().expect("temp file creation should succeed");
+    let data_dir = TempDir::new().expect("temp file creation should succeed");
+    let data_path = write_tabular_dataset(&data_dir, 16, 4);
     let yaml = format!(
         r#"
 model:
@@ -87,7 +121,7 @@ model:
   layers: [q_proj, v_proj]
 
 data:
-  train: train.parquet
+  train: "{}"
   batch_size: 4
 
 optimizer:
@@ -103,6 +137,7 @@ training:
   epochs: 1
   output_dir: "{}"
 "#,
+        data_path.display(),
         output_dir.path().display()
     );
 
@@ -116,6 +151,8 @@ training:
 #[test]
 fn test_train_from_yaml_with_quantize() {
     let output_dir = TempDir::new().expect("temp file creation should succeed");
+    let data_dir = TempDir::new().expect("temp file creation should succeed");
+    let data_path = write_tabular_dataset(&data_dir, 16, 4);
     let yaml = format!(
         r#"
 model:
@@ -123,7 +160,7 @@ model:
   layers: []
 
 data:
-  train: train.parquet
+  train: "{}"
   batch_size: 4
 
 optimizer:
@@ -138,6 +175,7 @@ training:
   epochs: 1
   output_dir: "{}"
 "#,
+        data_path.display(),
         output_dir.path().display()
     );
 
@@ -364,13 +402,15 @@ training:
 fn test_train_from_yaml_default_mode_is_tabular() {
     // When mode is not specified, should default to tabular
     let output_dir = TempDir::new().expect("temp file creation should succeed");
+    let data_dir = TempDir::new().expect("temp file creation should succeed");
+    let data_path = write_tabular_dataset(&data_dir, 16, 4);
     let yaml = format!(
         r#"
 model:
   path: nonexistent_test_model.gguf
 
 data:
-  train: train.parquet
+  train: "{}"
   batch_size: 4
 
 optimizer:
@@ -381,6 +421,7 @@ training:
   epochs: 1
   output_dir: "{}"
 "#,
+        data_path.display(),
         output_dir.path().display()
     );
 

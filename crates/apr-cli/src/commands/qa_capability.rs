@@ -91,8 +91,21 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
         ));
     };
 
+    // A build without the `cuda` feature has no GPU backend compiled in, so
+    // "all N required ops supported by GPU" would be a claim about kernels
+    // this binary cannot reach. SKIP, matching the gpu_speedup and
+    // gpu_state_isolation gates in the same report.
+    #[cfg(all(feature = "inference", not(feature = "cuda")))]
+    {
+        let _ = arch;
+        return Ok(GateResult::skipped(
+            "capability_match",
+            "Requires 'inference' and 'cuda' features",
+        ));
+    }
+
     // Derive constraints and check capability
-    #[cfg(feature = "inference")]
+    #[cfg(all(feature = "inference", feature = "cuda"))]
     {
         use realizar::capability::{check_capability, gpu_supported_ops, required_ops};
         use realizar::gguf::ArchConstraints;

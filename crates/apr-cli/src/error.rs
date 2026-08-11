@@ -24,6 +24,16 @@ pub enum CliError {
     #[error("Invalid APR format: {0}")]
     InvalidFormat(String),
 
+    /// Malformed non-model input (a JSON report, a YAML config, a CSV…).
+    ///
+    /// Distinct from [`CliError::InvalidFormat`], whose Display hardcodes
+    /// "Invalid APR format" and therefore sends a user hunting for a corrupt
+    /// model file when what actually failed to parse was, say, a grad-norm
+    /// telemetry history. Shares exit code 4 — the class of failure is the
+    /// same, only the artifact named is different.
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -68,7 +78,7 @@ impl CliError {
         contract_pre_exit_code_on_error!();
         match self {
             Self::FileNotFound(_) | Self::NotAFile(_) => ExitCode::from(3),
-            Self::InvalidFormat(_) => ExitCode::from(4),
+            Self::InvalidFormat(_) | Self::InvalidInput(_) => ExitCode::from(4),
             Self::Io(_) => ExitCode::from(7),
             Self::ValidationFailed(_) => ExitCode::from(5),
             Self::Aprender(_) => ExitCode::from(1),
@@ -85,6 +95,31 @@ impl From<aprender::error::AprenderError> for CliError {
     fn from(e: aprender::error::AprenderError) -> Self {
         Self::Aprender(e.to_string())
     }
+}
+
+/// Refuse to clobber an existing output artifact unless `--force` was given.
+///
+/// #2392 (dogfood 0.63.0, finding 4): `apr convert` and `apr quantize` already
+/// refused with exit 5 and "Use --force to overwrite", but `apr export`,
+/// `apr merge`, `apr shard` and `apr unshard` wrote straight over whatever was
+/// at the output path and exited 0 — and none of them even *had* a `--force`
+/// flag, so the guarded behaviour was unreachable. A 9-byte file handed to
+/// `apr export -o precious.safetensors` came back as 9717255 bytes of model with
+/// no warning. Every write-a-file command now routes its overwrite decision
+/// through this one function so the policy cannot drift again.
+///
+/// # Errors
+///
+/// Returns [`CliError::ValidationFailed`] (exit 5) when `path` exists and
+/// `force` is false.
+pub fn refuse_overwrite(path: &std::path::Path, force: bool) -> std::result::Result<(), CliError> {
+    if path.exists() && !force {
+        return Err(CliError::ValidationFailed(format!(
+            "Output file '{}' already exists. Use --force to overwrite.",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 /// Resolve a model path: if given a directory, look for common model files inside.

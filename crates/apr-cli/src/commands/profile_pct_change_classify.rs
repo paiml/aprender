@@ -154,15 +154,118 @@ pub(crate) fn run_diff_benchmark(
     }
 }
 
+/// Every operation name the profilers actually emit.
+///
+/// GH-2395: `--focus` used to be a snake_case keyword match (`up_proj`, `down_proj`,
+/// `matmul`, `lm_head`) applied to the CamelCase names `BrickProfiler` emits.
+/// Lowercased, "upprojection" does not contain "up_proj" and nothing at all
+/// contains "matmul", so `--focus mlp` kept 1 of 4 FFN ops and `--focus matmul`
+/// returned an empty table with exit 0. When a hotspot carries one of these known
+/// names, membership decides the filter; keyword matching is only the fallback for
+/// unrecognised names (custom/synthetic instrumentation).
+const KNOWN_OP_NAMES: &[&str] = &[
+    // Attention (GPU brick names + CPU brick names)
+    "QKV",
+    "QkvProjection",
+    "AttentionScore",
+    "AttentionSoftmax",
+    "AttentionOutput",
+    "Attention",
+    "OProj",
+    "OutputProjection",
+    "RoPE",
+    "RopeEmbedding",
+    // FFN
+    "FFNGateUp",
+    "FFNDown",
+    "SwiGLU",
+    "GateProjection",
+    "UpProjection",
+    "DownProjection",
+    "Activation",
+    // Embedding / vocabulary projection
+    "Embedding",
+    "LmHead",
+    // Norm / residual / tokenization (belong to no focus area)
+    "RmsNorm",
+    "RmsNorm1",
+    "RmsNorm2",
+    "OutputNorm",
+    "LayerNorm",
+    "Residual1",
+    "Residual2",
+    "Tokenize",
+    "TokenizeEncode",
+    "TokenizeDecode",
+];
+
+/// Exact operation names belonging to a focus area.
+fn focus_op_names(focus: ProfileFocus) -> &'static [&'static str] {
+    match focus {
+        ProfileFocus::All => &[],
+        ProfileFocus::Attention => &[
+            "QKV",
+            "QkvProjection",
+            "AttentionScore",
+            "AttentionSoftmax",
+            "AttentionOutput",
+            "Attention",
+            "OProj",
+            "OutputProjection",
+            "RoPE",
+            "RopeEmbedding",
+        ],
+        ProfileFocus::Mlp => &[
+            "FFNGateUp",
+            "FFNDown",
+            "SwiGLU",
+            "GateProjection",
+            "UpProjection",
+            "DownProjection",
+            "Activation",
+        ],
+        // Every weight-matrix projection, including the vocabulary GEMV.
+        ProfileFocus::Matmul => &[
+            "QKV",
+            "QkvProjection",
+            "OProj",
+            "OutputProjection",
+            "FFNGateUp",
+            "FFNDown",
+            "GateProjection",
+            "UpProjection",
+            "DownProjection",
+            "LmHead",
+        ],
+        // RopeEmbedding is positional encoding, not an embedding-table op — it
+        // belongs to Attention. LmHead is the output-side embedding projection.
+        ProfileFocus::Embedding => &["Embedding", "LmHead"],
+    }
+}
+
 /// Return focus-area keywords, or `None` for `All` (no filtering).
+///
+/// Fallback only, for operation names outside [`KNOWN_OP_NAMES`].
 fn focus_keywords(focus: ProfileFocus) -> Option<&'static [&'static str]> {
     match focus {
         ProfileFocus::All => None,
-        ProfileFocus::Attention => Some(&["attention", "attn", "qkv", "softmax"]),
-        ProfileFocus::Mlp => Some(&["mlp", "ffn", "gate", "up_proj", "down_proj"]),
-        ProfileFocus::Matmul => Some(&["matmul", "gemm", "mm", "linear"]),
+        ProfileFocus::Attention => Some(&["attention", "attn", "qkv", "softmax", "rope"]),
+        ProfileFocus::Mlp => Some(&["mlp", "ffn", "gate", "up_proj", "down_proj", "swiglu"]),
+        ProfileFocus::Matmul => Some(&["matmul", "gemm", "mm", "linear", "_proj", "projection"]),
         ProfileFocus::Embedding => Some(&["embed", "lm_head", "vocab"]),
     }
+}
+
+/// Does this operation belong to the requested focus area?
+fn matches_focus(focus: ProfileFocus, name: &str) -> bool {
+    if matches!(focus, ProfileFocus::All) {
+        return true;
+    }
+    if KNOWN_OP_NAMES.contains(&name) {
+        return focus_op_names(focus).contains(&name);
+    }
+    let lower = name.to_lowercase();
+    focus_keywords(focus).is_some_and(|keywords| keywords.iter().any(|k| lower.contains(k)))
 }
 
 /// GH-173: Filter profile results by focus area (PMAT-182)
@@ -170,18 +273,12 @@ fn filter_results_by_focus(
     results: &RealProfileResults,
     focus: ProfileFocus,
 ) -> RealProfileResults {
-    let filtered_hotspots = match focus_keywords(focus) {
-        None => results.hotspots.clone(),
-        Some(keywords) => results
-            .hotspots
-            .iter()
-            .filter(|h| {
-                let lower = h.name.to_lowercase();
-                keywords.iter().any(|k| lower.contains(k))
-            })
-            .cloned()
-            .collect(),
-    };
+    let filtered_hotspots: Vec<Hotspot> = results
+        .hotspots
+        .iter()
+        .filter(|h| matches_focus(focus, &h.name))
+        .cloned()
+        .collect();
 
     RealProfileResults {
         model_path: results.model_path.clone(),

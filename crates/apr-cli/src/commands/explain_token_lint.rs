@@ -13,6 +13,7 @@ use super::explain_token_classifier::{
     classify_schema, ExplainGreedyOutcome, ExplainProbsOutcome, ExplainSampledOutcome,
     ExplainSchemaOutcome,
 };
+use super::threshold_arg;
 use crate::error::{CliError, Result};
 
 pub(crate) fn run(
@@ -21,6 +22,9 @@ pub(crate) fn run(
     require_greedy: bool,
     json: bool,
 ) -> Result<()> {
+    // Fail closed before any gate runs: `(sum - 1.0).abs() > tolerance` is
+    // false against NaN, so the probs-normalize gate could never fire.
+    threshold_arg::guard("--tolerance", tolerance, threshold_arg::TOLERANCE)?;
     if !jsonl_file.exists() {
         return Err(CliError::FileNotFound(PathBuf::from(jsonl_file)));
     }
@@ -117,6 +121,37 @@ mod cov_tests {
         let f = w("");
         let _ = run(f.path(), 1e-5, false, true);
     }
+    /// 0.63.0 printed `probs_normalize : Ok` and exited 0 for a record whose
+    /// post_probs sum to 0.6, whenever `--tolerance nan` was passed.
+    #[test]
+    fn nan_tolerance_cannot_disarm_the_probs_normalize_gate() {
+        let f = w(concat!(
+            r#"{"step":0,"sampled_id":7,"candidates":["#,
+            r#"{"token_id":7,"pre_prob":0.9,"post_prob":0.5,"rank":0},"#,
+            r#"{"token_id":3,"pre_prob":0.1,"post_prob":0.1,"rank":1}]}"#,
+            "\n"
+        ));
+
+        // Control: the shipped default rejects this body.
+        let err = run(f.path(), 1e-5, false, false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("probs-normalize"), "got: {msg}");
+            }
+            other => panic!("expected the probs gate to fire, got {other:?}"),
+        }
+
+        for bad in [f64::NAN, -1.0, f64::INFINITY] {
+            let err = run(f.path(), bad, false, false).unwrap_err();
+            match err {
+                CliError::ValidationFailed(msg) => {
+                    assert!(msg.contains("--tolerance"), "got: {msg}");
+                }
+                other => panic!("tolerance {bad} must fail closed, got {other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn garbage_jsonl_errors() {
         let f = w("garbage line\nanother\n");

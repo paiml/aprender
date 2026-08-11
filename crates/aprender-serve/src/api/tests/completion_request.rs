@@ -200,10 +200,12 @@ fn test_model_metadata_with_lineage() {
     let response = ModelMetadataResponse {
         id: "model-with-lineage".to_string(),
         name: "Test Model".to_string(),
-        format: "GGUF".to_string(),
-        size_bytes: 1_000_000,
+        format: Some("GGUF".to_string()),
+        size_bytes: Some(1_000_000),
         quantization: Some("Q4_K_M".to_string()),
-        context_length: 4096,
+        context_length: Some(4096),
+        model_max_context_length: None,
+        architecture: None,
         lineage: Some(ModelLineage {
             uri: "pacha://test:v1".to_string(),
             version: "1.0".to_string(),
@@ -222,10 +224,12 @@ fn test_model_metadata_traits() {
     let response = ModelMetadataResponse {
         id: "debug-id".to_string(),
         name: "Debug".to_string(),
-        format: "APR".to_string(),
-        size_bytes: 500,
+        format: Some("APR".to_string()),
+        size_bytes: Some(500),
         quantization: None,
-        context_length: 2048,
+        context_length: Some(2048),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: false,
     };

@@ -163,25 +163,57 @@ fn run_improvement_gate(v: &Value) -> (GateReport, Option<String>) {
     )
 }
 
+/// Canonicalise one `*_hashes` element into the string used for set
+/// membership. A hash may legitimately be serialised as a JSON string or as
+/// a JSON number; both are accepted and compared on the same footing so that
+/// `[1, 2]` vs `[1, 2]` is detected as leakage rather than silently dropped.
+/// Composite values (array/object/null) are not hashes and are rejected.
+fn canonical_hash(el: &Value) -> Result<String, String> {
+    match el {
+        Value::String(s) => Ok(s.clone()),
+        Value::Number(n) => Ok(n.to_string()),
+        Value::Bool(b) => Ok(b.to_string()),
+        other => Err(format!("element is not a scalar hash: {other}")),
+    }
+}
+
+/// Extract one hash set, refusing to invent an empty set out of missing or
+/// wrongly-typed evidence. Returning `Err` makes the gate FAIL: an
+/// unreadable observation is unknown, not disjoint.
+fn extract_hash_set(v: &Value, field: &str) -> Result<BTreeSet<String>, String> {
+    let Some(raw) = v.get(field) else {
+        return Err(format!("missing `{field}`"));
+    };
+    let Some(arr) = raw.as_array() else {
+        return Err(format!("`{field}` is not an array"));
+    };
+    let mut out = BTreeSet::new();
+    for (i, el) in arr.iter().enumerate() {
+        match canonical_hash(el) {
+            Ok(h) => {
+                out.insert(h);
+            }
+            Err(why) => return Err(format!("`{field}`[{i}]: {why}")),
+        }
+    }
+    Ok(out)
+}
+
 fn run_leakage_gate(v: &Value) -> (GateReport, Option<String>) {
-    let calib: BTreeSet<String> = v
-        .get("calib_hashes")
-        .and_then(|x| x.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|s| s.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
-    let eval: BTreeSet<String> = v
-        .get("eval_hashes")
-        .and_then(|x| x.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|s| s.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
+    // A non-object `leakage`, a missing array, or non-scalar elements used to
+    // collapse to two empty sets and be reported as `disjoint (|calib|=0,
+    // |eval|=0)` — a statement about data that was never read.
+    if !v.is_object() {
+        return leakage_unreadable(format!("`leakage` is not an object: {v}"));
+    }
+    let calib = match extract_hash_set(v, "calib_hashes") {
+        Ok(s) => s,
+        Err(why) => return leakage_unreadable(why),
+    };
+    let eval = match extract_hash_set(v, "eval_hashes") {
+        Ok(s) => s,
+        Err(why) => return leakage_unreadable(why),
+    };
     let disjoint = calibration_eval_disjoint(&calib, &eval);
     let overlap: Vec<&String> = calib.intersection(&eval).collect();
     let desc = if disjoint {
@@ -206,6 +238,23 @@ fn run_leakage_gate(v: &Value) -> (GateReport, Option<String>) {
             falsify_id: "FALSIFY-CRUX-B-07-001",
             outcome: desc,
             passed: disjoint,
+        },
+        err,
+    )
+}
+
+/// Build the FAIL report used when the `leakage` section cannot be read.
+fn leakage_unreadable(why: String) -> (GateReport, Option<String>) {
+    let desc = format!("leakage evidence unreadable: {why}");
+    let err = Some(format!(
+        "FALSIFY-CRUX-B-07-001 leakage gate could not be evaluated: {desc}"
+    ));
+    (
+        GateReport {
+            gate: "leakage",
+            falsify_id: "FALSIFY-CRUX-B-07-001",
+            outcome: desc,
+            passed: false,
         },
         err,
     )
@@ -421,6 +470,71 @@ mod tests {
         let f = write_obs(r#"{"provenance": {}}"#);
         let err = run(args_for(&f)).unwrap_err();
         assert!(err.contains("FALSIFY-CRUX-B-07-003"));
+    }
+
+    // ── leakage gate: degenerate evidence must not read as "disjoint" ─────
+    //
+    // Dogfood 0.63.0 #2377 finding 4. The gate reported
+    // `[PASS] leakage ...: disjoint (|calib|=0, |eval|=0)` for bodies it had
+    // never actually read, because `filter_map(as_str)` on a non-object or on
+    // integer-typed hashes yields two empty sets.
+
+    #[test]
+    fn leakage_overlapping_integer_hashes_are_detected() {
+        // Same overlap as the string case below, only serialized as numbers.
+        // Pre-fix this PASSED with "disjoint (|calib|=0, |eval|=0)".
+        let f = write_obs(r#"{"leakage": {"calib_hashes": [1, 2], "eval_hashes": [1, 2]}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(
+            err.contains("leakage invariant violated"),
+            "integer-typed overlapping hashes must be leakage, got: {err}"
+        );
+        assert!(err.contains('1'), "overlap must be named: {err}");
+    }
+
+    #[test]
+    fn leakage_overlapping_string_hashes_are_detected() {
+        // Control: the type the gate always handled correctly.
+        let f = write_obs(r#"{"leakage": {"calib_hashes": ["a"], "eval_hashes": ["a"]}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("leakage invariant violated"), "got: {err}");
+    }
+
+    #[test]
+    fn leakage_scalar_section_is_unreadable_not_disjoint() {
+        let f = write_obs(r#"{"leakage": "nonsense"}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(
+            err.contains("could not be evaluated"),
+            "a non-object leakage section must fail the gate, got: {err}"
+        );
+    }
+
+    #[test]
+    fn leakage_missing_eval_hashes_is_unreadable() {
+        let f = write_obs(r#"{"leakage": {"calib_hashes": ["a"]}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("eval_hashes"), "got: {err}");
+    }
+
+    #[test]
+    fn leakage_non_scalar_element_is_unreadable() {
+        let f = write_obs(r#"{"leakage": {"calib_hashes": [["a"]], "eval_hashes": ["b"]}}"#);
+        let err = run(args_for(&f)).unwrap_err();
+        assert!(err.contains("not a scalar hash"), "got: {err}");
+    }
+
+    #[test]
+    fn leakage_genuinely_disjoint_still_passes() {
+        // The fix must not turn a real pass into a failure.
+        let f = write_obs(r#"{"leakage": {"calib_hashes": ["a"], "eval_hashes": ["b"]}}"#);
+        assert!(run(args_for(&f)).is_ok());
+    }
+
+    #[test]
+    fn leakage_empty_but_explicit_sets_are_disjoint() {
+        let f = write_obs(r#"{"leakage": {"calib_hashes": [], "eval_hashes": []}}"#);
+        assert!(run(args_for(&f)).is_ok());
     }
 
     #[test]

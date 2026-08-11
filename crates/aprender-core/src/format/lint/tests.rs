@@ -447,3 +447,120 @@ mod tests_model_lint;
 mod tests_format_lint;
 #[path = "tests_magic_dispatch.rs"]
 mod tests_magic_dispatch;
+
+// ============================================================================
+// #2394: the lint verdict must DISCRIMINATE, not fail unconditionally
+// ============================================================================
+//
+// Dogfooding `cargo install aprender` 0.63.0 found `apr lint` exiting 5 on a
+// healthy model with its own message reading `0 error(s)`:
+//
+//     ⚠ WARN │ Metadata │ Missing 'license' field
+//     ⚠ WARN │ Metadata │ Missing 'model_card'
+//     ⚠ WARN │ Metadata │ Missing 'provenance' information
+//     ℹ INFO │ Efficiency │ 121 uncompressed tensors exceed 1MB
+//     error: Lint failed with 0 error(s), 3 warning(s), 1 info(s)
+//
+// A corrupt GGUF produced the same exit 5. A verdict that is always "fail"
+// distinguishes nothing, and `apr qualify` ran this as a gate that could
+// therefore never pass.
+
+fn report_with(errors: usize, warns: usize, infos: usize) -> LintReport {
+    let mut r = LintReport::new();
+    for _ in 0..errors {
+        r.add_issue(LintIssue::new(
+            LintLevel::Error,
+            LintCategory::Metadata,
+            "an error",
+        ));
+    }
+    for _ in 0..warns {
+        r.add_issue(LintIssue::new(
+            LintLevel::Warn,
+            LintCategory::Metadata,
+            "a warning",
+        ));
+    }
+    for _ in 0..infos {
+        r.add_issue(LintIssue::new(
+            LintLevel::Info,
+            LintCategory::Efficiency,
+            "a suggestion",
+        ));
+    }
+    r
+}
+
+#[test]
+fn advisory_findings_alone_do_not_fail_the_default_verdict() {
+    // The exact shape observed on a healthy model in 0.63.0.
+    let healthy = report_with(0, 3, 1);
+    assert!(
+        healthy.passed_at_level(LintLevel::Error),
+        "3 metadata warnings and 1 efficiency suggestion are advice, not defects; \
+         0.63.0 exited 5 here while printing `0 error(s)`"
+    );
+}
+
+#[test]
+fn an_error_fails_the_verdict_at_every_threshold() {
+    let broken = report_with(1, 0, 0);
+    assert!(!broken.passed_at_level(LintLevel::Error));
+    assert!(!broken.passed_at_level(LintLevel::Warn));
+    assert!(!broken.passed_at_level(LintLevel::Info));
+}
+
+#[test]
+fn strict_promotes_warnings_to_failures() {
+    let warned = report_with(0, 1, 0);
+    assert!(
+        warned.passed_at_level(LintLevel::Error),
+        "a warning must not fail the default threshold"
+    );
+    assert!(
+        !warned.passed_at_level(LintLevel::Warn),
+        "--strict exists precisely so a caller CAN fail on warnings"
+    );
+}
+
+#[test]
+fn info_never_fails_anything_short_of_the_info_threshold() {
+    let noted = report_with(0, 0, 5);
+    assert!(noted.passed_at_level(LintLevel::Error));
+    assert!(noted.passed_at_level(LintLevel::Warn));
+    assert!(
+        !noted.passed_at_level(LintLevel::Info),
+        "the Info threshold means `no issues at all`"
+    );
+}
+
+#[test]
+fn the_verdict_actually_discriminates_between_two_models() {
+    // The property that was missing: two models of different quality must not
+    // receive the same verdict. In 0.63.0 a healthy .apr and a corrupt .gguf
+    // both exited 5.
+    let healthy = report_with(0, 3, 1);
+    let broken = report_with(2, 3, 1);
+    assert_ne!(
+        healthy.passed_at_level(LintLevel::Error),
+        broken.passed_at_level(LintLevel::Error),
+        "a model with errors and one without must not share a verdict"
+    );
+}
+
+#[test]
+fn passed_at_level_subsumes_the_two_hardcoded_predicates() {
+    for (e, w, i) in [(0, 0, 0), (0, 0, 2), (0, 1, 0), (1, 0, 0), (2, 3, 4)] {
+        let r = report_with(e, w, i);
+        assert_eq!(
+            r.passed_at_level(LintLevel::Warn),
+            r.passed(),
+            "Warn threshold is the existing passed()"
+        );
+        assert_eq!(
+            r.passed_at_level(LintLevel::Info),
+            r.passed_strict(),
+            "Info threshold is the existing passed_strict()"
+        );
+    }
+}

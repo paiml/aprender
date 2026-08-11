@@ -67,17 +67,18 @@ emit_pass(){ PASS=$((PASS+1)); printf '✓ PASS  %s\n' "$1"; }
 emit_fail(){ FAIL=$((FAIL+1)); FAILED_BEATS+=("$1"); printf '✗ FAIL  %s  -  %s\n' "$1" "$2"; }
 emit_skip(){ SKIP=$((SKIP+1)); printf '○ SKIP  %s  -  %s\n' "$1" "$2"; }
 
-# Run a single apr command with a timeout, capture exit + last-line output.
-# Args: timeout_seconds command...
-# Sets globals: RC_EC, RC_OUT, RC_TAIL
-run_cmd() {
-  local t="$1"; shift
-  # Route a bare `apr` through the resolved, freshness-asserted binary so every
-  # call site is pinned without having to touch all 16 of them.
-  if [ "${1:-}" = "apr" ]; then shift; set -- "$APR" "$@"; fi
-  RC_OUT=$(timeout "$t" "$@" 2>&1); RC_EC=$?
-  RC_TAIL=$(echo "$RC_OUT" | tail -1)
-}
+# run_cmd lives in a sourceable library so its stream handling can be tested
+# directly - see scripts/check_story_json_streams.sh. It sets RC_OUT (stdout
+# only), RC_ERR (stderr only), RC_ALL (both) and RC_EC.
+#
+# Parse RC_OUT when you want JSON; grep RC_ALL when the thing you are looking
+# for could arrive on either stream (panics go to stderr). Merging the two
+# unconditionally is what made a PASSING format_parity gate report as missing.
+#
+# The explicit `|| exit 1` is what makes a missing library fatal; the library
+# itself must not run `set`, which would leak options into this script.
+# shellcheck source=scripts/lib_story_run.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib_story_run.sh" || exit 1
 
 # Print the captured output of the last run_cmd, indented, so it survives into
 # the story log (and therefore into the `story-log` CI artifact).
@@ -90,7 +91,7 @@ run_cmd() {
 # A verdict with no evidence behind it cannot be audited after the fact.
 emit_evidence() {
   printf '    -- captured output (%s) --\n' "$1"
-  printf '%s\n' "$RC_OUT" | sed 's/^/    /'
+  printf '%s\n' "$RC_ALL" | sed 's/^/    /'
 }
 
 # Extract rows from one `pmat query`, tolerating BOTH shapes pmat can return.
@@ -112,10 +113,18 @@ emit_evidence() {
 # Args: <jq-output-filter> <pmat query args...>
 pmat_rows() {
   local filter="$1"; shift
+  # The jq program is assembled with printf rather than written as a
+  # double-quoted string spanning several lines: bashrs reads the latter as an
+  # unterminated string (SC1078) and reported 2 errors here, which kept
+  # FALSIFY-QWEN-STORY-007 ("bashrs lints clean") red. Behaviour is unchanged -
+  # only the quoting is.
+  local prog
+  prog=$(printf '%s\n%s\n%s' \
+    'if type == "array" then .[] else empty end' \
+    '| select(.function != null)' \
+    "| $filter")
   pmat query "$@" --format json 2>/dev/null \
-    | jq -r "if type == \"array\" then .[] else empty end
-             | select(.function != null)
-             | $filter" 2>/dev/null \
+    | jq -r "$prog" 2>/dev/null \
     | head -3 || true
 }
 
@@ -217,7 +226,9 @@ beat2_trust() {
   # passed:true). The grep below therefore cannot distinguish "everything ran
   # and passed" from "half of it skipped".
   emit_evidence "apr qa $M_15B_APR"
-  if echo "$RC_OUT" | grep -q "ALL GATES PASSED"; then
+  # RC_ALL: the banner is a human-facing line and apr is free to put it on
+  # either stream; this check is about presence, not about parsing.
+  if echo "$RC_ALL" | grep -q "ALL GATES PASSED"; then
     emit_pass "B2 apr qa"
   else
     emit_fail "B2 apr qa" "no 'ALL GATES PASSED' line"
@@ -231,11 +242,20 @@ beat2_trust() {
   else
     emit_fail "B2 apr validate --quality" "exit=$RC_EC (after #1866 fix this should be 0)"
   fi
+  # This accepted `0 || 5` - PASS whether lint passed OR failed - which made it
+  # unable to detect anything. It was written that way because `apr lint` could
+  # not exit 0 on any real model: it gated on "no warnings", and every model
+  # carries advisory metadata warnings (missing license / model_card /
+  # provenance), so a healthy .apr and a corrupt .gguf both exited 5. #2394.
+  #
+  # Now that the verdict discriminates - ERRORs fail, warnings are advice,
+  # --strict promotes them - this asserts the real thing: a known-good model
+  # must lint clean.
   run_cmd 30 apr lint "$M_15B_APR"
-  if [ "$RC_EC" -eq 0 ] || [ "$RC_EC" -eq 5 ]; then
-    emit_pass "B2 apr lint (exit=$RC_EC)"
+  if [ "$RC_EC" -eq 0 ]; then
+    emit_pass "B2 apr lint (exit=0 on a healthy model)"
   else
-    emit_fail "B2 apr lint" "exit=$RC_EC"
+    emit_fail "B2 apr lint" "exit=$RC_EC on a known-good model; lint must exit 0 unless there are ERROR-level findings"
   fi
   pmat_hunt "qa validate lint" \
     crates/apr-cli/src/commands/qa.rs \
@@ -296,7 +316,9 @@ beat4_adapt() {
   elif [ "$RC_EC" -eq 5 ]; then
     # Clean validation error is acceptable post-#1865 (e.g. missing num_heads).
     emit_pass "B4 apr export (clean exit=5, no panic)"
-  elif [ "$RC_EC" -eq 101 ] || echo "$RC_OUT" | grep -qE 'thread.*panicked'; then
+  # RC_ALL, NOT RC_OUT: a Rust panic message is written to STDERR. Grepping
+  # stdout alone would silently stop detecting panics.
+  elif [ "$RC_EC" -eq 101 ] || echo "$RC_ALL" | grep -qE 'thread.*panicked'; then
     emit_fail "B4 apr export" "PANIC (exit=$RC_EC)  -  #1865 regression"
   else
     emit_fail "B4 apr export" "unexpected exit=$RC_EC"

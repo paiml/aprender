@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-06'
   author: PAIML Engineering
   registry: true
@@ -20,7 +20,7 @@ metadata:
 
 kind: CLICommandContract
 name: apr-cli-commands
-version: "1.0.0"
+version: "1.1.0"
 scope: "all apr CLI subcommands (77 commands — original 57 + `mcp` added 2026-04-17 via PR #864 + `registry` added 2026-04-20 via CRUX-A-01 + `ollama-chat-lint` added 2026-04-21 via CRUX-C-04 SHIP-001 retrofit + `dry-sampling-lint` added 2026-04-21 via CRUX-C-23 SHIP-001 retrofit + `awq-lint` added 2026-04-21 via CRUX-B-08 SHIP-001 retrofit + `oom-lint` added 2026-04-21 via CRUX-F-13 SHIP-001 + `tool-use-lint` added 2026-04-21 via CRUX-C-11 SHIP-001 retrofit + `gbnf-lint` added 2026-04-21 via CRUX-C-10 SHIP-001 retrofit + `typical-p-lint` added 2026-04-21 via CRUX-C-22 SHIP-001 retrofit + `grad-norm` added 2026-04-21 via CRUX-F-09 + `registry-quota-lint` added 2026-04-21 via CRUX-A-22 SHIP-001 retrofit + `fp8-lint` added 2026-04-22 via CRUX-B-11 SHIP-001 retrofit + `imatrix-lint` added 2026-04-22 via CRUX-B-07 SHIP-001 retrofit + `nf4-lint` added 2026-04-22 via CRUX-B-10 SHIP-001 retrofit + `gptq-lint` added 2026-04-22 via CRUX-B-09 SHIP-001 retrofit + `embeddings-lint` added 2026-04-23 via CRUX-C-13 SHIP-001 retrofit + `unified-search-lint` added 2026-04-23 via CRUX-A-23 SHIP-001 retrofit + `rm-gc-lint` added 2026-04-23 via CRUX-A-25 SHIP-001 retrofit + `shared-cache-lint` added 2026-04-23 via CRUX-A-21 SHIP-001 retrofit + `ppl` added 2026-04-23 via CRUX-E-02 SHIP-001 retrofit)"
 binary: "apr"
 install: "cargo install aprender"
@@ -709,3 +709,20 @@ falsification:
     description: "Command count drifts from contract"
     check: "The number of commands in `apr --help` must equal the count in this YAML"
     enforcement: "cargo test --test apr_cli_commands test_command_count_matches"
+
+  - name: FALSIFY-CLI-THRESHOLD-NAN-001
+    description: >
+      A tolerance/threshold flag accepts a value that makes its gate
+      unfalsifiable. Every CRUX lint gate compares an observation against a
+      threshold (`mad > tol_abs`, `efficiency < floor`, `used_pct < threshold`);
+      IEEE-754 makes every comparison against NaN false, so a NaN threshold
+      makes the failing branch unreachable — the command exits 0 and the report
+      prints `Ok` next to the violating number. A negative value does the same
+      to the floor-style gates. Shipped in 0.63.0 on 8 flags across 5 commands
+      (see #2391).
+    check: >
+      Every f64 tolerance/threshold flag must reject NaN, ±inf and
+      out-of-domain values at parse time (exit 2), and each lint `run()` must
+      re-check its thresholds so a non-clap caller also fails closed. The
+      shared validator is crates/apr-cli/src/commands/threshold_arg.rs.
+    enforcement: "cargo test -p apr-cli --test cli_commands nan_threshold_never_reports_a_failing_lint_gate_as_ok"

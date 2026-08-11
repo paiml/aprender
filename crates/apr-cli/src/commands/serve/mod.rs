@@ -30,6 +30,13 @@ use crate::error::{CliError, Result};
 /// Serve command entry point (blocking)
 #[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
 pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
+    // Record which file we are serving so the metadata endpoints can MEASURE
+    // it instead of reporting constants. Everything downstream takes
+    // `&ServerConfig`, so stamping it once here reaches every serve path.
+    let config = &ServerConfig {
+        model_path: Some(model_path.to_path_buf()),
+        ..config.clone()
+    };
     contract_pre_graceful_shutdown!();
     contract_pre_resource_cleanup!();
     contract_pre_concurrent_isolation!();

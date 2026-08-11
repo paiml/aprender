@@ -4,6 +4,10 @@
 //! dispatches the pure classifiers in `otlp_classifier`. Exits non-zero on
 //! any failure.
 //!
+//! Every check is opt-in, so at least one of `--require-apr-span`,
+//! `--require-genai-attrs` or `--expect-trace-id` must be given. A run that
+//! selects no gate is rejected rather than reported as clean.
+//!
 //! Spec: `contracts/crux-K-08-v1.yaml`. CRUX-SHIP-001 g2/g3 surface.
 
 use std::path::{Path, PathBuf};
@@ -34,6 +38,18 @@ pub(crate) fn run(
             otlp_file.display()
         ))
     })?;
+
+    // All three checks are opt-in, so the documented bare invocation
+    // `apr otlp-lint --otlp-file body.json` ran zero of them and exited 0 for
+    // any parseable JSON — including the scalar `42`. A CI step wired to it
+    // was permanently green.
+    if !require_apr_span && !require_genai_attrs && expect_trace_id.is_none() {
+        return Err(CliError::ValidationFailed(format!(
+            "otlp-lint: VACUOUS RUN — no gate was selected, so nothing in {} was checked. Pass at \
+             least one of --require-apr-span, --require-genai-attrs or --expect-trace-id <ID>.",
+            otlp_file.display()
+        )));
+    }
 
     let span = if require_apr_span {
         Some(classify_span_present(&body, K08_ROOT_SPAN_NAME))
@@ -130,9 +146,46 @@ mod cov_tests {
         let err = run(f.path(), false, false, None, false);
         assert!(err.is_err());
     }
+    /// Was `empty_json_object_runs`, which discarded the result entirely and
+    /// so asserted nothing about the very command whose job is to assert.
     #[test]
-    fn empty_json_object_runs() {
-        let f = w("{}");
-        let _ = run(f.path(), false, false, None, true);
+    fn falsifier_no_gate_flags_is_a_vacuous_run() {
+        // Six bodies the 0.63.0 binary all accepted with rc=0 and a report
+        // header that reads as a clean PASS.
+        for body in [
+            "{}",
+            r#"{"totally":"unrelated"}"#,
+            "[]",
+            r#""str""#,
+            "42",
+            "false",
+        ] {
+            let f = w(body);
+            for json in [false, true] {
+                let err = run(f.path(), false, false, None, json).unwrap_err();
+                match err {
+                    CliError::ValidationFailed(msg) => {
+                        assert!(msg.contains("VACUOUS RUN"), "{body}: {msg}");
+                        assert!(msg.contains("--require-apr-span"), "{body}: {msg}");
+                    }
+                    other => panic!("{body}: expected ValidationFailed, got {other:?}"),
+                }
+            }
+        }
+    }
+
+    /// The gates themselves still work, and an armed run on a good body still
+    /// passes — the fix is to the default, not to the checks.
+    #[test]
+    fn armed_gate_still_distinguishes_good_from_bad() {
+        let bad = w("[]");
+        assert!(run(bad.path(), true, false, None, false).is_err());
+
+        let good = w(r#"{"resourceSpans":[{"scopeSpans":[{"spans":[
+            {"name":"apr.inference","traceId":"0123456789abcdef0123456789abcdef"}]}]}]}"#);
+        assert!(
+            run(good.path(), true, false, None, false).is_ok(),
+            "an armed span-present gate must still pass a well-formed body"
+        );
     }
 }

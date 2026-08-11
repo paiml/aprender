@@ -31,14 +31,31 @@ impl CpuInfo {
         self
     }
 
+    /// Reconcile a machine-wide physical core count against the parallelism this
+    /// process is actually allowed to use.
+    ///
+    /// `available_parallelism` is cgroup- and affinity-aware: it reports what THIS
+    /// process may run on. `/proc/cpuinfo` is not — it describes the whole machine
+    /// regardless of any restriction. Comparing the two directly mixes denominators,
+    /// and under any CPU restriction the machine-wide figure is both larger than the
+    /// usable one and useless for sizing work.
+    ///
+    /// Clamping keeps `cores <= threads` true by construction and makes `cores` mean
+    /// "physical cores this process can actually use", which is what every consumer
+    /// of the field (thread-pool sizing, efficiency estimates) needs.
+    pub(super) fn usable_cores(detected_physical: Option<u32>, threads: u32) -> u32 {
+        let threads = threads.max(1);
+        detected_physical.map_or(threads, |physical| physical.clamp(1, threads))
+    }
+
     /// Detect current CPU information
     pub fn detect() -> Self {
-        // Get logical CPU count using standard library
+        // Get logical CPU count using standard library. This is cgroup/affinity aware.
         let threads = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1);
 
-        // Estimate physical cores (assumes hyperthreading with 2 threads per core)
-        // This is a heuristic - for accurate counts would need platform-specific APIs
-        let cores = Self::detect_physical_cores().unwrap_or_else(|| threads.max(1));
+        // Physical cores come from /proc/cpuinfo, which is NOT restriction-aware, so
+        // the result is reconciled against `threads` — see `usable_cores`.
+        let cores = Self::usable_cores(Self::detect_physical_cores(), threads);
         let simd = SimdCapability::detect();
 
         // Try to get CPU model name

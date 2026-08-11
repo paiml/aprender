@@ -59,27 +59,45 @@
         assert!(result.is_ok() || result.is_err());
     }
 
+    /// The message must name the file the user has to produce.
+    ///
+    /// This test used to build its OWN copy of the error string and assert on
+    /// that, so it passed while the shipped message printed the literal
+    /// `{stem}.tokenizer.json` — an unsubstituted format placeholder — to every
+    /// user who ran `apr chat` on a model with no tokenizer. It now calls the
+    /// real message builder.
     #[test]
     fn test_find_qwen_tokenizer_error_message_content_when_no_cache() {
-        // When find_qwen_tokenizer fails, it should return an InvalidFormat error
-        // with a helpful message listing the search locations.
-        // We test the error construction directly since the function may succeed
-        // on machines with cached tokenizers.
-        let err = CliError::InvalidFormat(
-            "No Qwen tokenizer found. Searched:\n\
-             1. Model directory (tokenizer.json)\n\
-             2. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n\
-             3. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\n\
-             To fix: Download a Qwen model with tokenizer:\n\
-               apr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF"
-                .to_string(),
+        let msg = no_qwen_tokenizer_message(Path::new("/models/sub/m.apr"));
+
+        assert!(
+            !msg.contains("{stem}"),
+            "the message must not show an unsubstituted format placeholder: {msg}"
         );
-        let msg = err.to_string();
+        assert!(
+            msg.contains("/models/sub/m.tokenizer.json"),
+            "the pacha-cache candidate must be a concrete path: {msg}"
+        );
+        assert!(
+            msg.contains("/models/sub/tokenizer.json"),
+            "the model-directory candidate must be a concrete path: {msg}"
+        );
         assert!(msg.contains("No Qwen tokenizer found"));
-        assert!(msg.contains("tokenizer.json"));
         assert!(msg.contains("HuggingFace cache"));
         assert!(msg.contains("APR cache"));
         assert!(msg.contains("apr pull"));
+    }
+
+    /// A bare filename has no parent directory; the message must still resolve
+    /// to something a user can act on rather than an empty path fragment.
+    #[test]
+    fn no_qwen_tokenizer_message_handles_bare_filename() {
+        let msg = no_qwen_tokenizer_message(Path::new("m.apr"));
+        assert!(!msg.contains("{stem}"), "{msg}");
+        assert!(
+            msg.contains("./m.tokenizer.json"),
+            "bare filename must resolve against the CWD: {msg}"
+        );
     }
 
     #[test]

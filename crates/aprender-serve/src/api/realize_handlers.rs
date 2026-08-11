@@ -383,16 +383,32 @@ pub struct ModelMetadataResponse {
     pub id: String,
     /// Model name
     pub name: String,
-    /// Model format (GGUF, APR, SafeTensors)
-    pub format: String,
-    /// Model size in bytes
-    pub size_bytes: u64,
+    /// Container format (`gguf`, `apr`, `safetensors`), detected from the
+    /// file's magic bytes. Absent when this server did not measure it — never
+    /// defaulted to `"gguf"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    /// Model size in bytes, measured from the file. Absent when unknown;
+    /// `0` is not used as a stand-in for "we did not look".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
     /// Quantization type
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quantization: Option<String>,
-    /// Context window size
-    pub context_length: usize,
-    /// Model lineage from Pacha
+    /// Context window this server will actually serve (the KV-cache bound,
+    /// i.e. what `--context-length` set). Absent when unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_length: Option<usize>,
+    /// The model's own advertised maximum context, when the loader read one.
+    /// A separate fact from `context_length`; conflating them is how the
+    /// shipped handler reported 4096 for a 32768-context model served at 128.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_max_context_length: Option<usize>,
+    /// Model architecture the loader identified (e.g. `qwen2`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub architecture: Option<String>,
+    /// Model lineage. Present ONLY when a real content hash was computed —
+    /// provenance is either measured or absent, never synthesised.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lineage: Option<ModelLineage>,
     /// Whether model is loaded

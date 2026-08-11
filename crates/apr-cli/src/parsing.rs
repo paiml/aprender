@@ -23,6 +23,65 @@
             .expect("join");
     }
 
+    /// `apr code -p "hi" --model X` must RUN model X.
+    ///
+    /// With `trailing_var_arg` the option landed in the prompt vector and the
+    /// run silently fell back to auto-discovery — a different model than the
+    /// one named, with no warning.
+    #[test]
+    fn test_parse_code_model_after_prompt_is_honoured() {
+        let args = vec!["apr", "code", "-p", "hi", "--model", "/tmp/named.gguf"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Code {
+                model,
+                prompt,
+                print,
+                ..
+            } => {
+                assert!(print, "-p must still set print");
+                assert_eq!(
+                    model,
+                    Some(PathBuf::from("/tmp/named.gguf")),
+                    "--model written after the prompt must be honoured, not swallowed"
+                );
+                assert_eq!(
+                    prompt,
+                    vec!["hi".to_string()],
+                    "the prompt must not absorb the option"
+                );
+            }
+            _ => panic!("Expected Code command"),
+        }
+    }
+
+    /// A misspelled option after the prompt must be a parse error, not silence.
+    #[test]
+    fn test_parse_code_unknown_option_after_prompt_is_rejected() {
+        let args = vec!["apr", "code", "-p", "hi", "--totally-bogus-flag-xyz"];
+        let err = parse_cli(args)
+            .expect_err("an unknown option after the prompt must fail to parse");
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::UnknownArgument,
+            "expected UnknownArgument, got {:?}",
+            err.kind()
+        );
+    }
+
+    /// Multi-word prompts must still collect into the positional vector.
+    #[test]
+    fn test_parse_code_multiword_prompt_still_collects() {
+        let args = vec!["apr", "code", "-p", "fix", "the", "auth", "bug"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Code { prompt, .. } => {
+                assert_eq!(prompt, vec!["fix", "the", "auth", "bug"]);
+            }
+            _ => panic!("Expected Code command"),
+        }
+    }
+
     /// Test parsing 'apr inspect' command
     #[test]
     fn test_parse_inspect_command() {
@@ -253,6 +312,61 @@
         }
     }
 
+    /// #2397 finding 1: `--iterations 0` must be rejected where it is typed.
+    /// Appending it to any `cbtop --ci` invocation used to turn the gate green
+    /// because a brick with zero samples scores a perfect 100/A.
+    #[test]
+    fn test_parse_cbtop_rejects_zero_iterations() {
+        let args = vec![
+            "apr",
+            "cbtop",
+            "--headless",
+            "--simulated",
+            "--ci",
+            "--iterations",
+            "0",
+        ];
+        assert!(
+            parse_cli(args).is_err(),
+            "cbtop accepted --iterations 0 at parse time"
+        );
+
+        // One iteration is the smallest honest run and must still parse.
+        let ok = vec!["apr", "cbtop", "--headless", "--iterations", "1"];
+        let cli = parse_cli(ok).expect("--iterations 1 should parse");
+        match *cli.command {
+            Commands::Extended(ExtendedCommands::Cbtop { iterations, .. }) => {
+                assert_eq!(iterations, 1);
+            }
+            _ => panic!("Expected Cbtop command"),
+        }
+    }
+
+    /// #2397 finding 4: `--json` and `--output` document "requires --headless",
+    /// so the parser must enforce it. Without the constraint the flag was
+    /// silently dropped and cbtop entered the interactive TUI instead.
+    #[test]
+    fn test_parse_cbtop_json_requires_headless() {
+        assert!(
+            parse_cli(vec!["apr", "cbtop", "--json"]).is_err(),
+            "cbtop --json was accepted without --headless"
+        );
+        assert!(
+            parse_cli(vec!["apr", "cbtop", "--output", "r.json"]).is_err(),
+            "cbtop --output was accepted without --headless"
+        );
+
+        let cli = parse_cli(vec!["apr", "cbtop", "--headless", "--json"])
+            .expect("--json --headless should parse");
+        match *cli.command {
+            Commands::Extended(ExtendedCommands::Cbtop { headless, json, .. }) => {
+                assert!(headless);
+                assert!(json);
+            }
+            _ => panic!("Expected Cbtop command"),
+        }
+    }
+
     /// Test parsing 'apr qa' command
     #[test]
     fn test_parse_qa_command() {
@@ -463,4 +577,47 @@
             }
             _ => panic!("Expected Profile command"),
         }
+    }
+
+    /// Dogfood 0.63.0 #2377 finding 10: `apr typical-p-lint --help` printed
+    /// its only required flag with an empty description, so the (non-obvious,
+    /// otherwise undocumented) observation schema had no route to the user.
+    /// Every other command in the 16-command lint family documents its flag.
+    ///
+    /// A family-wide ratchet, not a one-line fix: a new `*-lint` command that
+    /// forgets its flag doc turns this red.
+    #[test]
+    fn every_lint_command_documents_its_flags() {
+        use clap::CommandFactory;
+        let offenders = std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                let mut root = Cli::command();
+                root.build();
+                let mut bad: Vec<String> = Vec::new();
+                for sub in root.get_subcommands() {
+                    if !sub.get_name().ends_with("-lint") {
+                        continue;
+                    }
+                    for arg in sub.get_arguments() {
+                        if arg.get_id() == "help" || arg.get_id() == "version" {
+                            continue;
+                        }
+                        let documented = arg
+                            .get_help()
+                            .is_some_and(|h| !h.to_string().trim().is_empty());
+                        if !documented {
+                            bad.push(format!("{} --{}", sub.get_name(), arg.get_id()));
+                        }
+                    }
+                }
+                bad
+            })
+            .expect("spawn")
+            .join()
+            .expect("join");
+        assert!(
+            offenders.is_empty(),
+            "lint commands with an undocumented flag: {offenders:?}"
+        );
     }

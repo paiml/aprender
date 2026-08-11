@@ -153,9 +153,19 @@ pub(crate) fn run(
         return run_analyze(file, prune_method, json_output);
     }
 
-    // Plan mode
+    // Plan mode. Depth pruning needs --remove-layers to estimate anything, and
+    // the run would reject the same invocation — so reject it here too rather
+    // than print a plan for a command that cannot execute.
     if plan_only {
-        return run_plan(file, prune_method, target_ratio, sparsity, json_output);
+        validate_depth_args(prune_method, remove_layers)?;
+        return run_plan(
+            file,
+            prune_method,
+            target_ratio,
+            sparsity,
+            remove_layers,
+            json_output,
+        );
     }
 
     let out = output_path.ok_or_else(|| {

@@ -78,17 +78,28 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 layer,
                 assert,
                 tolerance,
-            } => crate::error::resolve_model_path(file).and_then(|r| {
-                probar::run(
-                    &r,
-                    output,
-                    format.parse().unwrap_or(probar::ExportFormat::Both),
-                    golden.as_deref(),
-                    layer.as_deref(),
-                    *assert,
-                    *tolerance,
-                )
-            }),
+            } => {
+                // An unparseable --format used to be swallowed by
+                // `.unwrap_or(Both)`, so `--format bogus` silently exported
+                // something the user never asked for. FromStr already produces
+                // the right message; surface it.
+                format
+                    .parse::<probar::ExportFormat>()
+                    .map_err(crate::error::CliError::ValidationFailed)
+                    .and_then(|export_format| {
+                        crate::error::resolve_model_path(file).and_then(|r| {
+                            probar::run(
+                                &r,
+                                output,
+                                export_format,
+                                golden.as_deref(),
+                                layer.as_deref(),
+                                *assert,
+                                *tolerance,
+                            )
+                        })
+                    })
+            }
         },
 
         ExtendedCommands::CompareHf {
@@ -580,9 +591,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             file,
             max_shard_size,
             output,
-        } => dispatch_shard(file, max_shard_size, output, cli.json),
+            force,
+        } => dispatch_shard(file, max_shard_size, output, *force, cli.json),
 
-        ExtendedCommands::Unshard { input, output } => dispatch_unshard(input, output, cli.json),
+        ExtendedCommands::Unshard {
+            input,
+            output,
+            force,
+        } => dispatch_unshard(input, output, *force, cli.json),
 
         ExtendedCommands::Diagnose {
             checkpoint_dir,
@@ -607,8 +623,13 @@ fn dispatch_shard(
     file: &std::path::Path,
     max_shard_size: &str,
     output: &std::path::Path,
+    force: bool,
     json: bool,
 ) -> Result<(), CliError> {
+    // #2392 finding 4: a shard set is identified by its weight-map index. Writing
+    // a second set into the same directory silently replaces the index (and the
+    // shards it names) — refuse unless the user asked for it.
+    crate::error::refuse_overwrite(&output.join("model.safetensors.index.json"), force)?;
     match commands::shard::run_shard(file, max_shard_size, output) {
         Ok(report) => {
             if json {
@@ -653,8 +674,10 @@ fn dispatch_shard(
 fn dispatch_unshard(
     input: &std::path::Path,
     output: &std::path::Path,
+    force: bool,
     json: bool,
 ) -> Result<(), CliError> {
+    crate::error::refuse_overwrite(output, force)?;
     match commands::shard::run_unshard(input, output) {
         Ok(report) => {
             if json {
@@ -864,7 +887,7 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
                 model_size,
                 model_path.as_deref(),
                 *num_classes,
-                output,
+                output.as_deref(),
                 strategy,
                 *budget,
                 *scout,
@@ -1106,9 +1129,14 @@ fn dispatch_tune_command(
             json,
         )
     } else {
+        // `--method bogus` used to `unwrap_or(Auto)`: TuneMethod::from_str already
+        // produced a perfectly good "Unknown method: … Use: auto, full, lora,
+        // qlora" and it was thrown away, so a typo silently planned a DIFFERENT
+        // method and the banner confirmed the typo back to the user.
+        let method: tune::TuneMethod = method.parse().map_err(CliError::ValidationFailed)?;
         tune::run(
             file,
-            method.parse().unwrap_or(tune::TuneMethod::Auto),
+            method,
             rank,
             vram,
             plan,
@@ -1118,6 +1146,21 @@ fn dispatch_tune_command(
             json,
         )
     }
+}
+
+/// What `apr ptx` says when this binary was built without the PTX analyzer.
+///
+/// `cargo install aprender` builds default features, which do not include
+/// `trueno-explain`, so every `apr ptx` invocation fails while `apr --help`
+/// still advertises the command (#2399 finding 1). The old text — "ptx command
+/// requires --features full" — named a compile flag rather than something the
+/// user of an installed binary can act on, and pointed at `full`, which drags
+/// in CUDA and training rather than the one crate `ptx` actually needs.
+#[cfg(not(feature = "trueno-explain"))]
+fn ptx_unavailable_message() -> String {
+    "apr ptx needs the PTX analyzer, which this build does not include. \
+     Reinstall with it: cargo install aprender --features ptx"
+        .to_string()
 }
 
 /// Dispatch profiling and QA commands (profile, bench, eval, qa, parity, ptx, ptx-map, tune).
@@ -1180,6 +1223,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 *ollama,
                 *no_gpu,
                 compare.as_deref(),
+                cli.json,
             )
         }),
 
@@ -1272,6 +1316,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 text.as_deref(),
                 Some(*max_tokens),
                 Some(*threshold),
+                device,
                 cli.json,
             ),
         }),
@@ -1362,31 +1407,32 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             json,
             verbose,
         } => {
-            match file
-                .as_ref()
-                .map(|f| crate::error::resolve_model_path(f))
-                .transpose()
+            // #2399 finding 1: the feature check must come FIRST. It used to run
+            // after path resolution, so on a default build `apr ptx missing.ptx`
+            // answered "File not found" (exit 3) — a user could spend a long time
+            // fixing a path for a command this binary cannot run at all.
+            #[cfg(not(feature = "trueno-explain"))]
             {
-                Ok(resolved) => {
-                    #[cfg(feature = "full")]
-                    {
-                        commands::ptx_explain::run(
-                            resolved.as_deref(),
-                            kernel.as_deref(),
-                            *strict,
-                            *bugs,
-                            *json || cli.json,
-                            *verbose || cli.verbose,
-                        )
-                    }
-                    #[cfg(not(feature = "full"))]
-                    {
-                        Err(CliError::Aprender(
-                            "ptx command requires --features full".into(),
-                        ))
-                    }
+                let _ = (file, kernel, strict, bugs, json, verbose);
+                Err(CliError::FeatureDisabled(ptx_unavailable_message()))
+            }
+            #[cfg(feature = "trueno-explain")]
+            {
+                match file
+                    .as_ref()
+                    .map(|f| crate::error::resolve_model_path(f))
+                    .transpose()
+                {
+                    Ok(resolved) => commands::ptx_explain::run(
+                        resolved.as_deref(),
+                        kernel.as_deref(),
+                        *strict,
+                        *bugs,
+                        *json || cli.json,
+                        *verbose || cli.verbose,
+                    ),
+                    Err(e) => Err(e),
                 }
-                Err(e) => Err(e),
             }
         }
 
@@ -1497,6 +1543,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
                 trace_output.clone(),
                 trace_level.as_str(),
                 *profile,
+                cli.offline,
             )
         }
 
@@ -1554,6 +1601,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             cli.verbose,
             None,
             &[],
+            cli.json,
         ),
 
         ExtendedCommands::Tools(ToolCommands::Encrypt {

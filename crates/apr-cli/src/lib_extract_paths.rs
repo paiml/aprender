@@ -439,6 +439,7 @@
     fn test_execute_lint_file_not_found() {
         let cli = make_cli(Commands::Lint {
             file: PathBuf::from("/tmp/nonexistent_model_lint_test.apr"),
+                strict: false,
         });
         let result = execute_command(&cli);
         assert!(result.is_err(), "Lint should fail with non-existent file");

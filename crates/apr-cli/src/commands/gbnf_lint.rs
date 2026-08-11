@@ -27,7 +27,13 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::commands::gbnf_classifier as clf;
+use crate::commands::lint_vacuity::{assert_not_vacuous, skipped_label, SectionRun};
 use crate::error::{CliError, Result};
+
+/// Top-level observation keys each classifier reads, in report order.
+const JSON_KEYS: &[&str] = &["output", "finish_reason"];
+const DIAGNOSTIC_KEYS: &[&str] = &["grammar_error"];
+const MASKING_KEYS: &[&str] = &["masking"];
 
 pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
     if !observation_file.exists() {
@@ -46,7 +52,7 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
     let err_diag = classify_error_diagnostic(&obs);
     let masking = classify_masking(&obs);
 
-    let fail_reasons: Vec<String> = [
+    let mut fail_reasons: Vec<String> = [
         json_out.as_ref().and_then(json_fail_reason),
         err_diag.as_ref().and_then(error_fail_reason),
         masking.as_ref().and_then(masking_fail_reason),
@@ -57,11 +63,38 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
 
     print_report(
         observation_file,
+        &obs,
         json_out.as_ref(),
         err_diag.as_ref(),
         masking.as_ref(),
         json,
     );
+
+    // A run in which no gate reached a verdict has proved nothing about the
+    // grammar-constrained decode; it must not exit 0.
+    if let Err(reason) = assert_not_vacuous(
+        "FALSIFY-CRUX-C-10",
+        &obs,
+        &[
+            SectionRun {
+                name: "json",
+                keys: JSON_KEYS,
+                ran: json_out.is_some(),
+            },
+            SectionRun {
+                name: "diagnostic",
+                keys: DIAGNOSTIC_KEYS,
+                ran: err_diag.is_some(),
+            },
+            SectionRun {
+                name: "masking",
+                keys: MASKING_KEYS,
+                ran: masking.is_some(),
+            },
+        ],
+    ) {
+        fail_reasons.push(reason);
+    }
 
     if fail_reasons.is_empty() {
         Ok(())
@@ -157,6 +190,7 @@ fn masking_fail_reason(o: &clf::IllegalTokenMaskingOutcome) -> Option<String> {
 
 fn print_report(
     path: &Path,
+    obs: &Value,
     json_out: Option<&clf::JsonGrammarOutputOutcome>,
     err_diag: Option<&clf::GrammarErrorDiagnosticOutcome>,
     masking: Option<&clf::IllegalTokenMaskingOutcome>,
@@ -175,16 +209,31 @@ fn print_report(
         );
     } else {
         println!("gbnf-lint report for {}", path.display());
-        print_line("  json:        ", json_out.map(|o| format!("{o:?}")));
-        print_line("  diagnostic:  ", err_diag.map(|o| format!("{o:?}")));
-        print_line("  masking:     ", masking.map(|o| format!("{o:?}")));
+        print_line(
+            "  json:        ",
+            json_out.map(|o| format!("{o:?}")),
+            obs,
+            JSON_KEYS,
+        );
+        print_line(
+            "  diagnostic:  ",
+            err_diag.map(|o| format!("{o:?}")),
+            obs,
+            DIAGNOSTIC_KEYS,
+        );
+        print_line(
+            "  masking:     ",
+            masking.map(|o| format!("{o:?}")),
+            obs,
+            MASKING_KEYS,
+        );
     }
 }
 
-fn print_line(prefix: &str, v: Option<String>) {
+fn print_line(prefix: &str, v: Option<String>, obs: &Value, keys: &[&str]) {
     match v {
         Some(s) => println!("{prefix}{s}"),
-        None => println!("{prefix}(missing fields — classifier skipped)"),
+        None => println!("{prefix}{}", skipped_label(obs, keys)),
     }
 }
 
@@ -214,10 +263,70 @@ mod tests {
         assert!(matches!(err, CliError::InvalidFormat(_)));
     }
 
+    // This test used to assert `is_ok()` on `{}` and so held the defect in
+    // place: an observation that engages no classifier proves nothing about
+    // the decode and must not exit 0.
     #[test]
-    fn empty_object_passes_no_gates() {
+    fn falsifier_empty_object_is_rejected() {
         let f = write_obs("{}");
-        assert!(run(f.path(), false).is_ok());
+        let err = run(f.path(), false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("has none of json/diagnostic/masking"), "{msg}");
+            }
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn falsifier_unrelated_body_is_rejected() {
+        let f = write_obs(r#"{"hello": "world", "nested": {"a": 1}}"#);
+        let err = run(f.path(), false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn falsifier_null_observation_is_rejected() {
+        let f = write_obs("null");
+        let err = run(f.path(), true).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("not a JSON object"), "{msg}"),
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    // 0/1 and true/false express the same legal-token mask. The int form used
+    // to suppress the masking gate entirely, hiding a real violation.
+    #[test]
+    fn falsifier_int_legal_mask_does_not_suppress_the_masking_gate() {
+        let bools = write_obs(
+            r#"{"masking": {"logits": [1.0, 5.0, 2.0], "legal_mask": [true,false,true]}}"#,
+        );
+        let ints = write_obs(r#"{"masking": {"logits": [1.0, 5.0, 2.0], "legal_mask": [1,0,1]}}"#);
+        assert!(
+            run(bools.path(), false).is_err(),
+            "control: bool mask must fail"
+        );
+        let err = run(ints.path(), false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("present but unusable"), "{msg}")
+            }
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn falsifier_wrong_typed_finish_reason_is_rejected() {
+        let f = write_obs(r#"{"output": "{}", "finish_reason": 7}"#);
+        let err = run(f.path(), false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("present but unusable"), "{msg}");
+                assert!(msg.contains("json"), "{msg}");
+            }
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
     }
 
     #[test]

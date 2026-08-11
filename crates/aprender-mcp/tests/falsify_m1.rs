@@ -135,28 +135,40 @@ fn falsify_mcp_005_invalid_jsonrpc_version_is_minus_32600() {
     assert_eq!(resp.id, Some(serde_json::json!(40)), "id echoed back");
 }
 
-/// FALSIFY-MCP-007: an `initialize` whose `params.protocolVersion` does not
-/// match the server's supported version must be rejected with `-32602 Invalid
-/// Params`. The server must not advance the connection — subsequent
-/// `tools/list` from the same client would also need to fail until a compatible
-/// version is negotiated, but here we only assert the negotiation-phase error.
+/// FALSIFY-MCP-007: an `initialize` whose `params.protocolVersion` differs
+/// from ours must be answered with the version the server DOES support, so the
+/// client can decide whether to proceed or disconnect.
+///
+/// This gate previously asserted the opposite — `-32602 Invalid Params` on any
+/// mismatch — and so locked in the defect found by the 0.63.0 dogfood: every
+/// MCP client that negotiates a newer dated version (Claude Code and Cursor
+/// propose 2025-03-26 / 2025-06-18) had its handshake aborted and could never
+/// connect, even though the wire protocol it would then speak is one this
+/// server handles. The MCP lifecycle is explicit that a version mismatch is
+/// answered with a supported version, not an error. Rewritten with the
+/// contract entry in `contracts/apr-mcp-server-v1.yaml`.
 #[test]
-fn falsify_mcp_007_protocol_version_mismatch_is_minus_32602() {
-    let mut server = AprMcpServer::new();
-    let resp = server.handle_request(&request(
-        50,
-        "initialize",
-        serde_json::json!({ "protocolVersion": "1999-01-01" }),
-    ));
+fn falsify_mcp_007_protocol_version_mismatch_negotiates_down() {
+    for proposed in ["1999-01-01", "2025-06-18", "2025-03-26", "2024-10-07"] {
+        let mut server = AprMcpServer::new();
+        let resp = server.handle_request(&request(
+            50,
+            "initialize",
+            serde_json::json!({ "protocolVersion": proposed }),
+        ));
 
-    assert!(resp.result.is_none(), "must not return success");
-    let err = resp.error.expect("error present");
-    assert_eq!(err.code, -32602, "must be Invalid Params");
-    assert!(
-        err.message.contains("protocolVersion"),
-        "message should mention protocolVersion, got: {}",
-        err.message
-    );
+        assert!(
+            resp.error.is_none(),
+            "proposing {proposed} must not abort the handshake, got: {:?}",
+            resp.error
+        );
+        let result = resp.result.expect("result present");
+        assert_eq!(
+            result["protocolVersion"], PROTOCOL_VERSION,
+            "server must answer with the version it speaks"
+        );
+        assert_eq!(result["serverInfo"]["name"], "aprender-mcp");
+    }
 }
 
 /// FALSIFY-MCP-007 (negative): an `initialize` whose `params.protocolVersion`

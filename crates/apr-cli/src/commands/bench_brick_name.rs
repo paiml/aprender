@@ -394,6 +394,62 @@
         assert_eq!(result.median_time, Duration::from_millis(300));
     }
 
+    // ====================================================================
+    // --percentiles range enforcement
+    // ====================================================================
+
+    /// The help text says "Values must be in (0, 100]" but 0 and 101 were
+    /// accepted, each emitting a plausible-looking `latency_p0_ms` /
+    /// `latency_p101_ms` key with a `null` value into the JSON report.
+    #[test]
+    fn parse_percentile_rejects_out_of_range_points() {
+        for bad in ["0", "101", "-5", "100.5", "nan", "inf"] {
+            let err =
+                parse_percentile(bad).expect_err("point outside (0, 100] must be rejected");
+            assert!(
+                err.contains(bad) || err.contains("out of range"),
+                "error must explain the rejection, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_percentile_accepts_the_documented_range() {
+        assert!((parse_percentile("50").expect("50") - 50.0).abs() < f64::EPSILON);
+        assert!((parse_percentile("100").expect("100") - 100.0).abs() < f64::EPSILON);
+        assert!(parse_percentile("0.1").is_ok(), "just above zero is valid");
+        assert!(parse_percentile("99.9").is_ok());
+    }
+
+    #[test]
+    fn parse_percentile_rejects_non_numeric() {
+        assert!(parse_percentile("abc").is_err());
+        assert!(parse_percentile("").is_err());
+    }
+
+    /// `run` is also reachable from non-clap callers, so it range-checks too —
+    /// and does so before touching the model, which is why a nonexistent path
+    /// still surfaces the percentile error.
+    #[test]
+    fn bench_run_rejects_out_of_range_percentiles() {
+        let err = run(
+            Path::new("/tmp/nonexistent_bench_percentile_model.gguf"),
+            0,
+            1,
+            2,
+            None,
+            false,
+            None,
+            true,
+            &[101.0],
+        )
+        .expect_err("101 must be rejected");
+        assert!(
+            err.to_string().contains("out of range"),
+            "got: {err}"
+        );
+    }
+
     #[cfg(feature = "inference")]
     #[test]
     fn test_calculate_stats_high_token_count() {
