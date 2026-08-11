@@ -15,6 +15,7 @@ use super::attn_viz_classifier::{
     classify_causal_mask, classify_html_heatmap_count, classify_row_softmax_normalization,
     AttnCausalMaskOutcome, AttnHtmlOutcome, AttnRowsOutcome,
 };
+use super::threshold_arg;
 use crate::error::{CliError, Result};
 
 pub(crate) fn run(
@@ -25,6 +26,10 @@ pub(crate) fn run(
     epsilon: f64,
     json: bool,
 ) -> Result<()> {
+    // Fail closed before any gate runs: with a NaN tolerance/epsilon the
+    // row-softmax and causal-mask comparisons are false for every element.
+    threshold_arg::guard("--tolerance", tolerance, threshold_arg::TOLERANCE)?;
+    threshold_arg::guard("--epsilon", epsilon, threshold_arg::TOLERANCE)?;
     if attn_file.is_none() && html_file.is_none() {
         return Err(CliError::ValidationFailed(
             "apr attn-viz-lint: at least one of --attn-file or --html-file is required".to_string(),
@@ -153,6 +158,40 @@ mod cov_tests {
         .unwrap_err();
         assert!(matches!(err, CliError::FileNotFound(_)));
     }
+    /// 0.63.0 printed `row_softmax : Ok { shape: (1, 1, 2, 2) }` and
+    /// `causal_mask : Ok` for a dump whose first row sums to 5.0 and whose
+    /// upper-triangular entry is 2.0, whenever the tolerance/epsilon was NaN.
+    #[test]
+    fn nan_tolerance_or_epsilon_cannot_disarm_the_attn_gates() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().expect("tempfile");
+        f.write_all(b"[[[[3.0,2.0],[0.5,0.5]]]]").expect("write");
+        f.flush().expect("flush");
+
+        // Control: the shipped defaults reject this dump.
+        let err = run(Some(f.path()), None, 0, 1e-5, 1e-9, false).unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("row-softmax"), "got: {msg}");
+            }
+            other => panic!("expected the row-softmax gate to fire, got {other:?}"),
+        }
+
+        for (tol, eps, flag) in [
+            (f64::NAN, 1e-9, "--tolerance"),
+            (1e-5, f64::NAN, "--epsilon"),
+            (-1.0, 1e-9, "--tolerance"),
+        ] {
+            let err = run(Some(f.path()), None, 0, tol, eps, false).unwrap_err();
+            match err {
+                CliError::ValidationFailed(msg) => {
+                    assert!(msg.contains(flag), "expected {flag} named; got: {msg}");
+                }
+                other => panic!("({tol}, {eps}) must fail closed, got {other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn missing_html_file_is_file_not_found() {
         let err = run(

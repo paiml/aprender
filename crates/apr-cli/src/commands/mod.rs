@@ -6,6 +6,8 @@
 //! - Visualization: Make problems visible
 
 pub(crate) mod aliases;
+pub(crate) mod threshold_arg;
+
 pub(crate) mod attn_parity_classifier;
 pub(crate) mod attn_parity_lint;
 pub(crate) mod attn_viz_classifier;

@@ -456,3 +456,141 @@ fn backend_cuda_on_non_cuda_build_refuses_instead_of_falling_back() {
          Output:\n{combined}"
     );
 }
+
+/// True when the report printed `<gate> : Ok` — i.e. a positive assertion that
+/// the named gate examined the observation and was satisfied by it.
+fn report_says_gate_is_ok(stdout: &str, gate: &str) -> bool {
+    stdout.lines().any(|line| {
+        let line = line.trim();
+        match line.split_once(':') {
+            Some((label, verdict)) => label.trim() == gate && verdict.trim().starts_with("Ok"),
+            None => false,
+        }
+    })
+}
+
+/// FALSIFY-CLI-THRESHOLD-NAN-001: a NaN (or negative) tolerance must never turn
+/// a failing CRUX lint gate into a reported pass.
+///
+/// Every one of these gates compares an observation against a threshold —
+/// `mad > tol_abs`, `efficiency < floor`, `used_pct < threshold`. IEEE-754
+/// makes every comparison against NaN false, so in apr 0.63.0 `--tol-abs nan`,
+/// `--scaling-floor nan`, `--preempt-threshold nan`, `--tolerance nan` and
+/// `--epsilon nan` each made the failing branch unreachable: the command exited
+/// 0 AND the report printed a positive `Ok` next to the violating number, e.g.
+/// `scaling_efficiency : Ok { efficiency: 0.0025 }` for a 0.25%-efficient DDP
+/// run. A CI log scraper reading that gets the wrong answer.
+///
+/// Each case runs twice against the SAME observation file: once with the
+/// shipped defaults (must fail — proving the body is genuinely bad and the gate
+/// works) and once with the disarming value (must also fail).
+#[test]
+fn nan_threshold_never_reports_a_failing_lint_gate_as_ok() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let p = |name: &str, body: &str| -> String {
+        let path = dir.path().join(name);
+        std::fs::write(&path, body).expect("write fixture");
+        path.display().to_string()
+    };
+
+    let kv = p(
+        "kv.json",
+        r#"{"block_size_tokens":16,"total_blocks":100,"peak_used_pct":0.1,"preemption_count":3,
+            "timeline":[{"step":0,"t_ms":1.0,"used_blocks":10,"free_blocks":90,
+                         "used_pct":0.10,"active_seqs":1,"preempted_seqs":3}]}"#,
+    );
+    let parity = p("parity.json", r#"{"max_abs_diff":999.0,"cosine_sim":-0.5}"#);
+    let attn = p("attn.json", "[[[[3.0,2.0],[0.5,0.5]]]]");
+    let explain = p(
+        "explain.jsonl",
+        "{\"step\":0,\"sampled_id\":7,\"candidates\":[\
+         {\"token_id\":7,\"pre_prob\":0.9,\"post_prob\":0.5,\"rank\":0},\
+         {\"token_id\":3,\"pre_prob\":0.1,\"post_prob\":0.1,\"rank\":1}]}\n",
+    );
+    let ddp1 = p("ddp1.json", r#"{"tokens_per_sec":1000.0,"final_loss":2.0}"#);
+    let ddpn = p(
+        "ddpn.json",
+        r#"{"tokens_per_sec":10.0,"final_loss":9.9,
+            "ddp_metrics":{"allreduce_bandwidth_gbps":[12.5]}}"#,
+    );
+
+    // (args that fail at the defaults, the disarming values, the gate label
+    //  that must never be reported as Ok)
+    let cases: Vec<(Vec<String>, Vec<String>, &str)> = vec![
+        (
+            vec!["kv-timeline-lint".into(), "--timeline-file".into(), kv],
+            vec!["--preempt-threshold".into(), "nan".into()],
+            "preemption_trigger",
+        ),
+        (
+            vec!["attn-parity-lint".into(), "--parity-file".into(), parity],
+            vec![
+                "--tol-abs".into(),
+                "nan".into(),
+                "--tol-cos".into(),
+                "nan".into(),
+            ],
+            "parity_numerics",
+        ),
+        (
+            vec!["attn-viz-lint".into(), "--attn-file".into(), attn],
+            vec![
+                "--tolerance".into(),
+                "nan".into(),
+                "--epsilon".into(),
+                "nan".into(),
+            ],
+            "row_softmax",
+        ),
+        (
+            vec!["explain-token-lint".into(), "--jsonl-file".into(), explain],
+            vec!["--tolerance".into(), "nan".into()],
+            "probs_normalize",
+        ),
+        (
+            vec![
+                "ddp-metrics-lint".into(),
+                "--metrics-1gpu-file".into(),
+                ddp1,
+                "--metrics-ngpu-file".into(),
+                ddpn,
+                "--world-size".into(),
+                "4".into(),
+            ],
+            vec![
+                "--scaling-floor".into(),
+                "nan".into(),
+                "--loss-tolerance".into(),
+                "nan".into(),
+            ],
+            "scaling_efficiency",
+        ),
+    ];
+
+    for (base, disarm, gate) in cases {
+        let control = apr_binary().args(&base).output().expect("run apr");
+        assert!(
+            !control.status.success(),
+            "FALSIFY-CLI-THRESHOLD-NAN-001 control: `apr {}` must FAIL at the shipped \
+             defaults, otherwise the disarm case below proves nothing.\nstdout:\n{}",
+            base.join(" "),
+            String::from_utf8_lossy(&control.stdout)
+        );
+
+        let mut args = base.clone();
+        args.extend(disarm.iter().cloned());
+        let out = apr_binary().args(&args).output().expect("run apr");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !out.status.success(),
+            "FALSIFY-CLI-THRESHOLD-NAN-001: `apr {}` exited 0 — a NaN threshold disarmed \
+             the {gate} gate on a body that fails at the defaults.\nstdout:\n{stdout}",
+            args.join(" ")
+        );
+        assert!(
+            !report_says_gate_is_ok(&stdout, gate),
+            "FALSIFY-CLI-THRESHOLD-NAN-001: the report asserted `{gate} : Ok` for an \
+             observation it never actually checked.\nstdout:\n{stdout}"
+        );
+    }
+}

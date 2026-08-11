@@ -15,9 +15,18 @@ use super::kv_timeline_classifier::{
     classify_schema, classify_used_pct_arithmetic, KvBlockConservationOutcome, KvPeakOutcome,
     KvPreemptionOutcome, KvSchemaOutcome, KvUsedPctOutcome, F06_DEFAULT_PREEMPT_THRESHOLD,
 };
+use super::threshold_arg;
 use crate::error::{CliError, Result};
 
 pub(crate) fn run(timeline_file: &Path, preempt_threshold: f64, json: bool) -> Result<()> {
+    // Fail closed before any gate runs: a NaN threshold makes `used_pct <
+    // threshold` false for every step, so the preemption gate could never fire
+    // and the report would print a positive `preemption_trigger : Ok`.
+    threshold_arg::guard(
+        "--preempt-threshold",
+        preempt_threshold,
+        threshold_arg::FRACTION,
+    )?;
     if !timeline_file.exists() {
         return Err(CliError::FileNotFound(PathBuf::from(timeline_file)));
     }
@@ -166,6 +175,34 @@ mod tests {
         let f = write_obs(r#"{"timeline": []}"#);
         let err = run(f.path(), KV_TIMELINE_DEFAULT_THRESHOLD, false).unwrap_err();
         assert!(matches!(err, CliError::ValidationFailed(_)));
+    }
+
+    /// A body that FAILS the preemption gate at the default 0.95 must not turn
+    /// into a pass just because the threshold is NaN or negative: `used_pct <
+    /// NaN` is false, so the gate could never fire and the report printed
+    /// `preemption_trigger : Ok` while exiting 0 (0.63.0).
+    #[test]
+    fn nan_or_negative_threshold_cannot_disarm_the_preemption_gate() {
+        let failing = r#"{"block_size_tokens":16,"total_blocks":100,"peak_used_pct":0.1,
+            "preemption_count":3,
+            "timeline":[{"step":0,"t_ms":1.0,"used_blocks":10,"free_blocks":90,
+                         "used_pct":0.10,"active_seqs":1,"preempted_seqs":3}]}"#;
+        let f = write_obs(failing);
+
+        // Control: the shipped default still rejects this body.
+        let err = run(f.path(), KV_TIMELINE_DEFAULT_THRESHOLD, false).unwrap_err();
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+
+        for bad in [f64::NAN, -1.0, f64::INFINITY, 99.0] {
+            let err = run(f.path(), bad, false).unwrap_err();
+            match err {
+                CliError::ValidationFailed(msg) => assert!(
+                    msg.contains("--preempt-threshold"),
+                    "threshold {bad} must be rejected by name; got: {msg}"
+                ),
+                other => panic!("threshold {bad} must fail closed, got {other:?}"),
+            }
+        }
     }
 
     #[test]

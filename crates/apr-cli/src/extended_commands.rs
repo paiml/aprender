@@ -867,10 +867,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "N")]
         world_size: i64,
         /// Scaling-efficiency floor (default 0.85, PyTorch DDP convention)
-        #[arg(long, value_name = "F", default_value_t = 0.85)]
+        #[arg(long, value_name = "F", default_value_t = 0.85,
+              value_parser = commands::threshold_arg::parse_fraction)]
         scaling_floor: f64,
         /// Loss-parity relative tolerance (default 0.01)
-        #[arg(long, value_name = "F", default_value_t = 0.01)]
+        #[arg(long, value_name = "F", default_value_t = 0.01,
+              value_parser = commands::threshold_arg::parse_tolerance)]
         loss_tolerance: f64,
     },
     /// Lint a captured `apr dataset audio-inspect --format json` body (CRUX-H-13)
@@ -897,10 +899,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         head_dim_error_file: Option<PathBuf>,
         /// Max absolute diff tolerance (default 5e-3, FlashAttention-2 bound)
-        #[arg(long, value_name = "F", default_value_t = 5e-3)]
+        #[arg(long, value_name = "F", default_value_t = 5e-3,
+              value_parser = commands::threshold_arg::parse_tolerance)]
         tol_abs: f64,
         /// Min cosine similarity floor (default 0.9999)
-        #[arg(long, value_name = "F", default_value_t = 0.9999)]
+        #[arg(long, value_name = "F", default_value_t = 0.9999,
+              value_parser = commands::threshold_arg::parse_cosine)]
         tol_cos: f64,
     },
     /// Lint a captured `apr attn-viz` attention dump (CRUX-F-17)
@@ -915,10 +919,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "N", default_value_t = 1)]
         expected_heatmaps: usize,
         /// Row-softmax normalization tolerance (default 1e-5)
-        #[arg(long, value_name = "F64", default_value_t = 1e-5)]
+        #[arg(long, value_name = "F64", default_value_t = 1e-5,
+              value_parser = commands::threshold_arg::parse_tolerance)]
         tolerance: f64,
         /// Causal-mask zero epsilon (default 1e-9)
-        #[arg(long, value_name = "F64", default_value_t = 1e-9)]
+        #[arg(long, value_name = "F64", default_value_t = 1e-9,
+              value_parser = commands::threshold_arg::parse_tolerance)]
         epsilon: f64,
     },
     /// Lint a captured `apr trace --check-finite` error JSON and/or `--list` coverage JSON (CRUX-F-11)
@@ -951,7 +957,8 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         jsonl_file: PathBuf,
         /// Tolerance for `Σ post_prob ≈ 1.0` (default 1e-5)
-        #[arg(long, value_name = "F64", default_value_t = 1e-5)]
+        #[arg(long, value_name = "F64", default_value_t = 1e-5,
+              value_parser = commands::threshold_arg::parse_tolerance)]
         tolerance: f64,
         /// Assert greedy decoding: sampled_id must equal argmax(pre_prob)
         #[arg(long)]
@@ -969,7 +976,8 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         timeline_file: PathBuf,
         /// Preemption threshold (default 0.95, vLLM canonical)
-        #[arg(long, value_name = "FRACTION", default_value_t = 0.95)]
+        #[arg(long, value_name = "FRACTION", default_value_t = 0.95,
+              value_parser = commands::threshold_arg::parse_fraction)]
         preempt_threshold: f64,
     },
     /// Lint a captured OTLP/JSON ExportTraceServiceRequest body (CRUX-K-08)

@@ -16,6 +16,7 @@ use super::attn_parity_classifier::{
     AttnHeadDimErrorOutcome, AttnParityNumericsOutcome, AttnProvenanceOutcome,
     L02_DEFAULT_MAX_ABS_DIFF, L02_DEFAULT_MIN_COSINE_SIM,
 };
+use super::threshold_arg;
 use crate::error::{CliError, Result};
 
 pub(crate) fn run(
@@ -26,6 +27,10 @@ pub(crate) fn run(
     tol_cos: f64,
     json: bool,
 ) -> Result<()> {
+    // Fail closed before any gate runs: `mad > tol_abs` / `cos < tol_cos` are
+    // both false against a NaN threshold, so the gate could never fire.
+    threshold_arg::guard("--tol-abs", tol_abs, threshold_arg::TOLERANCE)?;
+    threshold_arg::guard("--tol-cos", tol_cos, threshold_arg::COSINE)?;
     if parity_file.is_none() && provenance_file.is_none() && head_dim_error_file.is_none() {
         return Err(CliError::ValidationFailed(
             "apr attn-parity-lint: at least one of --parity-file, --provenance-file, or --head-dim-error-file is required"
@@ -171,6 +176,50 @@ mod cov_tests {
         .unwrap_err();
         assert!(matches!(err, CliError::FileNotFound(_)));
     }
+    /// A parity body that fails at the shipped defaults must keep failing: in
+    /// 0.63.0 `--tol-abs nan --tol-cos nan` printed
+    /// `parity_numerics : Ok { max_abs_diff: 999.0, cosine_sim: -0.5 }` and
+    /// exited 0, because `mad > NaN` and `cos < NaN` are both false.
+    #[test]
+    fn nan_tolerance_cannot_disarm_the_parity_gate() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().expect("tempfile");
+        f.write_all(br#"{"max_abs_diff":999.0,"cosine_sim":-0.5}"#)
+            .expect("write");
+        f.flush().expect("flush");
+
+        // Control: the defaults reject this body on the numerics gate.
+        let err = run(
+            Some(f.path()),
+            None,
+            None,
+            ATTN_PARITY_DEFAULT_MAX_ABS_DIFF,
+            ATTN_PARITY_DEFAULT_MIN_COSINE_SIM,
+            false,
+        )
+        .unwrap_err();
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("parity-numerics"), "got: {msg}");
+            }
+            other => panic!("expected the numerics gate to fire, got {other:?}"),
+        }
+
+        for (abs, cos, flag) in [
+            (f64::NAN, ATTN_PARITY_DEFAULT_MIN_COSINE_SIM, "--tol-abs"),
+            (ATTN_PARITY_DEFAULT_MAX_ABS_DIFF, f64::NAN, "--tol-cos"),
+            (-1.0, ATTN_PARITY_DEFAULT_MIN_COSINE_SIM, "--tol-abs"),
+        ] {
+            let err = run(Some(f.path()), None, None, abs, cos, false).unwrap_err();
+            match err {
+                CliError::ValidationFailed(msg) => {
+                    assert!(msg.contains(flag), "expected {flag} named; got: {msg}");
+                }
+                other => panic!("({abs}, {cos}) must fail closed, got {other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn missing_provenance_file_is_file_not_found() {
         let err = run(
