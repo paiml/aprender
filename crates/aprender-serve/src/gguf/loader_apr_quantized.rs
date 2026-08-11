@@ -174,19 +174,108 @@ fn apr_load_lm_head(
     )
 }
 
-/// Load an F32 tensor from APR format, trying multiple names.
-fn apr_load_f32_tensor(
+/// Decode the raw bytes of a dense (unquantized) APR tensor into F32.
+///
+/// #2443: This is the ONLY place in the APR loader that turns tensor bytes into
+/// `f32`, and it refuses to do so without consulting the dtype recorded in the
+/// tensor index. The two helpers it replaced read every 1-D tensor as
+/// `chunks_exact(4) -> f32::from_le_bytes` — the `F16` arm of one of them was
+/// the only dtype ever checked, and everything else fell through to the 4-byte
+/// read. A BF16 export (`qwen2.5-coder-0.5b-instruct.apr` stores 290 of its 291
+/// tensors as BF16) therefore decoded all 49 RMSNorm weights and all 72 q/k/v
+/// biases at HALF their element count with arbitrary values, and nothing
+/// crashed: `gguf/ops.rs::rms_norm` takes `hidden_dim` from `weight.len()`, so a
+/// 448-long norm silently re-sliced each 896-wide activation into two rows. The
+/// model produced fluent-looking tokens that did not depend on the prompt.
+///
+/// Two properties make that class unrepresentable rather than merely fixed:
+///
+/// 1. **No silent fallthrough.** A dtype that is not a dense float is an error,
+///    never a reinterpretation. Per the rule the CLI adopted in #2407, a path
+///    that cannot work must fail instead of emitting plausible numbers.
+/// 2. **The byte count must agree with the shape.** `raw.len()` has to equal
+///    `shape.product() * width`, so decoding at the wrong width cannot succeed
+///    even if a future dtype arm is added with the wrong element size — the very
+///    mismatch this bug relied on (1792 bytes read as 448 F32 instead of 896
+///    BF16) is now the thing that trips the guard.
+fn apr_decode_dense_float(
+    name: &str,
+    dtype: &str,
+    shape: &[usize],
+    raw: &[u8],
+) -> Result<Vec<f32>> {
+    let width = match dtype {
+        "F32" => 4usize,
+        "F16" | "BF16" => 2usize,
+        other => {
+            return Err(RealizarError::FormatError {
+                reason: format!(
+                    "APR: tensor {name} has dtype {other}, which is not a dense float type; \
+                     refusing to reinterpret its bytes as F32 (that yields a plausible but \
+                     wrong tensor rather than an error)"
+                ),
+            });
+        }
+    };
+
+    let expected_elems: usize = shape.iter().product();
+    if shape.is_empty() {
+        if raw.len() % width != 0 {
+            return Err(RealizarError::FormatError {
+                reason: format!(
+                    "APR: tensor {name} ({dtype}) has {} bytes, not a multiple of {width}",
+                    raw.len()
+                ),
+            });
+        }
+    } else if raw.len() != expected_elems * width {
+        return Err(RealizarError::FormatError {
+            reason: format!(
+                "APR: tensor {name} ({dtype}) has {} bytes but shape {shape:?} \
+                 needs {} ({expected_elems} elements x {width} bytes)",
+                raw.len(),
+                expected_elems * width
+            ),
+        });
+    }
+
+    let values: Vec<f32> = match dtype {
+        "F32" => raw
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect(),
+        "F16" => raw
+            .chunks_exact(2)
+            .map(|c| half::f16::from_le_bytes([c[0], c[1]]).to_f32())
+            .collect(),
+        // BF16 is the upper 16 bits of the F32 bit pattern.
+        _ => raw
+            .chunks_exact(2)
+            .map(|c| half::bf16::from_le_bytes([c[0], c[1]]).to_f32())
+            .collect(),
+    };
+    Ok(values)
+}
+
+/// Try loading an optional dense float tensor from APR format, trying multiple
+/// names in order.
+///
+/// `Ok(None)` means NO listed name exists — the only benign reason to skip a
+/// tensor. A name that DOES exist but cannot be decoded is `Err`, never `None`:
+/// #2443's other half was that a bias silently dropped is as wrong an answer as
+/// a bias decoded at the wrong width, and both used to be unobservable.
+fn apr_try_load_dense_float(
     apr: &crate::apr::MappedAprModel,
     data: &[u8],
     data_offset: usize,
     names: &[&str],
-) -> Result<Vec<f32>> {
-    let (tensor, found_name) = names
+) -> Result<Option<Vec<f32>>> {
+    let Some((tensor, found_name)) = names
         .iter()
         .find_map(|name| apr.find_tensor(name).map(|t| (t, *name)))
-        .ok_or_else(|| RealizarError::FormatError {
-            reason: format!("APR: tensor not found (tried: {})", names.join(", ")),
-        })?;
+    else {
+        return Ok(None);
+    };
     let start = data_offset + tensor.offset as usize;
     let end = start + tensor.size as usize;
     if end > data.len() {
@@ -194,39 +283,45 @@ fn apr_load_f32_tensor(
             reason: format!("APR: tensor {found_name} extends past EOF"),
         });
     }
-    Ok(data[start..end]
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect())
+    apr_decode_dense_float(found_name, &tensor.dtype, &tensor.shape, &data[start..end]).map(Some)
 }
 
-/// Try loading an optional F32 bias tensor from APR format.
-fn apr_try_load_f32(
+/// Reject an RMSNorm/LayerNorm weight whose element count is not `hidden_dim`.
+///
+/// #2443's damage was done downstream of loading: `gguf/ops.rs::rms_norm` infers
+/// `hidden_dim` from `weight.len()` and `seq_len` from `input.len() /
+/// hidden_dim`, so it cannot distinguish "a 448-wide norm and one 896-wide
+/// token" from "a 448-wide norm and two 448-wide tokens" — a half-width norm is
+/// arithmetically valid there and produces numbers instead of an error. The
+/// loader is the last place that still knows `hidden_dim` from the config, so it
+/// is where the check belongs: a norm of the wrong width cannot reach the
+/// forward pass at all.
+fn apr_check_norm_width(name: &str, weight: &[f32], hidden_dim: usize) -> Result<()> {
+    if weight.len() == hidden_dim {
+        return Ok(());
+    }
+    Err(RealizarError::FormatError {
+        reason: format!(
+            "APR: norm weight {name} decoded to {} elements but hidden_dim is {hidden_dim}; \
+             refusing to load (a wrong-width norm silently re-slices every activation \
+             instead of failing)",
+            weight.len()
+        ),
+    })
+}
+
+/// Load a required dense float tensor from APR format, trying multiple names.
+fn apr_load_f32_tensor(
     apr: &crate::apr::MappedAprModel,
     data: &[u8],
     data_offset: usize,
-    name: &str,
-) -> Option<Vec<f32>> {
-    let tensor = apr.find_tensor(name)?;
-    let start = data_offset + tensor.offset as usize;
-    let end = start + tensor.size as usize;
-    if end > data.len() {
-        return None;
-    }
-    let raw = &data[start..end];
-    // GH-180: Dispatch on dtype — FP16 APR models store biases as F16
-    match tensor.dtype.as_str() {
-        "F16" => Some(
-            raw.chunks_exact(2)
-                .map(|c| half::f16::from_le_bytes([c[0], c[1]]).to_f32())
-                .collect(),
-        ),
-        _ => Some(
-            raw.chunks_exact(4)
-                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect(),
-        ),
-    }
+    names: &[&str],
+) -> Result<Vec<f32>> {
+    apr_try_load_dense_float(apr, data, data_offset, names)?.ok_or_else(|| {
+        RealizarError::FormatError {
+            reason: format!("APR: tensor not found (tried: {})", names.join(", ")),
+        }
+    })
 }
 
 /// Infer vocab_size from APR metadata or embedding tensor shape.
@@ -350,7 +445,9 @@ impl OwnedQuantizedModel {
         // Output norm
         let output_norm_weight =
             apr_load_f32_tensor(apr, data, data_offset, &["model.norm.weight", "output_norm.weight"])?;
-        let output_norm_bias = apr_try_load_f32(apr, data, data_offset, "model.norm.bias");
+        apr_check_norm_width("model.norm.weight", &output_norm_weight, hidden_dim)?;
+        let output_norm_bias =
+            apr_try_load_dense_float(apr, data, data_offset, &["model.norm.bias"])?;
 
         // LM head. Tied-embedding resolution lives in `apr_load_lm_head`:
         // weight-tied exports (Qwen2 0.5B, most <2B models) write lm_head as a
@@ -366,11 +463,15 @@ impl OwnedQuantizedModel {
         // LM head (try HF name first, then GGUF; tied embeddings resolved in-loader)
         let lm_head_weight =
             apr_load_lm_head(apr, data, data_offset, hidden_dim, vocab_size, transpose)?;
-        let lm_head_bias = apr_try_load_f32(apr, data, data_offset, "lm_head.bias");
+        let lm_head_bias = apr_try_load_dense_float(apr, data, data_offset, &["lm_head.bias"])?;
 
         // GH-278: Load learned position embeddings (GPT-2 style)
-        let position_embedding =
-            apr_try_load_f32(apr, data, data_offset, "model.position_embedding.weight");
+        let position_embedding = apr_try_load_dense_float(
+            apr,
+            data,
+            data_offset,
+            &["model.position_embedding.weight"],
+        )?;
 
         let load_ms = t0.elapsed().as_secs_f64() * 1000.0;
         eprintln!(
@@ -486,19 +587,22 @@ impl OwnedQuantizedModel {
         let gguf_q_bias = format!("blk.{layer_idx}.attn_q.bias");
         let gguf_k_bias = format!("blk.{layer_idx}.attn_k.bias");
         let gguf_v_bias = format!("blk.{layer_idx}.attn_v.bias");
-        let qkv_bias = apr_try_load_f32(apr, data, data_offset, &hf_q_bias)
-            .or_else(|| apr_try_load_f32(apr, data, data_offset, &gguf_q_bias))
-            .and_then(|q_b| {
-                let k_b = apr_try_load_f32(apr, data, data_offset, &hf_k_bias)
-                    .or_else(|| apr_try_load_f32(apr, data, data_offset, &gguf_k_bias))?;
-                let v_b = apr_try_load_f32(apr, data, data_offset, &hf_v_bias)
-                    .or_else(|| apr_try_load_f32(apr, data, data_offset, &gguf_v_bias))?;
+        let qkv_bias = match (
+            apr_try_load_dense_float(apr, data, data_offset, &[&hf_q_bias, &gguf_q_bias])?,
+            apr_try_load_dense_float(apr, data, data_offset, &[&hf_k_bias, &gguf_k_bias])?,
+            apr_try_load_dense_float(apr, data, data_offset, &[&hf_v_bias, &gguf_v_bias])?,
+        ) {
+            (Some(q_b), Some(k_b), Some(v_b)) => {
                 let mut combined = Vec::with_capacity(q_b.len() + k_b.len() + v_b.len());
                 combined.extend_from_slice(&q_b);
                 combined.extend_from_slice(&k_b);
                 combined.extend_from_slice(&v_b);
                 Some(combined)
-            });
+            }
+            // A model with only some of Q/K/V biased has no concatenated layout
+            // to offer; that is the pre-existing contract, kept verbatim.
+            _ => None,
+        };
 
         // GH-479: O proj maps q_dim -> hidden_dim (Qwen3 q_dim != hidden_dim)
         let o_weight = apr_load_quantized_tensor(apr, data, data_offset, &[&hf_o, &gguf_o], q_dim, hidden_dim, transpose)?;
@@ -508,9 +612,17 @@ impl OwnedQuantizedModel {
         let ffn_up_weight = apr_load_quantized_tensor(apr, data, data_offset, &[&hf_up, &gguf_up], hidden_dim, intermediate_dim, transpose)?;
         let ffn_down_weight = apr_load_quantized_tensor(apr, data, data_offset, &[&hf_down, &gguf_down], intermediate_dim, hidden_dim, transpose)?;
 
-        // Norm weights (F32)
-        let attn_norm_weight = apr_load_f32_tensor(apr, data, data_offset, &[&hf_attn_norm, &gguf_attn_norm])?;
-        let ffn_norm_weight = apr_load_f32_tensor(apr, data, data_offset, &[&hf_ffn_norm, &gguf_ffn_norm]).ok();
+        // Norm weights (dense float — F32, F16 or BF16 depending on the export)
+        let attn_norm_weight =
+            apr_load_f32_tensor(apr, data, data_offset, &[&hf_attn_norm, &gguf_attn_norm])?;
+        // #2443: `.ok()` here used to swallow a decode failure as "this model has
+        // no FFN norm" (true for GPT-2). Only ABSENCE may yield `None` now.
+        let ffn_norm_weight =
+            apr_try_load_dense_float(apr, data, data_offset, &[&hf_ffn_norm, &gguf_ffn_norm])?;
+        apr_check_norm_width(&hf_attn_norm, &attn_norm_weight, hidden_dim)?;
+        if let Some(w) = ffn_norm_weight.as_deref() {
+            apr_check_norm_width(&hf_ffn_norm, w, hidden_dim)?;
+        }
 
         // GH-278: Load biases (GPT-2/phi-2 style models have biases on all projections)
         // GH-87: Try both HF names and GGUF names for all bias tensors
@@ -525,36 +637,69 @@ impl OwnedQuantizedModel {
         let gguf_up_bias = format!("blk.{layer_idx}.ffn_up.bias");
         let gguf_down_bias = format!("blk.{layer_idx}.ffn_down.bias");
 
+        let hf_q_norm = format!("model.layers.{layer_idx}.self_attn.q_norm.weight");
+        let gguf_q_norm = format!("blk.{layer_idx}.attn_q_norm.weight");
+        let hf_k_norm = format!("model.layers.{layer_idx}.self_attn.k_norm.weight");
+        let gguf_k_norm = format!("blk.{layer_idx}.attn_k_norm.weight");
+        let hf_post_attn_norm = format!("model.layers.{layer_idx}.post_attention_layernorm.weight");
+        let gguf_post_attn_norm = format!("blk.{layer_idx}.post_attention_norm.weight");
+        let hf_post_ffw_norm = format!("model.layers.{layer_idx}.post_feedforward_layernorm.weight");
+        let gguf_post_ffw_norm = format!("blk.{layer_idx}.post_ffw_norm.weight");
+
         Ok(OwnedQuantizedLayer {
             attn_norm_weight,
-            attn_norm_bias: apr_try_load_f32(apr, data, data_offset, &hf_attn_norm_bias)
-                .or_else(|| apr_try_load_f32(apr, data, data_offset, &gguf_attn_norm_bias)),
+            attn_norm_bias: apr_try_load_dense_float(
+                apr,
+                data,
+                data_offset,
+                &[&hf_attn_norm_bias, &gguf_attn_norm_bias],
+            )?,
             qkv_weight,
             qkv_bias,
             attn_output_weight: o_weight,
-            attn_output_bias: apr_try_load_f32(apr, data, data_offset, &hf_o_bias)
-                .or_else(|| apr_try_load_f32(apr, data, data_offset, &gguf_o_bias)),
+            attn_output_bias: apr_try_load_dense_float(
+                apr,
+                data,
+                data_offset,
+                &[&hf_o_bias, &gguf_o_bias],
+            )?,
             ffn_norm_weight,
-            ffn_norm_bias: apr_try_load_f32(apr, data, data_offset, &hf_ffn_norm_bias)
-                .or_else(|| apr_try_load_f32(apr, data, data_offset, &gguf_ffn_norm_bias)),
+            ffn_norm_bias: apr_try_load_dense_float(
+                apr,
+                data,
+                data_offset,
+                &[&hf_ffn_norm_bias, &gguf_ffn_norm_bias],
+            )?,
             ffn_gate_weight,
             ffn_gate_bias: None,
             ffn_up_weight,
-            ffn_up_bias: apr_try_load_f32(apr, data, data_offset, &hf_up_bias)
-                .or_else(|| apr_try_load_f32(apr, data, data_offset, &gguf_up_bias)),
+            ffn_up_bias: apr_try_load_dense_float(
+                apr,
+                data,
+                data_offset,
+                &[&hf_up_bias, &gguf_up_bias],
+            )?,
             ffn_down_weight,
-            ffn_down_bias: apr_try_load_f32(apr, data, data_offset, &hf_down_bias)
-                .or_else(|| apr_try_load_f32(apr, data, data_offset, &gguf_down_bias)),
+            ffn_down_bias: apr_try_load_dense_float(
+                apr,
+                data,
+                data_offset,
+                &[&hf_down_bias, &gguf_down_bias],
+            )?,
             // GH-479: QK norm weights (Qwen3 per-head RMSNorm)
             // Contract: qk-norm-apr-loader-v1 §QKN-LOAD-002
-            attn_q_norm_weight: apr_try_load_f32(apr, data, data_offset,
-                &format!("model.layers.{layer_idx}.self_attn.q_norm.weight"))
-                .or_else(|| apr_try_load_f32(apr, data, data_offset,
-                    &format!("blk.{layer_idx}.attn_q_norm.weight"))),
-            attn_k_norm_weight: apr_try_load_f32(apr, data, data_offset,
-                &format!("model.layers.{layer_idx}.self_attn.k_norm.weight"))
-                .or_else(|| apr_try_load_f32(apr, data, data_offset,
-                    &format!("blk.{layer_idx}.attn_k_norm.weight"))),
+            attn_q_norm_weight: apr_try_load_dense_float(
+                apr,
+                data,
+                data_offset,
+                &[&hf_q_norm, &gguf_q_norm],
+            )?,
+            attn_k_norm_weight: apr_try_load_dense_float(
+                apr,
+                data,
+                data_offset,
+                &[&hf_k_norm, &gguf_k_norm],
+            )?,
             // PMAT-810 / PMAT-888: Gemma2 post-attention / post-FFN RMSNorm
             // (None for every other architecture). Gated on `is_gemma2` because the
             // HF name `post_attention_layernorm.weight` is the FFN norm for
@@ -564,18 +709,22 @@ impl OwnedQuantizedModel {
             // `pre_feedforward_layernorm`, so this name collision only harms
             // non-Gemma2 models.
             post_attn_norm_weight: if is_gemma2 {
-                apr_try_load_f32(apr, data, data_offset,
-                    &format!("model.layers.{layer_idx}.post_attention_layernorm.weight"))
-                    .or_else(|| apr_try_load_f32(apr, data, data_offset,
-                        &format!("blk.{layer_idx}.post_attention_norm.weight")))
+                apr_try_load_dense_float(
+                    apr,
+                    data,
+                    data_offset,
+                    &[&hf_post_attn_norm, &gguf_post_attn_norm],
+                )?
             } else {
                 None
             },
             post_ffw_norm_weight: if is_gemma2 {
-                apr_try_load_f32(apr, data, data_offset,
-                    &format!("model.layers.{layer_idx}.post_feedforward_layernorm.weight"))
-                    .or_else(|| apr_try_load_f32(apr, data, data_offset,
-                        &format!("blk.{layer_idx}.post_ffw_norm.weight")))
+                apr_try_load_dense_float(
+                    apr,
+                    data,
+                    data_offset,
+                    &[&hf_post_ffw_norm, &gguf_post_ffw_norm],
+                )?
             } else {
                 None
             },
@@ -827,5 +976,229 @@ mod gh478_per_layer_dequant_tests {
             }
         }
         0.0
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod issue_2443_bf16_dense_tensor_tests {
+    //! #2443: the APR bf16 body path emitted the SAME tokens for every prompt.
+    //!
+    //! `apr run qwen2.5-coder-0.5b-instruct.apr` answered three semantically
+    //! unrelated prompts with a byte-identical run of 12 `<|fim_suffix|>`, exit
+    //! code 0. The container was not at fault (the same weights as SafeTensors
+    //! answered "4"), nor was bf16 arithmetic (the 2-D bf16 weights dispatch
+    //! correctly in `matmul_fused.rs`). The intersection was: every 1-D tensor
+    //! in an .apr was read as `chunks_exact(4) -> f32` with no dtype dispatch,
+    //! so 290 BF16 tensors — all 49 RMSNorm weights, all 72 q/k/v biases —
+    //! decoded to HALF their elements with unrelated values.
+    //!
+    //! These are the falsifiers for that. Each asserts a VALUE or a REFUSAL,
+    //! not a shape: a loader that returns the right count of wrong numbers
+    //! fails them just as hard as the original did.
+
+    use crate::apr::{HEADER_SIZE, MAGIC, MappedAprModel};
+    use std::io::Write;
+
+    /// APR dtype bytes, as written into the tensor index.
+    const DTYPE_F32: u8 = 0;
+    const DTYPE_F16: u8 = 1;
+    const DTYPE_Q4_K: u8 = 12;
+    const DTYPE_BF16: u8 = 30;
+
+    fn build_single_tensor_apr(
+        name: &str,
+        dtype_byte: u8,
+        shape: &[u64],
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let metadata = b"{}";
+        let metadata_padded = metadata.len().div_ceil(64) * 64;
+
+        let mut entry = Vec::new();
+        entry.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        entry.extend_from_slice(name.as_bytes());
+        entry.push(dtype_byte);
+        entry.push(shape.len() as u8);
+        for &d in shape {
+            entry.extend_from_slice(&d.to_le_bytes());
+        }
+        entry.extend_from_slice(&0u64.to_le_bytes());
+        entry.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+
+        let tensor_index_offset = (HEADER_SIZE + metadata_padded) as u64;
+        let data_offset = tensor_index_offset + entry.len() as u64;
+        let total = data_offset as usize + payload.len();
+
+        let mut out = vec![0u8; total];
+        out[0..4].copy_from_slice(&MAGIC);
+        out[4] = 2;
+        out[5] = 0;
+        out[8..12].copy_from_slice(&1u32.to_le_bytes());
+        out[12..20].copy_from_slice(&(HEADER_SIZE as u64).to_le_bytes());
+        out[20..24].copy_from_slice(&(metadata.len() as u32).to_le_bytes());
+        out[24..32].copy_from_slice(&tensor_index_offset.to_le_bytes());
+        out[32..40].copy_from_slice(&data_offset.to_le_bytes());
+
+        out[HEADER_SIZE..HEADER_SIZE + metadata.len()].copy_from_slice(metadata);
+        let idx = tensor_index_offset as usize;
+        out[idx..idx + entry.len()].copy_from_slice(&entry);
+        let data_start = data_offset as usize;
+        out[data_start..data_start + payload.len()].copy_from_slice(payload);
+        out
+    }
+
+    fn write_tempfile(bytes: &[u8]) -> tempfile::NamedTempFile {
+        let mut f = tempfile::NamedTempFile::new().expect("tempfile");
+        f.write_all(bytes).expect("write apr");
+        f
+    }
+
+    fn load_norm(dtype_byte: u8, shape: &[u64], payload: &[u8]) -> crate::Result<Vec<f32>> {
+        let file = write_tempfile(&build_single_tensor_apr(
+            "model.norm.weight",
+            dtype_byte,
+            shape,
+            payload,
+        ));
+        let apr = MappedAprModel::from_path(file.path()).expect("load apr");
+        super::apr_load_f32_tensor(
+            &apr,
+            apr.data(),
+            apr.data_offset() as usize,
+            &["model.norm.weight"],
+        )
+    }
+
+    /// The eight values below are exactly representable in bf16 (their low 16
+    /// mantissa bits are zero), so "decoded correctly" is an EQUALITY, not a
+    /// tolerance — and the wrong-width read cannot coincidentally match.
+    const BF16_VALUES: [f32; 8] = [7.0625, -0.0625, 1.5, 17.25, -3.0, 0.03125, 128.0, -0.75];
+
+    fn bf16_payload() -> Vec<u8> {
+        BF16_VALUES
+            .iter()
+            .flat_map(|v| half::bf16::from_f32(*v).to_le_bytes())
+            .collect()
+    }
+
+    #[test]
+    fn bf16_norm_decodes_to_its_own_values_not_a_reinterpretation() {
+        let payload = bf16_payload();
+        assert_eq!(payload.len(), 16, "8 bf16 values are 16 bytes");
+
+        let got = load_norm(DTYPE_BF16, &[8], &payload).expect("BF16 norm must load");
+
+        // Before the fix this returned 4 values (16 bytes read as F32), the
+        // first of which was 7.132_92 — a plausible-looking RMSNorm weight.
+        assert_eq!(
+            got,
+            BF16_VALUES.to_vec(),
+            "a BF16 tensor must decode as BF16; got {got:?}"
+        );
+    }
+
+    #[test]
+    fn f16_norm_still_decodes_as_f16() {
+        // GH-180 regression guard: F16 was the ONE dtype the old code checked.
+        let values = [1.5f32, -0.25, 8.0, 0.125];
+        let payload: Vec<u8> = values
+            .iter()
+            .flat_map(|v| half::f16::from_f32(*v).to_le_bytes())
+            .collect();
+
+        let got = load_norm(DTYPE_F16, &[4], &payload).expect("F16 norm must load");
+        assert_eq!(got, values.to_vec());
+    }
+
+    #[test]
+    fn f32_norm_still_decodes_as_f32() {
+        let values = [1.5f32, -0.25, 8.0, 0.125];
+        let payload: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+
+        let got = load_norm(DTYPE_F32, &[4], &payload).expect("F32 norm must load");
+        assert_eq!(got, values.to_vec());
+    }
+
+    #[test]
+    fn unknown_dtype_is_refused_not_reinterpreted_as_f32() {
+        // POKA-YOKE: the old `_ =>` arm turned every unhandled dtype into a
+        // plausible f32 vector. A quantized 1-D tensor must now be an error —
+        // the #2407 rule: a path that cannot work fails instead of emitting
+        // numbers.
+        let payload = vec![0x42u8; 144]; // one Q4_K super-block
+        let err = load_norm(DTYPE_Q4_K, &[256], &payload)
+            .expect_err("a Q4_K norm must not decode as dense float");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Q4_K") && msg.contains("not a dense float"),
+            "error must name the offending dtype, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn byte_count_must_agree_with_shape_and_dtype_width() {
+        // POKA-YOKE: this is the mismatch #2443 rode in on — 16 bytes of BF16
+        // consumed as 4 F32 while the index said 8 elements. Even a future
+        // dtype arm wired to the wrong width cannot decode silently now.
+        let payload = bf16_payload(); // 16 bytes = 8 BF16, but only 4 F32
+        let err = load_norm(DTYPE_F32, &[8], &payload)
+            .expect_err("8 F32 elements need 32 bytes, not 16");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("16 bytes") && msg.contains("needs 32"),
+            "error must state both byte counts, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn absent_tensor_is_none_but_undecodable_tensor_is_err() {
+        // An optional tensor that is MISSING is benign (`Ok(None)`). One that
+        // is PRESENT and undecodable used to be indistinguishable from missing,
+        // so a dropped bias was as invisible as a mis-decoded one.
+        let payload = vec![0x42u8; 144];
+        let file = write_tempfile(&build_single_tensor_apr(
+            "model.layers.0.self_attn.q_proj.bias",
+            DTYPE_Q4_K,
+            &[256],
+            &payload,
+        ));
+        let apr = MappedAprModel::from_path(file.path()).expect("load apr");
+
+        let absent = super::apr_try_load_dense_float(
+            &apr,
+            apr.data(),
+            apr.data_offset() as usize,
+            &["model.layers.0.mlp.up_proj.bias"],
+        )
+        .expect("a missing optional tensor is not an error");
+        assert!(absent.is_none(), "missing tensor must be None");
+
+        let present_but_bad = super::apr_try_load_dense_float(
+            &apr,
+            apr.data(),
+            apr.data_offset() as usize,
+            &["model.layers.0.self_attn.q_proj.bias"],
+        );
+        assert!(
+            present_but_bad.is_err(),
+            "a present-but-undecodable bias must be an error, not silently dropped"
+        );
+    }
+
+    #[test]
+    fn a_norm_whose_width_is_not_hidden_dim_is_refused() {
+        // POKA-YOKE: `rms_norm` infers hidden_dim from weight.len(), so a
+        // half-width norm computes happily forever. The loader is the last
+        // place that still knows the true hidden_dim.
+        super::apr_check_norm_width("model.norm.weight", &[1.0; 896], 896)
+            .expect("a full-width norm loads");
+
+        let err = super::apr_check_norm_width("model.norm.weight", &[1.0; 448], 896)
+            .expect_err("a half-width norm must be refused");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("448") && msg.contains("896"),
+            "error must state both widths, got: {msg}"
+        );
     }
 }
