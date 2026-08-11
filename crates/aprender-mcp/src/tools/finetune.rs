@@ -125,7 +125,10 @@ pub fn call_with_sink(
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     match (sink, progress_token) {
-        (Some(sink), Some(token)) => stream_with_sink("apr", &argv, sink, &token),
+        (Some(sink), Some(token)) => {
+            // #2384: self-resolved binary, never a `$PATH` lookup.
+            stream_with_sink(crate::apr_bin::apr_binary(), &argv, sink, &token)
+        }
         _ => run_apr(&argv),
     }
 }
@@ -136,8 +139,8 @@ pub fn call_with_sink(
 /// forwarded as a plain string. The returned `ToolCallResult` is the
 /// aggregated stdout (same shape as `run_apr`'s success body).
 #[must_use]
-pub fn stream_with_sink(
-    program: &str,
+pub fn stream_with_sink<P: AsRef<std::ffi::OsStr>>(
+    program: P,
     args: &[&str],
     sink: &NotificationSink,
     progress_token: &serde_json::Value,

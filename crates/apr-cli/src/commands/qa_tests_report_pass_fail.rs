@@ -199,13 +199,13 @@
     #[test]
     fn qa_config_partial_override_preserves_defaults() {
         let config = QaConfig {
-            min_tps: 500.0,
+            min_tps: Some(500.0),
             skip_golden: true,
             iterations: 5,
             ..Default::default()
         };
         // Overridden fields
-        assert!((config.min_tps - 500.0).abs() < f64::EPSILON);
+        assert_eq!(config.min_tps, Some(500.0));
         assert!(config.skip_golden);
         assert_eq!(config.iterations, 5);
         // Default fields must be preserved

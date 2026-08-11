@@ -122,7 +122,7 @@
         assert!(config.skip_format_parity);
         // Non-skip fields should be default
         assert_eq!(config.iterations, 10);
-        assert!((config.min_tps - 100.0).abs() < f64::EPSILON);
+        assert_eq!(config.min_tps, None, "default asserts no throughput floor");
     }
 
     /// QaConfig with json=true and verbose=true simultaneously.
@@ -142,7 +142,7 @@
     #[test]
     fn qa_config_extreme_thresholds() {
         let config = QaConfig {
-            min_tps: f64::MAX,
+            min_tps: Some(f64::MAX),
             min_speedup: 0.0,
             min_gpu_speedup: f64::MIN_POSITIVE,
             iterations: usize::MAX,
@@ -150,7 +150,7 @@
             max_tokens: 1,
             ..Default::default()
         };
-        assert_eq!(config.min_tps, f64::MAX);
+        assert_eq!(config.min_tps, Some(f64::MAX));
         assert!((config.min_speedup).abs() < f64::EPSILON);
         assert_eq!(config.iterations, usize::MAX);
         assert_eq!(config.warmup, 0);

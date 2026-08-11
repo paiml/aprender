@@ -6,41 +6,55 @@ https://claude.ai/code/artifact/2ab8934a-3db7-49fe-adbf-eb0905c2de8e
 
 201 findings across 37 root-cause clusters.
 
-## Reading the PR column
+## How this count is kept honest
 
-`#NNNN` is the pull request that addresses the finding; `✅` means it has merged to `main`.
-Several PRs against one finding means its cluster took more than one pass. A blank cell
-means no PR has claimed that finding yet.
+This ledger has said 190, 211, 202 and 201. Every correction was downward and had one
+cause: **re-running a probe slice produces findings that restate defects already recorded,
+in different words.** Nineteen such restatements have been collapsed. Matching on a title
+prefix cannot see a re-wording, so it kept letting them in.
 
-All 37 clusters have at least one PR. Several are deliberately partial and say so in their
-own bodies — `Refs #2374 (partial) — remaining: 4, 9, 10, 12` — rather than claiming a
-clean sweep. An issue closes only when its LAST finding is covered, which is why merged
-PRs outnumber closed issues.
+The rule the ledger is now maintained by, so a future audit does not re-inflate it:
 
-Verified against binaries built from `main` and SHA-matched via `apr --version`:
-`--offline`, `validate`, SSE streaming, `rosetta`, the native serve routes and the remote
-abort, and MCP `apr.serve`. The SHA match matters — the workspace target dir is shared
-across every worktree, so an "after" binary can silently be another worktree's build.
+> Two findings are the same defect when they share a **surface** and a **primary command**,
+> and their titles match at `SequenceMatcher >= 0.42` after normalisation (inline code
+> spans and punctuation stripped, lowercased, whitespace collapsed). Keep the record with
+> more evidence — longer repro, observed, expected and variations.
+
+Anything in the 0.42–0.62 band gets read by a human before collapsing, because that band
+contains real pairs that merely *sound* alike. The ones deliberately kept apart so far:
+
+| kept as two | why |
+|---|---|
+| `rerank --input-ids` vs `--hidden-dim` | two different panics, different frames |
+| `apr.trace` null layer stats vs unimplemented `reference` | different failures of the same tool |
+| `hex --tensor` wrong bytes vs `hex --json` | different output paths |
+| `validate` APR "3/100 points" vs its out-of-bounds tensor drop | different gates |
+
+**No issue has ever lost coverage to this process.** Only duplicate rows disappear; every
+finding still appears in exactly one cluster issue, and any issue whose finding set changed
+was refreshed.
+
+The count is a floor regardless: it is what 700+ invocations found, not what exists.
 
 | Sev | Surface | Target | Cluster | Issue | Fixed by | Defect |
 |---|---|---|---|---|---|---|
-| P0 | mcp | `apr mcp (all subprocess-backed tools)` | bare-apr-path-resolution | #2384 | #2424 | MCP server executes a bare `apr` resolved from PATH — every tool ran a DIFFERENT (0.60.0) binary while apr.version reported 0.63.0 |
-| P0 | cli | `code` | bare-apr-path-resolution | #2384 | #2424 | `apr code` runs inference through a PATH-resolved `apr` binary, not itself — the pinned 0.63.0 binary silently executed a 0.60.0 backend |
+| P0 | mcp | `apr mcp (all subprocess-backed tools)` | bare-apr-path-resolution | #2384 | #2424&nbsp;✅ | MCP server executes a bare `apr` resolved from PATH — every tool ran a DIFFERENT (0.60.0) binary while apr.version reported 0.63.0 |
+| P0 | cli | `code` | bare-apr-path-resolution | #2384 | #2424&nbsp;✅ | `apr code` runs inference through a PATH-resolved `apr` binary, not itself — the pinned 0.63.0 binary silently executed a 0.60.0 backend |
 | P0 | cli | `chat` | cli:chat | #2387 | #2413 | `apr chat <local model path>` is unusable: every path containing a slash is rewritten to hf://<path> and fetched from HuggingFace |
-| P0 | cli | `data decontaminate` | cli:data | #2381 | #2423 | `apr data decontaminate --ngram 0` panics (exit 101) instead of validating the flag |
+| P0 | cli | `data decontaminate` | cli:data | #2381 | #2423&nbsp;✅ | `apr data decontaminate --ngram 0` panics (exit 101) instead of validating the flag |
 | P0 | cli | `validate` | cli:diag-misc | #2394 | #2428&nbsp;✅ | apr validate silently DROPS an out-of-bounds tensor and reports "VALID ... 0 contract violations" with exit 0 on a corrupt GGUF that four sibling commands hard-reject |
-| P0 | cli | `rerank` | cli:embed-rerank | #2383 | #2412 #2414 | `apr rerank --input-ids` panics (slice index out of range) on any token id >= vocab_size instead of validating |
-| P0 | cli | `rerank` | cli:embed-rerank | #2383 | #2412 #2414 | `apr rerank --hidden-dim` / `--num-heads` panic on an incompatible value instead of erroring |
+| P0 | cli | `rerank` | cli:embed-rerank | #2383 | #2412 #2414&nbsp;✅ | `apr rerank --input-ids` panics (slice index out of range) on any token id >= vocab_size instead of validating |
+| P0 | cli | `rerank` | cli:embed-rerank | #2383 | #2412 #2414&nbsp;✅ | `apr rerank --hidden-dim` / `--num-heads` panic on an incompatible value instead of erroring |
 | P0 | cli | `explain` | cli:explain | #2386 | #2368&nbsp;✅ | `apr explain` prints its error to stdout and exits 0 — a missing file reads as success to any shell/CI script |
 | P0 | cli | `audio-inspect-lint` | cli:lint-family | #2377 | #2438 | audio-inspect-lint truncates sample_rate/channels with a wrapping `as u32` cast — an out-of-range value PASSES the gate and the report prints a fabricated value |
-| P0 | cli | `qa` | cli:qa-bench | #2380 | #2372 #2426 | `apr qa --assert-tps N` is never enforced: for GGUF it is silently rewritten to max(10, N/10), for APR/SafeTensors it is discarded entirely — the throughput gate PASSES and `apr qa` exits 0 far below the asserted minimum |
+| P0 | cli | `qa` | cli:qa-bench | #2380 | #2372&nbsp;✅ #2426 | `apr qa --assert-tps N` is never enforced: for GGUF it is silently rewritten to max(10, N/10), for APR/SafeTensors it is discarded entirely — the throughput gate PASSES and `apr qa` exits 0 far below the asserted minimum |
 | P0 | cli | `rosetta compare-inference` | cli:rosetta | #2382 | #2420&nbsp;✅ | `apr rosetta compare-inference` reports "RESULT: INFERENCE MATCH (100%)" and exits 0 for any pair of models — even when it prints "NO TOKENS CAPTURED - INFERENCE MAY HAVE FAILED!" and the two models produce completely different text |
 | P0 | cli | `rosetta fingerprint` | cli:rosetta | #2382 | #2420&nbsp;✅ | `apr rosetta fingerprint A B` diff mode prints 27 of 27 tensors as "Missing in Model B", then concludes "✓ No statistical anomalies detected" / `"passed": true` and exits 0 |
 | P0 | cli | `rosetta verify` | cli:rosetta | #2382 | #2420&nbsp;✅ | `apr rosetta verify --intermediate apr` prints "Round-trip verification FAILED" with Max Diff: inf and exits 0 |
 | P0 | cli | `run (default install, wgpu backend)` | cli:run | #2378 | #2427 | Default `apr run <gguf>` peaks at 13.9 GB RSS and 11.1 s because it dequantizes the whole model to F32 for a wgpu path its own parity gate then rejects |
-| P0 | cli | `finetune --task classify` | cli:train-family | #2374 | #2436 | `apr finetune --task classify <model.apr>` ignores the named .apr and loads weights from whatever SafeTensors file happens to sit in the same directory |
-| P0 | cli | `train apply --task pretrain` | cli:train-family | #2374 | #2436 | `apr train apply --task pretrain` panics (exit 101) on any dataset whose input width differs from its target width |
-| P0 | cli | `train apply --task pretrain` | cli:train-family | #2374 | #2436 | `apr train apply` silently trains on fabricated demo data instead of the user's dataset and exits 0 reporting success |
+| P0 | cli | `finetune --task classify` | cli:train-family | #2374 | #2436 #2442 | `apr finetune --task classify <model.apr>` ignores the named .apr and loads weights from whatever SafeTensors file happens to sit in the same directory |
+| P0 | cli | `train apply --task pretrain` | cli:train-family | #2374 | #2436 #2442 | `apr train apply --task pretrain` panics (exit 101) on any dataset whose input width differs from its target width |
+| P0 | cli | `train apply --task pretrain` | cli:train-family | #2374 | #2436 #2442 | `apr train apply` silently trains on fabricated demo data instead of the user's dataset and exits 0 reporting success |
 | P0 | http | `/tokenize, /batch/tokenize, /batch/generate, /realize/batch,` | http:native | #2376 | #2429&nbsp;✅ | Seven native routes — including the startup-banner-advertised /stream/generate and /batch/generate — always fail with "No model available" on the standard `apr serve run model.gguf` path, while /generate on the same server works |
 | P0 | http | `POST /generate, POST /v1/completions` | http:native | #2376 | #2429&nbsp;✅ | A single unauthenticated request with a large max_tokens aborts the whole server process (KV cache allocated as prompt_len+max_tokens with no clamp) |
 | P0 | http | `POST /v1/chat/completions (stream:true)` | http:openai | #2375 | #2367&nbsp;✅ | SSE streaming deltas have ALL leading whitespace stripped per token — concatenated stream text loses every space and newline |
@@ -53,23 +67,23 @@ across every worktree, so an "after" binary can silently be another worktree's b
 | P1 | cli | `code` | cli:code | #2398 | — | `apr code` silently swallows every option written after the prompt — including `--model`, so it runs a different model than the user asked for, with no warning |
 | P1 | cli | `code` | cli:code | #2398 | — | `apr code` cannot run the qwen2.5-coder-0.5b APR fixture — HTTP 500 "matmul weight has EMPTY data buffer" on a model every inspection tool reads fine |
 | P1 | cli | `convert / quantize` | cli:convert-export | #2392 | #2437 | apr convert/quantize silently discard the tokenizer for every scheme except q4k, exit 0 with "Conversion successful", producing an APR that cannot run inference |
-| P1 | cli | `data audit` | cli:data | #2381 | #2423 | `apr data audit` reports "Duplicates: 0 (0.0%) OK" for any dataset whose duplicate ratio is <= 1% -- 50 identical rows in 10,000 are reported as zero |
-| P1 | cli | `data audit` | cli:data | #2381 | #2423 | `apr data audit` tells the user to run `apr data dedup`, which the parser rejects as an unknown subcommand |
+| P1 | cli | `data audit` | cli:data | #2381 | #2423&nbsp;✅ | `apr data audit` reports "Duplicates: 0 (0.0%) OK" for any dataset whose duplicate ratio is <= 1% -- 50 identical rows in 10,000 are reported as zero |
+| P1 | cli | `data audit` | cli:data | #2381 | #2423&nbsp;✅ | `apr data audit` tells the user to run `apr data dedup`, which the parser rejects as an unknown subcommand |
 | P1 | cli | `check` | cli:diag-misc | #2394 | #2428&nbsp;✅ | `apr check` prints "MODEL PROVEN CORRECT" (exit 0) on a GGUF whose output_norm.weight shape is corrupted to half the hidden size |
 | P1 | cli | `debug` | cli:diag-misc | #2394 | #2428&nbsp;✅ | apr debug --drama reports models as COMPRESSED / ENCRYPTED when every other surface of the same binary reports no such flags |
 | P1 | cli | `diff` | cli:diag-misc | #2394 | #2428&nbsp;✅ | apr diff --quant-roundtrip fails a file compared against ITSELF (exit 5) because all-zero bias tensors are scored cosine=0.000000 despite rmse=0 and max_abs=0 |
 | P1 | cli | `hex` | cli:diag-misc | #2394 | #2428&nbsp;✅ | apr hex --tensor prints a "Hex dump" whose bytes are not the bytes in the file for any non-F32 dtype — BF16 tensors are widened to F32 and the fabricated bytes are shown under the tensor's real file offset |
 | P1 | cli | `inspect` | cli:diag-misc | #2394 | #2428&nbsp;✅ | apr inspect reports "valid": true / "checksum_valid": true / 291 tensors / physics 20-of-20 on a 200-byte truncated APR file, exit 0, while validate and tensors reject the same file |
 | P1 | cli | `validate` | cli:diag-misc | #2394 | #2428&nbsp;✅ | validate --quality --min-score is a gate that cannot fail on GGUF/SafeTensors: no score is computed, no advisory is printed, and --min-score 100 still exits 0 |
-| P1 | cli | `embed --normalize / rerank --with-pooler` | cli:embed-rerank | #2383 | #2412 #2414 | `--normalize false` and `--with-pooler false` are documented in --help but rejected by the parser, and the 'off' state is unreachable |
+| P1 | cli | `embed --normalize / rerank --with-pooler` | cli:embed-rerank | #2383 | #2412 #2414&nbsp;✅ | `--normalize false` and `--with-pooler false` are documented in --help but rejected by the parser, and the 'off' state is unreachable |
 | P1 | cli | `attn-parity-lint, attn-viz-lint, audio-inspect-lint, check-f` | cli:lint-family | #2377 | #2438 | 8 of the 16 commands in this slice document a producer command in `apr --help` and their own `--help` that the shipped binary does not have |
 | P1 | cli | `awq-lint, gptq-lint, imatrix-lint, embeddings-lint` | cli:lint-family | #2377 | #2438 | The "CLI flag accepted" gates report PASS for argv that the shipped `apr quantize` / `apr serve run` parser rejects with exit 2 |
 | P1 | cli | `profile` | cli:profile | #2395 | #2440 | `apr profile --warmup N --measure N` are silently ignored — always 3 warmup / 10 measurement passes |
 | P1 | cli | `profile` | cli:profile | #2395 | #2440 | `apr profile --warmup`, `--measure` and `--tokens` are documented, parsed, and then silently discarded -- --measure 1 and --measure 100 take identical wall time |
 | P1 | cli | `profile --focus` | cli:profile | #2395 | #2440 | `apr profile --focus mlp` drops 3 of the 4 FFN operations and then reports the survivor as "100.0%"; `--focus matmul` returns an empty table with exit 0 |
 | P1 | cli | `ptx` | cli:ptx | #2399 | — | `apr ptx` is advertised in top-level --help but every invocation fails with "requires --features full" in the build `cargo install aprender` produces |
-| P1 | cli | `probar tensor` | cli:qa-bench | #2380 | #2372 #2426 | `apr probar tensor` lists "Generated files" ending in .png that do not exist — it writes Netpbm .pgm; `--format png` never produces a PNG, and an invalid --format value is silently accepted |
-| P1 | cli | `qualify` | cli:qa-bench | #2380 | #2372 #2426 | `apr qualify --tier standard/full` runs its Contract Audit gate against a hardcoded cwd-relative path, so it FAILS for every user who is not sitting in the aprender source checkout |
+| P1 | cli | `probar tensor` | cli:qa-bench | #2380 | #2372&nbsp;✅ #2426 | `apr probar tensor` lists "Generated files" ending in .png that do not exist — it writes Netpbm .pgm; `--format png` never produces a PNG, and an invalid --format value is silently accepted |
+| P1 | cli | `qualify` | cli:qa-bench | #2380 | #2372&nbsp;✅ #2426 | `apr qualify --tier standard/full` runs its Contract Audit gate against a hardcoded cwd-relative path, so it FAILS for every user who is not sitting in the aprender source checkout |
 | P1 | cli | `encrypt` | cli:registry-pkg | #2408 | #2410 | `apr encrypt --key-file` accepts a ZERO-BYTE key file and produces a file anyone can decrypt; `ALBOR_ENCRYPT_KEY=""` bypasses the empty-passphrase guard the same way |
 | P1 | cli | `list` | cli:registry-pkg | #2408 | #2410 | `apr list` marks every model "(orphan)" and reports "0 tracked" — including a model `apr pull` wrote seconds earlier; the registry manifest is never written |
 | P1 | cli | `pull --verify` | cli:registry-pkg | #2408 | #2410 | `apr pull --verify` looks in a different cache tree than `apr pull` writes, and records no checksums at all for non-sharded models — contradicting its own --help |
@@ -86,16 +100,16 @@ across every worktree, so an "after" binary can silently be another worktree's b
 | P1 | http | `apr serve run --context-length / POST /v1/completions` | cli:serve-flags | #2400 | #2385 | --context-length is accepted but has no effect: a 3001-token prompt is served normally under --context-length 512, and it does not bound KV-cache allocation either |
 | P1 | http | `apr serve run --no-cors` | cli:serve-flags | #2400 | #2385 | `--no-cors` has no effect — CorsLayer::permissive() is applied unconditionally, so `access-control-allow-origin: *` is still sent on every response |
 | P1 | http | `apr serve run --no-metrics / GET /metrics` | cli:serve-flags | #2400 | #2385 | `--no-metrics` ("Disable Prometheus metrics endpoint") does not disable the endpoint — it only hides one line of the startup banner; /metrics still serves the full metric set |
-| P1 | cli | `prune --plan` | cli:train-family | #2374 | #2436 | `apr prune --plan` reports an "Est. output" size up to 20x smaller than what pruning actually produces; the real output is never smaller than the input |
-| P1 | cli | `runs ls --status` | cli:train-family | #2374 | #2436 | `apr runs ls --status completed` matches nothing while 2941 completed runs exist; invalid status values return an empty list with exit 0 |
-| P1 | cli | `train apply` | cli:train-family | #2374 | #2436 | `apr train apply -o/--output` is silently ignored, and a missing output directory destroys the run AFTER training completes |
-| P1 | cli | `train halving` | cli:train-family | #2374 | #2436 | `apr train halving` ignores the exit status of every trial and declares an HPO winner from all-null scores with exit 0, after rewriting the user's sweep configs in place |
-| P1 | cli | `train plan --format` | cli:train-family | #2374 | #2436 | `apr train plan --format` is completely inert - text, json, yaml and an invalid value all produce byte-identical text output with exit 0 |
-| P1 | cli | `train plan / train apply (--task classify, the DEFAULT)` | cli:train-family | #2374 | #2436 | The default task of `apr train plan` and `apr train apply` always fails, with an error claiming a dependency is unpublished that the shipped binary already links at 0.63.0 |
-| P1 | cli | `tune -r/--rank` | cli:train-family | #2374 | #2436 | `apr tune --rank` has no effect on the recommended configuration; the tool prints the requested rank and then discards it |
+| P1 | cli | `prune --plan` | cli:train-family | #2374 | #2436 #2442 | `apr prune --plan` reports an "Est. output" size up to 20x smaller than what pruning actually produces; the real output is never smaller than the input |
+| P1 | cli | `runs ls --status` | cli:train-family | #2374 | #2436 #2442 | `apr runs ls --status completed` matches nothing while 2941 completed runs exist; invalid status values return an empty list with exit 0 |
+| P1 | cli | `train apply` | cli:train-family | #2374 | #2436 #2442 | `apr train apply -o/--output` is silently ignored, and a missing output directory destroys the run AFTER training completes |
+| P1 | cli | `train halving` | cli:train-family | #2374 | #2436 #2442 | `apr train halving` ignores the exit status of every trial and declares an HPO winner from all-null scores with exit 0, after rewriting the user's sweep configs in place |
+| P1 | cli | `train plan --format` | cli:train-family | #2374 | #2436 #2442 | `apr train plan --format` is completely inert - text, json, yaml and an invalid value all produce byte-identical text output with exit 0 |
+| P1 | cli | `train plan / train apply (--task classify, the DEFAULT)` | cli:train-family | #2374 | #2436 #2442 | The default task of `apr train plan` and `apr train apply` always fails, with an error claiming a dependency is unpublished that the shipped binary already links at 0.63.0 |
+| P1 | cli | `tune -r/--rank` | cli:train-family | #2374 | #2436 #2442 | `apr tune --rank` has no effect on the recommended configuration; the tool prints the requested rank and then discards it |
 | P1 | http | `POST /generate` | http:native | #2376 | #2429&nbsp;✅ | Documented GenerateRequest fields `strategy`, `top_p` and `seed` are silently ignored on the quantized-GGUF path — `strategy:"greedy"` still samples, and seed=1 and seed=2 give byte-identical output |
-| P1 | http | `POST /api/chat, POST /api/generate` | http:ollama | #2396 | #2371 | Ollama created_at is a raw unix epoch ("1786289584.000000000Z"), not RFC3339 — the real Ollama Go client fails to unmarshal the whole response |
-| P1 | http | `POST /api/chat, POST /api/generate (stream:true)` | http:ollama | #2396 | — | Ollama /api/chat and /api/generate accept and then silently discard "stream":true — always one buffered JSON object, never NDJSON |
+| P1 | http | `POST /api/chat, POST /api/generate` | http:ollama | #2396 | #2435 | Ollama created_at is a raw unix epoch ("1786289584.000000000Z"), not RFC3339 — the real Ollama Go client fails to unmarshal the whole response |
+| P1 | http | `POST /api/chat, POST /api/generate (stream:true)` | http:ollama | #2396 | #2435 | Ollama /api/chat and /api/generate accept and then silently discard "stream":true — always one buffered JSON object, never NDJSON |
 | P1 | http | `POST /v1/chat/completions (stream:true)` | http:openai | #2375 | #2367&nbsp;✅ | Streaming finish_reason is hardcoded "stop" even when max_tokens truncated the output; the non-streaming path on the same request correctly returns "length" |
 | P1 | http | `POST /v1/completions (stream:true)` | http:openai | #2375 | #2367&nbsp;✅ | /v1/completions ignores stream:true — returns content-type application/json with a full text_completion object instead of an SSE stream |
 | P1 | http | `POST /v1/completions, POST /api/chat, POST /api/generate` | http:openai | #2375 | #2367&nbsp;✅ | stream:true is silently ignored on /v1/completions and both Ollama endpoints — a single application/json body is returned instead of SSE / NDJSON |
@@ -128,8 +142,8 @@ across every worktree, so an "after" binary can silently be another worktree's b
 | P1 | cli | `unified-search-lint` | lint-passes-on-bad-obs | #2389 | #2431 | `unified-search-lint` prints `[PASS] offline … expected_count_ok=false sources_ok=0` and exits 0 — a gate marked PASS whose own outcome string reports its criterion as false |
 | P1 | mcp | `apr mcp (stdio read loop)` | mcp:apr mcp | #2393 | #2434 | A single invalid UTF-8 byte on stdin terminates the whole MCP server (exit 1); all subsequent requests on the session are dropped |
 | P1 | mcp | `apr mcp / initialize` | mcp:apr mcp | #2393 | #2434 | initialize hard-errors (-32602) on any protocolVersion other than the exact string 2024-11-05, instead of replying with the version the server supports |
-| P1 | mcp | `apr.finetune` | mcp:apr.finetune | #2417 | — | apr.finetune cannot fine-tune a .safetensors base model though its schema advertises .safetensors — fails with "No model path or --model-size provided" while a path WAS provided |
-| P1 | mcp | `apr.qa (generic run_apr wrapper: subprocess.rs:57-66)` | mcp:apr.qa | #2418 | — | On any non-zero CLI exit the tool discards the full JSON report on stdout and returns only the one-line stderr — apr.qa gate detail is unreachable from MCP |
+| P1 | mcp | `apr.finetune` | mcp:apr.finetune | #2417 | #2433 | apr.finetune cannot fine-tune a .safetensors base model though its schema advertises .safetensors — fails with "No model path or --model-size provided" while a path WAS provided |
+| P1 | mcp | `apr.qa (generic run_apr wrapper: subprocess.rs:57-66)` | mcp:apr.qa | #2418 | #2433 | On any non-zero CLI exit the tool discards the full JSON report on stdout and returns only the one-line stderr — apr.qa gate detail is unreachable from MCP |
 | P1 | mcp | `apr.run / apr.bench / apr.qa / apr.tensors / apr.trace / apr` | mcp:apr.run | #2403 | #2433 | Wrong-typed optional arguments are silently dropped instead of rejected — including apr.qa's assert_tps, which disarms the throughput gate without any warning |
 | P1 | mcp | `apr.trace` | mcp:apr.trace | #2407 | — | apr.trace `reference` is advertised in the inputSchema but unimplemented, and returns a NON-error success result whose entire body is a stub string |
 | P1 | cli | `attn-parity-lint, attn-viz-lint, ddp-metrics-lint, explain-t` | nan-threshold-disarms | #2391 | #2422 | Passing `nan` (or a negative value) to any tolerance/threshold flag turns a hard-failing gate into `Ok` with exit 0 — and the report prints `Ok` next to the violating number |
@@ -152,8 +166,8 @@ across every worktree, so an "after" binary can silently be another worktree's b
 | P2 | cli | `import` | cli:convert-export | #2392 | #2437 | import of a nonexistent LOCAL absolute path advises verifying the name on huggingface.co |
 | P2 | cli | `quantize --plan` | cli:convert-export | #2392 | #2437 | quantize --plan returns a hardcoded 7.111x ratio for q4k that ignores tensor shape eligibility - 4.3x optimistic on a real model |
 | P2 | cli | `shard --max-shard-size` | cli:convert-export | #2392 | #2437 | shard --max-shard-size rejects a non-numeric value but quotes an empty string instead of the value the user passed |
-| P2 | cli | `data balance` | cli:data | #2381 | #2423 | `apr data balance --strategy sqrt-inverse` prints its own failed invariant -- "Weight sum: 7.1141 (should equal 5)" -- and exits 0 |
-| P2 | cli | `data decontaminate` | cli:data | #2381 | #2423 | `--threshold 5.0` (help says 0.0-1.0) and `--ngram 1000` silently turn the AC-016 contamination gate into an unconditional PASS |
+| P2 | cli | `data balance` | cli:data | #2381 | #2423&nbsp;✅ | `apr data balance --strategy sqrt-inverse` prints its own failed invariant -- "Weight sum: 7.1141 (should equal 5)" -- and exits 0 |
+| P2 | cli | `data decontaminate` | cli:data | #2381 | #2423&nbsp;✅ | `--threshold 5.0` (help says 0.0-1.0) and `--ngram 1000` silently turn the AC-016 contamination gate into an unconditional PASS |
 | P2 | cli | `debug` | cli:diag-misc | #2394 | #2428&nbsp;✅ | `apr debug` exits 0 on a file it reports as "✗ INVALID / ✗ CORRUPTED", but exits 4 on an equally-bad file — inconsistent failure signalling |
 | P2 | cli | `flow` | cli:diag-misc | #2394 | #2428&nbsp;✅ | `apr flow --component encoder` draws an ENCODER diagram for a decoder-only model, and prints a "--verbose ... not yet implemented" warning when --verbose was never passed |
 | P2 | cli | `gpu` | cli:diag-misc | #2394 | #2428&nbsp;✅ | `apr gpu` reports gpu_present=true and 20879 MB reservable from a build with no CUDA support, while `apr profile` on the same box reports Backend=CPU |
@@ -167,7 +181,7 @@ across every worktree, so an "after" binary can silently be another worktree's b
 | P2 | cli | `tree` | cli:diag-misc | #2394 | #2428&nbsp;✅ | apr tree --format accepts any invalid value and silently falls back to ascii with exit 0 |
 | P2 | cli | `validate` | cli:diag-misc | #2394 | #2428&nbsp;✅ | apr validate on the native APR format prints a green "✓ VALID 3/100 points" verdict with exit 0, while 21 of its 25 checks are "Pending / Not implemented" |
 | P2 | cli | `validate` | cli:diag-misc | #2394 | #2428&nbsp;✅ | Debug tracing lines "[GH-187] Embedding ..." leak to stderr on every apr validate run of an APR file, including under --quiet and --json |
-| P2 | cli | `rerank` | cli:embed-rerank | #2383 | #2412 #2414 | `apr rerank --passage` + `--passages` is documented as mutually exclusive but is silently accepted, and one of the two inputs is discarded |
+| P2 | cli | `rerank` | cli:embed-rerank | #2383 | #2412 #2414&nbsp;✅ | `apr rerank --passage` + `--passages` is documented as mutually exclusive but is silently accepted, and one of the two inputs is discarded |
 | P2 | cli | `explain` | cli:explain | #2386 | #2368&nbsp;✅ | `apr explain <unknown>` exits 0 while saying it did not recognise the input, and the documented "family name (auto-detected)" form is not accepted |
 | P2 | cli | `11 of 16 lints (--json)` | cli:lint-family | #2377 | #2438 | `--json` emits Rust `Debug` formatting inside string values instead of structured fields, and the family ships two mutually incompatible JSON envelopes |
 | P2 | cli | `imatrix-lint, embeddings-lint, hang-trace-lint` | cli:lint-family | #2377 | #2438 | A present-but-degenerate section satisfies the "observation has content" guard and then passes trivially — imatrix-lint prints `[PASS] leakage: disjoint (/calib/=0, /eval/=0)` for a body whose leakage value is the string "nonsense" |
@@ -180,20 +194,20 @@ across every worktree, so an "after" binary can silently be another worktree's b
 | P2 | cli | `profile --ci` | cli:profile | #2395 | #2440 | `apr profile --ci` always reports p50 identical to p99, so `--assert-p99` is really asserting on a single sample |
 | P2 | cli | `ptx-map` | cli:ptx | #2399 | — | `apr ptx-map` emits a confident standard-transformer kernel dispatch map for qwen35, an architecture apr itself rejects as SSM/Gated Delta Net |
 | P2 | cli | `ptx-map` | cli:ptx | #2399 | — | Every source path `apr ptx-map` prints points into a `trueno-gpu/` tree that no longer exists after the monorepo consolidation |
-| P2 | cli | `bench` | cli:qa-bench | #2380 | #2372 #2426 | `apr bench --percentiles` documents "Values must be in (0, 100]" but accepts 0 and 101, emitting a null metric key into the JSON report |
-| P2 | cli | `eval` | cli:qa-bench | #2380 | #2372 #2426 | `apr eval --device` has no effect in perplexity mode and accepts arbitrary values — `--device cuda` and `--device bogus` both run identically on a CPU-only build with no warning |
-| P2 | cli | `qa` | cli:qa-bench | #2380 | #2372 #2426 | On a CPU-only build `apr qa` passes two GPU gates vacuously — Capability Match asserts ops are "supported by GPU" and PTX Parity passes with 0/0 kernel pairs |
-| P2 | cli | `showcase` | cli:qa-bench | #2380 | #2372 #2426 | `apr showcase --step <unknown>` reports "No step specified" — the error contradicts the command line the user typed |
+| P2 | cli | `bench` | cli:qa-bench | #2380 | #2372&nbsp;✅ #2426 | `apr bench --percentiles` documents "Values must be in (0, 100]" but accepts 0 and 101, emitting a null metric key into the JSON report |
+| P2 | cli | `eval` | cli:qa-bench | #2380 | #2372&nbsp;✅ #2426 | `apr eval --device` has no effect in perplexity mode and accepts arbitrary values — `--device cuda` and `--device bogus` both run identically on a CPU-only build with no warning |
+| P2 | cli | `qa` | cli:qa-bench | #2380 | #2372&nbsp;✅ #2426 | On a CPU-only build `apr qa` passes two GPU gates vacuously — Capability Match asserts ops are "supported by GPU" and PTX Parity passes with 0/0 kernel pairs |
+| P2 | cli | `showcase` | cli:qa-bench | #2380 | #2372&nbsp;✅ #2426 | `apr showcase --step <unknown>` reports "No step specified" — the error contradicts the command line the user typed |
 | P2 | cli | `publish` | cli:registry-pkg | #2408 | #2410 | `apr publish --dry-run` lists 1 of 4 files under "Files to upload:" — the companion files it will actually upload are hidden behind -v |
 | P2 | cli | `publish` | cli:registry-pkg | #2408 | #2410 | Auto-generated model card ships a non-compiling usage snippet that also names the wrong file (`model.apr` for a safetensors publish) |
 | P2 | cli | `registry aliases` | cli:registry-pkg | #2408 | #2410 | `apr registry aliases` help says the map comes "from configs/aliases.yaml", but that file is never read — the alias map is compiled in and cannot be extended |
 | P2 | cli | `run` | cli:run | #2378 | #2427 | Every `apr run --trace` emits a false `[CONTRACT WARN] gpu-decode-profiling-v1 TOKEN_ACCOUNTING` — LmHead.count is deterministically tokens_processed-1 |
 | P2 | cli | `run / chat` | cli:run | #2378 | #2427 | Two misleading user-facing error strings: an empty lm_head on a dense Qwen2 is blamed on "a MoE per-expert tensor", and a chat error prints the literal template placeholder `{stem}` |
-| P2 | cli | `finetune --task classify` | cli:train-family | #2374 | #2436 | `apr finetune --task classify` on a .safetensors or .gguf claims no model path was provided when one was passed as the positional argument |
-| P2 | cli | `grad-norm` | cli:train-family | #2374 | #2436 | `apr grad-norm` reports a malformed JSON history file as "Invalid APR format" |
-| P2 | cli | `pretrain` | cli:train-family | #2374 | #2436 | `apr pretrain` prints "OK CONVERGED" regardless of whether the target val_loss was reached - final loss 3.0000 against a target of 0.001 still reports CONVERGED with exit 0 |
-| P2 | cli | `pretrain --num-steps` | cli:train-family | #2374 | #2436 | `apr pretrain --num-steps N` silently rounds up to a whole epoch - asking for 3 steps runs 100 |
-| P2 | cli | `tune --method, train sweep --strategy, runs ls --status` | cli:train-family | #2374 | #2436 | Enum-valued flags are validated inconsistently across the train family - finetune/distill/prune reject bad values, tune/sweep/runs silently fall back |
+| P2 | cli | `finetune --task classify` | cli:train-family | #2374 | #2436 #2442 | `apr finetune --task classify` on a .safetensors or .gguf claims no model path was provided when one was passed as the positional argument |
+| P2 | cli | `grad-norm` | cli:train-family | #2374 | #2436 #2442 | `apr grad-norm` reports a malformed JSON history file as "Invalid APR format" |
+| P2 | cli | `pretrain` | cli:train-family | #2374 | #2436 #2442 | `apr pretrain` prints "OK CONVERGED" regardless of whether the target val_loss was reached - final loss 3.0000 against a target of 0.001 still reports CONVERGED with exit 0 |
+| P2 | cli | `pretrain --num-steps` | cli:train-family | #2374 | #2436 #2442 | `apr pretrain --num-steps N` silently rounds up to a whole epoch - asking for 3 steps runs 100 |
+| P2 | cli | `tune --method, train sweep --strategy, runs ls --status` | cli:train-family | #2374 | #2436 #2442 | Enum-valued flags are validated inconsistently across the train family - finetune/distill/prune reject bad values, tune/sweep/runs silently fall back |
 | P2 | http | `/tokenize vs /batch/tokenize vs /batch/generate vs /realize/` | http:native | #2376 | #2429&nbsp;✅ | The identical server-side condition ("Model registry error: No model available") is reported as 404 on some routes and 500 on others, and 404 is wrong for a server-side misconfiguration in either case |
 | P2 | http | `GET / , GET /ready , POST /predict , POST /transcribe , POST` | http:native | #2376 | #2429&nbsp;✅ | Route-surface drift between the three routers: /, /ready, /predict and /transcribe 404 on the GGUF serve path, and both startup banners advertise POST /v1/predict, which can only ever 503 for a GGUF model |
 | P2 | http | `GET /models vs GET /realize/model` | http:native | #2376 | #2429&nbsp;✅ | Two model-info endpoints on the same server disagree about the same model: /models says format "unknown", /realize/model says "gguf" |
@@ -202,7 +216,7 @@ across every worktree, so an "after" binary can silently be another worktree's b
 | P2 | http | `POST /generate` | http:native | #2376 | #2429&nbsp;✅ | Negative `temperature` is accepted with HTTP 200 and inverts the sampling distribution, returning multilingual garbage instead of a 400 |
 | P2 | http | `POST /generate (malformed body) / POST /v1/predict` | http:native | #2376 | #2429&nbsp;✅ | Error bodies are inconsistently shaped — JSON {"error":...} on most failures but bare text/plain on 400/415 — and the 400 leaks raw serde parser internals that the 422 sanitizer was added to prevent |
 | P2 | http | `POST /generate (oversized prompt)` | http:native | #2376 | #2429&nbsp;✅ | An oversized-prompt client error is returned as HTTP 500, after ~172 s of server CPU, with a hint naming a CLI flag that does not exist on the HTTP API |
-| P2 | http | `GET /api/tags, GET /api/show, POST /api/embeddings` | http:ollama | #2396 | — | Ollama model-discovery endpoints (/api/tags, /api/show, /api/embeddings) are absent although the server banner advertises "Ollama-Parity Endpoints" |
+| P2 | http | `GET /api/tags, GET /api/show, POST /api/embeddings` | http:ollama | #2396 | #2435 | Ollama model-discovery endpoints (/api/tags, /api/show, /api/embeddings) are absent although the server banner advertises "Ollama-Parity Endpoints" |
 | P2 | http | `GET /v1/metrics` | http:openai | #2375 | #2367&nbsp;✅ | /v1/metrics reports latency_p50/p95/p99 = 0.0 ms while /metrics on the same process at the same instant reports avg_latency_ms 626.79; model_name is always "N/A" |
 | P2 | http | `POST /v1/chat/completions` | http:openai | #2375 | #2367&nbsp;✅ | OpenAI `n` parameter is accepted and silently ignored — always exactly one choice is returned |
 | P2 | http | `POST /v1/predict` | http:openai | #2375 | #2367&nbsp;✅ | /v1/predict says "No APR model loaded" while the server is serving an .apr file, and leaks the internal Rust API name AppState::demo() to HTTP clients |

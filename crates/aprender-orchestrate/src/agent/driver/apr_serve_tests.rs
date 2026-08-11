@@ -9,6 +9,127 @@ fn test_find_apr_binary() {
     assert!(result.is_ok(), "apr binary should be on PATH: {result:?}");
 }
 
+// ═══ #2384: `apr code` must launch ITSELF, not a $PATH-resolved `apr` ═══
+//
+// Field defect: `apr code` from a freshly installed 0.63.0 spawned
+// `/home/noah/.local/bin/apr` (0.60.0) as its inference backend, because
+// `find_apr_binary` was a bare `which::which("apr")`.
+
+/// Write an executable `/bin/sh` script at `path` that prints `marker`.
+#[cfg(unix)]
+fn write_marker_bin(path: &std::path::Path, marker: &str) {
+    use std::io::Write;
+    let mut f = std::fs::File::create(path).expect("create marker bin");
+    writeln!(f, "#!/bin/sh").expect("shebang");
+    writeln!(f, "echo {marker}").expect("body");
+    f.sync_all().expect("sync");
+    drop(f);
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(path).expect("stat").permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms).expect("chmod");
+}
+
+/// FALSIFIER (#2384): with a *different* `apr` reachable through the PATH
+/// lookup, resolution must still pick the running executable — and executing
+/// the resolved path must produce the self binary's output, not the PATH
+/// one's. Before the fix, `find_apr_binary` never consulted `current_exe`
+/// and always returned the PATH candidate.
+#[test]
+#[cfg(unix)]
+fn falsify_2384_self_wins_over_path_lookup() {
+    // Unique per process: a fixed path lets two concurrent runs of this test
+    // binary delete each other's shim mid-flight.
+    let dir =
+        std::env::temp_dir().join(format!("aprender-orchestrate-2384-self-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("self")).expect("mkdir self");
+    std::fs::create_dir_all(dir.join("path")).expect("mkdir path");
+
+    let self_apr = dir.join("self").join("apr");
+    let path_apr = dir.join("path").join("apr");
+    write_marker_bin(&self_apr, "SELF-0.63.0");
+    write_marker_bin(&path_apr, "PATH-0.60.0");
+
+    let resolved = resolve_apr_binary(None, Some(self_apr.clone()), || Some(path_apr.clone()))
+        .expect("resolution must succeed");
+    assert_eq!(
+        resolved,
+        self_apr,
+        "must launch the running executable, got {}",
+        resolved.display()
+    );
+
+    let out = std::process::Command::new(&resolved).output().expect("spawn resolved backend");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "SELF-0.63.0",
+        "the backend that runs must be the binary the user invoked"
+    );
+}
+
+/// The field bug's two binaries share a basename and differ only by
+/// directory, so a basename comparison would have passed while the defect was
+/// live. Resolution must preserve the full path.
+#[test]
+fn falsify_2384_resolution_preserves_the_directory() {
+    let installed = std::path::PathBuf::from("/opt/release-0.63.0/bin/apr");
+    let stale = std::path::PathBuf::from("/home/user/.local/bin/apr");
+    let resolved = resolve_apr_binary(None, Some(installed.clone()), || Some(stale.clone()))
+        .expect("resolution must succeed");
+    assert_eq!(resolved, installed);
+    assert_ne!(resolved, stale);
+}
+
+/// A host process that is not `apr` (the `batuta` library embedded elsewhere,
+/// or this very test harness) must still fall back to `$PATH`.
+#[test]
+fn falsify_2384_non_apr_host_falls_back_to_path() {
+    let harness = std::path::PathBuf::from("/w/target/debug/deps/batuta-1a2b3c4d");
+    let on_path = std::path::PathBuf::from("/usr/bin/apr");
+    assert_eq!(
+        resolve_apr_binary(None, Some(harness), || Some(on_path.clone())),
+        Some(on_path.clone())
+    );
+    assert_eq!(resolve_apr_binary(None, None, || Some(on_path.clone())), Some(on_path));
+    // Nothing anywhere → None, which `find_apr_binary` maps to an error.
+    assert_eq!(resolve_apr_binary(None, None, || None), None);
+}
+
+/// Near-miss names are not the `apr` CLI.
+#[test]
+fn falsify_2384_similar_names_are_not_apr() {
+    let on_path = std::path::PathBuf::from("/usr/bin/apr");
+    for name in ["apr-cli", "aprender", "batuta", "aprx"] {
+        let exe = std::path::PathBuf::from("/usr/bin").join(name);
+        assert_eq!(
+            resolve_apr_binary(None, Some(exe), || Some(on_path.clone())),
+            Some(on_path.clone()),
+            "{name} must not be mistaken for the apr binary"
+        );
+    }
+}
+
+/// `$APR_BIN` overrides everything; an exported-but-empty value is ignored.
+#[test]
+fn falsify_2384_explicit_override_wins() {
+    let exe = std::path::PathBuf::from("/opt/bin/apr");
+    let on_path = std::path::PathBuf::from("/usr/bin/apr");
+    assert_eq!(
+        resolve_apr_binary(
+            Some(std::ffi::OsString::from("/mock/apr")),
+            Some(exe.clone()),
+            || Some(on_path.clone())
+        ),
+        Some(std::path::PathBuf::from("/mock/apr"))
+    );
+    assert_eq!(
+        resolve_apr_binary(Some(std::ffi::OsString::new()), Some(exe.clone()), || Some(on_path)),
+        Some(exe)
+    );
+    assert_eq!(APR_BIN_ENV, "APR_BIN");
+}
+
 #[test]
 fn test_privacy_tier_is_sovereign() {
     assert_eq!(PrivacyTier::Sovereign, PrivacyTier::Sovereign);

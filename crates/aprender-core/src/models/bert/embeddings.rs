@@ -65,8 +65,12 @@ impl BertEmbeddings {
     ///
     /// # Panics
     ///
-    /// Panics if `input_ids.len() != token_type_ids.len()` or
-    /// `input_ids.len() > max_position_embeddings`.
+    /// Panics if `input_ids.len() != token_type_ids.len()`, if
+    /// `input_ids.len() > max_position_embeddings`, or if any id is at or
+    /// above its table size (the embedding rows are sliced unchecked).
+    /// Callers handling untrusted ids must pre-check with
+    /// [`BertConfig::validate_ids`](crate::models::bert::BertConfig::validate_ids)
+    /// and surface the error rather than aborting the process.
     #[must_use]
     pub fn forward(&self, input_ids: &[u32], token_type_ids: &[u32]) -> Tensor {
         assert_eq!(
@@ -138,5 +142,29 @@ mod tests {
         let token_type_ids = vec![0u32, 0, 0, 1, 1];
         let out = emb.forward(&input_ids, &token_type_ids);
         assert_eq!(out.shape(), &[1, 5, 384]);
+    }
+
+    /// The hazard `BertConfig::validate_ids` exists to guard: the embedding
+    /// rows are sliced with the raw id, so an id past the end of the table
+    /// aborts the process. Pinning it here keeps the guard load-bearing — if
+    /// this ever stops panicking, the pre-check is no longer the only thing
+    /// standing between user input and a slice-range abort.
+    #[test]
+    #[should_panic(expected = "out of range for slice")]
+    fn embeddings_out_of_range_id_panics_without_a_pre_check() {
+        let config = BertConfig::minilm_l6();
+        let emb = BertEmbeddings::new(&config);
+        let _ = emb.forward(&[101u32, 999_999, 102], &[0u32, 0, 0]);
+    }
+
+    /// The same ids, run through the pre-check first, are rejected with a
+    /// recoverable error instead of aborting.
+    #[test]
+    fn validate_ids_rejects_what_forward_would_abort_on() {
+        let config = BertConfig::minilm_l6();
+        let err = config
+            .validate_ids(&[101, 999_999, 102], &[0, 0, 0])
+            .expect_err("id past the word-embedding table must be rejected");
+        assert_eq!(err.field, "input_ids[1]");
     }
 }

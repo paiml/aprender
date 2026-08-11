@@ -118,14 +118,26 @@ enum ResampleStrategy {
     Undersample,
 }
 
-/// Compute sqrt-inverse class weights — mirrors alimentar::sqrt_inverse_weights.
+/// Compute sqrt-inverse class weights, normalised so that the weights sum to
+/// the number of non-empty classes (i.e. mean weight 1.0).
+///
+/// The raw `sqrt(N / (K * n_i))` form is NOT normalised: for a 90/10 split it
+/// yields 0.7454 and 2.2361, summing to 2.9814 while the command reported
+/// "should equal 2". Shipping weights whose mean is 1.49 rather than 1.0
+/// silently inflates the effective loss scale of any training run that
+/// consumes them. Normalising preserves the sqrt-inverse *ratios* between
+/// classes — the only part that affects rebalancing — and makes the stated
+/// invariant true.
+///
+/// Classes with zero samples keep weight 0.0 and are excluded from the target
+/// sum; `weight_sum_target` reports what the sum must equal.
 fn sqrt_inverse_weights(counts: &[usize]) -> Vec<f32> {
     let total: usize = counts.iter().sum();
     if total == 0 || counts.is_empty() {
         return vec![];
     }
     let k = counts.len() as f32;
-    counts
+    let raw: Vec<f32> = counts
         .iter()
         .map(|&c| {
             if c == 0 {
@@ -134,7 +146,21 @@ fn sqrt_inverse_weights(counts: &[usize]) -> Vec<f32> {
                 (total as f32 / (k * c as f32)).sqrt()
             }
         })
-        .collect()
+        .collect();
+
+    let raw_sum: f32 = raw.iter().sum();
+    let target = weight_sum_target(counts) as f32;
+    if raw_sum <= 0.0 || target <= 0.0 {
+        return raw;
+    }
+    let scale = target / raw_sum;
+    raw.iter().map(|w| w * scale).collect()
+}
+
+/// The value the sqrt-inverse weights are normalised to sum to: the number of
+/// classes that actually have samples.
+fn weight_sum_target(counts: &[usize]) -> usize {
+    counts.iter().filter(|&&c| c > 0).count()
 }
 
 /// Select resampled indices using deterministic hashing for reproducibility.
@@ -255,6 +281,10 @@ struct AuditResult {
     out_of_range: usize,
     num_classes: usize,
     duplicate_count: usize,
+    /// Whether the duplicate ratio crossed the alert threshold. Decoupled from
+    /// `duplicate_count`: a dataset can hold real duplicates without tripping
+    /// the alert, and the count must still be reported truthfully.
+    duplicates_flagged: bool,
     imbalance_report: alimentar::imbalance::ImbalanceReport,
     text_stats: TextColumnStats,
     path: String,
@@ -325,14 +355,16 @@ fn print_audit_report(r: &AuditResult) {
     );
 
     println!();
-    let dup_status = if duplicate_count > 0 {
-        format!(
-            "{duplicate_count} ({:.1}%)  {}",
-            duplicate_count as f64 / total as f64 * 100.0,
-            "minor".yellow()
-        )
-    } else {
+    let dup_pct = duplicate_count as f64 / total as f64 * 100.0;
+    let dup_status = if duplicate_count == 0 {
         format!("0 (0.0%)  {}", "OK".green())
+    } else if r.duplicates_flagged {
+        format!("{duplicate_count} ({dup_pct:.1}%)  {}", "minor".yellow())
+    } else {
+        format!(
+            "{duplicate_count} ({dup_pct:.1}%)  {}",
+            "below alert threshold".green()
+        )
     };
     output::kv("Duplicates", dup_status);
 
@@ -367,9 +399,10 @@ fn print_audit_report(r: &AuditResult) {
             "Severe class imbalance ({ratio:.1}:1) -- use `apr data balance` to fix"
         ));
     }
-    if duplicate_count > 0 {
+    if r.duplicates_flagged {
         issues.push(format!(
-            "{duplicate_count} duplicate inputs -- use `apr data dedup` to remove"
+            "{duplicate_count} duplicate rows -- use `apr data dedup {} -o clean.jsonl` to remove",
+            r.path
         ));
     }
     if out_of_range > 0 {
@@ -391,6 +424,25 @@ fn print_audit_report(r: &AuditResult) {
             println!("  {} {issue}", "!".yellow());
         }
     }
+}
+
+/// Number of duplicate rows in a quality report.
+///
+/// Reads the count the checker actually measured. It must NOT be derived by
+/// summing the `DuplicateRows` issues: that issue is only pushed once the
+/// duplicate ratio crosses the alert threshold (default 1%), so summing it
+/// collapses every sub-threshold count to a hard 0 — 49 duplicate rows in
+/// 10,000 were reported as "0 (0.0%) OK".
+fn duplicate_row_count(report: &alimentar::quality::QualityReport) -> usize {
+    report.duplicate_row_count
+}
+
+/// Whether the duplicate ratio crossed the checker's alert threshold.
+fn duplicates_flagged(report: &alimentar::quality::QualityReport) -> bool {
+    report
+        .issues
+        .iter()
+        .any(|i| matches!(i, alimentar::quality::QualityIssue::DuplicateRows { .. }))
 }
 
 /// Validate dataset schema has required columns.
@@ -473,6 +525,10 @@ pub(crate) fn run_audit(
 
     validate_audit_schema(&dataset, input_column, label_column)?;
 
+    // NOTE: `max_duplicate_ratio` is the per-COLUMN duplicate threshold. The
+    // duplicate-ROW alert uses QualityThresholds::max_duplicate_row_ratio
+    // (1%); the row count itself is always read from the report, never
+    // inferred from whether that alert fired.
     let checker = QualityChecker::new()
         .max_null_ratio(0.01)
         .max_duplicate_ratio(0.05);
@@ -489,16 +545,8 @@ pub(crate) fn run_audit(
 
     let out_of_range = count_out_of_range_labels(&imbalance_report, num_classes);
 
-    let duplicate_count: usize = quality_report
-        .issues
-        .iter()
-        .filter_map(|issue| match issue {
-            alimentar::quality::QualityIssue::DuplicateRows {
-                duplicate_count, ..
-            } => Some(*duplicate_count),
-            _ => None,
-        })
-        .sum();
+    let duplicate_count = duplicate_row_count(&quality_report);
+    let dup_flagged = duplicates_flagged(&quality_report);
 
     if json_output {
         #[allow(clippy::disallowed_methods)]
@@ -511,6 +559,7 @@ pub(crate) fn run_audit(
             "imbalance_ratio": imbalance_report.metrics.imbalance_ratio,
             "imbalance_severity": format!("{:?}", imbalance_report.metrics.severity),
             "duplicates": duplicate_count,
+            "duplicates_flagged": dup_flagged,
             "input_length": {
                 "min": text_stats.min_len,
                 "max": text_stats.max_len,
@@ -534,6 +583,7 @@ pub(crate) fn run_audit(
         out_of_range,
         num_classes,
         duplicate_count,
+        duplicates_flagged: dup_flagged,
         imbalance_report,
         text_stats,
         path: path.display().to_string(),
@@ -756,6 +806,8 @@ fn run_balance_sqrt_inverse(
     }
 
     let weights = sqrt_inverse_weights(&ordered_counts);
+    let sum: f32 = weights.iter().sum();
+    let target = weight_sum_target(&ordered_counts);
 
     if json_output {
         #[allow(clippy::disallowed_methods)]
@@ -763,6 +815,8 @@ fn run_balance_sqrt_inverse(
             "strategy": "sqrt-inverse",
             "class_counts": ordered_counts,
             "weights": weights,
+            "weight_sum": sum,
+            "weight_sum_target": target,
         });
         println!(
             "{}",
@@ -775,9 +829,15 @@ fn run_balance_sqrt_inverse(
             let count = ordered_counts.get(i).copied().unwrap_or(0);
             println!("  class {i}: count={count:>8}  weight={w:.4}");
         }
-        let sum: f32 = weights.iter().sum();
         println!();
-        output::kv("Weight sum", format!("{sum:.4} (should equal {k})"));
+        output::kv("Weight sum", format!("{sum:.4} (equals {target})"));
+        if target < k {
+            println!(
+                "  {} {} of {k} classes have no samples and carry weight 0",
+                "note:".yellow(),
+                k - target
+            );
+        }
     }
     Ok(())
 }
@@ -854,6 +914,7 @@ pub(crate) fn run_decontaminate(
     let ref_slices: Vec<&str> = ref_texts.iter().map(|s| s.as_str()).collect();
 
     let report = check_contamination(&training_lines, &ref_slices, ngram_size, threshold);
+    let vacuous = report.is_vacuous();
 
     if json_output {
         #[allow(clippy::disallowed_methods)]
@@ -861,9 +922,12 @@ pub(crate) fn run_decontaminate(
             "ngram_size": report.ngram_size,
             "threshold": report.threshold,
             "total_samples": report.total_samples,
+            "evaluated_samples": report.evaluated_samples,
+            "evaluated_references": report.evaluated_references,
             "contaminated_count": report.contaminated_count,
             "contamination_rate": report.contamination_rate,
-            "gate": if report.contamination_rate < 0.01 { "PASS" } else { "FAIL" },
+            "vacuous": vacuous,
+            "gate": if vacuous { "VACUOUS" } else if report.contamination_rate < 0.01 { "PASS" } else { "FAIL" },
         });
         println!(
             "{}",
@@ -873,14 +937,29 @@ pub(crate) fn run_decontaminate(
         output::section("Decontamination Check");
         println!();
         output::kv("Training samples", format!("{}", report.total_samples));
+        output::kv(
+            "  compared",
+            format!(
+                "{} ({} too short for a {}-gram)",
+                report.evaluated_samples,
+                report.total_samples - report.evaluated_samples,
+                report.ngram_size
+            ),
+        );
         output::kv("Reference samples", format!("{}", ref_slices.len()));
+        output::kv("  compared", format!("{}", report.evaluated_references));
         output::kv("N-gram size", format!("{}", report.ngram_size));
         output::kv("Threshold", format!("{:.2}", report.threshold));
         println!();
         output::kv("Contaminated", format!("{}", report.contaminated_count));
         output::kv("Rate", format!("{:.2}%", report.contamination_rate * 100.0));
         println!();
-        if report.contamination_rate < 0.01 {
+        if vacuous {
+            println!(
+                "{} nothing was compared -- a 0.00% rate here proves nothing",
+                "VACUOUS".red()
+            );
+        } else if report.contamination_rate < 0.01 {
             println!("{} Contamination rate <1% (AC-016 gate)", "PASS".green());
         } else {
             println!(
@@ -891,6 +970,23 @@ pub(crate) fn run_decontaminate(
         }
     }
 
+    // A configuration that compares nothing must never satisfy the AC-016
+    // gate. `--ngram 1000` on a corpus of short lines produced no n-grams at
+    // all and reported a clean 0.00% on a file holding byte-identical copies
+    // of the benchmark.
+    if vacuous {
+        return Err(CliError::ValidationFailed(format!(
+            "Contamination check was vacuous: {} of {} training samples and {} of {} reference \
+             samples yielded no {}-grams, so nothing was compared. Lower --ngram (currently {}).",
+            report.total_samples - report.evaluated_samples,
+            report.total_samples,
+            ref_slices.len() - report.evaluated_references,
+            ref_slices.len(),
+            report.ngram_size,
+            report.ngram_size,
+        )));
+    }
+
     if report.contamination_rate >= 0.01 {
         return Err(CliError::ValidationFailed(format!(
             "Contamination rate {:.2}% exceeds 1% gate (AC-016)",
@@ -898,6 +994,106 @@ pub(crate) fn run_decontaminate(
         )));
     }
 
+    Ok(())
+}
+
+// ── apr data dedup ──────────────────────────────────────────────────────────
+
+/// Canonical form of a JSONL row for exact-duplicate comparison.
+///
+/// Objects are key-sorted so that two rows carrying the same fields in a
+/// different key order compare equal — which is how the Arrow-backed audit
+/// counts them. Non-object lines fall back to their trimmed text.
+fn canonical_row(line: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(line) {
+        Ok(serde_json::Value::Object(map)) => {
+            let mut pairs: Vec<(&String, String)> =
+                map.iter().map(|(k, v)| (k, v.to_string())).collect();
+            pairs.sort_by(|a, b| a.0.cmp(b.0));
+            pairs
+                .iter()
+                .map(|(k, v)| format!("{k}\u{1}{v}"))
+                .collect::<Vec<_>>()
+                .join("\u{2}")
+        }
+        Ok(other) => other.to_string(),
+        Err(_) => line.trim().to_string(),
+    }
+}
+
+/// Remove exact duplicate rows from a JSONL dataset, keeping first occurrence.
+///
+/// This is the remediation `apr data audit` points at when it reports
+/// duplicate rows; before this existed the advice named a subcommand the
+/// parser rejected.
+pub(crate) fn run_dedup(path: &Path, output_path: &Path, json_output: bool) -> Result<()> {
+    use std::collections::HashSet;
+    use std::io::{BufRead, BufReader, Write};
+
+    if !path.exists() {
+        return Err(CliError::FileNotFound(path.to_path_buf()));
+    }
+
+    let file = std::fs::File::open(path).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to open {}: {e}", path.display()))
+    })?;
+    let reader = BufReader::new(file);
+
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut unique_rows: Vec<String> = Vec::new();
+    let mut total_rows = 0usize;
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| CliError::ValidationFailed(format!("Read error: {e}")))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        total_rows += 1;
+        if seen.insert(canonical_row(trimmed)) {
+            unique_rows.push(trimmed.to_string());
+        }
+    }
+
+    if total_rows == 0 {
+        return Err(CliError::ValidationFailed("Dataset is empty".to_string()));
+    }
+
+    let mut out = std::fs::File::create(output_path).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to create {}: {e}", output_path.display()))
+    })?;
+    for row in &unique_rows {
+        writeln!(out, "{row}")
+            .map_err(|e| CliError::ValidationFailed(format!("Write error: {e}")))?;
+    }
+
+    let unique = unique_rows.len();
+    let removed = total_rows - unique;
+
+    if json_output {
+        #[allow(clippy::disallowed_methods)]
+        let report = serde_json::json!({
+            "input": path.display().to_string(),
+            "total_rows": total_rows,
+            "unique_rows": unique,
+            "removed": removed,
+            "output": output_path.display().to_string(),
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
+        return Ok(());
+    }
+
+    output::section("Deduplication");
+    println!();
+    output::kv("Input", format!("{} ({total_rows} rows)", path.display()));
+    output::kv("Unique", format!("{unique} rows"));
+    output::kv("Removed", format!("{removed} duplicate rows"));
+    output::kv("Output", output_path.display());
+    println!();
+    println!("{} Deduplicated dataset written", "OK".green());
     Ok(())
 }
 
@@ -952,15 +1148,54 @@ mod tests {
 
     #[test]
     fn test_sqrt_inverse_weights_imbalanced() {
-        // class 0: 900, class 1: 100 => total = 1000, k = 2
-        // w0 = sqrt(1000 / (2 * 900)) = sqrt(0.5556) ~= 0.7454
-        // w1 = sqrt(1000 / (2 * 100)) = sqrt(5.0) ~= 2.2361
+        // class 0: 900, class 1: 100. The RAW sqrt-inverse form gives
+        // 0.7454 / 2.2361, which sums to 2.9814 — 49% above the sum of 2 the
+        // command claims. This test used to assert those raw values and so
+        // locked the contradiction in place; it now asserts the normalised
+        // weights, whose ratio is unchanged.
         let w = sqrt_inverse_weights(&[900, 100]);
         assert_eq!(w.len(), 2);
-        assert!((w[0] - (1000.0_f32 / 1800.0).sqrt()).abs() < 1e-4);
-        assert!((w[1] - (1000.0_f32 / 200.0).sqrt()).abs() < 1e-4);
+        let sum: f32 = w.iter().sum();
+        assert!((sum - 2.0).abs() < 1e-4, "weights must sum to 2, got {sum}");
+        // sqrt-inverse ratio is preserved: sqrt(900/100) = 3
+        assert!((w[1] / w[0] - 3.0).abs() < 1e-4, "ratio drifted: {w:?}");
         // Minority class should have higher weight
         assert!(w[1] > w[0]);
+    }
+
+    /// The command prints "Weight sum: X (equals K)". That line must be true
+    /// for every distribution, not only for already-balanced data — the case
+    /// the strategy exists to fix is exactly the case it used to fail in
+    /// (90/10 -> 2.9814 vs 2; 62/20/10/6/4 -> 7.1141 vs 5).
+    #[test]
+    fn test_sqrt_inverse_weight_sum_invariant_holds_when_imbalanced() {
+        for counts in [
+            vec![5usize, 5],
+            vec![90, 10],
+            vec![62, 20, 10, 6, 4],
+            vec![9990, 10],
+            vec![1, 1, 1, 1000],
+        ] {
+            let w = sqrt_inverse_weights(&counts);
+            let sum: f32 = w.iter().sum();
+            let target = weight_sum_target(&counts) as f32;
+            assert!(
+                (sum - target).abs() < 1e-3,
+                "counts {counts:?}: weight sum {sum} != stated invariant {target}"
+            );
+        }
+    }
+
+    /// Empty classes carry weight 0 and are excluded from the target sum, so
+    /// the printed invariant stays satisfiable.
+    #[test]
+    fn test_sqrt_inverse_weight_sum_target_skips_empty_classes() {
+        let counts = [100usize, 0, 50];
+        assert_eq!(weight_sum_target(&counts), 2);
+        let w = sqrt_inverse_weights(&counts);
+        let sum: f32 = w.iter().sum();
+        assert!((sum - 2.0).abs() < 1e-4, "got {sum}");
+        assert!((w[1] - 0.0).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1241,6 +1476,7 @@ mod tests {
             out_of_range: 0,
             num_classes: 2,
             duplicate_count: 0,
+            duplicates_flagged: false,
             imbalance_report,
             text_stats: TextColumnStats {
                 min_len: 5,
@@ -1274,6 +1510,7 @@ mod tests {
             out_of_range: 5,
             num_classes: 2,
             duplicate_count: 10,
+            duplicates_flagged: true,
             imbalance_report,
             text_stats: TextColumnStats {
                 min_len: 0,
@@ -1753,5 +1990,314 @@ mod tests {
         let s = ResampleStrategy::Oversample;
         let s2 = s;
         assert!(matches!(s2, ResampleStrategy::Oversample));
+    }
+
+    // ── duplicate row count: truth, not "did the alert fire" ─────────────────
+
+    /// Build a JSONL file with `copies` identical rows padded to `n` rows and
+    /// return the QualityChecker's report on it.
+    fn quality_report_for(
+        name: &str,
+        n: usize,
+        copies: usize,
+    ) -> alimentar::quality::QualityReport {
+        use alimentar::quality::QualityChecker;
+        let mut lines: Vec<String> = Vec::new();
+        for _ in 0..copies {
+            lines.push(r#"{"input": "DUPLICATE ROW", "label": 0}"#.to_string());
+        }
+        for i in copies..n {
+            lines.push(format!(r#"{{"input": "unique row {i}", "label": 1}}"#));
+        }
+        let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+        let path = write_temp_jsonl(name, &refs);
+        let dataset = alimentar::ArrowDataset::from_json(&path).expect("load jsonl");
+        QualityChecker::new()
+            .max_null_ratio(0.01)
+            .max_duplicate_ratio(0.05)
+            .check(&dataset)
+            .expect("quality check")
+    }
+
+    /// 50 identical rows in 10,000 is a 0.49% duplicate ratio — below the 1%
+    /// alert threshold. The count must still be 49; deriving it by summing
+    /// the `DuplicateRows` issues (which is only pushed above the threshold)
+    /// reported a hard 0 and printed "Duplicates: 0 (0.0%) OK".
+    #[test]
+    fn test_duplicate_row_count_reports_sub_threshold_duplicates() {
+        let report = quality_report_for("dupcount_sub_threshold.jsonl", 10_000, 50);
+        assert_eq!(
+            duplicate_row_count(&report),
+            49,
+            "49 extra copies must be counted even below the alert threshold"
+        );
+        assert!(
+            !duplicates_flagged(&report),
+            "0.49% is below the 1% alert threshold, so no issue is raised"
+        );
+    }
+
+    /// The count and the alert are decoupled: above the threshold both fire.
+    #[test]
+    fn test_duplicate_row_count_and_alert_agree_above_threshold() {
+        let report = quality_report_for("dupcount_supra_threshold.jsonl", 100, 50);
+        assert_eq!(duplicate_row_count(&report), 49);
+        assert!(duplicates_flagged(&report));
+    }
+
+    /// A clean dataset must report zero and raise nothing.
+    #[test]
+    fn test_duplicate_row_count_zero_on_clean_data() {
+        let report = quality_report_for("dupcount_clean.jsonl", 100, 0);
+        assert_eq!(duplicate_row_count(&report), 0);
+        assert!(!duplicates_flagged(&report));
+    }
+
+    // ── apr data dedup ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_run_dedup_removes_duplicate_rows() {
+        let path = write_temp_jsonl(
+            "dedup_input.jsonl",
+            &[
+                r#"{"input": "the quick brown fox", "label": 0}"#,
+                r#"{"input": "the quick brown fox", "label": 0}"#,
+                r#"{"input": "the quick brown fox", "label": 0}"#,
+                r#"{"input": "unique one", "label": 1}"#,
+                r#"{"input": "unique two", "label": 1}"#,
+            ],
+        );
+        let out = std::env::temp_dir()
+            .join("apr-data-tests")
+            .join("dedup_output.jsonl");
+        let _ = std::fs::remove_file(&out);
+
+        run_dedup(&path, &out, false).expect("dedup should succeed");
+
+        let written = std::fs::read_to_string(&out).expect("read output");
+        let rows: Vec<&str> = written.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(rows.len(), 3, "5 rows with 2 extra copies -> 3 unique");
+        assert_eq!(
+            rows.iter()
+                .filter(|r| r.contains("quick brown fox"))
+                .count(),
+            1,
+            "first occurrence kept exactly once"
+        );
+    }
+
+    /// Key order is not row identity: the Arrow-backed audit counts these as
+    /// duplicates, so dedup must remove them too.
+    #[test]
+    fn test_run_dedup_is_key_order_insensitive() {
+        let path = write_temp_jsonl(
+            "dedup_keyorder.jsonl",
+            &[
+                r#"{"input": "same row", "label": 7}"#,
+                r#"{"label": 7, "input": "same row"}"#,
+            ],
+        );
+        let out = std::env::temp_dir()
+            .join("apr-data-tests")
+            .join("dedup_keyorder_out.jsonl");
+        let _ = std::fs::remove_file(&out);
+
+        run_dedup(&path, &out, false).expect("dedup should succeed");
+        let written = std::fs::read_to_string(&out).expect("read output");
+        assert_eq!(written.lines().filter(|l| !l.is_empty()).count(), 1);
+    }
+
+    #[test]
+    fn test_run_dedup_preserves_already_unique_data() {
+        let path = write_temp_jsonl(
+            "dedup_unique.jsonl",
+            &[
+                r#"{"input": "a", "label": 0}"#,
+                r#"{"input": "b", "label": 1}"#,
+            ],
+        );
+        let out = std::env::temp_dir()
+            .join("apr-data-tests")
+            .join("dedup_unique_out.jsonl");
+        let _ = std::fs::remove_file(&out);
+        run_dedup(&path, &out, true).expect("dedup should succeed");
+        let written = std::fs::read_to_string(&out).expect("read output");
+        assert_eq!(written.lines().filter(|l| !l.is_empty()).count(), 2);
+    }
+
+    #[test]
+    fn test_run_dedup_file_not_found() {
+        let missing = std::path::PathBuf::from("/nonexistent/dedup-input.jsonl");
+        let out = std::env::temp_dir().join("apr-data-tests/never-written.jsonl");
+        assert!(run_dedup(&missing, &out, false).is_err());
+    }
+
+    // ── decontamination: a vacuous configuration must not PASS ───────────────
+
+    /// `--ngram 1000` produces no n-grams from any short line, so nothing is
+    /// compared. The command used to print "Rate: 0.00%" and exit 0 on a file
+    /// containing byte-identical copies of the benchmark.
+    #[test]
+    fn test_run_decontaminate_oversized_ngram_is_rejected_not_passed() {
+        let leaked = "the capital of france is paris and it is a large european city";
+        let train_path = write_temp_jsonl(
+            "decontam_vacuous_train.txt",
+            &[leaked, "unrelated gardening sentence about trowels"],
+        );
+        let ref_path = write_temp_jsonl("decontam_vacuous_ref.txt", &[leaked]);
+
+        let result = run_decontaminate(&train_path, &[ref_path], 1000, 0.5, false);
+        let err = result.expect_err("a check that compared nothing must not pass");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("vacuous"),
+            "error must name the vacuous configuration, got: {msg}"
+        );
+    }
+
+    /// Same hazard reached through the JSON path — the machine-readable gate
+    /// field must not read PASS either.
+    #[test]
+    fn test_run_decontaminate_vacuous_json_also_fails() {
+        let leaked = "water boils at one hundred degrees celsius at standard pressure";
+        let train_path = write_temp_jsonl("decontam_vacuous_train_json.txt", &[leaked]);
+        let ref_path = write_temp_jsonl("decontam_vacuous_ref_json.txt", &[leaked]);
+        assert!(run_decontaminate(&train_path, &[ref_path], 500, 0.5, true).is_err());
+    }
+
+    /// A normal configuration must still pass — the vacuity gate must not
+    /// fail closed on real corpora.
+    #[test]
+    fn test_run_decontaminate_normal_ngram_still_passes() {
+        let train_path = write_temp_jsonl(
+            "decontam_nonvacuous_train.txt",
+            &["completely unique training sample number one about carpentry"],
+        );
+        let ref_path = write_temp_jsonl(
+            "decontam_nonvacuous_ref.txt",
+            &["a reference benchmark sample that shares nothing at all"],
+        );
+        assert!(run_decontaminate(&train_path, &[ref_path], 10, 0.5, false).is_ok());
+    }
+
+    // ── canonical_row ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_canonical_row_key_order_independent() {
+        assert_eq!(
+            canonical_row(r#"{"a": 1, "b": 2}"#),
+            canonical_row(r#"{"b": 2, "a": 1}"#)
+        );
+        assert_ne!(
+            canonical_row(r#"{"a": 1, "b": 2}"#),
+            canonical_row(r#"{"a": 1, "b": 3}"#)
+        );
+    }
+
+    #[test]
+    fn test_canonical_row_non_object_falls_back_to_text() {
+        assert_eq!(canonical_row("  not json  "), "not json");
+    }
+
+    // ── flag validation at the CLI boundary ──────────────────────────────────
+
+    #[test]
+    fn test_parse_ngram_size_rejects_zero() {
+        let err = crate::parse_ngram_size("0").expect_err("0 is not a window size");
+        assert!(err.contains(">= 1"), "unhelpful message: {err}");
+        assert_eq!(crate::parse_ngram_size("1"), Ok(1));
+        assert_eq!(crate::parse_ngram_size("10"), Ok(10));
+        assert!(crate::parse_ngram_size("-1").is_err());
+        assert!(crate::parse_ngram_size("abc").is_err());
+    }
+
+    #[test]
+    fn test_parse_unit_interval_rejects_out_of_range() {
+        assert!(crate::parse_unit_interval("5.0").is_err());
+        assert!(crate::parse_unit_interval("-1").is_err());
+        assert!(crate::parse_unit_interval("nan").is_err());
+        assert!(crate::parse_unit_interval("inf").is_err());
+        assert_eq!(crate::parse_unit_interval("0.0"), Ok(0.0));
+        assert_eq!(crate::parse_unit_interval("0.5"), Ok(0.5));
+        assert_eq!(crate::parse_unit_interval("1.0"), Ok(1.0));
+    }
+
+    /// Parse argv on a 16 MB stack. Clap's recursive destructuring of the
+    /// full `Commands` enum overflows the default 2 MiB test-thread stack in
+    /// debug builds (same pattern as `parsing.rs` and `pretrain.rs`).
+    fn parse_cli(args: Vec<&'static str>) -> std::result::Result<crate::Cli, clap::error::Error> {
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                use clap::Parser;
+                crate::Cli::try_parse_from(args)
+            })
+            .expect("spawn parse thread")
+            .join()
+            .expect("join parse thread")
+    }
+
+    /// `--ngram 0` must be rejected by the parser (exit 2) rather than
+    /// reaching `slice::windows(0)` and aborting the process (exit 101).
+    #[test]
+    fn test_cli_rejects_ngram_zero() {
+        assert!(parse_cli(vec![
+            "apr",
+            "data",
+            "decontaminate",
+            "train.jsonl",
+            "--reference",
+            "bench.jsonl",
+            "--ngram",
+            "0",
+        ])
+        .is_err());
+    }
+
+    /// `--threshold` is documented as 0.0-1.0; 5.0 made the AC-016 gate an
+    /// unconditional pass.
+    #[test]
+    fn test_cli_rejects_out_of_range_threshold() {
+        for bad in ["5.0", "-0.5", "1.5"] {
+            assert!(
+                parse_cli(vec![
+                    "apr",
+                    "data",
+                    "decontaminate",
+                    "train.jsonl",
+                    "--reference",
+                    "bench.jsonl",
+                    "--threshold",
+                    bad,
+                ])
+                .is_err(),
+                "--threshold {bad} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_cli_accepts_valid_decontaminate_flags() {
+        assert!(parse_cli(vec![
+            "apr",
+            "data",
+            "decontaminate",
+            "train.jsonl",
+            "--reference",
+            "bench.jsonl",
+            "--ngram",
+            "8",
+            "--threshold",
+            "0.75",
+        ])
+        .is_ok());
+    }
+
+    /// `apr data audit` tells the user to run `apr data dedup`; the parser
+    /// rejected it as an unknown subcommand.
+    #[test]
+    fn test_cli_accepts_data_dedup_subcommand() {
+        parse_cli(vec!["apr", "data", "dedup", "in.jsonl", "-o", "out.jsonl"])
+            .expect("`apr data dedup` must parse -- audit recommends it");
     }
 }
