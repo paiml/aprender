@@ -88,14 +88,13 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
         .dimmed()
     );
 
-    println!();
-    println!("{}", "Endpoints:".green().bold());
-    println!("  POST /v1/predict     - Model prediction (APR)");
-    println!("  POST /generate       - Text generation (GGUF)");
-    println!("  GET  /health         - Health check");
-    if config.metrics {
-        println!("  GET  /metrics        - Prometheus metrics");
-    }
+    // aprender#2376(8): no endpoint list here. This point in the program is BEFORE
+    // the magic bytes are read, so the format is unknown, the router does not exist
+    // and nothing that could be printed would be a measurement. The list printed
+    // here claimed "POST /v1/predict - Model prediction (APR)" on every path — it
+    // answers 503 even when the served file IS a .apr — and "POST /generate -
+    // Text generation (GGUF)", which 404s on the APR server. The real list is
+    // printed by the server that mounted it, after bind, from its own route table.
 
     // GH-153: "Server ready" message now printed AFTER TcpListener::bind succeeds
     // in start_*_server functions, not here (was misleading since bind happens later)

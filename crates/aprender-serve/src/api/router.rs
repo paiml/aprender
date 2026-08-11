@@ -54,65 +54,126 @@ impl Default for RouterConfig {
     }
 }
 
-/// Routes mounted unconditionally by [`create_router_with_config`], as (method, path).
+/// One route: the method and path a client calls, and the handler that answers it.
 ///
-/// aprender#2376(12): the 404 body told clients "See /health for available
-/// endpoints", and `/health` returns five status fields and no route list — so
-/// following the instruction in the error message yielded nothing. The 404 now
-/// serves this list itself, and `test_advertised_routes_are_all_mounted` probes
-/// every entry so the list cannot drift into a second false advertisement.
-const NATIVE_ROUTES: &[(&str, &str)] = &[
-    ("GET", "/health"),
-    ("GET", "/health/live"),
-    ("GET", "/health/ready"),
-    ("GET", "/metrics"),
-    ("GET", "/metrics/dispatch"),
-    ("POST", "/metrics/dispatch/reset"),
-    ("GET", "/models"),
-    ("POST", "/tokenize"),
-    ("POST", "/generate"),
-    ("POST", "/batch/tokenize"),
-    ("POST", "/batch/generate"),
-    ("POST", "/stream/generate"),
-    ("POST", "/realize/generate"),
-    ("POST", "/realize/batch"),
-    ("POST", "/realize/embed"),
-    ("GET", "/realize/model"),
-    ("POST", "/realize/reload"),
-];
+/// aprender#2376(8): the mounted surface and the advertised surface used to be two
+/// hand-maintained lists that had already drifted apart — `--no-metrics` unmounted
+/// `/metrics`, `/metrics/dispatch` and `/metrics/dispatch/reset` while the 404 body
+/// kept advertising all three, and `/api/tags`, `/api/show` and `/api/version` were
+/// mounted but advertised nowhere. Binding the advertised string to the handler in
+/// one tuple makes both halves of that drift unrepresentable: a row cannot enter the
+/// list without a handler to mount, and a handler cannot be mounted without its row
+/// entering the list.
+type Route = (
+    &'static str,
+    &'static str,
+    axum::routing::MethodRouter<AppState>,
+);
 
-/// Routes mounted only when `RouterConfig::openai_api` is set (the default).
-const OPENAI_ROUTES: &[(&str, &str)] = &[
-    ("GET", "/v1/models"),
-    ("POST", "/v1/completions"),
-    ("POST", "/v1/chat/completions"),
-    ("POST", "/v1/chat/completions/stream"),
-    ("POST", "/v1/embeddings"),
-    ("POST", "/v1/predict"),
-    ("POST", "/v1/explain"),
-    ("GET", "/v1/audit/:request_id"),
-    ("POST", "/v1/gpu/warmup"),
-    ("GET", "/v1/gpu/status"),
-    ("POST", "/v1/batch/completions"),
-    ("GET", "/v1/metrics"),
-    ("POST", "/api/chat"),
-    ("POST", "/api/generate"),
-];
+/// Every route this configuration serves, in the order clients see them advertised.
+///
+/// This is the single source of truth: [`create_router_with_config`] mounts exactly
+/// these and the 404 body advertises exactly these.
+fn route_table(config: &RouterConfig) -> Vec<Route> {
+    let mut routes: Vec<Route> = vec![
+        // Health (CRUX-C-34: /health, /health/live, /health/ready)
+        ("GET", "/health", get(health_handler)),
+        ("GET", "/health/live", get(health_live_handler)),
+        ("GET", "/health/ready", get(health_ready_handler)),
+        // Native Realizar API (legacy paths)
+        ("GET", "/models", get(models_handler)),
+        ("POST", "/tokenize", post(tokenize_handler)),
+        ("POST", "/generate", post(generate_handler)),
+        ("POST", "/batch/tokenize", post(batch_tokenize_handler)),
+        ("POST", "/batch/generate", post(batch_generate_handler)),
+        ("POST", "/stream/generate", post(stream_generate_handler)),
+        // Native Realizar API (spec §5.2 /realize/* paths)
+        ("POST", "/realize/generate", post(stream_generate_handler)),
+        ("POST", "/realize/batch", post(batch_generate_handler)),
+        ("POST", "/realize/embed", post(realize_embed_handler)),
+        ("GET", "/realize/model", get(realize_model_handler)),
+        ("POST", "/realize/reload", post(realize_reload_handler)),
+    ];
 
-/// Routes mounted only in CUDA builds (realizr#191).
-#[cfg(feature = "cuda")]
-const CUDA_ROUTES: &[(&str, &str)] = &[("POST", "/v1/logprobs"), ("POST", "/v1/perplexity")];
-
-/// The routes this router mounts, as `"METHOD /path"` strings for the 404 body.
-fn route_index(openai_api: bool) -> Vec<String> {
-    let fmt = |(method, path): &(&str, &str)| format!("{method} {path}");
-    let mut routes: Vec<String> = NATIVE_ROUTES.iter().map(fmt).collect();
-    if openai_api {
-        routes.extend(OPENAI_ROUTES.iter().map(fmt));
+    // Metrics endpoints conditionally enabled: `apr serve run --no-metrics`
+    // must actually withhold telemetry, not just hide the banner line.
+    if config.metrics {
+        routes.extend([
+            ("GET", "/metrics", get(metrics_handler)),
+            ("GET", "/metrics/dispatch", get(dispatch_metrics_handler)),
+            (
+                "POST",
+                "/metrics/dispatch/reset",
+                post(dispatch_reset_handler),
+            ),
+        ]);
     }
+
+    // GH-148: OpenAI-compatible API conditionally enabled
+    if config.openai_api {
+        routes.extend([
+            // OpenAI-compatible API (v1) - spec §5.1
+            ("GET", "/v1/models", get(openai_models_handler)),
+            ("POST", "/v1/completions", post(openai_completions_handler)),
+            (
+                "POST",
+                "/v1/chat/completions",
+                post(openai_chat_completions_handler),
+            ),
+            (
+                "POST",
+                "/v1/chat/completions/stream",
+                post(openai_chat_completions_stream_handler),
+            ),
+            ("POST", "/v1/embeddings", post(openai_embeddings_handler)),
+            // APR-specific API (spec §15.1)
+            ("POST", "/v1/predict", post(apr_predict_handler)),
+            ("POST", "/v1/explain", post(apr_explain_handler)),
+            ("GET", "/v1/audit/:request_id", get(apr_audit_handler)),
+            // GPU batch inference API (PARITY-022)
+            ("POST", "/v1/gpu/warmup", post(gpu_warmup_handler)),
+            ("GET", "/v1/gpu/status", get(gpu_status_handler)),
+            (
+                "POST",
+                "/v1/batch/completions",
+                post(gpu_batch_completions_handler),
+            ),
+            // TUI monitoring API (PARITY-107)
+            ("GET", "/v1/metrics", get(server_metrics_handler)),
+            // PMAT-923: Ollama-native HTTP API (/api/* prefix) — makes `apr serve`
+            // a drop-in Ollama HTTP replacement. Both delegate to the OpenAI chat
+            // generation path. Discharges OBLIG-OLLAMA-API-CHAT-GENERATE-ROUTED.
+            ("POST", "/api/chat", post(ollama_chat_handler)),
+            ("POST", "/api/generate", post(ollama_generate_handler)),
+            // Model discovery. Ollama clients call /api/tags BEFORE issuing any
+            // chat request and /api/show to probe capabilities; without them the
+            // "drop-in Ollama replacement" claim above is unreachable in practice.
+            ("GET", "/api/tags", get(ollama_tags_handler)),
+            ("POST", "/api/show", post(ollama_show_handler)),
+            ("GET", "/api/version", get(ollama_version_handler)),
+        ]);
+    }
+
+    // realizr#191: Logprobs + perplexity endpoints (CUDA only, F-QUALITY-01)
     #[cfg(feature = "cuda")]
-    routes.extend(CUDA_ROUTES.iter().map(fmt));
+    routes.extend([
+        ("POST", "/v1/logprobs", post(logprobs_handler)),
+        ("POST", "/v1/perplexity", post(perplexity_handler)),
+    ]);
+
     routes
+}
+
+/// The routes a server built with `config` serves, as `"METHOD /path"` strings.
+///
+/// Callers that advertise the surface — the 404 body, the CLI startup banner —
+/// MUST read it from here rather than restating it, so that what is printed is
+/// what is mounted.
+pub fn advertised_routes(config: &RouterConfig) -> Vec<String> {
+    route_table(config)
+        .iter()
+        .map(|(method, path, _)| format!("{method} {path}"))
+        .collect()
 }
 
 /// Create the API router with default options (OpenAI API enabled)
@@ -131,84 +192,22 @@ pub fn create_router(state: AppState) -> Router {
 /// * `state` - Application state with model and tokenizer
 /// * `config` - Router configuration (controls which route groups are enabled)
 pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Router {
-    let mut router = Router::new()
-        // Health and metrics (CRUX-C-34: /health, /health/live, /health/ready)
-        .route("/health", get(health_handler))
-        .route("/health/live", get(health_live_handler))
-        .route("/health/ready", get(health_ready_handler))
-        // Native Realizar API (legacy paths)
-        .route("/models", get(models_handler))
-        .route("/tokenize", post(tokenize_handler))
-        .route("/generate", post(generate_handler))
-        .route("/batch/tokenize", post(batch_tokenize_handler))
-        .route("/batch/generate", post(batch_generate_handler))
-        .route("/stream/generate", post(stream_generate_handler))
-        // Native Realizar API (spec §5.2 /realize/* paths)
-        .route("/realize/generate", post(stream_generate_handler))
-        .route("/realize/batch", post(batch_generate_handler))
-        .route("/realize/embed", post(realize_embed_handler))
-        .route("/realize/model", get(realize_model_handler))
-        .route("/realize/reload", post(realize_reload_handler));
+    // One table, two consumers: the mount loop below and the 404 body. Neither can
+    // name a route the other does not (aprender#2376(8)).
+    let table = route_table(&config);
+    let routes: Vec<String> = table
+        .iter()
+        .map(|(method, path, _)| format!("{method} {path}"))
+        .collect();
 
-    // Metrics endpoints conditionally enabled: `apr serve run --no-metrics`
-    // must actually withhold telemetry, not just hide the banner line.
-    if config.metrics {
-        router = router
-            .route("/metrics", get(metrics_handler))
-            .route("/metrics/dispatch", get(dispatch_metrics_handler))
-            .route("/metrics/dispatch/reset", post(dispatch_reset_handler));
-    }
-
-    // GH-148: OpenAI-compatible API conditionally enabled
-    if config.openai_api {
-        router = router
-            // OpenAI-compatible API (v1) - spec §5.1
-            .route("/v1/models", get(openai_models_handler))
-            .route("/v1/completions", post(openai_completions_handler))
-            .route(
-                "/v1/chat/completions",
-                post(openai_chat_completions_handler),
-            )
-            .route(
-                "/v1/chat/completions/stream",
-                post(openai_chat_completions_stream_handler),
-            )
-            .route("/v1/embeddings", post(openai_embeddings_handler))
-            // APR-specific API (spec §15.1)
-            .route("/v1/predict", post(apr_predict_handler))
-            .route("/v1/explain", post(apr_explain_handler))
-            .route("/v1/audit/:request_id", get(apr_audit_handler))
-            // GPU batch inference API (PARITY-022)
-            .route("/v1/gpu/warmup", post(gpu_warmup_handler))
-            .route("/v1/gpu/status", get(gpu_status_handler))
-            .route("/v1/batch/completions", post(gpu_batch_completions_handler))
-            // TUI monitoring API (PARITY-107)
-            .route("/v1/metrics", get(server_metrics_handler))
-            // PMAT-923: Ollama-native HTTP API (/api/* prefix) — makes `apr serve`
-            // a drop-in Ollama HTTP replacement. Both delegate to the OpenAI chat
-            // generation path. Discharges OBLIG-OLLAMA-API-CHAT-GENERATE-ROUTED.
-            .route("/api/chat", post(ollama_chat_handler))
-            .route("/api/generate", post(ollama_generate_handler))
-            // Model discovery. Ollama clients call /api/tags BEFORE issuing any
-            // chat request and /api/show to probe capabilities; without them the
-            // "drop-in Ollama replacement" claim above is unreachable in practice.
-            .route("/api/tags", get(ollama_tags_handler))
-            .route("/api/show", post(ollama_show_handler))
-            .route("/api/version", get(ollama_version_handler));
-    }
-
-    // realizr#191: Logprobs + perplexity endpoints (CUDA only, F-QUALITY-01)
-    #[cfg(feature = "cuda")]
-    {
-        router = router
-            .route("/v1/logprobs", post(logprobs_handler))
-            .route("/v1/perplexity", post(perplexity_handler));
+    let mut router = Router::new();
+    for (_, path, handler) in table {
+        router = router.route(path, handler);
     }
 
     // GH-672: Return JSON error body for unmatched routes (not empty 404)
     // aprender#2376(12): serve the route list here instead of pointing clients at
     // /health, which does not have one.
-    let routes = route_index(config.openai_api);
     router = router.fallback(move || {
         let routes = routes.clone();
         async move {
@@ -223,9 +222,9 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
         }
     });
 
-    // GH-649: Sanitize axum deserialization errors to avoid leaking internals to clients.
-    // Axum returns 422 with raw serde error details by default; replace with a generic message.
-    router = router.layer(axum::middleware::from_fn(sanitize_json_rejection));
+    // GH-649 / aprender#2376(7): every error leaving this server is a JSON envelope
+    // that says nothing about our internals.
+    router = router.layer(axum::middleware::from_fn(envelope_error_body));
 
     // GH-671: CORS support — allow cross-origin requests from browser-based clients.
     // Conditional: `apr serve run --no-cors` must emit no `access-control-*` header.
@@ -236,30 +235,78 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
     router.with_state(state)
 }
 
-/// GH-649: Middleware that intercepts axum's 422 JSON rejection responses and replaces
-/// the body with a generic error message, preventing internal serde error details from
-/// leaking to API clients.
-async fn sanitize_json_rejection(
+/// What a client is told about a rejection axum produced before any handler ran.
+///
+/// Deliberately says nothing an attacker or a confused user could not have derived
+/// from the request they just sent. Axum's own rejection text does the opposite: it
+/// echoes the serde parser's cursor ("key must be a string at line 1 column 2") and,
+/// for typed rejections, the field names of our internal request structs.
+fn rejection_message(status: StatusCode) -> String {
+    match status {
+        StatusCode::BAD_REQUEST => {
+            "Malformed request body: expected a JSON object.".to_string()
+        }
+        StatusCode::UNSUPPORTED_MEDIA_TYPE => {
+            "Unsupported Content-Type: this endpoint expects `application/json`.".to_string()
+        }
+        StatusCode::UNPROCESSABLE_ENTITY => {
+            "Invalid request body. Check that the JSON structure matches the expected schema."
+                .to_string()
+        }
+        StatusCode::PAYLOAD_TOO_LARGE => "Request body too large.".to_string(),
+        other => format!(
+            "Request rejected: {}.",
+            other.canonical_reason().unwrap_or("error")
+        ),
+    }
+}
+
+/// GH-649 / aprender#2376(7): the outermost layer over every route and the 404
+/// fallback, so that no error response can leave this server with a body that is
+/// not a JSON envelope.
+///
+/// GH-649 sanitised only 422. Axum rejects a malformed body with 400 and a missing
+/// `Content-Type` with 415, and both bypassed that check — 0.63.0 answered
+/// `POST /generate` with `{not json` in `text/plain` carrying the serde parser
+/// position, on every route that takes a body. Keying on the *shape* of the
+/// response (non-JSON content type on an error status) rather than on an
+/// enumeration of statuses is what makes the leak unrepresentable: a rejection
+/// variant added by a future axum release is covered the day it appears.
+///
+/// A handler's own JSON error — `{"error":"temperature must be >= 0, got -1"}` —
+/// is already an envelope and passes through untouched, so this does not cost the
+/// caller a real diagnostic.
+async fn envelope_error_body(
     request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
 
     let response = next.run(request).await;
+    let status = response.status();
 
-    // Axum returns 422 Unprocessable Entity for JSON deserialization failures.
-    // Replace the body to avoid leaking serde error internals.
-    if response.status() == StatusCode::UNPROCESSABLE_ENTITY {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(ErrorResponse {
-                error: "Invalid request body. Check that the JSON structure matches the expected schema.".to_string(),
-            }),
-        )
-            .into_response();
+    if !status.is_client_error() && !status.is_server_error() {
+        return response;
     }
 
-    response
+    let is_json = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("application/json"));
+    if is_json {
+        return response;
+    }
+
+    // The original body is dropped, never inspected: it is precisely the text we
+    // must not forward.
+    (
+        status,
+        Json(ErrorResponse {
+            error: rejection_message(status),
+        }),
+    )
+        .into_response()
 }
 
 /// Process-wide server start instant.

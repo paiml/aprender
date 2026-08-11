@@ -48,7 +48,10 @@ pub(crate) async fn apr_predict_handler(
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(ErrorResponse {
-                error: "No APR model loaded. Use AppState::demo() or load a .apr model."
+                // aprender#2376(7): this is what an HTTP client reads. It named a
+                // Rust constructor no client can call — `AppState::demo()` — and
+                // said nothing about what the server is actually serving.
+                error: "This server was not started with an APR model, so /v1/predict is unavailable. Start it with `apr serve run <model>.apr`, or use /generate for text generation."
                     .to_string(),
             }),
         )
