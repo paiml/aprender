@@ -331,6 +331,7 @@
         let path = Path::new("/definitely/not/a/real/path/model.apr");
         let result = run(
             path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+            false, // offline
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -346,6 +347,7 @@
         let path = Path::new("/no/such/model.safetensors");
         let result = run(
             path, 0.5, 0.8, 256, None, false, false, false, None, false, None, "info", false,
+            false, // offline
         );
         assert!(result.is_err());
     }
@@ -355,6 +357,7 @@
         let path = Path::new("/no/such/model.apr");
         let result = run(
             path, 1.0, 1.0, 1024, None, true, true, false, None, false, None, "warn", false,
+            false, // offline
         );
         assert!(result.is_err());
     }
@@ -384,6 +387,7 @@
             Some(PathBuf::from("/tmp/full_trace.json")),
             "debug",
             true,
+            false, // offline
         );
         assert!(result.is_err());
     }
@@ -393,6 +397,7 @@
         let path = Path::new("/no/model.bin");
         let result = run(
             path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+            false, // offline
         );
         assert!(result.is_err());
     }
@@ -415,6 +420,7 @@
             None,
             "info",
             false,
+            false, // offline
         );
         assert!(result.is_err());
     }
@@ -428,6 +434,7 @@
             false, // not verbose
             None,  // no trace output
             "info", false, // no profile
+            false, // offline
         );
         assert!(result.is_err());
     }
@@ -439,6 +446,7 @@
             path, 0.7, 0.9, 512, None, false, false,
             true, // trace must be on for profile to print
             None, false, None, "info", true, // profile enabled
+            false, // offline
         );
         assert!(result.is_err());
     }

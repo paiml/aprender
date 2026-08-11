@@ -1497,6 +1497,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
                 trace_output.clone(),
                 trace_level.as_str(),
                 *profile,
+                cli.offline,
             )
         }
 

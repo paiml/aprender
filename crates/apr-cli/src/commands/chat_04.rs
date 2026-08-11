@@ -7,4 +7,5 @@ include!("chat_config.rs");
 include!("chat_config_02.rs");
 include!("chat_clean.rs");
 include!("chat_command_find_qwen.rs");
+include!("chat_local_path.rs");
 }
