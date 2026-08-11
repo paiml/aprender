@@ -64,8 +64,8 @@ pub(crate) use openai_handlers::{
 // OpenAI chat path so `apr serve` is a drop-in Ollama HTTP replacement.
 mod ollama_handlers;
 pub(crate) use ollama_handlers::{
-    ollama_chat_handler, ollama_generate_handler, ollama_show_handler, ollama_tags_handler,
-    ollama_version_handler,
+    ollama_chat_handler, ollama_embeddings_handler, ollama_generate_handler, ollama_show_handler,
+    ollama_tags_handler, ollama_version_handler,
 };
 // What this server actually measured about the model it loaded. Metadata
 // handlers read it instead of substituting plausible-looking constants.
