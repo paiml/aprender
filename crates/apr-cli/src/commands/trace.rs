@@ -250,19 +250,47 @@ fn handle_special_modes_with_json(
         return Some(run_traced_inference(path));
     }
 
-    if diff {
-        if let Some(ref_path) = reference {
+    match DiffMode::resolve(diff, reference) {
+        Err(refusal) => return Some(Err(refusal)),
+        Ok(Some(DiffMode { reference })) => {
             println!(
                 "Diffing trace between {} and {}",
                 path.display(),
-                ref_path.display()
+                reference.display()
             );
-        } else {
-            println!("Diff mode requires --reference");
         }
+        Ok(None) => {}
     }
 
     None
+}
+
+/// `--diff`, resolved: a diff always has something to diff against.
+///
+/// dogfood-0.63.0, issue #2394 finding 6: `apr trace model.gguf --diff`
+/// printed "Diff mode requires --reference", then ignored its own requirement,
+/// ran an ordinary single-model trace and exited 0 — so a scripted diff
+/// produced a plain trace that looked like a successful comparison. The
+/// invalid combination is now unrepresentable: a `DiffMode` cannot be built
+/// without a reference path, and `resolve` is the only way to build one.
+struct DiffMode<'a> {
+    reference: &'a Path,
+}
+
+impl<'a> DiffMode<'a> {
+    /// `Ok(None)` when `--diff` was not requested; `Err` when it was requested
+    /// without the reference it needs.
+    fn resolve(diff: bool, reference: Option<&'a Path>) -> Result<Option<Self>, CliError> {
+        if !diff {
+            return Ok(None);
+        }
+        match reference {
+            Some(reference) => Ok(Some(Self { reference })),
+            None => Err(CliError::ValidationFailed(
+                "--diff requires --reference <MODEL>: there is nothing to diff against".to_string(),
+            )),
+        }
+    }
 }
 
 /// Resolve a model path: download from HuggingFace if `hf://` URI, else return unchanged.

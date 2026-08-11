@@ -34,10 +34,59 @@ struct PtxStats {
     global_stores: u32,
 }
 
+/// A quantization label that was **measured**, never guessed.
+///
+/// dogfood-0.63.0, issue #2444: `apr ptx-map` read the quantization out of the
+/// FILE NAME. Renaming a Q4_K file to `totally-not-Q8_0.gguf` made it report
+/// `Q8_0` for the same bytes, and a name carrying no quant token fell through
+/// to a hardcoded `"Q4_K"` default — which is what the shipped fixture
+/// (lowercase `q4_k_m`, matched case-sensitively) always hit.
+///
+/// The field is now a type whose only constructor takes a GGUF qtype id read
+/// out of a tensor header, so a `String` derived from a path cannot reach it.
+mod measured_quant {
+    /// Quantization named from the qtype stored in the model's own tensors.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) struct MeasuredQuant(&'static str);
+
+    impl MeasuredQuant {
+        /// Reported when no tensor carries a qtype this build can name.
+        /// Honest absence — never a stand-in for a plausible default.
+        pub(crate) const UNKNOWN: Self = Self("unknown");
+
+        /// The only way to name a quantization: from a qtype id read out of
+        /// the file. Delegates to realizar's table (ground truth for the
+        /// kernel that runs) rather than GGUF's advisory `general.file_type`.
+        #[allow(unused_variables)]
+        pub(crate) fn from_qtype(qtype: u32) -> Option<Self> {
+            #[cfg(feature = "inference")]
+            {
+                realizar::api::gguf_qtype_name(qtype).map(Self)
+            }
+            #[cfg(not(feature = "inference"))]
+            {
+                None
+            }
+        }
+
+        pub(crate) fn as_str(self) -> &'static str {
+            self.0
+        }
+    }
+
+    impl std::fmt::Display for MeasuredQuant {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.0)
+        }
+    }
+}
+
+use measured_quant::MeasuredQuant;
+
 /// Model dimensions extracted from GGUF config
 struct ModelInfo {
     name: String,
-    quant: String,
+    quant: MeasuredQuant,
     num_layers: usize,
     hidden_dim: u32,
     intermediate_dim: u32,
@@ -398,31 +447,23 @@ fn extract_model_info(model_path: &Path) -> Result<ModelInfo> {
         )));
     }
 
-    // Extract model name and quantization from filename
+    // The file name is a LABEL, never a measurement: it names the row, and
+    // nothing else (issue #2444).
     let filename = model_path
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or("unknown");
-    let quant = if filename.contains("Q4_K") {
-        "Q4_K".to_string()
-    } else if filename.contains("Q6_K") {
-        "Q6_K".to_string()
-    } else if filename.contains("Q5_K") {
-        "Q5_K".to_string()
-    } else if filename.contains("Q8_0") {
-        "Q8_0".to_string()
-    } else {
-        "Q4_K".to_string()
-    };
 
-    let num_kv_heads = if config.num_heads == 28 {
-        4 // Qwen2 7B: 28 Q / 4 KV
-    } else if config.num_heads == 12 {
-        2 // Qwen2 1.5B: 12 Q / 2 KV
-    } else {
-        config.num_heads // fallback: MHA
-    };
+    let quant = dominant_weight_quant(mapped.model.tensors.iter().map(|t| (t.dims.len(), t.qtype)))
+        .unwrap_or(MeasuredQuant::UNKNOWN);
 
+    // Every attention number below is COPIED from the config realizar parsed
+    // out of the file. `num_kv_heads` used to be reconstructed from a table
+    // keyed on `num_heads` (28 → 4, 12 → 2, else → num_heads), which reported
+    // 14 KV heads for Qwen2.5-0.5B (2 in metadata) and 32 for Qwen3-8B (8) —
+    // and propagated into the printed QKV shape. `head_dim` used to be
+    // recomputed as hidden_dim/num_heads, which ignores an explicit
+    // `attention.key_length` (Qwen3-0.6B: 1024/16 = 64, actual 128).
     Ok(ModelInfo {
         name: filename.to_string(),
         quant,
@@ -430,13 +471,32 @@ fn extract_model_info(model_path: &Path) -> Result<ModelInfo> {
         hidden_dim: config.hidden_dim as u32,
         intermediate_dim: config.intermediate_dim as u32,
         num_heads: config.num_heads as u32,
-        num_kv_heads: num_kv_heads as u32,
-        head_dim: if config.num_heads > 0 {
-            (config.hidden_dim / config.num_heads) as u32
-        } else {
-            0
-        },
+        num_kv_heads: config.num_kv_heads as u32,
+        head_dim: config.head_dim() as u32,
     })
+}
+
+/// The quantization the model ACTUALLY stores, from the modal qtype across its
+/// matmul weights (`n_dims >= 2` — the tensors a GEMV kernel is launched for).
+///
+/// Takes `(n_dims, qtype)` pairs and nothing else: the file name is not an
+/// argument, so it cannot influence the answer. Ties break to the lowest qtype
+/// id so the label is deterministic for a given file.
+fn dominant_weight_quant<I: Iterator<Item = (usize, u32)>>(tensors: I) -> Option<MeasuredQuant> {
+    let mut counts: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
+    for (n_dims, qtype) in tensors {
+        if n_dims >= 2 {
+            *counts.entry(qtype).or_insert(0) += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .filter_map(|(qtype, n)| MeasuredQuant::from_qtype(qtype).map(|q| (q, n)))
+        // max_by_key returns the LAST maximum; iterate descending so the
+        // lowest qtype id wins a tie.
+        .rev()
+        .max_by_key(|&(_, n)| n)
+        .map(|(quant, _)| quant)
 }
 
 /// Print table header

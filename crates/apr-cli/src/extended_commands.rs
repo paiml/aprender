@@ -579,8 +579,15 @@ pub enum ExtendedCommands {
         #[arg(long)]
         filter: Option<String>,
         /// Output format: ascii, dot, mermaid, json
+        ///
+        /// #2394 finding 15: this was a `String` that the dispatcher parsed
+        /// with `.unwrap_or(TreeFormat::Ascii)`, so `--format bogusvalue`
+        /// silently rendered ascii and exited 0 — a typo'd `--format josn` in
+        /// a pipeline produced a tree instead of JSON, with no warning. Parsing
+        /// at the CLI boundary makes the unparseable value unrepresentable
+        /// downstream: clap rejects it before any command runs.
         #[arg(long, default_value = "ascii")]
-        format: String,
+        format: crate::commands::tree::TreeFormat,
         /// Show tensor sizes
         #[arg(long)]
         sizes: bool,

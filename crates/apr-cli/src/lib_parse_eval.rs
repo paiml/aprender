@@ -205,7 +205,7 @@
             }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(filter, Some("encoder".to_string()));
-                assert_eq!(format, "mermaid");
+                assert_eq!(format, crate::commands::tree::TreeFormat::Mermaid);
                 assert!(sizes);
                 assert_eq!(depth, Some(3));
             }
@@ -226,7 +226,7 @@
                 filter,
                 ..
             }) => {
-                assert_eq!(format, "ascii");
+                assert_eq!(format, crate::commands::tree::TreeFormat::Ascii);
                 assert!(!sizes);
                 assert!(depth.is_none());
                 assert!(filter.is_none());
