@@ -334,6 +334,49 @@ fn format_prediction_output(
 /// NaN/Inf counts), those are printed per layer. Otherwise falls back to
 /// aggregate timing from RunResult.
 fn print_layer_trace(result: &RunResult, max_tokens: usize) {
+    eprint!("{}", render_layer_trace(result, max_tokens));
+}
+
+/// Fixed share of per-token wall time attributed to each step of the 8-step
+/// state machine. These are ASSUMPTIONS, not measurements — see
+/// [`render_layer_trace`].
+fn layer_trace_share(step: &str) -> f64 {
+    match step {
+        "TRANSFORMER" => 0.85,
+        "LM_HEAD" => 0.08,
+        "SAMPLE" => 0.02,
+        _ => 0.017,
+    }
+}
+
+/// Render the layer-trace table.
+///
+/// # These numbers are ESTIMATES and the table says so
+///
+/// The per-step figures are `wall_ms / tokens * <fixed share>` — a constant
+/// split of one measured total, identical for every model and every prompt.
+/// The table used to head that column `Time` and print the values bare, so it
+/// read as a measurement: it always "proved" TRANSFORMER was 85% of the run,
+/// while the real `[BRICK-PROFILE]` block a few lines above the same output
+/// reported FFN 42% / Qkv 21% / LmHead 4.5% for that identical run. TOKENIZE,
+/// EMBED and DECODE came out equal to the hundredth of a millisecond in every
+/// run, which is the tell.
+///
+/// Two things follow, and both are in the rendered output now:
+///
+/// 1. The column is `Est. Time`, each value is prefixed `~`, and the share used
+///    to derive it is printed next to it. A reader cannot mistake a derived
+///    number for a measured one.
+/// 2. `TOTAL` is labelled wall-clock **including model load**, and its rate is
+///    labelled end-to-end. Reporting `1.0 tok/s` next to the profiler's
+///    `19.2 tok/s` for the same run, with neither labelled, is a 19x
+///    contradiction inside one screen of output.
+///
+/// Returned as a `String` so the rendering is directly assertable; the caller
+/// prints it to stderr.
+fn render_layer_trace(result: &RunResult, max_tokens: usize) -> String {
+    use std::fmt::Write as _;
+
     let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
     let total_ms = result.duration_secs * 1000.0;
     let tok_per_sec = if result.duration_secs > 0.0 {
@@ -341,10 +384,6 @@ fn print_layer_trace(result: &RunResult, max_tokens: usize) {
     } else {
         0.0
     };
-
-    eprintln!();
-    eprintln!("{}", "=== Layer Trace (APR-TRACE-001) ===".cyan().bold());
-    eprintln!();
 
     // 8-step inference state machine trace
     let steps = [
@@ -362,34 +401,68 @@ fn print_layer_trace(result: &RunResult, max_tokens: usize) {
         total_ms
     };
 
-    eprintln!(
-        "  {:<16} {:<10} {}",
+    let mut out = String::new();
+    let _ = writeln!(out);
+    let _ = writeln!(out, "{}", "=== Layer Trace (APR-TRACE-001) ===".cyan().bold());
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "  {}",
+        "ESTIMATED — per-step values are a fixed share of measured wall time,".yellow()
+    );
+    let _ = writeln!(
+        out,
+        "  {}",
+        "NOT per-step measurements. Same ratios for every model and prompt.".yellow()
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "  {:<16} {:<12} {:<8} {}",
         "Step".bold(),
-        "Time".bold(),
+        "Est. Time".bold(),
+        "Share".bold(),
         "Description".bold()
     );
-    eprintln!("  {}", "─".repeat(56));
+    let _ = writeln!(out, "  {}", "─".repeat(66));
 
     for (name, desc) in &steps {
-        // Approximate per-step timing from total (real brick timing
-        // requires BrickProfiler integration via `apr profile --granular`)
-        let step_ms = match *name {
-            "TRANSFORMER" => per_token_ms * 0.85,
-            "LM_HEAD" => per_token_ms * 0.08,
-            "SAMPLE" => per_token_ms * 0.02,
-            _ => per_token_ms * 0.017,
-        };
-        eprintln!("  {:<16} {:>7.2}ms  {}", name, step_ms, desc.dimmed());
+        let share = layer_trace_share(name);
+        let _ = writeln!(
+            out,
+            "  {:<16} ~{:>8.2}ms  {:>6.1}%  {}",
+            name,
+            per_token_ms * share,
+            share * 100.0,
+            desc.dimmed()
+        );
     }
 
-    eprintln!("  {}", "─".repeat(56));
-    eprintln!("  {:<16} {:>7.2}ms  {:.1} tok/s", "TOTAL", total_ms, tok_per_sec);
-    eprintln!();
-    eprintln!(
-        "  {}",
-        "Tip: Use `apr profile <model> --granular` for real per-brick µs timing.".dimmed()
+    let _ = writeln!(out, "  {}", "─".repeat(66));
+    let _ = writeln!(
+        out,
+        "  {:<16} {:>9.2}ms  measured wall clock, incl. model load",
+        "TOTAL", total_ms
     );
-    eprintln!();
+    let _ = writeln!(
+        out,
+        "  {:<16} {:>9.1} tok/s  end-to-end ({} tokens / total wall clock);",
+        "RATE", tok_per_sec, tokens_generated
+    );
+    let _ = writeln!(
+        out,
+        "  {:<16} {}",
+        "",
+        "decode-only throughput is the [BRICK-PROFILE] figure, which excludes load".dimmed()
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "  {}",
+        "For measured per-brick µs timing: `apr profile <model> --granular`.".dimmed()
+    );
+    let _ = writeln!(out);
+    out
 }
 
 /// Print payload trace with activation statistics (TensorStats per layer).

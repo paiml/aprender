@@ -1,4 +1,24 @@
 
+/// Compute backends `--backend` accepts on `apr run` / `apr chat`.
+///
+/// The flag used to be a free-form `String`: `--backend banana` printed
+/// `Backend override: banana` and then quietly ran the default backend. That is
+/// the exact failure the `--backend cuda` guard in `dispatch.rs` exists to
+/// prevent — a run whose throughput number was taken through a backend the
+/// caller did not ask for — so a typo must be rejected by the parser, not
+/// echoed back.
+pub const BACKEND_VALUES: [&str; 3] = ["cuda", "cpu", "wgpu"];
+
+/// Trace detail levels `--trace-level` accepts.
+///
+/// Each value is dispatched on by string equality in `run_entry.rs`; an
+/// unrecognised value silently selected "no extra trace output at all" while
+/// printing `Trace level: <typo>` as though it had taken effect.
+pub const TRACE_LEVEL_VALUES: [&str; 5] = ["none", "basic", "layer", "payload", "chrome"];
+
+/// Output formats `apr run -f/--format` accepts.
+pub const RUN_FORMAT_VALUES: [&str; 4] = ["text", "json", "srt", "vtt"];
+
 /// Output format for `apr code` non-interactive mode (PMAT-CODE-OUTPUT-FORMAT-001).
 /// Mirrors Claude Code's `claude -p --output-format <fmt>` parity row.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Default)]
@@ -51,7 +71,7 @@ pub enum Commands {
         #[arg(short, long)]
         task: Option<String>,
         /// Output format (text, json, srt, vtt)
-        #[arg(short = 'f', long, default_value = "text")]
+        #[arg(short = 'f', long, default_value = "text", value_parser = RUN_FORMAT_VALUES)]
         format: String,
         /// Disable GPU acceleration (force CPU-only inference)
         #[arg(long, alias = "cpu", conflicts_with = "gpu")]
@@ -80,7 +100,7 @@ pub enum Commands {
         /// Trace detail level (none, basic, layer, payload, chrome)
         /// "chrome" outputs chrome://tracing JSON integrating layer trace + brick profile.
         /// F-CLIPARITY-01 / PMAT-386 / paiml/aprender#574
-        #[arg(long, value_name = "LEVEL", default_value = "basic")]
+        #[arg(long, value_name = "LEVEL", default_value = "basic", value_parser = TRACE_LEVEL_VALUES)]
         trace_level: String,
         /// Shorthand for --trace --trace-level payload (tensor value inspection)
         #[arg(long)]
@@ -131,7 +151,7 @@ pub enum Commands {
         #[arg(short, long)]
         verbose: bool,
         /// PMAT-488: Compute backend override (cuda, cpu, wgpu)
-        #[arg(long, value_name = "BACKEND")]
+        #[arg(long, value_name = "BACKEND", value_parser = BACKEND_VALUES)]
         backend: Option<String>,
     },
     /// Inference server (plan/run)

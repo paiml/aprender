@@ -169,6 +169,12 @@ pub(crate) struct RunOptions {
     pub repeat_last_n: usize,
     /// Process prompt tokens one-by-one (debug prefill)
     pub split_prompt: bool,
+    /// `--stream`: emit one NDJSON event per generated token.
+    ///
+    /// Known here (not only at the print site) because streaming is the one
+    /// mode that needs per-token decoded text, and resolving the tokenizer for
+    /// it costs a second open of the model file.
+    pub stream: bool,
 }
 
 impl Default for RunOptions {
@@ -196,6 +202,7 @@ impl Default for RunOptions {
             repeat_penalty: 1.0,
             repeat_last_n: 64,
             split_prompt: false,
+            stream: false,
         }
     }
 }
@@ -217,6 +224,12 @@ pub(crate) struct RunResult {
     pub used_gpu: Option<bool>,
     /// GH-250: Generated token IDs for parity checking
     pub generated_tokens: Option<Vec<u32>>,
+    /// Per-token decoded text, positionally aligned with `generated_tokens`.
+    ///
+    /// `Some` only in `--stream` mode and only when a tokenizer for the model
+    /// could be resolved. `--stream` used to emit `"text":""` for every token
+    /// because nothing ever decoded the ids one at a time.
+    pub token_texts: Option<Vec<String>>,
 }
 
 /// Resolve a user-supplied model argument into a [`ModelSource`].
@@ -302,6 +315,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         tok_per_sec: output.tok_per_sec,
         used_gpu: output.used_gpu,
         generated_tokens: output.generated_tokens,
+        token_texts: output.token_texts,
     })
 }
 

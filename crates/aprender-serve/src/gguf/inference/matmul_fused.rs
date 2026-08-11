@@ -497,8 +497,14 @@ fn validate_matmul_weight_shape(weight: &OwnedQuantizedTensor) -> Result<()> {
     if weight.data.is_empty() {
         return Err(RealizarError::InvalidShape {
             reason: format!(
-                "matmul weight has EMPTY data buffer (in_dim={}, out_dim={}, qtype={}); \
-                 likely a MoE per-expert tensor was registered with len-0 data — see aprender#1789",
+                "matmul weight has EMPTY data buffer (in_dim={}, out_dim={}, qtype={}): \
+                 the tensor is declared with a shape but carries 0 bytes. Known causes: \
+                 (1) a tied-embedding model (e.g. dense Qwen2/Qwen2.5) whose lm_head.weight \
+                 is declared but empty because it was never aliased to the populated token \
+                 embedding matrix; (2) a MoE parent FFN tensor whose real weights live in \
+                 per-expert slices the loader has not wired in. Run `apr tensors <model>` — \
+                 the tensor showing a shape with 0 B of data is the one at fault. \
+                 See aprender#1789",
                 weight.in_dim, weight.out_dim, weight.qtype
             ),
         });
@@ -559,6 +565,33 @@ mod tests {
         assert!(
             msg.contains("in_dim=4096"),
             "must include declared dims for diagnostics; got: {msg}"
+        );
+    }
+
+    /// The message must not diagnose ONE cause it cannot have established.
+    ///
+    /// On `qwen2.5-coder-0.5b-instruct.apr` — a dense, tied-embedding model
+    /// with no experts at all — this guard fired and told the user "likely a
+    /// MoE per-expert tensor was registered with len-0 data". The actual state
+    /// was `lm_head.weight [151936, 896] 0 B` beside a fully populated
+    /// `model.embed_tokens.weight`: tied embeddings that were never resolved.
+    /// A confident wrong diagnosis costs more than no diagnosis.
+    #[test]
+    fn validate_empty_data_does_not_blame_moe_alone() {
+        let t = mk_tensor(vec![], 896, 151_936, GGUF_TYPE_F32);
+        let msg = format!("{}", validate_matmul_weight_shape(&t).unwrap_err());
+        assert!(
+            msg.contains("tied-embedding") || msg.contains("lm_head"),
+            "a dense tied-embedding model is the other known cause and must be \
+             named; got: {msg}"
+        );
+        assert!(
+            !msg.contains("likely a MoE"),
+            "must not present MoE as the single likely cause; got: {msg}"
+        );
+        assert!(
+            msg.contains("apr tensors"),
+            "must tell the user how to find the offending tensor; got: {msg}"
         );
     }
 

@@ -307,16 +307,40 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
         }
     }
 
-    Err(CliError::InvalidFormat(
-        "No Qwen tokenizer found. Searched:\n\
-         1. Pacha cache ({stem}.tokenizer.json alongside model)\n\
-         2. Model directory (tokenizer.json)\n\
-         3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n\
-         4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\n\
+    Err(CliError::InvalidFormat(no_qwen_tokenizer_message(
+        model_path,
+    )))
+}
+
+/// The "no tokenizer" message for `model_path`, with every search location
+/// spelled out as a concrete path.
+///
+/// This message used to print the literal text `{stem}.tokenizer.json` — the
+/// format placeholder was written inside a plain string, so it was never
+/// substituted and the user was shown a template instead of the filename `apr`
+/// actually looked for. Naming the real paths is the difference between "go
+/// find out what apr means by stem" and "create this file".
+fn no_qwen_tokenizer_message(model_path: &Path) -> String {
+    let dir = model_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map_or_else(|| ".".to_string(), |p| p.display().to_string());
+    let stem = model_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("<model>");
+    let home = dirs::home_dir().map_or_else(|| "~".to_string(), |h| h.display().to_string());
+
+    format!(
+        "No Qwen tokenizer found for {model}. Searched:\n\
+         1. Pacha cache:       {dir}/{stem}.tokenizer.json\n\
+         2. Model directory:   {dir}/tokenizer.json\n\
+         3. HuggingFace cache: {home}/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json\n\
+         4. APR cache:         {home}/.apr/tokenizers/qwen2/tokenizer.json\n\n\
          To fix: Download a Qwen model with tokenizer:\n\
-           apr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF"
-            .to_string(),
-    ))
+           apr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+        model = model_path.display(),
+    )
 }
 
 /// Normalize repeated punctuation (max 3 repeats of `!`, `?`, `.`).

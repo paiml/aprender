@@ -70,6 +70,11 @@ pub(crate) fn run(
         );
     }
 
+    // Kept for the chrome-trace writer below: `RunOptions` takes ownership of
+    // `trace_output`, and `--trace-level chrome` must honour the path the user
+    // asked for instead of inventing `trace-<epoch>.json` in the CWD.
+    let requested_trace_output = trace_output.clone();
+
     let options = RunOptions {
         input: input.map(Path::to_path_buf),
         prompt: prompt.map(String::from),
@@ -93,6 +98,7 @@ pub(crate) fn run(
         repeat_penalty,
         repeat_last_n,
         split_prompt,
+        stream,
     };
 
     let result = run_model(source, &options)?;
@@ -109,7 +115,13 @@ pub(crate) fn run(
     // Integrates layer trace + brick profile into chrome://tracing format.
     // Usage: apr run model.gguf "prompt" --trace --trace-level chrome --profile
     if trace && trace_level == "chrome" {
-        print_chrome_trace(&result, source, max_tokens, profile);
+        print_chrome_trace(
+            &result,
+            source,
+            max_tokens,
+            profile,
+            requested_trace_output.as_deref(),
+        );
     }
 
     if profile && trace_level != "chrome" {
@@ -130,21 +142,65 @@ pub(crate) fn run(
 
 /// F-CLIPARITY-01 / PMAT-386: Chrome trace JSON output.
 /// Integrates layer trace + brick profile into chrome://tracing format.
-/// Output file: trace-{timestamp}.json (matches Candle's --tracing output).
+///
+/// Destination: `--trace-output FILE` when the caller gave one, otherwise
+/// `trace-{timestamp}.json` in the CWD (matches Candle's `--tracing` output).
+///
+/// The path argument exists because `--trace-level chrome` used to ignore
+/// `--trace-output` unconditionally: the chrome JSON landed in an auto-named
+/// file in the working directory while the path the user asked for was left
+/// holding the summary stub, so a scripted consumer silently read the wrong
+/// file.
 fn print_chrome_trace(
     result: &super::run::RunResult,
     source: &str,
     max_tokens: usize,
     include_profile: bool,
+    trace_output: Option<&Path>,
 ) {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let filename = format!("trace-{timestamp}.json");
+    let filename = match trace_output {
+        Some(p) => p.to_path_buf(),
+        None => {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            PathBuf::from(format!("trace-{timestamp}.json"))
+        }
+    };
 
+    let trace = build_chrome_trace(result, source, max_tokens, include_profile);
+
+    match std::fs::write(
+        &filename,
+        serde_json::to_string_pretty(&trace).unwrap_or_default(),
+    ) {
+        Ok(()) => eprintln!(
+            "Chrome trace written to: {} (load in chrome://tracing)",
+            filename.display()
+        ),
+        Err(e) => eprintln!("Failed to write chrome trace: {e}"),
+    }
+}
+
+/// Build the chrome://tracing document for a completed run.
+///
+/// Split out of [`print_chrome_trace`] so the document can be asserted on
+/// directly. The tests used to assert against a *copy* of this logic kept in
+/// the test file, which proved only that the copy agreed with itself.
+///
+/// `metadata.timing_model` is `"derived"`: apart from the run's total wall
+/// clock, the per-event durations here are a fixed split of that total, not
+/// measured spans. Real per-operation timing comes from the brick profiler
+/// (`apr profile --granular`).
+pub(crate) fn build_chrome_trace(
+    result: &super::run::RunResult,
+    source: &str,
+    max_tokens: usize,
+    include_profile: bool,
+) -> serde_json::Value {
     let mut events = Vec::new();
     let mut ts_us: u64 = 0;
 
@@ -234,8 +290,7 @@ fn print_chrome_trace(
         }
     }
 
-    // Write chrome trace JSON
-    let trace = serde_json::json!({
+    serde_json::json!({
         "traceEvents": events,
         "displayTimeUnit": "ms",
         "metadata": {
@@ -243,17 +298,12 @@ fn print_chrome_trace(
             "tool": "apr run --trace --trace-level chrome",
             "max_tokens": max_tokens,
             "tok_per_sec": result.tok_per_sec,
-            "include_profile": include_profile
+            "include_profile": include_profile,
+            // Honesty marker: only the run total is measured; the per-event
+            // durations below are a fixed split of it.
+            "timing_model": "derived"
         }
-    });
-
-    match std::fs::write(
-        &filename,
-        serde_json::to_string_pretty(&trace).unwrap_or_default(),
-    ) {
-        Ok(()) => eprintln!("Chrome trace written to: {filename} (load in chrome://tracing)"),
-        Err(e) => eprintln!("Failed to write chrome trace: {e}"),
-    }
+    })
 }
 
 /// Print trace configuration when tracing is enabled.
@@ -381,9 +431,11 @@ fn build_final_json(result: &RunResult, source: &str, max_tokens: usize) -> serd
 /// {"event":"final","model":"...","text":"...","tokens":[...],"tok_per_sec":42.0,...}
 /// ```
 ///
-/// Per-token `text` is best-effort: when no per-token decoded text is
-/// available (today, always — see `print_run_output` doc) the field is an
-/// empty string. The token id is always present and exact.
+/// Per-token `text` carries that token's own decoded text, so a consumer can
+/// render the reply as the events arrive. It falls back to an empty string
+/// only when no tokenizer could be resolved for the model; the token id is
+/// always present and exact, and the terminal `final` event always carries the
+/// authoritative full text.
 fn print_stream_output(result: &RunResult, source: &str, max_tokens: usize) -> Result<()> {
     use std::io::Write;
     let stdout = std::io::stdout();
@@ -402,14 +454,13 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
     max_tokens: usize,
 ) -> std::io::Result<()> {
     if let Some(tokens) = result.generated_tokens.as_deref() {
+        let texts = result.token_texts.as_deref().unwrap_or(&[]);
         for (index, token_id) in tokens.iter().copied().enumerate() {
             let evt = serde_json::json!({
                 "event": "token",
                 "index": index as u32,
                 "token_id": token_id,
-                // Per-token decoded text isn't available from realizar yet;
-                // stream consumers should fall back to the final `text` field.
-                "text": "",
+                "text": texts.get(index).map_or("", String::as_str),
             });
             writeln!(out, "{}", serde_json::to_string(&evt).unwrap_or_default())?;
         }

@@ -62,17 +62,42 @@ impl ProfileReport {
             }
         }
 
-        // CONTRACT 3: decoded_tokens == LmHead.count
+        // CONTRACT 3: LmHead fires once per FORWARD PASS
         // "LmHead is invoked exactly once per decoded token"
         // Catches: token accounting errors, profiler miscounting
+        //
+        // The comparison used to be `lm.count != tokens_processed`, which fired on
+        // 100% of healthy runs — always short by exactly one. That is not a defect
+        // in the profiler, it is the shape of the generation loop:
+        // `generate_with_cache` (gguf/inference/generate_quantized.rs) runs one
+        // forward pass per prompt token, then per generated token it SAMPLES from
+        // the logits it already has and only afterwards forwards the new token to
+        // produce the next logits. The final sampled token is never fed back — the
+        // loop breaks at `tokens.len() >= max_seq_len` before that forward — so its
+        // logits are never computed and LmHead never fires for it, while
+        // `tokens_processed` (prefill + generated) counts it.
+        //
+        // So the honest invariant is "one LmHead per forward pass", i.e.
+        // `tokens_processed - 1` (the last token was not fed back) or
+        // `tokens_processed` (every processed token was). Anything outside that
+        // band is real miscounting — a missing instrumentation path, or LmHead
+        // firing more than once per token — and still fires the warning.
+        //
+        // A falsifier that fires on every healthy run carries no information, and
+        // trains readers to ignore the one run where it means something.
         if let Some(lm) = lm_head {
-            if self.tokens_processed > 0 && lm.count != self.tokens_processed {
+            let expected_low = self.tokens_processed.saturating_sub(1);
+            if self.tokens_processed > 0
+                && (lm.count < expected_low || lm.count > self.tokens_processed)
+            {
                 violations.push((
                     ContractSeverity::Warning,
                     format!(
-                        "gpu-decode-profiling-v1 TOKEN_ACCOUNTING: LmHead.count={} != tokens_processed={}. \
-                         LmHead should fire exactly once per decoded token.",
-                        lm.count, self.tokens_processed
+                        "gpu-decode-profiling-v1 TOKEN_ACCOUNTING: LmHead.count={} outside \
+                         [{}, {}] for tokens_processed={}. LmHead fires once per forward pass \
+                         (every processed token except, optionally, the final sampled token, \
+                         which is never fed back).",
+                        lm.count, expected_low, self.tokens_processed, self.tokens_processed
                     ),
                 ));
             }
