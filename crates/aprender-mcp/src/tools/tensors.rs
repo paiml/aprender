@@ -136,7 +136,10 @@ mod tests {
         // is asserted there.
         let text = &result.content[0].text;
         assert!(text.contains("stats"), "must name the argument: {text}");
-        assert!(text.contains("boolean"), "must state the expected type: {text}");
+        assert!(
+            text.contains("boolean"),
+            "must state the expected type: {text}"
+        );
         assert!(text.contains("yes"), "must quote what was received: {text}");
     }
 

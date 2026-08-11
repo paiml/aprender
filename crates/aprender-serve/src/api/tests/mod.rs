@@ -55,3 +55,4 @@ mod native_routes_2376; // aprender#2376: native routes on a quantized server, K
 mod router_flags; // --no-cors / --no-metrics must change HTTP behaviour, not just the banner
 mod ollama_compat_http; // Dogfood 0.63.0 (#2396/#2402): /api/tags|show|version routed, stream:true is NDJSON, /realize/* stops fabricating
 mod embed_and_envelope_2376; // aprender#2376(1 seventh route, 7, 8) + #2396(2): embeddings on a quantized server, one error envelope, / and /ready
+mod explain_2375; // aprender#2375(2): /v1/explain must not fabricate SHAP values and a 0.95 prediction

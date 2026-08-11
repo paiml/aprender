@@ -97,8 +97,14 @@ mod tests {
             "model_path WAS supplied; reporting it as missing sends the caller \
              to fix the wrong thing. got: {text}"
         );
-        assert!(text.contains("model_path"), "must name the argument: {text}");
-        assert!(text.contains("string"), "must state the expected type: {text}");
+        assert!(
+            text.contains("model_path"),
+            "must name the argument: {text}"
+        );
+        assert!(
+            text.contains("string"),
+            "must state the expected type: {text}"
+        );
         assert!(text.contains("42"), "must quote what was received: {text}");
     }
 }

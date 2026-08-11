@@ -263,9 +263,18 @@ mod tests {
         );
         assert_eq!(result.is_error, Some(true));
         let text = &result.content[0].text;
-        assert!(text.contains("max_tokens"), "must name the argument: {text}");
-        assert!(text.contains("integer"), "must state the expected type: {text}");
-        assert!(text.contains("eight"), "must quote what was received: {text}");
+        assert!(
+            text.contains("max_tokens"),
+            "must name the argument: {text}"
+        );
+        assert!(
+            text.contains("integer"),
+            "must state the expected type: {text}"
+        );
+        assert!(
+            text.contains("eight"),
+            "must quote what was received: {text}"
+        );
     }
 
     #[test]
