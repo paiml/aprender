@@ -375,7 +375,21 @@ async fn realize_model_never_emits_a_synthetic_content_hash() {
             json[field]
         );
     }
-    assert_eq!(json["loaded"], true);
+    // `loaded` must report the resident model, not a literal.
+    //
+    // This asserted `true` against a `demo_mock()` fixture, which is documented
+    // as "no model = no inference overhead" — so the server has no model and the
+    // endpoint was answering `loaded: true` regardless. That is the same
+    // fabricated provenance this test exists to forbid, one field over: the
+    // handler hardcoded `loaded: true` while `size_bytes` and `format` were
+    // being correctly reported as ABSENT-when-unmeasured.
+    //
+    // Now sourced from `state.model_loaded()`, so on this fixture it is false.
+    assert_eq!(
+        json["loaded"], false,
+        "the shared test fixture is demo_mock() and has no model resident, so \
+         /realize/model must not claim one is loaded: {json}"
+    );
 }
 
 #[tokio::test]
