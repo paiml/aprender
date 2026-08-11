@@ -449,4 +449,141 @@ mod tests {
             _ => panic!("expected ValidationFailed"),
         }
     }
+
+    // ── `apr embed --normalize` CLI surface ──────────────────────────
+    //
+    // `--help` documents "Pass `--normalize false` to keep raw
+    // magnitudes". With a bare `bool` field clap derives a SetTrue
+    // switch, so `default_value_t = true` pins the value ON and the
+    // documented `false` is rejected by the parser (exit 2). These
+    // tests assert the PARSED VALUE for each documented spelling, not
+    // merely that parsing succeeds.
+
+    /// Parse an exact `apr embed …` argv and return the `normalize`
+    /// field. `Err` carries clap's rendered error (what the user sees).
+    ///
+    /// Parsed on a 16 MiB thread: the flattened `Commands` enum is large
+    /// enough to overflow the default test stack (same reason as the
+    /// `apr pretrain` CLI tests).
+    fn parse_embed_normalize_argv(argv: &[&str]) -> std::result::Result<bool, String> {
+        let argv: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                use clap::Parser;
+                match crate::Cli::try_parse_from(&argv) {
+                    Ok(cli) => match *cli.command {
+                        crate::Commands::Extended(crate::ExtendedCommands::Embed {
+                            normalize,
+                            ..
+                        }) => Ok(normalize),
+                        other => panic!("expected ExtendedCommands::Embed, got {other:?}"),
+                    },
+                    Err(e) => Err(e.to_string()),
+                }
+            })
+            .expect("spawn parse thread")
+            .join()
+            .expect("parse thread must not panic")
+    }
+
+    /// `apr embed <MODEL> --vocab … --text … <extra>` — the documented
+    /// argument order, with `extra` appended.
+    fn parse_embed_normalize(extra: &[&str]) -> std::result::Result<bool, String> {
+        let mut argv: Vec<&str> = vec![
+            "apr",
+            "embed",
+            "/tmp/_embed_norm/model.apr",
+            "--vocab",
+            "/tmp/_embed_norm/vocab.txt",
+            "--text",
+            "hello",
+        ];
+        argv.extend_from_slice(extra);
+        parse_embed_normalize_argv(&argv)
+    }
+
+    #[test]
+    fn embed_normalize_defaults_to_on_when_omitted() {
+        assert_eq!(
+            parse_embed_normalize(&[]),
+            Ok(true),
+            "omitting --normalize must keep the sentence-transformers default (L2-normalise)"
+        );
+    }
+
+    #[test]
+    fn embed_normalize_bare_flag_is_on() {
+        assert_eq!(
+            parse_embed_normalize(&["--normalize"]),
+            Ok(true),
+            "a bare --normalize must still mean ON"
+        );
+    }
+
+    #[test]
+    fn embed_normalize_space_separated_false_turns_it_off() {
+        // `--help` literally says: "Pass `--normalize false` to keep raw
+        // magnitudes". Before the fix clap rejected this with
+        // "unexpected argument 'false' found" (exit 2).
+        assert_eq!(
+            parse_embed_normalize(&["--normalize", "false"]),
+            Ok(false),
+            "`--normalize false` is documented in --help and MUST reach the handler as false"
+        );
+    }
+
+    #[test]
+    fn embed_normalize_equals_false_turns_it_off() {
+        // Before the fix: "unexpected value 'false' for '--normalize'
+        // found; no more were expected" (exit 2).
+        assert_eq!(
+            parse_embed_normalize(&["--normalize=false"]),
+            Ok(false),
+            "`--normalize=false` MUST reach the handler as false"
+        );
+    }
+
+    #[test]
+    fn embed_normalize_equals_true_is_on() {
+        assert_eq!(parse_embed_normalize(&["--normalize=true"]), Ok(true));
+    }
+
+    #[test]
+    fn embed_normalize_rejects_non_boolean_value() {
+        // The optional value must still be type-checked — `--normalize
+        // maybe` is a user error, not a silent default.
+        let err = parse_embed_normalize(&["--normalize", "maybe"])
+            .expect_err("non-boolean value must be rejected");
+        assert!(err.contains("maybe"), "{err}");
+    }
+
+    /// The one cost of an optional-valued flag: `--normalize` directly
+    /// followed by the MODEL positional is ambiguous, and clap resolves
+    /// it by treating the path as the flag's value. That is inherent to
+    /// `num_args(0..=1)` — the alternative (`require_equals`) would break
+    /// the `--normalize false` spelling that `--help` documents.
+    ///
+    /// It is a legible error listing the accepted values, not a silent
+    /// misparse, and `apr embed <MODEL> --normalize` (the documented
+    /// order) is unaffected. Asserted here so the trade-off is a
+    /// deliberate, reviewed behaviour rather than a latent surprise.
+    #[test]
+    fn embed_normalize_before_positional_errors_legibly() {
+        let err = parse_embed_normalize_argv(&[
+            "apr",
+            "embed",
+            "--normalize",
+            "/tmp/_embed_norm/model.apr",
+            "--vocab",
+            "/tmp/_embed_norm/vocab.txt",
+            "--text",
+            "hello",
+        ])
+        .expect_err("`--normalize <MODEL>` consumes the path as the flag value");
+        assert!(
+            err.contains("model.apr") && err.contains("true") && err.contains("false"),
+            "the error must name the offending token and list the accepted values, got: {err}"
+        );
+    }
 }
