@@ -30,7 +30,8 @@ pub enum CliError {
     /// "Invalid APR format" and therefore sends a user hunting for a corrupt
     /// model file when what actually failed to parse was, say, a grad-norm
     /// telemetry history. Shares exit code 4 — the class of failure is the
-    /// same, only the artifact named is different.
+    /// same ("the input could not be parsed"), only the artifact named is
+    /// different, exactly as `FileNotFound`/`NotAFile` already share 3.
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
@@ -76,17 +77,27 @@ impl CliError {
         contract_pre_exit_code_semantics!();
         contract_pre_error_mapping!();
         contract_pre_exit_code_on_error!();
+        ExitCode::from(self.exit_code_value())
+    }
+
+    /// The numeric exit code this error maps to.
+    ///
+    /// `exit_code()` returns a `std::process::ExitCode`, which is opaque — it
+    /// has no accessor and no `PartialEq`, so a test cannot assert on it. This
+    /// is the same mapping as a plain `u8` so the exit-code convention is
+    /// testable in-process.
+    pub fn exit_code_value(&self) -> u8 {
         match self {
-            Self::FileNotFound(_) | Self::NotAFile(_) => ExitCode::from(3),
-            Self::InvalidFormat(_) | Self::InvalidInput(_) => ExitCode::from(4),
-            Self::Io(_) => ExitCode::from(7),
-            Self::ValidationFailed(_) => ExitCode::from(5),
-            Self::Aprender(_) => ExitCode::from(1),
-            Self::ModelLoadFailed(_) => ExitCode::from(6),
-            Self::InferenceFailed(_) => ExitCode::from(8),
-            Self::FeatureDisabled(_) => ExitCode::from(9),
-            Self::NetworkError(_) => ExitCode::from(10),
-            Self::HttpNotFound(_) => ExitCode::from(11),
+            Self::FileNotFound(_) | Self::NotAFile(_) => 3,
+            Self::InvalidFormat(_) | Self::InvalidInput(_) => 4,
+            Self::Io(_) => 7,
+            Self::ValidationFailed(_) => 5,
+            Self::Aprender(_) => 1,
+            Self::ModelLoadFailed(_) => 6,
+            Self::InferenceFailed(_) => 8,
+            Self::FeatureDisabled(_) => 9,
+            Self::NetworkError(_) => 10,
+            Self::HttpNotFound(_) => 11,
         }
     }
 }

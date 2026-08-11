@@ -56,7 +56,7 @@ pub(crate) fn run(
 
 fn run_non_streaming(body: &str, path: &Path, declared: &[String], json: bool) -> Result<()> {
     let response: Value = serde_json::from_str(body).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr ollama-tools-lint: failed to parse JSON from {}: {e}",
             path.display()
         ))
@@ -87,7 +87,7 @@ fn run_stream(body: &str, path: &Path, json: bool) -> Result<()> {
             continue;
         }
         let frame: Value = serde_json::from_str(trimmed).map_err(|e| {
-            CliError::InvalidFormat(format!(
+            CliError::InvalidInput(format!(
                 "apr ollama-tools-lint: invalid NDJSON at line {} of {}: {e}",
                 idx + 1,
                 path.display()
@@ -111,7 +111,7 @@ fn load_declared_tool_names(path: &Path) -> Result<Vec<String>> {
     }
     let body = std::fs::read_to_string(path)?;
     let req: Value = serde_json::from_str(&body).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr ollama-tools-lint: failed to parse request JSON from {}: {e}",
             path.display()
         ))
@@ -225,7 +225,19 @@ mod cov_tests {
         let f = w("not a json response");
         let req = w(r#"{"tools":[]}"#);
         let err = run(f.path(), Some(req.path()), false, false).unwrap_err();
-        assert!(matches!(err, CliError::InvalidFormat(_)));
+        // InvalidInput, NOT InvalidFormat. `InvalidFormat`'s Display hardcodes
+        // "Invalid APR format", which sends the user hunting for a corrupt model
+        // when what failed to parse was a captured JSON response. Both map to
+        // exit 4 — same error class, honest diagnostic (#2404).
+        assert!(
+            matches!(err, CliError::InvalidInput(_)),
+            "a malformed JSON response must not be reported as an APR format error: {err:?}"
+        );
+        assert_eq!(
+            err.exit_code_value(),
+            4,
+            "the exit code is unchanged: {err}"
+        );
     }
 
     const RESP_ONE_CALL: &str = r#"{"model":"q","created_at":"t","done":true,"message":

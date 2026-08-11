@@ -28,7 +28,7 @@ pub(crate) fn run(report_file: &Path, stderr_file: Option<&Path>, json: bool) ->
     let bytes = body.len() as u64;
 
     let report: Value = serde_json::from_str(&body).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr oom-lint: failed to parse JSON from {}: {e}",
             report_file.display()
         ))
@@ -152,7 +152,7 @@ mod cov_tests {
     fn invalid_json_is_invalid_format() {
         let f = write_obs("not json");
         let err = run(f.path(), None, false).unwrap_err();
-        assert!(matches!(err, CliError::InvalidFormat(_)));
+        assert!(matches!(err, CliError::InvalidInput(_)));
     }
 
     #[test]

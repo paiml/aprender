@@ -32,7 +32,7 @@ pub(crate) fn run(response_file: &Path, stream: bool, json: bool) -> Result<()> 
 
 fn run_non_streaming(body: &str, path: &Path, json: bool) -> Result<()> {
     let response: Value = serde_json::from_str(body).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr ollama-chat-lint: failed to parse JSON from {}: {e}",
             path.display()
         ))
@@ -63,7 +63,7 @@ fn run_stream(body: &str, path: &Path, json: bool) -> Result<()> {
             continue;
         }
         let frame: Value = serde_json::from_str(trimmed).map_err(|e| {
-            CliError::InvalidFormat(format!(
+            CliError::InvalidInput(format!(
                 "apr ollama-chat-lint: invalid NDJSON at line {} of {}: {e}",
                 idx + 1,
                 path.display()

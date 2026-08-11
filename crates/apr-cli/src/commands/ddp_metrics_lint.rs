@@ -71,7 +71,7 @@ fn load_json(path: &Path) -> Result<Value> {
     }
     let body_text = std::fs::read_to_string(path)?;
     serde_json::from_str(&body_text).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr ddp-metrics-lint: failed to parse JSON from {}: {e}",
             path.display()
         ))
@@ -213,6 +213,6 @@ mod cov_tests {
             false,
         )
         .unwrap_err();
-        assert!(matches!(err, CliError::InvalidFormat(_)));
+        assert!(matches!(err, CliError::InvalidInput(_)));
     }
 }

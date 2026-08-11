@@ -42,6 +42,17 @@ pub(crate) fn run(
                 .to_string(),
         ));
     }
+
+    // `--trace-dir` naming a regular file used to fall through to read_dir and
+    // surface as a raw `IO error: Not a directory (os error 20)` with exit 7 —
+    // an OS-failure code for what is really "the input you handed me is not a
+    // usable observation" (exit 4 across the family; see commands::lint_error).
+    if !trace_dir.is_dir() {
+        return Err(CliError::InvalidInput(format!(
+            "apr hang-trace-lint: --trace-dir is not a directory: {}",
+            trace_dir.display()
+        )));
+    }
     let entries = std::fs::read_dir(trace_dir)?
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))

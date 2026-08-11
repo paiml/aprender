@@ -27,7 +27,7 @@ pub(crate) fn run(
     }
     let body_text = std::fs::read_to_string(trace_file)?;
     let body: Value = serde_json::from_str(&body_text).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr react-trace-lint: failed to parse JSON from {}: {e}",
             trace_file.display()
         ))
@@ -113,7 +113,7 @@ mod cov_tests {
     fn invalid_json_is_invalid_format() {
         let f = w("xx");
         let err = run(f.path(), None, false, false).unwrap_err();
-        assert!(matches!(err, CliError::InvalidFormat(_)));
+        assert!(matches!(err, CliError::InvalidInput(_)));
     }
     #[test]
     fn empty_object_runs() {
