@@ -426,6 +426,16 @@ jobs:
       # compile its own test suite. Text-only check, no build.
       - name: No exclude pattern may swallow a src/ directory
         run: bash scripts/check_exclude_anchored.sh
+      # Poka-yoke: capturing `cmd 2>&1` into one variable and then parsing it as
+      # JSON puts the command's diagnostics in front of its data. On 2026-08-11
+      # the nightly story reported `no format_parity gate found in --json output
+      # (got: '')` for a gate that had run and PASSED, because `apr qa --json`
+      # writes JSON to stdout while the CUDA path emits `[trueno#243]` lines to
+      # stderr. A false FAIL reddens main for a non-reason. The converse matters
+      # too: a Rust panic arrives on stderr, so the panic checks must keep
+      # reading the merged view. Behavioural, text-only, no build.
+      - name: Story JSON parsing must read stdout, not the merged stream
+        run: bash scripts/check_story_json_streams.sh
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".

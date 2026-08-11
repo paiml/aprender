@@ -149,6 +149,12 @@ falsification_tests:
     test: "grep -q 'rev-parse --short HEAD' scripts/apr_bin.sh && grep -q 'STALE apr BINARY' scripts/apr_bin.sh"
     if_fails: "Freshness is asserted by version string alone or not at all; a rebuilt-but-not-reinstalled binary would pass."
 
+  - id: FALSIFY-QWEN-STORY-014
+    rule: "A check that parses JSON reads STDOUT alone; only pattern checks see the merged stream"
+    prediction: "scripts/check_story_json_streams.sh exits 0: run_cmd sets RC_OUT from stdout only, RC_ERR from stderr only, RC_ALL from both, and no jq call site in qwen-story.sh is fed from the merged stream"
+    test: "bash scripts/check_story_json_streams.sh"
+    if_fails: "run_cmd captured `cmd 2>&1` into one variable, so a command's stderr was prepended to its JSON. On 2026-08-11 that reported `no format_parity gate found in --json output (got: '', apr qa exit=0)` for a gate that had run and PASSED - apr qa writes JSON to stdout and the CUDA path emits unconditional `[trueno#243]` lines to stderr. A false FAIL is as corrosive as a gate that cannot fail: main goes red for a non-reason. Note the converse is equally a defect - a Rust panic arrives on stderr, so the panic checks must keep reading RC_ALL."
+
   - id: FALSIFY-QWEN-STORY-008
     rule: "Beat 7 doesn't run apr qa on 7B (known #1864 regression)"
     prediction: "Beat 7 calls profile/gpu/serve plan but NOT apr qa on the 7B model"
