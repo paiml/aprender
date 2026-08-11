@@ -429,6 +429,9 @@ pub enum Commands {
         /// Plan mode (validate inputs, show export plan, no execution)
         #[arg(long)]
         plan: bool,
+        /// #2392: Overwrite an existing output file (refused without it)
+        #[arg(short, long)]
+        force: bool,
     },
     /// Import from external formats (hf://org/repo, local files, URLs)
     Import {
@@ -662,6 +665,9 @@ pub enum Commands {
         /// Plan mode (validate inputs, show merge plan, no execution)
         #[arg(long)]
         plan: bool,
+        /// #2392: Overwrite an existing output file (refused without it)
+        #[arg(short, long)]
+        force: bool,
     },
     /// Quantize model weights (GH-243)
     Quantize {

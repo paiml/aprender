@@ -296,7 +296,7 @@ fn save_output(
             quantize,
         )
     } else {
-        save_model_tensors(tensors, output_path, compression, quantize)
+        save_model_tensors(tensors, output_path, compression, quantize, gguf_tokenizer)
     }
 }
 

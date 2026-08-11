@@ -227,3 +227,91 @@ pub fn streaming_quantize_peak_estimate(path: &Path) -> Option<u64> {
         })
         .max()
 }
+
+/// Bytes a single tensor contributes to a Q4K APR, given only its name+shape.
+///
+/// Mirrors the two Q4K write paths exactly — `save_model_tensors_q4k` and
+/// `streaming_quantize_apr_to_q4k` both gate on [`should_quantize_tensor`] and
+/// then emit either `quantize_q4_k_matrix` blocks or a plain F32 tensor.
+///
+/// A Q4K super-block covers 256 elements in 144 bytes, and
+/// `quantize_q4_k_matrix` blocks **per row**, zero-padding each row up to a
+/// whole number of super-blocks. So a `[N, 384]` weight costs
+/// `N * 2 * 144` bytes, not `N * 384 * 4.5 / 8`.
+fn q4k_tensor_bytes(name: &str, shape: &[usize]) -> u64 {
+    const SUPER_BLOCK_SIZE: usize = 256;
+    const SUPER_BLOCK_BYTES: u64 = 144;
+
+    let elements: usize = shape.iter().product();
+    if !should_quantize_tensor(name, shape, elements) {
+        // Not eligible → written verbatim as F32.
+        return (elements as u64).saturating_mul(4);
+    }
+    if shape.len() == 2 {
+        let rows = shape[0] as u64;
+        let super_blocks_per_row = shape[1].div_ceil(SUPER_BLOCK_SIZE) as u64;
+        return rows
+            .saturating_mul(super_blocks_per_row)
+            .saturating_mul(SUPER_BLOCK_BYTES);
+    }
+    // >2D falls through to flat `quantize_q4_k`, which blocks the whole buffer.
+    (elements.div_ceil(SUPER_BLOCK_SIZE) as u64).saturating_mul(SUPER_BLOCK_BYTES)
+}
+
+/// Estimate the Q4K tensor payload `apr quantize -s q4k` would write, by
+/// scanning only the input's tensor index (no tensor data is loaded).
+///
+/// #2392 (dogfood 0.63.0, finding 3): `apr quantize --plan -s q4k` used to apply
+/// a flat "4.5 bits per weight against an assumed-F32 input", producing a
+/// **constant** 7.111x reduction ratio for every model ever passed to it. That
+/// ignores the two things that actually decide a Q4K model's size: which tensors
+/// are eligible at all (embeddings, norms, biases, scales and anything under 256
+/// elements stay F32 — 84.4% of one real model's bytes), and the per-row padding
+/// Q4K applies to rows whose width is not a multiple of 256. On a real 87 MB
+/// model the plan promised 12778677 bytes and quantization produced 55507012 —
+/// 4.34x optimistic. On a small model whose weights Q4K actually *inflates*, the
+/// plan still promised a 7x shrink.
+///
+/// Returns the summed tensor payload, or `None` when the input's tensor index
+/// cannot be read (unknown format) so the caller can fall back to the flat
+/// estimate. This counts tensor bytes only: the container's metadata — notably
+/// an embedded tokenizer vocabulary, which can be megabytes for a 151k-token BPE
+/// model — is not included, so the estimate is a lower bound on the file size.
+pub fn q4k_output_size_estimate(path: &Path) -> Option<u64> {
+    q4k_estimate_from_apr(path).or_else(|| q4k_estimate_from_safetensors(path))
+}
+
+/// Q4K payload estimate for an APR v2 source (both `apr quantize` APR paths).
+fn q4k_estimate_from_apr(path: &Path) -> Option<u64> {
+    use crate::bundle::MappedFile;
+
+    let mapped = MappedFile::open(path).ok()?;
+    let reader = AprV2ReaderRef::from_bytes(mapped.as_slice()).ok()?;
+    let names = reader.tensor_names();
+    if names.is_empty() {
+        return None;
+    }
+    Some(
+        names
+            .iter()
+            .filter_map(|n| reader.get_tensor(n).map(|e| (n, e)))
+            .map(|(n, e)| q4k_tensor_bytes(n, &e.shape))
+            .fold(0u64, u64::saturating_add),
+    )
+}
+
+/// Q4K payload estimate for a SafeTensors source.
+fn q4k_estimate_from_safetensors(path: &Path) -> Option<u64> {
+    let mapped = crate::serialization::safetensors::MappedSafeTensors::open(path).ok()?;
+    let names = mapped.tensor_names();
+    if names.is_empty() {
+        return None;
+    }
+    Some(
+        names
+            .iter()
+            .filter_map(|n| mapped.get_metadata(n).map(|m| (n, m)))
+            .map(|(n, m)| q4k_tensor_bytes(n, &m.shape))
+            .fold(0u64, u64::saturating_add),
+    )
+}

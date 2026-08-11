@@ -252,6 +252,7 @@ pub(crate) fn run(
     batch: Option<&str>,
     json_output: bool,
     plan: bool,
+    force: bool,
 ) -> Result<()> {
     contract_pre_format_conversion_roundtrip!();
     contract_pre_atomic_write_safety!();
@@ -293,6 +294,10 @@ pub(crate) fn run(
     if pipe_to_stdout {
         return run_export_to_stdout(file, export_format, quant_type);
     }
+
+    // #2392 finding 4: export used to write straight over an existing file and
+    // exit 0. `-o -` is exempt above (stdout is not a file we can clobber).
+    crate::error::refuse_overwrite(output, force)?;
 
     if !json_output {
         output::header("APR Export");

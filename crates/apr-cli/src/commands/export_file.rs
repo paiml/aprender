@@ -38,6 +38,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
         match result {
@@ -48,7 +49,7 @@ mod tests {
 
     #[test]
     fn test_run_no_file() {
-        let result = run(None, "safetensors", None, None, false, None, false, false);
+        let result = run(None, "safetensors", None, None, false, None, false, false, true);
         assert!(result.is_err());
         match result {
             Err(CliError::ValidationFailed(msg)) => {
@@ -70,6 +71,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
         match result {
@@ -92,6 +94,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
         match result {
@@ -114,6 +117,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
         match result {
@@ -136,6 +140,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
         match result {
@@ -158,6 +163,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
         match result {
@@ -180,6 +186,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
         match result {
@@ -232,6 +239,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
     }
@@ -242,13 +250,13 @@ mod tests {
 
     #[test]
     fn test_list_formats() {
-        let result = run(None, "safetensors", None, None, true, None, false, false);
+        let result = run(None, "safetensors", None, None, true, None, false, false, true);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_list_formats_json() {
-        let result = run(None, "safetensors", None, None, true, None, true, false);
+        let result = run(None, "safetensors", None, None, true, None, true, false, true);
         assert!(result.is_ok());
     }
 
@@ -268,6 +276,7 @@ mod tests {
             Some("gguf,unknown"),
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
     }
@@ -284,6 +293,7 @@ mod tests {
             Some("gguf,onnx"),
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
         match result {
@@ -382,6 +392,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
     }
@@ -459,6 +470,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         // Fails with FileNotFound (not output validation) because stdout is detected
         assert!(result.is_err());
@@ -476,6 +488,7 @@ mod tests {
             None,
             false,
             false,
+            true, // #2392: force — these tests predate the overwrite guard
         );
         assert!(result.is_err());
         assert!(matches!(result, Err(CliError::FileNotFound(_))));

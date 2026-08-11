@@ -200,16 +200,22 @@ fn add_tensor_with_quantization(
 /// Save model tensors with optional compression
 ///
 /// Note: For .apr output, use save_model_tensors_with_config() instead to embed metadata.
+///
+/// `tokenizer` carries the tokenizer that the convert pipeline already located and
+/// parsed for the source model. It MUST be forwarded to the APR writer — an APR
+/// file with no embedded tokenizer is unusable for inference (see
+/// `save_model_tensors_with_config`).
 fn save_model_tensors(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
     compression: Option<Compression>,
     quantize: Option<QuantizationType>,
+    tokenizer: Option<&GgufTokenizer>,
 ) -> Result<()> {
     // GH-165 FIX: If output is .apr, use APR format with embedded config
     let extension = output.extension().and_then(|e| e.to_str()).unwrap_or("");
     if extension == "apr" {
-        return save_model_tensors_with_config(tensors, output, compression, quantize);
+        return save_model_tensors_with_config(tensors, output, compression, quantize, tokenizer);
     }
 
     // PMAT-274 FIX: Apply quantization for SafeTensors output too
@@ -350,11 +356,23 @@ fn f32_slice_to_f16_le_bytes(data: &[f32]) -> Vec<u8> {
 /// Infers model configuration from tensor shapes and embeds it in APR metadata.
 /// This ensures AprTransformer can load with correct dimensions.
 /// If config cannot be inferred (generic tensors), saves with minimal metadata.
+///
+/// #2392 (dogfood 0.63.0, finding 1): this is the fallback save path taken by
+/// `apr convert` / `apr quantize` whenever no sibling `config.json` was found,
+/// i.e. for every scheme except Q4K (which returns early into
+/// `save_model_tensors_q4k`). It used to drop `tokenizer` on the floor: convert
+/// located the tokenizer, parsed all 151665 tokens, printed that it had done so,
+/// then wrote an APR with no `tokenizer.vocabulary` and exited 0 reporting
+/// "Conversion successful". The resulting artifact violated the format contract
+/// the same binary enforces at load time and failed `apr run` with rc=8
+/// ("APR format requires self-contained tokenizer"). The tokenizer is now
+/// embedded here with the identical helper the Q4K and import paths use.
 fn save_model_tensors_with_config(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
     _compression: Option<Compression>,
     quantize: Option<QuantizationType>,
+    tokenizer: Option<&GgufTokenizer>,
 ) -> Result<()> {
     // Try to infer model configuration from tensor shapes
     let config = infer_model_config_from_tensors(tensors);
@@ -371,6 +389,35 @@ fn save_model_tensors_with_config(
         metadata.num_heads = cfg.num_heads;
         metadata.num_kv_heads = cfg.num_kv_heads;
         metadata.intermediate_size = cfg.intermediate_size;
+    }
+
+    // #2392 (finding 1, second half): embedding the tokenizer alone still left
+    // the artifact unrunnable — `apr run` then died with "C-01: APR model
+    // missing 'architecture' metadata — cannot infer model type". This path
+    // never stamped `architecture` at all. The tensor names carry it, and the
+    // import path already reads them with this exact helper, so use it here too.
+    // ("unknown" is what the helper returns for GGUF-style `blk.N` names it
+    // cannot disambiguate — stamping that would be worse than leaving it unset.)
+    if metadata.architecture.is_none() {
+        if let Some(arch) = import::infer_architecture_from_names(tensors) {
+            if arch != "unknown" {
+                metadata.model_type.clone_from(&arch);
+                metadata.architecture = Some(arch);
+            }
+        }
+    }
+
+    // #2392: embed the tokenizer the caller already resolved. Same helper the
+    // Q4K path (`save_model_tensors_q4k`) and the SafeTensors import path use,
+    // so every quantization scheme now produces a self-contained APR.
+    if let Some(tok) = tokenizer {
+        write::insert_f32_tokenizer_metadata(tok, &mut metadata.custom);
+        eprintln!(
+            "[#2392] Embedded tokenizer ({} vocab, {} merges) into APR, architecture={}",
+            tok.vocabulary.len(),
+            tok.merges.len(),
+            metadata.architecture.as_deref().unwrap_or("unset")
+        );
     }
 
     // GH-237: Create writer and add tensors with correct dtype dispatch

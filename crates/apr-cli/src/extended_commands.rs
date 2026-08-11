@@ -1115,6 +1115,9 @@ pub enum ExtendedCommands {
         /// Output directory for shards + model.safetensors.index.json
         #[arg(short, long, value_name = "DIR")]
         output: PathBuf,
+        /// #2392: Overwrite an existing shard set in the output directory
+        #[arg(short, long)]
+        force: bool,
     },
     /// Reconstruct a single safetensors file from a sharded directory (CRUX-B-05)
     Unshard {
@@ -1124,6 +1127,9 @@ pub enum ExtendedCommands {
         /// Output single-file safetensors path
         #[arg(short, long, value_name = "FILE")]
         output: PathBuf,
+        /// #2392: Overwrite an existing output file (refused without it)
+        #[arg(short, long)]
+        force: bool,
     },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
