@@ -8,10 +8,12 @@ fn test_model_metadata_response_full_cov() {
     let metadata = ModelMetadataResponse {
         id: "my-model-v1".to_string(),
         name: "My Model V1".to_string(),
-        format: "GGUF".to_string(),
-        size_bytes: 4_000_000_000,
+        format: Some("GGUF".to_string()),
+        size_bytes: Some(4_000_000_000),
         quantization: Some("Q4_K_M".to_string()),
-        context_length: 4096,
+        context_length: Some(4096),
+        model_max_context_length: None,
+        architecture: None,
         lineage: Some(ModelLineage {
             uri: "pacha://org/model".to_string(),
             version: "1.0.0".to_string(),
@@ -33,10 +35,12 @@ fn test_model_metadata_response_minimal_cov() {
     let metadata = ModelMetadataResponse {
         id: "basic".to_string(),
         name: "Basic Model".to_string(),
-        format: "APR".to_string(),
-        size_bytes: 100_000_000,
+        format: Some("APR".to_string()),
+        size_bytes: Some(100_000_000),
         quantization: None,
-        context_length: 1024,
+        context_length: Some(1024),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: false,
     };

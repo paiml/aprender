@@ -63,7 +63,14 @@ pub(crate) use openai_handlers::{
 // PMAT-923: Ollama HTTP compat (/api/chat, /api/generate) — delegates to the
 // OpenAI chat path so `apr serve` is a drop-in Ollama HTTP replacement.
 mod ollama_handlers;
-pub(crate) use ollama_handlers::{ollama_chat_handler, ollama_generate_handler};
+pub(crate) use ollama_handlers::{
+    ollama_chat_handler, ollama_generate_handler, ollama_show_handler, ollama_tags_handler,
+    ollama_version_handler,
+};
+// What this server actually measured about the model it loaded. Metadata
+// handlers read it instead of substituting plausible-looking constants.
+mod model_source;
+pub use model_source::{detect_format_from_magic, gguf_qtype_name, ModelSourceInfo};
 mod gpu_handlers;
 pub(crate) use gpu_handlers::{
     batch_generate_handler, batch_tokenize_handler, generate_handler,
@@ -183,6 +190,30 @@ pub struct AppState {
     verbose: bool,
     /// GH-103: Enable inference tracing (propagates into QuantizedGenerateConfig.trace)
     trace: bool,
+    /// What the loader measured about the served model (path, size, format,
+    /// quantization, context length). `None` means this server was built
+    /// without that knowledge — the metadata handlers then report the fields
+    /// as ABSENT rather than inventing values.
+    model_source: Option<Arc<ModelSourceInfo>>,
+}
+
+impl AppState {
+    /// Attach measured model provenance/metadata.
+    ///
+    /// Call this from whatever loaded the model; it is what makes
+    /// `/realize/model`, `/api/tags` and `/api/show` report the truth instead
+    /// of constants.
+    #[must_use]
+    pub fn with_model_source(mut self, source: ModelSourceInfo) -> Self {
+        self.model_source = Some(Arc::new(source));
+        self
+    }
+
+    /// Measured model provenance/metadata, if the loader supplied any.
+    #[must_use]
+    pub fn model_source(&self) -> Option<&ModelSourceInfo> {
+        self.model_source.as_deref()
+    }
 }
 
 /// Helper to create default audit infrastructure

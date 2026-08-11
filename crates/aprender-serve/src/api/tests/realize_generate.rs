@@ -77,10 +77,12 @@ fn test_model_metadata_response_clone_debug_more_cov() {
     let metadata = ModelMetadataResponse {
         id: "test".to_string(),
         name: "Test".to_string(),
-        format: "GGUF".to_string(),
-        size_bytes: 1000,
+        format: Some("GGUF".to_string()),
+        size_bytes: Some(1000),
         quantization: None,
-        context_length: 4096,
+        context_length: Some(4096),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: true,
     };

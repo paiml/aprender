@@ -325,17 +325,19 @@ fn test_model_metadata_response_zero_size() {
     let response = ModelMetadataResponse {
         id: "streaming-model".to_string(),
         name: "Streaming Model".to_string(),
-        format: "GGUF".to_string(),
-        size_bytes: 0,
+        format: Some("GGUF".to_string()),
+        size_bytes: Some(0),
         quantization: None,
-        context_length: 4096,
+        context_length: Some(4096),
+        model_max_context_length: None,
+        architecture: None,
         lineage: None,
         loaded: false,
     };
 
     let json = serde_json::to_string(&response).expect("serialize");
     let parsed: ModelMetadataResponse = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(parsed.size_bytes, 0);
+    assert_eq!(parsed.size_bytes, Some(0));
 }
 
 #[test]
@@ -345,10 +347,12 @@ fn test_model_metadata_response_all_quantizations() {
         let response = ModelMetadataResponse {
             id: format!("model-{quant}"),
             name: format!("Model {quant}"),
-            format: "GGUF".to_string(),
-            size_bytes: 1000,
+            format: Some("GGUF".to_string()),
+            size_bytes: Some(1000),
             quantization: Some(quant.to_string()),
-            context_length: 2048,
+            context_length: Some(2048),
+            model_max_context_length: None,
+            architecture: None,
             lineage: None,
             loaded: true,
         };

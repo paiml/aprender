@@ -389,10 +389,12 @@
         let response = ModelMetadataResponse {
             id: "model-123".to_string(),
             name: "TinyLlama".to_string(),
-            format: "GGUF".to_string(),
-            size_bytes: 1_000_000_000,
+            format: Some("GGUF".to_string()),
+            size_bytes: Some(1_000_000_000),
             quantization: Some("Q4_K_M".to_string()),
-            context_length: 4096,
+            context_length: Some(4096),
+            model_max_context_length: None,
+            architecture: None,
             lineage: None,
             loaded: true,
         };
@@ -405,10 +407,12 @@
         let response = ModelMetadataResponse {
             id: "model-456".to_string(),
             name: "CustomModel".to_string(),
-            format: "APR".to_string(),
-            size_bytes: 500_000_000,
+            format: Some("APR".to_string()),
+            size_bytes: Some(500_000_000),
             quantization: None,
-            context_length: 2048,
+            context_length: Some(2048),
+            model_max_context_length: None,
+            architecture: None,
             lineage: Some(ModelLineage {
                 uri: "pacha://models/custom".to_string(),
                 version: "1.0.0".to_string(),
@@ -428,10 +432,12 @@
         let response = ModelMetadataResponse {
             id: "test".to_string(),
             name: "Test".to_string(),
-            format: "GGUF".to_string(),
-            size_bytes: 100,
+            format: Some("GGUF".to_string()),
+            size_bytes: Some(100),
             quantization: None,
-            context_length: 1024,
+            context_length: Some(1024),
+            model_max_context_length: None,
+            architecture: None,
             lineage: None,
             loaded: true,
         };

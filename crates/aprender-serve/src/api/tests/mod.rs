@@ -53,3 +53,4 @@ mod embeddings_pmat803; // PMAT-803: model-backed embeddings (semantic-similarit
 mod sse_stream_whitespace; // Dogfood 0.63.0: SSE deltas must reassemble with whitespace intact
 mod native_routes_2376; // aprender#2376: native routes on a quantized server, KV-cache budget, sampling fields
 mod router_flags; // --no-cors / --no-metrics must change HTTP behaviour, not just the banner
+mod ollama_compat_http; // Dogfood 0.63.0 (#2396/#2402): /api/tags|show|version routed, stream:true is NDJSON, /realize/* stops fabricating

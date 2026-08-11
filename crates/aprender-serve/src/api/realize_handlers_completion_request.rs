@@ -467,10 +467,12 @@
         let response = ModelMetadataResponse {
             id: "debug".to_string(),
             name: "Debug Model".to_string(),
-            format: "APR".to_string(),
-            size_bytes: 0,
+            format: Some("APR".to_string()),
+            size_bytes: Some(0),
             quantization: None,
-            context_length: 2048,
+            context_length: Some(2048),
+            model_max_context_length: None,
+            architecture: None,
             lineage: None,
             loaded: false,
         };
@@ -483,10 +485,12 @@
         let response = ModelMetadataResponse {
             id: "c".to_string(),
             name: "Clone".to_string(),
-            format: "GGUF".to_string(),
-            size_bytes: 42,
+            format: Some("GGUF".to_string()),
+            size_bytes: Some(42),
             quantization: Some("Q4_K_M".to_string()),
-            context_length: 4096,
+            context_length: Some(4096),
+            model_max_context_length: None,
+            architecture: None,
             lineage: None,
             loaded: true,
         };

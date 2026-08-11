@@ -188,7 +188,13 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
             // a drop-in Ollama HTTP replacement. Both delegate to the OpenAI chat
             // generation path. Discharges OBLIG-OLLAMA-API-CHAT-GENERATE-ROUTED.
             .route("/api/chat", post(ollama_chat_handler))
-            .route("/api/generate", post(ollama_generate_handler));
+            .route("/api/generate", post(ollama_generate_handler))
+            // Model discovery. Ollama clients call /api/tags BEFORE issuing any
+            // chat request and /api/show to probe capabilities; without them the
+            // "drop-in Ollama replacement" claim above is unreachable in practice.
+            .route("/api/tags", get(ollama_tags_handler))
+            .route("/api/show", post(ollama_show_handler))
+            .route("/api/version", get(ollama_version_handler));
     }
 
     // realizr#191: Logprobs + perplexity endpoints (CUDA only, F-QUALITY-01)

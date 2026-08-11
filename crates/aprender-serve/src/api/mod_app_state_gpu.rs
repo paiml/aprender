@@ -63,6 +63,7 @@ impl AppState {
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
+            model_source: None,
         })
     }
 
@@ -117,6 +118,7 @@ impl AppState {
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
+            model_source: None,
         })
     }
 
@@ -179,6 +181,7 @@ impl AppState {
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
+            model_source: None,
         })
     }
 
@@ -244,6 +247,7 @@ impl AppState {
             cached_eos_token_id: eos,
             verbose: false,
             trace: false,
+            model_source: None,
         })
     }
 
@@ -298,6 +302,7 @@ impl AppState {
             cached_eos_token_id: eos,
             verbose: false,
             trace: false,
+            model_source: None,
         })
     }
 
@@ -357,6 +362,7 @@ impl AppState {
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
+            model_source: None,
         })
     }
 
@@ -578,6 +584,7 @@ impl AppState {
             cached_eos_token_id: eos_id,
             verbose: false,
             trace: false,
+            model_source: None,
         })
     }
 
@@ -624,6 +631,7 @@ impl AppState {
             cached_eos_token_id: None,
             verbose: false,
             trace: false,
+            model_source: None,
         })
     }
 

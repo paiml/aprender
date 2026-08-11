@@ -1,4 +1,60 @@
 
+/// The quantization actually present in the loaded weights.
+///
+/// Derived from the qtype of the projection tensors themselves — the ground
+/// truth — not from GGUF's advisory `general.file_type`, which goes stale when
+/// a file is requantized. Returns the modal qtype across every layer's
+/// attention-output and FFN projections, or `None` when no layer carries a
+/// qtype this build knows a name for. Never guesses "Q4_K_M".
+#[cfg(feature = "inference")]
+fn dominant_quantization(model: &realizar::gguf::OwnedQuantizedModel) -> Option<&'static str> {
+    use std::collections::HashMap;
+
+    let mut counts: HashMap<u32, usize> = HashMap::new();
+    for layer in model.layers() {
+        let mut tally = |qtype: u32| *counts.entry(qtype).or_insert(0) += 1;
+        tally(layer.attn_output_weight.qtype);
+        tally(layer.ffn_up_weight.qtype);
+        tally(layer.ffn_down_weight.qtype);
+        if let Some(gate) = layer.ffn_gate_weight.as_ref() {
+            tally(gate.qtype);
+        }
+    }
+    counts
+        .into_iter()
+        .filter_map(|(qtype, n)| realizar::api::gguf_qtype_name(qtype).map(|name| (name, n)))
+        .max_by_key(|&(_, n)| n)
+        .map(|(name, _)| name)
+}
+
+/// Everything this process actually knows about the model it just loaded.
+///
+/// Facts come from three places, all measured: the file (size, container
+/// format from magic bytes), the loaded weights (architecture, quantization,
+/// the model's own advertised context length) and the operator's flags
+/// (`--context-length`). No field is defaulted — an unmeasured field is
+/// reported as absent by the metadata handlers.
+#[cfg(feature = "inference")]
+fn measured_model_source(
+    model: &realizar::gguf::OwnedQuantizedModel,
+    config: &ServerConfig,
+) -> realizar::api::ModelSourceInfo {
+    let base = config
+        .model_path
+        .as_deref()
+        .map(realizar::api::ModelSourceInfo::from_path)
+        .unwrap_or_default();
+
+    let mut source = base
+        .with_architecture(model.config().architecture.as_str())
+        .with_model_max_context_length(model.config().context_length)
+        .with_context_length(config.context_length);
+    if let Some(quantization) = dominant_quantization(model) {
+        source = source.with_quantization(quantization);
+    }
+    source
+}
+
 /// Run the CPU inference server
 ///
 /// `mapped_model` is `None` for non-GGUF formats (APR / SafeTensors). For
@@ -16,8 +72,14 @@ fn run_cpu_server(
 ) -> Result<()> {
     use realizar::api::{create_router_with_config, AppState};
 
+    // Measure the model BEFORE it is moved into AppState. Anything not
+    // measurable here stays absent — `/realize/model` no longer substitutes
+    // `size_bytes: 0` / `context_length: 4096` / `quantization: "Q4_K_M"`.
+    let model_source = measured_model_source(&quantized_model, config);
+
     let mut state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
-        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?;
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
+        .with_model_source(model_source);
     if let Some(mapped) = mapped_model {
         state = state.with_mapped_gguf_model(mapped);
     }
@@ -57,6 +119,11 @@ fn run_cpu_server(
         println!("  POST /batch/generate      - Batch inference");
         println!("  POST /v1/completions      - OpenAI-compatible");
         println!("  POST /v1/chat/completions - Chat completions");
+        println!("  GET  /api/tags            - Ollama model list");
+        println!("  POST /api/show            - Ollama model metadata");
+        println!("  GET  /api/version         - Server version");
+        println!("  POST /api/chat            - Ollama chat (stream:true -> NDJSON)");
+        println!("  POST /api/generate        - Ollama generate (stream:true -> NDJSON)");
         println!();
         println!(
             "{}",
