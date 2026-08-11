@@ -18,6 +18,44 @@ use super::{
 // APR-Specific API Handlers (spec §15.1)
 // ============================================================================
 
+/// The 503 for `/v1/predict` when no APR *estimator* is resident.
+///
+/// Dogfood 0.63.0 (#2375 finding 8): the previous body was
+/// `"No APR model loaded. Use AppState::demo() or load a .apr model."` and it
+/// was returned verbatim by a server whose own log said
+/// `Detected format: APR / APR loaded: 291 tensors` — because `apr_model` holds
+/// a classical estimator (classifier/regressor) while a *generative* .apr is
+/// loaded into the quantized/transformer slots. So the message contradicted an
+/// observable fact, and its only advice named `AppState::demo()`, an internal
+/// Rust constructor no HTTP client can call.
+///
+/// The replacement reports what this server actually has, and points at the
+/// endpoints that can serve it.
+fn no_estimator_loaded(state: &AppState) -> (StatusCode, Json<ErrorResponse>) {
+    // Two distinct operator situations, and each names the ARTIFACT to supply
+    // (a `.apr` estimator), not just the endpoint to call. aprender#2376(7)'s
+    // falsifier requires both `/v1/predict` and `.apr` to appear: the original
+    // text said "Use AppState::demo() or load a .apr model", instructing an HTTP
+    // client to call a Rust constructor it has no access to. Telling a client
+    // which endpoint to use instead is useful but does not tell whoever STARTED
+    // the server what to do differently.
+    let error = if state.model_loaded() {
+        "This server has a generative model loaded, not an APR estimator. \
+         /v1/predict serves APR classifier/regressor models — start the server \
+         with a .apr estimator to use it; for text generation on this server use \
+         /v1/completions or /v1/chat/completions."
+    } else {
+        "No APR estimator model is loaded. Start the server with a .apr \
+         classifier/regressor model to use /v1/predict."
+    };
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(ErrorResponse {
+            error: error.to_string(),
+        }),
+    )
+}
+
 /// APR prediction handler (/v1/predict)
 ///
 /// Handles classification and regression predictions for APR models.
@@ -43,24 +81,11 @@ pub(crate) async fn apr_predict_handler(
         ));
     }
 
-    // Get APR model from state
-    let apr_model = state.apr_model.as_ref().ok_or_else(|| {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ErrorResponse {
-                // aprender#2376(7): this used to read "Use AppState::demo() or load
-                // a .apr model." — an internal Rust constructor, instructing an HTTP
-                // client to call something it has no access to. Name what the
-                // OPERATOR must do instead, and what this server actually holds.
-                error: format!(
-                    "No APR model loaded: /v1/predict requires a .apr model, and this \
-                     server was started with a {} model. Use /generate or \
-                     /v1/completions for text generation.",
-                    state.model_format()
-                ),
-            }),
-        )
-    })?;
+    // Get APR estimator from state
+    let apr_model = state
+        .apr_model
+        .as_ref()
+        .ok_or_else(|| no_estimator_loaded(&state))?;
 
     // Log request to audit trail
     let model_name = apr_model

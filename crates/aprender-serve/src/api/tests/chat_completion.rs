@@ -48,7 +48,7 @@ fn test_chat_completion_chunk_content() {
 
 #[test]
 fn test_chat_completion_chunk_done() {
-    let chunk = ChatCompletionChunk::done("req-789", "model-v2");
+    let chunk = ChatCompletionChunk::done("req-789", "model-v2", crate::api::FinishReason::Stop);
 
     assert_eq!(chunk.id, "req-789");
     assert_eq!(chunk.model, "model-v2");

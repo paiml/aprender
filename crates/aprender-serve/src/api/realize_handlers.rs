@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "gpu")]
 use super::ContinuousBatchRequest;
-use super::{AppState, ChatMessage, ErrorResponse, Usage};
+use super::{AppState, ChatMessage, ChoiceCount, ErrorResponse, FinishReason, Usage};
 use crate::generate::{GenerationConfig, SamplingStrategy};
 use crate::registry::ModelInfo;
 
@@ -473,6 +473,18 @@ pub struct CompletionRequest {
     /// Stop sequences
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop: Option<Vec<String>>,
+    /// Stream the completion as `text/event-stream` chunks.
+    ///
+    /// Dogfood 0.63.0 (#2375 findings 3/5): this field did not exist, so
+    /// `{"stream":true}` was dropped by serde as an unknown key and every
+    /// streaming client (`openai.completions.create(..., stream=True)`) got one
+    /// buffered JSON body where it expected an SSE iterator.
+    #[serde(default)]
+    pub stream: bool,
+    /// Number of completions to return; only `1` is supported and any other
+    /// value is rejected at deserialization (see [`ChoiceCount`]).
+    #[serde(default)]
+    pub n: ChoiceCount,
 }
 
 /// OpenAI-compatible completions response
@@ -504,6 +516,39 @@ pub struct CompletionChoice {
     pub logprobs: Option<serde_json::Value>,
     /// Finish reason
     pub finish_reason: String,
+}
+
+/// One `data:` frame of a streamed `/v1/completions` response.
+///
+/// Same envelope as [`CompletionResponse`] minus `usage`, which OpenAI omits
+/// from completion chunks. `finish_reason` is `null` on every chunk but the
+/// last — clients use exactly that transition to know the stream ended.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionChunk {
+    /// Response ID (identical across every chunk of one completion)
+    pub id: String,
+    /// Object type: always `text_completion`
+    pub object: String,
+    /// Creation timestamp
+    pub created: u64,
+    /// Model used
+    pub model: String,
+    /// Chunk choices
+    pub choices: Vec<CompletionChunkChoice>,
+}
+
+/// One choice inside a [`CompletionChunk`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionChunkChoice {
+    /// Text delta for this chunk
+    pub text: String,
+    /// Choice index
+    pub index: usize,
+    /// Log probabilities (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logprobs: Option<serde_json::Value>,
+    /// `null` until the terminal chunk, then the reason generation ended.
+    pub finish_reason: Option<String>,
 }
 
 include!("realize_handlers_embed_completion.rs");

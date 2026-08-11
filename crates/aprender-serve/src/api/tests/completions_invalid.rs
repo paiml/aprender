@@ -165,7 +165,7 @@ fn test_chat_completion_request_traits() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: crate::api::ChoiceCount::ONE,
         stream: false,
         stop: Some(vec!["stop".to_string()]),
         user: Some("user".to_string()),

@@ -23,6 +23,8 @@ fn test_reload_response_serde() {
 #[test]
 fn test_completion_request_serde() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "default".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: Some(100),

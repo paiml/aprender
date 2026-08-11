@@ -2,6 +2,8 @@
     #[test]
     fn test_completion_request_full() {
         let request = CompletionRequest {
+            stream: false,
+            n: crate::api::ChoiceCount::ONE,
             model: "llama2".to_string(),
             prompt: "Once upon a time".to_string(),
             max_tokens: Some(100),
@@ -21,6 +23,8 @@
     #[test]
     fn test_completion_request_optional_fields_skipped() {
         let request = CompletionRequest {
+            stream: false,
+            n: crate::api::ChoiceCount::ONE,
             model: "test".to_string(),
             prompt: "hi".to_string(),
             max_tokens: None,
@@ -38,6 +42,8 @@
     #[test]
     fn test_completion_request_debug() {
         let request = CompletionRequest {
+            stream: false,
+            n: crate::api::ChoiceCount::ONE,
             model: "debug_test".to_string(),
             prompt: "test".to_string(),
             max_tokens: None,
@@ -53,6 +59,8 @@
     #[test]
     fn test_completion_request_clone() {
         let request = CompletionRequest {
+            stream: false,
+            n: crate::api::ChoiceCount::ONE,
             model: "test".to_string(),
             prompt: "hello".to_string(),
             max_tokens: Some(50),

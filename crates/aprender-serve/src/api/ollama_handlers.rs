@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     openai_chat_completions_handler, AppState, ChatCompletionRequest, ChatCompletionResponse,
-    ChatMessage, ModelSourceInfo,
+    ChatMessage, ChoiceCount, ModelSourceInfo,
 };
 
 // ============================================================================
@@ -335,7 +335,7 @@ fn to_chat_request(
         top_p: opts.top_p,
         top_k: opts.top_k,
         seed: opts.seed,
-        n: 1,
+        n: ChoiceCount::ONE,
         // The internal chat path has no token callback, so it is always driven
         // non-streaming. `stream:true` on the Ollama request is honoured at the
         // WIRE level instead — see `ndjson_response` — never discarded.
@@ -353,7 +353,11 @@ fn to_chat_request(
 ///
 /// Empty input yields no fragments: the response is then just the terminal
 /// `done:true` object, which is what ollama does for an empty generation.
-fn content_fragments(content: &str) -> Vec<String> {
+///
+/// Shared with the OpenAI `/v1/completions` SSE path (#2375 findings 3/5), which
+/// has the identical requirement: concatenating the streamed deltas must
+/// reproduce the non-streamed body exactly.
+pub(crate) fn content_fragments(content: &str) -> Vec<String> {
     if content.is_empty() {
         return Vec::new();
     }

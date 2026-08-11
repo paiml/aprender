@@ -10,7 +10,7 @@ fn test_chat_completion_chunk_content() {
 
 #[test]
 fn test_chat_completion_chunk_done() {
-    let chunk = ChatCompletionChunk::done("chatcmpl-123", "gpt-4");
+    let chunk = ChatCompletionChunk::done("chatcmpl-123", "gpt-4", crate::api::FinishReason::Stop);
     assert_eq!(chunk.id, "chatcmpl-123");
     assert!(chunk.choices[0].delta.content.is_none());
     assert!(chunk.choices[0].delta.role.is_none());
