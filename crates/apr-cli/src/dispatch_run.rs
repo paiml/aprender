@@ -338,10 +338,30 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
     // `--offline` is a clap global, so it is seen in either position
     // (`apr --offline pull ...` and `apr pull --offline ...`).
     crate::commands::offline::latch(cli.offline);
+    // #2401: same shape, same reason. `--quiet` / `--verbose` are clap
+    // globals advertised on all 104 subcommands and were read by exactly two
+    // of them, because reading them meant threading a parameter through every
+    // command. Record the level once, here, and let the crate-wide `println!`
+    // shadow in `crate::verbosity` consult it.
+    crate::verbosity::latch(cli.quiet, cli.verbose, cli.json);
     // PMAT-237: Contract gate — refuse to operate on corrupt models
+    let gated_paths = extract_model_paths(&cli.command);
+    // #2401: and the other half — `--verbose` was byte-inert on 13 of 16
+    // sampled commands. Report the dispatcher's own resolution instead of
+    // inventing per-command chatter for all 104: which model paths were
+    // extracted, and what the contract gate did with them.
+    if crate::verbosity::is_verbose() {
+        for line in crate::verbosity::preamble_lines(
+            env!("CARGO_PKG_VERSION"),
+            cli.offline,
+            cli.skip_contract,
+            &gated_paths,
+        ) {
+            vprintln!("{line}");
+        }
+    }
     if !cli.skip_contract {
-        let paths = extract_model_paths(&cli.command);
-        validate_model_contract(&paths)?;
+        validate_model_contract(&gated_paths)?;
     }
 
     dispatch_core_command(cli).unwrap_or_else(|| dispatch_extended_command(cli))

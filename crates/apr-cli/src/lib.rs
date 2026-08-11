@@ -23,6 +23,14 @@ use std::path::{Path, PathBuf};
 #[allow(unused_macros, clippy::duplicated_attributes)]
 mod generated_contracts;
 
+// #2401: `--quiet` / `--verbose` control. MUST come before `mod commands;` —
+// it shadows `println!`/`print!` for every module declared after it, which is
+// how the two global flags reach ~9 000 call sites without any command having
+// to remember to forward a parameter.
+#[macro_use]
+#[allow(unused_macros)]
+pub mod verbosity;
+
 mod commands;
 pub mod error;
 mod output;
@@ -95,11 +103,11 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
 
-    /// Verbose output
+    /// Verbose output: dispatch resolution, plus per-command detail where there is more to show
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
-    /// Quiet mode (errors only)
+    /// Quiet mode: suppress stdout (errors still go to stderr; --json still prints)
     #[arg(short, long, global = true)]
     pub quiet: bool,
 

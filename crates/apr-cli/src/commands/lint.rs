@@ -12,12 +12,6 @@ use aprender::format::{lint_model_file, LintLevel, LintReport};
 use colored::Colorize;
 use std::path::Path;
 
-/// Run the lint command
-// GH-685: added quiet param — suppress WARN/INFO when quiet=true
-#[provable_contracts_macros::contract(
-    "apr-cli-operations-v1",
-    equation = "side_effect_classification"
-)]
 /// The severity at which lint stops calling a model acceptable.
 ///
 /// `apr lint` used to gate on `report.passed()`, i.e. fail on any warning. Every
@@ -53,7 +47,24 @@ fn verdict_message(report: &LintReport, strict: bool) -> String {
 }
 
 /// Run the lint command
+// GH-685: added quiet param — suppress WARN/INFO when quiet=true
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(file: &Path, json: bool, quiet: bool, strict: bool) -> Result<()> {
+    // #2401: `apr lint` already had richer quiet semantics than "print
+    // nothing" — GH-685 filters the issue table down to errors. Opt this
+    // command out of the crate-wide stdout gate so that behaviour survives;
+    // the `quiet` parameter below stays the thing that shapes the report.
+    let _verbosity = crate::verbosity::scope(
+        if crate::verbosity::is_verbose() {
+            crate::verbosity::Level::Verbose
+        } else {
+            crate::verbosity::Level::Normal
+        },
+        json,
+    );
     contract_pre_apr_model_validity!();
     contract_pre_lint_model_conventions!();
     // Validate input exists
