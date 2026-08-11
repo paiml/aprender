@@ -22,11 +22,21 @@ fn apr_load_quantized_tensor(
     use crate::apr::MappedAprModel;
     use crate::gguf::types::{APR_TYPE_Q4, APR_TYPE_Q8};
 
+    // A candidate whose data length is 0 is a PLACEHOLDER, not a weight:
+    // tied-embedding exporters write `lm_head.weight` with the full shape and
+    // zero bytes. Selecting it handed matmul an empty buffer, which surfaced
+    // at request time as an HTTP 500 blaming "a MoE per-expert tensor" on a
+    // dense model. Skip empty candidates so a later name (the tied embedding)
+    // can win.
     let (tensor, found_name) = names
         .iter()
-        .find_map(|name| apr.find_tensor(name).map(|t| (t, *name)))
+        .find_map(|name| apr.find_tensor(name).filter(|t| t.size > 0).map(|t| (t, *name)))
         .ok_or_else(|| RealizarError::FormatError {
-            reason: format!("APR: tensor not found (tried: {})", names.join(", ")),
+            reason: format!(
+                "APR: no tensor with data found (tried: {}); \
+                 a listed name may exist with a zero-length data buffer",
+                names.join(", ")
+            ),
         })?;
     let start = data_offset + tensor.offset as usize;
     let end = start + tensor.size as usize;
@@ -266,10 +276,34 @@ impl OwnedQuantizedModel {
             apr_load_f32_tensor(apr, data, data_offset, &["model.norm.weight", "output_norm.weight"])?;
         let output_norm_bias = apr_try_load_f32(apr, data, data_offset, "model.norm.bias");
 
-        // LM head (try HF name first, then GGUF)
+        // LM head (try HF name first, then GGUF, then the TIED EMBEDDING).
+        // Weight-tied exports (Qwen2 0.5B, most <2B models) either omit
+        // lm_head entirely or write it as a zero-length placeholder; the
+        // embedding matrix IS the head and has the identical row-major
+        // [vocab, hidden] layout, so it can be used verbatim.
+        //
+        // Say so out loud: a head silently sourced from somewhere other than
+        // the named tensor is exactly the kind of thing the next person
+        // debugging this model needs to know before anything else.
+        if ["lm_head.weight", "output.weight"]
+            .iter()
+            .any(|n| apr.find_tensor(n).is_some_and(|t| t.size == 0))
+        {
+            eprintln!(
+                "[tied-embeddings] LM head tensor is a 0-byte placeholder — \
+                 using the token embedding matrix as the output head"
+            );
+        }
         let lm_head_weight = apr_load_quantized_tensor(
             apr, data, data_offset,
-            &["lm_head.weight", "output.weight"],
+            &[
+                "lm_head.weight",
+                "output.weight",
+                "model.embed_tokens.weight",
+                "embed_tokens.weight",
+                "token_embd.weight",
+                "tok_embeddings.weight",
+            ],
             hidden_dim, vocab_size, transpose,
         )?;
         let lm_head_bias = apr_try_load_f32(apr, data, data_offset, "lm_head.bias");

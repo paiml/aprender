@@ -23,6 +23,65 @@
             .expect("join");
     }
 
+    /// `apr code -p "hi" --model X` must RUN model X.
+    ///
+    /// With `trailing_var_arg` the option landed in the prompt vector and the
+    /// run silently fell back to auto-discovery — a different model than the
+    /// one named, with no warning.
+    #[test]
+    fn test_parse_code_model_after_prompt_is_honoured() {
+        let args = vec!["apr", "code", "-p", "hi", "--model", "/tmp/named.gguf"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Code {
+                model,
+                prompt,
+                print,
+                ..
+            } => {
+                assert!(print, "-p must still set print");
+                assert_eq!(
+                    model,
+                    Some(PathBuf::from("/tmp/named.gguf")),
+                    "--model written after the prompt must be honoured, not swallowed"
+                );
+                assert_eq!(
+                    prompt,
+                    vec!["hi".to_string()],
+                    "the prompt must not absorb the option"
+                );
+            }
+            _ => panic!("Expected Code command"),
+        }
+    }
+
+    /// A misspelled option after the prompt must be a parse error, not silence.
+    #[test]
+    fn test_parse_code_unknown_option_after_prompt_is_rejected() {
+        let args = vec!["apr", "code", "-p", "hi", "--totally-bogus-flag-xyz"];
+        let err = parse_cli(args)
+            .expect_err("an unknown option after the prompt must fail to parse");
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::UnknownArgument,
+            "expected UnknownArgument, got {:?}",
+            err.kind()
+        );
+    }
+
+    /// Multi-word prompts must still collect into the positional vector.
+    #[test]
+    fn test_parse_code_multiword_prompt_still_collects() {
+        let args = vec!["apr", "code", "-p", "fix", "the", "auth", "bug"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Code { prompt, .. } => {
+                assert_eq!(prompt, vec!["fix", "the", "auth", "bug"]);
+            }
+            _ => panic!("Expected Code command"),
+        }
+    }
+
     /// Test parsing 'apr inspect' command
     #[test]
     fn test_parse_inspect_command() {
