@@ -54,16 +54,6 @@ fn quote_arg(arg: &str) -> String {
     }
 }
 
-/// Render `program args...` as a copy-pasteable shell command.
-pub(crate) fn display_command(program: &str, args: &[&str]) -> String {
-    let mut out = quote_arg(program);
-    for a in args {
-        out.push(' ');
-        out.push_str(&quote_arg(a));
-    }
-    out
-}
-
 /// Build the `isError` result for a subprocess that exited non-zero.
 ///
 /// The first content block is the one-line summary the client already relied
@@ -128,9 +118,23 @@ pub fn run_program<P: AsRef<OsStr>>(program: P, args: &[&str]) -> ToolCallResult
     }
 }
 
-/// Render `program args...` for user-facing error messages.
+/// Render `program args...` for user-facing error messages, quoted so the echoed
+/// command can actually be re-run.
+///
+/// This used to be `args.join(" ")`, which is the #2403 defect: `--prompt What is
+/// 2+2?` is a DIFFERENT command from the one that ran, and a user copying it out
+/// of an error message gets a different failure than the one being reported.
+///
+/// The merge that produced this file kept the `OsStr` signature (every call site
+/// passes `apr_binary()`, an OsStr) but had dropped the quoting, leaving
+/// `quote_arg` orphaned — clippy's dead-code error is what surfaced the lost fix.
 fn display_cmd(program: &OsStr, args: &[&str]) -> String {
-    format!("{} {}", program.to_string_lossy(), args.join(" "))
+    let mut out = quote_arg(&program.to_string_lossy());
+    for a in args {
+        out.push(' ');
+        out.push_str(&quote_arg(a));
+    }
+    out
 }
 
 /// Spawn `apr <args...>` cancellable via `cancel_rx`.
@@ -493,7 +497,10 @@ mod tests {
     /// one that ran.
     #[test]
     fn echoed_command_is_shell_quoted() {
-        let cmd = display_command("apr", &["run", "m.gguf", "--prompt", "What is 2+2?"]);
+        let cmd = display_cmd(
+            OsStr::new("apr"),
+            &["run", "m.gguf", "--prompt", "What is 2+2?"],
+        );
         assert_eq!(cmd, "apr run m.gguf --prompt 'What is 2+2?'");
     }
 

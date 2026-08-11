@@ -16,12 +16,6 @@ use crate::tools::args::{self, try_arg};
 use crate::tools::subprocess::run_apr;
 use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
 
-/// Why `reference` is refused (see module docs, #2407).
-const REFERENCE_UNSUPPORTED: &str =
-    "layer-by-layer comparison against a reference model is not implemented; \
-     `apr trace --reference` returns a stub, so this tool would report success \
-     for a comparison it never performed";
-
 /// Tool name registered with MCP clients.
 pub const NAME: &str = "apr.trace";
 
