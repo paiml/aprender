@@ -4,6 +4,7 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::tools::args::{self, try_arg};
 use crate::tools::subprocess::run_apr;
 use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
 
@@ -31,13 +32,13 @@ pub fn bench_tool_definition() -> ToolDefinition {
     }
 }
 
-/// Execute `apr.bench` by spawning `apr bench <model> --json [...flags]`.
-#[must_use]
-pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let model_path = match crate::tools::args::require_str(args, "model_path") {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+/// Build the `apr bench ...` argv from `tools/call` arguments.
+///
+/// # Errors
+/// Returns the client-facing message when an argument is present but not
+/// usable at its declared type.
+pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
+    let model_path = args::required_str(args, "model_path")?;
 
     let mut owned: Vec<String> = vec![
         "bench".to_string(),
@@ -45,20 +46,26 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
         "--json".to_string(),
     ];
 
-    if let Some(n) = args.get("iterations").and_then(serde_json::Value::as_u64) {
+    if let Some(n) = args::opt_u64(args, "iterations")? {
         owned.push("--iterations".to_string());
         owned.push(n.to_string());
     }
-    if let Some(n) = args.get("max_tokens").and_then(serde_json::Value::as_u64) {
+    if let Some(n) = args::opt_u64(args, "max_tokens")? {
         owned.push("--max-tokens".to_string());
         owned.push(n.to_string());
     }
-    let prompt = args.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
+    let prompt = args::opt_str(args, "prompt")?.unwrap_or("");
     if !prompt.is_empty() {
         owned.push("--prompt".to_string());
         owned.push(prompt.to_string());
     }
+    Ok(owned)
+}
 
+/// Execute `apr.bench` by spawning `apr bench <model> --json [...flags]`.
+#[must_use]
+pub fn call(args: &serde_json::Value) -> ToolCallResult {
+    let owned = try_arg!(build_argv(args));
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
     run_apr(&argv)
 }
@@ -103,5 +110,37 @@ mod tests {
         let result = call(&serde_json::json!({}));
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("model_path"));
+    }
+
+    /// #2403 — the audit asked for 1 iteration of 8 tokens as JSON strings and
+    /// got 5 iterations of 32 tokens (the CLI defaults), reported back as if
+    /// that is what it had asked for.
+    #[test]
+    fn string_iterations_and_max_tokens_reach_the_cli() {
+        let argv = build_argv(&serde_json::json!({
+            "model_path": "m.gguf",
+            "iterations": "1",
+            "max_tokens": "8"
+        }))
+        .expect("numeric strings are usable");
+        assert_eq!(
+            argv,
+            vec![
+                "bench",
+                "m.gguf",
+                "--json",
+                "--iterations",
+                "1",
+                "--max-tokens",
+                "8"
+            ]
+        );
+    }
+
+    #[test]
+    fn unusable_iterations_is_an_error_not_a_dropped_flag() {
+        let result = call(&serde_json::json!({ "model_path": "m.gguf", "iterations": "lots" }));
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("iterations"));
     }
 }

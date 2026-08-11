@@ -48,13 +48,38 @@ pub(crate) fn read_apr_architecture(
     )
 }
 
+/// Whether `path` starts with an APR magic (`APR\0` v2 or `APRN` v1).
+///
+/// #2417: the LoRA training pipeline is `InstructPipeline::from_apr` — APR
+/// only. A `.safetensors` base used to travel the whole way to that call and
+/// surface as `Failed to open APR file '<model>.safetensors': Invalid magic`,
+/// naming a format the caller never mentioned. Callers use this to reject an
+/// unsupported base up front, with an actionable message.
+pub(crate) fn is_apr_file(path: &Path) -> bool {
+    use aprender::format::v2::MAGIC_V2;
+    use std::io::Read;
+
+    const MAGIC_V1: [u8; 4] = *b"APRN";
+
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut magic = [0u8; 4];
+    if file.read_exact(&mut magic).is_err() {
+        return false;
+    }
+    magic == MAGIC_V2 || magic == MAGIC_V1
+}
+
 /// Resolve TransformerConfig from .apr metadata, HF config.json, or --model-size fallback.
 ///
 /// Precedence:
 ///   1. `.apr` file metadata (provable, validated at import)
-///   2. HuggingFace `config.json` in model directory
-///   3. `--model-size` string match (legacy fallback, no .apr file)
-///   4. Error (refuse to silently degrade to tiny)
+///   2. HuggingFace `config.json` beside the model file (#2417)
+///   3. HuggingFace `config.json` in model directory
+///   4. `--model-size` string match (legacy fallback, no .apr file)
+///   5. Error naming the path that was actually supplied (refuse to silently
+///      degrade to tiny, and refuse to claim no path was given when one was)
 pub(crate) fn resolve_transformer_config(
     model_path: Option<&Path>,
     model_size: Option<&str>,
@@ -62,6 +87,14 @@ pub(crate) fn resolve_transformer_config(
     // Attempt 1: Read architecture from .apr file metadata
     if let Some(path) = model_path.filter(|p| p.is_file()) {
         if let Some(config) = read_apr_architecture(path) {
+            return Ok(config);
+        }
+        // Attempt 2: a .safetensors / .gguf checkout ships its architecture in
+        // a sibling config.json. Before #2417 this was only consulted when the
+        // model path was a DIRECTORY, so `apr finetune model.safetensors`
+        // could never resolve an architecture even with the config.json
+        // sitting right next to the weights.
+        if let Some(config) = read_sibling_hf_config(path) {
             return Ok(config);
         }
         eprintln!(
@@ -72,7 +105,7 @@ pub(crate) fn resolve_transformer_config(
         );
     }
 
-    // Attempt 2: Read architecture from HuggingFace config.json in model directory
+    // Attempt 3: Read architecture from HuggingFace config.json in model directory
     if let Some(path) = model_path.filter(|p| p.is_dir()) {
         if let Some(config) = read_hf_config_json(path) {
             return Ok(config);
@@ -115,8 +148,12 @@ fn describe_format(path: &Path) -> String {
 /// Parses the standard HF model config format used by Qwen, LLaMA, Mistral, etc.
 /// Returns None if config.json doesn't exist or required fields are missing.
 fn read_hf_config_json(dir: &Path) -> Option<entrenar::transformer::TransformerConfig> {
-    let config_path = dir.join("config.json");
-    let data = std::fs::read_to_string(&config_path).ok()?;
+    read_hf_config_file(&dir.join("config.json"))
+}
+
+/// Parse one HuggingFace `config.json` file into a `TransformerConfig`.
+fn read_hf_config_file(config_path: &Path) -> Option<entrenar::transformer::TransformerConfig> {
+    let data = std::fs::read_to_string(config_path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&data).ok()?;
 
     let hidden_size = json.get("hidden_size")?.as_u64()? as usize;
@@ -360,4 +397,28 @@ mod arch_resolution_tests {
             "0.5B is qwen2-0.5b: hidden size 896"
         );
     }
+}
+
+/// Where a `config.json` for `file` may live: the pacha cache writes
+/// `<hash>.config.json` next to `<hash>.safetensors`, while a HuggingFace
+/// checkout puts a plain `config.json` in the same directory.
+fn sibling_config_candidates(file: &Path) -> Vec<std::path::PathBuf> {
+    let Some(dir) = file.parent() else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    if let Some(stem) = file.file_stem() {
+        let mut name = stem.to_os_string();
+        name.push(".config.json");
+        candidates.push(dir.join(name));
+    }
+    candidates.push(dir.join("config.json"));
+    candidates
+}
+
+/// Read TransformerConfig from a `config.json` sitting beside a model file.
+fn read_sibling_hf_config(file: &Path) -> Option<entrenar::transformer::TransformerConfig> {
+    sibling_config_candidates(file)
+        .iter()
+        .find_map(|c| read_hf_config_file(c))
 }

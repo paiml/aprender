@@ -85,6 +85,9 @@ pub(crate) mod kernel_explain;
 pub(crate) mod kv_timeline_classifier;
 pub(crate) mod kv_timeline_lint;
 pub(crate) mod lint;
+pub(crate) mod lint_error;
+#[cfg(test)]
+mod lint_exit_convention_tests;
 pub(crate) mod lint_vacuity;
 pub(crate) mod manifest;
 pub(crate) mod mcp;
@@ -161,6 +164,7 @@ pub(crate) mod shared_cache;
 pub(crate) mod shared_cache_lint;
 pub(crate) mod showcase;
 pub(crate) mod sign_artifacts;
+pub(crate) mod spdx;
 pub(crate) mod stamp;
 pub(crate) mod stop_op;
 pub(crate) mod tensors;

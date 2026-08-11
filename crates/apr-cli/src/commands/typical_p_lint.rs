@@ -29,6 +29,29 @@ use crate::error::{CliError, Result};
 /// Each classifier reads exactly one top-level section of the same name.
 static SECTION_NAMES: [&str; 5] = ["range", "identity", "mass", "sort", "renorm"];
 
+/// #2391 finding 6, second half: a MISSPELLED section key.
+///
+/// `assert_not_vacuous` catches a known section that is present but did not
+/// classify (`{"range": {"p": "1.7"}}` — right key, wrong value type). It cannot
+/// catch `{"renrom": {...}}`: the real `renorm` section is simply absent, so
+/// nothing reports it and the gate it should have run is skipped in silence.
+/// Any top-level key that is not one of SECTION_NAMES is therefore a failure.
+fn unknown_sections_reason(obs: &Value) -> Option<String> {
+    let map = obs.as_object()?;
+    let unknown: Vec<&str> = map
+        .keys()
+        .map(String::as_str)
+        .filter(|k| !SECTION_NAMES.contains(k))
+        .collect();
+    if unknown.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "FALSIFY-CRUX-C-22 unknown section(s) {unknown:?}: expected any of \
+         {SECTION_NAMES:?} (a misspelled key would otherwise skip its gate silently)"
+    ))
+}
+
 pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
     if !observation_file.exists() {
         return Err(CliError::FileNotFound(PathBuf::from(observation_file)));
@@ -36,7 +59,7 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
 
     let body = std::fs::read_to_string(observation_file)?;
     let obs: Value = serde_json::from_str(&body).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr typical-p-lint: failed to parse JSON from {}: {e}",
             observation_file.display()
         ))
@@ -89,6 +112,9 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
         })
         .collect();
     if let Err(reason) = assert_not_vacuous("FALSIFY-CRUX-C-22", &obs, &sections) {
+        fail_reasons.push(reason);
+    }
+    if let Some(reason) = unknown_sections_reason(&obs) {
         fail_reasons.push(reason);
     }
 
@@ -319,7 +345,7 @@ mod tests {
     fn invalid_json_is_invalid_format() {
         let f = write_obs("nope");
         let err = run(f.path(), false).unwrap_err();
-        assert!(matches!(err, CliError::InvalidFormat(_)));
+        assert!(matches!(err, CliError::InvalidInput(_)));
     }
 
     // Was `assert!(run(...).is_ok())` on `{}` — an observation with no
@@ -429,5 +455,48 @@ mod tests {
     fn renorm_gate_runs_json_mode() {
         let f = write_obs(r#"{"renorm": {"filtered_probs": [0.6, 0.4]}}"#);
         let _ = run(f.path(), true);
+    }
+
+    // ------------------------------------------------------------------
+    // #2391 finding 6 (second half): a MISSPELLED section key
+    // ------------------------------------------------------------------
+    //
+    // `assert_not_vacuous` covers a known section present but unparseable
+    // (`{"range": {"p": "1.7"}}`). It cannot cover `{"renrom": ...}` — the real
+    // `renorm` section is simply ABSENT, nothing reports it, and the gate that
+    // should have run is skipped in silence with exit 0.
+
+    #[test]
+    fn a_misspelled_section_key_is_reported_not_silently_skipped() {
+        let obs: Value = serde_json::from_str(r#"{"renrom": {"filtered_probs": [0.6, 0.4]}}"#)
+            .expect("fixture parses");
+        let reason = unknown_sections_reason(&obs)
+            .expect("a key that is not a known section must be reported");
+        assert!(
+            reason.contains("renrom"),
+            "must name the offending key: {reason}"
+        );
+        assert!(
+            reason.contains("FALSIFY-CRUX-C-22"),
+            "must cite the gate it belongs to: {reason}"
+        );
+    }
+
+    #[test]
+    fn every_correctly_spelled_section_is_accepted() {
+        for name in SECTION_NAMES {
+            let obs: Value =
+                serde_json::from_str(&format!(r#"{{"{name}": {{}}}}"#)).expect("fixture parses");
+            assert!(
+                unknown_sections_reason(&obs).is_none(),
+                "{name} is a real section and must not be flagged as unknown"
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_observation_has_no_unknown_sections() {
+        let obs: Value = serde_json::from_str("{}").expect("fixture parses");
+        assert!(unknown_sections_reason(&obs).is_none());
     }
 }

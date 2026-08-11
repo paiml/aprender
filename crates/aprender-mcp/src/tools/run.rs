@@ -17,6 +17,7 @@
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
 use crate::server::NotificationSink;
+use crate::tools::args::{self, try_arg};
 use crate::tools::subprocess::{run_apr_cancellable, spawn_streaming, CANCEL_GRACE_MS};
 use crate::types::{InputSchema, JsonRpcNotification, ToolCallResult, ToolDefinition};
 use std::sync::mpsc::Receiver;
@@ -59,6 +60,47 @@ pub fn call(args: &serde_json::Value, cancel_rx: &Receiver<()>) -> ToolCallResul
     call_with_sink(args, cancel_rx, None, None)
 }
 
+/// Build the `apr run ...` argv from `tools/call` arguments.
+///
+/// `streaming` selects `--stream` (NDJSON) over `--json` (one blob).
+///
+/// # Errors
+/// Returns the client-facing message when an argument is present but not
+/// usable at its declared type.
+pub fn build_argv(args: &serde_json::Value, streaming: bool) -> Result<Vec<String>, String> {
+    let model_path = args::required_str(args, "model_path")?;
+
+    let mut owned: Vec<String> = vec!["run".to_string(), model_path.to_string()];
+    // --stream emits NDJSON (one event per line); the legacy --json path
+    // emits a single pretty-printed blob. Pick whichever matches the
+    // intended consumer.
+    if streaming {
+        owned.push("--stream".to_string());
+    } else {
+        owned.push("--json".to_string());
+    }
+
+    if let Some(prompt) = args::opt_str(args, "prompt")? {
+        if !prompt.is_empty() {
+            owned.push("--prompt".to_string());
+            owned.push(prompt.to_string());
+        }
+    }
+    if let Some(n) = args::opt_u64(args, "max_tokens")? {
+        owned.push("--max-tokens".to_string());
+        owned.push(n.to_string());
+    }
+    if let Some(t) = args::opt_f64(args, "temperature")? {
+        owned.push("--temperature".to_string());
+        owned.push(t.to_string());
+    }
+    if let Some(p) = args::opt_f64(args, "top_p")? {
+        owned.push("--top-p".to_string());
+        owned.push(p.to_string());
+    }
+    Ok(owned)
+}
+
 /// Execute `apr.run` with optional `notifications/progress` streaming.
 ///
 /// FALSIFY-MCP-PROGRESS-002: when both `sink` and `progress_token` are
@@ -82,50 +124,12 @@ pub fn call_with_sink(
     sink: Option<&NotificationSink>,
     progress_token: Option<serde_json::Value>,
 ) -> ToolCallResult {
-    let model_path = match crate::tools::args::require_str(args, "model_path") {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-
     let streaming = sink.is_some() && progress_token.is_some();
-
-    let mut owned: Vec<String> = vec!["run".to_string(), model_path.to_string()];
-    // --stream emits NDJSON (one event per line); the legacy --json path
-    // emits a single pretty-printed blob. Pick whichever matches the
-    // intended consumer.
-    if streaming {
-        owned.push("--stream".to_string());
-    } else {
-        owned.push("--json".to_string());
-    }
-
-    if let Some(prompt) = args.get("prompt").and_then(|v| v.as_str()) {
-        if !prompt.is_empty() {
-            owned.push("--prompt".to_string());
-            owned.push(prompt.to_string());
-        }
-    }
-    if let Some(n) = args.get("max_tokens").and_then(serde_json::Value::as_u64) {
-        owned.push("--max-tokens".to_string());
-        owned.push(n.to_string());
-    }
-    if let Some(t) = args.get("temperature").and_then(serde_json::Value::as_f64) {
-        owned.push("--temperature".to_string());
-        owned.push(t.to_string());
-    }
-    if let Some(p) = args.get("top_p").and_then(serde_json::Value::as_f64) {
-        owned.push("--top-p".to_string());
-        owned.push(p.to_string());
-    }
-
+    let owned = try_arg!(build_argv(args, streaming));
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     match (streaming, sink, progress_token) {
-        (true, Some(sink), Some(token)) => {
-            // #2384: the streaming path must target the same self-resolved
-            // binary as the non-streaming path, not a `$PATH` lookup.
-            stream_with_sink(crate::apr_bin::apr_binary(), &argv, sink, &token)
-        }
+        (true, Some(sink), Some(token)) => stream_with_sink("apr", &argv, sink, &token),
         _ => run_apr_cancellable(&argv, cancel_rx, CANCEL_GRACE_MS),
     }
 }
@@ -139,8 +143,8 @@ pub fn call_with_sink(
 /// is the aggregated stdout (same shape as `run_apr_cancellable`'s success
 /// body) so non-streaming consumers get the full payload too.
 #[must_use]
-pub fn stream_with_sink<P: AsRef<std::ffi::OsStr>>(
-    program: P,
+pub fn stream_with_sink(
+    program: &str,
     args: &[&str],
     sink: &NotificationSink,
     progress_token: &serde_json::Value,
@@ -199,5 +203,91 @@ mod tests {
         let result = call(&serde_json::json!({}), &rx);
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("model_path"));
+    }
+
+    /// #2403 — `max_tokens: "8"` produced a 32-token generation whose result
+    /// JSON echoed `"max_tokens": 32`, so the client could not even detect
+    /// that its request had been ignored.
+    #[test]
+    fn string_max_tokens_reaches_the_cli() {
+        let argv = build_argv(
+            &serde_json::json!({ "model_path": "m.gguf", "prompt": "hi", "max_tokens": "8" }),
+            false,
+        )
+        .expect("numeric string is usable");
+        let idx = argv
+            .iter()
+            .position(|a| a == "--max-tokens")
+            .unwrap_or_else(|| panic!("max_tokens dropped: {argv:?}"));
+        assert_eq!(argv[idx + 1], "8");
+    }
+
+    #[test]
+    fn unusable_temperature_is_an_error_not_a_dropped_flag() {
+        let (_tx, rx) = std::sync::mpsc::channel::<()>();
+        let result = call(
+            &serde_json::json!({ "model_path": "m.gguf", "temperature": "warm" }),
+            &rx,
+        );
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("temperature"));
+    }
+
+    /// Streaming selects `--stream`; the argument handling is otherwise
+    /// identical, so a wrong-typed value must not sneak through that path.
+    #[test]
+    fn streaming_argv_uses_stream_flag_and_same_coercion() {
+        let argv = build_argv(
+            &serde_json::json!({ "model_path": "m.gguf", "top_p": "0.9" }),
+            true,
+        )
+        .expect("numeric string is usable");
+        assert!(argv.contains(&"--stream".to_string()), "{argv:?}");
+        assert!(!argv.contains(&"--json".to_string()), "{argv:?}");
+        assert!(argv.contains(&"--top-p".to_string()), "{argv:?}");
+    }
+
+    /// #2419: `max_tokens:"eight"` was dropped and the run proceeded with the
+    /// default 32 — a caller asking for 8 got 4x the generation it requested
+    /// with no diagnostic. The tool must refuse before spawning anything.
+    #[test]
+    fn non_integer_max_tokens_is_rejected_before_the_subprocess_runs() {
+        let (_tx, rx) = std::sync::mpsc::channel::<()>();
+        let result = call(
+            &serde_json::json!({
+                "model_path": "/nonexistent/model.gguf",
+                "prompt": "hi",
+                "max_tokens": "eight",
+            }),
+            &rx,
+        );
+        assert_eq!(result.is_error, Some(true));
+        let text = &result.content[0].text;
+        assert!(
+            text.contains("max_tokens"),
+            "must name the argument: {text}"
+        );
+        assert!(
+            text.contains("integer"),
+            "must state the expected type: {text}"
+        );
+        assert!(
+            text.contains("eight"),
+            "must quote what was received: {text}"
+        );
+    }
+
+    #[test]
+    fn non_numeric_temperature_is_rejected() {
+        let (_tx, rx) = std::sync::mpsc::channel::<()>();
+        let result = call(
+            &serde_json::json!({
+                "model_path": "/nonexistent/model.gguf",
+                "temperature": "hot",
+            }),
+            &rx,
+        );
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("Invalid temperature"));
     }
 }

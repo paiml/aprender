@@ -7,6 +7,7 @@
 mod tests {
     use super::*;
 include!("parsing.rs");
+include!("help_producer_truth.rs");
 include!("lib_parse_rosetta.rs");
 include!("lib_parse_eval.rs");
 include!("lib_parse_export.rs");

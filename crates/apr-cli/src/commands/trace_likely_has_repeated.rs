@@ -160,22 +160,47 @@ pub(crate) fn run(
         return result;
     }
 
-    // Detect format via Rosetta Stone dispatch
-    // BUG-TRACE-001 FIX: Now returns total_params computed from tensor shapes
-    let (format_name, layers, total_params) = detect_and_trace(path, layer_filter, verbose)?;
-    let summary = compute_trace_summary(&layers, total_params);
-
+    // #2407: reject --reference before doing work whose result would be
+    // thrown away. It used to run the whole trace and then discard it in
+    // favour of a stub string printed at exit 0.
     if let Some(ref_path) = reference {
-        return compare_with_reference(path, ref_path, &layers, json_output);
+        return compare_with_reference(ref_path);
     }
 
+    // Detect format via Rosetta Stone dispatch
+    // BUG-TRACE-001 FIX: Now returns total_params computed from tensor shapes
+    let traced = detect_and_trace(path, layer_filter, verbose)?;
+    let summary = compute_trace_summary(&traced.layers, traced.total_params);
+
     if json_output {
-        output_json(path, &format_name, &layers, &summary);
+        output_json(
+            path,
+            &traced.format_name,
+            &traced.layers,
+            &summary,
+            &traced.notes,
+        );
     } else {
-        output_text(path, &format_name, &layers, &summary, verbose);
+        output_text(
+            path,
+            &traced.format_name,
+            &traced.layers,
+            &summary,
+            &traced.notes,
+            verbose,
+        );
     }
 
     Ok(())
+}
+
+/// What a metadata-only trace found in a model file.
+struct TracedLayers {
+    format_name: String,
+    layers: Vec<LayerTrace>,
+    total_params: usize,
+    /// Caveats about this result — currently the `--layer` filter outcome.
+    notes: Vec<String>,
 }
 
 /// Detect format and trace layers from any supported format.
@@ -184,7 +209,7 @@ fn detect_and_trace(
     path: &Path,
     layer_filter: Option<&str>,
     verbose: bool,
-) -> Result<(String, Vec<LayerTrace>, usize), CliError> {
+) -> Result<TracedLayers, CliError> {
     use aprender::format::rosetta::FormatType;
 
     validate_path(path)?;
@@ -196,7 +221,8 @@ fn detect_and_trace(
     match format {
         FormatType::Apr => {
             let (format_name, metadata_bytes) = read_model_metadata(path)?;
-            let layers = trace_layers(&metadata_bytes, layer_filter, verbose);
+            let layers = trace_layers(&metadata_bytes, verbose);
+            let (layers, notes) = apply_layer_filter(layers, layer_filter);
             // BUG-TRACE-003 FIX: Use RosettaStone to compute total_params from tensor shapes
             // Previously hardcoded to 0, now properly computed like GGUF/SafeTensors
             let rosetta = aprender::format::rosetta::RosettaStone::new();
@@ -204,7 +230,12 @@ fn detect_and_trace(
                 .inspect(path)
                 .map(|report| report.total_params)
                 .unwrap_or(0);
-            Ok((format_name, layers, total_params))
+            Ok(TracedLayers {
+                format_name,
+                layers,
+                total_params,
+                notes,
+            })
         }
         FormatType::Gguf => trace_gguf(path, layer_filter),
         FormatType::SafeTensors => trace_safetensors(path, layer_filter),
@@ -227,10 +258,7 @@ fn gguf_meta_u32(
 
 /// Trace layers from GGUF format by extracting architecture from KV metadata.
 /// BUG-TRACE-001 FIX: Now computes total_params from tensor shapes
-fn trace_gguf(
-    path: &Path,
-    layer_filter: Option<&str>,
-) -> Result<(String, Vec<LayerTrace>, usize), CliError> {
+fn trace_gguf(path: &Path, layer_filter: Option<&str>) -> Result<TracedLayers, CliError> {
     use aprender::format::gguf::reader::GgufReader;
     use aprender::format::gguf::GgufValue;
 
@@ -258,11 +286,14 @@ fn trace_gguf(
 
     let format_name = format!("GGUF ({arch})");
 
+    // #2407: the skeleton is built UNFILTERED. It used to be built with the
+    // filter applied inside the constructors, which made `layers.len() <= 2`
+    // below (meant to detect "block_count missing from metadata") also fire
+    // whenever the filter happened to exclude every transformer block.
     let mut layers = vec![create_embedding_layer(n_embd)];
-    layers.extend(create_transformer_layers(n_layers, layer_filter));
+    layers.extend(create_transformer_layers(n_layers));
     layers.push(create_final_layer_norm());
 
-    // Add tensor count info as anomaly note if verbose
     if layers.len() <= 2 && !reader.tensors.is_empty() {
         // No layers detected from metadata but tensors exist
         layers.clear();
@@ -272,7 +303,7 @@ fn trace_gguf(
                 .iter()
                 .map(|t| t.name.as_str())
                 .collect::<Vec<_>>(),
-            layer_filter,
+            None,
         ));
     }
 
@@ -280,15 +311,19 @@ fn trace_gguf(
         layers.push(create_default_layer());
     }
 
-    Ok((format_name, layers, total_params))
+    let (layers, notes) = apply_layer_filter(layers, layer_filter);
+
+    Ok(TracedLayers {
+        format_name,
+        layers,
+        total_params,
+        notes,
+    })
 }
 
 /// Trace layers from SafeTensors format by inferring architecture from tensor names.
 /// BUG-TRACE-001 FIX: Now returns total_params from Rosetta inspection
-fn trace_safetensors(
-    path: &Path,
-    layer_filter: Option<&str>,
-) -> Result<(String, Vec<LayerTrace>, usize), CliError> {
+fn trace_safetensors(path: &Path, layer_filter: Option<&str>) -> Result<TracedLayers, CliError> {
     use aprender::format::rosetta::RosettaStone;
 
     let rosetta = RosettaStone::new();
@@ -298,14 +333,21 @@ fn trace_safetensors(
 
     let format_name = "SafeTensors".to_string();
     let tensor_names: Vec<&str> = report.tensors.iter().map(|t| t.name.as_str()).collect();
-    let mut layers = infer_layers_from_tensor_names(&tensor_names, layer_filter);
+    let mut layers = infer_layers_from_tensor_names(&tensor_names, None);
 
     if layers.is_empty() {
         layers.push(create_default_layer());
     }
 
+    let (layers, notes) = apply_layer_filter(layers, layer_filter);
+
     // BUG-TRACE-001 FIX: Use total_params from Rosetta inspection
-    Ok((format_name, layers, report.total_params))
+    Ok(TracedLayers {
+        format_name,
+        layers,
+        total_params: report.total_params,
+        notes,
+    })
 }
 
 /// Infer layer structure from tensor naming conventions.
@@ -365,6 +407,7 @@ fn maybe_push_layer(
     layers.push(LayerTrace {
         name: name.to_string(),
         index,
+        hidden_dim: None,
         input_stats: None,
         output_stats: None,
         weight_stats: None,

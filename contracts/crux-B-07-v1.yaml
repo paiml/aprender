@@ -78,16 +78,13 @@ falsification_tests:
     - falsify_crux_b_07_001_improvement_rejects_below_threshold
     - falsify_crux_b_07_001_improvement_rejects_regression
     - falsify_crux_b_07_001_improvement_rejects_zero_baseline
-    - falsify_crux_b_07_001_leakage_ok_disjoint
-    - falsify_crux_b_07_001_leakage_rejects_overlap
     sub_claim: |
       Algorithm-level necessary condition: `classify_imatrix_improvement`
       computes Δ = (PPL_naive − PPL_calib)/PPL_naive and admits only
       Δ >= `MIN_PPL_IMPROVEMENT` (0.005) as the `Improved` verdict; any
       regression, zero-or-negative baseline, or below-threshold gain
       returns `Insufficient` rather than panicking (i.e., we don't hide
-      upstream pipeline bugs). `calibration_eval_disjoint` enforces the
-      leakage invariant via BTreeSet intersection.
+      upstream pipeline bugs).
     tests:
     - improvement_meets_threshold_exact
     - improvement_above_threshold_classifies_improved
@@ -95,10 +92,7 @@ falsification_tests:
     - regression_is_insufficient
     - zero_or_negative_baseline_is_insufficient_not_panic
     - improvement_is_deterministic
-    - disjoint_sets_are_disjoint
-    - overlapping_sets_are_not_disjoint
-    - empty_sets_are_trivially_disjoint
-    scope: PPL-Δ threshold + calib/eval leakage (pure functions)
+    scope: PPL-Δ threshold (pure function)
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: real calibration.jsonl + wikitext-eval-512 corpus + apr qa perplexity harness
 
@@ -173,6 +167,40 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: AprV2Metadata.imatrix_source_sha256 field + `apr inspect --json` wiring
 
+- id: FALSIFY-CRUX-B-07-004
+  rule: calibration and eval sets are disjoint
+  prediction: "No calibration item hash appears in the held-out eval set"
+  test: |
+    apr imatrix-lint --observation-file obs.json --json \
+      | jq -e '.gates[] | select(.gate == "leakage") | .passed'
+  if_fails: "imatrix calibration leaked into the eval set; the PPL improvement measured by FALSIFY-CRUX-B-07-001 is not held-out and means nothing"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/imatrix_classifier.rs
+    cli_path: crates/apr-cli/src/commands/imatrix_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_07.rs
+    e2e_tests:
+    - falsify_crux_b_07_001_leakage_ok_disjoint
+    - falsify_crux_b_07_001_leakage_rejects_overlap
+    sub_claim: |
+      Algorithm-level necessary condition: `calibration_eval_disjoint`
+      enforces the leakage invariant via BTreeSet intersection. This is
+      an independent invariant from the PPL-Δ gate — it can fail while
+      the improvement gate passes, and a green improvement number on a
+      leaked eval set is worse than no number — so it carries its own
+      falsify id. Until 2026-08 the leakage gate stamped
+      FALSIFY-CRUX-B-07-001, so a `--json` consumer keying on
+      `falsify_id` could not tell a leakage failure from a
+      perplexity-improvement failure (dogfood 0.63.0, issue #2391).
+    tests:
+    - disjoint_sets_are_disjoint
+    - overlapping_sets_are_not_disjoint
+    - empty_sets_are_trivially_disjoint
+    - every_gate_carries_a_distinct_falsify_id
+    - leakage_failure_is_not_filed_under_the_improvement_id
+    scope: calib/eval leakage (pure set intersection)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: real calibration.jsonl + wikitext-eval-512 corpus
+
 proof_obligations:
 - type: invariant
   property: "Calibrated Q4_K PPL <= naïve Q4_K PPL * 0.995 on held-out 512-token eval"
@@ -198,6 +226,9 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-B-07-003
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: "AprV2Metadata.imatrix_source_sha256 field + `apr inspect --json` wiring"
+  - falsify_id: FALSIFY-CRUX-B-07-004
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: real calibration.jsonl + wikitext-eval-512 corpus
 
 ship_discipline:
   ship_rule: CRUX-SHIP-001
@@ -215,7 +246,8 @@ ship_discipline:
     `apr imatrix-lint --observation-file <obs.json>` dispatches four
     classifiers (improvement, leakage, flags, provenance) over captured
     JSON; each missing top-level key is skipped so observations can
-    exercise any subset of FALSIFY-CRUX-B-07-001/002/003 independently.
+    exercise any subset of FALSIFY-CRUX-B-07-001/002/003/004
+    independently; each gate stamps its own falsify id.
     e2e suite (23 tests) covers help surface, bare-invocation rejection,
     improvement at/below/regression/zero-baseline, leakage
     disjoint/overlap, flags space/equals/absent-expected/wrong-path/

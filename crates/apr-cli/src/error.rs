@@ -30,7 +30,8 @@ pub enum CliError {
     /// "Invalid APR format" and therefore sends a user hunting for a corrupt
     /// model file when what actually failed to parse was, say, a grad-norm
     /// telemetry history. Shares exit code 4 — the class of failure is the
-    /// same, only the artifact named is different.
+    /// same ("the input could not be parsed"), only the artifact named is
+    /// different, exactly as `FileNotFound`/`NotAFile` already share 3.
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
@@ -68,6 +69,14 @@ pub enum CliError {
     /// HTTP 404 Not Found (GH-356: distinguish from other network errors)
     #[error("HTTP 404 Not Found: {0}")]
     HttpNotFound(String),
+
+    /// An advertised option exists but its implementation does not.
+    ///
+    /// #2407: `apr trace --reference` printed a stub string and exited 0, so
+    /// every caller — including the MCP wrapper — read "did nothing" as
+    /// "succeeded". An unimplemented option must fail, not report success.
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
 }
 
 impl CliError {
@@ -76,17 +85,31 @@ impl CliError {
         contract_pre_exit_code_semantics!();
         contract_pre_error_mapping!();
         contract_pre_exit_code_on_error!();
+        ExitCode::from(self.exit_code_value())
+    }
+
+    /// The numeric exit code this error maps to.
+    ///
+    /// `exit_code()` returns a `std::process::ExitCode`, which is opaque — it
+    /// has no accessor and no `PartialEq`, so a test cannot assert on it. This
+    /// is the same mapping as a plain `u8` so the exit-code convention is
+    /// testable in-process.
+    pub fn exit_code_value(&self) -> u8 {
         match self {
-            Self::FileNotFound(_) | Self::NotAFile(_) => ExitCode::from(3),
-            Self::InvalidFormat(_) | Self::InvalidInput(_) => ExitCode::from(4),
-            Self::Io(_) => ExitCode::from(7),
-            Self::ValidationFailed(_) => ExitCode::from(5),
-            Self::Aprender(_) => ExitCode::from(1),
-            Self::ModelLoadFailed(_) => ExitCode::from(6),
-            Self::InferenceFailed(_) => ExitCode::from(8),
-            Self::FeatureDisabled(_) => ExitCode::from(9),
-            Self::NetworkError(_) => ExitCode::from(10),
-            Self::HttpNotFound(_) => ExitCode::from(11),
+            Self::FileNotFound(_) | Self::NotAFile(_) => 3,
+            Self::InvalidFormat(_) | Self::InvalidInput(_) => 4,
+            Self::Io(_) => 7,
+            Self::ValidationFailed(_) => 5,
+            Self::Aprender(_) => 1,
+            Self::ModelLoadFailed(_) => 6,
+            Self::InferenceFailed(_) => 8,
+            Self::FeatureDisabled(_) => 9,
+            Self::NetworkError(_) => 10,
+            Self::HttpNotFound(_) => 11,
+            // #2407: an advertised option whose implementation is a stub must
+            // FAIL, not print something and exit 0. Distinct code so a caller
+            // can tell "this build cannot do that" from "your input was wrong".
+            Self::NotImplemented(_) => 12,
         }
     }
 }
@@ -261,6 +284,16 @@ mod tests {
     fn test_feature_disabled_exit_code() {
         let err = CliError::FeatureDisabled("test".to_string());
         assert_eq!(err.exit_code(), ExitCode::from(9));
+    }
+
+    /// #2407: an unimplemented option must exit non-zero — a stub that exits
+    /// 0 is read by every caller as "it worked".
+    #[test]
+    fn test_not_implemented_exit_code_is_nonzero() {
+        let err = CliError::NotImplemented("comparison".to_string());
+        assert_eq!(err.exit_code(), ExitCode::from(12));
+        assert_ne!(err.exit_code(), ExitCode::SUCCESS);
+        assert_eq!(err.to_string(), "Not implemented: comparison");
     }
 
     #[test]

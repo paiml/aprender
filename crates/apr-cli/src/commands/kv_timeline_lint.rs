@@ -32,7 +32,7 @@ pub(crate) fn run(timeline_file: &Path, preempt_threshold: f64, json: bool) -> R
     }
     let body_text = std::fs::read_to_string(timeline_file)?;
     let body: Value = serde_json::from_str(&body_text).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr kv-timeline-lint: failed to parse JSON from {}: {e}",
             timeline_file.display()
         ))
@@ -156,7 +156,7 @@ mod tests {
     fn invalid_json_is_invalid_format() {
         let f = write_obs("xx");
         let err = run(f.path(), KV_TIMELINE_DEFAULT_THRESHOLD, false).unwrap_err();
-        assert!(matches!(err, CliError::InvalidFormat(_)));
+        assert!(matches!(err, CliError::InvalidInput(_)));
     }
 
     #[test]

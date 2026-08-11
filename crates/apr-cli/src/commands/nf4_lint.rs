@@ -29,6 +29,7 @@
 //! Any missing top-level key is skipped. Non-zero exit + FALSIFY-CRUX-B-10
 //! stderr stamp on any failing gate.
 
+use super::lint_error::{load_json_observation, LintError};
 use crate::commands::lint_vacuity::{json_type, verdict_tag, Verdict};
 use crate::commands::nf4_classifier::{
     expected_nf4_storage_bytes, nearest_codebook_index, nf4_dequantize_block, nf4_quantize_block,
@@ -52,21 +53,8 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: Nf4LintArgs) -> Result<(), String> {
-    let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-B-10: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-B-10: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-B-10: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-B-10: observation is not valid JSON: {e}"))?;
+pub fn run(args: Nf4LintArgs) -> Result<(), LintError> {
+    let obs: Value = load_json_observation(&args.observation_file, "FALSIFY-CRUX-B-10")?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -101,9 +89,9 @@ pub fn run(args: Nf4LintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err(
-            "FALSIFY-CRUX-B-10: observation has none of codebook/roundtrip/storage/parity".into(),
-        );
+        return Err(LintError::unusable(
+            "FALSIFY-CRUX-B-10: observation has none of codebook/roundtrip/storage/parity",
+        ));
     }
 
     if args.json {
@@ -120,7 +108,7 @@ pub fn run(args: Nf4LintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(LintError::gate_failed(failures.join("\n")));
     }
     Ok(())
 }
@@ -383,29 +371,31 @@ mod tests {
             observation_file: "/nonexistent/path/nf4.json".to_string(),
             json: false,
         };
-        let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-B-10"));
-        assert!(err.contains("not found"));
+        let err = run(args).unwrap_err().to_string();
+        // The whole *-lint family reports a missing input identically:
+        // "File not found: <path>" with exit 3 (commands::lint_error).
+        assert!(err.contains("File not found"), "got: {err}");
+        assert!(err.contains("/nonexistent/path/nf4.json"), "got: {err}");
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs("   \n  ");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("observation file is empty"));
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("{ this is not json ");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("not valid JSON"));
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("none of codebook/roundtrip/storage/parity"));
     }
 
@@ -421,7 +411,7 @@ mod tests {
             r#"{"codebook": {"expcted": [0.0,1.0]}}"#, // key misspelled
         ] {
             let f = write_obs(body);
-            let err = run(args_for(&f)).unwrap_err();
+            let err = run(args_for(&f)).unwrap_err().to_string();
             assert!(err.contains("VACUOUS"), "{body}: {err}");
             assert!(err.contains("FALSIFY-CRUX-B-10-001"), "{body}: {err}");
             assert!(
@@ -448,7 +438,7 @@ mod tests {
             ),
         ] {
             let f = write_obs(body);
-            let err = run(args_for(&f)).unwrap_err();
+            let err = run(args_for(&f)).unwrap_err().to_string();
             assert!(err.contains(want), "{body}: expected {want:?}, got {err}");
         }
     }
@@ -461,7 +451,7 @@ mod tests {
         expected[7] += 0.25;
         let obs = serde_json::json!({ "codebook": { "expected": expected } });
         let f = write_obs(&obs.to_string());
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("codebook divergence at index 7"), "{err}");
     }
 
@@ -476,14 +466,14 @@ mod tests {
     #[test]
     fn codebook_wrong_length_fails() {
         let f = write_obs(r#"{"codebook": {"expected": [0.0, 1.0]}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-10-001"));
     }
 
     #[test]
     fn roundtrip_empty_weights_fails() {
         let f = write_obs(r#"{"roundtrip": {"weights": []}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-10-003"));
     }
 
@@ -499,7 +489,7 @@ mod tests {
     #[test]
     fn storage_invalid_dimensions_fail() {
         let f = write_obs(r#"{"storage": {"n_weights": 0, "block_size": 64}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-10-002"));
     }
 
@@ -527,7 +517,7 @@ mod tests {
     #[test]
     fn parity_wrong_index_fails() {
         let f = write_obs(r#"{"parity": {"target": 0.0, "expected_index": 3}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-10-004"));
     }
 

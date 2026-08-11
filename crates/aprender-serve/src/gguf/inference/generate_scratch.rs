@@ -242,3 +242,4 @@ impl OwnedQuantizedModel {
 }
 
 include!("generate_quantized.rs");
+include!("hidden_states.rs");

@@ -10,6 +10,7 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::tools::args::{self, try_arg};
 use crate::tools::subprocess::run_apr;
 use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
 
@@ -41,10 +42,7 @@ pub fn validate_tool_definition() -> ToolDefinition {
 /// Execute `apr.validate` by spawning `apr validate <model_path> --json`.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let model_path = match crate::tools::args::require_str(args, "model_path") {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let model_path = try_arg!(args::required_str(args, "model_path"));
     run_apr(&["validate", model_path, "--json"])
 }
 
@@ -85,22 +83,28 @@ mod tests {
         assert!(result.content[0].text.contains("model_path"));
     }
 
-    /// This test used to assert only `is_error == Some(true)`, which is shape,
-    /// not behaviour — it passed while the server told the client an argument
-    /// it had plainly sent was "Missing required argument: model_path". A
-    /// wrong-TYPE argument must name the type, so a client (or an LLM) does
-    /// not retry by re-adding a key it already supplied.
+    /// #2419: this test used to assert only `is_error`, which the defect
+    /// satisfied — the tool answered "Missing required argument: model_path"
+    /// for an argument that was present. The message is the behaviour the
+    /// caller acts on, so the message is what is asserted.
     #[test]
-    fn nonstring_model_path_returns_error() {
+    fn nonstring_model_path_is_reported_as_a_type_error_not_as_missing() {
         let result = call(&serde_json::json!({ "model_path": 42 }));
         assert_eq!(result.is_error, Some(true));
-        assert_eq!(
-            result.content[0].text,
-            "Argument model_path must be a string, got number"
+        let text = &result.content[0].text;
+        assert!(
+            !text.contains("Missing"),
+            "model_path WAS supplied; reporting it as missing sends the caller \
+             to fix the wrong thing. got: {text}"
         );
         assert!(
-            !result.content[0].text.contains("Missing"),
-            "an argument the client sent must never be reported as missing"
+            text.contains("model_path"),
+            "must name the argument: {text}"
         );
+        assert!(
+            text.contains("string"),
+            "must state the expected type: {text}"
+        );
+        assert!(text.contains("42"), "must quote what was received: {text}");
     }
 }
