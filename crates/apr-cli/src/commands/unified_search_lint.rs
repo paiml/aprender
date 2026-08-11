@@ -21,7 +21,14 @@
 //!
 //! Any missing top-level key is skipped. Non-zero exit + FALSIFY-CRUX-A-23
 //! stderr stamp on any failing gate.
+//!
+//! A gate reaches one of three verdicts, not two. `PASS` means every supplied
+//! expectation held; `FAIL` means one did not; `VACUOUS` means the section
+//! supplied no expectation to check (or supplied one the parser could not
+//! read), so the gate proved nothing. `VACUOUS` exits non-zero: a falsifier
+//! that asserted nothing must not be recorded as a discharged obligation.
 
+use crate::commands::lint_vacuity::{json_type, Verdict};
 use crate::commands::search_merge::{merge_search_results, MergedRow, SearchHit, Source};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -39,6 +46,7 @@ struct GateReport {
     gate: &'static str,
     falsify_id: &'static str,
     outcome: String,
+    verdict: &'static str,
     passed: bool,
 }
 
@@ -61,18 +69,16 @@ pub fn run(args: UnifiedSearchLintArgs) -> Result<(), String> {
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
 
-    if let Some(v) = obs.get("offline") {
-        let (r, err) = run_offline_gate(v);
-        reports.push(r);
-        if let Some(e) = err {
-            failures.push(e);
-        }
-    }
-    if let Some(v) = obs.get("dedup") {
-        let (r, err) = run_dedup_gate(v);
-        reports.push(r);
-        if let Some(e) = err {
-            failures.push(e);
+    for (key, gate, falsify_id) in [
+        ("offline", "offline", "FALSIFY-CRUX-A-23-001"),
+        ("dedup", "dedup", "FALSIFY-CRUX-A-23-002"),
+    ] {
+        if let Some(v) = obs.get(key) {
+            let (r, err) = run_gate(gate, falsify_id, v);
+            reports.push(r);
+            if let Some(e) = err {
+                failures.push(e);
+            }
         }
     }
 
@@ -88,8 +94,10 @@ pub fn run(args: UnifiedSearchLintArgs) -> Result<(), String> {
         println!("{}", serde_json::to_string_pretty(&payload).unwrap());
     } else {
         for r in &reports {
-            let tag = if r.passed { "PASS" } else { "FAIL" };
-            println!("[{tag}] {} ({}): {}", r.gate, r.falsify_id, r.outcome);
+            println!(
+                "[{}] {} ({}): {}",
+                r.verdict, r.gate, r.falsify_id, r.outcome
+            );
         }
     }
 
@@ -99,35 +107,90 @@ pub fn run(args: UnifiedSearchLintArgs) -> Result<(), String> {
     Ok(())
 }
 
-fn parse_hits(v: Option<&Value>) -> Vec<SearchHit> {
-    v.and_then(|x| x.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|h| {
-                    let repo = h.get("repo")?.as_str()?.to_string();
-                    let downloads = h.get("downloads").and_then(|x| x.as_u64()).unwrap_or(0);
-                    let likes = h.get("likes").and_then(|x| x.as_u64()).unwrap_or(0);
-                    let cached = h.get("cached").and_then(|x| x.as_bool()).unwrap_or(false);
-                    Some(SearchHit {
-                        repo,
-                        downloads,
-                        likes,
-                        cached,
-                    })
-                })
-                .collect()
+/// Parse a `hub`/`local` hit array.
+///
+/// Every wrong JSON type is an error. The 0.63.0 binary used `filter_map` here,
+/// so a hit whose `repo` was not a string vanished from the merged rows and
+/// silently changed the very count the gate compares against.
+fn parse_hits(field: &str, v: Option<&Value>) -> Result<Vec<SearchHit>, String> {
+    let Some(v) = v else {
+        return Ok(Vec::new());
+    };
+    if v.is_null() {
+        return Ok(Vec::new());
+    }
+    let arr = v
+        .as_array()
+        .ok_or_else(|| format!("{field} must be an array of hits, got {}", json_type(v)))?;
+    arr.iter()
+        .enumerate()
+        .map(|(i, h)| {
+            let repo = h
+                .get("repo")
+                .and_then(Value::as_str)
+                .ok_or_else(|| format!("{field}[{i}] has no string \"repo\" field"))?
+                .to_string();
+            let downloads = parse_u64_field(h, &format!("{field}[{i}].downloads"))?.unwrap_or(0);
+            let likes = parse_u64_field(h, &format!("{field}[{i}].likes"))?.unwrap_or(0);
+            let cached = match h.get("cached") {
+                None | Some(Value::Null) => false,
+                Some(c) => c.as_bool().ok_or_else(|| {
+                    format!(
+                        "{field}[{i}].cached must be a boolean, got {}",
+                        json_type(c)
+                    )
+                })?,
+            };
+            Ok(SearchHit {
+                repo,
+                downloads,
+                likes,
+                cached,
+            })
         })
-        .unwrap_or_default()
+        .collect()
 }
 
-fn parse_expected_sources(v: Option<&Value>) -> BTreeMap<String, String> {
-    v.and_then(|x| x.as_object())
-        .map(|o| {
-            o.iter()
-                .filter_map(|(k, val)| val.as_str().map(|s| (k.clone(), s.to_string())))
-                .collect()
+/// Read `<obj>.<last path segment>` as a `u64`, erroring on a wrong type.
+fn parse_u64_field(obj: &Value, path: &str) -> Result<Option<u64>, String> {
+    let key = path.rsplit('.').next().unwrap_or(path);
+    match obj.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(n) => n.as_u64().map(Some).ok_or_else(|| {
+            format!(
+                "{path} must be a non-negative integer, got {} ({n})",
+                json_type(n)
+            )
+        }),
+    }
+}
+
+/// Parse `expected_sources`. A wrong-typed map (or entry) is an error, never
+/// an empty map — an empty map silently disarms the whole source comparison.
+fn parse_expected_sources(v: Option<&Value>) -> Result<BTreeMap<String, String>, String> {
+    let Some(v) = v else {
+        return Ok(BTreeMap::new());
+    };
+    if v.is_null() {
+        return Ok(BTreeMap::new());
+    }
+    let obj = v.as_object().ok_or_else(|| {
+        format!(
+            "expected_sources must be an object of repo -> source, got {}",
+            json_type(v)
+        )
+    })?;
+    obj.iter()
+        .map(|(k, val)| {
+            let s = val.as_str().ok_or_else(|| {
+                format!(
+                    "expected_sources[{k:?}] must be a string, got {}",
+                    json_type(val)
+                )
+            })?;
+            Ok((k.clone(), s.to_string()))
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 fn source_tag(s: Source) -> &'static str {
@@ -143,6 +206,15 @@ fn compare_merge(
     expected_count: Option<u64>,
     expected_sources: &BTreeMap<String, String>,
 ) -> Result<String, String> {
+    // A section that supplies no expectation merges rows and compares nothing.
+    // 0.63.0 rendered that as `[PASS] … expected_count_ok=false sources_ok=0`.
+    if expected_count.is_none() && expected_sources.is_empty() {
+        return Err(format!(
+            "VACUOUS: section supplies neither expected_count nor expected_sources, so the {} \
+             merged row(s) were compared against nothing — a gate that asserts nothing cannot pass",
+            rows.len()
+        ));
+    }
     if let Some(want) = expected_count {
         if rows.len() as u64 != want {
             return Err(format!(
@@ -168,65 +240,57 @@ fn compare_merge(
         }
     }
     Ok(format!(
-        "rows={} expected_count_ok={} sources_ok={}",
+        "rows={} expected_count={} expected_sources={} — every supplied expectation held",
         rows.len(),
-        expected_count.is_some(),
+        expected_count.map_or_else(|| "(not supplied)".to_string(), |c| c.to_string()),
         expected_sources.len()
     ))
 }
 
-fn run_offline_gate(v: &Value) -> (GateReport, Option<String>) {
-    let hub = parse_hits(v.get("hub")); // absent → empty (offline)
-    let local = parse_hits(v.get("local"));
-    let expected_count = v.get("expected_count").and_then(|x| x.as_u64());
-    let expected_sources = parse_expected_sources(v.get("expected_sources"));
-
-    let rows = merge_search_results(&hub, &local);
-    let (passed, desc) = match compare_merge(&rows, expected_count, &expected_sources) {
-        Ok(msg) => (true, msg),
-        Err(msg) => (false, msg),
+/// Evaluate one gate section. Schema errors, vacuity and genuine violations
+/// are all non-zero; only a section that supplied an expectation and met it
+/// reaches `Verdict::Pass`.
+fn run_gate(
+    gate: &'static str,
+    falsify_id: &'static str,
+    v: &Value,
+) -> (GateReport, Option<String>) {
+    let result = evaluate_section(v);
+    let verdict = Verdict::of(&result);
+    let desc = match result {
+        Ok(msg) | Err(msg) => msg,
     };
-    let err = if passed {
+    let err = if verdict == Verdict::Pass {
         None
     } else {
-        Some(format!("FALSIFY-CRUX-A-23-001 offline gate failed: {desc}"))
+        Some(format!("{falsify_id} {gate} gate failed: {desc}"))
     };
     (
         GateReport {
-            gate: "offline",
-            falsify_id: "FALSIFY-CRUX-A-23-001",
+            gate,
+            falsify_id,
             outcome: desc,
-            passed,
+            verdict: verdict.tag(),
+            passed: verdict == Verdict::Pass,
         },
         err,
     )
 }
 
-fn run_dedup_gate(v: &Value) -> (GateReport, Option<String>) {
-    let hub = parse_hits(v.get("hub"));
-    let local = parse_hits(v.get("local"));
-    let expected_count = v.get("expected_count").and_then(|x| x.as_u64());
-    let expected_sources = parse_expected_sources(v.get("expected_sources"));
+fn evaluate_section(v: &Value) -> Result<String, String> {
+    if !v.is_object() {
+        return Err(format!(
+            "section must be a JSON object, got {} — nothing could be read from it",
+            json_type(v)
+        ));
+    }
+    let hub = parse_hits("hub", v.get("hub"))?; // absent → empty (offline)
+    let local = parse_hits("local", v.get("local"))?;
+    let expected_count = parse_u64_field(v, "expected_count")?;
+    let expected_sources = parse_expected_sources(v.get("expected_sources"))?;
 
     let rows = merge_search_results(&hub, &local);
-    let (passed, desc) = match compare_merge(&rows, expected_count, &expected_sources) {
-        Ok(msg) => (true, msg),
-        Err(msg) => (false, msg),
-    };
-    let err = if passed {
-        None
-    } else {
-        Some(format!("FALSIFY-CRUX-A-23-002 dedup gate failed: {desc}"))
-    };
-    (
-        GateReport {
-            gate: "dedup",
-            falsify_id: "FALSIFY-CRUX-A-23-002",
-            outcome: desc,
-            passed,
-        },
-        err,
-    )
+    compare_merge(&rows, expected_count, &expected_sources)
 }
 
 #[cfg(test)]
@@ -321,6 +385,105 @@ mod tests {
         );
         let err = run(args_for(&f)).unwrap_err();
         assert!(err.contains("FALSIFY-CRUX-A-23-002"));
+    }
+
+    /// `{"offline": {}}` merged zero rows and compared them to nothing, and
+    /// 0.63.0 called that `[PASS] … expected_count_ok=false sources_ok=0`.
+    #[test]
+    fn falsifier_section_with_no_expectations_is_vacuous_not_pass() {
+        for body in [
+            r#"{"offline": {}}"#,
+            r#"{"dedup": {}}"#,
+            r#"{"offline": {"local": [{"repo": "gpt2", "cached": true}]}}"#,
+            r#"{"offline": {"local": [{"repo": "gpt2", "cached": true}], "expected_sources": {}}}"#,
+        ] {
+            let f = write_obs(body);
+            let err = run(args_for(&f)).unwrap_err();
+            assert!(err.contains("VACUOUS"), "{body}: {err}");
+            assert!(err.contains("asserts nothing"), "{body}: {err}");
+        }
+    }
+
+    /// The same expectation quoted instead of numeric used to skip the whole
+    /// count comparison and exit 0.
+    #[test]
+    fn falsifier_wrong_typed_expectation_is_a_schema_error() {
+        let numeric = write_obs(
+            r#"{"offline": {"local": [{"repo": "gpt2", "cached": true}], "expected_count": 99}}"#,
+        );
+        assert!(
+            run(args_for(&numeric))
+                .unwrap_err()
+                .contains("expected_count=99, got 1"),
+            "control: a numeric expectation must still be compared"
+        );
+
+        for (body, want) in [
+            (
+                r#"{"offline": {"local": [{"repo": "gpt2", "cached": true}], "expected_count": "99"}}"#,
+                "expected_count must be a non-negative integer",
+            ),
+            (
+                r#"{"offline": {"local": [{"repo": "gpt2", "cached": true}], "expected_sources": "gpt2=HUB"}}"#,
+                "expected_sources must be an object",
+            ),
+            (
+                r#"{"offline": {"local": [{"repo": "gpt2", "cached": true}], "expected_sources": {"gpt2": 7}}}"#,
+                "expected_sources[\"gpt2\"] must be a string",
+            ),
+            (r#"{"offline": "nope"}"#, "section must be a JSON object"),
+            (
+                r#"{"offline": {"local": "gpt2", "expected_count": 1}}"#,
+                "local must be an array of hits",
+            ),
+            (
+                r#"{"offline": {"local": [{"repo": 7}], "expected_count": 1}}"#,
+                "local[0] has no string \"repo\" field",
+            ),
+        ] {
+            let f = write_obs(body);
+            let err = run(args_for(&f)).unwrap_err();
+            assert!(err.contains(want), "{body}: expected {want:?}, got {err}");
+            assert!(!err.contains("VACUOUS"), "{body}: {err}");
+        }
+    }
+
+    /// The report line and the exit code must agree. 0.63.0's `--json` said
+    /// `"passed": true` next to `expected_count_ok=false`.
+    #[test]
+    fn falsifier_json_report_never_marks_a_vacuous_gate_passed() {
+        let f = write_obs(r#"{"offline": {}}"#);
+        let args = UnifiedSearchLintArgs {
+            observation_file: f.path().to_string_lossy().into_owned(),
+            json: true,
+        };
+        assert!(run(args).is_err());
+
+        let (report, err) = run_gate("offline", "FALSIFY-CRUX-A-23-001", &serde_json::json!({}));
+        assert_eq!(report.verdict, "VACUOUS");
+        assert!(!report.passed);
+        assert!(err.is_some());
+    }
+
+    #[test]
+    fn passing_outcome_string_names_what_was_checked() {
+        let (report, err) = run_gate(
+            "offline",
+            "FALSIFY-CRUX-A-23-001",
+            &serde_json::json!({
+                "local": [{"repo": "gpt2", "cached": true}],
+                "expected_count": 1,
+                "expected_sources": {"gpt2": "LOCAL"},
+            }),
+        );
+        assert!(err.is_none());
+        assert_eq!(report.verdict, "PASS");
+        assert_eq!(
+            report.outcome,
+            "rows=1 expected_count=1 expected_sources=1 — every supplied expectation held"
+        );
+        // The self-contradictory 0.63.0 rendering must not come back.
+        assert!(!report.outcome.contains("_ok="));
     }
 
     #[test]

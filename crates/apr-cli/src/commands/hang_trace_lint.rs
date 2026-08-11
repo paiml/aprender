@@ -31,6 +31,17 @@ pub(crate) fn run(
     if !trace_dir.exists() {
         return Err(CliError::FileNotFound(PathBuf::from(trace_dir)));
     }
+    // `classify_timeout_dump` short-circuits to `Ok { ranks_seen: 0 }` at
+    // world_size 0, so an unset `${WORLD_SIZE}` expanding to 0 turned the whole
+    // timeout-dump gate into an unconditional pass whatever the directory held.
+    // ddp-metrics-lint already rejects world_size 0; this matches it.
+    if mode == HangMode::Timeout && world_size == 0 {
+        return Err(CliError::ValidationFailed(
+            "hang-trace-lint: --world-size 0 is not a world size — the timeout-dump gate would \
+             accept any directory contents. Pass the rank count the run was launched with."
+                .to_string(),
+        ));
+    }
     let entries = std::fs::read_dir(trace_dir)?
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
@@ -149,5 +160,50 @@ mod cov_tests {
         )
         .unwrap_err();
         assert!(matches!(err, CliError::FileNotFound(_)));
+    }
+
+    /// At `--world-size 0` the timeout-dump gate reported
+    /// `Ok { ranks_seen: 0 }` for three different directory states, each of
+    /// which it correctly rejects at world_size 2.
+    #[test]
+    fn falsifier_world_size_zero_is_rejected_not_silently_passed() {
+        let dir = tempfile::tempdir().unwrap();
+        let good = dir.path().join("rank0.py.txt");
+        std::fs::write(&good, "stack rank0").unwrap();
+        std::fs::write(dir.path().join("rank1.py.txt"), "stack rank1").unwrap();
+
+        // Control: the gate is live at a real world size.
+        assert!(run(dir.path(), HangMode::Timeout, 2, None, None, false).is_ok());
+
+        for state in ["populated", "truncated", "unrecognised-file"] {
+            match state {
+                "truncated" => std::fs::write(&good, "").unwrap(),
+                "unrecognised-file" => {
+                    std::fs::write(dir.path().join("random.txt"), "x").unwrap();
+                }
+                _ => {}
+            }
+            let err = run(dir.path(), HangMode::Timeout, 0, None, None, false).unwrap_err();
+            match err {
+                CliError::ValidationFailed(msg) => {
+                    assert!(msg.contains("--world-size 0 is not a world size"), "{msg}");
+                }
+                other => panic!("{state}: expected ValidationFailed, got {other:?}"),
+            }
+            // …and at a real world size the same directory does fail.
+            if state != "populated" {
+                assert!(
+                    run(dir.path(), HangMode::Timeout, 2, None, None, false).is_err(),
+                    "{state}: control must fail at world_size 2"
+                );
+            }
+        }
+    }
+
+    /// Success mode does not consult world_size, so it must stay reachable.
+    #[test]
+    fn success_mode_ignores_world_size_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(run(dir.path(), HangMode::Success, 0, None, None, false).is_ok());
     }
 }

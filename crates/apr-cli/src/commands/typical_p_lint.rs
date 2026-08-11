@@ -22,8 +22,12 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::commands::lint_vacuity::{assert_not_vacuous, skipped_label, SectionRun};
 use crate::commands::typical_p_classifier as clf;
 use crate::error::{CliError, Result};
+
+/// Each classifier reads exactly one top-level section of the same name.
+static SECTION_NAMES: [&str; 5] = ["range", "identity", "mass", "sort", "renorm"];
 
 pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
     if !observation_file.exists() {
@@ -44,7 +48,7 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
     let sort = classify_sort(&obs);
     let renorm = classify_renorm(&obs);
 
-    let fail_reasons: Vec<String> = [
+    let mut fail_reasons: Vec<String> = [
         range.as_ref().and_then(range_fail_reason),
         identity.as_ref().and_then(identity_fail_reason),
         mass.as_ref().and_then(mass_fail_reason),
@@ -57,6 +61,7 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
 
     print_report(
         observation_file,
+        &obs,
         range.as_ref(),
         identity.as_ref(),
         mass.as_ref(),
@@ -64,6 +69,28 @@ pub(crate) fn run(observation_file: &Path, json: bool) -> Result<()> {
         renorm.as_ref(),
         json,
     );
+
+    // `{"range": {"p": "1.7"}}` carries the same violation as `{"range":
+    // {"p": 1.7}}`; only the type differs. Neither may exit 0.
+    let ran = [
+        range.is_some(),
+        identity.is_some(),
+        mass.is_some(),
+        sort.is_some(),
+        renorm.is_some(),
+    ];
+    let sections: Vec<SectionRun> = SECTION_NAMES
+        .iter()
+        .zip(ran)
+        .map(|(name, ran)| SectionRun {
+            name,
+            keys: std::slice::from_ref(name),
+            ran,
+        })
+        .collect();
+    if let Err(reason) = assert_not_vacuous("FALSIFY-CRUX-C-22", &obs, &sections) {
+        fail_reasons.push(reason);
+    }
 
     if fail_reasons.is_empty() {
         Ok(())
@@ -216,6 +243,7 @@ fn renorm_fail_reason(o: &clf::RenormOutcome) -> Option<String> {
 #[allow(clippy::too_many_arguments)]
 fn print_report(
     path: &Path,
+    obs: &Value,
     range: Option<&clf::TypicalPRangeOutcome>,
     identity: Option<&clf::IdentityOutcome>,
     mass: Option<&clf::MassCoverageOutcome>,
@@ -238,18 +266,33 @@ fn print_report(
         );
     } else {
         println!("typical-p-lint report for {}", path.display());
-        print_line("  range:    ", range.map(|o| format!("{o:?}")));
-        print_line("  identity: ", identity.map(|o| format!("{o:?}")));
-        print_line("  mass:     ", mass.map(|o| format!("{o:?}")));
-        print_line("  sort:     ", sort.map(|o| format!("{o:?}")));
-        print_line("  renorm:   ", renorm.map(|o| format!("{o:?}")));
+        print_line(
+            "  range:    ",
+            range.map(|o| format!("{o:?}")),
+            obs,
+            "range",
+        );
+        print_line(
+            "  identity: ",
+            identity.map(|o| format!("{o:?}")),
+            obs,
+            "identity",
+        );
+        print_line("  mass:     ", mass.map(|o| format!("{o:?}")), obs, "mass");
+        print_line("  sort:     ", sort.map(|o| format!("{o:?}")), obs, "sort");
+        print_line(
+            "  renorm:   ",
+            renorm.map(|o| format!("{o:?}")),
+            obs,
+            "renorm",
+        );
     }
 }
 
-fn print_line(prefix: &str, v: Option<String>) {
+fn print_line(prefix: &str, v: Option<String>, obs: &Value, key: &str) {
     match v {
         Some(s) => println!("{prefix}{s}"),
-        None => println!("{prefix}(missing fields — classifier skipped)"),
+        None => println!("{prefix}{}", skipped_label(obs, &[key])),
     }
 }
 
@@ -279,10 +322,56 @@ mod tests {
         assert!(matches!(err, CliError::InvalidFormat(_)));
     }
 
+    // Was `assert!(run(...).is_ok())` on `{}` — an observation with no
+    // recognised section runs zero classifiers and proves nothing.
     #[test]
-    fn empty_object_passes_no_gates() {
+    fn falsifier_empty_object_is_rejected() {
         let f = write_obs("{}");
-        assert!(run(f.path(), false).is_ok());
+        match run(f.path(), false).unwrap_err() {
+            CliError::ValidationFailed(msg) => assert!(
+                msg.contains("has none of range/identity/mass/sort/renorm"),
+                "{msg}"
+            ),
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn falsifier_typo_in_section_name_is_rejected() {
+        let f = write_obs(r#"{"rnage": {"p": 1.7}}"#);
+        assert!(matches!(
+            run(f.path(), false).unwrap_err(),
+            CliError::ValidationFailed(_)
+        ));
+    }
+
+    // p=1.7 is out of range however it is spelled. The quoted form used to
+    // exit 0 while the numeric form exited 5.
+    #[test]
+    fn falsifier_quoted_p_carries_the_same_violation_as_numeric_p() {
+        let numeric = write_obs(r#"{"range": {"p": 1.7}}"#);
+        match run(numeric.path(), false).unwrap_err() {
+            CliError::ValidationFailed(msg) => {
+                assert!(msg.contains("p=1.7 > 1.0"), "control: {msg}");
+            }
+            other => panic!("control: expected ValidationFailed, got {other:?}"),
+        }
+
+        for body in [
+            r#"{"range": {"p": "1.7"}}"#,
+            r#"{"range": {"p": null}}"#,
+            r#"{"range": {"p": [1.7]}}"#,
+            r#"{"range": "nope"}"#,
+        ] {
+            let f = write_obs(body);
+            match run(f.path(), false).unwrap_err() {
+                CliError::ValidationFailed(msg) => {
+                    assert!(msg.contains("present but unusable"), "{body}: {msg}");
+                    assert!(msg.contains("range"), "{body}: {msg}");
+                }
+                other => panic!("{body}: expected ValidationFailed, got {other:?}"),
+            }
+        }
     }
 
     #[test]
