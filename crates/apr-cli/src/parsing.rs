@@ -464,3 +464,46 @@
             _ => panic!("Expected Profile command"),
         }
     }
+
+    /// Dogfood 0.63.0 #2377 finding 10: `apr typical-p-lint --help` printed
+    /// its only required flag with an empty description, so the (non-obvious,
+    /// otherwise undocumented) observation schema had no route to the user.
+    /// Every other command in the 16-command lint family documents its flag.
+    ///
+    /// A family-wide ratchet, not a one-line fix: a new `*-lint` command that
+    /// forgets its flag doc turns this red.
+    #[test]
+    fn every_lint_command_documents_its_flags() {
+        use clap::CommandFactory;
+        let offenders = std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                let mut root = Cli::command();
+                root.build();
+                let mut bad: Vec<String> = Vec::new();
+                for sub in root.get_subcommands() {
+                    if !sub.get_name().ends_with("-lint") {
+                        continue;
+                    }
+                    for arg in sub.get_arguments() {
+                        if arg.get_id() == "help" || arg.get_id() == "version" {
+                            continue;
+                        }
+                        let documented = arg
+                            .get_help()
+                            .is_some_and(|h| !h.to_string().trim().is_empty());
+                        if !documented {
+                            bad.push(format!("{} --{}", sub.get_name(), arg.get_id()));
+                        }
+                    }
+                }
+                bad
+            })
+            .expect("spawn")
+            .join()
+            .expect("join");
+        assert!(
+            offenders.is_empty(),
+            "lint commands with an undocumented flag: {offenders:?}"
+        );
+    }
