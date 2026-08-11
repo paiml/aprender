@@ -83,9 +83,22 @@ mod tests {
         assert!(result.content[0].text.contains("model_path"));
     }
 
+    /// #2419: this test used to assert only `is_error`, which the defect
+    /// satisfied — the tool answered "Missing required argument: model_path"
+    /// for an argument that was present. The message is the behaviour the
+    /// caller acts on, so the message is what is asserted.
     #[test]
-    fn nonstring_model_path_returns_error() {
+    fn nonstring_model_path_is_reported_as_a_type_error_not_as_missing() {
         let result = call(&serde_json::json!({ "model_path": 42 }));
         assert_eq!(result.is_error, Some(true));
+        let text = &result.content[0].text;
+        assert!(
+            !text.contains("Missing"),
+            "model_path WAS supplied; reporting it as missing sends the caller \
+             to fix the wrong thing. got: {text}"
+        );
+        assert!(text.contains("model_path"), "must name the argument: {text}");
+        assert!(text.contains("string"), "must state the expected type: {text}");
+        assert!(text.contains("42"), "must quote what was received: {text}");
     }
 }

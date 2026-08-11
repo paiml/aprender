@@ -155,7 +155,7 @@
 
     #[test]
     fn test_trace_layers_empty_metadata() {
-        let layers = trace_layers(&[], None, false);
+        let layers = trace_layers(&[], false);
         // Invalid metadata, should return default layer
         assert_eq!(layers.len(), 1);
         assert!(layers[0].name.contains("not available"));
@@ -163,7 +163,7 @@
 
     #[test]
     fn test_trace_layers_invalid_metadata() {
-        let layers = trace_layers(b"not valid msgpack", None, false);
+        let layers = trace_layers(b"not valid msgpack", false);
         // Should fall back to default layer
         assert_eq!(layers.len(), 1);
         assert!(layers[0].name.contains("not available"));
@@ -174,7 +174,7 @@
         // Valid msgpack but no hyperparameters key
         let map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
         let bytes = rmp_serde::to_vec(&map).expect("serialize msgpack");
-        let layers = trace_layers(&bytes, None, false);
+        let layers = trace_layers(&bytes, false);
         // No hyperparameters → default layer
         assert_eq!(layers.len(), 1);
         assert!(layers[0].name.contains("not available"));
@@ -189,7 +189,7 @@
         let mut map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
         map.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
         let bytes = rmp_serde::to_vec(&map).expect("serialize msgpack");
-        let layers = trace_layers(&bytes, None, false);
+        let layers = trace_layers(&bytes, false);
         // embedding + 2 transformer blocks + final_layer_norm = 4
         assert_eq!(layers.len(), 4);
         assert_eq!(layers[0].name, "embedding");
@@ -207,9 +207,10 @@
         let mut map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
         map.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
         let bytes = rmp_serde::to_vec(&map).expect("serialize msgpack");
-        let layers = trace_layers(&bytes, Some("block_2"), false);
+        let (layers, notes) = apply_layer_filter(trace_layers(&bytes, false), Some("block_2"));
         // Only block_2 should match the filter
         assert!(layers.iter().any(|l| l.name == "transformer_block_2"));
+        assert!(notes.is_empty());
     }
 
     // ========================================================================
@@ -259,6 +260,7 @@
         let trace = LayerTrace {
             name: "full_layer".to_string(),
             index: Some(5),
+            hidden_dim: None,
             input_stats: Some(stats.clone()),
             output_stats: Some(stats.clone()),
             weight_stats: Some(stats),
@@ -276,6 +278,7 @@
         let trace = LayerTrace {
             name: "layer_with_stats".to_string(),
             index: Some(0),
+            hidden_dim: None,
             input_stats: Some(stats.clone()),
             output_stats: None,
             weight_stats: None,
@@ -405,13 +408,135 @@
     // GGUF with layer filter returning no matches
     // ========================================================================
 
+    /// #2407: this test asserted `!layers.is_empty()` for a filter that
+    /// matches nothing — it required the fabricated
+    /// "(layer trace metadata not available)" entry, and so held the defect in
+    /// place. What a caller needs is the opposite: no layers, no anomaly, and
+    /// a note saying the filter matched nothing.
     #[test]
-    fn test_trace_gguf_filter_no_match() {
+    fn test_trace_gguf_filter_no_match_reports_zero_layers_not_a_fake_one() {
         let file = build_test_gguf();
-        let (_, layers, _) =
-            detect_and_trace(file.path(), Some("nonexistent"), false).expect("detect_and_trace");
-        // Should still have at least one layer (default or embedding)
-        assert!(!layers.is_empty());
+        let unfiltered =
+            detect_and_trace(file.path(), None, false).expect("detect_and_trace unfiltered");
+        assert!(
+            !unfiltered.layers.is_empty(),
+            "control: this file does have layers"
+        );
+
+        let traced = detect_and_trace(file.path(), Some("nonexistent"), false)
+            .expect("detect_and_trace filtered");
+        assert!(
+            traced.layers.is_empty(),
+            "a filter matching nothing must not fabricate a layer, got: {:?}",
+            traced.layers.iter().map(|l| &l.name).collect::<Vec<_>>()
+        );
+
+        let summary = compute_trace_summary(&traced.layers, traced.total_params);
+        assert_eq!(
+            summary.anomaly_count, 0,
+            "a filter miss is not an anomaly in the model; got: {:?}",
+            summary.anomalies
+        );
+
+        assert_eq!(
+            traced.notes,
+            vec![format!(
+                "layer filter \"nonexistent\" matched 0 of {} layers",
+                unfiltered.layers.len()
+            )],
+            "the result must say why it is empty"
+        );
+    }
+
+    // ========================================================================
+    // #2407 — a metadata-only trace must say that it is one
+    // ========================================================================
+
+    /// `apr trace --json` never executes the model, so every `*_stats` field
+    /// is null and `anomaly_count` is 0 no matter how broken the weights are.
+    /// Emitted as a bare success that was indistinguishable from "traced
+    /// fine, nothing anomalous". The payload now labels itself.
+    #[test]
+    fn test_trace_json_payload_declares_that_no_activations_were_computed() {
+        let file = build_test_gguf();
+        let traced = detect_and_trace(file.path(), None, false).expect("detect_and_trace");
+        let summary = compute_trace_summary(&traced.layers, traced.total_params);
+        let result = build_trace_result(
+            file.path(),
+            &traced.format_name,
+            &traced.layers,
+            &summary,
+            &traced.notes,
+        );
+        let json = serde_json::to_value(&result).expect("serialize trace result");
+
+        assert_eq!(
+            json["stats_source"], "metadata-only",
+            "a caller must be able to branch on where the stats came from"
+        );
+        assert!(
+            json["notes"]
+                .as_array()
+                .expect("notes is an array")
+                .iter()
+                .any(|n| n
+                    .as_str()
+                    .is_some_and(|s| s.contains("no activations were computed"))),
+            "the payload must state that nothing was executed; got: {}",
+            json["notes"]
+        );
+        assert_eq!(
+            summary.anomaly_count, 0,
+            "control: no anomalies are reported because none were looked for"
+        );
+
+        // And no layer may carry a statistics block, because none was measured.
+        for layer in &traced.layers {
+            assert!(
+                layer.output_stats.is_none() && layer.input_stats.is_none(),
+                "layer {} reports statistics that were never computed",
+                layer.name
+            );
+        }
+    }
+
+    // ========================================================================
+    // #2407 — --reference must fail rather than print a stub at exit 0
+    // ========================================================================
+
+    /// v0.63.0 printed `{"comparison": "reference comparison not yet
+    /// implemented"}` on stdout, put its only real signal on stderr (which
+    /// the MCP wrapper discards on success), and exited 0.
+    #[test]
+    fn test_trace_reference_is_an_error_not_a_stub_success() {
+        let model = build_test_gguf();
+        let reference = build_test_gguf();
+
+        let result = run(
+            model.path(),
+            None,
+            Some(reference.path()),
+            true, // --json
+            false,
+            false,
+            false,
+            false,
+        );
+
+        let err = result.expect_err("an unimplemented comparison must not succeed");
+        assert!(
+            matches!(err, CliError::NotImplemented(_)),
+            "expected NotImplemented, got: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("not implemented"),
+            "the message must say what is missing; got: {err}"
+        );
+        assert_ne!(
+            err.exit_code(),
+            std::process::ExitCode::SUCCESS,
+            "a stub must not exit 0"
+        );
     }
 
     // ========================================================================

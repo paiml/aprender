@@ -120,4 +120,33 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("stats"));
     }
+
+    /// #2419: `stats:"yes"` returned a success payload with no mean/std/min/max
+    /// and no diagnostic — the caller believed statistics had been checked.
+    #[test]
+    fn non_boolean_stats_is_rejected_rather_than_read_as_false() {
+        let result = call(&serde_json::json!({
+            "model_path": "/nonexistent/model.gguf",
+            "stats": "yes",
+        }));
+        assert_eq!(result.is_error, Some(true));
+        // Substance, not exact wording: the message must name the argument,
+        // say it was invalid, and quote what was actually received — so a
+        // client can correct itself. The precise phrasing lives in args.rs and
+        // is asserted there.
+        let text = &result.content[0].text;
+        assert!(text.contains("stats"), "must name the argument: {text}");
+        assert!(text.contains("boolean"), "must state the expected type: {text}");
+        assert!(text.contains("yes"), "must quote what was received: {text}");
+    }
+
+    #[test]
+    fn non_string_filter_is_rejected() {
+        let result = call(&serde_json::json!({
+            "model_path": "/nonexistent/model.gguf",
+            "filter": 7,
+        }));
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("Invalid filter"));
+    }
 }

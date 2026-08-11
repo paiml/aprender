@@ -23,6 +23,14 @@ pub(crate) struct LayerTrace {
     pub name: String,
     /// Layer index (if applicable)
     pub index: Option<usize>,
+    /// Hidden dimension read from model metadata, when the metadata carries
+    /// one for this layer. This is a declared shape, not a measurement.
+    ///
+    /// #2407: the embedding entry used to report this width inside a
+    /// fabricated all-zero `output_stats` block (`count: 1536`, every other
+    /// field `0.0`), which reads to a client as a measured, dead layer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hidden_dim: Option<usize>,
     /// Input statistics
     pub input_stats: Option<TensorStats>,
     /// Output statistics
@@ -161,11 +169,27 @@ impl TensorStats {
     }
 }
 
+/// Where the per-layer statistics in a trace result came from.
+///
+/// #2407: `apr trace` without `--payload` never runs a forward pass — it
+/// reads the layer skeleton out of file metadata and leaves every
+/// `*_stats` field null. Emitting that as a bare success made it
+/// indistinguishable from "traced fine, nothing anomalous". The result now
+/// says which it is.
+const STATS_SOURCE_METADATA_ONLY: &str = "metadata-only";
+
+/// Note attached to every metadata-only trace result.
+const METADATA_ONLY_NOTE: &str = "no activations were computed: this trace reports the layer skeleton read from file metadata, so every *_stats field is null and anomaly detection did not run. Use `apr trace --payload --json <model>` to execute a forward pass and get real per-layer statistics.";
+
 /// Trace result for JSON output
 #[derive(Serialize)]
 struct TraceResult {
     file: String,
     format: String,
+    /// `"metadata-only"` — see [`STATS_SOURCE_METADATA_ONLY`].
+    stats_source: &'static str,
+    /// Machine-readable caveats about this result (empty when there are none).
+    notes: Vec<String>,
     layers: Vec<LayerTrace>,
     summary: TraceSummary,
 }

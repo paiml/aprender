@@ -246,4 +246,39 @@ mod tests {
         assert!(!argv.contains(&"--json".to_string()), "{argv:?}");
         assert!(argv.contains(&"--top-p".to_string()), "{argv:?}");
     }
+
+    /// #2419: `max_tokens:"eight"` was dropped and the run proceeded with the
+    /// default 32 — a caller asking for 8 got 4x the generation it requested
+    /// with no diagnostic. The tool must refuse before spawning anything.
+    #[test]
+    fn non_integer_max_tokens_is_rejected_before_the_subprocess_runs() {
+        let (_tx, rx) = std::sync::mpsc::channel::<()>();
+        let result = call(
+            &serde_json::json!({
+                "model_path": "/nonexistent/model.gguf",
+                "prompt": "hi",
+                "max_tokens": "eight",
+            }),
+            &rx,
+        );
+        assert_eq!(result.is_error, Some(true));
+        let text = &result.content[0].text;
+        assert!(text.contains("max_tokens"), "must name the argument: {text}");
+        assert!(text.contains("integer"), "must state the expected type: {text}");
+        assert!(text.contains("eight"), "must quote what was received: {text}");
+    }
+
+    #[test]
+    fn non_numeric_temperature_is_rejected() {
+        let (_tx, rx) = std::sync::mpsc::channel::<()>();
+        let result = call(
+            &serde_json::json!({
+                "model_path": "/nonexistent/model.gguf",
+                "temperature": "hot",
+            }),
+            &rx,
+        );
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("Invalid temperature"));
+    }
 }
