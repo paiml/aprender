@@ -482,7 +482,7 @@
         let args = vec!["apr", "lint", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Lint { file } => {
+            Commands::Lint { file, .. } => {
                 assert_eq!(file, PathBuf::from("model.apr"));
             }
             _ => panic!("Expected Lint command"),

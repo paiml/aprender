@@ -278,7 +278,12 @@ fn dispatch_smoke_gate(
         "lint" => {
             let p = path.to_path_buf();
             run_gate(name, display, timeout, verbose, move || {
-                lint::run(&p, false, false)
+                // strict=false: fail this gate on lint ERRORS only. With the old
+                // fail-on-any-warning behaviour this gate could never pass —
+                // every real model carries advisory metadata warnings — so
+                // `apr qualify` reported a permanent lint failure that said
+                // nothing about the model.
+                lint::run(&p, false, false, false)
             })
         }
         "debug" => {

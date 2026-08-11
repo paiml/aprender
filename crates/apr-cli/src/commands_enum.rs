@@ -325,6 +325,14 @@ pub enum Commands {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
         file: PathBuf,
+        /// Fail on warnings as well as errors.
+        ///
+        /// By default only ERROR-level findings fail the run. Every real model
+        /// carries advisory metadata warnings (missing license, model_card,
+        /// provenance), so gating on warnings meant `apr lint` could not exit 0
+        /// on anything and its exit code told you nothing.
+        #[arg(long)]
+        strict: bool,
     },
     /// Evaluate a BeatBenchmark contract against a measured value (PMAT-741)
     #[command(name = "beat-run")]
