@@ -213,7 +213,7 @@
             Commands::Extended(ExtendedCommands::Tree {
                 file: PathBuf::from("m.apr"),
                 filter: None,
-                format: "ascii".to_string(),
+                format: crate::commands::tree::TreeFormat::Ascii,
                 sizes: false,
                 depth: None,
             }),

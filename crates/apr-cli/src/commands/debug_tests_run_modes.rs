@@ -62,6 +62,12 @@ fn run_drama_mode_with_valid_header() {
     assert!(result.is_ok());
 }
 
+/// FALSIFIER (#2394 finding 1): a file `apr debug` calls CORRUPTED must not
+/// exit 0 — in drama mode either, which shouts "Model is CORRUPTED!".
+///
+/// This test used to assert `is_ok()` on `XXXX` magic. It was green for as
+/// long as the defect existed and would have failed the fix: an alibi, not a
+/// check. The verdict and the exit code now come from one `Health` value.
 #[test]
 fn run_drama_mode_with_invalid_magic() {
     let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
@@ -70,7 +76,10 @@ fn run_drama_mode_with_invalid_magic() {
     buf[4] = 1;
     file.write_all(&buf).expect("write");
     let result = run(file.path(), true, false, false, 100, false, false);
-    assert!(result.is_ok());
+    assert!(
+        result.is_err(),
+        "drama mode prints 'Model is CORRUPTED!' — it must not then exit 0"
+    );
 }
 
 #[test]
@@ -98,6 +107,13 @@ fn run_drama_mode_version_non_one() {
     assert!(result.is_ok());
 }
 
+/// FALSIFIER (#2394 finding 1): `apr debug` on a file it reports as
+/// `Health ✗ CORRUPTED` must exit non-zero.
+///
+/// Measured on 200 KB of `/dev/urandom`: the report said `Magic ✗ INVALID`
+/// and `Health ✗ CORRUPTED`, and the process exited 0 — so
+/// `apr debug f && echo ok` printed ok. This test used to assert `is_ok()` on
+/// `ZZZZ` magic, which is the same claim the defect made.
 #[test]
 fn run_basic_mode_with_invalid_magic() {
     let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
@@ -105,7 +121,24 @@ fn run_basic_mode_with_invalid_magic() {
     buf[0..4].copy_from_slice(b"ZZZZ");
     file.write_all(&buf).expect("write");
     let result = run(file.path(), false, false, false, 100, false, false);
-    assert!(result.is_ok());
+    let err = result.expect_err("a CORRUPTED verdict must not exit 0");
+    assert!(
+        err.to_string().contains("magic"),
+        "the error must say what was wrong, got: {err}"
+    );
+}
+
+/// ...and the same command must still succeed on a well-formed header, so the
+/// exit code discriminates rather than always failing.
+#[test]
+fn run_basic_mode_with_valid_magic_still_exits_zero() {
+    let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+    let mut buf = vec![0u8; HEADER_SIZE];
+    buf[0..4].copy_from_slice(b"APRN");
+    buf[4] = 1;
+    file.write_all(&buf).expect("write");
+    run(file.path(), false, false, false, 100, false, false)
+        .expect("a valid APR header must still exit 0");
 }
 
 #[test]

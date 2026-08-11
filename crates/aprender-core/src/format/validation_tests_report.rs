@@ -559,4 +559,75 @@ mod tests_report {
         let pct = report.implemented_score_pct().expect("some");
         assert!(pct < 50.0, "expected < 50, got {pct}");
     }
+
+    /// FALSIFIER (#2394 finding 12): a score must carry the denominator it was
+    /// measured against.
+    ///
+    /// `apr validate` printed `✓ VALID 3/100 points` on a healthy model. 97 of
+    /// those 100 checks are `Skip("Not implemented")` stubs that never ran, so
+    /// "100" was never the denominator being measured against — the line
+    /// understates a healthy model and would equally overstate a sick one.
+    /// `ImplementedScore` cannot be displayed without both numbers.
+    #[test]
+    fn implemented_score_reports_the_checks_that_actually_ran() {
+        let mut report = ValidationReport::new();
+        for id in 1..=3u8 {
+            report.add_check(ValidationCheck {
+                id,
+                name: "implemented",
+                category: Category::Structure,
+                status: CheckStatus::Pass,
+                points: 1,
+            });
+        }
+        for id in 4..=100u8 {
+            report.add_check(ValidationCheck {
+                id,
+                name: "stub",
+                category: Category::Physics,
+                status: CheckStatus::Skip("Not implemented".to_string()),
+                points: 0,
+            });
+        }
+
+        let score = report.implemented_score();
+        assert_eq!(score.passed, 3);
+        assert_eq!(score.ran, 3, "97 stubs did not run and must not count");
+        assert_eq!(score.not_implemented(), 97);
+
+        let rendered = score.to_string();
+        assert!(
+            !rendered.contains("3/100"),
+            "the score must not be printed against a denominator that never ran: {rendered}"
+        );
+        assert!(rendered.contains("3/3"), "{rendered}");
+        assert!(rendered.contains("97"), "{rendered}");
+    }
+
+    /// A failing check RAN, so it belongs in the denominator — otherwise a
+    /// model could score 1/1 while a check was actively failing.
+    #[test]
+    fn implemented_score_counts_failures_in_the_denominator() {
+        let mut report = ValidationReport::new();
+        report.add_check(ValidationCheck {
+            id: 1,
+            name: "passing",
+            category: Category::Structure,
+            status: CheckStatus::Pass,
+            points: 1,
+        });
+        report.add_check(ValidationCheck {
+            id: 2,
+            name: "failing",
+            category: Category::Structure,
+            status: CheckStatus::Fail("bad".to_string()),
+            points: 0,
+        });
+
+        let score = report.implemented_score();
+        assert_eq!(score.passed, 1);
+        assert_eq!(score.ran, 2, "a FAILED check ran and must count against us");
+        assert_eq!(score.not_implemented(), 0);
+        assert_eq!(score.to_string(), "1/2 checks that ran");
+    }
 }

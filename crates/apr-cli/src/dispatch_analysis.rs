@@ -463,10 +463,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             sizes,
             depth,
         } => crate::error::resolve_model_path(file).and_then(|resolved| {
+            // `format` arrives already parsed (clap rejects unknown values at
+            // the boundary), so there is no error left here to swallow — the
+            // `.unwrap_or(Ascii)` that used to live on this line is what made
+            // `--format bogusvalue` print an ascii tree at exit 0 (#2394).
             let tree_format = if cli.json {
                 tree::TreeFormat::Json
             } else {
-                format.parse().unwrap_or(tree::TreeFormat::Ascii)
+                *format
             };
             tree::run(&resolved, filter.as_deref(), tree_format, *sizes, *depth)
         }),

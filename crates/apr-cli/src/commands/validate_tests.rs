@@ -512,3 +512,126 @@ fn pmat926_json_apr_all_zero_lm_head_rejected() {
         "JSON .apr path must fail closed on content-broken model, got Ok"
     );
 }
+
+// ============================================================================
+// #2394 findings 12 & 17: a score needs a denominator; a threshold needs a score
+// ============================================================================
+
+/// FALSIFIER (#2394 finding 17): `--min-score` on a format that computes no
+/// score must be refused, not silently ignored.
+///
+/// `apr validate model.gguf --quality --min-score 100` exited 0. 100 is the
+/// strictest threshold expressible, no score was printed anywhere in the
+/// output, and nothing said the flag had been dropped — the dispatcher simply
+/// never passed `min_score` to the Rosetta branch. A gate that cannot fail is
+/// worse than no gate: it reports PASS to whoever wired it into CI.
+#[test]
+fn min_score_is_refused_on_formats_that_compute_no_score() {
+    let dir = tempdir().expect("tempdir");
+    let gguf = dir.path().join("tiny.gguf");
+    std::fs::write(&gguf, b"GGUF\x03\x00\x00\x00rest-does-not-matter").expect("write");
+
+    let err = super::run(
+        &gguf,
+        /* quality */ true,
+        /* strict */ false,
+        /* min_score */ Some(100),
+        /* json */ false,
+        /* skip_contract */ false,
+    )
+    .expect_err("--min-score 100 must not pass on a format with no score");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("--min-score"),
+        "the refusal must name the flag it is refusing, got: {msg}"
+    );
+    assert!(
+        msg.contains("no score"),
+        "the refusal must say WHY (no score is computed), got: {msg}"
+    );
+}
+
+/// ...and it must still discriminate: the `.apr` validator does produce a
+/// score, so `--min-score` there is a real gate and must not be refused.
+#[test]
+fn min_score_is_accepted_on_the_format_that_does_compute_a_score() {
+    let dir = tempdir().expect("tempdir");
+    let apr = dir.path().join("tiny.apr");
+    std::fs::write(&apr, b"APR\x00\x02\x00\x00\x00truncated").expect("write");
+
+    // This file is broken, so validation fails — but it must fail on the FILE,
+    // never on the flag.
+    let msg = match super::run(&apr, false, false, Some(50), false, false) {
+        Ok(()) => String::new(),
+        Err(e) => e.to_string(),
+    };
+    assert!(
+        !msg.contains("does not apply"),
+        "--min-score must be honored for .apr, got refusal: {msg}"
+    );
+}
+
+/// FALSIFIER (#2394 finding 12): the verdict line must not print a score
+/// against a denominator that was never measured.
+///
+/// A healthy model printed `✓ VALID 3/100 points` — a green badge beside what
+/// reads as 3%. 97 of the 100 checks are `Skip("Not implemented")` stubs that
+/// never ran. Either reading of "3/100" is wrong, so the line must carry the
+/// denominator that was actually measured and disclose the stubs.
+#[test]
+fn valid_verdict_reports_the_denominator_it_measured() {
+    use aprender::format::validation::{Category, CheckStatus, ValidationCheck};
+
+    let mut report = ValidationReport::new();
+    for id in 1..=3u8 {
+        report.add_check(ValidationCheck {
+            id,
+            name: "implemented check",
+            category: Category::Structure,
+            status: CheckStatus::Pass,
+            points: 1,
+        });
+    }
+    for id in 4..=100u8 {
+        report.add_check(ValidationCheck {
+            id,
+            name: "stub",
+            category: Category::Physics,
+            status: CheckStatus::Skip("Not implemented".to_string()),
+            points: 0,
+        });
+    }
+
+    let line = summary_line(&report);
+    assert!(
+        !line.contains("/100"),
+        "97 of those 100 checks never ran; the line must not score against them: {line}"
+    );
+    assert!(
+        line.contains("3/3"),
+        "the denominator must be the checks that ran: {line}"
+    );
+    assert!(
+        line.contains("97"),
+        "the line must disclose the 97 unimplemented checks: {line}"
+    );
+}
+
+/// The same line must still read correctly when every check is implemented —
+/// no phantom "not implemented" clause.
+#[test]
+fn valid_verdict_omits_the_stub_clause_when_nothing_was_skipped() {
+    use aprender::format::validation::{Category, CheckStatus, ValidationCheck};
+
+    let mut report = ValidationReport::new();
+    report.add_check(ValidationCheck {
+        id: 1,
+        name: "implemented check",
+        category: Category::Structure,
+        status: CheckStatus::Pass,
+        points: 1,
+    });
+    let line = summary_line(&report);
+    assert!(line.contains("1/1"), "{line}");
+    assert!(!line.contains("not implemented"), "{line}");
+}

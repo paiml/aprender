@@ -64,7 +64,7 @@
         let cli = make_cli(Commands::Extended(ExtendedCommands::Tree {
             file: PathBuf::from("/tmp/nonexistent_model_tree_test.apr"),
             filter: None,
-            format: "ascii".to_string(),
+            format: crate::commands::tree::TreeFormat::Ascii,
             sizes: false,
             depth: None,
         }));
