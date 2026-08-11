@@ -258,8 +258,13 @@
                 failed: 0,
                 blocked: 0,
             },
-            status: "FAIL".to_string(),
-            ci_result: "red".to_string(),
+            // #2397 finding 2: this fixture used to say FAIL/red while the test
+            // asserted the gate PASSED — it encoded the defect that `--ci`
+            // ignored the report's own verdict. The verdict is now green so the
+            // test isolates what it is actually about: with only a throughput
+            // threshold set, the failing brick score must not be consulted.
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
         };
 
         let config = CbtopConfig {
@@ -270,6 +275,13 @@
 
         // Throughput passes, brick not checked
         assert!(check_ci_thresholds(&report, &config));
+
+        // The same report with a red verdict must fail even though the only
+        // configured threshold still passes.
+        let mut red = report;
+        red.status = "FAIL".to_string();
+        red.ci_result = "red".to_string();
+        assert!(!check_ci_thresholds(&red, &config));
     }
 
     #[test]

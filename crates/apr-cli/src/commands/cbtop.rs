@@ -393,6 +393,18 @@ impl App {
 /// Run the cbtop command
 #[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
 pub fn run(config: CbtopConfig) -> Result<()> {
+    // A zero-iteration run collects no samples at all: every brick's measured
+    // time stays 0.0µs, every gap factor is 0.00x, every score rounds to 100/A
+    // and the falsification summary reads all-passed. That is a green report
+    // for measurements that never happened, so refuse to produce one.
+    if config.iterations == 0 {
+        return Err(CliError::ValidationFailed(
+            "cbtop requires at least 1 measurement iteration (--iterations 0 measures nothing: \
+             every brick would report 0.0µs and score a perfect 100/A)"
+                .to_string(),
+        ));
+    }
+
     if config.headless {
         run_headless(config)
     } else {

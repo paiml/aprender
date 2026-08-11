@@ -253,6 +253,61 @@
         }
     }
 
+    /// #2397 finding 1: `--iterations 0` must be rejected where it is typed.
+    /// Appending it to any `cbtop --ci` invocation used to turn the gate green
+    /// because a brick with zero samples scores a perfect 100/A.
+    #[test]
+    fn test_parse_cbtop_rejects_zero_iterations() {
+        let args = vec![
+            "apr",
+            "cbtop",
+            "--headless",
+            "--simulated",
+            "--ci",
+            "--iterations",
+            "0",
+        ];
+        assert!(
+            parse_cli(args).is_err(),
+            "cbtop accepted --iterations 0 at parse time"
+        );
+
+        // One iteration is the smallest honest run and must still parse.
+        let ok = vec!["apr", "cbtop", "--headless", "--iterations", "1"];
+        let cli = parse_cli(ok).expect("--iterations 1 should parse");
+        match *cli.command {
+            Commands::Extended(ExtendedCommands::Cbtop { iterations, .. }) => {
+                assert_eq!(iterations, 1);
+            }
+            _ => panic!("Expected Cbtop command"),
+        }
+    }
+
+    /// #2397 finding 4: `--json` and `--output` document "requires --headless",
+    /// so the parser must enforce it. Without the constraint the flag was
+    /// silently dropped and cbtop entered the interactive TUI instead.
+    #[test]
+    fn test_parse_cbtop_json_requires_headless() {
+        assert!(
+            parse_cli(vec!["apr", "cbtop", "--json"]).is_err(),
+            "cbtop --json was accepted without --headless"
+        );
+        assert!(
+            parse_cli(vec!["apr", "cbtop", "--output", "r.json"]).is_err(),
+            "cbtop --output was accepted without --headless"
+        );
+
+        let cli = parse_cli(vec!["apr", "cbtop", "--headless", "--json"])
+            .expect("--json --headless should parse");
+        match *cli.command {
+            Commands::Extended(ExtendedCommands::Cbtop { headless, json, .. }) => {
+                assert!(headless);
+                assert!(json);
+            }
+            _ => panic!("Expected Cbtop command"),
+        }
+    }
+
     /// Test parsing 'apr qa' command
     #[test]
     fn test_parse_qa_command() {

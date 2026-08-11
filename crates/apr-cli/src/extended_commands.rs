@@ -440,12 +440,12 @@ pub enum ExtendedCommands {
         #[arg(long)]
         headless: bool,
         /// Output JSON format (requires --headless)
-        #[arg(long)]
+        #[arg(long, requires = "headless")]
         json: bool,
         /// Output file path (requires --headless)
-        #[arg(long, value_name = "FILE")]
+        #[arg(long, value_name = "FILE", requires = "headless")]
         output: Option<PathBuf>,
-        /// CI mode: exit with code 1 if thresholds not met
+        /// CI mode: exit non-zero if thresholds are not met or the report status is FAIL
         #[arg(long)]
         ci: bool,
         /// Minimum throughput threshold in tok/s (for --ci)
@@ -457,8 +457,8 @@ pub enum ExtendedCommands {
         /// Number of warmup iterations before measurement
         #[arg(long, default_value = "10")]
         warmup: usize,
-        /// Number of measurement iterations
-        #[arg(long, default_value = "100")]
+        /// Number of measurement iterations (must be >= 1)
+        #[arg(long, default_value = "100", value_parser = parse_cbtop_iterations)]
         iterations: usize,
         /// PAR-100: Enable speculative decoding benchmark
         #[arg(long)]
@@ -1414,4 +1414,24 @@ pub enum ProbarSubcommand {
         #[arg(long, default_value = "0.98")]
         tolerance: f32,
     },
+}
+
+/// Parse `apr cbtop --iterations`, rejecting 0.
+///
+/// With zero measurement iterations every brick keeps zero samples, so its
+/// measured time is 0.0µs, its gap factor is 0.00x and it scores a perfect
+/// 100/A — a green report attesting to measurements that never ran. Reject the
+/// value where the user typed it rather than emitting the fabricated report.
+fn parse_cbtop_iterations(s: &str) -> std::result::Result<usize, String> {
+    let n: usize = s
+        .parse()
+        .map_err(|_| format!("`{s}` is not a valid iteration count"))?;
+    if n == 0 {
+        return Err(
+            "must be at least 1 — a zero-iteration run measures nothing and would report every \
+             brick as a perfect 100/A from zero samples"
+                .to_string(),
+        );
+    }
+    Ok(n)
 }

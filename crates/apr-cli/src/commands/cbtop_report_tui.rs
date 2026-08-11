@@ -1,7 +1,25 @@
 
-/// Check CI thresholds
+/// Check CI thresholds.
+///
+/// The report's own verdict is the primary gate: when cbtop has already
+/// concluded `Status: FAIL | CI: red` (one or more bricks over budget), `--ci`
+/// must fail even if the caller passed no explicit `--throughput` /
+/// `--brick-score` number. Previously only the explicit numeric thresholds
+/// could set `passed = false`, so `apr cbtop --ci` printed a red report and
+/// exited 0 — a gate that could not fail.
 fn check_ci_thresholds(report: &HeadlessReport, config: &CbtopConfig) -> bool {
     let mut passed = true;
+
+    if report.ci_result != "green" {
+        eprintln!(
+            "cbtop: FAIL - report status {} (CI: {}), falsification {}/{} passed",
+            report.status,
+            report.ci_result,
+            report.falsification.passed,
+            report.falsification.total_points
+        );
+        passed = false;
+    }
 
     if let Some(threshold) = config.throughput_threshold {
         if report.throughput.tokens_per_sec < threshold {
