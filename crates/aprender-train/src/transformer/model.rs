@@ -210,6 +210,17 @@ impl Transformer {
             eprintln!("[from_apr-timing] parallel dequant->F32: {:?}", t_dequant.elapsed());
         }
 
+        // #2441: honor the tied-word-embedding placeholder. An `.apr` written from
+        // a `tie_word_embeddings=true` checkpoint stores `lm_head.weight` as a
+        // shape-only, ZERO-BYTE descriptor — the real matrix lives in
+        // `model.embed_tokens.weight`. Dequantizing that descriptor yields an empty
+        // f32 vec, which `validate_weight_shapes` then rejects with
+        // "Shape mismatch for 'lm_head.weight': expected N elements, got 0".
+        // `from_params` already implements the tie (`lm_head: None` falls back to
+        // `embed_tokens.weight` in both `forward` and `lm_head_weight_slice`), so
+        // resolving the tie here means dropping the placeholder.
+        Self::resolve_tied_lm_head(&mut weights);
+
         // Same validation pipeline as from_safetensors
         let t_val = std::time::Instant::now();
         validate_weights(&weights, config.num_hidden_layers)?;
@@ -235,6 +246,37 @@ impl Transformer {
             );
         }
         model
+    }
+
+    /// Resolve a tied-word-embedding `lm_head.weight` placeholder (#2441, #2309).
+    ///
+    /// APR files written from a `tie_word_embeddings=true` checkpoint record
+    /// `lm_head.weight` with its full shape but ZERO bytes of data, because the
+    /// matrix is the same one stored under `model.embed_tokens.weight`. A loader
+    /// that takes the descriptor at face value materializes an empty tensor and
+    /// then fails shape validation.
+    ///
+    /// Dropping the placeholder is the tie: `from_params` maps a missing
+    /// `lm_head.weight` to `lm_head: None`, and every consumer of the output
+    /// projection (`forward`, `forward_hidden`, `lm_head_weight`,
+    /// `lm_head_weight_slice`) already falls back to `embed_tokens.weight`.
+    ///
+    /// Returns `true` when a placeholder was resolved. An empty `lm_head.weight`
+    /// with no usable `model.embed_tokens.weight` is left in place so the shape
+    /// validator still reports the genuinely broken file.
+    fn resolve_tied_lm_head(weights: &mut HashMap<String, Tensor>) -> bool {
+        if weights.get("lm_head.weight").is_none_or(|t| t.len() != 0) {
+            return false;
+        }
+        if weights.get("model.embed_tokens.weight").is_none_or(|t| t.len() == 0) {
+            return false;
+        }
+        weights.remove("lm_head.weight");
+        eprintln!(
+            "[#2441] lm_head.weight is a 0-byte tied-embedding placeholder — \
+             tying the output projection to model.embed_tokens.weight"
+        );
+        true
     }
 
     /// Validate that all weight tensor shapes match the config dimensions
@@ -836,6 +878,215 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Write a tiny but complete Qwen2-shaped APR for the tied-embedding
+    /// falsifiers (#2441).
+    ///
+    /// `lm_head` selects how the output projection is recorded:
+    /// - `Some(fill)` — a genuine `lm_head.weight` holding `vocab*hidden` values
+    /// - `None` — the tied case: full `[vocab, hidden]` shape, ZERO bytes of data,
+    ///   exactly what a converter emits for `tie_word_embeddings=true`
+    fn write_tied_fixture_apr(
+        config: &TransformerConfig,
+        embed: &[f32],
+        lm_head: Option<f32>,
+        path: &std::path::Path,
+    ) {
+        use aprender::serialization::apr::AprWriter;
+
+        let hidden = config.hidden_size;
+        let q_dim = config.q_dim();
+        let kv_hidden = config.num_kv_heads * config.head_dim();
+        let inter = config.intermediate_size;
+        let vocab = config.vocab_size;
+
+        let mut w = AprWriter::new();
+        w.add_tensor_f32("model.embed_tokens.weight", vec![vocab, hidden], embed);
+        w.add_tensor_f32("model.norm.weight", vec![hidden], &vec![1.0; hidden]);
+        match lm_head {
+            Some(fill) => {
+                w.add_tensor_f32("lm_head.weight", vec![vocab, hidden], &vec![fill; vocab * hidden])
+            }
+            // The defect fixture: shape-only descriptor, no data.
+            None => w.add_tensor_f32("lm_head.weight", vec![vocab, hidden], &[]),
+        }
+        for i in 0..config.num_hidden_layers {
+            let p = format!("model.layers.{i}");
+            w.add_tensor_f32(
+                &format!("{p}.input_layernorm.weight"),
+                vec![hidden],
+                &vec![1.0; hidden],
+            );
+            w.add_tensor_f32(
+                &format!("{p}.post_attention_layernorm.weight"),
+                vec![hidden],
+                &vec![1.0; hidden],
+            );
+            w.add_tensor_f32(
+                &format!("{p}.self_attn.q_proj.weight"),
+                vec![q_dim, hidden],
+                &vec![0.01; q_dim * hidden],
+            );
+            w.add_tensor_f32(
+                &format!("{p}.self_attn.k_proj.weight"),
+                vec![kv_hidden, hidden],
+                &vec![0.02; kv_hidden * hidden],
+            );
+            w.add_tensor_f32(
+                &format!("{p}.self_attn.v_proj.weight"),
+                vec![kv_hidden, hidden],
+                &vec![0.03; kv_hidden * hidden],
+            );
+            w.add_tensor_f32(
+                &format!("{p}.self_attn.o_proj.weight"),
+                vec![hidden, q_dim],
+                &vec![0.04; hidden * q_dim],
+            );
+            w.add_tensor_f32(
+                &format!("{p}.mlp.gate_proj.weight"),
+                vec![inter, hidden],
+                &vec![0.05; inter * hidden],
+            );
+            w.add_tensor_f32(
+                &format!("{p}.mlp.up_proj.weight"),
+                vec![inter, hidden],
+                &vec![0.06; inter * hidden],
+            );
+            w.add_tensor_f32(
+                &format!("{p}.mlp.down_proj.weight"),
+                vec![hidden, inter],
+                &vec![0.07; hidden * inter],
+            );
+        }
+        std::fs::write(path, w.to_bytes().expect("apr bytes")).expect("write fixture");
+    }
+
+    /// Embedding fill that varies BETWEEN ROWS, so a model that ties its output
+    /// projection to the embeddings produces per-vocab-entry logits. A pattern
+    /// that only varies within a row repeats identically for every row and would
+    /// make the logits degenerate no matter which matrix the head used.
+    fn varied_embed(vocab: usize, hidden: usize) -> Vec<f32> {
+        (0..vocab * hidden)
+            .map(|i| {
+                let row = i / hidden;
+                let col = i % hidden;
+                ((row % 7) as f32 - 3.0) * 0.05 + ((col % 3) as f32 - 1.0) * 0.01
+            })
+            .collect()
+    }
+
+    /// #2441 RED→GREEN falsifier: `apr finetune` on a tied-embedding `.apr`.
+    ///
+    /// `apr finetune qwen2.5-coder-0.5b-instruct.apr --task classify` died with
+    ///
+    ///   error: Shape mismatch for 'lm_head.weight': expected 136134656 elements, got 0
+    ///
+    /// because the `.apr` records `lm_head.weight` as a shape-only, ZERO-BYTE
+    /// placeholder (its weights ARE `model.embed_tokens.weight`, stored once) and
+    /// `Transformer::from_apr` dequantized that descriptor into an empty tensor
+    /// before running it through shape validation. The sibling-directory load that
+    /// #2436 removed had been masking this — the wrong model loaded fine.
+    ///
+    /// RED before the fix: `from_apr` returns that ConfigError.
+    /// GREEN after: the tie is resolved and the output projection is the embedding.
+    #[test]
+    fn falsify_2441_from_apr_resolves_tied_lm_head_placeholder() {
+        let config = TransformerConfig::tiny();
+        let vocab = config.vocab_size;
+        let hidden = config.hidden_size;
+        let embed = varied_embed(vocab, hidden);
+
+        let dir = std::env::temp_dir().join(format!("apr_tied_lm_head_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("tmp dir");
+        let apr_path = dir.join("tied.apr");
+        write_tied_fixture_apr(&config, &embed, None, &apr_path);
+
+        let model = Transformer::from_apr(&apr_path, &config)
+            .expect("#2441: a tied-embedding .apr must load, not fail shape validation");
+
+        assert!(
+            model.lm_head.is_none(),
+            "#2441: a 0-byte lm_head placeholder means TIED — no separate head"
+        );
+        assert_eq!(
+            model.lm_head_weight_slice(),
+            embed.as_slice(),
+            "#2441: the output projection must be the embedding matrix itself"
+        );
+
+        // Behaviour: the logits the finetune loop consumes are real numbers coming
+        // off the embedding matrix, not an empty/zero head.
+        let logits = model.forward(&[1u32, 2, 3]);
+        assert_eq!(logits.len(), 3 * vocab);
+        assert!(
+            logits.data().iter().all(|v| v.is_finite()),
+            "tied lm_head must produce finite logits"
+        );
+        let first_row: Vec<f32> = logits.data().iter().take(vocab).copied().collect();
+        let first = first_row[0];
+        assert!(
+            first_row.iter().any(|v| (*v - first).abs() > 1e-6),
+            "tied lm_head must produce non-degenerate logits — an all-equal row would \
+             mean the head is empty/constant rather than the embedding matrix"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #2441 negative control: a REAL `lm_head.weight` must survive untouched.
+    ///
+    /// Guards against an over-broad fix that drops or overwrites every lm_head:
+    /// an untied model's output projection must stay its own matrix.
+    #[test]
+    fn falsify_2441_untied_lm_head_is_preserved() {
+        let config = TransformerConfig::tiny();
+        let vocab = config.vocab_size;
+        let hidden = config.hidden_size;
+        let embed = varied_embed(vocab, hidden);
+
+        let dir = std::env::temp_dir().join(format!("apr_untied_lm_head_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("tmp dir");
+        let apr_path = dir.join("untied.apr");
+        write_tied_fixture_apr(&config, &embed, Some(0.25), &apr_path);
+
+        let model = Transformer::from_apr(&apr_path, &config).expect("untied .apr must load");
+
+        assert!(
+            model.lm_head.is_some(),
+            "#2441: a materialized lm_head must NOT be dropped as if it were tied"
+        );
+        assert!(
+            model.lm_head_weight_slice().iter().all(|v| (*v - 0.25).abs() < 1e-9),
+            "#2441: the untied output projection must keep its own weights"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #2441: a 0-byte `lm_head.weight` with no usable embedding matrix is a
+    /// genuinely broken file and must still be rejected — the tie resolution must
+    /// not turn "unloadable" into "silently loaded with a wrong head".
+    #[test]
+    fn falsify_2441_empty_lm_head_without_tie_target_still_rejected() {
+        let config = TransformerConfig::tiny();
+        let mut weights: HashMap<String, Tensor> = HashMap::new();
+        weights.insert("lm_head.weight".to_string(), Tensor::from_vec(vec![], false));
+
+        assert!(
+            !Transformer::resolve_tied_lm_head(&mut weights),
+            "no usable embedding matrix => nothing to tie to"
+        );
+        assert!(
+            weights.contains_key("lm_head.weight"),
+            "the placeholder must be left in place so shape validation still reports it"
+        );
+        let err = Transformer::validate_weight_shapes(&weights, &config)
+            .expect_err("an empty lm_head with no tie target must fail shape validation");
+        assert!(
+            format!("{err}").contains("lm_head.weight"),
+            "the error must still name lm_head.weight, got: {err}"
+        );
     }
 
     #[test]

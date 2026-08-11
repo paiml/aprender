@@ -98,6 +98,82 @@ fn apr_load_quantized_tensor(
     }
 }
 
+/// Names an APR file may use for the token-embedding matrix.
+const APR_EMBED_NAME_FRAGMENTS: [&str; 3] = ["embed_tokens", "tok_embeddings", "token_embd"];
+
+/// Names an APR file may use for the output projection.
+const APR_LM_HEAD_NAMES: [&str; 2] = ["lm_head.weight", "output.weight"];
+
+/// Find the token-embedding tensor's name in an APR file.
+fn apr_find_embedding_name(apr: &crate::apr::MappedAprModel) -> Option<&str> {
+    apr.tensors
+        .iter()
+        .find(|t| APR_EMBED_NAME_FRAGMENTS.iter().any(|frag| t.name.contains(frag)))
+        .map(|t| t.name.as_str())
+}
+
+/// Is the output projection a tied-word-embedding placeholder? (#2309, #2441)
+///
+/// An `.apr` written from a `tie_word_embeddings=true` checkpoint records
+/// `lm_head.weight` with its full `[vocab, hidden]` shape but ZERO bytes of data:
+/// the matrix it names is the one already stored as `model.embed_tokens.weight`.
+/// Absent an `lm_head` descriptor entirely, the tie is likewise implied.
+fn apr_lm_head_is_tied(apr: &crate::apr::MappedAprModel) -> bool {
+    APR_LM_HEAD_NAMES
+        .iter()
+        .find_map(|name| apr.find_tensor(name))
+        .is_none_or(|t| t.size == 0)
+}
+
+/// Load the output projection, honoring tied word embeddings (#2309, #2441).
+///
+/// When `lm_head.weight` is a 0-byte placeholder, the embedding matrix IS the
+/// output projection: both are row-major `[vocab, hidden]`, so the same bytes are
+/// re-registered as `in_dim = hidden, out_dim = vocab` with no transpose. Loading
+/// the placeholder verbatim instead produced an `OwnedQuantizedTensor` with an
+/// empty `data` buffer, and every decode died in `fused_matmul` with
+/// "matmul weight has EMPTY data buffer".
+fn apr_load_lm_head(
+    apr: &crate::apr::MappedAprModel,
+    data: &[u8],
+    data_offset: usize,
+    hidden_dim: usize,
+    vocab_size: usize,
+    transpose: bool,
+) -> Result<OwnedQuantizedTensor> {
+    if apr_lm_head_is_tied(apr) {
+        let embed_name = apr_find_embedding_name(apr).ok_or_else(|| RealizarError::FormatError {
+            reason: "APR: lm_head.weight is a 0-byte tied-embedding placeholder but no \
+                     embedding tensor exists to tie it to"
+                .to_string(),
+        })?;
+        eprintln!(
+            "[#2309] lm_head is a 0-byte tied-embedding placeholder — tying output projection to '{embed_name}'"
+        );
+        // The embedding is stored [vocab, hidden] row-major in every architecture,
+        // including the Conv1D ones that set `transpose` for their projections, so
+        // the tied head is never transposed.
+        return apr_load_quantized_tensor(
+            apr,
+            data,
+            data_offset,
+            &[embed_name],
+            hidden_dim,
+            vocab_size,
+            false,
+        );
+    }
+    apr_load_quantized_tensor(
+        apr,
+        data,
+        data_offset,
+        &APR_LM_HEAD_NAMES,
+        hidden_dim,
+        vocab_size,
+        transpose,
+    )
+}
+
 /// Load an F32 tensor from APR format, trying multiple names.
 fn apr_load_f32_tensor(
     apr: &crate::apr::MappedAprModel,
@@ -276,36 +352,20 @@ impl OwnedQuantizedModel {
             apr_load_f32_tensor(apr, data, data_offset, &["model.norm.weight", "output_norm.weight"])?;
         let output_norm_bias = apr_try_load_f32(apr, data, data_offset, "model.norm.bias");
 
-        // LM head (try HF name first, then GGUF, then the TIED EMBEDDING).
-        // Weight-tied exports (Qwen2 0.5B, most <2B models) either omit
-        // lm_head entirely or write it as a zero-length placeholder; the
-        // embedding matrix IS the head and has the identical row-major
-        // [vocab, hidden] layout, so it can be used verbatim.
+        // LM head. Tied-embedding resolution lives in `apr_load_lm_head`:
+        // weight-tied exports (Qwen2 0.5B, most <2B models) write lm_head as a
+        // 0-byte placeholder and the embedding matrix IS the head.
         //
-        // Say so out loud: a head silently sourced from somewhere other than
-        // the named tensor is exactly the kind of thing the next person
-        // debugging this model needs to know before anything else.
-        if ["lm_head.weight", "output.weight"]
-            .iter()
-            .any(|n| apr.find_tensor(n).is_some_and(|t| t.size == 0))
-        {
-            eprintln!(
-                "[tied-embeddings] LM head tensor is a 0-byte placeholder — \
-                 using the token embedding matrix as the output head"
-            );
-        }
-        let lm_head_weight = apr_load_quantized_tensor(
-            apr, data, data_offset,
-            &[
-                "lm_head.weight",
-                "output.weight",
-                "model.embed_tokens.weight",
-                "embed_tokens.weight",
-                "token_embd.weight",
-                "tok_embeddings.weight",
-            ],
-            hidden_dim, vocab_size, transpose,
-        )?;
+        // Preferred over the inline name-fallback list this replaced, for two
+        // reasons that are not stylistic: it HARD-FAILS when the head is tied but
+        // no embedding tensor exists, instead of falling through to a confusing
+        // downstream shape error; and it loads the tied head with
+        // `transpose: false` unconditionally, because the embedding is stored
+        // [vocab, hidden] row-major in every architecture including the Conv1D
+        // ones that set `transpose` for their projections.
+        // LM head (try HF name first, then GGUF; tied embeddings resolved in-loader)
+        let lm_head_weight =
+            apr_load_lm_head(apr, data, data_offset, hidden_dim, vocab_size, transpose)?;
         let lm_head_bias = apr_try_load_f32(apr, data, data_offset, "lm_head.bias");
 
         // GH-278: Load learned position embeddings (GPT-2 style)
@@ -347,16 +407,8 @@ impl OwnedQuantizedModel {
         vocab_size: usize,
         hidden_dim: usize,
     ) -> Result<Vec<f32>> {
-        let embed_name = apr
-            .tensors
-            .iter()
-            .find(|t| {
-                t.name.contains("embed_tokens")
-                    || t.name.contains("tok_embeddings")
-                    || t.name.contains("token_embd")
-            })
-            .map(|t| t.name.as_str())
-            .ok_or_else(|| RealizarError::FormatError {
+        let embed_name =
+            apr_find_embedding_name(apr).ok_or_else(|| RealizarError::FormatError {
                 reason: "APR: embedding tensor not found".to_string(),
             })?;
 
