@@ -155,6 +155,24 @@ struct BenchResult {
     "apr-cli-operations-v1",
     equation = "side_effect_classification"
 )]
+/// Parse one `--percentiles` point, enforcing the documented (0, 100] range.
+///
+/// Out-of-range points used to sail through to `print_bench_json`, where the
+/// non-`Ok` `PercentileOutcome` was serialised as `null` under a plausible key
+/// (`latency_p101_ms`) — a consumer of the report saw a metric, not an error.
+pub(crate) fn parse_percentile(s: &str) -> std::result::Result<f64, String> {
+    let value: f64 = s
+        .trim()
+        .parse()
+        .map_err(|e| format!("invalid percentile '{s}': {e}"))?;
+    if !value.is_finite() || value <= 0.0 || value > 100.0 {
+        return Err(format!(
+            "percentile '{s}' out of range: values must be in (0, 100]"
+        ));
+    }
+    Ok(value)
+}
+
 pub(crate) fn run(
     path: &Path,
     warmup: usize,
@@ -166,6 +184,16 @@ pub(crate) fn run(
     json: bool,
     percentiles: &[f64],
 ) -> Result<()> {
+    // Defence in depth: the clap value_parser rejects out-of-range points, but
+    // `run` is also reachable from non-clap callers.
+    for &p in percentiles {
+        if !p.is_finite() || p <= 0.0 || p > 100.0 {
+            return Err(CliError::ValidationFailed(format!(
+                "percentile {p} out of range: values must be in (0, 100]"
+            )));
+        }
+    }
+
     // GH-512: Warn on deprecated --fast flag instead of silently ignoring
     if fast && !json {
         eprintln!("Warning: --fast is deprecated (always uses fast path now). Flag has no effect.");

@@ -78,17 +78,28 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 layer,
                 assert,
                 tolerance,
-            } => crate::error::resolve_model_path(file).and_then(|r| {
-                probar::run(
-                    &r,
-                    output,
-                    format.parse().unwrap_or(probar::ExportFormat::Both),
-                    golden.as_deref(),
-                    layer.as_deref(),
-                    *assert,
-                    *tolerance,
-                )
-            }),
+            } => {
+                // An unparseable --format used to be swallowed by
+                // `.unwrap_or(Both)`, so `--format bogus` silently exported
+                // something the user never asked for. FromStr already produces
+                // the right message; surface it.
+                format
+                    .parse::<probar::ExportFormat>()
+                    .map_err(crate::error::CliError::ValidationFailed)
+                    .and_then(|export_format| {
+                        crate::error::resolve_model_path(file).and_then(|r| {
+                            probar::run(
+                                &r,
+                                output,
+                                export_format,
+                                golden.as_deref(),
+                                layer.as_deref(),
+                                *assert,
+                                *tolerance,
+                            )
+                        })
+                    })
+            }
         },
 
         ExtendedCommands::CompareHf {
@@ -1277,6 +1288,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 text.as_deref(),
                 Some(*max_tokens),
                 Some(*threshold),
+                device,
                 cli.json,
             ),
         }),

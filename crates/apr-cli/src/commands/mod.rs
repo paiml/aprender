@@ -112,6 +112,7 @@ pub(crate) mod otlp_classifier;
 pub(crate) mod otlp_lint;
 pub(crate) mod parity;
 pub(crate) mod pipeline;
+pub(crate) mod png_encode;
 pub(crate) mod ppl;
 #[cfg(feature = "training")]
 pub(crate) mod pretrain;

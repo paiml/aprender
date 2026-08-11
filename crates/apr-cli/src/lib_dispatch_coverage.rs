@@ -269,6 +269,115 @@
         assert!(result.is_some(), "Diagnose should be handled by analysis dispatcher");
     }
 
+    // ── apr showcase --step ─────────────────────────────────────────────
+
+    /// `--step bogus` used to map to `None`, indistinguishable from "no --step
+    /// given", so the CLI answered "No step specified" to a command line that
+    /// plainly specified one.
+    #[test]
+    fn test_showcase_unknown_step_names_the_offending_value() {
+        let err = parse_showcase_step("bogus").expect_err("unknown step must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("bogus"),
+            "error must quote what the user typed, got: {msg}"
+        );
+        assert!(
+            !msg.contains("No step specified"),
+            "must not claim no step was specified, got: {msg}"
+        );
+        for expected in ["import", "gguf", "convert", "apr", "all"] {
+            assert!(
+                msg.contains(expected),
+                "error should list '{expected}', got: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_showcase_every_documented_step_parses() {
+        // The list printed by `print_available_steps`, plus `chat`.
+        for name in [
+            "import",
+            "gguf",
+            "convert",
+            "apr",
+            "brick",
+            "bench",
+            "chat",
+            "visualize",
+            "zram",
+            "cuda",
+            "all",
+        ] {
+            assert!(
+                parse_showcase_step(name).is_ok(),
+                "'{name}' is advertised and must parse"
+            );
+        }
+    }
+
+    #[test]
+    fn test_showcase_step_typo_is_rejected_not_silently_ignored() {
+        // A near-miss is the realistic case: `--step ggug` for `gguf`.
+        assert!(parse_showcase_step("ggug").is_err());
+        assert!(parse_showcase_step("GGUF").is_err(), "matching is exact");
+        assert!(parse_showcase_step("").is_err());
+    }
+
+    /// `apr probar tensor --format bogus` used to be silently rewritten to
+    /// `both` by `.unwrap_or(ExportFormat::Both)`, so a typo produced a
+    /// different export than requested and exited 0.
+    #[test]
+    fn test_dispatch_analysis_probar_rejects_unknown_format() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
+            command: ProbarSubcommand::Tensor {
+                file: PathBuf::from("/tmp/nonexistent_probar_model.apr"),
+                output: PathBuf::from("/tmp/nonexistent_probar_out"),
+                format: "bogus".to_string(),
+                golden: None,
+                layer: None,
+                assert: false,
+                tolerance: 0.98,
+            },
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        let err = result
+            .expect("Probar should be handled by analysis dispatcher")
+            .expect_err("unknown --format must be rejected, not silently defaulted");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Unknown format") && msg.contains("bogus"),
+            "error must name the rejected value, got: {msg}"
+        );
+    }
+
+    /// The valid values must still reach probar (which then fails on the
+    /// missing model, not on the format).
+    #[test]
+    fn test_dispatch_analysis_probar_accepts_known_formats() {
+        for format in ["json", "png", "both", "all"] {
+            let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
+                command: ProbarSubcommand::Tensor {
+                    file: PathBuf::from("/tmp/nonexistent_probar_model.apr"),
+                    output: PathBuf::from("/tmp/nonexistent_probar_out"),
+                    format: format.to_string(),
+                    golden: None,
+                    layer: None,
+                    assert: false,
+                    tolerance: 0.98,
+                },
+            }));
+            let err = dispatch_analysis_commands(&cli)
+                .expect("handled")
+                .expect_err("missing model file still errors");
+            assert!(
+                !err.to_string().contains("Unknown format"),
+                "'{format}' must be accepted, got: {err}"
+            );
+        }
+    }
+
     #[test]
     fn test_dispatch_analysis_compare_hf_offline_rejected() {
         let mut cli = make_cli(Commands::Extended(ExtendedCommands::CompareHf {

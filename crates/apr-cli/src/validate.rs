@@ -310,6 +310,40 @@ fn dispatch_cbtop(
     })
 }
 
+/// The `--step` values `apr showcase` accepts, in the order `--help` lists them.
+const SHOWCASE_STEPS: &[(&str, showcase::ShowcaseStep)] = &[
+    ("import", showcase::ShowcaseStep::Import),
+    ("gguf", showcase::ShowcaseStep::GgufInference),
+    ("convert", showcase::ShowcaseStep::Convert),
+    ("apr", showcase::ShowcaseStep::AprInference),
+    ("brick", showcase::ShowcaseStep::BrickDemo),
+    ("bench", showcase::ShowcaseStep::Benchmark),
+    ("chat", showcase::ShowcaseStep::Chat),
+    ("visualize", showcase::ShowcaseStep::Visualize),
+    ("zram", showcase::ShowcaseStep::ZramDemo),
+    ("cuda", showcase::ShowcaseStep::CudaDemo),
+    ("all", showcase::ShowcaseStep::All),
+];
+
+/// Resolve a `--step` value, naming the offending input when it is unknown.
+///
+/// An unrecognised step used to map to `None`, which is the same state as
+/// "no `--step` given" — so `--step bogus` reported "No step specified", a
+/// message that contradicts the command line the user typed.
+fn parse_showcase_step(s: &str) -> Result<showcase::ShowcaseStep, CliError> {
+    SHOWCASE_STEPS
+        .iter()
+        .find(|(name, _)| *name == s)
+        .map(|(_, step)| *step)
+        .ok_or_else(|| {
+            let names: Vec<&str> = SHOWCASE_STEPS.iter().map(|(name, _)| *name).collect();
+            CliError::ValidationFailed(format!(
+                "unknown step '{s}'; available: {}",
+                names.join(", ")
+            ))
+        })
+}
+
 /// Dispatch `apr showcase` — extracted to reduce cognitive complexity of `execute_command`
 #[allow(clippy::too_many_arguments)]
 fn dispatch_showcase(
@@ -325,20 +359,7 @@ fn dispatch_showcase(
     verbose: bool,
     quiet: bool,
 ) -> Result<(), CliError> {
-    let step = step.and_then(|s| match s {
-        "import" => Some(showcase::ShowcaseStep::Import),
-        "gguf" => Some(showcase::ShowcaseStep::GgufInference),
-        "convert" => Some(showcase::ShowcaseStep::Convert),
-        "apr" => Some(showcase::ShowcaseStep::AprInference),
-        "bench" => Some(showcase::ShowcaseStep::Benchmark),
-        "chat" => Some(showcase::ShowcaseStep::Chat),
-        "visualize" => Some(showcase::ShowcaseStep::Visualize),
-        "zram" => Some(showcase::ShowcaseStep::ZramDemo),
-        "cuda" => Some(showcase::ShowcaseStep::CudaDemo),
-        "brick" => Some(showcase::ShowcaseStep::BrickDemo),
-        "all" => Some(showcase::ShowcaseStep::All),
-        _ => None,
-    });
+    let step = step.map(parse_showcase_step).transpose()?;
 
     let tier = match tier {
         "tiny" => showcase::ModelTier::Tiny,

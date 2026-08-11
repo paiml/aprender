@@ -221,6 +221,7 @@ fn test_run_with_max_tokens() {
         None,
         Some(128),
         None,
+        "cpu",
         false,
     );
     assert!(result.is_err());
@@ -234,6 +235,7 @@ fn test_run_with_threshold() {
         None,
         None,
         Some(5.0),
+        "cpu",
         false,
     );
     assert!(result.is_err());
@@ -248,6 +250,7 @@ fn test_run_custom_with_text() {
         Some("test input text"),
         None,
         None,
+        "cpu",
         false,
     );
     assert!(result.is_err());

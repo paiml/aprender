@@ -440,6 +440,37 @@ fn load_eval_prompts_missing_file_errors() {
     assert!(load_eval_prompts(Path::new("/no/prompts.jsonl")).is_err());
 }
 
+// ── --device in perplexity mode ────────────────────────────────────────────
+//
+// `--device cuda` and `--device bogus` used to produce byte-identical output to
+// `--device cpu`, with no mention of a device anywhere — the flag was accepted,
+// never consulted, and never reported.
+
+#[test]
+fn perplexity_device_is_always_cpu() {
+    assert_eq!(perplexity_device("cpu"), "cpu");
+    assert_eq!(
+        perplexity_device("cuda"),
+        "cpu",
+        "perplexity has no GPU path; the report must say cpu"
+    );
+}
+
+#[test]
+fn perplexity_device_notice_fires_only_when_the_request_is_not_honoured() {
+    assert!(
+        perplexity_device_notice("cpu").is_none(),
+        "no notice when the request is honoured"
+    );
+
+    let notice = perplexity_device_notice("cuda").expect("cuda must be called out");
+    assert!(notice.contains("cuda"), "notice must quote the request");
+    assert!(
+        notice.contains("CPU-only") && notice.contains("cpu"),
+        "notice must state what actually ran, got: {notice}"
+    );
+}
+
 #[test]
 fn default_prompts_are_nonempty_python() {
     let prompts = default_code_eval_prompts();

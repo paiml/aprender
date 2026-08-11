@@ -106,6 +106,16 @@ fn ptx_gate_result(
     report: &realizar::ptx_parity::PtxParityReport,
     duration: Duration,
 ) -> GateResult {
+    // Zero comparisons is not a pass. Without the `cuda` feature
+    // `validate_all_kernel_pairs` returns an empty report, whose `all_passed()`
+    // is vacuously true — the gate then reported "0/0 kernel pairs passed PTX
+    // parity" as a green verdict and could not fail by construction.
+    if report.total == 0 {
+        return GateResult::skipped(
+            "ptx_parity",
+            "no PTX kernel pairs compiled in (requires 'cuda' feature)",
+        );
+    }
     if report.all_passed() {
         GateResult::passed(
             "ptx_parity",
