@@ -37,6 +37,7 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::tools::args::{self, try_arg};
 use crate::types::{ContentBlock, InputSchema, ToolCallResult, ToolDefinition};
 use std::io::Read;
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
@@ -112,42 +113,21 @@ pub fn serve_tool_definition() -> ToolDefinition {
 /// all look like. See this module's header for the terminal states.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let model_path = match crate::tools::args::require_str(args, "model_path") {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let model_path = try_arg!(args::required_str(args, "model_path"));
 
-    let port: u16 = match args.get("port") {
+    let port: u16 = match try_arg!(args::opt_u64(args, "port")) {
         None => DEFAULT_PORT,
-        Some(v) => match v.as_u64().and_then(|n| u16::try_from(n).ok()) {
-            Some(n) => n,
-            None => {
+        Some(n) => match u16::try_from(n) {
+            Ok(p) => p,
+            Err(_) => {
                 return ToolCallResult::error(format!(
-                    "Invalid port: expected integer 0..=65535, got {v}"
+                    "Invalid port: expected integer 0..=65535, got {n}"
                 ));
             }
         },
     };
 
-    // Both halves of this line were defects, fixed in two different PRs:
-    //
-    //   #2388 (via main) — the argv was `apr serve <model>`, which the CLI
-    //     rejects with "unrecognized subcommand"; the child died instantly and
-    //     the tool still returned {pid,url}. `serve_argv` puts `run` in, and
-    //     `spawn_and_confirm` refuses to report success for a dead child.
-    //   #2384 (this branch) — the program was the literal "apr", resolved
-    //     through $PATH, so `apr mcp` from 0.63.0 started whatever older `apr`
-    //     came first (0.60.0 on the dev box) and failed outright when the
-    //     install dir was not on $PATH.
-    //
-    // The merge must keep BOTH: the corrected argv AND the resolved binary.
-    // Passing "apr" here again would silently restore the $PATH lookup.
-    spawn_and_confirm(
-        &crate::apr_bin::apr_binary().to_string_lossy(),
-        &serve_argv(model_path, port),
-        port,
-        READY_TIMEOUT,
-    )
+    spawn_and_confirm("apr", &serve_argv(model_path, port), port, READY_TIMEOUT)
 }
 
 /// Spawn `program <args...>` as a background HTTP daemon on `port` and wait
