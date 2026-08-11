@@ -5,8 +5,10 @@
 //!
 //! 1. The YAML file exists and parses as valid YAML.
 //! 2. Top-level `status: ACTIVE`.
-//! 3. Exactly 9 entries in `falsification_conditions`, with ids
-//!    FALSIFY-MCP-001 through FALSIFY-MCP-009 (no gaps, no duplicates).
+//! 3. Exactly 14 entries in `falsification_conditions`, with ids
+//!    FALSIFY-MCP-001 through FALSIFY-MCP-014 (no gaps, no duplicates).
+//!    010-014 were added 2026-08-10 for the transport and protocol defects
+//!    found by the 0.63.0 crates.io dogfood (#2393).
 //! 4. Every entry has a non-empty `test_file` that exists on disk relative
 //!    to the workspace root, plus a non-empty `test_name` and
 //!    `status: ENFORCED`.
@@ -75,29 +77,39 @@ fn apr_mcp_server_contract_is_active() {
     );
 }
 
+/// Number of FALSIFY-MCP gates the spec defines. Raised from 9 to 14 on
+/// 2026-08-10 when the 0.63.0 crates.io dogfood (#2393) surfaced five gaps
+/// this contract had no gate for: responses dropped on stdin EOF (-010), a
+/// bad UTF-8 byte killing the session (-011), Invalid-Request vs Parse-error
+/// classification (-012), `ping` (-013), and wrong-type argument diagnostics
+/// (-014).
+const EXPECTED_GATES: usize = 14;
+
 #[test]
-fn apr_mcp_server_contract_has_exactly_nine_conditions() {
+fn apr_mcp_server_contract_has_exactly_expected_conditions() {
     let contract = load_contract();
     assert_eq!(
         contract.falsification_conditions.len(),
-        9,
-        "spec defines 9 FALSIFY-MCP gates; contract has {}",
+        EXPECTED_GATES,
+        "spec defines {EXPECTED_GATES} FALSIFY-MCP gates; contract has {}",
         contract.falsification_conditions.len()
     );
 }
 
 #[test]
-fn apr_mcp_server_contract_ids_are_falsify_mcp_001_through_009() {
+fn apr_mcp_server_contract_ids_are_contiguous_from_001() {
     let contract = load_contract();
     let actual: Vec<String> = contract
         .falsification_conditions
         .iter()
         .map(|c| c.id.clone())
         .collect();
-    let expected: Vec<String> = (1..=9).map(|n| format!("FALSIFY-MCP-{n:03}")).collect();
+    let expected: Vec<String> = (1..=EXPECTED_GATES)
+        .map(|n| format!("FALSIFY-MCP-{n:03}"))
+        .collect();
     assert_eq!(
         actual, expected,
-        "ids must be exactly FALSIFY-MCP-001..009 in order (no gaps, no duplicates)"
+        "ids must be exactly FALSIFY-MCP-001..{EXPECTED_GATES:03} in order (no gaps, no duplicates)"
     );
 }
 

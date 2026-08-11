@@ -150,11 +150,16 @@ falsification_conditions:
 
   - id: FALSIFY-MCP-007
     description: >
-      An `initialize` whose `params.protocolVersion` does not match the
-      server's supported version is rejected with JSON-RPC error code
-      -32602 (Invalid Params); the negotiation must not advance.
+      An `initialize` whose `params.protocolVersion` differs from the
+      server's is answered with a SUCCESS result carrying the version the
+      server does support, never a JSON-RPC error. The MCP lifecycle makes
+      version negotiation a proposal the client may accept or abandon by
+      disconnecting; answering -32602 aborts the handshake, which barred
+      every client proposing a newer dated version (Claude Code / Cursor
+      propose 2025-03-26 / 2025-06-18) from connecting at all. Revised
+      2026-08-10 from the inverted gate found by the 0.63.0 dogfood (#2393).
     test_file: crates/aprender-mcp/tests/falsify_m1.rs
-    test_name: falsify_mcp_007_protocol_version_mismatch_is_minus_32602
+    test_name: falsify_mcp_007_protocol_version_mismatch_negotiates_down
     status: ENFORCED
 
   - id: FALSIFY-MCP-008
@@ -183,14 +188,81 @@ falsification_conditions:
     test_name: falsify_mcp_009_no_reply_to_notification
     status: ENFORCED
 
+  - id: FALSIFY-MCP-010
+    description: >
+      Every request carrying an `id` is answered BEFORE the read loop
+      returns, including a `tools/call` still in flight when stdin reaches
+      EOF. `tools/call` runs on a worker thread that writes its own
+      response; the 0.63.0 loop returned the instant stdin closed without
+      joining those workers, so the canonical `printf ... | apr mcp`
+      invocation silently dropped every tool result while exiting 0 —
+      indistinguishable, to the client, from a tool that produced no output.
+      Added 2026-08-10 from the 0.63.0 dogfood (#2393, P0).
+    test_file: crates/aprender-mcp/src/server.rs
+    test_name: serve_stream_answers_tools_call_before_returning_on_eof
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-011
+    description: >
+      A line that is not valid UTF-8 is a malformed MESSAGE: it is answered
+      with -32700 and the session keeps serving, exactly as an already-
+      correct malformed-JSON line is. The 0.63.0 loop read lines via
+      `BufRead::lines()`, which surfaced a bad byte as an io::Error that
+      propagated out and killed the process (exit 1), losing every request
+      after it — while well-formed-UTF-8 malformed JSON was handled
+      correctly, so the server disagreed with itself.
+      Added 2026-08-10 from the 0.63.0 dogfood (#2393).
+    test_file: crates/aprender-mcp/src/server.rs
+    test_name: serve_stream_survives_invalid_utf8_line
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-012
+    description: >
+      Valid JSON that is not a valid Request object is -32600 Invalid
+      Request with the client's `id` echoed, NOT -32700 Parse error with
+      `id: null`; genuinely malformed JSON stays -32700; and a JSON-RPC
+      batch ARRAY is declined with a message that names batching rather
+      than leaking serde's "invalid type: map, expected a string". The
+      server already classified a WRONG `jsonrpc` VALUE correctly, so the
+      missing-field path disagreed with its own neighbour and lost the id
+      the client needs to correlate the failure.
+      Added 2026-08-10 from the 0.63.0 dogfood (#2393).
+    test_file: crates/aprender-mcp/src/server.rs
+    test_name: missing_required_field_is_invalid_request_with_id_echoed
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-013
+    description: >
+      `ping` is MCP base protocol, not an advertised capability: it is
+      answered with an empty result at any point in the session. 0.63.0
+      returned -32601 Method not found, which a keepalive client reads as a
+      dead server and acts on by restarting it.
+      Added 2026-08-10 from the 0.63.0 dogfood (#2393).
+    test_file: crates/aprender-mcp/src/server.rs
+    test_name: ping_returns_empty_result
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-014
+    description: >
+      A required `tools/call` argument supplied with the WRONG JSON TYPE is
+      reported as a type error naming the received type, never as
+      "Missing required argument". 0.63.0 emitted the byte-identical
+      "missing" message for absent, empty and wrong-type arguments, so a
+      client (or an LLM) told the argument was missing retries by adding a
+      key it already sent, and loops.
+      Added 2026-08-10 from the 0.63.0 dogfood (#2393).
+    test_file: crates/aprender-mcp/src/tools/args.rs
+    test_name: wrong_type_names_the_type_and_never_says_missing
+    status: ENFORCED
+
 # ── Acceptance gate ──
-# Promoting this contract out of ACTIVE requires all 9 conditions above to
+# Promoting this contract out of ACTIVE requires all 14 conditions above to
 # hold simultaneously on a clean checkout with `cargo test -p aprender-mcp`.
 
 qa_gate:
   id: F-MCP-SERVER-GATE
   name: "apr mcp end-to-end contract"
-  pass_criteria: "All 9 FALSIFY-MCP-* tests listed in falsification_conditions pass"
+  pass_criteria: "All 14 FALSIFY-MCP-* tests listed in falsification_conditions pass"
   run: "cargo test -p aprender-mcp --no-fail-fast"
   falsification: >
     Rename or delete any referenced test_file / test_name and the

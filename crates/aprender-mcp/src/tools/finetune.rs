@@ -85,8 +85,9 @@ pub fn call_with_sink(
     sink: Option<&NotificationSink>,
     progress_token: Option<serde_json::Value>,
 ) -> ToolCallResult {
-    let Some(base_model) = args.get("base_model").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: base_model");
+    let base_model = match crate::tools::args::require_str(args, "base_model") {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     let mut owned: Vec<String> = vec![
@@ -219,6 +220,12 @@ mod tests {
         let result = call(&serde_json::json!({ "base_model": 42 }));
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("base_model"));
+        // Shape ("is_error, mentions the field") passed while the message said
+        // the argument was MISSING — see tools::args. Assert the behaviour.
+        assert_eq!(
+            result.content[0].text,
+            "Argument base_model must be a string, got number"
+        );
     }
 
     /// FALSIFY-MCP-PROGRESS-001 (unit): `stream_with_sink` fires one

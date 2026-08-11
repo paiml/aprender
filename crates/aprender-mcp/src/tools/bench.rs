@@ -34,8 +34,9 @@ pub fn bench_tool_definition() -> ToolDefinition {
 /// Execute `apr.bench` by spawning `apr bench <model> --json [...flags]`.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
-    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
-        return ToolCallResult::error("Missing required argument: model_path");
+    let model_path = match crate::tools::args::require_str(args, "model_path") {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     let mut owned: Vec<String> = vec![
