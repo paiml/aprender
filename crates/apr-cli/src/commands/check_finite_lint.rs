@@ -7,14 +7,13 @@
 //!
 //! Spec: `contracts/crux-F-11-v1.yaml`. CRUX-SHIP-001 g2/g3 surface.
 
-use std::path::{Path, PathBuf};
-
-use serde_json::Value;
+use std::path::Path;
 
 use super::check_finite_classifier::{
     classify_error_json, classify_layer_coverage, CheckFiniteCoverageOutcome,
     CheckFiniteErrorOutcome, F11_REQUIRED_OP_PREFIXES,
 };
+use super::lint_input;
 use crate::error::{CliError, Result};
 
 pub(crate) fn run(
@@ -31,40 +30,19 @@ pub(crate) fn run(
     }
 
     let err_outcome = match error_file {
-        Some(p) => {
-            if !p.exists() {
-                return Err(CliError::FileNotFound(PathBuf::from(p)));
-            }
-            let body_text = std::fs::read_to_string(p)?;
-            let body: Value = serde_json::from_str(&body_text).map_err(|e| {
-                CliError::InvalidFormat(format!(
-                    "apr check-finite-lint: failed to parse error JSON from {}: {e}",
-                    p.display()
-                ))
-            })?;
-            Some(classify_error_json(&body))
-        }
+        Some(p) => Some(classify_error_json(&lint_input::read_json_observation(
+            "apr check-finite-lint",
+            p,
+        )?)),
         None => None,
     };
 
     let cov_outcome = match list_file {
-        Some(p) => {
-            if !p.exists() {
-                return Err(CliError::FileNotFound(PathBuf::from(p)));
-            }
-            let body_text = std::fs::read_to_string(p)?;
-            let body: Value = serde_json::from_str(&body_text).map_err(|e| {
-                CliError::InvalidFormat(format!(
-                    "apr check-finite-lint: failed to parse list JSON from {}: {e}",
-                    p.display()
-                ))
-            })?;
-            Some(classify_layer_coverage(
-                &body,
-                min_layers,
-                F11_REQUIRED_OP_PREFIXES,
-            ))
-        }
+        Some(p) => Some(classify_layer_coverage(
+            &lint_input::read_json_observation("apr check-finite-lint", p)?,
+            min_layers,
+            F11_REQUIRED_OP_PREFIXES,
+        )),
         None => None,
     };
 

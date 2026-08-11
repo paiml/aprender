@@ -34,9 +34,10 @@ use crate::commands::imatrix_classifier::{
     parse_imatrix_flag, validate_recorded_provenance, ImprovementOutcome, ProvenanceOutcome,
     MIN_PPL_IMPROVEMENT,
 };
+use crate::commands::lint_input;
+use crate::error::CliError;
 use serde_json::Value;
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -53,21 +54,9 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: ImatrixLintArgs) -> Result<(), String> {
+pub fn run(args: ImatrixLintArgs) -> crate::error::Result<()> {
     let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-B-07: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-B-07: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-B-07: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-B-07: observation is not valid JSON: {e}"))?;
+    let obs = lint_input::read_json_observation("apr imatrix-lint", path)?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -102,10 +91,10 @@ pub fn run(args: ImatrixLintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err(
+        return Err(CliError::ValidationFailed(
             "FALSIFY-CRUX-B-07: observation has none of improvement/leakage/flags/provenance"
                 .into(),
-        );
+        ));
     }
 
     if args.json {
@@ -122,7 +111,7 @@ pub fn run(args: ImatrixLintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(CliError::ValidationFailed(failures.join("\n")));
     }
     Ok(())
 }
@@ -368,28 +357,36 @@ mod tests {
             json: false,
         };
         let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-B-07"));
-        assert!(err.contains("not found"));
+        // #2377-8: this used to be exit 1, the same code a *failing falsifier*
+        // produced, because `run` returned `Result<(), String>` and dispatch had
+        // no class to map. A CI job could not tell the two apart.
+        assert_eq!(
+            err.exit_code(),
+            std::process::ExitCode::from(3),
+            "a missing observation file must be exit 3: {err}"
+        );
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs("  ");
-        let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("observation file is empty"));
+        let err = run(args_for(&f)).unwrap_err().to_string();
+        assert!(err.contains("is empty"), "{err}");
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("##");
-        let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("not valid JSON"));
+        let err = run(args_for(&f)).unwrap_err().to_string();
+        assert!(err.contains("failed to parse JSON"), "{err}");
+        // #2377-9: a captured JSON observation is not an APR model.
+        assert!(!err.contains("Invalid APR format"), "{err}");
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("none of improvement/leakage/flags/provenance"));
     }
 
@@ -403,7 +400,7 @@ mod tests {
     #[test]
     fn improvement_gate_no_gain_fails() {
         let f = write_obs(r#"{"improvement": {"ppl_naive": 100.0, "ppl_calib": 100.0}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-07-001"));
     }
 
@@ -418,7 +415,7 @@ mod tests {
     fn leakage_gate_overlap_fails() {
         let f =
             write_obs(r#"{"leakage": {"calib_hashes": ["a", "b"], "eval_hashes": ["b", "c"]}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-07-001"));
         assert!(err.contains("leakage"));
     }
@@ -441,7 +438,7 @@ mod tests {
     #[test]
     fn flags_gate_mismatch_fails() {
         let f = write_obs(r#"{"flags": {"argv": ["quantize"], "expected_path": "calib.jsonl"}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-07-002"));
     }
 
@@ -461,14 +458,14 @@ mod tests {
             "provenance": { "expected_sha256": "a".repeat(64), "recorded": "b".repeat(64) }
         });
         let f = write_obs(&obs.to_string());
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-07-003"));
     }
 
     #[test]
     fn provenance_gate_missing_input_fails() {
         let f = write_obs(r#"{"provenance": {}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-07-003"));
     }
 
@@ -484,7 +481,7 @@ mod tests {
         // Same overlap as the string case below, only serialized as numbers.
         // Pre-fix this PASSED with "disjoint (|calib|=0, |eval|=0)".
         let f = write_obs(r#"{"leakage": {"calib_hashes": [1, 2], "eval_hashes": [1, 2]}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(
             err.contains("leakage invariant violated"),
             "integer-typed overlapping hashes must be leakage, got: {err}"
@@ -496,14 +493,14 @@ mod tests {
     fn leakage_overlapping_string_hashes_are_detected() {
         // Control: the type the gate always handled correctly.
         let f = write_obs(r#"{"leakage": {"calib_hashes": ["a"], "eval_hashes": ["a"]}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("leakage invariant violated"), "got: {err}");
     }
 
     #[test]
     fn leakage_scalar_section_is_unreadable_not_disjoint() {
         let f = write_obs(r#"{"leakage": "nonsense"}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(
             err.contains("could not be evaluated"),
             "a non-object leakage section must fail the gate, got: {err}"
@@ -513,14 +510,14 @@ mod tests {
     #[test]
     fn leakage_missing_eval_hashes_is_unreadable() {
         let f = write_obs(r#"{"leakage": {"calib_hashes": ["a"]}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("eval_hashes"), "got: {err}");
     }
 
     #[test]
     fn leakage_non_scalar_element_is_unreadable() {
         let f = write_obs(r#"{"leakage": {"calib_hashes": [["a"]], "eval_hashes": ["b"]}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("not a scalar hash"), "got: {err}");
     }
 

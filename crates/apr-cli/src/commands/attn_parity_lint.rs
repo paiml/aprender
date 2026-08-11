@@ -61,44 +61,41 @@ pub(crate) fn run(
         json,
     );
 
-    if let Some(o) = &parity {
-        if !matches!(o, AttnParityNumericsOutcome::Ok { .. }) {
-            return Err(CliError::ValidationFailed(format!(
-                "attn-parity-lint parity-numerics gate rejected body: {o:?}"
-            )));
-        }
-    }
-    if let Some(o) = &provenance {
-        if !matches!(
+    verdict("parity-numerics", parity.as_ref(), |o| {
+        matches!(o, AttnParityNumericsOutcome::Ok { .. })
+    })?;
+    verdict("provenance", provenance.as_ref(), |o| {
+        matches!(
             o,
             AttnProvenanceOutcome::OkFlash2 { .. } | AttnProvenanceOutcome::OkFallback { .. }
-        ) {
-            return Err(CliError::ValidationFailed(format!(
-                "attn-parity-lint provenance gate rejected body: {o:?}"
-            )));
-        }
+        )
+    })?;
+    verdict("head-dim-error", head_dim.as_ref(), |o| {
+        matches!(o, AttnHeadDimErrorOutcome::Ok { .. })
+    })
+}
+
+/// Turn one classifier outcome into this command's verdict.
+///
+/// A gate that was not asked for (`None`) says nothing; a gate whose outcome is
+/// outside the accepting set fails the command with `ValidationFailed` (exit 5).
+/// Written once so the three gates cannot drift apart — and so `run` stays under
+/// the repo's cognitive-complexity ceiling.
+fn verdict<T: std::fmt::Debug>(
+    gate: &str,
+    outcome: Option<&T>,
+    accepts: impl Fn(&T) -> bool,
+) -> Result<()> {
+    match outcome {
+        Some(o) if !accepts(o) => Err(CliError::ValidationFailed(format!(
+            "attn-parity-lint {gate} gate rejected body: {o:?}"
+        ))),
+        _ => Ok(()),
     }
-    if let Some(o) = &head_dim {
-        if !matches!(o, AttnHeadDimErrorOutcome::Ok { .. }) {
-            return Err(CliError::ValidationFailed(format!(
-                "attn-parity-lint head-dim-error gate rejected body: {o:?}"
-            )));
-        }
-    }
-    Ok(())
 }
 
 fn load_json(path: &Path) -> Result<Value> {
-    if !path.exists() {
-        return Err(CliError::FileNotFound(PathBuf::from(path)));
-    }
-    let body_text = std::fs::read_to_string(path)?;
-    serde_json::from_str(&body_text).map_err(|e| {
-        CliError::InvalidFormat(format!(
-            "apr attn-parity-lint: failed to parse JSON from {}: {e}",
-            path.display()
-        ))
-    })
+    super::lint_input::read_json_observation("apr attn-parity-lint", path)
 }
 
 #[allow(clippy::too_many_arguments)]

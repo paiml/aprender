@@ -34,9 +34,10 @@
 use crate::commands::blob_gc::{
     apply_plan, apply_rm, compute_refcounts, plan_gc, GcPlan, Manifest,
 };
+use crate::commands::lint_input;
+use crate::error::CliError;
 use serde_json::Value;
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -53,21 +54,9 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: RmGcLintArgs) -> Result<(), String> {
+pub fn run(args: RmGcLintArgs) -> crate::error::Result<()> {
     let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-A-25: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-A-25: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-A-25: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-A-25: observation is not valid JSON: {e}"))?;
+    let obs = lint_input::read_json_observation("apr rm-gc-lint", path)?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -95,7 +84,9 @@ pub fn run(args: RmGcLintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err("FALSIFY-CRUX-A-25: observation has none of rm/safety/dryrun".into());
+        return Err(CliError::ValidationFailed(
+            "FALSIFY-CRUX-A-25: observation has none of rm/safety/dryrun".into(),
+        ));
     }
 
     if args.json {
@@ -112,7 +103,7 @@ pub fn run(args: RmGcLintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(CliError::ValidationFailed(failures.join("\n")));
     }
     Ok(())
 }
@@ -333,28 +324,36 @@ mod tests {
             json: false,
         };
         let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-A-25"));
-        assert!(err.contains("not found"));
+        // #2377-8: this used to be exit 1, the same code a *failing falsifier*
+        // produced, because `run` returned `Result<(), String>` and dispatch had
+        // no class to map. A CI job could not tell the two apart.
+        assert_eq!(
+            err.exit_code(),
+            std::process::ExitCode::from(3),
+            "a missing observation file must be exit 3: {err}"
+        );
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs("\t\n ");
-        let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("observation file is empty"));
+        let err = run(args_for(&f)).unwrap_err().to_string();
+        assert!(err.contains("is empty"), "{err}");
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("{nope");
-        let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("not valid JSON"));
+        let err = run(args_for(&f)).unwrap_err().to_string();
+        assert!(err.contains("failed to parse JSON"), "{err}");
+        // #2377-9: a captured JSON observation is not an APR model.
+        assert!(!err.contains("Invalid APR format"), "{err}");
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("none of rm/safety/dryrun"));
     }
 
@@ -377,14 +376,14 @@ mod tests {
                      "all_blobs": ["sha1", "sha2"],
                      "expected_freed": []}}"#,
         );
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-25-001"));
     }
 
     #[test]
     fn rm_gate_bad_manifests_is_parse_error() {
         let f = write_obs(r#"{"rm": {"manifests": "not-an-array"}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-25-001"));
         assert!(err.contains("parse error"));
     }

@@ -146,7 +146,6 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 observation_file: observation_file.to_string_lossy().to_string(),
                 json: cli.json,
             })
-            .map_err(crate::error::CliError::Aprender)
         }
 
         ExtendedCommands::Fp8Lint { observation_file } => {
@@ -154,7 +153,6 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 observation_file: observation_file.to_string_lossy().into_owned(),
                 json: cli.json,
             })
-            .map_err(crate::error::CliError::Aprender)
         }
 
         ExtendedCommands::Nf4Lint { observation_file } => {
@@ -162,7 +160,6 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 observation_file: observation_file.to_string_lossy().to_string(),
                 json: cli.json,
             })
-            .map_err(crate::error::CliError::Aprender)
         }
 
         ExtendedCommands::GptqLint { observation_file } => {
@@ -170,7 +167,6 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 observation_file: observation_file.to_string_lossy().to_string(),
                 json: cli.json,
             })
-            .map_err(crate::error::CliError::Aprender)
         }
 
         ExtendedCommands::OomLint {
@@ -368,7 +364,6 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     json: cli.json,
                 },
             )
-            .map_err(crate::error::CliError::Aprender)
         }
 
         ExtendedCommands::ImatrixLint { observation_file } => {
@@ -376,7 +371,6 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 observation_file: observation_file.to_string_lossy().to_string(),
                 json: cli.json,
             })
-            .map_err(crate::error::CliError::Aprender)
         }
 
         ExtendedCommands::EmbeddingsLint { observation_file } => {
@@ -384,7 +378,6 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 observation_file: observation_file.to_string_lossy().into_owned(),
                 json: cli.json,
             })
-            .map_err(crate::error::CliError::Aprender)
         }
 
         ExtendedCommands::UnifiedSearchLint { observation_file } => {
@@ -394,7 +387,6 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     json: cli.json,
                 },
             )
-            .map_err(crate::error::CliError::Aprender)
         }
 
         ExtendedCommands::RmGcLint { observation_file } => {
@@ -402,7 +394,6 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 observation_file: observation_file.to_string_lossy().to_string(),
                 json: cli.json,
             })
-            .map_err(crate::error::CliError::Aprender)
         }
 
         ExtendedCommands::SharedCacheLint { observation_file } => {
@@ -410,7 +401,6 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 observation_file: observation_file.to_string_lossy().to_string(),
                 json: cli.json,
             })
-            .map_err(crate::error::CliError::Aprender)
         }
 
         // CRUX-K-11: Modelfile DSL parser.

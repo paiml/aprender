@@ -78,17 +78,35 @@ fn falsify_crux_b_10_001_codebook_ok_on_canonical() {
 }
 
 #[test]
-fn falsify_crux_b_10_001_codebook_ok_without_expected() {
+fn falsify_crux_b_10_001_codebook_without_expected_is_vacuous_not_a_pass() {
+    // This test used to assert `success()` — that a `codebook` section carrying
+    // no `expected` array "falls back to a length check" and passes. #2449 made
+    // a section that supplies no expectation VACUOUS and non-zero, because a
+    // gate that compared the codebook against nothing has discharged nothing.
+    // The assertion was never updated, so this target has been red on main; it
+    // is not run by CI (`workspace-test` runs `--lib` plus a fixed 18-command
+    // chain that does not include it). Asserting the old shape here would lock
+    // the pre-#2449 defect back in.
     let tmp = write_tmp_json("nf4-cb-implicit", r#"{ "codebook": {} }"#);
     let out = apr_binary()
         .args(["nf4-lint", "--observation-file"])
         .arg(tmp.path())
         .output()
         .expect("run apr nf4-lint");
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        out.status.success(),
-        "codebook without expected must fall back to length check; stderr={}",
-        String::from_utf8_lossy(&out.stderr)
+        !out.status.success(),
+        "a codebook section with no `expected` proves nothing and must not pass; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("VACUOUS"),
+        "the rejection must name the reason, not just fail; stderr={stderr}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(5),
+        "a gate verdict is exit 5 — distinct from a missing (3) or unparseable (4) \
+         observation; stderr={stderr}"
     );
 }
 

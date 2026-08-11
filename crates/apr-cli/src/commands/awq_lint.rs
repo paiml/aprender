@@ -30,8 +30,9 @@ use crate::commands::awq_classifier::{
     AwqFlagValidation, CompressionOutcome, QualityRetention, AWQ_MAX_COMPRESSION_RATIO,
     AWQ_MIN_QUALITY_RETENTION,
 };
+use crate::commands::lint_input;
+use crate::error::CliError;
 use serde_json::Value;
-use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -48,21 +49,9 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: AwqLintArgs) -> Result<(), String> {
+pub fn run(args: AwqLintArgs) -> crate::error::Result<()> {
     let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-B-08: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-B-08: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-B-08: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-B-08: observation is not valid JSON: {e}"))?;
+    let obs = lint_input::read_json_observation("apr awq-lint", path)?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -90,7 +79,9 @@ pub fn run(args: AwqLintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err("FALSIFY-CRUX-B-08: observation has none of quality/compression/flags".into());
+        return Err(CliError::ValidationFailed(
+            "FALSIFY-CRUX-B-08: observation has none of quality/compression/flags".into(),
+        ));
     }
 
     if args.json {
@@ -107,7 +98,7 @@ pub fn run(args: AwqLintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(CliError::ValidationFailed(failures.join("\n")));
     }
     Ok(())
 }
@@ -252,28 +243,36 @@ mod tests {
             json: false,
         };
         let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-B-08"));
-        assert!(err.contains("not found"));
+        // #2377-8: this used to be exit 1, the same code a *failing falsifier*
+        // produced, because `run` returned `Result<(), String>` and dispatch had
+        // no class to map. A CI job could not tell the two apart.
+        assert_eq!(
+            err.exit_code(),
+            std::process::ExitCode::from(3),
+            "a missing observation file must be exit 3: {err}"
+        );
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs("  \n");
-        let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("observation file is empty"));
+        let err = run(args_for(&f)).unwrap_err().to_string();
+        assert!(err.contains("is empty"), "{err}");
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("xx");
-        let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("not valid JSON"));
+        let err = run(args_for(&f)).unwrap_err().to_string();
+        assert!(err.contains("failed to parse JSON"), "{err}");
+        // #2377-9: a captured JSON observation is not an APR model.
+        assert!(!err.contains("Invalid APR format"), "{err}");
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("none of quality/compression/flags"));
     }
 
@@ -287,7 +286,7 @@ mod tests {
     #[test]
     fn quality_gate_degraded_fails() {
         let f = write_obs(r#"{"quality": {"p_fp16": 0.90, "p_awq": 0.50}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-08-001"));
     }
 
@@ -301,7 +300,7 @@ mod tests {
     #[test]
     fn compression_gate_insufficient_fails() {
         let f = write_obs(r#"{"compression": {"fp16_bytes": 1000000, "awq_bytes": 900000}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-08-003"));
     }
 
@@ -324,7 +323,7 @@ mod tests {
     #[test]
     fn flags_gate_mismatch_fails() {
         let f = write_obs(r#"{"flags": {"argv": ["--bits", "4"], "expected_outcome": "ok"}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-B-08-002"));
     }
 

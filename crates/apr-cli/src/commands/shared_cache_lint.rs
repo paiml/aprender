@@ -25,9 +25,11 @@
 //! Any missing top-level key is skipped. Non-zero exit + FALSIFY-CRUX-A-21
 //! stderr stamp on any failing gate.
 
+use crate::commands::lint_input;
 use crate::commands::shared_cache::{
     blob_path_for, classify_pull_permission_outcome, resolve_registry_root, PullPermissionOutcome,
 };
+use crate::error::CliError;
 use serde_json::Value;
 use std::fs;
 use std::io::ErrorKind;
@@ -47,21 +49,9 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: SharedCacheLintArgs) -> Result<(), String> {
+pub fn run(args: SharedCacheLintArgs) -> crate::error::Result<()> {
     let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-A-21: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-A-21: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-A-21: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-A-21: observation is not valid JSON: {e}"))?;
+    let obs = lint_input::read_json_observation("apr shared-cache-lint", path)?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -82,7 +72,9 @@ pub fn run(args: SharedCacheLintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err("FALSIFY-CRUX-A-21: observation has none of dedup/permission".into());
+        return Err(CliError::ValidationFailed(
+            "FALSIFY-CRUX-A-21: observation has none of dedup/permission".into(),
+        ));
     }
 
     if args.json {
@@ -99,7 +91,7 @@ pub fn run(args: SharedCacheLintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(CliError::ValidationFailed(failures.join("\n")));
     }
     Ok(())
 }
@@ -319,28 +311,36 @@ mod tests {
             json: false,
         };
         let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-A-21"));
-        assert!(err.contains("not found"));
+        // #2377-8: this used to be exit 1, the same code a *failing falsifier*
+        // produced, because `run` returned `Result<(), String>` and dispatch had
+        // no class to map. A CI job could not tell the two apart.
+        assert_eq!(
+            err.exit_code(),
+            std::process::ExitCode::from(3),
+            "a missing observation file must be exit 3: {err}"
+        );
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs(" ");
-        let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("observation file is empty"));
+        let err = run(args_for(&f)).unwrap_err().to_string();
+        assert!(err.contains("is empty"), "{err}");
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("@@@");
-        let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("not valid JSON"));
+        let err = run(args_for(&f)).unwrap_err().to_string();
+        assert!(err.contains("failed to parse JSON"), "{err}");
+        // #2377-9: a captured JSON observation is not an APR model.
+        assert!(!err.contains("Invalid APR format"), "{err}");
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("none of dedup/permission"));
     }
 
@@ -362,7 +362,7 @@ mod tests {
                 "home": "/home/user",
                 "expected_root": "/somewhere/else"}}"#,
         );
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-21-001"));
     }
 
@@ -377,7 +377,7 @@ mod tests {
     #[test]
     fn permission_gate_unknown_kind_fails() {
         let f = write_obs(r#"{"permission": {"kind": "banana"}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-21-002"));
     }
 
@@ -385,7 +385,7 @@ mod tests {
     fn permission_gate_outcome_mismatch_fails() {
         let f =
             write_obs(r#"{"permission": {"kind": "permission_denied", "expected_outcome": "ok"}}"#);
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-21-002"));
     }
 

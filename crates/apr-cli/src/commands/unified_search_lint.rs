@@ -28,11 +28,12 @@
 //! read), so the gate proved nothing. `VACUOUS` exits non-zero: a falsifier
 //! that asserted nothing must not be recorded as a discharged obligation.
 
+use crate::commands::lint_input;
 use crate::commands::lint_vacuity::{json_type, Verdict};
 use crate::commands::search_merge::{merge_search_results, MergedRow, SearchHit, Source};
+use crate::error::CliError;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -50,21 +51,9 @@ struct GateReport {
     passed: bool,
 }
 
-pub fn run(args: UnifiedSearchLintArgs) -> Result<(), String> {
+pub fn run(args: UnifiedSearchLintArgs) -> crate::error::Result<()> {
     let path = Path::new(&args.observation_file);
-    if !path.exists() {
-        return Err(format!(
-            "FALSIFY-CRUX-A-23: observation file not found: {}",
-            args.observation_file
-        ));
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("FALSIFY-CRUX-A-23: failed to read observation: {e}"))?;
-    if raw.trim().is_empty() {
-        return Err("FALSIFY-CRUX-A-23: observation file is empty".to_string());
-    }
-    let obs: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("FALSIFY-CRUX-A-23: observation is not valid JSON: {e}"))?;
+    let obs = lint_input::read_json_observation("apr unified-search-lint", path)?;
 
     let mut reports: Vec<GateReport> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -83,7 +72,9 @@ pub fn run(args: UnifiedSearchLintArgs) -> Result<(), String> {
     }
 
     if reports.is_empty() {
-        return Err("FALSIFY-CRUX-A-23: observation has none of offline/dedup".into());
+        return Err(CliError::ValidationFailed(
+            "FALSIFY-CRUX-A-23: observation has none of offline/dedup".into(),
+        ));
     }
 
     if args.json {
@@ -102,7 +93,7 @@ pub fn run(args: UnifiedSearchLintArgs) -> Result<(), String> {
     }
 
     if !failures.is_empty() {
-        return Err(failures.join("\n"));
+        return Err(CliError::ValidationFailed(failures.join("\n")));
     }
     Ok(())
 }
@@ -320,28 +311,36 @@ mod tests {
             json: false,
         };
         let err = run(args).unwrap_err();
-        assert!(err.contains("FALSIFY-CRUX-A-23"));
-        assert!(err.contains("not found"));
+        // #2377-8: this used to be exit 1, the same code a *failing falsifier*
+        // produced, because `run` returned `Result<(), String>` and dispatch had
+        // no class to map. A CI job could not tell the two apart.
+        assert_eq!(
+            err.exit_code(),
+            std::process::ExitCode::from(3),
+            "a missing observation file must be exit 3: {err}"
+        );
     }
 
     #[test]
     fn empty_file_is_error() {
         let f = write_obs(" ");
-        let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("observation file is empty"));
+        let err = run(args_for(&f)).unwrap_err().to_string();
+        assert!(err.contains("is empty"), "{err}");
     }
 
     #[test]
     fn invalid_json_is_error() {
         let f = write_obs("zzz");
-        let err = run(args_for(&f)).unwrap_err();
-        assert!(err.contains("not valid JSON"));
+        let err = run(args_for(&f)).unwrap_err().to_string();
+        assert!(err.contains("failed to parse JSON"), "{err}");
+        // #2377-9: a captured JSON observation is not an APR model.
+        assert!(!err.contains("Invalid APR format"), "{err}");
     }
 
     #[test]
     fn empty_object_has_no_gates() {
         let f = write_obs("{}");
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("none of offline/dedup"));
     }
 
@@ -361,7 +360,7 @@ mod tests {
             r#"{"offline": {"local": [{"repo": "gpt2", "cached": true}],
                 "expected_count": 5}}"#,
         );
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-23-001"));
     }
 
@@ -383,7 +382,7 @@ mod tests {
                 "local": [{"repo": "gpt2", "cached": true}],
                 "expected_sources": {"gpt2": "HUB"}}}"#,
         );
-        let err = run(args_for(&f)).unwrap_err();
+        let err = run(args_for(&f)).unwrap_err().to_string();
         assert!(err.contains("FALSIFY-CRUX-A-23-002"));
     }
 
@@ -398,7 +397,7 @@ mod tests {
             r#"{"offline": {"local": [{"repo": "gpt2", "cached": true}], "expected_sources": {}}}"#,
         ] {
             let f = write_obs(body);
-            let err = run(args_for(&f)).unwrap_err();
+            let err = run(args_for(&f)).unwrap_err().to_string();
             assert!(err.contains("VACUOUS"), "{body}: {err}");
             assert!(err.contains("asserts nothing"), "{body}: {err}");
         }
@@ -414,6 +413,7 @@ mod tests {
         assert!(
             run(args_for(&numeric))
                 .unwrap_err()
+                .to_string()
                 .contains("expected_count=99, got 1"),
             "control: a numeric expectation must still be compared"
         );
@@ -442,7 +442,7 @@ mod tests {
             ),
         ] {
             let f = write_obs(body);
-            let err = run(args_for(&f)).unwrap_err();
+            let err = run(args_for(&f)).unwrap_err().to_string();
             assert!(err.contains(want), "{body}: expected {want:?}, got {err}");
             assert!(!err.contains("VACUOUS"), "{body}: {err}");
         }

@@ -7,14 +7,13 @@
 //!
 //! Spec: `contracts/crux-F-17-v1.yaml`. CRUX-SHIP-001 g2/g3 surface.
 
-use std::path::{Path, PathBuf};
-
-use serde_json::Value;
+use std::path::Path;
 
 use super::attn_viz_classifier::{
     classify_causal_mask, classify_html_heatmap_count, classify_row_softmax_normalization,
     AttnCausalMaskOutcome, AttnHtmlOutcome, AttnRowsOutcome,
 };
+use super::lint_input;
 use super::threshold_arg;
 use crate::error::{CliError, Result};
 
@@ -38,16 +37,7 @@ pub(crate) fn run(
 
     let (rows_outcome, mask_outcome) = match attn_file {
         Some(p) => {
-            if !p.exists() {
-                return Err(CliError::FileNotFound(PathBuf::from(p)));
-            }
-            let body_text = std::fs::read_to_string(p)?;
-            let body: Value = serde_json::from_str(&body_text).map_err(|e| {
-                CliError::InvalidFormat(format!(
-                    "apr attn-viz-lint: failed to parse JSON from {}: {e}",
-                    p.display()
-                ))
-            })?;
+            let body = lint_input::read_json_observation("apr attn-viz-lint", p)?;
             (
                 Some(classify_row_softmax_normalization(&body, tolerance)),
                 Some(classify_causal_mask(&body, epsilon)),
@@ -57,13 +47,10 @@ pub(crate) fn run(
     };
 
     let html_outcome = match html_file {
-        Some(p) => {
-            if !p.exists() {
-                return Err(CliError::FileNotFound(PathBuf::from(p)));
-            }
-            let html = std::fs::read_to_string(p)?;
-            Some(classify_html_heatmap_count(&html, expected_heatmaps))
-        }
+        Some(p) => Some(classify_html_heatmap_count(
+            &lint_input::read_observation_text(p)?,
+            expected_heatmaps,
+        )),
         None => None,
     };
 
