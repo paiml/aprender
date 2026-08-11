@@ -5,8 +5,11 @@
 ///
 /// See `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` and
 /// `evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v6-parity-gate-fires-but-fallback-is-silent.md`.
-pub(crate) const CUDA_FALLBACK_LOG_PREFIX: &str =
-    "[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected";
+///
+/// The tag is deliberately prose: it is read by users, not by ticket triage.
+/// Until #2405 it read `[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected`,
+/// which told the user a contract filename and nothing they could act on.
+pub(crate) const CUDA_FALLBACK_LOG_PREFIX: &str = "warning: GPU (CUDA) path rejected";
 
 /// FALSIFY-CPU-GPU-005 jidoka tag emitted on stderr when wgpu init/forward
 /// rejection forces a fallback. Locked in by
@@ -16,8 +19,9 @@ pub(crate) const CUDA_FALLBACK_LOG_PREFIX: &str =
 /// points so users always see which backend was rejected without --verbose.
 ///
 /// See `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` § FALSIFY-CPU-GPU-005.
-pub(crate) const WGPU_FALLBACK_LOG_PREFIX: &str =
-    "[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected";
+///
+/// Prose, not a contract filename — see [`CUDA_FALLBACK_LOG_PREFIX`] and #2405.
+pub(crate) const WGPU_FALLBACK_LOG_PREFIX: &str = "warning: GPU (wgpu) path rejected";
 
 /// f64-accumulated cosine similarity for FALSIFY-CPU-GPU-005 part b.
 ///
@@ -1131,63 +1135,69 @@ fn try_safetensors_cuda_inference(
 mod tests {
     use super::{CUDA_FALLBACK_LOG_PREFIX, WGPU_FALLBACK_LOG_PREFIX};
 
-    /// Drift-prevention for FALSIFY-CPU-GPU-003 (PR #1428):
-    /// the user-visible eprintln tag MUST start with the contract ID so that
-    /// `apr run` users (without --verbose) see exactly which backend was rejected
-    /// rather than silent gibberish from a downstream fallback.
-    ///
-    /// If this assertion ever fails, do NOT loosen it — re-read
-    /// `evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v6-parity-gate-fires-but-fallback-is-silent.md`
-    /// and either keep the tag stable or bump the parity contract before changing
-    /// the wire format.
-    #[test]
-    fn cuda_fallback_log_prefix_is_contract_tagged() {
+    /// A message the user can act on names the backend and says something went
+    /// wrong. A contract filename does neither.
+    fn assert_reads_as_a_warning_to_a_human(prefix: &str, backend: &str) {
         assert!(
-            CUDA_FALLBACK_LOG_PREFIX.starts_with("[apr-cpu-vs-gpu-output-parity-v1]"),
-            "FALSIFY-CPU-GPU-003 jidoka tag was renamed; bump contract version first. \
-             Got: {CUDA_FALLBACK_LOG_PREFIX}"
+            !prefix.contains("apr-cpu-vs-gpu-output-parity-v1"),
+            "the fallback message addresses the user in a contract ID: {prefix}"
         );
         assert!(
-            CUDA_FALLBACK_LOG_PREFIX.contains("CUDA path rejected"),
-            "fallback message must say which backend was rejected; got: {CUDA_FALLBACK_LOG_PREFIX}"
-        );
-    }
-
-    /// Drift-prevention for FALSIFY-CPU-GPU-005 (contract v1.2.0):
-    /// symmetric to the CUDA tag above, the wgpu fallback log MUST also be
-    /// contract-tagged so `apr run` users see WHICH backend was rejected when
-    /// CUDA falls through to wgpu and wgpu itself is rejected (e.g. broken
-    /// GPU build, no Vulkan ICD, etc.).
-    ///
-    /// Same regression class as #1428→#1429: a future refactor could rename
-    /// the tag, drop the contract ID prefix, or revert to verbose-only —
-    /// each silently re-introduces the silent-gibberish loophole the
-    /// `apr-cpu-vs-gpu-output-parity-v1` chain was authored to close.
-    #[test]
-    fn wgpu_fallback_log_prefix_is_contract_tagged() {
-        assert!(
-            WGPU_FALLBACK_LOG_PREFIX.starts_with("[apr-cpu-vs-gpu-output-parity-v1]"),
-            "FALSIFY-CPU-GPU-005 jidoka tag was renamed; bump contract version first. \
-             Got: {WGPU_FALLBACK_LOG_PREFIX}"
+            !prefix.starts_with('['),
+            "the fallback message opens with a bracketed internal tag: {prefix}"
         );
         assert!(
-            WGPU_FALLBACK_LOG_PREFIX.contains("wgpu path rejected"),
-            "fallback message must say which backend was rejected; got: {WGPU_FALLBACK_LOG_PREFIX}"
+            prefix.starts_with("warning:"),
+            "the fallback message must announce itself as a warning: {prefix}"
+        );
+        assert!(
+            prefix.contains(backend),
+            "fallback message must say which backend was rejected; got: {prefix}"
+        );
+        assert!(
+            prefix.ends_with("path rejected"),
+            "fallback message must say the path was rejected; got: {prefix}"
         );
     }
 
-    /// Symmetry guard: CUDA and wgpu prefixes must share the same contract
-    /// tag and structure (`[CONTRACT_ID] <backend> path rejected`). If they
-    /// diverge, the user-facing log format becomes inconsistent across
-    /// fallback hops and grep recipes break. Locks in the symmetry that
-    /// PR #1428 (CUDA) and this PR (wgpu) explicitly established.
+    /// FALSIFY-CPU-GPU-003 (PR #1428) established that the CUDA fallback
+    /// decision must reach the user WITHOUT `--verbose`, so a broken GPU can
+    /// never ship silent gibberish. #1429 pinned that by asserting the tag was
+    /// the contract ID `[apr-cpu-vs-gpu-output-parity-v1]` — which pinned the
+    /// wrong half. Visibility is the property worth locking in; the contract
+    /// filename was never something the user could act on, and the dogfood
+    /// audit (#2405) recorded it leaking into ordinary `apr run` output.
+    ///
+    /// This test now asserts what #1428 actually bought: an unconditional,
+    /// human-readable warning that names the rejected backend.
     #[test]
-    fn cuda_and_wgpu_fallback_log_prefixes_share_contract_tag() {
-        let contract_tag = "[apr-cpu-vs-gpu-output-parity-v1]";
-        assert!(CUDA_FALLBACK_LOG_PREFIX.starts_with(contract_tag));
-        assert!(WGPU_FALLBACK_LOG_PREFIX.starts_with(contract_tag));
-        assert!(CUDA_FALLBACK_LOG_PREFIX.ends_with("path rejected"));
-        assert!(WGPU_FALLBACK_LOG_PREFIX.ends_with("path rejected"));
+    fn cuda_fallback_log_prefix_warns_the_user_in_prose() {
+        assert_reads_as_a_warning_to_a_human(CUDA_FALLBACK_LOG_PREFIX, "CUDA");
+    }
+
+    /// Same property for FALSIFY-CPU-GPU-005: when CUDA falls through to wgpu
+    /// and wgpu is itself rejected, the user is told, in English, without
+    /// `--verbose`. Reverting to verbose-only, or to a bare contract ID, is the
+    /// regression this guards.
+    #[test]
+    fn wgpu_fallback_log_prefix_warns_the_user_in_prose() {
+        assert_reads_as_a_warning_to_a_human(WGPU_FALLBACK_LOG_PREFIX, "wgpu");
+    }
+
+    /// Symmetry guard: both hops of the fallback chain must read the same way,
+    /// so a user watching CUDA → wgpu → CPU sees one consistent shape rather
+    /// than two dialects. Locks in the symmetry PR #1428 (CUDA) and #1442
+    /// (wgpu) established, minus the ticket number.
+    #[test]
+    fn cuda_and_wgpu_fallback_log_prefixes_share_their_shape() {
+        for prefix in [CUDA_FALLBACK_LOG_PREFIX, WGPU_FALLBACK_LOG_PREFIX] {
+            assert!(prefix.starts_with("warning: GPU ("), "{prefix}");
+            assert!(prefix.ends_with(") path rejected"), "{prefix}");
+        }
+        assert_ne!(
+            CUDA_FALLBACK_LOG_PREFIX, WGPU_FALLBACK_LOG_PREFIX,
+            "the two hops must remain distinguishable"
+        );
     }
 
     /// FALSIFY-CPU-GPU-005 part b cosine helper — parallel vectors return 1.

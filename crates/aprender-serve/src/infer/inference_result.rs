@@ -564,7 +564,7 @@ fn log_cpu_backend(verbose: bool, is_legacy: bool) {
 /// backend downgrade from a throughput number alone.
 pub(crate) fn gpu_forward_failure_msg(pos: usize, probe_len: usize, err: &dyn std::fmt::Display) -> String {
     format!(
-        "[F2-VALIDATION] GPU forward FAILED at probe position {pos}/{probe_len}: {err} \
+        "warning: GPU forward failed at probe position {pos}/{probe_len}: {err} \
 — rejecting the CUDA path and falling back (fail-closed). This is NOT a decode \
 regression: throughput measured after this point reflects the fallback backend, \
 not CUDA."
@@ -601,7 +601,7 @@ fn validate_gpu_first_token(
             match model.config.bos_token_id {
                 Some(id) => vec![id],
                 None => {
-                    eprintln!("[F2-VALIDATION] no prompt context and BOS unknown — skipping GPU validation");
+                    eprintln!("warning: no prompt context and no BOS token — skipping the GPU-vs-CPU output check");
                     return true;
                 },
             }
@@ -677,9 +677,12 @@ fn validate_gpu_first_token(
     // Per-position decision over REAL positions (≥1). Excludes pos0 (BOS near-tie).
     let report = f2_multi_position_report(&cpu_logits_per_pos, &gpu_logits_per_pos);
     if report.accepted {
-        if report.pos0_argmax_flip {
+        // #2405: the GPU was ACCEPTED — this line reports a benign near-tie on a
+        // successful run and says nothing the user can act on, so it is a
+        // developer trace, not user output.
+        if report.pos0_argmax_flip && crate::dev_trace::dev_trace_enabled() {
             eprintln!(
-                "[F2-VALIDATION] pos0 argmax flip (benign BOS near-tie) ignored; all {} real positions match (min cosine {:.4} >= {F2_GATE_COSINE_MIN}) — accepting GPU path",
+                "pos0 argmax flip (benign BOS near-tie) ignored; all {} real positions match (min cosine {:.4} >= {F2_GATE_COSINE_MIN}) — accepting GPU path",
                 probe.len() - 1,
                 report.min_cosine_real,
             );
@@ -687,7 +690,7 @@ fn validate_gpu_first_token(
         true
     } else {
         eprintln!(
-            "[F2-VALIDATION] GPU diverges from CPU at real position {} (argmax {} != {}, cosine {:.4}); min real-position cosine {:.4} — HwDp4a-class mid-context degradation, falling back to CPU",
+            "warning: GPU output diverges from CPU at position {} (argmax {} != {}, cosine {:.4}); min cosine {:.4} — falling back to CPU",
             report.first_bad_pos,
             report.first_bad_gpu_argmax,
             report.first_bad_cpu_argmax,
@@ -1218,6 +1221,27 @@ mod cuda_silent_fallback_tests {
             msg.contains("NOT a decode regression"),
             "must inoculate against the fabricated-regression reading: any throughput \
              measured after this point reflects the fallback backend. Got: {msg}"
+        );
+    }
+
+    /// #2405: the same message opened with `[F2-VALIDATION]`, an internal
+    /// falsifier ID. It told the user which of our tickets to go read, which is
+    /// not a thing a user of `apr run` can do. The diagnostic content above is
+    /// unchanged; only the ticket number is gone.
+    #[test]
+    fn gpu_forward_failure_does_not_address_the_user_in_ticket_numbers() {
+        let msg = gpu_forward_failure_msg(3, 17, &"CUDA_ERROR_ILLEGAL_ADDRESS");
+        assert!(
+            !msg.contains("F2-VALIDATION"),
+            "internal falsifier ID leaked into user output: {msg}"
+        );
+        assert!(
+            !msg.starts_with('['),
+            "message opens with a bracketed internal tag: {msg}"
+        );
+        assert!(
+            msg.starts_with("warning:"),
+            "a fail-closed GPU rejection must announce itself as a warning: {msg}"
         );
     }
 }

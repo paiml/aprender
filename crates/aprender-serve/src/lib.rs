@@ -256,6 +256,11 @@ pub mod convert;
     clippy::manual_div_ceil
 )]
 pub mod cuda;
+/// Gating for developer-only diagnostic traces (`APR_DEV_TRACE`).
+///
+/// Keeps ticket-numbered tensor dumps and kernel decisions out of ordinary
+/// user output, and off the decode hot path.
+pub mod dev_trace;
 pub mod error;
 /// Model explainability (SHAP, Attention)
 ///
