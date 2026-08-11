@@ -31,11 +31,26 @@ pub struct AuditResponse {
 pub struct RouterConfig {
     /// Enable OpenAI-compatible API at /v1/* (default: true)
     pub openai_api: bool,
+    /// Send permissive CORS headers (default: true).
+    ///
+    /// `apr serve run --no-cors` sets this to `false`, which removes the
+    /// `CorsLayer` entirely so no `access-control-*` header is emitted.
+    pub cors: bool,
+    /// Expose the Prometheus/dispatch metrics endpoints (default: true).
+    ///
+    /// `apr serve run --no-metrics` sets this to `false`, which unregisters
+    /// `/metrics`, `/metrics/dispatch` and `/metrics/dispatch/reset` so they
+    /// return the 404 fallback instead of serving telemetry.
+    pub metrics: bool,
 }
 
 impl Default for RouterConfig {
     fn default() -> Self {
-        Self { openai_api: true }
+        Self {
+            openai_api: true,
+            cors: true,
+            metrics: true,
+        }
     }
 }
 
@@ -121,9 +136,6 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
         .route("/health", get(health_handler))
         .route("/health/live", get(health_live_handler))
         .route("/health/ready", get(health_ready_handler))
-        .route("/metrics", get(metrics_handler))
-        .route("/metrics/dispatch", get(dispatch_metrics_handler))
-        .route("/metrics/dispatch/reset", post(dispatch_reset_handler))
         // Native Realizar API (legacy paths)
         .route("/models", get(models_handler))
         .route("/tokenize", post(tokenize_handler))
@@ -137,6 +149,15 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
         .route("/realize/embed", post(realize_embed_handler))
         .route("/realize/model", get(realize_model_handler))
         .route("/realize/reload", post(realize_reload_handler));
+
+    // Metrics endpoints conditionally enabled: `apr serve run --no-metrics`
+    // must actually withhold telemetry, not just hide the banner line.
+    if config.metrics {
+        router = router
+            .route("/metrics", get(metrics_handler))
+            .route("/metrics/dispatch", get(dispatch_metrics_handler))
+            .route("/metrics/dispatch/reset", post(dispatch_reset_handler));
+    }
 
     // GH-148: OpenAI-compatible API conditionally enabled
     if config.openai_api {
@@ -200,9 +221,13 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
     // Axum returns 422 with raw serde error details by default; replace with a generic message.
     router = router.layer(axum::middleware::from_fn(sanitize_json_rejection));
 
-    // GH-671: CORS support — allow cross-origin requests from browser-based clients
-    let cors = tower_http::cors::CorsLayer::permissive();
-    router.layer(cors).with_state(state)
+    // GH-671: CORS support — allow cross-origin requests from browser-based clients.
+    // Conditional: `apr serve run --no-cors` must emit no `access-control-*` header.
+    if config.cors {
+        router = router.layer(tower_http::cors::CorsLayer::permissive());
+    }
+
+    router.with_state(state)
 }
 
 /// GH-649: Middleware that intercepts axum's 422 JSON rejection responses and replaces

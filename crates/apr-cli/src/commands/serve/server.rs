@@ -14,7 +14,7 @@ fn run_cpu_server(
     mapped_model: Option<std::sync::Arc<realizar::gguf::MappedGGUFModel>>,
     config: &ServerConfig,
 ) -> Result<()> {
-    use realizar::api::{create_router, AppState};
+    use realizar::api::{create_router_with_config, AppState};
 
     let mut state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?;
@@ -23,14 +23,16 @@ fn run_cpu_server(
     }
     let state = state.with_verbose(config.verbose); // GH-152: Pass verbose flag to handlers
 
-    // Create realizar's full inference router (Ollama-parity endpoints)
-    let app = create_router(state);
+    // Create realizar's full inference router (Ollama-parity endpoints).
+    // --no-cors / --no-metrics must reach the router, not stop at the banner.
+    let app = create_router_with_config(state, config.router_config());
 
     // Create tokio runtime and run server
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
     let bind_addr = config.bind_addr();
+    let metrics_enabled = config.metrics;
 
     runtime.block_on(async move {
         let listener = tokio::net::TcpListener::bind(&bind_addr)
@@ -47,7 +49,9 @@ fn run_cpu_server(
         println!();
         println!("{}", "Ollama-Parity Endpoints:".cyan());
         println!("  GET  /health              - Health check");
-        println!("  GET  /metrics             - Prometheus metrics");
+        if metrics_enabled {
+            println!("  GET  /metrics             - Prometheus metrics");
+        }
         println!("  POST /generate            - Text generation");
         println!("  POST /stream/generate     - SSE streaming");
         println!("  POST /batch/generate      - Batch inference");
@@ -83,7 +87,7 @@ fn start_gguf_server_gpu_batched(
     mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
     config: &ServerConfig,
 ) -> Result<()> {
-    use realizar::api::{create_router, spawn_batch_processor, AppState, BatchConfig};
+    use realizar::api::{create_router_with_config, spawn_batch_processor, AppState, BatchConfig};
     use realizar::gguf::OwnedQuantizedModelCachedSync;
 
     println!(
@@ -135,6 +139,7 @@ fn start_gguf_server_gpu_batched(
     println!("  GPU threshold: {}", batch_config.gpu_threshold);
 
     let bind_addr = config.bind_addr();
+    let router_config = config.router_config();
 
     // Run everything inside the runtime context
     runtime.block_on(async move {
@@ -146,7 +151,7 @@ fn start_gguf_server_gpu_batched(
         let state = state.with_batch_config(batch_tx, batch_config);
 
         // Create router
-        let app = create_router(state);
+        let app = create_router_with_config(state, router_config);
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await

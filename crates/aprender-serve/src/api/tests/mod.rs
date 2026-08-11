@@ -52,3 +52,4 @@ mod chat_template_contract; // PMAT-187: chat-template-v1.yaml contract enforcem
 mod embeddings_pmat803; // PMAT-803: model-backed embeddings (semantic-similarity falsifier, dim==hidden_size)
 mod sse_stream_whitespace; // Dogfood 0.63.0: SSE deltas must reassemble with whitespace intact
 mod native_routes_2376; // aprender#2376: native routes on a quantized server, KV-cache budget, sampling fields
+mod router_flags; // --no-cors / --no-metrics must change HTTP behaviour, not just the banner
