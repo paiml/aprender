@@ -310,7 +310,17 @@ pub enum ExtendedCommands {
         prefill: bool,
     },
     /// PTX analysis and bug detection (register pressure, roofline)
-    #[command(name = "ptx")]
+    ///
+    /// #2399 finding 1: on a build without the analyzer this line is the only
+    /// thing a user sees before running the command, so it has to say so.
+    #[cfg_attr(feature = "trueno-explain", command(name = "ptx"))]
+    #[cfg_attr(
+        not(feature = "trueno-explain"),
+        command(
+            name = "ptx",
+            about = "PTX analysis and bug detection [unavailable in this build: cargo install aprender --features ptx]"
+        )
+    )]
     Ptx {
         /// Path to a PTX source file
         #[arg(value_name = "FILE")]

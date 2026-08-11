@@ -95,28 +95,39 @@ fn parse_bracket_count(line: &str) -> u32 {
     line[start + 1..end].parse().unwrap_or(0)
 }
 
-/// Source location table for kernel types
+/// Source location table for kernel types.
+///
+/// Every entry is the file that actually defines `pub struct <kernel_name>`, and
+/// `source_paths_resolve_to_the_defining_file` proves it against the working
+/// tree. Before that test existed the whole table pointed into a `trueno-gpu/`
+/// directory that the APR-MONO consolidation deleted, and three of the six leaf
+/// paths were wrong on top of that — the Source column named files a reader
+/// could not open (dogfood-0.63.0, issue #2399 finding 3).
 fn source_location(kernel_name: &str) -> &'static str {
     match kernel_name {
-        "VectorizedRmsNormKernel" | "BatchedVectorizedRmsNormKernel" => {
-            "trueno-gpu/src/kernels/layernorm.rs"
+        "VectorizedRmsNormKernel" => "crates/aprender-gpu/src/kernels/layernorm/rmsnorm.rs",
+        "BatchedVectorizedRmsNormKernel" => "crates/aprender-gpu/src/kernels/layernorm/batched.rs",
+        "Q4KGemvKernel" => "crates/aprender-gpu/src/kernels/quantize/q4k/basic.rs",
+        "BatchedQ4KGemvKernel" => "crates/aprender-gpu/src/kernels/quantize/q4k/batched.rs",
+        "TensorCoreQ4KGemmKernel" => {
+            "crates/aprender-gpu/src/kernels/quantize/fp16_tensor/tensor_core_gemm.rs"
         }
-        "Q4KGemvKernel" | "BatchedQ4KGemvKernel" | "TensorCoreQ4KGemmKernel" => {
-            "trueno-gpu/src/kernels/quantize/q4k/"
+        "Q6KGemvKernel" => "crates/aprender-gpu/src/kernels/quantize/q6k/gemv.rs",
+        "BatchedQ6KGemvKernel" => "crates/aprender-gpu/src/kernels/quantize/q6k/batched.rs",
+        "RopeKernel" => "crates/aprender-gpu/src/kernels/elementwise/rope/standard.rs",
+        "BatchedRopeKernel" => "crates/aprender-gpu/src/kernels/elementwise/rope/batched.rs",
+        "IncrementalAttentionKernel" => {
+            "crates/aprender-gpu/src/kernels/attention/paged/incremental.rs"
         }
-        "Q6KGemvKernel" | "BatchedQ6KGemvKernel" => "trueno-gpu/src/kernels/quantize/q6k.rs",
-        "RopeKernel" | "BatchedRopeKernel" => "trueno-gpu/src/kernels/rope.rs",
-        "IncrementalAttentionKernel" | "AttentionKernel" => {
-            "trueno-gpu/src/kernels/attention/mod.rs"
-        }
+        "AttentionKernel" => "crates/aprender-gpu/src/kernels/attention/flash/mod.rs",
         "ResidualAddKernel" | "BatchedResidualAddKernel" => {
-            "trueno-gpu/src/kernels/elementwise/residual.rs"
+            "crates/aprender-gpu/src/kernels/elementwise/residual.rs"
         }
-        "SwigluKernel" | "FusedSwigluKernel" | "BatchedSwigluKernel" => {
-            "trueno-gpu/src/kernels/activation.rs"
+        "FusedSwigluKernel" | "BatchedSwigluKernel" => {
+            "crates/aprender-gpu/src/kernels/elementwise/swiglu.rs"
         }
-        "KvCacheScatterKernel" => "trueno-gpu/src/kernels/kv_cache.rs",
-        "ArgMaxKernel" => "trueno-gpu/src/kernels/argmax.rs",
+        "KvCacheScatterKernel" => "crates/aprender-gpu/src/kernels/elementwise/kv_cache.rs",
+        "ArgMaxKernel" => "crates/aprender-gpu/src/kernels/argmax.rs",
         _ => "unknown",
     }
 }
@@ -205,10 +216,13 @@ fn build_decode_sequence(info: &ModelInfo) -> Vec<KernelStep> {
         },
         KernelStep {
             index: 10,
-            name: "SwigluKernel",
+            // "SwigluKernel" was printed here for the decode path, but no such
+            // kernel exists — the decode SwiGLU is `FusedSwigluKernel`
+            // (crates/aprender-gpu/src/kernels/elementwise/swiglu.rs). #2399.
+            name: "FusedSwigluKernel",
             role: "SwiGLU",
             shape: format!("{inter} -> {inter}"),
-            source: source_location("SwigluKernel"),
+            source: source_location("FusedSwigluKernel"),
             is_batched: false,
         },
         KernelStep {
@@ -369,6 +383,20 @@ fn extract_model_info(model_path: &Path) -> Result<ModelInfo> {
 
     let config = realizar::gguf::GGUFConfig::from_gguf(&mapped.model)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
+
+    // #2399 finding 2: ptx-map claims to show what will actually run. For an
+    // architecture the inference path refuses to instantiate, nothing runs — so
+    // printing a dense-transformer sequence (RoPE + GQA + SwiGLU) with an exact
+    // launch count is fabrication. Ask realizar the same question `apr check`
+    // asks, and refuse with the same words.
+    if let Some(reason) = realizar::gguf::unsupported_architecture_reason(
+        &config.architecture,
+        mapped.model.tensors.iter().map(|t| t.name.as_str()),
+    ) {
+        return Err(CliError::ValidationFailed(format!(
+            "{reason} (ptx-map maps the kernels that would run; this model has no runnable kernel path)"
+        )));
+    }
 
     // Extract model name and quantization from filename
     let filename = model_path

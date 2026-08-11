@@ -123,7 +123,10 @@ pub(crate) mod prometheus_classifier;
 pub(crate) mod prometheus_lint;
 pub(crate) mod prune;
 pub(crate) mod ps_schema;
-#[cfg(feature = "full")]
+// #2399: gated on the crate it actually needs (aprender-explain, aliased
+// `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
+// user does not have to pull CUDA + training to analyze a .ptx file.
+#[cfg(feature = "trueno-explain")]
 pub(crate) mod ptx_explain;
 pub(crate) mod ptx_map;
 pub(crate) mod publish;
