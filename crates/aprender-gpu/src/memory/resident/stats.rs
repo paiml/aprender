@@ -1,61 +1,88 @@
 //! GPU Transfer Statistics (WAPR-PERF-004)
 //!
-//! Global counters and snapshot structs for tracking host↔device data movement.
+//! Per-thread counters and snapshot structs for tracking host↔device data
+//! movement.
+//!
+//! # Why per-thread and not process-global (GPU-ORD-1 / GPU-ORD-3)
+//!
+//! These counters exist to answer "how much did *this* piece of work move
+//! across the bus", and every caller uses them the same way: reset, do some
+//! work, read. That reading is only meaningful if nothing else contributed in
+//! between.
+//!
+//! They used to be `static AtomicU64`, shared by the whole process. 87 call
+//! sites reset-then-asserted them, so any two of those running concurrently
+//! measured each other. In `cargo test --workspace --lib` that showed up as
+//! `test_gpu_resident_tensor_lifecycle` asserting `total_h2d_transfers() == 1`
+//! and reading 7, 12, 22 or 30 — the magnitude tracking how many neighbours
+//! happened to transfer inside its measurement window — with the failing set
+//! changing every run.
+//!
+//! Binding the counters to the thread that performs the transfer makes that
+//! **unrepresentable** rather than merely unlikely: a reset-then-read pair on
+//! one thread cannot observe a transfer performed on another, so no amount of
+//! test parallelism or ordering can perturb it. It also matches what the
+//! numbers were always meant to describe, since a transfer is attributed to
+//! whoever issued it.
+//!
+//! No aggregate-across-threads consumer exists; the only non-test callers are
+//! re-exports in `memory::resident`.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::cell::Cell;
 
 // ============================================================================
-// Global Transfer Counters
+// Per-Thread Transfer Counters
 // ============================================================================
 
-/// Global transfer counters for debugging
-static TOTAL_H2D_TRANSFERS: AtomicU64 = AtomicU64::new(0);
-static TOTAL_D2H_TRANSFERS: AtomicU64 = AtomicU64::new(0);
-static TOTAL_H2D_BYTES: AtomicU64 = AtomicU64::new(0);
-static TOTAL_D2H_BYTES: AtomicU64 = AtomicU64::new(0);
+thread_local! {
+    static H2D_TRANSFERS: Cell<u64> = const { Cell::new(0) };
+    static D2H_TRANSFERS: Cell<u64> = const { Cell::new(0) };
+    static H2D_BYTES: Cell<u64> = const { Cell::new(0) };
+    static D2H_BYTES: Cell<u64> = const { Cell::new(0) };
+}
 
-/// Get total host-to-device transfers since last reset
+/// Get host-to-device transfers issued by the current thread since last reset
 #[must_use]
 pub fn total_h2d_transfers() -> u64 {
-    TOTAL_H2D_TRANSFERS.load(Ordering::Relaxed)
+    H2D_TRANSFERS.with(Cell::get)
 }
 
-/// Get total device-to-host transfers since last reset
+/// Get device-to-host transfers issued by the current thread since last reset
 #[must_use]
 pub fn total_d2h_transfers() -> u64 {
-    TOTAL_D2H_TRANSFERS.load(Ordering::Relaxed)
+    D2H_TRANSFERS.with(Cell::get)
 }
 
-/// Get total bytes transferred host-to-device since last reset
+/// Get bytes transferred host-to-device by the current thread since last reset
 #[must_use]
 pub fn total_h2d_bytes() -> u64 {
-    TOTAL_H2D_BYTES.load(Ordering::Relaxed)
+    H2D_BYTES.with(Cell::get)
 }
 
-/// Get total bytes transferred device-to-host since last reset
+/// Get bytes transferred device-to-host by the current thread since last reset
 #[must_use]
 pub fn total_d2h_bytes() -> u64 {
-    TOTAL_D2H_BYTES.load(Ordering::Relaxed)
+    D2H_BYTES.with(Cell::get)
 }
 
-/// Reset all transfer counters to zero
+/// Reset the current thread's transfer counters to zero
 pub fn reset_transfer_counters() {
-    TOTAL_H2D_TRANSFERS.store(0, Ordering::Relaxed);
-    TOTAL_D2H_TRANSFERS.store(0, Ordering::Relaxed);
-    TOTAL_H2D_BYTES.store(0, Ordering::Relaxed);
-    TOTAL_D2H_BYTES.store(0, Ordering::Relaxed);
+    H2D_TRANSFERS.with(|c| c.set(0));
+    D2H_TRANSFERS.with(|c| c.set(0));
+    H2D_BYTES.with(|c| c.set(0));
+    D2H_BYTES.with(|c| c.set(0));
 }
 
-/// Increment H2D transfer counter (used by GpuResidentTensor)
+/// Increment H2D transfer counter (used by `GpuResidentTensor`)
 pub(crate) fn record_h2d_transfer(bytes: u64) {
-    TOTAL_H2D_TRANSFERS.fetch_add(1, Ordering::Relaxed);
-    TOTAL_H2D_BYTES.fetch_add(bytes, Ordering::Relaxed);
+    H2D_TRANSFERS.with(|c| c.set(c.get() + 1));
+    H2D_BYTES.with(|c| c.set(c.get() + bytes));
 }
 
-/// Increment D2H transfer counter (used by GpuResidentTensor)
+/// Increment D2H transfer counter (used by `GpuResidentTensor`)
 pub(crate) fn record_d2h_transfer(bytes: u64) {
-    TOTAL_D2H_TRANSFERS.fetch_add(1, Ordering::Relaxed);
-    TOTAL_D2H_BYTES.fetch_add(bytes, Ordering::Relaxed);
+    D2H_TRANSFERS.with(|c| c.set(c.get() + 1));
+    D2H_BYTES.with(|c| c.set(c.get() + bytes));
 }
 
 // ============================================================================
@@ -127,6 +154,75 @@ impl std::fmt::Display for TransferStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// GPU-ORD-1 / GPU-ORD-3 falsifier: transfers performed by another thread
+    /// must not land in this thread's measurement window.
+    ///
+    /// This is the failure as it actually presented — a test resets the
+    /// counters, does one transfer, asserts `1`, and reads 7/12/22/30 because
+    /// neighbouring tests transferred inside the window. Black box: the
+    /// assertion is only about what this thread did, and says nothing about
+    /// how the counters are stored.
+    #[test]
+    fn test_counters_are_not_polluted_by_other_threads() {
+        reset_transfer_counters();
+        record_h2d_transfer(32);
+
+        // A neighbour doing far more work than us, concurrently.
+        let neighbour = std::thread::spawn(|| {
+            reset_transfer_counters();
+            for _ in 0..1000 {
+                record_h2d_transfer(4096);
+                record_d2h_transfer(4096);
+            }
+            // The neighbour's own window is likewise its own.
+            assert_eq!(total_h2d_transfers(), 1000);
+            assert_eq!(total_d2h_transfers(), 1000);
+        });
+        neighbour.join().expect("neighbour thread must not panic");
+
+        assert_eq!(
+            total_h2d_transfers(),
+            1,
+            "another thread's H2D transfers were attributed to this thread"
+        );
+        assert_eq!(
+            total_h2d_bytes(),
+            32,
+            "another thread's H2D bytes were attributed to this thread"
+        );
+        assert_eq!(
+            total_d2h_transfers(),
+            0,
+            "another thread's D2H transfers were attributed to this thread"
+        );
+        assert_eq!(
+            total_d2h_bytes(),
+            0,
+            "another thread's D2H bytes were attributed to this thread"
+        );
+    }
+
+    /// A neighbour calling `reset_transfer_counters()` must not zero ours
+    /// either — the pre-fix reset was a process-wide `store(0)`.
+    #[test]
+    fn test_reset_on_another_thread_does_not_zero_ours() {
+        reset_transfer_counters();
+        record_h2d_transfer(64);
+        record_d2h_transfer(64);
+
+        std::thread::spawn(|| {
+            reset_transfer_counters();
+        })
+        .join()
+        .expect("neighbour thread must not panic");
+
+        assert_eq!(
+            (total_h2d_transfers(), total_d2h_transfers()),
+            (1, 1),
+            "another thread's reset_transfer_counters() wiped this thread's window"
+        );
+    }
 
     #[test]
     fn test_transfer_counter_reset() {

@@ -38,7 +38,8 @@ pub use attention::{
     incremental_attention_gpu_async, incremental_attention_gpu_with_stream, kv_cache_scatter_gpu,
 };
 pub use cache::{
-    clear_kernel_cache, kernel_cache_hits, kernel_cache_misses, reset_kernel_cache_stats,
+    clear_kernel_cache, kernel_cache_exclusive, kernel_cache_hits, kernel_cache_misses,
+    reset_kernel_cache_stats, KernelCacheExclusive,
 };
 pub use stats::{
     reset_transfer_counters, total_d2h_bytes, total_d2h_transfers, total_h2d_bytes,

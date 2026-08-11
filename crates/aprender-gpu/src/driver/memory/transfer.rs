@@ -18,6 +18,75 @@ use crate::GpuError;
 use super::buffer::GpuBuffer;
 
 // ============================================================================
+// Blocking host-to-device primitive
+// ============================================================================
+
+/// Perform a host→device copy that is genuinely COMPLETE when it returns.
+///
+/// # The defect this closes (GPU-ORD-9)
+///
+/// CUDA's documented API synchronization behavior for a transfer out of
+/// *pageable* host memory is that the driver stages the bytes into an internal
+/// pinned buffer and returns "once the pageable buffer has been copied to the
+/// staging memory — the DMA to final destination may **not** have completed".
+/// That trailing DMA runs on the legacy default stream (handle 0).
+///
+/// Every `CudaStream` this crate hands out is `CU_STREAM_NON_BLOCKING`, which
+/// is by definition *not* ordered against the legacy default stream. So a
+/// kernel launch or `*_async` copy issued on a `CudaStream` right after a
+/// "synchronous" upload could read the buffer's pre-upload contents — silently,
+/// with every CUDA call returning success. Measured on an RTX 4090 at 8 of 40
+/// runs of `test_gpu_buffer_async_device_to_host`, and 15 of 200 uploads with
+/// the readback instrumented.
+///
+/// Draining the legacy default stream is the narrow wait that closes it: it
+/// costs microseconds when idle and does **not** wait on non-blocking streams.
+///
+/// # Why not a crate-owned stream
+///
+/// Issuing the copy on a private stream and synchronizing only that would
+/// avoid the legacy stream entirely, which is tempting because a legacy-stream
+/// synchronize is illegal while a graph capture is open. Such a stream cannot
+/// be cached: a stream belongs to the context it was created in, and this crate
+/// releases the device's primary context whenever the last `CudaContext` drops.
+/// `test_buffer_roundtrip_fuzz` creates and drops one per proptest case, so a
+/// process-global cached stream is left dangling and the next upload takes
+/// SIGSEGV — measured, 3 nextest runs out of 3. Creating and destroying a
+/// stream per upload instead would put two extra driver calls into the
+/// weight-loading path.
+///
+/// The capture hazard is real but narrow, and it is closed from the other side:
+/// nothing in this crate opens a `CaptureMode::Global` capture any more, and
+/// under `ThreadLocal` capture CUDA does not police other threads' actions.
+/// See `driver::cuda_tests::CAPTURE_VS_CTX_SYNC`.
+///
+/// # Poka-yoke
+///
+/// This is the ONLY place in the crate that calls `cuMemcpyHtoD`. Every
+/// synchronous H2D path funnels through here, so a synchronous upload that
+/// returns with its DMA still in flight is not expressible.
+/// `raw_htod_symbol_has_exactly_one_call_site` (below) fails the crate's tests
+/// if a second raw call site is ever introduced.
+fn memcpy_htod_blocking(
+    driver: &CudaDriver,
+    dst_ptr: u64,
+    src: *const c_void,
+    size: usize,
+) -> Result<(), GpuError> {
+    // SAFETY: caller has validated src is readable for `size` bytes and
+    // dst_ptr is a device pointer with at least `size` bytes allocated.
+    let result = unsafe { (driver.cuMemcpyHtoD)(dst_ptr, src, size) };
+    CudaDriver::check(result).map_err(|e| GpuError::Transfer(e.to_string()))?;
+
+    // Drain the legacy default stream (handle 0) so the staged DMA has landed
+    // before any non-blocking stream can observe the destination buffer.
+    // SAFETY: the null handle is the legacy default stream; always valid.
+    let result = unsafe { (driver.cuStreamSynchronize)(std::ptr::null_mut()) };
+    CudaDriver::check(result)
+        .map_err(|e| GpuError::Transfer(format!("H2D upload did not land on the device: {e}")))
+}
+
+// ============================================================================
 // Host <-> Device Transfers
 // ============================================================================
 
@@ -50,10 +119,8 @@ impl<T: Copy> GpuBuffer<T> {
         let driver = get_driver()?;
         let size = self.size_bytes();
 
-        // SAFETY: data is valid for size bytes, ptr is valid device pointer
-        let result =
-            unsafe { (driver.cuMemcpyHtoD)(self.ptr, data.as_ptr() as *const c_void, size) };
-        CudaDriver::check(result).map_err(|e| GpuError::Transfer(e.to_string()))
+        // data is valid for size bytes, ptr is valid device pointer
+        memcpy_htod_blocking(driver, self.ptr, data.as_ptr() as *const c_void, size)
     }
 
     /// Copy data from device to host (synchronous)
@@ -227,10 +294,8 @@ impl<T: Copy> GpuBuffer<T> {
         let size = std::mem::size_of_val(data);
         let dst_ptr = self.ptr + (offset * std::mem::size_of::<T>()) as u64;
 
-        // SAFETY: bounds checked above, data and ptr are valid
-        let result =
-            unsafe { (driver.cuMemcpyHtoD)(dst_ptr, data.as_ptr() as *const c_void, size) };
-        CudaDriver::check(result).map_err(|e| GpuError::Transfer(e.to_string()))
+        // bounds checked above, data and ptr are valid
+        memcpy_htod_blocking(driver, dst_ptr, data.as_ptr() as *const c_void, size)
     }
 
     /// Copy partial data from device to host at specific offset (PAR-018)
@@ -502,5 +567,78 @@ impl<T: Copy> GpuBuffer<T> {
         // SAFETY: bounds checked above, both ptrs valid, caller ensures lifetime + stream valid
         let result = unsafe { (driver.cuMemcpyDtoDAsync)(dst_ptr, src_ptr, size, stream_handle) };
         CudaDriver::check(result).map_err(|e| GpuError::Transfer(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod htod_funnel_guard {
+    /// Poka-yoke enforcement for GPU-ORD-9.
+    ///
+    /// The defect was a synchronous host-to-device upload returning while its
+    /// DMA was still queued on the legacy default stream, where no
+    /// `CU_STREAM_NON_BLOCKING` stream is ordered against it. The fix routes
+    /// every synchronous H2D through `memcpy_htod_blocking`, which drains that
+    /// stream before returning. That only stays true while
+    /// `memcpy_htod_blocking` is the sole caller of the raw driver entry point
+    /// — a second raw call site reintroduces the exact defect, silently, and
+    /// surfaces as a flake weeks later.
+    ///
+    /// The guard scans the whole crate rather than this one file, because the
+    /// decision to call the raw symbol can be made from any module.
+    #[test]
+    fn raw_htod_symbol_has_exactly_one_call_site() {
+        // Assembled at run time so this guard's own source cannot match it.
+        let needle = format!(".{})", "cuMemcpyHtoD");
+
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut hits: Vec<String> = Vec::new();
+        let mut files_scanned = 0usize;
+        let mut stack = vec![src.clone()];
+        while let Some(dir) = stack.pop() {
+            let entries = std::fs::read_dir(&dir)
+                .unwrap_or_else(|e| panic!("guard cannot read {}: {e}", dir.display()));
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    files_scanned += 1;
+                    let text = std::fs::read_to_string(&path)
+                        .unwrap_or_else(|e| panic!("guard cannot read {}: {e}", path.display()));
+                    for (n, line) in text.lines().enumerate() {
+                        if line.contains(&needle) {
+                            hits.push(format!(
+                                "{}:{}",
+                                path.strip_prefix(&src).unwrap_or(&path).display(),
+                                n + 1
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // A scan that finds nothing is indistinguishable from a scan pointed at
+        // the wrong text, so zero hits must fail as loudly as many.
+        assert!(
+            files_scanned > 100,
+            "guard scanned only {files_scanned} files under {} — it is not looking at the crate",
+            src.display()
+        );
+        assert_eq!(
+            hits.len(),
+            1,
+            "the raw synchronous H2D symbol must have exactly ONE call site, inside \
+             memcpy_htod_blocking, which drains the legacy default stream. Found {}: {:?}. \
+             Route the new upload through memcpy_htod_blocking, or GPU-ORD-9 returns as a \
+             roughly 1-in-5 stale read under load.",
+            hits.len(),
+            hits
+        );
+        assert!(
+            hits[0].starts_with("driver/memory/transfer.rs:"),
+            "the single raw H2D call site moved out of transfer.rs: {:?}",
+            hits
+        );
     }
 }

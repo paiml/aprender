@@ -285,12 +285,18 @@ fn test_transfer_stats_debug() {
 // Kernel Cache Stats Tests
 // ============================================================================
 
+/// GPU-ORD-2: this observation spans two kernel launches and is only true if
+/// nothing empties the shared module map in between. Holding exclusivity for
+/// the whole body makes that so — before, a neighbouring test's
+/// `clear_kernel_cache()` landed between the two `gelu` calls and the second
+/// one recompiled, printing `[KERNEL-CACHE] Compiling: gelu:16` twice.
 #[test]
 fn test_kernel_cache_stats_after_operations() {
     use crate::memory::resident::{
-        clear_kernel_cache, kernel_cache_hits, kernel_cache_misses, reset_kernel_cache_stats,
+        kernel_cache_exclusive, kernel_cache_hits, kernel_cache_misses, reset_kernel_cache_stats,
     };
-    clear_kernel_cache();
+    let exclusive = kernel_cache_exclusive();
+    exclusive.clear();
     let ctx = cuda_ctx!();
 
     reset_kernel_cache_stats();
