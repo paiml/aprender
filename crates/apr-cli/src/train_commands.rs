@@ -98,9 +98,13 @@ pub enum TrainCommands {
         /// Number of output classes
         #[arg(long, default_value = "5")]
         num_classes: usize,
-        /// Output directory for checkpoints and leaderboard
-        #[arg(short, long, default_value = "/tmp/training-output")]
-        output: PathBuf,
+        /// Output directory for checkpoints and leaderboard.
+        ///
+        /// When given it OVERRIDES `training.output_dir` in the YAML config.
+        /// When omitted, the config's `training.output_dir` is used (default
+        /// `./checkpoints`). The directory is created if it does not exist.
+        #[arg(short, long, value_name = "DIR")]
+        output: Option<PathBuf>,
         /// HPO strategy: tpe, grid, random, manual
         #[arg(long, default_value = "tpe")]
         strategy: String,

@@ -5,14 +5,11 @@
 #[cfg(feature = "parquet")]
 mod arrow;
 mod batches;
-mod demo;
 mod loader;
 
 // Re-export public API (allow unused for external consumers)
 #[allow(unused_imports)]
 pub use batches::{load_training_batches, rebatch};
-#[allow(unused_imports)]
-pub use demo::create_demo_batches;
 pub use loader::{load_config, train_from_yaml, try_load_apr_for_inference};
 
 // Conditionally export parquet/json loaders for non-WASM

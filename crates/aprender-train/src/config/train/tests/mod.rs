@@ -1,7 +1,6 @@
 //! Tests for training configuration and batch loading
 
 mod config_loading;
-mod demo_batches;
 mod rebatch;
 mod train_yaml;
 

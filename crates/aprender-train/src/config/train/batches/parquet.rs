@@ -1,7 +1,6 @@
 //! Parquet batch loading using alimentar
 
 use super::super::arrow::arrow_array_to_f32;
-use super::super::demo::create_demo_batches;
 use super::rebatch::rebatch;
 use crate::error::{Error, Result};
 use crate::train::Batch;
@@ -40,11 +39,16 @@ fn detect_columns<'a>(column_names: &[&'a str]) -> Option<ColumnPair<'a>> {
     Some(ColumnPair { input_name, target_name })
 }
 
-/// Log column detection warning and return demo batches
-fn handle_missing_columns(column_names: &[&str], batch_size: usize) -> Vec<Batch> {
-    eprintln!("Warning: Could not find input/target columns in parquet (found: {column_names:?})");
-    eprintln!("  Expected columns like: input/target, x/y, features/labels");
-    create_demo_batches(batch_size)
+/// Reject a parquet dataset whose input/target columns could not be identified.
+///
+/// Never substitutes demo data: training on fabricated examples while reporting
+/// success is worse than refusing to start.
+fn missing_columns_error(path: &Path, column_names: &[&str]) -> Error {
+    Error::ConfigError(format!(
+        "Could not find input/target columns in parquet '{}' (found: {column_names:?}). \
+         Expected a pair like input/target, x/y or features/labels.",
+        path.display()
+    ))
 }
 
 /// Convert a single record batch to a training batch
@@ -103,7 +107,7 @@ pub fn load_parquet_batches(path: &Path, batch_size: usize) -> Result<Vec<Batch>
 
     let columns = match detect_columns(&column_names) {
         Some(cols) => cols,
-        None => return Ok(handle_missing_columns(&column_names, batch_size)),
+        None => return Err(missing_columns_error(path, &column_names)),
     };
 
     println!("  Using columns: input='{}', target='{}'", columns.input_name, columns.target_name);
@@ -223,10 +227,14 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_missing_columns_returns_demo_batches() {
+    fn test_missing_columns_is_an_error_naming_the_columns() {
+        // Was `test_handle_missing_columns_returns_demo_batches`, which asserted the
+        // defect: an unreadable parquet silently became synthetic training data.
         let cols = vec!["foo", "bar"];
-        let batches = handle_missing_columns(&cols, 32);
-        assert!(!batches.is_empty());
+        let err = missing_columns_error(Path::new("/tmp/x.parquet"), &cols);
+        let msg = err.to_string();
+        assert!(msg.contains("/tmp/x.parquet"), "error must name the dataset: {msg}");
+        assert!(msg.contains("foo"), "error must name the columns it found: {msg}");
     }
 
     #[test]

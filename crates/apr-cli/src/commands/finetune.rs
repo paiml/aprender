@@ -2180,14 +2180,35 @@ fn load_classify_pipeline(
         )
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load pretrained model: {e}")))
     } else if let Some(mp) = model_path.filter(|p| p.is_file()) {
-        // from_apr() not available in entrenar 0.7.5; use parent dir with from_pretrained
-        let parent = mp.parent().unwrap_or(mp);
-        entrenar::finetune::classify_pipeline::ClassifyPipeline::from_pretrained(
-            parent,
-            model_config,
-            config,
-        )
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR model: {e}")))
+        // Read the weights from the file the user NAMED. This used to hand the
+        // file's PARENT DIRECTORY to from_pretrained(), which scans for any
+        // SafeTensors it can find — so `apr finetune model.apr` silently trained
+        // whatever sibling model happened to sit next to it.
+        let ext = mp
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if ext == "apr" {
+            entrenar::finetune::classify_pipeline::ClassifyPipeline::from_apr(
+                mp,
+                model_config,
+                config,
+            )
+            .map_err(|e| {
+                CliError::ValidationFailed(format!(
+                    "Failed to load APR model '{}': {e}",
+                    mp.display()
+                ))
+            })
+        } else {
+            Err(CliError::ValidationFailed(format!(
+                "Cannot fine-tune from '{}' (format: {}). --task classify loads weights from a \
+                 .apr file or from a directory of SafeTensors; pass one of those.",
+                mp.display(),
+                if ext.is_empty() { "unknown" } else { &ext },
+            )))
+        }
     } else {
         Ok(entrenar::finetune::classify_pipeline::ClassifyPipeline::new(model_config, config))
     }

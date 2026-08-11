@@ -1284,7 +1284,7 @@ pub enum RunsCommands {
         /// Read from global experiment registry (~/.entrenar/experiments.db)
         #[arg(long)]
         global: bool,
-        /// Filter by status: running, completed, failed, all
+        /// Filter by status: all, pending, running, completed, failed, cancelled
         #[arg(long, default_value = "all")]
         status: String,
         /// Output as JSON

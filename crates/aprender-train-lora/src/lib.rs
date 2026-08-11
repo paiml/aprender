@@ -22,8 +22,28 @@ pub use optimizer::{recommended_learning_rate, LoraOptimizer, OptimalConfig};
 use entrenar_common::Result;
 
 /// Plan an optimal LoRA configuration for given constraints.
+///
+/// # Errors
+///
+/// Propagates the optimizer's rank-search failure.
 pub fn plan(model_params: u64, available_vram_gb: f64, method: Method) -> Result<OptimalConfig> {
-    LoraOptimizer::new(model_params, available_vram_gb).optimize(method)
+    plan_with_rank(model_params, available_vram_gb, method, None)
+}
+
+/// Plan a LoRA configuration, pinning the adapter rank when one was requested.
+///
+/// `requested_rank = None` auto-selects, exactly as [`plan`] does.
+///
+/// # Errors
+///
+/// Propagates the optimizer's rank-search failure.
+pub fn plan_with_rank(
+    model_params: u64,
+    available_vram_gb: f64,
+    method: Method,
+    requested_rank: Option<u32>,
+) -> Result<OptimalConfig> {
+    LoraOptimizer::new(model_params, available_vram_gb).optimize_with_rank(method, requested_rank)
 }
 
 /// Fine-tuning method.

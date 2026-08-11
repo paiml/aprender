@@ -24,6 +24,16 @@ pub enum CliError {
     #[error("Invalid APR format: {0}")]
     InvalidFormat(String),
 
+    /// Malformed non-model input (a JSON report, a YAML config, a CSV…).
+    ///
+    /// Distinct from [`CliError::InvalidFormat`], whose Display hardcodes
+    /// "Invalid APR format" and therefore sends a user hunting for a corrupt
+    /// model file when what actually failed to parse was, say, a grad-norm
+    /// telemetry history. Shares exit code 4 — the class of failure is the
+    /// same, only the artifact named is different.
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -68,7 +78,7 @@ impl CliError {
         contract_pre_exit_code_on_error!();
         match self {
             Self::FileNotFound(_) | Self::NotAFile(_) => ExitCode::from(3),
-            Self::InvalidFormat(_) => ExitCode::from(4),
+            Self::InvalidFormat(_) | Self::InvalidInput(_) => ExitCode::from(4),
             Self::Io(_) => ExitCode::from(7),
             Self::ValidationFailed(_) => ExitCode::from(5),
             Self::Aprender(_) => ExitCode::from(1),

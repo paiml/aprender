@@ -6,6 +6,158 @@ mod tests {
     use super::*;
 
     // ========================================================================
+    // --format (dogfood 0.63.0, issue #2374 finding 7)
+    //
+    // `apr train plan --format` was declared `_format: &str` — underscore
+    // prefixed, never read — so text, json, yaml and an invalid value all
+    // produced byte-identical text output with exit 0.
+    // ========================================================================
+
+    /// A minimal, valid pretrain spec parsed from YAML (TrainSpec has no Default).
+    fn scratch_spec(tag: &str) -> entrenar::config::TrainSpec {
+        let dir = std::env::temp_dir().join(format!("apr-2374-fmt-{}-{tag}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let cfg = dir.join("c.yaml");
+        // validate_config requires both paths to exist on disk.
+        let model = dir.join("m.safetensors");
+        let data = dir.join("d.json");
+        std::fs::write(&model, b"stub").expect("scratch model");
+        std::fs::write(&data, b"{}").expect("scratch data");
+        std::fs::write(
+            &cfg,
+            format!(
+                "model:\n  path: {}\n  mode: tabular\ndata:\n  train: {}\n  batch_size: 8\noptimizer:\n  name: adam\n  lr: 0.001\ntraining:\n  epochs: 1\n",
+                model.display(),
+                data.display()
+            ),
+        )
+        .expect("scratch config");
+        let spec = entrenar::config::load_config(&cfg).expect("minimal config must load");
+        let _ = std::fs::remove_dir_all(&dir);
+        spec
+    }
+
+    #[test]
+    fn plan_format_parses_the_three_documented_values() {
+        assert_eq!(PlanFormat::parse("text").expect("text is documented"), PlanFormat::Text);
+        assert_eq!(PlanFormat::parse("json").expect("json is documented"), PlanFormat::Json);
+        assert_eq!(PlanFormat::parse("yaml").expect("yaml is documented"), PlanFormat::Yaml);
+    }
+
+    #[test]
+    fn plan_format_distinguishes_the_documented_values() {
+        // The defect was that all three collapsed to the same rendering.
+        let text = PlanFormat::parse("text").expect("text is documented");
+        let json = PlanFormat::parse("json").expect("json is documented");
+        let yaml = PlanFormat::parse("yaml").expect("yaml is documented");
+        assert_ne!(text, json);
+        assert_ne!(json, yaml);
+        assert_ne!(text, yaml);
+    }
+
+    #[test]
+    fn plan_format_rejects_an_invalid_value() {
+        let err = PlanFormat::parse("bogus").expect_err("an invalid --format must not be accepted");
+        let msg = err.to_string();
+        assert!(msg.contains("bogus"), "error must echo the bad value: {msg}");
+        assert!(msg.contains("yaml"), "error must list the supported formats: {msg}");
+    }
+
+    #[test]
+    fn plan_format_is_case_insensitive_and_accepts_yml() {
+        assert_eq!(PlanFormat::parse("YAML").expect("case-insensitive"), PlanFormat::Yaml);
+        assert_eq!(PlanFormat::parse("yml").expect("yml is a yaml spelling"), PlanFormat::Yaml);
+    }
+
+    #[test]
+    fn plan_yaml_rendering_is_valid_yaml_and_not_the_text_table() {
+        // Falsifies "yaml prints the human table": the manifest must round-trip
+        // through a YAML parser and carry the plan's fields.
+        let spec = scratch_spec("yaml");
+        let manifest = pretrain_plan_manifest(std::path::Path::new("c.yaml"), &spec);
+        let rendered = serde_yaml::to_string(&manifest).expect("manifest must serialize to YAML");
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&rendered).expect("--format yaml must emit parseable YAML");
+        assert_eq!(parsed["task"], serde_yaml::Value::String("pretrain".into()));
+        assert_eq!(parsed["verdict"], serde_yaml::Value::String("ready".into()));
+        assert!(
+            !rendered.contains("Pre-training Plan"),
+            "yaml must not be the human table: {rendered}"
+        );
+    }
+
+    #[test]
+    fn plan_json_and_yaml_carry_the_same_manifest() {
+        let spec = scratch_spec("same");
+        let manifest = pretrain_plan_manifest(std::path::Path::new("c.yaml"), &spec);
+        let from_yaml: serde_json::Value = serde_yaml::from_str(
+            &serde_yaml::to_string(&manifest).expect("yaml render"),
+        )
+        .expect("yaml re-parse");
+        assert_eq!(from_yaml["config"], manifest["config"]);
+        assert_eq!(from_yaml["model"]["path"], manifest["model"]["path"]);
+    }
+
+    // ========================================================================
+    // --strategy (dogfood 0.63.0, issue #2374 finding 13)
+    //
+    // `apr train sweep --strategy bogus` fell through the `"random" | _` arm to
+    // a RANDOM search, printed "Strategy: bogus" back as though it were real,
+    // and wrote sweep files byte-identical to `--strategy random`. A user who
+    // believed they had a grid search had a random one.
+    // ========================================================================
+
+    #[test]
+    fn sweep_strategy_parses_both_real_strategies() {
+        assert_eq!(parse_sweep_strategy("grid").expect("grid is real"), SweepStrategy::Grid);
+        assert_eq!(parse_sweep_strategy("random").expect("random is real"), SweepStrategy::Random);
+    }
+
+    #[test]
+    fn sweep_strategy_rejects_a_typo_instead_of_silently_randomising() {
+        for typo in ["bogus", "gird", "Grid search", "", "tpe"] {
+            assert!(
+                parse_sweep_strategy(typo).is_err(),
+                "--strategy {typo:?} must be rejected, not silently randomised"
+            );
+        }
+    }
+
+    #[test]
+    fn sweep_strategy_typo_is_an_error_naming_the_alternatives() {
+        let err = parse_sweep_strategy("gird")
+            .expect_err("a typo must not silently become a random search");
+        let msg = err.to_string();
+        assert!(msg.contains("gird"), "error must echo the typo: {msg}");
+        assert!(msg.contains("grid") && msg.contains("random"), "error must list both: {msg}");
+    }
+
+    #[test]
+    fn sweep_strategy_round_trips_through_display() {
+        // The banner prints Display, so it must never echo a bad value back.
+        assert_eq!(SweepStrategy::Grid.to_string(), "grid");
+        assert_eq!(SweepStrategy::Random.to_string(), "random");
+    }
+
+    #[test]
+    fn sweep_rejects_a_bad_strategy_before_writing_anything() {
+        // Validation must precede create_dir_all: a typo must not leave files.
+        let dir = std::env::temp_dir().join(format!("apr-2374-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg = dir.join("base.yaml");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&cfg, "training:\n  epochs: 1\n").unwrap();
+        let out = dir.join("sweeps");
+
+        let err = run_sweep(&cfg, "bogus", 2, &out, 7, false)
+            .expect_err("a bogus strategy must be rejected");
+        assert!(matches!(err, CliError::ValidationFailed(_)));
+        assert!(!out.exists(), "no sweep directory may be created for a rejected strategy");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ========================================================================
     // classify_exit_code
     // ========================================================================
 
@@ -218,13 +370,59 @@ mod tests {
         let cfg = dir.join("base.yaml");
         std::fs::write(&cfg, "training:\n  epochs: 1\n").unwrap();
 
-        let out = patch_yaml_config(&cfg, true, Some(2), Some(0), Some("a:1"), true, Some(123))
+        let out = patch_yaml_config(&cfg, None, true, Some(2), Some(0), Some("a:1"), true, Some(123))
             .expect("patch should succeed");
         let patched = std::fs::read_to_string(&out).unwrap();
         let yaml: serde_yaml::Value = serde_yaml::from_str(&patched).unwrap();
         assert_eq!(yaml["training"]["distributed"]["world_size"].as_u64(), Some(2));
         assert_eq!(yaml["training"]["deterministic"].as_bool(), Some(true));
         assert_eq!(yaml["training"]["seed"].as_u64(), Some(123));
+
+        let _ = std::fs::remove_file(&out);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ─── -o/--output (dogfood 0.63.0, issue #2374 finding 5) ────────────────
+    //
+    // `apr train apply -o DIR` was accepted, documented with a default of
+    // /tmp/training-output, and silently discarded: only training.output_dir in
+    // the YAML was ever honoured, and a full training run was then thrown away
+    // at the save step with a bare "No such file or directory (os error 2)".
+
+    #[test]
+    fn patch_yaml_config_output_flag_overrides_the_yaml_output_dir() {
+        let dir = std::env::temp_dir().join(format!("apr-2374-out-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("base.yaml");
+        std::fs::write(&cfg, "training:\n  epochs: 1\n  output_dir: /tmp/FROM_YAML\n").unwrap();
+
+        let flag = std::path::Path::new("/tmp/FROM_FLAG");
+        let out = patch_yaml_config(&cfg, Some(flag), false, None, None, None, false, None)
+            .expect("patch should succeed");
+        let yaml: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        assert_eq!(
+            yaml["training"]["output_dir"].as_str(),
+            Some("/tmp/FROM_FLAG"),
+            "-o must win over training.output_dir; it used to be discarded"
+        );
+
+        let _ = std::fs::remove_file(&out);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn patch_yaml_config_without_output_flag_leaves_the_yaml_alone() {
+        let dir = std::env::temp_dir().join(format!("apr-2374-noout-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("base.yaml");
+        std::fs::write(&cfg, "training:\n  epochs: 1\n  output_dir: /tmp/FROM_YAML\n").unwrap();
+
+        let out = patch_yaml_config(&cfg, None, false, None, None, None, true, None)
+            .expect("patch should succeed");
+        let yaml: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        assert_eq!(yaml["training"]["output_dir"].as_str(), Some("/tmp/FROM_YAML"));
 
         let _ = std::fs::remove_file(&out);
         let _ = std::fs::remove_dir_all(&dir);
@@ -237,7 +435,7 @@ mod tests {
         let cfg = dir.join("notraining.yaml");
         std::fs::write(&cfg, "model:\n  path: foo\n").unwrap();
 
-        let err = patch_yaml_config(&cfg, false, None, None, None, true, None).unwrap_err();
+        let err = patch_yaml_config(&cfg, None, false, None, None, None, true, None).unwrap_err();
         match err {
             CliError::ValidationFailed(m) => assert!(m.contains("training")),
             _ => panic!("expected ValidationFailed for missing training section"),
@@ -251,7 +449,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let cfg = dir.join("bad.yaml");
         std::fs::write(&cfg, "training: [unterminated\n").unwrap();
-        let err = patch_yaml_config(&cfg, false, None, None, None, false, Some(1)).unwrap_err();
+        let err = patch_yaml_config(&cfg, None, false, None, None, None, false, Some(1)).unwrap_err();
         assert!(matches!(err, CliError::ValidationFailed(_)));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -509,7 +707,7 @@ mod tests {
         let out_dir = std::path::Path::new(".");
         let err = run_plan(
             None, "small", None, 2, "bogus-task", None, out_dir, "auto", 1, false, 1, None, None,
-            None, None, None, "apr", false,
+            None, None, None, "text", false,
         )
         .unwrap_err();
         match err {
@@ -523,7 +721,7 @@ mod tests {
         let out_dir = std::path::Path::new(".");
         let err = run_plan(
             None, "small", None, 2, "classify", None, out_dir, "auto", 1, false, 1, None, None,
-            None, None, None, "apr", false,
+            None, None, None, "text", false,
         )
         .unwrap_err();
         match err {
@@ -537,7 +735,7 @@ mod tests {
         let out_dir = std::path::Path::new(".");
         let err = run_plan(
             None, "small", None, 2, "pretrain", None, out_dir, "auto", 1, false, 1, None, None,
-            None, None, None, "apr", false,
+            None, None, None, "text", false,
         )
         .unwrap_err();
         match err {
@@ -550,8 +748,8 @@ mod tests {
     fn run_apply_unknown_task_errors() {
         let out_dir = std::path::Path::new(".");
         let err = run_apply(
-            None, None, "nope", None, "small", None, 2, out_dir, "auto", 1, false, 1, None, None,
-            None, false, false, None, None, None, false, None,
+            None, None, "nope", None, "small", None, 2, Some(out_dir), "auto", 1, false, 1, None,
+            None, None, false, false, None, None, None, false, None,
         )
         .unwrap_err();
         assert!(matches!(err, CliError::ValidationFailed(_)));
@@ -561,8 +759,8 @@ mod tests {
     fn run_apply_pretrain_missing_config_errors() {
         let out_dir = std::path::Path::new(".");
         let err = run_apply(
-            None, None, "pretrain", None, "small", None, 2, out_dir, "auto", 1, false, 1, None,
-            None, None, false, false, None, None, None, false, None,
+            None, None, "pretrain", None, "small", None, 2, Some(out_dir), "auto", 1, false, 1,
+            None, None, None, false, false, None, None, None, false, None,
         )
         .unwrap_err();
         match err {
@@ -583,7 +781,7 @@ mod tests {
             "small",
             None,
             2,
-            out_dir,
+            Some(out_dir),
             "auto",
             1,
             false,
