@@ -165,6 +165,7 @@
             },
             Commands::Lint {
                 file: PathBuf::from("m.apr"),
+                strict: false,
             },
             Commands::Extended(ExtendedCommands::Qa {
                 file: PathBuf::from("m.apr"),

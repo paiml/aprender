@@ -276,9 +276,9 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             validate_manifest::run(file, artifact.as_deref(), cli.json, live_check)
         }
 
-        Commands::Lint { file } => {
-            let (j, q) = (cli.json, cli.quiet);
-            crate::pipe::with_stdin_support(file, |p| lint::run(p, j, q))
+        Commands::Lint { file, strict } => {
+            let (j, q, st) = (cli.json, cli.quiet, *strict);
+            crate::pipe::with_stdin_support(file, |p| lint::run(p, j, q, st))
         }
 
         Commands::BeatRun { contract, measured } => {

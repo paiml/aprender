@@ -209,6 +209,32 @@ impl LintReport {
         self.issues.is_empty()
     }
 
+    /// Did the report pass, treating `fail_at` and anything more severe as failure?
+    ///
+    /// `passed()` and `passed_strict()` are the `Warn` and `Info` cases of this
+    /// function; it exists so a caller can state its threshold instead of picking
+    /// between two hardcoded ones.
+    ///
+    /// `apr lint` gated on `passed()` — fail on any warning — which meant it could
+    /// not exit 0 on any real model. Three advisory metadata warnings (missing
+    /// `license`, `model_card`, `provenance`) sank a model with zero errors, and
+    /// the message said so in as many words:
+    ///
+    /// ```text
+    /// error: Validation failed: Lint failed with 0 error(s), 3 warning(s), 1 info(s)
+    /// ```
+    ///
+    /// A verdict that is always "fail" carries no information, so the exit code
+    /// could not distinguish a healthy model from a corrupt one.
+    #[must_use]
+    pub fn passed_at_level(&self, fail_at: LintLevel) -> bool {
+        match fail_at {
+            LintLevel::Error => self.error_count == 0,
+            LintLevel::Warn => self.error_count == 0 && self.warn_count == 0,
+            LintLevel::Info => self.issues.is_empty(),
+        }
+    }
+
     /// Get total issue count
     #[must_use]
     pub fn total_issues(&self) -> usize {

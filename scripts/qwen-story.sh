@@ -231,11 +231,20 @@ beat2_trust() {
   else
     emit_fail "B2 apr validate --quality" "exit=$RC_EC (after #1866 fix this should be 0)"
   fi
+  # This accepted `0 || 5` - PASS whether lint passed OR failed - which made it
+  # unable to detect anything. It was written that way because `apr lint` could
+  # not exit 0 on any real model: it gated on "no warnings", and every model
+  # carries advisory metadata warnings (missing license / model_card /
+  # provenance), so a healthy .apr and a corrupt .gguf both exited 5. #2394.
+  #
+  # Now that the verdict discriminates - ERRORs fail, warnings are advice,
+  # --strict promotes them - this asserts the real thing: a known-good model
+  # must lint clean.
   run_cmd 30 apr lint "$M_15B_APR"
-  if [ "$RC_EC" -eq 0 ] || [ "$RC_EC" -eq 5 ]; then
-    emit_pass "B2 apr lint (exit=$RC_EC)"
+  if [ "$RC_EC" -eq 0 ]; then
+    emit_pass "B2 apr lint (exit=0 on a healthy model)"
   else
-    emit_fail "B2 apr lint" "exit=$RC_EC"
+    emit_fail "B2 apr lint" "exit=$RC_EC on a known-good model; lint must exit 0 unless there are ERROR-level findings"
   fi
   pmat_hunt "qa validate lint" \
     crates/apr-cli/src/commands/qa.rs \

@@ -525,6 +525,7 @@
     fn test_dispatch_inspection_routes_lint() {
         let cli = make_cli(Commands::Lint {
             file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+                strict: false,
         });
         let result = dispatch_inspection_commands(&cli);
         assert!(result.is_some(), "Lint should be handled by inspection dispatcher");
