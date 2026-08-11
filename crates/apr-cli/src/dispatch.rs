@@ -544,6 +544,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 tokenizer.as_ref(),
                 *enforce_provenance,
                 *allow_no_config,
+                cli.json,
             )
         }
         Commands::Convert {
@@ -853,12 +854,19 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 crate::commands::pull::resolve_cache_dir_for_ref(model_ref)
                     .and_then(|dir| crate::commands::pull_verify::run_verify(&dir))
             } else {
-                pull::run(model_ref, *force, *dry_run, revision.as_deref(), *offline)
+                pull::run(
+                    model_ref,
+                    *force,
+                    *dry_run,
+                    revision.as_deref(),
+                    *offline,
+                    cli.json,
+                )
             }
         }
         Commands::Registry { command } => crate::commands::registry::run(command.clone()),
         Commands::List => pull::list(cli.json, cli.quiet),
-        Commands::Rm { model_ref } => pull::remove(model_ref),
+        Commands::Rm { model_ref } => pull::remove(model_ref, cli.json),
         Commands::Tui { file } => tui::run(file.clone()),
         Commands::Mcp {} => mcp::run(),
 

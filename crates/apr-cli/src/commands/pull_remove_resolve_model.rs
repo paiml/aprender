@@ -1,10 +1,40 @@
 
-/// Remove a model from cache
-pub fn remove(model_ref: &str) -> Result<()> {
-    println!("{}", "=== APR Remove ===".cyan().bold());
-    println!();
-    println!("Model: {}", model_ref.cyan());
+/// The complete stdout of `apr rm`, in whichever mode was asked for.
+///
+/// `None` means "write nothing to stdout": the not-found case under `--json`.
+/// That keeps the convention the already-correct JSON commands use
+/// (`apr validate --json`, `apr stamp --json`) — on failure the diagnostic goes
+/// to stderr and the exit code carries the outcome, so a consumer that parses
+/// stdout only ever sees a whole JSON document or nothing at all.
+// serde_json::json!() uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn remove_stdout(model_ref: &str, removed: bool, json: bool) -> Option<String> {
+    if json {
+        if !removed {
+            return None;
+        }
+        let doc = serde_json::json!({
+            "model": model_ref,
+            "removed": true,
+        });
+        return Some(serde_json::to_string_pretty(&doc).unwrap_or_default());
+    }
 
+    let outcome = if removed {
+        format!("{} Model removed from cache", "✓".green())
+    } else {
+        format!("{} Model not found in cache", "⚠".yellow())
+    };
+    Some(format!(
+        "{}\n\nModel: {}\n{}",
+        "=== APR Remove ===".cyan().bold(),
+        model_ref.cyan(),
+        outcome
+    ))
+}
+
+/// Remove a model from cache
+pub fn remove(model_ref: &str, json: bool) -> Result<()> {
     let mut fetcher = ModelFetcher::new().map_err(|e| {
         CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
     })?;
@@ -13,12 +43,14 @@ pub fn remove(model_ref: &str) -> Result<()> {
         .remove(model_ref)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to remove model: {e}")))?;
 
+    if let Some(out) = remove_stdout(model_ref, removed, json) {
+        println!("{out}");
+    }
+
     if removed {
-        println!("{} Model removed from cache", "✓".green());
         Ok(())
     } else {
         // GH-601: rm of nonexistent model must exit non-zero (like unix rm).
-        println!("{} Model not found in cache", "⚠".yellow());
         Err(CliError::FileNotFound(std::path::PathBuf::from(model_ref)))
     }
 }
