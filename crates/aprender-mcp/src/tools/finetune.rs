@@ -29,6 +29,7 @@
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
 use crate::server::NotificationSink;
+use crate::tools::args::{self, try_arg};
 use crate::tools::subprocess::{run_apr, spawn_streaming};
 use crate::types::{InputSchema, JsonRpcNotification, ToolCallResult, ToolDefinition};
 
@@ -79,16 +80,33 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
 /// progressToken, per MCP spec "servers MUST NOT send progress notifications
 /// if the client did not request them"), we fall back to the non-streaming
 /// [`run_apr`] path.
+///
+/// Every optional argument the `inputSchema` declares — `dataset`,
+/// `lora_rank`, `epochs`, `method`, `output` — is forwarded by
+/// [`build_argv`], and a wrong-typed one is now an `isError` result rather
+/// than a silent omission (#2417 / #2403).
 #[must_use]
 pub fn call_with_sink(
     args: &serde_json::Value,
     sink: Option<&NotificationSink>,
     progress_token: Option<serde_json::Value>,
 ) -> ToolCallResult {
-    let base_model = match crate::tools::args::require_str(args, "base_model") {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let owned = try_arg!(build_argv(args));
+    let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
+
+    match (sink, progress_token) {
+        (Some(sink), Some(token)) => stream_with_sink("apr", &argv, sink, &token),
+        _ => run_apr(&argv),
+    }
+}
+
+/// Build the `apr finetune ...` argv from `tools/call` arguments.
+///
+/// # Errors
+/// Returns the client-facing message when an argument is present but not
+/// usable at its declared type.
+pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
+    let base_model = args::required_str(args, "base_model")?;
 
     let mut owned: Vec<String> = vec![
         "finetune".to_string(),
@@ -96,42 +114,33 @@ pub fn call_with_sink(
         "--json".to_string(),
     ];
 
-    if let Some(dataset) = args.get("dataset").and_then(|v| v.as_str()) {
+    if let Some(dataset) = args::opt_str(args, "dataset")? {
         if !dataset.is_empty() {
             owned.push("--data".to_string());
             owned.push(dataset.to_string());
         }
     }
-    if let Some(rank) = args.get("lora_rank").and_then(serde_json::Value::as_u64) {
+    if let Some(rank) = args::opt_u64(args, "lora_rank")? {
         owned.push("--rank".to_string());
         owned.push(rank.to_string());
     }
-    if let Some(epochs) = args.get("epochs").and_then(serde_json::Value::as_u64) {
+    if let Some(epochs) = args::opt_u64(args, "epochs")? {
         owned.push("--epochs".to_string());
         owned.push(epochs.to_string());
     }
-    if let Some(method) = args.get("method").and_then(|v| v.as_str()) {
+    if let Some(method) = args::opt_str(args, "method")? {
         if !method.is_empty() {
             owned.push("--method".to_string());
             owned.push(method.to_string());
         }
     }
-    if let Some(output) = args.get("output").and_then(|v| v.as_str()) {
+    if let Some(output) = args::opt_str(args, "output")? {
         if !output.is_empty() {
             owned.push("--output".to_string());
             owned.push(output.to_string());
         }
     }
-
-    let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
-
-    match (sink, progress_token) {
-        (Some(sink), Some(token)) => {
-            // #2384: self-resolved binary, never a `$PATH` lookup.
-            stream_with_sink(crate::apr_bin::apr_binary(), &argv, sink, &token)
-        }
-        _ => run_apr(&argv),
-    }
+    Ok(owned)
 }
 
 /// Test-visible: stream `program args...` and forward each stdout line as a
@@ -140,8 +149,8 @@ pub fn call_with_sink(
 /// forwarded as a plain string. The returned `ToolCallResult` is the
 /// aggregated stdout (same shape as `run_apr`'s success body).
 #[must_use]
-pub fn stream_with_sink<P: AsRef<std::ffi::OsStr>>(
-    program: P,
+pub fn stream_with_sink(
+    program: &str,
     args: &[&str],
     sink: &NotificationSink,
     progress_token: &serde_json::Value,
@@ -220,12 +229,61 @@ mod tests {
         let result = call(&serde_json::json!({ "base_model": 42 }));
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("base_model"));
-        // Shape ("is_error, mentions the field") passed while the message said
-        // the argument was MISSING — see tools::args. Assert the behaviour.
+    }
+
+    /// #2417 — every optional argument the inputSchema declares must appear in
+    /// the spawned argv. A declared argument that is dropped is a wrong-answer
+    /// channel: the caller believes it configured the run.
+    #[test]
+    fn every_declared_optional_argument_is_forwarded() {
+        let argv = build_argv(&serde_json::json!({
+            "base_model": "base.safetensors",
+            "dataset": "/tmp/d.jsonl",
+            "lora_rank": 4,
+            "epochs": 1,
+            "method": "lora",
+            "output": "/tmp/out"
+        }))
+        .expect("all arguments usable");
         assert_eq!(
-            result.content[0].text,
-            "Argument base_model must be a string, got number"
+            argv,
+            vec![
+                "finetune",
+                "base.safetensors",
+                "--json",
+                "--data",
+                "/tmp/d.jsonl",
+                "--rank",
+                "4",
+                "--epochs",
+                "1",
+                "--method",
+                "lora",
+                "--output",
+                "/tmp/out"
+            ]
         );
+    }
+
+    /// The same call with the two integers sent as JSON strings — the shape an
+    /// LLM client routinely emits — must be identical, not silently rank-less.
+    #[test]
+    fn string_typed_rank_and_epochs_are_forwarded() {
+        let argv = build_argv(&serde_json::json!({
+            "base_model": "base.safetensors",
+            "lora_rank": "4",
+            "epochs": "1"
+        }))
+        .expect("numeric strings usable");
+        assert!(argv.contains(&"--rank".to_string()), "{argv:?}");
+        assert!(argv.contains(&"--epochs".to_string()), "{argv:?}");
+    }
+
+    #[test]
+    fn unusable_lora_rank_is_an_error_not_a_dropped_flag() {
+        let result = call(&serde_json::json!({ "base_model": "b.apr", "lora_rank": "high" }));
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("lora_rank"));
     }
 
     /// FALSIFY-MCP-PROGRESS-001 (unit): `stream_with_sink` fires one

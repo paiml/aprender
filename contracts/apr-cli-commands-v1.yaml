@@ -522,7 +522,7 @@ commands:
 
   - name: rm-gc-lint
     category: inspection
-    description: "Lint a captured `apr rm` / `apr gc` blob-GC observation (CRUX-A-25)"
+    description: "Lint a captured `apr rm` / externally captured gc blob-GC observation (CRUX-A-25)"
     requires_model: false
     side_effects: []
 
@@ -570,25 +570,25 @@ commands:
 
   - name: explain-token-lint
     category: inspection
-    description: "Validate captured `apr explain --format jsonl` sampler-chain trace (CRUX-F-19): schema + Σ post_prob ≈ 1 + sampled_id present in candidates + optional greedy=argmax assertion"
+    description: "Validate an externally captured token-selection JSONL sampler-chain trace (CRUX-F-19; no apr producer yet): schema + Σ post_prob ≈ 1 + sampled_id present in candidates + optional greedy=argmax assertion"
     requires_model: false
     side_effects: []
 
   - name: check-finite-lint
     category: inspection
-    description: "Validate captured `apr trace --check-finite` outputs (CRUX-F-11): error JSON shape (6 keys + value ∈ {nan,+inf,-inf}) + layer-coverage list (min_layers + transformer-op prefixes)"
+    description: "Validate externally captured check-finite outputs (CRUX-F-11; no apr producer yet): error JSON shape (6 keys + value ∈ {nan,+inf,-inf}) + layer-coverage list (min_layers + transformer-op prefixes)"
     requires_model: false
     side_effects: []
 
   - name: attn-viz-lint
     category: inspection
-    description: "Validate captured `apr attn-viz` outputs (CRUX-F-17): 4-D attention dump row-softmax normalization + causal-mask zero + HTML heatmap count"
+    description: "Validate an externally captured attention dump (CRUX-F-17; no apr producer yet): 4-D attention dump row-softmax normalization + causal-mask zero + HTML heatmap count"
     requires_model: false
     side_effects: []
 
   - name: embed-viz-lint
     category: inspection
-    description: "Validate captured `apr debug embed-viz` CSV (CRUX-F-18): schema (4 columns + finite coords + non-negative token_id) + optional row-count=vocab_size + optional byte-identical determinism check"
+    description: "Validate an externally captured embedding-projection CSV (CRUX-F-18; no apr producer yet): schema (4 columns + finite coords + non-negative token_id) + optional row-count=vocab_size + optional byte-identical determinism check"
     requires_model: false
     side_effects: []
 
@@ -600,7 +600,7 @@ commands:
 
   - name: react-trace-lint
     category: inspection
-    description: "Validate captured `apr agent --trace` ReAct loop trace (CRUX-I-06): termination reason matches exit-code (final_answer=0, max_iterations|timeout=2, tool_error=3, parse_fail=4) + iteration bound + scratchpad grammar (Thought/Action/Observation/Final Answer)"
+    description: "Validate an externally captured ReAct loop trace (CRUX-I-06; no apr producer yet): termination reason matches exit-code (final_answer=0, max_iterations|timeout=2, tool_error=3, parse_fail=4) + iteration bound + scratchpad grammar (Thought/Action/Observation/Final Answer)"
     requires_model: false
     side_effects: []
 
@@ -612,13 +612,13 @@ commands:
 
   - name: ddp-metrics-lint
     category: inspection
-    description: "Validate two captured `apr finetune --parallel ddp --json` outputs (CRUX-D-11): scaling efficiency T_N/(N*T_1) >= 0.85 + loss parity |L_N - L_1|/L_1 <= 0.01 + per-step allreduce bandwidth > 0"
+    description: "Validate two externally captured DDP metrics JSONs, N=1 and N=k (CRUX-D-11; no apr producer yet): scaling efficiency T_N/(N*T_1) >= 0.85 + loss parity |L_N - L_1|/L_1 <= 0.01 + per-step allreduce bandwidth > 0"
     requires_model: false
     side_effects: []
 
   - name: audio-inspect-lint
     category: inspection
-    description: "Validate captured `apr dataset audio-inspect --format json` body (CRUX-H-13): amplitude bounds (finite + [-1,1]) + sample_rate (canonical set or expected) + channel_shape (positive + optional channel-count match)"
+    description: "Validate an externally captured audio-inspect JSON body (CRUX-H-13; no apr producer yet): amplitude bounds (finite + [-1,1]) + sample_rate (canonical set or expected) + channel_shape (positive + optional channel-count match)"
     requires_model: false
     side_effects: []
 

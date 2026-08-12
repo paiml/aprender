@@ -135,7 +135,7 @@ fn falsify_crux_b_07_001_improvement_rejects_zero_baseline() {
     assert!(stderr.contains("FALSIFY-CRUX-B-07-001"));
 }
 
-// ---- leakage gate (FALSIFY-CRUX-B-07-001 invariant) -----------------------
+// ---- leakage gate (FALSIFY-CRUX-B-07-004 invariant) -----------------------
 
 #[test]
 fn falsify_crux_b_07_001_leakage_ok_disjoint() {
@@ -168,7 +168,16 @@ fn falsify_crux_b_07_001_leakage_rejects_overlap() {
         .expect("run apr imatrix-lint");
     assert!(!out.status.success(), "calib/eval leakage must fail");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("FALSIFY-CRUX-B-07-001"));
+    // The leakage invariant is its own falsifiable claim: it must NOT be
+    // filed under -001, the perplexity-improvement id (issue #2391).
+    assert!(
+        stderr.contains("FALSIFY-CRUX-B-07-004"),
+        "leakage failure must stamp its own id; got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("FALSIFY-CRUX-B-07-001"),
+        "leakage failure filed under the improvement id: {stderr}"
+    );
 }
 
 // ---- flags gate (FALSIFY-CRUX-B-07-002) -----------------------------------
@@ -466,4 +475,16 @@ fn falsify_crux_b_07_json_output_shape() {
     assert!(stdout.contains("FALSIFY-CRUX-B-07-001"));
     assert!(stdout.contains("FALSIFY-CRUX-B-07-002"));
     assert!(stdout.contains("FALSIFY-CRUX-B-07-003"));
+    assert!(stdout.contains("FALSIFY-CRUX-B-07-004"));
+    // A --json consumer keys on falsify_id: every gate needs its own.
+    let ids: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.contains("\"falsify_id\""))
+        .collect();
+    let unique: std::collections::BTreeSet<&&str> = ids.iter().collect();
+    assert_eq!(
+        ids.len(),
+        unique.len(),
+        "duplicate falsify_id in --json gates: {ids:?}"
+    );
 }

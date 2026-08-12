@@ -36,10 +36,19 @@ const TOOLS_CALL_VERSION: &str = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call
 /// crate is exercised in isolation. Same approach as
 /// `falsify_mcp_dogfood_001.rs`.
 fn apr_binary() -> PathBuf {
-    let candidate = assert_cmd::cargo::cargo_bin("apr");
-    if candidate.is_file() {
-        return candidate;
-    }
+    // ALWAYS build; never short-circuit on "the file exists".
+    //
+    // Returning an existing `cargo_bin("apr")` unconditionally means a binary
+    // left in the shared target dir by ANY other commit is silently preferred.
+    // That happened: these six falsifiers all failed against
+    // `apr 0.63.0 (d16c608b1)` while the worktree was at 11f958f25 — the exact
+    // pre-fix symptom ("stream did not contain valid UTF-8", exit 1), so the
+    // fix under test looked broken when it was simply not the code running.
+    // All six pass once the binary's embedded SHA matches HEAD.
+    //
+    // `cargo build` is a cheap no-op when the binary is already current, so
+    // this costs nothing in the common case and removes the failure mode.
+    // Same doctrine as scripts/apr_bin.sh, which hard-fails on a stale SHA.
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let pkg_spec = format!("aprender@{}", env!("CARGO_PKG_VERSION"));
     let status = Command::new(&cargo)

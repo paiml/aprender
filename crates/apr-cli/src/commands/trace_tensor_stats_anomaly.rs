@@ -124,6 +124,7 @@
         let trace = LayerTrace {
             name: "attention".to_string(),
             index: Some(0),
+            hidden_dim: None,
             input_stats: None,
             output_stats: None,
             weight_stats: None,
@@ -139,6 +140,7 @@
         let trace = LayerTrace {
             name: "ffn".to_string(),
             index: Some(5),
+            hidden_dim: None,
             input_stats: None,
             output_stats: None,
             weight_stats: None,
@@ -152,6 +154,7 @@
         let trace = LayerTrace {
             name: "mlp".to_string(),
             index: None,
+            hidden_dim: None,
             input_stats: None,
             output_stats: None,
             weight_stats: None,
@@ -166,6 +169,7 @@
         let trace = LayerTrace {
             name: "layer_0".to_string(),
             index: Some(0),
+            hidden_dim: None,
             input_stats: None,
             output_stats: None,
             weight_stats: None,

@@ -33,7 +33,7 @@ pub(crate) fn run(
     }
     let body_text = std::fs::read_to_string(otlp_file)?;
     let body: Value = serde_json::from_str(&body_text).map_err(|e| {
-        CliError::InvalidFormat(format!(
+        CliError::InvalidInput(format!(
             "apr otlp-lint: failed to parse JSON from {}: {e}",
             otlp_file.display()
         ))

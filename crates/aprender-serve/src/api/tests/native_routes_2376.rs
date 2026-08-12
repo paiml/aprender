@@ -19,7 +19,7 @@ use crate::api::{create_router, AppState};
 /// A quantized-only server: exactly what `apr serve run model.gguf` builds — a
 /// tokenizer plus `quantized_model`, and NO dense f32 `Model`.
 #[cfg(feature = "gpu")]
-fn quantized_state() -> AppState {
+pub(super) fn quantized_state() -> AppState {
     use crate::api::test_helpers::create_test_quantized_model;
     use crate::gguf::{ArchConstraints, GGUFConfig};
 
@@ -45,14 +45,14 @@ fn quantized_state() -> AppState {
         .expect("build quantized AppState")
 }
 
-async fn body_string(response: axum::response::Response) -> String {
+pub(super) async fn body_string(response: axum::response::Response) -> String {
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-async fn post(state: AppState, uri: &str, json: &str) -> (StatusCode, String) {
+pub(super) async fn post(state: AppState, uri: &str, json: &str) -> (StatusCode, String) {
     let response = create_router(state)
         .oneshot(
             Request::builder()
@@ -68,7 +68,7 @@ async fn post(state: AppState, uri: &str, json: &str) -> (StatusCode, String) {
     (status, body_string(response).await)
 }
 
-async fn get(state: AppState, uri: &str) -> (StatusCode, String) {
+pub(super) async fn get(state: AppState, uri: &str) -> (StatusCode, String) {
     let response = create_router(state)
         .oneshot(
             Request::builder()
