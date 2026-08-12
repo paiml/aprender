@@ -81,7 +81,7 @@ fn print_report(
         let obj = serde_json::json!({
             "csv_file": csv_file.display().to_string(),
             "csv_file_b": csv_file_b.map(|p| p.display().to_string()),
-            "schema": format!("{schema:?}"),
+            "schema": schema,
             "row_count": row_count.map(|o| format!("{o:?}")),
             "determinism": determinism.map(|o| format!("{o:?}")),
         });

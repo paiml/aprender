@@ -108,11 +108,11 @@ fn print_report(
     if json {
         let obj = serde_json::json!({
             "file": path.display().to_string(),
-            "schema": format!("{schema:?}"),
-            "block_conservation": format!("{block:?}"),
-            "used_pct_arithmetic": format!("{used_pct:?}"),
-            "peak_consistency": format!("{peak:?}"),
-            "preemption_trigger": format!("{preempt:?}"),
+            "schema": schema,
+            "block_conservation": block,
+            "used_pct_arithmetic": used_pct,
+            "peak_consistency": peak,
+            "preemption_trigger": preempt,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

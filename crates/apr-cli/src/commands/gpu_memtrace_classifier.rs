@@ -22,7 +22,8 @@
 use serde_json::Value;
 
 /// Outcome of `classify_schema`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ChromeTraceSchemaOutcome {
     Ok { event_count: usize },
     NotAnObject,
@@ -35,7 +36,8 @@ pub enum ChromeTraceSchemaOutcome {
 }
 
 /// Outcome of `classify_alloc_free_pairing`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum AllocFreePairingOutcome {
     Ok,
     OrphanAllocs { addresses: Vec<String> },
@@ -44,7 +46,8 @@ pub enum AllocFreePairingOutcome {
 }
 
 /// Outcome of `classify_monotonic_timestamps`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum MonotonicTimestampsOutcome {
     Ok,
     NonMonotonic {

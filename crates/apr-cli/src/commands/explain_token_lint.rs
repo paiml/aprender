@@ -83,9 +83,9 @@ fn print_report(
     if json {
         let obj = serde_json::json!({
             "file": path.display().to_string(),
-            "schema": format!("{schema:?}"),
-            "probs_normalize": format!("{probs:?}"),
-            "sampled_in_candidates": format!("{sampled:?}"),
+            "schema": schema,
+            "probs_normalize": probs,
+            "sampled_in_candidates": sampled,
             "greedy_picks_argmax": greedy.map(|g| format!("{g:?}")),
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());

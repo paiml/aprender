@@ -26,7 +26,8 @@ pub const H13_CANONICAL_SAMPLE_RATES: &[u32] = &[
 ];
 
 /// Outcome of `classify_amplitude_bounds`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum AudioBoundsOutcome {
     Ok { min: f64, max: f64 },
     NotAnObject,
@@ -40,7 +41,8 @@ pub enum AudioBoundsOutcome {
 }
 
 /// Outcome of `classify_sample_rate`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum AudioSampleRateOutcome {
     Ok {
         rate: u32,
@@ -64,7 +66,8 @@ pub enum AudioSampleRateOutcome {
 }
 
 /// Outcome of `classify_channel_shape`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum AudioChannelShapeOutcome {
     Ok {
         channels: u32,
