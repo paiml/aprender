@@ -436,6 +436,20 @@ jobs:
       # reading the merged view. Behavioural, text-only, no build.
       - name: Story JSON parsing must read stdout, not the merged stream
         run: bash scripts/check_story_json_streams.sh
+      # Poka-yoke: the 0.63.0 dogfood audit found 201 defects in code that was
+      # shipped, tested and covered. The 5 Whys (docs/audits/dogfood-0.63.0-hansei.md)
+      # landed on: nothing mechanical requires an assertion to EXCLUDE an outcome.
+      # `assert!(status == OK || status == BAD_REQUEST || status == NOT_IMPLEMENTED)`
+      # passes whatever the endpoint does, earns identical line coverage to an
+      # assert_eq!, and is exempt from diff-scoped mutation testing on
+      # pre-existing surface. 320 such sites existed; the first one tightened
+      # showed a test named `test_apr_explain_endpoint` never reaching the
+      # explain handler at all. Baseline-ratcheted so the debt only falls.
+      # Text-only check, no build.
+      - name: Assertions must exclude an outcome, not merely reach one
+        run: bash scripts/check_assertions_exclude.sh
+      - name: Assertion-exclusion guard case table
+        run: bash scripts/check_assertions_exclude.sh --self-test
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
