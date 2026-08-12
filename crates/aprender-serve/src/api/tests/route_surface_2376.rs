@@ -141,7 +141,7 @@ async fn advertised_routes_answer_under_every_config() {
 async fn unadvertised_routes_do_not_answer() {
     let universe: std::collections::BTreeSet<String> = all_configs()
         .iter()
-        .flat_map(|config| advertised_routes(config))
+        .flat_map(advertised_routes)
         .collect();
 
     for config in all_configs() {
