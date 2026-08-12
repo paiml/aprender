@@ -21,7 +21,8 @@
 pub const F18_REQUIRED_COLUMNS: &[&str] = &["token_id", "token_str", "x", "y"];
 
 /// Outcome of `classify_schema`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum EmbedSchemaOutcome {
     Ok {
         rows: usize,

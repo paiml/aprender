@@ -38,7 +38,8 @@ pub const F15_DOC_LINK_SUBSTRINGS: &[&str] = &[
 ];
 
 /// Outcome of `classify_schema`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum NcclSchemaOutcome {
     Ok,
     NotAnObject,

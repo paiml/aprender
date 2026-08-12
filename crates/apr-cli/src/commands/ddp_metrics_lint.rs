@@ -91,9 +91,9 @@ fn print_report(
         let obj = serde_json::json!({
             "metrics_1gpu_file": file1.display().to_string(),
             "metrics_ngpu_file": file_n.display().to_string(),
-            "scaling_efficiency": format!("{scaling:?}"),
-            "loss_parity": format!("{parity:?}"),
-            "allreduce_bandwidth": format!("{allreduce:?}"),
+            "scaling_efficiency": scaling,
+            "loss_parity": parity,
+            "allreduce_bandwidth": allreduce,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

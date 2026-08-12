@@ -67,7 +67,7 @@ fn print_report(
     if json {
         let obj = serde_json::json!({
             "file": path.display().to_string(),
-            "text_format": format!("{text:?}"),
+            "text_format": text,
             "required_metrics": required.map(|r| format!("{r:?}")),
             "content_type": ct.map(|c| format!("{c:?}")),
         });

@@ -67,9 +67,14 @@ fn print_report(
     if json_out {
         let obj = serde_json::json!({
             "file": path.display().to_string(),
-            "amplitude_bounds": format!("{bounds:?}"),
-            "sample_rate": format!("{rate:?}"),
-            "channel_shape": format!("{shape:?}"),
+            // aprender#2377(6): these were `format!("{x:?}")`, which puts a Rust
+            // Debug rendering inside a JSON *string* — a consumer asking for the
+            // sample rate got the characters `Ok { rate: 16000 }`. The outcome
+            // enums are internally-tagged Serialize, so each is now an object
+            // with a `status` discriminant and its real fields.
+            "amplitude_bounds": bounds,
+            "sample_rate": rate,
+            "channel_shape": shape,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;
@@ -110,6 +115,35 @@ mod cov_tests {
 
     /// Dogfood 0.63.0 #2377 finding 5 at the command surface: the body says
     /// 4294983296, the pre-fix report said `Ok { rate: 16000 }` and exited 0.
+    /// FALSIFIER (#2377-6): the JSON report carries FIELDS, not a Debug string.
+    ///
+    /// Before, `--json` emitted `"sample_rate": "ExpectedRateMismatch { got: \
+    /// 8000, expected: 16000 }"` — a Rust rendering inside a JSON string, which
+    /// no consumer can read and which changes whenever a variant is renamed.
+    /// Asserting `!is_string()` is the half that would have caught the original
+    /// defect; asserting the fields is the half that keeps it honest.
+    #[test]
+    fn json_outcomes_are_objects_with_fields_not_debug_strings() {
+        let v = serde_json::to_value(AudioSampleRateOutcome::ExpectedRateMismatch {
+            got: 8000,
+            expected: 16000,
+        })
+        .expect("outcome serializes");
+
+        assert!(
+            !v.is_string(),
+            "a JSON consumer must get an object, not a Debug rendering: {v}"
+        );
+        assert_eq!(v["status"], "expected_rate_mismatch");
+        assert_eq!(v["got"], 8000);
+        assert_eq!(v["expected"], 16000);
+
+        // A unit variant still carries its discriminant rather than vanishing.
+        let missing =
+            serde_json::to_value(AudioSampleRateOutcome::MissingSampleRate).expect("serializes");
+        assert_eq!(missing["status"], "missing_sample_rate");
+    }
+
     #[test]
     fn out_of_range_sample_rate_fails_the_command() {
         let f = w(r#"{"min":-0.5,"max":0.5,"sample_rate":4294983296,"channels":1,"samples":100}"#);

@@ -24,7 +24,8 @@ pub const D11_DEFAULT_SCALING_FLOOR: f64 = 0.85;
 pub const D11_DEFAULT_LOSS_TOLERANCE: f64 = 0.01;
 
 /// Outcome of `classify_scaling_efficiency`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum DdpScalingOutcome {
     Ok {
         efficiency: f64,
@@ -49,7 +50,8 @@ pub enum DdpScalingOutcome {
 }
 
 /// Outcome of `classify_loss_parity`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum DdpLossParityOutcome {
     Ok {
         rel_diff: f64,
@@ -69,7 +71,8 @@ pub enum DdpLossParityOutcome {
 }
 
 /// Outcome of `classify_allreduce_bandwidth`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum DdpAllreduceOutcome {
     Ok { steps: usize },
     MissingDdpMetrics,
