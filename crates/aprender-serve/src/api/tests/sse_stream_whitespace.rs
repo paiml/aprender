@@ -84,6 +84,8 @@ async fn sse_deltas_reassemble_with_whitespace_intact() {
         "test-model".to_string(),
         Arc::new(crate::metrics::MetricsCollector::new()),
         std::time::Instant::now(),
+        // Budget far above the token count: this stream ends on EOS, not length.
+        256,
     );
 
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)

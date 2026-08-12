@@ -33,7 +33,7 @@ fn test_chat_completion_request_deserialization_minimal() {
     assert_eq!(req.max_tokens, None);
     assert_eq!(req.temperature, None);
     assert_eq!(req.top_p, None);
-    assert_eq!(req.n, 1);
+    assert_eq!(req.n.get(), 1);
     assert!(!req.stream);
     assert_eq!(req.stop, None);
     assert_eq!(req.user, None);
@@ -62,7 +62,7 @@ fn test_chat_completion_request_deserialization_full() {
     assert_eq!(req.max_tokens, Some(100));
     assert!((req.temperature.expect("test value should be present") - 0.7).abs() < 0.01);
     assert!((req.top_p.expect("test value should be present") - 0.9).abs() < 0.01);
-    assert_eq!(req.n, 1);
+    assert_eq!(req.n.get(), 1);
     assert!(req.stream);
     assert_eq!(req.stop.as_ref().expect("test value should be present").len(), 2);
     assert_eq!(req.user, Some("test-user".to_string()));
@@ -97,7 +97,7 @@ fn test_chat_completion_request_serialization() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: crate::api::ChoiceCount::ONE,
         stream: false,
         stop: None,
         user: None,
@@ -282,7 +282,7 @@ fn test_chat_completion_chunk_content() {
 
 #[test]
 fn test_chat_completion_chunk_done() {
-    let chunk = ChatCompletionChunk::done("chatcmpl-789", "phi-2");
+    let chunk = ChatCompletionChunk::done("chatcmpl-789", "phi-2", crate::api::FinishReason::Stop);
 
     assert_eq!(chunk.id, "chatcmpl-789");
     assert_eq!(chunk.choices[0].delta.role, None);

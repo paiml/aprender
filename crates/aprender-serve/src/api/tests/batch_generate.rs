@@ -202,7 +202,7 @@ async fn test_openai_chat_completions_endpoint() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: crate::api::ChoiceCount::ONE,
         stream: false,
         stop: None,
         user: None,
@@ -422,7 +422,8 @@ fn test_format_chat_messages_alpaca() {
 
 #[test]
 fn test_default_n() {
-    assert_eq!(default_n(), 1);
+    // #2375(9): `n` is a ChoiceCount now; its default is still one choice.
+    assert_eq!(crate::api::ChoiceCount::default().get(), 1);
 }
 
 #[test]

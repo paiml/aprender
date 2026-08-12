@@ -15,9 +15,14 @@ use colored::Colorize;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// Output format for tree
+/// Output format for tree.
+///
+/// `pub` because it is the parsed type of the `apr tree --format` argument on
+/// the public `ExtendedCommands` enum (the same shape as `CodeOutputFormat`).
+/// Parsing at the CLI boundary is what stops `--format bogusvalue` from
+/// silently rendering ascii — see #2394 finding 15.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TreeFormat {
+pub enum TreeFormat {
     /// ASCII tree (default)
     Ascii,
     /// Graphviz DOT format

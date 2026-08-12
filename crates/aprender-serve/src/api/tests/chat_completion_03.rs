@@ -132,7 +132,7 @@ fn test_chat_completion_request_defaults_cov() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 1,
+        n: crate::api::ChoiceCount::ONE,
         stream: false,
         stop: None,
         max_tokens: None,

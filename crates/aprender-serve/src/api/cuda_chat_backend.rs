@@ -160,6 +160,7 @@ async fn try_cuda_backend(
             request.model.clone(),
             state.metrics.clone(),
             start,
+            max_tokens,
         ));
     }
 
@@ -280,6 +281,7 @@ fn try_quantized_backend(
             request.model.clone(),
             state.metrics.clone(),
             start,
+            max_tokens,
         ));
     }
 
@@ -384,6 +386,7 @@ fn registry_fallback(
             request_id.to_string(),
             request.model.clone(),
             request.stop.as_deref(),
+            request.max_tokens.unwrap_or(256),
         );
     }
 
@@ -789,6 +792,7 @@ fn try_qwen3_moe_backend(
             request.model.clone(),
             state.metrics.clone(),
             start,
+            max_tokens,
         ));
     }
 

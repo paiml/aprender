@@ -621,3 +621,38 @@
             "lint commands with an undocumented flag: {offenders:?}"
         );
     }
+
+    /// FALSIFIER (#2394 finding 15): `apr tree --format <garbage>` must be
+    /// rejected, not silently rendered as ascii.
+    ///
+    /// `apr tree model.apr --format bogusvalue` printed the ascii tree and
+    /// exited 0 — no error, no warning. The dispatcher parsed the string with
+    /// `.unwrap_or(TreeFormat::Ascii)`, so `--format josn` in a pipeline
+    /// produced a tree where JSON was expected and every downstream check saw
+    /// success. `TreeFormat::from_str` had always returned
+    /// `Err("Unknown format: …")`; the error was thrown away one call up.
+    #[test]
+    fn test_tree_rejects_an_unknown_format_value() {
+        let err = parse_cli(vec!["apr", "tree", "m.apr", "--format", "bogusvalue"])
+            .expect_err("--format bogusvalue must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("bogusvalue"),
+            "the error must quote the value it rejected, got: {msg}"
+        );
+    }
+
+    /// ...while every documented spelling still parses, so the guard rejects
+    /// typos rather than rejecting everything.
+    #[test]
+    fn test_tree_accepts_every_documented_format() {
+        for value in ["ascii", "text", "dot", "graphviz", "mermaid", "md", "json"] {
+            let args: Vec<&'static str> = vec!["apr", "tree", "m.apr", "--format", value];
+            assert!(
+                parse_cli(args).is_ok(),
+                "--format {value} is documented and must parse"
+            );
+        }
+        // And the default (no --format at all) still works.
+        assert!(parse_cli(vec!["apr", "tree", "m.apr"]).is_ok());
+    }

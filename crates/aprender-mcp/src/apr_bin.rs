@@ -91,6 +91,82 @@ mod tests {
         }
     }
 
+    /// Execute a just-written shim, retrying only on ETXTBSY.
+    ///
+    /// `write_marker_bin` already syncs and drops its own handle, so the fd
+    /// that makes the file "busy" is not ours. Under `cargo test --workspace
+    /// --lib` this module's neighbours in `tools::subprocess::tests` spawn
+    /// subprocesses concurrently; if one of them forks in the window where our
+    /// write fd to the shim is still open, the forked child inherits that fd
+    /// and holds it until its own exec. Our exec of the shim then fails with
+    /// ETXTBSY. `O_CLOEXEC` closes the fd at the child's exec but not before
+    /// it, so the window is real — which is why this test passed standalone
+    /// (`-p aprender-mcp --lib`) and failed under `--workspace --lib` with
+    /// `spawn resolved program .../apr: Text file busy (os error 26)`.
+    ///
+    /// Retrying cannot mask the defect under test: only ETXTBSY is retried,
+    /// the bound is one second, and a shim that is wrong or never becomes
+    /// executable still fails. `exec_marker_bin_survives_a_transient_etxtbsy`
+    /// holds a write fd open on purpose to prove both halves.
+    #[cfg(unix)]
+    fn exec_marker_bin(path: &Path) -> std::process::Output {
+        const ETXTBSY: i32 = 26;
+        let mut last = String::new();
+        for _ in 0..100 {
+            match std::process::Command::new(path).output() {
+                Ok(out) => return out,
+                Err(e) if e.raw_os_error() == Some(ETXTBSY) => {
+                    last = e.to_string();
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(e) => panic!("spawn {}: {e}", path.display()),
+            }
+        }
+        panic!(
+            "spawn {} still busy after 100 attempts: {last}",
+            path.display()
+        );
+    }
+
+    /// FALSIFIER: the ETXTBSY window is real, and `exec_marker_bin` rides it out.
+    ///
+    /// Holding a write handle open reproduces exactly the state a forked
+    /// sibling leaves the shim in. A direct spawn must fail with ETXTBSY (if it
+    /// does not, the premise of the retry is wrong and this test says so);
+    /// the retrying helper must then succeed once the handle drops. Deleting
+    /// the retry loop turns this RED deterministically.
+    #[test]
+    #[cfg(unix)]
+    fn exec_marker_bin_survives_a_transient_etxtbsy() {
+        let dir = scratch_dir("etxtbsy");
+        let shim = dir.join("apr");
+        write_marker_bin(&shim, "RETRY-MARKER");
+
+        let held = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&shim)
+            .expect("hold a write fd open");
+        let direct = std::process::Command::new(&shim).output();
+        assert_eq!(
+            direct.err().and_then(|e| e.raw_os_error()),
+            Some(26),
+            "an open write fd must make a direct spawn fail with ETXTBSY; without that \
+             the retry loop is guarding nothing"
+        );
+
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            drop(held);
+        });
+
+        let out = exec_marker_bin(&shim);
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "RETRY-MARKER",
+            "the helper must retry through ETXTBSY and then run the shim"
+        );
+    }
+
     /// Per-process, per-call scratch dir. A fixed path would let two
     /// concurrent runs of this test binary delete each other's shim.
     fn scratch_dir(name: &str) -> PathBuf {
@@ -130,9 +206,7 @@ mod tests {
             resolved.display()
         );
 
-        let out = std::process::Command::new(&resolved)
-            .output()
-            .unwrap_or_else(|e| panic!("spawn resolved program {}: {e}", resolved.display()));
+        let out = exec_marker_bin(&resolved);
         assert_eq!(
             String::from_utf8_lossy(&out.stdout).trim(),
             "SELF-BINARY-UNDER-TEST",

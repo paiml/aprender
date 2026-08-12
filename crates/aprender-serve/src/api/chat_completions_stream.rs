@@ -1,4 +1,16 @@
 
+/// The deltas of a streamed response, plus whether a stop STRING ended it.
+///
+/// `stopped` exists because the terminal chunk needs it: #2375 finding 6 shipped
+/// a hardcoded `finish_reason: "stop"` partly because the delta builder threw
+/// away the one fact that distinguishes "stopped" from "ran out of budget".
+struct StreamedText {
+    /// Text deltas, in order; `deltas.concat()` is the full (stop-truncated) text.
+    deltas: Vec<String>,
+    /// True when a stop string matched and truncated the text.
+    stopped: bool,
+}
+
 /// Produce char-boundary-safe streaming text deltas from a fully-generated token list.
 ///
 /// Fixes two bugs on this pregenerated SSE path (PMAT-758):
@@ -15,9 +27,10 @@ fn streaming_text_deltas(
     tokenizer: &BPETokenizer,
     token_ids: &[u32],
     stops: Option<&[String]>,
-) -> Vec<String> {
+) -> StreamedText {
     let mut deltas = Vec::new();
     let mut emitted = 0usize;
+    let mut stopped = false;
     for i in 0..token_ids.len() {
         let Ok(raw) = tokenizer.decode(&token_ids[..=i]) else {
             continue;
@@ -33,10 +46,11 @@ fn streaming_text_deltas(
             emitted = text.len();
         }
         if stop_hit {
+            stopped = true;
             break;
         }
     }
-    deltas
+    StreamedText { deltas, stopped }
 }
 
 /// Resolve the `GenerationConfig` for a streaming chat completion (PMAT-790).
@@ -147,7 +161,11 @@ pub async fn openai_chat_completions_stream_handler(
     // per-token `decode(&[token_id])` split multi-byte UTF-8 (emoji/CJK -> U+FFFD) and
     // ignored request.stop entirely. All tokens are already generated here, so we can decode
     // cumulatively and emit only complete-char, pre-stop deltas.
-    let deltas = streaming_text_deltas(&tokenizer, &generated_ids, request.stop.as_deref());
+    let StreamedText { deltas, stopped } =
+        streaming_text_deltas(&tokenizer, &generated_ids, request.stop.as_deref());
+    // #2375(6): the terminal chunk must state why generation ended. The
+    // non-streaming path reports "length" at the budget; so does this one now.
+    let finish = FinishReason::from_generation(stopped, generated_ids.len(), max_tokens);
 
     let stream = async_stream::stream! {
         // PMAT-753: pass ONLY the JSON payload to Event::data() — axum's Sse adds the
@@ -163,7 +181,7 @@ pub async fn openai_chat_completions_stream_handler(
             yield Ok(Event::default().data(data));
         }
 
-        let done = ChatCompletionChunk::done(&request_id_clone, &model_name);
+        let done = ChatCompletionChunk::done(&request_id_clone, &model_name, finish);
         let data = serde_json::to_string(&done).unwrap_or_default();
         yield Ok(Event::default().data(data));
 
@@ -192,7 +210,7 @@ mod pmat758_streaming_delta_tests {
         // decode(&[id]) ran from_utf8_lossy on each single byte -> four U+FFFD. Cumulative
         // decode must hold back until the char completes, emitting a single "😀".
         let t = tok(&["<unk>", "<0xF0>", "<0x9F>", "<0x98>", "<0x80>"]);
-        let deltas = streaming_text_deltas(&t, &[1, 2, 3, 4], None);
+        let deltas = streaming_text_deltas(&t, &[1, 2, 3, 4], None).deltas;
         assert_eq!(deltas.concat(), "😀");
         assert!(
             !deltas.concat().contains('\u{FFFD}'),
@@ -204,7 +222,7 @@ mod pmat758_streaming_delta_tests {
     fn applies_stop_and_halts_emission() {
         // "abXc" with stop ["X"] -> streamed text is "ab", never contains the stop string.
         let t = tok(&["<unk>", "a", "b", "X", "c"]);
-        let deltas = streaming_text_deltas(&t, &[1, 2, 3, 4], Some(&["X".to_string()]));
+        let deltas = streaming_text_deltas(&t, &[1, 2, 3, 4], Some(&["X".to_string()])).deltas;
         assert_eq!(deltas.concat(), "ab");
         assert!(!deltas.concat().contains('X'));
     }
@@ -212,7 +230,7 @@ mod pmat758_streaming_delta_tests {
     #[test]
     fn no_stop_streams_full_text() {
         let t = tok(&["<unk>", "a", "b", "X", "c"]);
-        let deltas = streaming_text_deltas(&t, &[1, 2, 3, 4], None);
+        let deltas = streaming_text_deltas(&t, &[1, 2, 3, 4], None).deltas;
         assert_eq!(deltas.concat(), "abXc");
     }
 }

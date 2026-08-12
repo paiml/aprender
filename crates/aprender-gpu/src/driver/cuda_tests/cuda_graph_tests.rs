@@ -26,12 +26,19 @@ fn test_cuda_graph_instantiate_empty() {
 
 #[test]
 fn test_cuda_graph_capture_and_replay() {
+    let _capture_lock = super::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
     let stream = CudaStream::new(&ctx).expect("Stream creation MUST succeed");
 
-    // Begin capture
+    // GPU-ORD-4: ThreadLocal, not Global. `CaptureMode::Global` makes every
+    // legacy-stream synchronous API illegal in the WHOLE PROCESS for as long as
+    // the capture is open, and an unsafe call from any other thread invalidates
+    // the capture. Neither this test nor the crate needs that: it captures its
+    // own stream from its own thread. Leaving it Global made unrelated
+    // concurrent tests fail with CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED (900) —
+    // `test_context_synchronize` panicking on a plain `ctx.synchronize()`.
     stream
-        .begin_capture(CaptureMode::Global)
+        .begin_capture(CaptureMode::ThreadLocal)
         .expect("Begin capture MUST succeed");
 
     // Simulate some work (empty capture is valid)
@@ -57,15 +64,19 @@ fn test_cuda_graph_capture_and_replay() {
 
 #[test]
 fn test_cuda_graph_capture_modes() {
+    let _capture_lock = super::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
     let stream = CudaStream::new(&ctx).expect("Stream creation MUST succeed");
 
-    // Test each capture mode
-    for mode in [
-        CaptureMode::Global,
-        CaptureMode::ThreadLocal,
-        CaptureMode::Relaxed,
-    ] {
+    // GPU-ORD-4: `CaptureMode::Global` is deliberately absent. Opening a Global
+    // capture makes every legacy-stream synchronous API illegal across the
+    // whole process until it closes, and an "unsafe" call from any other thread
+    // invalidates the capture — so this test cannot open one without breaking
+    // whatever else is running. The value it added here was "the driver accepts
+    // mode 0", and the enum-to-constant mapping is already asserted directly by
+    // `driver::graph::tests` (`CaptureMode::Global.to_cuda_mode() == 0`), which
+    // costs nothing and cannot disturb a neighbour.
+    for mode in [CaptureMode::ThreadLocal, CaptureMode::Relaxed] {
         stream
             .begin_capture(mode)
             .expect("Begin capture MUST succeed");
@@ -78,6 +89,7 @@ fn test_cuda_graph_capture_modes() {
 
 #[test]
 fn test_cuda_graph_with_kernel() {
+    let _capture_lock = super::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
     let stream = CudaStream::new(&ctx).expect("Stream creation MUST succeed");
 
@@ -126,9 +138,15 @@ $done:
     let n: u32 = 256;
     let config = LaunchConfig::linear(256, 256);
 
-    // Begin capture
+    // GPU-ORD-4: ThreadLocal, not Global. `CaptureMode::Global` makes every
+    // legacy-stream synchronous API illegal in the WHOLE PROCESS for as long as
+    // the capture is open, and an unsafe call from any other thread invalidates
+    // the capture. Neither this test nor the crate needs that: it captures its
+    // own stream from its own thread. Leaving it Global made unrelated
+    // concurrent tests fail with CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED (900) —
+    // `test_context_synchronize` panicking on a plain `ctx.synchronize()`.
     stream
-        .begin_capture(CaptureMode::Global)
+        .begin_capture(CaptureMode::ThreadLocal)
         .expect("Begin capture MUST succeed");
 
     // Launch kernel (will be captured)

@@ -33,8 +33,13 @@ fn test_cuda_stress_concurrent_streams() {
     }
 }
 
+/// GPU-ORD-4: "the card must hand me at least 2GB" is a claim on shared device
+/// capacity. It failed with "Memory exhausted after 2 chunks (512MB)" on a 24GB
+/// card, because `test_oom_resilience` was concurrently holding nearly all of
+/// it. Both take `device_memory_exclusive()`.
 #[test]
 fn test_cuda_stress_memory_pressure() {
+    let _exclusive = crate::driver::device_memory_exclusive();
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
 
     // Allocate 4GB total in 256MB chunks

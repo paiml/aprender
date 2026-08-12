@@ -83,6 +83,98 @@ fn should_use_managed_memory(ctx: &CudaContext) -> bool {
 }
 
 // ============================================================================
+// Per-thread device allocation accounting (GPU-ORD-4)
+// ============================================================================
+
+thread_local! {
+    /// Device bytes this thread has allocated through `GpuBuffer` and not yet
+    /// freed.
+    static OUTSTANDING_DEVICE_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Device bytes allocated by the current thread through `GpuBuffer` and not
+/// yet freed.
+///
+/// # Why this exists, and what to use it for (GPU-ORD-4)
+///
+/// The obvious way to check that a buffer released its memory is to bracket
+/// the work with `CudaContext::memory_info()` and compare free memory. That
+/// number is a property of the **device**, shared by every thread in this
+/// process, every other process on the box, and the display server. Assertions
+/// built on it are not measuring the code under test:
+/// `test_raii_cleanup_single_buffer` once reported `before=20583415808,
+/// during=21017526272` — *more* free memory after allocating 100MB, which no
+/// leak can explain and only a neighbour freeing memory can.
+///
+/// This counter is owned by the thread that did the allocating, so nothing
+/// else can move it. That makes it exact rather than approximate: RAII
+/// assertions can demand the count return to precisely where it started
+/// instead of allowing the 10MB–50MB "driver overhead" tolerances that a
+/// device-global reading forces, and which were wide enough to hide a real
+/// leak.
+///
+/// A buffer allocated on one thread and dropped on another is debited from the
+/// thread that drops it; for the same-thread allocate-and-drop this is written
+/// for, the count is exact.
+#[must_use]
+pub fn device_bytes_outstanding() -> u64 {
+    OUTSTANDING_DEVICE_BYTES.with(std::cell::Cell::get)
+}
+
+/// Record a successful device allocation against the current thread.
+fn record_device_alloc(bytes: usize) {
+    OUTSTANDING_DEVICE_BYTES.with(|c| c.set(c.get().saturating_add(bytes as u64)));
+}
+
+/// Record a device free against the current thread.
+fn record_device_free(bytes: usize) {
+    OUTSTANDING_DEVICE_BYTES.with(|c| c.set(c.get().saturating_sub(bytes as u64)));
+}
+
+/// Serialises claims on, and mutations of, process/device-wide allocation
+/// state.
+static DEVICE_MEMORY_EXCLUSIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Exclusive claim on the device's allocation state. See
+/// [`device_memory_exclusive`].
+pub struct DeviceMemoryExclusive(std::sync::MutexGuard<'static, ()>);
+
+/// Acquire an exclusive claim on the device's allocation state.
+///
+/// Per-thread accounting ([`device_bytes_outstanding`]) fixes assertions about
+/// *this caller's own* allocations. It cannot help two other kinds of
+/// statement, which are irreducibly about shared state and therefore need
+/// mutual exclusion:
+///
+/// 1. **Claims on total device capacity** — "allocating 100GB must fail",
+///    "2GB must succeed", "allocating until OOM then freeing returns the
+///    memory". Two such tests running at once each invalidate the other's
+///    premise: `test_cuda_stress_memory_pressure` reported "Memory exhausted
+///    after 2 chunks (512MB)" on a 24GB card because `test_oom_resilience` was
+///    concurrently holding almost all of it.
+///
+/// 2. **Mutations of `MANAGED_MEMORY`** — the allocator consults that
+///    environment variable on *every* allocation, and the environment is
+///    process-wide. While one test had `MANAGED_MEMORY=1` set, an unrelated
+///    concurrent allocation routed to `cuMemAllocManaged`, which oversubscribes
+///    — which is how `test_alloc_oversize_100gb` came to panic with "CRITICAL:
+///    100GB allocation succeeded".
+///
+/// Both categories must take this lock, because they conflict with each other,
+/// not merely within their own category.
+#[must_use]
+pub fn device_memory_exclusive() -> DeviceMemoryExclusive {
+    // The lock orders test-scoped claims; it guards no invariant that a panic
+    // could leave broken, so recovering from poisoning is correct and stops one
+    // unrelated failure from cascading into every later allocation test.
+    DeviceMemoryExclusive(
+        DEVICE_MEMORY_EXCLUSIVE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    )
+}
+
+// ============================================================================
 // GPU Buffer
 // ============================================================================
 
@@ -192,6 +284,7 @@ impl<T> GpuBuffer<T> {
         // SAFETY: ptr is valid, size is computed correctly
         let result = unsafe { (driver.cuMemAlloc)(&mut ptr, size) };
         CudaDriver::check(result).map_err(|e| GpuError::MemoryAllocation(e.to_string()))?;
+        record_device_alloc(size);
 
         Ok(Self {
             ptr,
@@ -225,6 +318,7 @@ impl<T> GpuBuffer<T> {
         CudaDriver::check(result).map_err(|e| {
             GpuError::MemoryAllocation(format!("cuMemAllocManaged({} bytes): {}", size, e))
         })?;
+        record_device_alloc(size);
         Ok(Self {
             ptr,
             len,
@@ -508,6 +602,7 @@ impl<T> Drop for GpuBuffer<T> {
                     } else {
                         // Standard device/managed memory
                         let _ = (driver.cuMemFree)(self.ptr);
+                        record_device_free(self.len * mem::size_of::<T>());
                     }
                 }
             }

@@ -91,6 +91,49 @@ impl Category {
     }
 }
 
+/// A QA score carrying the denominator it was measured against.
+///
+/// dogfood-0.63.0, issue #2394 finding 12: `apr validate` printed
+/// `✓ VALID 3/100 points` for a healthy model. Read literally that is a 3%
+/// model waved through. It is not: most of the checklist is `Skip("Not
+/// implemented")` stubs that never ran — measured on
+/// `qwen2.5-coder-0.5b-instruct.apr`, 4 of the 26 declared checks actually
+/// ran. "100" was never the denominator anything was measured against. A
+/// score is meaningless without the number of checks that produced it, so the
+/// two travel together and `Display` refuses to print one without the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImplementedScore {
+    /// Checks that ran and passed.
+    pub passed: u8,
+    /// Checks that ran at all (Pass / Fail / Warn — not Skip).
+    pub ran: u8,
+    /// Checks declared by the checklist, run or not.
+    pub declared: usize,
+}
+
+impl ImplementedScore {
+    /// Checks the checklist declares but has not implemented.
+    #[must_use]
+    pub fn not_implemented(&self) -> usize {
+        self.declared.saturating_sub(self.ran as usize)
+    }
+}
+
+impl std::fmt::Display for ImplementedScore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let skipped = self.not_implemented();
+        write!(f, "{}/{} checks that ran", self.passed, self.ran)?;
+        if skipped > 0 {
+            write!(
+                f,
+                " ({skipped} of {} not implemented — not evidence of health)",
+                self.declared
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// Complete validation report
 #[derive(Debug, Clone)]
 pub struct ValidationReport {
@@ -165,6 +208,24 @@ impl ValidationReport {
             .filter(|c| !matches!(c.status, CheckStatus::Skip(_)))
             .count()
             .min(u8::MAX as usize) as u8
+    }
+
+    /// The score together with the denominator it was actually measured
+    /// against — see [`ImplementedScore`].
+    #[must_use]
+    pub fn implemented_score(&self) -> ImplementedScore {
+        let ran = self.implemented_max();
+        let passed = self
+            .checks
+            .iter()
+            .filter(|c| c.status.is_pass())
+            .count()
+            .min(u8::MAX as usize) as u8;
+        ImplementedScore {
+            passed,
+            ran,
+            declared: self.checks.len(),
+        }
     }
 
     /// Percentage of *implemented* (non-Skip) checks that passed. Returns

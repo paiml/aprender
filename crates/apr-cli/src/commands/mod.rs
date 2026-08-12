@@ -86,8 +86,11 @@ pub(crate) mod kv_timeline_classifier;
 pub(crate) mod kv_timeline_lint;
 pub(crate) mod lint;
 pub(crate) mod lint_error;
+// Poka-yoke for the *-lint family error surface (#2377-8/-9): scans the family's
+// own source so the class cannot be reintroduced by the next copy-paste.
 #[cfg(test)]
 mod lint_exit_convention_tests;
+pub(crate) mod lint_family_guard;
 pub(crate) mod lint_vacuity;
 pub(crate) mod manifest;
 pub(crate) mod mcp;

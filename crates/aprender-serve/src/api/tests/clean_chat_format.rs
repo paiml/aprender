@@ -267,6 +267,8 @@ async fn test_openai_embeddings_endpoint() {
 #[test]
 fn test_completion_request_serialization() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "test-model".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: Some(100),

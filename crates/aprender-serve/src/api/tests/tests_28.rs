@@ -463,6 +463,8 @@ fn test_reload_response_serde() {
 #[test]
 fn test_completion_request_serde() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "test-model".to_string(),
         prompt: "Once upon a time".to_string(),
         max_tokens: Some(50),

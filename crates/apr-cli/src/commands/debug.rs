@@ -97,16 +97,64 @@ fn log_verbose_metadata(path: &Path) {
     }
 }
 
+/// The health verdict of a debug run.
+///
+/// dogfood-0.63.0, issue #2394 finding 1: `apr debug garbage.bin` printed
+/// `Magic ✗ INVALID` and `Health ✗ CORRUPTED` and exited 0, so
+/// `apr debug f && use f` proceeded on a file the tool had just called
+/// corrupt. The badge and the exit code were computed independently — one from
+/// `info.magic_valid`, the other not at all. They are now one value: the badge
+/// is rendered from it and the exit code is derived from it, so they cannot
+/// disagree, and it is `#[must_use]` so a caller cannot print the report and
+/// drop the verdict.
+#[must_use]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Health {
+    Ok,
+    Corrupt(String),
+}
+
+impl Health {
+    /// The badge printed next to "Health".
+    fn badge(&self) -> String {
+        match self {
+            Self::Ok => output::badge_pass("OK"),
+            Self::Corrupt(_) => output::badge_fail("CORRUPTED"),
+        }
+    }
+
+    /// The exit status this verdict implies.
+    fn into_result(self) -> Result<(), CliError> {
+        match self {
+            Self::Ok => Ok(()),
+            Self::Corrupt(reason) => Err(CliError::InvalidFormat(reason)),
+        }
+    }
+}
+
 fn run_apr_mode(path: &Path, drama: bool) -> Result<(), CliError> {
     let (header_bytes, file_size) = read_header(path)?;
     let info = parse_header(&header_bytes);
+    let health = header_health(&info);
 
     if drama {
         run_drama_mode(path, &header_bytes, file_size, info.magic_valid);
     } else {
-        run_basic_mode(path, file_size, &info);
+        run_basic_mode(path, file_size, &info, &health);
     }
-    Ok(())
+    health.into_result()
+}
+
+/// The verdict the printed report is rendered from.
+fn header_health(info: &HeaderInfo) -> Health {
+    if info.magic_valid {
+        Health::Ok
+    } else {
+        Health::Corrupt(format!(
+            "not an APR file: magic bytes are {:?}, expected \"APR\\0\" — the file is corrupt or is another format",
+            info.magic_str
+        ))
+    }
 }
 
 /// GH-248: JSON debug output via Rosetta Stone
@@ -255,7 +303,7 @@ fn parse_header(header: &[u8; HEADER_SIZE]) -> HeaderInfo {
 }
 
 /// Run basic debug output mode.
-fn run_basic_mode(path: &Path, file_size: u64, info: &HeaderInfo) {
+fn run_basic_mode(path: &Path, file_size: u64, info: &HeaderInfo, health: &Health) {
     let filename = path
         .file_name()
         .unwrap_or(OsStr::new("unknown"))
@@ -274,11 +322,6 @@ fn run_basic_mode(path: &Path, file_size: u64, info: &HeaderInfo) {
     } else {
         output::badge_fail("INVALID")
     };
-    let health = if info.magic_valid {
-        output::badge_pass("OK")
-    } else {
-        output::badge_fail("CORRUPTED")
-    };
     let flag_list = collect_flags(info);
     let flags_str = if flag_list.is_empty() {
         "none".to_string()
@@ -292,7 +335,7 @@ fn run_basic_mode(path: &Path, file_size: u64, info: &HeaderInfo) {
             ("Size", humansize::format_size(file_size, humansize::BINARY)),
             ("Magic", format!("{} {}", info.magic_str, magic_status)),
             ("Flags", flags_str),
-            ("Health", health),
+            ("Health", health.badge()),
         ])
     );
 }

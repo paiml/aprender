@@ -15,6 +15,8 @@ use crate::api::realize_handlers::{
 #[test]
 fn test_completion_request_with_stop_sequences() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: Some(50),
@@ -39,6 +41,8 @@ fn test_completion_request_optional_fields() {
 #[test]
 fn test_completion_request_traits() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "hello".to_string(),
         max_tokens: Some(100),

@@ -3,12 +3,12 @@
 //! Global kernel cache to eliminate PTX recompilation overhead.
 
 #[cfg(feature = "cuda")]
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::cell::Cell;
 
 #[cfg(feature = "cuda")]
 use std::collections::HashMap;
 #[cfg(feature = "cuda")]
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 #[cfg(feature = "cuda")]
 use crate::driver::{CudaContext, CudaModule, CudaStream, LaunchConfig};
@@ -40,11 +40,33 @@ use crate::error::Result;
 #[cfg(feature = "cuda")]
 static KERNEL_CACHE: OnceLock<Mutex<HashMap<String, Arc<Mutex<CudaModule>>>>> = OnceLock::new();
 
-/// Statistics for kernel cache performance
+// Kernel cache hit/miss statistics, counted **per thread**.
+//
+// GPU-ORD-2: these were process-global atomics, and every caller uses them the
+// same way — reset, do work, read. Sharing them across threads meant one
+// caller's window measured every other caller's compilations. Attributing a hit
+// or a miss to the thread that asked for the kernel makes cross-thread
+// pollution unrepresentable, and matches how the numbers are read.
 #[cfg(feature = "cuda")]
-static KERNEL_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
+thread_local! {
+    static KERNEL_CACHE_HITS: Cell<u64> = const { Cell::new(0) };
+    static KERNEL_CACHE_MISSES: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Serialises *destructive* access to the shared compiled-module map.
+///
+/// The map itself must stay process-global — it exists so a kernel is JIT
+/// compiled once rather than 24 times per inference. What broke
+/// `test_kernel_cache_stats_after_operations` was not sharing the map, it was
+/// one caller wiping it while another was midway through observing that a
+/// repeated kernel does *not* recompile. The tell was two identical
+/// `[KERNEL-CACHE] Compiling: gelu:16` lines in a single test's output.
+///
+/// `clear_kernel_cache` is the only way to empty the map and it takes this
+/// lock, so anyone who needs a compile/hit sequence to be atomic against every
+/// clear in the process can hold `kernel_cache_exclusive()` across it.
 #[cfg(feature = "cuda")]
-static KERNEL_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
+static CACHE_CLEAR_LOCK: Mutex<()> = Mutex::new(());
 
 /// Get the global kernel cache, initializing if needed
 #[cfg(feature = "cuda")]
@@ -96,13 +118,13 @@ pub(crate) fn get_or_compile_kernel(
     {
         let cache_guard = lock_cache(cache)?;
         if let Some(module) = cache_guard.get(key) {
-            KERNEL_CACHE_HITS.fetch_add(1, Ordering::Relaxed);
+            KERNEL_CACHE_HITS.with(|c| c.set(c.get() + 1));
             return Ok(Arc::clone(module));
         }
     }
 
     // Cache miss: compile and store
-    KERNEL_CACHE_MISSES.fetch_add(1, Ordering::Relaxed);
+    KERNEL_CACHE_MISSES.with(|c| c.set(c.get() + 1));
     eprintln!("[KERNEL-CACHE] Compiling: {key}");
 
     let module = CudaModule::from_ptx(ctx, ptx)?;
@@ -150,36 +172,80 @@ pub(crate) fn compile_lock_launch(
     Ok(())
 }
 
-/// Get kernel cache hit count
+/// Get kernel cache hits attributed to the current thread since last reset
 #[cfg(feature = "cuda")]
 #[must_use]
 pub fn kernel_cache_hits() -> u64 {
-    KERNEL_CACHE_HITS.load(Ordering::Relaxed)
+    KERNEL_CACHE_HITS.with(Cell::get)
 }
 
-/// Get kernel cache miss count
+/// Get kernel cache misses attributed to the current thread since last reset
 #[cfg(feature = "cuda")]
 #[must_use]
 pub fn kernel_cache_misses() -> u64 {
-    KERNEL_CACHE_MISSES.load(Ordering::Relaxed)
+    KERNEL_CACHE_MISSES.with(Cell::get)
 }
 
-/// Reset kernel cache statistics
+/// Reset the current thread's kernel cache statistics
 #[cfg(feature = "cuda")]
 pub fn reset_kernel_cache_stats() {
-    KERNEL_CACHE_HITS.store(0, Ordering::Relaxed);
-    KERNEL_CACHE_MISSES.store(0, Ordering::Relaxed);
+    KERNEL_CACHE_HITS.with(|c| c.set(0));
+    KERNEL_CACHE_MISSES.with(|c| c.set(0));
 }
 
-/// Clear the kernel cache (useful for testing)
+/// Empty the shared module map. Assumes `CACHE_CLEAR_LOCK` is already held.
 #[cfg(feature = "cuda")]
-pub fn clear_kernel_cache() {
+fn clear_kernel_cache_locked() {
     if let Some(cache) = KERNEL_CACHE.get() {
         if let Ok(mut guard) = lock_cache(cache) {
             guard.clear();
         }
     }
     reset_kernel_cache_stats();
+}
+
+/// Exclusive access to the shared compiled-kernel cache.
+///
+/// While this guard is alive no `clear_kernel_cache()` anywhere in the process
+/// can take effect, so a sequence like "compile a kernel, run the same kernel
+/// again, assert the second run did not recompile" is atomic against every
+/// clear. Dropping the guard releases it.
+#[cfg(feature = "cuda")]
+pub struct KernelCacheExclusive(MutexGuard<'static, ()>);
+
+#[cfg(feature = "cuda")]
+impl KernelCacheExclusive {
+    /// Empty the cache while holding exclusivity.
+    pub fn clear(&self) {
+        clear_kernel_cache_locked();
+    }
+}
+
+/// Acquire exclusive access to the shared compiled-kernel cache.
+///
+/// Blocks until no other holder and no in-flight `clear_kernel_cache()` call
+/// is running. See [`KernelCacheExclusive`].
+#[cfg(feature = "cuda")]
+#[must_use]
+pub fn kernel_cache_exclusive() -> KernelCacheExclusive {
+    // A poisoned lock guards no invariant here — it only orders clears — so
+    // recovering the guard is correct and keeps an unrelated panic from
+    // cascading into every later cache user.
+    KernelCacheExclusive(
+        CACHE_CLEAR_LOCK
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+    )
+}
+
+/// Clear the kernel cache (useful for testing)
+///
+/// Takes the same exclusivity lock as [`kernel_cache_exclusive`], so it cannot
+/// land in the middle of another caller's compile/hit observation.
+#[cfg(feature = "cuda")]
+pub fn clear_kernel_cache() {
+    let _exclusive = kernel_cache_exclusive();
+    clear_kernel_cache_locked();
 }
 
 // Non-CUDA stubs for compilation without cuda feature
@@ -205,6 +271,23 @@ pub fn reset_kernel_cache_stats() {}
 /// Clear the kernel cache (stub when CUDA disabled)
 #[cfg(not(feature = "cuda"))]
 pub fn clear_kernel_cache() {}
+
+/// Exclusive access to the kernel cache (stub when CUDA disabled)
+#[cfg(not(feature = "cuda"))]
+pub struct KernelCacheExclusive;
+
+#[cfg(not(feature = "cuda"))]
+impl KernelCacheExclusive {
+    /// Empty the cache (stub when CUDA disabled)
+    pub fn clear(&self) {}
+}
+
+/// Acquire exclusive access to the kernel cache (stub when CUDA disabled)
+#[cfg(not(feature = "cuda"))]
+#[must_use]
+pub fn kernel_cache_exclusive() -> KernelCacheExclusive {
+    KernelCacheExclusive
+}
 
 #[cfg(test)]
 mod tests {
@@ -256,19 +339,91 @@ mod cuda_tests {
     fn assert_counter_round_trip(hits: u64, misses: u64) {
         assert_clean_stats();
         for _ in 0..hits {
-            KERNEL_CACHE_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            KERNEL_CACHE_HITS.with(|c| c.set(c.get() + 1));
         }
         for _ in 0..misses {
-            KERNEL_CACHE_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            KERNEL_CACHE_MISSES.with(|c| c.set(c.get() + 1));
         }
         assert_eq!(kernel_cache_hits(), hits);
         assert_eq!(kernel_cache_misses(), misses);
         assert_clean_stats();
     }
 
+    /// GPU-ORD-2 falsifier (a): another thread's compilations must not land in
+    /// this thread's hit/miss window.
+    #[test]
+    fn test_cache_stats_are_not_polluted_by_other_threads() {
+        reset_kernel_cache_stats();
+        KERNEL_CACHE_HITS.with(|c| c.set(c.get() + 1));
+
+        std::thread::spawn(|| {
+            reset_kernel_cache_stats();
+            for _ in 0..500 {
+                KERNEL_CACHE_HITS.with(|c| c.set(c.get() + 1));
+                KERNEL_CACHE_MISSES.with(|c| c.set(c.get() + 1));
+            }
+        })
+        .join()
+        .expect("neighbour thread must not panic");
+
+        assert_eq!(
+            (kernel_cache_hits(), kernel_cache_misses()),
+            (1, 0),
+            "another thread's cache activity was attributed to this thread"
+        );
+    }
+
+    /// GPU-ORD-2 falsifier (b): a clear cannot land inside someone else's
+    /// compile/hit observation.
+    ///
+    /// This is the interference itself, expressed as behaviour and without
+    /// needing a GPU: while exclusivity is held, a `clear_kernel_cache()` on
+    /// another thread must not have completed. Before the fix the clear was a
+    /// straight `HashMap::clear()` with nothing to wait on, so it landed
+    /// immediately — which is exactly how a neighbour wiped `gelu:16` between
+    /// the two halves of `test_kernel_cache_stats_after_operations`.
+    #[test]
+    fn test_clear_cannot_interleave_with_exclusive_holder() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc as StdArc;
+
+        let cleared = StdArc::new(AtomicBool::new(false));
+        let cleared_bg = StdArc::clone(&cleared);
+
+        let exclusive = kernel_cache_exclusive();
+
+        let bg = std::thread::spawn(move || {
+            clear_kernel_cache();
+            cleared_bg.store(true, Ordering::SeqCst);
+        });
+
+        // Give the background thread ample opportunity to run to completion.
+        for _ in 0..50 {
+            assert!(
+                !cleared.load(Ordering::SeqCst),
+                "clear_kernel_cache() completed while another caller held \
+                 exclusivity — a clear can still land inside someone else's \
+                 compile/hit observation"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+
+        drop(exclusive);
+        bg.join().expect("clearing thread must not panic");
+        assert!(
+            cleared.load(Ordering::SeqCst),
+            "clear_kernel_cache() never completed after exclusivity was released"
+        );
+    }
+
     /// Clear the cache and assert it is empty with zeroed stats.
+    ///
+    /// Holds exclusivity across the clear *and* the assertion: otherwise a
+    /// concurrent test compiling a kernel repopulates the map between the two
+    /// and this reads a non-empty cache.
     fn clear_and_assert_empty() {
-        clear_kernel_cache();
+        let exclusive = kernel_cache_exclusive();
+        exclusive.clear();
         let guard = lock_cache(get_kernel_cache()).expect("Cache lock should not be poisoned");
         assert!(guard.is_empty(), "Cache should be empty");
     }
