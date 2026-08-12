@@ -94,7 +94,11 @@ fn run_cpu_server(
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
     let bind_addr = config.bind_addr();
-    let metrics_enabled = config.metrics;
+    // aprender#2376(8): the banner is read from the router's own table, not restated.
+    // The previous hand-written list named 11 of the 31 mounted routes and omitted
+    // /tokenize, /realize/*, /models and the health probes entirely, while a
+    // separate list printed before format detection named routes that 404.
+    let endpoints = realizar::api::advertised_routes(&config.router_config());
 
     runtime.block_on(async move {
         let listener = tokio::net::TcpListener::bind(&bind_addr)
@@ -109,21 +113,10 @@ fn run_cpu_server(
                 .bold()
         );
         println!();
-        println!("{}", "Ollama-Parity Endpoints:".cyan());
-        println!("  GET  /health              - Health check");
-        if metrics_enabled {
-            println!("  GET  /metrics             - Prometheus metrics");
+        println!("{}", "Endpoints:".cyan());
+        for endpoint in &endpoints {
+            println!("  {endpoint}");
         }
-        println!("  POST /generate            - Text generation");
-        println!("  POST /stream/generate     - SSE streaming");
-        println!("  POST /batch/generate      - Batch inference");
-        println!("  POST /v1/completions      - OpenAI-compatible");
-        println!("  POST /v1/chat/completions - Chat completions");
-        println!("  GET  /api/tags            - Ollama model list");
-        println!("  POST /api/show            - Ollama model metadata");
-        println!("  GET  /api/version         - Server version");
-        println!("  POST /api/chat            - Ollama chat (stream:true -> NDJSON)");
-        println!("  POST /api/generate        - Ollama generate (stream:true -> NDJSON)");
         println!();
         println!(
             "{}",

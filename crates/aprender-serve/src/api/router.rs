@@ -107,10 +107,36 @@ const OPENAI_ROUTES: &[(&str, &str)] = &[
 const CUDA_ROUTES: &[(&str, &str)] = &[("POST", "/v1/logprobs"), ("POST", "/v1/perplexity")];
 
 /// The routes this router mounts, as `"METHOD /path"` strings for the 404 body.
-fn route_index(openai_api: bool) -> Vec<String> {
+/// The routes a server built with `config` serves, as `"METHOD /path"` strings.
+///
+/// Callers that advertise the surface — the 404 body, the CLI startup banner —
+/// MUST read it from here rather than restating it, so that what is printed is
+/// what is mounted. `apr serve run` printed a hand-written list of 11 of the 31
+/// mounted routes, from a point in the program before the model format was even
+/// known; it named `/generate` for `.apr` models, where the route is not mounted,
+/// and `/v1/predict` for GGUF models, where it can only answer 503.
+///
+/// `advertised_routes_answer_under_every_config` and `unadvertised_routes_do_not_answer`
+/// probe every entry against a live router under each configuration, so this list
+/// cannot drift from the mounted surface without a test going red.
+pub fn advertised_routes(config: &RouterConfig) -> Vec<String> {
+    route_index(config)
+}
+
+fn route_index(config: &RouterConfig) -> Vec<String> {
     let fmt = |(method, path): &(&str, &str)| format!("{method} {path}");
-    let mut routes: Vec<String> = NATIVE_ROUTES.iter().map(fmt).collect();
-    if openai_api {
+    // The advertised list is derived under the SAME conditions as the mount loop
+    // below. Taking only `openai_api` was not enough: `--no-metrics` unmounts
+    // `/metrics`, `/metrics/dispatch` and `/metrics/dispatch/reset`, and this list
+    // went on advertising all three, so the 404 body and the startup banner both
+    // named routes that 404. Caught by `advertised_routes_answer_under_every_config`,
+    // which probes every advertised entry against a live router under each config.
+    let metrics_route = |(_, path): &&(&str, &str)| {
+        matches!(*path, "/metrics" | "/metrics/dispatch" | "/metrics/dispatch/reset")
+    };
+    let mut routes: Vec<String> =
+        NATIVE_ROUTES.iter().filter(|r| config.metrics || !metrics_route(r)).map(fmt).collect();
+    if config.openai_api {
         routes.extend(OPENAI_ROUTES.iter().map(fmt));
     }
     #[cfg(feature = "cuda")]
@@ -141,7 +167,7 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
     // route table this router actually mounted — the one thing a client needs to
     // discover the surface it landed on — and `/ready` is the conventional
     // readiness path, an alias of `/health/ready`.
-    let index_routes = route_index(config.openai_api);
+    let index_routes = route_index(&config);
     let mut router = Router::new()
         .route(
             "/",
@@ -242,7 +268,7 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
     // GH-672: Return JSON error body for unmatched routes (not empty 404)
     // aprender#2376(12): serve the route list here instead of pointing clients at
     // /health, which does not have one.
-    let routes = route_index(config.openai_api);
+    let routes = route_index(&config);
     router = router.fallback(move || {
         let routes = routes.clone();
         async move {
