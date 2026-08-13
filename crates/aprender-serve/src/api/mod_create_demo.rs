@@ -69,8 +69,13 @@ pub struct ChatCompletionRequest {
     /// Maximum tokens to generate
     #[serde(default)]
     pub max_tokens: Option<usize>,
-    /// Sampling temperature
-    #[serde(default)]
+    /// Sampling temperature.
+    ///
+    /// A temperature outside `[0, ∞)` finite is rejected at deserialization
+    /// (aprender#2375) — see `types::deserialize_temperature_f32`. `/api/chat`
+    /// and `/api/generate` build this struct in Rust rather than deserializing
+    /// it, so their own `options.temperature` carries the same guard.
+    #[serde(default, deserialize_with = "crate::api::types::deserialize_temperature_f32")]
     pub temperature: Option<f32>,
     /// Nucleus sampling
     #[serde(default)]

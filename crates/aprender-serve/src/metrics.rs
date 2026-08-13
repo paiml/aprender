@@ -59,6 +59,9 @@ pub struct MetricsCollector {
     /// Most recent per-request latencies in microseconds (oldest first), capped
     /// at [`LATENCY_WINDOW`]. This is the sample set the percentiles come from.
     recent_latencies_us: Arc<Mutex<VecDeque<u64>>>,
+    /// Streams whose client went away mid-generation — see
+    /// [`MetricsCollector::record_stream_abandoned`].
+    abandoned_streams: Arc<AtomicUsize>,
     /// Start time for rate calculations
     start_time: Instant,
 }
@@ -74,8 +77,34 @@ impl MetricsCollector {
             total_tokens: Arc::new(AtomicUsize::new(0)),
             total_inference_time_us: Arc::new(AtomicU64::new(0)),
             recent_latencies_us: Arc::new(Mutex::new(VecDeque::with_capacity(LATENCY_WINDOW))),
+            abandoned_streams: Arc::new(AtomicUsize::new(0)),
             start_time: Instant::now(),
         }
+    }
+
+    /// Record a streaming response whose client went away before the generation
+    /// finished, and which was therefore stopped early.
+    ///
+    /// aprender#2375(1)/#2376(3): the cancellation guard deliberately does NOT
+    /// fire for a request that completed, because a streaming handler returns
+    /// its SSE response while the decode loop is still running — cancelling
+    /// there emptied every streamed reply. What stops an ABANDONED stream
+    /// instead is the body drop: hyper drops the response body, the SSE receiver
+    /// drops with it, the next `on_token` send fails, and the loop breaks.
+    ///
+    /// That replacement mechanism was asserted in the contract and observed by
+    /// nothing. This counter is what makes it observable: one record per
+    /// abandoned stream. More than one for a single stream means the loop kept
+    /// running after the client left — the defect the mechanism exists to
+    /// prevent — and zero means the drop never reached the decode loop at all.
+    pub fn record_stream_abandoned(&self) {
+        self.abandoned_streams.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// How many streams were stopped because their client went away.
+    #[must_use]
+    pub fn streams_abandoned(&self) -> usize {
+        self.abandoned_streams.load(Ordering::Relaxed)
     }
 
     /// Record a successful request
@@ -217,7 +246,10 @@ impl MetricsCollector {
              realizar_error_rate {:.4}\n\
              # HELP realizar_uptime_seconds Uptime in seconds\n\
              # TYPE realizar_uptime_seconds counter\n\
-             realizar_uptime_seconds {}\n",
+             realizar_uptime_seconds {}\n\
+             # HELP realizar_streams_abandoned Streams stopped because the client went away\n\
+             # TYPE realizar_streams_abandoned counter\n\
+             realizar_streams_abandoned {}\n",
             snapshot.total_requests,
             snapshot.successful_requests,
             snapshot.failed_requests,
@@ -227,7 +259,8 @@ impl MetricsCollector {
             snapshot.tokens_per_sec,
             snapshot.avg_latency_ms,
             snapshot.error_rate,
-            snapshot.uptime_secs
+            snapshot.uptime_secs,
+            self.streams_abandoned()
         )
     }
 
@@ -238,6 +271,7 @@ impl MetricsCollector {
         self.failed_requests.store(0, Ordering::Relaxed);
         self.total_tokens.store(0, Ordering::Relaxed);
         self.total_inference_time_us.store(0, Ordering::Relaxed);
+        self.abandoned_streams.store(0, Ordering::Relaxed);
         // The latency window is part of "all metrics": leaving it behind would
         // let a reset collector report percentiles for traffic it no longer
         // counts.

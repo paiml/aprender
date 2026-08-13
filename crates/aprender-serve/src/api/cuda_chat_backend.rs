@@ -142,13 +142,15 @@ async fn try_cuda_backend(
             let cuda_model_clone = cuda_model_lock.clone();
             let prompt_ids_clone = prompt_ids.clone();
             let q_config_clone = q_config.clone();
+            let sink_metrics = state.metrics.clone();
 
             tokio::task::spawn_blocking(move || {
                 let mut cuda_model = cuda_model_clone.write().expect("operation failed");
                 let result = cuda_model.generate_gpu_resident_streaming(
                     &prompt_ids_clone,
                     &q_config_clone,
-                    |token_id| tx.blocking_send(Ok(token_id)).is_ok(),
+                    // Stops when the client goes away — see `streaming_token_sink`.
+                    crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics),
                 );
                 if let Err(e) = result {
                     let _ = tx.blocking_send(Err(e.to_string()));
@@ -267,12 +269,14 @@ fn try_quantized_backend(
         let quantized_model_clone = quantized_model.clone();
         let prompt_ids_clone = prompt_ids.clone();
         let q_config_clone = q_config.clone();
+        let sink_metrics = state.metrics.clone();
 
         tokio::task::spawn_blocking(move || {
             let result = quantized_model_clone.generate_with_cache_streaming(
                 &prompt_ids_clone,
                 &q_config_clone,
-                |token_id| tx.blocking_send(Ok(token_id)).is_ok(),
+                // Stops when the client goes away — see `streaming_token_sink`.
+                crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics),
             );
             if let Err(e) = result {
                 let _ = tx.blocking_send(Err(e.to_string()));
@@ -801,6 +805,7 @@ fn try_qwen3_moe_backend(
         let quantized_clone = quantized.clone();
         let input_ids_clone = input_ids.clone();
         let gen_config_clone = gen_config.clone();
+        let sink_metrics = state.metrics.clone();
 
         tokio::task::spawn_blocking(move || {
             let result = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate_streaming(
@@ -808,7 +813,8 @@ fn try_qwen3_moe_backend(
                 &quantized_clone,
                 &input_ids_clone,
                 &gen_config_clone,
-                |token_id| tx.blocking_send(Ok(token_id)).is_ok(),
+                // Stops when the client goes away — see `streaming_token_sink`.
+                crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics),
             );
             if let Err(e) = result {
                 let _ = tx.blocking_send(Err(e.to_string()));

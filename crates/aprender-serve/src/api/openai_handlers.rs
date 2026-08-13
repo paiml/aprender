@@ -569,6 +569,38 @@ fn pregenerated_sse_response(
     Sse::new(stream).into_response()
 }
 
+/// The `on_token` callback every streaming backend hands to its decode loop.
+///
+/// This is the mechanism that stops an ABANDONED stream, and the reason the
+/// cancellation layer is allowed to disarm its guard on completion
+/// (aprender#2375(1)): a streaming handler returns its SSE response while the
+/// decode loop is still running, so cancelling on completion emptied every
+/// reply. What covers the abandoned case instead is this chain —
+///
+/// > hyper drops the response body → the SSE receiver drops → this send fails →
+/// > the callback returns `false` → `generate_with_cache_streaming` breaks.
+///
+/// It is one function because all three streaming backends (quantized, CUDA,
+/// Qwen3-MoE) carried their own copy of `|t| tx.blocking_send(Ok(t)).is_ok()`,
+/// and a copy is exactly how one of them would end up ignoring the send result
+/// and burning a core for a client that left.
+///
+/// The abandonment is RECORDED, which is what makes the mechanism observable:
+/// `record_stream_abandoned` fires once per abandoned stream, and a second
+/// record for the same stream means the loop did not break.
+pub(crate) fn streaming_token_sink(
+    tx: tokio::sync::mpsc::Sender<Result<u32, String>>,
+    metrics: Arc<crate::metrics::MetricsCollector>,
+) -> impl FnMut(u32) -> bool {
+    move |token_id| {
+        if tx.blocking_send(Ok(token_id)).is_ok() {
+            return true;
+        }
+        metrics.record_stream_abandoned();
+        false
+    }
+}
+
 /// Build a true-streaming SSE response with keep-alive (tokens arrive via channel).
 ///
 /// Deltas are raw per-token decodes — see `decode_token`. The `clean` parameter
