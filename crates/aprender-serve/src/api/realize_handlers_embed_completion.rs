@@ -534,6 +534,41 @@ pub(crate) fn truncate_at_stop(text: String, stops: Option<&[String]>) -> String
     }
 }
 
+/// Build the dense-`Model` [`GenerationConfig`] for an OpenAI request.
+///
+/// `temperature: 0` is the canonical OpenAI request for deterministic output.
+/// Passing that 0 straight into the config makes `model.generate` ->
+/// `sample_token` -> `apply_temperature(0.0)` return
+/// `InvalidShape: Temperature must be a positive finite number`, which every
+/// dense backend mapped to **HTTP 500** — so `temperature: 0` was unserveable on
+/// `/v1/chat/completions` and `/v1/completions` for any registry/safetensors
+/// model. PMAT-790 fixed exactly one caller (the `/v1/chat/completions/stream`
+/// handler) with a private copy of this logic; the other two kept 500ing, which
+/// is what made a shared helper necessary.
+///
+/// Deterministic requests resolve to greedy argmax with a no-op temperature of
+/// `1.0` (the sampler never sees a non-positive scale). Positive temperatures
+/// are unchanged: greedy by default, top-p when `top_p` is set.
+pub(crate) fn resolve_dense_generation_config(
+    temperature: f32,
+    top_p: Option<f32>,
+    max_tokens: usize,
+) -> GenerationConfig {
+    if temperature == 0.0 {
+        return GenerationConfig::default()
+            .with_max_tokens(max_tokens)
+            .with_temperature(1.0);
+    }
+
+    let mut config = GenerationConfig::default()
+        .with_max_tokens(max_tokens)
+        .with_temperature(temperature);
+    if let Some(p) = top_p {
+        config.strategy = SamplingStrategy::TopP { p };
+    }
+    config
+}
+
 /// Cached model backend (includes batch path). Returns None if not available.
 #[cfg(feature = "gpu")]
 async fn try_cached_completions(

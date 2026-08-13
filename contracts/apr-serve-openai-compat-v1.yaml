@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.17.0"
+  version: "1.18.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -410,7 +410,7 @@ falsification_tests:
     if_fails: 'The /v1/chat/completions handler ignores request.tools (the pre-PMAT-801 behavior — the in-tree tool-calling library had ZERO call sites outside grammar/), so a tool call in the model output is never surfaced as response tool_calls / finish_reason:"tool_calls"; OR a no-tools request is no longer byte-identical; OR arguments serializes as a nested object instead of a JSON string.'
   - id: FALSIFY-STREAM-TEMP-ZERO-790
     name: pmat790_stream_temperature_zero_tests
-    prediction: 'resolve_stream_generation_config(temperature, top_p, max_tokens) maps temperature 0.0 to SamplingStrategy::Greedy with a positive (no-op 1.0) temperature, so sample_token() runs WITHOUT error and selects the argmax — directly exercising the model.generate -> sample_token -> apply_temperature chain the streaming handler runs. temperature 0 ignores top_p (stays Greedy). Positive temperatures are unchanged: greedy by default, top-p when set, and remain runnable.'
+    prediction: 'resolve_dense_generation_config(temperature, top_p, max_tokens) — the SHARED resolver, reached by /v1/chat/completions, /v1/completions and the /stream route alike — maps temperature 0.0 to SamplingStrategy::Greedy with a positive (no-op 1.0) temperature, so sample_token() runs WITHOUT error and selects the argmax — directly exercising the model.generate -> sample_token -> apply_temperature chain the streaming handler runs. temperature 0 ignores top_p (stays Greedy). Positive temperatures are unchanged: greedy by default, top-p when set, and remain runnable.'
     test_harness: 'cargo test -p aprender-serve --lib pmat790_stream_temperature_zero_tests'
     expected_output: "test result: ok"
     if_fails: 'The streaming /v1/chat/completions handler passes temperature 0.0 straight into GenerationConfig, so apply_temperature(0.0) returns Err and the handler answers HTTP 500 for every streaming chat completion with temperature 0 (the canonical OpenAI deterministic request) — the pre-PMAT-790 behavior.'
@@ -540,3 +540,33 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib openai_compat_2375::no_shipped_string_leaks_an_internal_rust_constructor'
     expected_output: "test result: ok"
     if_fails: 'An HTTP error body instructs a client to call a Rust constructor it cannot reach, which is what #2375 finding 8 shipped.'
+  - id: FALSIFY-CHAT-STREAM-BODY-NONEMPTY-2375
+    name: streamed_chat_body_carries_the_same_text_as_the_buffered_one
+    prediction: 'Through create_router (cancellation layer mounted), POST /v1/chat/completions with "stream":true on a quantized server returns text/event-stream whose concatenated choices[0].delta.content equals the non-streamed choices[0].message.content for the identical request — asserted twice, once through the tower service and once over a REAL socket served by axum::serve, so the result cannot be an artefact of oneshot. RED against the cancel_on_disconnect layer as first shipped, where the concatenation was "" because the per-request CancelOnDrop guard fired the instant the handler returned and the background decode loop observed it on its first poll.'
+    test_harness: 'cargo test -p aprender-serve --lib stream_and_metrics_2375::streamed_chat_body'
+    expected_output: "test result: ok"
+    if_fails: 'Every streaming chat reply is an empty but well-formed event stream: opening chunk, terminal chunk, [DONE], no content. The whitespace falsifier (sse_stream_whitespace) cannot see this because it calls true_streaming_sse_response directly and never routes a request.'
+  - id: FALSIFY-CHAT-STREAM-ROUTE-QUANTIZED-2375
+    name: chat_completions_stream_route_serves_a_quantized_server
+    prediction: 'POST /v1/chat/completions/stream on a quantized-only AppState (what apr serve run model.gguf builds) answers 200 text/event-stream, terminates with data: [DONE], and its concatenated deltas equal the /v1/chat/completions body for the same request; the frame shapes of the two routes are identical. RED on 0.63.0, which answered 404 {"error":"Model registry error: No model available"} because the route resolved the dense f32 Model only.'
+    test_harness: 'cargo test -p aprender-serve --lib -- stream_and_metrics_2375::chat_completions_stream_route_serves_a_quantized_server stream_and_metrics_2375::stream_route_and_stream_flag_agree_on_the_frame_shape'
+    expected_output: "test result: ok"
+    if_fails: 'A route the server mounts unconditionally and prints in its own startup banner is dead on every GGUF/APR deployment, or has drifted back into a second, divergent implementation of chat completion.'
+  - id: FALSIFY-DENSE-TEMP-ZERO-2375
+    name: temperature_zero_is_served_on_every_openai_route
+    prediction: '"temperature":0 — the OpenAI-canonical deterministic request — is answered 200 by /v1/chat/completions, /v1/chat/completions/stream AND /v1/completions on a dense server, and no response body contains "Temperature must be a positive". RED on the two non-stream routes, which answered 500 {"error":"Invalid shape: Temperature must be a positive finite number"} because PMAT-790 fixed one handler with a private copy of the resolution.'
+    test_harness: 'cargo test -p aprender-serve --lib stream_and_metrics_2375::temperature_zero_is_served_on_every_openai_route'
+    expected_output: "test result: ok"
+    if_fails: 'Deterministic decoding — what every eval harness and every reproducibility test asks for — is a server error on the dense backends.'
+  - id: FALSIFY-METRICS-PERCENTILES-MEASURED-2375
+    name: v1_metrics_percentiles_are_measured_alongside_a_nonzero_average
+    prediction: 'After five completed chat requests on one AppState, GET /v1/metrics reports latency_p50_ms > 0, p50 <= p95 <= p99, and a p50 within an order of magnitude of the realizar_avg_latency_ms that GET /metrics reports for the SAME state at the same instant. Unit-level: MetricsCollector::latency_percentiles over 100 samples of 1..=100 ms returns exactly (50, 95, 99) ms — values no multiple of the 50.5 ms mean can produce — and returns None when nothing has been recorded.'
+    test_harness: 'cargo test -p aprender-serve --lib -- stream_and_metrics_2375::v1_metrics_percentiles_are_measured_alongside_a_nonzero_average percentiles_are_order_statistics_not_multiples_of_the_mean'
+    expected_output: "test result: ok"
+    if_fails: 'A monitor graphs a flat 0 ms p50/p95/p99 under real load (the GPU build, which is what cargo install produces), or graphs avg*1.5 and avg*2.0 as if they were the tail (the non-GPU build). Neither describes any request that happened.'
+  - id: FALSIFY-METRICS-MODEL-NAME-2375
+    name: v1_metrics_model_name_is_derived_not_a_constant
+    prediction: 'GET /v1/metrics on a server with a model resident reports a model_name that is neither "N/A" nor the literal "phi-2-q4_k_m"; on a server with no model it reports "N/A" and latency_p50_ms 0.0. RED on 0.63.0, which reported "phi-2-q4_k_m" for any cached GPU model and "N/A" for everything else.'
+    test_harness: 'cargo test -p aprender-serve --lib -- stream_and_metrics_2375::v1_metrics_model_name_is_derived_not_a_constant stream_and_metrics_2375::v1_metrics_reports_no_model_name_when_nothing_is_loaded'
+    expected_output: "test result: ok"
+    if_fails: 'Every server in a fleet reports the same wrong model name, or no name at all, to whatever is monitoring it.'
