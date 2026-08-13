@@ -90,8 +90,21 @@ jobs:
           if ! command -v pmat >/dev/null 2>&1; then
             cargo install pmat --locked --quiet || true
           fi
-          # Validate the book-completeness contract via pv (in-tree dogfood per CLAUDE.md)
-          pv validate contracts/apr-book-completeness-v1.yaml
+          # Validate the book-completeness contract via pv.
+          #
+          # This line used to call a bare `pv` and exited 127 (command not found)
+          # the first time the step ever ran: every earlier run died at the parity
+          # gate above, so nothing reached it. Note the shape of the bug — the step
+          # guards `pmat` with `command -v` and a comment saying it "tolerates
+          # absence", then invokes `pv` unguarded one line earlier, in a step whose
+          # entire purpose is running pv.
+          #
+          # `pv` is IN-TREE (crates/aprender-contracts-cli, [[bin]] name = "pv"), so
+          # build it from the tree instead of depending on an installed copy — that
+          # is the dogfood rule in CLAUDE.md, and it cannot drift from the contracts
+          # it is validating.
+          cargo run --quiet -p aprender-contracts-cli --bin pv -- \
+            validate contracts/apr-book-completeness-v1.yaml
           # pmat comply check — single binary signal; tolerates absence (pmat may not be available on every runner)
           if command -v pmat >/dev/null 2>&1; then
             pmat comply check 2>&1 | tail -10 || echo "::warning::pmat comply check returned non-zero (advisory)"
