@@ -6,11 +6,23 @@ on:
     paths:
       - "book/**"
       - ".github/workflows/book.yml"
+      # FALSIFY-BOOK-CLI-PARITY-001 asserts every `apr` subcommand has a chapter.
+      # Filtering on book/** alone meant it only ran when the BOOK changed, never
+      # when the CLI gained a command — so `apr beat-run` shipped in #1995 with no
+      # chapter and the gate stayed green for months, until an unrelated batch that
+      # happened to touch book/ woke it. A parity gate must run when EITHER side
+      # moves; watching only one of them is how it comes to certify nothing.
+      - "crates/apr-cli/src/commands_enum.rs"
+      - "crates/apr-cli/src/extended_commands.rs"
+      - "crates/apr-cli/src/tool_commands.rs"
   pull_request:
     branches: [main]
     paths:
       - "book/**"
       - ".github/workflows/book.yml"
+      - "crates/apr-cli/src/commands_enum.rs"
+      - "crates/apr-cli/src/extended_commands.rs"
+      - "crates/apr-cli/src/tool_commands.rs"
 
 permissions:
   contents: read
