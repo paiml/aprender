@@ -287,33 +287,47 @@ fn run_rosetta_validation(
 
     if json {
         // GH-610: Apply strict checks before JSON output (was previously skipped)
-        if strict && !skip_contract {
-            if let Some(issues) = strict_blocking_issues(&report) {
-                // Still print the JSON report before returning error
-                let _ = print_rosetta_validation_json(path, &report, format, quality);
-                return Err(CliError::ValidationFailed(format!("Strict mode: {issues}")));
-            }
+        if let Some(err) = strict_mode_rejection(&report, strict, skip_contract) {
+            // Still print the JSON report before returning error
+            let _ = print_rosetta_validation_json(path, &report, format, quality);
+            return Err(err);
         }
         return print_rosetta_validation_json(path, &report, format, quality);
     }
 
+    print_rosetta_human_report(&report, format, quality);
+
+    // GH-507: --strict fails on warnings (NaN, Inf, all-zero tensors)
+    // GH-642: --skip-contract bypasses strict contract checks
+    if let Some(err) = strict_mode_rejection(&report, strict, skip_contract) {
+        return Err(err);
+    }
+
+    rosetta_content_verdict(&report, skip_contract)
+}
+
+/// The error `--strict` raises for this report, or `None` when strict mode passes.
+///
+/// GH-642: `--skip-contract` waives the strict gate entirely, so a report with
+/// NaN/Inf/all-zero warnings is accepted when the caller asked to skip contracts.
+fn strict_mode_rejection(
+    report: &RosettaValidationReport,
+    strict: bool,
+    skip_contract: bool,
+) -> Option<CliError> {
+    if !strict || skip_contract {
+        return None;
+    }
+    strict_blocking_issues(report)
+        .map(|issues| CliError::ValidationFailed(format!("Strict mode: {issues}")))
+}
+
+/// Render the human-readable Rosetta report: per-tensor table, summary line, and
+/// — under `--quality` — the physics-constraint breakdown.
+fn print_rosetta_human_report(report: &RosettaValidationReport, format: FormatType, quality: bool) {
     output::header(&format!("Validate: {} (Rosetta Stone)", format));
 
-    // Print per-tensor results as table
-    let mut rows: Vec<Vec<String>> = Vec::new();
-    for tv in &report.tensors {
-        let badge = if tv.is_valid {
-            output::badge_pass("PASS")
-        } else {
-            output::badge_fail("FAIL")
-        };
-        let failures_str = if tv.failures.is_empty() {
-            String::new()
-        } else {
-            tv.failures.join("; ")
-        };
-        rows.push(vec![tv.name.clone(), badge, failures_str]);
-    }
+    let rows = rosetta_tensor_rows(report);
     if !rows.is_empty() {
         println!(
             "{}",
@@ -325,25 +339,43 @@ fn run_rosetta_validation(
     println!("{}", report.summary());
 
     if quality {
-        print_quality_constraints(&report);
+        print_quality_constraints(report);
     }
+}
 
-    // GH-507: --strict fails on warnings (NaN, Inf, all-zero tensors)
-    // GH-642: --skip-contract bypasses strict contract checks
-    if strict && !skip_contract {
-        if let Some(issues) = strict_blocking_issues(&report) {
-            return Err(CliError::ValidationFailed(format!("Strict mode: {issues}")));
-        }
-    }
+/// One `[name, PASS/FAIL badge, joined failures]` row per validated tensor.
+fn rosetta_tensor_rows(report: &RosettaValidationReport) -> Vec<Vec<String>> {
+    report
+        .tensors
+        .iter()
+        .map(|tv| {
+            let badge = if tv.is_valid {
+                output::badge_pass("PASS")
+            } else {
+                output::badge_fail("FAIL")
+            };
+            let failures_str = if tv.failures.is_empty() {
+                String::new()
+            } else {
+                tv.failures.join("; ")
+            };
+            vec![tv.name.clone(), badge, failures_str]
+        })
+        .collect()
+}
 
-    // GH-658: A model with 0 tensors is invalid (truncated/corrupt).
+/// Whether the report's CONTENT passes — as distinct from the strict-mode warning
+/// gate above. A model with no tensors is truncated or corrupt (GH-658); otherwise
+/// failed tensors block unless `--skip-contract` waives them (GH-642).
+fn rosetta_content_verdict(
+    report: &RosettaValidationReport,
+    skip_contract: bool,
+) -> Result<(), CliError> {
     if report.tensors.is_empty() {
         return Err(CliError::ValidationFailed(
             "Model contains 0 tensors (truncated or corrupt file)".to_string(),
         ));
     }
-
-    // GH-642: --skip-contract bypasses tensor validation failure gate
     if skip_contract || report.is_valid {
         Ok(())
     } else {

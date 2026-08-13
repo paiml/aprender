@@ -122,67 +122,118 @@ pub fn classify_content_type(header: &str) -> PromContentTypeOutcome {
 /// optional integer timestamp, blank lines). It does NOT enforce label
 /// escape rules — those are checked at write time, not parse time.
 pub fn classify_text_format(body: &str) -> PromTextFormatOutcome {
-    use std::collections::HashMap;
-    let valid_types = ["counter", "gauge", "histogram", "summary", "untyped"];
-    let mut declared_types: HashMap<String, String> = HashMap::new();
+    let mut declared_types: TypeTable = TypeTable::new();
     let mut metrics_seen: Vec<String> = Vec::new();
 
     for (idx, line) in body.lines().enumerate() {
-        let line_no = idx + 1;
-        let trimmed = line.trim_start();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if let Some(rest) = trimmed.strip_prefix("# TYPE ") {
-            let mut it = rest.split_ascii_whitespace();
-            let (Some(name), Some(ty)) = (it.next(), it.next()) else {
-                continue;
-            };
-            if !valid_types.contains(&ty) {
-                return PromTextFormatOutcome::UnknownType {
-                    metric: name.to_string(),
-                    got: ty.to_string(),
-                    line_no,
-                };
-            }
-            if let Some(prev) = declared_types.get(name) {
-                if prev != ty {
-                    return PromTextFormatOutcome::DuplicateConflictingType {
-                        metric: name.to_string(),
-                        first: prev.clone(),
-                        second: ty.to_string(),
-                    };
-                }
-            } else {
-                declared_types.insert(name.to_string(), ty.to_string());
-                metrics_seen.push(name.to_string());
-            }
-            continue;
-        }
-        if trimmed.starts_with('#') {
-            continue;
-        }
-
-        let Some((sample_name, value_part)) = split_sample_line(trimmed) else {
-            return PromTextFormatOutcome::SampleMissingMetricName { line_no };
-        };
-        let base = metric_base_name(&sample_name, &declared_types);
-        if !declared_types.contains_key(&base) {
-            return PromTextFormatOutcome::SampleBeforeType {
-                metric: sample_name,
-                line_no,
-            };
-        }
-        let value_token = value_part.split_ascii_whitespace().next().unwrap_or("");
-        if !is_prometheus_numeric(value_token) {
-            return PromTextFormatOutcome::SampleValueNotNumeric {
-                metric: sample_name,
-                raw: value_token.to_string(),
-                line_no,
-            };
+        if let Err(rejection) =
+            check_exposition_line(line, idx + 1, &mut declared_types, &mut metrics_seen)
+        {
+            return rejection;
         }
     }
     PromTextFormatOutcome::Ok { metrics_seen }
+}
+
+/// Check one exposition line, which is exactly one of four things: blank, a
+/// `# TYPE` declaration, some other comment, or a sample.
+///
+/// Blank lines and non-TYPE comments carry no obligations. The other two kinds
+/// return `Err(outcome)` naming the rejection when the line is malformed.
+fn check_exposition_line(
+    line: &str,
+    line_no: usize,
+    declared_types: &mut TypeTable,
+    metrics_seen: &mut Vec<String>,
+) -> Result<(), PromTextFormatOutcome> {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if let Some(rest) = trimmed.strip_prefix("# TYPE ") {
+        return record_type_declaration(rest, line_no, declared_types, metrics_seen);
+    }
+    if trimmed.starts_with('#') {
+        return Ok(());
+    }
+    check_sample_line(trimmed, line_no, declared_types)
+}
+
+/// Metric name → declared `# TYPE` value, in declaration order of first sighting.
+type TypeTable = std::collections::HashMap<String, String>;
+
+/// The `# TYPE` values Prometheus 0.0.4 defines. Anything else is a malformed body.
+const VALID_METRIC_TYPES: [&str; 5] = ["counter", "gauge", "histogram", "summary", "untyped"];
+
+/// Record one `# TYPE <name> <type>` declaration into `declared_types`.
+///
+/// `rest` is the text following the `# TYPE ` prefix. A declaration missing either
+/// the name or the type is silently ignored (matching the original parser, which
+/// treats a malformed comment as a comment). Returns `Err(outcome)` for the two
+/// ways a well-formed declaration can still be rejected: an unknown type value, or
+/// a redeclaration that conflicts with the type already recorded for that metric.
+fn record_type_declaration(
+    rest: &str,
+    line_no: usize,
+    declared_types: &mut TypeTable,
+    metrics_seen: &mut Vec<String>,
+) -> Result<(), PromTextFormatOutcome> {
+    let mut it = rest.split_ascii_whitespace();
+    let (Some(name), Some(ty)) = (it.next(), it.next()) else {
+        return Ok(());
+    };
+    if !VALID_METRIC_TYPES.contains(&ty) {
+        return Err(PromTextFormatOutcome::UnknownType {
+            metric: name.to_string(),
+            got: ty.to_string(),
+            line_no,
+        });
+    }
+    match declared_types.get(name) {
+        Some(prev) if prev != ty => Err(PromTextFormatOutcome::DuplicateConflictingType {
+            metric: name.to_string(),
+            first: prev.clone(),
+            second: ty.to_string(),
+        }),
+        // Already declared with the same type — idempotent, and NOT a second sighting.
+        Some(_) => Ok(()),
+        None => {
+            declared_types.insert(name.to_string(), ty.to_string());
+            metrics_seen.push(name.to_string());
+            Ok(())
+        }
+    }
+}
+
+/// Check one sample line against the types declared so far.
+///
+/// A sample is well-formed when it (a) carries a metric name, (b) names a metric
+/// whose base — after stripping any histogram/summary suffix — was already
+/// `# TYPE`-declared, and (c) ends in a Prometheus-numeric value.
+fn check_sample_line(
+    trimmed: &str,
+    line_no: usize,
+    declared_types: &TypeTable,
+) -> Result<(), PromTextFormatOutcome> {
+    let Some((sample_name, value_part)) = split_sample_line(trimmed) else {
+        return Err(PromTextFormatOutcome::SampleMissingMetricName { line_no });
+    };
+    let base = metric_base_name(&sample_name, declared_types);
+    if !declared_types.contains_key(&base) {
+        return Err(PromTextFormatOutcome::SampleBeforeType {
+            metric: sample_name,
+            line_no,
+        });
+    }
+    let value_token = value_part.split_ascii_whitespace().next().unwrap_or("");
+    if !is_prometheus_numeric(value_token) {
+        return Err(PromTextFormatOutcome::SampleValueNotNumeric {
+            metric: sample_name,
+            raw: value_token.to_string(),
+            line_no,
+        });
+    }
+    Ok(())
 }
 
 /// Check that every name in `required` appears either as a `# TYPE` declaration
@@ -253,7 +304,7 @@ fn split_sample_line(line: &str) -> Option<(String, String)> {
 
 /// Strip histogram/summary suffixes (`_bucket`, `_sum`, `_count`) so the
 /// declared base type is matched against the sample series.
-fn metric_base_name(name: &str, declared: &std::collections::HashMap<String, String>) -> String {
+fn metric_base_name(name: &str, declared: &TypeTable) -> String {
     if declared.contains_key(name) {
         return name.to_string();
     }
@@ -405,6 +456,31 @@ mod tests {
             classify_text_format(body),
             PromTextFormatOutcome::DuplicateConflictingType { .. }
         ));
+    }
+
+    #[test]
+    fn text_format_records_each_metric_once_when_type_line_repeats() {
+        // `metrics_seen` is the list of DISTINCT metrics the body declares, in
+        // first-sighting order. A body may legally repeat an identical `# TYPE`
+        // line (two exporters merged, a scrape concatenated twice), and the
+        // repeat must NOT produce a second entry.
+        //
+        // Every other test in this module matches `Ok { .. }` and throws the
+        // payload away, so nothing here constrained `metrics_seen` at all —
+        // duplicate or dropped entries were invisible to the suite.
+        let body = concat!(
+            "# TYPE apr_x gauge\n",
+            "# TYPE apr_x gauge\n",
+            "apr_x 1\n",
+            "# TYPE apr_y counter\n",
+            "apr_y 2\n",
+        );
+        match classify_text_format(body) {
+            PromTextFormatOutcome::Ok { metrics_seen } => {
+                assert_eq!(metrics_seen, vec!["apr_x".to_string(), "apr_y".to_string()]);
+            }
+            other => panic!("expected Ok, got {other:?}"),
+        }
     }
 
     #[test]

@@ -124,51 +124,21 @@ pub fn classify_scratchpad_grammar(scratchpad: &str) -> ReactGrammarOutcome {
     let mut blocks = 0usize;
     let mut cursor = 0usize;
     while cursor < trimmed.len() {
-        let body = &trimmed[cursor..];
-        let Some(thought_start) = body.find("Thought:") else {
+        // No more Thought blocks ⇒ tail is the (optional) Final Answer.
+        let Some(block) = scan_thought_block(&trimmed[cursor..]) else {
             break;
         };
-        // No more Thought blocks ⇒ tail is the (optional) Final Answer.
         blocks += 1;
-        let block_idx = blocks - 1;
-        // Each block must have an Action: header before the next Thought / Final Answer / end.
-        let after_thought = thought_start + "Thought:".len();
-        let rest = &body[after_thought..];
-        let action_pos = rest.find("Action:");
-        let next_thought_pos = rest.find("Thought:");
-        let final_inblock_pos = rest.find("Final Answer:");
-        // Determine block end (whichever delimiter comes first after Action).
-        let end_of_block = [next_thought_pos, final_inblock_pos]
-            .iter()
-            .filter_map(|p| *p)
-            .min()
-            .unwrap_or(rest.len());
-
-        match action_pos {
-            Some(p) if p < end_of_block => {
-                // Action exists inside this block — block is well-formed.
-            }
-            _ => {
-                // Allow the very last block to be a pure Final Answer (no Action).
-                if final_inblock_pos.is_some() && next_thought_pos.is_none() {
-                    // Block has a Thought leading directly to a Final Answer
-                    // (e.g. one-shot reasoning). Spec permits this.
-                } else {
-                    return ReactGrammarOutcome::MissingAction { block: block_idx };
-                }
-            }
+        if !block.well_formed {
+            return ReactGrammarOutcome::MissingAction { block: blocks - 1 };
         }
-        cursor += thought_start + "Thought:".len() + end_of_block;
+        cursor += block.consumed_len();
     }
 
-    // Validate no Action follows Final Answer.
-    if let Some(fp) = final_pos {
-        let tail = &trimmed[fp + "Final Answer:".len()..];
-        if tail.contains("Action:") {
-            return ReactGrammarOutcome::ActionAfterFinalAnswer {
-                block: blocks.saturating_sub(1),
-            };
-        }
+    if action_follows_final_answer(trimmed, final_pos) {
+        return ReactGrammarOutcome::ActionAfterFinalAnswer {
+            block: blocks.saturating_sub(1),
+        };
     }
 
     if blocks == 0 {
@@ -180,6 +150,79 @@ pub fn classify_scratchpad_grammar(scratchpad: &str) -> ReactGrammarOutcome {
         return ReactGrammarOutcome::MissingThought { block: 0 };
     }
     ReactGrammarOutcome::Ok { blocks }
+}
+
+const THOUGHT: &str = "Thought:";
+const ACTION: &str = "Action:";
+const FINAL_ANSWER: &str = "Final Answer:";
+
+/// One `Thought:`-headed block located within the remaining scratchpad text.
+struct ThoughtBlock {
+    /// Offset of the `Thought:` header within the slice that was scanned.
+    thought_start: usize,
+    /// Length of the block body following the `Thought:` header.
+    body_len: usize,
+    /// Whether the block satisfies the ReAct grammar (see `block_is_well_formed`).
+    well_formed: bool,
+}
+
+impl ThoughtBlock {
+    /// How far the cursor advances past this block.
+    fn consumed_len(&self) -> usize {
+        self.thought_start + THOUGHT.len() + self.body_len
+    }
+}
+
+/// Locate the next `Thought:` block in `body` and decide whether it is well-formed.
+///
+/// Returns `None` when no `Thought:` header remains — the caller treats that as
+/// the end of the block sequence, leaving the tail to the Final Answer checks.
+fn scan_thought_block(body: &str) -> Option<ThoughtBlock> {
+    let thought_start = body.find(THOUGHT)?;
+    let rest = &body[thought_start + THOUGHT.len()..];
+    let action_pos = rest.find(ACTION);
+    let next_thought_pos = rest.find(THOUGHT);
+    let final_inblock_pos = rest.find(FINAL_ANSWER);
+    // The block ends at whichever delimiter comes first after the Thought header.
+    let body_len = [next_thought_pos, final_inblock_pos]
+        .iter()
+        .filter_map(|p| *p)
+        .min()
+        .unwrap_or(rest.len());
+    Some(ThoughtBlock {
+        thought_start,
+        body_len,
+        well_formed: block_is_well_formed(
+            action_pos,
+            body_len,
+            final_inblock_pos,
+            next_thought_pos,
+        ),
+    })
+}
+
+/// A block is well-formed when an `Action:` header appears inside it, OR when it is
+/// the last block and its Thought leads directly to a `Final Answer:` — one-shot
+/// reasoning, which the spec permits without an Action.
+fn block_is_well_formed(
+    action_pos: Option<usize>,
+    body_len: usize,
+    final_inblock_pos: Option<usize>,
+    next_thought_pos: Option<usize>,
+) -> bool {
+    if matches!(action_pos, Some(p) if p < body_len) {
+        return true;
+    }
+    final_inblock_pos.is_some() && next_thought_pos.is_none()
+}
+
+/// Whether an `Action:` header appears after `Final Answer:` — the agent kept
+/// acting after it claimed to be done.
+fn action_follows_final_answer(trimmed: &str, final_pos: Option<usize>) -> bool {
+    let Some(fp) = final_pos else {
+        return false;
+    };
+    trimmed[fp + FINAL_ANSWER.len()..].contains(ACTION)
 }
 
 /// FALSIFY-CRUX-I-06-001 / -002 iteration-budget guard.

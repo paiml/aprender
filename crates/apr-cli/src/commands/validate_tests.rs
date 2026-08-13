@@ -849,3 +849,88 @@ fn min_score_is_refused_when_no_check_ran() {
         "{err}"
     );
 }
+
+// ========================================================================
+// `--strict` gate (F-VALIDATE-STRICT-001)
+//
+// `strict_mode_rejection` collapses the two-term guard `strict && !skip_contract`
+// that the JSON and human Rosetta paths each used to spell out inline. That is a
+// De Morgan hazard: invert it wrong and `--strict --skip-contract` rejects a
+// report the CLI must accept, or `--strict` waves a NaN-carrying model through.
+// The suite constrained neither term before these tests.
+// ========================================================================
+
+/// A Rosetta report carrying `nan` NaN values and no tensors.
+fn report_with_nan_count(nan: usize) -> RosettaValidationReport {
+    RosettaValidationReport {
+        format: FormatType::Gguf,
+        file_path: "fixture.gguf".to_string(),
+        is_valid: true,
+        tensor_count: 0,
+        failed_tensor_count: 0,
+        total_nan_count: nan,
+        total_inf_count: 0,
+        all_zero_tensors: Vec::new(),
+        tensors: Vec::new(),
+        duration_ms: 0,
+    }
+}
+
+#[test]
+fn strict_mode_names_the_nan_finding_that_blocks() {
+    match strict_mode_rejection(&report_with_nan_count(3), true, false) {
+        Some(CliError::ValidationFailed(msg)) => assert_eq!(msg, "Strict mode: 3 NaN values"),
+        other => panic!("--strict must reject a report carrying NaN values, got {other:?}"),
+    }
+}
+
+#[test]
+fn strict_mode_is_waived_by_skip_contract() {
+    // GH-642: --skip-contract bypasses the strict contract checks.
+    assert!(
+        strict_mode_rejection(&report_with_nan_count(3), true, true).is_none(),
+        "--skip-contract must waive the --strict gate, NaN findings included"
+    );
+}
+
+#[test]
+fn strict_mode_does_not_fire_without_the_strict_flag() {
+    assert!(
+        strict_mode_rejection(&report_with_nan_count(3), false, false).is_none(),
+        "NaN values must not block validation unless --strict was passed"
+    );
+}
+
+#[test]
+fn strict_mode_accepts_a_clean_report() {
+    assert!(
+        strict_mode_rejection(&report_with_nan_count(0), true, false).is_none(),
+        "--strict must accept a report with no NaN/Inf/all-zero findings"
+    );
+}
+
+// ========================================================================
+// Rosetta content verdict (GH-658 / GH-642)
+// ========================================================================
+
+#[test]
+fn zero_tensor_model_is_rejected_as_truncated() {
+    match rosetta_content_verdict(&report_with_nan_count(0), false) {
+        Err(CliError::ValidationFailed(msg)) => {
+            assert_eq!(msg, "Model contains 0 tensors (truncated or corrupt file)");
+        }
+        other => panic!("a model with 0 tensors must be rejected, got {other:?}"),
+    }
+}
+
+#[test]
+fn zero_tensor_model_is_rejected_even_with_skip_contract() {
+    // GH-658 outranks GH-642: --skip-contract waives the tensor-failure gate,
+    // never the truncation check. A 0-tensor file is not a contract opinion.
+    match rosetta_content_verdict(&report_with_nan_count(0), true) {
+        Err(CliError::ValidationFailed(msg)) => {
+            assert_eq!(msg, "Model contains 0 tensors (truncated or corrupt file)");
+        }
+        other => panic!("--skip-contract must not excuse a 0-tensor file, got {other:?}"),
+    }
+}

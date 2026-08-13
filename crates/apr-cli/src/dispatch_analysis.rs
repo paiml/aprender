@@ -69,38 +69,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         // GH-876 Milestone 1: Probar is now a subcommand container.
         // The existing flat-args behavior moved under `apr probar tensor <FILE>`.
-        ExtendedCommands::Probar { command } => match command {
-            ProbarSubcommand::Tensor {
-                file,
-                output,
-                format,
-                golden,
-                layer,
-                assert,
-                tolerance,
-            } => {
-                // An unparseable --format used to be swallowed by
-                // `.unwrap_or(Both)`, so `--format bogus` silently exported
-                // something the user never asked for. FromStr already produces
-                // the right message; surface it.
-                format
-                    .parse::<probar::ExportFormat>()
-                    .map_err(crate::error::CliError::ValidationFailed)
-                    .and_then(|export_format| {
-                        crate::error::resolve_model_path(file).and_then(|r| {
-                            probar::run(
-                                &r,
-                                output,
-                                export_format,
-                                golden.as_deref(),
-                                layer.as_deref(),
-                                *assert,
-                                *tolerance,
-                            )
-                        })
-                    })
-            }
-        },
+        ExtendedCommands::Probar { command } => dispatch_probar_command(command),
 
         ExtendedCommands::CompareHf {
             file,
@@ -108,18 +77,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             tensor,
             threshold,
             json,
-        } => {
-            // GH-663: Reject compare-hf in --offline mode (requires HuggingFace download)
-            if cli.offline {
-                return Some(Err(crate::error::CliError::NetworkError(
-                    "Cannot run compare-hf in --offline mode (requires HuggingFace download)."
-                        .to_string(),
-                )));
-            }
-            crate::error::resolve_model_path(file).and_then(|r| {
-                compare_hf::run(&r, hf, tensor.as_deref(), *threshold, *json || cli.json)
-            })
-        }
+        } => dispatch_compare_hf(
+            file,
+            hf,
+            tensor.as_deref(),
+            *threshold,
+            *json || cli.json,
+            cli.offline,
+        ),
 
         ExtendedCommands::OllamaChatLint {
             response_file,
@@ -291,26 +256,16 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             world_size,
             exit_code,
             expected_exit_code,
-        } => match mode.as_str() {
-            "timeout" | "success" => {
-                let m = if mode == "timeout" {
-                    commands::hang_trace_lint::HangMode::Timeout
-                } else {
-                    commands::hang_trace_lint::HangMode::Success
-                };
-                commands::hang_trace_lint::run(
-                    trace_dir,
-                    m,
-                    *world_size,
-                    *exit_code,
-                    *expected_exit_code,
-                    cli.json,
-                )
-            }
-            other => Err(crate::error::CliError::ValidationFailed(format!(
-                "apr hang-trace-lint --mode must be `timeout` or `success` (got `{other}`)"
-            ))),
-        },
+        } => parse_hang_mode(mode).and_then(|m| {
+            commands::hang_trace_lint::run(
+                trace_dir,
+                m,
+                *world_size,
+                *exit_code,
+                *expected_exit_code,
+                cli.json,
+            )
+        }),
 
         ExtendedCommands::OtlpLint {
             otlp_file,
@@ -414,11 +369,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         }
 
         // CRUX-K-11: Modelfile DSL parser.
-        ExtendedCommands::Modelfile { command } => match command {
-            ModelfileSubcommand::Parse { file, format } => {
-                crate::commands::modelfile::run_parse(file, format)
-            }
-        },
+        ExtendedCommands::Modelfile { command } => dispatch_modelfile_command(command),
 
         ExtendedCommands::Hex {
             file,
@@ -463,16 +414,13 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             sizes,
             depth,
         } => crate::error::resolve_model_path(file).and_then(|resolved| {
-            // `format` arrives already parsed (clap rejects unknown values at
-            // the boundary), so there is no error left here to swallow — the
-            // `.unwrap_or(Ascii)` that used to live on this line is what made
-            // `--format bogusvalue` print an ascii tree at exit 0 (#2394).
-            let tree_format = if cli.json {
-                tree::TreeFormat::Json
-            } else {
-                *format
-            };
-            tree::run(&resolved, filter.as_deref(), tree_format, *sizes, *depth)
+            tree::run(
+                &resolved,
+                filter.as_deref(),
+                effective_tree_format(*format, cli.json),
+                *sizes,
+                *depth,
+            )
         }),
 
         ExtendedCommands::Flow {
@@ -620,6 +568,92 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         _ => return None,
     };
     Some(result)
+}
+
+/// GH-876 Milestone 1 — `apr probar tensor <FILE>`.
+///
+/// An unparseable `--format` used to be swallowed by `.unwrap_or(Both)`, so
+/// `--format bogus` silently exported something the user never asked for.
+/// `FromStr` already produces the right message; surface it.
+fn dispatch_probar_command(command: &ProbarSubcommand) -> Result<(), CliError> {
+    let ProbarSubcommand::Tensor {
+        file,
+        output,
+        format,
+        golden,
+        layer,
+        assert,
+        tolerance,
+    } = command;
+    format
+        .parse::<probar::ExportFormat>()
+        .map_err(crate::error::CliError::ValidationFailed)
+        .and_then(|export_format| {
+            crate::error::resolve_model_path(file).and_then(|r| {
+                probar::run(
+                    &r,
+                    output,
+                    export_format,
+                    golden.as_deref(),
+                    layer.as_deref(),
+                    *assert,
+                    *tolerance,
+                )
+            })
+        })
+}
+
+/// `apr compare-hf` — tensor-by-tensor comparison against a HuggingFace repo.
+///
+/// GH-663: refuses to run under `--offline`, since the comparison requires a
+/// HuggingFace download that offline mode forbids.
+fn dispatch_compare_hf(
+    file: &std::path::Path,
+    hf: &str,
+    tensor: Option<&str>,
+    threshold: f64,
+    json: bool,
+    offline: bool,
+) -> Result<(), CliError> {
+    if offline {
+        return Err(crate::error::CliError::NetworkError(
+            "Cannot run compare-hf in --offline mode (requires HuggingFace download).".to_string(),
+        ));
+    }
+    crate::error::resolve_model_path(file)
+        .and_then(|r| compare_hf::run(&r, hf, tensor, threshold, json))
+}
+
+/// `apr hang-trace-lint --mode` accepts exactly `timeout` or `success`; anything
+/// else is a user error rather than a lint failure.
+fn parse_hang_mode(mode: &str) -> Result<commands::hang_trace_lint::HangMode, CliError> {
+    match mode {
+        "timeout" => Ok(commands::hang_trace_lint::HangMode::Timeout),
+        "success" => Ok(commands::hang_trace_lint::HangMode::Success),
+        other => Err(crate::error::CliError::ValidationFailed(format!(
+            "apr hang-trace-lint --mode must be `timeout` or `success` (got `{other}`)"
+        ))),
+    }
+}
+
+/// CRUX-K-11 — Modelfile DSL parser.
+fn dispatch_modelfile_command(command: &ModelfileSubcommand) -> Result<(), CliError> {
+    let ModelfileSubcommand::Parse { file, format } = command;
+    crate::commands::modelfile::run_parse(file, format)
+}
+
+/// A global `--json` overrides the per-command `apr tree --format`.
+///
+/// `format` arrives already parsed (clap rejects unknown values at the boundary),
+/// so there is no error left here to swallow — the `.unwrap_or(Ascii)` that used to
+/// live on this line is what made `--format bogusvalue` print an ascii tree at
+/// exit 0 (#2394).
+fn effective_tree_format(format: tree::TreeFormat, global_json: bool) -> tree::TreeFormat {
+    if global_json {
+        tree::TreeFormat::Json
+    } else {
+        format
+    }
 }
 
 /// CRUX-B-05 — split a safetensors file into shards + weight-map index.
