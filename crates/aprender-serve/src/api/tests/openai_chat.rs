@@ -168,7 +168,7 @@ fn test_format_chat_messages_assistant_role_more_cov() {
 
 #[test]
 fn test_default_n_function_more_cov() {
-    assert_eq!(default_n(), 1);
+    assert_eq!(crate::api::ChoiceCount::default().get(), 1);
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn test_chat_completion_request_all_fields_more_cov() {
         repeat_penalty: None,
         repeat_last_n: None,
         seed: None,
-        n: 2,
+        n: crate::api::ChoiceCount::ONE,
         stream: true,
         stop: Some(vec!["END".to_string()]),
         user: Some("test-user".to_string()),

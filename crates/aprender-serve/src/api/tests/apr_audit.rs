@@ -205,6 +205,8 @@ async fn test_imp_085_completions_uses_gpu_model() {
 
     // Make completion request
     let request = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         prompt: "Hello".to_string(),
         max_tokens: Some(5),
         temperature: Some(0.0),
@@ -371,6 +373,8 @@ async fn test_imp_116c_completions_uses_cached_model() {
 
     // Make completion request - may fail due to test model but path should be exercised
     let request = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         prompt: "Hello".to_string(),
         max_tokens: Some(3),
         temperature: Some(0.0),

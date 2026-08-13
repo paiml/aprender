@@ -107,10 +107,36 @@ const OPENAI_ROUTES: &[(&str, &str)] = &[
 const CUDA_ROUTES: &[(&str, &str)] = &[("POST", "/v1/logprobs"), ("POST", "/v1/perplexity")];
 
 /// The routes this router mounts, as `"METHOD /path"` strings for the 404 body.
-fn route_index(openai_api: bool) -> Vec<String> {
+/// The routes a server built with `config` serves, as `"METHOD /path"` strings.
+///
+/// Callers that advertise the surface — the 404 body, the CLI startup banner —
+/// MUST read it from here rather than restating it, so that what is printed is
+/// what is mounted. `apr serve run` printed a hand-written list of 11 of the 31
+/// mounted routes, from a point in the program before the model format was even
+/// known; it named `/generate` for `.apr` models, where the route is not mounted,
+/// and `/v1/predict` for GGUF models, where it can only answer 503.
+///
+/// `advertised_routes_answer_under_every_config` and `unadvertised_routes_do_not_answer`
+/// probe every entry against a live router under each configuration, so this list
+/// cannot drift from the mounted surface without a test going red.
+pub fn advertised_routes(config: &RouterConfig) -> Vec<String> {
+    route_index(config)
+}
+
+fn route_index(config: &RouterConfig) -> Vec<String> {
     let fmt = |(method, path): &(&str, &str)| format!("{method} {path}");
-    let mut routes: Vec<String> = NATIVE_ROUTES.iter().map(fmt).collect();
-    if openai_api {
+    // The advertised list is derived under the SAME conditions as the mount loop
+    // below. Taking only `openai_api` was not enough: `--no-metrics` unmounts
+    // `/metrics`, `/metrics/dispatch` and `/metrics/dispatch/reset`, and this list
+    // went on advertising all three, so the 404 body and the startup banner both
+    // named routes that 404. Caught by `advertised_routes_answer_under_every_config`,
+    // which probes every advertised entry against a live router under each config.
+    let metrics_route = |(_, path): &&(&str, &str)| {
+        matches!(*path, "/metrics" | "/metrics/dispatch" | "/metrics/dispatch/reset")
+    };
+    let mut routes: Vec<String> =
+        NATIVE_ROUTES.iter().filter(|r| config.metrics || !metrics_route(r)).map(fmt).collect();
+    if config.openai_api {
         routes.extend(OPENAI_ROUTES.iter().map(fmt));
     }
     #[cfg(feature = "cuda")]
@@ -141,7 +167,7 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
     // route table this router actually mounted — the one thing a client needs to
     // discover the surface it landed on — and `/ready` is the conventional
     // readiness path, an alias of `/health/ready`.
-    let index_routes = route_index(config.openai_api);
+    let index_routes = route_index(&config);
     let mut router = Router::new()
         .route(
             "/",
@@ -242,7 +268,7 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
     // GH-672: Return JSON error body for unmatched routes (not empty 404)
     // aprender#2376(12): serve the route list here instead of pointing clients at
     // /health, which does not have one.
-    let routes = route_index(config.openai_api);
+    let routes = route_index(&config);
     router = router.fallback(move || {
         let routes = routes.clone();
         async move {
@@ -336,10 +362,21 @@ async fn sanitize_json_rejection(
         return response;
     }
 
-    let body = serde_json::to_vec(&ErrorResponse {
-        error: sanitized_error_message(status),
-    })
-    .unwrap_or_else(|_| br#"{"error":"Request failed."}"#.to_vec());
+    // The body is read ONLY to look for a marker a handler deliberately planted
+    // (`client_visible_reason`). Axum's own rejection text carries no marker and
+    // is therefore still discarded unread-for-forwarding — the property this
+    // middleware exists to guarantee. A validator that wants to speak to the
+    // client, e.g. the `n` refusal in #2375(9), opts in explicitly.
+    let (parts_for_body, body_in) = response.into_parts();
+    let raw = axum::body::to_bytes(body_in, usize::MAX)
+        .await
+        .unwrap_or_default();
+    let message = client_visible_reason(&String::from_utf8_lossy(&raw))
+        .unwrap_or_else(|| sanitized_error_message(status));
+    let response = axum::response::Response::from_parts(parts_for_body, axum::body::Body::empty());
+
+    let body = serde_json::to_vec(&ErrorResponse { error: message })
+        .unwrap_or_else(|_| br#"{"error":"Request failed."}"#.to_vec());
 
     // Keep the original head (status, `allow`, `retry-after`, …) and swap only the
     // representation — rebuilding the response from scratch would silently drop
@@ -351,6 +388,75 @@ async fn sanitize_json_rejection(
         axum::http::HeaderValue::from_static("application/json"),
     );
     axum::response::Response::from_parts(parts, axum::body::Body::from(body))
+}
+
+/// Marker a validator puts in front of a message that is MEANT for the client.
+///
+/// GH-649 sanitizes every 422 body so raw serde internals (Rust type paths,
+/// field offsets) never reach an API client. That is right for accidental
+/// errors and wrong for deliberate ones: aprender#2375(9) rejects `n > 1` at
+/// deserialization, and without this marker the caller was told only "Invalid
+/// request body" — refused, but with no way to learn which field was refused.
+/// A validator prefixes its message with this marker to opt into being shown.
+pub(crate) const CLIENT_VISIBLE_MARKER: &str = "[request] ";
+
+/// Recover an authored, client-visible reason out of an axum rejection body.
+///
+/// Returns `None` for anything unmarked, so unauthored serde text stays hidden.
+fn client_visible_reason(rejection_body: &str) -> Option<String> {
+    let reason = rejection_body.split(CLIENT_VISIBLE_MARKER).nth(1)?;
+    let reason = reason.split('\n').next().unwrap_or(reason);
+    // serde_json appends " at line L column C" to a custom error; that offset is
+    // about our parse position, not about the caller's mistake.
+    let reason = reason
+        .split(" at line ")
+        .next()
+        .unwrap_or(reason)
+        .trim_end_matches(['"', ' ', '.']);
+    (!reason.is_empty()).then(|| reason.to_string())
+}
+
+#[cfg(test)]
+mod client_visible_reason_tests {
+    use super::client_visible_reason;
+
+    #[test]
+    fn unmarked_serde_text_stays_hidden() {
+        // GH-649: raw axum/serde text must never reach the client.
+        assert_eq!(
+            client_visible_reason(
+                "Failed to deserialize the JSON body into the target type: \
+                 missing field `messages` at line 1 column 42"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn marked_reason_is_extracted_without_the_serde_frame() {
+        let extracted = client_visible_reason(
+            "Failed to deserialize the JSON body into the target type: n: \
+             [request] n must be 1: this server returns exactly one choice per request",
+        )
+        .expect("marked reason is surfaced");
+        assert!(extracted.starts_with("n must be 1"));
+        assert!(
+            !extracted.contains("deserialize"),
+            "the serde frame must be stripped: {extracted}"
+        );
+    }
+
+    #[test]
+    fn serde_position_suffix_is_stripped() {
+        // Observed on the live server: serde_json appends its parse position to
+        // a custom error, which means nothing to the caller.
+        let extracted = client_visible_reason(
+            "Failed to deserialize the JSON body into the target type: n: \
+             [request] n must be 1: send 3 requests instead at line 1 column 84",
+        )
+        .expect("marked reason is surfaced");
+        assert_eq!(extracted, "n must be 1: send 3 requests instead");
+    }
 }
 
 /// Process-wide server start instant.

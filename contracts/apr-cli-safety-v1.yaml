@@ -60,6 +60,16 @@ falsification_tests:
   prediction: apr encrypt model.enc errors
   test: apr encrypt model.enc -o out.enc
   if_fails: Double encryption — unrecoverable data corruption
+- id: FALSIFY-CLI-004
+  rule: a score threshold is refused by any validator that computes no score
+  prediction: apr validate model.gguf --quality --min-score 100 exits 5 naming --min-score
+  test: crates/apr-cli/src/commands/validate_tests.rs::min_score_is_refused_on_formats_that_compute_no_score
+  if_fails: Gate that cannot fail — CI wires --min-score 100 and every GGUF passes (#2394-17)
+- id: FALSIFY-CLI-005
+  rule: a printed score names the denominator it was measured against
+  prediction: the VALID line reports passed/ran and discloses unimplemented checks, never x/100
+  test: crates/apr-cli/src/commands/validate_tests.rs::valid_verdict_reports_the_denominator_it_measured
+  if_fails: '''VALID 3/100 points'' reads as a 3% model waved through (#2394-12)'
 proof_obligations:
 - type: invariant
   property: "score < 50 implies exit_code != 0"

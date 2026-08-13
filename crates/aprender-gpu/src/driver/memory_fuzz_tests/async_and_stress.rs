@@ -181,10 +181,16 @@ fn test_buffer_view_properties() {
 }
 
 /// Falsification Test 18: Stress multiple allocations and drops
+///
+/// GPU-ORD-4: measured against this thread's own accounting rather than
+/// device-global free memory, which neighbouring tests move underneath it.
+/// Exact, so a single leaked byte fails — the old device-global reading needed
+/// a 50MB tolerance and still failed spuriously ("leaked=146800640" when
+/// nothing had leaked).
 #[test]
 fn test_stress_alloc_dealloc_cycle() {
     let ctx = CudaContext::new(0).expect("Context");
-    let (free_start, _) = ctx.memory_info().expect("Memory info");
+    let start = device_bytes_outstanding();
 
     // Allocate and drop 100 buffers
     for i in 0..100 {
@@ -193,16 +199,9 @@ fn test_stress_alloc_dealloc_cycle() {
         // Buffer dropped at end of iteration
     }
 
-    let (free_end, _) = ctx.memory_info().expect("Memory info");
-
-    // Should be back to roughly same free memory
-    // CUDA driver has internal fragmentation and caching, so allow 50MB tolerance
-    let tolerance = 50 * 1024 * 1024; // 50MB tolerance for driver overhead
-    assert!(
-        free_end >= free_start - tolerance,
-        "Memory leak after 100 alloc/dealloc cycles! start={}, end={}, leaked={}",
-        free_start,
-        free_end,
-        free_start.saturating_sub(free_end)
+    assert_eq!(
+        device_bytes_outstanding(),
+        start,
+        "Memory leak after 100 alloc/dealloc cycles"
     );
 }

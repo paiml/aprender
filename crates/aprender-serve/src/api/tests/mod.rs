@@ -56,3 +56,5 @@ mod router_flags; // --no-cors / --no-metrics must change HTTP behaviour, not ju
 mod ollama_compat_http; // Dogfood 0.63.0 (#2396/#2402): /api/tags|show|version routed, stream:true is NDJSON, /realize/* stops fabricating
 mod embed_and_envelope_2376; // aprender#2376(1 seventh route, 7, 8) + #2396(2): embeddings on a quantized server, one error envelope, / and /ready
 mod explain_2375; // aprender#2375(2): /v1/explain must not fabricate SHAP values and a 0.95 prediction
+mod openai_compat_2375; // Dogfood 0.63.0 (#2375): /v1/completions streams, finish_reason is measured, `n` is honoured or refused, /v1/predict stops lying
+mod route_surface_2376; // aprender#2376(7,8): advertised surface == mounted surface; every error body is a JSON envelope

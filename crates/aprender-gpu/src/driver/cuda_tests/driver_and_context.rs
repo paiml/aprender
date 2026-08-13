@@ -55,6 +55,7 @@ fn test_context_make_current() {
 
 #[test]
 fn test_context_synchronize() {
+    let _capture_lock = super::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
     ctx.synchronize().expect("synchronize MUST succeed");
 }

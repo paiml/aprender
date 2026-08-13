@@ -323,10 +323,84 @@ async fn try_cuda_gguf_completions(
     )))
 }
 
+/// Turn a finished completion into the SSE frames an OpenAI streaming client reads.
+///
+/// The deltas are `content_fragments` of the SAME text the non-streaming body
+/// carries, so `"".join(chunk.choices[0].text for chunk in stream)` equals the
+/// non-streamed `choices[0].text` byte for byte. The terminal chunk carries the
+/// `finish_reason` the backend computed — it is not a literal, so a completion
+/// truncated at `max_tokens` streams `"length"` exactly as the non-streaming
+/// response reports it.
+pub(crate) fn completion_sse_response(response: &CompletionResponse) -> axum::response::Response {
+    use axum::response::sse::{Event, Sse};
+    use axum::response::IntoResponse;
+
+    let choice = response.choices.first();
+    let text = choice.map(|c| c.text.as_str()).unwrap_or_default();
+    let finish_reason = choice.map_or_else(
+        || FinishReason::Stop.as_str().to_string(),
+        |c| c.finish_reason.clone(),
+    );
+
+    let envelope = |text: String, finish_reason: Option<String>| CompletionChunk {
+        id: response.id.clone(),
+        object: response.object.clone(),
+        created: response.created,
+        model: response.model.clone(),
+        choices: vec![CompletionChunkChoice {
+            text,
+            index: 0,
+            logprobs: None,
+            finish_reason,
+        }],
+    };
+
+    let mut chunks: Vec<CompletionChunk> = crate::api::ollama_handlers::content_fragments(text)
+        .into_iter()
+        .map(|fragment| envelope(fragment, None))
+        .collect();
+    chunks.push(envelope(String::new(), Some(finish_reason)));
+
+    let stream = tokio_stream::iter(
+        chunks
+            .into_iter()
+            .filter_map(|chunk| serde_json::to_string(&chunk).ok())
+            .chain(std::iter::once("[DONE]".to_string()))
+            .map(|data| Ok::<Event, std::convert::Infallible>(Event::default().data(data))),
+    );
+
+    Sse::new(stream).into_response()
+}
+
+/// `POST /v1/completions`.
+///
+/// Dogfood 0.63.0 (#2375 findings 3/5): this handler returned
+/// `Result<Json<CompletionResponse>, RErr>` — a type that cannot carry an SSE
+/// body — and `CompletionRequest` had no `stream` field at all, so `stream:true`
+/// was dropped by serde and answered with `content-type: application/json`.
+///
+/// The generation itself lives in [`completions_inner`]; this wrapper is the ONE
+/// place that turns a completion into an HTTP body, so no backend return path can
+/// forget the streaming decision (all of them return a `CompletionResponse`).
 pub async fn openai_completions_handler(
     State(state): State<AppState>,
     Json(request): Json<CompletionRequest>,
-) -> Result<Json<CompletionResponse>, RErr> {
+) -> Result<axum::response::Response, RErr> {
+    use axum::response::IntoResponse;
+
+    let stream = request.stream;
+    let completion = completions_inner(state, request).await?;
+    Ok(if stream {
+        completion_sse_response(&completion)
+    } else {
+        Json(completion).into_response()
+    })
+}
+
+async fn completions_inner(
+    state: AppState,
+    request: CompletionRequest,
+) -> Result<CompletionResponse, RErr> {
     let start = std::time::Instant::now();
     let max_tokens = request.max_tokens.unwrap_or(256);
     let temperature = request.temperature.unwrap_or(0.7) as f32;
@@ -335,27 +409,27 @@ pub async fn openai_completions_handler(
     if let Some(r) =
         try_cached_completions(&state, &request, max_tokens, temperature, start).await?
     {
-        return Ok(Json(r));
+        return Ok(r);
     }
 
     if let Some(r) = try_quantized_completions(&state, &request, max_tokens, temperature, start)? {
-        return Ok(Json(r));
+        return Ok(r);
     }
 
     #[cfg(feature = "gpu")]
     if let Some(r) = try_gpu_completions(&state, &request, max_tokens, temperature, start)? {
-        return Ok(Json(r));
+        return Ok(r);
     }
 
     #[cfg(feature = "cuda")]
     if let Some(r) = try_apr_q4k_completions(&state, &request, max_tokens, temperature, start).await? {
-        return Ok(Json(r));
+        return Ok(r);
     }
 
     // realizar#184 / ALB-136: CUDA GGUF models via batch scheduler
     #[cfg(feature = "cuda")]
     if let Some(r) = try_cuda_gguf_completions(&state, &request, max_tokens, temperature, start).await? {
-        return Ok(Json(r));
+        return Ok(r);
     }
 
     // GH-627/637/670: Direct CUDA model fallback for APR GPU path
@@ -393,7 +467,7 @@ pub async fn openai_completions_handler(
             .collect();
         let elapsed = start.elapsed();
         let completion_tokens = gen_tokens.len();
-        return Ok(Json(CompletionResponse {
+        return Ok(CompletionResponse {
             id: format!("cmpl-cuda-{}", elapsed.as_millis()),
             object: "text_completion".to_string(),
             created: std::time::SystemTime::now()
@@ -412,16 +486,10 @@ pub async fn openai_completions_handler(
                 completion_tokens,
                 total_tokens: prompt_ids.len() + completion_tokens,
             },
-        }));
+        });
     }
 
-    Ok(Json(registry_completions(
-        &state,
-        &request,
-        max_tokens,
-        temperature,
-        start,
-    )?))
+    registry_completions(&state, &request, max_tokens, temperature, start)
 }
 
 /// realizr#191: Logprobs endpoint for perplexity measurement (F-QUALITY-01).

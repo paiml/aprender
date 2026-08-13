@@ -45,6 +45,19 @@ pub(crate) fn run(
         .or_else(|_| FormatType::from_extension(path))
         .map_err(|e| CliError::InvalidFormat(format!("Cannot detect format: {e}")))?;
 
+    // #2394 finding 17: `--min-score 100` on a GGUF exited 0. The dispatcher
+    // simply did not pass `min_score` to the Rosetta branch, which computes no
+    // score at all — the strictest possible threshold could never fail, and
+    // nothing said so. A threshold against a number that is never computed is
+    // a gate that cannot fail; refuse it instead of honouring it silently.
+    if let Some(min) = min_score {
+        if !produces_qa_score(format) {
+            return Err(CliError::ValidationFailed(format!(
+                "--min-score {min} does not apply to {format}: the 100-point QA checklist is the .apr validator, and {format} validation reports per-tensor pass/fail with no score. Re-run without --min-score, or use --strict to fail on NaN/Inf/all-zero findings."
+            )));
+        }
+    }
+
     let result = match format {
         FormatType::Apr => {
             run_apr_validation(path, quality, strict, min_score, json, skip_contract)
@@ -57,6 +70,23 @@ pub(crate) fn run(
         contract_post_validate_exit_code_consistency!(r);
     }
     result
+}
+
+/// Does this format's validator produce a 0-100 QA score for `--min-score` to
+/// threshold against?
+///
+/// Exhaustive on purpose, with no wildcard arm: a format added to
+/// [`FormatType`] cannot compile until someone decides whether `--min-score`
+/// means anything for it. That is the poka-yoke for #2394 finding 17 — the
+/// GGUF path did not "handle min_score wrongly", it never received the
+/// argument, and nothing forced anyone to notice.
+fn produces_qa_score(format: FormatType) -> bool {
+    match format {
+        // `AprValidator` runs the 100-point checklist.
+        FormatType::Apr => true,
+        // RosettaStone reports per-tensor pass/fail; there is no score.
+        FormatType::Gguf | FormatType::SafeTensors => false,
+    }
 }
 
 /// APR validation via 100-point QA checklist + fail-closed content gates.
@@ -543,27 +573,41 @@ fn print_check_results(report: &ValidationReport) {
     );
 }
 
+/// The verdict line a human reads, with the denominator the score was
+/// measured against.
+///
+/// #2394 finding 12: this used to read `✓ VALID 3/100 points` on a healthy
+/// model — a green badge next to what looks like 3%. Most of the checklist is
+/// `Skip("Not implemented")` stubs that never ran; on
+/// `qwen2.5-coder-0.5b-instruct.apr` the report declares 26 checks of which 4
+/// ran, so "100" was never the denominator anything was measured against. It
+/// now reads `✓ VALID 3/4 checks that ran (22 of 26 not implemented — not
+/// evidence of health)`.
+fn summary_line(report: &ValidationReport) -> String {
+    let failed = report.failed_checks().len();
+    if failed == 0 {
+        format!(
+            "  {} {}",
+            output::badge_pass("VALID"),
+            report.implemented_score()
+        )
+    } else {
+        format!("  {} {failed} checks failed", output::badge_fail("INVALID"))
+    }
+}
+
 fn print_summary(report: &ValidationReport) -> Result<(), CliError> {
     // PMAT-926: --strict is now honored via the fail-closed content gate
     // (`gate_apr_content`), not ignored here. This function prints only the
     // structural 100-point summary table.
     println!();
+    println!("{}", summary_line(report));
 
     let failed_checks = report.failed_checks();
 
     if failed_checks.is_empty() {
-        println!(
-            "  {} {}/100 points",
-            output::badge_pass("VALID"),
-            report.total_score
-        );
         Ok(())
     } else {
-        println!(
-            "  {} {} checks failed",
-            output::badge_fail("INVALID"),
-            failed_checks.len()
-        );
         Err(CliError::ValidationFailed(format!(
             "{} validation checks failed",
             failed_checks.len()

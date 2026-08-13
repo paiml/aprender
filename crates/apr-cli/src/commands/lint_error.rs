@@ -52,6 +52,26 @@ impl LintError {
     pub fn gate_failed(msg: impl Into<String>) -> Self {
         Self::GateFailed(msg.into())
     }
+
+    /// The numeric exit code this failure produces, per the table in the module
+    /// header.
+    ///
+    /// That table was prose until `lint_family_guard` asked the type for it. A
+    /// convention nothing can query is a convention only in the doc comment:
+    /// this routes through the same `From<LintError> for CliError` the dispatcher
+    /// uses, so a test asserting "missing input is 3" fails if either mapping
+    /// drifts. Returns `u8` rather than `std::process::ExitCode` because the
+    /// latter is opaque - no accessor, no `PartialEq` - so a test cannot assert
+    /// on it.
+    pub fn exit_code_value(&self) -> u8 {
+        let as_cli: CliError = match self {
+            Self::MissingInput(p) => CliError::FileNotFound(p.clone()),
+            Self::Unreadable(m) => CliError::Io(std::io::Error::other(m.clone())),
+            Self::UnusableInput(m) => CliError::InvalidInput(m.clone()),
+            Self::GateFailed(m) => CliError::ValidationFailed(m.clone()),
+        };
+        as_cli.exit_code_value()
+    }
 }
 
 impl fmt::Display for LintError {

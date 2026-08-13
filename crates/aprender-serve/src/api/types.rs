@@ -179,3 +179,105 @@ pub struct ModelsResponse {
     /// List of available models
     pub models: Vec<ModelInfo>,
 }
+
+/// Why a completion stopped, in OpenAI's vocabulary.
+///
+/// Dogfood 0.63.0 (#2375 finding 6): the STREAMING chat path emitted the string
+/// literal `"stop"` in its terminal chunk no matter what happened, while the
+/// non-streaming path on the identical request correctly reported `"length"`
+/// when the generation hit `max_tokens`. A client that streams therefore cannot
+/// tell a truncated answer from a finished one, and every "continue from where
+/// you stopped" flow silently breaks.
+///
+/// The type exists so that literal cannot come back: the terminal-chunk
+/// constructor takes a `FinishReason`, which is only obtainable from
+/// [`FinishReason::from_generation`] (or an explicit, named variant). There is
+/// no `&str` parameter left to hardcode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FinishReason {
+    /// The model emitted a stop token or a stop string matched.
+    Stop,
+    /// Generation was cut off at the `max_tokens` budget.
+    Length,
+}
+
+impl FinishReason {
+    /// Decide the reason from what the generation actually did.
+    ///
+    /// Mirrors `finalize_chat_text` / `completion_finish_reason`: a matched stop
+    /// string wins over the budget, and a model that terminated early is
+    /// `Stop`. Only "ran to the budget with no stop match" is `Length`.
+    #[must_use]
+    pub fn from_generation(stopped: bool, completion_tokens: usize, max_tokens: usize) -> Self {
+        if !stopped && completion_tokens >= max_tokens {
+            Self::Length
+        } else {
+            Self::Stop
+        }
+    }
+
+    /// The wire string OpenAI clients match on.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stop => "stop",
+            Self::Length => "length",
+        }
+    }
+}
+
+impl std::fmt::Display for FinishReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The OpenAI `n` field: how many completions the client asked for.
+///
+/// Dogfood 0.63.0 (#2375 finding 9): `n` was declared as a plain `usize` on the
+/// request structs and read by no handler, so `n: 3` returned one choice with
+/// HTTP 200 and no warning — a caller doing best-of-n sampling silently got
+/// one sample and could not detect it.
+///
+/// This server generates exactly one choice per request. Rather than accept a
+/// number it will not honour, deserialization REJECTS anything but 1, so the
+/// value can never again reach a handler that ignores it: `n > 1` is not
+/// representable in a deserialized request at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct ChoiceCount(usize);
+
+impl ChoiceCount {
+    /// The only supported value.
+    pub const ONE: Self = Self(1);
+
+    /// The requested number of choices (always 1 — see the type docs).
+    #[must_use]
+    pub fn get(self) -> usize {
+        self.0
+    }
+}
+
+impl Default for ChoiceCount {
+    fn default() -> Self {
+        Self::ONE
+    }
+}
+
+impl<'de> Deserialize<'de> for ChoiceCount {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let requested = usize::deserialize(deserializer)?;
+        if requested == 1 {
+            Ok(Self::ONE)
+        } else {
+            Err(serde::de::Error::custom(format!(
+                "{}n must be 1: this server returns exactly one choice per request, \
+                 so n={requested} cannot be honoured (send {requested} requests instead)",
+                crate::api::CLIENT_VISIBLE_MARKER
+            )))
+        }
+    }
+}

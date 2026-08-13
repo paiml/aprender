@@ -407,19 +407,32 @@
         assert!(result.expect("should be Some").is_ok());
     }
 
+    /// FALSIFIER (#2394 finding 6): `--diff` without `--reference` must stop.
+    ///
+    /// `apr trace model.gguf --diff` printed "Diff mode requires --reference"
+    /// and then ran an ordinary single-model trace and exited 0 — the tool
+    /// stated its own requirement and ignored it, so a scripted diff came back
+    /// looking successful. This test used to assert exactly that behaviour
+    /// (`result.is_none()`, i.e. "fall through and trace anyway"), which is
+    /// why the defect survived: it was the bug's alibi.
     #[test]
     fn test_handle_special_modes_diff_without_reference() {
         let path = Path::new("/tmp/model.apr");
-        // diff mode without reference just prints a message and returns None
-        let result = handle_special_modes(path, None, false, true, false);
-        assert!(result.is_none());
+        let result = handle_special_modes(path, None, false, true, false)
+            .expect("--diff without --reference must be handled, not fall through to a trace");
+        let err = result.expect_err("--diff without --reference must be an error");
+        assert!(
+            err.to_string().contains("--reference"),
+            "the refusal must name the missing flag, got: {err}"
+        );
     }
 
     #[test]
     fn test_handle_special_modes_diff_with_reference() {
         let path = Path::new("/tmp/model.apr");
         let ref_path = Path::new("/tmp/ref.apr");
-        // diff mode with reference prints message and returns None (not handled here)
+        // With a reference the combination is valid: diff mode announces the
+        // pair and falls through to the trace path (returns None).
         let result = handle_special_modes(path, Some(ref_path), false, true, false);
         assert!(result.is_none());
     }

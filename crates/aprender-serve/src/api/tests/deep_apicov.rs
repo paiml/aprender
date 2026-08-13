@@ -326,6 +326,8 @@ fn test_deep_apicov_embedding_response_structure() {
 #[test]
 fn test_deep_apicov_completion_request_serialize() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "gpt-3.5".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: Some(100),

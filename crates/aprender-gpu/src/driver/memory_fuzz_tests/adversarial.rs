@@ -7,6 +7,13 @@ use super::*;
 /// Attempt to allocate 100GB - must return OOM, not panic or hang
 #[test]
 fn test_alloc_oversize_100gb() {
+    // GPU-ORD-4: "100GB must be impossible" is only true under the default
+    // allocator. `MANAGED_MEMORY=1`, set by a concurrent test and visible
+    // process-wide, routes this to `cuMemAllocManaged`, which oversubscribes
+    // happily — hence the observed "CRITICAL: 100GB allocation succeeded" on a
+    // 24GB card. The exclusivity lock covers env mutation as well as capacity
+    // claims, so this cannot run while `MANAGED_MEMORY` is being played with.
+    let _exclusive = device_memory_exclusive();
     let ctx = CudaContext::new(0).expect("Context");
 
     // 100GB of f32 = 25 billion elements
@@ -151,38 +158,38 @@ fn test_d2d_copy_at_src_out_of_bounds() {
 }
 
 /// Falsification Test 9: RAII cleanup verification
-/// Allocate, drop, verify memory returns to the pool
+/// Allocate, drop, verify the allocation is released
+///
+/// GPU-ORD-4: this used to bracket the work with `ctx.memory_info()` and
+/// compare device *free* memory, which every other thread and process on the
+/// box also moves. It failed with `before=20583415808, during=21017526272` —
+/// free memory going **up** across a 100MB allocation, impossible for a leak
+/// and only explicable by a neighbour releasing memory mid-test. Per-thread
+/// accounting is owned by this test, so the assertions can be exact instead of
+/// carrying a 10MB tolerance that was wide enough to hide a real leak.
 #[test]
 fn test_raii_cleanup_single_buffer() {
     let ctx = CudaContext::new(0).expect("Context");
 
-    let (free_before, _) = ctx.memory_info().expect("Memory info");
+    let before = device_bytes_outstanding();
 
     // Allocate 100MB
     let size = 25_000_000; // 100MB of f32
+    let bytes = (size * std::mem::size_of::<f32>()) as u64;
     {
         let _buf = GpuBuffer::<f32>::new(&ctx, size).expect("Alloc");
-        let (free_during, _) = ctx.memory_info().expect("Memory info");
 
-        // Memory should be allocated (less free memory)
-        assert!(
-            free_during < free_before,
-            "Memory should decrease after allocation: before={}, during={}",
-            free_before,
-            free_during
+        assert_eq!(
+            device_bytes_outstanding(),
+            before + bytes,
+            "allocating {bytes} bytes must be accounted for on this thread"
         );
     }
     // Buffer dropped here
 
-    let (free_after, _) = ctx.memory_info().expect("Memory info");
-
-    // Memory should be returned (within 10MB tolerance for driver overhead)
-    let tolerance = 10 * 1024 * 1024;
-    assert!(
-        free_after >= free_before - tolerance,
-        "Memory leak detected! before={}, after={}, diff={}",
-        free_before,
-        free_after,
-        free_before.saturating_sub(free_after)
+    assert_eq!(
+        device_bytes_outstanding(),
+        before,
+        "RAII leak: dropping the buffer did not release its {bytes} bytes"
     );
 }

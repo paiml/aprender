@@ -2,6 +2,8 @@
 #[test]
 fn test_completion_request_clone() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: Some(50),
@@ -22,6 +24,8 @@ fn test_completion_request_clone() {
 #[test]
 fn test_completion_request_debug() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "debug-model".to_string(),
         prompt: "debug prompt".to_string(),
         max_tokens: None,

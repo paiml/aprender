@@ -196,8 +196,20 @@ async fn test_apr_predict_endpoint() {
     }
 }
 
+/// `/v1/explain` rejects a body without `feature_names`.
+///
+/// This test was named `test_apr_explain_endpoint` and asserted
+/// `OK || BAD_REQUEST || UNPROCESSABLE_ENTITY || NOT_IMPLEMENTED` under the
+/// comment "handler is exercised either way". It was not: `ExplainRequest`
+/// declares `feature_names: Vec<String>` with no `serde(default)`, so axum's
+/// `Json` extractor rejects this body at 422 and the handler never runs. The
+/// four-way assertion admitted both "explained" and "refused", so nothing ever
+/// reported that the endpoint under test was unreachable from this test.
+///
+/// Pinned to the one status it actually produces. Handler behaviour is covered
+/// by the `/v1/explain` falsifiers, not here.
 #[tokio::test]
-async fn test_apr_explain_endpoint() {
+async fn explain_rejects_request_without_feature_names() {
     let app = create_test_app_shared();
     let body = serde_json::json!({
         "features": [1.0, 2.0, 3.0, 4.0],
@@ -211,15 +223,10 @@ async fn test_apr_explain_endpoint() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    // Accept various status codes - handler is exercised either way
-    let status = response.status();
-    assert!(
-        status == StatusCode::OK
-            || status == StatusCode::BAD_REQUEST
-            || status == StatusCode::UNPROCESSABLE_ENTITY
-            || status == StatusCode::NOT_IMPLEMENTED,
-        "Explain endpoint returned unexpected status: {:?}",
-        status
+    assert_eq!(
+        response.status(),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "a body omitting the required `feature_names` must be refused by the extractor"
     );
 }
 

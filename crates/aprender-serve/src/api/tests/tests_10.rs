@@ -370,6 +370,8 @@ fn test_completion_response_debug() {
 #[test]
 fn test_completion_request_with_stop_tokens() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: None,
@@ -390,6 +392,8 @@ fn test_completion_request_with_stop_tokens() {
 fn test_completion_request_temperature_extremes() {
     // Test temperature = 0.0 (greedy)
     let req_zero = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: None,
@@ -403,6 +407,8 @@ fn test_completion_request_temperature_extremes() {
 
     // Test temperature = 2.0 (high randomness)
     let req_high = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: None,
@@ -418,6 +424,8 @@ fn test_completion_request_temperature_extremes() {
 #[test]
 fn test_completion_request_top_p_values() {
     let req = CompletionRequest {
+        stream: false,
+        n: crate::api::ChoiceCount::ONE,
         model: "test".to_string(),
         prompt: "Hello".to_string(),
         max_tokens: None,

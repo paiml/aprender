@@ -35,10 +35,17 @@ fn test_unaligned_byte_copy() {
     assert_eq!(data, out);
 }
 
+/// GPU-ORD-4: this test deliberately consumes the whole device, so it must not
+/// share it — while it held ~24GB, `test_cuda_stress_memory_pressure` reported
+/// "Memory exhausted after 2 chunks (512MB)" on a 24GB card. Its own leak check
+/// now reads this thread's accounting instead of device-global free memory,
+/// which a neighbour moves (it once failed with "268435456 bytes missing"
+/// having leaked nothing).
 #[test]
 fn test_oom_resilience() {
+    let _exclusive = device_memory_exclusive();
     let ctx = CudaContext::new(0).expect("Context");
-    let (free_start, _) = ctx.memory_info().expect("Mem info");
+    let outstanding_start = device_bytes_outstanding();
 
     // Allocate 1GB chunks until failure
     let mut allocations = Vec::new();
@@ -72,19 +79,10 @@ fn test_oom_resilience() {
     // Drop all allocations
     drop(allocations);
 
-    // Verify memory is returned
-    let (free_end, _) = ctx.memory_info().expect("Mem info");
-    // Allow some small driver overhead variance, but major blocks should be free
-    // Diff should be small
-    let diff = if free_start > free_end {
-        free_start - free_end
-    } else {
-        0
-    };
-    // 100MB tolerance
-    assert!(
-        diff < 100 * 1024 * 1024,
-        "Memory leak detected! {} bytes missing",
-        diff
+    // Verify every chunk we managed to allocate was returned
+    assert_eq!(
+        device_bytes_outstanding(),
+        outstanding_start,
+        "Memory leak after allocating to OOM and dropping (hit_oom={hit_oom})"
     );
 }

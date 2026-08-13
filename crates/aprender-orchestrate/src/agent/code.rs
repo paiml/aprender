@@ -19,6 +19,71 @@ use crate::agent::tool::shell::ShellTool;
 use crate::agent::tool::ToolRegistry;
 use crate::serve::backends::PrivacyTier;
 
+/// Permission to execute exactly ONE agent turn.
+///
+/// Cannot be constructed except by [`TurnBudget::try_permit`], and
+/// [`run_single_prompt`] cannot be called without one. That is the whole point:
+/// `--max-turns` used to be a `u32` parameter that the non-interactive branch
+/// simply never read, so `apr code --max-turns 0 -p "…"` launched `apr serve`,
+/// ran a full turn and answered at exit 0 (dogfood-0.63.0, issue #2444). The
+/// cap was inert at *every* value in `-p` mode, not merely mishandled at zero.
+/// Forgetting to consult the budget is now a compile error, not a silent
+/// over-run.
+#[must_use]
+#[derive(Debug)]
+pub struct TurnPermit(());
+
+/// The `--max-turns` cap, as a resource that must be spent to run a turn.
+pub struct TurnBudget {
+    max_turns: u32,
+    used: u32,
+}
+
+impl TurnBudget {
+    /// A budget of `max_turns` turns. `0` permits nothing — the same meaning
+    /// the REPL has always given it (`repl.rs`: `turn_count >= max_turns`
+    /// breaks before reading any input).
+    pub fn new(max_turns: u32) -> Self {
+        Self { max_turns, used: 0 }
+    }
+
+    /// Spend one turn, or refuse when the cap is exhausted.
+    pub fn try_permit(&mut self) -> Option<TurnPermit> {
+        if self.used >= self.max_turns {
+            return None;
+        }
+        self.used += 1;
+        Some(TurnPermit(()))
+    }
+
+    /// The cap this budget was created with (for error messages).
+    pub fn max_turns(&self) -> u32 {
+        self.max_turns
+    }
+}
+
+/// Spend the one turn a non-interactive (`-p`) run costs, or refuse.
+///
+/// Returns `Ok(None)` for an interactive session, which spends its budget per
+/// turn inside the REPL loop instead. Refusal is an error, not a quiet exit-0:
+/// `apr code --max-turns 0 -p "…" > out.txt && use out.txt` must not treat an
+/// empty answer as a successful one.
+pub fn permit_single_prompt(
+    budget: &mut TurnBudget,
+    non_interactive: bool,
+) -> anyhow::Result<Option<TurnPermit>> {
+    if !non_interactive {
+        return Ok(None);
+    }
+    match budget.try_permit() {
+        Some(permit) => Ok(Some(permit)),
+        None => anyhow::bail!(
+            "--max-turns {}: refusing to run — a single-prompt run costs one turn and the budget allows none",
+            budget.max_turns()
+        ),
+    }
+}
+
 /// Entry point for `batuta code` / `apr code`.
 ///
 /// This is the public library API — callable from both the batuta binary
@@ -51,6 +116,13 @@ pub fn cmd_code(
         }
         std::env::set_current_dir(&project)?;
     }
+
+    // --max-turns: settled BEFORE any model is launched, so a run that is not
+    // allowed to do anything costs no `apr serve` subprocess and no weights
+    // load. A non-interactive (`-p`) run is exactly one turn, so it needs one
+    // permit; the REPL spends the same budget per turn inside its loop.
+    let mut turn_budget = TurnBudget::new(max_turns);
+    let single_prompt_permit = permit_single_prompt(&mut turn_budget, print || !prompt.is_empty())?;
 
     // --resume <id>: resolve the session BEFORE any model is launched.
     // An unknown id used to be discarded without a word: `-p` mode returned
@@ -194,10 +266,13 @@ pub fn cmd_code(
     // Build memory
     let memory = crate::agent::memory::InMemorySubstrate::new();
 
-    // Non-interactive mode: single prompt
+    // Non-interactive mode: single prompt.
+    // The branch condition IS the turn permit: the permit exists exactly when
+    // `--max-turns` allowed this run, and `run_single_prompt` consumes it, so
+    // no path can reach a turn without having spent budget for it (#2444).
     // PMAT-161: Return exit code instead of process::exit() so driver Drop
     // runs and kills the apr serve subprocess (no zombie processes).
-    if print || !prompt.is_empty() {
+    if let Some(permit) = single_prompt_permit {
         let prompt_text = if prompt.is_empty() {
             let mut buf = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
@@ -226,6 +301,7 @@ pub fn cmd_code(
             emit_trace.as_deref(),
             output_format,
             resumed_store,
+            permit,
         );
         drop(driver); // Kill apr serve subprocess before exit
         std::process::exit(code);
@@ -731,7 +807,11 @@ fn run_single_prompt(
     // PMAT-CODE-OUTPUT-FORMAT-001: "text" (default) or "json".
     output_format: &str,
     resumed: Option<crate::agent::session::SessionStore>,
+    // The turn this call spends. Taken by value so it is consumed here and
+    // cannot be reused; its existence proves `--max-turns` was consulted.
+    permit: TurnPermit,
 ) -> i32 {
+    let TurnPermit(()) = permit;
     let mut single_manifest = manifest.clone();
     single_manifest.resources.max_iterations = single_manifest.resources.max_iterations.min(10);
     // PMAT-197: Use compact system prompt for -p mode.
