@@ -15,11 +15,10 @@ cd "$ROOT"
 CLI_DIR="book/src/cli"
 mkdir -p "$CLI_DIR"
 
-APR="${APR:-/home/noah/.cargo/bin/apr}"
-if ! [ -x "$APR" ]; then
-  echo "error: apr binary not found at $APR — set APR=path/to/apr" >&2
-  exit 2
-fi
+# This generator writes book chapters from `apr --help`. Hardcoding one
+# developer's ~/.cargo/bin meant the generated chapters documented whatever was
+# installed there, on any machine that happened to have it (#2358).
+. scripts/apr_bin.sh || exit 2
 
 # Categories drive the example. Default is `apr <cmd> --help`.
 declare -A EXAMPLE

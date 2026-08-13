@@ -3,13 +3,17 @@
 # Per BOOK-CLOSEOUT-001 § Phase 4.
 set -euo pipefail
 
-APR="${APR:-/home/noah/.cargo/bin/apr}"
-if ! [ -x "$APR" ]; then
-  APR="$(which apr)"
-fi
-
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+# This gate reads `apr --help` and asserts a chapter exists for every subcommand.
+# It used to resolve the binary as `${APR:-/home/noah/.cargo/bin/apr}`, falling
+# back to `$(which apr)` — one developer's home directory, then PATH. Both are
+# the #2357 defect: the command list it compared the book against came from
+# whatever binary happened to be installed, not from this commit. A chapter
+# added for a NEW subcommand would have been reported missing, and a chapter for
+# a DELETED one reported present, with no way to tell from the output.
+. scripts/apr_bin.sh || exit 1
 
 cmds=$("$APR" --help 2>&1 | awk '/^Commands:/{f=1; next} f && /^  [a-z]/{print $1}')
 

@@ -406,8 +406,16 @@ jobs:
       # installed 0.61.0 to ~/.cargo/bin and then executed a 24-day-old 0.60.0
       # from ~/.local/bin, so every beat validated stale code while reporting
       # green. Text-only check, no build.
-      - name: Every CI-surface `apr` invocation must be pinned
+      - name: Every execution-surface `apr` reference must be pinned
         run: bash scripts/check_apr_bin_pinned.sh
+      # The guard's own must-match/must-not-match table plus one mutation per
+      # SCANNED SURFACE, in that surface's own syntax. #2358: extending the
+      # scope to scripts/** and .claude/skills/** did NOT carry the old proof
+      # over - the Makefile lesson repeated itself twice (a skill bash fence and
+      # a `!`...`` inline command were both invisible to a pattern that was
+      # correct everywhere else). Run the table; do not re-read the regex.
+      - name: "`apr`-pinning guard must still turn RED (case table + surfaces)"
+        run: bash scripts/check_apr_bin_pinned.sh --self-test
       # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
       # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
       # `set -uo pipefail` deliberately (it must run every beat and tally the

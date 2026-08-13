@@ -14,6 +14,12 @@
 
 set -euo pipefail
 
+# This script discharges AC-EX-005/006 by pulling the PUBLISHED model and
+# re-running it. Both acceptance criteria are claims about this commit's `apr`,
+# so the binary must be this commit's (#2358) - a bare `apr` here would have
+# discharged the criteria against whatever was installed.
+. "$(dirname "$0")/../apr_bin.sh" || exit 1
+
 MODEL_ID="${MODEL_ID:-paiml/qwen2.5-coder-7b-apache-q4k-v1}"
 MANIFEST_DIR="${MANIFEST_DIR:-contracts/publish-manifests}"
 MANIFEST_PREFIX="${MANIFEST_PREFIX:-paiml-qwen2.5-coder-7b-apache-q4k-v1}"
@@ -27,7 +33,7 @@ echo "[EX-06] apr pull $MODEL_ID"
 # `apr pull` has no -o flag; it caches into ~/.cache/pacha/models/ and prints
 # the path on a `Path: <path>` line. NO_COLOR=1 strips ANSI so awk is clean.
 PULL_LOG="$TMPDIR/pull.log"
-NO_COLOR=1 apr pull "$MODEL_ID" 2>&1 | tee "$PULL_LOG"
+NO_COLOR=1 "$APR" pull "$MODEL_ID" 2>&1 | tee "$PULL_LOG"
 PULLED_PATH=$(awk '/^  *Path:/ {print $2; exit}' "$PULL_LOG")
 if [[ -z "$PULLED_PATH" || ! -f "$PULLED_PATH" ]]; then
     echo "ABORT: could not parse pulled path from apr pull output" >&2
@@ -65,7 +71,7 @@ fi
 
 echo "[EX-06] apr run --prompt 'def fib(n):'"
 OUTPUT_FILE="$TMPDIR/apr_run.out"
-apr run "$PULLED_PATH" --prompt 'def fib(n):' --max-tokens 64 --temperature 0.0 --top-k 1 > "$OUTPUT_FILE" 2>&1 || true
+"$APR" run "$PULLED_PATH" --prompt 'def fib(n):' --max-tokens 64 --temperature 0.0 --top-k 1 > "$OUTPUT_FILE" 2>&1 || true
 
 # AC-EX-006 (spec §12.3 literal): "emits syntactically valid Python"
 # We extract the generated body between the "Output:\n" banner and the

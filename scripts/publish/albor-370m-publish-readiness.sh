@@ -30,9 +30,11 @@ Example (using the §85 P2-E ep49 checkpoint):
         /mnt/nvme-raid0/runs/model-2-p2e-tuned-hp-20260517/ckpt/epoch-049.apr
 
 The checkpoint MUST be the stamped variant (post-§86 salvage if it's
-a pre-P0-K artifact). To stamp:
+a pre-P0-K artifact). To stamp (pin the binary first — stamping metadata with
+an unknown-age apr is how a model ships with provenance it does not have):
 
-    apr stamp <pre-p0k.apr> \
+    . scripts/apr_bin.sh || exit 1
+    "$APR" stamp <pre-p0k.apr> \
         --architecture qwen2 \
         --hf-architecture Qwen2ForCausalLM \
         --hf-model-type qwen2 \
