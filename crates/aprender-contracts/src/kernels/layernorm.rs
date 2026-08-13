@@ -256,24 +256,40 @@ mod tests {
         fn prop_layernorm_unit_variance(
             v in proptest::collection::vec(-10.0_f32..10.0, 4..64)
         ) {
-            // Check that not all elements are the same (skip constant vectors)
-            let min = v.iter().copied().fold(f32::INFINITY, f32::min);
-            let max = v.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-            if (max - min).abs() < 1e-6 {
-                return Ok(());
-            }
+            // LayerNorm divides by sqrt(var_in + eps), so the output variance is
+            // exactly var_in / (var_in + eps) — it approaches 1.0 only as var_in
+            // grows large relative to eps, and is BELOW 1.0 for every finite input.
+            //
+            // The old guard skipped vectors whose RANGE was under 1e-6, but range is
+            // a proxy for the wrong quantity. proptest found
+            // v = [-4.983007, -4.9585605, -4.9680285, -5.0763197]: range 0.12, far
+            // above that guard, but var_in = 2.2e-3, only ~220x eps. Output variance
+            // came out 0.99547684 and the 1e-3 assertion failed. That is arithmetic
+            // working correctly, not a layernorm defect — the PROPERTY is false in
+            // that regime, so the test was asserting something untrue.
+            //
+            // Precondition on the quantity that actually governs the error. From
+            // |1 - var_in/(var_in + eps)| = eps/(var_in + eps) < TOL, the property
+            // holds when var_in > eps/TOL - eps. Derived from EPS and TOL rather
+            // than hardcoded, so changing either cannot silently re-open the gap.
+            const EPS: f32 = 1e-5;
+            const TOL: f32 = 1e-3;
+            let n_in = v.len() as f32;
+            let mean_in: f32 = v.iter().sum::<f32>() / n_in;
+            let var_in: f32 = v.iter().map(|&x| (x - mean_in) * (x - mean_in)).sum::<f32>() / n_in;
+            prop_assume!(var_in > EPS / TOL);
 
             let gamma = vec![1.0_f32; v.len()];
             let beta = vec![0.0_f32; v.len()];
             let mut output = vec![0.0_f32; v.len()];
-            layernorm_scalar(&v, &gamma, &beta, 1e-5, &mut output);
+            layernorm_scalar(&v, &gamma, &beta, EPS, &mut output);
 
             let n = output.len() as f32;
             let mean: f32 = output.iter().sum::<f32>() / n;
             let var: f32 = output.iter().map(|&x| (x - mean) * (x - mean)).sum::<f32>() / n;
             prop_assert!(
-                (var - 1.0).abs() < 1e-3,
-                "output variance = {var}, expected ~1.0"
+                (var - 1.0).abs() < TOL,
+                "output variance = {var}, expected ~1.0 (input variance {var_in})"
             );
         }
 
