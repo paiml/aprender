@@ -93,7 +93,8 @@ pub enum RosettaCommands {
         intermediate: String,
 
         /// Tolerance for numerical differences (default: 1e-5)
-        #[arg(long, default_value = "1e-5")]
+        #[arg(long, default_value = "1e-5",
+              value_parser = crate::commands::threshold_arg::parse_tolerance_f32)]
         tolerance: f32,
 
         /// Output as JSON
@@ -124,7 +125,8 @@ pub enum RosettaCommands {
         temperature: f32,
 
         /// Logit difference tolerance
-        #[arg(long, default_value = "0.1")]
+        #[arg(long, default_value = "0.1",
+              value_parser = crate::commands::threshold_arg::parse_fraction_f32)]
         tolerance: f32,
 
         /// Output as JSON
@@ -212,7 +214,8 @@ pub enum RosettaCommands {
         fingerprints: Option<PathBuf>,
 
         /// Deviation threshold in standard deviations (default: 3.0)
-        #[arg(long, default_value = "3.0")]
+        #[arg(long, default_value = "3.0",
+              value_parser = crate::commands::threshold_arg::parse_tolerance_f32)]
         threshold: f32,
 
         /// Use role-specific thresholds (stricter for LayerNorm, looser for embeddings)

@@ -104,6 +104,48 @@ fn parse_in(s: &str, domain: ThresholdDomain) -> std::result::Result<f64, String
     check(value, domain)
 }
 
+/// clap `value_parser` for an `f32` tolerance/floor flag.
+///
+/// The `f32` family exists because roughly half the gate thresholds in the CLI
+/// are declared `f32` (cosine floors on `apr diff`, sigma thresholds on
+/// `apr rosetta validate-stats`, the perplexity ceiling on `apr eval`). Parsing
+/// as `f32` first and widening for the domain check keeps the round-trip exact:
+/// parsing as `f64` and narrowing would accept `1e-300` and then hand the gate a
+/// silent `0.0`.
+pub(crate) fn parse_tolerance_f32(s: &str) -> std::result::Result<f32, String> {
+    parse_in_f32(s, TOLERANCE)
+}
+
+/// clap `value_parser` for an `f32` `[0.0, 1.0]` fraction flag.
+pub(crate) fn parse_fraction_f32(s: &str) -> std::result::Result<f32, String> {
+    parse_in_f32(s, FRACTION)
+}
+
+/// clap `value_parser` for an `f32` cosine-similarity floor flag.
+pub(crate) fn parse_cosine_f32(s: &str) -> std::result::Result<f32, String> {
+    parse_in_f32(s, COSINE)
+}
+
+fn parse_in_f32(s: &str, domain: ThresholdDomain) -> std::result::Result<f32, String> {
+    let value: f32 = s.parse().map_err(|_| "invalid float literal".to_string())?;
+    check(f64::from(value), domain)?;
+    Ok(value)
+}
+
+/// `guard()` for an `f32` threshold. Same fail-closed contract as [`guard`].
+pub(crate) fn guard_f32(flag: &str, value: f32, domain: ThresholdDomain) -> Result<()> {
+    guard(flag, f64::from(value), domain)
+}
+
+/// `guard()` for an optional threshold: `None` means "no assertion", which is
+/// not a disarmed gate, so it passes. `Some(NaN)` is a disarmed gate.
+pub(crate) fn guard_opt(flag: &str, value: Option<f64>, domain: ThresholdDomain) -> Result<()> {
+    match value {
+        Some(v) => guard(flag, v, domain),
+        None => Ok(()),
+    }
+}
+
 /// Fail-closed guard for the `run()` entry points, so a non-clap caller cannot
 /// disarm a gate either. Errors as `ValidationFailed` (exit 5), matching the
 /// exit code the gate itself would have produced.

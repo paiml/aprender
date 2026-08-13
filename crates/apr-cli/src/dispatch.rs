@@ -458,6 +458,11 @@ fn dispatch_quant_roundtrip(
 ) -> Result<(), CliError> {
     use commands::diff_quant_roundtrip::{build_report, render_tsv};
 
+    // GH-2391: `any_below_threshold` is an OR of `cosine < threshold`. Against a
+    // NaN threshold every term is false, so the CRUX-B-20 exit-code gate reports
+    // a clean roundtrip for a quantization it never checked.
+    commands::threshold_arg::guard_f32("--threshold", threshold, commands::threshold_arg::COSINE)?;
+
     let report = build_report(reference, quantized, threshold)?;
 
     if json {

@@ -43,6 +43,16 @@ pub(crate) fn run(
     spike_multiplier: f64,
     json: bool,
 ) -> Result<()> {
+    // GH-2391: a NaN cap makes `norm > cap` false for every step, so the
+    // cap-violation check reports zero violations for telemetry it never read.
+    use crate::commands::threshold_arg;
+    threshold_arg::guard_opt("--max-grad-norm", max_grad_norm, threshold_arg::TOLERANCE)?;
+    threshold_arg::guard(
+        "--spike-multiplier",
+        spike_multiplier,
+        threshold_arg::TOLERANCE,
+    )?;
+
     if !history_file.exists() {
         return Err(CliError::FileNotFound(PathBuf::from(history_file)));
     }
