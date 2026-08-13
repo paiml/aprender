@@ -80,23 +80,23 @@ pub fn build_argv(args: &serde_json::Value, streaming: bool) -> Result<Vec<Strin
         owned.push("--json".to_string());
     }
 
+    // `--flag=value`, never `--flag` `value`: a prompt is arbitrary user text
+    // and a temperature may legitimately be negative, and clap reads a
+    // leading `-` in the value position as the next flag. See
+    // [`args::flag`] for the measured before/after.
     if let Some(prompt) = args::opt_str(args, "prompt")? {
         if !prompt.is_empty() {
-            owned.push("--prompt".to_string());
-            owned.push(prompt.to_string());
+            owned.push(args::flag("prompt", prompt));
         }
     }
     if let Some(n) = args::opt_u64(args, "max_tokens")? {
-        owned.push("--max-tokens".to_string());
-        owned.push(n.to_string());
+        owned.push(args::flag("max-tokens", n));
     }
     if let Some(t) = args::opt_f64(args, "temperature")? {
-        owned.push("--temperature".to_string());
-        owned.push(t.to_string());
+        owned.push(args::flag("temperature", t));
     }
     if let Some(p) = args::opt_f64(args, "top_p")? {
-        owned.push("--top-p".to_string());
-        owned.push(p.to_string());
+        owned.push(args::flag("top-p", p));
     }
     Ok(owned)
 }
@@ -129,7 +129,13 @@ pub fn call_with_sink(
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     match (streaming, sink, progress_token) {
-        (true, Some(sink), Some(token)) => stream_with_sink("apr", &argv, sink, &token),
+        // #2384/#2424: `run_apr_cancellable` resolves the binary through
+        // `crate::apr_bin::apr_binary`; this branch used to hand the bare name
+        // `apr` to the OS for a `$PATH` search, so opting into progress
+        // streaming silently switched which `apr` produced the tokens.
+        (true, Some(sink), Some(token)) => {
+            stream_with_sink(crate::apr_bin::apr_binary(), &argv, sink, &token)
+        }
         _ => run_apr_cancellable(&argv, cancel_rx, CANCEL_GRACE_MS),
     }
 }
@@ -143,8 +149,8 @@ pub fn call_with_sink(
 /// is the aggregated stdout (same shape as `run_apr_cancellable`'s success
 /// body) so non-streaming consumers get the full payload too.
 #[must_use]
-pub fn stream_with_sink(
-    program: &str,
+pub fn stream_with_sink<P: AsRef<std::ffi::OsStr>>(
+    program: P,
     args: &[&str],
     sink: &NotificationSink,
     progress_token: &serde_json::Value,
@@ -215,11 +221,63 @@ mod tests {
             false,
         )
         .expect("numeric string is usable");
-        let idx = argv
-            .iter()
-            .position(|a| a == "--max-tokens")
-            .unwrap_or_else(|| panic!("max_tokens dropped: {argv:?}"));
-        assert_eq!(argv[idx + 1], "8");
+        assert_eq!(
+            argv,
+            vec!["run", "m.gguf", "--json", "--prompt=hi", "--max-tokens=8"],
+            "max_tokens must reach the CLI"
+        );
+    }
+
+    /// A prompt beginning with `-` is ordinary user text — "-1 + 2 equals",
+    /// "-Wall means what?", a diff hunk. Under the two-token argv form it
+    /// reached clap as a bare `-1` and the whole call died with
+    /// `unexpected argument '-1' found` (exit 2), while `POST /generate` with
+    /// the identical prompt answered 200. An MCP client cannot escape it: it
+    /// supplies a JSON string, and this wrapper owns the argv encoding.
+    #[test]
+    fn a_prompt_beginning_with_a_hyphen_survives_argv_encoding() {
+        for prompt in ["-1 + 2 equals", "--help does what?", "-Wall"] {
+            let argv = build_argv(
+                &serde_json::json!({ "model_path": "m.gguf", "prompt": prompt }),
+                false,
+            )
+            .expect("any string is a usable prompt");
+            assert_eq!(
+                argv,
+                vec![
+                    "run".to_string(),
+                    "m.gguf".to_string(),
+                    "--json".to_string(),
+                    format!("--prompt={prompt}"),
+                ],
+                "the prompt must ride in ONE argv token, else clap reads its \
+                 leading '-' as the next flag"
+            );
+        }
+    }
+
+    /// `temperature` is a `"type": "number"`, so `-1` is schema-valid. The
+    /// two-token form turned it into `unexpected argument '-1' found` — a
+    /// parse error where `POST /generate` returns 422 with
+    /// "temperature must be a finite number >= 0". Encoding must not be what
+    /// decides; the value has to reach the CLI to be judged there.
+    #[test]
+    fn negative_sampling_numbers_survive_argv_encoding() {
+        let argv = build_argv(
+            &serde_json::json!({ "model_path": "m.gguf", "temperature": -1, "top_p": -0.5 }),
+            false,
+        )
+        .expect("negative numbers are usable JSON numbers");
+        assert_eq!(
+            argv,
+            vec![
+                "run",
+                "m.gguf",
+                "--json",
+                "--temperature=-1",
+                "--top-p=-0.5"
+            ]
+        );
     }
 
     #[test]
@@ -242,9 +300,7 @@ mod tests {
             true,
         )
         .expect("numeric string is usable");
-        assert!(argv.contains(&"--stream".to_string()), "{argv:?}");
-        assert!(!argv.contains(&"--json".to_string()), "{argv:?}");
-        assert!(argv.contains(&"--top-p".to_string()), "{argv:?}");
+        assert_eq!(argv, vec!["run", "m.gguf", "--stream", "--top-p=0.9"]);
     }
 
     /// #2419: `max_tokens:"eight"` was dropped and the run proceeded with the

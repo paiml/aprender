@@ -49,10 +49,11 @@ pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
     if args::opt_bool(args, "stats")?.unwrap_or(false) {
         argv.push("--stats".to_string());
     }
+    // `--flag=value` — see [`args::flag`]. `{"filter": "-norm"}` used to reach
+    // clap as `--filter -norm` and die with `unexpected argument '-n'`.
     let filter = args::opt_str(args, "filter")?.unwrap_or("");
     if !filter.is_empty() {
-        argv.push("--filter".to_string());
-        argv.push(filter.to_string());
+        argv.push(args::flag("filter", filter));
     }
     Ok(argv)
 }
@@ -141,6 +142,31 @@ mod tests {
             "must state the expected type: {text}"
         );
         assert!(text.contains("yes"), "must quote what was received: {text}");
+    }
+
+    /// `{"filter": "-norm"}` reached clap as the two tokens `--filter -norm`
+    /// and the call died with `unexpected argument '-n' found` (exit 2), so a
+    /// perfectly ordinary substring pattern was untransmittable over MCP. The
+    /// `=` form puts it in one token.
+    ///
+    /// Mutation-verified: reverting `build_argv` to the two-token push turns
+    /// this RED. It exists because the first pass of this work had no such
+    /// test here, and the tensors mutation survived while its five siblings
+    /// went red.
+    #[test]
+    fn a_filter_beginning_with_a_hyphen_survives_argv_encoding() {
+        let argv = build_argv(&serde_json::json!({ "model_path": "m.gguf", "filter": "-norm" }))
+            .expect("any string is a usable filter");
+        assert_eq!(argv, vec!["tensors", "m.gguf", "--json", "--filter=-norm"]);
+    }
+
+    /// Positive control for the pattern above: an ordinary filter is encoded
+    /// the same way, so the `=` form is the rule and not a special case.
+    #[test]
+    fn an_ordinary_filter_uses_the_same_single_token_form() {
+        let argv = build_argv(&serde_json::json!({ "model_path": "m.gguf", "filter": "norm" }))
+            .expect("valid");
+        assert_eq!(argv, vec!["tensors", "m.gguf", "--json", "--filter=norm"]);
     }
 
     #[test]

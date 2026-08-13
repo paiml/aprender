@@ -22,6 +22,13 @@ pub mod trace;
 pub mod validate;
 pub mod version;
 
+/// FALSIFY-MCP-PIN-001..003 — every spawn site resolves `apr` through
+/// [`crate::apr_bin::apr_binary`]. Kept in its own file because the invariant
+/// is cross-cutting: it belongs to no single tool, and the three call sites it
+/// pins were exactly the ones a per-tool review missed.
+#[cfg(test)]
+mod spawn_pinning_tests;
+
 pub use registry::{DispatchFn, McpToolEntry, ToolIndex};
 
 pub use bench::bench_tool_definition;

@@ -46,18 +46,17 @@ pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
         "--json".to_string(),
     ];
 
+    // `--flag=value` — see [`args::flag`]: a bench prompt beginning with `-`
+    // is ordinary user text that the two-token form makes untransmittable.
     if let Some(n) = args::opt_u64(args, "iterations")? {
-        owned.push("--iterations".to_string());
-        owned.push(n.to_string());
+        owned.push(args::flag("iterations", n));
     }
     if let Some(n) = args::opt_u64(args, "max_tokens")? {
-        owned.push("--max-tokens".to_string());
-        owned.push(n.to_string());
+        owned.push(args::flag("max-tokens", n));
     }
     let prompt = args::opt_str(args, "prompt")?.unwrap_or("");
     if !prompt.is_empty() {
-        owned.push("--prompt".to_string());
-        owned.push(prompt.to_string());
+        owned.push(args::flag("prompt", prompt));
     }
     Ok(owned)
 }
@@ -129,10 +128,8 @@ mod tests {
                 "bench",
                 "m.gguf",
                 "--json",
-                "--iterations",
-                "1",
-                "--max-tokens",
-                "8"
+                "--iterations=1",
+                "--max-tokens=8"
             ]
         );
     }
@@ -142,5 +139,19 @@ mod tests {
         let result = call(&serde_json::json!({ "model_path": "m.gguf", "iterations": "lots" }));
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("iterations"));
+    }
+
+    /// A benchmark prompt beginning with `-` is ordinary user text; the
+    /// two-token argv form made it a clap parse error. Mirrors
+    /// `run::tests::a_prompt_beginning_with_a_hyphen_survives_argv_encoding`.
+    #[test]
+    fn a_prompt_beginning_with_a_hyphen_survives_argv_encoding() {
+        let argv =
+            build_argv(&serde_json::json!({ "model_path": "m.gguf", "prompt": "-1 + 2 equals" }))
+                .expect("any string is a usable prompt");
+        assert_eq!(
+            argv,
+            vec!["bench", "m.gguf", "--json", "--prompt=-1 + 2 equals"]
+        );
     }
 }

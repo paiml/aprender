@@ -54,16 +54,15 @@ pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
         "--json".to_string(),
     ];
 
+    // `--flag=value` — see [`args::flag`].
     if let Some(pat) = args::opt_str(args, "layer")? {
         if !pat.is_empty() {
-            owned.push("--layer".to_string());
-            owned.push(pat.to_string());
+            owned.push(args::flag("layer", pat));
         }
     }
     if let Some(ref_path) = args::opt_str(args, "reference")? {
         if !ref_path.is_empty() {
-            owned.push("--reference".to_string());
-            owned.push(ref_path.to_string());
+            owned.push(args::flag("reference", ref_path));
         }
     }
     Ok(owned)
@@ -155,12 +154,19 @@ mod tests {
                 "trace",
                 "m.gguf",
                 "--json",
-                "--layer",
-                "blk.7",
-                "--reference",
-                "ref.gguf"
+                "--layer=blk.7",
+                "--reference=ref.gguf"
             ]
         );
+    }
+
+    /// A layer pattern beginning with `-` reached clap as `--layer -norm` and
+    /// died with `unexpected argument '-n' found`; the `=` form transmits it.
+    #[test]
+    fn a_layer_pattern_beginning_with_a_hyphen_survives_argv_encoding() {
+        let argv = build_argv(&serde_json::json!({ "model_path": "m.gguf", "layer": "-norm" }))
+            .expect("any string is a usable pattern");
+        assert_eq!(argv, vec!["trace", "m.gguf", "--json", "--layer=-norm"]);
     }
 
     #[test]

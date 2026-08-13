@@ -31,6 +31,40 @@ use serde_json::Value;
 /// but not convertible to the declared type.
 pub type ArgResult<T> = Result<Option<T>, String>;
 
+/// Render `--<name> <value>` as the SINGLE argv token `--<name>=<value>`.
+///
+/// The two-token form is what a human types at a shell, but it is not a form a
+/// programmatic caller can use: clap refuses a value that begins with `-` in
+/// the value position, because it cannot tell it from the next flag. Measured
+/// on `apr 0.63.0 (9b19970db)` before this helper existed —
+///
+/// ```text
+/// tools/call apr.run {"model_path": "...", "prompt": "-1 + 2 equals", "max_tokens": 3}
+///   -> isError: `apr run ... --prompt '-1 + 2 equals' --max-tokens 3`
+///      failed (exit 2): error: unexpected argument '-1' found
+///
+/// POST /generate {"prompt": "-1 + 2 equals", "max_tokens": 3}
+///   -> 200 {"text": "-1 + 2 equals 1.\n", "num_generated": 3}
+/// ```
+///
+/// — so the same prompt was answerable over HTTP and structurally
+/// untransmittable over MCP. An MCP client has no `--` escape and no
+/// `--flag=value` spelling available to it; it supplies a JSON string and the
+/// wrapper owns the translation to argv. `tools/call apr.tensors
+/// {"filter": "-norm"}` failed the same way (`unexpected argument '-n'`), as
+/// does every `"type": "number"` argument given a negative value, since `-1`
+/// is a schema-valid JSON number.
+///
+/// Every long option the wrappers emit was checked against a live `apr` in
+/// both forms before this landed — `run`, `bench`, `tensors`, `trace`, `qa`,
+/// `finetune`, `serve run` — and clap accepted `=` for all of them (exit 3/5,
+/// "file not found", never exit 2 "unexpected argument"). The per-builder unit
+/// tests below pin the emitted argv so a regression to the two-token form is a
+/// test failure rather than a runtime surprise.
+pub fn flag(name: &str, value: impl std::fmt::Display) -> String {
+    format!("--{name}={value}")
+}
+
 /// Early-return an `isError` [`crate::types::ToolCallResult`] when an
 /// argument is present with an unusable type.
 macro_rules! try_arg {

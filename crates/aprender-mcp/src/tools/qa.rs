@@ -50,18 +50,18 @@ pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
     ];
 
     // A wrong-typed assert_tps used to vanish here, disarming the throughput
-    // gate without any diagnostic (#2403).
+    // gate without any diagnostic (#2403). `--flag=value` — see
+    // [`args::flag`]: `assert_tps` is a `"type": "number"`, so a negative
+    // value is schema-valid and the two-token form turned it into a clap
+    // parse error instead of a threshold.
     if let Some(tps) = args::opt_f64(args, "assert_tps")? {
-        owned.push("--assert-tps".to_string());
-        owned.push(tps.to_string());
+        owned.push(args::flag("assert-tps", tps));
     }
     if let Some(n) = args::opt_u64(args, "max_tokens")? {
-        owned.push("--max-tokens".to_string());
-        owned.push(n.to_string());
+        owned.push(args::flag("max-tokens", n));
     }
     if let Some(n) = args::opt_u64(args, "iterations")? {
-        owned.push("--iterations".to_string());
-        owned.push(n.to_string());
+        owned.push(args::flag("iterations", n));
     }
     Ok(owned)
 }
@@ -127,15 +127,17 @@ mod tests {
             "iterations": 1
         }))
         .expect("string 100000 is a usable number");
-        assert!(
-            argv.contains(&"--assert-tps".to_string()),
-            "throughput gate disarmed: {argv:?}"
+        assert_eq!(
+            argv,
+            vec![
+                "qa",
+                "m.gguf",
+                "--json",
+                "--assert-tps=100000",
+                "--iterations=1"
+            ],
+            "throughput gate disarmed"
         );
-        let idx = argv
-            .iter()
-            .position(|a| a == "--assert-tps")
-            .expect("flag present");
-        assert_eq!(argv[idx + 1], "100000");
     }
 
     /// A number still works exactly as before — the positive control the
@@ -145,7 +147,19 @@ mod tests {
         let argv =
             build_argv(&serde_json::json!({ "model_path": "m.gguf", "assert_tps": 100_000 }))
                 .expect("number is usable");
-        assert!(argv.contains(&"--assert-tps".to_string()), "{argv:?}");
+        assert_eq!(argv, vec!["qa", "m.gguf", "--json", "--assert-tps=100000"]);
+    }
+
+    /// A NEGATIVE `assert_tps` is a schema-valid `"type": "number"`, and under
+    /// the two-token argv form it reached clap as a bare `-1` and died with
+    /// `unexpected argument '-1' found` — a parser error standing in for what
+    /// should be a threshold. The `=` form transmits it, so the CLI (not the
+    /// argv encoding) decides what a negative threshold means.
+    #[test]
+    fn negative_assert_tps_survives_argv_encoding() {
+        let argv = build_argv(&serde_json::json!({ "model_path": "m.gguf", "assert_tps": -1 }))
+            .expect("-1 is a usable number");
+        assert_eq!(argv, vec!["qa", "m.gguf", "--json", "--assert-tps=-1"]);
     }
 
     /// An assert_tps that cannot mean a threshold is an error the client can

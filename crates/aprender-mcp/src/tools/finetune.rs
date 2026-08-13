@@ -95,7 +95,13 @@ pub fn call_with_sink(
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     match (sink, progress_token) {
-        (Some(sink), Some(token)) => stream_with_sink("apr", &argv, sink, &token),
+        // #2384/#2424: `run_apr` resolves the binary through
+        // `crate::apr_bin::apr_binary`; this branch used to hand the bare name
+        // `apr` to the OS for a `$PATH` search, so opting into progress
+        // streaming silently switched which `apr` did the training.
+        (Some(sink), Some(token)) => {
+            stream_with_sink(crate::apr_bin::apr_binary(), &argv, sink, &token)
+        }
         _ => run_apr(&argv),
     }
 }
@@ -114,30 +120,28 @@ pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
         "--json".to_string(),
     ];
 
+    // `--flag=value` — see [`args::flag`]. A dataset or output path is caller
+    // text; the two-token form makes any value beginning with `-` a clap
+    // parse error rather than an argument.
     if let Some(dataset) = args::opt_str(args, "dataset")? {
         if !dataset.is_empty() {
-            owned.push("--data".to_string());
-            owned.push(dataset.to_string());
+            owned.push(args::flag("data", dataset));
         }
     }
     if let Some(rank) = args::opt_u64(args, "lora_rank")? {
-        owned.push("--rank".to_string());
-        owned.push(rank.to_string());
+        owned.push(args::flag("rank", rank));
     }
     if let Some(epochs) = args::opt_u64(args, "epochs")? {
-        owned.push("--epochs".to_string());
-        owned.push(epochs.to_string());
+        owned.push(args::flag("epochs", epochs));
     }
     if let Some(method) = args::opt_str(args, "method")? {
         if !method.is_empty() {
-            owned.push("--method".to_string());
-            owned.push(method.to_string());
+            owned.push(args::flag("method", method));
         }
     }
     if let Some(output) = args::opt_str(args, "output")? {
         if !output.is_empty() {
-            owned.push("--output".to_string());
-            owned.push(output.to_string());
+            owned.push(args::flag("output", output));
         }
     }
     Ok(owned)
@@ -149,8 +153,8 @@ pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
 /// forwarded as a plain string. The returned `ToolCallResult` is the
 /// aggregated stdout (same shape as `run_apr`'s success body).
 #[must_use]
-pub fn stream_with_sink(
-    program: &str,
+pub fn stream_with_sink<P: AsRef<std::ffi::OsStr>>(
+    program: P,
     args: &[&str],
     sink: &NotificationSink,
     progress_token: &serde_json::Value,
@@ -251,16 +255,11 @@ mod tests {
                 "finetune",
                 "base.safetensors",
                 "--json",
-                "--data",
-                "/tmp/d.jsonl",
-                "--rank",
-                "4",
-                "--epochs",
-                "1",
-                "--method",
-                "lora",
-                "--output",
-                "/tmp/out"
+                "--data=/tmp/d.jsonl",
+                "--rank=4",
+                "--epochs=1",
+                "--method=lora",
+                "--output=/tmp/out"
             ]
         );
     }
@@ -275,8 +274,39 @@ mod tests {
             "epochs": "1"
         }))
         .expect("numeric strings usable");
-        assert!(argv.contains(&"--rank".to_string()), "{argv:?}");
-        assert!(argv.contains(&"--epochs".to_string()), "{argv:?}");
+        assert_eq!(
+            argv,
+            vec![
+                "finetune",
+                "base.safetensors",
+                "--json",
+                "--rank=4",
+                "--epochs=1"
+            ]
+        );
+    }
+
+    /// A dataset or output path beginning with `-` is a path like any other;
+    /// the two-token argv form made it a clap parse error before any file was
+    /// opened. Mirrors `run::tests::a_prompt_beginning_with_a_hyphen_...`.
+    #[test]
+    fn paths_beginning_with_a_hyphen_survive_argv_encoding() {
+        let argv = build_argv(&serde_json::json!({
+            "base_model": "base.safetensors",
+            "dataset": "-data.jsonl",
+            "output": "-out"
+        }))
+        .expect("any string is a usable path");
+        assert_eq!(
+            argv,
+            vec![
+                "finetune",
+                "base.safetensors",
+                "--json",
+                "--data=-data.jsonl",
+                "--output=-out"
+            ]
+        );
     }
 
     #[test]

@@ -62,6 +62,25 @@ pub fn resolve(override_var: Option<OsString>, current_exe: Option<PathBuf>) -> 
     PathBuf::from("apr")
 }
 
+/// Test-only serialization for `$APR_BIN`.
+///
+/// The variable is process-global and every falsifier that proves a spawn site
+/// honours it must set it, run, and unset it. Two such tests overlapping means
+/// one `remove_var` lands inside the other's window, and the loser fails with
+/// "must execute the resolved binary" while the code under test is correct.
+/// Observed exactly that: `falsify_mcp_pin_003` was green under a filtered run
+/// and RED under the full `--lib` suite, racing
+/// `subprocess::tests::falsify_2384_run_apr_executes_the_resolved_binary`.
+///
+/// Every test that touches `$APR_BIN` takes this guard first.
+#[cfg(test)]
+pub(crate) fn apr_bin_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// True when `path` names the `apr` CLI itself (`apr`, or `apr.exe` on
 /// Windows). Deliberately an exact stem match: `aprender_mcp-1a2b3c` and
 /// `apr-cli` are *not* `apr`, and spawning them with `apr` subcommands would

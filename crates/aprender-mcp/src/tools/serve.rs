@@ -37,8 +37,10 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::apr_bin::apr_binary;
 use crate::tools::args::{self, try_arg};
 use crate::types::{ContentBlock, InputSchema, ToolCallResult, ToolDefinition};
+use std::ffi::OsStr;
 use std::io::Read;
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::process::{Command, Stdio};
@@ -79,8 +81,10 @@ pub fn serve_argv(model_path: &str, port: u16) -> Vec<String> {
         "serve".to_string(),
         "run".to_string(),
         model_path.to_string(),
-        "--port".to_string(),
-        port.to_string(),
+        // `--port=<n>` for uniformity with every other wrapper; see
+        // [`args::flag`]. A u16 can never start with `-`, so this one is
+        // consistency rather than a fix.
+        args::flag("port", port),
     ]
 }
 
@@ -127,23 +131,38 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
         },
     };
 
-    spawn_and_confirm("apr", &serve_argv(model_path, port), port, READY_TIMEOUT)
+    // #2384/#2424: the daemon must be THIS `apr`, resolved by
+    // `crate::apr_bin::apr_binary`, never the bare name `apr` handed to the OS
+    // for a `$PATH` search. `run_apr` was pinned when #2384 landed but this
+    // call site kept the literal, so on a box with an older `apr` earlier on
+    // `$PATH` the MCP server answered `apr.version` = 0.63.0 while
+    // `apr.serve` started a 0.60.0 daemon — measured here as `GET /health`
+    // reporting `"version":"0.60.0"` from a server launched by the 0.63.0
+    // binary.
+    spawn_and_confirm(
+        apr_binary(),
+        &serve_argv(model_path, port),
+        port,
+        READY_TIMEOUT,
+    )
 }
 
 /// Spawn `program <args...>` as a background HTTP daemon on `port` and wait
 /// up to `ready_timeout` for it to prove it is running.
 ///
-/// Generic over the program name so the readiness/liveness contract can be
-/// exercised in unit tests without a built `apr` on `PATH` — the same shape
-/// `subprocess::spawn_cancellable` uses.
+/// Generic over the program so the readiness/liveness contract can be
+/// exercised in unit tests without a built `apr` on `PATH`, and so production
+/// callers can hand it the resolved [`apr_binary`] `PathBuf` rather than a
+/// bare name — the same shape `subprocess::spawn_cancellable` uses.
 #[must_use]
-pub fn spawn_and_confirm(
-    program: &str,
+pub fn spawn_and_confirm<P: AsRef<OsStr>>(
+    program: P,
     args: &[String],
     port: u16,
     ready_timeout: Duration,
 ) -> ToolCallResult {
-    let cmd_display = format!("{program} {}", args.join(" "));
+    let program = program.as_ref();
+    let cmd_display = format!("{} {}", program.to_string_lossy(), args.join(" "));
 
     // The daemon outlives this call, so its stderr must not go to a pipe
     // nobody drains (a full pipe buffer would wedge the server). Route it to
@@ -357,7 +376,7 @@ mod tests {
         let argv = serve_argv("/models/qwen.gguf", 18590);
         assert_eq!(
             argv,
-            vec!["serve", "run", "/models/qwen.gguf", "--port", "18590"],
+            vec!["serve", "run", "/models/qwen.gguf", "--port=18590"],
             "apr.serve must shell out to `apr serve run <model> --port <n>`"
         );
         // Position matters, not mere presence: the model path must never be

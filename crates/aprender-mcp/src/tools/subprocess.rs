@@ -567,6 +567,10 @@ mod tests {
         perms.set_mode(0o755);
         std::fs::set_permissions(&shim, perms).expect("chmod");
 
+        // `$APR_BIN` is process-global: hold the shared guard so this test's
+        // `remove_var` cannot land inside FALSIFY-MCP-PIN-001..003's window
+        // (that race made PIN-003 pass filtered and fail under `--lib`).
+        let _guard = crate::apr_bin::apr_bin_env_lock();
         // Edition 2021 — `set_var` is safe here.
         std::env::set_var(crate::apr_bin::APR_BIN_ENV, &shim);
         let result = run_apr(&["validate", "/dev/null", "--json"]);
