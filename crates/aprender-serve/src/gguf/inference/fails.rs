@@ -51,6 +51,11 @@ impl OwnedQuantizedModel {
         let max_len = prompt.len() + config.max_tokens;
 
         for _ in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             // Forward pass with fused Q4_K ops (1.37x faster)
             let logits = self.forward(&tokens)?;
 
@@ -239,6 +244,11 @@ impl OwnedQuantizedModel {
         // Generate new tokens
         // First iteration uses logits from prefill, subsequent use logits from forward pass
         for gen_idx in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let token_start = std::time::Instant::now();
             // DEBUG: Print logits info for first generated token
             if gen_idx == 0 && std::env::var("REALIZAR_DEBUG_LOGITS").is_ok() {
@@ -389,6 +399,11 @@ impl OwnedQuantizedModel {
 
         // Generate new tokens with streaming
         for gen_idx in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let token_start = std::time::Instant::now();
             // Sample next token
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {

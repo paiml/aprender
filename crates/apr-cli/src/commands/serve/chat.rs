@@ -269,6 +269,7 @@ pub(crate) async fn safetensors_chat_completions_handler(
         repetition_penalty: 1.0,
         trace: false,
         stop_tokens: vec![],
+        cancel: realizar::generate::CancelToken::never(),
     };
     let output_ids = {
         // PMAT-189: Handle transformer lock poisoning gracefully

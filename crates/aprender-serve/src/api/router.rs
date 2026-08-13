@@ -283,6 +283,12 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
         }
     });
 
+    // aprender#2376(3): mint a per-request CancelToken, publish it to the handlers
+    // via request extensions, and cancel it when axum drops this request because
+    // the client went away. Applied to the WHOLE router, not just the generate
+    // routes, so a route added later cannot silently opt out of cancellation.
+    router = router.layer(axum::middleware::from_fn(cancel_on_disconnect));
+
     // GH-649: Sanitize axum deserialization errors to avoid leaking internals to clients.
     // Axum returns 422 with raw serde error details by default; replace with a generic message.
     router = router.layer(axum::middleware::from_fn(sanitize_json_rejection));

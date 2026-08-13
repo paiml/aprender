@@ -512,6 +512,7 @@ fn test_generate_config_clone() {
         repetition_penalty: 1.2,
         trace: false,
         stop_tokens: vec![],
+        cancel: realizar::generate::CancelToken::never(),
     };
     let cloned = config.clone();
     assert_eq!(config.max_tokens, cloned.max_tokens);

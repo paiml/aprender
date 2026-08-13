@@ -542,6 +542,7 @@ async fn try_cached_completions(
     max_tokens: usize,
     temperature: f32,
     start: std::time::Instant,
+    cancel: &CancelToken,
 ) -> Result<Option<CompletionResponse>, RErr> {
     use crate::gguf::QuantizedGenerateConfig;
 
@@ -588,7 +589,8 @@ async fn try_cached_completions(
         top_k: if temperature == 0.0 { 1 } else { 40 },
         stop_tokens: Vec::new(),
         trace: state.is_trace_enabled(),
-            ..Default::default()
+        cancel: cancel.clone(),
+        ..Default::default()
     };
 
     // IMP-126: adaptive generation when dispatch_metrics available
@@ -630,6 +632,7 @@ fn try_quantized_completions(
     max_tokens: usize,
     temperature: f32,
     start: std::time::Instant,
+    cancel: &CancelToken,
 ) -> Result<Option<CompletionResponse>, RErr> {
     use crate::gguf::QuantizedGenerateConfig;
 
@@ -660,7 +663,8 @@ fn try_quantized_completions(
         top_k: if temperature == 0.0 { 1 } else { 40 },
         stop_tokens: Vec::new(),
         trace: state.is_trace_enabled(),
-            ..Default::default()
+        cancel: cancel.clone(),
+        ..Default::default()
     };
 
     // aprender#2376(9): a context-budget rejection is a client error (400), not a

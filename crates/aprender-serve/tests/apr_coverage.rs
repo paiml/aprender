@@ -1462,6 +1462,7 @@ fn test_generate_config_custom() {
         repetition_penalty: 1.2,
         trace: false,
         stop_tokens: vec![],
+        cancel: realizar::generate::CancelToken::never(),
     };
     assert_eq!(config.max_tokens, 100);
     assert!((config.temperature - 0.7).abs() < 0.001);

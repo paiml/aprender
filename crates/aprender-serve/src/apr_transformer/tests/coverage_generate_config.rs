@@ -9,6 +9,7 @@ fn test_generate_config_custom() {
         repetition_penalty: 1.1,
         trace: false,
         stop_tokens: vec![],
+        cancel: crate::generate::CancelToken::never(),
     };
 
     assert_eq!(config.max_tokens, 100);
@@ -28,6 +29,7 @@ fn test_generate_config_clone() {
         repetition_penalty: 1.2,
         trace: false,
         stop_tokens: vec![],
+        cancel: crate::generate::CancelToken::never(),
     };
 
     let cloned = original.clone();

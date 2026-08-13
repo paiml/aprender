@@ -421,6 +421,11 @@ impl GpuModel {
 
         // Generate new tokens
         for _ in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             // Sample next token (greedy when temperature=0, otherwise top-k)
             let next_token = if config.temperature == 0.0 || config.top_k == 1 {
                 // Greedy decoding

@@ -1,0 +1,201 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-13'
+  author: PAIML Engineering
+  description: apr serve must stop generating when the HTTP client disconnects
+  references:
+  - aprender#2376 finding 3
+  lessons_learned:
+  - 'aprender#2376(3): one abandoned request pinned a core at ~250% CPU for the remaining
+    life of the process, with zero open connections'
+  - 'Dropping a future only cancels work suspended at an await point; a synchronous
+    decode loop has no await inside it, so axum dropping the response future could
+    not reach it'
+  - 'Asserting that a cancellation flag was set proves nothing — the shipped defect
+    is compatible with the flag being set and nobody reading it. Assert observed work
+    (tokens produced) instead.'
+
+equations:
+  tokens_generated_bound:
+    formula: len(generate(prompt, cfg)) - len(prompt) == min(cfg.max_tokens, effective_context_budget,
+      polls_until_cancel)
+    domain: prompt in u32^n with 1 <= n <= context_length; cfg.max_tokens in N; cfg.cancel
+      a CancelToken
+    codomain: N (count of newly generated tokens)
+    invariants:
+    - tokens_generated <= cfg.max_tokens
+    - tokens_generated <= polls_until_cancel
+    - cfg.cancel is never cancelled => tokens_generated == min(cfg.max_tokens, effective_context_budget)
+    - cfg.cancel cancelled before entry => tokens_generated == 0
+    - the cancelled output is a prefix of the uncancelled output for the same prompt,
+      seed and sampling parameters
+    preconditions:
+    - prompt is non-empty
+    - the decode loop calls cfg.cancel.is_cancelled() exactly once per decode step,
+      before performing that step's forward pass
+    postconditions:
+    - result.len() >= prompt.len()
+    - result.len() - prompt.len() <= cfg.max_tokens
+    - result.len() - prompt.len() <= cfg.cancel.polls()
+    - result[..prompt.len()] == prompt
+  poll_rate:
+    formula: cancel.polls() == tokens_generated + 1 when cancellation trips, else tokens_generated
+    domain: a live CancelToken observed by exactly one decode loop
+    codomain: N (poll count)
+    invariants:
+    - 'polls is bounded: the loop polls at most once per token, so cancellation is
+      observed within one token of being requested'
+    - CancelToken::never() allocates nothing and always answers false, so an unwired
+      caller pays a null check and no atomic
+    preconditions:
+    - the token is not shared between concurrent decode loops
+    postconditions:
+    - cancel.polls() <= tokens_generated + 1
+    - cancel.polls() == 0 for CancelToken::never()
+  disconnect_signal:
+    formula: drop(response_future) => cancel.peek_cancelled() == true
+    domain: an axum request routed through the cancel_on_disconnect layer
+    codomain: bool (cancellation state observable by the decode loop)
+    invariants:
+    - the layer mints one token per request and publishes it in the request extensions
+    - the CancelOnDrop guard lives in the layer's future, so axum dropping that future
+      on client disconnect sets the flag
+    - the inner handler runs in a separate task, so its decode loop is still alive
+      to observe the flag after the drop
+    - a request that COMPLETES returns a response byte-identical to the same handler
+      invoked directly with CancelToken::never()
+    preconditions:
+    - the router carries the cancel_on_disconnect layer
+    - the handler installs the extension token on its generation config
+    postconditions:
+    - cancel.peek_cancelled() == true after the layer's future is dropped
+    - the decode loop terminates with tokens_generated < cfg.max_tokens
+    - a completed request's response body is unchanged by the layer
+
+falsification_tests:
+- id: FALSIFY-SERVE-CANCEL-001
+  name: dense_generation_stops_at_the_cancel_point_not_max_tokens
+  prediction: 'Model::generate with max_tokens=64 and CancelToken::with_budget(8) returns
+    prompt.len() + 8 tokens and polls the token 9 times; the same call with no cancellation
+    returns prompt.len() + 64, and the cancelled output is a prefix of it.'
+  test_harness: cargo test -p aprender-serve --lib dense_generation_stops_at_the_cancel_point_not_max_tokens
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX: GenerationConfig had no cancel field and layers/model_model.rs::generate
+    had no poll, so the loop produced 64 tokens whether or not the client was still
+    there — a cancelled request was indistinguishable from an uncancelled one.'
+- id: FALSIFY-SERVE-CANCEL-002
+  name: dense_generation_cancelled_before_start_produces_no_tokens
+  prediction: 'Model::generate with an already-cancelled CancelToken and max_tokens=64
+    returns exactly prompt.len() tokens — zero decode work.'
+  test_harness: cargo test -p aprender-serve --lib dense_generation_cancelled_before_start_produces_no_tokens
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX: the loop ran all 64 forward passes. Also fails if the poll is
+    placed at the END of the loop body instead of the top, which costs one wasted
+    forward pass per cancelled request.'
+- id: FALSIFY-SERVE-CANCEL-003
+  name: quantized_generation_stops_at_the_cancel_point_not_max_tokens
+  prediction: 'OwnedQuantizedModel::generate_with_cache with max_tokens=48 and CancelToken::with_budget(6)
+    returns prompt.len() + 6 tokens and polls 7 times; uncancelled it returns prompt.len()
+    + 48.'
+  test_harness: cargo test -p aprender-serve --lib quantized_generation_stops_at_the_cancel_point_not_max_tokens
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX: this is the loop behind apr serve run model.gguf on /generate,
+    /stream/generate, /v1/completions and /v1/chat/completions. It ran the full 48-token
+    budget for a client that had already hung up.'
+- id: FALSIFY-SERVE-CANCEL-004
+  name: dropping_the_request_future_stops_a_running_generation
+  prediction: 'A synchronous decode loop with a ceiling of 500000 steps, running under
+    the cancel_on_disconnect layer, terminates after strictly fewer than 500000 steps
+    once the request future is dropped mid-decode.'
+  test_harness: cargo test -p aprender-serve --lib dropping_the_request_future_stops_a_running_generation
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX: there was no cancellation machinery in crates/aprender-serve/src/api/
+    at all — no CancelToken, no is_closed() check, no tokio::select — so the loop ran
+    to its ceiling with zero open connections. Also fails if the CancelOnDrop guard
+    is removed from the layer, or if the handler is awaited inline instead of in its
+    own task (the loop then has no await point to be dropped at).'
+- id: FALSIFY-SERVE-CANCEL-005
+  name: the_real_router_hands_every_request_a_live_cancel_token
+  prediction: 'A handler mounted under the cancel_on_disconnect layer reads a token
+    from the request extensions whose peek_cancelled() is true after the response future
+    is dropped — which CancelToken::never() can never report.'
+  test_harness: cargo test -p aprender-serve --lib the_real_router_hands_every_request_a_live_cancel_token
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX: no layer existed, so request_cancel_token fell back to CancelToken::never()
+    and every decode loop polled a token that answers false forever. Also fails if
+    the layer is dropped from create_router.'
+- id: FALSIFY-SERVE-CANCEL-006
+  name: a_completed_generate_request_is_unchanged_by_the_cancellation_layer
+  prediction: 'POST /generate {"prompt":"token5","max_tokens":4} through create_router
+    produces a JSON body equal to the one generate_handler produces when invoked directly
+    with CancelToken::never().'
+  test_harness: cargo test -p aprender-serve --lib a_completed_generate_request_is_unchanged_by_the_cancellation_layer
+  expected_output: 'test result: ok'
+  if_fails: 'The CancelOnDrop guard fires on NORMAL completion too, and the layer now
+    runs every handler in a spawned task. Either could truncate or reshape a completed
+    response. A failure here means the fix changed what a working request returns.'
+
+proof_obligations:
+- type: invariant
+  property: An uncancelled decode loop produces exactly its budget
+  formal: for all cfg with cfg.cancel = never, tokens_generated(cfg) = min(cfg.max_tokens,
+    context_length - len(prompt))
+  applies_to: Model::generate, OwnedQuantizedModel::generate_with_cache
+  discharged_by: FALSIFY-SERVE-CANCEL-001, FALSIFY-SERVE-CANCEL-003
+  notes: >-
+    The converse half. Without it a falsifier could pass because generation is
+    broken and emits nothing, which is indistinguishable from "cancellation
+    worked" if only the cancelled case is asserted.
+- type: invariant
+  property: Cancellation is observed within one decode step of being requested
+  formal: for all cfg, tokens_generated(cfg) <= polls_until_cancel(cfg.cancel) and
+    cancel.polls() <= tokens_generated + 1
+  applies_to: every decode loop that takes a GenerationConfig, QuantizedGenerateConfig,
+    GpuGenerateConfig or apr_transformer GenerateConfig
+  discharged_by: FALSIFY-SERVE-CANCEL-001, FALSIFY-SERVE-CANCEL-002, FALSIFY-SERVE-CANCEL-003
+  notes: >-
+    Bounds the wasted work at one token. The poll must be at the TOP of the loop
+    body: at the bottom it costs one extra forward pass per cancelled request,
+    which FALSIFY-SERVE-CANCEL-002 detects.
+- type: invariant
+  property: A dropped response future stops the decode loop
+  formal: drop(response_future) => eventually the decode loop exits with
+    tokens_generated < cfg.max_tokens
+  applies_to: every route mounted on create_router
+  discharged_by: FALSIFY-SERVE-CANCEL-004, FALSIFY-SERVE-CANCEL-005
+  notes: >-
+    Requires all three of: the token in the request extensions, the CancelOnDrop
+    guard in the layer's future, and the handler running in its own task.
+    Removing any one restores the defect; each removal is separately mutation-verified.
+- type: invariant
+  property: Cancellation does not change a completed response
+  formal: for all requests r that complete, response(router_with_layer, r) ==
+    response(handler_with_never_token, r)
+  applies_to: POST /generate and every other route on create_router
+  discharged_by: FALSIFY-SERVE-CANCEL-006
+  notes: >-
+    The guard fires on normal completion too, and the layer interposes a task.
+    Neither may alter a successful response.
+
+kani_harnesses:
+- id: KANI-SERVE-CANCEL-001
+  obligation: Cancellation is observed within one decode step of being requested
+  property: for any budget b and ceiling m, a loop polling once per step runs exactly
+    min(b, m) steps
+  bound: 32
+  strategy: exhaustive
+  harness: verify_cancel_budget_bounds_steps
+  status: planned
+
+qa_gate:
+  id: F-SERVE-CANCEL-001
+  name: apr serve cancellation contract
+  checks:
+  - Every decode loop taking a generation config polls config.cancel at the top of
+    its loop body
+  - create_router carries the cancel_on_disconnect layer
+  - Every generate handler extracts Extension<CancelToken> and installs it on its
+    generation config
+  - A completed request returns the same body with and without the layer
+  pass_criteria: All six FALSIFY-SERVE-CANCEL falsifiers pass, and each has been
+    mutation-verified by removing the mechanism it covers and observing RED

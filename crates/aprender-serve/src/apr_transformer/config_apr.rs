@@ -145,6 +145,7 @@ mod tests {
             repetition_penalty: 1.1,
             trace: true,
             stop_tokens: vec![],
+            cancel: crate::generate::CancelToken::never(),
         };
         let cloned = config.clone();
         assert_eq!(cloned.max_tokens, 100);

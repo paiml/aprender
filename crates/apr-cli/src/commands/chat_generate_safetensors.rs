@@ -44,6 +44,7 @@ impl ChatSession {
                 repetition_penalty: 1.0,
                 trace: config.trace,
             stop_tokens: vec![],
+            cancel: realizar::generate::CancelToken::never(),
             };
 
             transformer

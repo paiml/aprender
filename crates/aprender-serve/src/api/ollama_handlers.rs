@@ -22,7 +22,7 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
+    Extension, Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -587,13 +587,16 @@ async fn split_response(resp: Response) -> (StatusCode, axum::body::Bytes) {
 pub async fn ollama_chat_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Extension(cancel): Extension<crate::generate::CancelToken>,
     Json(request): Json<OllamaChatRequest>,
 ) -> Response {
     let model = model_label(&request.model);
     let stream = request.stream;
     let chat_req = to_chat_request(&model, request.messages, &request.options);
 
-    let inner = openai_chat_completions_handler(State(state), headers, Json(chat_req)).await;
+    let inner =
+        openai_chat_completions_handler(State(state), headers, Extension(cancel), Json(chat_req))
+            .await;
     let (status, body) = split_response(inner).await;
     let (content, prompt_tokens, eval_count) = chat_response_to_parts(status, &body);
 
@@ -627,6 +630,7 @@ pub async fn ollama_chat_handler(
 pub async fn ollama_generate_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Extension(cancel): Extension<crate::generate::CancelToken>,
     Json(request): Json<OllamaGenerateRequest>,
 ) -> Response {
     let model = model_label(&request.model);
@@ -645,7 +649,9 @@ pub async fn ollama_generate_handler(
     });
 
     let chat_req = to_chat_request(&model, messages, &request.options);
-    let inner = openai_chat_completions_handler(State(state), headers, Json(chat_req)).await;
+    let inner =
+        openai_chat_completions_handler(State(state), headers, Extension(cancel), Json(chat_req))
+            .await;
     let (status, body) = split_response(inner).await;
     let (content, prompt_tokens, eval_count) = chat_response_to_parts(status, &body);
 

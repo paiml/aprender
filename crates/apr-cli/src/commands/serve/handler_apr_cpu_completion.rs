@@ -137,6 +137,7 @@ fn spawn_cpu_streaming_task(
             repetition_penalty: 1.0,
             trace: false,
             stop_tokens: vec![],
+            cancel: realizar::generate::CancelToken::never(),
         };
 
         let Ok(t) = transformer.lock() else {
@@ -210,6 +211,7 @@ fn spawn_cpu_token_text_stream(
             repetition_penalty: 1.0,
             trace: false,
             stop_tokens: vec![],
+            cancel: realizar::generate::CancelToken::never(),
         };
 
         let Ok(t) = transformer.lock() else {

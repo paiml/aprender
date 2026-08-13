@@ -340,6 +340,11 @@ pub fn generate_with_cache(
     tokens.push(next_token);
 
     for _ in 1..config.max_tokens {
+        // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+        // stop here instead of burning a core to max_tokens for nobody.
+        if config.cancel.is_cancelled() {
+            break;
+        }
         let logits = forward_gpu_incremental(model, next_token, &mut kv_cache)?;
         next_token = sample_token(&logits, config.temperature, config.top_k);
 

@@ -86,6 +86,11 @@ impl OwnedQuantizedModelCachedSync {
 
         // Generation loop with batched FFN (PARITY-021: GPU optimization)
         for gen_idx in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             // Collect active prompts for this generation step
             let active_indices: Vec<usize> = (0..num_prompts).filter(|&i| !done[i]).collect();
 

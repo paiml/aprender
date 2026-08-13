@@ -76,6 +76,11 @@ impl OwnedQuantizedModel {
         // 1. Sample from current logits (prefill on first iter, previous forward otherwise)
         // 2. Then run forward on the new token to get logits for next iteration
         for gen_idx in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let token_start = std::time::Instant::now();
             // PMAT-814: apply repetition penalty in place over the recent context
             // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
@@ -189,6 +194,11 @@ impl OwnedQuantizedModel {
 
         // Generate new tokens with adaptive attention
         for gen_idx in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let token_start = std::time::Instant::now();
             // PMAT-814: apply repetition penalty in place over the recent context
             // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).

@@ -82,6 +82,7 @@ proptest! {
             temperature: 1.0,
             eos_token_id: None,
             seed: Some(42),
+            cancel: realizar::generate::CancelToken::never(),
         };
 
         let result = model.generate(&prompt, &gen_config);
@@ -326,6 +327,7 @@ fn test_greedy_sampling_deterministic() {
         temperature: 1.0,
         eos_token_id: None,
         seed: None,
+        cancel: realizar::generate::CancelToken::never(),
     };
 
     let result1 = model.generate(&prompt, &gen_config).expect("gen1");
@@ -355,6 +357,7 @@ fn test_different_sampling_strategies() {
             temperature: 1.0,
             eos_token_id: None,
             seed: Some(42),
+            cancel: realizar::generate::CancelToken::never(),
         };
 
         let result = model.generate(&prompt, &gen_config);

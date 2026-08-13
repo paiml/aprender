@@ -7,6 +7,7 @@
 fn dense_stream_tokens(
     state: &AppState,
     request: &GenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<(Vec<u32>, usize, std::sync::Arc<BPETokenizer>), ApiErr> {
     let (model, tokenizer) = state
         .get_model(request.model_id.as_deref())
@@ -30,7 +31,8 @@ fn dense_stream_tokens(
 
     let mut config = GenerationConfig::default()
         .with_max_tokens(request.max_tokens)
-        .with_temperature(request.temperature);
+        .with_temperature(request.temperature)
+        .with_cancel(cancel.clone());
     config.strategy = strategy;
     if let Some(seed) = request.seed {
         config = config.with_seed(seed);
@@ -69,6 +71,7 @@ fn dense_stream_tokens(
 fn try_quantized_stream_tokens(
     state: &AppState,
     request: &GenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<Option<(Vec<u32>, usize, std::sync::Arc<BPETokenizer>)>, ApiErr> {
     let quantized_model = match state.quantized_model() {
         Some(m) => m,
@@ -91,6 +94,7 @@ fn try_quantized_stream_tokens(
         request.temperature,
         &sampling,
         request.seed,
+        cancel,
     );
 
     let generated = quantized_model
@@ -104,18 +108,25 @@ fn try_quantized_stream_tokens(
 ///
 /// Tries the quantized backend first (the `apr serve run model.gguf` path), then
 /// the dense f32 `Model`.
+///
+/// aprender#2376(3): the whole sequence is generated *before* the SSE stream is
+/// built, so this handler's synchronous decode is exactly the work an abandoned
+/// request used to keep doing. `cancel` (minted per request by
+/// `cancel_on_disconnect`) is installed on the config so the loop stops at its
+/// next token boundary once the client goes away.
 pub async fn stream_generate_handler(
     State(state): State<AppState>,
+    Extension(cancel): Extension<CancelToken>,
     Json(request): Json<GenerateRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, Json<ErrorResponse>)> {
     // NOTE: Streaming via CUDA model uses /v1/chat/completions endpoint with stream=true
     // This handler uses the CPU model path; for GPU streaming use OpenAI-compatible endpoint
 
     let (token_ids, prompt_len, tokenizer_clone) =
-        if let Some(resolved) = try_quantized_stream_tokens(&state, &request)? {
+        if let Some(resolved) = try_quantized_stream_tokens(&state, &request, &cancel)? {
             resolved
         } else {
-            dense_stream_tokens(&state, &request)?
+            dense_stream_tokens(&state, &request, &cancel)?
         };
 
     // Create stream that emits tokens one by one
