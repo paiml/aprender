@@ -100,7 +100,8 @@ pub enum ExtendedCommands {
         #[arg(long, default_value = "512")]
         max_tokens: usize,
         /// Perplexity threshold for pass/fail
-        #[arg(long, default_value = "20.0")]
+        #[arg(long, default_value = "20.0",
+              value_parser = commands::threshold_arg::parse_tolerance_f32)]
         threshold: f32,
         /// Task type: omit for perplexity, "classify" for classification eval
         #[arg(long)]
@@ -146,7 +147,8 @@ pub enum ExtendedCommands {
         #[arg(long)]
         detect_naive: bool,
         /// Achieved-GFLOPS floor below which the run is reported as naive
-        #[arg(long, default_value = "10.0")]
+        #[arg(long, default_value = "10.0",
+              value_parser = commands::threshold_arg::parse_tolerance)]
         threshold: f64,
         /// [NOT IMPLEMENTED — accepted and ignored] Compare against HuggingFace baseline
         #[arg(long)]
@@ -172,13 +174,13 @@ pub enum ExtendedCommands {
         #[arg(long)]
         ci: bool,
         /// Minimum throughput in tok/s (CI assertion, exits 1 if below)
-        #[arg(long)]
+        #[arg(long, value_parser = commands::threshold_arg::parse_tolerance)]
         assert_throughput: Option<f64>,
         /// Maximum p99 latency in ms (CI assertion, exits 1 if above)
-        #[arg(long)]
+        #[arg(long, value_parser = commands::threshold_arg::parse_tolerance)]
         assert_p99: Option<f64>,
         /// Maximum p50 latency in ms (CI assertion, exits 1 if above)
-        #[arg(long)]
+        #[arg(long, value_parser = commands::threshold_arg::parse_tolerance)]
         assert_p50: Option<f64>,
         /// Warmup passes before measurement (default: 3)
         #[arg(long, default_value = "3")]
@@ -206,13 +208,16 @@ pub enum ExtendedCommands {
         #[arg(value_name = "FILE")]
         file: PathBuf,
         /// Minimum throughput threshold in tok/s
-        #[arg(long, value_name = "TPS")]
+        #[arg(long, value_name = "TPS",
+              value_parser = commands::threshold_arg::parse_tolerance)]
         assert_tps: Option<f64>,
         /// Minimum speedup vs Ollama
-        #[arg(long, value_name = "SPEEDUP")]
+        #[arg(long, value_name = "SPEEDUP",
+              value_parser = commands::threshold_arg::parse_tolerance)]
         assert_speedup: Option<f64>,
         /// Minimum GPU vs CPU speedup (F-PERF-042)
-        #[arg(long, value_name = "SPEEDUP")]
+        #[arg(long, value_name = "SPEEDUP",
+              value_parser = commands::threshold_arg::parse_tolerance)]
         assert_gpu_speedup: Option<f64>,
         /// Skip golden output test
         #[arg(long)]
@@ -260,7 +265,8 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         previous_report: Option<PathBuf>,
         /// Maximum allowed performance regression ratio (default: 0.10 = 10%)
-        #[arg(long, value_name = "RATIO")]
+        #[arg(long, value_name = "RATIO",
+              value_parser = commands::threshold_arg::parse_fraction)]
         regression_threshold: Option<f64>,
         /// Skip GPU state isolation test
         #[arg(long)]
@@ -460,7 +466,8 @@ pub enum ExtendedCommands {
         #[arg(long)]
         ci: bool,
         /// Minimum throughput threshold in tok/s (for --ci)
-        #[arg(long, value_name = "TOK_S")]
+        #[arg(long, value_name = "TOK_S",
+              value_parser = commands::threshold_arg::parse_tolerance)]
         throughput: Option<f64>,
         /// Minimum brick score threshold 0-100 (for --ci)
         #[arg(long, value_name = "SCORE")]
@@ -511,7 +518,8 @@ pub enum ExtendedCommands {
         #[arg(long)]
         tensor: Option<String>,
         /// Comparison threshold (default: 1e-5)
-        #[arg(long, default_value = "1e-5")]
+        #[arg(long, default_value = "1e-5",
+              value_parser = commands::threshold_arg::parse_tolerance)]
         threshold: f64,
         /// Output as JSON
         #[arg(long)]
@@ -689,7 +697,7 @@ pub enum ExtendedCommands {
         seed: u64,
         /// Target val_loss. Omit to inherit mode default
         /// (finetune: 2.2, from-scratch: 3.0).
-        #[arg(long)]
+        #[arg(long, value_parser = commands::threshold_arg::parse_tolerance_f32)]
         target_val_loss: Option<f32>,
         /// Vocabulary size (required for `--mode from-scratch` INV-TRAIN-005
         /// regime-dependent cap: 2·ln(vocab_size)). MODEL-2 uses 50257.
@@ -1060,13 +1068,15 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         history_file: PathBuf,
         /// Maximum allowed clipped grad-norm (for cap-violation check)
-        #[arg(long, value_name = "M")]
+        #[arg(long, value_name = "M",
+              value_parser = commands::threshold_arg::parse_tolerance)]
         max_grad_norm: Option<f64>,
         /// Rolling-median window size for spike detection (in steps)
         #[arg(long, default_value = "16")]
         spike_window: usize,
         /// Multiplier threshold for spike detection
-        #[arg(long, default_value = "10.0")]
+        #[arg(long, default_value = "10.0",
+              value_parser = commands::threshold_arg::parse_tolerance)]
         spike_multiplier: f64,
     },
     /// Lint a captured registry byte-quota observation (CRUX-A-22)
@@ -1461,7 +1471,8 @@ pub enum ProbarSubcommand {
         #[arg(long)]
         assert: bool,
         /// Cosine similarity threshold for golden comparison (default: 0.98)
-        #[arg(long, default_value = "0.98")]
+        #[arg(long, default_value = "0.98",
+              value_parser = commands::threshold_arg::parse_cosine_f32)]
         tolerance: f32,
     },
 }

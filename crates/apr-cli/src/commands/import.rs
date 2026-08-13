@@ -217,9 +217,13 @@ pub(crate) struct ImportDescription {
 /// exact string a consumer parses.
 // serde_json::json!() uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
+///
+/// `score` is `None` when no QA check ran — `null`, never `0`. A zero score
+/// and an unmeasured score are different facts, and printing the first for the
+/// second is the #1866 defect in miniature.
 pub(crate) fn import_json_stdout(
     describe: &ImportDescription,
-    score: u8,
+    score: Option<u8>,
     grade: &str,
     passed: bool,
 ) -> String {
@@ -245,14 +249,19 @@ fn print_import_result(
     match result {
         Ok(report) => {
             let grade = report.grade();
+            // #1866: `passed`/`score` are measured against the checks that RAN.
+            // They used to be measured against a fixed 100-point denominator
+            // that the checklist can never reach — 22 of its 26 checks are
+            // `Skip("Not implemented")` stubs — so `passed(95)` was
+            // unreachable and EVERY successful import printed
+            // "Import completed with warnings" next to Grade F.
+            let score = report.implemented_score();
             let passed = report.passed(95);
 
             if json {
                 // Exactly one JSON document on stdout, nothing else.
-                println!(
-                    "{}",
-                    import_json_stdout(describe, report.total_score, grade, passed)
-                );
+                let pct = score.pct().map(|p| p.round() as u8);
+                println!("{}", import_json_stdout(describe, pct, grade, passed));
                 return Ok(());
             }
 
@@ -261,7 +270,7 @@ fn print_import_result(
             println!(
                 "{}",
                 output::kv_table(&[
-                    ("Score", format!("{}/100", report.total_score)),
+                    ("Score", format!("{score}")),
                     ("Grade", output::grade_color(grade).to_string()),
                 ])
             );

@@ -89,6 +89,10 @@ fn generation_err(e: &crate::error::RealizarError) -> ApiErr {
 }
 
 /// Build the quantized engine config shared by `/generate` and `/batch/generate`.
+///
+/// `cancel` is the request's [`CancelToken`] (aprender#2376(3)). It is a required
+/// parameter rather than an `Option` so that a new call site cannot silently
+/// produce a config whose decode loop runs on after the client hangs up.
 fn quantized_config(
     state: &AppState,
     tokenizer: &BPETokenizer,
@@ -96,6 +100,7 @@ fn quantized_config(
     temperature: f32,
     sampling: &QuantizedSampling,
     seed: Option<u64>,
+    cancel: &CancelToken,
 ) -> crate::gguf::QuantizedGenerateConfig {
     use crate::gguf::QuantizedGenerateConfig;
 
@@ -106,6 +111,7 @@ fn quantized_config(
         top_p: sampling.top_p,
         stop_tokens: vec![eos_id(tokenizer, state.model_eos_token_id())],
         trace: state.is_trace_enabled(),
+        cancel: cancel.clone(),
         ..Default::default()
     };
     // Leave the default seed alone when the client did not ask for one, so an
@@ -119,6 +125,7 @@ fn quantized_config(
 fn try_quantized_generate(
     state: &AppState,
     request: &GenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<Option<GenerateResponse>, ApiErr> {
     let quantized_model = match state.quantized_model() {
         Some(m) => m,
@@ -141,6 +148,7 @@ fn try_quantized_generate(
         request.temperature,
         &sampling,
         request.seed,
+        cancel,
     );
 
     // GH-95: Use generate_with_cache for O(n) autoregressive generation.
@@ -229,6 +237,7 @@ async fn try_apr_q4k_generate(
 fn try_apr_generate(
     state: &AppState,
     request: &GenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<Option<GenerateResponse>, ApiErr> {
     use crate::apr_transformer::GenerateConfig;
 
@@ -243,6 +252,7 @@ fn try_apr_generate(
     let gen_config = GenerateConfig {
         max_tokens: request.max_tokens,
         temperature: request.temperature,
+        cancel: cancel.clone(),
         ..Default::default()
     };
 
@@ -268,6 +278,7 @@ fn try_apr_generate(
 fn registry_generate(
     state: &AppState,
     request: &GenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<GenerateResponse, ApiErr> {
     let (model, tokenizer) = state
         .get_model(request.model_id.as_deref())
@@ -290,7 +301,8 @@ fn registry_generate(
 
     let mut config = GenerationConfig::default()
         .with_max_tokens(request.max_tokens)
-        .with_temperature(request.temperature);
+        .with_temperature(request.temperature)
+        .with_cancel(cancel.clone());
     config.strategy = strategy;
     if let Some(seed) = request.seed {
         config = config.with_seed(seed);
@@ -322,8 +334,15 @@ fn registry_generate(
     })
 }
 
+/// `POST /generate`.
+///
+/// `cancel` (aprender#2376(3)) is minted per request by `cancel_on_disconnect` and
+/// reaches every backend's decode loop. When the client goes away, axum drops that
+/// middleware's future, the guard fires, and the loop breaks at its next token
+/// instead of running to `max_tokens` for nobody.
 pub async fn generate_handler(
     State(state): State<AppState>,
+    Extension(cancel): Extension<CancelToken>,
     Json(request): Json<GenerateRequest>,
 ) -> Result<Json<GenerateResponse>, ApiErr> {
     use std::time::Instant;
@@ -332,20 +351,20 @@ pub async fn generate_handler(
     if state.is_verbose() {
         eprintln!(
             "[VERBOSE] POST /generate prompt={:?} max_tokens={}",
-            &request.prompt.chars().take(50).collect::<String>(),
+            request.prompt.chars().take(50).collect::<String>(),
             request.max_tokens
         );
     }
 
     #[cfg(feature = "cuda")]
-    if let Some(resp) = try_cuda_generate(&state, &request)? {
+    if let Some(resp) = try_cuda_generate(&state, &request, &cancel)? {
         state
             .metrics
             .record_success(resp.num_generated, start.elapsed());
         return Ok(Json(resp));
     }
 
-    if let Some(resp) = try_quantized_generate(&state, &request)? {
+    if let Some(resp) = try_quantized_generate(&state, &request, &cancel)? {
         state
             .metrics
             .record_success(resp.num_generated, start.elapsed());
@@ -360,14 +379,14 @@ pub async fn generate_handler(
         return Ok(Json(resp));
     }
 
-    if let Some(resp) = try_apr_generate(&state, &request)? {
+    if let Some(resp) = try_apr_generate(&state, &request, &cancel)? {
         state
             .metrics
             .record_success(resp.num_generated, start.elapsed());
         return Ok(Json(resp));
     }
 
-    let resp = registry_generate(&state, &request)?;
+    let resp = registry_generate(&state, &request, &cancel)?;
     state
         .metrics
         .record_success(resp.num_generated, start.elapsed());
@@ -422,6 +441,7 @@ pub async fn batch_tokenize_handler(
 fn try_cuda_batch_generate(
     state: &AppState,
     request: &BatchGenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<Option<Vec<GenerateResponse>>, ApiErr> {
     use crate::gguf::QuantizedGenerateConfig;
 
@@ -441,6 +461,7 @@ fn try_cuda_batch_generate(
         },
         stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
         trace: state.is_trace_enabled(),
+        cancel: cancel.clone(),
         ..Default::default()
     };
 
@@ -493,6 +514,7 @@ fn try_cuda_batch_generate(
 fn try_quantized_batch_generate(
     state: &AppState,
     request: &BatchGenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<Option<Vec<GenerateResponse>>, ApiErr> {
     let quantized_model = match state.quantized_model() {
         Some(m) => m,
@@ -513,6 +535,7 @@ fn try_quantized_batch_generate(
         request.temperature,
         &sampling,
         request.seed,
+        cancel,
     );
 
     let mut results = Vec::with_capacity(request.prompts.len());
@@ -538,6 +561,7 @@ fn try_quantized_batch_generate(
 fn try_apr_batch_generate(
     state: &AppState,
     request: &BatchGenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<Option<Vec<GenerateResponse>>, ApiErr> {
     use crate::apr_transformer::GenerateConfig;
 
@@ -550,6 +574,7 @@ fn try_apr_batch_generate(
     let gen_config = GenerateConfig {
         max_tokens: request.max_tokens,
         temperature: request.temperature,
+        cancel: cancel.clone(),
         ..Default::default()
     };
 
@@ -588,6 +613,7 @@ fn try_apr_batch_generate(
 fn registry_batch_generate(
     state: &AppState,
     request: &BatchGenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<Vec<GenerateResponse>, ApiErr> {
     let (model, tokenizer) = state
         .get_model(None)
@@ -607,7 +633,8 @@ fn registry_batch_generate(
 
     let mut config = GenerationConfig::default()
         .with_max_tokens(request.max_tokens)
-        .with_temperature(request.temperature);
+        .with_temperature(request.temperature)
+        .with_cancel(cancel.clone());
     config.strategy = strategy;
     if let Some(seed) = request.seed {
         config = config.with_seed(seed);
@@ -651,8 +678,11 @@ fn registry_batch_generate(
     Ok(results)
 }
 
+/// `POST /batch/generate` and `/realize/batch`. See [`generate_handler`] for how
+/// `cancel` reaches the decode loops (aprender#2376(3)).
 pub async fn batch_generate_handler(
     State(state): State<AppState>,
+    Extension(cancel): Extension<CancelToken>,
     Json(request): Json<BatchGenerateRequest>,
 ) -> Result<Json<BatchGenerateResponse>, ApiErr> {
     if request.prompts.is_empty() {
@@ -663,18 +693,18 @@ pub async fn batch_generate_handler(
     }
 
     #[cfg(feature = "cuda")]
-    if let Some(results) = try_cuda_batch_generate(&state, &request)? {
+    if let Some(results) = try_cuda_batch_generate(&state, &request, &cancel)? {
         return Ok(Json(BatchGenerateResponse { results }));
     }
 
-    if let Some(results) = try_quantized_batch_generate(&state, &request)? {
+    if let Some(results) = try_quantized_batch_generate(&state, &request, &cancel)? {
         return Ok(Json(BatchGenerateResponse { results }));
     }
 
-    if let Some(results) = try_apr_batch_generate(&state, &request)? {
+    if let Some(results) = try_apr_batch_generate(&state, &request, &cancel)? {
         return Ok(Json(BatchGenerateResponse { results }));
     }
 
-    let results = registry_batch_generate(&state, &request)?;
+    let results = registry_batch_generate(&state, &request, &cancel)?;
     Ok(Json(BatchGenerateResponse { results }))
 }

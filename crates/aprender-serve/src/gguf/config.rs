@@ -574,11 +574,11 @@ impl GGUFConfig {
     #[inline]
     #[must_use]
     pub fn head_dim(&self) -> usize {
-        self.explicit_head_dim.unwrap_or(if self.num_heads > 0 {
-            self.hidden_dim / self.num_heads
-        } else {
-            self.hidden_dim
-        })
+        let derived = self
+            .hidden_dim
+            .checked_div(self.num_heads)
+            .unwrap_or(self.hidden_dim);
+        self.explicit_head_dim.unwrap_or(derived)
     }
 
     /// PMAT-810: Pre-softmax attention scale `1/sqrt(d)`.
@@ -634,11 +634,7 @@ impl GGUFConfig {
         hidden_dim: usize,
         num_heads: usize,
     ) -> Option<usize> {
-        let default_head_dim = if num_heads > 0 {
-            hidden_dim / num_heads
-        } else {
-            hidden_dim
-        };
+        let default_head_dim = hidden_dim.checked_div(num_heads).unwrap_or(hidden_dim);
         model
             .key_length()
             .or_else(|| {

@@ -49,6 +49,11 @@ use crate::{
     tokenizer::BPETokenizer,
 };
 
+// aprender#2376(3): request-scoped cancellation for the generate handlers.
+mod cancel_scope;
+pub(crate) use cancel_scope::cancel_on_disconnect;
+pub use cancel_scope::request_cancel_token;
+
 // PMAT-802: Extracted handlers
 #[cfg(feature = "cuda")]
 pub mod apr_q4k_scheduler;

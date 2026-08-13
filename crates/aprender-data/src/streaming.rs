@@ -346,9 +346,9 @@ impl DataSource for ChainedSource {
     fn size_hint(&self) -> Option<usize> {
         let mut total = 0;
         for source in &self.sources {
-            match source.size_hint() {
-                Some(hint) => total += hint,
-                None => return None,
+            {
+                let hint = source.size_hint()?;
+                total += hint;
             }
         }
         Some(total)

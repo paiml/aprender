@@ -159,8 +159,7 @@ pub fn format_status_report(reports: &[LeanStatusReport]) -> String {
         "Total", total_ob, total_proved, total_sorry, total_wip, total_na
     ));
 
-    if total_ob > 0 {
-        let pct = total_proved * 100 / total_ob;
+    if let Some(pct) = (total_proved * 100).checked_div(total_ob) {
         out.push_str(&format!(
             "L4 Coverage: {pct}% ({total_proved}/{total_ob})   Sorry Debt: {total_sorry}\n"
         ));

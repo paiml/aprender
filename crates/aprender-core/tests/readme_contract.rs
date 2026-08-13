@@ -1,18 +1,27 @@
-//! README.md Contract Enforcement
+//! Published-docs Contract Enforcement — README.md, docs/BEATS.md, CLAUDE.md
 //!
 //! Enforces: contracts/apr-docs-v1.yaml
-//! FALSIFY-README-001 through FALSIFY-README-005 + FALSIFY-SVG-002/003
+//! FALSIFY-README-001..007 + FALSIFY-SVG-002/003
+//! FALSIFY-DOCS-BEATS-001..003, FALSIFY-DOCS-CLAUDE-001
 //!
-//! These tests prevent README drift from the actual workspace state.
+//! These tests prevent our *published* claims from drifting away from the tree
+//! and from `contracts/`. A doc claim nobody re-measures is a claim nobody can
+//! trust — see the withdrawn 1.371x Ollama beat in docs/BEATS.md.
+//!
+//! WHY ALL THREE DOCS SHARE ONE TEST TARGET. `.github/workflows/ci.yml` runs
+//! `--lib` across the workspace, and gates integration targets by *explicit name*
+//! on one physical line. A brand-new `tests/*.rs` file would therefore never run
+//! (547 of 573 integration targets in this repo are dark for exactly this
+//! reason), and only one PR at a time may edit that line without a merge-queue
+//! conflict. `readme_contract` is already on it, so the doc gates live here.
 
 use std::path::Path;
-use std::process::Command;
 
 fn workspace_root() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
-        .unwrap()
+        .expect("workspace root (crates/aprender-core/../..) must resolve")
 }
 
 fn read_readme() -> String {
@@ -273,5 +282,236 @@ fn test_every_readme_links_monorepo() {
         no_link.is_empty(),
         "FALSIFY-README-CRATE-002: READMEs without monorepo link: {:?}",
         no_link
+    );
+}
+
+// ---------------------------------------------------------------------------
+// docs/BEATS.md — the public scoreboard must match contracts/
+// ---------------------------------------------------------------------------
+//
+// #2349 carve-out. docs/BEATS.md published "apr 1.371x faster than Ollama" as a
+// WON headline beat with "gate >=1.10x" long after the claim was withdrawn. The
+// contract had already been corrected to `beat_threshold: 0.9000` (a NO-COLLAPSE
+// FLOOR) and the harness to `ENFORCED_THRESHOLD: f64 = 0.90`; only the
+// scoreboard still said "win". Nothing failed, because nothing compared the two.
+
+const OLLAMA_BEAT_CONTRACT: &str = "contracts/beat-ollama-decode-throughput-speed-v1.yaml";
+
+fn read_doc(rel: &str) -> String {
+    let path = workspace_root().join(rel);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{rel} must be readable: {e}"))
+}
+
+/// Parse `beat_threshold:` out of a beat contract.
+///
+/// Deliberately reads the CONTRACT rather than a constant duplicated here — a
+/// gate that hardcodes the number it is checking proves only that someone typed
+/// the same digits twice.
+fn contract_beat_threshold(yaml: &str) -> f64 {
+    for line in yaml.lines() {
+        if let Some(rest) = line.trim_start().strip_prefix("beat_threshold:") {
+            let value = rest.split('#').next().unwrap_or("").trim();
+            return value
+                .parse::<f64>()
+                .unwrap_or_else(|e| panic!("beat_threshold {value:?} is not a number: {e}"));
+        }
+    }
+    panic!("{OLLAMA_BEAT_CONTRACT} has no `beat_threshold:` key");
+}
+
+/// Every `<date> apr <tps> ollama <tps> <ratio>x` row recorded in the contract
+/// description, as the literal strings a reader would look for.
+fn contract_measurement_figures(yaml: &str) -> Vec<String> {
+    let mut figures = Vec::new();
+    for line in yaml.lines() {
+        let t = line.trim();
+        if !t.starts_with("20") || !t.contains(" apr ") || !t.contains(" ollama ") {
+            continue;
+        }
+        // 2026-06-15  apr 412.3  ollama 300.7  1.371x  <note...>
+        let fields: Vec<&str> = t.split_whitespace().collect();
+        if fields.len() < 6 {
+            continue;
+        }
+        figures.push(fields[2].to_string()); // apr tok/s
+        figures.push(fields[4].to_string()); // ollama tok/s
+        figures.push(fields[5].trim_end_matches('x').to_string()); // ratio
+    }
+    figures
+}
+
+/// FALSIFY-DOCS-BEATS-001: docs/BEATS.md states the Ollama gate exactly as the
+/// contract carries it, and never restates the withdrawn 1.10x gate as live.
+#[test]
+fn test_beats_md_ollama_gate_matches_contract() {
+    let beats = read_doc("docs/BEATS.md");
+    let threshold = contract_beat_threshold(&read_doc(OLLAMA_BEAT_CONTRACT));
+
+    let rendered = format!("beat_threshold: {threshold:.4}");
+    assert!(
+        beats.contains(&rendered),
+        "FALSIFY-DOCS-BEATS-001: docs/BEATS.md must publish the Ollama gate as the \
+         contract carries it (`{rendered}`, from {OLLAMA_BEAT_CONTRACT}). The scoreboard \
+         is public; a gate figure it invents is a false claim about what CI enforces."
+    );
+
+    // The withdrawn gate, in the exact forms BEATS.md used to publish it.
+    const WITHDRAWN_GATE_PHRASES: [&str; 3] = [
+        "gate \u{2265}1.10\u{d7}",     // "gate ≥1.10×"
+        "\u{2265} ollama \u{d7} 1.10", // "≥ ollama × 1.10"
+        "ollama median x 1.10",
+    ];
+    let restated: Vec<&str> = WITHDRAWN_GATE_PHRASES
+        .into_iter()
+        .filter(|p| beats.contains(p))
+        .collect();
+    assert!(
+        restated.is_empty(),
+        "FALSIFY-DOCS-BEATS-001: docs/BEATS.md restates the WITHDRAWN 1.10x Ollama gate as \
+         live: {restated:?}. The contract enforces {threshold:.4}."
+    );
+}
+
+/// FALSIFY-DOCS-BEATS-002: while the contract's threshold is a floor
+/// (`beat_threshold < 1.0`), no Ollama-decode row in docs/BEATS.md may be marked
+/// WON. A floor proves apr did not collapse; it cannot prove a win.
+#[test]
+fn test_beats_md_ollama_decode_is_not_marked_won_under_a_floor() {
+    let beats = read_doc("docs/BEATS.md");
+    let threshold = contract_beat_threshold(&read_doc(OLLAMA_BEAT_CONTRACT));
+
+    assert!(
+        threshold < 1.0,
+        "FALSIFY-DOCS-BEATS-002: {OLLAMA_BEAT_CONTRACT} now carries \
+         beat_threshold={threshold:.4} >= 1.0, i.e. it asserts a WIN again. That is a \
+         scoreboard promotion, not a doc edit: re-measure, then update docs/BEATS.md and \
+         this test together."
+    );
+
+    let mut won_rows: Vec<String> = Vec::new();
+    for line in beats.lines() {
+        let lower = line.to_lowercase();
+        if lower.contains("ollama") && lower.contains("decode") && line.contains("**WON**") {
+            won_rows.push(line.trim().chars().take(120).collect());
+        }
+    }
+    assert!(
+        won_rows.is_empty(),
+        "FALSIFY-DOCS-BEATS-002: docs/BEATS.md marks an Ollama-decode row **WON** while the \
+         contract gate is a no-collapse floor (beat_threshold={threshold:.4}). \
+         Offending line(s): {won_rows:?}"
+    );
+}
+
+/// FALSIFY-DOCS-BEATS-003: docs/BEATS.md publishes EVERY measurement the contract
+/// records — including the ones that killed the claim.
+///
+/// This is the under-claiming guard. Deleting the retracted numbers would let the
+/// scoreboard pass FALSIFY-DOCS-BEATS-001/002 while telling the reader less than
+/// we know. A withdrawal has to cite what replaced the claim.
+#[test]
+fn test_beats_md_publishes_every_contract_measurement() {
+    let beats = read_doc("docs/BEATS.md");
+    let figures = contract_measurement_figures(&read_doc(OLLAMA_BEAT_CONTRACT));
+
+    assert!(
+        figures.len() >= 12,
+        "FALSIFY-DOCS-BEATS-003: parsed only {} figures from {OLLAMA_BEAT_CONTRACT} — the \
+         parser is wrong, or the contract's measurement table changed shape. Fix the parser \
+         before trusting this gate.",
+        figures.len()
+    );
+
+    let missing: Vec<&String> = figures.iter().filter(|f| !beats.contains(*f)).collect();
+    assert!(
+        missing.is_empty(),
+        "FALSIFY-DOCS-BEATS-003: docs/BEATS.md omits measurement(s) the contract records: \
+         {missing:?}. Under-claiming is a reporting failure too — publish the numbers that \
+         replaced the withdrawn claim, do not just delete the claim."
+    );
+}
+
+// ---------------------------------------------------------------------------
+// CLAUDE.md / docs/BEATS.md — every path they cite must exist
+// ---------------------------------------------------------------------------
+
+/// FALSIFY-DOCS-CLAUDE-001: every repo-relative source path cited in CLAUDE.md
+/// (and docs/BEATS.md) resolves on disk.
+///
+/// CLAUDE.md advertised six pre-monorepo paths for months —
+/// `realizar/src/inference_trace.rs`, `realizar/src/quantize/fused_gate_up.rs`,
+/// `quantize/fused_gate_up.rs`, `src/format/layout_contract.rs`,
+/// `src/format/converter/write.rs`, `src/format/converter/mod.rs` — none of which
+/// have existed since APR-MONO moved everything under `crates/`. Nothing checked
+/// them, so nothing complained.
+///
+/// Scope is deliberately narrow so the gate cannot cry wolf: a token counts only
+/// if it sits inside backticks, contains `/`, carries no shell/glob
+/// metacharacters, and ends in a source extension. A path that legitimately is
+/// not in the tree (e.g. the gitignored `.cargo/config.toml`) is marked
+/// `[gitignored]` on the same line — information the reader wants anyway.
+const DOCS_WITH_PATHS: [&str; 2] = ["CLAUDE.md", "docs/BEATS.md"];
+
+/// Does this backticked token look like a repo-relative source path we can check?
+fn looks_like_repo_path(token: &str) -> bool {
+    const EXTENSIONS: [&str; 6] = [".rs", ".yaml", ".yml", ".toml", ".sh", ".md"];
+    const SKIP_PREFIXES: [&str; 5] = ["http", "hf://", "~", "/", "target/"];
+    const METACHARACTERS: [char; 12] = [' ', '*', '<', '>', '|', '(', ')', '[', ']', '{', '}', '?'];
+
+    token.contains('/')
+        && !token.contains("..")
+        && !token.contains(METACHARACTERS)
+        && !SKIP_PREFIXES.iter().any(|p| token.starts_with(p))
+        && EXTENSIONS.iter().any(|e| token.ends_with(e))
+}
+
+/// Every `(1-based line, path)` a document cites, skipping lines that mark the
+/// reference as historical (`DELETED`) or deliberately absent (`[gitignored]`).
+fn cited_paths(doc: &str) -> Vec<(usize, String)> {
+    read_doc(doc)
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| !line.contains("DELETED") && !line.contains("[gitignored]"))
+        // Odd-indexed `split('`')` fragments are the backticked spans.
+        .flat_map(|(i, line)| {
+            line.split('`')
+                .skip(1)
+                .step_by(2)
+                .filter(|t| looks_like_repo_path(t))
+                .map(move |t| (i + 1, t.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+#[test]
+fn test_documented_paths_exist() {
+    let ws_root = workspace_root();
+    let cited: Vec<(&str, usize, String)> = DOCS_WITH_PATHS
+        .iter()
+        .flat_map(|doc| {
+            cited_paths(doc)
+                .into_iter()
+                .map(move |(line, path)| (*doc, line, path))
+        })
+        .collect();
+
+    assert!(
+        cited.len() >= 20,
+        "FALSIFY-DOCS-CLAUDE-001: only {} paths extracted from {DOCS_WITH_PATHS:?} — the \
+         extractor stopped matching. A gate that checks nothing is worse than no gate.",
+        cited.len()
+    );
+
+    let missing: Vec<String> = cited
+        .iter()
+        .filter(|(_, _, path)| !ws_root.join(path).exists())
+        .map(|(doc, line, path)| format!("{doc}:{line}: {path}"))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "FALSIFY-DOCS-CLAUDE-001: documented path(s) do not exist: {missing:#?}\n\
+         Fix the doc (APR-MONO moved everything under crates/), or mark a deliberately \
+         absent path `[gitignored]` on the same line."
     );
 }

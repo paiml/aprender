@@ -261,6 +261,7 @@ fn test_generate_config_greedy() {
         repetition_penalty: 1.0,
         trace: false,
         stop_tokens: vec![],
+        cancel: crate::generate::CancelToken::never(),
     };
     assert_eq!(config.temperature, 0.0);
     assert_eq!(config.top_k, 1);
@@ -276,6 +277,7 @@ fn test_generate_config_with_nucleus_sampling() {
         repetition_penalty: 1.1,
         trace: false,
         stop_tokens: vec![],
+        cancel: crate::generate::CancelToken::never(),
     };
     assert_eq!(config.top_p, 0.9);
 }
@@ -290,6 +292,7 @@ fn test_generate_config_with_trace() {
         repetition_penalty: 1.0,
         trace: true,
         stop_tokens: vec![],
+        cancel: crate::generate::CancelToken::never(),
     };
     assert!(config.trace);
 }

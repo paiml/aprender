@@ -57,7 +57,7 @@ impl UnigramTokenizer {
         let mut vocab_items: Vec<(String, usize)> = token_counts.into_iter().collect();
 
         // Sort by frequency (descending), keep top tokens
-        vocab_items.sort_by(|a, b| b.1.cmp(&a.1));
+        vocab_items.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         // Prune to target size (keep special tokens + most frequent)
         if vocab_items.len() > vocab_size {

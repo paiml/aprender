@@ -32,7 +32,14 @@ set -euo pipefail
 
 : "${HF_TOKEN:?HF_TOKEN env var required (write access to paiml)}"
 
-APR_BIN="${APR_BIN:-/mnt/nvme-raid0/targets/aprender/release/apr}"
+# Default: the binary THIS CHECKOUT builds (#2358). The old default named one
+# machine's build output; this script UPLOADS A MODEL TO HUGGING FACE, so the
+# binary that produced the artifacts must be the one under test. APR_BIN still
+# overrides.
+APR_BIN="${APR_BIN:-}"
+if [ -z "$APR_BIN" ] && . "$(dirname "$0")/../apr_bin.sh" 2>/dev/null; then
+    APR_BIN="$APR"
+fi
 STAGING_DIR="${STAGING_DIR:-/mnt/nvme-raid0/models/ship-two-001}"
 MODEL_ID="paiml/qwen2.5-coder-7b-apache-q4k-v1"
 MANIFEST_DIR="contracts/publish-manifests"

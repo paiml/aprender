@@ -78,17 +78,23 @@ jobs:
           # Fail closed on staleness. A path fix alone would silently rot again
           # the next time PATH changes; this asserts that the apr the story is
           # about to run IS the one just built from this checkout.
-          WANT=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
-          GOT=$(apr --version)
-          echo "workspace version: $WANT"
-          echo "apr --version:     $GOT  ($(command -v apr))"
-          case "$GOT" in
-            *"$WANT"*) echo "apr binary is fresh" ;;
-            *)
-              echo "::error::STALE apr: workspace is $WANT but PATH resolves to '$GOT' at $(command -v apr). The story would validate code that is not this commit."
-              exit 1
-              ;;
-          esac
+          #
+          # This was hand-rolled as `GOT=$(apr --version)` compared against
+          # Cargo.toml's version, which is weaker than it looks in two ways
+          # (#2358): it read the version off a BARE `apr` - the exact defect the
+          # step exists to catch, six lines under a comment explaining it - and
+          # it compared only the VERSION, so any two builds of 0.63.0 matched,
+          # including a month-old one. scripts/apr_bin.sh asks cargo for the
+          # binary and compares the git SHA that build.rs embeds, so "fresh"
+          # means built from THIS commit rather than tagged with this number.
+          # APR_BIN_STRICT=1 makes "cannot prove" mean "refuse".
+          export APR_BIN_STRICT=1
+          . scripts/apr_bin.sh || {
+            echo "::error::STALE or missing apr - the story would validate code that is not this commit."
+            exit 1
+          }
+          echo "apr pinned to: $APR"
+          "$APR" --version
 
       - name: Run scripts/qwen-story.sh
         id: story

@@ -349,6 +349,7 @@ fn run_apr_benchmark(
         repetition_penalty: 1.0,
         trace: false,
         stop_tokens: vec![],
+        cancel: realizar::generate::CancelToken::never(),
     };
 
     // Warmup (untraced)

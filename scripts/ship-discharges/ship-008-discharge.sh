@@ -29,7 +29,16 @@
 set -euo pipefail
 
 # --- Defaults -----------------------------------------------------------
-APR_BINARY="${APR_BINARY:-/mnt/nvme-raid0/targets/aprender/release/apr}"
+# Default: the binary THIS CHECKOUT builds (#2358). The previous default was a
+# hardcoded /mnt/nvme-raid0/targets/aprender/release/apr - a path nothing writes
+# any more, and one that on 2026-08-01 was two minor versions stale while docs
+# still called it canonical. A discharge script signs off a SHIP; signing it off
+# with a binary of unknown provenance certifies nothing. `--apr-binary` and the
+# APR_BINARY env var both still override.
+APR_BINARY="${APR_BINARY:-}"
+if [ -z "$APR_BINARY" ] && . "$(dirname "$0")/../apr_bin.sh" 2>/dev/null; then
+    APR_BINARY="$APR"
+fi
 MODEL="${MODEL:-paiml/qwen2.5-coder-7b-apache-q4k-v1}"
 SYSTEM_MSG="You are a helpful coding assistant."
 USER_MSG="Write a Python function to compute the nth Fibonacci number."

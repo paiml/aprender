@@ -243,10 +243,8 @@ fn apply_kv(config: &mut PvConfig, section: &str, key: &str, val: &str) {
             "files" => config.lint.suppress.files = parse_toml_array(val),
             _ => {}
         },
-        "lint.diff" => {
-            if key == "base_ref" {
-                config.lint.diff.base_ref = Some(val.to_string());
-            }
+        "lint.diff" if key == "base_ref" => {
+            config.lint.diff.base_ref = Some(val.to_string());
         }
         "lint.trend" => match key {
             "enabled" => config.lint.trend.enabled = val == "true",

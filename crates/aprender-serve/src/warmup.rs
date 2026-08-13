@@ -65,7 +65,7 @@ impl Default for WarmupConfig {
     fn default() -> Self {
         Self {
             warmup_iterations: 3,
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_mins(1),
             sample_prompt: "Hello, world!".to_string(),
             sample_max_tokens: 10,
             validate_output: true,

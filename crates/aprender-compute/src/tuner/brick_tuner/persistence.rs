@@ -9,7 +9,7 @@ use super::BrickTuner;
 
 impl BrickTuner {
     /// APR format magic bytes (APR1 = uncompressed)
-    const APR_MAGIC: [u8; 4] = [b'A', b'P', b'R', b'1'];
+    const APR_MAGIC: [u8; 4] = *b"APR1";
 
     /// Serialize to JSON
     pub fn to_json(&self) -> Result<String, TunerError> {

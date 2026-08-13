@@ -418,7 +418,7 @@ fn compute_pareto(
         .map(|(cat, (attempts, successes))| (*cat, attempts - successes))
         .collect();
 
-    failures.sort_by(|a, b| b.1.cmp(&a.1));
+    failures.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     let threshold = (total_failures as f32 * 0.80) as usize;
     let mut cumulative = 0;

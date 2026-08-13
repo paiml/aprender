@@ -90,11 +90,10 @@ impl MemoryEstimate {
         let target_memory = (available_vram as f64 * 0.8) as u64;
         let per_sample = (seq_len * hidden_dim * 32 * 2) as u64;
         let available_for_activations = target_memory.saturating_sub(model_bytes + optimizer_bytes);
-        let recommended_batch_size = if per_sample > 0 {
-            (available_for_activations / per_sample).max(1) as usize
-        } else {
-            1
-        };
+        let recommended_batch_size = available_for_activations
+            .checked_div(per_sample)
+            .unwrap_or(1)
+            .max(1) as usize;
 
         Self {
             model_bytes,

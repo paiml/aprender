@@ -249,7 +249,7 @@ impl PatternUsageMetrics {
     #[must_use]
     pub fn most_used(&self, n: usize) -> Vec<(usize, u64)> {
         let mut counts: Vec<_> = self.usage_counts.iter().map(|(&k, &v)| (k, v)).collect();
-        counts.sort_by(|a, b| b.1.cmp(&a.1));
+        counts.sort_by_key(|b| std::cmp::Reverse(b.1));
         counts.truncate(n);
         counts
     }
@@ -392,7 +392,7 @@ impl ErrorFrequencyMetrics {
             .iter()
             .map(|(k, &v)| (k.clone(), v))
             .collect();
-        counts.sort_by(|a, b| b.1.cmp(&a.1));
+        counts.sort_by_key(|b| std::cmp::Reverse(b.1));
         counts.truncate(n);
         counts
     }

@@ -81,7 +81,11 @@ pub fn run(args: UnifiedSearchLintArgs) -> Result<(), LintError> {
             "contract": "CRUX-A-23",
             "gates": reports,
         });
-        println!("{}", serde_json::to_string_pretty(&payload).unwrap());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&payload)
+                .expect("the --json report is a locally-built serde_json::Value")
+        );
     } else {
         for r in &reports {
             println!(

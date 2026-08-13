@@ -48,7 +48,7 @@ async fn process_batch(
         // Send responses
         match results {
             Ok(all_token_ids) => {
-                for (request, token_ids) in batch.drain(..).zip(all_token_ids.into_iter()) {
+                for (request, token_ids) in batch.drain(..).zip(all_token_ids) {
                     let response = ContinuousBatchResponse {
                         token_ids,
                         prompt_len: request.prompt_tokens.len(),
@@ -408,6 +408,7 @@ pub async fn tokenize_handler(
 fn try_cuda_generate(
     state: &AppState,
     request: &GenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<Option<GenerateResponse>, ApiErr> {
     use crate::gguf::QuantizedGenerateConfig;
 
@@ -429,7 +430,8 @@ fn try_cuda_generate(
         },
         stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
         trace: false,
-                ..Default::default()
+        cancel: cancel.clone(),
+        ..Default::default()
     };
 
     let mut cuda_model = cuda_model_lock.write().map_err(|_| {

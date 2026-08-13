@@ -263,11 +263,9 @@ impl<T: Copy + Default> AlignedVec<T> {
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         let size_of_t = size_of::<T>();
-        let aligned_cap = if size_of_t > 0 {
-            (capacity * size_of_t).div_ceil(64) * 64 / size_of_t
-        } else {
-            capacity
-        };
+        let aligned_cap = ((capacity * size_of_t).div_ceil(64) * 64)
+            .checked_div(size_of_t)
+            .unwrap_or(capacity);
         let aligned_cap = aligned_cap.max(capacity);
         let data = vec![T::default(); aligned_cap];
         Self {

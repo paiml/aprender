@@ -406,8 +406,16 @@ jobs:
       # installed 0.61.0 to ~/.cargo/bin and then executed a 24-day-old 0.60.0
       # from ~/.local/bin, so every beat validated stale code while reporting
       # green. Text-only check, no build.
-      - name: Every CI-surface `apr` invocation must be pinned
+      - name: Every execution-surface `apr` reference must be pinned
         run: bash scripts/check_apr_bin_pinned.sh
+      # The guard's own must-match/must-not-match table plus one mutation per
+      # SCANNED SURFACE, in that surface's own syntax. #2358: extending the
+      # scope to scripts/** and .claude/skills/** did NOT carry the old proof
+      # over - the Makefile lesson repeated itself twice (a skill bash fence and
+      # a `!`...`` inline command were both invisible to a pattern that was
+      # correct everywhere else). Run the table; do not re-read the regex.
+      - name: "`apr`-pinning guard must still turn RED (case table + surfaces)"
+        run: bash scripts/check_apr_bin_pinned.sh --self-test
       # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
       # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
       # `set -uo pipefail` deliberately (it must run every beat and tally the
@@ -436,6 +444,31 @@ jobs:
       # reading the merged view. Behavioural, text-only, no build.
       - name: Story JSON parsing must read stdout, not the merged stream
         run: bash scripts/check_story_json_streams.sh
+      # Poka-yoke: mac-server runs 16 runners under ONE $HOME, so
+      # $HOME/.cargo/bin is shared mutable state. `cargo install` replaces a
+      # binary there while another job is mid-run and about to exec it — on
+      # 2026-07-31 Coverage Nightly died on
+      # `could not execute process .../cargo-llvm-cov ... No such file or
+      # directory (os error 2)` and posted an EMPTY coverage figure, i.e. a
+      # missing measurement (#2353). Text-only check, no build.
+      - name: Self-hosted jobs must install cargo tools into a private root
+        run: |
+          bash scripts/check_cargo_install_private_root.sh --self-test
+          bash scripts/check_cargo_install_private_root.sh
+      # Poka-yoke: the nightly's pmat bug-hunt printed eight manifest headers and
+      # ZERO rows every night since the cron was added (#2356), so the workflow's
+      # "manifest grew by >5" alert branch never had a non-zero input. Three
+      # causes, each silent: the jq filters named `.function`/`.churn.commit_count`
+      # /`.faults` where pmat emits `function_name`/`commit_count`/
+      # `fault_annotations`; the churn and fault hunts passed the beat label as a
+      # free-text query, which is a relevance filter applied BEFORE `--path` and
+      # collapses a module-scoped hunt to nothing; and three hunted paths had been
+      # deleted or moved. All three present as "the manifest is empty tonight",
+      # which used to be indistinguishable from "the code is clean tonight" -
+      # pmat_hunt returned 0 unconditionally. It now fails the beat. Behavioural
+      # against a stubbed pmat, text-only, no build.
+      - name: The pmat bug-hunt manifest must be able to produce rows
+        run: bash scripts/check_story_pmat_hunt.sh
       # Poka-yoke: the 0.63.0 dogfood audit found 201 defects in code that was
       # shipped, tested and covered. The 5 Whys (docs/audits/dogfood-0.63.0-hansei.md)
       # landed on: nothing mechanical requires an assertion to EXCLUDE an outcome.

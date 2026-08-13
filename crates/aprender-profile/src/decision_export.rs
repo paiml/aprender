@@ -297,7 +297,7 @@ pub fn print_stats(path: &std::path::Path) -> Result<(), String> {
 
     println!("By category:");
     let mut categories: Vec<_> = by_category.into_iter().collect();
-    categories.sort_by(|a, b| b.1.cmp(&a.1));
+    categories.sort_by_key(|b| std::cmp::Reverse(b.1));
     for (category, count) in categories {
         println!("  {category}: {count}");
     }

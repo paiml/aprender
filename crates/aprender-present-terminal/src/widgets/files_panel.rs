@@ -182,7 +182,7 @@ impl FilesPanel {
     /// Get sorted entries (by size descending).
     fn sorted_entries(&self) -> Vec<&FileEntry> {
         let mut sorted: Vec<_> = self.entries.iter().collect();
-        sorted.sort_by(|a, b| b.size.cmp(&a.size));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.size));
         sorted
     }
 

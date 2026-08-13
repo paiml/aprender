@@ -85,7 +85,7 @@ impl CorpusMerger {
         }
 
         // Sort by priority (higher first) so dedup keeps the highest-priority copy.
-        all_samples.sort_by(|a, b| b.1.cmp(&a.1));
+        all_samples.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         let (mut buffer, duplicates) = self.build_buffer(&all_samples);
         provenance.duplicates_removed = duplicates;

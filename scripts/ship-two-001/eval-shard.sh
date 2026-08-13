@@ -33,6 +33,13 @@
 
 set -euo pipefail
 
+# The LOCAL shard runs `apr run --batch-jsonl` directly; remote shards go
+# through eval-pass-at-k.sh on the far host. The local invocation was bare, so
+# a benchmark number attributed to this commit could come from any apr on the
+# orchestrator's PATH - and FALSIFY-SHARD-003 compares shards for parity, which
+# a version skew between local and remote would quietly break (#2358).
+. "$(dirname "$0")/../apr_bin.sh" || exit 1
+
 BENCHMARK="${1:?Usage: eval-shard.sh BENCHMARK (humaneval|mbpp|bigcodebench)}"
 
 : "${HOSTS:?HOSTS env var required (space-separated ssh aliases)}"
@@ -191,7 +198,7 @@ dispatch_one() {
         # stdout from `apr run --batch-jsonl` (one JSON per completion).
         local raw_out="${REMOTE_WORKDIR}/completions_shard_${i}.jsonl"
         if (( is_local )); then
-            apr run "$remote_model" \
+            "$APR" run "$remote_model" \
                 --batch-jsonl "$remote_shard" \
                 --max-tokens "$MAX_TOKENS" \
                 --temperature "$TEMPERATURE" \

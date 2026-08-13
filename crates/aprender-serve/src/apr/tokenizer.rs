@@ -185,7 +185,7 @@ fn split_by_special_tokens(text: &str, special_tokens: &HashMap<String, u32>) ->
     }
 
     let mut sorted_tokens: Vec<(&String, &u32)> = special_tokens.iter().collect();
-    sorted_tokens.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    sorted_tokens.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
 
     let mut segments = Vec::new();
     let mut remaining = text;

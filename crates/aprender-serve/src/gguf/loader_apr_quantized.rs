@@ -396,8 +396,8 @@ impl OwnedQuantizedModel {
         if let Some(q_tensor) = apr.find_tensor(q_tensor_name).or_else(|| apr.find_tensor(gguf_q_name)) {
             if q_tensor.shape.len() == 2 {
                 let q_out_dim = q_tensor.shape[0];
-                let inferred_head_dim = if config.num_heads > 0 { q_out_dim / config.num_heads } else { 0 };
-                let default_head_dim = if config.num_heads > 0 { hidden_dim / config.num_heads } else { 0 };
+                let inferred_head_dim = q_out_dim.checked_div(config.num_heads).unwrap_or(0);
+                let default_head_dim = hidden_dim.checked_div(config.num_heads).unwrap_or(0);
                 if inferred_head_dim > 0 && inferred_head_dim != default_head_dim {
                     config.explicit_head_dim = Some(inferred_head_dim);
                 }

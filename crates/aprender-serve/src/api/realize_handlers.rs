@@ -4,13 +4,13 @@
 //! Contains context window management and native Realize API endpoints.
 #![allow(unreachable_pub)] // Items re-exported as pub from api/mod.rs
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "gpu")]
 use super::ContinuousBatchRequest;
 use super::{AppState, ChatMessage, ChoiceCount, ErrorResponse, FinishReason, Usage};
-use crate::generate::{GenerationConfig, SamplingStrategy};
+use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::registry::ModelInfo;
 
 // ============================================================================

@@ -40,7 +40,7 @@ impl Tokenizer for CharTokenizer {
 
         // Sort by frequency and take top vocab_size
         let mut chars: Vec<_> = char_counts.into_iter().collect();
-        chars.sort_by(|a, b| b.1.cmp(&a.1));
+        chars.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         for (c, count) in chars.into_iter().take(self.config.vocab_size) {
             if count >= self.config.min_frequency {

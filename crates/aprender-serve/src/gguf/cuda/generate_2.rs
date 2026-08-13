@@ -23,6 +23,11 @@ impl OwnedQuantizedModelCuda {
         let mut tokens = prompt.to_vec();
 
         for _ in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let logits = self.forward_cuda(&tokens)?;
 
             // Greedy sampling (temperature=0)
@@ -107,6 +112,11 @@ impl OwnedQuantizedModelCuda {
         let mut last_token = prompt[prompt.len() - 1];
 
         for _ in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let logits = self.forward_single_cuda_with_cache(last_token, &mut cache, position)?;
 
             // Greedy sampling (temperature=0)
@@ -190,6 +200,11 @@ impl OwnedQuantizedModelCuda {
         let mut last_token = prompt[prompt.len() - 1];
 
         for _ in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let logits =
                 self.forward_single_full_cuda_with_cache(last_token, &mut cache, position)?;
 

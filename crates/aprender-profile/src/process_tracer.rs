@@ -328,7 +328,7 @@ impl SyscallBreakdown {
             ("other", self.other_us),
             ("compute", self.compute_us),
         ];
-        categories.sort_by(|a, b| b.1.cmp(&a.1));
+        categories.sort_by_key(|b| std::cmp::Reverse(b.1));
         categories
     }
 }

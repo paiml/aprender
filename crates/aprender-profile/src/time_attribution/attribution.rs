@@ -125,7 +125,7 @@ pub fn calculate_time_attribution(
         .collect();
 
     // Sort by time (descending)
-    attributions.sort_by(|a, b| b.total_time.cmp(&a.total_time));
+    attributions.sort_by_key(|b| std::cmp::Reverse(b.total_time));
 
     attributions
 }

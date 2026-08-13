@@ -82,6 +82,11 @@ impl OwnedQuantizedModel {
         let mut rng = StdRng::seed_from_u64(config.seed);
 
         for _ in 0..max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             // Forward pass with fused Q4_K ops (1.37x faster)
             let mut logits = self.forward(&tokens)?;
 
@@ -364,6 +369,11 @@ impl OwnedQuantizedModel {
         // Generate new tokens
         // First iteration uses logits from prefill, subsequent use logits from forward pass
         for gen_idx in 0..max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let token_start = std::time::Instant::now();
             // DEBUG: Print logits info for first generated token
             if gen_idx == 0 && std::env::var("REALIZAR_DEBUG_LOGITS").is_ok() {
@@ -577,6 +587,11 @@ impl OwnedQuantizedModel {
 
         // Generate new tokens with streaming
         for gen_idx in 0..max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let token_start = std::time::Instant::now();
             // PMAT-814: apply repetition penalty in place over the recent context
             // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).

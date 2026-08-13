@@ -620,7 +620,7 @@ impl PerfTracer {
         ];
 
         let mut sorted: Vec<_> = self.stats.iter().collect();
-        sorted.sort_by(|a, b| b.1.total_duration.cmp(&a.1.total_duration));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.1.total_duration));
 
         for (name, stats) in sorted {
             let avg_us = stats.avg_duration().as_micros();

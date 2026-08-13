@@ -124,7 +124,14 @@ if [ "${PUBLISH_HOST}" = "gx10" ]; then
     "
 else
     echo "=== dispatching apr publish locally ==="
-    /mnt/nvme-raid0/targets/aprender/release/apr publish "${APR_PUBLISH_ARGS[@]}"
+    # The local branch hardcoded /mnt/nvme-raid0/targets/aprender/release/apr
+    # while the gx10 branch three lines up correctly used a checkout-relative
+    # ./target/release/apr - the same publish, one path per host, only one of
+    # them pinned. That /mnt path is orphaned (nothing writes it), so a local
+    # publish shipped a model to Hugging Face using a binary of unknown age
+    # (#2358). Ask cargo instead.
+    . "$(dirname "$0")/apr_bin.sh" || exit 1
+    "$APR" publish "${APR_PUBLISH_ARGS[@]}"
 fi
 
 echo

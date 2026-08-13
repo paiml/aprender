@@ -431,6 +431,20 @@ fn dispatch_profile(
     compare: Option<&Path>,
     json: bool,
 ) -> Result<(), CliError> {
+    // GH-2391: the CI assertions are `throughput >= min` / `p99 <= max`. A NaN
+    // bound makes both false, which for the latency bounds looks like a clean
+    // FAIL and for the throughput bound like a clean PASS — neither verdict was
+    // computed from the measurement. A negative floor disarms outright.
+    use crate::commands::threshold_arg;
+    threshold_arg::guard("--threshold", threshold, threshold_arg::TOLERANCE)?;
+    threshold_arg::guard_opt(
+        "--assert-throughput",
+        assert_throughput,
+        threshold_arg::TOLERANCE,
+    )?;
+    threshold_arg::guard_opt("--assert-p99", assert_p99, threshold_arg::TOLERANCE)?;
+    threshold_arg::guard_opt("--assert-p50", assert_p50, threshold_arg::TOLERANCE)?;
+
     // GH-2395: `--json` is a global flag that `apr profile` parsed and ignored, and
     // an unparseable `--format` silently degraded to the human table. See
     // `commands/profile_options.rs`.

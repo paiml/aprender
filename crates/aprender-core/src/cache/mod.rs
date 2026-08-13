@@ -419,7 +419,7 @@ impl CacheTier {
     pub const fn typical_latency(&self) -> Duration {
         match self {
             Self::L1Hot => Duration::from_nanos(100),
-            Self::L2Warm => Duration::from_micros(1000),
+            Self::L2Warm => Duration::from_millis(1),
             Self::L3Cold => Duration::from_millis(10),
         }
     }

@@ -8,6 +8,15 @@ pub fn run_validate_stats(
     strict: bool,
     json: bool,
 ) -> Result<()> {
+    // GH-2391: an anomaly is `deviation > threshold`. NaN makes that false for
+    // every tensor, so the command reports "no anomalies" over a model it never
+    // judged.
+    crate::commands::threshold_arg::guard_f32(
+        "--threshold",
+        threshold,
+        crate::commands::threshold_arg::TOLERANCE,
+    )?;
+
     validate_stats_inputs(model, reference, fingerprints_file)?;
 
     if !json {

@@ -18,7 +18,11 @@ use crate::{
 
 // Submodules
 mod algorithms;
+pub mod cancel;
 mod sampler;
+
+// aprender#2376(3): cooperative cancellation for the decode loops.
+pub use cancel::{CancelOnDrop, CancelToken};
 
 // Re-exports from algorithms (unique sampling algorithms)
 pub use algorithms::{
@@ -137,6 +141,11 @@ pub struct GenerationConfig {
     pub eos_token_id: Option<usize>,
     /// Random seed for reproducibility
     pub seed: Option<u64>,
+    /// Cooperative cancellation signal, polled once per decode step.
+    ///
+    /// aprender#2376(3). Defaults to [`CancelToken::never`] — zero-cost, never
+    /// cancels — so every existing caller is unaffected.
+    pub cancel: CancelToken,
 }
 
 impl Default for GenerationConfig {
@@ -147,6 +156,7 @@ impl Default for GenerationConfig {
             temperature: 1.0,
             eos_token_id: None,
             seed: None,
+            cancel: CancelToken::never(),
         }
     }
 }
@@ -204,6 +214,13 @@ impl GenerationConfig {
     #[must_use]
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
+        self
+    }
+
+    /// Attach a cooperative cancellation signal (aprender#2376(3)).
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: CancelToken) -> Self {
+        self.cancel = cancel;
         self
     }
 }

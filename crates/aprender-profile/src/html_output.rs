@@ -228,7 +228,7 @@ impl HtmlOutput {
 
         // Sort by total time (descending)
         let mut sorted_stats: Vec<_> = stats.iter().collect();
-        sorted_stats.sort_by(|a, b| b.1.total_time_us.cmp(&a.1.total_time_us));
+        sorted_stats.sort_by_key(|b| std::cmp::Reverse(b.1.total_time_us));
 
         for (name, stat) in sorted_stats {
             let pct = if total_time > 0 {
@@ -237,7 +237,7 @@ impl HtmlOutput {
                 0.0
             };
 
-            let usecs_per_call = if stat.count > 0 { stat.total_time_us / stat.count } else { 0 };
+            let usecs_per_call = stat.total_time_us.checked_div(stat.count).unwrap_or(0);
 
             let seconds = stat.total_time_us as f64 / 1_000_000.0;
 

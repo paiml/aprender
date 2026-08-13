@@ -177,11 +177,7 @@ pub fn attention_with_cache(
 ) -> Vec<f32> {
     let hidden_dim = q.len();
     let head_dim = hidden_dim / num_heads;
-    let cache_len = if hidden_dim > 0 {
-        k_cache.len() / hidden_dim
-    } else {
-        0
-    };
+    let cache_len = k_cache.len().checked_div(hidden_dim).unwrap_or(0);
     let total_len = cache_len + 1;
     let scale = 1.0 / (head_dim as f32).sqrt();
 
@@ -345,11 +341,7 @@ pub fn attention_with_transposed_v(
 ) -> Vec<f32> {
     let hidden_dim = q.len();
     let head_dim = hidden_dim / num_heads;
-    let cache_len = if hidden_dim > 0 {
-        k_cache.len() / hidden_dim
-    } else {
-        0
-    };
+    let cache_len = k_cache.len().checked_div(hidden_dim).unwrap_or(0);
     let total_len = cache_len + 1;
     let scale = 1.0 / (head_dim as f32).sqrt();
 

@@ -54,13 +54,9 @@ impl AprKVCache {
     pub fn new(config: &AprTransformerConfig) -> Self {
         let num_layers = config.num_layers;
         let num_kv_heads = config.num_kv_heads;
-        let head_dim = config.explicit_head_dim.unwrap_or_else(|| {
-            if config.num_heads > 0 {
-                config.hidden_dim / config.num_heads
-            } else {
-                0
-            }
-        });
+        let head_dim = config
+            .explicit_head_dim
+            .unwrap_or_else(|| config.hidden_dim.checked_div(config.num_heads).unwrap_or(0));
         // N-03 (Meyer DbC): context_length may be 0 if metadata is missing.
         // Apply a safe minimum for KV cache allocation.
         let capacity = if config.context_length > 0 {
@@ -218,6 +214,12 @@ pub struct GenerateConfig {
     /// **Design by Contract**: These come from the model config, not hardcoded.
     /// Empty means no EOS checking (generate until max_tokens).
     pub stop_tokens: Vec<u32>,
+    /// Cooperative cancellation signal, polled once per decode step.
+    ///
+    /// aprender#2376(3). Defaults to
+    /// [`CancelToken::never`](crate::generate::CancelToken::never) — zero-cost,
+    /// never cancels — so every existing caller is unaffected.
+    pub cancel: crate::generate::CancelToken,
 }
 
 impl Default for GenerateConfig {
@@ -230,6 +232,7 @@ impl Default for GenerateConfig {
             repetition_penalty: 1.0,
             trace: false,
             stop_tokens: Vec::new(),
+            cancel: crate::generate::CancelToken::never(),
         }
     }
 }

@@ -24,6 +24,13 @@ mod tests_report {
         assert_eq!(report.total_score, 95);
     }
 
+    /// #1866: `F` is earned by FAILING checks, never by a short checklist.
+    ///
+    /// This test used to assert that 50 checks — every one of them PASSING —
+    /// graded `F`, because the grade banded 50 awarded points against a fixed
+    /// 100-point denominator. That assertion was the defect written down as a
+    /// test: it is the same arithmetic that graded a healthy `.apr` file `F`
+    /// at 3/100.
     #[test]
     fn test_report_grade_f() {
         let mut report = ValidationReport::new();
@@ -36,10 +43,29 @@ mod tests_report {
                 points: 1,
             });
         }
-        assert_eq!(report.grade(), "F");
+        assert_eq!(
+            report.grade(),
+            "A+",
+            "50 of 50 checks passed; a short checklist is not a failing model"
+        );
         assert_eq!(report.total_score, 50);
+
+        // One genuine failure, and only then, is F.
+        report.add_check(ValidationCheck {
+            id: 51,
+            name: "broken",
+            category: Category::Structure,
+            status: CheckStatus::Fail("magic bytes".to_string()),
+            points: 0,
+        });
+        assert_eq!(report.grade(), "F");
     }
 
+    /// #1866: the threshold is a percentage of the checks that RAN.
+    ///
+    /// It used to compare raw awarded points, so `passed(95)` was unreachable
+    /// for any real `.apr` file (ceiling 4 points) and `apr import` reported
+    /// "completed with warnings" on every successful import.
     #[test]
     fn test_report_passed_threshold() {
         let mut report = ValidationReport::new();
@@ -53,7 +79,33 @@ mod tests_report {
             });
         }
         assert!(report.passed(90));
-        assert!(!report.passed(95));
+        assert!(report.passed(95), "90/90 checks passed — that is 100%");
+
+        // A tenth of the suite failing puts it under the bar.
+        for i in 91..=100 {
+            report.add_check(ValidationCheck {
+                id: i,
+                name: "test",
+                category: Category::Structure,
+                status: CheckStatus::Fail("bad".to_string()),
+                points: 0,
+            });
+        }
+        assert!(!report.passed(95), "90/100 = 90% must not clear 95");
+    }
+
+    /// A threshold cannot be cleared against a score that was never measured.
+    #[test]
+    fn passed_fails_closed_when_no_check_ran() {
+        let mut report = ValidationReport::new();
+        for i in 1..=25 {
+            push_check(&mut report, i, CheckStatus::Skip("Not implemented".into()));
+        }
+        assert!(
+            !report.passed(0),
+            "nothing ran, so no threshold — not even 0 — was demonstrated"
+        );
+        assert_eq!(report.grade(), "N/A");
     }
 
     #[test]
@@ -629,5 +681,124 @@ mod tests_report {
         assert_eq!(score.ran, 2, "a FAILED check ran and must count against us");
         assert_eq!(score.not_implemented(), 0);
         assert_eq!(score.to_string(), "1/2 checks that ran");
+    }
+
+    // ========================================================================
+    // #1866 FALSIFIER: a healthy model must not be graded F, and the grade,
+    // the pass flag and the human verdict must not contradict each other.
+    //
+    // Contract: apr-validate-quality-threshold-v1
+    // ========================================================================
+
+    /// The exact report `apr validate` builds for
+    /// `/home/noah/models/qwen2.5-coder-0.5b-instruct.apr` — a model
+    /// `apr qa` passes and `apr run` answers correctly from. Checks 1/2/3
+    /// PASS, check 11 WARNs on an unknown flag bit, and 22 checks are
+    /// `Skip("Not implemented")` stubs.
+    fn healthy_apr_report() -> ValidationReport {
+        let mut report = ValidationReport::new();
+        push_check(&mut report, 1, CheckStatus::Pass);
+        push_check(&mut report, 2, CheckStatus::Pass);
+        push_check(&mut report, 3, CheckStatus::Pass);
+        push_check(
+            &mut report,
+            11,
+            CheckStatus::Warn("Unknown flag bits: 0x00000100".into()),
+        );
+        push_check(
+            &mut report,
+            4,
+            CheckStatus::Skip("Footer not implemented".into()),
+        );
+        for id in 5..=25 {
+            push_check(&mut report, id, CheckStatus::Skip("Not implemented".into()));
+        }
+        report
+    }
+
+    /// FALSIFY-VALIDATE-QUALITY-004 (#1866): a healthy model must score above
+    /// the F band.
+    ///
+    /// Before the fix this asserted `"F"` on a working model, at exit 0, while
+    /// the same report advertised `passed: true` and printed `✓ VALID`.
+    #[test]
+    fn healthy_model_is_not_graded_f() {
+        let report = healthy_apr_report();
+
+        assert_eq!(report.implemented_score().ran, 4);
+        assert_eq!(report.implemented_score().not_implemented(), 22);
+        assert_ne!(
+            report.grade(),
+            "F",
+            "a model with zero failed checks was graded F: {:?}",
+            report.implemented_score()
+        );
+        assert_eq!(report.grade(), "C+", "3 of the 4 checks that ran passed");
+    }
+
+    /// FALSIFY-VALIDATE-QUALITY-005 (#1866): grade, pass flag and human
+    /// verdict are one decision, not three.
+    ///
+    /// `grade() == "F"` must hold EXACTLY when a check that ran reported a
+    /// failure — which is also `!is_valid()`, the predicate behind the
+    /// `VALID` / `INVALID` badge. Exhaustive over every arrangement of
+    /// Pass/Fail/Warn/Skip across four checks (256 reports).
+    #[test]
+    fn grade_is_f_exactly_when_a_check_failed() {
+        let statuses = [
+            CheckStatus::Pass,
+            CheckStatus::Fail("bad".into()),
+            CheckStatus::Warn("advisory".into()),
+            CheckStatus::Skip("Not implemented".into()),
+        ];
+        // Every arrangement of four checks, enumerated as the base-4 digits
+        // of 0..256 — one loop instead of four nested ones.
+        for shape in 0..statuses.len().pow(4) {
+            let picks = [shape % 4, (shape / 4) % 4, (shape / 16) % 4, (shape / 64) % 4];
+            let mut report = ValidationReport::new();
+            for (i, idx) in picks.into_iter().enumerate() {
+                push_check(&mut report, i as u8 + 1, statuses[idx].clone());
+            }
+            let grade = report.grade();
+            let any_failed = !report.is_valid();
+
+            if report.implemented_score().ran == 0 {
+                assert_eq!(grade, "N/A", "nothing ran but was graded {grade}");
+                continue;
+            }
+            assert_eq!(
+                grade == "F",
+                any_failed,
+                "grade {grade} disagrees with the VALID/INVALID verdict for {picks:?}"
+            );
+            // The JSON `passed` flag is `is_valid()` too, so a passing report
+            // can never carry an F.
+            assert!(
+                any_failed || grade != "F",
+                "passing report graded F for {picks:?}"
+            );
+        }
+    }
+
+    /// A category in which nothing is declared must report `ran == 0`, so the
+    /// renderer can say "not implemented" instead of drawing `0/25` — a zero
+    /// for something that was never measured (#1866).
+    #[test]
+    fn category_score_distinguishes_never_ran_from_scored_zero() {
+        let report = healthy_apr_report(); // Structure only.
+
+        let structure = report.category_score(Category::Structure);
+        assert_eq!(structure.ran, 4);
+        assert_eq!(structure.passed, 3);
+
+        for empty in [Category::Physics, Category::Tooling, Category::Conversion] {
+            let score = report.category_score(empty);
+            assert_eq!(score.declared, 0, "{empty:?} declares no checks here");
+            assert_eq!(
+                score.pct(),
+                None,
+                "{empty:?} ran nothing, so it has no score — not a score of zero"
+            );
+        }
     }
 }

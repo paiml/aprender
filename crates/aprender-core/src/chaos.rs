@@ -50,7 +50,7 @@ impl Default for ChaosConfig {
         Self {
             memory_limit: 0,
             cpu_limit: 0.0,
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_mins(1),
             signal_injection: false,
         }
     }
@@ -188,7 +188,7 @@ impl ChaosConfig {
         Self::new()
             .with_memory_limit(512 * 1024 * 1024)
             .with_cpu_limit(0.8)
-            .with_timeout(Duration::from_secs(120))
+            .with_timeout(Duration::from_mins(2))
     }
 
     /// Aggressive chaos preset: strict limits, short timeout, signal injection.

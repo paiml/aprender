@@ -124,6 +124,62 @@ mod tests {
         );
     }
 
+    /// The non-test half of a `*_lint.rs`, i.e. everything above `#[cfg(test)]`.
+    ///
+    /// The ban below is about *shipped* code. Test bodies in this family use
+    /// `.unwrap()` on `NamedTempFile` freely and that is fine — a panicking test
+    /// is a failing test. Scanning the whole file would flag those and the guard
+    /// would be deleted within a week.
+    /// Yields `(1-based line number in the real file, line)`. The line number is
+    /// carried rather than recomputed after filtering: `code_only` drops comment
+    /// lines, so enumerating its output reports a number that does not exist in
+    /// the file the reader then has to open.
+    fn shipped_code(src: &str) -> Vec<(usize, &str)> {
+        let end = src.find("#[cfg(test)]").unwrap_or(src.len());
+        src[..end]
+            .lines()
+            .enumerate()
+            .map(|(i, l)| (i + 1, l))
+            .filter(|(_, l)| !l.trim_start().starts_with("//"))
+            .collect()
+    }
+
+    /// `.unwrap()` is banned by `.clippy.toml` (`disallowed_methods`), but
+    /// `apr-cli/src/lib.rs` opens with
+    /// `#![allow(clippy::all, clippy::pedantic, clippy::disallowed_methods)]`,
+    /// so for this crate — the one with all 103 subcommands in it — the ban is
+    /// switched off crate-wide and clippy is green with unwraps present.
+    ///
+    /// That is why ten of them accumulated on one identical line, in ten files,
+    /// with nothing complaining:
+    ///
+    /// ```ignore
+    /// println!("{}", serde_json::to_string_pretty(&payload).unwrap());
+    /// ```
+    ///
+    /// Lifting the crate-wide allow is a large, separate change (the crate has
+    /// many other pedantic violations behind it). Until then this test restores
+    /// the ban for the family that demonstrably propagates by copy-paste, so a
+    /// new `*_lint.rs` cannot reintroduce the eleventh.
+    #[test]
+    fn no_lint_command_unwraps_in_shipped_code() {
+        let mut offenders = Vec::new();
+        for (name, src) in lint_family() {
+            for (lineno, line) in shipped_code(&src) {
+                if line.contains(".unwrap()") {
+                    offenders.push(format!("{name}:{lineno} {}", line.trim()));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "`.unwrap()` is banned (.clippy.toml disallowed_methods) but apr-cli \
+             allows it crate-wide, so only this scan catches it. Use .expect(\"why\") \
+             or propagate with ?:\n{}",
+            offenders.join("\n")
+        );
+    }
+
     #[test]
     fn no_lint_command_blames_the_apr_model_format_for_an_observation() {
         // #2377-9. `CliError::InvalidFormat` Displays as "Invalid APR format".

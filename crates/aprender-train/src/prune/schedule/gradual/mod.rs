@@ -48,10 +48,14 @@ impl PruningSchedule {
         end_step: usize,
         frequency: usize,
     ) -> usize {
-        if frequency == 0 {
-            1
-        } else {
-            (end_step - start_step) / frequency + 1
+        // NonZeroUsize rather than `checked_div`: it keeps `end_step - start_step`
+        // inside the divisor-is-nonzero branch, exactly as the original
+        // `if frequency == 0 { 1 } else { ... }` did. `checked_div` would hoist
+        // the subtraction out and underflow on end_step < start_step, which
+        // `gradual_validate` rejects but this fn does not re-check.
+        match std::num::NonZeroUsize::new(frequency) {
+            None => 1,
+            Some(f) => (end_step - start_step) / f + 1,
         }
     }
 

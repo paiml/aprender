@@ -332,6 +332,11 @@ impl OwnedQuantizedModel {
 
         // Generate new tokens one at a time (autoregressive)
         for gen_idx in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             // PMAT-814: apply repetition penalty in place over the recent context
             // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
             crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(
@@ -410,6 +415,11 @@ impl OwnedQuantizedModel {
 
         // Generate new tokens
         for gen_idx in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let position = prompt.len() + gen_idx;
             let last_token = *tokens.last().ok_or_else(|| RealizarError::InvalidShape {
                 reason: "Token buffer empty during generation".to_string(),

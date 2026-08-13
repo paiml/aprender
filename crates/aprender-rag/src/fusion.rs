@@ -167,7 +167,7 @@ impl FusionStrategy {
         }
 
         let mut results: Vec<_> = scores.into_iter().collect();
-        results.sort_by(|a, b| a.1 .1.cmp(&b.1 .1)); // Sort by rank
+        results.sort_by_key(|a| a.1 .1); // Sort by rank
         results.into_iter().map(|(id, (score, _))| (id, score)).collect()
     }
 

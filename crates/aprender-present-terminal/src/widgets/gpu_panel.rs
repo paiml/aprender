@@ -364,7 +364,7 @@ impl GpuPanel {
 
         // Sort by VRAM usage
         let mut sorted: Vec<_> = self.processes.iter().collect();
-        sorted.sort_by(|a, b| b.vram_used.cmp(&a.vram_used));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.vram_used));
 
         for proc in sorted.iter().take(self.max_processes) {
             // Truncate name to fit

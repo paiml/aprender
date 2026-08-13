@@ -338,6 +338,12 @@ pub struct GpuGenerateConfig {
     pub stop_tokens: Vec<usize>,
     /// Enable debug tracing (F-COV-95: Added for cli/inference.rs compatibility)
     pub trace: bool,
+    /// Cooperative cancellation signal, polled once per decode step.
+    ///
+    /// aprender#2376(3). Defaults to
+    /// [`CancelToken::never`](crate::generate::CancelToken::never) — zero-cost,
+    /// never cancels — so every existing caller is unaffected.
+    pub cancel: crate::generate::CancelToken,
 }
 
 impl Default for GpuGenerateConfig {
@@ -348,6 +354,7 @@ impl Default for GpuGenerateConfig {
             top_k: 1,
             stop_tokens: Vec::new(),
             trace: false,
+            cancel: crate::generate::CancelToken::never(),
         }
     }
 }
@@ -362,6 +369,7 @@ impl GpuGenerateConfig {
             top_k: 1,
             stop_tokens: Vec::new(),
             trace: false,
+            cancel: crate::generate::CancelToken::never(),
         }
     }
 
@@ -374,6 +382,7 @@ impl GpuGenerateConfig {
             top_k,
             stop_tokens: Vec::new(),
             trace: false,
+            cancel: crate::generate::CancelToken::never(),
         }
     }
 

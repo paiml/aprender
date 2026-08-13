@@ -134,6 +134,11 @@ fn generate_next_tokens(
 ) -> Result<()> {
     let mut logits = initial_logits;
     for i in 0..config.max_tokens {
+        // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+        // stop here instead of burning a core to max_tokens for nobody.
+        if config.cancel.is_cancelled() {
+            break;
+        }
         let next_token = sample_from_logits(&logits, config);
         output.push(next_token);
 
@@ -277,6 +282,11 @@ where
     // Generate tokens with streaming callback
     let mut logits = logits;
     for i in 0..config.max_tokens {
+        // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+        // stop here instead of burning a core to max_tokens for nobody.
+        if config.cancel.is_cancelled() {
+            break;
+        }
         let next_token = sample_from_logits(&logits, config);
         output.push(next_token);
 
@@ -324,6 +334,7 @@ mod top_p_top_k_tests {
             repetition_penalty: 1.0,
             trace: false,
             stop_tokens: vec![],
+            cancel: crate::generate::CancelToken::never(),
         }
     }
 

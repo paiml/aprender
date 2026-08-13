@@ -17,11 +17,10 @@ fn mean_pool_hidden_states(
 ) -> Vec<f32> {
     // Never index past the rows we were actually given: `data` is
     // `[seq_len, hidden_dim]` and the caller's `token_ids` must align with it.
-    let seq_len = if hidden_dim == 0 {
-        0
-    } else {
-        token_ids.len().min(data.len() / hidden_dim)
-    };
+    let seq_len = data
+        .len()
+        .checked_div(hidden_dim)
+        .map_or(0, |rows| token_ids.len().min(rows));
 
     let mut sum = vec![0.0f32; hidden_dim];
     let mut counted = 0usize;
@@ -543,6 +542,7 @@ async fn try_cached_completions(
     max_tokens: usize,
     temperature: f32,
     start: std::time::Instant,
+    cancel: &CancelToken,
 ) -> Result<Option<CompletionResponse>, RErr> {
     use crate::gguf::QuantizedGenerateConfig;
 
@@ -589,7 +589,8 @@ async fn try_cached_completions(
         top_k: if temperature == 0.0 { 1 } else { 40 },
         stop_tokens: Vec::new(),
         trace: state.is_trace_enabled(),
-            ..Default::default()
+        cancel: cancel.clone(),
+        ..Default::default()
     };
 
     // IMP-126: adaptive generation when dispatch_metrics available
@@ -631,6 +632,7 @@ fn try_quantized_completions(
     max_tokens: usize,
     temperature: f32,
     start: std::time::Instant,
+    cancel: &CancelToken,
 ) -> Result<Option<CompletionResponse>, RErr> {
     use crate::gguf::QuantizedGenerateConfig;
 
@@ -661,7 +663,8 @@ fn try_quantized_completions(
         top_k: if temperature == 0.0 { 1 } else { 40 },
         stop_tokens: Vec::new(),
         trace: state.is_trace_enabled(),
-            ..Default::default()
+        cancel: cancel.clone(),
+        ..Default::default()
     };
 
     // aprender#2376(9): a context-budget rejection is a client error (400), not a

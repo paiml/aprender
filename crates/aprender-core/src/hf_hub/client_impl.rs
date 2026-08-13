@@ -391,7 +391,7 @@ impl HfHubClient {
         let response = ureq::post(&url)
             .set("Authorization", &format!("Bearer {token}"))
             .set("Content-Type", "application/x-ndjson")
-            .timeout(std::time::Duration::from_secs(120))
+            .timeout(std::time::Duration::from_mins(2))
             .send_string(&ndjson_body);
 
         match response {

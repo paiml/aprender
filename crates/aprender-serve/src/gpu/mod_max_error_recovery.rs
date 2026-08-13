@@ -419,7 +419,7 @@ impl ConnectionConfig {
         Self {
             max_connections: 10,
             min_connections: 1,
-            idle_timeout: Duration::from_secs(300),
+            idle_timeout: Duration::from_mins(5),
         }
     }
 

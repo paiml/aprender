@@ -406,6 +406,23 @@ pub fn run(
     assert_classifier_head: bool,
 ) -> Result<()> {
     contract_pre_qa_gate_composition!();
+    // GH-2391: every QA gate is `observed >= asserted`. A NaN or negative
+    // assertion makes that comparison unable to distinguish pass from fail, so
+    // the release gate reports a verdict it never reached. Refuse the value.
+    use crate::commands::threshold_arg;
+    threshold_arg::guard_opt("--assert-tps", min_tps, threshold_arg::TOLERANCE)?;
+    threshold_arg::guard_opt("--assert-speedup", min_speedup, threshold_arg::TOLERANCE)?;
+    threshold_arg::guard_opt(
+        "--assert-gpu-speedup",
+        min_gpu_speedup,
+        threshold_arg::TOLERANCE,
+    )?;
+    threshold_arg::guard_opt(
+        "--regression-threshold",
+        regression_threshold,
+        threshold_arg::FRACTION,
+    )?;
+
     let config = QaConfig {
         min_tps,
         min_speedup: min_speedup.unwrap_or(0.2), // Ollama uses llama.cpp optimized kernels

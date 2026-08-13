@@ -61,9 +61,7 @@ pub fn get_cpu_info() -> String {
 /// Uses `std::thread::available_parallelism()`, falling back to 1.
 #[must_use]
 pub fn cpu_count() -> usize {
-    std::thread::available_parallelism()
-        .map(std::num::NonZero::get)
-        .unwrap_or(1)
+    std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
 }
 
 #[cfg(test)]

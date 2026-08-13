@@ -70,7 +70,7 @@ impl Tool for RagTool {
     }
 
     fn timeout(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(120)
+        std::time::Duration::from_mins(2)
     }
 }
 
