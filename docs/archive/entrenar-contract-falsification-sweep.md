@@ -1,4 +1,17 @@
 # Design by Contract Falsification Sweep: /home/noah/src/entrenar/src
+> **Archived record — 2026-02-23. Do not edit to satisfy a present-day gate.**
+>
+> The cost table quoted below names `gpt-4-turbo`, `claude-3-opus`,
+> `claude-3-sonnet` and `claude-3-haiku`. All are **superseded**; see
+> [`docs/agent-models.md`](../agent-models.md) for what replaced them and for the
+> ids actually in use.
+>
+> `pmat comply` CB-1657 reports these as doc model drift and will keep doing so.
+> That is accepted deliberately: this file records an analysis performed on a
+> specific tree on a specific day, and rewriting its quoted code so a gate goes
+> green would make the record describe something that never ran. Making a gate
+> pass rather than making the claim true is the exact defect class
+> `docs/audits/dogfood-0.63.0-hansei.md` was written about.
 
 **Date:** 2026-02-23  
 **Scope:** 941 Rust source files, 5509 functions  

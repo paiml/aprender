@@ -9,6 +9,8 @@
 name: apr-dogfood
 allowed-tools: Bash(cargo:*), Bash(apr:*), Bash(pmat:*), Bash(gh:*), Bash(git:*), Bash(find:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(grep:*), Bash(diff:*), Bash(timeout:*), Bash(jq:*), Bash(python3:*), Bash(echo:*), Bash(cat:*), Bash(rm:*), Bash(ssh:*), Read, Glob, Grep, Agent
 description: Dogfood apr-cli — rebuild, install, exercise all commands against real models, check quality, find next work
+effort: high          # MACS F4: pinned for reproducible cost/behavior - exercises the whole CLI against real models and judges the output
+
 ---
 
 # APR CLI Exhaustive QA — Contract-First Dogfood

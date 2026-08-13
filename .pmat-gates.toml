@@ -28,9 +28,15 @@ check_complexity = true
 max_complexity = 10
 
 [exclude]
+# The key is `paths`, NOT `patterns`. pmat reads `[exclude] paths`,
+# `exclude_paths`, or `[quality-gates] exclude`
+# (quality_gate_config.rs::extract_excludes_from_table). Under `patterns` these
+# three entries parsed as valid TOML, were never read, and excluded nothing --
+# a config that looks like it works and does not.
+#
 # mdBook generated files (not our code)
 # Python helper scripts (one-off utilities, not production code)
-patterns = [
+paths = [
     "**/book/**",
     "**/target/**",
     "scripts/*.py",
