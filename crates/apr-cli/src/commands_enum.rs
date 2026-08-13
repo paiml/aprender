@@ -272,7 +272,8 @@ pub enum Commands {
         quant_roundtrip: bool,
         /// CRUX-B-20: cosine threshold for the quant-roundtrip exit-code gate.
         /// Any tensor with cosine < threshold makes the command exit non-zero.
-        #[arg(long, default_value = "0.95")]
+        #[arg(long, default_value = "0.95",
+              value_parser = crate::commands::threshold_arg::parse_cosine_f32)]
         threshold: f32,
         /// CRUX-B-20: suppress the threshold exit-code gate (still emits the report).
         #[arg(long)]

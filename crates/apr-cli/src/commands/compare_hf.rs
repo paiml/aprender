@@ -27,6 +27,15 @@ pub(crate) fn run(
     threshold: f64,
     json_output: bool,
 ) -> Result<(), CliError> {
+    // GH-2391: `max_abs_diff < threshold` is false for a NaN threshold, so every
+    // tensor is reported as failing-but-not-gated and the summary printed a
+    // count it never computed. Refuse the threshold instead.
+    crate::commands::threshold_arg::guard(
+        "--threshold",
+        threshold,
+        crate::commands::threshold_arg::TOLERANCE,
+    )?;
+
     #[cfg(not(feature = "safetensors-compare"))]
     {
         let _ = (apr_path, hf_repo, tensor_filter, threshold, json_output);

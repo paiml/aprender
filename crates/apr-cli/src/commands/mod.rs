@@ -7,6 +7,10 @@
 
 pub(crate) mod aliases;
 pub(crate) mod threshold_arg;
+// GH-2391 falsifiers for the whole threshold/tolerance flag family, not just
+// the *-lint commands the module originally covered.
+#[cfg(test)]
+mod threshold_arg_gh2391;
 
 pub(crate) mod attn_parity_classifier;
 pub(crate) mod attn_parity_lint;
