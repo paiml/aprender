@@ -93,7 +93,11 @@ pub fn run(args: RmGcLintArgs) -> Result<(), LintError> {
             "contract": "CRUX-A-25",
             "gates": reports,
         });
-        println!("{}", serde_json::to_string_pretty(&payload).unwrap());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&payload)
+                .expect("the --json report is a locally-built serde_json::Value")
+        );
     } else {
         for r in &reports {
             let tag = if r.passed { "PASS" } else { "FAIL" };

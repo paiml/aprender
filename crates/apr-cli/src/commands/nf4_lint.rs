@@ -99,7 +99,11 @@ pub fn run(args: Nf4LintArgs) -> Result<(), LintError> {
             "contract": "CRUX-B-10",
             "gates": reports,
         });
-        println!("{}", serde_json::to_string_pretty(&payload).unwrap());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&payload)
+                .expect("the --json report is a locally-built serde_json::Value")
+        );
     } else {
         for r in &reports {
             let tag = verdict_tag(r.passed, &r.outcome);

@@ -3,6 +3,21 @@
 //! This library is the foundation for the apr CLI binary.
 //! Exports CLI structures for testing and reuse.
 
+// PMAT-540 declared `#![cfg_attr(coverage_nightly, coverage(off))]` in twenty
+// files of this crate but never declared the feature that makes `coverage(off)`
+// legal, and nothing in the workspace did. On the pinned stable toolchain
+// (rust-toolchain.toml = 1.93.0) the `cfg_attr` is inert, so nobody noticed; the
+// moment a coverage run sets `--cfg coverage_nightly` — which is exactly what
+// `pmat quality-gates` does via `cargo +nightly llvm-cov` — the crate stops
+// compiling:
+//
+//     crates/apr-cli/src/generated_contracts.rs:9:31: error[E0658]:
+//     the `#[coverage]` attribute is an experimental feature
+//
+// and the coverage gate reports "failed to run" rather than a number. A gate
+// that cannot run is not a gate that passed. This declaration is likewise
+// gated, so stable builds are byte-identical.
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 // APR-MONO: Clippy pedantic allows for monorepo transition.
 // unwrap() eliminated (524 → expect()). Style lints from 20 merged crates
 // are suppressed at crate level. Will be incrementally addressed.
