@@ -408,6 +408,7 @@ pub async fn tokenize_handler(
 fn try_cuda_generate(
     state: &AppState,
     request: &GenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<Option<GenerateResponse>, ApiErr> {
     use crate::gguf::QuantizedGenerateConfig;
 
@@ -429,7 +430,8 @@ fn try_cuda_generate(
         },
         stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
         trace: false,
-                ..Default::default()
+        cancel: cancel.clone(),
+        ..Default::default()
     };
 
     let mut cuda_model = cuda_model_lock.write().map_err(|_| {

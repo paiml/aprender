@@ -10,7 +10,7 @@ use axum::{
     extract::State,
     http::StatusCode,
     response::sse::{Event, Sse},
-    Json,
+    Extension, Json,
 };
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
@@ -20,7 +20,7 @@ use super::{
     BatchTokenizeRequest, BatchTokenizeResponse, ErrorResponse, GenerateRequest, GenerateResponse,
     ModelsResponse, StreamDoneEvent, StreamTokenEvent, TokenizeRequest, TokenizeResponse,
 };
-use crate::generate::{GenerationConfig, SamplingStrategy};
+use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::registry::ModelInfo;
 use crate::tokenizer::BPETokenizer;
 

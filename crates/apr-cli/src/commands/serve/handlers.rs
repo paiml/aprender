@@ -873,6 +873,7 @@ fn run_apr_cpu_inference(
         repetition_penalty: 1.0,
         trace: false,
         stop_tokens: vec![],
+        cancel: realizar::generate::CancelToken::never(),
     };
 
     let gen_start = Instant::now();

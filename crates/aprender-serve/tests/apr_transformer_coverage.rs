@@ -506,6 +506,7 @@ fn test_generate_config_custom_values() {
         repetition_penalty: 1.2,
         trace: false,
         stop_tokens: vec![],
+        cancel: realizar::generate::CancelToken::never(),
     };
     assert_eq!(config.max_tokens, 100);
     assert!((config.temperature - 0.5).abs() < f32::EPSILON);

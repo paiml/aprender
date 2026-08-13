@@ -9,6 +9,7 @@
 //! on other complex types, making them easy to extract.
 
 use super::config::GGUFConfig;
+use crate::generate::CancelToken;
 
 // ============================================================================
 // QuantizedGenerateConfig - Generation parameters
@@ -40,6 +41,13 @@ pub struct QuantizedGenerateConfig {
     pub trace: bool,
     /// Return per-token log probabilities (realizr#191, F-QUALITY-01)
     pub logprobs: bool,
+    /// Cooperative cancellation signal, polled once per decode step.
+    ///
+    /// aprender#2376(3): without this, an abandoned HTTP request kept decoding to
+    /// `max_tokens` with the client long gone. Defaults to
+    /// [`CancelToken::never`] — zero-cost, never cancels — so every existing caller
+    /// is unaffected.
+    pub cancel: CancelToken,
 }
 
 impl Default for QuantizedGenerateConfig {
@@ -55,6 +63,7 @@ impl Default for QuantizedGenerateConfig {
             stop_tokens: Vec::new(),
             trace: false,
             logprobs: false,
+            cancel: CancelToken::never(),
         }
     }
 }
@@ -77,6 +86,13 @@ impl QuantizedGenerateConfig {
     #[must_use]
     pub fn with_trace(mut self, trace: bool) -> Self {
         self.trace = trace;
+        self
+    }
+
+    /// Attach a cooperative cancellation signal (aprender#2376(3)).
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: CancelToken) -> Self {
+        self.cancel = cancel;
         self
     }
 

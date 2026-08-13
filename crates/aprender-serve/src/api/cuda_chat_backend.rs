@@ -6,6 +6,7 @@ fn try_safetensors_cuda_backend(
     request: &ChatCompletionRequest,
     request_id: &str,
     start: Instant,
+    cancel: &CancelToken,
 ) -> Option<Response> {
     let model_lock = state.safetensors_cuda_model()?;
     let tokenizer = match require_tokenizer(state) {
@@ -83,6 +84,7 @@ async fn try_cuda_backend(
     request_id: &str,
     trace_level: Option<&str>,
     start: Instant,
+    cancel: &CancelToken,
 ) -> Option<Response> {
     // PMAT-821: config now built by chat_quantized_config (in openai_handlers.rs).
     let ttft_trace = std::env::var("TTFT_TRACE").is_ok();
@@ -112,6 +114,7 @@ async fn try_cuda_backend(
         &tokenizer,
         state.model_eos_token_id(),
         state.should_trace(trace_level),
+        cancel,
     );
     let max_tokens = q_config.max_tokens;
 
@@ -231,6 +234,7 @@ fn try_quantized_backend(
     request_id: &str,
     trace_level: Option<&str>,
     start: Instant,
+    cancel: &CancelToken,
 ) -> Option<Response> {
     // PMAT-821: config now built by chat_quantized_config (in openai_handlers.rs).
     let quantized_model = state.quantized_model()?;
@@ -254,6 +258,7 @@ fn try_quantized_backend(
         &tokenizer,
         state.model_eos_token_id(),
         state.should_trace(trace_level),
+        cancel,
     );
     let max_tokens = q_config.max_tokens;
 
@@ -341,6 +346,7 @@ fn registry_fallback(
     request: &ChatCompletionRequest,
     request_id: &str,
     start: Instant,
+    cancel: &CancelToken,
 ) -> Response {
     let model_id = if request.model == "default" || request.model.is_empty() {
         None
@@ -361,7 +367,7 @@ fn registry_fallback(
 
     let prompt_tokens = prompt_ids.len();
     let prompt: Vec<usize> = prompt_ids.iter().map(|&id| id as usize).collect();
-    let config = build_gen_config(request);
+    let config = build_gen_config(request).with_cancel(cancel.clone());
 
     let generated = match model.generate(&prompt, &config) {
         Ok(g) => g,
@@ -482,6 +488,8 @@ async fn try_apr_q4k_chat_backend(
     trace_level: Option<&str>,
     start: Instant,
 ) -> Option<Response> {
+    // aprender#2376(3): this backend hands the work to the Q4K scheduler thread
+    // rather than decoding here, so there is no in-handler loop to poll.
     use crate::api::apr_q4k_scheduler::AprQ4kRequest;
 
     let q4k_tx = state.apr_q4k_tx()?;
@@ -576,6 +584,7 @@ async fn try_apr_q4k_chat_backend(
 pub async fn openai_chat_completions_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Extension(cancel): Extension<CancelToken>,
     Json(request): Json<ChatCompletionRequest>,
 ) -> Response {
     let start = Instant::now();
@@ -606,24 +615,37 @@ pub async fn openai_chat_completions_handler(
             .as_millis()
     );
 
-    if let Some(r) = try_qwen3_moe_backend(&state, &request, &request_id, start) {
+    if let Some(r) = try_qwen3_moe_backend(&state, &request, &request_id, start, &cancel) {
         return r;
     }
 
     #[cfg(feature = "gpu")]
-    if let Some(r) = try_gpu_backend(&state, &request, &request_id, trace_level.as_deref(), start) {
+    if let Some(r) = try_gpu_backend(
+        &state,
+        &request,
+        &request_id,
+        trace_level.as_deref(),
+        start,
+        &cancel,
+    ) {
         return r;
     }
 
     #[cfg(feature = "gpu")]
-    if let Some(r) =
-        try_cached_backend(&state, &request, &request_id, trace_level.as_deref(), start)
-    {
+    if let Some(r) = try_cached_backend(
+        &state,
+        &request,
+        &request_id,
+        trace_level.as_deref(),
+        start,
+        &cancel,
+    ) {
         return r;
     }
 
     #[cfg(feature = "cuda")]
-    if let Some(r) = try_cuda_backend(&state, &request, &request_id, trace_level.as_deref(), start).await
+    if let Some(r) =
+        try_cuda_backend(&state, &request, &request_id, trace_level.as_deref(), start, &cancel).await
     {
         return r;
     }
@@ -636,17 +658,22 @@ pub async fn openai_chat_completions_handler(
 
     // #169: SafeTensors CUDA backend (format parity)
     #[cfg(feature = "cuda")]
-    if let Some(r) = try_safetensors_cuda_backend(&state, &request, &request_id, start) {
+    if let Some(r) = try_safetensors_cuda_backend(&state, &request, &request_id, start, &cancel) {
         return r;
     }
 
-    if let Some(r) =
-        try_quantized_backend(&state, &request, &request_id, trace_level.as_deref(), start)
-    {
+    if let Some(r) = try_quantized_backend(
+        &state,
+        &request,
+        &request_id,
+        trace_level.as_deref(),
+        start,
+        &cancel,
+    ) {
         return r;
     }
 
-    registry_fallback(&state, &request, &request_id, start)
+    registry_fallback(&state, &request, &request_id, start, &cancel)
 }
 
 /// aprender#1789 Option B: qwen3_moe MoE-aware dispatch for /v1/chat/completions.
@@ -671,6 +698,7 @@ fn try_qwen3_moe_backend(
     request: &ChatCompletionRequest,
     request_id: &str,
     start: Instant,
+    cancel: &CancelToken,
 ) -> Option<Response> {
     use crate::gguf::QuantizedGenerateConfig;
 
@@ -759,6 +787,7 @@ fn try_qwen3_moe_backend(
         repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
         seed: request.seed.unwrap_or(defaults.seed),
         stop_tokens,
+        cancel: cancel.clone(),
         ..defaults
     };
 

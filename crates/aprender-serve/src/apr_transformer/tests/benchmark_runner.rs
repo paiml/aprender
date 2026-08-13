@@ -435,6 +435,7 @@ fn test_generate_with_cache_top_k_sampling() {
         repetition_penalty: 1.0,
         trace: false,
         stop_tokens: vec![],
+        cancel: crate::generate::CancelToken::never(),
     };
 
     let result = transformer.generate_with_cache(&[0, 1], &gen_config);
@@ -454,6 +455,7 @@ fn test_generate_with_cache_top_p_sampling() {
         repetition_penalty: 1.0,
         trace: false,
         stop_tokens: vec![],
+        cancel: crate::generate::CancelToken::never(),
     };
 
     let result = transformer.generate_with_cache(&[0], &gen_config);

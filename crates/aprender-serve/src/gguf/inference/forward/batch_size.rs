@@ -66,6 +66,11 @@ impl OwnedQuantizedModel {
 
         // Generation phase: process all active requests together
         for gen_idx in 0..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             // Count active requests
             let active_count = active.iter().filter(|&&a| a).count();
             if active_count == 0 {

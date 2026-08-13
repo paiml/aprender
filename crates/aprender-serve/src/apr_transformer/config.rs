@@ -218,6 +218,12 @@ pub struct GenerateConfig {
     /// **Design by Contract**: These come from the model config, not hardcoded.
     /// Empty means no EOS checking (generate until max_tokens).
     pub stop_tokens: Vec<u32>,
+    /// Cooperative cancellation signal, polled once per decode step.
+    ///
+    /// aprender#2376(3). Defaults to
+    /// [`CancelToken::never`](crate::generate::CancelToken::never) — zero-cost,
+    /// never cancels — so every existing caller is unaffected.
+    pub cancel: crate::generate::CancelToken,
 }
 
 impl Default for GenerateConfig {
@@ -230,6 +236,7 @@ impl Default for GenerateConfig {
             repetition_penalty: 1.0,
             trace: false,
             stop_tokens: Vec::new(),
+            cancel: crate::generate::CancelToken::never(),
         }
     }
 }

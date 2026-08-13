@@ -12,6 +12,7 @@ fn test_generate_with_cache_repetition_penalty() {
         repetition_penalty: 1.5, // Strong repetition penalty
         trace: false,
         stop_tokens: vec![],
+        cancel: crate::generate::CancelToken::never(),
     };
 
     let result = transformer.generate_with_cache(&[0, 1, 2], &gen_config);

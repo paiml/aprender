@@ -375,6 +375,11 @@ impl GpuModel {
 
         // Generate remaining tokens using optimized incremental forward
         for _ in 1..config.max_tokens {
+            // aprender#2376(3): CANCELLATION POLL. The HTTP client may be gone;
+            // stop here instead of burning a core to max_tokens for nobody.
+            if config.cancel.is_cancelled() {
+                break;
+            }
             let logits = self.forward_gpu_incremental_optimized(next_token, &mut kv_cache)?;
 
             next_token = if config.temperature == 0.0 || config.top_k == 1 {

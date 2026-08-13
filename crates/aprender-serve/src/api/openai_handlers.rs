@@ -15,7 +15,7 @@ use axum::{
         sse::{Event, Sse},
         IntoResponse, Response,
     },
-    Json,
+    Extension, Json,
 };
 use futures::stream::Stream;
 
@@ -24,7 +24,7 @@ use super::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse,
     FinishReason, OpenAIModel, OpenAIModelsResponse, Usage,
 };
-use crate::generate::{GenerationConfig, SamplingStrategy};
+use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::tokenizer::BPETokenizer;
 
 // ============================================================================
@@ -170,11 +170,16 @@ mod pmat760_top_k_tests {
 /// (`chat_gen_params` / `resolve_chat_top_k`).
 ///
 /// Discharges F-CHAT-HANDLER-THREADS-PARAMS-001 in `contracts/openai-compat-v1.yaml`.
+///
+/// `cancel` is the request's cancellation signal (aprender#2376(3)). It is a
+/// required parameter rather than an `Option` so a new chat backend cannot
+/// silently produce a config whose decode loop outlives its client.
 fn chat_quantized_config(
     request: &ChatCompletionRequest,
     tokenizer: &BPETokenizer,
     model_eos: Option<u32>,
     trace: bool,
+    cancel: &crate::generate::CancelToken,
 ) -> crate::gguf::QuantizedGenerateConfig {
     let defaults = crate::gguf::QuantizedGenerateConfig::default();
     let (max_tokens, temperature, eos_token_id) = chat_gen_params(request, tokenizer, model_eos);
@@ -188,6 +193,7 @@ fn chat_quantized_config(
         seed: request.seed.unwrap_or(defaults.seed),
         stop_tokens: vec![eos_token_id],
         trace,
+        cancel: cancel.clone(),
         ..defaults
     }
 }
@@ -243,7 +249,13 @@ mod pmat821_chat_handler_threading_tests {
         // which is orthogonal to top_p but keeps the request realistic.
         request.temperature = Some(0.7);
         let tokenizer = test_tokenizer();
-        let config = chat_quantized_config(&request, &tokenizer, None, false);
+        let config = chat_quantized_config(
+            &request,
+            &tokenizer,
+            None,
+            false,
+            &crate::generate::CancelToken::never(),
+        );
         assert!(
             (config.top_p - 0.5).abs() < f32::EPSILON,
             "handler dropped top_p: expected 0.5, got {}",
@@ -258,7 +270,13 @@ mod pmat821_chat_handler_threading_tests {
         request.repeat_penalty = Some(1.3);
         request.temperature = Some(0.7);
         let tokenizer = test_tokenizer();
-        let config = chat_quantized_config(&request, &tokenizer, None, false);
+        let config = chat_quantized_config(
+            &request,
+            &tokenizer,
+            None,
+            false,
+            &crate::generate::CancelToken::never(),
+        );
         assert!(
             (config.repeat_penalty - 1.3).abs() < f32::EPSILON,
             "handler dropped repeat_penalty: expected 1.3, got {}",
@@ -273,7 +291,13 @@ mod pmat821_chat_handler_threading_tests {
         request.seed = Some(7);
         request.temperature = Some(0.7);
         let tokenizer = test_tokenizer();
-        let config = chat_quantized_config(&request, &tokenizer, None, false);
+        let config = chat_quantized_config(
+            &request,
+            &tokenizer,
+            None,
+            false,
+            &crate::generate::CancelToken::never(),
+        );
         assert_eq!(config.repeat_last_n, 128, "handler dropped repeat_last_n");
         assert_eq!(config.seed, 7, "handler dropped seed");
     }
@@ -286,7 +310,13 @@ mod pmat821_chat_handler_threading_tests {
         let request = base_request();
         let tokenizer = test_tokenizer();
         let defaults = QuantizedGenerateConfig::default();
-        let config = chat_quantized_config(&request, &tokenizer, None, false);
+        let config = chat_quantized_config(
+            &request,
+            &tokenizer,
+            None,
+            false,
+            &crate::generate::CancelToken::never(),
+        );
         assert!(
             (config.top_p - defaults.top_p).abs() < f32::EPSILON,
             "no-param top_p must equal default"
@@ -620,6 +650,7 @@ fn try_gpu_backend(
     request_id: &str,
     trace_level: Option<&str>,
     start: Instant,
+    cancel: &crate::generate::CancelToken,
 ) -> Option<Response> {
     use crate::gpu::GpuGenerateConfig;
 
@@ -646,6 +677,7 @@ fn try_gpu_backend(
         top_k: resolve_chat_top_k(temperature, request.top_k),
         stop_tokens: vec![eos_token_id as usize],
         trace: state.should_trace(trace_level),
+        cancel: cancel.clone(),
     };
 
     let mut model = match gpu_model_lock.write() {
@@ -714,6 +746,7 @@ fn try_cached_backend(
     request_id: &str,
     trace_level: Option<&str>,
     start: Instant,
+    cancel: &crate::generate::CancelToken,
 ) -> Option<Response> {
     use crate::gguf::QuantizedGenerateConfig;
 
@@ -739,6 +772,7 @@ fn try_cached_backend(
         top_k: resolve_chat_top_k(temperature, request.top_k),
         stop_tokens: vec![eos_token_id],
         trace: state.should_trace(trace_level),
+        cancel: cancel.clone(),
         ..Default::default()
     };
 

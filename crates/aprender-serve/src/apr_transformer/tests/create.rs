@@ -364,6 +364,7 @@ fn test_generate_config_custom_values() {
         repetition_penalty: 1.1,
         trace: true,
         stop_tokens: vec![],
+        cancel: crate::generate::CancelToken::never(),
     };
     assert_eq!(config.max_tokens, 64);
     assert!((config.temperature - 1.0).abs() < f32::EPSILON);

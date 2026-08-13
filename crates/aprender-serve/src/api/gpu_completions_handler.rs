@@ -23,6 +23,7 @@ fn try_gpu_completions(
     max_tokens: usize,
     temperature: f32,
     start: std::time::Instant,
+    cancel: &CancelToken,
 ) -> Result<Option<CompletionResponse>, RErr> {
     use crate::gpu::GpuGenerateConfig;
 
@@ -54,6 +55,7 @@ fn try_gpu_completions(
         top_k: 1,
         stop_tokens: Vec::new(),
         trace: state.is_trace_enabled(),
+        cancel: cancel.clone(),
     };
 
     let mut gpu_model = gpu_model_lock.write().map_err(|e| {
@@ -117,6 +119,7 @@ fn registry_completions(
     max_tokens: usize,
     temperature: f32,
     start: std::time::Instant,
+    cancel: &CancelToken,
 ) -> Result<CompletionResponse, RErr> {
     let model_id = if request.model == "default" || request.model.is_empty() {
         None
@@ -140,7 +143,8 @@ fn registry_completions(
 
     let mut config = GenerationConfig::default()
         .with_max_tokens(max_tokens)
-        .with_temperature(temperature);
+        .with_temperature(temperature)
+        .with_cancel(cancel.clone());
     if let Some(top_p) = request.top_p {
         config.strategy = SamplingStrategy::TopP { p: top_p as f32 };
     }
@@ -384,12 +388,13 @@ pub(crate) fn completion_sse_response(response: &CompletionResponse) -> axum::re
 /// forget the streaming decision (all of them return a `CompletionResponse`).
 pub async fn openai_completions_handler(
     State(state): State<AppState>,
+    Extension(cancel): Extension<CancelToken>,
     Json(request): Json<CompletionRequest>,
 ) -> Result<axum::response::Response, RErr> {
     use axum::response::IntoResponse;
 
     let stream = request.stream;
-    let completion = completions_inner(state, request).await?;
+    let completion = completions_inner(state, request, cancel).await?;
     Ok(if stream {
         completion_sse_response(&completion)
     } else {
@@ -400,6 +405,7 @@ pub async fn openai_completions_handler(
 async fn completions_inner(
     state: AppState,
     request: CompletionRequest,
+    cancel: CancelToken,
 ) -> Result<CompletionResponse, RErr> {
     let start = std::time::Instant::now();
     let max_tokens = request.max_tokens.unwrap_or(256);
@@ -407,17 +413,21 @@ async fn completions_inner(
 
     #[cfg(feature = "gpu")]
     if let Some(r) =
-        try_cached_completions(&state, &request, max_tokens, temperature, start).await?
+        try_cached_completions(&state, &request, max_tokens, temperature, start, &cancel).await?
     {
         return Ok(r);
     }
 
-    if let Some(r) = try_quantized_completions(&state, &request, max_tokens, temperature, start)? {
+    if let Some(r) =
+        try_quantized_completions(&state, &request, max_tokens, temperature, start, &cancel)?
+    {
         return Ok(r);
     }
 
     #[cfg(feature = "gpu")]
-    if let Some(r) = try_gpu_completions(&state, &request, max_tokens, temperature, start)? {
+    if let Some(r) =
+        try_gpu_completions(&state, &request, max_tokens, temperature, start, &cancel)?
+    {
         return Ok(r);
     }
 
@@ -489,7 +499,7 @@ async fn completions_inner(
         });
     }
 
-    registry_completions(&state, &request, max_tokens, temperature, start)
+    registry_completions(&state, &request, max_tokens, temperature, start, &cancel)
 }
 
 /// realizr#191: Logprobs endpoint for perplexity measurement (F-QUALITY-01).
