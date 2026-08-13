@@ -135,14 +135,7 @@ fn run_apr_validation(
         print_quality_assessment(report);
     }
 
-    if let Some(min) = min_score {
-        if report.total_score < min {
-            return Err(CliError::ValidationFailed(format!(
-                "Score {}/100 below minimum {min}",
-                report.total_score
-            )));
-        }
-    }
+    check_min_score(report, min_score)?;
 
     // GH-647: Exit non-zero when validation shows contract violations
     // GH-642: --skip-contract bypasses the contract score threshold gate
@@ -152,12 +145,11 @@ fn run_apr_validation(
     //        Grade F on every valid APR file until every stub was filled in.
     //        See apr-validate-quality-threshold-v1.yaml.
     if !skip_contract {
-        if let Some(pct) = report.implemented_score_pct() {
+        let score = report.implemented_score();
+        if let Some(pct) = score.pct() {
             if pct < 50.0 {
-                let max = report.implemented_max();
                 return Err(CliError::ValidationFailed(format!(
-                    "Score {}/{max} implemented checks passed ({:.0}%) — below 50% threshold",
-                    report.total_score, pct
+                    "{score} ({pct:.0}%) — below 50% threshold"
                 )));
             }
         }
@@ -169,6 +161,40 @@ fn run_apr_validation(
     // PMAT-926: fail-closed content gate (F-DATA-QUALITY-001..007) +
     // --strict wiring, applied identically to the Rosetta GGUF/ST path.
     gate_apr_content(&content, strict, skip_contract)
+}
+
+/// `--min-score N` against the checks that RAN, never against the aspirational
+/// 100 (#1866).
+///
+/// This used to read `report.total_score < min`, where `total_score` is a raw
+/// count of awarded points and the `.apr` checklist can award at most 4 of
+/// them (22 of 26 checks are `Skip("Not implemented")` stubs). `--min-score 50`
+/// therefore failed a model that the very same run printed `✓ VALID` for and
+/// exited 0 on without the flag. Measured on
+/// `qwen2.5-coder-0.5b-instruct.apr`: `error: Validation failed: Score 3/100
+/// below minimum 50`, exit 5.
+///
+/// When nothing ran there is no score to threshold, so the flag is REFUSED
+/// rather than silently satisfied — same rule as `produces_qa_score` above:
+/// a threshold against a number that is never computed is a gate that cannot
+/// fail.
+fn check_min_score(report: &ValidationReport, min_score: Option<u8>) -> Result<(), CliError> {
+    let Some(min) = min_score else {
+        return Ok(());
+    };
+    let score = report.implemented_score();
+    let Some(pct) = score.pct() else {
+        return Err(CliError::ValidationFailed(format!(
+            "--min-score {min} cannot be evaluated: none of the {} declared QA checks ran, so there is no score to threshold.",
+            score.declared
+        )));
+    };
+    if pct < f64::from(min) {
+        return Err(CliError::ValidationFailed(format!(
+            "Score {pct:.0}/100 below minimum {min} ({score})"
+        )));
+    }
+    Ok(())
 }
 
 /// PMAT-926: gate the `.apr` exit code on the Rosetta content gates.
@@ -386,23 +412,26 @@ fn print_contract_violations(failures: &[(&str, &str)]) {
     }
 }
 
-/// Print APR validation report as JSON (GH-240/GH-251: machine-parseable output).
+/// The exact `apr validate --json` document for a `.apr` file, and whether it
+/// passed.
+///
+/// Kept separate from printing so a unit test can assert on the document a
+/// machine consumer actually parses, rather than on a side effect of stdout.
+/// #1866 shipped for 81 days because nothing ever looked at all three fields
+/// at once: the same document said `"grade": "F"`, `"failed": 0` and
+/// `"passed": true`.
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
-fn print_apr_validation_json(
+fn apr_validation_json(
     path: &Path,
     report: &ValidationReport,
     content: &Result<RosettaValidationReport, AprenderError>,
-    strict: bool,
     min_score: Option<u8>,
-    skip_contract: bool,
-) -> Result<(), CliError> {
-    // PMAT-926: --strict is now honored on the APR JSON path. The structural
-    // 100-point report still drives `passed`, but the fail-closed content
-    // gate (F-DATA-QUALITY) is applied AFTER the JSON is printed so machine
-    // consumers always get a report, and the exit code fails closed.
-    let passed =
-        report.failed_checks().is_empty() && min_score.is_none_or(|min| report.total_score >= min);
+) -> (serde_json::Value, bool) {
+    // #1866: `passed` is now the same predicate as the human VALID badge and
+    // the grade band — `report.is_valid()` — and `--min-score` thresholds the
+    // measured percentage, not the raw awarded points.
+    let structurally_passed = report.is_valid() && check_min_score(report, min_score).is_ok();
     // GH-251: Only include executed checks (PASS/FAIL) — SKIP/WARN are not actionable
     // and cause parity checker false positives
     let checks_json: Vec<serde_json::Value> = report
@@ -438,30 +467,65 @@ fn print_apr_validation_json(
         ),
         Err(_) => (false, 0, 0, 0, 0),
     };
+    let passed = structurally_passed && content_passed;
+    let score = report.implemented_score();
     let output = serde_json::json!({
         "model": path.display().to_string(),
         "format": "apr",
-        "total_score": report.total_score,
+        // #1866: `total_score` now means what its name says — a score out of
+        // 100 — computed against the checks that RAN. It used to be the raw
+        // count of awarded points printed as "3/100" for a healthy model.
+        // `points_earned` / `checks_ran` keep the raw numbers available.
+        "total_score": score.pct().map(|p| p.round() as u8),
         "grade": report.grade(),
+        "verdict": if report.is_valid() { "VALID" } else { "INVALID" },
+        "points_earned": score.passed,
+        "checks_ran": score.ran,
+        "checks_not_implemented": score.not_implemented(),
         "checks": checks_json,
         "total_checks": report.checks.len(),
         "failed": report.failed_checks().len(),
-        "passed": passed && content_passed,
+        "passed": passed,
         "content_passed": content_passed,
         "content_total_nan": content_nan,
         "content_total_inf": content_inf,
         "content_all_zero_tensors": content_zero,
         "content_failed_tensors": content_failed,
     });
+    (output, passed)
+}
+
+/// Print APR validation report as JSON (GH-240/GH-251: machine-parseable output).
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn print_apr_validation_json(
+    path: &Path,
+    report: &ValidationReport,
+    content: &Result<RosettaValidationReport, AprenderError>,
+    strict: bool,
+    min_score: Option<u8>,
+    skip_contract: bool,
+) -> Result<(), CliError> {
+    // PMAT-926: --strict is now honored on the APR JSON path. The structural
+    // report still drives `passed`, but the fail-closed content gate
+    // (F-DATA-QUALITY) is applied AFTER the JSON is printed so machine
+    // consumers always get a report, and the exit code fails closed.
+    let (output, passed) = apr_validation_json(path, report, content, min_score);
     println!(
         "{}",
         serde_json::to_string_pretty(&output).unwrap_or_default()
     );
     if !passed {
-        return Err(CliError::ValidationFailed(format!(
-            "Score {}/100",
-            report.total_score
-        )));
+        // Report the reason the caller can act on: the threshold it missed, a
+        // failed structural check, or — falling through — the content gate.
+        check_min_score(report, min_score)?;
+        let failed = report.failed_checks().len();
+        if failed > 0 {
+            return Err(CliError::ValidationFailed(format!(
+                "{failed} validation checks failed ({})",
+                report.implemented_score()
+            )));
+        }
     }
     // PMAT-926: fail-closed content gate + --strict, after the JSON is printed.
     gate_apr_content(content, strict, skip_contract)
@@ -615,10 +679,21 @@ fn print_summary(report: &ValidationReport) -> Result<(), CliError> {
     }
 }
 
-fn print_quality_assessment(report: &ValidationReport) {
-    output::header("100-Point Quality Assessment");
-
-    // Category score rows as table
+/// The `--quality` category table and TOTAL line, as a string.
+///
+/// Returned rather than printed so the falsifier can read the exact text a
+/// user sees. #1866: this block printed
+///
+/// ```text
+/// │ B. Tensor Physics & Statistics   │  0/25 │ ░░░░░░░░░░░░░░░░░░░░ │
+///   TOTAL: 3/100  Grade: F
+/// ```
+///
+/// on a model `apr qa` passes and `apr run` answers correctly from. Both
+/// numbers were fiction: category B declares no checks at all on the `.apr`
+/// path (so `0/25` is a zero for something never measured, not a zero score),
+/// and `3/100` banded 3 awarded points against a ceiling of 4.
+fn quality_assessment_body(report: &ValidationReport) -> String {
     let categories = [
         (Category::Structure, "A. Format & Structural Integrity"),
         (Category::Physics, "B. Tensor Physics & Statistics"),
@@ -628,23 +703,37 @@ fn print_quality_assessment(report: &ValidationReport) {
 
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (cat, name) in &categories {
-        let score = report.category_scores.get(cat).copied().unwrap_or(0);
-        let max = 25;
-        let bar = output::progress_bar(score as usize, max as usize, 20);
-        rows.push(vec![(*name).to_string(), format!("{score}/{max}"), bar]);
+        let score = report.category_score(*cat);
+        let (cell, bar) = match score.pct() {
+            Some(_) => (
+                format!("{}/{}", score.passed, score.ran),
+                output::progress_bar(score.passed as usize, score.ran as usize, 20),
+            ),
+            // Nothing in this category ran. Say so; do not draw a zero.
+            None => ("not implemented".to_string(), String::new()),
+        };
+        rows.push(vec![(*name).to_string(), cell, bar]);
     }
-    println!(
-        "{}",
-        output::table(&["Category", "Score", "Progress"], &rows)
-    );
 
-    // Total score with grade
-    let grade = report.grade();
-    println!(
-        "\n  TOTAL: {}/100  Grade: {}",
-        format!("{}", report.total_score).white().bold(),
-        output::grade_color(grade),
-    );
+    let mut out = output::table(&["Category", "Checks passed", "Progress"], &rows);
+    let score = report.implemented_score();
+    let grade = output::grade_color(report.grade());
+    match score.pct() {
+        Some(pct) => out.push_str(&format!(
+            "\n  TOTAL: {}\n  SCORE: {pct:.0}% of the checks that ran   Grade: {grade}\n",
+            format!("{score}").white().bold(),
+        )),
+        None => out.push_str(&format!(
+            "\n  TOTAL: none of the {} declared checks ran — nothing was measured\n  SCORE: unavailable   Grade: {grade}\n",
+            score.declared,
+        )),
+    }
+    out
+}
+
+fn print_quality_assessment(report: &ValidationReport) {
+    output::header("Quality Assessment");
+    println!("{}", quality_assessment_body(report));
 
     // Print failed checks summary
     let failed = report.failed_checks();

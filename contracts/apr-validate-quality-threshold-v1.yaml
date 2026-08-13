@@ -1,8 +1,8 @@
 metadata:
-  version: 1.0.0
+  version: 2.0.0
   created: '2026-05-22'
   author: PAIML Engineering
-  description: "`apr validate --quality` must gate pass/fail on the *implemented* check denominator, not the aspirational 100-point denominator. Stubbed `Skip(Not implemented)` checks cannot count against working models — otherwise every valid APR file scores Grade F until every placeholder is filled in."
+  description: "`apr validate --quality` must score, grade and gate against the *implemented* check denominator, not the aspirational 100-point denominator. Stubbed `Skip(Not implemented)` checks cannot count against working models — otherwise every valid APR file scores Grade F until every placeholder is filled in. v2.0.0 extends the rule from the exit code to every OUTPUT: the grade, the JSON `passed`/`verdict`, the `--min-score` threshold and `ValidationReport::passed()` are now one decision, so they cannot contradict each other."
   kind: pattern
   references:
     - "paiml/aprender#1866 (apr validate --quality: 22/25 checks 'Pending — Not implemented' → working models score 3/100, exit 5)"
@@ -23,6 +23,15 @@ five_whys:
   why_4: "The QA checklist was designed as an aspirational 100-point ceiling (APR-SPEC-v2-draft.md Section 11) but the implementation grew incrementally — gate code assumed all checks would be implemented; they never were"
   why_5: "No provable contract bound the threshold to the implementation surface — 'score thresholds are relative to runnable checks' was an unstated invariant"
   root_cause: "Threshold gate uses the aspirational 100-point denominator instead of the runnable denominator (count of non-Skip checks). The fix moves the gate to `implemented_score_pct() < 50` and treats a fully-stubbed suite as informational (None) rather than a hard fail."
+
+five_whys_v2:
+  symptom: "v1.0.0 fixed the EXIT CODE and nothing else. Re-measured 2026-08-13 on `/home/noah/models/qwen2.5-coder-0.5b-instruct.apr` at 6adeb6351: `apr validate --quality` exits 0 and prints `✓ VALID 3/4 checks that ran` — and, four lines later, `TOTAL: 3/100  Grade: F`. The `--json` document says `\"grade\": \"F\"`, `\"failed\": 0`, `\"passed\": true` simultaneously. `--min-score 50` on the same healthy model exits 5 with `Score 3/100 below minimum 50`."
+  why_1: "`ValidationReport::grade()` still banded `total_score` — the raw count of awarded points — against a fixed 100-point match arm"
+  why_2: "the `--quality` category table, `--min-score`, `ValidationReport::passed()`, `apr import`'s Score/Grade panel and the TUI QA panel all read `total_score` directly, so each one re-derived the same wrong denominator independently"
+  why_3: "v1.0.0 added `implemented_max` / `implemented_score_pct` but wired them into exactly ONE caller (the exit-code gate); the helpers existed and the other six call sites were never migrated"
+  why_4: "no test read two of the outputs at once — `grade`, `passed` and the human verdict each had passing tests in isolation, and their mutual contradiction was invisible to all of them"
+  why_5: "'a fix is done when the reported symptom stops' — the issue reported exit 5, so the exit code was fixed and the issue closed COMPLETED; the wrong number stayed on screen for 81 more days"
+  root_cause: "The measured denominator was introduced as a local fix at one call site instead of as the definition of the report's score. v2.0.0 makes `grade()`, `passed()`, `is_valid()` and every renderer derive from `implemented_score()`, and asserts the three user-visible outputs agree by construction."
 
 equations:
   implemented_denominator:
@@ -52,6 +61,34 @@ equations:
       - "Fully-stubbed reports (implemented_max == 0) PASS as informational"
       - "apr qa is the canonical pass/fail gate per CLAUDE.md; `apr validate --quality` complements with structural integrity audit"
 
+  grade_on_measured:
+    formula: "grade(report) = if ran == 0 then 'N/A' else if any_failed then 'F' else band(pct)"
+    domain: "validation reports"
+    codomain: "letter grade in {N/A, F, D, C, C+, B, B+, A, A+}"
+    invariants:
+      - "band(pct) is floored at 'D': with no failures every check that ran passed or warned, so 'F' is unreachable without a failure"
+      - "grade(report) == 'F' if and only if ran > 0 AND at least one check failed"
+      - "a report with 4 checks that ran (3 Pass, 1 Warn) and 22 Skip stubs grades 'C+', not 'F'"
+      - "'N/A' is not a score of zero — it means nothing was measured"
+
+  verdict_agreement:
+    formula: "is_valid(report) = (failed_checks(report) == 0); verdict = if is_valid then VALID else INVALID"
+    domain: "any apr validate invocation on a .apr file"
+    codomain: "the triple (grade, passed, human verdict)"
+    invariants:
+      - "the human VALID/INVALID badge, the JSON `verdict` field and the JSON `passed` flag are all is_valid(report) — one predicate, not three"
+      - "passed == true implies grade != 'F' (the #1866 contradiction is unrepresentable)"
+      - "grade == 'F' implies verdict == INVALID implies passed == false"
+
+  min_score_on_measured:
+    formula: "min_score_ok(report, n) = pct(report) is Some(p) AND p >= n"
+    domain: "apr validate --min-score N, and ValidationReport::passed(N)"
+    codomain: "boolean"
+    invariants:
+      - "the threshold is a percentage of the checks that RAN, never a count of awarded points"
+      - "pct == None (nothing ran) REFUSES the flag rather than satisfying it — a threshold against an uncomputed number is a gate that cannot fail"
+      - "a report of 3 Pass + 1 Warn + 22 Skip clears --min-score 75 and is refused by --min-score 80"
+
 proof_obligations:
   - type: invariant
     property: "Working models pass the threshold"
@@ -65,6 +102,22 @@ proof_obligations:
     property: "Half-implemented half-failing models do fail"
     formal: "implemented_max = 4 AND fail_count = 3 ⟹ fail_gate(report)"
     applies_to: threshold_gate_on_implemented
+  - type: invariant
+    property: "A healthy model is never graded F"
+    formal: "ran > 0 AND fail_count == 0 ⟹ grade(report) != 'F'"
+    applies_to: grade_on_measured
+  - type: invariant
+    property: "Grade F is earned only by a failing check"
+    formal: "grade(report) == 'F' ⟺ (ran > 0 AND fail_count > 0)"
+    applies_to: grade_on_measured
+  - type: invariant
+    property: "Grade, passed flag and human verdict never contradict"
+    formal: "passed(report) ⟹ grade(report) != 'F' AND verdict(report) == VALID"
+    applies_to: verdict_agreement
+  - type: invariant
+    property: "min_score cannot be cleared against an unmeasured score"
+    formal: "pct(report) == None ⟹ NOT min_score_ok(report, n) for every n"
+    applies_to: min_score_on_measured
 
 falsification_tests:
   - id: FALSIFY-VALIDATE-QUALITY-001
@@ -80,17 +133,50 @@ falsification_tests:
     if_fails: "Working models still mis-scored against unimplemented denominator"
 
   - id: FALSIFY-VALIDATE-QUALITY-003
-    rule: "validate.rs gates on implemented_score_pct, not total_score"
-    prediction: "validate.rs source contains implemented_score_pct call and no `total_score < 50` bare comparison in the gate"
-    test: "grep -q 'implemented_score_pct' crates/apr-cli/src/commands/validate.rs && ! grep -nE 'report\\.total_score *< *50' crates/apr-cli/src/commands/validate.rs"
-    if_fails: "Threshold gate still uses the aspirational 100-point denominator"
+    rule: "validate.rs reads the measured score, never the raw point total"
+    prediction: "validate.rs calls implemented_score() and contains no `report.total_score` READ at all (v2.0.0 strengthened this from 'no `total_score < 50` comparison' — the original grep passed while five other call sites still read the raw total for the grade, the table, --min-score and the JSON)"
+    test: "grep -q 'implemented_score()' crates/apr-cli/src/commands/validate.rs && ! grep -nE '^[^/]*report\\.total_score' crates/apr-cli/src/commands/validate.rs"
+    if_fails: "Threshold gate or a renderer is back on the aspirational 100-point denominator"
+
+  - id: FALSIFY-VALIDATE-QUALITY-004
+    rule: "A healthy model is not graded F"
+    prediction: "The report apr validate builds for qwen2.5-coder-0.5b-instruct.apr (3 Pass, 1 Warn, 22 Skip) grades C+"
+    test: "cargo test -p aprender-core --lib healthy_model_is_not_graded_f"
+    if_fails: "Working models are still graded F against a denominator nothing was measured against"
+
+  - id: FALSIFY-VALIDATE-QUALITY-005
+    rule: "grade == F exactly when a check that ran failed"
+    prediction: "Exhaustive over all 256 arrangements of Pass/Fail/Warn/Skip across four checks, (grade == 'F') == !is_valid() whenever anything ran"
+    test: "cargo test -p aprender-core --lib grade_is_f_exactly_when_a_check_failed"
+    if_fails: "The grade and the VALID/INVALID verdict can disagree again"
+
+  - id: FALSIFY-VALIDATE-QUALITY-006
+    rule: "The --json document cannot report grade F, verdict VALID and passed true at once"
+    prediction: "apr_validation_json on the healthy report yields grade C+, verdict VALID, passed true, total_score 75, checks_ran 4, checks_not_implemented 22; adding one Fail flips grade/verdict/passed together"
+    test: "cargo test -p apr-cli --lib json_grade_passed_and_verdict_agree"
+    if_fails: "Machine consumers see a self-contradictory document again"
+
+  - id: FALSIFY-VALIDATE-QUALITY-007
+    rule: "The --quality table scores only what ran"
+    prediction: "quality_assessment_body contains neither '/100  Grade' nor '0/25', names the unimplemented categories, and reads Grade: C+"
+    test: "cargo test -p apr-cli --lib quality_table_scores_only_what_ran"
+    if_fails: "The table again draws a zero for categories that declare no checks"
+
+  - id: FALSIFY-VALIDATE-QUALITY-008
+    rule: "--min-score thresholds the checks that ran, and is refused when none did"
+    prediction: "The healthy report clears --min-score 75, is refused by --min-score 80 quoting '75/100', and an all-Skip report refuses even --min-score 0"
+    test: "cargo test -p apr-cli --lib min_score"
+    if_fails: "--min-score again rejects healthy models, or silently passes when no score exists"
 
 qa_gate:
   id: F-VALIDATE-QUALITY-001
-  name: "apr validate --quality threshold gates on implemented checks"
-  description: "Pass/fail threshold must use percentage of implemented (non-Skip) checks. A fully-stubbed suite must be treated as informational, not a hard fail."
+  name: "apr validate --quality scores, grades and gates on implemented checks"
+  description: "Score, grade, --min-score threshold and pass/fail must all use the checks that ran (non-Skip). A fully-stubbed suite must be treated as informational for the gate and REFUSED for an explicit threshold, never as a score of zero. The grade, the JSON passed/verdict flags and the human VALID/INVALID badge must be derived from one predicate so they cannot contradict each other."
   checks:
     - "implemented_denominator"
     - "implemented_score_pct"
     - "threshold_gate_on_implemented"
-  pass_criteria: "FALSIFY-VALIDATE-QUALITY-{001,002,003} all PASS"
+    - "grade_on_measured"
+    - "verdict_agreement"
+    - "min_score_on_measured"
+  pass_criteria: "FALSIFY-VALIDATE-QUALITY-{001..008} all PASS"

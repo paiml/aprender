@@ -254,6 +254,9 @@ pub(crate) fn grade_color(grade: &str) -> ColoredString {
         "B+" | "B" => grade.green(),
         "C+" | "C" => grade.yellow(),
         "D" => grade.yellow().bold(),
+        // #1866: "N/A" means nothing was measured. That is not a failing
+        // grade and must not be painted like one.
+        "N/A" => grade.dimmed(),
         _ => grade.red().bold(),
     }
 }
