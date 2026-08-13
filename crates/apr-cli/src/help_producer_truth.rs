@@ -211,14 +211,18 @@ fn resolver_rejects_the_invocations_dogfooding_found() {
         .spawn(|| {
             use clap::CommandFactory;
             let root = Cli::command();
+            // aprender#2377 finding 3 IMPLEMENTED three of the eight producers,
+            // so `apr dataset audio-inspect …`, `apr kernel parity …` and
+            // `apr debug embed-viz …` moved to the accepts-list below. What is
+            // left here is still missing, and `apr debug model.gguf embed-viz`
+            // stays: `embed-viz` is a subcommand of `debug`, not a word that
+            // may follow the model path.
             [
                 "apr attn-viz model.gguf",
-                "apr dataset audio-inspect --format json",
                 "apr trace model.gguf --check-finite",
                 "apr finetune --parallel ddp",
                 "apr debug model.gguf embed-viz",
                 "apr profile model.gguf --gpu-memory-trace",
-                "apr kernel parity --impl flash2",
                 "apr quantize model.apr --imatrix calib.jsonl",
             ]
             .into_iter()
@@ -256,6 +260,13 @@ fn resolver_accepts_real_invocations() {
                 "apr quantize model.gguf --scheme q4k -o out.apr",
                 "apr export model.apr --format gguf",
                 "apr rm model",
+                // aprender#2377 finding 3: the three producers this batch added.
+                "apr dataset audio-inspect clip.wav --format json",
+                "apr dataset audio-inspect clip.wav --format json -o audio.json",
+                "apr kernel parity --impl tiled --ref naive --json",
+                "apr kernel parity --impl flash2 --ref naive --head-dim 96 --json",
+                "apr debug embed-viz --model model.apr --seed 42 -o emb.csv",
+                "apr debug model.apr --hex",
             ]
             .into_iter()
             .map(|t| (t, resolve(&root, t)))

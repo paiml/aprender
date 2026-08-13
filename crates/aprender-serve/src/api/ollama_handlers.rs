@@ -64,7 +64,14 @@ pub struct OllamaMessage {
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct OllamaOptions {
     /// Sampling temperature.
-    #[serde(default)]
+    ///
+    /// Rejected at deserialization when outside `[0, ∞)` finite (aprender#2375):
+    /// `to_chat_request` builds a `ChatCompletionRequest` in Rust, so the guard
+    /// on that struct's field never sees an Ollama request.
+    #[serde(
+        default,
+        deserialize_with = "crate::api::types::deserialize_temperature_f32"
+    )]
     pub temperature: Option<f32>,
     /// Nucleus sampling.
     #[serde(default)]

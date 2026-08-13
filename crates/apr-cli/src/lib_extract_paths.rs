@@ -371,7 +371,8 @@
     #[test]
     fn test_execute_debug_file_not_found() {
         let cli = make_cli(Commands::Debug {
-            file: PathBuf::from("/tmp/nonexistent_model_debug_test.apr"),
+            file: Some(PathBuf::from("/tmp/nonexistent_model_debug_test.apr")),
+            action: None,
             drama: false,
             hex: false,
             strings: false,

@@ -190,11 +190,18 @@ pub enum Commands {
         #[arg(long)]
         quality: bool,
     },
-    /// Simple debugging output ("drama" mode available)
+    /// Simple debugging output ("drama" mode available), or a debug subcommand
+    ///
+    /// `apr debug model.apr` dumps the file. `apr debug embed-viz --model M`
+    /// projects the model's token-embedding table to 2-D — the producer
+    /// `apr embed-viz-lint` reads (aprender#2377 finding 3).
     Debug {
-        /// Path to .apr model file
+        /// Path to .apr model file (omit only when using a subcommand)
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: Option<PathBuf>,
+        /// Debug subcommand, e.g. `embed-viz`
+        #[command(subcommand)]
+        action: Option<DebugCommands>,
         /// Theatrical "drama" mode output
         #[arg(long)]
         drama: bool,
@@ -794,4 +801,46 @@ pub enum Commands {
     #[cfg(feature = "dev")]
     #[command(subcommand)]
     Mono(crate::commands::mono::MonoCommands),
+}
+
+/// Subcommands for `apr debug` (aprender#2377 finding 3).
+///
+/// `embed-viz` is the PRODUCER for `apr embed-viz-lint`: CRUX-F-18 shipped the
+/// lint with help pointing at `apr debug embed-viz`, which did not exist, so
+/// its schema / row-count / determinism gates had never run on real data.
+#[derive(Subcommand, Debug)]
+pub enum DebugCommands {
+    /// Project a model's token-embedding table to 2-D and write the
+    /// `token_id,token_str,x,y` CSV `apr embed-viz-lint` reads.
+    ///
+    /// Reads the real embedding tensor (GGUF / APR / SafeTensors, dequantising
+    /// as needed). `--projection umap` is REFUSED with a non-zero exit rather
+    /// than labelling a different algorithm's output "umap".
+    EmbedViz {
+        /// Model file holding the embedding table
+        #[arg(long, value_name = "FILE")]
+        model: PathBuf,
+        /// Embedding tensor name (default: auto-detect the known names)
+        #[arg(long, value_name = "NAME")]
+        tensor: Option<String>,
+        /// Projection method: exact `pca`, seeded `random`, or `umap` (refused)
+        #[arg(long, value_enum, default_value_t = EmbedProjection::Pca)]
+        projection: EmbedProjection,
+        /// Seed pinning the random projection, so a rerun is byte-identical
+        #[arg(long, value_name = "N", default_value_t = 0)]
+        seed: u64,
+        /// Project only the first N vocabulary rows (default: all)
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+        /// Token text, one per line, for the `token_str` column. Without it apr
+        /// reads the GGUF vocabulary, or writes `<unresolved>`
+        #[arg(long, value_name = "FILE")]
+        tokens: Option<PathBuf>,
+        /// Write the CSV here instead of stdout
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+        /// Overwrite an existing --output file (refused without it)
+        #[arg(short, long)]
+        force: bool,
+    },
 }

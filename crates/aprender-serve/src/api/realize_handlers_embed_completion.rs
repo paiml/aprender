@@ -534,6 +534,60 @@ pub(crate) fn truncate_at_stop(text: String, stops: Option<&[String]>) -> String
     }
 }
 
+/// Build the dense-`Model` [`GenerationConfig`] for an OpenAI request.
+///
+/// `temperature: 0` is the canonical OpenAI request for deterministic output.
+/// Passing that 0 straight into the config makes `model.generate` ->
+/// `sample_token` -> `apply_temperature(0.0)` return
+/// `InvalidShape: Temperature must be a positive finite number`, which every
+/// dense backend mapped to **HTTP 500** — so `temperature: 0` was unserveable on
+/// `/v1/chat/completions` and `/v1/completions` for any registry/safetensors
+/// model. PMAT-790 fixed exactly one caller (the `/v1/chat/completions/stream`
+/// handler) with a private copy of this logic; the other two kept 500ing, which
+/// is what made a shared helper necessary.
+///
+/// Deterministic requests resolve to greedy argmax with a no-op temperature of
+/// `1.0` (the sampler never sees a non-positive scale). Positive temperatures
+/// are unchanged: greedy by default, top-p when `top_p` is set.
+///
+/// # The rest of the domain
+///
+/// The first version of this resolver special-cased `temperature == 0.0` and
+/// nothing else, so `-1`, `NaN`, `+inf` and a `1e40` that narrows to `+inf`
+/// still reached `apply_temperature` and still produced
+/// `500 {"error":"Invalid shape: Temperature must be a positive finite number"}`
+/// — the exact body the fix set out to eliminate.
+///
+/// Those values are now refused where the request is parsed (they are not
+/// representable in a deserialized request — `types::deserialize_temperature_f32`),
+/// which is the fix a client observes: 4xx naming the field. This function is
+/// TOTAL as well, so that no Rust caller can construct a config the sampler
+/// rejects: anything that is not a positive finite temperature resolves to the
+/// same deterministic greedy config as `0`.
+///
+/// `temperature.is_finite()` is load-bearing and cannot be replaced by a
+/// comparison: `NaN == 0.0`, `NaN > 0.0` and `NaN < 0.0` are all false, so a
+/// comparison-only guard passes NaN straight through (aprender#2391).
+pub(crate) fn resolve_dense_generation_config(
+    temperature: f32,
+    top_p: Option<f32>,
+    max_tokens: usize,
+) -> GenerationConfig {
+    if !temperature.is_finite() || temperature <= 0.0 {
+        return GenerationConfig::default()
+            .with_max_tokens(max_tokens)
+            .with_temperature(1.0);
+    }
+
+    let mut config = GenerationConfig::default()
+        .with_max_tokens(max_tokens)
+        .with_temperature(temperature);
+    if let Some(p) = top_p {
+        config.strategy = SamplingStrategy::TopP { p };
+    }
+    config
+}
+
 /// Cached model backend (includes batch path). Returns None if not available.
 #[cfg(feature = "gpu")]
 async fn try_cached_completions(

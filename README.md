@@ -41,9 +41,9 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **78** workspace crates | `cargo metadata --no-deps` (NOT `ls crates/` — 4 are `exclude`d, 1 has no Cargo.toml) |
-| Provable contracts | **1770** provable contracts | `find contracts/ -name '*.yaml'` |
-| CLI commands | **103** CLI commands | `apr --help` |
-| Book CLI chapters | **103** chapters | `ls book/src/cli/*.md` (parity with CLI) |
+| Provable contracts | **1771** provable contracts | `find contracts/ -name '*.yaml'` |
+| CLI commands | **105** CLI commands | `apr --help` |
+| Book CLI chapters | **105** chapters | `ls book/src/cli/*.md` (parity with CLI) |
 | Book lib chapters | **69** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
 
 These numbers are enforced by [`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml).
@@ -212,7 +212,7 @@ paiml/aprender/
 ├── Cargo.toml                      # Workspace root + `cargo install aprender`
 ├── crates/
 │   ├── aprender-core/              # ML library (use aprender::*)
-│   ├── apr-cli/                    # CLI logic (103 subcommands)
+│   ├── apr-cli/                    # CLI logic (105 subcommands)
 │   ├── aprender-compute/           # SIMD/GPU compute kernels
 │   ├── aprender-gpu/               # CUDA PTX
 │   ├── aprender-serve/             # Inference server

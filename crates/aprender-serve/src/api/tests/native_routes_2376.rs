@@ -438,20 +438,45 @@ async fn test_greedy_strategy_is_argmax_over_http() {
 }
 
 /// The request-level rejections are visible over HTTP, on a server that has a model.
+///
+/// `strategy` and `top_p` are refused by the handler (400). `temperature` is
+/// refused one layer earlier, by the extractor (422), because validating it in
+/// the handler only covered the QUANTIZED backend: on a dense server the same
+/// value reached the sampler and came back as
+/// `500 "Temperature must be a positive finite number"` (aprender#2375). Both
+/// are 4xx; the codes differ because the layers differ.
 #[tokio::test]
 #[cfg(feature = "gpu")]
 async fn test_generate_rejects_bad_sampling_params_with_400() {
-    let cases = [
-        r#"{"prompt":"token5","max_tokens":4,"temperature":-1.0}"#,
+    let handler_rejections = [
         r#"{"prompt":"token5","max_tokens":4,"strategy":"invalid_strategy"}"#,
         r#"{"prompt":"token5","max_tokens":4,"strategy":"top_p","top_p":9.9}"#,
     ];
-    for json in cases {
+    for json in handler_rejections {
         let (status, body) = post(quantized_state(), "/generate", json).await;
         assert_eq!(
             status,
             StatusCode::BAD_REQUEST,
             "{json} must be rejected, got {status} / {body}"
+        );
+    }
+
+    let extractor_rejections = [
+        r#"{"prompt":"token5","max_tokens":4,"temperature":-1.0}"#,
+        // `1e40` is a finite JSON number that BECOMES `+inf` as the `f32` this
+        // field deserializes into — the case `is_nan() || < 0.0` let through.
+        r#"{"prompt":"token5","max_tokens":4,"temperature":1e40}"#,
+    ];
+    for json in extractor_rejections {
+        let (status, body) = post(quantized_state(), "/generate", json).await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{json} must be refused before any backend runs, got {status} / {body}"
+        );
+        assert!(
+            body.contains("temperature"),
+            "the refusal must name the field: {body}"
         );
     }
     // Positive control on the same server: a well-formed request still succeeds.

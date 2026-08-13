@@ -131,7 +131,8 @@
     #[test]
     fn test_dispatch_model_commands_returns_none_for_debug() {
         let cli = make_cli(Commands::Debug {
-            file: PathBuf::from("model.apr"),
+            file: Some(PathBuf::from("model.apr")),
+            action: None,
             drama: false,
             hex: false,
             strings: false,
@@ -670,7 +671,8 @@
     #[test]
     fn test_dispatch_inspection_routes_debug() {
         let cli = make_cli(Commands::Debug {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: Some(PathBuf::from("/tmp/nonexistent_pmat540.apr")),
+            action: None,
             drama: false,
             hex: false,
             strings: false,

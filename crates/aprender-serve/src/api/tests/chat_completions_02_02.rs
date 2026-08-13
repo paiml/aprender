@@ -119,7 +119,14 @@ async fn test_chat_completions_all_optional_params() {
     );
 }
 
-/// Test with negative temperature (edge case)
+/// A negative temperature is REFUSED, and refused before it can reach a model.
+///
+/// This assertion used to admit five outcomes ("might be rejected or clamped"),
+/// including `200 OK` and `500` — so it passed whatever the server did with an
+/// unservable temperature, which for a long time was `500` on the dense
+/// backends and a 200 carrying inverted-distribution text on the quantized ones
+/// (aprender#2375). The value is now rejected at deserialization
+/// (`types::deserialize_temperature_f32`), so the outcome is exactly one thing.
 #[tokio::test]
 async fn test_chat_completions_negative_temperature() {
     let app = create_test_app_shared();
@@ -138,13 +145,10 @@ async fn test_chat_completions_negative_temperature() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    // Negative temperature might be rejected or clamped
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    assert_eq!(
+        response.status(),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "a negative temperature must be refused by the extractor, before any backend runs"
     );
 }
 

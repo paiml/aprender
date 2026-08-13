@@ -1,3 +1,35 @@
+/// Attention implementation under test for `apr kernel parity --impl`.
+///
+/// `Flash2` names the pinned `hf-kernels-community:flash-attn2@<sha>` CUDA
+/// kernel. This binary embeds no such kernel, so selecting it is REFUSED —
+/// never quietly answered by `Tiled` under flash2's name, which is the
+/// fabricated-provenance failure CRUX-L-02 exists to prevent.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum KernelImpl {
+    /// In-tree tiled online-softmax kernel (`realizar::brick::FlashAttentionBrick`).
+    Tiled,
+    /// Pinned hf-kernels-community flash-attn2 CUDA kernel (not embedded here).
+    Flash2,
+}
+
+/// Reference implementation for `apr kernel parity --ref`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum KernelRef {
+    /// Materialised-score softmax attention, computed in f32 on the CPU.
+    Naive,
+}
+
+/// 2-D projection for `apr debug embed-viz --projection`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum EmbedProjection {
+    /// Exact PCA onto the top 2 principal components (deterministic).
+    Pca,
+    /// Seeded Johnson–Lindenstrauss random projection (deterministic in --seed).
+    Random,
+    /// Not implemented in this binary — selecting it is refused, not substituted.
+    Umap,
+}
+
 /// Extended CLI commands (analysis, profiling, QA, benchmarks, and advanced tools).
 ///
 /// Flattened into `Commands` via `#[command(flatten)]` so all subcommands remain
@@ -908,9 +940,20 @@ pub enum ExtendedCommands {
               value_parser = commands::threshold_arg::parse_tolerance)]
         loss_tolerance: f64,
     },
-    /// Lint an externally captured audio-inspect JSON body (CRUX-H-13 — no apr producer yet)
+    /// Dataset inspection tools (CRUX-H-13)
+    Dataset {
+        #[command(subcommand)]
+        command: DatasetCommands,
+    },
+    /// Kernel-level parity measurements (CRUX-L-02)
+    Kernel {
+        #[command(subcommand)]
+        command: KernelCommands,
+    },
+    /// Lint an audio-inspect JSON body, e.g. from
+    /// `apr dataset audio-inspect clip.wav --format json -o audio.json` (CRUX-H-13)
     AudioInspectLint {
-        /// Path to captured JSON body
+        /// Path to the JSON body written by `apr dataset audio-inspect --format json`
         #[arg(long, value_name = "FILE")]
         json_file: PathBuf,
         /// Optional expected sample_rate (typically the `--resample-to` arg)
@@ -920,15 +963,20 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "U32")]
         expected_channels: Option<u32>,
     },
-    /// Lint captured flash-attn2 parity + provenance JSON outputs (CRUX-L-02)
+    /// Lint attention parity + provenance JSON, e.g. from
+    /// `apr kernel parity --impl tiled --ref naive --json -o parity.json` (CRUX-L-02)
     AttnParityLint {
-        /// Path to an externally captured flash2-vs-naive parity JSON body (no apr producer yet)
+        /// Parity JSON body (`max_abs_diff`, `cosine_sim`), as written by
+        /// `apr kernel parity --json`
         #[arg(long, value_name = "FILE")]
         parity_file: Option<PathBuf>,
-        /// Path to an externally captured flash2 provenance JSON body (no apr producer yet)
+        /// Provenance JSON body (`attn_impl`, `kernel_source`, `fallback`).
+        /// `apr kernel parity --json` writes both gates' fields into one body,
+        /// so the same file may be passed here and to --parity-file
         #[arg(long, value_name = "FILE")]
         provenance_file: Option<PathBuf>,
-        /// Path to captured head_dim error JSON
+        /// head_dim refusal JSON, as written by
+        /// `apr kernel parity --impl flash2 --head-dim 96 --json` (which exits non-zero)
         #[arg(long, value_name = "FILE")]
         head_dim_error_file: Option<PathBuf>,
         /// Max absolute diff tolerance (default 5e-3, FlashAttention-2 bound)
@@ -972,15 +1020,16 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "N", default_value_t = 100)]
         min_layers: usize,
     },
-    /// Lint an externally captured embedding-projection CSV (CRUX-F-18 — no apr producer yet)
+    /// Lint an embedding-projection CSV, e.g. from
+    /// `apr debug embed-viz --model model.apr --seed 42 -o emb.csv` (CRUX-F-18)
     EmbedVizLint {
-        /// Path to captured embed-viz CSV (token_id,token_str,x,y)
+        /// Path to the `token_id,token_str,x,y` CSV written by `apr debug embed-viz`
         #[arg(long, value_name = "FILE")]
         csv_file: PathBuf,
         /// Expected row count == vocab_size (optional)
         #[arg(long, value_name = "N")]
         expected_vocab_size: Option<usize>,
-        /// Second CSV captured under the same seed for determinism check (optional)
+        /// Second CSV from a rerun at the same --seed, for the determinism gate (optional)
         #[arg(long, value_name = "FILE")]
         csv_file_b: Option<PathBuf>,
     },
@@ -1343,6 +1392,85 @@ pub enum ExtendedCommands {
         /// Output as JSON.
         #[arg(long)]
         json: bool,
+    },
+}
+
+/// Subcommands for `apr dataset` — dataset inspection (aprender#2377 finding 3).
+///
+/// `audio-inspect` is the PRODUCER for `apr audio-inspect-lint`: CRUX-H-13
+/// shipped the lint with help pointing at a command the binary did not have,
+/// so its gates had never run on real data.
+#[derive(Subcommand, Debug)]
+pub enum DatasetCommands {
+    /// Decode an uncompressed RIFF/WAVE file and report its measured shape and
+    /// amplitude extrema — the observation `apr audio-inspect-lint` reads.
+    ///
+    /// Supports PCM u8/i16/i24/i32 and IEEE float32. Compressed containers
+    /// (FLAC, MP3, Ogg) and codecs it cannot decode are REFUSED with a non-zero
+    /// exit; no resampling and no channel mixdown are performed, so the reported
+    /// `sample_rate` and `channels` are always the file's own.
+    AudioInspect {
+        /// Path to the .wav file to decode
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Output format: `json` for the lint-readable body, `text` for humans
+        #[arg(long, value_name = "FORMAT", default_value = "text",
+              value_parser = ["json", "text"])]
+        format: String,
+        /// Write the observation here instead of stdout
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+        /// Overwrite an existing --output file (refused without it)
+        #[arg(short, long)]
+        force: bool,
+    },
+}
+
+/// Subcommands for `apr kernel` — kernel-level measurements (aprender#2377 finding 3).
+///
+/// `parity` is the PRODUCER for `apr attn-parity-lint`: CRUX-L-02 shipped the
+/// lint with help pointing at `apr kernel parity`, which did not exist.
+#[derive(Subcommand, Debug)]
+pub enum KernelCommands {
+    /// Measure a tiled attention kernel against a naive reference on seeded
+    /// Q/K/V, emitting the parity + provenance body `apr attn-parity-lint` reads.
+    ///
+    /// `--impl tiled` runs the in-tree `realizar::brick::FlashAttentionBrick`
+    /// online-softmax kernel. `--impl flash2` means the pinned
+    /// `hf-kernels-community:flash-attn2@<sha>` CUDA kernel, which this binary
+    /// does not embed: asking for it is REFUSED with a non-zero exit rather
+    /// than answered by a different kernel under a borrowed name.
+    Parity {
+        /// Attention implementation under test
+        #[arg(long = "impl", value_name = "IMPL", value_enum, default_value_t = KernelImpl::Tiled)]
+        kernel: KernelImpl,
+        /// Reference implementation to compare against
+        #[arg(long = "ref", value_name = "REF", value_enum, default_value_t = KernelRef::Naive)]
+        reference: KernelRef,
+        /// KV cache length to attend over
+        #[arg(long, value_name = "N", default_value_t = 128)]
+        seq_len: usize,
+        /// Number of query heads
+        #[arg(long, value_name = "N", default_value_t = 8)]
+        num_heads: usize,
+        /// Number of key/value heads (GQA groups when smaller than --num-heads)
+        #[arg(long, value_name = "N", default_value_t = 8)]
+        num_kv_heads: usize,
+        /// Per-head dimension. flash2 dispatches only 64 or 128
+        #[arg(long, value_name = "N", default_value_t = 64)]
+        head_dim: usize,
+        /// Seed pinning the Q/K/V draw, so a run is reproducible
+        #[arg(long, value_name = "N", default_value_t = 0)]
+        seed: u64,
+        /// Emit the observation as JSON (required to capture it for the lint)
+        #[arg(long)]
+        json: bool,
+        /// Write the observation here instead of stdout
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+        /// Overwrite an existing --output file (refused without it)
+        #[arg(short, long)]
+        force: bool,
     },
 }
 

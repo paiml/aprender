@@ -105,6 +105,31 @@ impl Default for FitMode {
     }
 }
 
+/// Fisher-Yates partner index for position `i` in the epoch-`seed` sample shuffle.
+///
+/// Contract: `contracts/apr-stochastic-lr-v1.yaml` — `stochastic_convergence`
+/// ("shuffled sample order each epoch") and `minibatch_gradient` ("each sample seen
+/// exactly once per epoch"). Returning a value in `[0, i]` is what makes the
+/// Fisher-Yates pass a permutation.
+/// The arithmetic is deliberately `u64`, not `usize`. Refs #2310. Both MMIX
+/// constants exceed `u32::MAX`, so as bare `usize` literals they are a hard
+/// compile error on 32-bit targets ("literal out of range for `usize`" on
+/// `wasm32-unknown-unknown`), and the products overflow `u64` — `seed * MUL` from
+/// `seed == 3`, `i * INC` from `i == 13` — which aborts every overflow-checked
+/// build on 64-bit too. `wrapping_*` reproduces the 64-bit release-mode result
+/// bit-for-bit, so no previously-trained model's epoch order shifts.
+#[inline]
+fn shuffle_partner(seed: usize, i: usize) -> usize {
+    const LCG_MULTIPLIER: u64 = 6_364_136_223_846_793_005;
+    const LCG_INCREMENT: u64 = 1_442_695_040_888_963_407;
+    let mixed = (seed as u64)
+        .wrapping_mul(LCG_MULTIPLIER)
+        .wrapping_add((i as u64).wrapping_mul(LCG_INCREMENT));
+    // `i + 1` cannot overflow: `i` indexes a live Vec, so `i < usize::MAX`.
+    // The remainder is `< i + 1`, hence always representable as `usize`.
+    (mixed % (i as u64 + 1)) as usize
+}
+
 /// Logistic Regression classifier for binary classification.
 ///
 /// Uses sigmoid activation and binary cross-entropy loss with
@@ -374,7 +399,7 @@ impl LogisticRegression {
             // Contract: stochastic_convergence — "shuffled sample order each epoch"
             let seed = epoch;
             for i in (1..n_samples).rev() {
-                let j = (seed * 6364136223846793005 + i * 1442695040888963407) % (i + 1);
+                let j = shuffle_partner(seed, i);
                 indices.swap(i, j);
             }
 
@@ -422,7 +447,7 @@ impl LogisticRegression {
             // Shuffle
             let seed = epoch;
             for i in (1..n_samples).rev() {
-                let j = (seed * 6364136223846793005 + i * 1442695040888963407) % (i + 1);
+                let j = shuffle_partner(seed, i);
                 indices.swap(i, j);
             }
 
@@ -754,6 +779,12 @@ mod svc_rbf_sklearn_fixture;
 #[cfg(test)]
 #[path = "tests_logreg_contract.rs"]
 mod tests_logreg_contract;
+
+// #2310: the SGD epoch shuffle must compile on 32-bit targets and must not
+// overflow on 64-bit. Falsifiers for `shuffle_partner` and both SGD fit modes.
+#[cfg(test)]
+#[path = "tests_sgd_portable_shuffle.rs"]
+mod tests_sgd_portable_shuffle;
 
 // Estimator impl so LogisticRegression works with generic cross_validate /
 // grid_search (Pillar 1). Labels round-trip through f32; inherent API unchanged.

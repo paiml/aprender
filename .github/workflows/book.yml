@@ -6,11 +6,23 @@ on:
     paths:
       - "book/**"
       - ".github/workflows/book.yml"
+      # FALSIFY-BOOK-CLI-PARITY-001 asserts every `apr` subcommand has a chapter.
+      # Filtering on book/** alone meant it only ran when the BOOK changed, never
+      # when the CLI gained a command — so `apr beat-run` shipped in #1995 with no
+      # chapter and the gate stayed green for months, until an unrelated batch that
+      # happened to touch book/ woke it. A parity gate must run when EITHER side
+      # moves; watching only one of them is how it comes to certify nothing.
+      - "crates/apr-cli/src/commands_enum.rs"
+      - "crates/apr-cli/src/extended_commands.rs"
+      - "crates/apr-cli/src/tool_commands.rs"
   pull_request:
     branches: [main]
     paths:
       - "book/**"
       - ".github/workflows/book.yml"
+      - "crates/apr-cli/src/commands_enum.rs"
+      - "crates/apr-cli/src/extended_commands.rs"
+      - "crates/apr-cli/src/tool_commands.rs"
 
 permissions:
   contents: read
@@ -78,8 +90,21 @@ jobs:
           if ! command -v pmat >/dev/null 2>&1; then
             cargo install pmat --locked --quiet || true
           fi
-          # Validate the book-completeness contract via pv (in-tree dogfood per CLAUDE.md)
-          pv validate contracts/apr-book-completeness-v1.yaml
+          # Validate the book-completeness contract via pv.
+          #
+          # This line used to call a bare `pv` and exited 127 (command not found)
+          # the first time the step ever ran: every earlier run died at the parity
+          # gate above, so nothing reached it. Note the shape of the bug — the step
+          # guards `pmat` with `command -v` and a comment saying it "tolerates
+          # absence", then invokes `pv` unguarded one line earlier, in a step whose
+          # entire purpose is running pv.
+          #
+          # `pv` is IN-TREE (crates/aprender-contracts-cli, [[bin]] name = "pv"), so
+          # build it from the tree instead of depending on an installed copy — that
+          # is the dogfood rule in CLAUDE.md, and it cannot drift from the contracts
+          # it is validating.
+          cargo run --quiet -p aprender-contracts-cli --bin pv -- \
+            validate contracts/apr-book-completeness-v1.yaml
           # pmat comply check — single binary signal; tolerates absence (pmat may not be available on every runner)
           if command -v pmat >/dev/null 2>&1; then
             pmat comply check 2>&1 | tail -10 || echo "::warning::pmat comply check returned non-zero (advisory)"

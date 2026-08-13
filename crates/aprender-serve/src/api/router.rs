@@ -725,44 +725,87 @@ async fn dispatch_reset_handler(State(_state): State<AppState>) -> axum::respons
         .into_response()
 }
 
+/// The name this server answers to for the model it is serving.
+///
+/// aprender#2375(7): `/v1/metrics` reported `model_name` as the literal
+/// `"phi-2-q4_k_m"` whenever a cached GPU model was resident and `"N/A"`
+/// otherwise — neither derived from the model actually loaded, so a monitor
+/// watching a fleet labelled every server with the same wrong name or with no
+/// name at all. Derived here from what the loader measured, falling back to the
+/// id `/v1/models` advertises, and only reporting `"N/A"` when nothing is
+/// resident to name.
+fn served_model_name(state: &AppState) -> String {
+    if let Some(stem) = state
+        .model_source()
+        .and_then(crate::api::ModelSourceInfo::path)
+        .and_then(|p| {
+            std::path::Path::new(p)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+        })
+        .filter(|s| !s.is_empty())
+    {
+        return stem;
+    }
+    if let Some(id) = state.default_model_id.clone() {
+        return id;
+    }
+    if state.model_loaded() {
+        // The id `GET /v1/models` lists in single-model mode, so a client can
+        // send this straight back as `"model"`.
+        return "default".to_string();
+    }
+    "N/A".to_string()
+}
+
+/// Request-latency percentiles for `/v1/metrics`, in milliseconds.
+///
+/// Shared by both feature variants of [`server_metrics_handler`] so they cannot
+/// disagree about the same server: the GPU build reported a hardcoded
+/// `(0.0, 0.0, 0.0)` whenever no GPU dispatch metrics existed — which is every
+/// CPU deployment — while the non-GPU build reported `avg`, `avg * 1.5` and
+/// `avg * 2.0`, two of which are not measurements at all.
+///
+/// Kernel-dispatch percentiles still win when GPU work was actually dispatched;
+/// otherwise these are the collector's measured request latencies, and
+/// `(0.0, 0.0, 0.0)` now means only "no request has completed yet".
+fn measured_latency_percentiles(state: &AppState) -> (f64, f64, f64) {
+    #[cfg(feature = "gpu")]
+    if let Some(dispatch) = state.dispatch_metrics() {
+        if dispatch.gpu_dispatches() > 0 {
+            return (
+                dispatch.gpu_latency_p50_us() / 1000.0,
+                dispatch.gpu_latency_p95_us() / 1000.0,
+                dispatch.gpu_latency_p99_us() / 1000.0,
+            );
+        }
+        if dispatch.cpu_dispatches() > 0 {
+            return (
+                dispatch.cpu_latency_p50_us() / 1000.0,
+                dispatch.cpu_latency_p95_us() / 1000.0,
+                dispatch.cpu_latency_p99_us() / 1000.0,
+            );
+        }
+    }
+    state
+        .metrics
+        .latency_percentiles()
+        .map_or((0.0, 0.0, 0.0), |p| (p.p50_ms, p.p95_ms, p.p99_ms))
+}
+
 /// Server metrics handler for TUI monitoring (PARITY-107)
 /// GET /v1/metrics - Returns JSON metrics for realizar-monitor
 #[cfg(feature = "gpu")]
 async fn server_metrics_handler(State(state): State<AppState>) -> Json<ServerMetricsResponse> {
     let snapshot = state.metrics.snapshot();
 
-    // Get latency percentiles from dispatch metrics (in microseconds, convert to ms)
-    let (latency_p50_ms, latency_p95_ms, latency_p99_ms, gpu_dispatches, cuda_path_active) =
-        if let Some(dispatch) = state.dispatch_metrics() {
-            // Use GPU latency if available, otherwise CPU latency
-            let gpu_p50 = dispatch.gpu_latency_p50_us();
-            let gpu_p95 = dispatch.gpu_latency_p95_us();
-            let gpu_p99 = dispatch.gpu_latency_p99_us();
-            let gpu_count = dispatch.gpu_dispatches();
-
-            if gpu_count > 0 {
-                (
-                    gpu_p50 / 1000.0,
-                    gpu_p95 / 1000.0,
-                    gpu_p99 / 1000.0,
-                    gpu_count,
-                    true,
-                )
-            } else {
-                let cpu_p50 = dispatch.cpu_latency_p50_us();
-                let cpu_p95 = dispatch.cpu_latency_p95_us();
-                let cpu_p99 = dispatch.cpu_latency_p99_us();
-                (
-                    cpu_p50 / 1000.0,
-                    cpu_p95 / 1000.0,
-                    cpu_p99 / 1000.0,
-                    0,
-                    false,
-                )
-            }
-        } else {
-            (0.0, 0.0, 0.0, 0, false)
-        };
+    let (latency_p50_ms, latency_p95_ms, latency_p99_ms) = measured_latency_percentiles(&state);
+    let (gpu_dispatches, cuda_path_active) = state
+        .dispatch_metrics()
+        .map_or((0, false), |dispatch| {
+            let gpu = dispatch.gpu_dispatches();
+            (gpu, gpu > 0)
+        });
 
     // Get GPU memory from cached model
     let (gpu_memory_used_bytes, gpu_memory_total_bytes): (u64, u64) =
@@ -794,12 +837,7 @@ async fn server_metrics_handler(State(state): State<AppState>) -> Json<ServerMet
         (1, 0)
     };
 
-    // Model name from cached model or default
-    let model_name = if state.cached_model().is_some() {
-        "phi-2-q4_k_m".to_string()
-    } else {
-        "N/A".to_string()
-    };
+    let model_name = served_model_name(&state);
 
     Json(ServerMetricsResponse {
         throughput_tok_per_sec: snapshot.tokens_per_sec,
@@ -819,16 +857,21 @@ async fn server_metrics_handler(State(state): State<AppState>) -> Json<ServerMet
     })
 }
 
-/// Server metrics handler stub for non-GPU builds (PARITY-107)
+/// Server metrics handler for non-GPU builds (PARITY-107).
+///
+/// Reports the SAME measured percentiles as the GPU variant — this build used
+/// to serve `p95 = avg * 1.5` and `p99 = avg * 2.0`, which describe no request
+/// that ever happened.
 #[cfg(not(feature = "gpu"))]
 async fn server_metrics_handler(State(state): State<AppState>) -> Json<ServerMetricsResponse> {
     let snapshot = state.metrics.snapshot();
+    let (latency_p50_ms, latency_p95_ms, latency_p99_ms) = measured_latency_percentiles(&state);
 
     Json(ServerMetricsResponse {
         throughput_tok_per_sec: snapshot.tokens_per_sec,
-        latency_p50_ms: snapshot.avg_latency_ms,
-        latency_p95_ms: snapshot.avg_latency_ms * 1.5,
-        latency_p99_ms: snapshot.avg_latency_ms * 2.0,
+        latency_p50_ms,
+        latency_p95_ms,
+        latency_p99_ms,
         gpu_memory_used_bytes: 0,
         gpu_memory_total_bytes: 0,
         gpu_utilization_percent: 0,
@@ -838,6 +881,6 @@ async fn server_metrics_handler(State(state): State<AppState>) -> Json<ServerMet
         total_tokens: snapshot.total_tokens as u64,
         total_requests: snapshot.total_requests as u64,
         uptime_secs: snapshot.uptime_secs,
-        model_name: "N/A".to_string(),
+        model_name: served_model_name(&state),
     })
 }

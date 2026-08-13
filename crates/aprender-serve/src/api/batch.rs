@@ -20,21 +20,25 @@ pub(super) struct QuantizedSampling {
 ///
 /// # Errors
 ///
-/// 400 for a negative or NaN `temperature`, an unknown `strategy`, or a `top_p`
-/// outside `(0, 1]` when nucleus sampling was requested.
+/// 400 for a `temperature` outside `[0, inf)` finite (negative, NaN or infinite),
+/// an unknown `strategy`, or a `top_p` outside `(0, 1]` when nucleus sampling was
+/// requested.
 pub(super) fn resolve_quantized_sampling(
     strategy: &str,
     top_k: usize,
     top_p: f32,
     temperature: f32,
 ) -> Result<QuantizedSampling, ApiErr> {
-    // NaN is rejected alongside negatives. A negative temperature divides the logits
-    // by a negative number, which inverts the distribution: the model then emits its
-    // LEAST likely tokens and the client cannot tell that from a bad model.
-    if temperature.is_nan() || temperature < 0.0 {
+    // NaN and ±inf are rejected alongside negatives. A negative temperature divides
+    // the logits by a negative number, which inverts the distribution: the model then
+    // emits its LEAST likely tokens and the client cannot tell that from a bad model.
+    // `is_nan() || < 0.0` used to let `+inf` through, and `+inf` is rejected by the
+    // dense sampler with HTTP 500 and flattens every logit to 0.0 on the quantized
+    // one — so the whole non-finite class is refused here, not just NaN.
+    if !temperature.is_finite() || temperature < 0.0 {
         return Err(api_err(
             StatusCode::BAD_REQUEST,
-            format!("temperature must be >= 0, got {temperature}"),
+            format!("temperature must be a finite number >= 0, got {temperature}"),
         ));
     }
 
