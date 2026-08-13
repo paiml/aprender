@@ -391,11 +391,9 @@ impl WidthPruner {
     /// Compute head dimension after pruning.
     #[must_use]
     pub fn head_dim_after_pruning(&self) -> usize {
-        if self.num_attention_heads == 0 {
-            0
-        } else {
-            self.target_hidden_dim / self.num_attention_heads
-        }
+        self.target_hidden_dim
+            .checked_div(self.num_attention_heads)
+            .unwrap_or(0)
     }
 }
 

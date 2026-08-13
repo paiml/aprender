@@ -208,7 +208,7 @@ impl SpilloverRouter {
             config,
             metrics,
             last_window: std::sync::RwLock::new(Instant::now()),
-            window_duration: Duration::from_secs(60),
+            window_duration: Duration::from_mins(1),
         }
     }
 

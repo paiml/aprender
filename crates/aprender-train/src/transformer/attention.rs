@@ -924,29 +924,17 @@ impl MultiHeadAttention {
                 self.w_o = value;
                 true
             }
-            "self_attn.q_proj.bias" => {
-                if self.b_q.is_some() {
-                    self.b_q = Some(value);
-                    true
-                } else {
-                    false
-                }
+            "self_attn.q_proj.bias" if self.b_q.is_some() => {
+                self.b_q = Some(value);
+                true
             }
-            "self_attn.k_proj.bias" => {
-                if self.b_k.is_some() {
-                    self.b_k = Some(value);
-                    true
-                } else {
-                    false
-                }
+            "self_attn.k_proj.bias" if self.b_k.is_some() => {
+                self.b_k = Some(value);
+                true
             }
-            "self_attn.v_proj.bias" => {
-                if self.b_v.is_some() {
-                    self.b_v = Some(value);
-                    true
-                } else {
-                    false
-                }
+            "self_attn.v_proj.bias" if self.b_v.is_some() => {
+                self.b_v = Some(value);
+                true
             }
             _ => false,
         }

@@ -40,7 +40,7 @@ impl Default for MeasurementProtocol {
         Self {
             latency_samples: 100,
             latency_percentiles: vec![50.0, 90.0, 95.0, 99.0, 99.9],
-            throughput_duration: Duration::from_secs(60),
+            throughput_duration: Duration::from_mins(1),
             throughput_ramp_up: Duration::from_secs(10),
             memory_samples: 10,
             memory_interval: Duration::from_secs(1),

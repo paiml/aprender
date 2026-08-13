@@ -20,16 +20,12 @@ impl ValidatedAprTransformer {
         let intermediate_dim = config.intermediate_dim;
         // GH-313: Infer head_dim from actual QKV tensor shape when available.
         // Some models (Qwen3-0.6B) have head_dim != hidden_dim/num_heads.
-        let default_head_dim = if config.num_heads > 0 {
-            hidden_dim / config.num_heads
-        } else {
-            hidden_dim
-        };
+        let default_head_dim = hidden_dim.checked_div(config.num_heads).unwrap_or(hidden_dim);
         let head_dim = if !transformer.layers.is_empty() {
             let qkv_len = transformer.layers[0].qkv_weight.len();
             // qkv_weight has (q_dim + 2*kv_dim) * hidden_dim elements
             // Try to infer: qkv_out_dim = qkv_len / hidden_dim
-            let qkv_out_dim_inferred = if hidden_dim > 0 { qkv_len / hidden_dim } else { 0 };
+            let qkv_out_dim_inferred = qkv_len.checked_div(hidden_dim).unwrap_or(0);
             // q_dim = qkv_out_dim - 2*kv_dim. With GQA: kv_dim = num_kv_heads * head_dim
             // qkv_out_dim = num_heads*hd + 2*num_kv_heads*hd = hd*(num_heads + 2*num_kv_heads)
             let total_heads = config.num_heads + 2 * config.num_kv_heads;

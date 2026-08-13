@@ -136,7 +136,7 @@ impl ModelConfig {
                 .unwrap_or_else(|| PathBuf::from("/tmp"))
                 .join("pacha")
                 .join("models");
-            let filename = format!("{}-{}.gguf", repo.replace('/', "--"), quant,);
+            let filename = format!("{}-{}.gguf", repo.replace('/', "--"), quant);
             return Some(cache_dir.join(filename));
         }
         None

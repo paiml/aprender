@@ -19,7 +19,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings
+.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings
 
 # Default target
 all: tier2
@@ -126,6 +126,14 @@ test-spec: ## Run ALL spec falsification tests (structural only, no models)
 lint:
 	cargo clippy -- -D warnings
 
+# Toolchain CEILING gate (aprender#2370). `lint` above runs through the
+# rust-toolchain.toml pin, so clippy findings from NEWER releases accumulate
+# unseen until someone's toolchain outruns the pin. This lints on current
+# stable instead, and refuses to pass vacuously. Mirror of `check_msrv.sh`,
+# which guards the floor.
+lint-current:
+	@bash scripts/check_clippy_current_stable.sh
+
 # Format check
 fmt:
 	cargo fmt
@@ -212,6 +220,8 @@ tier3:
 	@bash scripts/check_build_rs_paths.sh
 	@echo "Checking self-hosted CI jobs pin a discriminating runner label..."
 	@bash scripts/check_runner_labels.sh
+	@echo "Checking the toolchain-ceiling guard's comparator (aprender#2370)..."
+	@bash scripts/check_clippy_current_stable.sh --self-test
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \

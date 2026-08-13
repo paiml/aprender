@@ -46,7 +46,7 @@ pub fn decode(
 
     let q_dim = num_heads * head_dim;
     let kv_dim_per = num_kv_heads * head_dim;
-    let group_size = if num_kv_heads > 0 { num_heads / num_kv_heads } else { 1 };
+    let group_size = num_heads.checked_div(num_kv_heads).unwrap_or(1);
 
     for layer in self.layers.iter() {
         // === Causal self-attention ===

@@ -271,7 +271,7 @@ impl StatsTracker {
 
         // Sort by call count
         let mut sorted: Vec<_> = self.stats.iter().collect();
-        sorted.sort_by(|a, b| b.1.count.cmp(&a.1.count));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.1.count));
 
         for (name, stats) in sorted {
             #[cfg(feature = "otlp")]
@@ -318,7 +318,7 @@ impl StatsTracker {
 
         // Sort by call count (descending)
         let mut sorted: Vec<_> = self.stats.iter().collect();
-        sorted.sort_by(|a, b| b.1.count.cmp(&a.1.count));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.1.count));
 
         // Print header
         eprintln!("% time     seconds  usecs/call     calls    errors syscall");
@@ -332,8 +332,7 @@ impl StatsTracker {
                 0.0
             };
             let seconds = stats.total_time_us as f64 / 1_000_000.0;
-            let usecs_per_call =
-                if stats.count > 0 { stats.total_time_us / stats.count } else { 0 };
+            let usecs_per_call = stats.total_time_us.checked_div(stats.count).unwrap_or(0);
 
             eprintln!(
                 "{:6.2} {:>11.6} {:>11} {:>9} {:>9} {}",
@@ -349,7 +348,7 @@ impl StatsTracker {
         // Print summary line
         eprintln!("------ ----------- ----------- --------- --------- ----------------");
         let total_seconds = total_time_us as f64 / 1_000_000.0;
-        let avg_usecs = if total_calls > 0 { total_time_us / total_calls } else { 0 };
+        let avg_usecs = total_time_us.checked_div(total_calls).unwrap_or(0);
         eprintln!(
             "100.00 {:>11.6} {:>11} {:>9} {:>9} total",
             total_seconds,

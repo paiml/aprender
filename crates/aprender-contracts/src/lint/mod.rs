@@ -291,7 +291,7 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
             contract_timings.push((format!("{stem}.yaml"), ct_ms));
         }
         // Sort by duration descending
-        contract_timings.sort_by(|a, b| b.1.cmp(&a.1));
+        contract_timings.sort_by_key(|b| std::cmp::Reverse(b.1));
     }
 
     // Stale suppression detection (PV-SUP-001, Section 17 Gap 2)

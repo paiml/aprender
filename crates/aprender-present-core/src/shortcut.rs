@@ -401,7 +401,7 @@ impl ShortcutManager {
             .collect();
 
         // Sort by priority (highest first)
-        matches.sort_by(|a, b| b.1.cmp(&a.1));
+        matches.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         // Try handlers in priority order
         for (id, _) in matches {

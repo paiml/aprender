@@ -66,7 +66,7 @@ pub fn top_ngrams(ngrams: &NGramMap, k: usize) -> Vec<(NGram, usize)> {
         ngrams.iter().map(|(ngram, count)| (ngram.clone(), *count)).collect();
 
     // Sort by frequency (descending)
-    ngram_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    ngram_vec.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     ngram_vec.into_iter().take(k).collect()
 }

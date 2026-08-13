@@ -1,0 +1,56 @@
+name: Toolchain Ceiling
+
+# The CEILING gate (aprender#2370). `scripts/check_msrv.sh` guards the FLOOR;
+# nothing guarded the ceiling.
+#
+# Every gate this repo owns — `make tier1/2/3`, the sovereign-ci `lint` job —
+# runs clippy through `rust-toolchain.toml`, which pins one exact release
+# (1.93.0). Clippy findings introduced by NEWER clippy releases therefore
+# accumulate with nothing to report them. #2370 is what that looks like from
+# outside: a fresh checkout on a machine whose rustc is not rustup-managed (a
+# homebrew rust, so the pin is silently inert) ran `make`, got clippy 1.96, and
+# `tier2` died with 28 errors that no gate here had ever seen. By the time it
+# was reported the tree had 107 findings across 12 lints.
+#
+# This job lints the tree on whatever stable is CURRENT, daily, and FAILS.
+#
+# Why scheduled and not per-PR: a new Rust release can introduce a lint on a
+# Tuesday morning. Blocking the merge queue on an event outside the repo is
+# the wrong trade — but letting it accumulate unseen is what produced #2370.
+# Scheduled + fail-closed is the middle: red the next morning, nobody blocked.
+#
+# The script refuses to pass vacuously (stale `stable` older than the pin, no
+# clippy component, broken version comparator) — see its header.
+
+on:
+  schedule:
+    - cron: '0 5 * * *' # 05:00 UTC — after the 04:00 binary nightly
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: toolchain-ceiling
+  cancel-in-progress: true
+
+jobs:
+  clippy-current-stable:
+    # clean-room pool, same as coverage-nightly: this is a full-workspace clippy
+    # run on a toolchain that is NOT the pinned one, so it cold-builds.
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 90
+    steps:
+      # clean: false — matches coverage-nightly; the default git-clean chokes on
+      # root-owned leftovers from prior jobs (contracts/.pv/cache → EACCES).
+      - uses: actions/checkout@v7
+        with:
+          clean: false
+
+      - name: Clippy on current stable (ceiling gate)
+        run: |
+          # Explicit `shell: run` default here is `bash -e`, NOT `bash -eo pipefail`
+          # (see memory: feedback_gh_default_shell_no_pipefail). No pipes below, and
+          # the script's own exit status is the verdict — do not tee it.
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          bash scripts/check_clippy_current_stable.sh

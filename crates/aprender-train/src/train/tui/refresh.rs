@@ -23,7 +23,7 @@ impl Default for RefreshPolicy {
     fn default() -> Self {
         Self {
             min_interval: Duration::from_millis(50),
-            max_interval: Duration::from_millis(1000),
+            max_interval: Duration::from_secs(1),
             step_interval: 10,
             last_refresh: Instant::now(),
             last_step: 0,

@@ -243,7 +243,7 @@ impl ResponseCache {
 
     /// Default cache with 15 minute TTL
     pub fn default_ttl() -> Self {
-        Self::new(Duration::from_secs(15 * 60))
+        Self::new(Duration::from_mins(15))
     }
 
     /// Cache a search result

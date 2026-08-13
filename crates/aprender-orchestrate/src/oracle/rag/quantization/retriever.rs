@@ -111,7 +111,7 @@ impl RescoreRetriever {
             .collect();
 
         // Sort descending by score
-        scores.sort_by(|a, b| b.1.cmp(&a.1));
+        scores.sort_by_key(|b| std::cmp::Reverse(b.1));
         scores.truncate(num_candidates);
 
         scores

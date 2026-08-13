@@ -78,11 +78,7 @@ impl GNNErrorEncoder {
     /// Mean pool over nodes.
     fn mean_pool(&self, tensor: &Tensor, num_nodes: usize) -> Vec<f32> {
         let data = tensor.data();
-        let feature_dim = if num_nodes > 0 {
-            data.len() / num_nodes
-        } else {
-            self.output_dim
-        };
+        let feature_dim = data.len().checked_div(num_nodes).unwrap_or(self.output_dim);
 
         let mut pooled = vec![0.0f32; feature_dim];
         if num_nodes == 0 {

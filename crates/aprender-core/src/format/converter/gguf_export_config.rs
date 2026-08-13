@@ -208,11 +208,7 @@ fn resolve_gguf_config(
             }),
         rms_norm_eps: apr_metadata.and_then(|m| m.rms_norm_eps).unwrap_or(1e-6),
         // N-02 (Meyer DbC): 0 when dimensions unknown, not hardcoded 128.
-        head_dim: if num_heads > 0 {
-            hidden_size / num_heads
-        } else {
-            0
-        },
+        head_dim: hidden_size.checked_div(num_heads).unwrap_or(0),
         model_name: apr_metadata
             .and_then(|m| m.name.clone())
             .unwrap_or_else(|| "model".to_string()),

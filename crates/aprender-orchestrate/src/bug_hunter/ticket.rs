@@ -164,26 +164,22 @@ fn parse_section_line<'a>(
     }
 
     match section.to_lowercase().as_str() {
-        "description" | "summary" => {
-            if !trimmed.is_empty() {
-                description_lines.push(trimmed);
-            }
+        "description" | "summary" if !trimmed.is_empty() => {
+            description_lines.push(trimmed);
         }
-        "affected files" | "files" | "paths" | "scope" => {
-            if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
-                let path_str = strip_list_marker(trimmed).trim().trim_matches('`');
-                ticket.affected_paths.push(PathBuf::from(path_str));
-            }
+        "affected files" | "files" | "paths" | "scope"
+            if (trimmed.starts_with("- ") || trimmed.starts_with("* ")) =>
+        {
+            let path_str = strip_list_marker(trimmed).trim().trim_matches('`');
+            ticket.affected_paths.push(PathBuf::from(path_str));
         }
-        "expected behavior" | "expected" => {
-            if !trimmed.is_empty() {
-                ticket.expected_behavior = Some(trimmed.to_string());
-            }
+        "expected behavior" | "expected" if !trimmed.is_empty() => {
+            ticket.expected_behavior = Some(trimmed.to_string());
         }
-        "acceptance criteria" | "criteria" => {
-            if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
-                ticket.acceptance_criteria.push(strip_list_marker(trimmed).to_string());
-            }
+        "acceptance criteria" | "criteria"
+            if (trimmed.starts_with("- ") || trimmed.starts_with("* ")) =>
+        {
+            ticket.acceptance_criteria.push(strip_list_marker(trimmed).to_string());
         }
         "priority" => {
             ticket.priority = parse_priority(trimmed);

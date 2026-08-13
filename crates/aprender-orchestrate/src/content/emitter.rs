@@ -330,7 +330,9 @@ course:
 
                 // Generate module entries
                 for m in 1..=modules {
-                    let week = if weeks > 0 { ((m - 1) / (modules / weeks).max(1)) + 1 } else { 1 };
+                    let week = modules
+                        .checked_div(weeks)
+                        .map_or(1, |per_week| ((m - 1) / per_week.max(1)) + 1);
                     output.push_str(&format!(
                         r"  - id: module_{}
     week: {}

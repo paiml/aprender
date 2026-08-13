@@ -1153,7 +1153,7 @@ impl GradFn for SoftmaxLastDimBackward {
         let ndim = shape.len();
         let features = if ndim == 0 { 1 } else { shape[ndim - 1] };
         let total = self.output.numel();
-        let rows = if features == 0 { 0 } else { total / features };
+        let rows = total.checked_div(features).unwrap_or(0);
 
         let out_data = self.output.data();
         let grad_data = grad_output.data();

@@ -39,11 +39,7 @@ fn write_coverage_summary(out: &mut String, report: &CoverageReport) {
         .iter()
         .filter(|c| c.falsification_covered > 0)
         .count();
-    let pct = if total > 0 {
-        with_tests * 100 / total
-    } else {
-        0
-    };
+    let pct = (with_tests * 100).checked_div(total).unwrap_or(0);
 
     let _ = writeln!(
         out,

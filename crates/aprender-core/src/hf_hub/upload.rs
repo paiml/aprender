@@ -122,7 +122,7 @@ impl HfHubClient {
             let t = Instant::now();
             let resp = ureq::put(chunk_url)
                 .set("Content-Type", "application/octet-stream")
-                .timeout(std::time::Duration::from_secs(7200))
+                .timeout(std::time::Duration::from_hours(2))
                 .send_bytes(chunk_data)
                 .map_err(|e| {
                     eprintln!("[LFS] ERROR: Chunk {} upload failed: {}", i + 1, e);
@@ -169,7 +169,7 @@ impl HfHubClient {
 
         let mut request = ureq::put(url)
             .set("Content-Type", "application/octet-stream")
-            .timeout(std::time::Duration::from_secs(7200));
+            .timeout(std::time::Duration::from_hours(2));
 
         if let Some(hdrs) = headers {
             for (key, value) in hdrs {
@@ -317,7 +317,7 @@ impl HfHubClient {
 
         let mut request = ureq::put(upload_url)
             .set("Content-Type", "application/octet-stream")
-            .timeout(std::time::Duration::from_secs(7200));
+            .timeout(std::time::Duration::from_hours(2));
 
         if let Some(header_obj) = upload_action
             .and_then(|a| a.get("header"))

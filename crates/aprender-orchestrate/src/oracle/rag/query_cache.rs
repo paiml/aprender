@@ -46,7 +46,7 @@ impl QueryPlanCache {
             capacity: cap,
             hits: 0,
             misses: 0,
-            ttl: Duration::from_secs(300), // 5 minutes default
+            ttl: Duration::from_mins(5), // 5 minutes default
         }
     }
 

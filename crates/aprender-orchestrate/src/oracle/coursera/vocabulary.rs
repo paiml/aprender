@@ -155,7 +155,7 @@ pub fn extract_vocabulary(transcripts: &[TranscriptInput]) -> Vec<VocabularyEntr
         })
         .collect();
 
-    entries.sort_by(|a, b| b.frequency.cmp(&a.frequency));
+    entries.sort_by_key(|b| std::cmp::Reverse(b.frequency));
     entries
 }
 

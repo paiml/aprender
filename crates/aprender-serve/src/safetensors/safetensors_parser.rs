@@ -517,7 +517,7 @@ impl SafetensorsConfig {
         self.head_dim.or_else(|| {
             let hidden = self.hidden_size?;
             let heads = self.num_attention_heads?;
-            if heads > 0 { Some(hidden / heads) } else { None }
+            hidden.checked_div(heads)
         })
     }
 

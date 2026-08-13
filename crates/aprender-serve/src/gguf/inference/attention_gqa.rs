@@ -161,11 +161,7 @@ impl OwnedQuantizedModel {
         let q_per_kv = num_heads / num_kv_heads;
 
         // Total sequence length = cached + 1 (current)
-        let cache_len = if kv_dim > 0 {
-            k_cache.len() / kv_dim
-        } else {
-            0
-        };
+        let cache_len = k_cache.len().checked_div(kv_dim).unwrap_or(0);
         let total_len = cache_len + 1;
 
         let mut output = vec![0.0f32; q_dim];
@@ -270,11 +266,7 @@ impl OwnedQuantizedModel {
 
         let q_per_kv = num_heads / num_kv_heads;
 
-        let cache_len = if kv_dim > 0 {
-            k_cache.len() / kv_dim
-        } else {
-            0
-        };
+        let cache_len = k_cache.len().checked_div(kv_dim).unwrap_or(0);
         let total_len = cache_len + 1;
 
         // Zero output buffer
@@ -399,11 +391,7 @@ impl OwnedQuantizedModel {
         let hidden_dim = self.config.hidden_dim;
 
         // Calculate cache length
-        let cache_len = if hidden_dim > 0 {
-            k_cache.len() / hidden_dim
-        } else {
-            0
-        };
+        let cache_len = k_cache.len().checked_div(hidden_dim).unwrap_or(0);
 
         // Threshold for GPU dispatch (matches IMP-119)
         const GPU_CACHE_LEN_THRESHOLD: usize = 64;

@@ -450,7 +450,7 @@ impl ClassifyEvalReport {
                 }
             }
         }
-        pairs.sort_by(|a, b| b.2.cmp(&a.2));
+        pairs.sort_by_key(|b| std::cmp::Reverse(b.2));
         pairs.truncate(top_n);
         pairs
     }
@@ -959,7 +959,7 @@ impl ClassifyEvalReport {
             if count > 0 {
                 let lo = i as f64 * 0.1;
                 let hi = lo + 0.1;
-                out.push_str(&format!("[{lo:.1}-{hi:.1})   {conf:.3}   {acc:.3}   {count:>5}\n",));
+                out.push_str(&format!("[{lo:.1}-{hi:.1})   {conf:.3}   {acc:.3}   {count:>5}\n"));
             }
         }
         out.push_str("```\n\n");

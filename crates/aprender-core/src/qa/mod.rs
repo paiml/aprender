@@ -180,11 +180,7 @@ impl QaReport {
             .map(|s| u16::from(s.points_possible))
             .sum();
 
-        self.total_score = if possible > 0 {
-            ((earned * 100) / possible).min(100) as u8
-        } else {
-            0
-        };
+        self.total_score = (earned * 100).checked_div(possible).unwrap_or(0).min(100) as u8;
 
         // Pass if score >= 80 and no blockers
         self.passed = self.total_score >= 80 && self.blockers.is_empty();

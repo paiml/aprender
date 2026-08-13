@@ -594,9 +594,9 @@ impl ModelCatalog {
         // Sort
         match query.sort {
             SortOrder::Name => matches.sort_by(|a, b| a.name.cmp(&b.name)),
-            SortOrder::Downloads => matches.sort_by(|a, b| b.downloads.cmp(&a.downloads)),
-            SortOrder::SizeAsc => matches.sort_by(|a, b| a.size_bytes.cmp(&b.size_bytes)),
-            SortOrder::SizeDesc => matches.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes)),
+            SortOrder::Downloads => matches.sort_by_key(|b| std::cmp::Reverse(b.downloads)),
+            SortOrder::SizeAsc => matches.sort_by_key(|a| a.size_bytes),
+            SortOrder::SizeDesc => matches.sort_by_key(|b| std::cmp::Reverse(b.size_bytes)),
             SortOrder::DateDesc => {
                 matches.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
             }
@@ -604,10 +604,10 @@ impl ModelCatalog {
                 matches.sort_by(|a, b| a.updated_at.cmp(&b.updated_at));
             }
             SortOrder::ParametersAsc => {
-                matches.sort_by(|a, b| a.parameters.cmp(&b.parameters));
+                matches.sort_by_key(|a| a.parameters);
             }
             SortOrder::ParametersDesc => {
-                matches.sort_by(|a, b| b.parameters.cmp(&a.parameters));
+                matches.sort_by_key(|b| std::cmp::Reverse(b.parameters));
             }
         }
 

@@ -475,9 +475,7 @@ impl Histogram {
             }
 
             // Draw bar
-            let bar_chars: String = (0..(bar_width.ceil() as usize).max(0))
-                .map(|_| '█')
-                .collect();
+            let bar_chars: String = (0..(bar_width.ceil() as usize)).map(|_| '█').collect();
             if !bar_chars.is_empty() {
                 canvas.draw_text(&bar_chars, Point::new(x, y), &style);
             }

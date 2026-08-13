@@ -332,7 +332,7 @@ pub async fn generate_handler(
     if state.is_verbose() {
         eprintln!(
             "[VERBOSE] POST /generate prompt={:?} max_tokens={}",
-            &request.prompt.chars().take(50).collect::<String>(),
+            request.prompt.chars().take(50).collect::<String>(),
             request.max_tokens
         );
     }

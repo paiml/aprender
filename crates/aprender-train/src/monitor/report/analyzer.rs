@@ -71,7 +71,7 @@ impl HanseiAnalyzer {
         self.check_missing_metrics(&summary, &mut issues);
 
         // Sort issues by severity (critical first)
-        issues.sort_by(|a, b| b.severity.cmp(&a.severity));
+        issues.sort_by_key(|b| std::cmp::Reverse(b.severity));
 
         PostTrainingReport {
             training_id: training_id.to_string(),
