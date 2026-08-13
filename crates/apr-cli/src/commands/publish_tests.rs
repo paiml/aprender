@@ -809,8 +809,16 @@ fn test_safetensors_needing_alias_no_safetensors_skips_alias() {
 // character 0. The model card now lives in the `readme` string field.
 // =========================================================================
 
-fn dry_run_plan_fixture(manifest: Option<&Path>) -> DryRunPlan {
-    let dir = std::env::temp_dir().join("apr_publish_json_fixture");
+/// Build a dry-run plan over a throwaway artifact of known size.
+///
+/// `slug` MUST be unique per test. Every caller used to share one fixed path,
+/// `$TMPDIR/apr_publish_json_fixture/model.safetensors`, and the harness runs
+/// these tests on parallel threads — so one test's `fs::write` truncated the
+/// file to 0 bytes in the window where the other was stat-ing it for
+/// `size_bytes`. That surfaced as `size_bytes: 0` against the expected 16,
+/// reproducible at ~1/25 full-suite runs under load.
+fn dry_run_plan_fixture(slug: &str, manifest: Option<&Path>) -> DryRunPlan {
+    let dir = std::env::temp_dir().join(format!("apr_publish_json_fixture_{slug}"));
     let _ = fs::create_dir_all(&dir);
     let artifact = dir.join("model.safetensors");
     let _ = fs::write(&artifact, b"not-a-real-model");
@@ -825,7 +833,7 @@ fn dry_run_plan_fixture(manifest: Option<&Path>) -> DryRunPlan {
 
 #[test]
 fn test_publish_dry_run_json_stdout_parses_as_json() {
-    let plan = dry_run_plan_fixture(None);
+    let plan = dry_run_plan_fixture("json_stdout", None);
     let stdout = plan.stdout(true);
 
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
@@ -853,7 +861,7 @@ fn test_publish_dry_run_json_stdout_parses_as_json() {
 
 #[test]
 fn test_publish_dry_run_human_mode_is_still_human() {
-    let plan = dry_run_plan_fixture(None);
+    let plan = dry_run_plan_fixture("human_mode", None);
     let stdout = plan.stdout(false);
     assert!(
         stdout.contains("=== DRY RUN: Would publish to paiml/test-model ==="),
