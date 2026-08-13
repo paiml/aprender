@@ -14,6 +14,15 @@ metadata:
   - 'Asserting that a cancellation flag was set proves nothing — the shipped defect
     is compatible with the flag being set and nobody reading it. Assert observed work
     (tokens produced) instead.'
+  - 'aprender#2375(1): the guard fired on NORMAL completion too, on the reasoning that
+    firing late is harmless. It is harmless only for a handler that generates inside
+    its own future. A streaming handler returns its SSE response while the decode loop
+    is still in prefill, so the guard cancelled it at the first poll and every streamed
+    chat reply was a well-formed event stream with zero content deltas. A completed
+    handler must DISARM the guard.'
+  - 'The falsifier for the streamed deltas called true_streaming_sse_response directly
+    and stayed green through all of it. A guard that never routes a request cannot see
+    a defect that lives in the middleware.'
 
 equations:
   tokens_generated_bound:
@@ -62,13 +71,24 @@ equations:
       on client disconnect sets the flag
     - the inner handler runs in a separate task, so its decode loop is still alive
       to observe the flag after the drop
+    - a request that COMPLETES disarms the guard, so a response body still being
+      written by a background decode loop (every streaming route) is not cancelled by
+      its own success
+    - 'an abandoned STREAM is still stopped, by body-drop rather than by this guard:
+      hyper drops the response body, the SSE receiver drops, the generator on_token
+      send fails, and the loop breaks. Discharged by FALSIFY-SERVE-CANCEL-008, which
+      drives the real router and counts the abandonments the shared streaming sink
+      records: at least one (the drop reached the loop) and EXACTLY one (the loop
+      broke rather than kept failing to send)'
     - a request that COMPLETES returns a response byte-identical to the same handler
       invoked directly with CancelToken::never()
     preconditions:
     - the router carries the cancel_on_disconnect layer
     - the handler installs the extension token on its generation config
     postconditions:
-    - cancel.peek_cancelled() == true after the layer's future is dropped
+    - cancel.peek_cancelled() == true after the layer's future is dropped WITHOUT the
+      handler having returned
+    - cancel.peek_cancelled() == false after a request that ran to completion
     - the decode loop terminates with tokens_generated < cfg.max_tokens
     - a completed request's response body is unchanged by the layer
 
@@ -117,13 +137,44 @@ falsification_tests:
 - id: FALSIFY-SERVE-CANCEL-005
   name: the_real_router_hands_every_request_a_live_cancel_token
   prediction: 'A handler mounted under the cancel_on_disconnect layer reads a token
-    from the request extensions whose peek_cancelled() is true after the response future
-    is dropped — which CancelToken::never() can never report.'
+    from the request extensions that (a) is NOT cancelled after the request ran to
+    completion, and (b) reports cancelled once cancel() is called on it — which
+    CancelToken::never() can never do. (b) proves the token is live without depending
+    on the layer cancelling a request nobody abandoned.'
   test_harness: cargo test -p aprender-serve --lib the_real_router_hands_every_request_a_live_cancel_token
   expected_output: 'test result: ok'
   if_fails: 'PRE-FIX: no layer existed, so request_cancel_token fell back to CancelToken::never()
     and every decode loop polled a token that answers false forever. Also fails if
-    the layer is dropped from create_router.'
+    the layer is dropped from create_router, or if the guard is left ARMED on normal
+    completion — aprender#2375(1), which emptied every streaming response body.'
+- id: FALSIFY-SERVE-CANCEL-007
+  name: disarmed_guard_does_not_cancel_on_drop
+  prediction: 'CancelOnDrop::disarm() makes the guard drop a no-op: the token is not
+    cancelled. A second, still-armed guard on the same token does cancel, so the
+    default is unchanged and forgetting to disarm cannot silently lose the
+    disconnect behaviour.'
+  test_harness: cargo test -p aprender-serve --lib generate::cancel::tests
+  expected_output: 'test result: ok'
+  if_fails: 'Either the guard cannot be disarmed (aprender#2375(1): a completed
+    streaming handler cancels its own background decode loop before its first token),
+    or it is disarmed by default (the #2376(3) disconnect defect returns).'
+- id: FALSIFY-SERVE-CANCEL-008
+  name: an_abandoned_stream_is_stopped_by_the_body_drop
+  prediction: 'POST /v1/chat/completions {"stream":true,"max_tokens":64} through create_router
+    on a quantized server, with the response body DROPPED unread (max_tokens far exceeds
+    the 16-slot token channel, so the decode loop is provably still running), causes
+    MetricsCollector::streams_abandoned() to reach EXACTLY 1 — at least one, because the
+    body drop must reach the decode loop, and no more than one, because the loop must
+    then break rather than keep failing to send. A stream read to completion on the same
+    fixture records 0.'
+  test_harness: cargo test -p aprender-serve --lib an_abandoned_stream_is_stopped_by_the_body_drop
+  expected_output: 'test result: ok'
+  if_fails: 'The mechanism that replaced the guard for streaming responses does not work.
+    Zero abandonments means dropping the response body never reached the decode loop, so
+    an abandoned stream burns a core to max_tokens with nobody listening — aprender#2376(3),
+    reintroduced for exactly the case #2375(1) removed the guard from. More than one means
+    the loop kept generating after the client left (mutation-verified: making the sink
+    ignore the send result recorded 19 abandonments for one abandoned stream).'
 - id: FALSIFY-SERVE-CANCEL-006
   name: a_completed_generate_request_is_unchanged_by_the_cancellation_layer
   prediction: 'POST /generate {"prompt":"token5","max_tokens":4} through create_router
@@ -168,14 +219,34 @@ proof_obligations:
     guard in the layer's future, and the handler running in its own task.
     Removing any one restores the defect; each removal is separately mutation-verified.
 - type: invariant
+  property: An abandoned STREAM stops too, by body-drop rather than by the guard
+  formal: drop(response_body) => eventually the streaming decode loop exits, and it
+    does so after exactly one failed on_token send
+  applies_to: every streaming backend behind create_router (quantized, CUDA,
+    Qwen3-MoE), which all hand their decode loop the same
+    openai_handlers::streaming_token_sink
+  discharged_by: FALSIFY-SERVE-CANCEL-008
+  notes: >-
+    aprender#2375(1) deliberately removed the guard's coverage of streaming
+    responses — a streaming handler COMPLETES while its decode loop is still
+    running, so the guard could not tell an abandoned stream from a healthy one
+    and cancelled both. This is the replacement mechanism, and it shipped
+    asserted-but-untested: the only abandonment falsifier (CANCEL-004) uses a
+    handler that never completes, i.e. the still-ARMED path. The three backends
+    each carried their own copy of the send-and-check callback; they now share
+    one, and it records the abandonment so the property is observable rather
+    than merely stated.
+- type: invariant
   property: Cancellation does not change a completed response
   formal: for all requests r that complete, response(router_with_layer, r) ==
     response(handler_with_never_token, r)
   applies_to: POST /generate and every other route on create_router
   discharged_by: FALSIFY-SERVE-CANCEL-006
   notes: >-
-    The guard fires on normal completion too, and the layer interposes a task.
-    Neither may alter a successful response.
+    The layer interposes a task, and the guard used to fire on normal completion
+    too. Neither may alter a successful response — and since aprender#2375(1),
+    "does not alter" includes the response BODY of a stream that is still being
+    produced when the handler returns.
 
 kani_harnesses:
 - id: KANI-SERVE-CANCEL-001
@@ -197,5 +268,7 @@ qa_gate:
   - Every generate handler extracts Extension<CancelToken> and installs it on its
     generation config
   - A completed request returns the same body with and without the layer
-  pass_criteria: All six FALSIFY-SERVE-CANCEL falsifiers pass, and each has been
+  - Every streaming backend hands its decode loop openai_handlers::streaming_token_sink,
+    so a dropped response body stops it
+  pass_criteria: All seven FALSIFY-SERVE-CANCEL falsifiers pass, and each has been
     mutation-verified by removing the mechanism it covers and observing RED

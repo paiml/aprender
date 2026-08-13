@@ -141,13 +141,14 @@ fn registry_completions(
     let prompt_tokens = prompt_ids.len();
     let prompt: Vec<usize> = prompt_ids.iter().map(|&id| id as usize).collect();
 
-    let mut config = GenerationConfig::default()
-        .with_max_tokens(max_tokens)
-        .with_temperature(temperature)
-        .with_cancel(cancel.clone());
-    if let Some(top_p) = request.top_p {
-        config.strategy = SamplingStrategy::TopP { p: top_p as f32 };
-    }
+    // #2375: `temperature: 0` used to reach `apply_temperature` unchanged and
+    // answer HTTP 500 for the OpenAI-canonical deterministic request.
+    let config = resolve_dense_generation_config(
+        temperature,
+        request.top_p.map(|p| p as f32),
+        max_tokens,
+    )
+    .with_cancel(cancel.clone());
 
     let generated = model
         .generate(&prompt, &config)

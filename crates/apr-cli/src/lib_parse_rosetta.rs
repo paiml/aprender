@@ -144,7 +144,8 @@
                 quality: false,
             },
             Commands::Debug {
-                file: PathBuf::from("m.apr"),
+                file: Some(PathBuf::from("m.apr")),
+                action: None,
                 drama: false,
                 hex: false,
                 strings: false,

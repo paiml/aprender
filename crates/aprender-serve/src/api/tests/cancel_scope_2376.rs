@@ -384,11 +384,26 @@ async fn the_real_router_hands_every_request_a_live_cancel_token() {
         .ok()
         .and_then(|g| g.clone())
         .expect("handler must have seen a token");
+
+    // aprender#2375(1): this request COMPLETED, so it was never abandoned. The
+    // layer must not have cancelled it — a completed handler may still be
+    // streaming its body from a background decode loop, and cancelling here is
+    // what emptied every SSE reply.
+    assert!(
+        !token.peek_cancelled(),
+        "the layer cancelled a request that ran to completion; that stops the \
+         background decode loop behind a streaming response before it emits its \
+         first token"
+    );
+
+    // Liveness, asserted without depending on the layer's exit behaviour: a
+    // `CancelToken::never` cannot be cancelled, so a token that reports
+    // cancelled after `cancel()` is a real one from the layer.
+    token.cancel();
     assert!(
         token.peek_cancelled(),
-        "the layer must cancel the token when the response future is dropped; a \
-         `never` token cannot report cancelled, which is how this distinguishes a \
-         live token from a missing one"
+        "the layer must hand every request a LIVE token; a `never` token silently \
+         ignores cancel() and leaves the decode loop with nothing to poll"
     );
 }
 

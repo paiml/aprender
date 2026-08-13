@@ -58,8 +58,17 @@ pub struct GenerateRequest {
     /// Maximum tokens to generate
     #[serde(default = "default_max_tokens")]
     pub max_tokens: usize,
-    /// Sampling temperature
-    #[serde(default = "default_temperature")]
+    /// Sampling temperature.
+    ///
+    /// Rejected at deserialization when outside `[0, ∞)` finite (aprender#2375),
+    /// so it cannot reach a backend that does not validate it: only the
+    /// QUANTIZED path ran `resolve_quantized_sampling`, and on a dense server
+    /// `/generate`, `/stream/generate` and `/batch/generate` all answered
+    /// `500 "Temperature must be a positive finite number"`.
+    #[serde(
+        default = "default_temperature",
+        deserialize_with = "deserialize_temperature_f32_required"
+    )]
     pub temperature: f32,
     /// Sampling strategy: "greedy", "`top_k`", or "`top_p`"
     #[serde(default = "default_strategy")]
@@ -134,8 +143,13 @@ pub struct BatchGenerateRequest {
     /// Maximum tokens to generate (shared across all prompts)
     #[serde(default = "default_max_tokens")]
     pub max_tokens: usize,
-    /// Sampling temperature (shared)
-    #[serde(default = "default_temperature")]
+    /// Sampling temperature (shared).
+    ///
+    /// Rejected at deserialization when outside `[0, ∞)` finite (aprender#2375).
+    #[serde(
+        default = "default_temperature",
+        deserialize_with = "deserialize_temperature_f32_required"
+    )]
     pub temperature: f32,
     /// Sampling strategy (shared)
     #[serde(default = "default_strategy")]
@@ -280,4 +294,111 @@ impl<'de> Deserialize<'de> for ChoiceCount {
             )))
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Temperature: the servable domain, enforced where the request is parsed
+// ---------------------------------------------------------------------------
+
+/// Is this temperature one the samplers can honour?
+///
+/// The servable domain is `[0, ∞)` **finite**. `0` is the OpenAI-canonical
+/// deterministic request and resolves to greedy; every positive finite value
+/// scales the logits.
+///
+/// Everything else is unservable, and each mode fails differently, which is why
+/// none of them may reach a sampler:
+///
+/// * **negative** — `logit / -t` inverts the distribution, so the dense path
+///   answered HTTP 500 (`apply_temperature`) and the quantized path served the
+///   model's LEAST likely tokens with a 200.
+/// * **NaN** — every comparison against NaN is false, so a `t < 0.0` guard does
+///   not catch it (aprender#2391 is an entire issue about exactly that). It
+///   poisons every logit and the cumulative draw never fires.
+/// * **±∞** — `t.is_nan() || t < 0.0` misses `+inf` as well; the dense sampler
+///   rejects it (500) and the quantized one flattens every logit to 0.
+///
+/// `is_finite()` is what carries the NaN and ±∞ cases: a comparison-only guard
+/// such as `t < 0.0` is FALSE for NaN and lets it straight through.
+#[must_use]
+pub(crate) fn temperature_is_servable(temperature: f64) -> bool {
+    temperature.is_finite() && temperature >= 0.0
+}
+
+/// The client-visible refusal for an unservable temperature.
+fn temperature_rejection<E: serde::de::Error>(temperature: f64) -> E {
+    E::custom(format!(
+        "{}temperature must be a finite number >= 0 (0 means deterministic/greedy), \
+         got {temperature}",
+        crate::api::CLIENT_VISIBLE_MARKER
+    ))
+}
+
+/// `deserialize_with` for an `Option<f32>` temperature field.
+///
+/// aprender#2375: `temperature: 0` was fixed by hand in the handlers and the
+/// REST of the domain was left reaching `apply_temperature`, which answers
+/// `500 {"error":"Invalid shape: Temperature must be a positive finite number"}`
+/// — the very body that fix set out to eliminate. Refusing here makes an
+/// unservable temperature unrepresentable in a deserialized request, exactly as
+/// [`ChoiceCount`] does for `n > 1`, so no handler and no backend can be the one
+/// that forgot.
+///
+/// The `f64 -> f32` narrowing is part of the check: `1e40` is a perfectly finite
+/// `f64` that becomes `+inf` as an `f32`, and that infinity is what would reach
+/// the sampler.
+///
+/// # Errors
+///
+/// Rejects a temperature outside the servable domain — see
+/// [`temperature_is_servable`].
+pub(crate) fn deserialize_temperature_f32<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let Some(raw) = Option::<f64>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    let narrowed = f64::from(raw as f32);
+    if !temperature_is_servable(raw) || !temperature_is_servable(narrowed) {
+        return Err(temperature_rejection(raw));
+    }
+    Ok(Some(raw as f32))
+}
+
+/// `deserialize_with` for an `Option<f64>` temperature field.
+///
+/// Same rule as [`deserialize_temperature_f32`]; the value still narrows to
+/// `f32` before it reaches a sampler, so the narrowing is checked here too.
+///
+/// # Errors
+///
+/// Rejects a temperature outside the servable domain.
+pub(crate) fn deserialize_temperature_f64<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(deserialize_temperature_f32(deserializer)?.map(f64::from))
+}
+
+/// `deserialize_with` for a non-`Option` `f32` temperature field.
+///
+/// A MISSING field never reaches here — serde's `default` attribute answers it —
+/// so this sees only values the client actually sent. An explicit `null` is
+/// refused rather than silently becoming a temperature the client did not
+/// choose, which is what `f32::deserialize` did before this guard existed.
+///
+/// # Errors
+///
+/// Rejects `null` and any temperature outside the servable domain.
+pub(crate) fn deserialize_temperature_f32_required<'de, D>(deserializer: D) -> Result<f32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_temperature_f32(deserializer)?.ok_or_else(|| {
+        serde::de::Error::custom(format!(
+            "{}temperature must be a finite number >= 0, not null",
+            crate::api::CLIENT_VISIBLE_MARKER
+        ))
+    })
 }

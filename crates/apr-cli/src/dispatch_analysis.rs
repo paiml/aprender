@@ -1,3 +1,55 @@
+/// Dispatch `apr dataset …` (aprender#2377 finding 3).
+///
+/// Its own function so the producer arms do not push
+/// `dispatch_analysis_commands` further past the complexity threshold it was
+/// already over.
+fn dispatch_dataset_command(command: &DatasetCommands, cli: &Cli) -> Result<(), CliError> {
+    match command {
+        DatasetCommands::AudioInspect {
+            file,
+            format,
+            output,
+            force,
+        } => commands::audio_inspect::run(
+            file,
+            format == "json" || cli.json,
+            output.as_deref(),
+            *force,
+        ),
+    }
+}
+
+/// Dispatch `apr kernel …` (aprender#2377 finding 3).
+fn dispatch_kernel_command(command: &KernelCommands, cli: &Cli) -> Result<(), CliError> {
+    match command {
+        KernelCommands::Parity {
+            kernel,
+            reference,
+            seq_len,
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            seed,
+            json,
+            output,
+            force,
+        } => commands::kernel_parity::run(
+            *kernel,
+            *reference,
+            commands::kernel_parity::ParityDims {
+                seq_len: *seq_len,
+                num_heads: *num_heads,
+                num_kv_heads: *num_kv_heads,
+                head_dim: *head_dim,
+                seed: *seed,
+            },
+            *json || cli.json,
+            output.as_deref(),
+            *force,
+        ),
+    }
+}
+
 /// Dispatch analysis commands (cbtop, probar, compare-hf, hex, tree, flow, oracle).
 ///
 /// Returns `None` if the command is not an analysis command, allowing the caller
@@ -232,6 +284,10 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *loss_tolerance,
             cli.json,
         ),
+
+        // aprender#2377 finding 3: the PRODUCERS the *-lint help documents.
+        ExtendedCommands::Dataset { command } => dispatch_dataset_command(command, cli),
+        ExtendedCommands::Kernel { command } => dispatch_kernel_command(command, cli),
 
         ExtendedCommands::AudioInspectLint {
             json_file,

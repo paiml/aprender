@@ -464,8 +464,15 @@ pub struct CompletionRequest {
     /// Maximum tokens to generate
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<usize>,
-    /// Temperature
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Temperature.
+    ///
+    /// A temperature outside `[0, ∞)` finite is rejected at deserialization
+    /// (aprender#2375) — see `types::deserialize_temperature_f64`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::api::types::deserialize_temperature_f64"
+    )]
     pub temperature: Option<f64>,
     /// Top-p sampling
     #[serde(skip_serializing_if = "Option::is_none")]
