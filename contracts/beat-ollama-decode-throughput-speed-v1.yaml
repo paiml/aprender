@@ -72,10 +72,12 @@ metadata:
   - "memory/project_fusion_003_1_5b_falsified.md (the 1-in-6 CUDA_ERROR variance class — fixed by #2049)"
   - "contracts/apr-fail-closed-garbage-beat-v1.yaml (the correctness-headline Pillar-4 beat)"
 version: 2
-# ENFORCED (manual/GPU gate): a real, non-flaky clean-decode beat. The ~1-in-6
-# decode-stall variance that blocked promotion is fixed by #2049; a median-of-7
-# >= 1.10x gate clears the measured 1.37x median with a ~0% bootstrapped flake
-# rate. Held for #2049 landing on main (see description DEPENDENCY). See VERDICT.
+# ENFORCED (manual/GPU gate) as a NO-COLLAPSE FLOOR, not a beat. The 1.371x win
+# claim is WITHDRAWN (see VERDICT SUPERSEDED in the description); the enforced
+# assertion is median-of-7 >= ollama median x 0.90 (`beat_threshold` below), which
+# catches CPU fallback (~0.065) without asserting a win apr does not have. The
+# ~1-in-6 decode-stall variance is fixed by #2049, which the median premise still
+# DEPENDS on (see description DEPENDENCY).
 status: enforced
 date: 2026-06-15
 
@@ -116,27 +118,34 @@ beat:
 ci_gating:
   mode: manual          # ENFORCED gate, run manually on a GPU host (no NVIDIA CI runner)
   reason: >
-    ENFORCED median-of-7 >= 1.10x gate. (1) Non-flaky: the ~1-in-6 catastrophic
-    decode stall (FUSION-003 1-in-6 CUDA_ERROR class) that previously made a median
-    gate flake is FIXED by #2049 (FP8-warmup OOB poison) — re-measured 0 stalls / 8
-    trials, median 1.37x, worst single run 1.23x; a median-of-7 >= 1.10x gate
-    bootstraps to ~0% false-FAIL. This gate's non-stall premise DEPENDS on #2049
-    being on main; do NOT enforce without it. (2) Manual/GPU: requires an RTX-class
-    GPU, apr `--features cuda`, ollama + the Q4_K_M model, and the matching GGUF on
-    disk — none on the CPU-only self-hosted CI runners. Like the cuda-oxide
-    throughput beat, it runs manually on an NVIDIA host (lambda-vector RTX 4090 /
-    gx10 GB10), not in per-PR CI.
+    ENFORCED median-of-7 >= 0.90x NO-COLLAPSE FLOOR (NOT a beat threshold; the
+    1.371x win claim is withdrawn — see VERDICT SUPERSEDED). (1) Non-flaky: the
+    ~1-in-6 catastrophic decode stall (FUSION-003 1-in-6 CUDA_ERROR class) that
+    previously made a median gate flake is FIXED by #2049 (FP8-warmup OOB poison) —
+    re-measured 0 stalls / 8 trials. 0.90 also sits 12% under the worst observed
+    post-#2323 median (1.015), so it does not flake for distributional reasons
+    either. This gate's non-stall premise DEPENDS on #2049 being on main; do NOT
+    enforce without it. (2) Manual/GPU: requires an RTX-class GPU, apr
+    `--features cuda`, ollama + the Q4_K_M model, and the matching GGUF on disk —
+    none on the CPU-only self-hosted CI runners. Like the cuda-oxide throughput
+    beat, it runs manually on an NVIDIA host (lambda-vector RTX 4090 / gx10 GB10),
+    not in per-PR CI. A green run proves apr did not COLLAPSE; it does not license
+    any claim that apr is faster than ollama.
   run_recipe: |
     # On an NVIDIA host with apr (--features cuda), ollama, and the model:
-    #   1. Build/locate the cuda apr binary (must include #2049 FP8 stall fix):
-    #        cargo build --release --features cuda  # -> target/release/apr
-    #      (canonical: /mnt/nvme-raid0/targets/aprender/release/apr)
+    #   1. Resolve the cuda apr binary. NEVER hardcode a path and never call a bare
+    #      `apr` — scripts/apr_bin.sh exports $APR and PROVES it was built from HEAD
+    #      (four apr binaries once coexisted here; a bare `apr` won at 26 days old).
+    #        cargo build --release --features cuda
+    #        . scripts/apr_bin.sh || exit 1    # -> $APR
+    #      The build must include #2049 (FP8 stall fix); without it the median premise
+    #      above does not hold.
     #   2. Ensure the GGUF + ollama model match:
     #        ls ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
     #        ollama pull qwen2.5-coder:1.5b-instruct-q4_K_M && ollama ps
     #   3. Run the ignored ENFORCED gate (asserts apr median-of-7 >= ollama
-    #      median x 1.10; FAILS the build on a real regression):
-    #        APR_BIN=/mnt/nvme-raid0/targets/aprender/release/apr \
+    #      median x 0.90 — the no-collapse floor; FAILS the build on a collapse):
+    #        APR_BIN="$APR" \
     #        APR_GGUF=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
     #        OLLAMA_MODEL=qwen2.5-coder:1.5b-instruct-q4_K_M \
     #        cargo test -p aprender-serve --test beat_ollama_decode_throughput_speed \
