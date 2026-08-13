@@ -39,6 +39,29 @@ jobs:
     # full-workspace llvm-cov run. The `clean-room` label pins to that pool.
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 75
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+      # PER-RUN PRIVATE TOOL ROOT (#2353). mac-server runs 16 runners under ONE
+      # $HOME, so $HOME/.cargo/bin is shared mutable state across every
+      # concurrent job. `cargo install` replaces a binary there; a job that is
+      # mid-run and execs that same path gets whatever exists at that instant.
+      # On 2026-07-31 this job died with
+      #   could not execute process `/home/noah/.cargo/bin/cargo-llvm-cov`
+      #   (never executed) No such file or directory (os error 2)
+      # and reported an EMPTY coverage figure into the tracking issue — a
+      # MISSING measurement, the class project_coverage_floor_measurement_broken
+      # is about. ENOENT on an absolute path means the path did not exist when
+      # exec'd, which nothing but a concurrent writer to that path can produce.
+      #
+      # The fix removes the shared path rather than retrying around it: every
+      # `cargo install` in this job lands in a directory named after THIS run,
+      # which no other job can address. Note this deliberately redirects only
+      # the INSTALL ROOT, not CARGO_HOME (which is what the `security` job
+      # isolates): the registry/git caches under ~/.cargo are guarded by cargo's
+      # own package-cache lock and are safe to share, while a private CARGO_HOME
+      # would re-download the whole dependency graph every night for no gain.
+      COV_TOOLS: /tmp/apr-cov-tools-${{ github.run_id }}-${{ github.run_attempt }}
+      CARGO_INSTALL_ROOT: /tmp/apr-cov-tools-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       # clean: false — a coverage run builds from source and doesn't need a
       # pristine tree, and the default git-clean choked on root-owned leftovers
@@ -47,6 +70,60 @@ jobs:
       - uses: actions/checkout@v7
         with:
           clean: false
+
+      # Provision cargo-llvm-cov WITHOUT touching ~/.cargo/bin (#2353).
+      #
+      # Preferred source is the copy already baked into sovereign-ci at
+      # /usr/local/cargo/bin/cargo-llvm-cov — verified 2026-08-13 on mac-server
+      # to be the SAME version the runtime install was producing (0.8.7) and to
+      # execute on the host once copied out (host glibc 2.35). Using it costs a
+      # 4.5MB file copy instead of a ~5.5min compile, and the binary is pinned
+      # to whatever the image ships rather than to whatever crates.io has today.
+      #
+      # Fallback (image not cached / registry down / binary won't run here):
+      # compile it, but with an explicit --root so it STILL never lands in
+      # ~/.cargo/bin. Both paths write only to $COV_TOOLS.
+      #
+      # Fail closed. A coverage run without a working cargo-llvm-cov must be RED
+      # here, not a green job that reports an empty percentage.
+      - name: Provision cargo-llvm-cov into the per-run private root
+        run: |
+          set -euo pipefail
+          mkdir -p "$COV_TOOLS/bin"
+          src="none"
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            # --user: without it the copy lands root-owned and the cleanup step
+            # (running as the runner user) cannot remove it.
+            if docker run --rm --user "$(id -u):$(id -g)" \
+                 -v "$COV_TOOLS/bin:/out" --entrypoint sh "$IMAGE" \
+                 -c 'cp /usr/local/cargo/bin/cargo-llvm-cov /out/'; then
+              src="image"
+            else
+              echo "::warning::could not copy cargo-llvm-cov out of $IMAGE — will build it"
+            fi
+          else
+            echo "sovereign-ci image not cached on this runner — will build the tool"
+          fi
+          if [ "$src" = "image" ]; then
+            if ! "$COV_TOOLS/bin/cargo-llvm-cov" llvm-cov --version; then
+              echo "::warning::baked cargo-llvm-cov does not run on this host — falling back to cargo install"
+              rm -f "$COV_TOOLS/bin/cargo-llvm-cov"
+              src="none"
+            fi
+          fi
+          if [ "$src" = "none" ]; then
+            export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+            cargo install cargo-llvm-cov --locked --root "$COV_TOOLS"
+            src="cargo-install"
+          fi
+          # Prove the mechanism engaged: name the file that will actually run.
+          # Under `set -e` this last check is the fail-closed gate — no working
+          # tool here means a RED job, never a green one reporting no number.
+          echo "provisioned from: $src"
+          ls -l "$COV_TOOLS/bin/cargo-llvm-cov"
+          "$COV_TOOLS/bin/cargo-llvm-cov" llvm-cov --version
+          # Ahead of ~/.cargo/bin for every later step in this job.
+          echo "$COV_TOOLS/bin" >> "$GITHUB_PATH"
 
       # Data + summary via the maintained Makefile machinery (handles the
       # mold-linker/config.toml dance + slow-test skips correctly). Non-blocking.
@@ -57,13 +134,24 @@ jobs:
         id: cov
         run: |
           set -o pipefail
-          # The 15 intel runners aren't uniformly provisioned: cargo / cargo-llvm-cov
-          # may be off PATH (some runners lack it), which makes the Makefile's
-          # `cargo install cargo-llvm-cov || exit 1` abort immediately. Put cargo on
-          # PATH for the make subshell + pre-install the tool (non-blocking) so the
-          # Makefile's `which cargo-llvm-cov` short-circuits.
-          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-          command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked || true
+          # The 15 intel runners aren't uniformly provisioned: cargo may be off
+          # PATH for a raw `run:` step, so put it there for the make subshell.
+          # $COV_TOOLS/bin goes FIRST so the Makefile's `which cargo-llvm-cov`
+          # short-circuits on the private copy — if ~/.cargo/bin led here, the
+          # private root would be decorative and #2353 would still be live.
+          export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          # Assert it, don't assume it: a measurement run must prove which
+          # binary it is about to use, not describe its intent.
+          resolved="$(command -v cargo-llvm-cov || true)"
+          echo "cargo-llvm-cov resolves to: ${resolved:-<none>}"
+          case "$resolved" in
+            "$COV_TOOLS/bin/"*) ;;
+            *)
+              echo "::error::cargo-llvm-cov resolved to '${resolved:-<none>}', not the per-run private root $COV_TOOLS/bin"
+              echo "::error::a concurrent job could replace that path mid-run (aprender#2353)"
+              exit 1
+              ;;
+          esac
           # ARMED (was `|| true`). `make coverage` now enforces a RATCHET floor
           # (COV_FLOOR, the last measured value) rather than the aspirational 95%
           # target, so a red here means coverage went DOWN - not that we have not
@@ -76,10 +164,13 @@ jobs:
       # on PATH for raw run: steps on these runners, so source the cargo env; and
       # `|| true` keeps a pmat failure from aborting the job (the coverage % below
       # is the core deliverable; gap ranking is a bonus).
+      # CARGO_INSTALL_ROOT (job env) sends this install to the per-run root too,
+      # so this step cannot clobber another job's pmat either — the exposure is
+      # symmetric and #2353 only happened to be observed from the victim side.
       - name: Ensure pmat installed
         run: |
-          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-          command -v pmat >/dev/null 2>&1 || cargo install pmat --locked || true
+          export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          command -v pmat >/dev/null 2>&1 || cargo install pmat --locked --root "$COV_TOOLS" || true
 
       # Dogfooded gap analysis — pmat query, NOT raw llvm-cov output (CLAUDE.md).
       # Same default ./target as the make step so pmat finds the coverage profiles.
@@ -87,7 +178,7 @@ jobs:
         id: gaps
         if: always()
         run: |
-          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
           if command -v pmat >/dev/null 2>&1; then
             pmat query --coverage-gaps --exclude-tests --limit 30 > /tmp/gaps.txt 2>/dev/null \
               || echo "(pmat --coverage-gaps returned no data — coverage profile missing?)" > /tmp/gaps.txt
@@ -133,3 +224,14 @@ jobs:
           else
             gh issue create --title "$title" --body "$body" && echo "created tracking issue"
           fi
+
+      # A per-run directory that is never removed is just a slower leak. Drop
+      # this run's, then sweep any orphan left by a hard-killed run (which skips
+      # even `if: always()` steps — the same failure mode the workspace-test
+      # ownership-restore step exists for).
+      - name: Remove the per-run tool root
+        if: always()
+        run: |
+          rm -rf "$COV_TOOLS"
+          find /tmp -maxdepth 1 -name 'apr-cov-tools-*' -uid "$(id -u)" -mtime +1 \
+            -exec rm -rf {} + 2>/dev/null || true
