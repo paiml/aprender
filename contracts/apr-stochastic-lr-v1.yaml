@@ -83,6 +83,22 @@ falsification_tests:
     cargo test -p aprender-core --lib -- test_minibatch_equals_batch 2>&1 | grep "ok"
   if_fails: "mini-batch gradient diverges from full-batch"
 
+- id: FALSIFY-SGD-004
+  rule: epoch shuffle arithmetic is width-portable and overflow-free
+  prediction: >
+    The Fisher-Yates partner index is computed in wrapping u64, so both SGD fit
+    modes run to completion under overflow checking on 64-bit and aprender-core
+    compiles for a 32-bit target. Refs aprender#2310. The grep is anchored on a
+    non-zero pass count: an unanchored `grep "ok"` matches
+    "test result: ok. 0 passed" and would pass on an empty filter.
+  test: |
+    cargo test -p aprender-core --lib -- classification::tests_sgd_portable_shuffle 2>&1 | grep -E "^test result: ok\. [1-9][0-9]* passed"
+    bash scripts/check_wasm32_core_builds.sh
+  if_fails: >
+    The MMIX LCG constants are back in a usize expression: 4 "literal out of
+    range for usize" errors on wasm32-unknown-unknown, and "attempt to multiply
+    with overflow" from epoch 3 / index 13 in any debug build on 64-bit.
+
 proof_obligations:
 - type: invariant
   property: "default FitMode::Batch backward compatible"
@@ -90,9 +106,13 @@ proof_obligations:
   property: "stochastic mode shuffles samples each epoch"
 - type: invariant
   property: "mini-batch(n) == full-batch for complete dataset"
+- type: invariant
+  property: "shuffle_partner(seed, i) in [0, i] for all seed, i — the Fisher-Yates pass is a permutation"
+- type: invariant
+  property: "shuffle_partner uses wrapping u64, never usize, so it is width-portable and cannot overflow"
 
 verification_summary:
-  total_obligations: 3
+  total_obligations: 5
   proven: 0
-  tested: 0
+  tested: 2
   status: pending
