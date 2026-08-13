@@ -53,19 +53,25 @@ fn streaming_text_deltas(
     StreamedText { deltas, stopped }
 }
 
-/// Resolve the `GenerationConfig` for a streaming chat completion (PMAT-790).
+/// Resolve the `GenerationConfig` for a dense-`Model` chat completion (PMAT-790).
 ///
 /// `temperature == 0` is the canonical OpenAI request for deterministic (greedy) output, and
-/// every non-streaming `/v1/chat/completions` backend honors it via the `top_k == 1` greedy
-/// path. The streaming handler previously passed the raw `0.0` into `GenerationConfig`, so
+/// every quantized `/v1/chat/completions` backend honors it via the `top_k == 1` greedy
+/// path. The dense path previously passed the raw `0.0` into `GenerationConfig`, so
 /// `model.generate` -> `sample_token` -> `apply_temperature(0.0)` returned an `InvalidShape`
 /// error ("Temperature must be a positive finite number") which the handler mapped to HTTP
-/// 500 — so EVERY streaming chat completion with `temperature: 0` was broken.
+/// 500 — so EVERY dense chat completion with `temperature: 0` was broken.
 ///
 /// This helper forces `Greedy` for `temperature == 0` and substitutes a no-op temperature of
 /// `1.0` so the sampler never sees a non-positive scale. For positive temperatures the
 /// behavior is unchanged: greedy by default, or top-p when `top_p` is set.
-fn resolve_stream_generation_config(
+///
+/// #2375(4): it used to be reachable only from the (dead-on-arrival)
+/// `/v1/chat/completions/stream` handler, so `registry_fallback` — the dense
+/// backend of the route users actually call — still 500'd on `temperature: 0`.
+/// Both now build their config here, which is what "one behaviour per server"
+/// means in practice.
+fn resolve_chat_generation_config(
     temperature: f32,
     top_p: Option<f32>,
     max_tokens: usize,
@@ -86,109 +92,32 @@ fn resolve_stream_generation_config(
     config
 }
 
-/// OpenAI-compatible /v1/chat/completions streaming endpoint (SSE)
+/// OpenAI-compatible `/v1/chat/completions/stream` endpoint (SSE).
+///
+/// aprender#2375(4): this used to be an INDEPENDENT implementation that
+/// resolved only the dense f32 `Model` through `AppState::get_model`. That slot
+/// is `None` for every `apr serve run model.gguf` — those weights live in
+/// `quantized_model` — so a route the router mounts unconditionally next to
+/// `/v1/chat/completions` answered
+/// `{"error":"Model registry error: No model available"}` HTTP 404 on a server
+/// that was, at the same instant, serving `/v1/chat/completions` and reporting
+/// `model_loaded:true` on `/health`. Every backend added since (quantized, GPU,
+/// cached, CUDA, qwen3-moe) was invisible to it.
+///
+/// It now forwards to the one chat handler with `stream` forced on, so the
+/// route is the streaming flag and cannot drift from it again: one backend
+/// chain, one delta encoding, one `finish_reason` rule, one set of status
+/// codes.
 pub async fn openai_chat_completions_stream_handler(
     State(state): State<AppState>,
-    Json(request): Json<ChatCompletionRequest>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, Json<ErrorResponse>)> {
-    let model_id = if request.model == "default" || request.model.is_empty() {
-        None
-    } else {
-        Some(request.model.as_str())
-    };
-
-    let (model, tokenizer) = state.get_model(model_id).map_err(|e| {
-        state.metrics.record_failure();
-        (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: e.to_string(),
-            }),
-        )
-    })?;
-
-    let prompt_text = format_chat_messages(&request.messages, Some(&request.model));
-    let prompt_ids = tokenizer.encode(&prompt_text);
-    if prompt_ids.is_empty() {
-        state.metrics.record_failure();
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "Messages cannot be empty".to_string(),
-            }),
-        ));
-    }
-
-    let prompt_len = prompt_ids.len();
-    let prompt: Vec<usize> = prompt_ids.iter().map(|&id| id as usize).collect();
-
-    // GH-665: Cap max_tokens to prevent hangs on large values
-    let max_tokens = request.max_tokens.unwrap_or(256).min(4096);
-    let config = resolve_stream_generation_config(
-        request.temperature.unwrap_or(0.7),
-        request.top_p,
-        max_tokens,
-    );
-
-    let request_id = format!(
-        "chatcmpl-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    );
-
-    let generated = model.generate(&prompt, &config).map_err(|e| {
-        state.metrics.record_failure();
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: e.to_string(),
-            }),
-        )
-    })?;
-
-    let token_ids: Vec<u32> = generated
-        .iter()
-        .filter_map(|&id| u32::try_from(id).ok())
-        .collect();
-
-    let generated_ids = token_ids[prompt_len..].to_vec();
-    let model_name = request.model.clone();
-    let request_id_clone = request_id.clone();
-
-    // PMAT-758: precompute char-safe, stop-truncated deltas BEFORE streaming. The previous
-    // per-token `decode(&[token_id])` split multi-byte UTF-8 (emoji/CJK -> U+FFFD) and
-    // ignored request.stop entirely. All tokens are already generated here, so we can decode
-    // cumulatively and emit only complete-char, pre-stop deltas.
-    let StreamedText { deltas, stopped } =
-        streaming_text_deltas(&tokenizer, &generated_ids, request.stop.as_deref());
-    // #2375(6): the terminal chunk must state why generation ended. The
-    // non-streaming path reports "length" at the budget; so does this one now.
-    let finish = FinishReason::from_generation(stopped, generated_ids.len(), max_tokens);
-
-    let stream = async_stream::stream! {
-        // PMAT-753: pass ONLY the JSON payload to Event::data() — axum's Sse adds the
-        // `data: ` field prefix and the `\n\n` terminator itself. A manual `data: ` prefix
-        // would double-prefix the wire and break JSON.parse for every spec-compliant client.
-        let initial = ChatCompletionChunk::initial(&request_id_clone, &model_name);
-        let data = serde_json::to_string(&initial).unwrap_or_default();
-        yield Ok(Event::default().data(data));
-
-        for delta in &deltas {
-            let chunk = ChatCompletionChunk::content(&request_id_clone, &model_name, delta);
-            let data = serde_json::to_string(&chunk).unwrap_or_default();
-            yield Ok(Event::default().data(data));
-        }
-
-        let done = ChatCompletionChunk::done(&request_id_clone, &model_name, finish);
-        let data = serde_json::to_string(&done).unwrap_or_default();
-        yield Ok(Event::default().data(data));
-
-        yield Ok(Event::default().data("[DONE]"));
-    };
-
-    Ok(Sse::new(stream))
+    headers: HeaderMap,
+    Json(mut request): Json<ChatCompletionRequest>,
+) -> Response {
+    // The URL *is* the streaming request. Honouring a client's `"stream":false`
+    // here would answer an SSE endpoint with a buffered JSON body — the same
+    // wire-format violation #2375(3,5) reported against `/v1/completions`.
+    request.stream = true;
+    openai_chat_completions_handler(State(state), headers, Json(request)).await
 }
 
 #[cfg(test)]
@@ -235,14 +164,15 @@ mod pmat758_streaming_delta_tests {
     }
 }
 
-// PMAT-790: streaming /v1/chat/completions with `temperature: 0` must not 500. The handler
+// PMAT-790: /v1/chat/completions with `temperature: 0` must not 500 on the dense path. The
+// handler
 // builds a GenerationConfig and runs it through `model.generate` -> `sample_token` ->
 // `apply_temperature`, which rejects a non-positive temperature. `temperature: 0` is the
 // canonical OpenAI deterministic request and is honored by every non-streaming backend; it
 // must resolve to a runnable, greedy config here too.
 #[cfg(test)]
-mod pmat790_stream_temperature_zero_tests {
-    use super::resolve_stream_generation_config;
+mod pmat790_chat_temperature_zero_tests {
+    use super::resolve_chat_generation_config;
     use crate::generate::{sample_token, SamplingStrategy};
     use crate::tensor::Tensor;
 
@@ -252,7 +182,7 @@ mod pmat790_stream_temperature_zero_tests {
         // `sample_token` -> `apply_temperature(0.0)` returned Err -> the handler answered HTTP
         // 500 for every streaming chat completion with temperature 0. The resolved config must
         // (a) be greedy and (b) sample without error.
-        let config = resolve_stream_generation_config(0.0, None, 16);
+        let config = resolve_chat_generation_config(0.0, None, 16);
         assert_eq!(
             config.strategy,
             SamplingStrategy::Greedy,
@@ -272,7 +202,7 @@ mod pmat790_stream_temperature_zero_tests {
         // Even when top_p is supplied, temperature 0 means deterministic output (matches the
         // non-streaming backends where temperature 0 forces top_k = 1 regardless of other
         // sampling controls).
-        let config = resolve_stream_generation_config(0.0, Some(0.9), 16);
+        let config = resolve_chat_generation_config(0.0, Some(0.9), 16);
         assert_eq!(config.strategy, SamplingStrategy::Greedy);
     }
 
@@ -280,11 +210,11 @@ mod pmat790_stream_temperature_zero_tests {
     fn positive_temperature_unchanged() {
         // Regression guard: positive temperatures keep prior behavior — greedy by default,
         // top-p when requested — and remain runnable.
-        let greedy = resolve_stream_generation_config(0.7, None, 16);
+        let greedy = resolve_chat_generation_config(0.7, None, 16);
         assert_eq!(greedy.strategy, SamplingStrategy::Greedy);
         assert!((greedy.temperature - 0.7).abs() < 1e-6);
 
-        let nucleus = resolve_stream_generation_config(0.7, Some(0.8), 16);
+        let nucleus = resolve_chat_generation_config(0.7, Some(0.8), 16);
         assert!(matches!(
             nucleus.strategy,
             SamplingStrategy::TopP { p } if (p - 0.8).abs() < 1e-6
