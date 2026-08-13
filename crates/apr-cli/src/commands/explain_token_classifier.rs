@@ -24,7 +24,8 @@
 use serde_json::Value;
 
 /// Outcome of `classify_schema`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ExplainSchemaOutcome {
     Ok {
         line_count: usize,
@@ -59,7 +60,8 @@ pub enum ExplainSchemaOutcome {
 }
 
 /// Outcome of `classify_probs_normalize`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ExplainProbsOutcome {
     Ok,
     NotNormalized {
@@ -71,7 +73,8 @@ pub enum ExplainProbsOutcome {
 }
 
 /// Outcome of `classify_sampled_in_candidates`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ExplainSampledOutcome {
     Ok,
     SampledNotInCandidates {

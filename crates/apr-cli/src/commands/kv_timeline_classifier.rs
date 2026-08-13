@@ -48,7 +48,8 @@ pub const KV_TIMELINE_STEP_KEYS: &[&str] = &[
 ];
 
 /// Outcome of `classify_schema`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum KvSchemaOutcome {
     Ok,
     NotAnObject,
@@ -61,7 +62,8 @@ pub enum KvSchemaOutcome {
 }
 
 /// Outcome of `classify_block_conservation`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum KvBlockConservationOutcome {
     Ok,
     Violation {
@@ -73,7 +75,8 @@ pub enum KvBlockConservationOutcome {
 }
 
 /// Outcome of `classify_used_pct_arithmetic`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum KvUsedPctOutcome {
     Ok,
     Mismatch {
@@ -84,7 +87,8 @@ pub enum KvUsedPctOutcome {
 }
 
 /// Outcome of `classify_peak_consistency`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum KvPeakOutcome {
     Ok,
     PeakMismatch { expected: f64, got: f64 },
@@ -92,7 +96,8 @@ pub enum KvPeakOutcome {
 }
 
 /// Outcome of `classify_preemption_trigger`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum KvPreemptionOutcome {
     Ok,
     PreemptionBelowThreshold {

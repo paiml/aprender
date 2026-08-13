@@ -43,7 +43,8 @@ pub enum PromContentTypeOutcome {
 }
 
 /// Outcome of `classify_text_format`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum PromTextFormatOutcome {
     /// Body parses as a valid Prometheus 0.0.4 text exposition.
     Ok { metrics_seen: Vec<String> },

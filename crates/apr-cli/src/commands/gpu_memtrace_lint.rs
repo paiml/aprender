@@ -69,9 +69,9 @@ fn print_report(
     if json {
         let obj = serde_json::json!({
             "file": path.display().to_string(),
-            "schema": format!("{schema:?}"),
-            "alloc_free_pairing": format!("{pairing:?}"),
-            "monotonic_timestamps": format!("{ts:?}"),
+            "schema": schema,
+            "alloc_free_pairing": pairing,
+            "monotonic_timestamps": ts,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

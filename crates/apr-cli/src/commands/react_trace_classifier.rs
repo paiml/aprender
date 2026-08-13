@@ -38,7 +38,8 @@ pub const I06_REASON_EXIT: &[(&str, i32)] = &[
 ];
 
 /// Outcome of `classify_termination`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ReactTerminationOutcome {
     Ok {
         reason: String,

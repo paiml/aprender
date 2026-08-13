@@ -92,6 +92,38 @@ mod tests {
         );
     }
 
+    /// #2377-6. A lint's `--json` must emit FIELDS, not a Rust `Debug` rendering
+    /// stuffed into a JSON string value.
+    ///
+    /// `"sample_rate": format!("{rate:?}")` hands a consumer the characters
+    /// `Ok { rate: 16000 }` where it asked for a number — unparseable by
+    /// anything, and it changes shape whenever a variant is renamed. There were
+    /// 21 such sites across 9 files. The outcome enums are internally-tagged
+    /// `Serialize` instead, so each renders as an object with a `status`
+    /// discriminant and its real fields.
+    ///
+    /// Scanned rather than fixed-and-forgotten: the next `*_lint.rs` written by
+    /// copy-paste would reintroduce it, which is how it reached 21.
+    #[test]
+    fn no_lint_renders_debug_output_into_a_json_value() {
+        let mut offenders = Vec::new();
+        for (name, src) in lint_family() {
+            for (i, line) in code_only(&src).lines().enumerate() {
+                let t = line.trim();
+                // `"key": format!("{var:?}")` — a Debug rendering used as a value.
+                if t.starts_with('"') && t.contains("\": format!(\"{") && t.contains(":?}\")") {
+                    offenders.push(format!("{name}:{} {t}", i + 1));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "--json must emit fields, not a Debug string. Derive Serialize on the \
+             outcome enum (internally tagged) and pass it directly:\n{}",
+            offenders.join("\n")
+        );
+    }
+
     #[test]
     fn no_lint_command_blames_the_apr_model_format_for_an_observation() {
         // #2377-9. `CliError::InvalidFormat` Displays as "Invalid APR format".
