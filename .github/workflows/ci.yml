@@ -436,6 +436,17 @@ jobs:
       # reading the merged view. Behavioural, text-only, no build.
       - name: Story JSON parsing must read stdout, not the merged stream
         run: bash scripts/check_story_json_streams.sh
+      # Poka-yoke: mac-server runs 16 runners under ONE $HOME, so
+      # $HOME/.cargo/bin is shared mutable state. `cargo install` replaces a
+      # binary there while another job is mid-run and about to exec it — on
+      # 2026-07-31 Coverage Nightly died on
+      # `could not execute process .../cargo-llvm-cov ... No such file or
+      # directory (os error 2)` and posted an EMPTY coverage figure, i.e. a
+      # missing measurement (#2353). Text-only check, no build.
+      - name: Self-hosted jobs must install cargo tools into a private root
+        run: |
+          bash scripts/check_cargo_install_private_root.sh --self-test
+          bash scripts/check_cargo_install_private_root.sh
       # Poka-yoke: the 0.63.0 dogfood audit found 201 defects in code that was
       # shipped, tested and covered. The 5 Whys (docs/audits/dogfood-0.63.0-hansei.md)
       # landed on: nothing mechanical requires an assertion to EXCLUDE an outcome.
