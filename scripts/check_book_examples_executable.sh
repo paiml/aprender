@@ -25,19 +25,26 @@ skip=0
 fail=0
 total=0
 
-# Build the apr binary path. If `apr` is on PATH we use it; otherwise we look
-# for the canonical lambda-vector build path before giving up gracefully.
+# Resolve the binary THIS CHECKOUT builds (#2358).
+#
+# This used to be `command -v apr`, falling back to a hardcoded
+# /mnt/nvme-raid0/targets/aprender/release/apr. Both are the #2357 defect, and
+# this gate is a bad place for it: it executes the book's own examples and
+# reports whether they work. Against a stale binary it certifies that examples
+# run correctly on code nobody is shipping — an example using a flag added this
+# week FAILS, and an example using a flag deleted this week PASSES. The /mnt
+# fallback is worse than stale: nothing writes that path any more.
+#
+# `. scripts/apr_bin.sh` asks cargo for the target dir and asserts the binary's
+# embedded git SHA matches HEAD. It returns non-zero when there is no
+# freshly-built binary, which for this gate is a SKIP, not a failure — the
+# examples are still scanned and rust blocks still reported.
 APR_BIN=""
-if command -v apr >/dev/null 2>&1; then
-    APR_BIN="$(command -v apr)"
-elif [ -x /mnt/nvme-raid0/targets/aprender/release/apr ]; then
-    APR_BIN=/mnt/nvme-raid0/targets/aprender/release/apr
-fi
-
-# If we have no apr binary at all, all CLI examples skip — but the
-# script still scans rust blocks (none of which it runs) and reports.
-if [ -z "$APR_BIN" ]; then
-    echo "[INFO] apr binary not on PATH; all CLI examples will SKIP"
+if . scripts/apr_bin.sh 2>/dev/null; then
+    APR_BIN="$APR"
+else
+    echo "[INFO] no apr binary built from HEAD; all CLI examples will SKIP"
+    echo "[INFO]   build one with: cargo build --release -p apr-cli --bin apr"
 fi
 
 # Helper: rewrite a destructive command into a safe variant (or fail).

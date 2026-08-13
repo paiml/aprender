@@ -18,13 +18,17 @@ MATRIX_FILE="${REPO_ROOT}/docs/qualify-matrix.md"
 TIMEOUT=180
 CACHED_ONLY=false
 
-# Find apr binary on PATH
-if ! command -v apr >/dev/null 2>&1; then
-    echo "ERROR: apr not found on PATH. Run:"
-    echo "  cargo install --path crates/apr-cli"
+# Resolve the binary THIS CHECKOUT builds, not whatever PATH holds (#2358).
+# This script writes docs/qualify-matrix.md — a published claim about which
+# models qualify. Sourced from PATH, that table described whichever apr was
+# installed first, which is how a 24-day-old binary came to certify a gate
+# merged the day before.
+if ! . "$(dirname "$0")/apr_bin.sh"; then
+    echo "ERROR: no apr binary built from HEAD. Run:" >&2
+    echo "  cargo build --release -p apr-cli --bin apr" >&2
     exit 1
 fi
-APR_BIN="$(command -v apr)"
+APR_BIN="$APR"
 
 # Local models (ordered smallest-first)
 LOCAL_MODELS=(
