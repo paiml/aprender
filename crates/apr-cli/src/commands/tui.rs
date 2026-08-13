@@ -188,7 +188,15 @@ impl App {
             Ok(data) => {
                 let mut validator = AprValidator::new();
                 let report = validator.validate_bytes(&data);
-                self.validation_score = Some(report.total_score);
+                // #1866: percentage of the checks that RAN, not raw awarded
+                // points banded against a 100 the checklist cannot reach.
+                // The panel used to paint a healthy model "QA Score: 3/100" in
+                // red. `None` (nothing ran) hides the panel rather than
+                // painting a zero.
+                self.validation_score = report
+                    .implemented_score()
+                    .pct()
+                    .map(|pct| pct.round() as u8);
                 match AprReader::from_bytes(data) {
                     Ok(reader) => {
                         self.load_tensors(&reader);

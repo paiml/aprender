@@ -514,7 +514,7 @@ fn import_description_fixture() -> ImportDescription {
 
 #[test]
 fn test_import_json_stdout_parses_as_json() {
-    let stdout = import_json_stdout(&import_description_fixture(), 97, "A", true);
+    let stdout = import_json_stdout(&import_description_fixture(), Some(97), "A", true);
 
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
         panic!(
@@ -532,7 +532,7 @@ fn test_import_json_stdout_parses_as_json() {
 
 #[test]
 fn test_import_json_stdout_carries_no_human_decoration() {
-    let stdout = import_json_stdout(&import_description_fixture(), 60, "D", false);
+    let stdout = import_json_stdout(&import_description_fixture(), Some(60), "D", false);
 
     // These are the strings apr 0.63.0 put on stdout ahead of any document.
     for leak in [
@@ -555,7 +555,7 @@ fn test_import_json_stdout_carries_no_human_decoration() {
 fn test_import_json_stdout_reports_quantization_when_requested() {
     let mut describe = import_description_fixture();
     describe.quantize = Some("Int8".to_string());
-    let stdout = import_json_stdout(&describe, 91, "A", true);
+    let stdout = import_json_stdout(&describe, Some(91), "A", true);
 
     let parsed: serde_json::Value =
         serde_json::from_str(&stdout).expect("quantized import must still be one JSON document");

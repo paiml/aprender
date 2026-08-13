@@ -117,6 +117,20 @@ impl ImplementedScore {
     pub fn not_implemented(&self) -> usize {
         self.declared.saturating_sub(self.ran as usize)
     }
+
+    /// Percentage of the checks that RAN which passed, or `None` when nothing
+    /// ran.
+    ///
+    /// `None` is not zero. Zero means "we measured and you failed everything";
+    /// `None` means "nothing was measured", which is not a score and must not
+    /// be rendered as one (#1866).
+    #[must_use]
+    pub fn pct(&self) -> Option<f64> {
+        if self.ran == 0 {
+            return None;
+        }
+        Some((f64::from(self.passed) / f64::from(self.ran)) * 100.0)
+    }
 }
 
 impl std::fmt::Display for ImplementedScore {
@@ -166,25 +180,87 @@ impl ValidationReport {
         self.total_score += points;
     }
 
-    /// Get grade based on score
+    /// Letter grade for what the checklist ACTUALLY measured (#1866).
+    ///
+    /// This used to band `total_score`, a raw count of awarded points, against
+    /// a fixed 100-point denominator. 22 of the 26 checks the `.apr` path
+    /// declares are `Skip("Not implemented")` stubs that never run, so the
+    /// ceiling was 4 and every healthy model was graded `F` — while the same
+    /// report said `passed: true`, `failed: 0` and printed `✓ VALID`. A grade
+    /// nobody can earn is not a grade, it is a lie with a letter on it.
+    ///
+    /// The grade is now a function of the checks that ran, and it is wired to
+    /// the verdict rather than merely correlated with it:
+    ///
+    /// * nothing ran            → `"N/A"` — not a grade; nothing was measured
+    /// * any check FAILED       → `"F"`
+    /// * otherwise              → band of [`Self::implemented_score_pct`],
+    ///   floored at `"D"` because a report with no failures is at worst
+    ///   all-advisory.
+    ///
+    /// Invariant, proved by construction and asserted in
+    /// `grade_is_f_exactly_when_a_check_failed`:
+    ///
+    /// ```text
+    /// grade() == "F"  <=>  a check ran AND at least one check failed
+    ///                 <=>  !is_valid()  (given something ran)
+    /// ```
+    ///
+    /// so `is_valid()` (the human `VALID` badge), the JSON `passed` flag and
+    /// the grade cannot disagree.
     #[must_use]
     pub fn grade(&self) -> &'static str {
-        match self.total_score {
-            95..=100 => "A+",
-            90..=94 => "A",
-            85..=89 => "B+",
-            80..=84 => "B",
-            75..=79 => "C+",
-            70..=74 => "C",
-            60..=69 => "D",
-            _ => "F",
+        let Some(pct) = self.implemented_score_pct() else {
+            return "N/A";
+        };
+        if !self.is_valid() {
+            return "F";
+        }
+        // No failures ⇒ every check that ran either passed or warned ⇒ the
+        // worst reachable band here is "D". "F" is unreachable without a
+        // failure, which is exactly the invariant above.
+        if pct >= 95.0 {
+            "A+"
+        } else if pct >= 90.0 {
+            "A"
+        } else if pct >= 85.0 {
+            "B+"
+        } else if pct >= 80.0 {
+            "B"
+        } else if pct >= 75.0 {
+            "C+"
+        } else if pct >= 70.0 {
+            "C"
+        } else {
+            "D"
         }
     }
 
-    /// Check if validation passed (score >= threshold)
+    /// True when no check that ran reported a failure.
+    ///
+    /// This is the single predicate behind the human `VALID` / `INVALID`
+    /// badge, the JSON `verdict`, and the `"F"` grade band — so the three
+    /// cannot contradict each other (#1866).
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        self.failed_checks().is_empty()
+    }
+
+    /// Check if validation cleared a `min_score` threshold, expressed as a
+    /// percentage of the checks that RAN (#1866).
+    ///
+    /// It used to compare `total_score` — raw awarded points — against the
+    /// threshold, so `report.passed(95)` was unreachable for any `.apr` file
+    /// (ceiling 4) and `apr import` reported "completed with warnings" on
+    /// every successful import.
+    ///
+    /// Fails closed when nothing ran: you cannot clear a threshold against a
+    /// number that was never measured. That is the same rule `apr validate`
+    /// applies when refusing `--min-score` on a format that computes no score.
     #[must_use]
     pub fn passed(&self, min_score: u8) -> bool {
-        self.total_score >= min_score
+        self.implemented_score_pct()
+            .is_some_and(|pct| pct >= f64::from(min_score))
     }
 
     /// Get failed checks
@@ -234,17 +310,29 @@ impl ValidationReport {
     /// a hard fail (#1866).
     #[must_use]
     pub fn implemented_score_pct(&self) -> Option<f64> {
-        let max = self.implemented_max();
-        if max == 0 {
-            return None;
+        self.implemented_score().pct()
+    }
+
+    /// The same measured score, restricted to one category (#1866).
+    ///
+    /// The `--quality` table printed `B. Tensor Physics & Statistics 0/25` for
+    /// categories in which not a single check is even declared on the `.apr`
+    /// path — an empty progress bar that reads as "measured, scored nothing"
+    /// when the truth is "never ran". `ran == 0` here lets the renderer say
+    /// so instead of drawing a zero.
+    #[must_use]
+    pub fn category_score(&self, category: Category) -> ImplementedScore {
+        let in_category = || self.checks.iter().filter(|c| c.category == category);
+        let clamp = |n: usize| n.min(u8::MAX as usize) as u8;
+        ImplementedScore {
+            passed: clamp(in_category().filter(|c| c.status.is_pass()).count()),
+            ran: clamp(
+                in_category()
+                    .filter(|c| !matches!(c.status, CheckStatus::Skip(_)))
+                    .count(),
+            ),
+            declared: in_category().count(),
         }
-        let passed: u8 = self
-            .checks
-            .iter()
-            .filter(|c| c.status.is_pass())
-            .count()
-            .min(u8::MAX as usize) as u8;
-        Some((f64::from(passed) / f64::from(max)) * 100.0)
     }
 }
 
