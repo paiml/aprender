@@ -42,10 +42,13 @@ equations:
   pmat_audit_per_beat:
     formula: "PMAT_HUNT=1 emits a manifest of {coverage_gap, churn, fault} for each beat's command-handler module"
     domain: "any beat that PASSed (manifest only meaningful if the command actually ran)"
-    codomain: "structured stderr manifest (gap=, churn=, fault= prefixed lines)"
+    codomain: "structured stdout manifest (gap, churn, fault prefixed lines)"
     invariants:
-      - "Each beat with PMAT_HUNT=1 emits at most 9 lines (3 gaps + 3 churn + 3 faults)"
-      - "Manifest is informational — it does not change exit code"
+      - "Each beat with PMAT_HUNT=1 emits at most 9 lines per hunted path (3 gaps + 3 churn + 3 faults)"
+      - "A beat with PMAT_HUNT=1 emits AT LEAST ONE row: a header with nothing under it fails the beat"
+      - "Row formatters read pmat's own JSON keys — function_name, impact_score, commit_count, fault_annotations"
+      - "Hunts are scoped by --path alone; a free-text query is a relevance filter applied BEFORE --path and collapses a module-scoped hunt to nothing"
+      - "Every path a beat hunts exists in the tree"
       - "Manifest is consumed by the daily cron to detect drift over time"
 
   beat_to_command_surface:
@@ -91,8 +94,12 @@ falsification_tests:
 
   - id: FALSIFY-QWEN-STORY-003
     rule: "Every beat uses OUT=$(cmd); EC=$? pattern via run_cmd helper"
-    prediction: "Script defines run_cmd helper that captures both stdout and exit code"
-    test: "grep -qE 'RC_OUT=.*timeout.*RC_EC=' scripts/qwen-story.sh"
+    prediction: "run_cmd captures both stdout and the exit code without a pipeline"
+    # Was `grep ... scripts/qwen-story.sh`, which stopped matching the moment
+    # run_cmd moved into scripts/lib_story_run.sh - a falsifier that can no
+    # longer see the code it is about is not testing anything. Same class as the
+    # inert pmat manifest this contract now also covers (FALSIFY-QWEN-STORY-015).
+    test: "grep -qE 'RC_OUT=.*timeout.*RC_EC=' scripts/lib_story_run.sh"
     if_fails: "Methodology regression — pipe-then-$? could re-introduce false-positive bugs"
 
   - id: FALSIFY-QWEN-STORY-004
@@ -154,6 +161,12 @@ falsification_tests:
     prediction: "scripts/check_story_json_streams.sh exits 0: run_cmd sets RC_OUT from stdout only, RC_ERR from stderr only, RC_ALL from both, and no jq call site in qwen-story.sh is fed from the merged stream"
     test: "bash scripts/check_story_json_streams.sh"
     if_fails: "run_cmd captured `cmd 2>&1` into one variable, so a command's stderr was prepended to its JSON. On 2026-08-11 that reported `no format_parity gate found in --json output (got: '', apr qa exit=0)` for a gate that had run and PASSED - apr qa writes JSON to stdout and the CUDA path emits unconditional `[trueno#243]` lines to stderr. A false FAIL is as corrosive as a gate that cannot fail: main goes red for a non-reason. Note the converse is equally a defect - a Rust panic arrives on stderr, so the panic checks must keep reading RC_ALL."
+
+  - id: FALSIFY-QWEN-STORY-015
+    rule: "The pmat bug-hunt manifest can produce rows, and an empty manifest fails the beat"
+    prediction: "scripts/check_story_pmat_hunt.sh exits 0: pmat_rows formats from function_name/impact_score/commit_count/fault_annotations, a free-text query before --path yields nothing, pmat_hunt returns 1 and calls emit_fail when its header carries no rows, and every path the story hunts exists"
+    test: "bash scripts/check_story_pmat_hunt.sh"
+    if_fails: "The hunt printed eight manifest headers and ZERO rows a night from the day the cron was added, so the workflow's 'manifest grew by >5' alert branch never had a non-zero input and half the nightly's alerting was decorative. Three independent causes, each sufficient: (1) the jq filters named .function / .churn.commit_count / .faults while pmat emits function_name / commit_count / fault_annotations - the row guard select(.function != null) discarded 100% of records; (2) the churn and fault hunts passed the beat label as a free-text query, and --path is a POST-filter over the semantic top-K, so a module-scoped hunt collapsed to nothing (measured on pmat 3.30.0: query + --path <module> = 0 rows, no query + --path <same module> = 3 rows); (3) commands/list.rs, commands/code.rs and commands/serve.rs had been deleted or moved. All three present as an empty manifest, which pmat_hunt's unconditional `return 0` made indistinguishable from clean code."
 
   - id: FALSIFY-QWEN-STORY-008
     rule: "Beat 7 doesn't run apr qa on 7B (known #1864 regression)"

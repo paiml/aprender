@@ -436,6 +436,20 @@ jobs:
       # reading the merged view. Behavioural, text-only, no build.
       - name: Story JSON parsing must read stdout, not the merged stream
         run: bash scripts/check_story_json_streams.sh
+      # Poka-yoke: the nightly's pmat bug-hunt printed eight manifest headers and
+      # ZERO rows every night since the cron was added (#2356), so the workflow's
+      # "manifest grew by >5" alert branch never had a non-zero input. Three
+      # causes, each silent: the jq filters named `.function`/`.churn.commit_count`
+      # /`.faults` where pmat emits `function_name`/`commit_count`/
+      # `fault_annotations`; the churn and fault hunts passed the beat label as a
+      # free-text query, which is a relevance filter applied BEFORE `--path` and
+      # collapses a module-scoped hunt to nothing; and three hunted paths had been
+      # deleted or moved. All three present as "the manifest is empty tonight",
+      # which used to be indistinguishable from "the code is clean tonight" -
+      # pmat_hunt returned 0 unconditionally. It now fails the beat. Behavioural
+      # against a stubbed pmat, text-only, no build.
+      - name: The pmat bug-hunt manifest must be able to produce rows
+        run: bash scripts/check_story_pmat_hunt.sh
       # Poka-yoke: the 0.63.0 dogfood audit found 201 defects in code that was
       # shipped, tested and covered. The 5 Whys (docs/audits/dogfood-0.63.0-hansei.md)
       # landed on: nothing mechanical requires an assertion to EXCLUDE an outcome.

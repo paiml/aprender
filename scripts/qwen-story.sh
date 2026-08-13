@@ -94,63 +94,21 @@ emit_evidence() {
   printf '%s\n' "$RC_ALL" | sed 's/^/    /'
 }
 
-# Extract rows from one `pmat query`, tolerating BOTH shapes pmat can return.
+# pmat_rows / pmat_hunt live in a sourceable library so the manifest can be
+# driven directly against a stubbed pmat - see scripts/check_story_pmat_hunt.sh.
+# They ran here for months emitting eight headers and zero rows a night (#2356);
+# the library header records all three causes and the measurements behind them.
 #
-# A function query returns a JSON ARRAY of function records, but when nothing
-# matches semantically pmat falls back to a document search and returns
-# `{"documents":[...]}` instead. The original filter ran `.[] | \(.function)`
-# unconditionally: on the fallback shape `.[]` yields the documents ARRAY, and
-# interpolating `.function` from an array raises "Cannot index array with
-# function" - jq exits 5. Under `pipefail` the whole assignment then returned
-# 5, which is what killed the nightly story once errexit leaked in from
-# apr_bin.sh. Guarding on `type == "array"` makes the no-match case yield an
-# empty string instead of an error.
+# The hunt is NO LONGER ADVISORY: a header with no rows under it calls emit_fail
+# and fails the beat, because every one of those three causes presented as an
+# empty manifest and nothing could tell that apart from clean code. emit_fail
+# must therefore be defined before this point - the library checks and refuses
+# to load otherwise.
 #
-# `|| true` is deliberate and load-bearing: this manifest is ADVISORY. It
-# annotates the story, and must never be able to fail it - not via pmat's exit
-# status, not via jq, not via SIGPIPE from `head`.
-#
-# Args: <jq-output-filter> <pmat query args...>
-pmat_rows() {
-  local filter="$1"; shift
-  # The jq program is assembled with printf rather than written as a
-  # double-quoted string spanning several lines: bashrs reads the latter as an
-  # unterminated string (SC1078) and reported 2 errors here, which kept
-  # FALSIFY-QWEN-STORY-007 ("bashrs lints clean") red. Behaviour is unchanged -
-  # only the quoting is.
-  local prog
-  prog=$(printf '%s\n%s\n%s' \
-    'if type == "array" then .[] else empty end' \
-    '| select(.function != null)' \
-    "| $filter")
-  pmat query "$@" --format json 2>/dev/null \
-    | jq -r "$prog" 2>/dev/null \
-    | head -3 || true
-}
-
-# Run pmat full audit on a list of command module patterns. Outputs a compact
-# manifest (top 3 high-risk untested functions, top 3 churn, top 3 faults).
-pmat_hunt() {
-  local beat="$1"; shift
-  if [ "$PMAT_HUNT" != "1" ] || ! command -v pmat >/dev/null 2>&1; then
-    return 0
-  fi
-  printf '    -- pmat bug-hunt manifest (%s) --\n' "$beat"
-  for q in "$@"; do
-    local gaps churn faults
-    gaps=$(pmat_rows '"        gap   \(.function) (impact=\(.impact_score // "?"))"' \
-      --coverage-gaps --path "$q" --rank-by impact --limit 3)
-    churn=$(pmat_rows '"        churn \(.function) (commits=\(.churn.commit_count // "?"))"' \
-      "$beat" --path "$q" --churn --max-complexity 30 --limit 3)
-    faults=$(pmat_rows '"        fault \(.function) (\(.faults | join(",")))"' \
-      "$beat" --path "$q" --faults --exclude-tests --limit 3)
-    [ -n "$gaps" ]   && printf '%s\n' "$gaps"
-    [ -n "$churn" ]  && printf '%s\n' "$churn"
-    [ -n "$faults" ] && printf '%s\n' "$faults"
-  done
-  printf '\n'
-  return 0
-}
+# The explicit `|| exit 1` is what makes a missing library fatal; the library
+# itself must not run `set`, which would leak options into this script.
+# shellcheck source=scripts/lib_story_pmat.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib_story_pmat.sh" || exit 1
 
 # -- Beat 1: Discover (0.5B SafeTensors) --------------------------------------─
 beat1_discover() {
@@ -167,7 +125,9 @@ beat1_discover() {
     emit_fail "B1 list" "exit=$RC_EC"
     return
   fi
-  pmat_hunt "registry list" crates/apr-cli/src/commands/list.rs crates/apr-cli/src/commands/pull.rs
+  # No commands/list.rs: `Commands::List => pull::list(...)` - list and pull are
+  # the same module. The dead path was hunted nightly and returned nothing.
+  pmat_hunt "registry list" crates/apr-cli/src/commands/pull.rs
 }
 
 # The GGUF leg of Beat 2. Deliberately NOT named beat<N>_* - the story has
@@ -352,10 +312,12 @@ beat5_use() {
   else
     emit_skip "B5 apr code -p" "non-zero exit=$RC_EC (may need --model)"
   fi
+  # `apr code` moved out of apr-cli into aprender-orchestrate; commands/code.rs
+  # has not existed for some time and was hunted nightly regardless.
   pmat_hunt "run chat code" \
     crates/apr-cli/src/commands/run.rs \
     crates/apr-cli/src/commands/chat.rs \
-    crates/apr-cli/src/commands/code.rs
+    crates/aprender-orchestrate/src/cli/code.rs
 }
 
 # -- Beat 6: Serve (1.5B over HTTP) --------------------------------------------
@@ -395,8 +357,10 @@ beat6_serve() {
     emit_fail "B6 /v1/chat/completions" "no message.content in response"
   fi
   kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  # commands/serve.rs became the commands/serve/ DIRECTORY (handlers, routes,
+  # server, ollama, auth). The file path had been dead for months.
   pmat_hunt "serve http chat-completions" \
-    crates/apr-cli/src/commands/serve.rs \
+    crates/apr-cli/src/commands/serve \
     crates/aprender-serve/src/api/cuda_chat_backend.rs
 }
 
