@@ -18,13 +18,17 @@ async fn test_chat_completions_empty_content() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Empty content should trigger empty prompt handling
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 // =============================================================================
@@ -49,12 +53,17 @@ async fn test_chat_completions_unicode_content() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 /// Test content with newlines
@@ -75,12 +84,17 @@ async fn test_chat_completions_multiline_content() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 // =============================================================================
@@ -111,12 +125,17 @@ async fn test_chat_completions_all_optional_params() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 /// Test with negative temperature (edge case)
@@ -139,13 +158,17 @@ async fn test_chat_completions_negative_temperature() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Negative temperature might be rejected or clamped
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 // =============================================================================
@@ -171,12 +194,17 @@ async fn test_chat_completions_trace_header() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 // =============================================================================
@@ -203,11 +231,17 @@ async fn test_stream_handler_empty_messages() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Empty messages should be rejected (or NOT_FOUND if no model)
-    assert!(
-        response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::UNPROCESSABLE_ENTITY
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 /// Stream handler: non-existent model should return 404
@@ -230,13 +264,17 @@ async fn test_stream_handler_model_not_found() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Non-existent model should return NOT_FOUND or fall back to default
-    assert!(
-        response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 /// Stream handler: whitespace-only message content
@@ -259,13 +297,17 @@ async fn test_stream_handler_whitespace_content() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Whitespace-only content might be rejected or processed
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 /// Stream handler with top_p parameter
@@ -288,12 +330,17 @@ async fn test_stream_handler_with_top_p() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 /// Stream handler with extreme top_p values
@@ -317,13 +364,17 @@ async fn test_stream_handler_extreme_top_p() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 /// Stream handler with max_tokens=0
@@ -347,13 +398,17 @@ async fn test_stream_handler_zero_max_tokens() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Zero max_tokens might return empty or error
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 // =============================================================================
@@ -382,16 +437,18 @@ async fn test_registry_malfunction_structured_error() {
     let response = app.oneshot(request).await.expect("test value should be present");
     let status = response.status();
 
-    // Graceful degradation: must return structured error, not panic
-    assert!(
-        status == StatusCode::NOT_FOUND
-            || status == StatusCode::OK  // Might fall back to default
-            || status == StatusCode::INTERNAL_SERVER_ERROR,
-        "Expected graceful degradation, got: {status}"
+    // aprender#2375(4): "404 or OK or 500" admitted success and two different
+    // failures at once, so it could not distinguish graceful degradation from
+    // any other outcome. This fixture has no model at all, so the answer is the
+    // server-side condition: 503.
+    assert_eq!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
 
-    // If error, verify response body is valid JSON with error field
-    if status != StatusCode::OK {
+    // ... and it degrades gracefully: a structured JSON error, never a panic.
+    {
         let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
             .await
             .expect("test value should be present");

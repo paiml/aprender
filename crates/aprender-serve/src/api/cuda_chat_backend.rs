@@ -324,15 +324,16 @@ fn convert_token_ids(ids: &[usize]) -> Result<Vec<u32>, String> {
 
 /// Build generation config from request parameters
 fn build_gen_config(request: &ChatCompletionRequest) -> GenerationConfig {
-    let max_tokens = request.max_tokens.unwrap_or(256);
-    let temperature = request.temperature.unwrap_or(0.7);
-    let mut config = GenerationConfig::default()
-        .with_max_tokens(max_tokens)
-        .with_temperature(temperature);
-    if let Some(top_p) = request.top_p {
-        config.strategy = SamplingStrategy::TopP { p: top_p };
-    }
-    config
+    // #2375(4): built inline here, this dropped PMAT-790's `temperature == 0`
+    // normalization, so the dense backend of `/v1/chat/completions` answered 500
+    // ("Temperature must be a positive finite number") for the canonical OpenAI
+    // deterministic request while the quantized backend served it. One resolver
+    // for both.
+    resolve_chat_generation_config(
+        request.temperature.unwrap_or(0.7),
+        request.top_p,
+        request.max_tokens.unwrap_or(256),
+    )
 }
 
 /// Registry-based model fallback (no specialized backend).
@@ -350,7 +351,12 @@ fn registry_fallback(
 
     let (model, tokenizer) = match state.get_model(model_id) {
         Ok((m, t)) => (m, t),
-        Err(e) => return fail_response(state, StatusCode::NOT_FOUND, e),
+        // #2375(4): a hardcoded 404 told clients this mounted route did not
+        // exist whenever the server simply had no model resident. That is a
+        // server-side condition — 503, the status `/v1/predict` and
+        // `/v1/gpu/warmup` already answer for it. An unknown model NAME stays
+        // 404. `model_resolution_status` is the single rule (aprender#2376(5)).
+        Err(e) => return fail_response(state, super::model_resolution_status(&e), e),
     };
 
     let prompt_text = format_chat_messages(&request.messages, Some(&request.model));
