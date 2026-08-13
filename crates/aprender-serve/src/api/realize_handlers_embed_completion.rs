@@ -17,11 +17,10 @@ fn mean_pool_hidden_states(
 ) -> Vec<f32> {
     // Never index past the rows we were actually given: `data` is
     // `[seq_len, hidden_dim]` and the caller's `token_ids` must align with it.
-    let seq_len = if hidden_dim == 0 {
-        0
-    } else {
-        token_ids.len().min(data.len() / hidden_dim)
-    };
+    let seq_len = data
+        .len()
+        .checked_div(hidden_dim)
+        .map_or(0, |rows| token_ids.len().min(rows));
 
     let mut sum = vec![0.0f32; hidden_dim];
     let mut counted = 0usize;

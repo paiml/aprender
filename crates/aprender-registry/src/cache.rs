@@ -389,11 +389,11 @@ impl EvictionPolicy {
     /// Sort entries by eviction priority (lowest priority first)
     pub fn sort_for_eviction<'a>(&self, entries: &mut [&'a CacheEntry]) {
         match self {
-            Self::LRU => entries.sort_by(|a, b| a.last_accessed.cmp(&b.last_accessed)),
-            Self::LFU => entries.sort_by(|a, b| a.access_count.cmp(&b.access_count)),
-            Self::FIFO => entries.sort_by(|a, b| a.created_at.cmp(&b.created_at)),
-            Self::LargestFirst => entries.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes)),
-            Self::OldestFirst => entries.sort_by(|a, b| a.created_at.cmp(&b.created_at)),
+            Self::LRU => entries.sort_by_key(|a| a.last_accessed),
+            Self::LFU => entries.sort_by_key(|a| a.access_count),
+            Self::FIFO => entries.sort_by_key(|a| a.created_at),
+            Self::LargestFirst => entries.sort_by_key(|b| std::cmp::Reverse(b.size_bytes)),
+            Self::OldestFirst => entries.sort_by_key(|a| a.created_at),
         }
     }
 }
@@ -621,7 +621,7 @@ impl CacheManager {
     #[must_use]
     pub fn list(&self) -> Vec<&CacheEntry> {
         let mut entries: Vec<_> = self.entries.values().collect();
-        entries.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.last_accessed));
         entries
     }
 

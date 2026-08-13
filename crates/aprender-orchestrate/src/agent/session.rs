@@ -82,7 +82,7 @@ impl SessionStore {
     /// Only returns sessions modified within `max_age` (default 24h).
     /// PMAT-165: age filter prevents offering stale sessions.
     pub fn find_recent_for_cwd() -> Option<SessionManifest> {
-        Self::find_recent_for_cwd_within(std::time::Duration::from_secs(24 * 3600))
+        Self::find_recent_for_cwd_within(std::time::Duration::from_hours(24))
     }
 
     /// Find the most recent session for cwd within the given age limit.

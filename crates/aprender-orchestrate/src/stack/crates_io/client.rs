@@ -41,7 +41,7 @@ impl CratesIoClient {
             client,
             cache: HashMap::new(),
             persistent_cache: None,
-            cache_ttl: Duration::from_secs(15 * 60), // 15 minutes
+            cache_ttl: Duration::from_mins(15), // 15 minutes
             offline: false,
         }
     }

@@ -460,7 +460,7 @@ fn format_bar_segments(filled: usize, width: usize) -> String {
 
 /// Render a horizontal bar
 fn render_bar(value: usize, max: usize, width: usize) -> String {
-    let filled = if max > 0 { (value * width / max).min(width) } else { 0 };
+    let filled = (value * width).checked_div(max).unwrap_or(0).min(width);
     format_bar_segments(filled, width)
 }
 

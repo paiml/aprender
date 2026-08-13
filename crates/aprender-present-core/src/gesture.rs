@@ -223,10 +223,9 @@ impl GestureRecognizer {
     }
 
     fn on_touch_move(&mut self, id: TouchId, position: Point, pressure: f32) -> Option<Event> {
-        if let Some(touch) = self.touches.get_mut(&id) {
+        {
+            let touch = self.touches.get_mut(&id)?;
             touch.update(position, pressure);
-        } else {
-            return None;
         }
 
         match self.touches.len() {

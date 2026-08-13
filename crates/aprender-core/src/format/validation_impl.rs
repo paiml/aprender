@@ -392,11 +392,7 @@ impl PokaYokeResult {
             .fold(0u8, u8::saturating_add);
         let total_points: u16 = gates.iter().map(|g| u16::from(g.points)).sum();
         let max_points: u16 = gates.iter().map(|g| u16::from(g.max_points)).sum();
-        let score = if max_points > 0 {
-            ((total_points * 100) / max_points).min(100) as u8
-        } else {
-            0
-        };
+        let score = (total_points * 100).checked_div(max_points).unwrap_or(0).min(100) as u8;
         Self {
             gates,
             score,
@@ -415,11 +411,7 @@ impl PokaYokeResult {
     fn recalculate_score(&mut self) {
         let total_points: u16 = self.gates.iter().map(|g| u16::from(g.points)).sum();
         let max_points: u16 = self.gates.iter().map(|g| u16::from(g.max_points)).sum();
-        self.score = if max_points > 0 {
-            ((total_points * 100) / max_points).min(100) as u8
-        } else {
-            0
-        };
+        self.score = (total_points * 100).checked_div(max_points).unwrap_or(0).min(100) as u8;
     }
 
     /// Get letter grade

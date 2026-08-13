@@ -118,7 +118,7 @@ impl VerificationResult {
 
         for status in self.invariant_status.values() {
             let mark = if status.test_found { "✓" } else { "✗" };
-            let _ = writeln!(out, "  [{mark}] {} — {}", status.id, status.name,);
+            let _ = writeln!(out, "  [{mark}] {} — {}", status.id, status.name);
         }
 
         if !self.missing_bindings.is_empty() {
@@ -152,7 +152,7 @@ pub fn verify_bindings(contract: &ContractFile, known_tests: &[String]) -> Verif
         if found {
             verified += 1;
         } else {
-            missing.push(format!("{}: {} (expected: {})", inv.id, inv.name, inv.test_binding,));
+            missing.push(format!("{}: {} (expected: {})", inv.id, inv.name, inv.test_binding));
         }
 
         status.insert(

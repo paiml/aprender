@@ -61,7 +61,7 @@ impl BrickProfiler {
         }
 
         // Sort by total time descending
-        all_stats.sort_by(|a, b| b.1.total_ns.cmp(&a.1.total_ns));
+        all_stats.sort_by_key(|b| std::cmp::Reverse(b.1.total_ns));
 
         for (name, stats) in &all_stats {
             let pct = if self.total_ns > 0 {
@@ -139,7 +139,7 @@ impl BrickProfiler {
         }
 
         // Sort by total time descending
-        all_stats.sort_by(|a, b| b.1.total_ns.cmp(&a.1.total_ns));
+        all_stats.sort_by_key(|b| std::cmp::Reverse(b.1.total_ns));
 
         for (name, stats) in all_stats {
             let pct = if self.total_ns > 0 {

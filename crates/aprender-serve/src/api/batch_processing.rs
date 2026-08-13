@@ -48,7 +48,7 @@ async fn process_batch(
         // Send responses
         match results {
             Ok(all_token_ids) => {
-                for (request, token_ids) in batch.drain(..).zip(all_token_ids.into_iter()) {
+                for (request, token_ids) in batch.drain(..).zip(all_token_ids) {
                     let response = ContinuousBatchResponse {
                         token_ids,
                         prompt_len: request.prompt_tokens.len(),

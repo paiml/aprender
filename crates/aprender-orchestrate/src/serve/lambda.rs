@@ -546,7 +546,7 @@ impl LambdaClient {
         Self {
             function_arn: function_arn.into(),
             region: region.into(),
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_mins(1),
         }
     }
 

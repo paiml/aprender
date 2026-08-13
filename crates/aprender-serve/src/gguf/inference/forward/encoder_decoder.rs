@@ -126,11 +126,7 @@ impl OwnedQuantizedModel {
             // added at embedding time).
 
             // Multi-head bidirectional attention
-            let group_size = if num_kv_heads > 0 {
-                num_heads / num_kv_heads
-            } else {
-                1
-            };
+            let group_size = num_heads.checked_div(num_kv_heads).unwrap_or(1);
 
             for h in 0..num_heads {
                 let kv_h = h / group_size;

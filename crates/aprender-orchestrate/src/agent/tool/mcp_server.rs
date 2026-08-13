@@ -177,7 +177,7 @@ impl McpHandler for MemoryHandler {
                         for f in &fragments {
                             use std::fmt::Write;
                             let _ =
-                                writeln!(out, "- {} (score: {:.2})", f.content, f.relevance_score,);
+                                writeln!(out, "- {} (score: {:.2})", f.content, f.relevance_score);
                         }
                         ToolResult::success(out)
                     }
@@ -257,7 +257,7 @@ impl McpHandler for RagHandler {
         for (i, r) in truncated.iter().enumerate() {
             use std::fmt::Write;
             let _ =
-                writeln!(out, "{}. [{}] {} (score: {:.3})", i + 1, r.component, r.source, r.score,);
+                writeln!(out, "{}. [{}] {} (score: {:.3})", i + 1, r.component, r.source, r.score);
             let _ = writeln!(out, "   {}", r.content);
         }
         ToolResult::success(out)
@@ -365,7 +365,7 @@ async fn execute_command(command: &str, working_dir: &str, max_bytes: usize) -> 
             if out.status.success() {
                 ToolResult::success(text)
             } else {
-                ToolResult::error(format!("exit {}: {}", out.status.code().unwrap_or(-1), text,))
+                ToolResult::error(format!("exit {}: {}", out.status.code().unwrap_or(-1), text))
             }
         }
         Err(e) => ToolResult::error(format!("exec failed: {e}")),

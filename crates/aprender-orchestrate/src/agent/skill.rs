@@ -182,10 +182,8 @@ pub fn parse_skill_md(source: &str) -> Result<Skill, SkillError> {
         match key {
             "name" => name = value.to_string(),
             "description" => description = value.to_string(),
-            "when_to_use" | "when-to-use" => {
-                if !value.is_empty() {
-                    when_to_use = Some(value.to_string());
-                }
+            "when_to_use" | "when-to-use" if !value.is_empty() => {
+                when_to_use = Some(value.to_string());
             }
             "allowed-tools" | "allowed_tools" => {
                 allowed_tools = value

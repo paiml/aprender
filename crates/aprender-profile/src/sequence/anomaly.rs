@@ -154,7 +154,7 @@ pub fn detect_sequence_anomalies(
     }
 
     // Sort by severity (Critical → High → Medium → Low)
-    anomalies.sort_by(|a, b| b.severity.cmp(&a.severity));
+    anomalies.sort_by_key(|b| std::cmp::Reverse(b.severity));
 
     anomalies
 }

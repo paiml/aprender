@@ -346,7 +346,7 @@ impl std::fmt::Display for MetricsSummary {
             writeln!(f)?;
             writeln!(f, "Spans:")?;
             for (name, stats) in &self.spans {
-                let avg_us = if stats.count > 0 { stats.total_us / stats.count } else { 0 };
+                let avg_us = stats.total_us.checked_div(stats.count).unwrap_or(0);
                 writeln!(
                     f,
                     "  {}: count={}, avg={:.2}ms, min={:.2}ms, max={:.2}ms",

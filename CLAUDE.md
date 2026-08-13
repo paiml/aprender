@@ -355,6 +355,26 @@ Mutation testing: `cargo mutants --no-times --timeout 300 --in-place -- --all-fe
 Workspace-level lints in `Cargo.toml` (`[workspace.lints.rust]` / `[workspace.lints.clippy]`).
 Key: `unsafe_code = "forbid"`, `clippy::all + pedantic = "warn"`, ML-specific allows for casts/float_cmp.
 
+**Both ends of the toolchain range are gated (#2370).** `rust-toolchain.toml` pins one
+exact release, so every gate we own — `make tier1/2/3`, sovereign-ci `lint` — lints
+under that one clippy and nothing else.
+
+| End | Guard | Runs |
+|-----|-------|------|
+| FLOOR — declared `rust-version` still builds | `scripts/check_msrv.sh` | on demand |
+| CEILING — current stable clippy is clean | `scripts/check_clippy_current_stable.sh` / `make lint-current` | `toolchain-ceiling.yml`, daily 05:00 UTC |
+
+Without the ceiling gate, findings from newer clippy releases accumulate invisibly:
+#2370 was a fresh mbp whose homebrew rustc is not rustup-managed (so the pin is
+silently inert) running plain `make` and getting 28 errors out of `tier2` — the tree
+had 107 findings across 12 lints by then, none of which any gate had ever run.
+The ceiling gate refuses to pass vacuously (stale `stable`, missing clippy component,
+broken version comparator) and ships a comparator case table that `tier3` re-runs.
+
+Clippy's lint set is **not monotonic**: the #2370 tree is clean on 1.93/1.96/1.97 and
+1.95 *alone* reports 8 `collapsible_match` findings. A green ceiling gate means
+"clean on the pin and on current stable", never "clean on every release between".
+
 ## CI/CD (`.github/workflows/`)
 
 - **ci.yml**: check, fmt, clippy, test, coverage (Codecov), mutation testing, security audit, docs, bashrs

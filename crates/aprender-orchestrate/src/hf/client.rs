@@ -31,7 +31,7 @@ impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
             initial_backoff: Duration::from_secs(1),
-            max_backoff: Duration::from_secs(60),
+            max_backoff: Duration::from_mins(1),
             max_retries: 5,
             multiplier: 2.0,
         }

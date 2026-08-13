@@ -8,7 +8,7 @@ impl RustCompiler {
             cargo_path: which_cargo(),
             edition: RustEdition::default(),
             target: None,
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_mins(1),
             mode: CompilationMode::default(),
             extra_flags: Vec::new(),
         }

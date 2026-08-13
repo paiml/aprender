@@ -111,12 +111,12 @@ fn extract_themes(text: &str) -> Vec<String> {
 
     let top_unigrams: Vec<(String, usize)> = {
         let mut v: Vec<_> = freq.into_iter().filter(|(_, c)| *c >= 3).collect();
-        v.sort_by(|a, b| b.1.cmp(&a.1));
+        v.sort_by_key(|b| std::cmp::Reverse(b.1));
         v.into_iter().take(10).collect()
     };
 
     themes.extend(top_unigrams);
-    themes.sort_by(|a, b| b.1.cmp(&a.1));
+    themes.sort_by_key(|b| std::cmp::Reverse(b.1));
     themes.dedup_by(|a, b| a.0 == b.0);
 
     themes.into_iter().take(5).map(|(t, _)| capitalize_theme(&t)).collect()

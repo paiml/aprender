@@ -24,7 +24,7 @@ impl ParetoAnalysis {
         }
 
         let mut categories: Vec<(FailureCategory, u32)> = counts.into_iter().collect();
-        categories.sort_by(|a, b| b.1.cmp(&a.1)); // Sort descending by count
+        categories.sort_by_key(|b| std::cmp::Reverse(b.1)); // Sort descending by count
 
         Self { categories, total_failures: failures.len() as u32 }
     }

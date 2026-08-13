@@ -48,11 +48,7 @@ fn parse_size_config(yaml: &YamlValue, family: &str, size: &str) -> Result<Model
                 .get_usize("num_heads")
                 .or_else(|| yaml.get_usize("encoder_attention_heads"))
                 .unwrap_or(0);
-            if heads > 0 {
-                hidden / heads
-            } else {
-                0
-            }
+            hidden.checked_div(heads).unwrap_or(0)
         }),
         rope_theta: yaml.get_f64("rope_theta").unwrap_or(0.0),
         norm_eps: yaml

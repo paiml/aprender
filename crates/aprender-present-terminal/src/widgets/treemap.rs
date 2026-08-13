@@ -494,7 +494,7 @@ impl Widget for Treemap {
 
         // Draw rectangles from deepest to shallowest (painter's algorithm)
         let mut sorted_rects: Vec<_> = self.computed_rects.iter().collect();
-        sorted_rects.sort_by(|a, b| b.depth.cmp(&a.depth));
+        sorted_rects.sort_by_key(|b| std::cmp::Reverse(b.depth));
 
         for computed in sorted_rects {
             if computed.rect.width < 1.0 || computed.rect.height < 1.0 {

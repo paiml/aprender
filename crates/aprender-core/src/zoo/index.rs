@@ -109,7 +109,7 @@ impl ModelZooIndex {
     #[must_use]
     pub fn most_popular(&self, limit: usize) -> Vec<&ModelZooEntry> {
         let mut models: Vec<_> = self.models.iter().collect();
-        models.sort_by(|a, b| b.downloads.cmp(&a.downloads));
+        models.sort_by_key(|b| std::cmp::Reverse(b.downloads));
         models.into_iter().take(limit).collect()
     }
 

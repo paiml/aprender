@@ -403,10 +403,8 @@ fn parse_fn_name(line: &str) -> Option<String> {
         r
     } else if let Some(r) = t.strip_prefix("async fn ") {
         r
-    } else if let Some(r) = t.strip_prefix("fn ") {
-        r
     } else {
-        return None;
+        t.strip_prefix("fn ")?
     };
     let name: String = rest
         .chars()

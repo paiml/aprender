@@ -45,8 +45,11 @@ impl GemvPool {
                                     Some((f, od)) => {
                                         // Can't clone Box<dyn Fn>, but we can get a ref
                                         // The Mutex is only locked briefly to read the ptr
-                                        let f_ptr = f.as_ref()
-                                            as *const (dyn Fn(usize, usize) + Send + Sync);
+                                        let f_ptr = std::ptr::from_ref::<
+                                            dyn Fn(usize, usize) + Send + Sync,
+                                        >(
+                                            f.as_ref()
+                                        );
                                         (f_ptr, *od)
                                     },
                                     None => {

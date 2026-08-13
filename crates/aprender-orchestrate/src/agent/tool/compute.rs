@@ -41,7 +41,7 @@ pub struct ComputeTool {
 impl ComputeTool {
     /// Create a new compute tool.
     pub fn new(working_dir: String) -> Self {
-        Self { max_concurrent: 4, task_timeout: Duration::from_secs(300), working_dir }
+        Self { max_concurrent: 4, task_timeout: Duration::from_mins(5), working_dir }
     }
 
     /// Set maximum concurrent tasks.

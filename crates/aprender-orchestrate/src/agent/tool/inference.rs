@@ -90,7 +90,7 @@ impl Tool for InferenceTool {
     }
 
     fn timeout(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(300)
+        std::time::Duration::from_mins(5)
     }
 }
 

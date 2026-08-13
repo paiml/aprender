@@ -127,8 +127,7 @@ pub fn generate(
     }
 
     // Decode: generate tokens one at a time
-    let mut pos = prompt_tokens.len();
-    for _ in 0..max_tokens {
+    for pos in (prompt_tokens.len()..).take(max_tokens) {
         let token = sample_token(&last_logits, params, &mut rng);
 
         if token == eos_token {
@@ -140,7 +139,6 @@ pub fn generate(
 
         generated.push(token);
         last_logits = model.forward(token, pos, &mut kv_cache, &mut arena)?;
-        pos += 1;
     }
 
     Ok(generated)

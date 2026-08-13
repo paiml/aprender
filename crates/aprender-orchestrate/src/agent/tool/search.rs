@@ -120,7 +120,7 @@ impl Tool for GlobTool {
         }
 
         // Sort by modification time (most recent first)
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by_key(|b| std::cmp::Reverse(b.1));
         results.truncate(MAX_GLOB_RESULTS);
 
         if results.is_empty() {

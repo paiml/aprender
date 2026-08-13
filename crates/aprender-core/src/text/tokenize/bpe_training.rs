@@ -355,11 +355,10 @@ impl BpeTokenizer {
                         current_value.push(c);
                     }
                 }
-                _ if !in_string && !c.is_whitespace() => {
-                    if !parsing_key {
+                _ if !in_string && !c.is_whitespace()
+                    && !parsing_key => {
                         current_value.push(c);
                     }
-                }
                 _ => {}
             }
         }

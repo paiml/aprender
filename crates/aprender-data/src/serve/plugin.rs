@@ -402,6 +402,11 @@ pub struct CoursePlugin;
 
 impl CoursePlugin {
     /// Create a new course plugin
+    // `mod plugin` is private, so nothing outside this file can call it yet; the
+    // struct above carries the same allow for the same reason. rustc >= 1.95
+    // reports unreachable associated fns, which the struct-level allow does not
+    // cover.
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self
     }
@@ -684,6 +689,9 @@ pub struct BookPlugin;
 
 impl BookPlugin {
     /// Create a new book plugin
+    // See `CoursePlugin::new` — private module, so this is unreachable until
+    // `mod plugin` is exported.
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self
     }

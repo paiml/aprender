@@ -140,7 +140,7 @@ impl FunctionProfiler {
 
         // Sort by total time (descending)
         let mut sorted: Vec<_> = self.stats.iter().collect();
-        sorted.sort_by(|a, b| b.1.total_time_us.cmp(&a.1.total_time_us));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.1.total_time_us));
 
         eprintln!("\n╔════════════════════════════════════════════════════════════════════════════════════════════════════╗");
         eprintln!("║  Function Timing Summary (sorted by total time)                                                   ║");
@@ -154,8 +154,7 @@ impl FunctionProfiler {
 
         for (function, stats) in &sorted {
             let total_seconds = stats.total_time_us as f64 / 1_000_000.0;
-            let avg_us =
-                if stats.syscall_count > 0 { stats.total_time_us / stats.syscall_count } else { 0 };
+            let avg_us = stats.total_time_us.checked_div(stats.syscall_count).unwrap_or(0);
             let avg_seconds = avg_us as f64 / 1_000_000.0;
 
             // Highlight functions with high-latency I/O

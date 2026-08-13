@@ -102,7 +102,7 @@ impl SovereignDeploymentRecipe {
     pub fn sign_artifact(&mut self, artifact_name: impl Into<String>, key_id: impl Into<String>) {
         let name = artifact_name.into();
         // In production, this would actually compute the signature
-        let signature = format!("sig_placeholder_{}", &name);
+        let signature = format!("sig_placeholder_{}", name);
         self.distribution.signatures.push(crate::experiment::ArtifactSignature {
             artifact_name: name,
             algorithm: crate::experiment::SignatureAlgorithm::Ed25519,

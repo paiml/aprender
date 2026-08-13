@@ -111,7 +111,7 @@ pub trait Tool: Send + Sync {
 
     /// Execution timeout (Jidoka: stop on timeout).
     fn timeout(&self) -> Duration {
-        Duration::from_secs(120)
+        Duration::from_mins(2)
     }
 }
 

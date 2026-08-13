@@ -481,11 +481,7 @@ impl Widget for CoreUtilizationHistogram {
                 if count == 0 {
                     return;
                 }
-                let bar_w = if total > 0 {
-                    (count * bar_max) / total
-                } else {
-                    0
-                };
+                let bar_w = (count * bar_max).checked_div(total).unwrap_or(0);
                 let bar: String = "█".repeat(bar_w);
                 let pad: String = "░".repeat(bar_max - bar_w);
 
