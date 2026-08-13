@@ -389,7 +389,16 @@ falsification_tests:
       other way, so the one-sided check cannot fire spuriously — that direction
       is pinned by `an_embedding_table_padded_above_the_token_list_is_accepted`.
     scope: "(model format, reported 2-D shape) -> (vocab, hidden) -> CSV row count
-      and coordinate provenance"
+      and coordinate provenance. RUNTIME IS OUT OF SCOPE and is not discharged
+      anywhere in this contract: every test above uses `--projection random`.
+      Fixing the axes made PCA tractable (it is no longer a 248320-wide
+      covariance problem) but NOT fast — measured on Qwen3.5-0.8B-Q4_K_M.gguf at
+      hidden=1024, cost is linear in ROWS at ~6.3ms/row (5,000 rows 82.6s;
+      20,000 rows 176.9s), so the full 248,320-token vocabulary does not finish
+      in 300s. `--projection pca` is the clap default, so the plain documented
+      invocation on a large vocabulary needs `--limit` or several minutes. This
+      is a real usability limitation, stated rather than gated: a falsifier for
+      it would be a ~30-minute CI test, which is worse than the honest note."
     discharge_status: FULL_ROUND_TRIP
 
 proof_obligations:

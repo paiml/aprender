@@ -47,6 +47,20 @@ differs. Taking `shape[0]` as the vocabulary for every format made
 — emit 1024 rows for a 248320-token vocabulary, and `--projection pca` never
 returned because it was handed a 248320-wide covariance problem.
 
+Fixing the axes made the row count correct and PCA tractable, but **it did not
+make full-vocabulary PCA fast**. Measured on that model with a release binary,
+at the correct hidden size of 1024:
+
+| rows | wall |
+|------|------|
+| 5,000 | 82.6s |
+| 20,000 | 176.9s |
+| 248,320 (whole vocab) | does not finish in 300s; ~26-30 min extrapolated |
+
+So on a large vocabulary the default `--projection pca` still needs either
+`--limit` or patience. Use `--projection random` (2.1s for the full vocab on the
+same model) when you want the whole vocabulary quickly.
+
 Note that `token_str` looks **correct either way**: it is resolved by row index
 from the vocabulary list, so it cannot reveal this. The row count against the
 real vocabulary size can. `apr embed-viz-lint --expected-vocab-size` is
@@ -83,8 +97,10 @@ apr embed-viz-lint --csv-file a.csv --csv-file-b b.csv
 ```
 
 `--limit` caps the number of tokens projected, which is what you want on a
-large vocabulary — PCA's cost is driven by the hidden size, but the CSV is one
-row per token.
+large vocabulary. PCA's cost here is dominated by the ROW count, not the hidden
+size: at a fixed hidden size of 1024, 5,000 rows takes 82.6s and 20,000 takes
+176.9s — roughly linear in rows, ~6.3ms per row. That is why the full 248,320-token
+vocabulary does not finish inside a 300s budget.
 
 ## Full help
 
