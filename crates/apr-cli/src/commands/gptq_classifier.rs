@@ -1,26 +1,25 @@
 //! CRUX-B-09 GPTQ quantization — algorithm-level classifiers.
 //!
-//! Partial discharge for the `apr quantize --method gptq` contract
-//! (`contracts/crux-B-09-v1.yaml`). Three pure classifiers cover:
+//! Partial discharge for the GPTQ quantization contract
+//! (`contracts/crux-B-09-v1.yaml`). Two pure classifiers cover:
 //!
 //! 1. Compression ratio (GPTQ bytes ≤ 0.30 × fp16 bytes) — FALSIFY-001.
 //! 2. Logit-fidelity cosine (mean cos ≥ 0.98 across N held-out prompts) — FALSIFY-002.
-//! 3. CLI surface — `--method gptq --bits --group-size` — FALSIFY-003.
+//!
+//! The CLI-surface gate (FALSIFY-003) used to live here as `parse_gptq_flags` +
+//! `validate_gptq_flags`: a hand-rolled `--method`/`--bits`/`--group-size`
+//! matcher that decided whether the shipped `apr quantize` would accept an
+//! argv. `apr quantize` takes none of those three flags, so the gate had never
+//! once validated the command it claimed to. It is deleted; the verdict now
+//! comes from the shipped clap parser via
+//! `commands::quantize_flag_parity::shipped_quantize_verdict`
+//! (aprender#2377 finding 2, `contracts/apr-lint-flag-parity-v1.yaml`).
 
 /// Maximum GPTQ-to-fp16 byte ratio.
 pub const GPTQ_MAX_COMPRESSION_RATIO: f64 = 0.30;
 
 /// Minimum mean logit-cosine the contract demands.
 pub const GPTQ_MIN_MEAN_COSINE: f64 = 0.98;
-
-/// Allowed GPTQ bit widths (matches auto-gptq reference).
-pub const GPTQ_ALLOWED_BITS: &[u32] = &[2, 3, 4, 8];
-
-/// Allowed GPTQ group sizes.
-pub const GPTQ_ALLOWED_GROUP_SIZES: &[i32] = &[-1, 32, 64, 128];
-
-/// Default group size (auto-gptq / GPTQ-for-LLaMa default).
-pub const GPTQ_DEFAULT_GROUP_SIZE: i32 = 128;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CompressionOutcome {
@@ -102,87 +101,6 @@ pub fn classify_mean_cosine(pairs: &[(&[f64], &[f64])], threshold: f64) -> Cosin
     } else {
         CosineFidelity::Degraded { mean, threshold, n }
     }
-}
-
-// ---- CLI surface ----
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GptqFlags {
-    pub method: Option<String>,
-    pub bits: Option<u32>,
-    pub group_size: Option<i32>,
-}
-
-#[must_use]
-pub fn parse_gptq_flags(argv: &[&str]) -> GptqFlags {
-    let mut f = GptqFlags {
-        method: None,
-        bits: None,
-        group_size: None,
-    };
-    let mut i = 0;
-    while i < argv.len() {
-        let a = argv[i];
-        match a {
-            "--method" => f.method = argv.get(i + 1).map(|s| (*s).to_string()),
-            "--bits" => f.bits = argv.get(i + 1).and_then(|s| s.parse::<u32>().ok()),
-            "--group-size" => f.group_size = argv.get(i + 1).and_then(|s| s.parse::<i32>().ok()),
-            _ => {
-                if let Some(rest) = a.strip_prefix("--method=") {
-                    f.method = Some(rest.to_string());
-                } else if let Some(rest) = a.strip_prefix("--bits=") {
-                    if let Ok(v) = rest.parse::<u32>() {
-                        f.bits = Some(v);
-                    }
-                } else if let Some(rest) = a.strip_prefix("--group-size=") {
-                    if let Ok(v) = rest.parse::<i32>() {
-                        f.group_size = Some(v);
-                    }
-                }
-            }
-        }
-        i += 1;
-    }
-    f
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GptqFlagValidation {
-    Ok { bits: u32, group_size: i32 },
-    MissingMethod,
-    WrongMethod { got: String },
-    InvalidBits { got: u32, allowed: &'static [u32] },
-    MissingBits,
-    InvalidGroupSize { got: i32, allowed: &'static [i32] },
-}
-
-#[must_use]
-pub fn validate_gptq_flags(flags: &GptqFlags) -> GptqFlagValidation {
-    let Some(method) = flags.method.as_deref() else {
-        return GptqFlagValidation::MissingMethod;
-    };
-    if method != "gptq" {
-        return GptqFlagValidation::WrongMethod {
-            got: method.to_string(),
-        };
-    }
-    let Some(bits) = flags.bits else {
-        return GptqFlagValidation::MissingBits;
-    };
-    if !GPTQ_ALLOWED_BITS.contains(&bits) {
-        return GptqFlagValidation::InvalidBits {
-            got: bits,
-            allowed: GPTQ_ALLOWED_BITS,
-        };
-    }
-    let group_size = flags.group_size.unwrap_or(GPTQ_DEFAULT_GROUP_SIZE);
-    if !GPTQ_ALLOWED_GROUP_SIZES.contains(&group_size) {
-        return GptqFlagValidation::InvalidGroupSize {
-            got: group_size,
-            allowed: GPTQ_ALLOWED_GROUP_SIZES,
-        };
-    }
-    GptqFlagValidation::Ok { bits, group_size }
 }
 
 #[cfg(test)]
@@ -314,131 +232,5 @@ mod tests {
             CosineFidelity::Ok { n, .. } => assert_eq!(n, 1),
             o => panic!("expected Ok with n=1, got {:?}", o),
         }
-    }
-
-    // ---- FALSIFY-003 (CLI) ----
-
-    #[test]
-    fn parse_all_three_space_form() {
-        let argv = &[
-            "quantize",
-            "--method",
-            "gptq",
-            "--bits",
-            "4",
-            "--group-size",
-            "128",
-        ];
-        let f = parse_gptq_flags(argv);
-        assert_eq!(f.method.as_deref(), Some("gptq"));
-        assert_eq!(f.bits, Some(4));
-        assert_eq!(f.group_size, Some(128));
-    }
-
-    #[test]
-    fn parse_group_size_neg_one_is_per_tensor() {
-        // auto-gptq convention: group_size=-1 means per-tensor.
-        let argv = &["--method=gptq", "--bits=4", "--group-size=-1"];
-        let f = parse_gptq_flags(argv);
-        assert_eq!(f.group_size, Some(-1));
-    }
-
-    #[test]
-    fn validate_ok_with_default_group_size() {
-        let f = GptqFlags {
-            method: Some("gptq".into()),
-            bits: Some(4),
-            group_size: None,
-        };
-        assert_eq!(
-            validate_gptq_flags(&f),
-            GptqFlagValidation::Ok {
-                bits: 4,
-                group_size: GPTQ_DEFAULT_GROUP_SIZE
-            }
-        );
-    }
-
-    #[test]
-    fn validate_ok_with_per_tensor_group_size() {
-        let f = GptqFlags {
-            method: Some("gptq".into()),
-            bits: Some(4),
-            group_size: Some(-1),
-        };
-        assert_eq!(
-            validate_gptq_flags(&f),
-            GptqFlagValidation::Ok {
-                bits: 4,
-                group_size: -1
-            }
-        );
-    }
-
-    #[test]
-    fn validate_rejects_wrong_method() {
-        let f = GptqFlags {
-            method: Some("awq".into()),
-            bits: Some(4),
-            group_size: Some(128),
-        };
-        assert!(matches!(
-            validate_gptq_flags(&f),
-            GptqFlagValidation::WrongMethod { .. }
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_missing_bits() {
-        let f = GptqFlags {
-            method: Some("gptq".into()),
-            bits: None,
-            group_size: Some(128),
-        };
-        assert_eq!(validate_gptq_flags(&f), GptqFlagValidation::MissingBits);
-    }
-
-    #[test]
-    fn validate_rejects_invalid_bits() {
-        let f = GptqFlags {
-            method: Some("gptq".into()),
-            bits: Some(5),
-            group_size: Some(128),
-        };
-        assert!(matches!(
-            validate_gptq_flags(&f),
-            GptqFlagValidation::InvalidBits { got: 5, .. }
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_invalid_group_size() {
-        let f = GptqFlags {
-            method: Some("gptq".into()),
-            bits: Some(4),
-            group_size: Some(96),
-        };
-        assert!(matches!(
-            validate_gptq_flags(&f),
-            GptqFlagValidation::InvalidGroupSize { got: 96, .. }
-        ));
-    }
-
-    #[test]
-    fn validate_is_deterministic() {
-        let f = GptqFlags {
-            method: Some("gptq".into()),
-            bits: Some(4),
-            group_size: None,
-        };
-        assert_eq!(validate_gptq_flags(&f), validate_gptq_flags(&f));
-    }
-
-    #[test]
-    fn reference_constants_match_spec() {
-        assert!(GPTQ_ALLOWED_BITS.contains(&4));
-        assert!(GPTQ_ALLOWED_GROUP_SIZES.contains(&128));
-        assert!(GPTQ_ALLOWED_GROUP_SIZES.contains(&-1));
-        assert_eq!(GPTQ_DEFAULT_GROUP_SIZE, 128);
     }
 }

@@ -16,21 +16,26 @@
 //!     "max_ratio":           0.30
 //!   },
 //!   "flags": {
-//!     "argv":             ["--method", "awq", "--bits", "4", "--group-size", "128"],
-//!     "expected_outcome": "ok"    // ok | missing_method | unknown_method | invalid_bits | invalid_group_size
+//!     "argv":             ["model.safetensors", "--scheme", "int4", "-o", "out.apr"],
+//!     "expected_outcome": "accepted"   // accepted (alias: ok) | rejected
 //!   }
 //! }
 //! ```
 //!
 //! Any missing top-level key is skipped. Non-zero exit + FALSIFY-CRUX-B-08
 //! stderr stamp on any failing gate.
+//!
+//! The `flags` gate asks the SHIPPED clap parser (`commands::quantize_flag_parity`)
+//! whether `apr quantize <argv>` is accepted — it used to ask a hand-rolled
+//! matcher that understood `--method`/`--bits`/`--group-size`, none of which
+//! `apr quantize` has ever taken (aprender#2377 finding 2).
 
 use super::lint_error::{load_json_observation, LintError};
 use crate::commands::awq_classifier::{
-    classify_compression_ratio, classify_quality_retention, parse_awq_flags, validate_awq_flags,
-    AwqFlagValidation, CompressionOutcome, QualityRetention, AWQ_MAX_COMPRESSION_RATIO,
-    AWQ_MIN_QUALITY_RETENTION,
+    classify_compression_ratio, classify_quality_retention, CompressionOutcome, QualityRetention,
+    AWQ_MAX_COMPRESSION_RATIO, AWQ_MIN_QUALITY_RETENTION,
 };
+use crate::commands::quantize_flag_parity::evaluate_flags_observation;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -70,7 +75,7 @@ pub fn run(args: AwqLintArgs) -> Result<(), LintError> {
         }
     }
     if let Some(f) = obs.get("flags") {
-        let (report, err) = run_flags_gate(f);
+        let (report, err) = run_flags_gate(f)?;
         reports.push(report);
         if let Some(e) = err {
             failures.push(e);
@@ -172,47 +177,28 @@ fn run_compression_gate(v: &Value) -> (GateReport, Option<String>) {
     )
 }
 
-fn run_flags_gate(v: &Value) -> (GateReport, Option<String>) {
-    let argv_owned: Vec<String> = v
-        .get("argv")
-        .and_then(|x| x.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|s| s.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
-    let argv: Vec<&str> = argv_owned.iter().map(|s| s.as_str()).collect();
-    let flags = parse_awq_flags(&argv);
-    let validation = validate_awq_flags(&flags);
-
-    let expected = v
-        .get("expected_outcome")
-        .and_then(|x| x.as_str())
-        .unwrap_or("ok");
-    let got = match &validation {
-        AwqFlagValidation::Ok { .. } => "ok",
-        AwqFlagValidation::MissingMethod => "missing_method",
-        AwqFlagValidation::UnknownMethod { .. } => "unknown_method",
-        AwqFlagValidation::InvalidBits { .. } => "invalid_bits",
-        AwqFlagValidation::InvalidGroupSize { .. } => "invalid_group_size",
-    };
-    let passed = got == expected;
-    let desc = format!("expected={expected} got={got} ({validation:?})");
-    let err = if passed {
-        None
-    } else {
-        Some(format!("FALSIFY-CRUX-B-08-002 flags gate failed: {desc}"))
-    };
-    (
+/// The CLI-surface gate: does the SHIPPED `apr quantize` agree with what the
+/// observation claims about this argv?
+///
+/// `Err` (exit 4) means the observation cannot be used — a missing argv, a
+/// missing expectation, or an `expected_outcome` written in the vocabulary of
+/// the hand-rolled parser this gate no longer owns. `Ok` with a failure string
+/// (exit 5) means the observation was usable and the real parser disagreed.
+fn run_flags_gate(v: &Value) -> Result<(GateReport, Option<String>), LintError> {
+    const FALSIFY_ID: &str = "FALSIFY-CRUX-B-08-002";
+    let gate = evaluate_flags_observation(v, FALSIFY_ID).map_err(LintError::unusable)?;
+    let err = gate
+        .failure
+        .map(|m| format!("{FALSIFY_ID} flags gate failed: {m}"));
+    Ok((
         GateReport {
             gate: "flags",
-            falsify_id: "FALSIFY-CRUX-B-08-002",
-            outcome: desc,
-            passed,
+            falsify_id: FALSIFY_ID,
+            outcome: gate.outcome,
+            passed: gate.passed,
         },
         err,
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -298,26 +284,51 @@ mod tests {
     }
 
     #[test]
-    fn flags_gate_valid_awq_passes() {
+    fn flags_gate_accepts_a_real_quantize_invocation() {
+        let f = write_obs(
+            r#"{"flags": {"argv": ["model.safetensors", "--scheme", "int4", "-o", "out.apr"], "expected_outcome": "accepted"}}"#,
+        );
+        run(args_for(&f)).expect("the shipped `apr quantize` accepts this argv");
+    }
+
+    /// FALSIFY-LINTFLAG-004 (awq half). Before aprender#2377 finding 2 this
+    /// observation PASSED: `parse_awq_flags` + `validate_awq_flags` reported
+    /// `Ok { bits: 4, group_size: 128 }` for an argv the shipped `apr quantize`
+    /// has never accepted. The gate now runs the real clap parser and refuses.
+    #[test]
+    fn flags_gate_rejects_the_method_bits_argv_the_shipped_cli_never_took() {
         let f = write_obs(
             r#"{"flags": {"argv": ["--method", "awq", "--bits", "4", "--group-size", "128"], "expected_outcome": "ok"}}"#,
         );
-        assert!(run(args_for(&f)).is_ok());
+        let err = run(args_for(&f))
+            .expect_err("shipped `apr quantize` has no --method/--bits/--group-size")
+            .to_string();
+        assert!(err.contains("FALSIFY-CRUX-B-08-002"), "got: {err}");
+        assert!(err.contains("REJECTED"), "got: {err}");
+        assert!(
+            err.contains("--scheme"),
+            "the operator must be told which flags `apr quantize` does accept; got: {err}"
+        );
     }
 
+    /// An observation may legitimately record that the CLI refuses something.
     #[test]
-    fn flags_gate_missing_method_classified() {
+    fn flags_gate_passes_when_the_observation_expects_a_rejection() {
+        let f = write_obs(
+            r#"{"flags": {"argv": ["--method", "awq", "--bits", "4"], "expected_outcome": "rejected"}}"#,
+        );
+        run(args_for(&f)).expect("observer asserted the refusal that actually happens");
+    }
+
+    /// Exit 4, not exit 5: a label the real parser cannot emit is a broken
+    /// capture, not a contract violation by the system under test.
+    #[test]
+    fn flags_gate_stale_vocabulary_is_unusable_input() {
         let f = write_obs(
             r#"{"flags": {"argv": ["--bits", "4"], "expected_outcome": "missing_method"}}"#,
         );
-        assert!(run(args_for(&f)).is_ok());
-    }
-
-    #[test]
-    fn flags_gate_mismatch_fails() {
-        let f = write_obs(r#"{"flags": {"argv": ["--bits", "4"], "expected_outcome": "ok"}}"#);
-        let err = run(args_for(&f)).unwrap_err().to_string();
-        assert!(err.contains("FALSIFY-CRUX-B-08-002"));
+        let err = run(args_for(&f)).expect_err("`missing_method` is not a clap verdict");
+        assert_eq!(err.exit_code_value(), 4, "got: {err}");
     }
 
     #[test]

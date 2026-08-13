@@ -1,0 +1,225 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-lint-flag-parity-v1
+#
+# A gate may not own a parser.
+#
+# `apr gptq-lint` and `apr awq-lint` each ran a "CLI flag accepted" gate that
+# decided whether an argv recorded in an observation would be accepted by the
+# shipped binary. Both decided it with a hand-rolled `while i < argv.len()`
+# matcher living in the same crate as the assertion
+# (`parse_gptq_flags`/`parse_awq_flags` + `validate_*_flags`). Those matchers
+# understood `--method`, `--bits`, `--group-size`.
+#
+# The shipped `apr quantize` (`Commands::Quantize`, crates/apr-cli/src/commands_enum.rs)
+# takes `<FILE> --scheme/-s --output/-o --format --batch --plan --force`. NOT ONE
+# FLAG WAS SHARED, and neither `gptq` nor `awq` is an accepted `--scheme` value.
+# The gate was green throughout while validating a second implementation that
+# stood beside the assertion instead of the command that ships.
+#
+# This contract binds the gate's verdict to the SHIPPED clap parser, so the two
+# cannot drift: renaming a `quantize` flag changes the gate's answer in the same
+# commit that changes the CLI.
+#
+# aprender#2377 finding 2.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contract: apr-lint-flag-parity
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-08-13'
+  last_modified: '2026-08-13'
+  author: PAIML Engineering
+  description: >
+    The `flags` gate of every `apr *-lint` command decides "would the shipped
+    `apr quantize` accept this argv?" by running the shipped clap parser
+    (`Cli::command().try_get_matches_from`), never a second parser of its own.
+    Implemented by crates/apr-cli/src/commands/quantize_flag_parity.rs and
+    consumed by gptq_lint.rs and awq_lint.rs.
+  references:
+  - 'aprender#2377 finding 2 — the lint flag gate validated a CLI that does not exist'
+  - 'crates/apr-cli/src/commands/quantize_flag_parity.rs — the predicate'
+  - 'crates/apr-cli/src/commands/lint_error.rs — the exit-code convention (3/4/5/7)'
+  - 'crates/apr-cli/src/commands_enum.rs — Commands::Quantize, the shipped surface'
+
+equations:
+  gate_verdict_is_the_shipped_parser_verdict:
+    formula: >
+      verdict(argv) = accepted  <=>  Cli::command().try_get_matches_from(["apr", "quantize"] ++ argv).is_ok()
+    domain: argv is Vec<String>, the argv recorded after `apr quantize` in an observation
+    codomain: verdict in {accepted, rejected}
+    invariants:
+    - 'no argv is classified by any parser other than the one the binary parses with'
+    - 'argv containing --method, --bits or --group-size is rejected (apr quantize has no such flag)'
+    - 'argv = [<FILE>, --scheme, <s>, -o, <path>] is accepted'
+    - 'verdict is deterministic: verdict(argv) = verdict(argv) for all argv'
+    postconditions:
+    - 'verdict is Rejected implies reason is the clap error first line, non-empty'
+    preconditions:
+    - 'every element of argv is a UTF-8 string'
+
+  gate_passes_iff_observation_matches_the_parser:
+    formula: >
+      gate.passed = (verdict(argv) == expected_outcome), expected_outcome in {accepted, ok, rejected}
+    domain: >
+      argv is Vec<String>, expected_outcome is String read from observation.flags.expected_outcome
+    codomain: gate.passed is bool
+    invariants:
+    - 'expected_outcome = accepted (or its alias ok) and verdict = rejected implies gate.passed = false'
+    - 'expected_outcome = rejected and verdict = accepted implies gate.passed = false'
+    - 'gate.passed = false implies the failure text names the flags apr quantize does accept'
+    postconditions:
+    - 'gate.failure is Some if and only if gate.passed = false'
+    preconditions:
+    - 'observation.flags.argv is present and is an array of strings'
+    - 'observation.flags.expected_outcome is present'
+
+  unusable_observation_is_exit_4_not_exit_5:
+    formula: >
+      exit_code = if expected_outcome not in {accepted, ok, rejected} then 4 else (if gate.passed then 0 else 5)
+    domain: observation.flags is a JSON object
+    codomain: exit_code in {0, 4, 5}
+    invariants:
+    - 'a per-flag label (missing_method, wrong_method, unknown_method, invalid_bits, missing_bits, invalid_group_size) is exit 4, never folded into rejected'
+    - 'a missing expected_outcome is exit 4, never defaulted to accepted'
+    - 'a missing argv is exit 4, never treated as the empty argv'
+    postconditions:
+    - 'exit_code 5 implies the observation was usable and the shipped parser disagreed with it'
+    preconditions:
+    - 'the observation file exists, is non-empty and parses as JSON (otherwise 3/4/7 per lint_error.rs)'
+
+  accepted_flag_list_is_read_off_the_shipped_command:
+    formula: >
+      accepts_summary = join(render(a) for a in Cli::command().find_subcommand("quantize").get_arguments() if a.id not in {help, version})
+    domain: the shipped clap Command tree
+    codomain: a String naming every argument apr quantize accepts
+    invariants:
+    - 'accepts_summary contains <FILE>, --scheme, --output, --format, --batch, --plan and --force'
+    - 'accepts_summary never contains --method, --bits or --group-size'
+    postconditions:
+    - 'accepts_summary is non-empty'
+    preconditions:
+    - 'the shipped CLI exposes a `quantize` subcommand'
+
+falsification_tests:
+- id: FALSIFY-LINTFLAG-001
+  rule: the acceptance oracle is the shipped parser, not a copy of it
+  name: shipped_parser_rejects_the_flags_the_hand_rolled_parser_accepted
+  prediction: >
+    shipped_quantize_verdict(["--method","gptq","--bits","4","--group-size","128"])
+    returns Rejected, and the reason names --method. The deleted
+    validate_gptq_flags called this exact argv Ok { bits: 4, group_size: 128 }.
+  test_harness: 'cargo test -p apr-cli --lib shipped_parser_rejects_the_flags_the_hand_rolled_parser_accepted'
+  expected_output: "test result: ok"
+  if_fails: >
+    Pre-fix behaviour: the gate ran its own matcher, so an argv the shipped
+    `apr quantize` refuses outright was reported as a valid CLI surface.
+
+- id: FALSIFY-LINTFLAG-002
+  rule: a real apr quantize invocation is reported accepted
+  name: shipped_parser_accepts_a_real_quantize_invocation
+  prediction: >
+    shipped_quantize_verdict(["model.safetensors","--scheme","int4","-o","out.apr"])
+    returns Accepted — the flags the binary really takes.
+  test_harness: 'cargo test -p apr-cli --lib shipped_parser_accepts_a_real_quantize_invocation'
+  expected_output: "test result: ok"
+  if_fails: >
+    Pre-fix behaviour: parse_gptq_flags/parse_awq_flags saw no --method in this
+    argv and returned MissingMethod, so the one argv `apr quantize` actually
+    accepts was the one the gate called invalid.
+
+- id: FALSIFY-LINTFLAG-003
+  rule: the gate verdict equals the shipped parser verdict
+  name: gate_fails_when_observation_expects_the_nonexistent_flags_to_be_accepted
+  prediction: >
+    evaluate_flags_observation({argv: [--method, gptq, --bits, 4, --group-size, 128],
+    expected_outcome: ok}) returns passed = false with a failure naming --scheme.
+  test_harness: 'cargo test -p apr-cli --lib gate_fails_when_observation_expects_the_nonexistent_flags_to_be_accepted'
+  expected_output: "test result: ok"
+  if_fails: >
+    Pre-fix behaviour: this observation PASSED. got == expected == "ok" because
+    both sides were produced by the same hand-rolled matcher.
+
+- id: FALSIFY-LINTFLAG-004
+  rule: both lint commands report the rejection end to end
+  name: flags_gate_rejects_the_method_bits_argv_the_shipped_cli_never_took
+  prediction: >
+    `apr gptq-lint` and `apr awq-lint` both fail on an observation recording
+    --method/--bits/--group-size with expected_outcome ok; the stderr carries
+    the FALSIFY stamp, the word REJECTED, and the --scheme flag the binary does
+    take. Two tests share this name, one per lint.
+  test_harness: 'cargo test -p apr-cli --lib flags_gate_rejects_the_method_bits_argv_the_shipped_cli_never_took'
+  expected_output: "test result: ok"
+  if_fails: >
+    Pre-fix behaviour: both commands exited 0 on that observation, so a CI
+    harness wired to them could never notice the flags did not exist.
+
+- id: FALSIFY-LINTFLAG-005
+  rule: the accepted-flag list an operator is shown comes from clap
+  name: accepts_summary_never_advertises_the_flags_that_do_not_exist
+  prediction: >
+    shipped_quantize_accepts_summary() names <FILE>, --scheme, --output,
+    --format, --batch, --plan and --force, and contains none of --method,
+    --bits, --group-size.
+  test_harness: 'cargo test -p apr-cli --lib accepts_summary'
+  expected_output: "test result: ok"
+  if_fails: >
+    A hardcoded flag list in the failure message drifts from the CLI exactly the
+    way the hand-rolled parser did, and tells the operator to try flags that do
+    not exist.
+
+- id: FALSIFY-LINTFLAG-006
+  rule: a stale observation is unusable input (exit 4), not a gate rejection (exit 5)
+  name: flags_gate_stale_vocabulary_is_unusable_input
+  prediction: >
+    An observation whose expected_outcome is a per-flag label the real parser
+    cannot emit (missing_bits, missing_method, …) exits 4 per
+    crates/apr-cli/src/commands/lint_error.rs, so a CI wrapper reads "your
+    capture is stale" and not "the system under test broke a contract".
+  test_harness: 'cargo test -p apr-cli --lib flags_gate_stale_vocabulary_is_unusable_input'
+  expected_output: "test result: ok"
+  if_fails: >
+    Folding the stale labels into "rejected" would let an old observation pass
+    for a brand-new reason — the exact class of test that locks a defect in.
+
+- id: FALSIFY-LINTFLAG-007
+  rule: an observation may assert the refusal the parser really produces
+  name: gate_passes_when_observation_expects_the_nonexistent_flags_to_be_rejected
+  prediction: >
+    evaluate_flags_observation({argv: [--method, awq, --bits, 4],
+    expected_outcome: rejected}) returns passed = true — negative captures stay
+    expressible under the new vocabulary.
+  test_harness: 'cargo test -p apr-cli --lib gate_passes_when_observation_expects_the_nonexistent_flags_to_be_rejected'
+  expected_output: "test result: ok"
+  if_fails: >
+    A gate that can only report acceptance cannot record a deliberate negative
+    case, so operators would drop the negative captures entirely.
+
+proof_obligations:
+- type: invariant
+  property: "gate verdict = shipped clap parser verdict for every argv"
+- type: invariant
+  property: "no lint gate contains an argv parser of its own"
+- type: invariant
+  property: "an expected_outcome outside {accepted, ok, rejected} exits 4, never 5"
+- type: invariant
+  property: "the accepted-flag list shown on failure is read from Cli::command()"
+
+qa_gate:
+  id: F-LINT-FLAG-PARITY-GATE
+  name: Lint Flag Parity Gate
+  description: >
+    The `flags` gate of the apr *-lint family must decide acceptance with the
+    shipped clap parser. Any reintroduction of a hand-rolled argv matcher turns
+    FALSIFY-LINTFLAG-001/003/004 red.
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 7 falsification tests + 4 proof obligations pass
+
+verification_summary:
+  total_obligations: 4
+  l2_property_tested: 4
+  l3_kani_proved: 0
+  l4_lean_proved: 0
+  l4_sorry_count: 0

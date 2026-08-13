@@ -182,11 +182,42 @@ fn falsify_crux_b_09_002_cosine_rejects_missing_pairs_key() {
 }
 
 // ---- flags gate (FALSIFY-CRUX-B-09-003) -----------------------------------
+//
+// The verdict comes from the SHIPPED clap parser (`commands::quantize_flag_parity`),
+// not from a hand-rolled matcher living beside the assertion. `expected_outcome`
+// is `accepted` (alias `ok`) or `rejected`; the pre-fix per-flag labels are
+// refused as an unusable observation. See aprender#2377 finding 2 and
+// `contracts/apr-lint-flag-parity-v1.yaml`.
 
 #[test]
-fn falsify_crux_b_09_003_flags_ok_on_canonical_argv() {
+fn falsify_crux_b_09_003_flags_ok_on_a_real_quantize_argv() {
     let tmp = write_tmp_json(
         "gptq-flg-ok",
+        r#"{ "flags": {
+               "argv": ["model.safetensors", "--scheme", "int4", "-o", "out.apr"],
+               "expected_outcome": "accepted"
+             } }"#,
+    );
+    let out = apr_binary()
+        .args(["gptq-lint", "--observation-file"])
+        .arg(tmp.path())
+        .output()
+        .expect("run apr gptq-lint");
+    assert!(
+        out.status.success(),
+        "a real `apr quantize <FILE> --scheme int4 -o out.apr` must pass; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// The load-bearing falsifier. Before aprender#2377 finding 2 this exact
+/// observation exited 0: the gate asked `parse_gptq_flags`/`validate_gptq_flags`,
+/// which reported `Ok { bits: 4, group_size: 128 }`. `apr quantize` has no
+/// `--method`, no `--bits` and no `--group-size`.
+#[test]
+fn falsify_crux_b_09_003_flags_reject_method_bits_group_size() {
+    let tmp = write_tmp_json(
+        "gptq-flg-legacy",
         r#"{ "flags": {
                "argv": ["--method", "gptq", "--bits", "4", "--group-size", "128"],
                "expected_outcome": "ok"
@@ -197,41 +228,28 @@ fn falsify_crux_b_09_003_flags_ok_on_canonical_argv() {
         .arg(tmp.path())
         .output()
         .expect("run apr gptq-lint");
-    assert!(
-        out.status.success(),
-        "canonical flags must pass; stderr={}",
+    assert_eq!(
+        out.status.code(),
+        Some(5),
+        "a gate rejection is exit 5; stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
-}
-
-#[test]
-fn falsify_crux_b_09_003_flags_ok_on_equals_form() {
-    let tmp = write_tmp_json(
-        "gptq-flg-eq",
-        r#"{ "flags": {
-               "argv": ["--method=gptq", "--bits=4", "--group-size=-1"],
-               "expected_outcome": "ok"
-             } }"#,
-    );
-    let out = apr_binary()
-        .args(["gptq-lint", "--observation-file"])
-        .arg(tmp.path())
-        .output()
-        .expect("run apr gptq-lint");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("FALSIFY-CRUX-B-09-003"), "got: {stderr}");
+    assert!(stderr.contains("REJECTED"), "got: {stderr}");
     assert!(
-        out.status.success(),
-        "--method=gptq per-tensor group_size must pass; stderr={}",
-        String::from_utf8_lossy(&out.stderr)
+        stderr.contains("--scheme"),
+        "the failure must name the flags `apr quantize` does accept; got: {stderr}"
     );
 }
 
 #[test]
-fn falsify_crux_b_09_003_flags_rejects_wrong_method() {
+fn falsify_crux_b_09_003_flags_reject_an_unknown_flag() {
     let tmp = write_tmp_json(
-        "gptq-flg-wm",
+        "gptq-flg-unknown",
         r#"{ "flags": {
-               "argv": ["--method", "awq", "--bits", "4"],
-               "expected_outcome": "ok"
+               "argv": ["m.apr", "--totally-made-up"],
+               "expected_outcome": "accepted"
              } }"#,
     );
     let out = apr_binary()
@@ -239,58 +257,18 @@ fn falsify_crux_b_09_003_flags_rejects_wrong_method() {
         .arg(tmp.path())
         .output()
         .expect("run apr gptq-lint");
-    assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("FALSIFY-CRUX-B-09-003"));
+    assert_eq!(out.status.code(), Some(5));
 }
 
 #[test]
-fn falsify_crux_b_09_003_flags_rejects_invalid_bits() {
-    let tmp = write_tmp_json(
-        "gptq-flg-bits",
-        r#"{ "flags": {
-               "argv": ["--method", "gptq", "--bits", "5"],
-               "expected_outcome": "ok"
-             } }"#,
-    );
-    let out = apr_binary()
-        .args(["gptq-lint", "--observation-file"])
-        .arg(tmp.path())
-        .output()
-        .expect("run apr gptq-lint");
-    assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("FALSIFY-CRUX-B-09-003"));
-}
-
-#[test]
-fn falsify_crux_b_09_003_flags_rejects_missing_bits() {
-    let tmp = write_tmp_json(
-        "gptq-flg-mb",
-        r#"{ "flags": {
-               "argv": ["--method", "gptq"],
-               "expected_outcome": "ok"
-             } }"#,
-    );
-    let out = apr_binary()
-        .args(["gptq-lint", "--observation-file"])
-        .arg(tmp.path())
-        .output()
-        .expect("run apr gptq-lint");
-    assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("FALSIFY-CRUX-B-09-003"));
-}
-
-#[test]
-fn falsify_crux_b_09_003_flags_observer_can_assert_expected_failure() {
-    // Observer captured a deliberate negative case: argv has wrong method,
-    // and the observation asserts that the gate SHOULD produce wrong_method.
+fn falsify_crux_b_09_003_flags_observer_can_assert_expected_rejection() {
+    // Observer captured a deliberate negative case and asserts the refusal
+    // that the shipped parser actually produces.
     let tmp = write_tmp_json(
         "gptq-flg-neg",
         r#"{ "flags": {
                "argv": ["--method", "awq", "--bits", "4"],
-               "expected_outcome": "wrong_method"
+               "expected_outcome": "rejected"
              } }"#,
     );
     let out = apr_binary()
@@ -300,7 +278,31 @@ fn falsify_crux_b_09_003_flags_observer_can_assert_expected_failure() {
         .expect("run apr gptq-lint");
     assert!(
         out.status.success(),
-        "expected_outcome=wrong_method must match observed wrong_method; stderr={}",
+        "expected_outcome=rejected must match the shipped parser's refusal; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// Exit 4, not 5: an `expected_outcome` the real parser cannot emit means the
+/// capture step is stale, not that the system under test broke a contract.
+#[test]
+fn falsify_crux_b_09_003_stale_per_flag_label_is_unusable_input() {
+    let tmp = write_tmp_json(
+        "gptq-flg-stale",
+        r#"{ "flags": {
+               "argv": ["--method", "gptq"],
+               "expected_outcome": "missing_bits"
+             } }"#,
+    );
+    let out = apr_binary()
+        .args(["gptq-lint", "--observation-file"])
+        .arg(tmp.path())
+        .output()
+        .expect("run apr gptq-lint");
+    assert_eq!(
+        out.status.code(),
+        Some(4),
+        "stale vocabulary is unusable input (exit 4); stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
 }
@@ -352,7 +354,7 @@ fn falsify_crux_b_09_json_output_shape() {
         "gptq-json",
         r#"{
           "compression": { "fp16_bytes": 1000000, "gptq_bytes": 250000, "max_ratio": 0.30 },
-          "flags":       { "argv": ["--method","gptq","--bits","4"], "expected_outcome": "ok" }
+          "flags":       { "argv": ["m.apr","--scheme","int4","-o","o.apr"], "expected_outcome": "accepted" }
         }"#,
     );
     let out = apr_binary()

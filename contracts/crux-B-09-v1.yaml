@@ -134,44 +134,44 @@ falsification_tests:
 
 - id: FALSIFY-CRUX-B-09-003
   rule: GPTQ CLI surface parity with vllm/auto-gptq
-  prediction: "--method gptq --bits --group-size all accepted"
+  prediction: "the SHIPPED `apr quantize` clap parser decides whether a recorded argv is accepted; it has no --method/--bits/--group-size, so the vllm/auto-gptq surface is NOT exposed"
   test: |
-    apr quantize --help 2>&1 | grep -qE -- '--method[[:space:]<]'
-    apr quantize --help 2>&1 | grep -qE 'gptq'
+    cargo test -p apr-cli --lib flags_gate_rejects_the_method_bits_argv_the_shipped_cli_never_took
   if_fails: "apr quantize lacks --method gptq; vllm/auto-gptq path not exposed"
   evidence_discharged_by:
-    classifier_path: crates/apr-cli/src/commands/gptq_classifier.rs
+    classifier_path: crates/apr-cli/src/commands/quantize_flag_parity.rs
     cli_path: crates/apr-cli/src/commands/gptq_lint.rs
     e2e_path: crates/apr-cli/tests/falsification_crux_b_09.rs
     e2e_tests:
-    - falsify_crux_b_09_003_flags_ok_on_canonical_argv
-    - falsify_crux_b_09_003_flags_ok_on_equals_form
-    - falsify_crux_b_09_003_flags_rejects_wrong_method
-    - falsify_crux_b_09_003_flags_rejects_invalid_bits
-    - falsify_crux_b_09_003_flags_rejects_missing_bits
-    - falsify_crux_b_09_003_flags_observer_can_assert_expected_failure
+    - falsify_crux_b_09_003_flags_ok_on_a_real_quantize_argv
+    - falsify_crux_b_09_003_flags_reject_method_bits_group_size
+    - falsify_crux_b_09_003_flags_reject_an_unknown_flag
+    - falsify_crux_b_09_003_flags_observer_can_assert_expected_rejection
+    - falsify_crux_b_09_003_stale_per_flag_label_is_unusable_input
     sub_claim: |
-      Algorithm-level necessary condition: `parse_gptq_flags` handles
-      both `--method gptq` and `--method=gptq`; accepts the auto-gptq
-      convention `--group-size=-1` (per-tensor). `validate_gptq_flags`
-      enforces bits ∈ {2,3,4,8}, group_size ∈ {-1,32,64,128}, default
-      = `GPTQ_DEFAULT_GROUP_SIZE` (128). Missing method, wrong method,
-      missing/invalid bits, and invalid group_size each map to a
-      distinct error variant.
+      HONEST STATE (aprender#2377 finding 2): this gate used to be discharged
+      by `parse_gptq_flags` + `validate_gptq_flags`, a hand-rolled argv matcher
+      that lived beside the assertion and understood `--method`, `--bits` and
+      `--group-size`. The shipped `apr quantize` takes none of those three, so
+      the gate had never once validated the command it named — it validated a
+      second parser. Both functions are DELETED.
+      The verdict now comes from the shipped clap parser
+      (`quantize_flag_parity::shipped_quantize_verdict`, contract
+      apr-lint-flag-parity-v1), which REJECTS `--method gptq --bits 4
+      --group-size 128`. That rejection is the truthful state of this rule:
+      the vllm/auto-gptq CLI surface is not implemented, and the gate now says
+      so instead of asserting the opposite.
     tests:
-    - parse_all_three_space_form
-    - parse_group_size_neg_one_is_per_tensor
-    - validate_ok_with_default_group_size
-    - validate_ok_with_per_tensor_group_size
-    - validate_rejects_wrong_method
-    - validate_rejects_missing_bits
-    - validate_rejects_invalid_bits
-    - validate_rejects_invalid_group_size
-    - validate_is_deterministic
-    - reference_constants_match_spec
-    scope: argv → GptqFlags → GptqFlagValidation (pure)
-    discharge_status: PARTIAL_ALGORITHM_LEVEL
-    full_discharge_blocked_on: "clap `apr quantize --help` subcommand surface + gptq method enum"
+    - shipped_parser_rejects_the_flags_the_hand_rolled_parser_accepted
+    - shipped_parser_accepts_a_real_quantize_invocation
+    - gate_fails_when_observation_expects_the_nonexistent_flags_to_be_accepted
+    - gate_passes_when_observation_expects_the_nonexistent_flags_to_be_rejected
+    - flags_gate_rejects_the_method_bits_argv_the_shipped_cli_never_took
+    - flags_gate_accepts_a_real_quantize_invocation
+    - flags_gate_stale_vocabulary_is_unusable_input
+    scope: argv → shipped clap Command → {accepted, rejected}
+    discharge_status: REFUTED_SURFACE_NOT_IMPLEMENTED
+    full_discharge_blocked_on: "`apr quantize` gaining a --method/--bits/--group-size surface (or this rule being retired); see contracts/apr-lint-flag-parity-v1.yaml"
 
 proof_obligations:
 - type: invariant
@@ -196,8 +196,8 @@ verification_summary:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: "evidence/crux/vllm/gptq/prompts-64.jsonl + `apr diff --metric logit-cosine` harness"
   - falsify_id: FALSIFY-CRUX-B-09-003
-    discharge_status: PARTIAL_ALGORITHM_LEVEL
-    blocked_on: "clap `apr quantize --help` subcommand surface + gptq method enum"
+    discharge_status: REFUTED_SURFACE_NOT_IMPLEMENTED
+    blocked_on: "`apr quantize` has no --method/--bits/--group-size; the gate now runs the shipped clap parser and says so (aprender#2377 finding 2)"
 
 ship_discipline:
   ship_rule: CRUX-SHIP-001
