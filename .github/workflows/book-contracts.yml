@@ -10,6 +10,7 @@ on:
       - "contracts/apr-book-schema-*"
       - "crates/aprender-core/examples/ch*"
       - "crates/aprender-core/tests/book_contracts.rs"
+      - "crates/aprender-core/src/**"
       - "scripts/book-gate.sh"
       - ".github/workflows/book-contracts.yml"
   pull_request:
@@ -18,7 +19,16 @@ on:
       - "book/**"
       - "contracts/apr-book-*"
       - "contracts/apr-page-*"
+      # Was watched by `push` but NOT by `pull_request`: a PR touching only these
+      # was green because this workflow never ran, and main went red on merge.
+      - "contracts/apr-book-schema-*"
+      - "crates/aprender-core/tests/book_contracts.rs"
       - "crates/aprender-core/examples/ch*"
+      # This workflow RUNS the chapter examples, which train models with
+      # aprender-core's optimizers, losses and layers. Watching the examples but
+      # not the library they exercise meant an SGD regression could break all 27
+      # without ever triggering the workflow that runs them.
+      - "crates/aprender-core/src/**"
       - "scripts/book-gate.sh"
       - ".github/workflows/book-contracts.yml"
 
