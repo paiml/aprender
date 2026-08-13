@@ -48,6 +48,23 @@
 //! | 2 | Nothing ever sets the flag. |
 //! | 3 | No await point; the drop never happens mid-generation. |
 //!
+//! # Why the guard is disarmed on completion (aprender#2375(1))
+//!
+//! Step 2's guard originally fired on BOTH exits — abandonment and normal
+//! completion — because firing late was assumed harmless. It is harmless only
+//! for a handler that finishes its generation before returning. The streaming
+//! chat backends do the opposite: they hand the decode loop to
+//! `spawn_blocking` and return the SSE response at once, so this future
+//! completes while the loop is still in prefill. The guard then cancelled it at
+//! the very first poll, and `POST /v1/chat/completions` with `"stream":true`
+//! returned a well-formed event stream containing the opening chunk, the
+//! terminal chunk, and **zero content deltas** — every streamed reply empty.
+//!
+//! So a completed handler disarms the guard. Abandonment (drop) and a panicking
+//! handler still cancel. An abandoned *stream* is still stopped, by the
+//! mechanism that has always covered it: hyper drops the response body → the
+//! SSE receiver drops → the generator's `on_token` send fails → the loop breaks.
+//!
 //! # Panics are preserved
 //!
 //! A panicking handler is re-raised with [`std::panic::resume_unwind`] so hyper
@@ -76,16 +93,23 @@ pub(crate) async fn cancel_on_disconnect(mut request: Request<Body>, next: Next)
     let token = CancelToken::new();
     request.extensions_mut().insert(token.clone());
 
-    // (2) Lives in THIS future. Dropped when the response is finished *or* when
-    // axum abandons the request because the client went away.
-    let _disconnect_guard = token.cancel_on_drop();
+    // (2) Lives in THIS future. Dropped when axum abandons the request because
+    // the client went away — and DISARMED first when the handler returns, since
+    // a returned response may still be streaming from a background decode loop.
+    let mut disconnect_guard = token.cancel_on_drop();
 
     // (3) The handler outlives this future's drop, so its decode loop is still
     // running to see the flag the guard just set.
     let handle = tokio::spawn(async move { next.run(request).await });
 
     match handle.await {
-        Ok(response) => response,
+        Ok(response) => {
+            // The handler produced a response, so this request was not
+            // abandoned. Cancelling here would stop a streaming body that has
+            // not been written yet — see the module docs (#2375(1)).
+            disconnect_guard.disarm();
+            response
+        },
         Err(join_err) if join_err.is_panic() => std::panic::resume_unwind(join_err.into_panic()),
         Err(join_err) => (
             StatusCode::INTERNAL_SERVER_ERROR,

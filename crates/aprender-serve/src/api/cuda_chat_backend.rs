@@ -327,17 +327,18 @@ fn convert_token_ids(ids: &[usize]) -> Result<Vec<u32>, String> {
         .collect()
 }
 
-/// Build generation config from request parameters
+/// Build generation config from request parameters.
+///
+/// #2375: `temperature: 0` — the OpenAI-canonical deterministic request —
+/// reached `apply_temperature` unchanged here and made this backend answer
+/// HTTP 500 ("Temperature must be a positive finite number") for every dense
+/// model. The resolution now lives in ONE place, shared with `/v1/completions`.
 fn build_gen_config(request: &ChatCompletionRequest) -> GenerationConfig {
-    let max_tokens = request.max_tokens.unwrap_or(256);
-    let temperature = request.temperature.unwrap_or(0.7);
-    let mut config = GenerationConfig::default()
-        .with_max_tokens(max_tokens)
-        .with_temperature(temperature);
-    if let Some(top_p) = request.top_p {
-        config.strategy = SamplingStrategy::TopP { p: top_p };
-    }
-    config
+    crate::api::realize_handlers::resolve_dense_generation_config(
+        request.temperature.unwrap_or(0.7),
+        request.top_p,
+        request.max_tokens.unwrap_or(256),
+    )
 }
 
 /// Registry-based model fallback (no specialized backend).

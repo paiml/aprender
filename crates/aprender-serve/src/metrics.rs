@@ -9,12 +9,39 @@
 //! Metrics are exposed in Prometheus format for easy integration with monitoring systems.
 
 use std::{
+    collections::VecDeque,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
+
+/// How many recent request latencies are kept for percentile reporting.
+///
+/// A bounded window: memory is constant regardless of uptime, and the reported
+/// percentiles describe recent behaviour rather than the whole life of the
+/// process — which is what a monitor graphing p95 wants.
+const LATENCY_WINDOW: usize = 1024;
+
+/// Measured request-latency percentiles, in milliseconds.
+///
+/// aprender#2375(7): `/v1/metrics` reported `latency_p50/p95/p99 = 0.0` while
+/// `/metrics` on the same process at the same instant reported
+/// `avg_latency_ms 626.79` over the same 27 requests — the collector kept only
+/// running totals, so there was no distribution to take a percentile of. The
+/// non-GPU variant of the handler filled the gap by *deriving* p95 as
+/// `avg * 1.5` and p99 as `avg * 2.0`, which are not measurements of anything.
+/// These are order statistics over the real samples.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LatencyPercentiles {
+    /// Median request latency (ms).
+    pub p50_ms: f64,
+    /// 95th-percentile request latency (ms).
+    pub p95_ms: f64,
+    /// 99th-percentile request latency (ms).
+    pub p99_ms: f64,
+}
 
 /// Central metrics collector for tracking system performance
 #[derive(Debug, Clone)]
@@ -29,6 +56,9 @@ pub struct MetricsCollector {
     total_tokens: Arc<AtomicUsize>,
     /// Total inference time in microseconds
     total_inference_time_us: Arc<AtomicU64>,
+    /// Most recent per-request latencies in microseconds (oldest first), capped
+    /// at [`LATENCY_WINDOW`]. This is the sample set the percentiles come from.
+    recent_latencies_us: Arc<Mutex<VecDeque<u64>>>,
     /// Start time for rate calculations
     start_time: Instant,
 }
@@ -43,6 +73,7 @@ impl MetricsCollector {
             failed_requests: Arc::new(AtomicUsize::new(0)),
             total_tokens: Arc::new(AtomicUsize::new(0)),
             total_inference_time_us: Arc::new(AtomicU64::new(0)),
+            recent_latencies_us: Arc::new(Mutex::new(VecDeque::with_capacity(LATENCY_WINDOW))),
             start_time: Instant::now(),
         }
     }
@@ -53,8 +84,55 @@ impl MetricsCollector {
         self.total_requests.fetch_add(1, Ordering::Relaxed);
         self.successful_requests.fetch_add(1, Ordering::Relaxed);
         self.total_tokens.fetch_add(tokens, Ordering::Relaxed);
+        let elapsed_us = duration.as_micros() as u64;
         self.total_inference_time_us
-            .fetch_add(duration.as_micros() as u64, Ordering::Relaxed);
+            .fetch_add(elapsed_us, Ordering::Relaxed);
+        // aprender#2375(7): keep the SAMPLE, not just the sum. Without it there
+        // is no distribution, and the percentile fields could only be zeros or
+        // multiples of the mean.
+        if let Ok(mut samples) = self.recent_latencies_us.lock() {
+            if samples.len() == LATENCY_WINDOW {
+                samples.pop_front();
+            }
+            samples.push_back(elapsed_us);
+        }
+    }
+
+    /// Percentiles over the recent request-latency window.
+    ///
+    /// `None` when no successful request has been recorded — an honest "not
+    /// measured yet", which the caller must not render as a measured `0.0`.
+    ///
+    /// Nearest-rank order statistics (no interpolation): with `n` samples the
+    /// q-th percentile is the `ceil(q*n)`-th smallest, so `p95` of 100 samples
+    /// is the 95th smallest and can never be a scaled mean.
+    #[must_use]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
+    pub fn latency_percentiles(&self) -> Option<LatencyPercentiles> {
+        let mut samples: Vec<u64> = {
+            let guard = self.recent_latencies_us.lock().ok()?;
+            if guard.is_empty() {
+                return None;
+            }
+            guard.iter().copied().collect()
+        };
+        samples.sort_unstable();
+
+        let nth = |quantile: f64| -> f64 {
+            let n = samples.len();
+            let rank = (quantile * n as f64).ceil().max(1.0) as usize;
+            let index = rank.min(n) - 1;
+            samples[index] as f64 / 1000.0
+        };
+        Some(LatencyPercentiles {
+            p50_ms: nth(0.50),
+            p95_ms: nth(0.95),
+            p99_ms: nth(0.99),
+        })
     }
 
     /// Record a failed request
@@ -160,6 +238,12 @@ impl MetricsCollector {
         self.failed_requests.store(0, Ordering::Relaxed);
         self.total_tokens.store(0, Ordering::Relaxed);
         self.total_inference_time_us.store(0, Ordering::Relaxed);
+        // The latency window is part of "all metrics": leaving it behind would
+        // let a reset collector report percentiles for traffic it no longer
+        // counts.
+        if let Ok(mut samples) = self.recent_latencies_us.lock() {
+            samples.clear();
+        }
     }
 }
 
@@ -347,5 +431,115 @@ mod tests {
         approx::assert_relative_eq!(snapshot.tokens_per_sec, 0.0);
         approx::assert_relative_eq!(snapshot.avg_latency_ms, 0.0);
         approx::assert_relative_eq!(snapshot.error_rate, 0.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // aprender#2375(7): the percentiles must be order statistics of the real
+    // samples — not zeros, and not multiples of the mean.
+    // -----------------------------------------------------------------------
+
+    /// The falsifier. 100 requests at 1..=100 ms have mean 50.5 ms, so the
+    /// shipped formulas produce p50 = 50.5, p95 = 75.75 (`avg * 1.5`) and
+    /// p99 = 101.0 (`avg * 2.0`). The measured order statistics are 50, 95 and
+    /// 99 — a value `avg * k` cannot equal for both p95 and p99.
+    #[test]
+    fn percentiles_are_order_statistics_not_multiples_of_the_mean() {
+        let metrics = MetricsCollector::new();
+        for ms in 1..=100u64 {
+            metrics.record_success(1, Duration::from_millis(ms));
+        }
+
+        let p = metrics
+            .latency_percentiles()
+            .expect("100 recorded requests must produce percentiles");
+
+        approx::assert_relative_eq!(p.p50_ms, 50.0, epsilon = 1e-6);
+        approx::assert_relative_eq!(p.p95_ms, 95.0, epsilon = 1e-6);
+        approx::assert_relative_eq!(p.p99_ms, 99.0, epsilon = 1e-6);
+
+        // Spell the shipped fabrication out so a regression names itself.
+        let avg = metrics.snapshot().avg_latency_ms;
+        assert!(
+            (p.p95_ms - avg * 1.5).abs() > 1.0,
+            "p95 must be measured, not derived as avg*1.5 ({avg} -> {})",
+            avg * 1.5
+        );
+        assert!(
+            (p.p99_ms - avg * 2.0).abs() > 1.0,
+            "p99 must be measured, not derived as avg*2.0 ({avg} -> {})",
+            avg * 2.0
+        );
+    }
+
+    /// Order is a property of percentiles, whatever the distribution.
+    #[test]
+    fn percentiles_are_monotonic() {
+        let metrics = MetricsCollector::new();
+        for ms in [5u64, 900, 12, 7, 350, 8, 9, 11, 6, 10] {
+            metrics.record_success(1, Duration::from_millis(ms));
+        }
+        let p = metrics.latency_percentiles().expect("samples recorded");
+        assert!(
+            p.p50_ms <= p.p95_ms && p.p95_ms <= p.p99_ms,
+            "percentiles must be non-decreasing: {p:?}"
+        );
+        assert!(
+            p.p99_ms >= 350.0,
+            "the tail must reach the slow requests, or the window is dropping them: {p:?}"
+        );
+    }
+
+    /// No traffic is reported as "no measurement", never as a measured 0 ms.
+    #[test]
+    fn no_samples_reports_absence_not_zero() {
+        let metrics = MetricsCollector::new();
+        assert!(
+            metrics.latency_percentiles().is_none(),
+            "a collector with no successful request has nothing to take a percentile of"
+        );
+        metrics.record_failure();
+        assert!(
+            metrics.latency_percentiles().is_none(),
+            "a failed request carries no latency sample"
+        );
+    }
+
+    /// The window is bounded, and keeps the RECENT samples.
+    #[test]
+    fn window_is_bounded_and_keeps_the_newest_samples() {
+        let metrics = MetricsCollector::new();
+        // Fill past capacity with slow requests, then push a full window of fast
+        // ones. The slow ones must have aged out entirely.
+        for _ in 0..LATENCY_WINDOW {
+            metrics.record_success(1, Duration::from_millis(500));
+        }
+        for _ in 0..LATENCY_WINDOW {
+            metrics.record_success(1, Duration::from_millis(1));
+        }
+        let p = metrics.latency_percentiles().expect("samples recorded");
+        approx::assert_relative_eq!(p.p99_ms, 1.0, epsilon = 1e-6);
+
+        let held = metrics
+            .recent_latencies_us
+            .lock()
+            .expect("window lock")
+            .len();
+        assert_eq!(
+            held, LATENCY_WINDOW,
+            "the window must stay bounded regardless of uptime"
+        );
+    }
+
+    #[test]
+    fn reset_clears_the_latency_window() {
+        let metrics = MetricsCollector::new();
+        metrics.record_success(1, Duration::from_millis(42));
+        assert!(metrics.latency_percentiles().is_some());
+        metrics.reset();
+        assert!(
+            metrics.latency_percentiles().is_none(),
+            "reset must drop the samples too, or percentiles describe traffic the \
+             counters no longer count"
+        );
     }
 }

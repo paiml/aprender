@@ -144,18 +144,38 @@ impl CancelToken {
     pub fn cancel_on_drop(&self) -> CancelOnDrop {
         CancelOnDrop {
             token: self.clone(),
+            armed: true,
         }
     }
 }
 
-/// Cancels its [`CancelToken`] on drop.
+/// Cancels its [`CancelToken`] on drop, unless [`CancelOnDrop::disarm`] ran first.
 ///
-/// Firing after generation already finished is harmless — the loop is gone and the
-/// flag is read by nobody — so the guard is deliberately not disarmable. That keeps
-/// the disconnect path from depending on a "did we remember to disarm" branch.
+/// # Why it has to be disarmable
+///
+/// The original version fired unconditionally, on the reasoning that "firing after
+/// generation already finished is harmless — the loop is gone and the flag is read
+/// by nobody". That is true for a handler that generates *inside* its own future,
+/// and false for every streaming handler: those hand the decode loop to a
+/// background task and RETURN the SSE response immediately, so the middleware
+/// future completes while generation is still starting. An unconditional guard
+/// therefore cancelled the loop before its first token, and
+/// `POST /v1/chat/completions` with `"stream":true` answered
+/// `text/event-stream` carrying an opening chunk, a terminal chunk and **no
+/// content deltas at all**.
+///
+/// So the guard now distinguishes the two exits it always had:
+/// - dropped while the future is still running (the client went away) → cancel;
+/// - disarmed by a future that ran to completion → do nothing.
+///
+/// A streaming request abandoned mid-body is still cancelled, by a different and
+/// pre-existing mechanism: hyper drops the response body, which drops the SSE
+/// receiver, which makes the generator's `on_token` send fail, which breaks the
+/// decode loop.
 #[derive(Debug)]
 pub struct CancelOnDrop {
     token: CancelToken,
+    armed: bool,
 }
 
 impl CancelOnDrop {
@@ -164,11 +184,22 @@ impl CancelOnDrop {
     pub fn token(&self) -> &CancelToken {
         &self.token
     }
+
+    /// Give up the right to cancel: this guard's drop becomes a no-op.
+    ///
+    /// Call it on the path where the work this guard protects has *completed* or
+    /// been handed to something else that can stop it. Anything else (an early
+    /// return, a panic, a dropped future) leaves the guard armed.
+    pub fn disarm(&mut self) {
+        self.armed = false;
+    }
 }
 
 impl Drop for CancelOnDrop {
     fn drop(&mut self) {
-        self.token.cancel();
+        if self.armed {
+            self.token.cancel();
+        }
     }
 }
 
@@ -269,5 +300,34 @@ mod tests {
         assert!(!guard.token().peek_cancelled());
         drop(guard);
         assert!(t.peek_cancelled());
+    }
+
+    /// aprender#2375(1): a disarmed guard must NOT cancel. The streaming handlers
+    /// return their response while the decode loop is still starting, so a guard
+    /// that fired on normal completion killed the generation before its first
+    /// token and the SSE body carried no content deltas.
+    #[test]
+    fn disarmed_guard_does_not_cancel_on_drop() {
+        let t = CancelToken::new();
+        {
+            let mut guard = t.cancel_on_drop();
+            guard.disarm();
+        }
+        assert!(
+            !t.peek_cancelled(),
+            "a disarmed guard must leave the token alive: work handed to a \
+             background task outlives the future that armed the guard"
+        );
+    }
+
+    /// The guard is armed by default, so forgetting to disarm keeps the
+    /// disconnect behaviour rather than silently losing it.
+    #[test]
+    fn guard_is_armed_until_disarmed() {
+        let t = CancelToken::new();
+        let mut guard = t.cancel_on_drop();
+        drop(t.cancel_on_drop()); // a second, still-armed guard cancels
+        assert!(t.peek_cancelled());
+        guard.disarm();
     }
 }
