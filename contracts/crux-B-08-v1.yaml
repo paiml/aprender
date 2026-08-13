@@ -92,48 +92,44 @@ falsification_tests:
 
 - id: FALSIFY-CRUX-B-08-002
   rule: CLI surface matches vllm
-  prediction: "apr quantize --method awq --bits --group-size all accepted"
+  prediction: "the SHIPPED `apr quantize` clap parser decides whether a recorded argv is accepted; it has no --method/--bits/--group-size, so the vllm/awq surface is NOT exposed"
   test: |
-    apr quantize --help 2>&1 | grep -qE -- '--method[[:space:]<]'
-    apr quantize --help 2>&1 | grep -qE -- '--bits[[:space:]<]'
-    apr quantize --help 2>&1 | grep -qE -- '--group-size[[:space:]<]'
+    cargo test -p apr-cli --lib flags_gate_rejects_the_method_bits_argv_the_shipped_cli_never_took
   if_fails: "apr quantize missing AWQ-equivalent flags; competitor parity broken"
   evidence_discharged_by:
-    classifier_path: crates/apr-cli/src/commands/awq_classifier.rs
+    classifier_path: crates/apr-cli/src/commands/quantize_flag_parity.rs
     cli_path: crates/apr-cli/src/commands/awq_lint.rs
     e2e_path: crates/apr-cli/tests/falsification_crux_b_08.rs
     e2e_tests:
-    - falsify_crux_b_08_002_flags_ok_canonical
-    - falsify_crux_b_08_002_flags_ok_equals_form
-    - falsify_crux_b_08_002_flags_rejects_wrong_method
-    - falsify_crux_b_08_002_flags_rejects_invalid_bits
-    - falsify_crux_b_08_002_flags_rejects_missing_bits
-    - falsify_crux_b_08_002_flags_rejects_invalid_group_size
-    - falsify_crux_b_08_002_flags_observer_can_assert_expected_failure
+    - falsify_crux_b_08_002_flags_ok_on_a_real_quantize_argv
+    - falsify_crux_b_08_002_flags_reject_method_bits_group_size
+    - falsify_crux_b_08_002_flags_reject_quantize_without_the_required_file
+    - falsify_crux_b_08_002_flags_observer_can_assert_expected_rejection
+    - falsify_crux_b_08_002_stale_per_flag_label_is_unusable_input
     sub_claim: |
-      Algorithm-level necessary condition: `parse_awq_flags` extracts
-      all three flags (`--method`, `--bits`, `--group-size`) in both
-      space and `=` forms; `validate_awq_flags` enforces the full
-      contract envelope — bits ∈ {3,4,8}, group_size ∈ {64,128},
-      default group_size = `AWQ_DEFAULT_GROUP_SIZE` (128, matching
-      vllm/awq reference). Missing method, unknown method, and invalid
-      bits/group_size each map to a distinct error variant.
+      HONEST STATE (aprender#2377 finding 2): this gate used to be discharged
+      by `parse_awq_flags` + `validate_awq_flags`, a hand-rolled argv matcher
+      that lived beside the assertion and understood `--method`, `--bits` and
+      `--group-size`. The shipped `apr quantize` takes none of those three, so
+      the gate had never once validated the command it named — it validated a
+      second parser. Both functions are DELETED.
+      The verdict now comes from the shipped clap parser
+      (`quantize_flag_parity::shipped_quantize_verdict`, contract
+      apr-lint-flag-parity-v1), which REJECTS `--method awq --bits 4
+      --group-size 128`. That rejection is the truthful state of this rule:
+      the vllm/awq CLI surface is not implemented, and the gate now says so
+      instead of asserting the opposite.
     tests:
-    - parse_all_three_space_form
-    - parse_all_three_equals_form
-    - parse_absent_bits_yields_none
-    - validate_ok_with_default_group_size
-    - validate_ok_with_explicit_group_size
-    - validate_rejects_missing_method
-    - validate_rejects_unknown_method
-    - validate_rejects_invalid_bits
-    - validate_rejects_missing_bits
-    - validate_rejects_invalid_group_size
-    - allowed_sets_include_reference_values
-    - validate_is_deterministic
-    scope: argv → AwqFlags → AwqFlagValidation (pure)
-    discharge_status: PARTIAL_ALGORITHM_LEVEL
-    full_discharge_blocked_on: "clap `apr quantize --help` subcommand surface"
+    - shipped_parser_rejects_the_awq_argv_the_hand_rolled_parser_accepted
+    - shipped_parser_accepts_a_real_quantize_invocation
+    - gate_fails_when_observation_expects_the_nonexistent_flags_to_be_accepted
+    - gate_passes_when_observation_expects_the_nonexistent_flags_to_be_rejected
+    - flags_gate_rejects_the_method_bits_argv_the_shipped_cli_never_took
+    - flags_gate_accepts_a_real_quantize_invocation
+    - flags_gate_stale_vocabulary_is_unusable_input
+    scope: argv → shipped clap Command → {accepted, rejected}
+    discharge_status: REFUTED_SURFACE_NOT_IMPLEMENTED
+    full_discharge_blocked_on: "`apr quantize` gaining a --method/--bits/--group-size surface (or this rule being retired); see contracts/apr-lint-flag-parity-v1.yaml"
 
 - id: FALSIFY-CRUX-B-08-003
   rule: AWQ artifact size <= 0.3x fp16
@@ -186,8 +182,8 @@ verification_summary:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: real AWQ quantizer + HumanEval/0..9 scoring harness
   - falsify_id: FALSIFY-CRUX-B-08-002
-    discharge_status: PARTIAL_ALGORITHM_LEVEL
-    blocked_on: "clap `apr quantize --help` subcommand surface"
+    discharge_status: REFUTED_SURFACE_NOT_IMPLEMENTED
+    blocked_on: "`apr quantize` has no --method/--bits/--group-size; the gate now runs the shipped clap parser and says so (aprender#2377 finding 2)"
   - falsify_id: FALSIFY-CRUX-B-08-003
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: real AWQ 4-bit packer + fp16 source pair on disk

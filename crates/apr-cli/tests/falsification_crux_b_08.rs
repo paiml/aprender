@@ -8,7 +8,7 @@
 //! ```jsonc
 //! {
 //!   "quality":     { "p_fp16", "p_awq", "threshold" },         // FALSIFY-CRUX-B-08-001
-//!   "flags":       { "argv": [..], "expected_outcome": "ok" }, // FALSIFY-CRUX-B-08-002
+//!   "flags":       { "argv": [..], "expected_outcome": "accepted" }, // FALSIFY-CRUX-B-08-002
 //!   "compression": { "fp16_bytes", "awq_bytes", "max_ratio" }  // FALSIFY-CRUX-B-08-003
 //! }
 //! ```
@@ -175,12 +175,40 @@ fn falsify_crux_b_08_003_compression_rejects_zero_source() {
 }
 
 // ---- flags gate (FALSIFY-CRUX-B-08-002) -----------------------------------
+//
+// The verdict comes from the SHIPPED clap parser (`commands::quantize_flag_parity`),
+// not from a hand-rolled matcher living beside the assertion. `expected_outcome`
+// is `accepted` (alias `ok`) or `rejected`; the pre-fix per-flag labels are
+// refused as an unusable observation. See aprender#2377 finding 2 and
+// `contracts/apr-lint-flag-parity-v1.yaml`.
 
 #[test]
-fn falsify_crux_b_08_002_flags_ok_canonical() {
-    // --method awq --bits 4 --group-size 128 → Ok
+fn falsify_crux_b_08_002_flags_ok_on_a_real_quantize_argv() {
     let tmp = write_tmp_json(
         "awq-flags-ok",
+        r#"{ "flags": { "argv": ["model.safetensors", "--scheme", "int4", "-o", "out.apr"],
+                        "expected_outcome": "accepted" } }"#,
+    );
+    let out = apr_binary()
+        .args(["awq-lint", "--observation-file"])
+        .arg(tmp.path())
+        .output()
+        .expect("run apr awq-lint");
+    assert!(
+        out.status.success(),
+        "a real `apr quantize <FILE> --scheme int4 -o out.apr` must pass; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// The load-bearing falsifier. Before aprender#2377 finding 2 this exact
+/// observation exited 0: the gate asked `parse_awq_flags`/`validate_awq_flags`,
+/// which reported `Ok { bits: 4, group_size: 128 }`. `apr quantize` has no
+/// `--method`, no `--bits` and no `--group-size`.
+#[test]
+fn falsify_crux_b_08_002_flags_reject_method_bits_group_size() {
+    let tmp = write_tmp_json(
+        "awq-flags-legacy",
         r#"{ "flags": { "argv": ["--method", "awq", "--bits", "4", "--group-size", "128"],
                         "expected_outcome": "ok" } }"#,
     );
@@ -189,113 +217,44 @@ fn falsify_crux_b_08_002_flags_ok_canonical() {
         .arg(tmp.path())
         .output()
         .expect("run apr awq-lint");
-    assert!(
-        out.status.success(),
-        "canonical flags must pass; stderr={}",
+    assert_eq!(
+        out.status.code(),
+        Some(5),
+        "a gate rejection is exit 5; stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
-}
-
-#[test]
-fn falsify_crux_b_08_002_flags_ok_equals_form() {
-    // --method=awq --bits=4 → Ok (group_size defaults to 128)
-    let tmp = write_tmp_json(
-        "awq-flags-eq",
-        r#"{ "flags": { "argv": ["--method=awq", "--bits=4"],
-                        "expected_outcome": "ok" } }"#,
-    );
-    let out = apr_binary()
-        .args(["awq-lint", "--observation-file"])
-        .arg(tmp.path())
-        .output()
-        .expect("run apr awq-lint");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("FALSIFY-CRUX-B-08-002"), "got: {stderr}");
+    assert!(stderr.contains("REJECTED"), "got: {stderr}");
     assert!(
-        out.status.success(),
-        "equals-form flags must pass; stderr={}",
-        String::from_utf8_lossy(&out.stderr)
+        stderr.contains("--scheme"),
+        "the failure must name the flags `apr quantize` does accept; got: {stderr}"
     );
 }
 
 #[test]
-fn falsify_crux_b_08_002_flags_rejects_wrong_method() {
-    // Observer expected ok, but method=gptq → UnknownMethod → mismatch fails
+fn falsify_crux_b_08_002_flags_reject_quantize_without_the_required_file() {
     let tmp = write_tmp_json(
-        "awq-flags-wrongmethod",
-        r#"{ "flags": { "argv": ["--method", "gptq", "--bits", "4"],
-                        "expected_outcome": "ok" } }"#,
+        "awq-flags-nofile",
+        r#"{ "flags": { "argv": ["--scheme", "int4"],
+                        "expected_outcome": "accepted" } }"#,
     );
     let out = apr_binary()
         .args(["awq-lint", "--observation-file"])
         .arg(tmp.path())
         .output()
         .expect("run apr awq-lint");
-    assert!(!out.status.success(), "wrong method must fail");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("FALSIFY-CRUX-B-08-002"));
+    assert_eq!(out.status.code(), Some(5));
 }
 
 #[test]
-fn falsify_crux_b_08_002_flags_rejects_invalid_bits() {
-    // --bits 5 is not in AWQ_ALLOWED_BITS → InvalidBits
-    let tmp = write_tmp_json(
-        "awq-flags-bits",
-        r#"{ "flags": { "argv": ["--method", "awq", "--bits", "5"],
-                        "expected_outcome": "ok" } }"#,
-    );
-    let out = apr_binary()
-        .args(["awq-lint", "--observation-file"])
-        .arg(tmp.path())
-        .output()
-        .expect("run apr awq-lint");
-    assert!(!out.status.success(), "invalid bits must fail");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("FALSIFY-CRUX-B-08-002"));
-}
-
-#[test]
-fn falsify_crux_b_08_002_flags_rejects_missing_bits() {
-    // Missing --bits → InvalidBits { got: 0 }
-    let tmp = write_tmp_json(
-        "awq-flags-nobits",
-        r#"{ "flags": { "argv": ["--method", "awq"],
-                        "expected_outcome": "ok" } }"#,
-    );
-    let out = apr_binary()
-        .args(["awq-lint", "--observation-file"])
-        .arg(tmp.path())
-        .output()
-        .expect("run apr awq-lint");
-    assert!(!out.status.success(), "missing bits must fail");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("FALSIFY-CRUX-B-08-002"));
-}
-
-#[test]
-fn falsify_crux_b_08_002_flags_rejects_invalid_group_size() {
-    // --group-size 96 is not in AWQ_ALLOWED_GROUP_SIZES → InvalidGroupSize
-    let tmp = write_tmp_json(
-        "awq-flags-gs",
-        r#"{ "flags": { "argv": ["--method", "awq", "--bits", "4", "--group-size", "96"],
-                        "expected_outcome": "ok" } }"#,
-    );
-    let out = apr_binary()
-        .args(["awq-lint", "--observation-file"])
-        .arg(tmp.path())
-        .output()
-        .expect("run apr awq-lint");
-    assert!(!out.status.success(), "invalid group size must fail");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("FALSIFY-CRUX-B-08-002"));
-}
-
-#[test]
-fn falsify_crux_b_08_002_flags_observer_can_assert_expected_failure() {
-    // Observer deliberately captured a wrong-method case and expects that
-    // classification → PASS (the captured outcome matches expectation).
+fn falsify_crux_b_08_002_flags_observer_can_assert_expected_rejection() {
+    // Observer captured a deliberate negative case and asserts the refusal
+    // that the shipped parser actually produces.
     let tmp = write_tmp_json(
         "awq-flags-negobs",
         r#"{ "flags": { "argv": ["--method", "gptq", "--bits", "4"],
-                        "expected_outcome": "unknown_method" } }"#,
+                        "expected_outcome": "rejected" } }"#,
     );
     let out = apr_binary()
         .args(["awq-lint", "--observation-file"])
@@ -304,7 +263,29 @@ fn falsify_crux_b_08_002_flags_observer_can_assert_expected_failure() {
         .expect("run apr awq-lint");
     assert!(
         out.status.success(),
-        "observer-asserts-expected-failure must pass; stderr={}",
+        "observer-asserts-the-real-refusal must pass; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// Exit 4, not 5: an `expected_outcome` the real parser cannot emit means the
+/// capture step is stale, not that the system under test broke a contract.
+#[test]
+fn falsify_crux_b_08_002_stale_per_flag_label_is_unusable_input() {
+    let tmp = write_tmp_json(
+        "awq-flags-stale",
+        r#"{ "flags": { "argv": ["--bits", "4"],
+                        "expected_outcome": "missing_method" } }"#,
+    );
+    let out = apr_binary()
+        .args(["awq-lint", "--observation-file"])
+        .arg(tmp.path())
+        .output()
+        .expect("run apr awq-lint");
+    assert_eq!(
+        out.status.code(),
+        Some(4),
+        "stale vocabulary is unusable input (exit 4); stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
 }
@@ -362,7 +343,7 @@ fn falsify_crux_b_08_json_output_shape() {
         r#"{
           "quality":     { "p_fp16": 0.50, "p_awq": 0.45, "threshold": 0.80 },
           "compression": { "fp16_bytes": 1000000000, "awq_bytes": 250000000, "max_ratio": 0.30 },
-          "flags":       { "argv": ["--method", "awq", "--bits", "4", "--group-size", "128"],
+          "flags":       { "argv": ["m.apr", "--scheme", "int4", "-o", "o.apr"],
                            "expected_outcome": "ok" }
         }"#,
     );
