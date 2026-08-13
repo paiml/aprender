@@ -23,6 +23,12 @@ showing apr ≥ the incumbent on the incumbent's own canonical task (PMAT-741).
 > theater). Verified 2026-06-14: NF4 / LoRA-merge / fail-closed each fail under a
 > targeted mutation; autograd fails by construction (pinned-reference tolerance). See
 > `evidence/beats-adversarial-verification-2026-06-14/findings.md`.
+>
+> **Withdrawal rule:** a beat whose re-measurement no longer supports the claim is
+> **withdrawn from the scoreboard and recorded**, never quietly downgraded or
+> deleted. Under-claiming is as much a reporting failure as over-claiming, so a
+> withdrawal cites the numbers that replaced the claim. See
+> [Withdrawn beats](#withdrawn-beats).
 
 ## Speed scoreboard (evidence-backed, sourced)
 
@@ -31,7 +37,6 @@ contract (status: `enforced`) or in-repo evidence:
 
 | Speed win | Result | Source (contract / evidence) |
 |-----------|--------|------------------------------|
-| **GPU decode vs Ollama** (headline) | apr **1.371× faster** median (412.3 vs 300.7 tok/s; worst single run 1.230×), qwen2.5-coder-1.5b Q4_K_M, RTX 4090, same GGUF/host | `beat-ollama-decode-throughput-speed-v1.yaml` (ENFORCED, gate ≥1.10×) · `crates/aprender-serve/tests/beat_ollama_decode_throughput_speed.rs` |
 | **Cold-start vs sklearn** (static binary, no Python import) | apr **~528× faster** end-to-end (ratio 0.0019) | `beat-sklearn-coldstart-speed-v1.yaml` · `crates/aprender-core/tests/beat_sklearn_coldstart_speed.rs` |
 | **Cold-start vs PyTorch** | apr **~1500× faster** (ratio 0.0007) | `beat-pytorch-coldstart-speed-v1.yaml` · `crates/aprender-core/tests/beat_pytorch_coldstart_speed.rs` |
 | **Cold-start vs HF transformers** (inference import) | apr **~1388× faster** (ratio 0.0007) | `beat-hf-inference-coldstart-speed-v1.yaml` · `crates/aprender-core/tests/beat_hf_inference_coldstart_speed.rs` |
@@ -47,11 +52,17 @@ contract (status: `enforced`) or in-repo evidence:
 | **trueno SIMD dot product** | AVX-512 **6–17× faster** / AVX2 **10–12× faster** than scalar | `crates/aprender-compute/AVX512_COMPUTE_BOUND_VALIDATION.md` |
 | **Deploy footprint vs PyTorch** | apr **53.9 MiB** static binary, **15.8–17.1× smaller** than torch ~853–921 MiB | `beat-pytorch-deploy-footprint-v1.yaml` |
 
+apr is at measured **parity** — not a win, not a loss — in this case:
+
+| Parity (no win claimed) | Result | Source (contract / evidence) |
+|-------------------------|--------|------------------------------|
+| **GPU decode vs Ollama** | apr **1.015–1.109×** ollama on RTX 4090 sm_89 (three post-#2323 medians: 1.109 / 1.042 / 1.015). Inside measurement noise — apr does **not** currently win GPU decode vs ollama. The earlier **1.371× headline is WITHDRAWN** (see [Withdrawn beats](#withdrawn-beats)) | `beat-ollama-decode-throughput-speed-v1.yaml` (`beat_threshold: 0.9000` — a **no-collapse floor**, not a beat) · `crates/aprender-serve/tests/beat_ollama_decode_throughput_speed.rs` (`ENFORCED_THRESHOLD: f64 = 0.90`) |
+
 apr **loses** speed in these **specific, narrow** cases (not a blanket concession):
 
 | Speed loss (narrow case) | Result | Note |
 |--------------------------|--------|------|
-| **llama.cpp** single-request c=1 decode | llama.cpp ~1.55× faster (431 vs 277 tok/s, RTX 4090) | This is *llama.cpp*, not Ollama; apr **wins** the same-host steady-state decode vs Ollama 1.371× |
+| **llama.cpp** single-request c=1 decode | llama.cpp ~1.55× faster (431 vs 277 tok/s, RTX 4090) | This is *llama.cpp*, not Ollama; against Ollama on the same host apr is at **parity** (1.015–1.109×), not ahead — the 1.371× win previously cited here is withdrawn |
 | **7B-Q4K on GB10 Blackwell** | ~12 tok/s (bandwidth-bound; DP4A path degraded) | Memory-wall + degraded DP4A on Blackwell, not a kernel-design loss |
 | **Short-prompt one-shot wall-clock vs Ollama** | apr CLI ~2.7–3.9 s fixed startup vs Ollama's resident daemon | Decode-rate beat is steady-state; one-shot startup is a separate, scoped comparison (see Pillar 4) |
 | **PCA fit_transform vs sklearn** | apr ~18.6× *slower* | sklearn delegates to LAPACK-SVD; apr's decomposition is unoptimized |
@@ -66,6 +77,8 @@ apr **loses** speed in these **specific, narrow** cases (not a blanket concessio
 | 📊 **TRACKING** | measured, pinned baseline; gate not yet wired (or stretch target) |
 | 🚧 **PLANNED** | identified; not yet built |
 | ⚖️ **NARROW LOSS** | measured; apr loses in this *specific* case (named root cause) — an optimization target, not a blanket concession |
+| 🟰 **PARITY (no-collapse floor)** | measured within noise of the incumbent. The contract still gates, but it gates against *collapse* (`beat_threshold < 1.0`), so **no win may be claimed** from a green run |
+| ⛔ **WITHDRAWN** | was published as WON; re-measurement did not reproduce it. Kept on the scoreboard with the retraction and the replacing numbers — never deleted |
 
 ## Pillar 1 — scikit-learn
 
@@ -115,31 +128,35 @@ named** set of losses — not a blanket speed concession. See
 
 | Beat | Metric | Result | Gate |
 |------|--------|--------|------|
-| **GPU decode throughput vs Ollama** (headline speed) | tok/s ratio (RTX-4090) | ✅ **WON** (PMAT-755) — apr **1.371× faster** median (apr median-of-7 **412.3** vs ollama **300.7** tok/s; worst single run 1.230×, best 1.523×), same qwen2.5-coder-1.5b Q4_K_M GGUF, same host. Gate = apr median-of-7 ≥ ollama × 1.10 (wide margin under 1.371×; ~0% bootstrapped flake rate) | manual/GPU gate (no NVIDIA CI runner) · `beat_ollama_decode_throughput_speed` · `beat-ollama-decode-throughput-speed-v1` |
+| **GPU decode throughput vs Ollama** | tok/s ratio (RTX-4090 sm_89) | 🟰 **PARITY (no-collapse floor)** — apr **1.015–1.109×** ollama, same qwen2.5-coder-1.5b Q4_K_M GGUF, same host. Gate = apr median-of-7 ≥ ollama median **× 0.90** (`beat_threshold: 0.9000`). That is a floor against collapse, **not** a win — a green run proves apr did not fall off a cliff, nothing more. ⛔ The prior **1.371× WON claim is WITHDRAWN** (see below) | manual/GPU gate (no NVIDIA CI runner) · `beat_ollama_decode_throughput_speed` · `beat-ollama-decode-throughput-speed-v1` |
 | **Fail-closed correctness** (headline correctness) | broken-artifact classes rejected | ✅ **WON** — apr rejects **10/10** semantically-broken tensor classes (zero/NaN/Inf/L2~0/constant/shape) fail-closed; **llama.cpp accepts** the same (measured: zeroed-ffn GGUF → `apr validate` ✗ FAIL, `llama-cli` 0 errors + ran it) | CI `beat_fail_closed_garbage` · `apr-fail-closed-garbage-beat-v1` |
-| **llama.cpp** single-request c=1 decode | tok/s ratio (RTX-4090) | ⚖️ **NARROW LOSS** — llama.cpp ~1.55× *faster* (431 vs 277 tok/s) at concurrency=1; this is *llama.cpp*, not Ollama, which apr beats 1.371× same-host | — |
+| **llama.cpp** single-request c=1 decode | tok/s ratio (RTX-4090) | ⚖️ **NARROW LOSS** — llama.cpp ~1.55× *faster* (431 vs 277 tok/s) at concurrency=1; this is *llama.cpp*, not Ollama, against which apr measures at parity (1.015–1.109×) | — |
 | 7B-Q4K decode on GB10 Blackwell | tok/s | ⚖️ **NARROW LOSS** — ~12 tok/s (bandwidth-bound; DP4A path degraded on Blackwell) | — |
 | Short-prompt one-shot wall-clock vs Ollama | end-to-end seconds | ⚖️ **NARROW LOSS** — apr CLI ~2.7–3.9 s fixed startup vs Ollama's resident daemon (separate from the steady-state decode beat above) | — |
 
-**Headline speed beat — apr beats Ollama 1.371× on GPU decode (PMAT-755):** for the
-*same* qwen2.5-coder-1.5b Q4_K_M GGUF on the *same* RTX 4090, apr's steady-state GPU
-decode is **412.3 tok/s** (median of 7) vs Ollama's **300.7 tok/s** (median, tight
-294–306 band) = **1.371× median**; every single apr run clears the **1.10×** enforced
-gate (worst 369.9 = 1.230×, best 1.523×). This was promoted from TRACKING to an
-**ENFORCED** beat once the ~1-in-6 decode-stall variance was fixed (#2049) and a
-median-of-7 estimator brought the false-FAIL rate to ~0% — the contract is now the
-source of truth (`contracts/beat-ollama-decode-throughput-speed-v1.yaml`, status
-`enforced`). It stays a **manual/GPU gate** (`#[ignore]`, NVIDIA host only) because
-there is no NVIDIA CI runner — same caveat as the cuda-oxide throughput gate. The
-narrow losses above (llama.cpp at c=1, 7B-on-Blackwell, one-shot startup) are
-**specific, named** cases, not a blanket "speed conceded" stance.
+**GPU decode vs Ollama — PARITY, and the gate is a floor (PMAT-755, withdrawn
+2026-07-31):** for the *same* qwen2.5-coder-1.5b Q4_K_M GGUF on the *same* RTX 4090
+(sm_89), the three reproducible post-#2323 medians are **1.109×** (2026-07-29, apr
+332.7 vs ollama 299.9), **1.042×** (2026-07-31, 342.4 vs 328.6) and **1.015×**
+(2026-07-31 idle box, 318.2 vs 313.5). The contract pins `baseline_value: 1.0150` —
+the **worst** of the three, not the best — and sets `beat_threshold: 0.9000`, matched
+by `ENFORCED_THRESHOLD: f64 = 0.90` in the harness. **0.90 is a no-collapse floor: it
+cannot express a win.** It exists to catch the class that actually hurts (silent CPU
+fallback lands near ratio 0.065), and it sits 12% under the worst observed median so
+it does not flake. Pillar 4 therefore claims **no GPU decode win over Ollama on
+sm_89**; restoring a ≥1.10× win is tracked separately. Still a **manual/GPU gate**
+(`#[ignore]`, NVIDIA host only) — there is no NVIDIA CI runner, same caveat as the
+cuda-oxide throughput gate. The narrow losses above (llama.cpp at c=1,
+7B-on-Blackwell, one-shot startup) remain **specific, named** cases, not a blanket
+"speed conceded" stance — see the Speed scoreboard for the cases apr does win.
 
 **Headline correctness beat — "we provably never ship garbage; they provably do":** a
 model that *parses* but is *semantically* dead (all-zero / NaN / Inf weights) loads and
 runs in llama.cpp/Ollama with exit 0 and no warning; apr's Poka-Yoke validation
 (F-DATA-QUALITY-001..004) rejects it. Measured head-to-head 2026-06-13 in
 `evidence/pillar4-fail-closed-2026-06-13/`. Correctness is a wedge none of the four
-incumbents have — *and* apr now also wins the GPU decode-rate beat above.
+incumbents have. It is Pillar 4's **only** WON beat: the GPU decode-rate row above is
+parity, not a second win.
 
 **PMAT-742 (unblocked Pillar 4):** the default `apr run --gpu` was silently 8 tok/s — its
 CUDA first-token parity gate false-rejected the correct fast path (a single BOS-only probe
@@ -215,6 +232,51 @@ kernel throughput, measured A/B against the incumbent hand-written path:
 kernels (attention, RMSNorm, RoPE, SwiGLU). The DP4A-bound Q4K GEMV/FFN path (PMAT-881)
 stays hand-PTX — a **named NO-GO**, not a blanket loss.
 
+## Withdrawn beats
+
+A beat is withdrawn when re-measurement stops supporting the published claim. The
+row is **not deleted** — deleting it would hide that the scoreboard was wrong, and a
+reader who saw the old claim deserves the retraction next to it.
+
+### ⛔ GPU decode throughput vs Ollama — "apr 1.371× faster" (WITHDRAWN 2026-07-31)
+
+| | |
+|---|---|
+| **Claimed** | ✅ WON, apr **1.371×** ollama median (apr median-of-7 **412.3** vs ollama **300.7** tok/s; worst run 1.230×, best 1.523×), gate ≥ **1.10×** |
+| **Claimed on** | 2026-06-15 (measurement), published 2026-06-25 via #2067 (PMAT-755), promoted TRACKING → ENFORCED |
+| **Replaced by** | 🟰 PARITY, **1.015–1.109×**, gate `beat_threshold: 0.9000` (no-collapse floor) |
+| **Contract** | `contracts/beat-ollama-decode-throughput-speed-v1.yaml` v2.0.0 — `baseline_value: 1.0150`, `baseline_floor: 0.9000`, `beat_threshold: 0.9000` |
+| **Harness** | `crates/aprender-serve/tests/beat_ollama_decode_throughput_speed.rs` — `ENFORCED_THRESHOLD: f64 = 0.90` |
+
+Four measurements on one host (lambda RTX 4090, sm_89), same GGUF on both sides:
+
+| Date | apr median | ollama median | ratio | Source |
+|------|-----------:|--------------:|------:|--------|
+| 2026-06-15 | 412.3 | 300.7 | **1.371×** | promotion claim (#2067) — **not reproducible** |
+| 2026-07-29 | 332.7 | 299.9 | 1.109× | cuda-nightly, PASSED |
+| 2026-07-31 | 342.4 | 328.6 | 1.042× | cuda-nightly, FAILED |
+| 2026-07-31 | 318.2 | 313.5 | 1.015× | idle box, this harness |
+
+**Why it is apr's number that moved, not the rig:** the *ollama* column reproduces
+across six weeks — 300.7 / 299.9 / 328.6 / 313.5. A measurement fault would drift
+both columns. apr's moved 412 → ~318–342.
+
+**Why the gate did not catch it:** the 2026-07-29 run **PASSED at 1.109×** against a
+1.10× gate — 0.8% of headroom. It went unexamined because it was green. *A gate
+passing with <1% headroom is a finding, not a pass.*
+
+**Attribution, stated honestly:** #2323 (2026-07-27) made `auto_q4k` return `Mwv` on
+every device; sm_89 previously defaulted to `HwDp4a`. The 412.3 figure predates that
+change. This is **not** "#2323 cost 23%" — re-running today with `HW_DP4A_Q4K=1`
+measures **20.3 tok/s**, because `HwDp4a` fails the F2 first-token cosine floor
+(0.9186 < 0.95) and the run finishes on CPU SIMD. The claim is withdrawn as
+**unreproducible**, not reattributed to a cause we have not proven.
+
+**Consequence for the scoreboard:** Pillar 4 has **one** WON beat (fail-closed
+correctness), not two. Restoring a ≥1.10× GPU decode win is tracked separately; until
+a re-measurement supports it, no GPU decode win over Ollama on sm_89 may be published
+here.
+
 ## Beat infrastructure (PMAT-741)
 
 The machinery every beat plugs into:
@@ -236,15 +298,31 @@ The machinery every beat plugs into:
 3. **Measure before claiming.** apr **wins** speed in many CI-gated cases (Speed
    scoreboard above); where it loses, name the **specific case** and root cause — never
    a blanket "speed conceded" stance.
+4. **The contract is the gate of record.** This file must state the same threshold the
+   contract carries; a `beat_threshold < 1.0` is a floor and may never be reported as a
+   win. `crates/aprender-core/tests/readme_contract.rs` fails the build on drift
+   (FALSIFY-DOCS-BEATS-001/002/003).
+5. **A gate passing with <1% headroom is a finding.** Green is not the same as proven —
+   the 2026-07-29 Ollama run passed at 1.109× against a 1.10× gate and was the
+   regression.
 
-_Last updated: 2026-06-25 — promoted the mission from FOUR-pillar to FIVE-pillar:
-added Pillar 5 (Claude Code / `apr code`) with the honest split — function-scale
-outcome parity WON (1.0000, corpus 30/30 + HumanEval + test-survival), project-scale
-Arena TRACKED GAP (0.20, 1/5), per the CCPA harness (claude-code-parity-apr-v1.yaml
-v1.32.0, 20 gates) + the new aprender-side tracking pointer
-beat-claude-code-parity-v1.yaml; V1_004 model-family finding noted as the leading
-hypothesis for the gap. Earlier 2026-06-25 edit promoted the Ollama GPU-decode beat
-from TRACKING to ENFORCED (1.371× median, 412.3 vs 300.7 tok/s); asserted the
-evidence-backed cold-start (~528–5000×), LAPACK-free ML (1.6–4.9×), cuda-oxide/SIMD
-(1.4–17×), and footprint (15.8–17.1×) speed wins; replaced blanket-concession wording
-with specific, sourced narrow-loss cases._
+_Last updated: 2026-08-13 — **withdrew the Ollama GPU-decode "1.371× WON" headline**
+(#2349 carve-out). Measured reality on RTX 4090 sm_89 is **1.015–1.109×** — parity —
+and the contract enforces `beat_threshold: 0.9000`, a no-collapse floor, not a beat.
+The row moved out of the Speed-wins table into a new PARITY table; Pillar 4's table,
+the llama.cpp comparison note and the headline paragraph were corrected to match; the
+full claim history is preserved under [Withdrawn beats](#withdrawn-beats); ⛔/🟰
+statuses and a withdrawal rule were added to the legend, and Discipline gained rules 4
+and 5. `beats_doc_contract.rs` now gates this file against the contract._
+
+_2026-06-25 — promoted the mission from FOUR-pillar to FIVE-pillar: added Pillar 5
+(Claude Code / `apr code`) with the honest split — function-scale outcome parity WON
+(1.0000, corpus 30/30 + HumanEval + test-survival), project-scale Arena TRACKED GAP
+(0.20, 1/5), per the CCPA harness (claude-code-parity-apr-v1.yaml v1.32.0, 20 gates) +
+the new aprender-side tracking pointer beat-claude-code-parity-v1.yaml; V1_004
+model-family finding noted as the leading hypothesis for the gap. Earlier 2026-06-25
+edit promoted the Ollama GPU-decode beat from TRACKING to ENFORCED (1.371× median,
+412.3 vs 300.7 tok/s — **since withdrawn, see above**); asserted the evidence-backed
+cold-start (~528–5000×), LAPACK-free ML (1.6–4.9×), cuda-oxide/SIMD (1.4–17×), and
+footprint (15.8–17.1×) speed wins; replaced blanket-concession wording with specific,
+sourced narrow-loss cases._

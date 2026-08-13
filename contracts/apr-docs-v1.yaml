@@ -52,6 +52,38 @@ equations:
     - "All markdown files parse correctly"
     - "All internal links resolve"
 
+  beats_scoreboard_matches_contracts:
+    formula: |
+      let T = contracts/beat-ollama-decode-throughput-speed-v1.yaml : beat.beat_threshold
+      docs/BEATS.md MUST state T verbatim as the gate of record
+      T < 1.0  =>  no Ollama-decode row in docs/BEATS.md is marked **WON**
+      forall m in measurements recorded by the contract:
+        docs/BEATS.md contains m
+    domain: docs/BEATS.md text, contracts/beat-*.yaml
+    codomain: bool (scoreboard agrees with contract)
+    invariants:
+    - "The contract is the gate of record; the scoreboard may not invent a threshold"
+    - "beat_threshold < 1.0 is a NO-COLLAPSE FLOOR and may never be reported as a win"
+    - "A withdrawn claim is retracted with its replacing numbers, never deleted —
+       under-claiming is a reporting failure too"
+    preconditions:
+    - "docs/BEATS.md exists and the referenced beat contract parses"
+    postconditions:
+    - "A reader of docs/BEATS.md sees the same threshold CI enforces"
+
+  claude_md_paths_resolve:
+    formula: |
+      forall p in backticked repo-relative source paths cited in {CLAUDE.md, docs/BEATS.md}:
+        exists(workspace_root / p)  or  the citing line is marked `[gitignored]`
+    domain: CLAUDE.md and docs/BEATS.md text, filesystem
+    codomain: bool
+    invariants:
+    - "Onboarding docs cite paths that exist — APR-MONO moved every crate under crates/"
+    - "Scope is narrow (backticked, no glob metacharacters, source extension) so the
+       gate cannot cry wolf"
+    preconditions:
+    - "Both documents exist at the workspace root"
+
 falsification_tests:
 - id: FALSIFY-README-001
   rule: cargo install aprender in README
@@ -83,9 +115,39 @@ falsification_tests:
   test: mdbook build book/
   if_fails: Documentation is broken
 
+- id: FALSIFY-DOCS-BEATS-001
+  rule: BEATS.md publishes the gate the contract carries, and never the withdrawn 1.10x one
+  prediction: >-
+    docs/BEATS.md contains the literal "beat_threshold: <value>" read from
+    contracts/beat-ollama-decode-throughput-speed-v1.yaml
+  test: cargo test -p aprender-core --test readme_contract test_beats_md_ollama_gate_matches_contract
+  if_fails: The public scoreboard advertises a CI gate that does not exist
+
+- id: FALSIFY-DOCS-BEATS-002
+  rule: a no-collapse floor is never reported as a win
+  prediction: while beat_threshold < 1.0, no Ollama-decode row in docs/BEATS.md contains "**WON**"
+  test: cargo test -p aprender-core --test readme_contract test_beats_md_ollama_decode_is_not_marked_won_under_a_floor
+  if_fails: A withdrawn beat is republished as WON — the exact #2349 defect
+
+- id: FALSIFY-DOCS-BEATS-003
+  rule: a withdrawal cites the numbers that replaced the claim
+  prediction: every apr/ollama tok/s and ratio in the contract's measurement table appears in docs/BEATS.md
+  test: cargo test -p aprender-core --test readme_contract test_beats_md_publishes_every_contract_measurement
+  if_fails: The retraction hides the measurements — under-claiming instead of over-claiming
+
+- id: FALSIFY-DOCS-CLAUDE-001
+  rule: documented paths exist
+  prediction: every backticked repo-relative source path in CLAUDE.md and docs/BEATS.md resolves
+  test: cargo test -p aprender-core --test readme_contract test_documented_paths_exist
+  if_fails: Onboarding docs send readers to files deleted by APR-MONO
+
 proof_obligations:
 - type: invariant
   property: "README install command matches actual binary"
+- type: invariant
+  property: "docs/BEATS.md states the same beat_threshold the contract enforces"
+- type: invariant
+  property: "documented file paths resolve in the tree"
 
 kani_harnesses:
 - id: KH-DOCS-001
@@ -94,7 +156,7 @@ kani_harnesses:
   bound: 4
 
 verification_summary:
-  total_obligations: 5
+  total_obligations: 9
   proven: 0
-  tested: 5
+  tested: 9
   status: tested
