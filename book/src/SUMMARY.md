@@ -299,6 +299,7 @@
 - [apr diff](./cli/diff.md)
 - [apr distill](./cli/distill.md)
 - [apr dry-sampling-lint](./cli/dry-sampling-lint.md)
+- [apr debug embed-viz](./cli/embed-viz.md)
 - [apr embed-viz-lint](./cli/embed-viz-lint.md)
 - [apr embed](./cli/embed.md)
 - [apr embeddings-lint](./cli/embeddings-lint.md)

@@ -9,8 +9,13 @@ Simple debugging output ("drama" mode available)
 ## Synopsis
 
 ```text
-apr debug [OPTIONS]
+apr debug [FILE] [OPTIONS]
+apr debug embed-viz --model <MODEL> [OPTIONS]
 ```
+
+`FILE` is optional because a subcommand brings its own input. `apr debug` with
+neither a file nor a subcommand refuses rather than exiting 0 having done
+nothing.
 
 ## Example
 
@@ -25,5 +30,6 @@ Run `apr debug --help` for the complete option list.
 
 ## See also
 
+- Subcommand: [`apr debug embed-viz`](./embed-viz.md)
 - Source: [`crates/apr-cli/src/commands/debug.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/debug.rs)
 - Contract: [`contracts/apr-page-cli-debug-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-debug-v1.yaml)

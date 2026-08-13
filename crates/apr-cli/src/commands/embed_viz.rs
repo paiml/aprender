@@ -32,8 +32,9 @@
 
 use std::path::{Path, PathBuf};
 
-use aprender::format::rosetta::RosettaStone;
+use aprender::format::rosetta::{FormatType, RosettaStone};
 use aprender::format::tensors::{list_tensors, TensorListOptions};
+use aprender::text::llama_tokenizer::LlamaTokenizer;
 
 use crate::error::{refuse_overwrite, CliError, Result};
 
@@ -92,6 +93,13 @@ pub(crate) fn run(args: &EmbedVizArgs) -> Result<()> {
     }
 
     let (name, vocab, hidden) = locate_embedding(&args.model, args.tensor.as_deref())?;
+    // Read the model's own vocabulary ONCE. It serves two purposes: it supplies
+    // `token_str` below, and its length cross-checks the axis chosen above
+    // against something the file states independently of the tensor shape.
+    let vocab_list = gguf_vocab(&args.model);
+    if let Some(tokenizer) = &vocab_list {
+        check_vocab_axis(tokenizer.vocab_size(), vocab, &name, &args.model)?;
+    }
     let data = RosettaStone::new()
         .load_tensor_f32(&args.model, &name)
         .map_err(|e| {
@@ -114,7 +122,7 @@ pub(crate) fn run(args: &EmbedVizArgs) -> Result<()> {
         ));
     }
     let coords = project(&data[..rows * hidden], rows, hidden, args)?;
-    let tokens = resolve_tokens(args, rows)?;
+    let tokens = resolve_tokens(args, rows, vocab_list.as_ref())?;
     let csv = render_csv(&coords, &tokens);
 
     match &args.output {
@@ -122,7 +130,8 @@ pub(crate) fn run(args: &EmbedVizArgs) -> Result<()> {
         None => print!("{csv}"),
     }
     eprintln!(
-        "embed-viz: {name} [{vocab}x{hidden}] -> {rows} rows, projection={}, seed={}, token_str={}",
+        "embed-viz: {name} vocab={vocab} hidden={hidden} -> {rows} rows, projection={}, \
+         seed={}, token_str={}",
         projection_label(args.projection),
         args.seed,
         tokens.source
@@ -130,8 +139,80 @@ pub(crate) fn run(args: &EmbedVizArgs) -> Result<()> {
     Ok(())
 }
 
-/// Find the embedding tensor and its 2-D shape.
+/// Refuse when the model declares more tokens than the chosen vocab axis has rows.
+///
+/// An embedding table may be padded ABOVE the token list (llama.cpp rounds the
+/// row count up), so `declared <= vocab` is the sound one-sided invariant. The
+/// reverse — a vocabulary larger than the table that is supposed to embed it —
+/// means the axes were read the wrong way round, which is exactly how the GGUF
+/// defect shipped: 248320 declared tokens against a 1024-row "vocab" axis.
+fn check_vocab_axis(declared: usize, vocab: usize, name: &str, model: &Path) -> Result<()> {
+    if declared > vocab {
+        return Err(CliError::ValidationFailed(format!(
+            "apr debug embed-viz: {} declares {declared} tokens but tensor `{name}` offers only \
+             {vocab} embedding rows. Every token must have a row, so the vocabulary axis was \
+             read the wrong way round for this format.",
+            model.display()
+        )));
+    }
+    Ok(())
+}
+
+/// Which axis of a REPORTED 2-D shape is the vocabulary — this differs by FORMAT.
+///
+/// The bug this exists to prevent: `shape[0]` was taken as the vocab axis for
+/// every format. That is right for APR/SafeTensors and INVERTED for GGUF, so on
+/// `Qwen3.5-0.8B-Q4_K_M.gguf` (`token_embd.weight` reported `[1024, 248320]`)
+/// the producer emitted 1024 rows for a 248320-token vocabulary and paired each
+/// row's real `token_str` with coordinates projected from ~242 concatenated
+/// token vectors. `apr embed-viz-lint --expected-vocab-size 248320` then exited
+/// 5 on the producer's own output.
+///
+/// ## The rule, measured rather than assumed
+///
+/// * **GGUF** reports GGML `ne` order, `ne[0]` being the CONTIGUOUS dimension:
+///   `token_embd.weight` is `[hidden, vocab]`. `contracts/tensor-layout-v1.yaml`
+///   states this (`gguf_shape_formula: "[hidden, vocab]"` against
+///   `apr_shape_formula: "[vocab, hidden]"`).
+/// * **APR** and **SafeTensors** are row-major `[vocab, hidden]`.
+///
+/// The DATA is `[vocab][hidden]` with `hidden` contiguous in all three — only
+/// the reported axis ORDER differs, so no restriding is needed once the axes are
+/// named correctly. That was verified against the same model in both formats
+/// (`qwen2.5-coder-0.5b-instruct` GGUF vs SafeTensors): reading the GGUF payload
+/// as `[vocab][hidden]` rows matched the SafeTensors row at cosine **0.999**,
+/// while the transposed reading matched at **0.014**.
+///
+/// For a non-embedding 2-D tensor named via `--tensor` the same rule yields
+/// `(out_dim, in_dim)` — the row-major interpretation — which is what the
+/// row-slicing projection needs.
+pub(crate) fn embedding_axes(format: FormatType, shape: &[usize]) -> (usize, usize) {
+    match format {
+        // GGML `ne` order: ne[0] is contiguous, so [hidden, vocab].
+        FormatType::Gguf => (shape[1], shape[0]),
+        // Row-major [vocab, hidden].
+        FormatType::SafeTensors | FormatType::Apr => (shape[0], shape[1]),
+    }
+}
+
+/// Identify the container format, so `embedding_axes` can apply the right rule.
+fn detect_format(model: &Path) -> Result<FormatType> {
+    FormatType::from_magic(model)
+        .or_else(|_| FormatType::from_extension(model))
+        .map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "apr debug embed-viz: cannot determine the format of {}: {e}",
+                model.display()
+            ))
+        })
+}
+
+/// Find the embedding tensor and its `(vocab, hidden)` extent.
+///
+/// The returned pair is always in APR/row-major order regardless of the source
+/// format — see `embedding_axes`.
 fn locate_embedding(model: &Path, requested: Option<&str>) -> Result<(String, usize, usize)> {
+    let format = detect_format(model)?;
     let listing = list_tensors(model, TensorListOptions::default()).map_err(|e| {
         CliError::ValidationFailed(format!(
             "apr debug embed-viz: cannot list tensors in {}: {e}",
@@ -169,7 +250,8 @@ fn locate_embedding(model: &Path, requested: Option<&str>) -> Result<(String, us
             info.name, info.shape
         )));
     }
-    Ok((info.name.clone(), info.shape[0], info.shape[1]))
+    let (vocab, hidden) = embedding_axes(format, &info.shape);
+    Ok((info.name.clone(), vocab, hidden))
 }
 
 // ── projection ───────────────────────────────────────────────────────────
@@ -253,7 +335,11 @@ pub(crate) struct ResolvedTokens {
 
 const UNRESOLVED: &str = "<unresolved>";
 
-fn resolve_tokens(args: &EmbedVizArgs, rows: usize) -> Result<ResolvedTokens> {
+fn resolve_tokens(
+    args: &EmbedVizArgs,
+    rows: usize,
+    vocab_list: Option<&LlamaTokenizer>,
+) -> Result<ResolvedTokens> {
     if let Some(path) = &args.tokens {
         let text = std::fs::read_to_string(path)?;
         let mut strings: Vec<String> = text.lines().map(str::to_string).collect();
@@ -270,9 +356,9 @@ fn resolve_tokens(args: &EmbedVizArgs, rows: usize) -> Result<ResolvedTokens> {
             source: format!("--tokens {}", path.display()),
         });
     }
-    if let Some(vocab) = gguf_vocab(&args.model, rows) {
+    if let Some(strings) = vocab_list.and_then(|t| take_tokens(t, rows)) {
         return Ok(ResolvedTokens {
-            strings: vocab,
+            strings,
             source: "gguf tokenizer.ggml.tokens".to_string(),
         });
     }
@@ -288,13 +374,20 @@ fn resolve_tokens(args: &EmbedVizArgs, rows: usize) -> Result<ResolvedTokens> {
 }
 
 /// Read `tokenizer.ggml.tokens` out of a GGUF, when the model is one.
-fn gguf_vocab(model: &Path, rows: usize) -> Option<Vec<String>> {
-    use aprender::text::llama_tokenizer::LlamaTokenizer;
+///
+/// Returns the tokenizer rather than a token slice so the caller pays the file
+/// read ONCE and can also ask it how many tokens the model declares — the
+/// cross-check in `check_vocab_axis`.
+fn gguf_vocab(model: &Path) -> Option<LlamaTokenizer> {
     let bytes = std::fs::read(model).ok()?;
     if !bytes.starts_with(b"GGUF") {
         return None;
     }
-    let tokenizer = LlamaTokenizer::from_gguf_bytes(&bytes).ok()?;
+    LlamaTokenizer::from_gguf_bytes(&bytes).ok()
+}
+
+/// The first `rows` token strings, or `None` if the vocabulary cannot cover them.
+fn take_tokens(tokenizer: &LlamaTokenizer, rows: usize) -> Option<Vec<String>> {
     let mut out = Vec::with_capacity(rows);
     for id in 0..rows {
         out.push(tokenizer.id_to_token(u32::try_from(id).ok()?)?.to_string());

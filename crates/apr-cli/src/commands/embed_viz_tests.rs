@@ -11,6 +11,11 @@ use crate::commands::{embed_viz_classifier, embed_viz_lint};
 const VOCAB: usize = 24;
 const HIDDEN: usize = 8;
 
+/// GGUF fixture extents. Deliberately UNEQUAL and different from the APR
+/// fixture's, so an axis mixup cannot hide behind a coincidence.
+const G_VOCAB: usize = 24;
+const G_HIDDEN: usize = 6;
+
 /// A minimal APR v2 model carrying a real `model.embed_tokens.weight` table.
 fn model_fixture() -> tempfile::NamedTempFile {
     use aprender::format::v2::{AprV2Metadata, AprV2Writer};
@@ -369,6 +374,215 @@ fn the_projection_is_not_constant() {
             projection_label(projection)
         );
     }
+}
+
+// ── GGUF: the first-class advertised path (aprender#2377-3 blockers 1-3) ─
+//
+// `token_embd.weight` is the FIRST entry in `EMBEDDING_TENSOR_CANDIDATES`, yet
+// the only fixture in this file was an APR v2 table written as
+// `[VOCAB, HIDDEN]` — the single layout where `shape[0]` really is the vocab
+// axis. That made the GGUF axis inversion invisible: the producer emitted 1024
+// rows for `Qwen3.5-0.8B-Q4_K_M.gguf`'s 248320-token vocabulary and
+// `embed-viz-lint --expected-vocab-size 248320` exited 5 on its own producer's
+// output.
+//
+// THE TRAP these tests are built to avoid: `token_str` is resolved from the
+// vocabulary list by row index, so it reads correctly no matter which axis
+// produced the coordinates. Asserting on `token_str` CANNOT detect this bug.
+// What follows asserts the ROW COUNT against the real vocab size and the
+// COORDINATES against a `hidden`-length slice.
+
+/// The value at (token `t`, dim `d`) of the GGUF fixture's embedding table.
+///
+/// Rank-1 by construction — row `t` is `(t+1)` times a fixed profile — because
+/// that makes the seeded JL projection EXACTLY linear in `t+1`, which is the
+/// property `gguf_coordinates_come_from_the_hidden_axis` checks without having
+/// to re-derive the RNG stream.
+fn g_value(t: usize, d: usize) -> f32 {
+    (t as f32 + 1.0) * (0.25f32.mul_add(d as f32, 1.0))
+}
+
+/// A minimal GGUF carrying `token_embd.weight` in real GGML `ne` order.
+///
+/// `ne` is `[hidden, vocab]` — the CONTIGUOUS dimension first — while the
+/// payload is `[vocab][hidden]` rows, exactly as llama.cpp writes it and as
+/// measured against a real model in both formats.
+fn gguf_fixture(vocab: usize, hidden: usize, declared_tokens: usize) -> tempfile::NamedTempFile {
+    use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+
+    let mut bytes = Vec::new();
+    for t in 0..vocab {
+        for d in 0..hidden {
+            bytes.extend_from_slice(&g_value(t, d).to_le_bytes());
+        }
+    }
+    let tensor = GgufTensor {
+        name: "token_embd.weight".to_string(),
+        // GGML `ne` order: ne[0] is contiguous, so [hidden, vocab].
+        shape: vec![hidden as u64, vocab as u64],
+        dtype: GgmlType::F32,
+        data: bytes,
+    };
+    let tokens: Vec<String> = (0..declared_tokens).map(|i| format!("tok{i}")).collect();
+    let metadata = vec![
+        (
+            "general.architecture".to_string(),
+            GgufValue::String("llama".to_string()),
+        ),
+        (
+            "tokenizer.ggml.model".to_string(),
+            GgufValue::String("gpt2".to_string()),
+        ),
+        (
+            "tokenizer.ggml.tokens".to_string(),
+            GgufValue::ArrayString(tokens),
+        ),
+    ];
+
+    let file = tempfile::NamedTempFile::with_suffix(".gguf").expect("tempfile");
+    let mut buf = Vec::new();
+    export_tensors_to_gguf(&mut buf, &[tensor], &metadata).expect("write GGUF");
+    std::fs::write(file.path(), buf).expect("write file");
+    file
+}
+
+/// The per-format axis rule, as a case table. GGUF is `[hidden, vocab]`;
+/// APR and SafeTensors are `[vocab, hidden]`.
+#[test]
+fn the_vocab_axis_is_chosen_per_format_not_assumed_to_be_axis_zero() {
+    use aprender::format::rosetta::FormatType;
+
+    // A real measurement: Qwen3.5-0.8B-Q4_K_M.gguf reports [1024, 248320] for a
+    // 248320-token vocabulary at hidden size 1024.
+    assert_eq!(
+        embedding_axes(FormatType::Gguf, &[1024, 248_320]),
+        (248_320, 1024),
+        "GGUF ne order is [hidden, vocab]"
+    );
+    assert_eq!(
+        embedding_axes(FormatType::SafeTensors, &[151_936, 896]),
+        (151_936, 896),
+        "SafeTensors is row-major [vocab, hidden]"
+    );
+    assert_eq!(
+        embedding_axes(FormatType::Apr, &[VOCAB, HIDDEN]),
+        (VOCAB, HIDDEN),
+        "APR is row-major [vocab, hidden]"
+    );
+}
+
+/// `locate_embedding` must hand back `(vocab, hidden)` in APR order whatever the
+/// container said. This is the assertion that the projected slice is `hidden`
+/// long: `run` slices `data[i * hidden .. (i + 1) * hidden]`.
+#[test]
+fn gguf_locate_embedding_returns_vocab_and_hidden_in_apr_order() {
+    let model = gguf_fixture(G_VOCAB, G_HIDDEN, G_VOCAB);
+    let (name, vocab, hidden) = locate_embedding(model.path(), None).expect("locate");
+    assert_eq!(name, "token_embd.weight");
+    assert_eq!(
+        (vocab, hidden),
+        (G_VOCAB, G_HIDDEN),
+        "GGUF ne [{G_HIDDEN}, {G_VOCAB}] must be read as vocab={G_VOCAB} hidden={G_HIDDEN}"
+    );
+}
+
+/// The round trip the audit found missing: producer -> lint, on GGUF.
+#[test]
+fn round_trip_gguf_producer_csv_is_accepted_by_embed_viz_lint() {
+    let model = gguf_fixture(G_VOCAB, G_HIDDEN, G_VOCAB);
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    for projection in [Projection::Pca, Projection::Random] {
+        let csv = dir
+            .path()
+            .join(format!("g-{}.csv", projection_label(projection)));
+        run(&args(model.path(), &csv, projection)).expect("producer must project a GGUF table");
+
+        let body = std::fs::read_to_string(&csv).expect("read");
+        assert_eq!(
+            body.lines().count() - 1,
+            G_VOCAB,
+            "one row per TOKEN, not one per hidden dim:\n{body}"
+        );
+
+        embed_viz_lint::run(&csv, Some(G_VOCAB), None, false).unwrap_or_else(|e| {
+            panic!(
+                "embed-viz-lint must accept the producer's own GGUF {} CSV: {e}",
+                projection_label(projection)
+            )
+        });
+        // Pinned in both directions: the row count is G_VOCAB and nothing else.
+        let err = embed_viz_lint::run(&csv, Some(G_HIDDEN), None, false)
+            .expect_err("the row-count gate must reject the hidden dim as a vocab size");
+        assert!(matches!(err, CliError::ValidationFailed(_)), "{err:?}");
+    }
+}
+
+/// The coordinates must be the projection of `hidden`-long TOKEN rows.
+///
+/// The fixture is rank-1 — row `t` is `(t+1)` times a fixed profile — so the
+/// seeded JL projection is exactly linear in `t+1`: `x_t / x_0 == t+1`. Slicing
+/// the other axis mixes several tokens into each row and destroys that ratio.
+/// This is the assertion `token_str` cannot make.
+#[test]
+fn gguf_coordinates_come_from_the_hidden_axis() {
+    let model = gguf_fixture(G_VOCAB, G_HIDDEN, G_VOCAB);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let csv = dir.path().join("g.csv");
+    run(&args(model.path(), &csv, Projection::Random)).expect("producer");
+
+    let body = std::fs::read_to_string(&csv).expect("read");
+    let xs: Vec<f64> = body
+        .lines()
+        .skip(1)
+        .map(|l| {
+            l.split(',')
+                .nth(2)
+                .and_then(|f| f.parse::<f64>().ok())
+                .unwrap_or_else(|| panic!("unparseable x in row `{l}`"))
+        })
+        .collect();
+    assert_eq!(xs.len(), G_VOCAB);
+    assert!(
+        xs[0].abs() > 1e-6,
+        "the fixture must not project token 0 onto the origin: {xs:?}"
+    );
+    for (t, x) in xs.iter().enumerate() {
+        let expected = xs[0] * (t as f64 + 1.0);
+        assert!(
+            (x - expected).abs() <= 1e-4 * expected.abs().max(1.0),
+            "row {t}: x={x} but a hidden-axis projection of a rank-1 table must give \
+             {expected} (x_0 * (t+1)); the coordinates were projected from the wrong axis"
+        );
+    }
+}
+
+/// A GGUF whose vocabulary is LARGER than its embedding table has been read the
+/// wrong way round — every token must have a row. Padding goes the other way
+/// (more rows than tokens), so this one-sided check cannot fire spuriously.
+#[test]
+fn a_vocabulary_larger_than_the_embedding_table_is_refused() {
+    let model = gguf_fixture(G_VOCAB, G_HIDDEN, G_VOCAB + 6);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path().join("x.csv");
+    let err = run(&args(model.path(), &out, Projection::Random))
+        .expect_err("30 tokens cannot be embedded by a 24-row table");
+    assert!(matches!(err, CliError::ValidationFailed(_)), "{err:?}");
+    assert!(
+        err.to_string().contains("wrong way round"),
+        "the refusal must name the axis as the suspect: {err}"
+    );
+}
+
+/// A table padded ABOVE the token list is normal and must still be projected.
+#[test]
+fn an_embedding_table_padded_above_the_token_list_is_accepted() {
+    let model = gguf_fixture(G_VOCAB, G_HIDDEN, G_VOCAB - 4);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path().join("x.csv");
+    run(&args(model.path(), &out, Projection::Random))
+        .expect("more rows than tokens is padding, not an inverted axis");
+    embed_viz_lint::run(&out, Some(G_VOCAB), None, false).expect("lint");
 }
 
 #[test]

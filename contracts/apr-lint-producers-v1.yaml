@@ -190,14 +190,32 @@ falsification_tests:
     - round_trip_producer_output_is_accepted_by_attn_parity_lint
     - round_trip_cannot_pass_vacuously_when_the_body_is_corrupted
     - tiled_and_naive_agree_far_inside_the_fa2_bound
+    - the_emitted_parity_metrics_are_the_ones_that_were_measured
+    - perturbing_the_inputs_moves_the_emitted_parity_metrics
     - the_parity_metrics_are_not_vacuous
     sub_claim: |
       One body discharges both L-02 gates. The negative half corrupts
       `max_abs_diff`, `cosine_sim`, and the provenance pair (flash2 with no
       pinned sha; a blanked fallback reason) and requires a refusal each time.
-      `the_parity_metrics_are_not_vacuous` proves the metrics can see a
-      perturbation, so agreement is evidence rather than arithmetic.
-    scope: "(seeded Q/K/V) -> parity+provenance body -> lint exit status"
+
+      The EMITTED numbers are bound to a measurement, which is the claim this
+      entry previously over-stated. It credited
+      `the_parity_metrics_are_not_vacuous` with proving the metrics can see a
+      perturbation; that test operates on synthetic vectors and never calls
+      `run()`, so it said nothing about the shipped body. Replacing the two
+      measured fields in `measure_tiled` with the literals `0.0` / `1.0` left
+      all 16 tests of the day green, this entry included.
+
+      Two tests now close that hole:
+      `the_emitted_parity_metrics_are_the_ones_that_were_measured` re-runs the
+      brick and the naive reference independently, across three shapes, and
+      requires the observation to carry exactly those numbers (modulo the 1-ULP
+      JSON float round trip, which it cancels rather than tolerates);
+      `perturbing_the_inputs_moves_the_emitted_parity_metrics` varies the seed
+      and requires the emitted values to move. Both are red for a fabricated
+      constant, including one chosen to be exactly right for the default shape.
+    scope: "(seeded Q/K/V) -> parity+provenance body -> lint exit status; the
+      emitted metrics are pinned to an independent re-measurement"
     discharge_status: FULL_ROUND_TRIP
 - id: FALSIFY-LINT-PRODUCER-004
   rule: "unsupported head_dim errors at dispatch and its error body feeds the lint"
@@ -253,19 +271,32 @@ falsification_tests:
     e2e_path: crates/apr-cli/src/commands/embed_viz_tests.rs
     e2e_tests:
     - round_trip_producer_csv_is_accepted_by_embed_viz_lint
+    - round_trip_gguf_producer_csv_is_accepted_by_embed_viz_lint
     - round_trip_two_seeded_runs_pass_the_determinism_gate
     - round_trip_cannot_pass_vacuously_when_the_csv_is_corrupted
     - the_determinism_gate_rejects_two_different_csvs
     - a_different_seed_moves_the_projection
     - a_token_containing_a_comma_does_not_shift_the_column_count
     sub_claim: |
-      The producer reads a real embedding tensor out of an APR fixture and both
-      projections' CSVs pass schema + row-count. The determinism gate passes on
-      two same-seed runs AND fails on two different-seed runs, so byte-identity
-      is evidence rather than a tautology. The negative half poisons a
-      coordinate, drops a row, renames a header column and negates a token id,
-      requiring a refusal each time.
-    scope: "(model, projection, seed, limit) -> CSV -> lint exit status"
+      The producer reads a real embedding tensor out of an APR fixture AND a
+      GGUF fixture, and both projections' CSVs pass schema + row-count. The
+      determinism gate passes on two same-seed runs AND fails on two
+      different-seed runs, so byte-identity is evidence rather than a tautology.
+      The negative half poisons a coordinate, drops a row, renames a header
+      column and negates a token id, requiring a refusal each time.
+
+      The GGUF half was previously ABSENT, and this entry claimed the round trip
+      anyway. The only fixture was an APR table written `[VOCAB, HIDDEN]` — the
+      one layout where `shape[0]` really is the vocab axis — so the producer's
+      inversion of the GGUF axes was invisible to it while
+      `token_embd.weight` was, and is, the first name it looks for. On
+      `Qwen3.5-0.8B-Q4_K_M.gguf` the producer wrote 1024 rows for a
+      248320-token vocabulary and `embed-viz-lint --expected-vocab-size 248320`
+      exited 5 on its own producer's output. See FALSIFY-LINT-PRODUCER-008.
+    scope: "(model, projection, seed, limit) -> CSV -> lint exit status, over APR
+      and GGUF fixtures. SafeTensors shares the row-major axis rule and is
+      covered by the FALSIFY-LINT-PRODUCER-008 case table, but has NO end-to-end
+      fixture here — that is the residual gap in this entry."
     discharge_status: FULL_ROUND_TRIP
 - id: FALSIFY-LINT-PRODUCER-006
   rule: "an algorithm the binary does not implement is refused, not relabelled"
@@ -316,6 +347,50 @@ falsification_tests:
       accept list, which is how the guard proved they now exist.
     scope: "(clap tree, help strings) -> unresolvable invocations"
     discharge_status: FULL_ROUND_TRIP
+- id: FALSIFY-LINT-PRODUCER-008
+  rule: "`apr debug embed-viz` picks the vocabulary axis PER FORMAT"
+  prediction: "a GGUF `token_embd.weight` reported `[hidden, vocab]` yields one CSV
+    row per TOKEN, and the row count satisfies `--expected-vocab-size`"
+  test: |
+    set -euo pipefail
+    apr debug embed-viz --model model.gguf --projection random --seed 42 -o /tmp/e.csv
+    apr embed-viz-lint --csv-file /tmp/e.csv --expected-vocab-size "$VOCAB"
+  if_fails: "the producer emits one row per hidden dimension instead of per token,
+    and pairs each row's real token_str with coordinates projected across many
+    concatenated token vectors"
+  evidence_discharged_by:
+    producer_path: crates/apr-cli/src/commands/embed_viz.rs
+    e2e_path: crates/apr-cli/src/commands/embed_viz_tests.rs
+    e2e_tests:
+    - the_vocab_axis_is_chosen_per_format_not_assumed_to_be_axis_zero
+    - gguf_locate_embedding_returns_vocab_and_hidden_in_apr_order
+    - gguf_coordinates_come_from_the_hidden_axis
+    - a_vocabulary_larger_than_the_embedding_table_is_refused
+    - an_embedding_table_padded_above_the_token_list_is_accepted
+    sub_claim: |
+      GGUF reports GGML `ne` order, `ne[0]` contiguous, so `token_embd.weight` is
+      `[hidden, vocab]`; APR and SafeTensors are row-major `[vocab, hidden]`.
+      `contracts/tensor-layout-v1.yaml` states this, and it was re-measured
+      before the fix: reading the GGUF payload of `qwen2.5-coder-0.5b-instruct`
+      as `[vocab][hidden]` rows matches the same model's SafeTensors row at
+      cosine 0.999, the transposed reading at 0.014. Only the reported axis
+      ORDER differs between formats; the payload is `[vocab][hidden]` in all
+      three, so no restriding is needed once the axes are named.
+
+      THE TRAP this entry exists to document: `token_str` is resolved from the
+      vocabulary by row index, so it reads correctly no matter which axis
+      produced the coordinates. No assertion on `token_str` can detect this.
+      The tests assert the ROW COUNT against the vocabulary and the COORDINATES
+      against a `hidden`-length slice (the fixture is rank-1, so a correct
+      projection is exactly linear in the token index).
+
+      `check_vocab_axis` additionally refuses at run time when a model declares
+      more tokens than the chosen axis has rows. Padding only ever goes the
+      other way, so the one-sided check cannot fire spuriously — that direction
+      is pinned by `an_embedding_table_padded_above_the_token_list_is_accepted`.
+    scope: "(model format, reported 2-D shape) -> (vocab, hidden) -> CSV row count
+      and coordinate provenance"
+    discharge_status: FULL_ROUND_TRIP
 
 proof_obligations:
 - type: invariant
@@ -327,11 +402,15 @@ proof_obligations:
 - type: invariant
   property: "a configuration or codec the producer cannot run exits non-zero and
     reports no measurement"
+- type: invariant
+  property: "a producer's reported metric is the one it measured, not a constant"
+- type: invariant
+  property: "the vocabulary axis of an embedding table is chosen per FORMAT"
 
 verification_summary:
-  total_obligations: 4
+  total_obligations: 6
   proven: 0
-  tested: 4
+  tested: 6
   status: tested
 
 pmat_work_tracking:

@@ -275,8 +275,167 @@ fn tiled_and_naive_agree_far_inside_the_fa2_bound() {
     );
 }
 
+// ── the EMITTED numbers are the MEASURED ones ────────────────────────────
+//
+// Everything above this point can pass while the producer fabricates its
+// verdict. Replacing the two measured fields in `measure_tiled` with the
+// literals `0.0` / `1.0` left ALL 16 tests green — including both round trips
+// and `the_parity_metrics_are_not_vacuous`, which never reaches `run()` at all:
+// it re-runs the brick itself on synthetic vectors and so says nothing about
+// what the shipped body WROTE. Nothing connected the emitted JSON to a
+// measurement. These two tests are that connection.
+
+/// Recompute the parity metrics for `dims` without going through `run()`.
+#[cfg(feature = "inference")]
+fn measure_independently(dims: &ParityDims) -> (f64, f64) {
+    use realizar::brick::FlashAttentionBrick;
+    let (q, k, v) = draw_qkv(dims);
+    let tiled = FlashAttentionBrick::new(dims.num_heads, dims.num_kv_heads, dims.head_dim)
+        .forward(&q, &k, &v, dims.seq_len)
+        .expect("tiled forward");
+    let naive = naive_attention(&q, &k, &v, dims);
+    (
+        max_abs_diff(&tiled, &naive),
+        cosine_sim(&tiled, &naive).expect("non-zero norms"),
+    )
+}
+
+/// Put a value through the same JSON round trip the observation file makes.
+///
+/// `serde_json` is 1 ULP lossy on f64: `0x3e68_0000_0000_0000` comes back as
+/// `0x3e68_0000_0000_0001`. Comparing a parsed observation against an in-memory
+/// f64 with `==` would therefore be testing serde's float fidelity rather than
+/// the producer. Sending the measured value through the same pipe cancels that
+/// out and lets the comparison stay EXACT — which matters, because the gap
+/// between a real cosine (0.999999999999992…) and a fabricated `1.0` is only
+/// ~32 ulps, and a hand-picked epsilon could easily swallow it.
+fn through_json(v: f64) -> f64 {
+    let s = serde_json::to_string_pretty(&serde_json::json!({ "v": v })).expect("ser");
+    serde_json::from_str::<serde_json::Value>(&s).expect("parse")["v"]
+        .as_f64()
+        .expect("f64")
+}
+
+/// Read the two metrics out of a `run()`-produced observation file.
+#[cfg(feature = "inference")]
+fn emitted_metrics(dims: ParityDims, path: &std::path::Path) -> (f64, f64) {
+    run(
+        KernelImpl::Tiled,
+        KernelRef::Naive,
+        dims,
+        true,
+        Some(path),
+        true,
+    )
+    .expect("the tiled kernel must produce a measurement");
+    let body: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).expect("read")).expect("parse");
+    (
+        body["max_abs_diff"].as_f64().expect("max_abs_diff"),
+        body["cosine_sim"].as_f64().expect("cosine_sim"),
+    )
+}
+
+/// The numbers in the observation must be the numbers the kernels produced —
+/// bit for bit, not merely "inside the tolerance the lint happens to allow".
+///
+/// A producer that reports a constant passes every tolerance gate ever written,
+/// which is exactly why this asserts EQUALITY TO AN INDEPENDENT MEASUREMENT
+/// rather than membership of a passing range.
+#[cfg(feature = "inference")]
+#[test]
+fn the_emitted_parity_metrics_are_the_ones_that_were_measured() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let obs = dir.path().join("parity.json");
+
+    for (label, d) in [
+        ("the shipped default shape", dims()),
+        (
+            "a longer KV cache",
+            ParityDims {
+                seq_len: 128,
+                ..dims()
+            },
+        ),
+        (
+            "head_dim 128, no GQA",
+            ParityDims {
+                num_heads: 2,
+                num_kv_heads: 2,
+                head_dim: 128,
+                ..dims()
+            },
+        ),
+    ] {
+        let (emitted_mad, emitted_cos) = emitted_metrics(d, &obs);
+        let (measured_mad, measured_cos) = measure_independently(&d);
+        assert_eq!(
+            emitted_mad,
+            through_json(measured_mad),
+            "{label}: the emitted max_abs_diff is not the measured one \
+             (a fabricated constant would land here)"
+        );
+        assert_eq!(
+            emitted_cos,
+            through_json(measured_cos),
+            "{label}: the emitted cosine_sim is not the measured one"
+        );
+        // The measurement must also be a real one, not a degenerate value a
+        // constant could coincide with.
+        assert!(
+            measured_mad > 0.0 && measured_cos < 1.0,
+            "{label}: two independent f32 kernels agreed EXACTLY \
+             (max_abs_diff={measured_mad}, cosine_sim={measured_cos}); this test can no \
+             longer tell a measurement from a hardcoded 0.0/1.0"
+        );
+    }
+}
+
+/// Perturbing the inputs must MOVE the emitted numbers.
+///
+/// The seed pins Q/K/V, so changing it changes what the two kernels are asked to
+/// agree about, and the f32 rounding they disagree by changes with it. A body
+/// that reports a constant cannot move, so this is red for any hardcoded pair —
+/// including one that happened to be numerically plausible.
+#[cfg(feature = "inference")]
+#[test]
+fn perturbing_the_inputs_moves_the_emitted_parity_metrics() {
+    use std::collections::BTreeSet;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let obs = dir.path().join("parity.json");
+    let mut mads: BTreeSet<u64> = BTreeSet::new();
+    let mut coss: BTreeSet<u64> = BTreeSet::new();
+
+    for seed in [7u64, 8, 9, 1234, 20_260_813] {
+        let (mad, cos) = emitted_metrics(ParityDims { seed, ..dims() }, &obs);
+        assert!(
+            mad.is_finite() && cos.is_finite(),
+            "seed {seed}: emitted a non-finite metric ({mad}, {cos})"
+        );
+        mads.insert(mad.to_bits());
+        coss.insert(cos.to_bits());
+    }
+
+    assert!(
+        mads.len() > 1,
+        "max_abs_diff was identical across 5 different seeded inputs, so it is not \
+         derived from them: {mads:?}"
+    );
+    assert!(
+        coss.len() > 1,
+        "cosine_sim was identical across 5 different seeded inputs, so it is not \
+         derived from them: {coss:?}"
+    );
+}
+
 /// The comparison must be able to FAIL — otherwise it proves nothing about the
 /// kernel. Perturbing one output by 0.5 has to blow past the 5e-3 bound.
+///
+/// NOTE the limit of this test, which the audit found being over-claimed: it
+/// operates on synthetic vectors and never calls `run()`, so it proves only that
+/// the two metric FUNCTIONS can see a perturbation. That the shipped body
+/// actually reports what they returned is proved by the two tests above.
 #[test]
 fn the_parity_metrics_are_not_vacuous() {
     let a = vec![0.25f32, -0.5, 0.75, 1.0];
