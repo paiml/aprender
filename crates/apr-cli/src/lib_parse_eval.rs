@@ -325,12 +325,14 @@
         match *cli.command {
             Commands::Debug {
                 file,
+                action,
                 drama,
                 hex,
                 strings,
                 limit,
             } => {
-                assert_eq!(file, PathBuf::from("model.apr"));
+                assert_eq!(file, Some(PathBuf::from("model.apr")));
+                assert!(action.is_none(), "no subcommand was given");
                 assert!(drama);
                 assert!(hex);
                 assert!(strings);

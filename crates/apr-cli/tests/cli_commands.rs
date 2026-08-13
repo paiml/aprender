@@ -46,6 +46,9 @@ fn registered_commands() -> Vec<&'static str> {
         "manifest",
         "explain",
         "tensors",
+        // aprender#2377 finding 3: the producers `*-lint` help documents.
+        "dataset",
+        "kernel",
         "trace",
         "diff",
         "hex",

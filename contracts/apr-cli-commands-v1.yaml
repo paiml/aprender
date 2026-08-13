@@ -118,6 +118,20 @@ commands:
     requires_model: true
     side_effects: []
 
+  # aprender#2377 finding 3: the producers `*-lint` help documents.
+  # See contracts/apr-lint-producers-v1.yaml.
+  - name: dataset
+    category: inspection
+    description: "Dataset inspection tools (audio-inspect)"
+    requires_model: false
+    side_effects: []
+
+  - name: kernel
+    category: analysis
+    description: "Kernel-level parity measurements (parity)"
+    requires_model: false
+    side_effects: []
+
   - name: trace
     category: inspection
     description: "Layer-by-layer trace analysis"

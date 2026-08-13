@@ -1,0 +1,340 @@
+# APR-LINT-PRODUCERS — every *-lint consumer has a runnable producer
+#
+# aprender#2377 finding 3. Dogfooding 0.63.0 found three `*-lint` commands whose
+# help text documented a producer the shipped binary did not have:
+#
+#   attn-parity-lint   documented `apr kernel parity …`      — no `kernel` command
+#   audio-inspect-lint documented `apr dataset audio-inspect` — no `dataset` command
+#   embed-viz-lint     documented `apr debug embed-viz`       — no such subcommand
+#
+# A lint reads a captured observation; its help text is the only thing telling an
+# operator how to produce that observation. Where the producer does not exist the
+# lint is unreachable in practice — its gates had never run on real data and
+# could not. This contract pins the property that closes it: for each pair, the
+# producer's OWN output is accepted by its lint, and a corrupted body is not.
+#
+# The falsifiers are ROUND TRIPS, not shape assertions. A shape assertion
+# ("the JSON has a sample_rate key") cannot prove producer and consumer agree;
+# running the consumer on the producer's bytes can. Each round trip ships with
+# its negative half, so it cannot pass vacuously.
+
+metadata:
+  id: APR-LINT-PRODUCERS
+  version: "1.0.0"
+  created: "2026-08-13"
+  updated: "2026-08-13"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  kind: kernel
+  parent_contracts:
+  - crux-L-02-v1
+  - crux-H-13-v1
+  - crux-F-18-v1
+  category: "CLI — producer/consumer integrity"
+  competitor: none
+  demand_score: 5
+  intake_status: implemented
+  description: >
+    Every `apr *-lint` consumer whose help text names an `apr …` producer must
+    have that producer in the same binary, and the producer's output must be
+    accepted by that lint. Producers report only what they measured: a
+    configuration or codec they cannot run is REFUSED with a non-zero exit and a
+    message naming what is missing, never a plausible-looking number and never
+    exit 0.
+
+  references:
+  - 'aprender#2377 finding 3 — dogfood 0.63.0'
+  - 'contracts/crux-L-02-v1.yaml — attn-parity-lint consumer'
+  - 'contracts/crux-H-13-v1.yaml — audio-inspect-lint consumer'
+  - 'contracts/crux-F-18-v1.yaml — embed-viz-lint consumer'
+  - 'arXiv:2307.08691 — FlashAttention-2 (head_dim ∈ {64,128} dispatch set)'
+  - 'RIFF/WAVE — Multimedia Programming Interface and Data Specifications 1.0'
+
+equations:
+  audio_inspect_round_trip:
+    formula: |
+      Let W be an uncompressed RIFF/WAVE file.
+          obs := apr dataset audio-inspect W --format json
+          obs ⊨ {min, max, sample_rate, channels, samples}
+      Then:
+          apr audio-inspect-lint --json-file obs  ⇒  exit 0
+      and for any single-field corruption c of obs that violates an H-13 gate:
+          apr audio-inspect-lint --json-file c(obs)  ⇒  exit ≠ 0
+      Amplitude normalisation (torchaudio load(normalize=True) convention):
+          pcm_u8   x ↦ (x - 128) / 128
+          pcm_s16  x ↦ x / 2^15
+          pcm_s24  x ↦ x / 2^23
+          pcm_s32  x ↦ x / 2^31
+          pcm_f32  x ↦ x            (reported as stored)
+    domain: "a RIFF/WAVE file with a `fmt ` and a `data` chunk"
+    codomain: "an H-13 observation body, or a non-zero exit naming the refusal"
+    invariants:
+    - "integer PCM normalises into [-1, 1]; a float payload is reported as stored"
+    - "a container or codec the decoder cannot read is REFUSED, never estimated"
+    - "a truncated `data` chunk is REFUSED — extrema over a surviving prefix answer
+       a question about a file that does not exist"
+    - "0 decoded frames is REFUSED: an empty stream has no amplitude to report"
+
+  kernel_parity_round_trip:
+    formula: |
+      Given seeded Q ∈ R^{H×D}, K,V ∈ R^{S×H_kv×D} drawn from `--seed`:
+          out_tiled := FlashAttentionBrick(H, H_kv, D).forward(Q, K, V, S)
+          out_naive := softmax(QKᵀ / √D) · V         (materialised, max-subtracted)
+          obs := { max_abs_diff: max|out_tiled - out_naive|,
+                   cosine_sim:  ⟨out_tiled, out_naive⟩ / (‖·‖‖·‖),
+                   attn_impl, kernel_source, fallback }
+      Then:
+          apr attn-parity-lint --parity-file obs --provenance-file obs  ⇒  exit 0
+      at the SHIPPED defaults (tol_abs = 5e-3, tol_cos = 0.9999).
+      Provenance is never borrowed:
+          attn_impl == "flash2"  ⟹  the pinned kernel actually ran
+          attn_impl != "flash2"  ⟹  `fallback` is a non-empty reason
+    domain: "(impl ∈ {tiled, flash2}, ref = naive, seq_len, num_heads, num_kv_heads, head_dim, seed)"
+    codomain: "an L-02 parity+provenance body, or a non-zero exit naming the refusal"
+    invariants:
+    - "the measurement is between two INDEPENDENT implementations — online-softmax
+       tiling vs materialised softmax — so a regression in either makes it fail"
+    - "`--impl flash2` is refused: this binary embeds no hf-kernels-community
+       flash-attn2 kernel, so no flash2 measurement exists to report"
+    - "head_dim ∉ {64, 128} under `--impl flash2` errors at dispatch, and the error
+       body is itself the observation `--head-dim-error-file` reads"
+    - "the regime measured (decode step, one query position) is stated in the body"
+
+  embed_viz_round_trip:
+    formula: |
+      Let E ∈ R^{V × d} be a model's token-embedding tensor.
+          Z := project(E[0..n], method)      method ∈ {pca, random}
+          csv := "token_id,token_str,x,y" + rows (i, escape(tok_i), Z[i,0], Z[i,1])
+      Then:
+          apr embed-viz-lint --csv-file csv --expected-vocab-size n  ⇒  exit 0
+      and for two runs at the same --seed:
+          apr embed-viz-lint --csv-file a --csv-file-b b  ⇒  exit 0   (byte-identical)
+    domain: "(model: Path, tensor: Option<String>, projection, seed, limit)"
+    codomain: "a `token_id,token_str,x,y` CSV, or a non-zero exit naming the refusal"
+    invariants:
+    - "the projection named in the report is the one that ran; `--projection umap`
+       is REFUSED rather than answered by pca or random under umap's name"
+    - "same seed ⇒ byte-identical CSV; a different seed ⇒ a different CSV"
+    - "token text is escaped so a token containing a comma cannot shift the column
+       count the F-18 classifier counts"
+    - "unresolvable token text is written as the literal `<unresolved>`, which
+       claims nothing, rather than a plausible-looking token"
+
+falsification_tests:
+- id: FALSIFY-LINT-PRODUCER-001
+  rule: "`apr dataset audio-inspect` output is accepted by `apr audio-inspect-lint`"
+  prediction: "decoding a 16 kHz stereo i16 WAV and linting the result exits 0"
+  test: |
+    set -euo pipefail
+    apr dataset audio-inspect clip.wav --format json -o /tmp/audio.json
+    apr audio-inspect-lint --json-file /tmp/audio.json \
+        --expected-sample-rate 16000 --expected-channels 2
+  if_fails: "the H-13 producer and consumer disagree — the lint is unreachable again"
+  evidence_discharged_by:
+    producer_path: crates/apr-cli/src/commands/audio_inspect.rs
+    cli_path: crates/apr-cli/src/commands/audio_inspect_lint.rs
+    e2e_path: crates/apr-cli/src/commands/audio_inspect_tests.rs
+    e2e_tests:
+    - round_trip_producer_output_is_accepted_by_audio_inspect_lint
+    - round_trip_cannot_pass_vacuously_when_the_body_is_corrupted
+    - json_body_carries_the_five_keys_the_h13_classifier_reads
+    sub_claim: |
+      The producer decodes a real RIFF/WAVE payload and the H-13 lint accepts
+      the bytes it wrote, with both optional assertions armed. The negative half
+      corrupts one field per H-13 gate (amplitude above full scale, non-canonical
+      sample rate, zero frames) and requires a refusal each time.
+    scope: "(wav bytes) -> observation -> lint exit status"
+    discharge_status: FULL_ROUND_TRIP
+- id: FALSIFY-LINT-PRODUCER-002
+  rule: "a codec the decoder cannot read is refused, not estimated"
+  prediction: "FLAC / bad magic / truncated data / 0 frames each exit non-zero"
+  test: |
+    set -euo pipefail
+    set +e
+    apr dataset audio-inspect song.flac --format json > /tmp/flac.json
+    EC=$?
+    set -e
+    [ "$EC" -ne 0 ] || exit 1
+  if_fails: "the producer invented an observation for a file it did not decode"
+  evidence_discharged_by:
+    producer_path: crates/apr-cli/src/commands/audio_inspect.rs
+    e2e_path: crates/apr-cli/src/commands/audio_inspect_tests.rs
+    e2e_tests:
+    - refuses_a_flac_stream_by_name
+    - refuses_a_non_riff_file
+    - refuses_a_truncated_data_chunk_instead_of_reporting_the_prefix
+    - refuses_an_empty_stream_rather_than_reporting_zero_amplitude
+    - refuses_an_unsupported_codec_tag
+    - refuses_a_zero_channel_header
+    sub_claim: |
+      Six refusal paths, each asserting the refusal (not merely `is_err`) and
+      each requiring the message to name what was found.
+    scope: "(unsupported bytes) -> non-zero exit + a message naming the container"
+    discharge_status: FULL_ROUND_TRIP
+- id: FALSIFY-LINT-PRODUCER-003
+  rule: "`apr kernel parity` output is accepted by `apr attn-parity-lint`"
+  prediction: "tiled-vs-naive parity at the shipped 5e-3 / 0.9999 defaults exits 0"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl tiled --ref naive --json -o /tmp/parity.json
+    apr attn-parity-lint --parity-file /tmp/parity.json \
+                         --provenance-file /tmp/parity.json
+  if_fails: "the L-02 producer and consumer disagree, or the tiled kernel diverged
+    from the naive reference past the FlashAttention-2 bound"
+  evidence_discharged_by:
+    producer_path: crates/apr-cli/src/commands/kernel_parity.rs
+    cli_path: crates/apr-cli/src/commands/attn_parity_lint.rs
+    e2e_path: crates/apr-cli/src/commands/kernel_parity_tests.rs
+    e2e_tests:
+    - round_trip_producer_output_is_accepted_by_attn_parity_lint
+    - round_trip_cannot_pass_vacuously_when_the_body_is_corrupted
+    - tiled_and_naive_agree_far_inside_the_fa2_bound
+    - the_parity_metrics_are_not_vacuous
+    sub_claim: |
+      One body discharges both L-02 gates. The negative half corrupts
+      `max_abs_diff`, `cosine_sim`, and the provenance pair (flash2 with no
+      pinned sha; a blanked fallback reason) and requires a refusal each time.
+      `the_parity_metrics_are_not_vacuous` proves the metrics can see a
+      perturbation, so agreement is evidence rather than arithmetic.
+    scope: "(seeded Q/K/V) -> parity+provenance body -> lint exit status"
+    discharge_status: FULL_ROUND_TRIP
+- id: FALSIFY-LINT-PRODUCER-004
+  rule: "unsupported head_dim errors at dispatch and its error body feeds the lint"
+  prediction: "`--impl flash2 --head-dim 96 --json` exits non-zero and writes
+    an `error` mentioning head-dim, which `--head-dim-error-file` accepts"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl flash2 --ref naive --head-dim 96 --json -o /tmp/hd.json
+    EC=$?
+    set -e
+    [ "$EC" -ne 0 ] || exit 1
+    apr attn-parity-lint --head-dim-error-file /tmp/hd.json
+  if_fails: "flash2 silently slow-paths an unsupported head_dim, or the refusal is
+    not capturable as an observation"
+  evidence_discharged_by:
+    producer_path: crates/apr-cli/src/commands/kernel_parity.rs
+    e2e_path: crates/apr-cli/src/commands/kernel_parity_tests.rs
+    e2e_tests:
+    - round_trip_head_dim_refusal_is_accepted_by_the_head_dim_gate
+    - head_dim_gate_rejects_an_error_body_that_is_not_about_head_dim
+    - flash2_is_refused_rather_than_answered_by_the_tiled_kernel
+    - flash2_at_a_supported_head_dim_still_refuses_without_the_kernel
+    - zero_head_dim_is_refused_with_a_head_dim_message
+    sub_claim: |
+      The head-dim refusal is emitted as `{"error": ...}` and accepted by the
+      head-dim gate; an unrelated error ("out of memory") is rejected by that
+      same gate, so the gate discriminates. `--impl flash2` is refused at every
+      head_dim, including the supported ones, because this binary embeds no
+      hf-kernels-community flash-attn2 kernel — and the refusal body carries no
+      `max_abs_diff`.
+    scope: "(impl, head_dim) -> refusal body -> head-dim gate exit status"
+    discharge_status: FULL_ROUND_TRIP
+    note: |
+      Exit code is apr's convention (5 = ValidationFailed for the head-dim
+      refusal, 12 = NotImplemented for the absent kernel), not the literal 1 the
+      older crux-L-02-v1 shell snippet asserts. Both are non-zero; the snippet
+      predates this exit-code table.
+- id: FALSIFY-LINT-PRODUCER-005
+  rule: "`apr debug embed-viz` CSV is accepted by `apr embed-viz-lint`"
+  prediction: "projecting a model's embedding table and linting the CSV exits 0
+    for both pca and random, and two runs at one seed pass the determinism gate"
+  test: |
+    set -euo pipefail
+    apr debug embed-viz --model model.apr --projection random --seed 42 -o /tmp/a.csv
+    apr debug embed-viz --model model.apr --projection random --seed 42 -o /tmp/b.csv
+    apr embed-viz-lint --csv-file /tmp/a.csv --csv-file-b /tmp/b.csv
+  if_fails: "the F-18 producer and consumer disagree, or the projection is not
+    deterministic in --seed"
+  evidence_discharged_by:
+    producer_path: crates/apr-cli/src/commands/embed_viz.rs
+    cli_path: crates/apr-cli/src/commands/embed_viz_lint.rs
+    e2e_path: crates/apr-cli/src/commands/embed_viz_tests.rs
+    e2e_tests:
+    - round_trip_producer_csv_is_accepted_by_embed_viz_lint
+    - round_trip_two_seeded_runs_pass_the_determinism_gate
+    - round_trip_cannot_pass_vacuously_when_the_csv_is_corrupted
+    - the_determinism_gate_rejects_two_different_csvs
+    - a_different_seed_moves_the_projection
+    - a_token_containing_a_comma_does_not_shift_the_column_count
+    sub_claim: |
+      The producer reads a real embedding tensor out of an APR fixture and both
+      projections' CSVs pass schema + row-count. The determinism gate passes on
+      two same-seed runs AND fails on two different-seed runs, so byte-identity
+      is evidence rather than a tautology. The negative half poisons a
+      coordinate, drops a row, renames a header column and negates a token id,
+      requiring a refusal each time.
+    scope: "(model, projection, seed, limit) -> CSV -> lint exit status"
+    discharge_status: FULL_ROUND_TRIP
+- id: FALSIFY-LINT-PRODUCER-006
+  rule: "an algorithm the binary does not implement is refused, not relabelled"
+  prediction: "`--projection umap` exits non-zero and writes no CSV"
+  test: |
+    set -euo pipefail
+    set +e
+    apr debug embed-viz --model model.apr --projection umap -o /tmp/umap.csv
+    EC=$?
+    set -e
+    [ "$EC" -ne 0 ] || exit 1
+    [ ! -f /tmp/umap.csv ] || exit 1
+  if_fails: "a different projection shipped under UMAP's name — the exact
+    fabrication class aprender#2377 exists to eliminate"
+  evidence_discharged_by:
+    producer_path: crates/apr-cli/src/commands/embed_viz.rs
+    e2e_path: crates/apr-cli/src/commands/embed_viz_tests.rs
+    e2e_tests:
+    - umap_is_refused_rather_than_silently_substituted
+    - unresolved_tokens_are_marked_not_invented
+    - a_short_tokens_file_is_refused_rather_than_padded
+    sub_claim: |
+      UMAP is refused with `NotImplemented` and leaves no artifact behind.
+      Token text that cannot be resolved is written as the literal
+      `<unresolved>` rather than invented, and a `--tokens` file too short for
+      the projected rows is refused rather than padded.
+    scope: "(projection, tokens) -> non-zero exit + no artifact"
+    discharge_status: FULL_ROUND_TRIP
+- id: FALSIFY-LINT-PRODUCER-007
+  rule: "every `apr …` invocation quoted in a *-lint help string is runnable"
+  prediction: "resolving each backtick-quoted invocation against the clap tree succeeds"
+  test: |
+    set -euo pipefail
+    cargo test -p apr-cli --lib every_apr_command_quoted_in_lint_help_exists
+  if_fails: "a lint documents a producer the binary does not have — the defect
+    class aprender#2377 finding 3 reported"
+  evidence_discharged_by:
+    cli_path: crates/apr-cli/src/help_producer_truth.rs
+    e2e_path: crates/apr-cli/src/help_producer_truth.rs
+    e2e_tests:
+    - every_apr_command_quoted_in_lint_help_exists
+    - resolver_rejects_the_invocations_dogfooding_found
+    - resolver_accepts_real_invocations
+    sub_claim: |
+      The guard walks the real clap tree. Its own accept/reject case table is
+      re-run on every build, so the resolver cannot silently stop discriminating
+      — the three producers this contract adds moved from the reject list to the
+      accept list, which is how the guard proved they now exist.
+    scope: "(clap tree, help strings) -> unresolvable invocations"
+    discharge_status: FULL_ROUND_TRIP
+
+proof_obligations:
+- type: invariant
+  property: "each *-lint help invocation resolves against the shipped clap tree"
+- type: invariant
+  property: "each producer's own output is accepted by its lint (round trip)"
+- type: invariant
+  property: "a corrupted producer body is rejected by that lint (non-vacuity)"
+- type: invariant
+  property: "a configuration or codec the producer cannot run exits non-zero and
+    reports no measurement"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 4
+  status: tested
+
+pmat_work_tracking:
+  ticket_tag: apr-lint-producers
+  priority: high
+  auto_created: false

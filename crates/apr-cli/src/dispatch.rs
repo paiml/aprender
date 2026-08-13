@@ -226,6 +226,54 @@ or drop `--backend`."
     })
 }
 
+/// Dispatch `apr debug`: either the file dump or a debug subcommand.
+///
+/// aprender#2377 finding 3: `embed-viz-lint`'s help documented
+/// `apr debug embed-viz` and no such subcommand existed. `file` is now optional
+/// because a subcommand supplies its own input, and `apr debug` with neither
+/// must REFUSE rather than dump nothing and exit 0.
+fn dispatch_debug(
+    cli: &Cli,
+    file: Option<&Path>,
+    action: Option<&DebugCommands>,
+    flags: (bool, bool, bool, usize),
+) -> Result<(), CliError> {
+    if let Some(DebugCommands::EmbedViz {
+        model,
+        tensor,
+        projection,
+        seed,
+        limit,
+        tokens,
+        output,
+        force,
+    }) = action
+    {
+        return commands::embed_viz::run(&commands::embed_viz::EmbedVizArgs {
+            model: model.clone(),
+            tensor: tensor.clone(),
+            projection: *projection,
+            seed: *seed,
+            limit: *limit,
+            tokens: tokens.clone(),
+            output: output.clone(),
+            force: *force,
+        });
+    }
+    let file = file.ok_or_else(|| {
+        CliError::ValidationFailed(
+            "apr debug: needs a model FILE (`apr debug model.apr`) or a subcommand \
+             (`apr debug embed-viz --model model.apr`)"
+                .to_string(),
+        )
+    })?;
+    let (drama, hex, strings, limit) = flags;
+    let (j, verb) = (cli.json, cli.verbose);
+    crate::pipe::with_stdin_support(file, |p| {
+        debug::run(p, drama, hex, strings, limit, j, verb)
+    })
+}
+
 /// Dispatch inspection commands: inspect, debug, validate, lint, explain, canary.
 #[allow(clippy::many_single_char_names)]
 fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
@@ -248,14 +296,17 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         // GH-685: forward cli.verbose to debug
         Commands::Debug {
             file,
+            action,
             drama,
             hex,
             strings,
             limit,
-        } => {
-            let (d, h, s, l, j, verb) = (*drama, *hex, *strings, *limit, cli.json, cli.verbose);
-            crate::pipe::with_stdin_support(file, |p| debug::run(p, d, h, s, l, j, verb))
-        }
+        } => dispatch_debug(
+            cli,
+            file.as_deref(),
+            action.as_ref(),
+            (*drama, *hex, *strings, *limit),
+        ),
 
         Commands::Validate {
             file,
