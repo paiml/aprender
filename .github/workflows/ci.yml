@@ -444,6 +444,16 @@ jobs:
       # reading the merged view. Behavioural, text-only, no build.
       - name: Story JSON parsing must read stdout, not the merged stream
         run: bash scripts/check_story_json_streams.sh
+      # Poka-yoke: a path filter is a claim that nothing outside those paths can
+      # break the gate. book.yml filtered on `book/**`, so the CLI/book parity gate
+      # never ran when the CLI gained a command — `apr beat-run` shipped in #1995
+      # with no chapter and the gate stayed green for three months, hiding a lib
+      # parity failure, a `pv` step that exited 127, and two chapter examples
+      # training to NaN behind it. Text-only check, no build.
+      - name: A path-filtered workflow must not be able to go dark
+        run: |
+          bash scripts/check_workflow_path_filters.sh --self-test
+          bash scripts/check_workflow_path_filters.sh
       # Poka-yoke: mac-server runs 16 runners under ONE $HOME, so
       # $HOME/.cargo/bin is shared mutable state. `cargo install` replaces a
       # binary there while another job is mid-run and about to exec it — on
