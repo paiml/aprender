@@ -20,7 +20,16 @@ fn main() {
     let y = Tensor::new(&[3.0, 7.0, 11.0, 15.0], &[4, 1]);
 
     let loss_fn = MSELoss::new();
-    let learning_rate = 0.01_f32;
+// #2310 follow-on: the learning rate here was 0.01, which DIVERGES on this data.
+// x runs to 8.0 and y to 15.0, both unnormalized, so the first MSE gradients are
+// large enough that a 0.01 step overshoots; loss reaches NaN by epoch 25 and the
+// `final_loss < initial_loss` assertion panics. Measured on this exact example:
+// lr 0.01 -> NaN; lr 0.001 -> 110.38 converging to 0.0000.
+//
+// This is the EXAMPLE's parameter, not a framework defect: SGD, MSELoss and
+// backward are all correct at a step size the data supports, which is what the
+// lr sweep above established before anything was changed.
+    let learning_rate = 0.001_f32;
     let mut optimizer = SGD::new(model.parameters_mut(), learning_rate);
 
     // Initial forward pass
