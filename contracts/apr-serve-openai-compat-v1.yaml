@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.18.0"
+  version: "1.19.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -359,7 +359,90 @@ proof_obligations:
       permitted: ERROR-MESSAGES-NAME-A-REAL-REMEDY names it deliberately as the
       embedder API that enables registry mode.)
 
+  - type: invariant
+    property: >
+      COMPLETIONS-END-AT-EOS (audit 2026-08-13, DISCHARGED): every generating
+      route on one server ends a sequence at the SAME token. /v1/completions
+      passed `stop_tokens: Vec::new()` to the quantized engine while /generate,
+      /stream/generate and /v1/chat/completions all passed the model's EOS, and
+      the decode loop only breaks on `config.stop_tokens.contains(next)`. So
+      every /v1/completions request ran the full max_tokens budget, always
+      reported finish_reason "length", and returned the answer followed by
+      whatever the model emits after end-of-text. Measured on
+      qwen2.5-coder-0.5b-instruct-q4_k_m, one server, max_tokens 200: /generate
+      returned 5 tokens ("2+2=4"), /v1/completions returned 200 tokens ending in
+      "I'm sorry, but I can't assist with that." repeated to the budget. Both
+      quantized completion backends now build their config through ONE builder
+      (completion_quantized_config) that resolves EOS with the same GH-330
+      priority as the other routes.
+  - type: invariant
+    property: >
+      COMPLETIONS-TOP-P-HONOURED-OR-REFUSED (audit 2026-08-13, DISCHARGED):
+      `top_p` is a documented field of CompletionRequest. The quantized backend
+      took `..Default::default()` and so sampled with top_p = 1.0 whatever the
+      request said — `{"temperature":2.0,"top_p":0.000001}` returned output
+      byte-identical to `{"temperature":2.0}`. It is now threaded into the engine
+      config, and a value outside (0, 1] — previously accepted with HTTP 200
+      because it was being discarded — is refused with 400 naming the field, the
+      same classification /generate already used.
+  - type: invariant
+    property: >
+      GENERATION-ERROR-STATUS-IS-UNIFORM (aprender#2376(9) extended, DISCHARGED):
+      a failure fully determined by the request is 4xx on EVERY generating route.
+      #2376(9) fixed the GPU-cached chat backend and missed try_quantized_backend
+      — the backend every `apr serve run model.gguf` uses. Measured on one live
+      server with a 60k-token prompt: 400 from /generate, /stream/generate,
+      /v1/completions, /realize/embed and /v1/embeddings, and 500 from
+      /v1/chat/completions, which makes every OpenAI SDK retry a request that can
+      never succeed.
+  - type: invariant
+    property: >
+      BATCH-COMPLETIONS-USE-THE-TOKENIZER (audit 2026-08-13, DISCHARGED):
+      /v1/batch/completions tokenized prompts as raw BYTES
+      (`p.bytes().map(|b| b as u32)`, under the comment "In production, use a
+      proper tokenizer") and decoded results by truncating each token id to a
+      byte (`t as u8 as char`), then returned HTTP 200 with throughput
+      statistics — a confident answer to a question the model was never asked.
+      Both ends now go through the server's own BPETokenizer, and the batch
+      config carries the model's EOS like every other generating path.
+
 falsification_tests:
+  - id: FALSIFY-COMPLETIONS-EOS-2459
+    name: completions_surface_2459
+    prediction: >
+      On a quantized server whose model declares eos_token_id == the first token
+      it samples, POST /v1/completions returns usage.completion_tokens == 0 and
+      finish_reason "stop"; with an eos_token_id the model never samples, the same
+      request runs the full max_tokens budget (control, so "stops early" cannot
+      mean "generation is broken"). /v1/completions and /generate report the same
+      token count for the same prompt. completion_quantized_config threads
+      request.top_p (0.25 => config.top_p == 0.25, absent => engine default) and
+      puts the model's EOS in stop_tokens. A top_p of 5.0 is refused with 400
+      naming the field while 0.9 is served. A context overflow is 400 on
+      /v1/chat/completions, matching /generate. batch_prompt_tokens/batch_decode
+      go through the tokenizer and differ from the byte cast that shipped.
+    test_harness: 'cargo test -p aprender-serve --lib api::tests::completions_surface_2459'
+    expected_output: "test result: ok"
+    if_fails: >
+      A completion runs past the model's end-of-text to max_tokens (the shipped
+      behaviour), or a declared sampling field is parsed and dropped, or a
+      request-determined failure is reported as a server failure, or the batch
+      route answers from byte values instead of tokens.
+  - id: FALSIFY-OLLAMA-DISCOVERY-ADVERTISED-2459
+    name: ollama_discovery_routes_are_advertised_and_answer
+    prediction: >
+      GET /api/tags, POST /api/show and GET /api/version each appear in the route
+      list the live server hands out (GET / and the 404 body) AND answer with a
+      status other than 404. They were mounted and unlisted, so the server
+      advertised 34 routes while 37 answered; unadvertised_routes_do_not_answer
+      cannot catch that direction because it builds its candidate universe from
+      the advertised list itself.
+    test_harness: 'cargo test -p aprender-serve --lib api::tests::route_surface_2376::ollama_discovery_routes_are_advertised_and_answer'
+    expected_output: "test result: ok"
+    if_fails: >
+      A mounted route is missing from the only two places a client is told what
+      this server serves — and every Ollama client calls /api/tags before it will
+      issue a chat request.
   - id: FALSIFY-STOP-TRUNCATE-754
     name: pmat754_stop_truncation_tests
     prediction: 'truncate_at_stop(text, stops) truncates at the EARLIEST stop position (not the first-listed): truncate_at_stop("hello world", ["world","hello"]) == ""; keeps text when no stop matches; ignores empty stop strings; unchanged when stops is None. try_cached_completions / try_quantized_completions apply it so their output never contains a stop string.'

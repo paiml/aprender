@@ -409,6 +409,10 @@ async fn completions_inner(
     cancel: CancelToken,
 ) -> Result<CompletionResponse, RErr> {
     let start = std::time::Instant::now();
+    // Refused before any backend is chosen, so every backend answers the same way
+    // for the same unsatisfiable request (this used to be accepted with 200 only
+    // because the quantized path was discarding the field).
+    validate_completion_top_p(request.top_p)?;
     let max_tokens = request.max_tokens.unwrap_or(256);
     let temperature = request.temperature.unwrap_or(0.7) as f32;
 

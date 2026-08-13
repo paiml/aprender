@@ -588,6 +588,84 @@ pub(crate) fn resolve_dense_generation_config(
     config
 }
 
+/// Build the quantized-engine config for a `POST /v1/completions` request.
+///
+/// ONE builder for both quantized backends, for the same reason
+/// `chat_quantized_config` is one builder for the chat backends: each copy is a
+/// place where a request field can quietly stop being read.
+///
+/// Two things this fixes, both observed against a live
+/// `apr serve run qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`:
+///
+/// 1. **`stop_tokens` was `Vec::new()`** — the model's EOS was not in the stop
+///    set, and the decode loop only breaks on `config.stop_tokens.contains(..)`
+///    (`gguf/inference/generate_quantized.rs`). So EVERY `/v1/completions`
+///    request ran the whole `max_tokens` budget, `finish_reason` was always
+///    `"length"`, and the answer was buried under whatever the model emits after
+///    end-of-text. On the same server, same prompt, `max_tokens: 200`:
+///
+///    ```text
+///    POST /generate         -> num_generated 5,   "2+2=4"
+///    POST /v1/completions   -> completion_tokens 200, finish_reason "length",
+///                              "2+2=4\nI'm sorry, but I can't assist with that.\n…" ×N
+///    ```
+///
+///    `/generate`, `/stream/generate` and `/v1/chat/completions` all passed the
+///    EOS through; this one route did not.
+///
+/// 2. **`top_p` was dropped.** It is a documented field of [`CompletionRequest`]
+///    and it reached the dense path (`resolve_dense_generation_config`) but not
+///    the quantized one, which took `..Default::default()` (`top_p = 1.0`, i.e.
+///    no nucleus at all). `{"temperature":2.0,"top_p":0.000001}` returned output
+///    byte-identical to `{"temperature":2.0}` — the field was parsed and ignored.
+pub(super) fn completion_quantized_config(
+    request: &CompletionRequest,
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    model_eos: Option<u32>,
+    max_tokens: usize,
+    temperature: f32,
+    trace: bool,
+    cancel: &CancelToken,
+) -> crate::gguf::QuantizedGenerateConfig {
+    let defaults = crate::gguf::QuantizedGenerateConfig::default();
+    crate::gguf::QuantizedGenerateConfig {
+        max_tokens,
+        temperature,
+        top_k: if temperature == 0.0 { 1 } else { 40 },
+        top_p: request
+            .top_p
+            .map_or(defaults.top_p, |p| p as f32),
+        // GH-330 resolution order (model config, then tokenizer, then disabled),
+        // shared with `/generate` and `/v1/chat/completions` so the three routes
+        // cannot disagree about where this model ends a sequence.
+        stop_tokens: vec![super::gpu_handlers::eos_id(tokenizer, model_eos)],
+        trace,
+        cancel: cancel.clone(),
+        ..defaults
+    }
+}
+
+/// Reject a `top_p` this server cannot honour, instead of ignoring it.
+///
+/// `/generate` already refuses `top_p` outside `(0, 1]` with 400
+/// (`resolve_quantized_sampling`). `/v1/completions` accepted `{"top_p": 5.0}`
+/// with HTTP 200 — which was harmless only because the value was being dropped
+/// on the floor. Now that it reaches the sampler, an unsatisfiable value is a
+/// client error and is named as one.
+#[allow(clippy::result_large_err)]
+fn validate_completion_top_p(top_p: Option<f64>) -> Result<(), RErr> {
+    let Some(p) = top_p else { return Ok(()) };
+    if p.is_nan() || p <= 0.0 || p > 1.0 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("top_p must be in (0, 1], got {p}"),
+            }),
+        ));
+    }
+    Ok(())
+}
+
 /// Cached model backend (includes batch path). Returns None if not available.
 #[cfg(feature = "gpu")]
 async fn try_cached_completions(
@@ -598,8 +676,6 @@ async fn try_cached_completions(
     start: std::time::Instant,
     cancel: &CancelToken,
 ) -> Result<Option<CompletionResponse>, RErr> {
-    use crate::gguf::QuantizedGenerateConfig;
-
     let cached_model = match state.cached_model() {
         Some(m) => m,
         None => return Ok(None),
@@ -637,15 +713,15 @@ async fn try_cached_completions(
     }
 
     // Single-request cached path
-    let q_config = QuantizedGenerateConfig {
+    let q_config = completion_quantized_config(
+        request,
+        &tokenizer,
+        state.model_eos_token_id(),
         max_tokens,
         temperature,
-        top_k: if temperature == 0.0 { 1 } else { 40 },
-        stop_tokens: Vec::new(),
-        trace: state.is_trace_enabled(),
-        cancel: cancel.clone(),
-        ..Default::default()
-    };
+        state.is_trace_enabled(),
+        cancel,
+    );
 
     // IMP-126: adaptive generation when dispatch_metrics available
     let generated = if let Some(metrics) = state.dispatch_metrics() {
@@ -688,8 +764,6 @@ fn try_quantized_completions(
     start: std::time::Instant,
     cancel: &CancelToken,
 ) -> Result<Option<CompletionResponse>, RErr> {
-    use crate::gguf::QuantizedGenerateConfig;
-
     let quantized_model = match state.quantized_model() {
         Some(m) => m,
         None => return Ok(None),
@@ -711,15 +785,15 @@ fn try_quantized_completions(
     }
     let prompt_tokens = prompt_ids.len();
 
-    let q_config = QuantizedGenerateConfig {
+    let q_config = completion_quantized_config(
+        request,
+        &tokenizer,
+        state.model_eos_token_id(),
         max_tokens,
         temperature,
-        top_k: if temperature == 0.0 { 1 } else { 40 },
-        stop_tokens: Vec::new(),
-        trace: state.is_trace_enabled(),
-        cancel: cancel.clone(),
-        ..Default::default()
-    };
+        state.is_trace_enabled(),
+        cancel,
+    );
 
     // aprender#2376(9): a context-budget rejection is a client error (400), not a
     // server failure — same classification as /generate.

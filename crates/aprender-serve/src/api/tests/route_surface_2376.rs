@@ -200,6 +200,41 @@ async fn no_metrics_stops_advertising_metrics() {
     );
 }
 
+/// The three Ollama discovery routes, probed BY NAME.
+///
+/// `unadvertised_routes_do_not_answer` above cannot catch these: it builds its
+/// candidate universe out of `advertised_routes`, so a route that is mounted but
+/// absent from every table is invisible to it — which is exactly what happened.
+/// `GET /api/tags`, `POST /api/show` and `GET /api/version` were mounted in
+/// `create_router_with_config` and missing from `OPENAI_ROUTES`, so a live server
+/// answered 200 on all three while `GET /` and the 404 body listed 34 routes and
+/// named none of them. An Ollama client reads `/api/tags` before it will issue a
+/// single chat request; a client that discovers this server through its own index
+/// was told that route does not exist.
+///
+/// Naming them here is the ratchet: it is a second, independent list, and it goes
+/// red if either the mount or the advertisement is dropped.
+#[tokio::test]
+async fn ollama_discovery_routes_are_advertised_and_answer() {
+    let config = RouterConfig::default();
+    let advertised = advertised_over_http(&config).await;
+
+    for route in ["GET /api/tags", "POST /api/show", "GET /api/version"] {
+        assert!(
+            advertised.iter().any(|r| r == route),
+            "`{route}` is mounted and answering, but no client is told it exists: \
+             {advertised:?}"
+        );
+        let (method, path) = route.split_once(' ').expect("METHOD /path");
+        let (status, _, body) = probe(&config, method, path, Some("application/json"), "{}").await;
+        assert_ne!(
+            status,
+            StatusCode::NOT_FOUND,
+            "`{route}` is advertised but does not answer: {body}"
+        );
+    }
+}
+
 /// `advertised_routes` is what the CLI banner prints. It must agree with the list
 /// the running server hands out, or the banner is a second, independent claim.
 #[tokio::test]

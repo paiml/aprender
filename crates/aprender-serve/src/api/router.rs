@@ -99,6 +99,16 @@ const OPENAI_ROUTES: &[(&str, &str)] = &[
     ("GET", "/v1/metrics"),
     ("POST", "/api/chat"),
     ("POST", "/api/generate"),
+    // Ollama discovery. These three are mounted below and were missing from this
+    // list, so `GET /` and the 404 body — the two places a client is told what
+    // this server serves — named 34 routes while 37 answered. The direction the
+    // list was wrong in matters: `unadvertised_routes_do_not_answer` builds its
+    // candidate universe FROM this table, so a route absent from every table is
+    // invisible to it. `ollama_discovery_routes_are_advertised` probes these
+    // three by name for exactly that reason.
+    ("GET", "/api/tags"),
+    ("POST", "/api/show"),
+    ("GET", "/api/version"),
     ("POST", "/api/embeddings"),
 ];
 

@@ -63,7 +63,12 @@ fn tokenize_prompt(tokenizer: &BPETokenizer, prompt: &str) -> Result<Vec<u32>, A
 /// 1. Model config (class invariant from GGUF/APR metadata)
 /// 2. Tokenizer vocabulary lookup (runtime fallback)
 /// 3. 0 (disabled — no EOS checking) instead of hardcoded Qwen2 value
-fn eos_id(tokenizer: &BPETokenizer, model_eos: Option<u32>) -> u32 {
+///
+/// `pub(super)` so the `/v1/completions` backends resolve EOS through THIS
+/// function rather than a second copy of the same priority order: they were
+/// passing an empty stop set, and a route that ends a sequence differently from
+/// its neighbours on the same server is the bug that made it visible.
+pub(super) fn eos_id(tokenizer: &BPETokenizer, model_eos: Option<u32>) -> u32 {
     model_eos
         .or_else(|| tokenizer.get_token_id("<|im_end|>"))
         .or_else(|| tokenizer.get_token_id("<|endoftext|>"))

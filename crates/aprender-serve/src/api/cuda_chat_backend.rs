@@ -297,7 +297,15 @@ fn try_quantized_backend(
     // Non-streaming quantized
     let generated = match quantized_model.generate_with_cache(&prompt_ids, &q_config) {
         Ok(g) => g,
-        Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
+        // aprender#2376(9) landed this classification on the GPU-cached backend
+        // (`try_cached_backend`) and missed THIS one — the backend every
+        // `apr serve run model.gguf` uses. Measured on a live server: an
+        // over-long prompt returned 400 from /generate, /stream/generate,
+        // /v1/completions, /realize/embed and /v1/embeddings, and 500 from
+        // /v1/chat/completions. The condition is fully determined by the request,
+        // and a 5xx tells every OpenAI SDK to RETRY a request that can never
+        // succeed.
+        Err(e) => return Some(fail_response(state, super::generation_error_status(&e), e)),
     };
 
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();

@@ -214,6 +214,38 @@ pub async fn gpu_status_handler(
     }))
 }
 
+/// Tokenize the prompts of a `POST /v1/batch/completions` request.
+///
+/// This route used to "tokenize" with `p.bytes().map(|b| b as u32)` under the
+/// comment *"Simple tokenization for batch - uses model's vocab / In production,
+/// use a proper tokenizer"* — on a mounted, advertised route. Byte values are not
+/// token ids: `"What is 2+2?"` was fed to the model as ids
+/// `[87, 104, 97, 116, 32, …]`, arbitrary unrelated vocabulary entries. The
+/// endpoint then returned HTTP 200 with `stats.throughput_tps` and a `text`
+/// field, i.e. a confident answer to a question the model was never asked.
+///
+/// The tokenizer is the same `state.tokenizer` every other generating route uses,
+/// so this route can no longer disagree with them about what a prompt is.
+#[cfg(feature = "gpu")]
+pub(super) fn batch_prompt_tokens(tokenizer: &BPETokenizer, prompts: &[String]) -> Vec<Vec<u32>> {
+    prompts.iter().map(|p| tokenizer.encode(p)).collect()
+}
+
+/// Decode one batch result back to text.
+///
+/// The previous form was `tokens.iter().map(|&t| t as u8 as char).collect()` —
+/// each token id truncated to its low byte and reinterpreted as a char, which
+/// produces mojibake for every id above 255 (token 151643 rendered as `'»'`) and
+/// is unrelated to the vocabulary for the rest. `decode` can fail on malformed
+/// ids; that is reported as text rather than silently dropped, because a decode
+/// failure a client cannot see is how fabricated output ships.
+#[cfg(feature = "gpu")]
+pub(super) fn batch_decode(tokenizer: &BPETokenizer, tokens: &[u32]) -> String {
+    tokenizer
+        .decode(tokens)
+        .unwrap_or_else(|e| format!("<decode failed: {e}>"))
+}
+
 /// GPU batch completions handler (PARITY-022)
 /// POST /v1/batch/completions - GPU-accelerated batch inference
 #[cfg(feature = "gpu")]
@@ -245,24 +277,18 @@ pub async fn gpu_batch_completions_handler(
     let gpu_ready = cached_model.is_gpu_cache_warm();
     let batch_size = request.prompts.len();
 
-    // Tokenize all prompts
-    // For GPU batch, we need token IDs as Vec<Vec<u32>>
-    let prompts_tokens: Vec<Vec<u32>> = request
-        .prompts
-        .iter()
-        .map(|p| {
-            // Simple tokenization for batch - uses model's vocab
-            // In production, use a proper tokenizer
-            p.bytes().map(|b| b as u32).collect()
-        })
-        .collect();
+    // The SERVER'S tokenizer, not a byte cast. See `batch_prompt_tokens`.
+    let tokenizer = require_tok(&state)?;
+    let prompts_tokens: Vec<Vec<u32>> = batch_prompt_tokens(&tokenizer, &request.prompts);
 
     // Create generation config
     let gen_config = crate::gguf::QuantizedGenerateConfig {
         max_tokens: request.max_tokens,
         temperature: request.temperature,
         top_k: request.top_k,
-        stop_tokens: vec![],
+        // Same EOS resolution as every other generating route on this server;
+        // an empty stop set means "run the whole budget past end-of-text".
+        stop_tokens: vec![eos_id(&tokenizer, state.model_eos_token_id())],
         trace: false,
             ..Default::default()
     };
@@ -318,8 +344,8 @@ pub async fn gpu_batch_completions_handler(
             let num_generated = tokens.len().saturating_sub(prompt_len);
             GpuBatchResult {
                 index: idx,
-                token_ids: tokens.clone(),
-                text: tokens.iter().map(|&t| t as u8 as char).collect(),
+                text: batch_decode(&tokenizer, &tokens),
+                token_ids: tokens,
                 num_generated,
             }
         })
