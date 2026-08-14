@@ -173,10 +173,14 @@ fn try_quantized_generate(
     }))
 }
 
+/// aprender#2465(1): the THIRD Q4K submission site, alongside the chat and
+/// completions backends. `cancel` is required for the same reason — the scheduler
+/// decodes on its own thread. See `api/apr_q4k_scheduler.rs`.
 #[cfg(feature = "cuda")]
 async fn try_apr_q4k_generate(
     state: &AppState,
     request: &GenerateRequest,
+    cancel: &CancelToken,
 ) -> Result<Option<GenerateResponse>, ApiErr> {
     use super::apr_q4k_scheduler::AprQ4kRequest;
 
@@ -200,6 +204,7 @@ async fn try_apr_q4k_generate(
             max_tokens: request.max_tokens,
             temperature: request.temperature,
             eos_ids,
+            cancel: cancel.clone(),
             response_tx,
         })
         .await
@@ -376,7 +381,7 @@ pub async fn generate_handler(
     }
 
     #[cfg(feature = "cuda")]
-    if let Some(resp) = try_apr_q4k_generate(&state, &request).await? {
+    if let Some(resp) = try_apr_q4k_generate(&state, &request, &cancel).await? {
         state
             .metrics
             .record_success(resp.num_generated, start.elapsed());

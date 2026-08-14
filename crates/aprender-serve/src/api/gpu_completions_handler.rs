@@ -177,6 +177,10 @@ fn registry_completions(
 }
 
 /// ALB-098: Q4K GPU completions via dedicated inference thread.
+///
+/// aprender#2465(1): `cancel` is required, not optional — the Q4K scheduler decodes
+/// on its own thread, which neither the dropped response future nor a failed
+/// per-token send can reach. See `api/apr_q4k_scheduler.rs`.
 #[cfg(feature = "cuda")]
 async fn try_apr_q4k_completions(
     state: &AppState,
@@ -184,6 +188,7 @@ async fn try_apr_q4k_completions(
     max_tokens: usize,
     temperature: f32,
     start: std::time::Instant,
+    cancel: &CancelToken,
 ) -> Result<Option<CompletionResponse>, RErr> {
     use crate::api::apr_q4k_scheduler::AprQ4kRequest;
 
@@ -210,6 +215,7 @@ async fn try_apr_q4k_completions(
             max_tokens,
             temperature,
             eos_ids,
+            cancel: cancel.clone(),
             response_tx,
         })
         .await
@@ -433,7 +439,9 @@ async fn completions_inner(
     }
 
     #[cfg(feature = "cuda")]
-    if let Some(r) = try_apr_q4k_completions(&state, &request, max_tokens, temperature, start).await? {
+    if let Some(r) =
+        try_apr_q4k_completions(&state, &request, max_tokens, temperature, start, &cancel).await?
+    {
         return Ok(r);
     }
 

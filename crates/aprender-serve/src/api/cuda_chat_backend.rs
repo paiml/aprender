@@ -492,9 +492,14 @@ async fn try_apr_q4k_chat_backend(
     request_id: &str,
     trace_level: Option<&str>,
     start: Instant,
+    cancel: &crate::generate::CancelToken,
 ) -> Option<Response> {
-    // aprender#2376(3): this backend hands the work to the Q4K scheduler thread
-    // rather than decoding here, so there is no in-handler loop to poll.
+    // aprender#2465(1): this backend hands the work to the Q4K scheduler THREAD,
+    // and handing a loop to another thread does not stop it. The dropped response
+    // future cannot reach that thread, and the scheduler returns one accumulated
+    // AprQ4kResponse so there is no per-token send left to fail either — the
+    // request carries the token and the decode loop polls it. The previous comment
+    // here claimed the hand-off was itself the answer; it was not.
     use crate::api::apr_q4k_scheduler::AprQ4kRequest;
 
     let q4k_tx = state.apr_q4k_tx()?;
@@ -521,6 +526,7 @@ async fn try_apr_q4k_chat_backend(
             max_tokens,
             temperature,
             eos_ids,
+            cancel: cancel.clone(),
             response_tx,
         })
         .await
@@ -657,7 +663,7 @@ pub async fn openai_chat_completions_handler(
 
     // ALB-110: APR Q4K GPU backend via dedicated inference thread
     #[cfg(feature = "cuda")]
-    if let Some(r) = try_apr_q4k_chat_backend(&state, &request, &request_id, trace_level.as_deref(), start).await {
+    if let Some(r) = try_apr_q4k_chat_backend(&state, &request, &request_id, trace_level.as_deref(), start, &cancel).await {
         return r;
     }
 
