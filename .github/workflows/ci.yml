@@ -503,6 +503,17 @@ jobs:
         run: bash scripts/check_assertions_exclude.sh
       - name: Assertion-exclusion guard case table
         run: bash scripts/check_assertions_exclude.sh --self-test
+
+      # FALSIFY-README-00*: README metric claims must match measurement. The
+      # guard existed and ran nowhere -- its only caller was scripts/dogfood-book.sh,
+      # which is itself in no workflow and no Makefile target, so it was
+      # unreachable. It was also pattern-narrow: it matched `**M** provable
+      # contracts` and took `head -1`, while the README carried THREE different
+      # contract counts (1771 in the table, 1158 at line 225, 1767 at line 256).
+      # It now checks every contract-count claim, so the README cannot contradict
+      # itself either. Text-only, no build.
+      - name: README claims must match measurement
+        run: bash scripts/check_readme_claims.sh
       # Poka-yoke: APR-MONO made every sibling a path alias under crates/, but
       # `trueno = "0.16"` still BUILDS - cargo resolves the crates.io copy
       # alongside the in-tree one, so the tree compiles two mutually

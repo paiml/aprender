@@ -222,7 +222,7 @@ paiml/aprender/
 │   ├── aprender-profile/           # Profiling
 │   ├── aprender-db/ aprender-graph/ aprender-rag/
 │   └── ... (82 crates total)
-├── contracts/                      # 1158 provable YAML contracts
+├── contracts/                      # 1771 provable YAML contracts
 └── book/                           # mdBook documentation
 ```
 
@@ -253,7 +253,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1767 contracts across inference, training, quantization, attention, FFN,
+1771 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates
