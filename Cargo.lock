@@ -832,7 +832,6 @@ dependencies = [
  "anyhow",
  "aprender-compute",
  "aprender-core",
- "aprender-db",
  "arrow 57.3.1",
  "bytemuck",
  "criterion 0.6.0",
@@ -1265,7 +1264,6 @@ version = "0.63.0"
 dependencies = [
  "aprender-common",
  "aprender-compute",
- "aprender-db",
  "aprender-serve",
  "async-trait",
  "bincode",
