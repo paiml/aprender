@@ -84,11 +84,21 @@ claimed_crate_count() {
   grep -oE "$crate_re" "$README" | grep -oE "$num_re" | head -1
 }
 
-claimed_contract_count() {
-  # Look for pattern "**M** provable contracts"
-  local contract_re='\*\*[0-9]+\*\* provable contracts'
-  local num_re='[0-9]+'
-  grep -oE "$contract_re" "$README" | grep -oE "$num_re" | head -1
+# EVERY contract count the README claims, one per line, deduplicated.
+#
+# This used to match only `**M** provable contracts` -- the bold table form --
+# and then `head -1`. The README carried THREE different counts and the guard
+# saw one of them: 1771 in the table (correct), 1158 at line 225 ("# 1158
+# provable YAML contracts", wrong by 613) and 1767 at line 256 ("1767 contracts
+# across inference, training..."). A drift detector that reads one of three
+# claims reports claim discipline it is not providing.
+#
+# Now: any number immediately preceding "contract(s)", optionally through one
+# qualifier word ("provable YAML contracts"), with markdown bold stripped.
+claimed_contract_counts() {
+  grep -oiE '[0-9]+\*{0,2}( +[a-z]+){0,2} +contracts?\b' "$README" \
+    | grep -oE '^[0-9]+' \
+    | sort -un
 }
 
 claimed_cli_command_count() {
@@ -116,18 +126,27 @@ check_crate_count() {
 }
 
 check_contract_count() {
-  local measured claimed
+  local measured claimed rc=0 n=0
   measured=$(measured_contract_count)
-  claimed=$(claimed_contract_count)
+  claimed=$(claimed_contract_counts)
   if [[ -z "$claimed" ]]; then
-    echo "FAIL FALSIFY-README-002 contract_count: README lacks '**M** provable contracts' claim" >&2
+    echo "FAIL FALSIFY-README-002 contract_count: README makes no contract-count claim" >&2
     return 1
   fi
-  if [[ "$measured" != "$claimed" ]]; then
-    echo "FAIL FALSIFY-README-002 contract_count: README claims $claimed, filesystem has $measured" >&2
-    return 1
-  fi
-  echo "PASS FALSIFY-README-002 contract_count: $measured"
+  # EVERY claim must agree with the filesystem, not just the first one found.
+  # The README is also not allowed to contradict itself: three different counts
+  # in one file is a drift the reader cannot resolve.
+  while IFS= read -r c; do
+    [[ -n "$c" ]] || continue
+    n=$((n + 1))
+    if [[ "$measured" != "$c" ]]; then
+      echo "FAIL FALSIFY-README-002 contract_count: README claims $c, filesystem has $measured" >&2
+      grep -niE "\\b$c\\*{0,2}( +[a-z]+){0,2} +contracts?\\b" "$README" | sed 's|^|       |' >&2
+      rc=1
+    fi
+  done <<< "$claimed"
+  [[ "$rc" -eq 0 ]] || return 1
+  echo "PASS FALSIFY-README-002 contract_count: $measured ($n claim(s) checked)"
 }
 
 check_cli_command_count() {
