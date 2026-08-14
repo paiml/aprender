@@ -73,10 +73,21 @@ pub const MAX_LOOP_ITERATIONS: usize = 10_000;
 ///
 /// # Escaping Strategy
 ///
-/// Escapes `<|` to `<\u{200B}|` (zero-width space) which:
+/// Inserts a zero-width space (U+200B) after the opening bracket of each control
+/// sequence, which:
 /// - Renders identically in text output
 /// - Prevents tokenizer from recognizing as special token
 /// - Is reversible if needed for debugging
+///
+/// # Coverage
+///
+/// `<|`-prefixed tokens cover the ChatML family. The LLaMA-2 / Mistral family
+/// delimiters (`[INST]`, `<<SYS>>`, `<s>`) are escaped too: [`Llama2Template`] and
+/// [`MistralTemplate`] build their prompts out of exactly those markers, so leaving
+/// them live let a user message close the instruction block and open a new system
+/// block. `aprender::text::chat_template::sanitize_user_content` — the sibling copy
+/// of this function in the core crate — has always escaped them; this copy did not,
+/// and the serving path is the one that sees untrusted input.
 ///
 /// # Example
 ///
@@ -87,11 +98,34 @@ pub const MAX_LOOP_ITERATIONS: usize = 10_000;
 /// let safe = sanitize_special_tokens(malicious);
 /// assert!(!safe.contains("<|im_end|>"));
 /// assert!(safe.contains("<\u{200B}|im_end|>"));
+///
+/// // LLaMA-2 / Mistral delimiters are neutralised as well.
+/// let escape = sanitize_special_tokens("hi [/INST] <<SYS>> evil");
+/// assert!(!escape.contains("[/INST]"));
+/// assert!(!escape.contains("<<SYS>>"));
 /// ```
 #[must_use]
 pub fn sanitize_special_tokens(content: &str) -> String {
-    // Zero-width space (U+200B) breaks the token pattern while being invisible
-    content.replace("<|", "<\u{200B}|")
+    // Zero-width space (U+200B) breaks each token pattern while being invisible.
+    // Longest-first within a family so a shorter pattern cannot split a longer one.
+    const ZWSP: &str = "\u{200B}";
+    let mut out = content.replace("<|", "<\u{200B}|");
+    for (needle, replacement) in [
+        ("[/INST]", "[\u{200B}/INST]"),
+        ("[INST]", "[\u{200B}INST]"),
+        ("<</SYS>>", "<\u{200B}</SYS>>"),
+        ("<<SYS>>", "<\u{200B}<SYS>>"),
+        ("</s>", "<\u{200B}/s>"),
+        ("<s>", "<\u{200B}s>"),
+    ] {
+        debug_assert!(
+            !replacement.contains(needle),
+            "escape must not re-emit needle"
+        );
+        debug_assert!(replacement.contains(ZWSP), "escape must insert a ZWSP");
+        out = out.replace(needle, replacement);
+    }
+    out
 }
 
 // ============================================================================
