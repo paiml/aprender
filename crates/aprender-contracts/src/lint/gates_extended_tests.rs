@@ -24,6 +24,7 @@ fn make_falsification_test(id: &str, test_name: &str) -> FalsificationTest {
         prediction: "test prediction".into(),
         test: Some(test_name.into()),
         if_fails: "investigate".into(),
+        ..Default::default()
     }
 }
 

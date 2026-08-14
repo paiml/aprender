@@ -98,7 +98,7 @@ falsification_conditions:
       AFTER the bearer is hashed — the configured hash is never compared
       against plaintext.
     test_file: crates/apr-cli/tests/falsify_auth_002.rs
-    test_name: valid_bearer_passes_and_hash_path_is_constant_time
+    test_name: valid_bearer_passes_on_every_route
     status: ENFORCED
 
   - id: FALSIFY-AUTH-003
@@ -109,7 +109,7 @@ falsification_conditions:
       arrays. This is a structural source-code gate — necessary because
       runtime timing tests are too noisy to be CI-tractable.
     test_file: crates/apr-cli/tests/falsify_auth_003.rs
-    test_name: auth_module_uses_subtle_constanttimeeq
+    test_name: auth_module_imports_subtle_constanttimeeq
     status: ENFORCED
 
 # ── Acceptance gate ──

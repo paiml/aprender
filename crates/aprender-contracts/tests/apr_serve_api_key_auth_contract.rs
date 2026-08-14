@@ -121,6 +121,38 @@ fn apr_serve_api_key_auth_contract_every_test_file_exists() {
     }
 }
 
+/// Every `test_name` must actually be a fn in its `test_file`.
+///
+/// #2465: this file's own header claimed "Renaming or deleting any FALSIFY-AUTH
+/// test fails this test loudly before apr-cli compiles." It did not. The only
+/// assertion on `test_name` was `!is_empty()`, so a name that matched nothing
+/// passed — and two of the three did:
+///
+///   FALSIFY-AUTH-002  valid_bearer_passes_and_hash_path_is_constant_time -> absent
+///   FALSIFY-AUTH-003  auth_module_uses_subtle_constanttimeeq             -> absent
+///
+/// Both had been renamed in the test files without the contract following.
+/// Checking that the FILE exists is not checking that the TEST exists.
+#[test]
+fn apr_serve_api_key_auth_contract_every_test_name_exists_in_its_file() {
+    let contract = load_contract();
+    let root = workspace_root();
+    for cond in &contract.falsification_conditions {
+        let full = root.join(&cond.test_file);
+        let src = std::fs::read_to_string(&full)
+            .unwrap_or_else(|e| panic!("{}: read {}: {e}", cond.id, full.display()));
+        let needle = format!("fn {}(", cond.test_name);
+        assert!(
+            src.contains(&needle),
+            "{}: test_name `{}` is not defined in {} — the contract cites a test that \
+             does not exist, so nothing enforces this gate.",
+            cond.id,
+            cond.test_name,
+            cond.test_file
+        );
+    }
+}
+
 #[test]
 fn apr_serve_api_key_auth_contract_every_condition_is_enforced() {
     let contract = load_contract();
