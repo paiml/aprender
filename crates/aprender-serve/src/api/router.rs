@@ -54,59 +54,146 @@ impl Default for RouterConfig {
     }
 }
 
-/// Routes mounted unconditionally by [`create_router_with_config`], as (method, path).
+/// One row of the route table: the method and path used to *advertise* the
+/// route, and the handler used to *mount* it.
 ///
 /// aprender#2376(12): the 404 body told clients "See /health for available
 /// endpoints", and `/health` returns five status fields and no route list — so
 /// following the instruction in the error message yielded nothing. The 404 now
-/// serves this list itself, and `test_advertised_routes_are_all_mounted` probes
-/// every entry so the list cannot drift into a second false advertisement.
-const NATIVE_ROUTES: &[(&str, &str)] = &[
-    ("GET", "/"),
-    ("GET", "/health"),
-    ("GET", "/health/live"),
-    ("GET", "/health/ready"),
-    ("GET", "/ready"),
-    ("GET", "/metrics"),
-    ("GET", "/metrics/dispatch"),
-    ("POST", "/metrics/dispatch/reset"),
-    ("GET", "/models"),
-    ("POST", "/tokenize"),
-    ("POST", "/generate"),
-    ("POST", "/batch/tokenize"),
-    ("POST", "/batch/generate"),
-    ("POST", "/stream/generate"),
-    ("POST", "/realize/generate"),
-    ("POST", "/realize/batch"),
-    ("POST", "/realize/embed"),
-    ("GET", "/realize/model"),
-    ("POST", "/realize/reload"),
-];
+/// serves this list itself.
+///
+/// The list and the mount used to be two copies — `const`s of `(method, path)`
+/// beside a chain of `.route()` calls. `unadvertised_routes_do_not_answer` was
+/// written to catch a route that is mounted but advertised to nobody, and could
+/// not: it builds its candidate universe by unioning the ADVERTISED lists, so a
+/// route in no list never enters the universe and is never probed. Its doc says
+/// the universe is "every route any configuration mounts"; the code says
+/// advertises. Those differed by exactly three routes — `/api/tags`,
+/// `/api/show` and `/api/version` were mounted, named in no const, and so absent
+/// from the 404 body AND from the `apr serve` startup banner, which prints
+/// `advertised_routes`. An Ollama client calls `/api/tags` before it will chat.
+///
+/// Deriving both from this one table is what makes the class impossible rather
+/// than merely tested: there is no second copy to disagree with, and the
+/// guard's universe is now the table itself.
+type Route = (
+    &'static str,
+    &'static str,
+    axum::routing::MethodRouter<AppState>,
+);
+
+/// Routes mounted unconditionally. `GET /` is not here — it serves the index
+/// built *from* this table, so it cannot be constructed until the table is.
+fn native_routes() -> Vec<Route> {
+    vec![
+        ("GET", "/health", get(health_handler)),
+        ("GET", "/health/live", get(health_live_handler)),
+        ("GET", "/health/ready", get(health_ready_handler)),
+        // `/ready` is the conventional readiness path and an alias of `/health/ready`.
+        ("GET", "/ready", get(health_ready_handler)),
+        // Native Realizar API (legacy paths)
+        ("GET", "/models", get(models_handler)),
+        ("POST", "/tokenize", post(tokenize_handler)),
+        ("POST", "/generate", post(generate_handler)),
+        ("POST", "/batch/tokenize", post(batch_tokenize_handler)),
+        ("POST", "/batch/generate", post(batch_generate_handler)),
+        ("POST", "/stream/generate", post(stream_generate_handler)),
+        // Native Realizar API (spec §5.2 /realize/* paths)
+        ("POST", "/realize/generate", post(stream_generate_handler)),
+        ("POST", "/realize/batch", post(batch_generate_handler)),
+        ("POST", "/realize/embed", post(realize_embed_handler)),
+        ("GET", "/realize/model", get(realize_model_handler)),
+        ("POST", "/realize/reload", post(realize_reload_handler)),
+    ]
+}
+
+/// Routes mounted only when `RouterConfig::metrics` is set (the default).
+///
+/// `apr serve run --no-metrics` must actually withhold telemetry, not just hide
+/// the banner line — and must not go on advertising it either.
+fn metrics_routes() -> Vec<Route> {
+    vec![
+        ("GET", "/metrics", get(metrics_handler)),
+        ("GET", "/metrics/dispatch", get(dispatch_metrics_handler)),
+        (
+            "POST",
+            "/metrics/dispatch/reset",
+            post(dispatch_reset_handler),
+        ),
+    ]
+}
 
 /// Routes mounted only when `RouterConfig::openai_api` is set (the default).
-const OPENAI_ROUTES: &[(&str, &str)] = &[
-    ("GET", "/v1/models"),
-    ("POST", "/v1/completions"),
-    ("POST", "/v1/chat/completions"),
-    ("POST", "/v1/chat/completions/stream"),
-    ("POST", "/v1/embeddings"),
-    ("POST", "/v1/predict"),
-    ("POST", "/v1/explain"),
-    ("GET", "/v1/audit/:request_id"),
-    ("POST", "/v1/gpu/warmup"),
-    ("GET", "/v1/gpu/status"),
-    ("POST", "/v1/batch/completions"),
-    ("GET", "/v1/metrics"),
-    ("POST", "/api/chat"),
-    ("POST", "/api/generate"),
-    ("POST", "/api/embeddings"),
-];
+fn openai_routes() -> Vec<Route> {
+    vec![
+        // OpenAI-compatible API (v1) - spec §5.1
+        ("GET", "/v1/models", get(openai_models_handler)),
+        ("POST", "/v1/completions", post(openai_completions_handler)),
+        (
+            "POST",
+            "/v1/chat/completions",
+            post(openai_chat_completions_handler),
+        ),
+        (
+            "POST",
+            "/v1/chat/completions/stream",
+            post(openai_chat_completions_stream_handler),
+        ),
+        ("POST", "/v1/embeddings", post(openai_embeddings_handler)),
+        // APR-specific API (spec §15.1)
+        ("POST", "/v1/predict", post(apr_predict_handler)),
+        ("POST", "/v1/explain", post(apr_explain_handler)),
+        ("GET", "/v1/audit/:request_id", get(apr_audit_handler)),
+        // GPU batch inference API (PARITY-022)
+        ("POST", "/v1/gpu/warmup", post(gpu_warmup_handler)),
+        ("GET", "/v1/gpu/status", get(gpu_status_handler)),
+        (
+            "POST",
+            "/v1/batch/completions",
+            post(gpu_batch_completions_handler),
+        ),
+        // TUI monitoring API (PARITY-107)
+        ("GET", "/v1/metrics", get(server_metrics_handler)),
+        // PMAT-923: Ollama-native HTTP API (/api/* prefix) — makes `apr serve` a
+        // drop-in Ollama HTTP replacement. Both delegate to the OpenAI chat
+        // generation path. Discharges OBLIG-OLLAMA-API-CHAT-GENERATE-ROUTED.
+        ("POST", "/api/chat", post(ollama_chat_handler)),
+        ("POST", "/api/generate", post(ollama_generate_handler)),
+        // Model discovery. Ollama clients call /api/tags BEFORE issuing any chat
+        // request and /api/show to probe capabilities; without them the "drop-in
+        // Ollama replacement" claim above is unreachable in practice.
+        ("GET", "/api/tags", get(ollama_tags_handler)),
+        ("POST", "/api/show", post(ollama_show_handler)),
+        ("GET", "/api/version", get(ollama_version_handler)),
+        // aprender#2396(2): every Ollama embedding client posts here; the route
+        // did not exist, so they got the 404 fallback.
+        ("POST", "/api/embeddings", post(ollama_embeddings_handler)),
+    ]
+}
 
-/// Routes mounted only in CUDA builds (realizr#191).
+/// Routes mounted only in CUDA builds (realizr#191, F-QUALITY-01).
 #[cfg(feature = "cuda")]
-const CUDA_ROUTES: &[(&str, &str)] = &[("POST", "/v1/logprobs"), ("POST", "/v1/perplexity")];
+fn cuda_routes() -> Vec<Route> {
+    vec![
+        ("POST", "/v1/logprobs", post(logprobs_handler)),
+        ("POST", "/v1/perplexity", post(perplexity_handler)),
+    ]
+}
 
-/// The routes this router mounts, as `"METHOD /path"` strings for the 404 body.
+/// Every route this configuration mounts, in advertised order.
+fn route_table(config: &RouterConfig) -> Vec<Route> {
+    let mut table = native_routes();
+    if config.metrics {
+        table.extend(metrics_routes());
+    }
+    if config.openai_api {
+        table.extend(openai_routes());
+    }
+    #[cfg(feature = "cuda")]
+    table.extend(cuda_routes());
+    table
+}
+
 /// The routes a server built with `config` serves, as `"METHOD /path"` strings.
 ///
 /// Callers that advertise the surface — the 404 body, the CLI startup banner —
@@ -116,32 +203,20 @@ const CUDA_ROUTES: &[(&str, &str)] = &[("POST", "/v1/logprobs"), ("POST", "/v1/p
 /// known; it named `/generate` for `.apr` models, where the route is not mounted,
 /// and `/v1/predict` for GGUF models, where it can only answer 503.
 ///
-/// `advertised_routes_answer_under_every_config` and `unadvertised_routes_do_not_answer`
-/// probe every entry against a live router under each configuration, so this list
-/// cannot drift from the mounted surface without a test going red.
+/// Derived from `route_table`, the same table `create_router_with_config` mounts,
+/// so advertising a route and mounting it are one act.
 pub fn advertised_routes(config: &RouterConfig) -> Vec<String> {
-    route_index(config)
+    route_index_of(&route_table(config))
 }
 
-fn route_index(config: &RouterConfig) -> Vec<String> {
-    let fmt = |(method, path): &(&str, &str)| format!("{method} {path}");
-    // The advertised list is derived under the SAME conditions as the mount loop
-    // below. Taking only `openai_api` was not enough: `--no-metrics` unmounts
-    // `/metrics`, `/metrics/dispatch` and `/metrics/dispatch/reset`, and this list
-    // went on advertising all three, so the 404 body and the startup banner both
-    // named routes that 404. Caught by `advertised_routes_answer_under_every_config`,
-    // which probes every advertised entry against a live router under each config.
-    let metrics_route = |(_, path): &&(&str, &str)| {
-        matches!(*path, "/metrics" | "/metrics/dispatch" | "/metrics/dispatch/reset")
-    };
-    let mut routes: Vec<String> =
-        NATIVE_ROUTES.iter().filter(|r| config.metrics || !metrics_route(r)).map(fmt).collect();
-    if config.openai_api {
-        routes.extend(OPENAI_ROUTES.iter().map(fmt));
-    }
-    #[cfg(feature = "cuda")]
-    routes.extend(CUDA_ROUTES.iter().map(fmt));
-    routes
+fn route_index_of(table: &[Route]) -> Vec<String> {
+    std::iter::once("GET /".to_string())
+        .chain(
+            table
+                .iter()
+                .map(|(method, path, _)| format!("{method} {path}")),
+        )
+        .collect()
 }
 
 /// Create the API router with default options (OpenAI API enabled)
@@ -167,110 +242,38 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
     // route table this router actually mounted — the one thing a client needs to
     // discover the surface it landed on — and `/ready` is the conventional
     // readiness path, an alias of `/health/ready`.
-    let index_routes = route_index(&config);
-    let mut router = Router::new()
-        .route(
-            "/",
-            get(move || {
-                let routes = index_routes.clone();
-                async move {
-                    Json(serde_json::json!({
-                        "service": "apr serve",
-                        "version": env!("CARGO_PKG_VERSION"),
-                        "routes": routes,
-                    }))
-                }
-            }),
-        )
-        // Health and metrics (CRUX-C-34: /health, /health/live, /health/ready)
-        .route("/health", get(health_handler))
-        .route("/health/live", get(health_live_handler))
-        .route("/health/ready", get(health_ready_handler))
-        // `/ready` is the conventional readiness path and an alias of
-        // `/health/ready`. It is listed in this router's advertised route table
-        // (NATIVE_ROUTES above), so leaving it unmounted would advertise a route
-        // that 404s — the index would lie about the surface it is serving.
-        // Verified by test_root_and_ready_are_mounted, whose failure body lists
-        // "GET /ready" among the available routes while 404ing on it.
-        .route("/ready", get(health_ready_handler))
-        // Native Realizar API (legacy paths)
-        .route("/models", get(models_handler))
-        .route("/tokenize", post(tokenize_handler))
-        .route("/generate", post(generate_handler))
-        .route("/batch/tokenize", post(batch_tokenize_handler))
-        .route("/batch/generate", post(batch_generate_handler))
-        .route("/stream/generate", post(stream_generate_handler))
-        // Native Realizar API (spec §5.2 /realize/* paths)
-        .route("/realize/generate", post(stream_generate_handler))
-        .route("/realize/batch", post(batch_generate_handler))
-        .route("/realize/embed", post(realize_embed_handler))
-        .route("/realize/model", get(realize_model_handler))
-        .route("/realize/reload", post(realize_reload_handler));
+    let table = route_table(&config);
+    let index_routes = route_index_of(&table);
 
-    // Metrics endpoints conditionally enabled: `apr serve run --no-metrics`
-    // must actually withhold telemetry, not just hide the banner line.
-    if config.metrics {
-        router = router
-            .route("/metrics", get(metrics_handler))
-            .route("/metrics/dispatch", get(dispatch_metrics_handler))
-            .route("/metrics/dispatch/reset", post(dispatch_reset_handler));
-    }
+    // `GET /` answers with the route table this router actually mounted — the one
+    // thing a client needs to discover the surface it landed on. It is mounted
+    // separately because its body is the index derived from `table`.
+    let root_index = index_routes.clone();
+    let mut router = Router::new().route(
+        "/",
+        get(move || {
+            let routes = root_index.clone();
+            async move {
+                Json(serde_json::json!({
+                    "service": "apr serve",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "routes": routes,
+                }))
+            }
+        }),
+    );
 
-    // GH-148: OpenAI-compatible API conditionally enabled
-    if config.openai_api {
-        router = router
-            // OpenAI-compatible API (v1) - spec §5.1
-            .route("/v1/models", get(openai_models_handler))
-            .route("/v1/completions", post(openai_completions_handler))
-            .route(
-                "/v1/chat/completions",
-                post(openai_chat_completions_handler),
-            )
-            .route(
-                "/v1/chat/completions/stream",
-                post(openai_chat_completions_stream_handler),
-            )
-            .route("/v1/embeddings", post(openai_embeddings_handler))
-            // APR-specific API (spec §15.1)
-            .route("/v1/predict", post(apr_predict_handler))
-            .route("/v1/explain", post(apr_explain_handler))
-            .route("/v1/audit/:request_id", get(apr_audit_handler))
-            // GPU batch inference API (PARITY-022)
-            .route("/v1/gpu/warmup", post(gpu_warmup_handler))
-            .route("/v1/gpu/status", get(gpu_status_handler))
-            .route("/v1/batch/completions", post(gpu_batch_completions_handler))
-            // TUI monitoring API (PARITY-107)
-            .route("/v1/metrics", get(server_metrics_handler))
-            // PMAT-923: Ollama-native HTTP API (/api/* prefix) — makes `apr serve`
-            // a drop-in Ollama HTTP replacement. Both delegate to the OpenAI chat
-            // generation path. Discharges OBLIG-OLLAMA-API-CHAT-GENERATE-ROUTED.
-            .route("/api/chat", post(ollama_chat_handler))
-            .route("/api/generate", post(ollama_generate_handler))
-            // Model discovery. Ollama clients call /api/tags BEFORE issuing any
-            // chat request and /api/show to probe capabilities; without them the
-            // "drop-in Ollama replacement" claim above is unreachable in practice.
-            .route("/api/tags", get(ollama_tags_handler))
-            .route("/api/show", post(ollama_show_handler))
-            .route("/api/version", get(ollama_version_handler))
-            // aprender#2396(2): every Ollama embedding client posts here; the route
-            // did not exist, so they got the 404 fallback.
-            .route("/api/embeddings", post(ollama_embeddings_handler));
-    }
-
-    // realizr#191: Logprobs + perplexity endpoints (CUDA only, F-QUALITY-01)
-    #[cfg(feature = "cuda")]
-    {
-        router = router
-            .route("/v1/logprobs", post(logprobs_handler))
-            .route("/v1/perplexity", post(perplexity_handler));
+    // Mount from the same table the index was built from. Advertising a route and
+    // mounting it are now one act, so they cannot disagree.
+    for (_, path, handler) in table {
+        router = router.route(path, handler);
     }
 
     // GH-672: Return JSON error body for unmatched routes (not empty 404)
     // aprender#2376(12): serve the route list here instead of pointing clients at
     // /health, which does not have one.
-    let routes = route_index(&config);
     router = router.fallback(move || {
-        let routes = routes.clone();
+        let routes = index_routes.clone();
         async move {
             (
                 axum::http::StatusCode::NOT_FOUND,

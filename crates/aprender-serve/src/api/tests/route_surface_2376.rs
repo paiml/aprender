@@ -385,3 +385,100 @@ async fn route_list_survives_the_envelope() {
         "the 404 must still list the routes it promises: {body}"
     );
 }
+
+/// Every route this router mounts must come from `route_table`.
+///
+/// `unadvertised_routes_do_not_answer` above builds its candidate universe by
+/// unioning the ADVERTISED lists. That was structurally unable to catch the
+/// defect it was written for: `/api/tags`, `/api/show` and `/api/version` were
+/// mounted, named in no list, and so never entered the universe and were never
+/// probed. Its doc comment claims the universe is "every route any configuration
+/// mounts"; the code says advertises, and those differed by exactly three routes.
+///
+/// Folding the index and the mount into one table closed that gap by
+/// construction — advertised and mounted are now the same list, because the
+/// mount loop consumes the table the index was built from. This test is the
+/// REINTRODUCTION guard: a hand-written `.route("/path", ...)` would restore the
+/// two-copy pattern and silently reopen the hole, since such a route is once
+/// again mounted and advertised to nobody.
+///
+/// Source-level because axum exposes no way to enumerate a `Router`'s paths.
+#[test]
+fn every_mounted_route_comes_from_the_route_table() {
+    let src = include_str!("../router.rs");
+
+    // `GET /` is mounted by hand and advertised by hand: its body IS the index
+    // derived from the table, so it cannot be a row of the table it prints.
+    const HAND_MOUNTED: &[&str] = &["/"];
+
+    // Vacuity control FIRST: prove we are reading the real router with a real
+    // table before concluding anything from an absence. Rows look like
+    // `("GET", "/health", get(handler))`.
+    let table_rows = ["(\"GET\", \"/", "(\"POST\", \"/"]
+        .iter()
+        .map(|pat| src.matches(pat).count())
+        .sum::<usize>();
+    assert!(
+        table_rows > 30,
+        "found only {table_rows} route-table rows — this test is parsing the wrong \
+         thing, or the table was dismantled. Fix the parser, not this number."
+    );
+
+    // Any `.route(` whose first argument is a string literal is a direct mount
+    // that bypasses the table. `.route(path, handler)` in the fold loop is not.
+    let literal_mounts: Vec<&str> = src
+        .match_indices(".route(")
+        .filter_map(|(i, m)| {
+            let rest = &src[i + m.len()..];
+            let arg = rest.trim_start();
+            let arg = arg.strip_prefix('"')?;
+            let end = arg.find('"')?;
+            Some(&arg[..end])
+        })
+        .collect();
+
+    for path in &literal_mounts {
+        assert!(
+            HAND_MOUNTED.contains(path),
+            "`{path}` is mounted by a hand-written .route() call rather than from \
+             route_table(), so it is advertised to nobody — neither the 404 body nor \
+             the `apr serve` startup banner will name it. Add it to a *_routes() table."
+        );
+    }
+
+    // And the hand-mounted allowlist must not rot: `/` really is still mounted.
+    assert!(
+        literal_mounts.contains(&"/"),
+        "`GET /` is no longer mounted directly; the allowlist is stale: {literal_mounts:?}"
+    );
+}
+
+/// The Ollama discovery surface must EXIST, not merely be self-consistent.
+///
+/// The table fold makes the index and the mount agree by construction — but
+/// agreement with nothing is still agreement. Deleting `/api/tags`, `/api/show`
+/// and `/api/version` from `route_table` removes them from both sides at once
+/// and every consistency test above stays green. Verified: that mutation passes
+/// all nine of them.
+///
+/// So this asserts the capability instead of the coherence. An Ollama client
+/// calls `/api/tags` before it will chat and `/api/show` to probe capabilities;
+/// without them the "drop-in Ollama replacement" claim in `openai_routes` is
+/// unreachable in practice, however tidy the routing table is.
+#[tokio::test]
+async fn ollama_discovery_routes_answer() {
+    let config = RouterConfig::default();
+    for (method, path) in [
+        ("GET", "/api/tags"),
+        ("POST", "/api/show"),
+        ("GET", "/api/version"),
+    ] {
+        let (status, _, _) = probe(&config, method, path, Some("application/json"), "{}").await;
+        assert_ne!(
+            status,
+            StatusCode::NOT_FOUND,
+            "{method} {path} does not answer — an Ollama client probes this before it \
+             will chat, so the drop-in replacement claim is dead without it"
+        );
+    }
+}
