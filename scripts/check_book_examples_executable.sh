@@ -40,8 +40,20 @@ total=0
 # freshly-built binary, which for this gate is a SKIP, not a failure — the
 # examples are still scanned and rust blocks still reported.
 APR_BIN=""
+# The pinned binary must be REACHED, not merely resolved. Every example below
+# runs through `bash -c "$code"`, and the code says `apr ...` -- which PATH
+# resolves, not $APR_BIN. On this box a bare `apr` was /home/noah/.local/bin/apr
+# = 0.60.0, so the gate that certifies the book's CLI examples was exercising a
+# binary from a different release than the tree it was gating. Putting the pinned
+# binary FIRST on PATH covers `apr` in any position, including pipelines and
+# subshells, which substituting a leading token does not.
+APR_PATH_PREFIX=""
 if . scripts/apr_bin.sh 2>/dev/null; then
     APR_BIN="$APR"
+    APR_PATH_PREFIX="$(dirname "$APR_BIN")"
+    PATH="${APR_PATH_PREFIX}:${PATH}"
+    export PATH
+    echo "[INFO] apr pinned to $APR_BIN (prepended to PATH)"
 else
     echo "[INFO] no apr binary built from HEAD; all CLI examples will SKIP"
     echo "[INFO]   build one with: cargo build --release -p apr-cli --bin apr"
@@ -230,6 +242,23 @@ echo ""
 echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: total=$total pass=$pass skip=$skip fail=$fail"
 if [ "$fail" -gt 0 ]; then
     echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: FAIL"
+    exit 1
+fi
+
+# A run that executed NOTHING is not a pass. With no apr binary built from HEAD
+# every CLI example skips, and this gate printed
+#   total=244 pass=0 skip=244 fail=0 ... PASS
+# which is the whole "gate that cannot fail" class in one line: the number that
+# mattered was zero and the verdict was green.
+if [ "$total" -gt 0 ] && [ "$pass" -eq 0 ]; then
+    if [ -z "$APR_BIN" ]; then
+        echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: NOT RUN — no apr binary built from HEAD," \
+             "so all $skip example(s) skipped and nothing was verified."
+        echo "  Build one first:  cargo build --release -p apr-cli --bin apr"
+        exit 1
+    fi
+    echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: FAIL — apr is available at $APR_BIN but" \
+         "0 of $total example(s) executed. The gate measured nothing."
     exit 1
 fi
 echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: PASS"
