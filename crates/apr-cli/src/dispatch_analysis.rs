@@ -1025,6 +1025,25 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             cluster, model, adapters, *rank, *epochs, *budget_mb, *dry_run, cli.json,
         ),
         TrainCommands::ClusterStatus { cluster } => train::run_cluster_status(cluster, cli.json),
+
+        // APR-MONO Rule 1 rehoming: each arm calls the `::cli::run_*` entry
+        // point that the deleted `aprender-train-*` binary's `main` called.
+        TrainCommands::Bench { action } => train_tools::dispatch_bench(action, cli),
+        TrainCommands::Distill { action } => train_tools::dispatch_distill(action, cli),
+        TrainCommands::Inspect { action } => train_tools::dispatch_inspect(action, cli),
+        TrainCommands::Lora { action } => train_tools::dispatch_lora(action, cli),
+        TrainCommands::Shell {
+            session,
+            command,
+            format,
+            no_color,
+        } => train_tools::dispatch_shell(
+            session.as_deref(),
+            command.as_deref(),
+            format,
+            *no_color,
+            cli,
+        ),
     }
 }
 

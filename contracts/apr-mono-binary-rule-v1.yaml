@@ -1,7 +1,7 @@
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   created: "2026-04-08"
-  updated: "2026-04-10"
+  updated: "2026-08-14"
   author: PAIML Engineering
   registry: true
   references:
@@ -39,14 +39,12 @@ equations:
       BUILD-TOOL (1 crate, 1 binary):
         aprender-contracts-cli -> pv               # Contract validation (Rule 2 exception)
 
-      INTERNAL-HELPER (8 crates, 9 binaries):
+      INTERNAL-HELPER (6 crates, 7 binaries):
         aprender-cbtop         -> aprender-cbtop   # GPU monitor, called by `apr monitor`
         aprender-present-cli   -> presentar        # TUI server, called by `apr present`
         aprender-present-terminal -> score, ptop   # TUI widgets, used by presentar
         aprender-ptx-debug     -> aprender-ptx-debug  # CUDA PTX debugger (dev-only)
         aprender-test-cli      -> aprender-test-cli    # WASM test runner (dev-only)
-        aprender-train-bench   -> aprender-train-bench # Training benchmark harness
-        aprender-train-shell   -> aprender-train-shell # Interactive training REPL
         aprender-viz-ttop      -> aprender-viz-ttop    # Standalone ttop (excluded from workspace)
 
       QA-TOOL (2 crates, 2 binaries — from Phase 2g port):
@@ -57,17 +55,36 @@ equations:
         aprender-serve         -> [[example]] aprender-serve   # Was: inference server. Use `apr serve`.
         aprender-train         -> [[example]] aprender-train   # Was: training CLI. Use `apr train`.
 
-      LEGACY-TO-MIGRATE (8 crates, 9 binaries):
+      MIGRATED (5 crates — [[bin]] DELETED, capability rehomed under `apr train`, 2026-08-14):
+        aprender-train-bench   -> `apr train bench`    # entrenar_bench::cli::run_*
+        aprender-train-distill -> `apr train distill`  # entrenar_distill::cli::run_*
+        aprender-train-inspect -> `apr train inspect`  # entrenar_inspect::cli::run_*
+        aprender-train-lora    -> `apr train lora`     # entrenar_lora::cli::run_*
+        aprender-train-shell   -> `apr train shell`    # entrenar_shell::cli::run_*
+
+      Why `apr train <tool>` and not the mappings this contract previously
+      guessed (`apr distill`, `apr finetune`):
+        - `apr distill` and `apr finetune` are flag-driven commands with an
+          optional leading positional. Bolting `run|estimate|validate|export`
+          onto them makes the first positional ambiguous — a breaking change to
+          a shipped surface.
+        - `apr bench` measures INFERENCE throughput of a model file;
+          `aprender-train-bench` sweeps DISTILLATION hyperparameters. Same word,
+          different subject. `apr inspect` reads `.apr` metadata;
+          `aprender-train-inspect` reads SafeTensors training checkpoints.
+          Neither pair is a duplicate, so neither binary could simply be deleted.
+        - `apr train` is already the training namespace (plan/apply/watch/sweep/
+          halving/archive/submit/cluster-status) and the crate names are
+          `aprender-train-*`, so the rehoming is 1:1 and mechanical.
+
+      LEGACY-TO-MIGRATE (5 crates, 5 binaries):
         aprender-cgp           -> aprender-cgp     # Contract graph processor → `apr contracts graph`
         aprender-data          -> alimentar        # Data loading → `apr data`
         aprender-db            -> aprender-db      # Embedded DB → `apr db`
         aprender-simulate      -> simular          # Simulation → `apr simulate`
-        aprender-train-distill -> aprender-train-distill  # Distillation → `apr distill`
-        aprender-train-inspect -> aprender-train-inspect  # Weight inspector → `apr train inspect`
-        aprender-train-lora    -> aprender-train-lora     # LoRA training → `apr finetune`
         aprender-zram-cli      -> trueno-zram      # ZRAM manager → `apr zram`
 
-    domain: 20 crates (22 → 20 after 2 migrated to [[example]])
+    domain: 15 crates (22 → 20 after 2 migrated to [[example]]; → 15 after 5 train tools rehomed)
     codomain: classification
     invariants:
     - "USER-FACING count == 1 (apr only)"
@@ -87,21 +104,45 @@ falsification_tests:
 
 - id: FALSIFY-BINRULE-002
   rule: binary count monotonically decreasing
-  prediction: "total [[bin]] count <= 21 (never increases without justification)"
+  prediction: "total [[bin]] count <= 18 (never increases without justification)"
+  # Ratchet history: the bound read `<= 21` while the tree carried 23, so this
+  # test was RED and nobody read it. Deleting the five aprender-train-* bins
+  # (2026-08-14) brought the real count to 18; the bound is pinned there. It is
+  # `-le`, so a later shard that removes more binaries still passes — only an
+  # ADDED binary turns it red, which is the whole point.
   test: |
     COUNT=$(grep -r '^\[\[bin\]\]' crates/*/Cargo.toml | wc -l)
-    [ "$COUNT" -le 21 ]
+    [ "$COUNT" -le 18 ]
   if_fails: "new binary added without updating this contract"
 
 - id: FALSIFY-BINRULE-003
   rule: legacy binaries have apr subcommand equivalent
-  prediction: "every LEGACY binary's functionality is accessible via apr subcommand"
+  prediction: "every LEGACY/MIGRATED binary's functionality is reachable as an apr subcommand"
+  # This used to grep `crates/apr-cli/src/commands_enum.rs` for the quoted
+  # strings "serve" "train" "distill" "data". None of the four has ever
+  # appeared in that file — the enum spells them `Serve {`, and `train` /
+  # `distill` live in extended_commands.rs / model_ops_commands.rs — so the
+  # test could only ever exit 1. It now reads the command registry that
+  # CLAUDE.md names as authoritative, which does list them.
   test: |
-    # Verify apr serve, apr train, apr distill, apr data all have handlers
     for cmd in serve train distill data; do
-      grep -q "\"$cmd\"" crates/apr-cli/src/commands_enum.rs || exit 1
+      grep -q "^  - name: ${cmd}\$" contracts/apr-cli-commands-v1.yaml || exit 1
     done
   if_fails: "legacy binary has no apr subcommand migration path"
+
+- id: FALSIFY-BINRULE-004
+  rule: the rehomed train tools kept their [[bin]] deleted AND stayed reachable
+  prediction: >
+    No aprender-train-{bench,distill,inspect,lora,shell} crate declares a
+    [[bin]], and each still exposes the cli:: entry point `apr train <tool>`
+    dispatches to.
+  test: |
+    for c in bench distill inspect lora shell; do
+      grep -q '^\[\[bin\]\]' "crates/aprender-train-${c}/Cargo.toml" && exit 1
+      test -f "crates/aprender-train-${c}/src/cli.rs" || exit 1
+    done
+    exit 0
+  if_fails: "a train tool either grew its binary back or lost its library entry point"
 
 proof_obligations:
 - type: invariant
@@ -112,5 +153,5 @@ proof_obligations:
 verification_summary:
   total_obligations: 2
   proven: 0
-  tested: 3
+  tested: 4
   status: audited

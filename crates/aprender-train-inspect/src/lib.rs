@@ -12,6 +12,7 @@
 //! - **SMED**: Quick format conversion for deployment changeover
 
 pub mod architecture;
+pub mod cli;
 pub mod convert;
 pub mod inspect;
 pub mod validate;

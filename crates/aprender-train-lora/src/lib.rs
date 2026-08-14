@@ -11,6 +11,7 @@
 //! - **Kaizen**: Iterative configuration refinement
 //! - **Muda Elimination**: Optimal rank selection avoids wasted parameters
 
+pub mod cli;
 pub mod memory;
 pub mod merge;
 pub mod optimizer;

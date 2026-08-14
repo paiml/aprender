@@ -1,170 +1,27 @@
-//! entrenar-bench CLI entry point.
+//! Command implementations for the distillation benchmark tool.
+//!
+//! These functions were the body of the `aprender-train-bench` binary's
+//! `main.rs`. That binary is gone (APR-MONO Rule 1: `apr` is the only
+//! user-facing binary); the capability is reachable as `apr train bench <verb>`,
+//! which calls exactly these entry points. Nothing was reimplemented in the CLI
+//! layer — `apr` parses arguments and delegates here.
 
 // The `serde_json::json!` macro expands to code containing `.unwrap()`, which
-// trips clippy::disallowed_methods on the macro invocation site even though no
-// author-written unwrap exists. Scope the allow to this benchmarking binary.
+// trips clippy::disallowed_methods at the macro invocation site even though no
+// author-written unwrap exists. Scope the allow to this presentation module.
 #![allow(clippy::disallowed_methods)]
 
-use clap::{Parser, Subcommand};
-use entrenar_bench::{
-    cost::{generate_sample_points, Constraints, CostModel, CostPerformanceAnalysis},
-    strategies::{compare, DistillStrategy},
-    sweep::{SweepConfig, Sweeper},
-};
-use entrenar_common::cli::{styles, CommonArgs};
+use crate::cost::{generate_sample_points, Constraints, CostModel, CostPerformanceAnalysis};
+use crate::strategies::{compare, DistillStrategy};
+use crate::sweep::{SweepConfig, Sweeper};
+use entrenar_common::cli::styles;
 
-#[derive(Parser)]
-#[command(name = "entrenar-bench")]
-#[command(about = "Distillation benchmarking and hyperparameter sweep tool")]
-#[command(version)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-
-    #[command(flatten)]
-    common: CommonArgs,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Sweep temperature hyperparameter
-    Temperature {
-        /// Start of range
-        #[arg(long, default_value = "1.0")]
-        start: f32,
-
-        /// End of range
-        #[arg(long, default_value = "8.0")]
-        end: f32,
-
-        /// Step size
-        #[arg(long, default_value = "0.5")]
-        step: f32,
-
-        /// Runs per configuration
-        #[arg(long, default_value = "3")]
-        runs: usize,
-    },
-
-    /// Sweep alpha hyperparameter
-    Alpha {
-        /// Start of range
-        #[arg(long, default_value = "0.1")]
-        start: f32,
-
-        /// End of range
-        #[arg(long, default_value = "0.9")]
-        end: f32,
-
-        /// Step size
-        #[arg(long, default_value = "0.1")]
-        step: f32,
-
-        /// Runs per configuration
-        #[arg(long, default_value = "3")]
-        runs: usize,
-    },
-
-    /// Compare distillation strategies
-    Compare {
-        /// Strategies to compare (kd, progressive, attention, combined, all)
-        #[arg(long, value_delimiter = ',', default_value = "all")]
-        strategies: Vec<String>,
-
-        /// Runs per strategy
-        #[arg(long, default_value = "5")]
-        runs: usize,
-    },
-
-    /// Run ablation study
-    Ablation {
-        /// Base configuration file
-        #[arg(short, long)]
-        config: Option<std::path::PathBuf>,
-    },
-
-    /// Analyze cost vs performance trade-offs
-    CostPerformance {
-        /// GPU type for cost calculation
-        #[arg(long, default_value = "a100-80gb")]
-        gpu: String,
-
-        /// Path to benchmark results file (JSON)
-        #[arg(long)]
-        results: Option<std::path::PathBuf>,
-    },
-
-    /// Recommend configurations based on constraints
-    Recommend {
-        /// Maximum GPU-hours
-        #[arg(long)]
-        max_gpu_hours: Option<f64>,
-
-        /// Maximum cost in USD
-        #[arg(long)]
-        max_cost: Option<f64>,
-
-        /// Minimum accuracy required (0.0 - 1.0)
-        #[arg(long)]
-        min_accuracy: Option<f64>,
-
-        /// Maximum memory in GB
-        #[arg(long)]
-        max_memory: Option<f64>,
-
-        /// GPU type for cost calculation
-        #[arg(long, default_value = "a100-80gb")]
-        gpu: String,
-    },
-}
-
-fn main() {
-    let cli = Cli::parse();
-    let config = cli.common.to_cli();
-
-    let result = match cli.command {
-        Commands::Temperature {
-            start,
-            end,
-            step,
-            runs,
-        } => temperature_command(start, end, step, runs, &config),
-        Commands::Alpha {
-            start,
-            end,
-            step,
-            runs,
-        } => alpha_command(start, end, step, runs, &config),
-        Commands::Compare { strategies, runs } => compare_command(&strategies, runs, &config),
-        Commands::Ablation { config: cfg_path } => ablation_command(cfg_path.as_deref(), &config),
-        Commands::CostPerformance { gpu, results } => {
-            cost_performance_command(&gpu, results.as_deref(), &config)
-        }
-        Commands::Recommend {
-            max_gpu_hours,
-            max_cost,
-            min_accuracy,
-            max_memory,
-            gpu,
-        } => recommend_command(
-            max_gpu_hours,
-            max_cost,
-            min_accuracy,
-            max_memory,
-            &gpu,
-            &config,
-        ),
-    };
-
-    if let Err(e) = result {
-        if !config.is_quiet() {
-            eprintln!("{}", styles::error(&e.to_string()));
-        }
-        std::process::exit(1);
-    }
-}
-
-fn temperature_command(
+/// Sweep the distillation temperature hyperparameter over `start..end`.
+///
+/// # Errors
+///
+/// Propagates sweep failures from [`Sweeper::run`].
+pub fn run_temperature(
     start: f32,
     end: f32,
     step: f32,
@@ -204,7 +61,12 @@ fn temperature_command(
     Ok(())
 }
 
-fn alpha_command(
+/// Sweep the KD/CE mixing weight (alpha) over `start..end`.
+///
+/// # Errors
+///
+/// Propagates sweep failures from [`Sweeper::run`].
+pub fn run_alpha(
     start: f32,
     end: f32,
     step: f32,
@@ -244,30 +106,51 @@ fn alpha_command(
     Ok(())
 }
 
-fn compare_command(
-    strategy_names: &[String],
-    _runs: usize,
-    cli: &entrenar_common::Cli,
-) -> entrenar_common::Result<()> {
-    let strategies: Vec<DistillStrategy> = if strategy_names.iter().any(|s| s == "all") {
-        vec![
+/// Resolve strategy names to [`DistillStrategy`] values.
+///
+/// `"all"` anywhere in the list expands to every strategy. Unknown names are
+/// dropped; an all-unknown list yields an empty vector, which
+/// [`run_compare`] turns into a refusal.
+#[must_use]
+pub fn resolve_strategies(strategy_names: &[String]) -> Vec<DistillStrategy> {
+    if strategy_names.iter().any(|s| s == "all") {
+        return vec![
             DistillStrategy::kd_only(),
             DistillStrategy::progressive(),
             DistillStrategy::attention(),
             DistillStrategy::combined(),
-        ]
-    } else {
-        strategy_names
-            .iter()
-            .filter_map(|name| match name.to_lowercase().as_str() {
-                "kd" | "kd-only" | "kdonly" => Some(DistillStrategy::kd_only()),
-                "progressive" | "prog" => Some(DistillStrategy::progressive()),
-                "attention" | "attn" => Some(DistillStrategy::attention()),
-                "combined" | "all" => Some(DistillStrategy::combined()),
-                _ => None,
-            })
-            .collect()
-    };
+        ];
+    }
+
+    strategy_names
+        .iter()
+        .filter_map(|name| match name.to_lowercase().as_str() {
+            "kd" | "kd-only" | "kdonly" => Some(DistillStrategy::kd_only()),
+            "progressive" | "prog" => Some(DistillStrategy::progressive()),
+            "attention" | "attn" => Some(DistillStrategy::attention()),
+            "combined" | "all" => Some(DistillStrategy::combined()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Compare distillation strategies head to head.
+///
+/// `runs` is accepted for CLI compatibility and deliberately unused: the
+/// comparison harness is deterministic, so repeat runs produce identical
+/// numbers. This matches the pre-migration binary exactly.
+///
+/// # Errors
+///
+/// Returns [`entrenar_common::EntrenarError::ConfigValue`] when no name in
+/// `strategy_names` resolves to a known strategy.
+pub fn run_compare(
+    strategy_names: &[String],
+    runs: usize,
+    cli: &entrenar_common::Cli,
+) -> entrenar_common::Result<()> {
+    let _ = runs;
+    let strategies = resolve_strategies(strategy_names);
 
     if strategies.is_empty() {
         return Err(entrenar_common::EntrenarError::ConfigValue {
@@ -316,10 +199,19 @@ fn compare_command(
     Ok(())
 }
 
-fn ablation_command(
-    _config_path: Option<&std::path::Path>,
+/// Run the ablation study: baseline, +KD, +progressive, +attention.
+///
+/// `config_path` is accepted for CLI compatibility and deliberately unused —
+/// the ablation ladder is fixed in code. This matches the pre-migration binary.
+///
+/// # Errors
+///
+/// Propagates comparison failures from [`compare`].
+pub fn run_ablation(
+    config_path: Option<&std::path::Path>,
     cli: &entrenar_common::Cli,
 ) -> entrenar_common::Result<()> {
+    let _ = config_path;
     if !cli.is_quiet() {
         println!("{}", styles::header("Ablation Study"));
         println!("Testing contribution of each component...\n");
@@ -392,11 +284,21 @@ fn ablation_command(
     Ok(())
 }
 
-fn cost_performance_command(
+/// Analyse the cost/performance frontier for a GPU type.
+///
+/// `results_path` is accepted for CLI compatibility and deliberately unused —
+/// the analysis runs on generated sample points. This matches the
+/// pre-migration binary.
+///
+/// # Errors
+///
+/// Returns [`entrenar_common::EntrenarError::ConfigValue`] for an unknown GPU.
+pub fn run_cost_performance(
     gpu: &str,
-    _results_path: Option<&std::path::Path>,
+    results_path: Option<&std::path::Path>,
     cli: &entrenar_common::Cli,
 ) -> entrenar_common::Result<()> {
+    let _ = results_path;
     // Parse GPU type
     let cost_model = parse_gpu_model(gpu)?;
 
@@ -495,7 +397,8 @@ fn print_constraints(
 }
 
 /// Build a `Constraints` value from optional fields.
-fn build_constraints(
+#[must_use]
+pub fn build_constraints(
     max_gpu_hours: Option<f64>,
     max_cost: Option<f64>,
     min_accuracy: Option<f64>,
@@ -518,7 +421,7 @@ fn build_constraints(
 }
 
 /// Print human-readable recommendation output (non-JSON).
-fn print_recommendations(recommendations: &[entrenar_bench::cost::Recommendation]) {
+fn print_recommendations(recommendations: &[crate::cost::Recommendation]) {
     if recommendations.is_empty() {
         println!(
             "{}",
@@ -552,7 +455,7 @@ fn print_recommendations(recommendations: &[entrenar_bench::cost::Recommendation
 }
 
 /// Print optional configuration fields (LoRA rank, quantization bits, temperature).
-fn print_optional_config(config: &entrenar_bench::cost::ConfigParams) {
+fn print_optional_config(config: &crate::cost::ConfigParams) {
     if let Some(rank) = config.lora_rank {
         println!("    LoRA rank: {rank}");
     }
@@ -564,7 +467,12 @@ fn print_optional_config(config: &entrenar_bench::cost::ConfigParams) {
     }
 }
 
-fn recommend_command(
+/// Recommend configurations that satisfy the given budget constraints.
+///
+/// # Errors
+///
+/// Returns [`entrenar_common::EntrenarError::ConfigValue`] for an unknown GPU.
+pub fn run_recommend(
     max_gpu_hours: Option<f64>,
     max_cost: Option<f64>,
     min_accuracy: Option<f64>,
@@ -608,7 +516,13 @@ fn recommend_command(
     Ok(())
 }
 
-fn parse_gpu_model(gpu: &str) -> entrenar_common::Result<CostModel> {
+/// Map a GPU name to its cost model.
+///
+/// # Errors
+///
+/// Returns [`entrenar_common::EntrenarError::ConfigValue`] when `gpu` is not
+/// one of `a100-80gb`, `a100-40gb`, `v100`, `t4` (case-insensitive, `_` or `-`).
+pub fn parse_gpu_model(gpu: &str) -> entrenar_common::Result<CostModel> {
     match gpu.to_lowercase().as_str() {
         "a100-80gb" | "a100_80gb" => Ok(CostModel::a100_80gb()),
         "a100-40gb" | "a100_40gb" => Ok(CostModel::a100_40gb()),
@@ -619,5 +533,93 @@ fn parse_gpu_model(gpu: &str) -> entrenar_common::Result<CostModel> {
             message: format!("Unknown GPU type: {gpu}"),
             suggestion: "Use: a100-80gb, a100-40gb, v100, t4".into(),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_gpu_model_accepts_every_documented_name() {
+        for name in [
+            "a100-80gb",
+            "a100_80gb",
+            "A100-80GB",
+            "a100-40gb",
+            "a100_40gb",
+            "v100",
+            "V100",
+            "t4",
+            "T4",
+        ] {
+            assert!(
+                parse_gpu_model(name).is_ok(),
+                "documented GPU name {name} must resolve to a cost model"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_gpu_model_refuses_unknown_gpu() {
+        // Asserting is_ok() on invalid input would lock the defect in; assert
+        // the refusal, and that it names the offending value.
+        let err = match parse_gpu_model("h100") {
+            Ok(_) => panic!("parse_gpu_model must refuse an unknown GPU name"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("h100"),
+            "refusal must quote the rejected value, got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_strategies_all_expands_to_four() {
+        let all = resolve_strategies(&["all".to_string()]);
+        assert_eq!(all.len(), 4);
+    }
+
+    #[test]
+    fn resolve_strategies_accepts_every_alias() {
+        for alias in [
+            "kd",
+            "kd-only",
+            "kdonly",
+            "progressive",
+            "prog",
+            "attention",
+            "attn",
+            "combined",
+        ] {
+            let resolved = resolve_strategies(&[alias.to_string()]);
+            assert_eq!(
+                resolved.len(),
+                1,
+                "alias {alias} must resolve to exactly one strategy"
+            );
+        }
+    }
+
+    #[test]
+    fn run_compare_refuses_when_no_name_resolves() {
+        let cli = entrenar_common::Cli::new().with_verbosity(0);
+        let err = match run_compare(&["nonsense".to_string()], 5, &cli) {
+            Ok(()) => panic!("run_compare must refuse a strategy list that resolves to nothing"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("No valid strategies specified"),
+            "refusal must explain the empty strategy set, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_constraints_carries_every_bound() {
+        let c = build_constraints(Some(10.0), Some(25.0), Some(0.9), Some(40.0));
+        assert_eq!(c.max_gpu_hours, Some(10.0));
+        assert_eq!(c.max_cost_usd, Some(25.0));
+        assert_eq!(c.min_accuracy, Some(0.9));
+        assert_eq!(c.max_memory_gb, Some(40.0));
     }
 }

@@ -11,9 +11,10 @@ repository = "https://github.com/paiml/entrenar"
 name = "entrenar_inspect"
 path = "src/lib.rs"
 
-[[bin]]
-name = "aprender-train-inspect"
-path = "src/main.rs"
+# APR-MONO Rule 1: `apr` is the only user-facing binary. The former
+# `aprender-train-inspect` bin is now `apr train inspect`, which calls
+# `entrenar_inspect::cli::run_*` — the same entry points its `main` called.
+# See contracts/apr-mono-binary-rule-v1.yaml.
 
 [lints]
 workspace = true

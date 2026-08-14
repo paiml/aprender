@@ -92,7 +92,7 @@ cuda-batch = ["cuda"]
 wgpu = ["inference"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
-training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]
+training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "dep:aprender-train-bench", "dep:aprender-train-inspect", "dep:aprender-train-shell", "aprender-train-distill?/shard-batch-source"]
 training-gpu = ["training"]
 whisper = ["whisper-apr"]
 dhat-heap = ["dep:dhat"]
@@ -225,6 +225,13 @@ entrenar = { workspace = true, optional = true }
 aprender-train-distill = { workspace = true, optional = true }
 # Distillation error types (PMAT-701 Bug B: needed for RealizarQ4KTeacher impl)
 aprender-train-common = { workspace = true, optional = true }
+# APR-MONO Rule 1 rehoming: the `aprender-train-{bench,inspect,shell}` binaries
+# were deleted and their capability now dispatches through `apr train
+# {bench,inspect,shell}`. apr-cli calls the same `::cli::run_*` entry points
+# those binaries' `main` called.
+aprender-train-bench = { workspace = true, optional = true }
+aprender-train-inspect = { workspace = true, optional = true }
+aprender-train-shell = { workspace = true, optional = true }
 # Heap profiling (opt-in via --features dhat-heap)
 dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)

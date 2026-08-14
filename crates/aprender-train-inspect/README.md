@@ -17,6 +17,16 @@ cargo install aprender    # CLI binary
 aprender-train-inspect = "0.29"
 ```
 
+## CLI
+
+This crate no longer ships a `[[bin]]`. Its command-line surface is `apr train inspect`
+(APR-MONO Rule 1: `apr` is the only user-facing binary), which calls the
+`entrenar_inspect::cli::run_*` entry points this crate exports.
+
+```bash
+apr train inspect --help
+```
+
 ## Links
 
 - [Monorepo](https://github.com/paiml/aprender)

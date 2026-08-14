@@ -12,6 +12,7 @@
 //! - **Muda Elimination**: Avoid wasted training runs through early stopping
 //! - **Visual Control**: Clear visualization of benchmark results
 
+pub mod cli;
 pub mod cost;
 pub mod stats;
 pub mod strategies;

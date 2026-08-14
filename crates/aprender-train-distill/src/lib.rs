@@ -17,7 +17,9 @@
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 pub mod batch_source;
+pub mod cli;
 pub mod config;
+pub mod export;
 pub mod kd_step;
 pub mod pipeline;
 pub mod student_provider;

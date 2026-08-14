@@ -263,7 +263,7 @@ commands:
 
   - name: train
     category: training
-    description: "Training pipeline (plan/apply)"
+    description: "Training pipeline (plan/apply) plus the rehomed train tools (bench/distill/inspect/lora/shell)"
     requires_model: false
     side_effects: [filesystem, gpu]
 

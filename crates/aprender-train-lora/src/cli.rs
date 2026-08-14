@@ -1,111 +1,27 @@
-//! entrenar-lora CLI entry point.
+//! Command implementations for the LoRA/QLoRA planner.
+//!
+//! These functions were the body of the `aprender-train-lora` binary's
+//! `main.rs`. That binary is gone (APR-MONO Rule 1: `apr` is the only
+//! user-facing binary); the capability is reachable as
+//! `apr train lora <verb>`, which calls exactly these entry points.
 
 // The `serde_json::json!` macro expands to code containing `.unwrap()`, which
-// trips clippy::disallowed_methods on the macro invocation site even though no
-// author-written unwrap exists. Scope the allow to this CLI binary.
+// trips clippy::disallowed_methods at the macro invocation site even though no
+// author-written unwrap exists. Scope the allow to this presentation module.
 #![allow(clippy::disallowed_methods)]
 
-use clap::{Parser, Subcommand};
-use entrenar_common::cli::{styles, CommonArgs};
+use crate::{plan, Method};
+use entrenar_common::cli::styles;
 use entrenar_common::output::{format_bytes, format_number, TableBuilder};
-use entrenar_lora::{plan, Method};
-use std::path::PathBuf;
+use std::path::Path;
 
-#[derive(Parser)]
-#[command(name = "entrenar-lora")]
-#[command(about = "LoRA/QLoRA configuration optimizer and memory planner")]
-#[command(version)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-
-    #[command(flatten)]
-    common: CommonArgs,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Plan optimal LoRA configuration for given constraints
-    Plan {
-        /// Model size in parameters (e.g., "7B", "13B") or exact number
-        #[arg(short, long)]
-        model: String,
-
-        /// Available VRAM in GB
-        #[arg(short, long)]
-        vram: f64,
-
-        /// Fine-tuning method: full, lora, qlora, auto
-        #[arg(short = 'm', long, default_value = "auto")]
-        method: String,
-    },
-
-    /// Compare different fine-tuning methods
-    Compare {
-        /// Model size
-        #[arg(short, long)]
-        model: String,
-
-        /// Available VRAM in GB
-        #[arg(short, long, default_value = "24")]
-        vram: f64,
-    },
-
-    /// Merge LoRA adapter with base model
-    Merge {
-        /// Path to base model
-        #[arg(short, long)]
-        base: PathBuf,
-
-        /// Path to LoRA adapter
-        #[arg(short, long)]
-        adapter: PathBuf,
-
-        /// Output path
-        #[arg(short, long)]
-        output: PathBuf,
-
-        /// Scale factor for adapter (default: 1.0)
-        #[arg(short, long, default_value = "1.0")]
-        scale: f32,
-    },
-
-    /// Inspect LoRA adapter structure
-    Inspect {
-        /// Path to adapter file
-        path: PathBuf,
-    },
-}
-
-fn main() {
-    let cli = Cli::parse();
-    let config = cli.common.to_cli();
-
-    let result = match cli.command {
-        Commands::Plan {
-            model,
-            vram,
-            method,
-        } => plan_command(&model, vram, &method, &config),
-        Commands::Compare { model, vram } => compare_command(&model, vram, &config),
-        Commands::Merge {
-            base,
-            adapter,
-            output,
-            scale,
-        } => merge_command(&base, &adapter, &output, scale, &config),
-        Commands::Inspect { path } => inspect_command(&path, &config),
-    };
-
-    if let Err(e) = result {
-        if !config.is_quiet() {
-            eprintln!("{}", styles::error(&e.to_string()));
-        }
-        std::process::exit(1);
-    }
-}
-
-fn parse_model_size(model: &str) -> u64 {
+/// Parse a model size string into a parameter count.
+///
+/// Accepts a `B`/`b` suffix (billions), an `M`/`m` suffix (millions), or a bare
+/// integer. Unparseable values fall back to the defaults the pre-migration
+/// binary used: 7.0 for `B`, 350.0 for `M`, and 7 000 000 000 for a bare value.
+#[must_use]
+pub fn parse_model_size(model: &str) -> u64 {
     let lower = model.to_lowercase();
     if lower.ends_with('b') {
         let num: f64 = lower.trim_end_matches('b').parse().unwrap_or(7.0);
@@ -118,7 +34,17 @@ fn parse_model_size(model: &str) -> u64 {
     }
 }
 
-fn plan_command(
+fn format_vram(gb: f64) -> String {
+    format!("{gb:.0} GB")
+}
+
+/// Plan an optimal LoRA configuration for a model size and VRAM budget.
+///
+/// # Errors
+///
+/// Returns [`entrenar_common::EntrenarError::ConfigValue`] when `method` is not
+/// one of `full`, `lora`, `qlora`, `auto`, and propagates optimizer failures.
+pub fn run_plan(
     model: &str,
     vram: f64,
     method: &str,
@@ -195,13 +121,19 @@ fn plan_command(
     Ok(())
 }
 
-fn compare_command(
+/// Compare full / LoRA / QLoRA fine-tuning for a model size and VRAM budget.
+///
+/// # Errors
+///
+/// Infallible today; returns `Result` so the signature is stable if the
+/// comparison gains fallible steps.
+pub fn run_compare(
     model: &str,
     vram: f64,
     cli: &entrenar_common::Cli,
 ) -> entrenar_common::Result<()> {
     let model_params = parse_model_size(model);
-    let comparisons = entrenar_lora::optimizer::compare_methods(model_params, vram);
+    let comparisons = crate::optimizer::compare_methods(model_params, vram);
 
     if cli.format == entrenar_common::OutputFormat::Json {
         let json: Vec<_> = comparisons
@@ -262,14 +194,19 @@ fn compare_command(
     Ok(())
 }
 
-fn merge_command(
-    base: &std::path::Path,
-    adapter: &std::path::Path,
-    output: &std::path::Path,
+/// Merge a LoRA adapter into a base model, scaling the delta by `scale`.
+///
+/// # Errors
+///
+/// Propagates load/merge/write failures from [`crate::MergeEngine`].
+pub fn run_merge(
+    base: &Path,
+    adapter: &Path,
+    output: &Path,
     scale: f32,
     cli: &entrenar_common::Cli,
 ) -> entrenar_common::Result<()> {
-    let engine = entrenar_lora::MergeEngine::new().with_scale(scale);
+    let engine = crate::MergeEngine::new().with_scale(scale);
     let result = engine.merge_from_file(base, adapter, output)?;
 
     if !cli.is_quiet() {
@@ -286,10 +223,13 @@ fn merge_command(
     Ok(())
 }
 
-fn inspect_command(
-    path: &std::path::Path,
-    cli: &entrenar_common::Cli,
-) -> entrenar_common::Result<()> {
+/// Inspect a LoRA adapter file.
+///
+/// # Errors
+///
+/// Returns [`entrenar_common::EntrenarError::ModelNotFound`] when `path` does
+/// not exist.
+pub fn run_inspect(path: &Path, cli: &entrenar_common::Cli) -> entrenar_common::Result<()> {
     if !path.exists() {
         return Err(entrenar_common::EntrenarError::ModelNotFound {
             path: path.to_path_buf(),
@@ -308,6 +248,52 @@ fn inspect_command(
     Ok(())
 }
 
-fn format_vram(gb: f64) -> String {
-    format!("{gb:.0} GB")
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_model_size_reads_billions_suffix() {
+        assert_eq!(parse_model_size("7B"), 7_000_000_000);
+        assert_eq!(parse_model_size("1.5b"), 1_500_000_000);
+    }
+
+    #[test]
+    fn parse_model_size_reads_millions_suffix() {
+        assert_eq!(parse_model_size("350M"), 350_000_000);
+    }
+
+    #[test]
+    fn parse_model_size_reads_bare_integer() {
+        assert_eq!(parse_model_size("123456789"), 123_456_789);
+    }
+
+    #[test]
+    fn run_plan_refuses_unknown_method() {
+        let cli = entrenar_common::Cli::new().with_verbosity(0);
+        let err = match run_plan("7B", 24.0, "dora", &cli) {
+            Ok(()) => panic!("run_plan must refuse an unknown fine-tuning method"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("dora"),
+            "refusal must quote the rejected method, got: {err}"
+        );
+    }
+
+    #[test]
+    fn run_inspect_refuses_missing_adapter() {
+        let cli = entrenar_common::Cli::new().with_verbosity(0);
+        let missing = std::path::Path::new("/nonexistent/adapter-that-does-not-exist.safetensors");
+        // Asserting is_ok() here would lock in a defect: a missing adapter must
+        // be refused, not silently "analysed".
+        let err = match run_inspect(missing, &cli) {
+            Ok(()) => panic!("run_inspect must refuse a path that does not exist"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("adapter-that-does-not-exist"),
+            "refusal must quote the missing path, got: {err}"
+        );
+    }
 }

@@ -242,12 +242,13 @@ fn test_no_unauthorized_binaries() {
         "aprender-shell",
         "aprender-simulate",
         "aprender-train",
-        "aprender-train-bench",
         "aprender-train-canary",
-        "aprender-train-distill",
-        "aprender-train-inspect",
-        "aprender-train-lora",
-        "aprender-train-shell",
+        // aprender-train-{bench,distill,inspect,lora,shell} were REMOVED from
+        // this allowlist on 2026-08-14: their [[bin]] targets are gone and the
+        // capability dispatches through `apr train {bench,distill,inspect,
+        // lora,shell}`. Leaving them listed would keep permitting a binary
+        // that no longer exists, so re-adding one would pass silently. See
+        // contracts/apr-mono-binary-rule-v1.yaml FALSIFY-BINRULE-004.
         "aprender-tsp",
         "aprender-monte-carlo",
         "aprender-viz",

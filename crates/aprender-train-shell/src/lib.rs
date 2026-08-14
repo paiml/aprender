@@ -11,6 +11,7 @@
 //! - **Kaizen**: Iterative experimentation for continuous improvement
 //! - **Visual Control**: Immediate feedback on operations
 
+pub mod cli;
 pub mod commands;
 pub mod repl;
 pub mod state;

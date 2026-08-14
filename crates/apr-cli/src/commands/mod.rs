@@ -190,6 +190,10 @@ pub(crate) mod trace;
 pub(crate) mod trace_save_tensor;
 #[cfg(feature = "training")]
 pub(crate) mod train;
+/// APR-MONO Rule 1: dispatch for the five `apr train` tools rehomed from the
+/// deleted `aprender-train-{bench,distill,inspect,lora,shell}` binaries.
+#[cfg(feature = "training")]
+pub(crate) mod train_tools;
 pub(crate) mod tree;
 pub(crate) mod tui;
 #[cfg(feature = "training")]

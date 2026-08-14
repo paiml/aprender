@@ -11,9 +11,10 @@ repository = "https://github.com/paiml/entrenar"
 name = "entrenar_distill"
 path = "src/lib.rs"
 
-[[bin]]
-name = "aprender-train-distill"
-path = "src/main.rs"
+# APR-MONO Rule 1: `apr` is the only user-facing binary. The former
+# `aprender-train-distill` bin is now `apr train distill`, which calls
+# `entrenar_distill::cli::run_*` — the same entry points its `main` called.
+# See contracts/apr-mono-binary-rule-v1.yaml.
 
 [lints]
 workspace = true

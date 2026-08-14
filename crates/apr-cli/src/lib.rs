@@ -97,7 +97,7 @@ use commands::{
     validate, validate_manifest,
 };
 #[cfg(feature = "training")]
-use commands::{finetune, gpu, train, tune};
+use commands::{finetune, gpu, train, train_tools, tune};
 
 #[cfg(feature = "training")]
 pub use commands::pretrain::PretrainMode;

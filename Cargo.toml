@@ -214,6 +214,9 @@ aprender-train = { path = "crates/aprender-train", version = "0.63.0" }
 entrenar = { path = "crates/aprender-train", version = "0.63.0", package = "aprender-train" }
 aprender-train-common = { path = "crates/aprender-train-common", version = "0.63.0" }
 aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.63.0" }
+aprender-train-bench = { path = "crates/aprender-train-bench", version = "0.63.0" }
+aprender-train-inspect = { path = "crates/aprender-train-inspect", version = "0.63.0" }
+aprender-train-shell = { path = "crates/aprender-train-shell", version = "0.63.0" }
 aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.63.0" }
 aprender-contracts = { path = "crates/aprender-contracts", version = "0.63.0" }
 aprender-profile = { path = "crates/aprender-profile", version = "0.63.0" }

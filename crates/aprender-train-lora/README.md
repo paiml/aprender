@@ -17,6 +17,16 @@ cargo install aprender    # CLI binary
 aprender-train-lora = "0.29"
 ```
 
+## CLI
+
+This crate no longer ships a `[[bin]]`. Its command-line surface is `apr train lora`
+(APR-MONO Rule 1: `apr` is the only user-facing binary), which calls the
+`entrenar_lora::cli::run_*` entry points this crate exports.
+
+```bash
+apr train lora --help
+```
+
 ## Links
 
 - [Monorepo](https://github.com/paiml/aprender)

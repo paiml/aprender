@@ -37,12 +37,19 @@ TIERS[4]="aprender-gpu"
 TIERS[5]="aprender-cuda-edge aprender-cgp"
 TIERS[6]="aprender-compute"
 TIERS[7]="aprender-cbtop aprender-ptx-debug aprender-explain"
-TIERS[8]="aprender-common aprender-train-common aprender-train aprender-train-lora aprender-train-distill aprender-serve aprender-mcp aprender-data aprender-orchestrate"
+# aprender-train-{bench,inspect,shell} moved UP from tier 13 on 2026-08-14.
+# Their [[bin]] targets were deleted and apr-cli (tier 10) now depends on them
+# for `apr train {bench,inspect,shell}`. Left in tier 13 they would publish
+# AFTER their own dependent, so the first cascade at a new version would fail
+# tier 10 with "no matching package named aprender-train-bench <new-version>".
+# They need only aprender-train-common + aprender-train, both earlier in this
+# tier, and the tier list is consumed left to right.
+TIERS[8]="aprender-common aprender-train-common aprender-train aprender-train-lora aprender-train-distill aprender-train-bench aprender-train-inspect aprender-train-shell aprender-serve aprender-mcp aprender-data aprender-orchestrate"
 TIERS[9]="aprender-present-core aprender-present-layout aprender-present-yaml aprender-present-widgets aprender-present-terminal"
 TIERS[10]="apr-cli"
 TIERS[11]="aprender"
 TIERS[12]="aprender-tsp aprender-monte-carlo aprender-shell"
-TIERS[13]="aprender-test-derive aprender-test-lib aprender-test-js-gen aprender-test-cli aprender-test-showcase aprender-zram-core aprender-zram-adaptive aprender-zram-generator aprender-zram-cli aprender-zram aprender-present-test-macros aprender-present-test aprender-present-lib aprender-present-cli aprender-db aprender-rag aprender-viz aprender-registry aprender-distribute aprender-simulate aprender-verify aprender-verify-ml aprender-train-shell aprender-train-inspect aprender-train-bench aprender-train-wasm aprender-contracts-cli aprender-rag-cli"
+TIERS[13]="aprender-test-derive aprender-test-lib aprender-test-js-gen aprender-test-cli aprender-test-showcase aprender-zram-core aprender-zram-adaptive aprender-zram-generator aprender-zram-cli aprender-zram aprender-present-test-macros aprender-present-test aprender-present-lib aprender-present-cli aprender-db aprender-rag aprender-viz aprender-registry aprender-distribute aprender-simulate aprender-verify aprender-verify-ml aprender-train-wasm aprender-contracts-cli aprender-rag-cli"
 
 TARGET_VERSION=$(grep -E '^version = "' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
 [ -z "$TARGET_VERSION" ] && { echo "ERROR: could not detect target version from Cargo.toml"; exit 1; }
