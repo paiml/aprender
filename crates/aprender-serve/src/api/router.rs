@@ -99,6 +99,13 @@ const OPENAI_ROUTES: &[(&str, &str)] = &[
     ("GET", "/v1/metrics"),
     ("POST", "/api/chat"),
     ("POST", "/api/generate"),
+    // aprender#2465: mounted by #2396(2) and advertised by nobody until the
+    // mounted-⇒-advertised arrow was checked. An Ollama client calls /api/tags
+    // BEFORE it will issue any request, so a surface that does not name it is
+    // undiscoverable by exactly the clients these routes exist for.
+    ("GET", "/api/tags"),
+    ("POST", "/api/show"),
+    ("GET", "/api/version"),
     ("POST", "/api/embeddings"),
 ];
 
@@ -119,6 +126,13 @@ const CUDA_ROUTES: &[(&str, &str)] = &[("POST", "/v1/logprobs"), ("POST", "/v1/p
 /// `advertised_routes_answer_under_every_config` and `unadvertised_routes_do_not_answer`
 /// probe every entry against a live router under each configuration, so this list
 /// cannot drift from the mounted surface without a test going red.
+///
+/// Those two check ONE arrow, though — both take this list as the universe they
+/// probe, so a route deleted from it simply leaves the universe and nothing
+/// notices (aprender#2465). The other arrow is
+/// `route_surface_completeness::every_mounted_route_is_advertised`, which reads
+/// the mounted set out of the source of `create_router_with_config` and so has a
+/// notion of "mounted" that does not come from here.
 pub fn advertised_routes(config: &RouterConfig) -> Vec<String> {
     route_index(config)
 }
@@ -230,8 +244,8 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
                 "/v1/chat/completions/stream",
                 post(openai_chat_completions_stream_handler),
             )
-            .route("/v1/embeddings", post(openai_embeddings_handler))
             // APR-specific API (spec §15.1)
+            .route("/v1/embeddings", post(openai_embeddings_handler))
             .route("/v1/predict", post(apr_predict_handler))
             .route("/v1/explain", post(apr_explain_handler))
             .route("/v1/audit/:request_id", get(apr_audit_handler))

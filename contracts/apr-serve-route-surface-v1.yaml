@@ -1,0 +1,196 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-14'
+  author: PAIML Engineering
+  description: the route surface apr serve ADVERTISES and the route surface it MOUNTS
+    must be the same set, in both directions
+  references:
+  - aprender#2465
+  - aprender#2376 finding 8
+  - aprender#2396 finding 2
+  lessons_learned:
+  - 'aprender#2465: the #2376(8) guards check advertised => answers. Nothing checked
+    mounted => advertised, so deleting an entry from OPENAI_ROUTES removed a route
+    from the 404 body and the startup banner while the route kept answering, and the
+    entire 15,638-test aprender-serve suite stayed green.'
+  - 'A guard whose candidate universe is DERIVED from the list it is guarding cannot
+    see a deletion from that list. unadvertised_routes_do_not_answer reads like the
+    reverse arrow but builds its universe by calling advertised_routes over every
+    config, so a route advertised by NO config is never probed.'
+  - 'The blindness was not hypothetical: /api/tags, /api/show and /api/version were
+    mounted by #2396(2) and never added to OPENAI_ROUTES. They shipped in 0.63.0
+    undiscoverable by exactly the Ollama clients they exist for — every one of which
+    calls /api/tags before it will issue a single request — past a test named
+    test_advertised_routes_are_all_mounted.'
+  - 'Checking the missing arrow requires a notion of "mounted" that does not come from
+    the advertised list. Reading the .route(...) calls out of the source text of
+    create_router_with_config gives two independently-derived sets that can be compared
+    exhaustively.'
+  - 'A source-scanning guard that matches nothing passes vacuously, because an empty
+    mounted set trivially contains no unadvertised route. The extractor therefore
+    carries anchors it must find and a must-match/must-not-match case table that is
+    run, not read.'
+
+equations:
+  surface_equality:
+    formula: mounted(create_router_with_config, cfg) == advertised(advertised_routes,
+      cfg)
+    domain: cfg in RouterConfig (openai_api x metrics x cors), plus the cuda feature
+    codomain: set of (METHOD, path) pairs
+    invariants:
+    - every route mounted under cfg appears in advertised_routes(cfg)
+    - every route named by advertised_routes(cfg) answers under cfg with a status
+      other than 404
+    - the 404 body and the apr serve run banner are both read from advertised_routes,
+      so neither is an independent restatement of the surface
+    - a route group gated by a config flag leaves BOTH sets together, never one of them
+    preconditions:
+    - create_router_with_config is the only function that mounts routes on this router
+    - advertised_routes derives its list under the same conditions as the mount loop
+    postconditions:
+    - mounted \ advertised == {}
+    - advertised \ mounted == {}
+    - deleting one entry from NATIVE_ROUTES, OPENAI_ROUTES or CUDA_ROUTES turns a test
+      RED
+    - adding one .route(...) call without a matching list entry turns a test RED
+  extractor_soundness:
+    formula: extract_mounted(src) recognises every rustfmt rendering of .route(path,
+      method(handler)) and nothing else
+    domain: the source text of create_router_with_config
+    codomain: set of (METHOD, path) pairs
+    invariants:
+    - a single-line, an argument-split and an inline-closure mount all extract
+    - a commented-out .route(...) is not a mount
+    - .fallback(...) and .layer(...) are not mounts
+    - a method constructor must start on a token boundary, so forget( is not get(
+    - the CUDA block counts iff the feature that compiles it is enabled
+    preconditions:
+    - the extractor is bounded to the body of create_router_with_config
+    postconditions:
+    - the extracted set contains the anchors POST /generate, GET /health, GET / and
+      POST /v1/chat/completions
+    - an extractor that matches nothing fails loudly rather than reporting no drift
+
+falsification_tests:
+- id: FALSIFY-SERVE-ROUTES-001
+  name: every_mounted_route_is_advertised
+  prediction: 'The set of (METHOD, path) pairs mounted by create_router_with_config,
+    read from its source, minus the set advertised_routes(RouterConfig::default())
+    names, is empty.'
+  test_harness: cargo test -p aprender-serve --lib every_mounted_route_is_advertised
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX: reported [("GET", "/api/tags"), ("GET", "/api/version"), ("POST",
+    "/api/show")] — three routes mounted by #2396(2), absent from the 404 body and
+    the startup banner, undiscoverable by the Ollama clients they were added for.
+    Mutation-verified twice: deleting ("POST", "/v1/embeddings") from OPENAI_ROUTES
+    and, separately, mounting an unadvertised GET /v1/ghost each turn this RED while
+    all 15,638 pre-existing aprender-serve tests stay green.'
+- id: FALSIFY-SERVE-ROUTES-002
+  name: every_advertised_route_is_mounted
+  prediction: 'The set advertised_routes(RouterConfig::default()) names, minus the set
+    mounted by create_router_with_config, is empty.'
+  test_harness: cargo test -p aprender-serve --lib every_advertised_route_is_mounted
+  expected_output: 'test result: ok'
+  if_fails: 'The 404 body and the startup banner promise a surface that 404s — the
+    #2376(8) defect with the arrow the other way round. Mutation-verified by deleting
+    the .route("/v1/embeddings", ...) mount while leaving its list entry in place.'
+- id: FALSIFY-SERVE-ROUTES-003
+  name: source_scan_finds_the_routes_it_is_scanning_for
+  prediction: 'The source scan finds POST /generate, GET /health, GET / and POST
+    /v1/chat/completions — four mounts create_router_with_config demonstrably makes.'
+  test_harness: cargo test -p aprender-serve --lib source_scan_finds_the_routes_it_is_scanning_for
+  expected_output: 'test result: ok'
+  if_fails: 'The extractor is broken, which would make FALSIFY-SERVE-ROUTES-001 pass
+    vacuously: an empty mounted set contains no unadvertised route. Mutation-verified
+    by breaking the extractor pattern to .rowte(, which turns this RED with "Found:
+    {}" rather than letting the drift check pass silently.'
+- id: FALSIFY-SERVE-ROUTES-004
+  name: extractor_case_table
+  prediction: 'The extractor recognises the single-line, argument-split and
+    inline-closure mount shapes plus a path parameter, and rejects a commented-out
+    mount, .fallback(...), .layer(...), a .route(...) with no method constructor, and
+    std::mem::forget( as a GET.'
+  test_harness: cargo test -p aprender-serve --lib extractor_case_table
+  expected_output: 'test result: ok'
+  if_fails: 'The pattern was reviewed instead of exercised. Every apr-invocation guard
+    regex in this repo that shipped wrong (five of them) was caught by a case table
+    and none by reading the pattern.'
+- id: FALSIFY-SERVE-ROUTES-005
+  name: advertised_routes_answer_under_every_config
+  prediction: 'Every route named in the live 404 body answers with a status other than
+    404, under each of the four openai_api x metrics configurations.'
+  test_harness: cargo test -p aprender-serve --lib advertised_routes_answer_under_every_config
+  expected_output: 'test result: ok'
+  if_fails: 'A configuration unmounts a route group without removing it from the
+    advertised list — the #2376(8) defect. This is the arrow that was already guarded;
+    it is listed here so the contract covers the equality rather than half of it.'
+- id: FALSIFY-SERVE-ROUTES-006
+  name: banner_source_agrees_with_live_server
+  prediction: 'advertised_routes(cfg) equals the routes array of the live 404 body for
+    every cfg, so the apr serve run banner and the running server make one claim.'
+  test_harness: cargo test -p aprender-serve --lib banner_source_agrees_with_live_server
+  expected_output: 'test result: ok'
+  if_fails: 'The banner has become a second, independent restatement of the surface.
+    apr serve run once printed a hand-written list of 11 of the 31 mounted routes.'
+
+proof_obligations:
+- type: invariant
+  property: No route answers that the server never names
+  formal: for all cfg, for all r in mounted(cfg), r in advertised(cfg)
+  applies_to: create_router_with_config, advertised_routes
+  discharged_by: FALSIFY-SERVE-ROUTES-001
+  notes: >-
+    The arrow aprender#2465 found unguarded. A client's only documented way to
+    discover this surface is the 404 body and the startup banner, both read from
+    advertised_routes; a route missing from that list does not exist as far as any
+    client is concerned, however well it answers.
+- type: invariant
+  property: No route is named that does not answer
+  formal: for all cfg, for all r in advertised(cfg), r in mounted(cfg)
+  applies_to: create_router_with_config, advertised_routes
+  discharged_by: FALSIFY-SERVE-ROUTES-002, FALSIFY-SERVE-ROUTES-005
+  notes: >-
+    Held twice over, and deliberately: once against the source text and once by
+    dispatching a live request per advertised entry per config. The source check
+    catches a deleted mount at compile-scope; the HTTP check catches a mount whose
+    handler cannot in fact be reached.
+- type: invariant
+  property: The drift guard cannot pass by failing to look
+  formal: extract_mounted(create_router_with_config source) contains the known anchors
+  applies_to: route_surface_completeness::extract_mounted
+  discharged_by: FALSIFY-SERVE-ROUTES-003, FALSIFY-SERVE-ROUTES-004
+  notes: >-
+    A search that finds nothing has two causes — absent, or you looked wrong. Set
+    difference against an empty set reports no drift, so the extractor must prove it
+    can succeed before its silence is evidence of anything.
+- type: invariant
+  property: One list drives every advertisement of the surface
+  formal: banner(cfg) == body_404(cfg) == advertised_routes(cfg)
+  applies_to: apr-cli commands::serve::server, create_router_with_config fallback
+  discharged_by: FALSIFY-SERVE-ROUTES-006
+  notes: >-
+    Two hand-maintained lists drift independently; one shared list can only be wrong
+    in one place, and that place is the one the equality falsifiers check.
+
+kani_harnesses:
+- id: KANI-SERVE-ROUTES-001
+  obligation: set equality is symmetric under the extractor
+  property: for any finite route set S, mounted == advertised iff both differences are
+    empty
+  bound: 16
+  strategy: exhaustive
+  harness: verify_route_surface_set_equality
+  status: planned
+
+qa_gate:
+  id: F-SERVE-ROUTES-001
+  name: apr serve route surface contract
+  checks:
+  - Every .route(...) in create_router_with_config has a matching entry in NATIVE_ROUTES,
+    OPENAI_ROUTES or CUDA_ROUTES
+  - Every entry in those lists is mounted, and answers non-404 under the config that
+    advertises it
+  - The 404 body and the apr serve run banner are both read from advertised_routes
+  - The source extractor carries anchors and a must-match/must-not-match case table
+  pass_criteria: All six FALSIFY-SERVE-ROUTES falsifiers pass, and 001, 002 and 003
+    have each been mutation-verified by turning them RED and capturing the output
