@@ -31,13 +31,13 @@ total=0
 # /mnt/nvme-raid0/targets/aprender/release/apr. Both are the #2357 defect, and
 # this gate is a bad place for it: it executes the book's own examples and
 # reports whether they work. Against a stale binary it certifies that examples
-# run correctly on code nobody is shipping — an example using a flag added this
+# run correctly on code nobody is shipping -- an example using a flag added this
 # week FAILS, and an example using a flag deleted this week PASSES. The /mnt
 # fallback is worse than stale: nothing writes that path any more.
 #
 # `. scripts/apr_bin.sh` asks cargo for the target dir and asserts the binary's
 # embedded git SHA matches HEAD. It returns non-zero when there is no
-# freshly-built binary, which for this gate is a SKIP, not a failure — the
+# freshly-built binary, which for this gate is a SKIP, not a failure -- the
 # examples are still scanned and rust blocks still reported.
 APR_BIN=""
 # The pinned binary must be REACHED, not merely resolved. Every example below
@@ -104,7 +104,7 @@ while IFS= read -r record; do
     code=$(printf '%s\n' "$record" | python3 -c "import json,sys;print(json.load(sys.stdin)['code'])")
     model=$(printf '%s\n' "$record" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('model',''))")
 
-    # Rust blocks are not executed here — that's the compile checker's job.
+    # Rust blocks are not executed here -- that's the compile checker's job.
     if [ "$lang" = "rust" ]; then
         skip=$((skip + 1))
         echo "[SKIP] $path :: $cost rust (compile gate handles this)"
@@ -122,10 +122,10 @@ while IFS= read -r record; do
                 pass=$((pass + 1))
                 echo "[PASS] $path :: trivial"
             else
-                # Special-case `apr <subcmd> --help` and `apr --version` —
+                # Special-case `apr <subcmd> --help` and `apr --version` --
                 # those are guaranteed by clap to exit 0 if the binary works.
                 fail=$((fail + 1))
-                echo "[FAIL] $path :: trivial — $(printf '%s' "$code" | head -c 80)"
+                echo "[FAIL] $path :: trivial -- $(printf '%s' "$code" | head -c 80)"
             fi
             ;;
         model-required)
@@ -176,7 +176,7 @@ while IFS= read -r record; do
                 echo "[PASS] $path :: model-required"
             else
                 fail=$((fail + 1))
-                echo "[FAIL] $path :: model-required — $(printf '%s' "$run_code" | head -c 80)"
+                echo "[FAIL] $path :: model-required -- $(printf '%s' "$run_code" | head -c 80)"
             fi
             ;;
         gpu)
@@ -205,7 +205,7 @@ while IFS= read -r record; do
                 echo "[PASS] $path :: gpu"
             else
                 fail=$((fail + 1))
-                echo "[FAIL] $path :: gpu — $(printf '%s' "$code" | head -c 80)"
+                echo "[FAIL] $path :: gpu -- $(printf '%s' "$code" | head -c 80)"
             fi
             ;;
         destructive)
@@ -252,12 +252,12 @@ fi
 # mattered was zero and the verdict was green.
 if [ "$total" -gt 0 ] && [ "$pass" -eq 0 ]; then
     if [ -z "$APR_BIN" ]; then
-        echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: NOT RUN — no apr binary built from HEAD," \
+        echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: NOT RUN -- no apr binary built from HEAD," \
              "so all $skip example(s) skipped and nothing was verified."
         echo "  Build one first:  cargo build --release -p apr-cli --bin apr"
         exit 1
     fi
-    echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: FAIL — apr is available at $APR_BIN but" \
+    echo "FALSIFY-BOOK-EXAMPLE-EXECUTES-001: FAIL -- apr is available at $APR_BIN but" \
          "0 of $total example(s) executed. The gate measured nothing."
     exit 1
 fi
