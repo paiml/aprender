@@ -514,6 +514,20 @@ jobs:
       # itself either. Text-only, no build.
       - name: README claims must match measurement
         run: bash scripts/check_readme_claims.sh
+
+      # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
+      # from the published crate while git still tracks it, so the crate compiles
+      # in-tree and fails for everyone installing from crates.io. This guard is
+      # Gate 1 of the pre-release skill and it could not fail: it scanned `src/`
+      # and packaged `-p aprender`, the PRE-MONOREPO layout. Root `src/` now holds
+      # 2 files with zero include!(), so it reported "All 0 include!() files are
+      # included" for every release since consolidation, while 1798 live under
+      # crates/. Now checks all 10 publishable crates that have include!() against
+      # their OWN package listing, and refuses to pass on an empty scan.
+      - name: include!() targets must survive cargo package (CB-510)
+        run: bash scripts/check_package_includes.sh
+      - name: Package-includes guard case table
+        run: bash scripts/check_package_includes.sh --self-test
       # Poka-yoke: APR-MONO made every sibling a path alias under crates/, but
       # `trueno = "0.16"` still BUILDS - cargo resolves the crates.io copy
       # alongside the in-tree one, so the tree compiles two mutually
