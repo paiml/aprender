@@ -354,16 +354,16 @@ fn finalize_chat_text(
     completion_tokens: usize,
     max_tokens: usize,
 ) -> (String, String) {
-    let orig_len = text.len();
-    let text = crate::api::realize_handlers::truncate_at_stop(text, stops);
-    let stopped = text.len() < orig_len;
-    let finish_reason = if !stopped && completion_tokens >= max_tokens {
-        "length"
-    } else {
-        "stop"
-    }
-    .to_string();
-    (text, finish_reason)
+    // #2465(2): the body moved to `apply_stop_sequences`, which `/v1/completions`
+    // now calls as well. Chat behaviour is unchanged — this is the same computation,
+    // in one place, so a fix to either surface reaches both.
+    let (text, finish_reason) = crate::api::realize_handlers::apply_stop_sequences(
+        text,
+        stops,
+        completion_tokens,
+        max_tokens,
+    );
+    (text, finish_reason.as_str().to_string())
 }
 
 /// PMAT-801: parse tool calls out of a chat completion's generated text.
