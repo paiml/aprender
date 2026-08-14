@@ -96,7 +96,9 @@ fn p5_draw_produces_content() {
                 }
             }
         }
-        if has_content { break; }
+        if has_content {
+            break;
+        }
     }
     assert!(has_content, "Draw should produce visible content");
 }
@@ -134,8 +136,10 @@ fn p9_frame_budget_120x40() {
         ui::draw(&app, &mut buf);
     }
     let avg_us = start.elapsed().as_micros() / 50;
-    assert!(avg_us < 16_000,
-        "P9: 120x40 must render within 16ms frame budget: {avg_us}us avg");
+    assert!(
+        avg_us < 16_000,
+        "P9: 120x40 must render within 16ms frame budget: {avg_us}us avg"
+    );
 }
 
 #[test]
@@ -149,8 +153,10 @@ fn p10_frame_budget_200x50() {
         ui::draw(&app, &mut buf);
     }
     let avg_us = start.elapsed().as_micros() / 20;
-    assert!(avg_us < 16_000,
-        "P10: 200x50 must render within 16ms budget: {avg_us}us avg");
+    assert!(
+        avg_us < 16_000,
+        "P10: 200x50 must render within 16ms budget: {avg_us}us avg"
+    );
 }
 
 // ============================================================================

@@ -41,10 +41,10 @@ pub const _ENFORCE_FALSIFICATION: &str = include_str!("../tests/panel_falsificat
 pub const _ENFORCE_PIXEL_PARITY: &str = include_str!("../tests/pixel_parity.rs");
 
 // Re-export presentar-terminal ptop types for testing and embedding
+pub use presentar_terminal::direct::{CellBuffer, DiffRenderer};
 pub use presentar_terminal::ptop::app::App;
 pub use presentar_terminal::ptop::config::PtopConfig;
 pub use presentar_terminal::ptop::ui;
-pub use presentar_terminal::ptop::PanelType;
 pub use presentar_terminal::ptop::MetricsSnapshot;
-pub use presentar_terminal::direct::{CellBuffer, DiffRenderer};
+pub use presentar_terminal::ptop::PanelType;
 pub use presentar_terminal::ColorMode;

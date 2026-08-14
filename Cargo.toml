@@ -94,16 +94,21 @@ members = [
     "crates/aprender-qa-report",
     "crates/aprender-qa-certify",
     "crates/aprender-qa-cli",
-    # Remaining excluded (workspace root shells with no src):
-    # "crates/aprender-viz-ttop",
+    # ttop system monitor. It is a real [package] (src/main.rs + src/lib.rs + 3
+    # test targets), NOT a "root shell" — it was mislabelled as one and excluded,
+    # which made its `workspace = true` deps unresolvable and left it unbuildable.
+    "crates/aprender-viz-ttop",
+    # Excluded below (genuine old workspace-root shells, no [package]):
     # "crates/aprender-present",
     # "crates/aprender-test",
 ]
 exclude = [
     "tools/ccpa-sft-export",
     "fuzz",
-    # Old workspace root shells (no package, just held sub-crates):
-    "crates/aprender-viz-ttop",
+    # Old workspace-root shells: these have a [workspace] table and NO [package],
+    # and their `members` still point at crates/{probar,presentar}-* paths that were
+    # hoisted to crates/aprender-{test,present}-* and no longer exist. Neither can
+    # ever build; nothing depends on them. Candidates for deletion.
     "crates/aprender-present",
     "crates/aprender-test",
     # aprender-train-canary is intentionally NOT a member — see the exclusion

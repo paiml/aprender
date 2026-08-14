@@ -34,13 +34,20 @@ fn process_contract(path: &std::path::Path) -> (usize, usize) {
 
     let (mut pre, mut post) = (0, 0);
     for (name, eq) in &yaml.equations {
-        let key = format!("CONTRACT_{}_{}", stem, name.to_uppercase().replace('-', "_"));
+        let key = format!(
+            "CONTRACT_{}_{}",
+            stem,
+            name.to_uppercase().replace('-', "_")
+        );
         if !eq.preconditions.is_empty() {
             println!("cargo:rustc-env={key}_PRE_COUNT={}", eq.preconditions.len());
             pre += eq.preconditions.len();
         }
         if !eq.postconditions.is_empty() {
-            println!("cargo:rustc-env={key}_POST_COUNT={}", eq.postconditions.len());
+            println!(
+                "cargo:rustc-env={key}_POST_COUNT={}",
+                eq.postconditions.len()
+            );
             post += eq.postconditions.len();
         }
     }

@@ -18,8 +18,8 @@ use crossterm::{
 };
 
 use presentar_terminal::direct::{CellBuffer, DiffRenderer};
-use presentar_terminal::ptop::{config::PtopConfig, ui, App, PanelType};
 use presentar_terminal::ptop::app::MetricsCollector;
+use presentar_terminal::ptop::{config::PtopConfig, ui, App, PanelType};
 use presentar_terminal::{AsyncCollector, ColorMode};
 
 /// ttop: Terminal Top - Sovereign AI Stack System Monitor
@@ -184,7 +184,9 @@ fn run_app(
     let (rx, bg_running) = spawn_metrics_collector(refresh_ms, app.deterministic);
 
     let render_interval = Duration::from_millis(16);
-    let mut last_render = Instant::now().checked_sub(render_interval).unwrap_or_else(Instant::now);
+    let mut last_render = Instant::now()
+        .checked_sub(render_interval)
+        .unwrap_or_else(Instant::now);
     let mut frame_times: Vec<Duration> = Vec::with_capacity(60);
     let mut was_exploded = false;
     let mut first_frame = true;

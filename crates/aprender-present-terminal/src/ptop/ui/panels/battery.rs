@@ -208,12 +208,9 @@ impl BatteryIcon {
         let filled_char = '█';
         let empty_char = '░';
 
-        let filled: String = std::iter::repeat(filled_char)
-            .take(self.filled as usize)
-            .collect();
-        let empty: String = std::iter::repeat(empty_char)
-            .take((self.total - self.filled) as usize)
-            .collect();
+        let filled: String = std::iter::repeat_n(filled_char, self.filled as usize).collect();
+        let empty: String =
+            std::iter::repeat_n(empty_char, (self.total - self.filled) as usize).collect();
 
         format!("[{}{}]", filled, empty)
     }

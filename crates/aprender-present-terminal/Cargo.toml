@@ -55,7 +55,7 @@ score = ["clap", "serde", "serde_json", "serde_yaml_ng"]
 ptop-release = ["ptop"]  # Use for release builds - triggers stricter enforcement
 
 [dependencies.sysinfo]
-version = "0.32"
+version = "0.33"
 optional = true
 
 [dependencies.clap]
