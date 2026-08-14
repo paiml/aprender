@@ -55,7 +55,7 @@ trueno-db = { workspace = true, optional = true }
 trueno-quant = { workspace = true }
 
 # Contract macros for pre/post-condition enforcement (zero cost in release)
-provable-contracts-macros = { version = "0.2" }
+provable-contracts-macros = { workspace = true }
 
 # PMAT-284: Core tracing primitives (zero-dep, breaks renacer circular dep)
 renacer-core = { workspace = true }
@@ -166,10 +166,10 @@ serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 # Contract trait enforcement (Section 23)
-provable-contracts = { version = "0.2" }
+provable-contracts = { workspace = true }
 
 # Visual regression testing framework (playbooks, TUI testing, GPU pixel verification)
-jugar-probar = { version = "0.4", features = ["tui", "gpu"] }
+jugar-probar = { workspace = true, features = ["tui", "gpu"] }
 
 # GPU edge-case test framework (null fuzzing, boundary probing, lifecycle chaos)
 trueno-cuda-edge = { path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }

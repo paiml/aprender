@@ -32,9 +32,13 @@ thiserror = "2.0"
 proptest = { workspace = true }
 criterion = { workspace = true }
 
-# ttop for parity testing against the reference implementation
-# See SPEC-024 Section 11 - Visual Comparison Findings
-ttop = "2.0"
+# NOTE: `ttop = "2.0"` REMOVED (same reason as the trueno-viz note below).
+# `ttop` is the published name of the in-tree `crates/aprender-viz-ttop`, which
+# is binary-only (no [lib]) — so the crates.io copy could not be swapped for it.
+# Nothing here imported `ttop::`; the dep only dragged in a parallel crates.io
+# stack (ttop 2.0 -> presentar-terminal 0.3.5 -> presentar-core 0.3.4 ->
+# trueno 0.14.6), i.e. a second copy of THIS crate and of the SIMD foundation.
+# SPEC-024 Section 11 visual-parity comparison was never wired up in code.
 # NOTE: trueno-viz dev-dep removed — it was unused (0 references) and its ^0.51.0
 # requirement created a crates.io publish cycle
 # (aprender-compute → aprender-present-terminal → aprender-viz → aprender-compute).

@@ -43,7 +43,7 @@ wasm-bindgen = { version = "0.2", optional = true }
 # Native CUDA monitoring via trueno-gpu (TRUENO-SPEC-010)
 trueno-gpu = { version = "0.63.0", path = "../aprender-gpu", optional = true, package = "aprender-gpu" }
 # PMAT-336: Provable contracts compile-time enforcement
-provable-contracts-macros = "0.3"
+provable-contracts-macros = { workspace = true }
 # P1a: Sovereign GEMM microkernel codegen (compile-time shape specialization)
 trueno-gemm-codegen = { version = "0.63.0", path = "../aprender-gemm-codegen", package = "aprender-gemm-codegen" }
 # Tracing/profiling support (renacer integration)

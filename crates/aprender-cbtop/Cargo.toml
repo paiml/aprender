@@ -59,7 +59,7 @@ libc = "0.2"
 proptest = "1"
 tempfile = "3"
 # TUI pixel-level testing framework
-jugar-probar = "1.0"
+jugar-probar = { workspace = true }
 
 [features]
 default = []

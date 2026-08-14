@@ -69,8 +69,14 @@ trueno = { workspace = true, optional = true, features = ["gpu"] }
 # SIMD/GPU memory compression (LZ4/ZSTD, native-only)
 trueno-zram-core = { workspace = true, optional = true }
 
-# GPU-accelerated block device via ublk (native-only)
-trueno-ublk = { version = "0.3", optional = true }
+# NOTE: `trueno-ublk = { version = "0.3", optional = true }` was REMOVED, not
+# re-pointed at the in-tree crate. It was a crates.io copy of an in-tree package
+# (`crates/aprender-zram/bins/trueno-ublk`) that this crate never imports —
+# `trueno_ublk` appears here only as a string literal in the Oracle knowledge
+# graph and as println! text in examples/trueno_ublk_demo.rs. The in-tree
+# package is also unbuildable today (its `trueno-zram-core` path dep points at
+# `crates/aprender-zram/crates/trueno-zram-core`, which does not exist), so
+# wiring it in would newly break the build for zero call sites.
 
 # Distributed compute (CPU/GPU/Remote executors, native-only)
 repartir = { workspace = true, optional = true, features = ["cpu", "remote"] }
@@ -127,7 +133,11 @@ alimentar = { workspace = true, optional = true }
 # RAG and visualization (native-only)
 trueno-rag = { workspace = true, optional = true, features = ["sqlite"] }
 trueno-viz = { workspace = true, optional = true }
-presentar = { version = "0.3", optional = true }
+# NOTE: `presentar = { version = "0.3", optional = true }` REMOVED. `presentar`
+# is the published name of the in-tree `crates/aprender-present-cli`, but that
+# package is binary-only ([[bin]] name = "presentar", no [lib]) so there is no
+# library to point at — and nothing here imported `presentar::` anyway (the
+# `presentar_terminal::`/`presentar_core::` uses come from the path deps above).
 
 # Speech recognition (native-only)
 whisper-apr = { version = "0.2", optional = true }
@@ -142,8 +152,15 @@ simular = { workspace = true, optional = true }
 # depyler = { version = "3.20", optional = true }  # blocked: serde version conflict (1.0.200-1.0.219)
 bashrs = { version = "6.65", optional = true }
 
-# Testing and quality (native-only)
-probar = { workspace = true, optional = true }
+# Testing and quality (native-only).
+# NOTE: the `probar = { workspace = true, optional = true }` alias that used to
+# sit here was removed. `probar` and `jugar-probar` are two workspace aliases for
+# the SAME package (crates/aprender-test-lib); once `jugar-probar` stopped
+# resolving to a crates.io copy they became one package under two names, which
+# cargo rejects ("depends on crate ... multiple times with different names").
+# Nothing here imported `probar::` — the only hits are inside raw-string cookbook
+# recipes — whereas `jugar_probar::{Browser, BrowserConfig, Page}` is a real
+# import in src/agent/tool/browser.rs. So `jugar-probar` below is the survivor.
 
 # HTTP server for Banco workbench API
 axum = { version = "0.7", features = ["json", "multipart", "ws"], optional = true }
@@ -152,7 +169,7 @@ async-stream = { version = "0.3", optional = true }
 tokio-stream = { version = "0.1", optional = true }
 
 # Headless browser automation (agent BrowserTool)
-jugar-probar = { version = "1.0", features = ["browser"], optional = true }
+jugar-probar = { workspace = true, features = ["browser"], optional = true }
 base64 = { version = "0.22", optional = true }
 
 # MCP protocol: client (consume external tools) + server (expose agent tools).
@@ -163,8 +180,8 @@ base64 = { version = "0.22", optional = true }
 pmcp = { version = "2.3", optional = true }
 
 # Provable design-by-contract (compile-time contract binding)
-provable-contracts = { version = "0.2", optional = true }
-provable-contracts-macros = { version = "0.2", optional = true }
+provable-contracts = { workspace = true, optional = true }
+provable-contracts-macros = { workspace = true, optional = true }
 
 # PNG rasterization for Coursera banner assets (native-only)
 resvg = { version = "0.47", optional = true }
@@ -232,7 +249,7 @@ ml = ["aprender", "entrenar", "alimentar", "native"]
 rag = ["trueno-rag", "oracle-mode"]
 
 # Visualization (terminal and WASM)
-viz = ["trueno-viz", "presentar", "native"]
+viz = ["trueno-viz", "native"]
 
 # Speech recognition (Whisper ASR)
 speech = ["whisper-apr", "native"]
@@ -243,8 +260,10 @@ kernel = ["pepita", "native"]
 # SIMD/GPU compression (LZ4/ZSTD with AVX2/AVX-512/NEON)
 compression = ["trueno-zram-core", "native"]
 
-# GPU-accelerated block device (ublk)
-block-device = ["trueno-ublk", "compression"]
+# GPU-accelerated block device (ublk). The `trueno-ublk` dep this used to pull
+# from crates.io is gone (see the dependency section); the feature keeps its
+# compression enablement so downstream `--features block-device` still resolves.
+block-device = ["compression"]
 
 # Simulation engine
 simulation = ["simular", "native"]
@@ -253,8 +272,9 @@ simulation = ["simular", "native"]
 # depyler blocked until serde versions aligned
 transpilers = ["bashrs", "native"]
 
-# Testing and quality
-testing = ["probar", "native"]
+# Testing and quality (see the dependency note: `probar` -> `jugar-probar`,
+# the same in-tree package under its other alias)
+testing = ["jugar-probar", "native"]
 
 # Banco: local-first AI workbench HTTP API (batteries included)
 # Includes: realizar (inference), aprender (BPE), alimentar (Arrow), entrenar (training/merge)
@@ -276,7 +296,7 @@ agents-mcp = ["agents", "pmcp"]
 # Provable design-by-contract (compile-time contract binding)
 agents-contracts = ["agents", "provable-contracts", "provable-contracts-macros"]
 # WASM visualization for agent dashboards in wos
-agents-viz = ["agents", "presentar"]
+agents-viz = ["agents"]
 # Full sovereign agent (all agent features)
 agents-full = ["agents-inference", "agents-rag"]
 
@@ -303,7 +323,7 @@ proptest = "1.5"
 blake3 = "1.8"
 filetime = "0.2"
 trueno-cuda-edge = { path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
-jugar-probar = { version = "1.0", features = ["browser"] }
+jugar-probar = { workspace = true, features = ["browser"] }
 tokio-tungstenite = "0.24"
 
 [[bench]]

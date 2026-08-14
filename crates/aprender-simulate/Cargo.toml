@@ -81,7 +81,7 @@ bitflags = "2.6"
 
 # Work stealing for Heijunka
 crossbeam-deque = "0.8"
-provable-contracts-macros = { version = "0.2" }
+provable-contracts-macros = { workspace = true }
 
 # Z3 removed from Cargo.toml to reduce Cargo.lock bloat (CB-081)
 # Re-add with: z3 = { version = "0.12", optional = true }
@@ -93,7 +93,7 @@ serde_yaml = "0.9"
 
 [dev-dependencies]
 # Contract trait enforcement (Section 23)
-provable-contracts = { version = "0.2" }
+provable-contracts = { workspace = true }
 # Property-based testing (Popperian falsification)
 proptest = "1.5"
 criterion = { version = "0.5", default-features = false }

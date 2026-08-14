@@ -66,7 +66,7 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 # Optional derive macros for type-safe selectors (Phase 4)
-jugar-probar-derive = { version = "=1.0.3", optional = true }
+jugar-probar-derive = { workspace = true, optional = true }
 
 # Optional GPU compute via trueno
 trueno = { workspace = true, optional = true }
