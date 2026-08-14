@@ -1,0 +1,38 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PCU (Page Content Unit) contract for book/src/cli/simulate.md (apr simulate CLI reference).
+    Enforces: page exists, references the command, has a runnable example.
+  references:
+    - "docs/specifications/book-completeness-spec.md"
+
+equations:
+  pcu_header_present:
+    formula: "file_contains(book/src/cli/simulate.md, 'PCU: cli-simulate')"
+  command_mentioned:
+    formula: "file_contains(book/src/cli/simulate.md, 'apr simulate')"
+  example_block_present:
+    formula: "file_contains_fenced(book/src/cli/simulate.md, language='bash')"
+
+falsification_tests:
+  - id: FALSIFY-PAGE-CLI-SIMULATE-001
+    name: stub_exists
+    prediction: "book/src/cli/simulate.md exists on disk"
+    test_harness: "test -f book/src/cli/simulate.md"
+    expected_output: "exit 0"
+    if_fails: "Run scripts/gen-cli-chapter-stubs.sh to regenerate."
+
+  - id: FALSIFY-PAGE-CLI-SIMULATE-002
+    name: command_mentioned
+    prediction: "page references the command at least once"
+    test_harness: "grep -q 'apr simulate' book/src/cli/simulate.md"
+    expected_output: "exit 0"
+    if_fails: "Add a mention of `apr simulate` to the chapter."
+
+  - id: FALSIFY-PAGE-CLI-SIMULATE-003
+    name: runnable_example
+    prediction: "page has at least one ```bash code block"
+    test_harness: "grep -c '^```bash' book/src/cli/simulate.md"
+    expected_output: "stdout >= 1"
+    if_fails: "Add a ```bash code block with a runnable example."

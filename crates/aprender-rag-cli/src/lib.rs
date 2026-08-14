@@ -1,6 +1,18 @@
-//! Trueno-RAG CLI
+//! RAG pipeline command surface — indexing, retrieval, transcription and
+//! evaluation over the `aprender-rag` engine.
 //!
-//! Command-line interface for the Trueno-RAG pipeline.
+//! # Why this is a library
+//!
+//! This crate used to be binary-only: 1 600 lines of clap tree and dispatch
+//! sat in `main.rs`, along with `mod discover; mod ingest; …`, so nothing
+//! outside a binary named `trueno-rag` could reach any of it. `trueno-rag` is
+//! a pre-consolidation name — it advertises a project (`trueno`) that is now
+//! `crates/aprender-compute`, and it is not a name anyone would guess from
+//! `cargo install aprender-rag-cli`.
+//!
+//! The clap tree and its dispatch now live here, so `apr rag` calls [`run`] —
+//! the *same* entry point `main` called — instead of a parallel copy that can
+//! drift from it.
 //!
 //! ## Features
 //!
@@ -13,13 +25,13 @@
 //! cargo build --release --features embeddings
 //!
 //! # Index documents with semantic embeddings
-//! trueno-rag index --path docs/ --output index/ --embedder semantic
+//! apr rag index --path docs/ --output index/ --embedder semantic
 //!
 //! # Index with recursive directory walking and subtitle support
-//! trueno-rag index --path /data/ --output index/ --recursive
+//! apr rag index --path /data/ --output index/ --recursive
 //!
 //! # Index with timestamp-aware chunking for media transcripts
-//! trueno-rag index --path /data/ --output index/ --recursive --chunk-strategy timestamp
+//! apr rag index --path /data/ --output index/ --recursive --chunk-strategy timestamp
 //! ```
 
 // APR-MONO §S #1976: this crate joined the workspace via flat-layout relocation, so it now
@@ -37,12 +49,12 @@ mod transcribe;
 
 use anyhow::Result;
 use aprender_rag::loader::LoaderRegistry;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
 /// Embedder type selection
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum EmbedderType {
+pub enum EmbedderType {
     /// TF-IDF statistical embeddings (default, no downloads)
     #[default]
     Tfidf,
@@ -52,7 +64,7 @@ enum EmbedderType {
 
 /// Model selection for semantic embeddings
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum SemanticModel {
+pub enum SemanticModel {
     /// all-MiniLM-L6-v2: Fast, good quality (384 dims)
     #[default]
     MiniLm,
@@ -64,7 +76,7 @@ enum SemanticModel {
 
 /// Chunking strategy selection
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum ChunkStrategy {
+pub enum ChunkStrategy {
     /// Auto-select: TimestampChunker for media, RecursiveChunker for text
     #[default]
     Auto,
@@ -76,7 +88,7 @@ enum ChunkStrategy {
 
 /// Compute backend for transcription
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum BackendType {
+pub enum BackendType {
     /// CPU with SIMD acceleration
     #[default]
     Cpu,
@@ -86,22 +98,23 @@ enum BackendType {
     Cuda,
 }
 
-#[derive(Parser)]
-#[command(name = "trueno-rag")]
-#[command(author = "Pragmatic AI Labs")]
-#[command(version)]
-#[command(about = "Pure-Rust RAG pipeline CLI", long_about = None)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
+/// RAG pipeline subcommands.
+///
+/// Mounted as `apr rag <SUBCOMMAND>`. Previously the whole command tree of a
+/// standalone `trueno-rag` binary.
+#[derive(Subcommand, Debug, Clone)]
+pub enum RagCommands {
     /// Run a demo RAG query
     Demo {
         /// Query string
-        #[arg(short, long, default_value = "What is machine learning?")]
+        ///
+        /// NOTE: long form only. `#[arg(short, long)]` derived `-q` here, which
+        /// collides with `apr`'s global `-q/--quiet` — clap refuses the whole
+        /// `demo` command when two arguments claim one short, so
+        /// `apr rag demo` would not even print its help. `--query` is
+        /// unchanged, and `apr rag query <QUERY> --index …` (the non-demo
+        /// path) takes its query positionally and is unaffected.
+        #[arg(long, default_value = "What is machine learning?")]
         query: String,
 
         /// Number of results to return
@@ -307,8 +320,8 @@ enum Commands {
 
 /// Eval sub-subcommands
 #[cfg(feature = "eval")]
-#[derive(Subcommand)]
-enum EvalAction {
+#[derive(Subcommand, Debug, Clone)]
+pub enum EvalAction {
     /// Sample chunks from index for ground truth generation (no API needed)
     Sample {
         /// Path to index directory (containing index.json)
@@ -497,12 +510,20 @@ struct PersistedChunk {
     end_secs: Option<f64>,
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
-
-    match cli.command {
-        Commands::Demo { query, top_k } => query::run_demo(&query, top_k)?,
-        Commands::Index {
+/// Execute one RAG subcommand.
+///
+/// This is the entry point the standalone `trueno-rag` binary's `main` used to
+/// inline; `apr rag` calls exactly this, so the two cannot drift.
+///
+/// # Errors
+///
+/// Propagates any failure from the underlying pipeline stage: unreadable input
+/// paths, an index that cannot be parsed, a missing Whisper model, a missing
+/// `ffmpeg`, or an eval gate that did not meet its thresholds.
+pub fn run(command: RagCommands) -> Result<()> {
+    match command {
+        RagCommands::Demo { query, top_k } => query::run_demo(&query, top_k)?,
+        RagCommands::Index {
             path,
             output,
             chunk_size,
@@ -553,7 +574,7 @@ fn main() -> Result<()> {
                 )?
             }
         }
-        Commands::Query {
+        RagCommands::Query {
             query,
             index,
             top_k,
@@ -567,7 +588,7 @@ fn main() -> Result<()> {
         } => query::run_query(
             &query, &index, top_k, &format, &mode, &fusion, fusion_k, candidates, &rerank, hyde,
         )?,
-        Commands::Transcribe {
+        RagCommands::Transcribe {
             path,
             recursive,
             skip_existing,
@@ -590,7 +611,7 @@ fn main() -> Result<()> {
             hotwords.as_deref(),
             &exclude,
         )?,
-        Commands::ExtractFrames {
+        RagCommands::ExtractFrames {
             path,
             recursive,
             threshold,
@@ -609,9 +630,9 @@ fn main() -> Result<()> {
             dry_run,
             &exclude,
         )?,
-        Commands::Info => run_info(),
+        RagCommands::Info => run_info(),
         #[cfg(feature = "eval")]
-        Commands::Eval { action } => eval_cmd::run_eval(action)?,
+        RagCommands::Eval { action } => eval_cmd::run_eval(action)?,
     }
 
     Ok(())

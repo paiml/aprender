@@ -123,9 +123,12 @@ name = "simular"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
-[[bin]]
-name = "simular"
-path = "src/main.rs"
+# No `[[bin]]`. This crate used to publish a binary called `simular` — the
+# pre-consolidation Spanish name of a project that is now `crates/aprender-simulate`
+# inside this monorepo. The simulation engine is unchanged and its whole command
+# surface is reachable as `apr simulate <run|render|validate|verify|emc-check|
+# emc-validate|list-emc>`; `apr-cli` depends on this crate and calls
+# `simular::cli::run_cli`, the same entry point `main` called.
 
 [[example]]
 name = "monte_carlo"

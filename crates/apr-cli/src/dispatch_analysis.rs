@@ -50,6 +50,113 @@ fn dispatch_kernel_command(command: &KernelCommands, cli: &Cli) -> Result<(), Cl
     }
 }
 
+/// `apr compare-hf` — compare a local model against a HuggingFace checkpoint.
+///
+/// GH-663: refused outright in `--offline` mode, since the comparison is
+/// defined by a download. Lifted out of `dispatch_analysis_commands` because
+/// the guard was an `if` with an early `return` nested inside a match arm.
+fn dispatch_compare_hf(
+    file: &Path,
+    hf: &str,
+    tensor: Option<&str>,
+    threshold: f64,
+    json: bool,
+    offline: bool,
+) -> std::result::Result<(), crate::error::CliError> {
+    if offline {
+        return Err(crate::error::CliError::NetworkError(
+            "Cannot run compare-hf in --offline mode (requires HuggingFace download).".to_string(),
+        ));
+    }
+    crate::error::resolve_model_path(file)
+        .and_then(|r| compare_hf::run(&r, hf, tensor, threshold, json))
+}
+
+/// `apr probar <SUBCOMMAND>` (GH-876 Milestone 1).
+///
+/// Lifted out of `dispatch_analysis_commands`: a `match` inside a `match` arm
+/// is what the cognitive-complexity gate charges for, and this one had a
+/// non-trivial body besides.
+fn dispatch_probar_command(
+    command: &ProbarSubcommand,
+) -> std::result::Result<(), crate::error::CliError> {
+    match command {
+        ProbarSubcommand::Tensor {
+            file,
+            output,
+            format,
+            golden,
+            layer,
+            assert,
+            tolerance,
+        } => {
+            // An unparseable --format used to be swallowed by
+            // `.unwrap_or(Both)`, so `--format bogus` silently exported
+            // something the user never asked for. FromStr already produces
+            // the right message; surface it.
+            format
+                .parse::<probar::ExportFormat>()
+                .map_err(crate::error::CliError::ValidationFailed)
+                .and_then(|export_format| {
+                    crate::error::resolve_model_path(file).and_then(|r| {
+                        probar::run(
+                            &r,
+                            output,
+                            export_format,
+                            golden.as_deref(),
+                            layer.as_deref(),
+                            *assert,
+                            *tolerance,
+                        )
+                    })
+                })
+        }
+    }
+}
+
+/// `apr modelfile <SUBCOMMAND>` (CRUX-K-11: Modelfile DSL parser).
+fn dispatch_modelfile_command(
+    command: &ModelfileSubcommand,
+) -> std::result::Result<(), crate::error::CliError> {
+    match command {
+        ModelfileSubcommand::Parse { file, format } => {
+            crate::commands::modelfile::run_parse(file, format)
+        }
+    }
+}
+
+/// `apr hang-trace-lint` (CRUX-F-14).
+///
+/// `--mode` is validated here rather than by clap, so an unrecognised value is
+/// REFUSED with the two legal spellings named — not silently treated as one of
+/// them.
+fn dispatch_hang_trace_lint(
+    trace_dir: &Path,
+    mode: &str,
+    world_size: usize,
+    exit_code: Option<i32>,
+    expected_exit_code: Option<i32>,
+    json: bool,
+) -> std::result::Result<(), crate::error::CliError> {
+    let hang_mode = match mode {
+        "timeout" => commands::hang_trace_lint::HangMode::Timeout,
+        "success" => commands::hang_trace_lint::HangMode::Success,
+        other => {
+            return Err(crate::error::CliError::ValidationFailed(format!(
+                "apr hang-trace-lint --mode must be `timeout` or `success` (got `{other}`)"
+            )))
+        }
+    };
+    commands::hang_trace_lint::run(
+        trace_dir,
+        hang_mode,
+        world_size,
+        exit_code,
+        expected_exit_code,
+        json,
+    )
+}
+
 /// Dispatch analysis commands (cbtop, probar, compare-hf, hex, tree, flow, oracle).
 ///
 /// Returns `None` if the command is not an analysis command, allowing the caller
@@ -121,38 +228,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         // GH-876 Milestone 1: Probar is now a subcommand container.
         // The existing flat-args behavior moved under `apr probar tensor <FILE>`.
-        ExtendedCommands::Probar { command } => match command {
-            ProbarSubcommand::Tensor {
-                file,
-                output,
-                format,
-                golden,
-                layer,
-                assert,
-                tolerance,
-            } => {
-                // An unparseable --format used to be swallowed by
-                // `.unwrap_or(Both)`, so `--format bogus` silently exported
-                // something the user never asked for. FromStr already produces
-                // the right message; surface it.
-                format
-                    .parse::<probar::ExportFormat>()
-                    .map_err(crate::error::CliError::ValidationFailed)
-                    .and_then(|export_format| {
-                        crate::error::resolve_model_path(file).and_then(|r| {
-                            probar::run(
-                                &r,
-                                output,
-                                export_format,
-                                golden.as_deref(),
-                                layer.as_deref(),
-                                *assert,
-                                *tolerance,
-                            )
-                        })
-                    })
-            }
-        },
+        ExtendedCommands::Probar { command } => dispatch_probar_command(command),
 
         ExtendedCommands::CompareHf {
             file,
@@ -160,18 +236,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             tensor,
             threshold,
             json,
-        } => {
-            // GH-663: Reject compare-hf in --offline mode (requires HuggingFace download)
-            if cli.offline {
-                return Some(Err(crate::error::CliError::NetworkError(
-                    "Cannot run compare-hf in --offline mode (requires HuggingFace download)."
-                        .to_string(),
-                )));
-            }
-            crate::error::resolve_model_path(file).and_then(|r| {
-                compare_hf::run(&r, hf, tensor.as_deref(), *threshold, *json || cli.json)
-            })
-        }
+        } => dispatch_compare_hf(
+            file,
+            hf,
+            tensor.as_deref(),
+            *threshold,
+            *json || cli.json,
+            cli.offline,
+        ),
 
         ExtendedCommands::OllamaChatLint {
             response_file,
@@ -347,26 +419,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             world_size,
             exit_code,
             expected_exit_code,
-        } => match mode.as_str() {
-            "timeout" | "success" => {
-                let m = if mode == "timeout" {
-                    commands::hang_trace_lint::HangMode::Timeout
-                } else {
-                    commands::hang_trace_lint::HangMode::Success
-                };
-                commands::hang_trace_lint::run(
-                    trace_dir,
-                    m,
-                    *world_size,
-                    *exit_code,
-                    *expected_exit_code,
-                    cli.json,
-                )
-            }
-            other => Err(crate::error::CliError::ValidationFailed(format!(
-                "apr hang-trace-lint --mode must be `timeout` or `success` (got `{other}`)"
-            ))),
-        },
+        } => dispatch_hang_trace_lint(
+            trace_dir,
+            mode,
+            *world_size,
+            *exit_code,
+            *expected_exit_code,
+            cli.json,
+        ),
 
         ExtendedCommands::OtlpLint {
             otlp_file,
@@ -470,11 +530,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         }
 
         // CRUX-K-11: Modelfile DSL parser.
-        ExtendedCommands::Modelfile { command } => match command {
-            ModelfileSubcommand::Parse { file, format } => {
-                crate::commands::modelfile::run_parse(file, format)
-            }
-        },
+        ExtendedCommands::Modelfile { command } => dispatch_modelfile_command(command),
 
         ExtendedCommands::Hex {
             file,
@@ -639,6 +695,20 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         ),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
         ExtendedCommands::Data { command } => dispatch_data_command(command, cli.json),
+        ExtendedCommands::Simulate { command } => {
+            dispatch_simulate_command(command.clone(), cli.verbose)
+        }
+        ExtendedCommands::Rag { command } => {
+            // `aprender_rag_cli::run` is the entry point the `trueno-rag`
+            // binary's `main` called. It takes the command by value and apr's
+            // dispatch tree is borrow-based throughout, hence the clone — these
+            // are argument structs of paths and scalars, not data.
+            aprender_rag_cli::run(command.clone())
+                .map_err(|e| CliError::Aprender(format!("rag: {e:#}")))
+        }
+        #[cfg(feature = "zram")]
+        ExtendedCommands::Zram { format, command } => aprender_zram_cli::run(command, *format)
+            .map_err(|e| CliError::Aprender(format!("zram: {e}"))),
         ExtendedCommands::Pipeline { command } => dispatch_pipeline_command(command, cli),
         ExtendedCommands::Ppl { log_probs_file } => commands::ppl::run(log_probs_file, cli.json),
 
@@ -805,6 +875,50 @@ fn dispatch_experiment_command(
     }
 }
 
+/// Dispatch `apr simulate` to the simulation engine.
+///
+/// # Exit-code parity
+///
+/// `simular::cli::run_cli` returns a `std::process::ExitCode`, and the engine
+/// only ever produces `ExitCode::SUCCESS` or `ExitCode::from(1)` /
+/// `ExitCode::FAILURE` — both of which are status 1. So a non-success result is
+/// mapped to [`CliError::Aprender`], the one apr error class whose
+/// `exit_code_value()` is `1`. `apr simulate run bad.yaml` therefore exits with
+/// the same status `simular run bad.yaml` did, which is what a CI script that
+/// gates on a failed experiment actually reads.
+///
+/// The engine has already printed its own diagnosis to stderr by this point;
+/// the error carried here only supplies the exit status and a one-line marker.
+fn dispatch_simulate_command(
+    command: SimulateCommands,
+    verbose: bool,
+) -> std::result::Result<(), CliError> {
+    let label = simulate_command_label(&command);
+    let args = simular::cli::Args {
+        command: command.to_simular(verbose),
+    };
+    if simular::cli::run_cli(args) == std::process::ExitCode::SUCCESS {
+        Ok(())
+    } else {
+        Err(CliError::Aprender(format!(
+            "simulate {label} reported failure (see output above)"
+        )))
+    }
+}
+
+/// The subcommand name, for the failure message.
+fn simulate_command_label(command: &SimulateCommands) -> &'static str {
+    match command {
+        SimulateCommands::Run { .. } => "run",
+        SimulateCommands::Render { .. } => "render",
+        SimulateCommands::Validate { .. } => "validate",
+        SimulateCommands::Verify { .. } => "verify",
+        SimulateCommands::EmcCheck { .. } => "emc-check",
+        SimulateCommands::EmcValidate { .. } => "emc-validate",
+        SimulateCommands::ListEmc => "list-emc",
+    }
+}
+
 /// Dispatch `apr data` subcommands to alimentar-backed implementations.
 fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Result<(), CliError> {
     match command {
@@ -859,6 +973,12 @@ fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Res
             output,
             json: json_flag,
         } => data::run_dedup(file, output, *json_flag || json),
+        // Everything the `alimentar` binary exposed. One call into
+        // `alimentar::cli::dispatch` — the entry point that binary's `main`
+        // reached — rather than a second copy of its 17-arm match here, which
+        // would be free to drift from the original.
+        DataCommands::Toolbox(command) => alimentar::cli::dispatch(command.clone())
+            .map_err(|e| CliError::Aprender(format!("data: {e}"))),
     }
 }
 

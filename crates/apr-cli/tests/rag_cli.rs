@@ -1,6 +1,10 @@
-//! CLI Integration Tests (EXTREME TDD - RED Phase)
+//! `apr rag` CLI integration tests.
 //!
-//! These tests define the expected behavior BEFORE implementation.
+//! These were `crates/aprender-rag-cli/tests/cli_tests.rs`, driving a
+//! standalone `trueno-rag` binary. That binary is gone — the pipeline is
+//! mounted at `apr rag` — so the suite now drives `apr rag` instead. Nothing
+//! about the assertions changed: this is the falsifier that the rehome kept
+//! every subcommand, flag and default reachable.
 
 // APR-MONO §S #1976: workspace `.clippy.toml` disallowed-methods now applies; allow
 // unwrap() in this integration-test crate per aprender-core convention.
@@ -11,9 +15,15 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
-/// Helper to get CLI command
+/// Helper to get CLI command.
+///
+/// Every test below spells its arguments exactly as it did against
+/// `trueno-rag`; the `rag` prefix is applied here so the diff between the two
+/// suites is this one function.
 fn cli() -> Command {
-    Command::cargo_bin("trueno-rag").unwrap()
+    let mut cmd = Command::cargo_bin("apr").unwrap();
+    cmd.arg("rag");
+    cmd
 }
 
 // ============================================================================
@@ -570,20 +580,38 @@ fn test_index_parallel_jobs() {
 
 #[test]
 fn test_help() {
+    // The about-line moved from the standalone binary's `#[command(about =
+    // "Pure-Rust RAG pipeline CLI")]` onto the `apr rag` variant, so this pins
+    // the new usage line and the full subcommand list rather than the old
+    // string — asserting the old one would only prove the rehome had not
+    // happened.
     cli()
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Pure-Rust RAG pipeline CLI"));
+        .stdout(predicate::str::contains("Usage: apr rag"))
+        .stdout(predicate::str::contains("Retrieval-augmented generation"))
+        .stdout(predicate::str::contains("demo"))
+        .stdout(predicate::str::contains("index"))
+        .stdout(predicate::str::contains("query"))
+        .stdout(predicate::str::contains("transcribe"))
+        .stdout(predicate::str::contains("extract-frames"))
+        .stdout(predicate::str::contains("info"));
 }
 
+/// `apr rag --version` reports the `apr` version, not a `trueno-rag` one.
+///
+/// The old assertion here was `contains("trueno-rag")` — the standalone
+/// binary's own name. There is no longer a binary by that name, and asserting
+/// the string still appeared would be asserting the rehome had NOT happened.
 #[test]
 fn test_version() {
     cli()
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("trueno-rag"));
+        .stdout(predicate::str::contains("apr"))
+        .stdout(predicate::str::contains("trueno-rag").not());
 }
 
 #[test]

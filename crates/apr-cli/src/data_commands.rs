@@ -34,7 +34,25 @@ fn parse_ngram_size(raw: &str) -> Result<usize, String> {
 
 /// Data quality pipeline subcommands (powered by alimentar).
 ///
-/// Thin CLI wrappers around alimentar's data utilities.
+/// Two groups live here:
+///
+/// 1. The five ML-dataset-hygiene commands defined inline below (`audit`,
+///    `split`, `decontaminate`, `dedup`, `balance`), implemented in
+///    `commands/data.rs` against JSONL classification datasets.
+/// 2. Everything the `alimentar` binary used to expose, flattened in from
+///    `alimentar::cli::Commands` — `convert`, `info`, `head`, `schema`,
+///    `mix`, `fim`, `dedup-text`, `filter-text`, `view`, `import`, `hub`,
+///    `registry`, `drift`, `quality`, `fed`, `doctest`, `repl`.
+///
+/// Group 2 was published as a binary named `alimentar`, which COLLIDES on
+/// crates.io with an unrelated `alimentar` crate that ships a bin of the same
+/// name — so `cargo install aprender-data` and `cargo install alimentar` fought
+/// over one path in `~/.cargo/bin`. The binary is gone; the commands are here.
+///
+/// The only name that had to change is alimentar's `dedup`, which is spelled
+/// `dedup-text` because `apr data dedup` already means something else (exact
+/// whole-row dedup of a JSONL file, versus text-column dedup of an Arrow
+/// dataset). See the note on `alimentar::cli::Commands::Dedup`.
 #[derive(Subcommand, Debug)]
 pub enum DataCommands {
     /// Audit a JSONL classification dataset for quality issues
@@ -130,4 +148,9 @@ pub enum DataCommands {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+
+    /// Dataset tooling: convert, inspect, mix, filter, import, registry,
+    /// drift, quality, federated splits (formerly the `alimentar` binary)
+    #[command(flatten)]
+    Toolbox(alimentar::cli::Commands),
 }

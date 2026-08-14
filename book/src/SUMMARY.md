@@ -356,6 +356,7 @@
 - [apr qualify](./cli/qualify.md)
 - [apr quant-preservation-lint](./cli/quant-preservation-lint.md)
 - [apr quantize](./cli/quantize.md)
+- [apr rag](./cli/rag.md)
 - [apr react-trace-lint](./cli/react-trace-lint.md)
 - [apr registry-quota-lint](./cli/registry-quota-lint.md)
 - [apr registry](./cli/registry.md)
@@ -369,6 +370,7 @@
 - [apr shard](./cli/shard.md)
 - [apr shared-cache-lint](./cli/shared-cache-lint.md)
 - [apr showcase](./cli/showcase.md)
+- [apr simulate](./cli/simulate.md)
 - [apr stamp](./cli/stamp.md)
 - [apr tensors](./cli/tensors.md)
 - [apr tokenize](./cli/tokenize.md)
@@ -383,6 +385,7 @@
 - [apr unshard](./cli/unshard.md)
 - [apr validate-manifest](./cli/validate-manifest.md)
 - [apr validate](./cli/validate.md)
+- [apr zram](./cli/zram.md)
 
 # Library Reference (aprender-core modules)
 

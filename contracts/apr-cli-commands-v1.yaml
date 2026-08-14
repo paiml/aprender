@@ -372,6 +372,28 @@ commands:
     requires_model: false
     side_effects: [filesystem]
 
+  # Rehomed pre-consolidation binaries. Each of these was published as a
+  # standalone bin under a name that either collided on crates.io
+  # (`alimentar`, folded into `data` above) or advertised a project that no
+  # longer exists independently (`simular`, `trueno-rag`, `trueno-zram`).
+  - name: simulate
+    category: data
+    description: "Reproducible simulation engine (was the `simular` binary)"
+    requires_model: false
+    side_effects: [filesystem]
+
+  - name: rag
+    category: data
+    description: "RAG pipeline: index, query, transcribe, eval (was the `trueno-rag` binary)"
+    requires_model: false
+    side_effects: [filesystem, network]
+
+  - name: zram
+    category: hardware
+    description: "zram device management and compression benchmarks (was the `trueno-zram` binary)"
+    requires_model: false
+    side_effects: [filesystem]
+
   - name: pipeline
     category: data
     description: "Pipeline orchestration (plan/apply/status)"

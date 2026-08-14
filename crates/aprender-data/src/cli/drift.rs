@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Drift detection commands.
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum DriftCommands {
     /// Detect drift between reference and current datasets
     Detect {

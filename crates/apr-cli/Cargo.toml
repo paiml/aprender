@@ -91,7 +91,10 @@ cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
 wgpu = ["inference"]
 visualization = ["renacer", "trueno-viz"]
-zram = ["trueno-zram-core"]
+# `apr zram` — the command surface formerly published as the `trueno-zram`
+# binary. `aprender-zram-cli` is the crate that used to own that binary; it is
+# now lib-only and this is its sole consumer.
+zram = ["trueno-zram-core", "dep:aprender-zram-cli"]
 training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]
 training-gpu = ["training"]
 whisper = ["whisper-apr"]
@@ -230,6 +233,24 @@ dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
 alimentar = { workspace = true }
+
+# ── Rehomed pre-consolidation binaries ──────────────────────────────────────
+# Each of these crates used to publish a binary under a pre-consolidation name
+# (`simular`, `trueno-rag`, `trueno-zram`; `alimentar` above). The binaries are
+# gone; the capability is mounted as an `apr` subcommand that calls the crate's
+# own entry point, so there is exactly one implementation of each.
+
+# `apr simulate` — was the `simular` binary. Entry point: simular::cli::run_cli.
+simular = { workspace = true }
+
+# `apr rag` — was the `trueno-rag` binary. Entry point: aprender_rag_cli::run.
+# aprender-rag itself is already in the graph via batuta's `rag` feature, so
+# this adds the command surface, not the engine.
+aprender-rag-cli = { path = "../aprender-rag-cli", version = "0.63.0" }
+
+# `apr zram` — was the `trueno-zram` binary. Entry point: aprender_zram_cli::run.
+# Gated by the existing `zram` feature alongside trueno-zram-core.
+aprender-zram-cli = { path = "../aprender-zram-cli", version = "0.63.0", optional = true }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }

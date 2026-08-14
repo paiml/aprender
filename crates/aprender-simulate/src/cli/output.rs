@@ -36,10 +36,10 @@ COMMANDS:
     version                     Show version information
 
 EXAMPLES:
-    simular run experiments/harmonic_oscillator.yaml
-    simular run experiments/harmonic_oscillator.yaml --seed 12345
-    simular verify experiments/harmonic_oscillator.yaml --runs 5
-    simular emc-check experiments/littles_law.yaml
+    apr simulate run experiments/harmonic_oscillator.yaml
+    apr simulate run experiments/harmonic_oscillator.yaml --seed 12345
+    apr simulate verify experiments/harmonic_oscillator.yaml --runs 5
+    apr simulate emc-check experiments/littles_law.yaml
 
 EDD COMPLIANCE:
     All experiments are validated against the four pillars of EDD:

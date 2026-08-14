@@ -143,8 +143,8 @@ pub fn validate_experiment(path: &Path) -> ExitCode {
             println!("  ✓ Falsification criteria defined");
             println!("  ✓ No prohibited custom code fields");
             println!("\nNext steps:");
-            println!("  • Run: simular run {}", path.display());
-            println!("  • Verify: simular verify {}", path.display());
+            println!("  • Run: apr simulate run {}", path.display());
+            println!("  • Verify: apr simulate verify {}", path.display());
             ExitCode::SUCCESS
         }
         Err(e) => {
@@ -307,7 +307,7 @@ pub fn list_emc() -> ExitCode {
                 println!("  - {reference}");
             }
 
-            println!("\nUsage: simular run <experiment.yaml>");
+            println!("\nUsage: apr simulate run <experiment.yaml>");
             println!(
                 "Reference EMCs using: equation_model_card.emc_ref: \"{}\"",
                 if sorted.is_empty() {

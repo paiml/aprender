@@ -3,14 +3,20 @@ name = "aprender-rag-cli"
 version = "0.63.0"
 edition = "2021"
 authors = ["Pragmatic AI Labs"]
-description = "CLI for Trueno-RAG pipeline"
+description = "RAG pipeline command surface (index/query/transcribe/eval), mounted as `apr rag`"
 license = "MIT"
 repository = "https://github.com/paiml/trueno-rag"
 readme = "../aprender-rag/README.md"
 
-[[bin]]
-name = "trueno-rag"
-path = "src/main.rs"
+# No `[[bin]]`. This crate used to publish a binary called `trueno-rag`, which
+# names a project (`trueno`) that is now `crates/aprender-compute` and tells a
+# user nothing about `cargo install aprender-rag-cli`. The pipeline is unchanged
+# and reachable as `apr rag <demo|index|query|transcribe|extract-frames|info|eval>`;
+# `apr-cli` depends on this crate and calls `aprender_rag_cli::run`, the same
+# entry point `main` called.
+[lib]
+name = "aprender_rag_cli"
+path = "src/lib.rs"
 
 [dependencies]
 # APR-MONO §S #1976: flat-layout relocation from crates/aprender-rag/crates/trueno-rag-cli/

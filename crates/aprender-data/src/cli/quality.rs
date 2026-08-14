@@ -8,7 +8,7 @@ use super::basic::load_dataset;
 use crate::quality::{ColumnQuality, QualityChecker};
 
 /// Quality checking commands.
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum QualityCommands {
     /// Check data quality of a dataset
     Check {
@@ -404,7 +404,7 @@ pub(crate) fn cmd_quality_profiles() -> crate::Result<()> {
         }
     }
 
-    println!("Usage: alimentar quality score <path> --profile <name>");
+    println!("Usage: apr data quality score <path> --profile <name>");
     Ok(())
 }
 
@@ -501,7 +501,7 @@ pub(crate) fn build_checklist_from_report(
             Severity::High,
             low_duplicates,
         )
-        .with_suggestion("Run deduplication: alimentar dedupe <file>"),
+        .with_suggestion("Run deduplication: apr data dedup-text <file> -o <out>"),
     );
     id += 1;
 

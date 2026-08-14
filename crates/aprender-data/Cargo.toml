@@ -28,7 +28,13 @@ format-encryption = ["dep:aes-gcm", "dep:argon2", "dep:x25519-dalek", "dep:hkdf"
 format-signing = ["dep:ed25519-dalek", "dep:getrandom"]
 format-streaming = ["mmap"]
 doctest = ["dep:chrono", "dep:regex", "dep:walkdir"]
-dhat-heap = ["dep:dhat"]
+# `dhat-heap` is GONE. It existed to install `dhat::Alloc` as the
+# `#[global_allocator]` in this crate's `src/main.rs`, and a global allocator
+# can only be declared by the crate that becomes the binary. With the binary
+# rehomed to `apr data`, the feature could still be enabled but would pull the
+# `dhat` dependency and profile nothing — a flag that silently does nothing is
+# worse than an absent one. Heap-profile `apr` instead:
+# `cargo run -p apr-cli --features dhat-heap -- data …`.
 
 [dependencies]
 # Core (always)
@@ -91,8 +97,7 @@ rand_core = { version = "0.6", optional = true }
 ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
 serde_yaml = "0.9.34"
 
-# Heap profiling (feature-gated)
-dhat = { version = "0.3", optional = true }
+# (heap profiling `dhat` dep removed with the `dhat-heap` feature — see above)
 
 # TUI support (unicode width calculation)
 unicode-width = "0.2"
@@ -111,10 +116,16 @@ assert_cmd = "2"
 predicates = "3"
 jugar-probar = "1.0.1"
 
-[[bin]]
-name = "alimentar"
-path = "src/main.rs"
-required-features = ["cli"]
+# No `[[bin]]`. This crate used to publish a binary called `alimentar`, and
+# that name COLLIDES on crates.io: an unrelated published `alimentar` crate
+# ships a bin of the same name, so `cargo install aprender-data` and
+# `cargo install alimentar` overwrite each other in ~/.cargo/bin — whichever
+# was installed last wins, silently, and neither tool tells you. The dataset
+# tooling is unchanged and reachable as `apr data <SUBCOMMAND>`; `apr-cli`
+# depends on this crate and calls `alimentar::cli::dispatch`.
+#
+# The `cli` feature still gates the command surface (clap + crossterm), because
+# `apr data` is the only consumer and the WASM/library builds do not want it.
 
 [[example]]
 name = "generate_fixtures"

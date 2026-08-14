@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Registry commands for dataset sharing and discovery.
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum RegistryCommands {
     /// Initialize a new registry
     Init {
@@ -27,6 +27,15 @@ pub enum RegistryCommands {
         path: PathBuf,
     },
     /// Push (publish) a dataset to the registry
+    // NOTE `disable_version_flag`: this subcommand takes a `--version <SEMVER>`
+    // argument naming a DATASET version. Mounted under `apr data registry`, it
+    // inherits apr's `propagate_version = true`, which auto-generates a
+    // `--version` flag on every subcommand — two arguments named `version`,
+    // which clap refuses outright ("Argument names must be unique"). The
+    // dataset version is the meaningful one here, so the auto-generated flag
+    // is turned off rather than the argument renamed; `apr --version` still
+    // reports the binary version at the top level.
+    #[command(disable_version_flag = true)]
     Push {
         /// Path to the dataset file (parquet)
         input: PathBuf,
@@ -34,7 +43,12 @@ pub enum RegistryCommands {
         #[arg(short, long)]
         name: String,
         /// Dataset version (semver)
-        #[arg(short, long, default_value = "1.0.0")]
+        // Long form only: `#[arg(short, long)]` derived `-v` here, which
+        // collides with apr's global `-v/--verbose`. clap refuses the whole
+        // subcommand when two arguments claim one short, so this would have
+        // made `apr data registry push` unrunnable. `--version <SEMVER>` is
+        // unchanged.
+        #[arg(long, default_value = "1.0.0")]
         version: String,
         /// Description of the dataset
         #[arg(short, long, default_value = "")]
@@ -50,6 +64,15 @@ pub enum RegistryCommands {
         registry: PathBuf,
     },
     /// Pull (download) a dataset from the registry
+    // NOTE `disable_version_flag`: this subcommand takes a `--version <SEMVER>`
+    // argument naming a DATASET version. Mounted under `apr data registry`, it
+    // inherits apr's `propagate_version = true`, which auto-generates a
+    // `--version` flag on every subcommand — two arguments named `version`,
+    // which clap refuses outright ("Argument names must be unique"). The
+    // dataset version is the meaningful one here, so the auto-generated flag
+    // is turned off rather than the argument renamed; `apr --version` still
+    // reports the binary version at the top level.
+    #[command(disable_version_flag = true)]
     Pull {
         /// Dataset name
         name: String,
@@ -57,7 +80,12 @@ pub enum RegistryCommands {
         #[arg(short, long)]
         output: PathBuf,
         /// Specific version to pull (defaults to latest)
-        #[arg(short, long)]
+        // Long form only: `#[arg(short, long)]` derived `-v` here, which
+        // collides with apr's global `-v/--verbose`. clap refuses the whole
+        // subcommand when two arguments claim one short, so this would have
+        // made `apr data registry pull` unrunnable. `--version <SEMVER>` is
+        // unchanged.
+        #[arg(long)]
         version: Option<String>,
         /// Path to registry directory
         #[arg(long, default_value = ".alimentar")]
@@ -80,11 +108,25 @@ pub enum RegistryCommands {
         path: PathBuf,
     },
     /// Delete a dataset version from the registry
+    // NOTE `disable_version_flag`: this subcommand takes a `--version <SEMVER>`
+    // argument naming a DATASET version. Mounted under `apr data registry`, it
+    // inherits apr's `propagate_version = true`, which auto-generates a
+    // `--version` flag on every subcommand — two arguments named `version`,
+    // which clap refuses outright ("Argument names must be unique"). The
+    // dataset version is the meaningful one here, so the auto-generated flag
+    // is turned off rather than the argument renamed; `apr --version` still
+    // reports the binary version at the top level.
+    #[command(disable_version_flag = true)]
     Delete {
         /// Dataset name
         name: String,
         /// Version to delete
-        #[arg(short, long)]
+        // Long form only: `#[arg(short, long)]` derived `-v` here, which
+        // collides with apr's global `-v/--verbose`. clap refuses the whole
+        // subcommand when two arguments claim one short, so this would have
+        // made `apr data registry delete` unrunnable. `--version <SEMVER>` is
+        // unchanged.
+        #[arg(long)]
         version: String,
         /// Path to registry directory
         #[arg(short, long, default_value = ".alimentar")]

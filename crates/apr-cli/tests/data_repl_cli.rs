@@ -16,10 +16,16 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
-/// Helper function to create alimentar REPL command
+/// Helper function to create the data REPL command.
+///
+/// This suite was `crates/aprender-data/tests/cli_repl_tests.rs`, driving a
+/// standalone `alimentar` binary. That binary is gone — its name COLLIDED on
+/// crates.io with an unrelated published `alimentar` — and the REPL is mounted
+/// at `apr data repl`. Only this function changed; every assertion below is the
+/// one that guarded the old binary.
 fn alimentar_repl() -> Command {
-    let mut cmd = Command::cargo_bin("alimentar").expect("Failed to find alimentar binary");
-    cmd.arg("repl");
+    let mut cmd = Command::cargo_bin("apr").expect("Failed to find apr binary");
+    cmd.args(["data", "repl"]);
     cmd
 }
 
@@ -136,7 +142,10 @@ fn test_ALIM_REPL_006_repl_exports_history() {
         .assert()
         .success()
         .stdout(predicate::str::contains("#!/usr/bin/env bash"))
-        .stdout(predicate::str::contains("alimentar session export"));
+        // The banner names the command the exported script's lines invoke. It
+        // said `alimentar session export` while every line read `alimentar …`;
+        // both now say `apr data`, because that is the command that exists.
+        .stdout(predicate::str::contains("apr data session export"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

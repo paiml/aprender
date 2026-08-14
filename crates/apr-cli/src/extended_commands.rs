@@ -791,10 +791,34 @@ pub enum ExtendedCommands {
         #[command(subcommand)]
         command: TokenizeCommands,
     },
-    /// Data quality pipeline (audit, split, balance) — powered by alimentar
+    /// Dataset pipeline: quality (audit/split/balance/dedup/decontaminate)
+    /// plus conversion, inspection, mixing, registry, drift and federated
+    /// splits — powered by alimentar
     Data {
         #[command(subcommand)]
         command: DataCommands,
+    },
+    /// Reproducible simulation engine: run/validate/verify EDD experiments,
+    /// check EMC compliance, render frames (formerly the `simular` binary)
+    Simulate {
+        #[command(subcommand)]
+        command: SimulateCommands,
+    },
+    /// Retrieval-augmented generation pipeline: index, query, transcribe,
+    /// extract keyframes, evaluate (formerly the `trueno-rag` binary)
+    Rag {
+        #[command(subcommand)]
+        command: aprender_rag_cli::RagCommands,
+    },
+    /// zram device management — a zramctl replacement with SIMD-accelerated
+    /// compression benchmarking (formerly the `trueno-zram` binary)
+    #[cfg(feature = "zram")]
+    Zram {
+        /// Output format for `status`: table, json, or raw (scripting)
+        #[arg(long, default_value = "table")]
+        format: aprender_zram_cli::output::OutputFormat,
+        #[command(subcommand)]
+        command: aprender_zram_cli::ZramCommands,
     },
     /// Pipeline orchestration (plan/apply/status) — wraps forjar DAG engine
     Pipeline {
@@ -1623,4 +1647,179 @@ fn parse_cbtop_iterations(s: &str) -> std::result::Result<usize, String> {
         );
     }
     Ok(n)
+}
+
+/// SVG render output format for `apr simulate render`.
+///
+/// The `simular` binary parsed this with a hand-rolled matcher:
+///
+/// ```text
+/// let format = match flags.get("--format").map(String::as_str) {
+///     Some("svg-frames") => RenderFormat::SvgFrames,
+///     _ => RenderFormat::SvgKeyframes,
+/// };
+/// ```
+///
+/// The `_` arm swallowed typos: `--format svg-fames` rendered keyframes and
+/// printed `Format: svg-keyframes`, which reads as confirmation. That is the
+/// same defect class the `--backend`/`--trace-level` value lists in
+/// `commands_enum.rs` exist to prevent, so it is a `ValueEnum` here and a
+/// misspelling is REFUSED rather than reinterpreted. Both accepted spellings
+/// are unchanged.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Default)]
+pub enum SimulateRenderFormat {
+    /// One template SVG plus a `keyframes.json` (default, as before).
+    #[default]
+    SvgKeyframes,
+    /// One SVG file per frame (`frame_NNNN.svg`).
+    SvgFrames,
+}
+
+impl SimulateRenderFormat {
+    /// Convert to the simulation engine's own format enum.
+    fn to_simular(self) -> simular::cli::RenderFormat {
+        match self {
+            Self::SvgKeyframes => simular::cli::RenderFormat::SvgKeyframes,
+            Self::SvgFrames => simular::cli::RenderFormat::SvgFrames,
+        }
+    }
+}
+
+/// Subcommands for `apr simulate` — the reproducible simulation engine that
+/// was published as a binary named `simular`.
+///
+/// Every variant maps 1:1 onto a `simular::cli::Command`, and dispatch goes
+/// through `simular::cli::run_cli` — the same entry point the binary's `main`
+/// called. `simular`'s `Command` also has `Help`, `Version` and `Error(String)`
+/// variants; those are outputs of its hand-rolled argv parser, not commands a
+/// user could type, and clap covers `--help`/`--version`/bad input natively.
+#[derive(Subcommand, Debug, Clone)]
+pub enum SimulateCommands {
+    /// Run an EDD experiment from a YAML file
+    ///
+    /// `simular run` took `-v`/`--verbose` (EMC library load count and
+    /// per-criterion detail). That flag is NOT redeclared here: `apr` already
+    /// has a global `-v/--verbose`, and a subcommand-local argument of the same
+    /// id silently SHADOWS the global one rather than erroring — so `-v` would
+    /// mean one thing on `apr simulate run` and another everywhere else, and
+    /// `apr --verbose simulate run x.yaml` would not be verbose at all. The
+    /// spelling and the effect are unchanged; the global flag is threaded into
+    /// the engine by `dispatch_simulate_command`.
+    Run {
+        /// Path to the experiment YAML file
+        #[arg(value_name = "EXPERIMENT")]
+        experiment_path: PathBuf,
+        /// Override the seed the experiment declares (reproducibility probe)
+        #[arg(long, value_name = "N")]
+        seed: Option<u64>,
+    },
+    /// Render a simulation to SVG frames or an SVG template + keyframes JSON
+    Render {
+        /// Simulation domain. `orbit` and `bouncing_balls` are implemented;
+        /// anything else is refused by the renderer with the list of supported
+        /// domains.
+        #[arg(long, value_name = "DOMAIN", default_value = "orbit")]
+        domain: String,
+        /// Output layout: one SVG per frame, or one template plus keyframes
+        #[arg(long, value_name = "FORMAT", value_enum, default_value_t = SimulateRenderFormat::SvgKeyframes)]
+        format: SimulateRenderFormat,
+        /// Directory to write frames/template into (created if absent)
+        #[arg(long, value_name = "DIR", default_value = ".")]
+        output: PathBuf,
+        /// Frames per second
+        #[arg(long, value_name = "N", default_value_t = 60)]
+        fps: u32,
+        /// Simulated duration in seconds (frames = fps × duration)
+        #[arg(long, value_name = "SECONDS", default_value_t = 10.0)]
+        duration: f64,
+        /// Seed pinning the draw, so a render is reproducible
+        #[arg(long, value_name = "N", default_value_t = 42)]
+        seed: u64,
+    },
+    /// Validate an experiment YAML against the EDD v2 schema
+    Validate {
+        /// Path to the experiment YAML file
+        #[arg(value_name = "EXPERIMENT")]
+        experiment_path: PathBuf,
+    },
+    /// Verify reproducibility by re-running an experiment N times
+    Verify {
+        /// Path to the experiment YAML file
+        #[arg(value_name = "EXPERIMENT")]
+        experiment_path: PathBuf,
+        /// Number of verification runs whose results must agree
+        #[arg(long, value_name = "N", default_value_t = 3)]
+        runs: usize,
+    },
+    /// Check an experiment for EMC (Experiment Method Card) compliance
+    #[command(name = "emc-check")]
+    EmcCheck {
+        /// Path to the experiment YAML file
+        #[arg(value_name = "EXPERIMENT")]
+        experiment_path: PathBuf,
+    },
+    /// Validate an EMC YAML file against the EDD v2 EMC schema
+    #[command(name = "emc-validate")]
+    EmcValidate {
+        /// Path to the EMC YAML file
+        #[arg(value_name = "EMC")]
+        emc_path: PathBuf,
+    },
+    /// List the EMCs available in the library
+    #[command(name = "list-emc")]
+    ListEmc,
+}
+
+impl SimulateCommands {
+    /// Lower an `apr simulate` invocation onto the simulation engine's own
+    /// command type.
+    ///
+    /// Kept as a total function with no fallible step: every field is carried
+    /// across by name, so a field added to `simular::cli::Command` fails this
+    /// build rather than being silently defaulted.
+    ///
+    /// `verbose` comes from apr's global `--verbose` rather than from a
+    /// subcommand-local flag — see the note on [`SimulateCommands::Run`].
+    fn to_simular(self, verbose: bool) -> simular::cli::Command {
+        match self {
+            Self::Run {
+                experiment_path,
+                seed,
+            } => simular::cli::Command::Run {
+                experiment_path,
+                seed_override: seed,
+                verbose,
+            },
+            Self::Render {
+                domain,
+                format,
+                output,
+                fps,
+                duration,
+                seed,
+            } => simular::cli::Command::Render {
+                domain,
+                format: format.to_simular(),
+                output,
+                fps,
+                duration,
+                seed,
+            },
+            Self::Validate { experiment_path } => {
+                simular::cli::Command::Validate { experiment_path }
+            }
+            Self::Verify {
+                experiment_path,
+                runs,
+            } => simular::cli::Command::Verify {
+                experiment_path,
+                runs,
+            },
+            Self::EmcCheck { experiment_path } => {
+                simular::cli::Command::EmcCheck { experiment_path }
+            }
+            Self::EmcValidate { emc_path } => simular::cli::Command::EmcValidate { emc_path },
+            Self::ListEmc => simular::cli::Command::ListEmc,
+        }
+    }
 }

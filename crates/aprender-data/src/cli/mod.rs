@@ -1,10 +1,20 @@
-//! alimentar CLI - Data Loading, Distribution and Tooling
+//! Dataset tooling command surface — convert, inspect, mix, filter, dedup,
+//! import/export, registry, drift, quality and federated-split commands.
 //!
-//! Command-line interface for alimentar operations.
+//! # Why this is a library module and not a binary
+//!
+//! This crate used to publish a binary called `alimentar`. That name COLLIDES
+//! on crates.io: an unrelated published `alimentar` crate also ships a bin of
+//! that name, so `cargo install aprender-data` and `cargo install alimentar`
+//! overwrite each other in `~/.cargo/bin` and the loser is whichever ran last.
+//!
+//! The command tree below is unchanged, but it is now mounted under
+//! `apr data`. [`dispatch`] is the single entry point — the one the binary's
+//! `main` used to reach through `run()` — so `apr data` cannot drift from it.
 
-use std::{path::PathBuf, process::ExitCode};
+use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::Subcommand;
 
 mod basic;
 mod drift;
@@ -23,17 +33,12 @@ pub use hub::ImportSource;
 pub use quality::QualityCommands;
 pub use registry::RegistryCommands;
 
-/// alimentar - Data Loading, Distribution and Tooling in Pure Rust
-#[derive(Parser)]
-#[command(name = "alimentar")]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
+/// Dataset tooling subcommands.
+///
+/// Flattened into `apr data`, so each variant below is spelled
+/// `apr data <variant>` — e.g. `apr data head train.parquet -n 20`.
+#[derive(Subcommand, Debug, Clone)]
+pub enum Commands {
     /// Convert between data formats
     Convert {
         /// Input file path
@@ -96,9 +101,18 @@ enum Commands {
         #[arg(long, default_value = "42")]
         seed: u64,
     },
-    /// Deduplicate dataset by text content (R-019)
+    /// Deduplicate an Arrow dataset by text content (R-019)
+    ///
+    /// Named `dedup-text` rather than `dedup` because `apr data dedup` already
+    /// exists and does something ELSE: it removes exact duplicate *rows* from a
+    /// JSONL file (key-order-insensitive, whole-object match). This one loads a
+    /// Parquet/CSV/JSON dataset through Arrow and collapses rows whose *text
+    /// column* repeats, auto-detecting that column when `--column` is omitted.
+    /// Two different operations on two different inputs cannot share a name;
+    /// merging them would have silently changed one of the two behaviours.
+    #[command(name = "dedup-text")]
     Dedup {
-        /// Input dataset file
+        /// Input dataset file (Parquet/CSV/JSON/Arrow)
         input: PathBuf,
         /// Output file path
         #[arg(short, long)]
@@ -169,7 +183,7 @@ enum Commands {
 
 /// Python doctest extraction commands
 #[cfg(feature = "doctest")]
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum DoctestCommands {
     /// Extract doctests from Python source files
     Extract {
@@ -196,12 +210,21 @@ pub enum DoctestCommands {
     },
 }
 
+/// Execute one dataset-tooling subcommand.
+///
+/// This is the whole of what the `alimentar` binary's `main` did after
+/// parsing, and it is what `apr data` calls. Keeping it as one function is
+/// the point: a second copy of this match in `apr-cli` would be free to drift
+/// from this one, and neither reviewer would see the divergence.
+///
+/// # Errors
+///
+/// Propagates the underlying dataset error — unreadable or unparseable input,
+/// a schema that lacks the requested column, a registry that does not exist,
+/// or a write that failed.
 #[allow(clippy::too_many_lines)]
-/// Run the alimentar CLI.
-pub fn run() -> ExitCode {
-    let cli = Cli::parse();
-
-    let result = match cli.command {
+pub fn dispatch(command: Commands) -> crate::error::Result<()> {
+    match command {
         Commands::Convert { input, output } => basic::cmd_convert(&input, &output),
         Commands::Info { path } => basic::cmd_info(&path),
         Commands::Head { path, rows } => basic::cmd_head(&path, rows),
@@ -291,14 +314,6 @@ pub fn run() -> ExitCode {
         },
         #[cfg(feature = "repl")]
         Commands::Repl => crate::repl::run(),
-    };
-
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            ExitCode::FAILURE
-        }
     }
 }
 

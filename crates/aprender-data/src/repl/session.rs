@@ -266,14 +266,14 @@ impl ReplSession {
     pub fn export_history(&self) -> String {
         let mut script = String::new();
         script.push_str("#!/usr/bin/env bash\n");
-        script.push_str("# alimentar session export\n");
+        script.push_str("# apr data session export\n");
         let _ = writeln!(script, "# Generated: {}", chrono_now());
         script.push_str("# Reproducible session for Batuta pipeline integration\n\n");
 
         for cmd in &self.history {
             // Convert REPL commands to batch CLI equivalents
             let batch_cmd = self.repl_to_batch(cmd);
-            let _ = writeln!(script, "alimentar {}", batch_cmd);
+            let _ = writeln!(script, "apr data {}", batch_cmd);
         }
 
         script
@@ -901,8 +901,8 @@ mod tests {
 
         let script = session.export_history();
         assert!(script.starts_with("#!/usr/bin/env bash"));
-        assert!(script.contains("alimentar load test.parquet"));
-        assert!(script.contains("alimentar head 5"));
+        assert!(script.contains("apr data load test.parquet"));
+        assert!(script.contains("apr data head 5"));
     }
 
     #[test]
@@ -914,9 +914,9 @@ mod tests {
         session.add_history("head");
 
         let script = session.export_history();
-        assert!(script.contains("alimentar info test.parquet"));
-        assert!(script.contains("alimentar schema test.parquet"));
-        assert!(script.contains("alimentar head test.parquet"));
+        assert!(script.contains("apr data info test.parquet"));
+        assert!(script.contains("apr data schema test.parquet"));
+        assert!(script.contains("apr data head test.parquet"));
     }
 
     #[test]

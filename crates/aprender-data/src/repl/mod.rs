@@ -273,9 +273,19 @@ mod tests {
 
         let script = session.export_history();
 
-        assert!(script.contains("# alimentar session export"));
-        assert!(script.contains("alimentar"));
-        assert!(script.contains("load data.parquet"));
+        assert!(script.contains("# apr data session export"));
+        // The exported script is meant to be RUN. Every line must therefore
+        // invoke a command that exists: `alimentar` was published as a binary
+        // and no longer is, so its presence here would mean the export writes
+        // a file of `command not found`.
+        assert!(
+            script.contains("apr data load data.parquet"),
+            "history line must be re-prefixed with the live command, got:\n{script}"
+        );
+        assert!(
+            !script.contains("alimentar"),
+            "export must not name the retired `alimentar` binary, got:\n{script}"
+        );
     }
 
     #[test]
@@ -734,7 +744,7 @@ mod tests {
 
         let script = session.export_history();
         assert!(script.contains("#!/usr/bin/env bash"));
-        assert!(script.contains("alimentar session export"));
+        assert!(script.contains("apr data session export"));
         // Commands should include file path
         assert!(script.contains("info"));
     }

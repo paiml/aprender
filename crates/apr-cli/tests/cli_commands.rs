@@ -88,6 +88,11 @@ fn registered_commands() -> Vec<&'static str> {
         "ptx-map",
         "cbtop",
         "data",
+        // Rehomed pre-consolidation binaries: `simular`, `trueno-rag`,
+        // `trueno-zram` (and `alimentar`, folded into `data`).
+        "simulate",
+        "rag",
+        "zram",
         "pipeline",
         "tui",
         "monitor",
@@ -149,6 +154,24 @@ fn apr_binary() -> Command {
     cmd
 }
 
+/// The command name a single `Commands:` row declares, if it declares one.
+///
+/// Command rows have EXACTLY a 2-space indent (`  cmd  description…`). A
+/// wrapped description continuation is column-aligned to where the description
+/// starts, typically 20+ spaces; matching those would report the first word of
+/// a wrapped sentence as a command name (CRUX-B-19).
+fn help_row_command_name(line: &str) -> Option<String> {
+    if line.chars().take_while(|c| *c == ' ').count() != 2 {
+        return None;
+    }
+    let name = line.trim().split_whitespace().next()?;
+    // Valid command names: lowercase, may contain hyphens, no parens/uppercase.
+    let looks_like_a_command = name.starts_with(|c: char| c.is_ascii_lowercase())
+        && !name.contains('(')
+        && !name.contains(')');
+    looks_like_a_command.then(|| name.to_string())
+}
+
 fn get_help_commands() -> Vec<String> {
     let output = apr_binary()
         .arg("--help")
@@ -156,44 +179,135 @@ fn get_help_commands() -> Vec<String> {
         .expect("failed to run apr --help");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut commands = Vec::new();
-    let mut in_commands = false;
+    let mut commands: Vec<String> = Vec::new();
 
-    for line in stdout.lines() {
-        if line.starts_with("Commands:") {
-            in_commands = true;
-            continue;
+    for line in stdout
+        .lines()
+        .skip_while(|l| !l.starts_with("Commands:"))
+        .skip(1)
+    {
+        if line.starts_with("Options:") || (line.is_empty() && commands.len() > 5) {
+            break;
         }
-        if in_commands {
-            if line.starts_with("Options:") || line.is_empty() && commands.len() > 5 {
-                break;
-            }
-            // Command rows have exactly 2-space indent (`  cmd  description...`).
-            // Wrapped description continuation lines have a much wider indent
-            // (column-aligned to the description start, typically 20+ spaces).
-            // Filter on exact 2-space indent to avoid picking up the first
-            // word of a wrap continuation as a "command name" (CRUX-B-19).
-            let leading_spaces = line.chars().take_while(|c| *c == ' ').count();
-            if leading_spaces != 2 {
-                continue;
-            }
-            let trimmed = line.trim();
-            if let Some(cmd_name) = trimmed.split_whitespace().next() {
-                // Valid command names: lowercase, may contain hyphens, no parens/uppercase
-                if !cmd_name.is_empty()
-                    && cmd_name
-                        .chars()
-                        .next()
-                        .map_or(false, |c| c.is_ascii_lowercase())
-                    && !cmd_name.contains('(')
-                    && !cmd_name.contains(')')
-                {
-                    commands.push(cmd_name.to_string());
-                }
-            }
+        if let Some(name) = help_row_command_name(line) {
+            commands.push(name);
         }
     }
     commands
+}
+
+/// Command names declared in the `commands:` block of the contract YAML.
+///
+/// # Why this exists
+///
+/// The contract calls itself "the SINGLE SOURCE OF TRUTH for all apr
+/// subcommands" and its own `enforcement:` fields name the three tests below.
+/// Those tests compare `apr --help` against [`registered_commands`] — a
+/// hardcoded Rust vec — and **never open the YAML**. Deleting a whole command
+/// entry from `contracts/apr-cli-commands-v1.yaml` left FALSIFY-CLI-001,
+/// FALSIFY-CLI-002 and FALSIFY-CLI-005 all green, so the file the docs point
+/// at could drift arbitrarily from the binary with nothing to say so.
+///
+/// The parser is deliberately literal: it takes lines between `commands:` and
+/// the next top-level key, which excludes the `falsification:` block further
+/// down (whose entries are also spelled `- name:`).
+fn contract_commands() -> Vec<String> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../contracts/apr-cli-commands-v1.yaml"
+    );
+    let text = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("cannot read the command contract at {}: {}", path, e));
+
+    let mut names = Vec::new();
+    let mut in_commands = false;
+    for line in text.lines() {
+        if line.starts_with("commands:") {
+            in_commands = true;
+            continue;
+        }
+        if !in_commands {
+            continue;
+        }
+        // A new top-level key (column 0, not a comment, not a list item) ends
+        // the block — this is what keeps `falsification:` out.
+        let first = line.chars().next();
+        if matches!(first, Some(c) if c.is_ascii_alphabetic()) {
+            break;
+        }
+        // Exactly two spaces of indent: a member of the top-level `commands:`
+        // sequence. `modelfile` and `probar` carry nested `subcommands:` lists
+        // whose entries are also `- name:` but sit six spaces in; those are
+        // `apr modelfile parse` / `apr probar tensor`, not top-level commands,
+        // and matching them made this parser report two phantom commands
+        // missing from `apr --help`.
+        if let Some(rest) = line.strip_prefix("  - name:") {
+            names.push(rest.trim().trim_matches('"').to_string());
+        }
+    }
+
+    // A parser that silently matches nothing would make every assertion below
+    // vacuously true — the exact failure mode this function was added to fix.
+    assert!(
+        names.len() > 50,
+        "parsed only {} command names out of the contract; the `commands:` block \
+         format changed and this parser is no longer reading it",
+        names.len()
+    );
+    // And it must not have swept up the nested `subcommands:` entries.
+    for nested in ["parse", "tensor"] {
+        assert!(
+            !names.contains(&nested.to_string()),
+            "`{}` is a nested subcommand entry, not a top-level command; the \
+             indent filter is not working",
+            nested
+        );
+    }
+    names
+}
+
+/// The contract YAML and the Rust mirror list exactly the same commands.
+///
+/// Without this, `registered_commands()` and the YAML are two independent
+/// lists that merely happen to agree, and only one of them is checked against
+/// the binary.
+#[test]
+fn contract_yaml_matches_registered_commands() {
+    let yaml: std::collections::BTreeSet<String> = contract_commands().into_iter().collect();
+    let rust: std::collections::BTreeSet<String> = registered_commands()
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+
+    let only_in_yaml: Vec<&String> = yaml.difference(&rust).collect();
+    let only_in_rust: Vec<&String> = rust.difference(&yaml).collect();
+
+    assert!(
+        only_in_yaml.is_empty() && only_in_rust.is_empty(),
+        "contracts/apr-cli-commands-v1.yaml and registered_commands() disagree.\n\
+         Only in the YAML contract: {:?}\n\
+         Only in registered_commands(): {:?}",
+        only_in_yaml,
+        only_in_rust
+    );
+}
+
+/// FALSIFY-CLI-001, read from the contract file itself: every command the YAML
+/// declares is really in `apr --help`.
+#[test]
+fn contract_yaml_commands_all_exist_in_help() {
+    let help: std::collections::BTreeSet<String> = get_help_commands().into_iter().collect();
+    let missing: Vec<String> = contract_commands()
+        .into_iter()
+        .filter(|c| !help.contains(c))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "FALSIFY-CLI-001: declared in contracts/apr-cli-commands-v1.yaml but absent \
+         from `apr --help`: {:?}",
+        missing
+    );
 }
 
 /// FALSIFY-CLI-003 + FALSIFY-CLI-004: Every command responds to --help with exit 0.

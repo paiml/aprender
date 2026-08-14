@@ -1,6 +1,6 @@
 [package]
 name = "aprender-zram-cli"
-description = "CLI tool for zram device management (zramctl replacement)"
+description = "zram device management command surface (zramctl replacement), mounted as `apr zram`"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,9 +8,15 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "trueno-zram"
-path = "src/main.rs"
+# No `[[bin]]`. This crate used to publish a binary called `trueno-zram` — a
+# pre-consolidation name from a project that no longer exists independently,
+# and one that `cargo install aprender-zram-cli` dropped into ~/.cargo/bin
+# under a name nothing else in the fleet answers to. The capability is
+# unchanged and reachable as `apr zram <create|remove|status|benchmark>`;
+# `apr-cli` depends on this crate and calls `aprender_zram_cli::run`.
+[lib]
+name = "aprender_zram_cli"
+path = "src/lib.rs"
 
 [dependencies]
 trueno-zram-core.workspace = true
