@@ -33,31 +33,31 @@ crossterm = "0.28"
 pollster = "0.4"
 
 # CLI parsing
-clap = { version = "4", features = ["derive"] }
+clap = { workspace = true }
 
 # Batuta shared utilities (format_bytes, sys info)
 batuta-common = { workspace = true }
 
 # Error handling
-anyhow = "1"
-thiserror = "1"
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 
 # Time handling
-chrono = "0.4"
+chrono = { workspace = true }
 
 # Serialization for headless mode
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
 toml = "0.8"
-dirs = "5.0"
+dirs = { workspace = true }
 
 # Unix statvfs for disk metrics
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
-proptest = "1"
-tempfile = "3"
+proptest = { workspace = true }
+tempfile = { workspace = true }
 # TUI pixel-level testing framework
 jugar-probar = "1.0"
 

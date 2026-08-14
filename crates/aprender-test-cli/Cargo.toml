@@ -50,7 +50,7 @@ tokio-tungstenite = { workspace = true }
 mime_guess = { workspace = true }
 notify = { workspace = true }
 futures = { workspace = true }
-chrono = "0.4"
+chrono = { workspace = true }
 
 # Debug and scoring utilities
 atty = "0.2"

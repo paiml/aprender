@@ -5,14 +5,14 @@ edition = "2021"
 publish = false
 
 [dependencies]
-anyhow = "1.0"
-colored = "2.1"
+anyhow = { workspace = true }
+colored = { workspace = true }
 walkdir = "2.4"
-regex = "1.10"
+regex = { workspace = true }
 bashrs = "6.35"
 
 [dev-dependencies]
-tempfile = "3.8"
+tempfile = { workspace = true }
 serial_test = "3.0"
 
 [lints.rust]

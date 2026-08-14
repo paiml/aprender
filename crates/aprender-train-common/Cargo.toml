@@ -15,11 +15,11 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
+clap = { workspace = true }
 thiserror = "2.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 trueno-viz = { workspace = true, features = ["terminal"] }
 
 [dev-dependencies]
-proptest = "1.4"
+proptest = { workspace = true }

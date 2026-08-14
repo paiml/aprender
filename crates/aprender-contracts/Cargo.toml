@@ -20,19 +20,19 @@ name = "provable_contracts"
 
 [dependencies]
 provable-contracts-macros = { path = "../aprender-contracts-macros", version = "0.63.0", package = "aprender-contracts-macros" }
-regex = "1"
+regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 thiserror = { workspace = true }
 
 [build-dependencies]
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 serde_yaml = "0.9"
 
 [dev-dependencies]
-tempfile = "3"
-proptest = "1"
+tempfile = { workspace = true }
+proptest = { workspace = true }
 criterion = { version = "0.5", features = ["html_reports"] }
 # Oracle for f16-conversion falsifiers (PMAT-905). `half` is a workspace leaf crate
 # (no aprender dependency) → dev-dep introduces no cycle. Used only in tests.

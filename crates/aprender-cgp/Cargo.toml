@@ -19,22 +19,22 @@ name = "cgp"
 
 [dependencies]
 # CLI framework
-clap = { version = "4", features = ["derive"] }
+clap = { workspace = true }
 # Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 serde_yaml_ng = "0.10"
 # Error handling
-anyhow = "1.0"
+anyhow = { workspace = true }
 thiserror = "2.0"
 # Time
-chrono = "0.4"
+chrono = { workspace = true }
 # System detection
-which = "7"
+which = { workspace = true }
 num_cpus = "1.17"
 # Output formatting
 comfy-table = "7"
-colored = "3"
+colored = { workspace = true }
 # GPU profiling: direct cuBLAS measurement (OWN THE STACK)
 trueno-gpu = { path = "../aprender-gpu", version = "0.63.0", features = ["cuda"], optional = true, package = "aprender-gpu" }
 
@@ -43,8 +43,8 @@ default = []
 cuda = ["dep:trueno-gpu"]
 
 [dev-dependencies]
-proptest = "1.9"
-tempfile = "3"
+proptest = { workspace = true }
+tempfile = { workspace = true }
 
 [[bin]]
 name = "aprender-cgp"

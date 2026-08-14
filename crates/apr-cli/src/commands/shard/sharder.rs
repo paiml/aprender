@@ -163,7 +163,8 @@ pub fn shard_safetensors_file(
 
     let bytes = fs::read(input)?;
     let st = SafeTensors::deserialize(&bytes)?;
-    let names: Vec<&str> = st.names().into_iter().map(String::as_str).collect();
+    // safetensors 0.7: `names()` yields `&str` directly (it yielded `&String` in 0.4).
+    let names: Vec<&str> = st.names();
     if names.is_empty() {
         return Err(ShardError::Invalid("input has no tensors".to_string()));
     }
@@ -193,7 +194,7 @@ pub fn shard_safetensors_file(
             .collect();
 
         let serialized =
-            safetensors::serialize(shard_tensors, &None).map_err(ShardError::SafeTensors)?;
+            safetensors::serialize(shard_tensors, None).map_err(ShardError::SafeTensors)?;
         fs::write(&shard_path, &serialized)?;
 
         for &i in group {

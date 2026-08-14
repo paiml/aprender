@@ -29,10 +29,10 @@ aprender-qa-report = { version = "0.63.0", path = "../aprender-qa-report" }
 aprender-qa-certify = { version = "0.63.0", path = "../aprender-qa-certify" }
 ctrlc = "3.4"
 safetensors = { workspace = true }
-colored = "2.2"
+colored = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

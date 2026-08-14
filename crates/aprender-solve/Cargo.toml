@@ -16,7 +16,7 @@ name = "trueno_solve"
 thiserror = "2"
 
 [dev-dependencies]
-proptest = "1"
+proptest = { workspace = true }
 criterion = { workspace = true }
 # RNE reference for the f32_to_f16 falsifier (OBLIG-SOLVE-F32-F16-RNE). Test-only.
 half = { workspace = true }

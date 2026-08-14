@@ -26,7 +26,7 @@ mod e2e {
         state.set_ready();
 
         let router = create_router(Arc::new(state));
-        let server = TestServer::new(router).expect("TestServer::new(router)");
+        let server = TestServer::new(router);
         (server, file)
     }
 
@@ -40,7 +40,7 @@ mod e2e {
         // Do NOT call set_ready()
 
         let router = create_router(Arc::new(state));
-        let server = TestServer::new(router).expect("TestServer::new(router)");
+        let server = TestServer::new(router);
         (server, file)
     }
 

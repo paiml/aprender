@@ -24,8 +24,8 @@ chrono = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
 aprender-qa-gen = { version = "0.63.0", path = "../aprender-qa-gen" }
 hostname = "0.4"
-rayon = "1.10"
-sha2 = "0.10"
+rayon = { workspace = true }
+sha2 = { workspace = true }
 regex = { workspace = true }
 num_cpus = "1.16"
 safetensors = { workspace = true }
@@ -37,7 +37,7 @@ half = { version = "2.4", optional = true }
 [dev-dependencies]
 proptest = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-tempfile = "3"
+tempfile = { workspace = true }
 half = "2.4"
 
 [lints]

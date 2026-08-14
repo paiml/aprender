@@ -29,7 +29,7 @@ async fn handle_socket(mut socket: WebSocket, state: BancoState) {
             "model_loaded": state.model.is_loaded(),
         }
     });
-    if socket.send(Message::Text(welcome.to_string())).await.is_err() {
+    if socket.send(Message::Text(welcome.to_string().into())).await.is_err() {
         return;
     }
 
@@ -40,7 +40,7 @@ async fn handle_socket(mut socket: WebSocket, state: BancoState) {
             event = rx.recv() => {
                 match event {
                     Ok(json) => {
-                        if socket.send(Message::Text(json)).await.is_err() {
+                        if socket.send(Message::Text(json.into())).await.is_err() {
                             break; // Client disconnected
                         }
                     }
@@ -50,7 +50,7 @@ async fn handle_socket(mut socket: WebSocket, state: BancoState) {
                             "type": "system_event",
                             "data": {"message": format!("Missed {n} events (slow consumer)")}
                         });
-                        let _ = socket.send(Message::Text(lag_msg.to_string())).await;
+                        let _ = socket.send(Message::Text(lag_msg.to_string().into())).await;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }

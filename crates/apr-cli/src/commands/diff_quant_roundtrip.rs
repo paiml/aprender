@@ -210,7 +210,8 @@ fn load_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, String)>>
                 )));
             }
         };
-        out.insert(name.clone(), (data, dtype_label));
+        // safetensors 0.7: `names()` yields `&str`, so `.clone()` would keep a borrow.
+        out.insert(name.to_string(), (data, dtype_label));
     }
     Ok(out)
 }
@@ -306,7 +307,7 @@ mod tests {
                 )
             })
             .collect();
-        let serialized = safetensors::serialize(views, &None).expect("serialize");
+        let serialized = safetensors::serialize(views, None).expect("serialize");
         fs::write(path, serialized).expect("write");
     }
 

@@ -23,7 +23,7 @@ aprender-gpu = { workspace = true, optional = true, features = ["cuda"] }
 [dev-dependencies]
 proptest.workspace = true
 criterion.workspace = true
-rayon = "1.10"
+rayon = { workspace = true }
 
 [[bench]]
 name = "compression"

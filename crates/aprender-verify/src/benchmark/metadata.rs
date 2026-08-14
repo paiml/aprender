@@ -5,7 +5,7 @@
 
 use crate::benchmark::*;
 use std::process::Command;
-use sysinfo::{System, SystemExt, CpuExt};
+use sysinfo::System;
 
 /// Collect complete benchmark metadata
 pub fn collect_metadata(

@@ -52,24 +52,20 @@ struct Index {
     total_size: Option<u64>,
 }
 
-fn parse_index_json(json: &str) -> Result<Index, UnshardError> {
-    let json = json.trim();
-    if !json.starts_with('{') || !json.ends_with('}') {
-        return Err(UnshardError::Invalid(
-            "index.json is not a JSON object".to_string(),
-        ));
-    }
+/// Scan out `"total_size": <digits>` if the index declares one.
+fn find_total_size(json: &str) -> Option<u64> {
+    let pos = json.find("\"total_size\"")?;
+    let after = &json[pos + 12..];
+    let colon = after.find(':')?;
+    let after_colon = after[colon + 1..].trim_start();
+    let end = after_colon
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(after_colon.len());
+    after_colon[..end].parse::<u64>().ok()
+}
 
-    let total_size = json.find("\"total_size\"").and_then(|pos| {
-        let after = &json[pos + 12..];
-        let colon = after.find(':')?;
-        let after_colon = after[colon + 1..].trim_start();
-        let end = after_colon
-            .find(|c: char| !c.is_ascii_digit())
-            .unwrap_or(after_colon.len());
-        after_colon[..end].parse::<u64>().ok()
-    });
-
+/// Return the body of the `weight_map` object, without its outer braces.
+fn weight_map_body(json: &str) -> Result<&str, UnshardError> {
     let wm_start = json.find("\"weight_map\"").ok_or_else(|| {
         UnshardError::Invalid("missing 'weight_map' key in index.json".to_string())
     })?;
@@ -79,35 +75,36 @@ fn parse_index_json(json: &str) -> Result<Index, UnshardError> {
     })?;
     let obj = &after_key[obj_start..];
 
+    let obj_end = match_closing_brace(obj).ok_or_else(|| {
+        UnshardError::Invalid("malformed weight_map: missing closing brace".to_string())
+    })?;
+    Ok(&obj[1..obj_end])
+}
+
+/// Index of the `}` closing the `{` that `s` starts with, or None if unbalanced.
+fn match_closing_brace(s: &str) -> Option<usize> {
     let mut depth = 0i32;
-    let mut obj_end = 0usize;
-    for (i, c) in obj.char_indices() {
+    for (i, c) in s.char_indices() {
         match c {
             '{' => depth += 1,
             '}' => {
                 depth -= 1;
                 if depth == 0 {
-                    obj_end = i;
-                    break;
+                    // A `}` at index 0 cannot close anything, so 0 stays a miss.
+                    return (i != 0).then_some(i);
                 }
             }
             _ => {}
         }
     }
-    if obj_end == 0 {
-        return Err(UnshardError::Invalid(
-            "malformed weight_map: missing closing brace".to_string(),
-        ));
-    }
-    let inner = &obj[1..obj_end];
+    None
+}
 
+/// Split a `"key": "value"` comma list into pairs, skipping malformed entries.
+fn parse_weight_map_entries(inner: &str) -> Vec<(String, String)> {
     let mut entries = Vec::new();
     for pair in inner.split(',') {
-        let pair = pair.trim();
-        if pair.is_empty() {
-            continue;
-        }
-        let parts: Vec<&str> = pair.splitn(2, ':').collect();
+        let parts: Vec<&str> = pair.trim().splitn(2, ':').collect();
         if parts.len() != 2 {
             continue;
         }
@@ -117,9 +114,22 @@ fn parse_index_json(json: &str) -> Result<Index, UnshardError> {
             entries.push((key, val));
         }
     }
+    entries
+}
+
+fn parse_index_json(json: &str) -> Result<Index, UnshardError> {
+    let json = json.trim();
+    if !json.starts_with('{') || !json.ends_with('}') {
+        return Err(UnshardError::Invalid(
+            "index.json is not a JSON object".to_string(),
+        ));
+    }
+
+    let total_size = find_total_size(json);
+    let inner = weight_map_body(json)?;
 
     Ok(Index {
-        weight_map: entries,
+        weight_map: parse_weight_map_entries(inner),
         total_size,
     })
 }
@@ -163,11 +173,8 @@ fn validate_shard_path(name: &str) -> Result<(), UnshardError> {
     Ok(())
 }
 
-/// Reconstruct a single safetensors file from a sharded directory.
-pub fn unshard_safetensors_dir(
-    input_dir: &Path,
-    output: &Path,
-) -> Result<UnshardReport, UnshardError> {
+/// Read `model.safetensors.index.json` out of a shard directory.
+fn read_index(input_dir: &Path) -> Result<Index, UnshardError> {
     if !input_dir.is_dir() {
         return Err(UnshardError::Invalid(format!(
             "input is not a directory: {}",
@@ -189,18 +196,26 @@ pub fn unshard_safetensors_dir(
             "weight_map is empty in index.json".to_string(),
         ));
     }
+    Ok(index)
+}
 
-    // Load each unique shard exactly once, preserving the first-seen order so
-    // that within a shard tensors land in the order safetensors stores them.
+/// Load each unique shard exactly once, preserving the first-seen order so that
+/// within a shard tensors land in the order safetensors stores them.
+fn load_shards(
+    input_dir: &Path,
+    weight_map: &[(String, String)],
+) -> Result<(Vec<String>, HashMap<String, Vec<u8>>), UnshardError> {
+    // Pass 1 — validate EVERY weight_map entry before touching the disk, so a
+    // traversal attempt anywhere in the index is rejected before any file read.
     let mut shard_order: Vec<String> = Vec::new();
-    let mut seen: HashMap<String, ()> = HashMap::new();
-    for (_tensor, shard) in &index.weight_map {
+    for (_tensor, shard) in weight_map {
         validate_shard_path(shard)?;
-        if seen.insert(shard.clone(), ()).is_none() {
+        if !shard_order.iter().any(|s| s == shard) {
             shard_order.push(shard.clone());
         }
     }
 
+    // Pass 2 — read each unique shard once.
     let mut shard_bytes: HashMap<String, Vec<u8>> = HashMap::new();
     for shard in &shard_order {
         let shard_path = input_dir.join(shard);
@@ -213,19 +228,21 @@ pub fn unshard_safetensors_dir(
         shard_bytes.insert(shard.clone(), fs::read(&shard_path)?);
     }
 
-    // Verify every tensor named in the weight_map actually exists in its shard.
-    let mut all_views: Vec<(String, TensorView<'_>)> = Vec::new();
-    let mut total_bytes: u64 = 0;
-    let mut by_shard: HashMap<&str, SafeTensors<'_>> = HashMap::new();
-    for shard in &shard_order {
-        let bytes = shard_bytes.get(shard).unwrap();
-        let st = SafeTensors::deserialize(bytes)?;
-        by_shard.insert(shard.as_str(), st);
-    }
+    Ok((shard_order, shard_bytes))
+}
 
-    // Visit tensors in weight_map insertion order. We preserve insertion order
-    // because that is what the contract spec requires for the round-trip.
-    for (tensor_name, shard_name) in &index.weight_map {
+/// Gather every tensor named in the weight_map, in insertion order, verifying
+/// each one is actually present in the shard the index claims holds it.
+///
+/// Returns the views alongside their total byte count.
+fn collect_views<'a>(
+    by_shard: &'a HashMap<&str, SafeTensors<'a>>,
+    weight_map: &[(String, String)],
+) -> Result<(Vec<(String, TensorView<'a>)>, u64), UnshardError> {
+    let mut all_views: Vec<(String, TensorView<'a>)> = Vec::with_capacity(weight_map.len());
+    let mut total_bytes: u64 = 0;
+
+    for (tensor_name, shard_name) in weight_map {
         let st = by_shard
             .get(shard_name.as_str())
             .ok_or_else(|| UnshardError::Invalid(format!("shard not loaded: {shard_name}")))?;
@@ -237,6 +254,27 @@ pub fn unshard_safetensors_dir(
         total_bytes = total_bytes.saturating_add(view.data().len() as u64);
         all_views.push((tensor_name.clone(), view));
     }
+
+    Ok((all_views, total_bytes))
+}
+
+/// Reconstruct a single safetensors file from a sharded directory.
+pub fn unshard_safetensors_dir(
+    input_dir: &Path,
+    output: &Path,
+) -> Result<UnshardReport, UnshardError> {
+    let index = read_index(input_dir)?;
+    let (shard_order, shard_bytes) = load_shards(input_dir, &index.weight_map)?;
+
+    let mut by_shard: HashMap<&str, SafeTensors<'_>> = HashMap::new();
+    for shard in &shard_order {
+        let bytes = shard_bytes
+            .get(shard)
+            .ok_or_else(|| UnshardError::Invalid(format!("shard not loaded: {shard}")))?;
+        by_shard.insert(shard.as_str(), SafeTensors::deserialize(bytes)?);
+    }
+
+    let (all_views, total_bytes) = collect_views(&by_shard, &index.weight_map)?;
 
     if let Some(declared) = index.total_size {
         if declared != total_bytes {
@@ -251,7 +289,7 @@ pub fn unshard_safetensors_dir(
         .map(|(n, v)| (n.as_str(), v.clone()))
         .collect();
 
-    let serialized = safetensors::serialize(view_refs, &None).map_err(UnshardError::SafeTensors)?;
+    let serialized = safetensors::serialize(view_refs, None).map_err(UnshardError::SafeTensors)?;
 
     if let Some(parent) = output.parent() {
         if !parent.as_os_str().is_empty() {

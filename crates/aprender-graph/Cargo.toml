@@ -24,7 +24,7 @@ parquet = { version = "57", optional = true }                       # Persistent
 tokio = { version = "1", features = ["rt", "fs", "sync", "macros"] }
 
 # Error handling
-anyhow = "1"
+anyhow = { workspace = true }
 thiserror = "2"
 
 # Phase 2+ dependencies
@@ -45,9 +45,9 @@ futures-intrusive = { version = "0.5", optional = true }
 # Testing
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
-proptest = "1.9"                                        # Property-based testing
+proptest = { workspace = true }                                        # Property-based testing
 serial_test = "3"                                       # Sequential test execution
-tempfile = "3"                                          # Temporary directories for tests
+tempfile = { workspace = true }                                          # Temporary directories for tests
 
 # Benchmarks
 criterion = { version = "0.6", features = ["html_reports"] }

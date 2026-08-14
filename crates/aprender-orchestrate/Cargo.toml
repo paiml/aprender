@@ -31,14 +31,14 @@ name = "batuta"
 
 [dependencies]
 # Core dependencies (WASM-compatible)
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-anyhow = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
 thiserror = "2.0"
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true, features = ["serde"] }
 async-trait = "0.1"
 # CLI and configuration (native-only)
-clap = { version = "4.5", features = ["derive", "env"], optional = true }
+clap = { workspace = true, features = ["env"], optional = true }
 serde_yaml_ng = { version = "0.10", optional = true }
 toml = { version = "0.9", optional = true }
 
@@ -54,7 +54,7 @@ walkdir = { version = "2.5", optional = true }
 glob = { version = "0.3", optional = true }
 
 # Process execution (native-only)
-which = { version = "6.0", optional = true }
+which = { workspace = true, optional = true }
 
 # Unix syscalls for PR_SET_PDEATHSIG — ensures apr serve children are reaped
 # when their parent apr code process dies (fixes #1712 orphan-process leak).
@@ -82,7 +82,7 @@ trueno-graph = { workspace = true, optional = true }
 trueno-db = { workspace = true, optional = true }
 
 # Utilities (native-only)
-dirs = { version = "5.0", optional = true }
+dirs = { workspace = true, optional = true }
 
 # Shared math/display utilities (sovereign stack)
 batuta-common = { workspace = true }
@@ -146,7 +146,7 @@ bashrs = { version = "6.65", optional = true }
 probar = { workspace = true, optional = true }
 
 # HTTP server for Banco workbench API
-axum = { version = "0.7", features = ["json", "multipart", "ws"], optional = true }
+axum = { workspace = true, features = ["multipart"], optional = true }
 tower = { version = "0.5", default-features = false, features = ["util"], optional = true }
 async-stream = { version = "0.3", optional = true }
 tokio-stream = { version = "0.1", optional = true }
@@ -163,8 +163,8 @@ base64 = { version = "0.22", optional = true }
 pmcp = { version = "2.3", optional = true }
 
 # Provable design-by-contract (compile-time contract binding)
-provable-contracts = { version = "0.2", optional = true }
-provable-contracts-macros = { version = "0.2", optional = true }
+provable-contracts = { workspace = true, optional = true }
+provable-contracts-macros = { workspace = true, optional = true }
 
 # PNG rasterization for Coursera banner assets (native-only)
 resvg = { version = "0.47", optional = true }
@@ -291,20 +291,20 @@ sovereign-stack = [
 ]
 
 [build-dependencies]
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
-tempfile = "3.23"
+tempfile = { workspace = true }
 criterion = { version = "0.8", features = ["html_reports"] }
-proptest = "1.5"
+proptest = { workspace = true }
 blake3 = "1.8"
 filetime = "0.2"
 trueno-cuda-edge = { path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
 jugar-probar = { version = "1.0", features = ["browser"] }
-tokio-tungstenite = "0.24"
+tokio-tungstenite = { workspace = true }
 
 [[bench]]
 name = "backend_selection"

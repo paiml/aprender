@@ -55,7 +55,7 @@ trueno-db = { workspace = true, optional = true }
 trueno-quant = { workspace = true }
 
 # Contract macros for pre/post-condition enforcement (zero cost in release)
-provable-contracts-macros = { version = "0.2" }
+provable-contracts-macros = { workspace = true }
 
 # PMAT-284: Core tracing primitives (zero-dep, breaks renacer circular dep)
 renacer-core = { workspace = true }
@@ -74,7 +74,7 @@ pacha = { workspace = true, optional = true }
 trueno-viz = { workspace = true, optional = true, features = ["terminal"] }
 
 # HTTP server ONLY (swappable via HttpServer trait)
-axum = { version = "0.7", optional = true }
+axum = { workspace = true, optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
 tokio-stream = { version = "0.1", optional = true }
 tower = { version = "0.5", default-features = false, features = ["util"], optional = true }
@@ -83,7 +83,7 @@ futures = { version = "0.3", optional = true }
 async-stream = { version = "0.3", optional = true }
 
 # CLI
-clap = { version = "4", features = ["derive"], optional = true }
+clap = { workspace = true, optional = true }
 
 # Terminal UI and CLI utilities (Ollama-style spinners, progress)
 presentar-terminal = { workspace = true, optional = true }
@@ -95,11 +95,11 @@ ureq = { version = "2", features = ["json"], optional = true }
 crossterm = { version = "0.28", optional = true }
 
 # HTTP client for real model server benchmarking (blocking for bench harness)
-reqwest = { version = "0.11", features = ["json", "blocking"], optional = true }
+reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"], default-features = false, optional = true }
 
 # Serialization (for REST API, not ML code)
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 # Lock-free concurrent data structures
 arc-swap = { version = "1.7", optional = true }
@@ -108,14 +108,14 @@ arc-swap = { version = "1.7", optional = true }
 dhat = { version = "0.3", optional = true }
 
 # Error handling
-thiserror = "1.0"
-anyhow = "1.0"
+thiserror = { workspace = true }
+anyhow = { workspace = true }
 
 # Structured logging / tracing (optional, for CUDA kernel spans)
 tracing = { version = "0.1", optional = true }
 
 # Audit logging (timestamps and UUIDs)
-chrono = { version = ">=0.4.26", features = ["serde"] }
+chrono = { workspace = true, features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # Numerical traits (for generic code)
@@ -135,7 +135,7 @@ lz4_flex = { version = "0.11", optional = true }
 zstd = { version = "0.13", optional = true }
 
 # Parallel processing for multi-core inference (per spec Phase 2/3)
-rayon = "1.10"
+rayon = { workspace = true }
 
 # Random number generation for sampling
 rand = "0.9"
@@ -161,12 +161,12 @@ uuid = { version = "1", features = ["v4", "serde", "js"] }
 
 [build-dependencies]
 # Parsing provable-contracts binding.yaml for CONTRACT_* env vars (build.rs)
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 # Contract trait enforcement (Section 23)
-provable-contracts = { version = "0.2" }
+provable-contracts = { workspace = true }
 
 # Visual regression testing framework (playbooks, TUI testing, GPU pixel verification)
 jugar-probar = { version = "0.4", features = ["tui", "gpu"] }
@@ -183,19 +183,19 @@ serial_test = "3"
 # Rich terminal output for examples (progress bars, colors, tables)
 indicatif = "0.17"
 console = "0.15"
-comfy-table = "6"
+comfy-table = "7"
 
 # Arrow for data pipeline example
 arrow = { version = "57", default-features = false }
 
 # Property-based testing
-proptest = "1.4"
+proptest = { workspace = true }
 
 # Test utilities
 approx = "0.5"
 
 # Temporary files for mmap tests
-tempfile = "3"
+tempfile = { workspace = true }
 
 # For testing HTTP endpoints (canonical tower/axum testing)
 http-body-util = "0.1"
@@ -203,7 +203,7 @@ hyper = { version = "1.4", features = ["full"] }
 mime = "0.3"
 
 # For external HTTP benchmarking (REAL model server calls)
-reqwest = { version = "0.11", features = ["json", "blocking"] }
+reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"], default-features = false }
 
 # For CLI integration tests
 assert_cmd = "2.0"

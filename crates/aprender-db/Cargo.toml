@@ -19,11 +19,11 @@ name = "trueno_db"
 trueno = { workspace = true }
 
 # Serialization (experiment tracking schema)
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 # Timestamps for experiment tracking
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true, features = ["serde"] }
 
 # GPU compute (optional - feature-gated to avoid +3.8MB binary bloat)
 wgpu = { version = "22", optional = true, features = ["wgsl"] }  # GPU compute (Vulkan/Metal/DX12/WebGPU)
@@ -53,20 +53,20 @@ lz4_flex = { version = "0.11", optional = true }
 zstd = { version = "0.13", optional = true }
 
 # Server (HTTP API)
-axum = { version = "0.7", optional = true }
-clap = { version = "4.5", features = ["derive"], optional = true }
+axum = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
 serde_yaml_ng = { version = "0.10", optional = true }
 
 # Error handling
 thiserror = "2"
-anyhow = "1"
+anyhow = { workspace = true }
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [build-dependencies]
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 serde_yaml_ng = "0.10"
 
 # Competitive benchmarks (CORE-009) — OPTIONAL on purpose. The `bundled` DuckDB dep
@@ -82,7 +82,7 @@ rusqlite = { version = "0.32", optional = true }
 [dev-dependencies]
 # Testing
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
-proptest = "1.5"           # Property-based testing
+proptest = { workspace = true }           # Property-based testing
 quickcheck = "1"           # Property-based testing (backend equivalence)
 rand = "0.9"               # Random data generation for examples
 
@@ -95,8 +95,8 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 serde-wasm-bindgen = "0.6"
 web-sys = { version = "0.3", features = [
     "console",

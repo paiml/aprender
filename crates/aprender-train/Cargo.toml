@@ -75,7 +75,7 @@ viz = ["dep:batuta-common"]
 
 [dependencies]
 # Contract macros for pre/post-condition enforcement (zero cost in release)
-provable-contracts-macros = { version = "0.2" }
+provable-contracts-macros = { workspace = true }
 # Core PAIML stack
 ndarray = "0.16"
 trueno = { workspace = true, features = ["parallel"] }
@@ -92,28 +92,28 @@ renacer = { workspace = true, optional = true }  # Distributed tracing
 wasm-bindgen = { version = "0.2", optional = true }  # WASM bindings
 getrandom = { version = "0.3", features = ["wasm_js"], optional = true }  # WASM random
 js-sys = { version = "0.3", optional = true }  # JavaScript types for WASM
-serde = { version = "1.0", features = ["derive"] }
+serde = { workspace = true }
 serde_yaml = "0.9"
-serde_json = "1.0"
+serde_json = { workspace = true }
 toml = "0.8"
-thiserror = "2.0"
+thiserror = { workspace = true }
 rand = "0.9"
 rayon = { workspace = true }  # PMAT-FINETUNE-CONSTRUCT: parallel F32 dequant in Transformer::from_apr
-clap = { version = "4.5", features = ["derive"] }
+clap = { workspace = true }
 clap_complete = "4.5"  # Shell completion generation
-dirs = "5.0"  # Cache directory resolution for HF pipeline
+dirs = { workspace = true }  # Cache directory resolution for HF pipeline
 trueno-rag = { workspace = true, optional = true }
 tokio = { version = "1.41", features = ["rt", "rt-multi-thread", "macros", "net"], optional = true }  # Async runtime
 uuid = { version = "1.11", features = ["v4", "serde"], optional = true }  # UUIDs for CITL patterns
-axum = { version = "0.8", optional = true }  # HTTP server for REST API
+axum = { workspace = true, optional = true }  # HTTP server for REST API
 tower = { version = "0.5", optional = true }  # Tower service utilities
 tower-http = { version = "0.6", features = ["trace", "cors"], optional = true }  # HTTP middleware
-safetensors = "0.7"  # SafeTensors format parsing
+safetensors = { workspace = true }  # SafeTensors format parsing
 half = "2.4"  # bf16/f16 to f32 conversion for weight loading
 rusqlite = { version = "0.32", features = ["bundled"] }  # SQLite experiment store
-sha2 = "0.10"  # SHA256 hashing for artifact CAS
+sha2 = { workspace = true }  # SHA256 hashing for artifact CAS
 hex = "0.4"  # Hex encoding for hashes
-regex = "1.10"  # ORCID/ROR validation
+regex = { workspace = true }  # ORCID/ROR validation
 ed25519-dalek = "2.1"  # Ed25519 signing for pre-registration
 bytemuck = { version = "1.19", features = ["derive"] }  # Safe byte casting for tensor data
 jsonschema = "0.28"  # JSON Schema validation for declarative config (AI-05)
@@ -122,7 +122,7 @@ schemars = "0.8"  # JSON Schema generation from Rust structs (AI-05)
 fs4 = "0.13"  # Cross-platform file locking for VRAM ledger (GPU-SHARE-001)
 arrow = { version = "57", default-features = false, optional = true }  # Arrow array types for alimentar integration
 nvml-wrapper = { version = "0.10", optional = true }  # NVIDIA NVML bindings for GPU monitoring
-hostname = "0.4.2"
+hostname = "0.4"
 ctrlc = "3.4"  # Signal handling for graceful shutdown (R-008)
 unicode-normalization = "0.1"  # NFC normalization for BPE tokenizer (C-TOK-BPE-001 INV-TOK-003)
 dhat = { version = "0.3", optional = true }  # Heap profiling
@@ -134,20 +134,20 @@ zip = "2.2"  # RO-Crate ZIP export (requires native compression, not available o
 alimentar = { workspace = true, optional = true }  # Dataset loading with parquet/arrow support (gated behind parquet feature)
 
 [build-dependencies]
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 serde_yaml_ng = "0.10"
 
 [dev-dependencies]
-proptest = "1.4"
+proptest = { workspace = true }
 approx = "0.5"
-tempfile = "3.8"
+tempfile = { workspace = true }
 criterion = { workspace = true }
 arrow = { version = "57", default-features = false }  # For MNIST example array access
 parquet = { version = "57", default-features = false }  # For ALB-007 Parquet writing in tests
 insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing for PMAT QA
-dirs = "5.0"  # Cache directory detection for examples
+dirs = { workspace = true }  # Cache directory detection for examples
 jugar-probar = "1.0"  # TUI snapshot testing (ENT-140)
-provable-contracts = { version = "0.2" }  # Contract trait enforcement (Section 23)
+provable-contracts = { workspace = true }  # Contract trait enforcement (Section 23)
 
 [[bench]]
 name = "monitor_bench"

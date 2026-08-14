@@ -13,8 +13,8 @@ categories = ["simulation", "science", "mathematics"]
 
 [dependencies]
 # Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 serde_yaml = "0.9"
 bincode = "1.3"
 
@@ -81,23 +81,23 @@ bitflags = "2.6"
 
 # Work stealing for Heijunka
 crossbeam-deque = "0.8"
-provable-contracts-macros = { version = "0.2" }
+provable-contracts-macros = { workspace = true }
 
 # Z3 removed from Cargo.toml to reduce Cargo.lock bloat (CB-081)
 # Re-add with: z3 = { version = "0.12", optional = true }
 # Code gated behind #[cfg(feature = "z3-proofs")]
 
 [build-dependencies]
-serde = { version = "1.0", features = ["derive"] }
+serde = { workspace = true }
 serde_yaml = "0.9"
 
 [dev-dependencies]
 # Contract trait enforcement (Section 23)
-provable-contracts = { version = "0.2" }
+provable-contracts = { workspace = true }
 # Property-based testing (Popperian falsification)
-proptest = "1.5"
+proptest = { workspace = true }
 criterion = { version = "0.5", default-features = false }
-tempfile = "3.14"
+tempfile = { workspace = true }
 # jugar-probar removed from dev-deps to reduce Cargo.lock (CB-081)
 # Tests in tests/probar_*.rs require jugar-probar and are gated via required-features
 # Presentar TUI testing framework (SPEC-024 Section 12 & 13)

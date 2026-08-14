@@ -20,10 +20,10 @@ trueno = { version = "0.63.0", path = "../aprender-compute", package = "aprender
 batuta-common = { workspace = true }
 
 # PNG encoding (pure Rust, no libpng)
-png = "0.17"
+png = { workspace = true }
 
 # Base64 encoding for SVG embedded images
-base64 = "0.22"
+base64 = { workspace = true }
 
 # Error handling
 thiserror = "2.0"
@@ -67,11 +67,11 @@ web-sys = { version = "0.3", optional = true, features = ["console"] }
 
 [dev-dependencies]
 # Testing
-proptest = "1.4"
+proptest = { workspace = true }
 criterion = { version = "0.6", features = ["html_reports"] }
 
 # Test utilities
-tempfile = "3.10"
+tempfile = { workspace = true }
 approx = "0.5"
 
 

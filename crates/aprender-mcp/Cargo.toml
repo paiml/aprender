@@ -53,9 +53,9 @@ inventory = "0.3"
 # behind the `pmcp-dispatcher` feature flag.
 pmcp = { version = "2.3", optional = true }
 # FALSIFY-MCP-006: SIGTERM/SIGKILL for cancelling in-flight `apr.run` subprocesses.
-# nix 0.29 is already in the workspace lockfile (pulled in by other crates).
+# nix 0.30 — same major as aprender-profile's, so the two share one build.
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.29", default-features = false, features = ["signal"] }
+nix = { version = "0.30", default-features = false, features = ["signal"] }
 
 [build-dependencies]
 # FALSIFY-MCP-008: build.rs reads contracts/apr-mcp-tool-schemas-v1.yaml at

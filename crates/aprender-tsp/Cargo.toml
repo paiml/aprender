@@ -19,7 +19,7 @@ name = "aprender-tsp"
 
 [dependencies]
 aprender = { path = "../../", version = "0.63.0" }
-clap = { version = "4", features = ["derive"] }
+clap = { workspace = true }
 rand = "0.9"
 crc32fast = "1.4"
 
@@ -27,8 +27,8 @@ crc32fast = "1.4"
 assert_cmd = "2"
 criterion = { workspace = true }
 predicates = "3"
-proptest = "1"
-tempfile = "3"
+proptest = { workspace = true }
+tempfile = { workspace = true }
 
 [[bench]]
 name = "tsp_benchmarks"

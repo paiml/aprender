@@ -39,11 +39,11 @@ arrow-json = { version = "57" }
 parquet = { version = "57", default-features = false, features = ["arrow", "snap", "zstd"] }
 thiserror = "2"
 bytes = "1"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 # Format serialization
-rmp-serde = "1"
+rmp-serde = { workspace = true }
 zstd = "0.13"
 lz4_flex = "0.11"
 
@@ -55,7 +55,7 @@ getrandom = { version = "0.2", features = ["js"], optional = true }
 memmap2 = { version = "0.9", optional = true }
 
 # CLI (optional, not for WASM)
-clap = { version = "4", features = ["derive"], optional = true }
+clap = { workspace = true, optional = true }
 crossterm = { version = "0.28", optional = true }
 
 # REPL (feature-gated)
@@ -89,7 +89,7 @@ rand_core = { version = "0.6", optional = true }
 
 # Signing (feature-gated, WASM-safe)
 ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
-serde_yaml = "0.9.34"
+serde_yaml = { workspace = true }
 
 # Heap profiling (feature-gated)
 dhat = { version = "0.3", optional = true }
@@ -98,15 +98,15 @@ dhat = { version = "0.3", optional = true }
 unicode-width = "0.2"
 
 # Doctest extraction (feature-gated)
-chrono = { version = "0.4", features = ["serde"], optional = true }
+chrono = { workspace = true, features = ["serde"], optional = true }
 regex = { version = "1", optional = true }
 walkdir = { version = "2", optional = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 criterion = { version = "0.5", features = ["html_reports"] }
-proptest = "1.6"
+proptest = { workspace = true }
 assert_cmd = "2"
 predicates = "3"
 jugar-probar = "1.0.1"

@@ -29,9 +29,9 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(internal_matrix_tests)'] }
 
 
 [dependencies]
-thiserror = "2.0.17"
+thiserror = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }  # Hardware capability serialization (PMAT-447)
-serde_json = "1.0"  # ML tuner data serialization (TUNER-010)
+serde_json = { workspace = true }  # ML tuner data serialization (TUNER-010)
 rayon = { version = "1.11", optional = true }
 wgpu = { version = "27.0", optional = true }
 pollster = { version = "0.4", optional = true }
@@ -43,14 +43,14 @@ wasm-bindgen = { version = "0.2", optional = true }
 # Native CUDA monitoring via trueno-gpu (TRUENO-SPEC-010)
 trueno-gpu = { version = "0.63.0", path = "../aprender-gpu", optional = true, package = "aprender-gpu" }
 # PMAT-336: Provable contracts compile-time enforcement
-provable-contracts-macros = "0.3"
+provable-contracts-macros = { workspace = true }
 # P1a: Sovereign GEMM microkernel codegen (compile-time shape specialization)
 trueno-gemm-codegen = { version = "0.63.0", path = "../aprender-gemm-codegen", package = "aprender-gemm-codegen" }
 # Tracing/profiling support (renacer integration)
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
 tracing-appender = { version = "0.2", optional = true }
-dirs = { version = "5.0", optional = true }  # Hardware capability path detection (PMAT-447)
+dirs = { workspace = true, optional = true }  # Hardware capability path detection (PMAT-447)
 # TUI monitoring (TRUENO-SPEC-020) — presentar-terminal
 crossterm = { version = "0.28", optional = true }
 presentar-core = { workspace = true, optional = true }
@@ -58,10 +58,10 @@ presentar-core = { workspace = true, optional = true }
 # Note: renacer 0.9.1 has compilation issue; using compatible local types instead
 dhat = { version = "0.3", optional = true }
 trueno-quant = { workspace = true }
-num_cpus = "1.17.0"
-anyhow = "1.0.100"
+num_cpus = "1.17"
+anyhow = { workspace = true }
 # Hardware capability detection (PMAT-447)
-chrono = "0.4"
+chrono = { workspace = true }
 toml = "0.8"
 # ML tuner integration (SHOWCASE-BRICK-001, Section 12) — aprender RandomForest is a
 # DEV-dependency only: the SIMD foundation must not depend on the ML layer (layer
@@ -84,22 +84,22 @@ web-sys = { version = "0.3", optional = true, features = ["console"] }
 hostname = "0.4"
 
 [build-dependencies]
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 serde_yaml_ng = "0.10"
 
 [dev-dependencies]
-proptest = "1.9"
+proptest = { workspace = true }
 # Reference IEEE-754 binary16 oracle for the f32_to_f16 RNE falsifier
 # (OBLIG-TRUENO-F32-F16-RNE). Dev-only: the foundation stays dependency-lean;
 # f32_to_f16 is a self-contained pure-Rust bit-twiddle that must MATCH `half`.
 half = { workspace = true }
 criterion = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt"] }
-serde_json = "1.0"
+serde_json = { workspace = true }
 nalgebra = "0.34"  # For eigendecomposition benchmark comparison
 # Simulation testing framework (TRUENO-SPEC-012)
 simular = { path = "../aprender-simulate", package = "aprender-simulate" }
-regex = "1.11"  # For PTX/WGSL pattern validation in falsification tests
+regex = { workspace = true }  # For PTX/WGSL pattern validation in falsification tests
 # GPU edge-case test framework (TCE-001)
 trueno-cuda-edge = { path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
 # Sparse and solver crates for contract tests

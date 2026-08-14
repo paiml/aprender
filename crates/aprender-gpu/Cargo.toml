@@ -46,7 +46,7 @@ wgpu = { version = "24", optional = true }
 manzana = { version = "0.2.0", optional = true }
 
 [dev-dependencies]
-proptest = "1.9"
+proptest = { workspace = true }
 criterion = { workspace = true }
 simular = { path = "../aprender-simulate", package = "aprender-simulate" }
 pollster = "0.4"

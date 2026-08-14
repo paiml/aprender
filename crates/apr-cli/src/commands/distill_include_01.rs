@@ -657,7 +657,7 @@ mod tests {
         let teacher_path = workdir.path().join("teacher.safetensors");
         fs::write(
             &teacher_path,
-            safetensors::serialize(teacher_views, &None)
+            safetensors::serialize(teacher_views, None)
                 .expect("serialize teacher"),
         )
         .expect("write teacher");
@@ -673,7 +673,7 @@ mod tests {
         let student_path = workdir.path().join("student.safetensors");
         fs::write(
             &student_path,
-            safetensors::serialize(student_views, &None)
+            safetensors::serialize(student_views, None)
                 .expect("serialize student"),
         )
         .expect("write student");
@@ -787,7 +787,7 @@ mod tests {
         let teacher_path = workdir.path().join("teacher.safetensors");
         fs::write(
             &teacher_path,
-            safetensors::serialize(teacher_views, &None).expect("serialize teacher"),
+            safetensors::serialize(teacher_views, None).expect("serialize teacher"),
         )
         .expect("write teacher");
 
@@ -802,7 +802,7 @@ mod tests {
         let student_path = workdir.path().join("student.safetensors");
         fs::write(
             &student_path,
-            safetensors::serialize(student_views, &None).expect("serialize student"),
+            safetensors::serialize(student_views, None).expect("serialize student"),
         )
         .expect("write student");
 

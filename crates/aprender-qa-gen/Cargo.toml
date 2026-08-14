@@ -18,12 +18,12 @@ anyhow = { workspace = true }
 proptest = { workspace = true }
 chrono = { workspace = true }
 safetensors = { workspace = true }
-sha2 = "0.10"
+sha2 = { workspace = true }
 hex = "0.4"
 
 [dev-dependencies]
 proptest = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

@@ -26,7 +26,7 @@ fn write_safetensors(
             )
         })
         .collect();
-    let bytes = safetensors::serialize(views, &None).expect("serialize");
+    let bytes = safetensors::serialize(views, None).expect("serialize");
     let path = dir.join(name);
     fs::write(&path, bytes).expect("write");
     path
@@ -123,10 +123,9 @@ fn falsify_crux_b_05_002_split_then_merge_identity() {
     let orig = SafeTensors::deserialize(&orig_bytes).expect("deserialize orig");
     let reb = SafeTensors::deserialize(&reb_bytes).expect("deserialize reb");
 
-    let orig_names: std::collections::HashSet<&str> =
-        orig.names().into_iter().map(String::as_str).collect();
-    let reb_names: std::collections::HashSet<&str> =
-        reb.names().into_iter().map(String::as_str).collect();
+    // safetensors 0.7: `names()` yields `&str` directly (it yielded `&String` in 0.4).
+    let orig_names: std::collections::HashSet<&str> = orig.names().into_iter().collect();
+    let reb_names: std::collections::HashSet<&str> = reb.names().into_iter().collect();
     assert_eq!(orig_names, reb_names, "tensor set must match");
 
     for name in orig.names() {

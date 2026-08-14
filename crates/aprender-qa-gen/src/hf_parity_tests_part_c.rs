@@ -56,7 +56,7 @@ fn test_compare_tensor_file_missing_logits() {
         data: vec![0u8; 4],
     };
     let tensors = vec![("other_name".to_string(), tensor)];
-    let bytes = safetensors::tensor::serialize(tensors, &None).expect("serialize");
+    let bytes = safetensors::tensor::serialize(tensors, None).expect("serialize");
     let path = dir.join("no_logits.safetensors");
     std::fs::write(&path, bytes).expect("write");
 

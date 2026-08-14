@@ -69,7 +69,7 @@ fn stage_qwen2_safetensors_fixture(dir: &std::path::Path) {
         TensorView::new(Dtype::F32, vec![vocab_size, hidden_size], &embed_data[..])
             .expect("TensorView"),
     )];
-    let bytes = safetensors::serialize(views, &None).expect("serialize safetensors");
+    let bytes = safetensors::serialize(views, None).expect("serialize safetensors");
     fs::write(dir.join("model.safetensors"), bytes).expect("write safetensors");
 }
 
@@ -188,7 +188,7 @@ fn pmat_690_p0k_apr_convert_no_config_leaves_hf_arch_null() {
         TensorView::new(Dtype::F32, vec![vocab_size, hidden_size], &embed_data[..])
             .expect("TensorView"),
     )];
-    let bytes = safetensors::serialize(views, &None).expect("serialize safetensors");
+    let bytes = safetensors::serialize(views, None).expect("serialize safetensors");
     let src_safetensors = src_dir.join("model.safetensors");
     fs::write(&src_safetensors, bytes).expect("write safetensors");
     let out_apr = tmp.path().join("out.apr");

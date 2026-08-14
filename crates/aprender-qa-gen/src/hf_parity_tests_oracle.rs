@@ -172,7 +172,7 @@ fn create_safetensors_file(path: &Path, logits: &[f32], shape: &[usize]) {
     };
     let tensors = vec![("logits".to_string(), tensor)];
     let bytes =
-        safetensors::tensor::serialize(tensors, &None).expect("failed to serialize safetensors");
+        safetensors::tensor::serialize(tensors, None).expect("failed to serialize safetensors");
     std::fs::write(path, bytes).expect("failed to write safetensors file");
 }
 
@@ -293,7 +293,7 @@ fn test_load_golden_from_path_missing_logits_tensor() {
     };
     // Name it "not_logits" so the "logits" lookup fails
     let tensors = vec![("not_logits".to_string(), tensor)];
-    let bytes = safetensors::tensor::serialize(tensors, &None).expect("serialize");
+    let bytes = safetensors::tensor::serialize(tensors, None).expect("serialize");
     let path = dir.join("no_logits.safetensors");
     std::fs::write(&path, bytes).expect("write");
 

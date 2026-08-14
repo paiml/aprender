@@ -36,11 +36,11 @@ console_error_panic_hook = { workspace = true }
 getrandom = { workspace = true }
 
 [dev-dependencies]
-provable-contracts = "0.3"
+provable-contracts = { workspace = true }
 presentar-test = { path = "../aprender-present-test", package = "aprender-present-test" }
-sha2 = "0.10"
+sha2 = { workspace = true }
 hex = "0.4"
-regex = "1"
+regex = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 proptest = { workspace = true }

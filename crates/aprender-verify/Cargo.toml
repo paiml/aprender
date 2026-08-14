@@ -28,16 +28,19 @@ name = "certeza"
 
 [dependencies]
 # Serialization for benchmark results
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 # System information for metadata collection
-sysinfo = "0.30"
+# 0.31 matches bashrs (the only other holder in the default graph), so the
+# workspace resolves ONE sysinfo instead of two. 0.31 dropped the SystemExt /
+# CpuExt traits; the methods are inherent on System/Cpu now.
+sysinfo = "0.31"
 # Date/time handling
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 # Property-based testing framework
-proptest = "1.5"
+proptest = { workspace = true }
 # Performance benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
 

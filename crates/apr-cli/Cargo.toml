@@ -110,7 +110,7 @@ aprender-contracts = { workspace = true }
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
 aprender-mcp = { path = "../aprender-mcp", version = "0.63.0" }
 async-stream = "0.3"
-provable-contracts-macros = "0.3"
+provable-contracts-macros = { workspace = true }
 
 # Shared formatting and system utilities (Batuta stack)
 batuta-common = { workspace = true }
@@ -139,7 +139,7 @@ trueno = { workspace = true, optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"], optional = true }
 
 # HTTP server (for serve command with inference feature)
-axum = { version = "0.7", optional = true }
+axum = { workspace = true, optional = true }
 
 # Async streams for SSE
 futures-util = { version = "0.3", optional = true }
@@ -151,16 +151,16 @@ clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
 gag = "1.0"
 
 # Output formatting
-colored = "2.1"
+colored = { workspace = true }
 tabled = "0.16"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-sha2 = "0.10"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 # HELIX-IDEA-009: constant-time SHA-256 digest comparison for `apr serve`
 # bearer-token auth. See contracts/apr-serve-api-key-auth-v1.yaml gate
 # FALSIFY-AUTH-003.
 subtle = "2.6"
-rmp-serde = "1.3"
+rmp-serde = { workspace = true }
 
 # Error handling
 thiserror = "2.0"
@@ -173,12 +173,12 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 humansize = "2.1"
 
 # Temporary directories (compile command)
-tempfile = "3.14"
+tempfile = { workspace = true }
 
 # File/directory utilities
 glob = "0.3"
-dirs = "5.0"
-which = "7"
+dirs = { workspace = true }
+which = { workspace = true }
 
 # Parquet input for `apr tokenize encode-corpus` — issue #1410 follow-up.
 # Stack v1.2 / codeparrot Python corpora ship as parquet, not JSONL; this
@@ -230,7 +230,7 @@ dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
 alimentar = { workspace = true }
-half = "2.4.1"
+half = { workspace = true }
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 
@@ -260,16 +260,16 @@ required-features = ["inference"]
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
-tempfile = "3.14"
-proptest = "1.6"
+tempfile = { workspace = true }
+proptest = { workspace = true }
 jugar-probar = { version = "0.4", features = ["tui"] }
-regex = "1.10"
+regex = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
-axum-test = "16"
+axum-test = "21"
 tower = "0.5"
 # FALSIFY-SHIP-012 — NFC normalization for tokenizer round-trip harness
 unicode-normalization = "0.1"
 # FALSIFY-APR-DISTILL-TRAIN-001 — SafeTensors fixture for §35 wire-up integration test
-safetensors = "0.4"
+safetensors = { workspace = true }
 bytemuck = { version = "1.24", features = ["derive"] }
 
