@@ -12,6 +12,24 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The actual workspace root.
+///
+/// `CARGO_MANIFEST_DIR` for this test target is `crates/aprender-core`, NOT the
+/// workspace root. Tests that pass it to `cargo metadata` as `current_dir` are
+/// unaffected — cargo walks up and reports all 78 packages — but any test using
+/// it as a filesystem path was silently looking in the wrong place. Two were:
+/// FALSIFY-MONO-011 scanned `crates/aprender-core/crates` (nonexistent, so it
+/// passed unconditionally) and FALSIFY-BUILD-004 read aprender-core's manifest
+/// while claiming to check the root's.
+///
+/// Same pattern as `readme_contract.rs:11`, which had it right.
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core")
+}
+
 /// FALSIFY-MONO-010: Every [package] name must be in the spec registry.
 /// Crate names not in Appendix A are unauthorized.
 #[test]
@@ -215,62 +233,122 @@ fn test_minimum_workspace_member_count() {
 /// (exception: aprender-contracts-cli for build tooling).
 #[test]
 fn test_no_unauthorized_binaries() {
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let crates_dir = workspace_root.join("crates");
+    // `CARGO_MANIFEST_DIR` is crates/aprender-core, so the old
+    // `workspace_root.join("crates")` resolved to crates/aprender-core/crates,
+    // which does not exist. `read_dir` returned Err, the `if let Ok(..)` body
+    // below never ran, `violations` stayed empty and this required check passed
+    // unconditionally for its entire life. Repointing it reports three crates.
+    //
+    // The six other tests in this file that use the bare `CARGO_MANIFEST_DIR`
+    // are NOT affected: they pass it only as `current_dir` to `cargo metadata`,
+    // which walks up to the workspace root on its own (verified: 78 packages
+    // from crates/aprender-core). Only this test and FALSIFY-BUILD-004 use it
+    // as a filesystem path, and both were wrong.
+    let crates_dir = workspace_root().join("crates");
 
     // During migration, legacy binaries from merged repos are allowed.
     // Post-migration (Phase 5+), these should be folded into apr-cli subcommands.
     // For now, we track them — the test documents what has [[bin]] sections.
+    // The migration debt register: every package that still ships a binary of
+    // its own, because its capability is not yet reachable as `apr <subcommand>`.
+    //
+    // This is NOT a permanent exemption list. Deleting a binary before its
+    // capability is reachable through `apr` removes the capability rather than
+    // relocating it, so the order is: expose via apr, drop the bin, drop the
+    // entry here. The ratchet below enforces that the list only shrinks.
+    //
+    // Derived from `cargo metadata`, so it includes packages that auto-discover
+    // `src/main.rs` without any `[[bin]]` section — invisible to the manifest
+    // grep this check used to do.
     let allowed_bins: HashSet<&str> = [
-        "apr-cli",
-        "aprender-contracts-cli",
-        "aprender-compute",
-        "aprender-cbtop",
-        "aprender-cgp",
-        "aprender-explain",
-        "aprender-ptx-debug",
-        "aprender-zram-cli",
-        "aprender-present-cli",
-        "aprender-present-terminal",
-        "aprender-test-cli",
-        "aprender-test-showcase",
-        "aprender-data",
-        "aprender-db",
-        "aprender-distribute",
-        "aprender-registry",
-        "aprender-serve",
-        "aprender-shell",
-        "aprender-simulate",
-        "aprender-train",
-        "aprender-train-bench",
-        "aprender-train-canary",
-        "aprender-train-distill",
-        "aprender-train-inspect",
-        "aprender-train-lora",
-        "aprender-train-shell",
-        "aprender-tsp",
-        "aprender-monte-carlo",
-        "aprender-viz",
-        "aprender-viz-ttop",
+        // Sanctioned by the contract itself (cgp-monorepo-consolidation-v1.yaml:212).
+        "apr-cli",                // apr, apr-corpus-ingest
+        "aprender",               // apr (root facade: `cargo install aprender`)
+        "aprender-contracts-cli", // pv — explicit contract exception, and
+        // `apr pv` + naked `pv` is a settled decision
+        // Build/dev tooling, never user-facing ML surface.
+        "aprender-compute-xtask", // aprender-compute-xtask
+        "aprender-ptx-debug",     // aprender-ptx-debug
+        "aprender-qa-certify",    // apr-qa-readme-sync
+        // Pre-consolidation names still carrying the only access to their
+        // capability. These are the migration targets.
+        "aprender-data",             // alimentar
+        "aprender-simulate",         // simular
+        "aprender-present-cli",      // presentar
+        "aprender-present-terminal", // ptop, score
+        "aprender-rag-cli",          // trueno-rag
+        "aprender-zram-cli",         // trueno-zram
+        "aprender-zram-generator",   // aprender-zram-generator
+        "aprender-verify-ml",        // verificar
+        "aprender-explain",          // aprender-explain (auto-discovered)
+        "aprender-orchestrate",      // aprender-orchestrate (auto-discovered)
+        "aprender-profile",          // aprender-profile (auto-discovered)
+        "aprender-qa-cli",           // apr-qa
+        "aprender-cbtop",            // aprender-cbtop
+        "aprender-cgp",              // aprender-cgp
+        "aprender-db",               // aprender-db
+        "aprender-test-cli",         // aprender-test-cli
+        // Training satellites.
+        "aprender-train-bench",   // aprender-train-bench
+        "aprender-train-distill", // aprender-train-distill
+        "aprender-train-inspect", // aprender-train-inspect
+        "aprender-train-lora",    // aprender-train-lora
+        "aprender-train-shell",   // aprender-train-shell
     ]
     .into();
 
+    // Ask cargo what binaries the workspace actually BUILDS, rather than
+    // grepping manifests for `[[bin]]`. Cargo auto-discovers `src/main.rs` with
+    // no `[[bin]]` section at all, and six packages rely on that —
+    // aprender-explain, aprender-orchestrate, aprender-profile,
+    // aprender-compute-xtask, aprender-zram-generator, and aprender-verify-ml,
+    // which ships `verificar`. A manifest grep is blind to every one of them, so
+    // the contract's central claim was unenforceable even where the path worked.
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(workspace_root())
+        .output()
+        .expect("failed to run cargo metadata");
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("cargo metadata is not valid JSON");
+    let packages = metadata["packages"]
+        .as_array()
+        .expect("cargo metadata has no packages array");
+
     let mut violations = Vec::new();
-
-    if let Ok(entries) = std::fs::read_dir(&crates_dir) {
-        for entry in entries.flatten() {
-            let toml_path = entry.path().join("Cargo.toml");
-            if !toml_path.exists() {
-                continue;
+    let mut with_bins: Vec<String> = Vec::new();
+    for pkg in packages {
+        let name = pkg["name"].as_str().unwrap_or_default().to_string();
+        let ships_bin = pkg["targets"].as_array().into_iter().flatten().any(|t| {
+            t["kind"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|k| k == "bin")
+        });
+        if ships_bin {
+            if !allowed_bins.contains(name.as_str()) {
+                violations.push(name.clone());
             }
-            let content = std::fs::read_to_string(&toml_path).unwrap_or_default();
-            let dir_name = entry.file_name().to_string_lossy().to_string();
-
-            if content.contains("[[bin]]") && !allowed_bins.contains(dir_name.as_str()) {
-                violations.push(dir_name);
-            }
+            with_bins.push(name);
         }
     }
+
+    // Vacuity: a scan that looked at nothing must not report clean. This is the
+    // assertion the original lacked, and it is why the path bug went unnoticed
+    // for the whole life of the check.
+    assert!(
+        packages.len() > 50,
+        "FALSIFY-MONO-011 saw only {} package(s) — cargo metadata is not reporting \
+         the workspace; fix the invocation rather than this number",
+        packages.len()
+    );
+    assert!(
+        with_bins.len() > 10,
+        "FALSIFY-MONO-011 found only {} package(s) shipping a binary, which cannot \
+         be right for this workspace — the target scan is broken",
+        with_bins.len()
+    );
 
     assert!(
         violations.is_empty(),
@@ -278,22 +356,71 @@ fn test_no_unauthorized_binaries() {
          Only apr-cli should produce user-facing binaries.",
         violations
     );
+
+    // RATCHET: the allowlist is a migration debt register, not a permanent
+    // exemption. Every entry is a capability reachable only by its own binary
+    // and not yet through `apr <subcommand>`; the list may SHRINK as capabilities
+    // migrate, never grow. Deleting a [[bin]] before its capability is reachable
+    // through apr removes the capability rather than relocating it, so the
+    // ordering is: expose via apr, then drop the bin, then drop the entry here.
+    const ALLOWLIST_BASELINE: usize = 27;
+    assert!(
+        allowed_bins.len() <= ALLOWLIST_BASELINE,
+        "FALSIFY-MONO-011: the [[bin]] allowlist grew to {} (baseline {ALLOWLIST_BASELINE}). \
+         It is shrink-only: migrate the capability to an `apr` subcommand instead of \
+         granting a new exemption.",
+        allowed_bins.len()
+    );
+
+    // And it must not rot: an allowlisted crate that no longer ships a [[bin]]
+    // is a stale exemption hiding the fact that the migration already happened.
+    let stale: Vec<&str> = allowed_bins
+        .iter()
+        .filter(|c| !with_bins.iter().any(|b| b == *c) && crates_dir.join(c).exists())
+        .copied()
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "FALSIFY-MONO-011: these crates are allowlisted but ship no [[bin]] — the \
+         exemption is stale and must be deleted so the ratchet reflects real debt: {stale:?}"
+    );
 }
 
 /// FALSIFY-BUILD-004: No [patch.crates-io] in root Cargo.toml.
 /// The monorepo eliminates the need for patches.
 #[test]
 fn test_no_patch_in_root_cargo_toml() {
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let cargo_toml = std::fs::read_to_string(workspace_root.join("Cargo.toml"))
-        .expect("failed to read root Cargo.toml");
+    // Was `Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")`, i.e.
+    // crates/aprender-core/Cargo.toml — this test has never once read the root
+    // manifest it is named for.
+    let root = workspace_root().join("Cargo.toml");
+    let cargo_toml = std::fs::read_to_string(&root)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", root.display()));
 
-    // Root Cargo.toml should not have [patch.crates-io]
-    // (it may exist in .cargo/config.toml for dev overrides, but not in the committed Cargo.toml)
+    // Line-based, ignoring comments. The root manifest legitimately DISCUSSES
+    // `[patch.crates-io]` twice — a note about the excluded aprender-train-canary
+    // crate, and `# [patch.crates-io] — REMOVED` recording that the cc patch was
+    // dropped. A naive `contains()` reads both as violations, so repointing the
+    // path without this would have turned a required check red on prose.
+    let active: Vec<(usize, &str)> = cargo_toml
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| l.trim_start().starts_with("[patch.crates-io]"))
+        .map(|(i, l)| (i + 1, l.trim()))
+        .collect();
+
+    // Vacuity: prove we read the real root before concluding from an absence.
     assert!(
-        !cargo_toml.contains("[patch.crates-io]"),
-        "FALSIFY-BUILD-004: Root Cargo.toml still has [patch.crates-io].\n\
-         The monorepo should eliminate all cross-repo patches."
+        cargo_toml.contains("[workspace]"),
+        "{} is not the workspace root manifest — the path is wrong again",
+        root.display()
+    );
+
+    assert!(
+        active.is_empty(),
+        "FALSIFY-BUILD-004: Root Cargo.toml has an active [patch.crates-io] at {active:?}.\n\
+         The monorepo should eliminate all cross-repo patches; a dev override belongs \
+         in .cargo/config.toml, which is not committed."
     );
 }
 
