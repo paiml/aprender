@@ -590,6 +590,23 @@ jobs:
         run: bash scripts/check_package_includes.sh
       - name: Package-includes guard case table
         run: bash scripts/check_package_includes.sh --self-test
+      # The manifest-level sibling guard proves no Cargo.toml DECLARES an in-tree
+      # crate from crates.io. It passes, and it is not sufficient: a dependency we
+      # legitimately take from the registry can drag an in-tree name in
+      # TRANSITIVELY, and no manifest here mentions it. `whisper-apr = "0.2"`
+      # resolves crates.io `aprender 0.27.8` -- this monorepo depending on a
+      # published copy of ITSELF, 36 minors stale -- plus registry trueno,
+      # realizar, trueno-quant, batuta-common, renacer-core.
+      #
+      # NOT `cargo tree --duplicates`: trueno/realizar/batuta-common are [lib]
+      # names, so the lockfile holds exactly ONE package of each (the registry
+      # one). They are not duplicates and never will be; measured, --duplicates
+      # catches 0 of 8 under default features. The lockfile is the only surface
+      # that sees all of them, and it is feature-independent.
+      - name: No in-tree crate name may resolve from crates.io
+        run: bash scripts/check_lockfile_no_registry_siblings.sh
+      - name: Lockfile sibling guard case table
+        run: bash scripts/check_lockfile_no_registry_siblings.sh --self-test
       # Poka-yoke: APR-MONO made every sibling a path alias under crates/, but
       # `trueno = "0.16"` still BUILDS - cargo resolves the crates.io copy
       # alongside the in-tree one, so the tree compiles two mutually
