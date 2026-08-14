@@ -30,7 +30,6 @@ thiserror = "2"
 # Phase 2+ dependencies
 aprender = { path = "../aprender-core", version = "0.63.0", package = "aprender-core" }                                        # Sparse matrix ops, PageRank
 trueno = { workspace = true }
-trueno-db = { workspace = true }
 
 # Phase 3: GPU acceleration (optional - requires wgpu-capable hardware)
 wgpu = { version = "22", optional = true, features = ["wgsl"] }

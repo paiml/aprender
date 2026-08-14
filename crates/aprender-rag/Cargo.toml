@@ -33,7 +33,6 @@ name = "aprender_rag"
 [dependencies]
 # Core compute
 trueno = { workspace = true }
-trueno-db = { workspace = true }
 
 # Async runtime
 tokio = { version = "1.49", features = ["full"] }
