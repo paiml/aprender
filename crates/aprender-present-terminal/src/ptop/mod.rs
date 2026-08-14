@@ -82,8 +82,11 @@ pub mod analyzers;
 pub mod app;
 pub mod config;
 pub mod input;
+pub mod run;
 pub mod ui;
 pub mod ui_atoms;
+
+pub use run::{parse_panel_type, run, PtopOptions, PANEL_VALUES};
 
 pub use analyzers::{
     AnalyzerRegistry, ConnectionsAnalyzer, ConnectionsData, PsiAnalyzer, PsiData, TcpConnection,

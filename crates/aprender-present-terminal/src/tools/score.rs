@@ -1,126 +1,150 @@
-//! TUI Quality Scorer (SPEC-024 Section 18.10)
+//! TUI Quality Scorer (SPEC-024 Section 18.10).
 //!
-//! Automated quality scoring for Rust TUI crates using the paiml-mcp-agent-toolkit methodology.
+//! Automated quality scoring for Rust TUI crates using the
+//! paiml-mcp-agent-toolkit methodology.
 //!
-//! # Usage
-//!
-//! ```bash
-//! score [OPTIONS] [PATH]
-//! ```
+//! This is the whole of what used to be `src/bin/score.rs`. It moved into the
+//! library so `apr score` can call it directly: `score` is far too generic a
+//! name to occupy in `~/.cargo/bin`, where `cargo install` put it.
 //!
 //! # Scoring Dimensions
 //!
 //! | Dimension | Weight | Description |
 //! |-----------|--------|-------------|
-//! | Performance | 25% | SIMD/GPU patterns, ComputeBlock usage |
+//! | Performance | 25% | SIMD/GPU patterns, `ComputeBlock` usage |
 //! | Testing | 20% | Test count, coverage, mutation testing |
 //! | Widget Reuse | 15% | Library widget adoption |
 //! | Code Coverage | 15% | Line, branch, function coverage |
 //! | Quality Metrics | 15% | Clippy warnings, rustfmt compliance |
 //! | Falsifiability | 10% | Explicit failure criteria, F-XXX patterns |
 
-use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Instant;
 
-/// TUI Quality Scorer - SPEC-024 Section 18.10
-#[derive(Parser, Debug)]
-#[command(name = "score", version, about = "TUI Quality Scorer for Rust crates")]
-#[allow(clippy::struct_excessive_bools)]
-struct Cli {
-    /// Path to crate root (default: current directory)
-    #[arg(default_value = ".")]
-    path: PathBuf,
-
-    /// Output format: text, json, yaml
-    #[arg(short, long, default_value = "text")]
-    output: OutputFormat,
-
-    /// Only output final score
-    #[arg(short, long)]
-    quiet: bool,
-
-    /// Show detailed metrics
-    #[arg(short, long)]
-    verbose: bool,
-
-    /// CI mode: exit 1 if score < threshold
-    #[arg(long)]
-    ci: bool,
-
-    /// Minimum passing score (default: 80)
-    #[arg(long, default_value = "80")]
-    threshold: u32,
-
-    /// Disable colored output
-    #[arg(long)]
-    no_color: bool,
-
-    /// Custom scoring config (YAML)
-    #[arg(long)]
-    config: Option<PathBuf>,
+/// Every option the `score` binary accepted, with its original default.
+#[derive(Debug, Clone)]
+pub struct ScoreOptions {
+    /// Crate root to analyse (positional, default `.`).
+    pub path: PathBuf,
+    /// Output format (`-o/--output`, default `text`).
+    pub output: OutputFormat,
+    /// Print only the final score (`-q/--quiet`).
+    pub quiet: bool,
+    /// Print per-dimension metrics (`-v/--verbose`).
+    pub verbose: bool,
+    /// Minimum passing score (`--threshold`, default 80).
+    pub threshold: u32,
+    /// Disable coloured output (`--no-color`).
+    pub no_color: bool,
+    /// Custom scoring config, YAML (`--config`).
+    pub config: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-enum OutputFormat {
+impl Default for ScoreOptions {
+    fn default() -> Self {
+        Self {
+            path: PathBuf::from("."),
+            output: OutputFormat::Text,
+            quiet: false,
+            verbose: false,
+            threshold: 80,
+            no_color: false,
+            config: None,
+        }
+    }
+}
+
+/// Report rendering format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum OutputFormat {
+    /// Human-readable table (default).
+    #[default]
     Text,
+    /// `QualityReport` as pretty JSON.
     Json,
+    /// `QualityReport` as YAML.
     Yaml,
 }
 
 /// Complete quality report (F-PMAT-003, F-PMAT-004)
 #[derive(Debug, Serialize, Deserialize)]
-struct QualityReport {
-    version: String,
+pub struct QualityReport {
+    /// Report schema version.
+    pub version: String,
+    /// Name read from the analysed crate's `Cargo.toml`.
     #[serde(rename = "crate")]
-    crate_name: String,
-    timestamp: String,
-    dimensions: DimensionScores,
-    total_score: f64,
-    max_score: u32,
-    grade: char,
-    pass: bool,
-    threshold: u32,
+    pub crate_name: String,
+    /// Unix-seconds timestamp with a `Z` suffix.
+    pub timestamp: String,
+    /// Per-dimension results.
+    pub dimensions: DimensionScores,
+    /// Sum of the six dimension scores, clamped to 0..=100.
+    pub total_score: f64,
+    /// Always 100.
+    pub max_score: u32,
+    /// Letter grade derived from `total_score`.
+    pub grade: char,
+    /// Whether `total_score >= threshold`.
+    pub pass: bool,
+    /// The threshold this run was judged against.
+    pub threshold: u32,
+    /// Wall-clock analysis duration.
     #[serde(skip_serializing_if = "Option::is_none")]
-    analysis_time_ms: Option<u128>,
+    pub analysis_time_ms: Option<u128>,
 }
 
+/// The six scoring dimensions.
 #[derive(Debug, Serialize, Deserialize)]
-struct DimensionScores {
-    performance: DimensionResult,
-    testing: DimensionResult,
-    widget_reuse: DimensionResult,
-    code_coverage: DimensionResult,
-    quality_metrics: DimensionResult,
-    falsifiability: DimensionResult,
+pub struct DimensionScores {
+    /// SIMD/GPU patterns, `ComputeBlock` usage (25 pts).
+    pub performance: DimensionResult,
+    /// Test count and density (20 pts).
+    pub testing: DimensionResult,
+    /// Library widget adoption (15 pts).
+    pub widget_reuse: DimensionResult,
+    /// Line coverage (15 pts).
+    pub code_coverage: DimensionResult,
+    /// Clippy/rustfmt/docs (15 pts).
+    pub quality_metrics: DimensionResult,
+    /// Explicit failure criteria (10 pts).
+    pub falsifiability: DimensionResult,
 }
 
+/// One dimension's score plus the raw metrics behind it.
 #[derive(Debug, Serialize, Deserialize)]
-struct DimensionResult {
-    score: f64,
-    max: u32,
-    weight: f64,
-    metrics: HashMap<String, MetricValue>,
+pub struct DimensionResult {
+    /// Points earned.
+    pub score: f64,
+    /// Points available.
+    pub max: u32,
+    /// Configured weight for this dimension.
+    pub weight: f64,
+    /// Raw metrics collected while scoring.
+    pub metrics: HashMap<String, MetricValue>,
 }
 
+/// A raw metric value, serialised untagged.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-enum MetricValue {
+pub enum MetricValue {
+    /// Numeric metric.
     Number(f64),
+    /// Textual metric.
     Text(String),
+    /// Boolean metric.
     Bool(bool),
 }
 
 /// Scoring configuration (F-PMAT-018)
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct ScoringConfig {
+pub struct ScoringConfig {
     #[serde(default = "default_weights")]
     weights: Weights,
     #[serde(default)]
+    #[allow(dead_code)]
     thresholds: Thresholds,
     #[serde(default)]
     performance: PerformanceConfig,
@@ -148,9 +172,9 @@ const fn default_weights() -> Weights {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct Thresholds {
     #[serde(default = "default_pass")]
+    #[allow(dead_code)]
     pass: u32,
 }
 
@@ -201,13 +225,15 @@ impl Default for ScoringConfig {
 }
 
 /// Analyze a crate and produce quality scores
-struct CrateAnalyzer {
+pub struct CrateAnalyzer {
     path: PathBuf,
     config: ScoringConfig,
 }
 
 impl CrateAnalyzer {
-    const fn new(path: PathBuf, config: ScoringConfig) -> Self {
+    /// Build an analyzer for `path` using `config`.
+    #[must_use]
+    pub const fn new(path: PathBuf, config: ScoringConfig) -> Self {
         Self { path, config }
     }
 
@@ -603,8 +629,12 @@ impl CrateAnalyzer {
         total
     }
 
-    /// Generate full quality report
-    fn analyze(&self, threshold: u32) -> Result<QualityReport, String> {
+    /// Generate full quality report.
+    ///
+    /// # Errors
+    ///
+    /// Returns the F-PMAT-017 message when `path` holds no `Cargo.toml`.
+    pub fn analyze(&self, threshold: u32) -> Result<QualityReport, String> {
         self.validate()?;
 
         let start = Instant::now();
@@ -627,14 +657,7 @@ impl CrateAnalyzer {
         // Verify range (F-PMAT-005)
         let total_score = total_score.clamp(0.0, 100.0);
 
-        // Calculate grade (F-PMAT-006)
-        let grade = match total_score as u32 {
-            90..=100 => 'A',
-            80..=89 => 'B',
-            70..=79 => 'C',
-            60..=69 => 'D',
-            _ => 'F',
-        };
+        let grade = grade_from_score(total_score);
 
         let analysis_time = start.elapsed().as_millis();
 
@@ -657,6 +680,18 @@ impl CrateAnalyzer {
             threshold,
             analysis_time_ms: Some(analysis_time),
         })
+    }
+}
+
+/// Letter grade for a 0..=100 score (F-PMAT-006).
+#[must_use]
+pub fn grade_from_score(score: f64) -> char {
+    match score as u32 {
+        90..=100 => 'A',
+        80..=89 => 'B',
+        70..=79 => 'C',
+        60..=69 => 'D',
+        _ => 'F',
     }
 }
 
@@ -796,128 +831,115 @@ fn print_text_report(report: &QualityReport, verbose: bool, no_color: bool) {
     }
 }
 
-fn main() {
-    let cli = Cli::parse();
+/// Load the scoring config named by `--config`, falling back to defaults.
+///
+/// Matches the binary: an unreadable or unparseable file falls back to the
+/// default weights rather than failing.
+fn load_config(config: Option<&PathBuf>) -> ScoringConfig {
+    config.map_or_else(ScoringConfig::default, |config_path| {
+        std::fs::read_to_string(config_path).map_or_else(
+            |_| ScoringConfig::default(),
+            |content| serde_yaml_ng::from_str(&content).unwrap_or_default(),
+        )
+    })
+}
 
-    // Load config (F-PMAT-018)
-    let config = if let Some(config_path) = &cli.config {
-        match std::fs::read_to_string(config_path) {
-            Ok(content) => serde_yaml_ng::from_str(&content).unwrap_or_default(),
-            Err(_) => ScoringConfig::default(),
-        }
-    } else {
-        ScoringConfig::default()
-    };
-
-    // Validate weights sum to 1.0 (F-PMAT-020)
-    let weight_sum = config.weights.performance
+/// Sum of the six configured dimension weights.
+#[must_use]
+fn weight_sum(config: &ScoringConfig) -> f64 {
+    config.weights.performance
         + config.weights.testing
         + config.weights.widget_reuse
         + config.weights.code_coverage
         + config.weights.quality_metrics
-        + config.weights.falsifiability;
-    if (weight_sum - 1.0).abs() > 0.001 {
-        eprintln!("Warning: Dimension weights sum to {weight_sum:.3}, expected 1.0");
-    }
+        + config.weights.falsifiability
+}
 
-    let analyzer = CrateAnalyzer::new(cli.path.clone(), config);
-
-    match analyzer.analyze(cli.threshold) {
-        Ok(report) => {
-            // Output based on format (F-PMAT-003, F-PMAT-004)
-            match cli.output {
-                OutputFormat::Json => match serde_json::to_string_pretty(&report) {
-                    Ok(json) => println!("{json}"),
-                    Err(e) => {
-                        eprintln!("JSON serialization error: {e}");
-                        std::process::exit(1);
-                    }
-                },
-                OutputFormat::Yaml => match serde_yaml_ng::to_string(&report) {
-                    Ok(yaml) => println!("{yaml}"),
-                    Err(e) => {
-                        eprintln!("YAML serialization error: {e}");
-                        std::process::exit(1);
-                    }
-                },
-                OutputFormat::Text => {
-                    if cli.quiet {
-                        // F-PMAT-009: minimal output
-                        println!("{:.1}", report.total_score);
-                    } else {
-                        print_text_report(&report, cli.verbose, cli.no_color);
-                    }
-                }
-            }
-
-            // CI mode exit codes (F-PMAT-007, F-PMAT-008)
-            if cli.ci && !report.pass {
-                std::process::exit(1);
+/// Render `report` in the requested format.
+fn emit(report: &QualityReport, opts: &ScoreOptions) -> Result<(), String> {
+    match opts.output {
+        OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(report)
+                .map_err(|e| format!("JSON serialization error: {e}"))?;
+            println!("{json}");
+        }
+        OutputFormat::Yaml => {
+            let yaml = serde_yaml_ng::to_string(report)
+                .map_err(|e| format!("YAML serialization error: {e}"))?;
+            println!("{yaml}");
+        }
+        OutputFormat::Text => {
+            if opts.quiet {
+                // F-PMAT-009: minimal output
+                println!("{:.1}", report.total_score);
+            } else {
+                print_text_report(report, opts.verbose, opts.no_color);
             }
         }
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
     }
+    Ok(())
+}
+
+/// Score the crate at `opts.path` and print the report.
+///
+/// Returns whether the crate met `opts.threshold`; the caller decides what a
+/// failing score means (the `score` binary exited 1 under `--ci`).
+///
+/// # Errors
+///
+/// Returns a message when `opts.path` is not a Rust crate (no `Cargo.toml`),
+/// or when the report cannot be serialised into the requested format.
+pub fn run(opts: &ScoreOptions) -> Result<bool, String> {
+    let config = load_config(opts.config.as_ref());
+
+    // Validate weights sum to 1.0 (F-PMAT-020)
+    let sum = weight_sum(&config);
+    if (sum - 1.0).abs() > 0.001 {
+        eprintln!("Warning: Dimension weights sum to {sum:.3}, expected 1.0");
+    }
+
+    let analyzer = CrateAnalyzer::new(opts.path.clone(), config);
+    let report = analyzer.analyze(opts.threshold)?;
+    emit(&report, opts)?;
+    Ok(report.pass)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // F-PMAT-005: Score range valid
-    #[test]
-    fn test_score_range_valid() {
-        let report = QualityReport {
+    fn report_with(total: f64, grade: char, pass: bool) -> QualityReport {
+        let dim = |score: f64, max: u32, weight: f64| DimensionResult {
+            score,
+            max,
+            weight,
+            metrics: HashMap::new(),
+        };
+        QualityReport {
             version: "1.0.0".into(),
             crate_name: "test".into(),
             timestamp: "0Z".into(),
             dimensions: DimensionScores {
-                performance: DimensionResult {
-                    score: 25.0,
-                    max: 25,
-                    weight: 0.25,
-                    metrics: HashMap::new(),
-                },
-                testing: DimensionResult {
-                    score: 20.0,
-                    max: 20,
-                    weight: 0.20,
-                    metrics: HashMap::new(),
-                },
-                widget_reuse: DimensionResult {
-                    score: 15.0,
-                    max: 15,
-                    weight: 0.15,
-                    metrics: HashMap::new(),
-                },
-                code_coverage: DimensionResult {
-                    score: 15.0,
-                    max: 15,
-                    weight: 0.15,
-                    metrics: HashMap::new(),
-                },
-                quality_metrics: DimensionResult {
-                    score: 15.0,
-                    max: 15,
-                    weight: 0.15,
-                    metrics: HashMap::new(),
-                },
-                falsifiability: DimensionResult {
-                    score: 10.0,
-                    max: 10,
-                    weight: 0.10,
-                    metrics: HashMap::new(),
-                },
+                performance: dim(20.0, 25, 0.25),
+                testing: dim(15.0, 20, 0.20),
+                widget_reuse: dim(12.0, 15, 0.15),
+                code_coverage: dim(10.0, 15, 0.15),
+                quality_metrics: dim(10.0, 15, 0.15),
+                falsifiability: dim(8.0, 10, 0.10),
             },
-            total_score: 100.0,
+            total_score: total,
             max_score: 100,
-            grade: 'A',
-            pass: true,
+            grade,
+            pass,
             threshold: 80,
-            analysis_time_ms: None,
-        };
+            analysis_time_ms: Some(100),
+        }
+    }
+
+    // F-PMAT-005: Score range valid
+    #[test]
+    fn test_score_range_valid() {
+        let report = report_with(100.0, 'A', true);
         assert!(report.total_score >= 0.0 && report.total_score <= 100.0);
     }
 
@@ -935,27 +957,10 @@ mod tests {
         assert_eq!(grade_from_score(59.0), 'F');
     }
 
-    fn grade_from_score(score: f64) -> char {
-        match score as u32 {
-            90..=100 => 'A',
-            80..=89 => 'B',
-            70..=79 => 'C',
-            60..=69 => 'D',
-            _ => 'F',
-        }
-    }
-
     // F-PMAT-020: Dimension weights sum to 1.0
     #[test]
     fn test_weights_sum_to_one() {
-        let weights = default_weights();
-        let sum = weights.performance
-            + weights.testing
-            + weights.widget_reuse
-            + weights.code_coverage
-            + weights.quality_metrics
-            + weights.falsifiability;
-        assert!((sum - 1.0).abs() < 0.001);
+        assert!((weight_sum(&ScoringConfig::default()) - 1.0).abs() < 0.001);
     }
 
     // F-PMAT-019: Reproducible scores (deterministic)
@@ -985,115 +990,50 @@ mod tests {
     // F-PMAT-003: JSON output valid
     #[test]
     fn test_json_serialization() {
-        let report = QualityReport {
-            version: "1.0.0".into(),
-            crate_name: "test".into(),
-            timestamp: "0Z".into(),
-            dimensions: DimensionScores {
-                performance: DimensionResult {
-                    score: 20.0,
-                    max: 25,
-                    weight: 0.25,
-                    metrics: HashMap::new(),
-                },
-                testing: DimensionResult {
-                    score: 15.0,
-                    max: 20,
-                    weight: 0.20,
-                    metrics: HashMap::new(),
-                },
-                widget_reuse: DimensionResult {
-                    score: 12.0,
-                    max: 15,
-                    weight: 0.15,
-                    metrics: HashMap::new(),
-                },
-                code_coverage: DimensionResult {
-                    score: 10.0,
-                    max: 15,
-                    weight: 0.15,
-                    metrics: HashMap::new(),
-                },
-                quality_metrics: DimensionResult {
-                    score: 10.0,
-                    max: 15,
-                    weight: 0.15,
-                    metrics: HashMap::new(),
-                },
-                falsifiability: DimensionResult {
-                    score: 8.0,
-                    max: 10,
-                    weight: 0.10,
-                    metrics: HashMap::new(),
-                },
-            },
-            total_score: 75.0,
-            max_score: 100,
-            grade: 'C',
-            pass: false,
-            threshold: 80,
-            analysis_time_ms: Some(100),
-        };
-        let json = serde_json::to_string(&report);
-        assert!(json.is_ok());
-        // Verify it parses back
-        let parsed: Result<QualityReport, _> = serde_json::from_str(&json.unwrap());
-        assert!(parsed.is_ok());
+        let report = report_with(75.0, 'C', false);
+        let json = serde_json::to_string(&report).expect("report serializes to JSON");
+        let parsed: QualityReport =
+            serde_json::from_str(&json).expect("serialized report parses back");
+        assert_eq!(parsed.total_score, 75.0);
     }
 
     // F-PMAT-004: YAML output valid
     #[test]
     fn test_yaml_serialization() {
-        let report = QualityReport {
-            version: "1.0.0".into(),
-            crate_name: "test".into(),
-            timestamp: "0Z".into(),
-            dimensions: DimensionScores {
-                performance: DimensionResult {
-                    score: 20.0,
-                    max: 25,
-                    weight: 0.25,
-                    metrics: HashMap::new(),
-                },
-                testing: DimensionResult {
-                    score: 15.0,
-                    max: 20,
-                    weight: 0.20,
-                    metrics: HashMap::new(),
-                },
-                widget_reuse: DimensionResult {
-                    score: 12.0,
-                    max: 15,
-                    weight: 0.15,
-                    metrics: HashMap::new(),
-                },
-                code_coverage: DimensionResult {
-                    score: 10.0,
-                    max: 15,
-                    weight: 0.15,
-                    metrics: HashMap::new(),
-                },
-                quality_metrics: DimensionResult {
-                    score: 10.0,
-                    max: 15,
-                    weight: 0.15,
-                    metrics: HashMap::new(),
-                },
-                falsifiability: DimensionResult {
-                    score: 8.0,
-                    max: 10,
-                    weight: 0.10,
-                    metrics: HashMap::new(),
-                },
-            },
-            total_score: 75.0,
-            max_score: 100,
-            grade: 'C',
-            pass: false,
-            threshold: 80,
-            analysis_time_ms: Some(100),
-        };
-        let yaml = serde_yaml_ng::to_string(&report);
-        assert!(yaml.is_ok());
+        let report = report_with(75.0, 'C', false);
+        let yaml = serde_yaml_ng::to_string(&report).expect("report serializes to YAML");
+        assert!(yaml.contains("total_score: 75.0"));
+    }
+
+    /// The defaults are the `score` binary's documented defaults.
+    #[test]
+    fn defaults_match_the_original_binary() {
+        let d = ScoreOptions::default();
+        assert_eq!(d.path, PathBuf::from("."));
+        assert_eq!(d.threshold, 80);
+        assert_eq!(d.output, OutputFormat::Text);
+    }
+
+    /// F-PMAT-017: a directory with no `Cargo.toml` is REFUSED.
+    ///
+    /// Asserting `is_ok()` here would lock the defect in — the point is that
+    /// invalid input produces an error, so assert the refusal and its message.
+    #[test]
+    fn non_crate_directory_is_refused() {
+        let dir = std::env::temp_dir().join("apr-score-not-a-crate");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+
+        let err = run(&ScoreOptions {
+            path: dir.clone(),
+            ..ScoreOptions::default()
+        })
+        .expect_err("a directory with no Cargo.toml must be refused");
+        assert!(
+            err.starts_with("Not a Rust crate:"),
+            "unexpected refusal message: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

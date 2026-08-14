@@ -119,6 +119,65 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *simulated,
         ),
 
+        // The rehomed `ptop` binary. Every flag is threaded through
+        // `commands::present::top_options`, which has a field-by-field
+        // falsifier — a dropped flag is the #2418 defect.
+        ExtendedCommands::Top {
+            refresh,
+            deterministic,
+            no_color,
+            render_once,
+            width,
+            height,
+            config,
+            dump_config,
+            qa_timing,
+            explode,
+        } => commands::present::run_top(&commands::present::top_options(
+            *refresh,
+            *deterministic,
+            *no_color,
+            *render_once,
+            *width,
+            *height,
+            config.as_deref(),
+            *dump_config,
+            *qa_timing,
+            explode.as_deref(),
+        )),
+
+        // The rehomed `score` binary. `-v`/`-q` come from apr's global flags,
+        // which are the same two flags the binary declared for itself.
+        ExtendedCommands::Score {
+            path,
+            output,
+            ci,
+            threshold,
+            no_color,
+            config,
+        } => commands::present::run_score(
+            &commands::present::score_options(
+                path,
+                // The global `--json` forces JSON, as it does on `apr cbtop`.
+                // Without this it would parse, appear in `apr score --help`,
+                // and change nothing about the output.
+                if cli.json {
+                    presentar_terminal::tools::score::OutputFormat::Json
+                } else {
+                    *output
+                },
+                cli.quiet,
+                cli.verbose,
+                *threshold,
+                *no_color,
+                config.as_deref(),
+            ),
+            *ci,
+        ),
+
+        // The rehomed `presentar` binary.
+        ExtendedCommands::Present { command } => commands::present::dispatch_present(command),
+
         // GH-876 Milestone 1: Probar is now a subcommand container.
         // The existing flat-args behavior moved under `apr probar tensor <FILE>`.
         ExtendedCommands::Probar { command } => match command {

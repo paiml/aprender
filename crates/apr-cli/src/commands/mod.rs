@@ -44,6 +44,9 @@ pub(crate) mod distill;
 #[cfg(all(feature = "cuda", feature = "training", feature = "inference"))]
 pub(crate) mod distill_q4k_teacher;
 pub mod modelfile;
+/// `apr present` / `apr top` / `apr score` — the rehomed `presentar`,
+/// `ptop` and `score` binaries.
+pub mod present;
 pub(crate) mod rm_gc_lint;
 
 pub(crate) mod data;

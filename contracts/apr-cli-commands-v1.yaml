@@ -391,6 +391,27 @@ commands:
     requires_model: false
     side_effects: []
 
+  # Rehomed pre-consolidation binaries. `ptop`, `score` and `presentar` each
+  # installed a bin of that name into ~/.cargo/bin; the capability is
+  # unchanged, the standalone names are gone.
+  - name: top
+    category: ui
+    description: "System monitor: CPU, memory, disk, network, GPU, sensors, processes (was the ptop binary)"
+    requires_model: false
+    side_effects: []
+
+  - name: score
+    category: ui
+    description: "Quality-score a Rust TUI crate across six weighted dimensions (was the score binary)"
+    requires_model: false
+    side_effects: []
+
+  - name: present
+    category: ui
+    description: "Presentar WASM app operations: serve, bundle, new, check, score, gate, deploy (was the presentar binary)"
+    requires_model: false
+    side_effects: [filesystem, network]
+
   - name: runs
     category: ui
     description: "List, show, and compare training experiment runs"

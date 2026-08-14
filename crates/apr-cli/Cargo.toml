@@ -195,8 +195,14 @@ blake3 = "1"
 
 # TUI
 crossterm = "0.28"
-presentar-terminal = { workspace = true }
+# `ptop` and `score` are what used to be the standalone `ptop` and `score`
+# binaries; enabling them here is what makes `apr top` and `apr score` real.
+# Both features gate library modules now, not [[bin]] targets.
+presentar-terminal = { workspace = true, features = ["ptop", "score"] }
 presentar-core = { workspace = true }
+# Presentar app operations — what the `presentar` binary used to do, now
+# reachable as `apr present <SUBCOMMAND>`.
+aprender-present-cli = { workspace = true }
 
 # Visualization (syscall tracing and charts)
 renacer = { workspace = true, optional = true }

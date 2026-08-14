@@ -266,6 +266,7 @@ dependencies = [
  "aprender-explain",
  "aprender-mcp",
  "aprender-orchestrate",
+ "aprender-present-cli",
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-profile",
@@ -968,7 +969,6 @@ name = "aprender-present-cli"
 version = "0.63.0"
 dependencies = [
  "aprender-present-yaml",
- "clap",
  "notify",
  "serde",
  "serde_yaml_ng",
@@ -1042,7 +1042,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
- "sysinfo 0.32.1",
+ "sysinfo 0.33.1",
  "thiserror 2.0.18",
  "ttop",
  "unicode-segmentation",
@@ -13675,20 +13675,6 @@ name = "sysinfo"
 version = "0.31.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "355dbe4f8799b304b05e1b0f05fc59b2a18d36645cf169607da45bde2f69a1be"
-dependencies = [
- "core-foundation-sys",
- "libc",
- "memchr",
- "ntapi",
- "rayon",
- "windows 0.57.0",
-]
-
-[[package]]
-name = "sysinfo"
-version = "0.32.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c33cd241af0f2e9e3b5c32163b873b29956890b5342e6745b917ce9d490f4af"
 dependencies = [
  "core-foundation-sys",
  "libc",

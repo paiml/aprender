@@ -1,4 +1,17 @@
-//! Presentar CLI - serve and bundle WASM apps.
+//! Presentar operations — serve, bundle, scaffold, check, score, gate, deploy
+//! WASM apps.
+//!
+//! This crate used to ship a `presentar` binary whose `main` was the only
+//! caller of everything below. The binary is gone: `presentar` is a
+//! pre-consolidation name, and `cargo install aprender-present-cli` put it in
+//! `~/.cargo/bin` next to whatever else claimed the name. The capability now
+//! lives behind `apr present <SUBCOMMAND>`, which calls these functions
+//! directly.
+//!
+//! The functions are unchanged, including their exit codes: each one still
+//! prints its diagnostics and calls `std::process::exit(1)` exactly where the
+//! binary did, so a script that checked `presentar gate`'s status gets the
+//! same status from `apr present gate`.
 
 #![allow(
     clippy::needless_pass_by_value,
@@ -24,7 +37,6 @@
     clippy::needless_raw_string_hashes
 )]
 
-use clap::{Parser, Subcommand};
 use std::fs;
 use std::io::Read;
 #[cfg(feature = "dev-server")]
@@ -36,178 +48,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tiny_http::{Response, Server};
 #[cfg(feature = "dev-server")]
 use tungstenite::accept;
-
-#[derive(Parser)]
-#[command(name = "presentar")]
-#[command(about = "WASM-first visualization framework CLI")]
-#[command(version)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Start development server with hot reload
-    Serve {
-        /// Port to serve on
-        #[arg(short, long, default_value = "8080")]
-        port: u16,
-
-        /// Directory to serve (default: www)
-        #[arg(short, long, default_value = "www")]
-        dir: PathBuf,
-
-        /// Watch for changes and rebuild
-        #[arg(short, long)]
-        watch: bool,
-    },
-
-    /// Build optimized WASM bundle
-    Bundle {
-        /// Output directory
-        #[arg(short, long, default_value = "dist")]
-        output: PathBuf,
-
-        /// Skip wasm-opt optimization
-        #[arg(long)]
-        no_optimize: bool,
-    },
-
-    /// Create new Presentar project
-    New {
-        /// Project name
-        name: String,
-    },
-
-    /// Check YAML manifest validity
-    Check {
-        /// Path to manifest file
-        #[arg(default_value = "app.yaml")]
-        manifest: PathBuf,
-    },
-
-    /// Compute quality score for a manifest
-    Score {
-        /// Path to manifest file
-        #[arg(default_value = "app.yaml")]
-        manifest: PathBuf,
-
-        /// Output format (text, json, badge)
-        #[arg(short, long, default_value = "text")]
-        format: String,
-
-        /// Output file for badge (svg)
-        #[arg(long)]
-        badge: Option<PathBuf>,
-    },
-
-    /// Run quality gates validation
-    Gate {
-        /// Path to manifest file
-        #[arg(default_value = "app.yaml")]
-        manifest: PathBuf,
-
-        /// Minimum passing grade (F, D, C, B, A)
-        #[arg(short, long, default_value = "B")]
-        min_grade: String,
-
-        /// Minimum score (0-100)
-        #[arg(short = 's', long)]
-        min_score: Option<f64>,
-
-        /// Strict mode - fail on any warning
-        #[arg(long)]
-        strict: bool,
-    },
-
-    /// Deploy application to cloud hosting
-    Deploy {
-        /// Source directory to deploy
-        #[arg(short, long, default_value = "dist")]
-        source: PathBuf,
-
-        /// Deployment target (s3, cloudflare, vercel, netlify, local)
-        #[arg(short, long, default_value = "s3")]
-        target: String,
-
-        /// S3 bucket name or deployment URL
-        #[arg(short, long)]
-        bucket: Option<String>,
-
-        /// CloudFront distribution ID for cache invalidation
-        #[arg(long)]
-        distribution: Option<String>,
-
-        /// AWS region for S3 deployment
-        #[arg(long, default_value = "us-east-1")]
-        region: String,
-
-        /// Dry run - show what would be deployed without actually deploying
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Skip bundle step (deploy existing files)
-        #[arg(long)]
-        skip_build: bool,
-    },
-}
-
-fn main() {
-    let cli = Cli::parse();
-
-    match cli.command {
-        Commands::Serve { port, dir, watch } => {
-            serve(port, dir, watch);
-        }
-        Commands::Bundle {
-            output,
-            no_optimize,
-        } => {
-            bundle(output, no_optimize);
-        }
-        Commands::New { name } => {
-            new_project(&name);
-        }
-        Commands::Check { manifest } => {
-            check_manifest(&manifest);
-        }
-        Commands::Score {
-            manifest,
-            format,
-            badge,
-        } => {
-            compute_score(&manifest, &format, badge.as_ref());
-        }
-        Commands::Gate {
-            manifest,
-            min_grade,
-            min_score,
-            strict,
-        } => {
-            run_gates(&manifest, &min_grade, min_score, strict);
-        }
-        Commands::Deploy {
-            source,
-            target,
-            bucket,
-            distribution,
-            region,
-            dry_run,
-            skip_build,
-        } => {
-            deploy(
-                &source,
-                &target,
-                bucket.as_deref(),
-                distribution.as_deref(),
-                &region,
-                dry_run,
-                skip_build,
-            );
-        }
-    }
-}
 
 #[cfg(feature = "dev-server")]
 /// Atomic counter for triggering hot reload
@@ -237,7 +77,16 @@ const HOT_RELOAD_SCRIPT: &str = r#"
 </script>
 "#;
 
-fn serve(port: u16, dir: PathBuf, watch: bool) {
+/// `apr present serve` — static dev server for `dir` on `port`.
+///
+/// With `watch`, rebuilds WASM and hot-reloads browsers (requires the
+/// `dev-server` feature; without it a warning is printed and the server runs
+/// without hot reload, exactly as the binary did).
+///
+/// # Panics
+///
+/// Panics if the listener cannot bind `0.0.0.0:{port}`.
+pub fn serve(port: u16, dir: PathBuf, watch: bool) {
     print_serve_banner(port, &dir, watch);
     spawn_watchers_if_enabled(&dir, watch);
 
@@ -519,7 +368,14 @@ fn rebuild_wasm() {
     }
 }
 
-fn bundle(output: PathBuf, no_optimize: bool) {
+/// `apr present bundle` — build the release WASM bundle into `output`.
+///
+/// `no_optimize` skips the `wasm-opt -Oz` pass.
+///
+/// # Panics
+///
+/// Panics if `wasm-pack` cannot be spawned.
+pub fn bundle(output: PathBuf, no_optimize: bool) {
     println!("Building Presentar WASM bundle...");
 
     // Build with wasm-pack
@@ -572,7 +428,12 @@ fn bundle(output: PathBuf, no_optimize: bool) {
     }
 }
 
-fn new_project(name: &str) {
+/// `apr present new` — scaffold a Presentar project directory named `name`.
+///
+/// # Panics
+///
+/// Panics if the project directory or its starter files cannot be written.
+pub fn new_project(name: &str) {
     println!("Creating new Presentar project: {}", name);
 
     let project_dir = PathBuf::from(name);
@@ -631,7 +492,10 @@ layout:
     println!("  presentar serve");
 }
 
-fn check_manifest(path: &PathBuf) {
+/// `apr present check` — parse `path` as a Presentar manifest and report it.
+///
+/// Exits 1 if the file cannot be read or does not parse.
+pub fn check_manifest(path: &PathBuf) {
     println!("Checking manifest: {}", path.display());
 
     let content = match fs::read_to_string(path) {
@@ -657,7 +521,15 @@ fn check_manifest(path: &PathBuf) {
     }
 }
 
-fn compute_score(path: &PathBuf, format: &str, badge_path: Option<&PathBuf>) {
+/// `apr present score` — quality-score the manifest at `path`.
+///
+/// `format` is `text`, `json` or `badge`; `badge_path` writes the SVG badge.
+/// Exits 1 if the manifest cannot be read or does not parse.
+///
+/// # Panics
+///
+/// Panics if `badge_path` is given and cannot be written.
+pub fn compute_score(path: &PathBuf, format: &str, badge_path: Option<&PathBuf>) {
     println!("Computing quality score for: {}", path.display());
 
     let content = match fs::read_to_string(path) {
@@ -901,7 +773,11 @@ fn generate_badge(score: &QualityScore) -> String {
     )
 }
 
-fn run_gates(path: &PathBuf, min_grade: &str, min_score: Option<f64>, strict: bool) {
+/// `apr present gate` — enforce quality thresholds on the manifest at `path`.
+///
+/// Exits 1 when the grade is below `min_grade`, when the score is below
+/// `min_score`, or when `strict` is set and any warning was raised.
+pub fn run_gates(path: &PathBuf, min_grade: &str, min_score: Option<f64>, strict: bool) {
     println!("Running quality gates for: {}", path.display());
 
     let manifest = load_manifest_or_exit(path);
@@ -1023,8 +899,13 @@ fn grade_to_value(grade: &str) -> u32 {
     }
 }
 
-/// Deploy application to cloud hosting.
-fn deploy(
+/// `apr present deploy` — publish `source` to a hosting target.
+///
+/// `target` is one of `s3`, `cloudflare`, `vercel`, `netlify`, `local`; any
+/// other value exits 1 after listing the supported set. Unless `skip_build`
+/// is set the bundle is built first. `dry_run` prints the plan and uploads
+/// nothing.
+pub fn deploy(
     source: &PathBuf,
     target: &str,
     bucket: Option<&str>,

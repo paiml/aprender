@@ -526,6 +526,92 @@ pub enum ExtendedCommands {
         #[arg(long)]
         simulated: bool,
     },
+    /// System monitor: CPU, memory, disk, network, GPU, sensors, processes
+    ///
+    /// This is the whole of the former `ptop` binary. `ptop` is a name other
+    /// system monitors already own, and `cargo install` put it in
+    /// `~/.cargo/bin` unqualified; `apr top` is the same program at an
+    /// address this project actually owns. `top` is the name every UNIX user
+    /// already reaches for, and `apr monitor` was taken — that is the
+    /// training-run monitor, a different thing entirely.
+    Top {
+        /// Refresh interval in milliseconds
+        #[arg(short, long, default_value = "1000")]
+        refresh: u64,
+        /// Deterministic mode for testing (disables timestamps/dynamic data)
+        #[arg(long)]
+        deterministic: bool,
+        /// Disable colors (use plain text)
+        #[arg(long)]
+        no_color: bool,
+        /// Render once to stdout and exit (for comparison/testing)
+        #[arg(long)]
+        render_once: bool,
+        /// Terminal width for render-once mode
+        #[arg(long, default_value = "120")]
+        width: u16,
+        /// Terminal height for render-once mode
+        #[arg(long, default_value = "40")]
+        height: u16,
+        /// Path to custom config file (YAML)
+        #[arg(short, long, value_name = "PATH")]
+        config: Option<PathBuf>,
+        /// Dump default configuration to stdout and exit
+        #[arg(long)]
+        dump_config: bool,
+        /// QA timing mode: output timing diagnostics to stderr
+        #[arg(long)]
+        qa_timing: bool,
+        /// Explode a single panel to full screen (cpu, memory, disk, network,
+        /// process, gpu, sensors, connections, psi, files, battery, containers;
+        /// the binary's short aliases mem/net/proc/conn/bat/docker still work)
+        ///
+        /// The `ptop` binary took a free-form string here and, on a typo,
+        /// warned on stderr, rendered the ordinary dashboard and exited 0.
+        /// A name outside the table is now refused by the parser.
+        #[arg(long, value_name = "PANEL",
+              value_parser = presentar_terminal::ptop::PANEL_VALUES)]
+        explode: Option<String>,
+    },
+    /// Quality-score a Rust TUI crate across six weighted dimensions
+    ///
+    /// This is the whole of the former `score` binary — a name far too
+    /// generic to occupy in `~/.cargo/bin`. Use the global `-v/--verbose`
+    /// for per-dimension metrics and `-q/--quiet` for the bare number; they
+    /// are the same flags the binary defined, now inherited from `apr`.
+    ///
+    /// Not to be confused with `apr present score`, which scores a Presentar
+    /// YAML manifest rather than a Rust crate.
+    Score {
+        /// Path to the crate root to analyse
+        #[arg(value_name = "PATH", default_value = ".")]
+        path: PathBuf,
+        /// Report format
+        #[arg(short, long, value_enum, default_value = "text")]
+        output: presentar_terminal::tools::score::OutputFormat,
+        /// CI mode: exit 1 if the score is below --threshold
+        #[arg(long)]
+        ci: bool,
+        /// Minimum passing score (0-100)
+        #[arg(long, default_value = "80")]
+        threshold: u32,
+        /// Disable colored output
+        #[arg(long)]
+        no_color: bool,
+        /// Custom scoring config (YAML) overriding the dimension weights
+        #[arg(long, value_name = "PATH")]
+        config: Option<PathBuf>,
+    },
+    /// Presentar WASM app operations (was the `presentar` binary)
+    ///
+    /// A container subcommand, because four of the seven verbs — `serve`,
+    /// `check`, `score`, `publish`-adjacent `deploy` — already mean something
+    /// else at the top level of `apr`. `apr present serve` serves a WASM app;
+    /// `apr serve` serves a model.
+    Present {
+        #[command(subcommand)]
+        command: PresentCommands,
+    },
     /// Probar testing framework (GH-876 — visual regression, replay, more).
     ///
     /// GH-876 Milestone 1: `apr probar tensor` migrates the existing flat
@@ -1604,6 +1690,116 @@ pub enum ProbarSubcommand {
         tolerance: f32,
     },
 }
+
+/// Subcommands for `apr present` — every verb the `presentar` binary had.
+///
+/// The names, shorts, defaults and semantics are the binary's; only the
+/// address changed. `aprender-present-cli` still holds the implementations,
+/// which now live in its `lib.rs` instead of its deleted `main.rs`.
+#[derive(Subcommand, Debug)]
+pub enum PresentCommands {
+    /// Start development server with hot reload
+    Serve {
+        /// Port to serve on
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+        /// Directory to serve (default: www)
+        #[arg(short, long, default_value = "www")]
+        dir: PathBuf,
+        /// Watch for changes and rebuild
+        #[arg(short, long)]
+        watch: bool,
+    },
+    /// Build optimized WASM bundle
+    Bundle {
+        /// Output directory
+        #[arg(short, long, default_value = "dist")]
+        output: PathBuf,
+        /// Skip wasm-opt optimization
+        #[arg(long)]
+        no_optimize: bool,
+    },
+    /// Create new Presentar project
+    New {
+        /// Project name (also the directory created)
+        name: String,
+    },
+    /// Check YAML manifest validity
+    Check {
+        /// Path to manifest file
+        #[arg(default_value = "app.yaml")]
+        manifest: PathBuf,
+    },
+    /// Compute quality score for a manifest
+    Score {
+        /// Path to manifest file
+        #[arg(default_value = "app.yaml")]
+        manifest: PathBuf,
+        /// Output format (text, json, badge)
+        #[arg(short, long, default_value = "text",
+              value_parser = PRESENT_SCORE_FORMAT_VALUES)]
+        format: String,
+        /// Output file for the SVG badge
+        #[arg(long, value_name = "FILE")]
+        badge: Option<PathBuf>,
+    },
+    /// Run quality gates validation
+    Gate {
+        /// Path to manifest file
+        #[arg(default_value = "app.yaml")]
+        manifest: PathBuf,
+        /// Minimum passing grade (F, D, C, B, A)
+        #[arg(short, long, default_value = "B")]
+        min_grade: String,
+        /// Minimum score (0-100)
+        #[arg(short = 's', long)]
+        min_score: Option<f64>,
+        /// Strict mode - fail on any warning
+        #[arg(long)]
+        strict: bool,
+    },
+    /// Deploy application to cloud hosting
+    Deploy {
+        /// Source directory to deploy
+        #[arg(short, long, default_value = "dist")]
+        source: PathBuf,
+        /// Deployment target
+        #[arg(short, long, default_value = "s3",
+              value_parser = PRESENT_DEPLOY_TARGET_VALUES)]
+        target: String,
+        /// S3 bucket name, Cloudflare project, or local destination directory
+        #[arg(short, long)]
+        bucket: Option<String>,
+        /// CloudFront distribution ID for cache invalidation
+        #[arg(long)]
+        distribution: Option<String>,
+        /// AWS region for S3 deployment
+        #[arg(long, default_value = "us-east-1")]
+        region: String,
+        /// Dry run - show what would be deployed without actually deploying
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip bundle step (deploy existing files)
+        #[arg(long)]
+        skip_build: bool,
+    },
+}
+
+/// Formats `apr present score --format` accepts.
+///
+/// The binary matched `"json"` and `"badge"` and fell through to the text
+/// renderer for everything else, so `--format jsno` printed a text report and
+/// exited 0. The three values it could actually produce are now the three the
+/// parser accepts.
+pub const PRESENT_SCORE_FORMAT_VALUES: [&str; 3] = ["text", "json", "badge"];
+
+/// Targets `apr present deploy --target` accepts.
+///
+/// Unlike `--format`, the binary already refused an unknown target (it printed
+/// the supported set and exited 1); pinning the list here moves that refusal
+/// to parse time, before `--skip-build` is honoured or a bundle is built.
+pub const PRESENT_DEPLOY_TARGET_VALUES: [&str; 5] =
+    ["s3", "cloudflare", "vercel", "netlify", "local"];
 
 /// Parse `apr cbtop --iterations`, rejecting 0.
 ///

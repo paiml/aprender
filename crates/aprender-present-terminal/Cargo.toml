@@ -55,7 +55,11 @@ score = ["clap", "serde", "serde_json", "serde_yaml_ng"]
 ptop-release = ["ptop"]  # Use for release builds - triggers stricter enforcement
 
 [dependencies.sysinfo]
-version = "0.32"
+# 0.32 does NOT have ProcessRefreshKind::nothing() (added in 0.33), and
+# refresh_processes' arity changed. The code here was written against 0.33+, so
+# `--features ptop` failed to compile with 28 errors while the default build was
+# clean — and nothing in .github/workflows builds ptop, so it was invisible.
+version = "0.33"
 optional = true
 
 [dependencies.clap]
@@ -76,15 +80,21 @@ optional = true
 version = "0.10"
 optional = true
 
-[[bin]]
-name = "score"
-path = "src/bin/score.rs"
-required-features = ["score"]
-
-[[bin]]
-name = "ptop"
-path = "src/bin/ptop.rs"
-required-features = ["ptop"]
+# The `score` and `ptop` bin targets are GONE — deliberately. This crate
+# declares no binary at all now, and FALSIFY-MONO-011 no longer exempts it.
+#
+# `cargo install` drops every bin target into ~/.cargo/bin unqualified, and both
+# names are ones this project has no claim to: `score` is a bare English word,
+# and `ptop` is a real system monitor shipped by unrelated projects. Two crates
+# in this workspace each installing a `ptop` would silently overwrite whichever
+# was installed first.
+#
+# The capability is unchanged, only its address:
+#   score  ->  apr score   (src/tools/score.rs :: run)
+#   ptop   ->  apr top     (src/ptop/run.rs    :: run)
+#
+# Both features still exist and still gate the code; they now gate a library
+# module instead of a binary, and apr-cli turns them on.
 
 [[example]]
 name = "tui-compare"

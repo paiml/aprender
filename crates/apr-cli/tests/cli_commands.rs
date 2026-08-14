@@ -91,6 +91,11 @@ fn registered_commands() -> Vec<&'static str> {
         "pipeline",
         "tui",
         "monitor",
+        // Rehomed pre-consolidation binaries: ptop -> top, score -> score,
+        // presentar -> present.
+        "top",
+        "score",
+        "present",
         "runs",
         "experiment",
         "showcase",

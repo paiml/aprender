@@ -770,12 +770,6 @@ pub(super) fn draw_cpu_exploded(app: &App, canvas: &mut DirectTerminalCanvas, ar
 /// - FILLS THE ENTIRE SCREEN
 #[allow(clippy::too_many_lines)]
 pub(super) fn draw_memory_exploded(app: &App, canvas: &mut DirectTerminalCanvas, area: Rect) {
-    use crate::widgets::display_rules::{
-        format_bytes_si, format_column, format_percent, ColumnAlign, TruncateStrategy,
-    };
-    use crate::widgets::selection::RowHighlight;
-    use crate::HeatScheme;
-
     let pcts = MemoryPcts::from_app(app);
     let Some(inner) = layout_memory_panel(app, canvas, area, &pcts) else {
         return;

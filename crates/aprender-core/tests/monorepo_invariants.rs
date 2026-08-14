@@ -215,8 +215,28 @@ fn test_minimum_workspace_member_count() {
 /// (exception: aprender-contracts-cli for build tooling).
 #[test]
 fn test_no_unauthorized_binaries() {
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // `CARGO_MANIFEST_DIR` is `<root>/crates/aprender-core`, NOT the workspace
+    // root. This test used to do `Path::new(env!("CARGO_MANIFEST_DIR"))
+    // .join("crates")` and scan `<root>/crates/aprender-core/crates`, which
+    // has never existed: `read_dir` returned `Err`, the `if let Ok` swallowed
+    // it, and `violations` stayed empty no matter what. FALSIFY-MONO-011 could
+    // not fail. Verified by re-adding a `[[bin]]` to aprender-present-cli —
+    // the test still passed.
+    //
+    // Two changes make that impossible to repeat: resolve the root by walking
+    // up from the manifest dir, and assert the scan directory exists before
+    // trusting an empty result.
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("aprender-core must sit at <workspace>/crates/aprender-core");
     let crates_dir = workspace_root.join("crates");
+    assert!(
+        crates_dir.is_dir(),
+        "FALSIFY-MONO-011 cannot run: {} is not a directory, so an empty \
+         violation list would prove nothing",
+        crates_dir.display()
+    );
 
     // During migration, legacy binaries from merged repos are allowed.
     // Post-migration (Phase 5+), these should be folded into apr-cli subcommands.
@@ -230,8 +250,11 @@ fn test_no_unauthorized_binaries() {
         "aprender-explain",
         "aprender-ptx-debug",
         "aprender-zram-cli",
-        "aprender-present-cli",
-        "aprender-present-terminal",
+        // aprender-present-cli (bin `presentar`) and aprender-present-terminal
+        // (bins `score`, `ptop`) were REMOVED from this list, not forgotten.
+        // Their capabilities are now `apr present`, `apr score` and `apr top`;
+        // neither crate declares a binary any more, so re-adding one has to
+        // re-earn its exemption here rather than inherit it.
         "aprender-test-cli",
         "aprender-test-showcase",
         "aprender-data",
@@ -252,25 +275,45 @@ fn test_no_unauthorized_binaries() {
         "aprender-monte-carlo",
         "aprender-viz",
         "aprender-viz-ttop",
+        // The three below were EXEMPT BY ACCIDENT, not by decision: while the
+        // scan directory was wrong (see above) this list was never consulted,
+        // so these crates' binaries had never been seen by FALSIFY-MONO-011.
+        // Recorded here so the guard is green on today's tree, and so the
+        // remaining work is legible rather than invisible:
+        //   aprender-rag-cli    -> bin `trueno-rag`         (pre-consolidation name)
+        //   aprender-qa-cli     -> bin `apr-qa`             (apr-prefixed)
+        //   aprender-qa-certify -> bin `apr-qa-readme-sync` (apr-prefixed)
+        "aprender-rag-cli",
+        "aprender-qa-cli",
+        "aprender-qa-certify",
     ]
     .into();
 
     let mut violations = Vec::new();
+    let mut scanned = 0usize;
 
-    if let Ok(entries) = std::fs::read_dir(&crates_dir) {
-        for entry in entries.flatten() {
-            let toml_path = entry.path().join("Cargo.toml");
-            if !toml_path.exists() {
-                continue;
-            }
-            let content = std::fs::read_to_string(&toml_path).unwrap_or_default();
-            let dir_name = entry.file_name().to_string_lossy().to_string();
+    let entries = std::fs::read_dir(&crates_dir)
+        .unwrap_or_else(|e| panic!("FALSIFY-MONO-011 cannot read {}: {e}", crates_dir.display()));
+    for entry in entries.flatten() {
+        let toml_path = entry.path().join("Cargo.toml");
+        if !toml_path.exists() {
+            continue;
+        }
+        let content = std::fs::read_to_string(&toml_path).unwrap_or_default();
+        let dir_name = entry.file_name().to_string_lossy().to_string();
+        scanned += 1;
 
-            if content.contains("[[bin]]") && !allowed_bins.contains(dir_name.as_str()) {
-                violations.push(dir_name);
-            }
+        if content.contains("[[bin]]") && !allowed_bins.contains(dir_name.as_str()) {
+            violations.push(dir_name);
         }
     }
+
+    assert!(
+        scanned > 50,
+        "FALSIFY-MONO-011 scanned only {scanned} manifests under {} — too few \
+         for an empty violation list to mean anything",
+        crates_dir.display()
+    );
 
     assert!(
         violations.is_empty(),

@@ -12,6 +12,9 @@
 
 pub mod bench;
 mod color_diff;
+/// TUI quality scorer — the library behind `apr score` (was the `score` binary).
+#[cfg(feature = "score")]
+pub mod score;
 #[cfg(feature = "tui-compare")]
 mod tui_compare;
 

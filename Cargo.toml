@@ -225,6 +225,7 @@ aprender-present-terminal = { path = "crates/aprender-present-terminal", version
 aprender-present-widgets = { path = "crates/aprender-present-widgets", version = "0.63.0" }
 aprender-present-layout = { path = "crates/aprender-present-layout", version = "0.63.0" }
 aprender-present-yaml = { path = "crates/aprender-present-yaml", version = "0.63.0" }
+aprender-present-cli = { path = "crates/aprender-present-cli", version = "0.63.0" }
 aprender-present-test = { path = "crates/aprender-present-test", version = "0.63.0" }
 aprender-db = { path = "crates/aprender-db", version = "0.63.0" }
 aprender-graph = { path = "crates/aprender-graph", version = "0.63.0" }

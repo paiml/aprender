@@ -9,13 +9,23 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "presentar"
-path = "src/main.rs"
+# The `presentar` bin target is GONE — deliberately. This crate declares no
+# binary at all now, and FALSIFY-MONO-011 no longer exempts it.
+#
+# `presentar` is a pre-consolidation name. Published, it installed a binary of
+# that name into ~/.cargo/bin, where it collided with the identically-named
+# binary the standalone `presentar` crate ships. The capability moved, intact,
+# to `apr present <SUBCOMMAND>`; the functions below are what apr-cli calls.
+#
+# clap left with the binary: this crate no longer parses arguments, apr-cli
+# does.
+
+[lib]
+name = "aprender_present_cli"
+path = "src/lib.rs"
 
 [dependencies]
 presentar-yaml = { workspace = true }
-clap = { version = "4.4", features = ["derive"] }
 notify = { version = "7.0", optional = true }
 tiny_http = "0.12"
 tungstenite = { version = "0.26", optional = true }

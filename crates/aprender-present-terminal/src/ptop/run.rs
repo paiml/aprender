@@ -1,14 +1,19 @@
-//! ptop: System monitor using presentar-terminal widget composition
+//! The ptop application entry point: option struct + run loop.
 //!
-//! Run: cargo run -p presentar-terminal --features ptop --bin ptop
-
-#![allow(clippy::struct_excessive_bools)]
-#![allow(clippy::unnecessary_debug_formatting)]
+//! This is the whole of what used to be `src/bin/ptop.rs::main` and its
+//! helpers. It moved into the library so `apr top` can call it directly
+//! instead of shelling out to, or duplicating, a second binary named `ptop`
+//! — a name owned by several unrelated system monitors, which
+//! `cargo install` would have dropped into `~/.cargo/bin` unqualified.
+//!
+//! Nothing about the behaviour changed in the move: the option names, their
+//! defaults, the render-once path, the background collector and the QA
+//! timing report are the code that used to live in the binary.
 
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use clap::Parser;
 use crossterm::{
     cursor,
     event::{self, Event, KeyEventKind},
@@ -16,57 +21,88 @@ use crossterm::{
     terminal::{self, ClearType},
 };
 
-use presentar_terminal::direct::{CellBuffer, DiffRenderer};
-use presentar_terminal::ptop::{config::PtopConfig, ui, App, PanelType};
-use presentar_terminal::ColorMode;
+use crate::direct::{CellBuffer, DiffRenderer};
+use crate::ptop::{config::PtopConfig, ui, App, PanelType};
+use crate::ColorMode;
 
-/// Presentar System Monitor - widget composition demo
-#[derive(Parser)]
-#[command(name = "ptop", version, about, long_about = None)]
-struct Cli {
-    /// Refresh interval in milliseconds
-    #[arg(short, long, default_value = "1000")]
-    refresh: u64,
+/// Panel names `--explode` accepts, including every alias the original
+/// `parse_panel_type` matched.
+///
+/// The binary took a free-form `String` here and, on an unrecognised value,
+/// printed a warning to stderr, left `exploded_panel` at `None` and exited 0
+/// — so `--explode cpuu` rendered the ordinary dashboard and reported
+/// success. That is the #2418 silently-dropped-argument shape. Every value
+/// that used to work still works; a typo is now refused by the parser.
+pub const PANEL_VALUES: [&str; 23] = [
+    "cpu",
+    "memory",
+    "mem",
+    "disk",
+    "network",
+    "net",
+    "process",
+    "proc",
+    "processes",
+    "gpu",
+    "sensors",
+    "sensor",
+    "connections",
+    "conn",
+    "psi",
+    "pressure",
+    "files",
+    "file",
+    "battery",
+    "bat",
+    "containers",
+    "container",
+    "docker",
+];
 
-    /// Enable deterministic mode for testing (disables timestamps/dynamic data)
-    #[arg(long)]
-    deterministic: bool,
+/// Every option the `ptop` binary accepted, with its original default.
+#[derive(Debug, Clone)]
+pub struct PtopOptions {
+    /// Refresh interval in milliseconds (`--refresh`, default 1000).
+    pub refresh: u64,
+    /// Deterministic mode for testing (`--deterministic`).
+    pub deterministic: bool,
+    /// Plain-text output with no colour (`--no-color`).
+    pub no_color: bool,
+    /// Render one frame to stdout and exit (`--render-once`).
+    pub render_once: bool,
+    /// Terminal width used by render-once mode (`--width`, default 120).
+    pub width: u16,
+    /// Terminal height used by render-once mode (`--height`, default 40).
+    pub height: u16,
+    /// Custom YAML config file (`--config`).
+    pub config: Option<PathBuf>,
+    /// Print the default configuration and exit (`--dump-config`).
+    pub dump_config: bool,
+    /// Emit timing diagnostics to stderr (`--qa-timing`).
+    pub qa_timing: bool,
+    /// Panel to explode (`--explode`); one of [`PANEL_VALUES`].
+    pub explode: Option<String>,
+}
 
-    /// Disable colors (use plain text)
-    #[arg(long)]
-    no_color: bool,
-
-    /// Render once to stdout and exit (for comparison/testing)
-    #[arg(long)]
-    render_once: bool,
-
-    /// Terminal width for render-once mode
-    #[arg(long, default_value = "120")]
-    width: u16,
-
-    /// Terminal height for render-once mode
-    #[arg(long, default_value = "40")]
-    height: u16,
-
-    /// Path to custom config file (YAML)
-    #[arg(short, long, value_name = "PATH")]
-    config: Option<std::path::PathBuf>,
-
-    /// Dump default configuration to stdout and exit
-    #[arg(long)]
-    dump_config: bool,
-
-    /// QA timing mode: output timing diagnostics to stderr
-    #[arg(long)]
-    qa_timing: bool,
-
-    /// Explode a specific panel for QA (cpu, memory, disk, network, process, gpu, sensors, connections, psi, files, battery, containers)
-    #[arg(long, value_name = "PANEL")]
-    explode: Option<String>,
+impl Default for PtopOptions {
+    fn default() -> Self {
+        Self {
+            refresh: 1000,
+            deterministic: false,
+            no_color: false,
+            render_once: false,
+            width: 120,
+            height: 40,
+            config: None,
+            dump_config: false,
+            qa_timing: false,
+            explode: None,
+        }
+    }
 }
 
 /// Load configuration from file or default location.
-fn load_config(config_path: Option<&std::path::PathBuf>) -> PtopConfig {
+fn load_config(config_path: Option<&PathBuf>) -> PtopConfig {
     if let Some(path) = config_path {
         PtopConfig::load_from_file(path).unwrap_or_else(|| {
             eprintln!("[ptop] Warning: Could not load config from {path:?}, using defaults");
@@ -78,17 +114,17 @@ fn load_config(config_path: Option<&std::path::PathBuf>) -> PtopConfig {
 }
 
 /// Handle render-once mode for testing/comparison.
-fn handle_render_once(cli: &Cli, config: PtopConfig) -> io::Result<()> {
-    let mut app = App::with_config_lightweight(cli.deterministic, config);
-    if !cli.deterministic {
+fn handle_render_once(opts: &PtopOptions, config: PtopConfig) -> io::Result<()> {
+    let mut app = App::with_config_lightweight(opts.deterministic, config);
+    if !opts.deterministic {
         app.collect_metrics();
         std::thread::sleep(Duration::from_millis(100));
         app.collect_metrics();
     }
-    if let Some(ref panel_name) = cli.explode {
+    if let Some(ref panel_name) = opts.explode {
         app.exploded_panel = parse_panel_type(panel_name);
     }
-    render_once(&app, cli.width, cli.height)
+    render_once(&app, opts.width, opts.height)
 }
 
 /// Setup terminal for interactive mode.
@@ -108,31 +144,35 @@ fn cleanup_terminal(stdout: &mut io::Stdout) -> io::Result<()> {
     terminal::disable_raw_mode()
 }
 
-fn main() -> io::Result<()> {
-    let cli = Cli::parse();
-
-    if cli.dump_config {
+/// Run ptop with `opts`. This is verbatim the old `ptop::main` body.
+///
+/// # Errors
+///
+/// Returns the underlying [`io::Error`] if the terminal cannot be put into
+/// raw mode, or if writing a frame to stdout fails.
+pub fn run(opts: &PtopOptions) -> io::Result<()> {
+    if opts.dump_config {
         println!("{}", PtopConfig::default_yaml());
         return Ok(());
     }
 
-    let config = load_config(cli.config.as_ref());
+    let config = load_config(opts.config.as_ref());
 
-    if cli.render_once {
-        return handle_render_once(&cli, config);
+    if opts.render_once {
+        return handle_render_once(opts, config);
     }
 
-    let app = App::with_config(cli.deterministic, config);
+    let app = App::with_config(opts.deterministic, config);
     let mut stdout = io::stdout();
 
     setup_terminal(&mut stdout)?;
 
-    let color_mode = if cli.no_color {
+    let color_mode = if opts.no_color {
         ColorMode::Mono
     } else {
         ColorMode::TrueColor
     };
-    let result = run_app(&mut stdout, app, cli.refresh, color_mode, cli.qa_timing);
+    let result = run_app(&mut stdout, app, opts.refresh, color_mode, opts.qa_timing);
 
     cleanup_terminal(&mut stdout)?;
     result
@@ -169,12 +209,12 @@ fn spawn_metrics_collector(
     refresh_ms: u64,
     deterministic: bool,
 ) -> (
-    std::sync::mpsc::Receiver<presentar_terminal::ptop::app::MetricsSnapshot>,
+    std::sync::mpsc::Receiver<crate::ptop::app::MetricsSnapshot>,
     std::sync::Arc<std::sync::atomic::AtomicBool>,
     std::sync::Arc<std::sync::atomic::AtomicU64>,
 ) {
-    use presentar_terminal::ptop::app::MetricsCollector;
-    use presentar_terminal::AsyncCollector;
+    use crate::ptop::app::MetricsCollector;
+    use crate::AsyncCollector;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{mpsc, Arc};
 
@@ -305,7 +345,7 @@ impl QaTimingState {
 
 /// Apply all pending snapshots from the metrics collector.
 fn apply_pending_snapshots(
-    rx: &std::sync::mpsc::Receiver<presentar_terminal::ptop::MetricsSnapshot>,
+    rx: &std::sync::mpsc::Receiver<crate::ptop::MetricsSnapshot>,
     app: &mut App,
 ) {
     while let Ok(snapshot) = rx.try_recv() {
@@ -400,8 +440,12 @@ fn run_app(
     Ok(())
 }
 
-/// Parse panel type from string for --explode flag
-fn parse_panel_type(name: &str) -> Option<PanelType> {
+/// Parse panel type from string for `--explode`.
+///
+/// Returns `None` only for a name outside [`PANEL_VALUES`]; callers that parse
+/// through clap's `value_parser` never reach that arm.
+#[must_use]
+pub fn parse_panel_type(name: &str) -> Option<PanelType> {
     match name.to_lowercase().as_str() {
         "cpu" => Some(PanelType::Cpu),
         "memory" | "mem" => Some(PanelType::Memory),
@@ -415,9 +459,61 @@ fn parse_panel_type(name: &str) -> Option<PanelType> {
         "files" | "file" => Some(PanelType::Files),
         "battery" | "bat" => Some(PanelType::Battery),
         "containers" | "container" | "docker" => Some(PanelType::Containers),
-        _ => {
-            eprintln!("[ptop] Unknown panel: {name}. Valid: cpu, memory, disk, network, process, gpu, sensors, connections, psi, files, battery, containers");
-            None
-        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every name `PANEL_VALUES` advertises must actually resolve to a panel.
+    ///
+    /// This is the guard against the rehome dropping an alias: the binary's
+    /// `--explode` accepted twelve panels under twenty-three spellings, and a
+    /// dropped alias would have degraded to "unknown panel, render the normal
+    /// dashboard, exit 0".
+    #[test]
+    fn every_advertised_panel_value_resolves() {
+        let unresolved: Vec<&str> = PANEL_VALUES
+            .iter()
+            .copied()
+            .filter(|name| parse_panel_type(name).is_none())
+            .collect();
+        assert_eq!(
+            unresolved,
+            Vec::<&str>::new(),
+            "PANEL_VALUES advertises names --explode cannot resolve"
+        );
+    }
+
+    /// The twelve distinct panels are all reachable through `PANEL_VALUES`.
+    #[test]
+    fn all_twelve_panels_are_reachable() {
+        let distinct: std::collections::BTreeSet<String> = PANEL_VALUES
+            .iter()
+            .filter_map(|name| parse_panel_type(name))
+            .map(|p| format!("{p:?}"))
+            .collect();
+        assert_eq!(
+            distinct.len(),
+            12,
+            "expected 12 distinct panels reachable from PANEL_VALUES, got {distinct:?}"
+        );
+    }
+
+    /// A name outside the table is refused, not silently ignored.
+    #[test]
+    fn unknown_panel_name_is_refused() {
+        assert_eq!(parse_panel_type("cpuu"), None);
+    }
+
+    /// The defaults are the binary's documented defaults.
+    #[test]
+    fn defaults_match_the_original_binary() {
+        let d = PtopOptions::default();
+        assert_eq!(d.refresh, 1000);
+        assert_eq!(d.width, 120);
+        assert_eq!(d.height, 40);
     }
 }
