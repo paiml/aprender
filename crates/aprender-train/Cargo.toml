@@ -75,7 +75,7 @@ viz = ["dep:batuta-common"]
 
 [dependencies]
 # Contract macros for pre/post-condition enforcement (zero cost in release)
-provable-contracts-macros = { version = "0.2" }
+provable-contracts-macros = { workspace = true }
 # Core PAIML stack
 ndarray = "0.16"
 trueno = { workspace = true, features = ["parallel"] }
@@ -146,8 +146,8 @@ arrow = { version = "57", default-features = false }  # For MNIST example array 
 parquet = { version = "57", default-features = false }  # For ALB-007 Parquet writing in tests
 insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing for PMAT QA
 dirs = "5.0"  # Cache directory detection for examples
-jugar-probar = "1.0"  # TUI snapshot testing (ENT-140)
-provable-contracts = { version = "0.2" }  # Contract trait enforcement (Section 23)
+jugar-probar = { workspace = true }  # TUI snapshot testing (ENT-140)
+provable-contracts = { workspace = true }  # Contract trait enforcement (Section 23)
 
 [[bench]]
 name = "monitor_bench"

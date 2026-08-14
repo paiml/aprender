@@ -20,7 +20,7 @@ serde_json = { workspace = true }
 # closed compute→gpu→present-core→compute (and …→simulate→present-core→…) cycles. The
 # never-enabled `simd` feature's trueno-backed helpers are dropped; the always-on
 # auto-vectorized f64 ComputeBlocks (batch_sum_f64, …) remain.
-provable-contracts-macros = "0.3"
+provable-contracts-macros = { workspace = true }
 
 [build-dependencies]
 serde = { workspace = true }

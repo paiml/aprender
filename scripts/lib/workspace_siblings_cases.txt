@@ -1,0 +1,139 @@
+# workspace_siblings_cases.txt — the must-fail / must-pass case table for
+# scripts/check_workspace_siblings_pathed.sh --self-test.
+#
+# Verification Discipline #7: a guard's pattern ships a case table, and the table
+# is RE-RUN rather than re-read. The `apr`-invocation patterns next door were
+# wrong five separate times; every one was caught here, none by review.
+#
+# The table lives in a data file rather than inline heredocs because bashrs parses
+# heredoc bodies as shell, and TOML's `name = "value"` reads to it as a malformed
+# assignment (SC1007). Keeping it out here buys a 0-error lint AND a table you can
+# grep.
+#
+# FORMAT
+#   LINE <fail|pass> <one dependency declaration>     — wrapped in [dependencies]
+#   FRAG <flag|clean> <label>                         — a whole manifest fragment,
+#   …verbatim lines…                                    verbatim, terminated by
+#   END                                                 a lone END
+#   # …                                               — comment (outside a FRAG)
+#
+# The name set the table runs against is: trueno, trueno-db, trueno_db, realizar,
+# aprender-compute, aprender-db — the real divergent package/lib pairs, so the
+# table exercises package name, lib name, and both spellings.
+
+# ---------------------------------------------------------------------------
+# must FAIL — an in-tree sibling pulled from the registry
+# ---------------------------------------------------------------------------
+LINE fail trueno = "0.16"
+LINE fail trueno = { version = "0.16.5", features = ["gpu"] }
+LINE fail trueno = {version="0.16"}
+# lib name `trueno_db` shadows the crates.io package `trueno-db`; a guard built
+# from [package] name alone holds only "aprender-db" and misses this one.
+LINE fail trueno-db = "0.3.2"
+# a trailing comment must not launder the declaration
+LINE fail trueno = "0.7.1"  # Direct dependency for SIMD backend
+LINE fail realizar = { version = "0.63", optional = true }
+# renamed key: the key is innocent, the `package` value is not
+LINE fail compute = { package = "trueno", version = "0.16" }
+# git is not the in-tree copy either
+LINE fail trueno = { git = "https://github.com/paiml/trueno" }
+# dotted-key form
+LINE fail trueno.version = "0.16"
+
+# ---------------------------------------------------------------------------
+# must PASS — a local source, or a genuine third-party crate
+# ---------------------------------------------------------------------------
+LINE pass trueno = { workspace = true }
+LINE pass trueno = { path = "../aprender-compute" }
+# path + version is what `cargo publish` requires; cargo builds from the path
+LINE pass trueno = { path = "crates/aprender-compute", version = "0.63.0", package = "aprender-compute" }
+LINE pass trueno = { path = "..", default-features = false, features = ["simd"] }
+LINE pass trueno.workspace = true
+LINE pass serde = "1"
+LINE pass serde = { version = "1.0", features = ["derive"] }
+LINE pass nalgebra = { version = "0.33", optional = true }
+LINE pass tokio = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# structural cases — whole manifest fragments
+# ---------------------------------------------------------------------------
+
+# A [features] entry is NOT a dependency, however much it looks like one. This
+# exact line is live in crates/aprender-orchestrate/Cargo.toml.
+FRAG clean features-array
+[features]
+trueno-integration = ["trueno", "native"]
+default = ["trueno"]
+END
+
+# …and a real dep in the same file is still caught.
+FRAG flag features-plus-dep
+[features]
+trueno-integration = ["trueno", "native"]
+
+[dependencies]
+trueno = "0.16"
+END
+
+FRAG flag dev-dependencies
+[dev-dependencies]
+realizar = "0.63"
+END
+
+FRAG flag build-dependencies
+[build-dependencies]
+trueno = "0.16"
+END
+
+FRAG flag target-cfg-dep
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+trueno = "0.16"
+END
+
+# The root alias itself can be the defect — provable-contracts was.
+FRAG flag workspace-dependencies
+[workspace.dependencies]
+trueno = "0.16"
+END
+
+FRAG flag subtable-registry
+[dependencies.trueno]
+version = "0.16"
+features = ["gpu"]
+END
+
+FRAG clean subtable-path
+[dependencies.trueno]
+path = ".."
+END
+
+# A sub-table must be decided at the section boundary, not leak into the next
+# section and read [package] version as its own.
+FRAG clean subtable-then-package
+[dependencies.trueno]
+path = ".."
+
+[package]
+name = "x"
+version = "0.16"
+END
+
+# [patch.crates-io] IS the redirection, not a dependency.
+FRAG clean patch-section
+[patch.crates-io]
+trueno = { path = "crates/aprender-compute" }
+END
+
+# `version` under [package] is this crate's own version.
+FRAG clean package-version
+[package]
+name = "trueno"
+version = "0.63.0"
+END
+
+# The comment-stripping direction that matters is the false NEGATIVE: an
+# unstripped comment would make this read as a legal path dep.
+FRAG flag comment-hides-path
+[dependencies]
+trueno = "0.16"  # was path = "../aprender-compute"
+END

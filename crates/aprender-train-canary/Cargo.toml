@@ -6,7 +6,8 @@ publish = false
 
 [dependencies]
 burn = { version = "0.21.0-pre.2", features = ["wgpu"] }
-trueno = { version = "0.16", features = ["parallel", "gpu"] }
-
-[patch.crates-io]
-trueno = { path = "/home/noah/src/trueno" }
+# APR-MONO: in-tree sibling. This replaces BOTH the crates.io pin and the
+# `[patch.crates-io] trueno = { path = "/home/noah/src/trueno" }` that used to
+# follow — an absolute path to a now-archived sibling checkout that exists only
+# on one dev box.
+trueno = { path = "../aprender-compute", package = "aprender-compute", features = ["parallel", "gpu"] }

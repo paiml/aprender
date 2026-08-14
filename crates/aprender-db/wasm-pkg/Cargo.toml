@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # Parent crate (simd only, no tokio for WASM)
 trueno-db = { path = "..", default-features = false, features = ["simd", "wasm"] }
-trueno = "0.7.1"  # Direct dependency for SIMD backend
+trueno = { path = "../../aprender-compute", package = "aprender-compute" }  # in-tree SIMD backend (APR-MONO)
 
 # WASM bindings
 wasm-bindgen = "0.2"

@@ -56,9 +56,14 @@ bytemuck = { version = "1.21", features = ["derive"] }
 # ^0.51.0 version pin closed a crates.io publish cycle
 # (aprender-compute → aprender-gpu → aprender-profile → aprender-core → aprender-compute).
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# GPU pixel testing with TUI visualization (Sovereign Stack)
-jugar-probar = { version = "0.4.0", optional = true }
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# GPU pixel testing with TUI visualization (Sovereign Stack).
+# DEV-dependency, not a normal one: every use is in tests/ (gpu_pixels.rs,
+# pixel_fkr, lz4_fkr) and none in src/. As a *normal* dep the in-tree edge
+# aprender-gpu -> aprender-test-lib -> aprender-compute -> aprender-gpu is a
+# cargo-rejected cycle; through a dev edge it is legal, which is why this was
+# still pinned to a crates.io copy.
+jugar-probar = { workspace = true }
 
 [features]
 default = []
@@ -71,8 +76,9 @@ wasm = ["dep:wasm-bindgen"]
 stress-test = ["dep:simular"]
 # TUI monitoring mode for stress tests
 tui-monitor = ["stress-test", "dep:crossterm"]
-# GPU pixel testing with probar TUI visualization
-gpu-pixels = ["dep:jugar-probar", "dep:crossterm"]
+# GPU pixel testing with probar TUI visualization.
+# `jugar-probar` is a dev-dependency (see above) so it cannot be a `dep:` entry.
+gpu-pixels = ["dep:crossterm"]
 # WGPU backend for cross-platform GPU compute (WebGPU via wgpu crate)
 wgpu = ["dep:wgpu"]
 # Apple Metal backend via manzana (macOS only)

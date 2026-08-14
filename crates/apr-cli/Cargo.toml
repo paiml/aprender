@@ -110,7 +110,7 @@ aprender-contracts = { workspace = true }
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
 aprender-mcp = { path = "../aprender-mcp", version = "0.63.0" }
 async-stream = "0.3"
-provable-contracts-macros = "0.3"
+provable-contracts-macros = { workspace = true }
 
 # Shared formatting and system utilities (Batuta stack)
 batuta-common = { workspace = true }
@@ -262,7 +262,7 @@ assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.14"
 proptest = "1.6"
-jugar-probar = { version = "0.4", features = ["tui"] }
+jugar-probar = { workspace = true, features = ["tui"] }
 regex = "1.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 axum-test = "16"

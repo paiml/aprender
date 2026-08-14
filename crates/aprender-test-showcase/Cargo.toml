@@ -32,7 +32,7 @@ web-sys = { version = "0.3", optional = true, features = [
 
 [dev-dependencies]
 # Use local probar for dogfooding PIXEL-001 v2.1
-jugar-probar = "1.0"
+jugar-probar = { workspace = true }
 proptest.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 

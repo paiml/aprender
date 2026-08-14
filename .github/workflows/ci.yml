@@ -503,6 +503,24 @@ jobs:
         run: bash scripts/check_assertions_exclude.sh
       - name: Assertion-exclusion guard case table
         run: bash scripts/check_assertions_exclude.sh --self-test
+      # Poka-yoke: APR-MONO made every sibling a path alias under crates/, but
+      # `trueno = "0.16"` still BUILDS - cargo resolves the crates.io copy
+      # alongside the in-tree one, so the tree compiles two mutually
+      # type-incompatible `trueno`s and the published-crate dependency cycle the
+      # consolidation removed comes back. Nothing goes red; you only see it in
+      # `cargo tree --duplicates`. At 88791ff55 the lockfile held four registry
+      # copies of trueno beside the path one. CLAUDE.md has forbidden this in
+      # prose since the consolidation - prose is not a gate.
+      # The name set is package names UNION lib names, because they diverge here
+      # (package aprender-compute has lib trueno): a guard built from package
+      # names alone would sail straight past the one declaration it exists to
+      # stop. Vacuity-guarded three ways, including a positive control that must
+      # be flagged before any clean verdict is printed. Text-only, no build.
+      # Self-test first: if the guard is blind, that matters more than its verdict.
+      - name: Sibling-crate pathing guard case table
+        run: bash scripts/check_workspace_siblings_pathed.sh --self-test
+      - name: In-tree siblings must be pathed, never pulled from crates.io
+        run: bash scripts/check_workspace_siblings_pathed.sh
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
