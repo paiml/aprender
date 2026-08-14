@@ -187,6 +187,7 @@ fn bench_text_generation(model: &realizar::layers::Model, _config: &realizar::la
         (
             "Top-k (k=5)",
             GenerationConfig {
+                cancel: realizar::generate::CancelToken::never(),
                 max_tokens: 20,
                 temperature: 1.0,
                 strategy: SamplingStrategy::TopK { k: 5 },
@@ -197,6 +198,7 @@ fn bench_text_generation(model: &realizar::layers::Model, _config: &realizar::la
         (
             "Top-p (p=0.9)",
             GenerationConfig {
+                cancel: realizar::generate::CancelToken::never(),
                 max_tokens: 20,
                 temperature: 1.0,
                 strategy: SamplingStrategy::TopP { p: 0.9 },
@@ -478,6 +480,7 @@ fn bench_throughput_summary(
 
     // Measure sustained generation throughput
     let gen_config = GenerationConfig {
+        cancel: realizar::generate::CancelToken::never(),
         max_tokens: 50,
         ..GenerationConfig::default()
     };

@@ -29,8 +29,15 @@ fn main() {
         eps: 1e-5,
         rope_type: 0, // NORM (adjacent pairs)
         explicit_head_dim: None,
-        bos_token_id: Some(128_000),
-        eos_token_id: Some(128_001),
+        query_pre_attn_scalar: None,
+        // LLaMA-2 ids. These were 128_000/128_001 -- LLaMA-3 ids paired with
+        // LLaMA-2's 32k vocab, so the example's own "valid" fixture was rejected
+        // by OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB (an eos >= vocab_size can never be
+        // sampled, so generation cannot stop). It panicked on the line below.
+        // Nobody saw it: examples are not compiled in CI, and this one had not
+        // compiled at all since `query_pre_attn_scalar` was added.
+        bos_token_id: Some(1),
+        eos_token_id: Some(2),
     };
 
     let validated = ValidatedModelConfig::validate(llama_config)
@@ -60,6 +67,7 @@ fn main() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -85,6 +93,7 @@ fn main() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
@@ -150,6 +159,7 @@ fn main() {
         eps: 1e-5,
         rope_type: 0,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
         bos_token_id: None,
         eos_token_id: None,
     };
