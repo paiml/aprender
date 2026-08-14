@@ -92,6 +92,7 @@
     fn test_execute_probar_file_not_found() {
         use ProbarSubcommand;
         let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
+            color: probador::ColorArg::Auto,
             command: ProbarSubcommand::Tensor {
                 file: PathBuf::from("/tmp/nonexistent_model_probar_test.apr"),
                 output: PathBuf::from("/tmp/probar-out"),

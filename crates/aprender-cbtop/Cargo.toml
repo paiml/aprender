@@ -9,10 +9,6 @@ keywords = ["gpu", "cuda", "simd", "monitoring", "tui"]
 categories = ["command-line-utilities", "hardware-support", "visualization"]
 authors = ["Trueno Engineering"]
 
-[[bin]]
-name = "aprender-cbtop"
-path = "src/main.rs"
-
 [lib]
 name = "cbtop"
 

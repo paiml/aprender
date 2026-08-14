@@ -121,7 +121,25 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         // GH-876 Milestone 1: Probar is now a subcommand container.
         // The existing flat-args behavior moved under `apr probar tensor <FILE>`.
-        ExtendedCommands::Probar { command } => match command {
+        ExtendedCommands::Probar { color, command } => match command {
+            // Every other probador subcommand, delegating to the probador
+            // library's own handlers. `--verbose`/`--quiet` come from apr's
+            // globals rather than probador's, which is why the config is built
+            // here instead of by `probador::run::run`.
+            ProbarSubcommand::Probador(sub) => {
+                let verbosity = if cli.quiet {
+                    probador::Verbosity::Quiet
+                } else if cli.verbose {
+                    probador::Verbosity::Verbose
+                } else {
+                    probador::Verbosity::Normal
+                };
+                let config = probador::CliConfig::new()
+                    .with_verbosity(verbosity)
+                    .with_color(probador::ColorChoice::from(color.clone()));
+                probador::run::run_command(config, sub)
+                    .map_err(|e| CliError::Aprender(e.to_string()))
+            }
             ProbarSubcommand::Tensor {
                 file,
                 output,
@@ -1546,12 +1564,115 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(result)
 }
 
+/// Dispatch the commands re-homed from standalone binaries (APR-MONO).
+///
+/// Its own sub-dispatcher for the same reason `dispatch_dataset_command` and
+/// `dispatch_kernel_command` are: `dispatch_analysis_commands` was already
+/// past the complexity threshold, and five more arms would push it further.
+///
+/// Returns `None` when the command is not one of these, so the caller can try
+/// the other sub-dispatchers.
+fn dispatch_rehomed_binary_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    let Commands::Extended(ref ext) = *cli.command.as_ref() else {
+        return None;
+    };
+    let result = match ext {
+        ExtendedCommands::Compute { command } => dispatch_compute_command(command),
+        ExtendedCommands::Perf { command } => dispatch_perf_command(command, cli),
+        ExtendedCommands::Db { command } => dispatch_db_command(command),
+        ExtendedCommands::PtxDebug { command } => dispatch_ptx_debug_command(command),
+        ExtendedCommands::CorpusIngest { command } => commands::corpus_ingest::run(command),
+        _ => return None,
+    };
+    Some(result)
+}
+
+/// Dispatch `apr compute ...` — the re-homed `cbtop` binary.
+///
+/// The library returns the exit code rather than calling `std::process::exit`
+/// itself, so its regression gates stay testable in-process; the code is
+/// surfaced here.
+fn dispatch_compute_command(command: &::cbtop::cli::ComputeCommand) -> Result<(), CliError> {
+    let code = ::cbtop::cli::run(command.clone()).map_err(|e| CliError::Aprender(e.to_string()))?;
+    exit_if_nonzero(code);
+    Ok(())
+}
+
+/// Dispatch `apr perf ...` — the re-homed `cgp` binary.
+fn dispatch_perf_command(command: &::cgp::cli::Commands, cli: &Cli) -> Result<(), CliError> {
+    ::cgp::cli::run_command(command.clone(), cli.json)
+        .map_err(|e| CliError::Aprender(format!("{e:#}")))
+}
+
+/// Dispatch `apr db ...` — the re-homed `trueno-db` binary.
+fn dispatch_db_command(command: &DbCommands) -> Result<(), CliError> {
+    match command {
+        DbCommands::Serve { config } => {
+            // Report a missing config as apr's not-found (exit 3) rather than
+            // as a generic failure, so `apr db serve --config typo.yaml` is
+            // distinguishable from a config that parsed and then failed.
+            if !config.exists() {
+                return Err(CliError::FileNotFound(config.clone()));
+            }
+            trueno_db::server::run_blocking(config)
+                .map_err(|e| CliError::Aprender(format!("{e:#}")))
+        }
+    }
+}
+
+/// Dispatch `apr ptx-debug ...` — the re-homed `trueno-ptx-debug` binary.
+///
+/// The standalone binary's exit-code table (0 clean, 1 for a score in
+/// 70..90, 2 below `--min-score`, 3 on a critical bug) is its CI interface, so
+/// it is passed through verbatim rather than folded into apr's error codes.
+fn dispatch_ptx_debug_command(
+    command: &::trueno_ptx_debug::cli::PtxDebugCommand,
+) -> Result<(), CliError> {
+    let code = ::trueno_ptx_debug::cli::run(command).map_err(|e| {
+        if e.is_not_found() {
+            CliError::FileNotFound(ptx_debug_input_path(command))
+        } else {
+            CliError::InvalidInput(e.to_string())
+        }
+    })?;
+    exit_if_nonzero(code);
+    Ok(())
+}
+
+/// The PTX file a [`::trueno_ptx_debug::cli::PtxDebugCommand`] reads, for error
+/// reporting.
+fn ptx_debug_input_path(command: &::trueno_ptx_debug::cli::PtxDebugCommand) -> PathBuf {
+    match command {
+        ::trueno_ptx_debug::cli::PtxDebugCommand::Analyze { file, .. }
+        | ::trueno_ptx_debug::cli::PtxDebugCommand::GenFkr { file, .. } => file.clone(),
+    }
+}
+
+/// Exit with `code` when it is non-zero.
+///
+/// `execute_command` returns `Result<(), CliError>`, and `CliError`'s exit
+/// codes are a different, apr-wide taxonomy (3 = not found, 4 = bad input...).
+/// A re-homed tool whose exit codes ARE its documented interface cannot be
+/// mapped onto that taxonomy without changing what its callers observe, so the
+/// code is passed through unchanged.
+fn exit_if_nonzero(code: u8) {
+    if code != 0 {
+        std::process::exit(i32::from(code));
+    }
+}
+
 /// Dispatch extended commands (analysis, profiling, QA, benchmarks).
 ///
 /// Delegates to [`dispatch_analysis_commands`] and [`dispatch_profiling_commands`]
 /// sub-dispatchers to keep cyclomatic complexity below 10 per function.
 fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
     contract_pre_feature_gated_dispatch!();
+    // Commands re-homed from standalone binaries (compute, perf, db,
+    // ptx-debug, corpus-ingest).
+    if let Some(result) = dispatch_rehomed_binary_commands(cli) {
+        return result;
+    }
+
     // Try analysis commands first (cbtop, probar, compare-hf, hex, tree, flow, oracle)
     if let Some(result) = dispatch_analysis_commands(cli) {
         return result;

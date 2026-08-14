@@ -132,6 +132,40 @@ commands:
     requires_model: false
     side_effects: []
 
+  # Re-homed standalone binaries (APR-MONO: one installed binary, `apr`).
+  # Each was a published `[[bin]]` that has been removed; the capability is
+  # unchanged, only its name. See book/src/cli/{compute,perf,db,ptx-debug,
+  # corpus-ingest}.md.
+  - name: compute
+    category: analysis
+    description: "Load-test, monitor and benchmark the compute backends (was the cbtop binary)"
+    requires_model: false
+    side_effects: []
+
+  - name: perf
+    category: analysis
+    description: "Unified performance analysis: kernels, roofline, baselines, contracts (was the cgp binary)"
+    requires_model: false
+    side_effects: []
+
+  - name: db
+    category: serving
+    description: "Embedded analytics database server: SQL over Parquet (was the trueno-db binary)"
+    requires_model: false
+    side_effects: [network]
+
+  - name: ptx-debug
+    category: analysis
+    description: "PTX falsification scoring and FKR test generation (was the trueno-ptx-debug binary)"
+    requires_model: false
+    side_effects: [filesystem]
+
+  - name: corpus-ingest
+    category: data
+    description: "MODEL-2 pretraining-corpus ingest dry-run scaffold (was the apr-corpus-ingest binary)"
+    requires_model: false
+    side_effects: [filesystem]
+
   - name: trace
     category: inspection
     description: "Layer-by-layer trace analysis"

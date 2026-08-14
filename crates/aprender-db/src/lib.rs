@@ -48,6 +48,11 @@ pub mod experiment;
 pub mod gpu;
 pub mod kv;
 pub mod query;
+
+/// HTTP API server (`apr db serve`). Requires the `server` feature.
+#[cfg(feature = "server")]
+pub mod server;
+
 pub mod storage;
 pub mod topk;
 #[cfg(all(target_arch = "wasm32", feature = "wasm"))]

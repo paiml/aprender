@@ -210,6 +210,12 @@ renacer-core = { path = "crates/aprender-profile-core", version = "0.63.0", pack
 repartir = { path = "crates/aprender-distribute", version = "0.63.0", package = "aprender-distribute" }
 simular = { path = "crates/aprender-simulate", version = "0.63.0", package = "aprender-simulate" }
 probar = { path = "crates/aprender-test-lib", version = "0.63.0", package = "aprender-test-lib" }
+# CLI-bearing crates whose standalone binaries were folded into `apr` — their
+# clap definitions now live in the lib and apr-cli embeds them directly.
+probador = { path = "crates/aprender-test-cli", version = "0.63.0", package = "aprender-test-cli" }
+cbtop = { path = "crates/aprender-cbtop", version = "0.63.0", package = "aprender-cbtop" }
+cgp = { path = "crates/aprender-cgp", version = "0.63.0", package = "aprender-cgp" }
+trueno-ptx-debug = { path = "crates/aprender-ptx-debug", version = "0.63.0", package = "aprender-ptx-debug" }
 aprender-train = { path = "crates/aprender-train", version = "0.63.0" }
 entrenar = { path = "crates/aprender-train", version = "0.63.0", package = "aprender-train" }
 aprender-train-common = { path = "crates/aprender-train-common", version = "0.63.0" }

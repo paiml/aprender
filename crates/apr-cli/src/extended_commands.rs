@@ -528,12 +528,20 @@ pub enum ExtendedCommands {
     },
     /// Probar testing framework (GH-876 — visual regression, replay, more).
     ///
-    /// GH-876 Milestone 1: `apr probar tensor` migrates the existing flat
-    /// `apr probar <FILE>` behavior (PMAT-481 tensor visual regression).
-    /// The remaining probador subcommands (test, record, coverage, playbook,
-    /// comply, av-sync, audio, video, animation, stress, llm) land in
-    /// follow-up PRs that delegate to the probador library.
+    /// `apr probar tensor` is apr's own (PMAT-481 tensor visual regression);
+    /// every other subcommand is the standalone `probador` binary's, flattened
+    /// in so `apr probar <cmd>` is spelled exactly as `probador <cmd>` was.
     Probar {
+        /// Color output (auto, always, never).
+        ///
+        /// `probador` carried this as a global flag on its own root command.
+        /// Flattening only its subcommands would have dropped it, so it is
+        /// re-declared here and forwarded to the probador config — an argument
+        /// that survives in one binary and vanishes in the next is the #2418
+        /// defect this whole move exists to avoid.
+        #[arg(long, default_value = "auto", global = true)]
+        color: probador::ColorArg,
+
         #[command(subcommand)]
         command: ProbarSubcommand,
     },
@@ -1393,6 +1401,66 @@ pub enum ExtendedCommands {
         #[arg(long)]
         json: bool,
     },
+
+    // Re-homed standalone binaries (APR-MONO: one installed binary, `apr`).
+    // Each embeds the clap enum that lives in the owning crate's lib, so the
+    // argument surface has exactly one definition.
+    /// Load-test, monitor and benchmark the compute backends (SIMD/wgpu/CUDA).
+    ///
+    /// Was the standalone `cbtop` binary ("Compute Block Top"). Note this is
+    /// NOT `apr cbtop`, which is a different tool ("ComputeBrick Top") that
+    /// profiles the brick pipeline of an LLM inference run.
+    Compute {
+        /// Which compute-backend tool to run.
+        #[command(subcommand)]
+        command: ::cbtop::cli::ComputeCommand,
+    },
+
+    /// Unified performance analysis: profile kernels and backends, roofline
+    /// models, baselines, and performance contracts.
+    ///
+    /// Was the standalone `cgp` binary ("Compute-GPU-Profile"). Distinct from
+    /// `apr profile` / `apr bench`, which operate on a MODEL file; these
+    /// commands operate on kernels, shaders and backends.
+    Perf {
+        /// Which performance-analysis command to run.
+        #[command(subcommand)]
+        command: ::cgp::cli::Commands,
+    },
+
+    /// Embedded analytics database: SQL over Parquet, GPU-first with SIMD
+    /// fallback.
+    ///
+    /// Was the standalone `trueno-db` binary.
+    Db {
+        /// Which database command to run.
+        #[command(subcommand)]
+        command: DbCommands,
+    },
+
+    /// PTX static analysis: 100-point falsification scoring and FKR test
+    /// generation.
+    ///
+    /// Was the standalone `trueno-ptx-debug` binary. Sits beside `apr ptx`
+    /// (register/roofline analysis) and `apr ptx-map` (model-to-kernel
+    /// mapping); this one scores a PTX file and generates regression tests.
+    #[command(name = "ptx-debug")]
+    PtxDebug {
+        /// Which PTX analysis command to run.
+        #[command(subcommand)]
+        command: ::trueno_ptx_debug::cli::PtxDebugCommand,
+    },
+
+    /// SHIP-TWO-001 MODEL-2 pretraining-corpus ingest (dry-run scaffold).
+    ///
+    /// Was the second binary in this crate, `apr-corpus-ingest`. Network-free:
+    /// it reads and validates the corpus contract and emits a planned manifest.
+    #[command(name = "corpus-ingest")]
+    CorpusIngest {
+        /// Which ingest command to run.
+        #[command(subcommand)]
+        command: CorpusIngestCommands,
+    },
 }
 
 /// Subcommands for `apr dataset` — dataset inspection (aprender#2377 finding 3).
@@ -1566,12 +1634,54 @@ pub enum ModelfileSubcommand {
         #[arg(long, default_value = "json")]
         format: String,
     },
+
+}
+
+/// Subcommands for `apr db`.
+#[derive(Subcommand, Debug)]
+pub enum DbCommands {
+    /// Start the analytics database HTTP server.
+    ///
+    /// Serves `GET /health`, `GET /status` and `POST /query` on the address
+    /// named by the config file's `listen` key.
+    Serve {
+        /// Path to the YAML configuration file.
+        #[arg(long, value_name = "FILE")]
+        config: PathBuf,
+    },
+}
+
+/// Subcommands for `apr corpus-ingest`.
+#[derive(Subcommand, Debug)]
+pub enum CorpusIngestCommands {
+    /// Read the corpus contract, validate it, print a plan summary, and emit
+    /// `<output-dir>/dry-run-manifest.yaml`. NO network, NO download.
+    Plan {
+        /// Path to the corpus contract YAML.
+        #[arg(long, default_value = commands::corpus_ingest::DEFAULT_CONTRACT_PATH)]
+        contract: PathBuf,
+
+        /// Output directory for the dry-run manifest.
+        #[arg(long, default_value = commands::corpus_ingest::DEFAULT_OUTPUT_DIR)]
+        output_dir: PathBuf,
+    },
+
+    /// Pure validation: parse the contract YAML and assert its top-level keys
+    /// and minimum invariant/falsification/gate counts. Writes no files.
+    #[command(name = "validate-contract")]
+    ValidateContract {
+        /// Path to the corpus contract YAML.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+    },
 }
 
 /// GH-876: Subcommands for `apr probar` — consolidates the probador testing
-/// framework under `apr`. Milestone 1 ships only `tensor` (the migrated
-/// existing behavior). Subsequent milestones add the remaining 14 probador
-/// subcommands as separate PRs that delegate to the probador library.
+/// framework under `apr`. `tensor` is apr's own (PMAT-481 visual regression);
+/// every other subcommand is probador's own [`probador::Commands`], flattened
+/// in so `apr probar test`, `apr probar serve`, `apr probar comply` … resolve
+/// to the same clap definitions the standalone `probador` binary used. There
+/// is no second copy of that argument surface to drift (defect class #2418).
 #[derive(Subcommand, Debug)]
 pub enum ProbarSubcommand {
     /// Export tensor activations for visual regression testing (PMAT-481).
@@ -1603,6 +1713,16 @@ pub enum ProbarSubcommand {
               value_parser = commands::threshold_arg::parse_cosine_f32)]
         tolerance: f32,
     },
+
+    /// Every subcommand the standalone `probador` binary shipped: `test`,
+    /// `record`, `report`, `coverage`, `init`, `config`, `serve`, `build`,
+    /// `watch`, `playbook`, `comply`, `av-sync`, `audio`, `video`,
+    /// `animation`, `stress`, `llm`.
+    ///
+    /// `flatten` merges them in at this level, so they are spelled
+    /// `apr probar <cmd>` exactly as they were spelled `probador <cmd>`.
+    #[command(flatten)]
+    Probador(probador::Commands),
 }
 
 /// Parse `apr cbtop --iterations`, rejecting 0.

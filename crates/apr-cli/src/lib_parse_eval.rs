@@ -260,7 +260,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Probar { command }) => match command {
+            Commands::Extended(ExtendedCommands::Probar { command, .. }) => match command {
                 ProbarSubcommand::Tensor {
                     file,
                     output,
@@ -278,6 +278,9 @@
                     assert!(!assert);
                     assert!((tolerance - 0.98).abs() < 0.01);
                 },
+                ProbarSubcommand::Probador(sub) => {
+                    panic!("expected `probar tensor`, parsed a probador subcommand: {sub:?}")
+                },
             },
             _ => panic!("Expected Probar command"),
         }
@@ -290,7 +293,7 @@
         let args = vec!["apr", "probar", "tensor", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Probar { command }) => match command {
+            Commands::Extended(ExtendedCommands::Probar { command, .. }) => match command {
                 ProbarSubcommand::Tensor {
                     output,
                     format,
@@ -302,6 +305,9 @@
                     assert_eq!(format, "both");
                     assert!(golden.is_none());
                     assert!(layer.is_none());
+                },
+                ProbarSubcommand::Probador(sub) => {
+                    panic!("expected `probar tensor`, parsed a probador subcommand: {sub:?}")
                 },
             },
             _ => panic!("Expected Probar command"),

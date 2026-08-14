@@ -45,7 +45,3 @@ cuda = ["dep:trueno-gpu"]
 [dev-dependencies]
 proptest = "1.9"
 tempfile = "3"
-
-[[bin]]
-name = "aprender-cgp"
-path = "src/main.rs"

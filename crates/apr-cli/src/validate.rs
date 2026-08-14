@@ -9,10 +9,16 @@ fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
         // === ACTION COMMANDS (gated) ===
         // GH-876: Probar is a subcommand container; extract file from the
         // active subcommand variant.
-        ExtendedCommands::Probar { command: probar_sub } => match probar_sub {
+        ExtendedCommands::Probar {
+            command: probar_sub, ..
+        } => match probar_sub {
             ProbarSubcommand::Tensor { file, .. } => {
                 vec![file.clone()]
             },
+            // The re-homed probador subcommands take WASM/test-project paths,
+            // not model files, so there is nothing for the model-path
+            // contract validator to check.
+            ProbarSubcommand::Probador(_) => vec![],
         },
         ExtendedCommands::CompareHf { file, .. }
         | ExtendedCommands::Chat { file, .. }

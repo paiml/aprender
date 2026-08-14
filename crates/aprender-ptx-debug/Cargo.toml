@@ -15,6 +15,9 @@ name = "trueno_ptx_debug"
 
 [dependencies]
 thiserror = "2.0"
+# CLI surface (`apr ptx-debug`) — the clap Subcommand enum lives in this crate
+# so apr-cli embeds it verbatim instead of keeping a second copy that can drift.
+clap = { version = "4", features = ["derive"] }
 
 # Inherit workspace lints
 [lints.rust]
@@ -28,7 +31,3 @@ proptest = "1.9"
 default = []
 # Enable renacer integration for runtime tracing
 runtime-trace = []
-
-[[bin]]
-name = "aprender-ptx-debug"
-path = "src/bin/main.rs"

@@ -990,8 +990,20 @@ pub struct CoverageArgs {
     #[arg(long)]
     pub png: Option<PathBuf>,
 
-    /// Output JSON file path
-    #[arg(long)]
+    /// Output JSON file path.
+    ///
+    /// Spelled `--json-out`, not `--json`. `apr` declares a GLOBAL
+    /// `--json: bool` ("output as JSON") on its root command, and a global
+    /// propagates onto every subcommand. Two arguments then claim the id
+    /// `json` with different types, and clap panics at PARSE time with
+    /// "Mismatch between definition and access of `json`" — it is not caught
+    /// by `Command::debug_assert`, so `apr probar coverage` would have
+    /// aborted on any invocation. The capability is unchanged; only the
+    /// spelling moved, so that `--json` keeps its apr-wide meaning here too.
+    /// The explicit `id` matters as much as the long name: clap derives the
+    /// argument id from the FIELD name, so renaming only the long would leave
+    /// this arg still claiming the id `json` and still panicking.
+    #[arg(id = "coverage_json_out", long = "json-out", value_name = "FILE")]
     pub json: Option<PathBuf>,
 
     /// Color palette (viridis, magma, heat)
@@ -1497,6 +1509,15 @@ pub struct ComplyCheckArgs {
 
 /// Arguments for comply migrate subcommand
 #[derive(Parser, Debug, Clone)]
+// `--version` here is a real argument ("migrate TO this version"), and the
+// root command sets `propagate_version = true`, which pushes clap's
+// auto-generated `--version` down onto every subcommand. Two arguments then
+// claim the id `version`, which clap rejects — a conflict that shipped
+// undetected in the standalone `probador` binary because nothing there ever
+// called `Command::debug_assert()`. apr's `test_cli_parsing_valid` does, so it
+// surfaced on the move. Disabling the auto flag on THIS leaf keeps the
+// documented argument working; `apr probar --version` still answers.
+#[command(disable_version_flag = true)]
 pub struct ComplyMigrateArgs {
     /// Directory to migrate (default: current directory)
     #[arg(default_value = ".")]

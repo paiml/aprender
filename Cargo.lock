@@ -258,19 +258,24 @@ name = "apr-cli"
 version = "0.63.0"
 dependencies = [
  "anyhow",
+ "aprender-cbtop",
+ "aprender-cgp",
  "aprender-common",
  "aprender-compute",
  "aprender-contracts",
  "aprender-core",
  "aprender-data",
+ "aprender-db",
  "aprender-explain",
  "aprender-mcp",
  "aprender-orchestrate",
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-profile",
+ "aprender-ptx-debug",
  "aprender-registry",
  "aprender-serve",
+ "aprender-test-cli",
  "aprender-train",
  "aprender-train-common",
  "aprender-train-distill",
@@ -706,7 +711,6 @@ dependencies = [
  "bytemuck",
  "cargo-llvm-cov",
  "chrono",
- "clap",
  "console_error_panic_hook",
  "criterion 0.5.1",
  "dashmap",
@@ -1159,6 +1163,7 @@ dependencies = [
 name = "aprender-ptx-debug"
 version = "0.63.0"
 dependencies = [
+ "clap",
  "proptest",
  "thiserror 2.0.18",
 ]

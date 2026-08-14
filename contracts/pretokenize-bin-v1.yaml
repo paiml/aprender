@@ -15,7 +15,7 @@
 # apr. The stopgap was a Python shim; that stopgap is MUDA per the
 # 2026-04-19 user feedback "why not fix root cause vs 'hack'". This
 # contract specifies the native Rust subcommand `apr tokenize
-# encode-corpus` (or equivalent `apr-corpus-ingest run`) that
+# encode-corpus` (or equivalent `apr corpus-ingest run`) that
 # consumes a trained BPE tokenizer + JSONL corpus and produces the
 # exact shard format ShardBatchIter expects.
 #
@@ -113,7 +113,7 @@ format:
 
 producer:
   cli_name: "apr tokenize encode-corpus"
-  alternative_cli_name: "apr-corpus-ingest run"
+  alternative_cli_name: "apr corpus-ingest run"
   required_inputs:
     - "--corpus <PATH>           # JSONL file with `content` field per line, or directory of such"
     - "--tokenizer <DIR>         # directory containing vocab.json + merges.txt from `apr tokenize train`"

@@ -49,6 +49,17 @@ fn registered_commands() -> Vec<&'static str> {
         // aprender#2377 finding 3: the producers `*-lint` help documents.
         "dataset",
         "kernel",
+        // Re-homed standalone binaries (APR-MONO: one installed binary, `apr`).
+        //   `cbtop` bin       -> `apr compute`      (NOT `apr cbtop`, a different tool)
+        //   `cgp` bin         -> `apr perf`
+        //   `trueno-db` bin   -> `apr db`
+        //   `trueno-ptx-debug`-> `apr ptx-debug`
+        //   `apr-corpus-ingest` (2nd bin in this crate) -> `apr corpus-ingest`
+        "compute",
+        "perf",
+        "db",
+        "ptx-debug",
+        "corpus-ingest",
         "trace",
         "diff",
         "hex",

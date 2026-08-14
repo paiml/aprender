@@ -45,6 +45,9 @@ pub mod lint;
 pub mod load_testing;
 mod output;
 mod runner;
+
+/// Command handlers for `apr probar` (was the standalone `probador` binary).
+pub mod run;
 pub mod score;
 pub mod simulation;
 pub mod statistics;
@@ -57,15 +60,15 @@ pub mod wasm_testing;
 pub use commands::{
     AnimationArgs, AnimationCheckArgs, AnimationSubcommand, AudioArgs, AudioCheckArgs,
     AudioSubcommand, AvSyncArgs, AvSyncCheckArgs, AvSyncOutputFormat, AvSyncReportArgs,
-    AvSyncSubcommand, BuildArgs, Cli, Commands, ComplyArgs, ComplyCheckArgs, ComplyDiffArgs,
-    ComplyEnforceArgs, ComplyMigrateArgs, ComplyOutputFormat, ComplyReportArgs, ComplyReportFormat,
-    ComplySubcommand, ConfigArgs, CoverageArgs, DataAuditArgs, DiagramFormat, ExperimentArgs,
-    ExperimentCompareArgs, ExperimentInitArgs, ExperimentStatusArgs, ExperimentSubcommand,
-    InitArgs, LlmArgs, LlmBenchArgs, LlmGenDatasetArgs, LlmLoadArgs, LlmReportArgs, LlmScoreArgs,
-    LlmSubcommand, LlmSweepArgs, LlmTestArgs, OutputFormat, PaletteArg, PlaybookArgs,
-    PlaybookOutputFormat, RecordArgs, RecordFormat, ReportArgs, ReportFormat, ScoreArgs,
-    ScoreOutputFormat, ServeArgs, ServeSubcommand, StressArgs, TestArgs, TreeArgs, VideoArgs,
-    VideoCheckArgs, VideoSubcommand, VizArgs, WasmTarget, WatchArgs,
+    AvSyncSubcommand, BuildArgs, Cli, ColorArg, Commands, ComplyArgs, ComplyCheckArgs,
+    ComplyDiffArgs, ComplyEnforceArgs, ComplyMigrateArgs, ComplyOutputFormat, ComplyReportArgs,
+    ComplyReportFormat, ComplySubcommand, ConfigArgs, CoverageArgs, DataAuditArgs, DiagramFormat,
+    ExperimentArgs, ExperimentCompareArgs, ExperimentInitArgs, ExperimentStatusArgs,
+    ExperimentSubcommand, InitArgs, LlmArgs, LlmBenchArgs, LlmGenDatasetArgs, LlmLoadArgs,
+    LlmReportArgs, LlmScoreArgs, LlmSubcommand, LlmSweepArgs, LlmTestArgs, OutputFormat,
+    PaletteArg, PlaybookArgs, PlaybookOutputFormat, RecordArgs, RecordFormat, ReportArgs,
+    ReportFormat, ScoreArgs, ScoreOutputFormat, ServeArgs, ServeSubcommand, StressArgs, TestArgs,
+    TreeArgs, VideoArgs, VideoCheckArgs, VideoSubcommand, VizArgs, WasmTarget, WatchArgs,
 };
 pub use config::{CliConfig, ColorChoice, Verbosity};
 pub use debug::{create_tracer, DebugCategory, DebugTracer, DebugVerbosity, ResolutionRule};

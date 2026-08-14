@@ -1,5 +1,9 @@
-//! `apr-corpus-ingest` — dry-run scaffolding for the SHIP-TWO-001 MODEL-2
+//! `apr corpus-ingest` — dry-run scaffolding for the SHIP-TWO-001 MODEL-2
 //! Python-code pretraining corpus ingest pipeline.
+//!
+//! This module used to be a second `[[bin]]` in this crate,
+//! `apr-corpus-ingest`. It is now reached as `apr corpus-ingest <COMMAND>`,
+//! so `cargo install aprender` places exactly one binary in `~/.cargo/bin`.
 //!
 //! Implements task #91: minimal, NETWORK-FREE scaffolding that reads and
 //! validates `contracts/dataset-thestack-python-v1.yaml` (C-DATA-THESTACK-PYTHON,
@@ -13,13 +17,16 @@
 //!
 //! Hard constraints honored:
 //!   * NO network calls.
-//!   * NO writes outside `./output/`.
-//!   * Only `serde`, `serde_yaml`, `anyhow`, `clap` workspace deps.
+//!   * NO writes outside the directory named by `--output-dir` (default
+//!     `./output/`).
+//!   * Only `serde`, `serde_yaml` and `anyhow` here — the clap definitions
+//!     moved to `CorpusIngestCommands` in `extended_commands.rs` when the
+//!     standalone binary was folded into `apr`.
 //!   * Does NOT touch `crates/aprender-train/` (task #89) or
 //!     `crates/apr-cli/src/commands/tokenize.rs` (task #90).
 
+use crate::error::CliError;
 use anyhow::{anyhow, bail, Context, Result};
-use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::collections::BTreeMap;
@@ -27,10 +34,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Default contract path, relative to workspace root.
-const DEFAULT_CONTRACT_PATH: &str = "contracts/dataset-thestack-python-v1.yaml";
+pub const DEFAULT_CONTRACT_PATH: &str = "contracts/dataset-thestack-python-v1.yaml";
 
 /// Default output directory for the dry-run manifest.
-const DEFAULT_OUTPUT_DIR: &str = "output";
+pub const DEFAULT_OUTPUT_DIR: &str = "output";
 
 /// Minimum counts required by the contract spec.
 /// The contract declares 7 invariants (INV-DATA-001..007), 5 falsification
@@ -48,39 +55,6 @@ const REQUIRED_TOP_KEYS: &[&str] = &[
     "split",
     "budget",
 ];
-
-#[derive(Parser)]
-#[command(
-    name = "apr-corpus-ingest",
-    version,
-    about = "Dry-run scaffold for SHIP-TWO-001 MODEL-2 corpus ingest (C-DATA-THESTACK-PYTHON)"
-)]
-struct Cli {
-    #[command(subcommand)]
-    cmd: Command,
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Read the corpus contract, validate it, print a plan summary, and emit
-    /// `./output/dry-run-manifest.yaml`. NO network, NO download.
-    Plan {
-        /// Path to the corpus contract YAML.
-        #[arg(long, default_value = DEFAULT_CONTRACT_PATH)]
-        contract: PathBuf,
-
-        /// Output directory for the dry-run manifest.
-        #[arg(long, default_value = DEFAULT_OUTPUT_DIR)]
-        output_dir: PathBuf,
-    },
-
-    /// Pure validation: parse YAML, assert top-level keys + min counts.
-    /// Exit 0 on pass, non-zero on failure. No output file is written.
-    ValidateContract {
-        /// Path to the corpus contract YAML.
-        path: PathBuf,
-    },
-}
 
 /// Structural view of the corpus contract used by both subcommands.
 /// We do NOT model every field — only the load-bearing structure that the
@@ -143,19 +117,26 @@ struct ValidationReport {
     present_top_keys: Vec<String>,
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
-    match cli.cmd {
-        Command::Plan {
+/// Dispatch one `apr corpus-ingest` command.
+///
+/// # Errors
+///
+/// Returns [`CliError::InvalidInput`] when the contract does not parse or does
+/// not meet its declared structural minimums, and [`CliError::Io`] when the
+/// manifest cannot be written.
+pub fn run(command: &crate::CorpusIngestCommands) -> std::result::Result<(), CliError> {
+    let outcome = match command {
+        crate::CorpusIngestCommands::Plan {
             contract,
             output_dir,
-        } => run_plan(&contract, &output_dir),
-        Command::ValidateContract { path } => {
-            let report = validate_contract(&path)?;
-            print_validation_report(&report);
-            Ok(())
+        } => run_plan(contract, output_dir),
+        crate::CorpusIngestCommands::ValidateContract { path } => {
+            validate_contract(path).map(|report| print_validation_report(&report))
         }
-    }
+    };
+    // `anyhow` carries the full context chain; flatten it into apr's error
+    // taxonomy so the exit code is the one apr documents (4 = bad input).
+    outcome.map_err(|e| CliError::InvalidInput(format!("{e:#}")))
 }
 
 /// `plan` — loads the contract, validates it, prints a summary, writes a

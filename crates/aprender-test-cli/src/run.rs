@@ -1,18 +1,28 @@
-//! Probar CLI: Command-line interface for WASM testing
+//! Command handlers for `apr probar`.
+//!
+//! This module used to be `src/main.rs` behind the standalone
+//! `aprender-test-cli` (`probador`) binary. That binary is gone (APR-MONO: one
+//! installed binary, `apr`); every command below is reached as
+//! `apr probar <COMMAND>`.
+//!
+//! The clap definitions already lived in this crate ([`crate::Cli`],
+//! [`crate::Commands`]); only the handlers were stranded in `main.rs`. They now
+//! sit beside the definitions, and `apr-cli` flattens [`crate::Commands`]
+//! straight into `apr probar`, so there is no second copy of the argument
+//! surface to drift (defect class #2418).
 //!
 //! ## Usage
 //!
 //! ```bash
-//! probar test                     # Run all tests
-//! probar test --filter "game::*"  # Filter tests
-//! probar record <test> --gif      # Record as GIF
-//! probar report --html            # Generate HTML report
+//! apr probar test                     # Run all tests
+//! apr probar test --filter "game::*"  # Filter tests
+//! apr probar record <test> --gif      # Record as GIF
+//! apr probar report --html            # Generate HTML report
 //! ```
 
-use clap::Parser;
 #[cfg(test)]
-use probador::handlers::comply::{check_makefile_cross_origin, check_probar_cross_origin_config};
-use probador::{
+use crate::handlers::comply::{check_makefile_cross_origin, check_probar_cross_origin_config};
+use crate::{
     handlers::{
         build::find_html_files,
         comply::{
@@ -24,63 +34,67 @@ use probador::{
     },
     Cli, CliConfig, CliResult, ColorChoice, Commands, TestRunner, Verbosity,
 };
-use std::process::ExitCode;
 
-fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            ExitCode::FAILURE
-        }
-    }
+/// Run a fully parsed probador CLI.
+///
+/// # Errors
+///
+/// Propagates whatever the selected command handler returns.
+pub fn run(cli: &Cli) -> CliResult<()> {
+    let config = build_config(cli);
+    run_command(config, &cli.command)
 }
 
-fn run() -> CliResult<()> {
-    let cli = Cli::parse();
-
-    // Build configuration from CLI args
-    let config = build_config(&cli);
-
-    match cli.command {
-        Commands::Test(args) => run_tests(config, &args),
+/// Run one probador command against an already-built [`CliConfig`].
+///
+/// `apr probar` calls this directly: it derives the config from `apr`'s own
+/// global `--verbose` / `--quiet` flags rather than from probador's.
+///
+/// # Errors
+///
+/// Propagates whatever the selected command handler returns.
+pub fn run_command(config: CliConfig, command: &Commands) -> CliResult<()> {
+    match command {
+        Commands::Test(args) => run_tests(config, args),
         Commands::Record(args) => {
-            run_record(&config, &args);
+            run_record(&config, args);
             Ok(())
         }
         Commands::Report(args) => {
-            run_report(&config, &args);
+            run_report(&config, args);
             Ok(())
         }
-        Commands::Coverage(args) => run_coverage(&config, &args),
+        Commands::Coverage(args) => run_coverage(&config, args),
         Commands::Init(args) => {
-            run_init(&config, &args);
+            run_init(&config, args);
             Ok(())
         }
         Commands::Config(args) => {
-            run_config(&config, &args);
+            run_config(&config, args);
             Ok(())
         }
-        Commands::Serve(args) => run_serve(&args),
-        Commands::Build(args) => run_build(&args),
-        Commands::Watch(args) => run_watch(&args),
-        Commands::Playbook(args) => run_playbook(&config, &args),
-        Commands::Comply(args) => run_comply(&config, &args),
-        Commands::AvSync(args) => run_av_sync(&config, &args),
-        Commands::Audio(args) => run_audio(&config, &args),
-        Commands::Video(args) => run_video(&config, &args),
-        Commands::Animation(args) => run_animation(&config, &args),
-        Commands::Stress(args) => run_stress(&config, &args),
+        Commands::Serve(args) => run_serve(args),
+        Commands::Build(args) => run_build(args),
+        Commands::Watch(args) => run_watch(args),
+        Commands::Playbook(args) => run_playbook(&config, args),
+        Commands::Comply(args) => run_comply(&config, args),
+        Commands::AvSync(args) => run_av_sync(&config, args),
+        Commands::Audio(args) => run_audio(&config, args),
+        Commands::Video(args) => run_video(&config, args),
+        Commands::Animation(args) => run_animation(&config, args),
+        Commands::Stress(args) => run_stress(&config, args),
         #[cfg(feature = "llm")]
-        Commands::Llm(args) => run_llm(&args),
+        Commands::Llm(args) => run_llm(args),
         #[cfg(not(feature = "llm"))]
-        Commands::Llm(_) => Err(probador::CliError::Generic(
+        Commands::Llm(_) => Err(crate::CliError::Generic(
             "LLM features not enabled. Rebuild with --features llm".to_string(),
         )),
     }
 }
 
-fn build_config(cli: &Cli) -> CliConfig {
+/// Build a [`CliConfig`] from probador's own global flags.
+#[must_use]
+pub fn build_config(cli: &Cli) -> CliConfig {
     let verbosity = if cli.quiet {
         Verbosity::Quiet
     } else {
@@ -96,7 +110,7 @@ fn build_config(cli: &Cli) -> CliConfig {
     CliConfig::new().with_verbosity(verbosity).with_color(color)
 }
 
-fn run_tests(config: CliConfig, args: &probador::TestArgs) -> CliResult<()> {
+fn run_tests(config: CliConfig, args: &crate::TestArgs) -> CliResult<()> {
     // PROBAR-006: Compile-first gate
     // Run `cargo test --no-run` before executing playbook tests to catch compile errors early
     if !args.skip_compile {
@@ -127,7 +141,7 @@ fn run_tests(config: CliConfig, args: &probador::TestArgs) -> CliResult<()> {
                     eprintln!("Run `cargo test --no-run` to see full error output.");
                     eprintln!("Use `probar test --skip-compile` to bypass this check.");
 
-                    return Err(probador::CliError::test_execution(
+                    return Err(crate::CliError::test_execution(
                         "Compile check failed - fix compilation errors before running tests",
                     ));
                 }
@@ -156,14 +170,14 @@ fn run_tests(config: CliConfig, args: &probador::TestArgs) -> CliResult<()> {
     if results.all_passed() {
         Ok(())
     } else {
-        Err(probador::CliError::test_execution(format!(
+        Err(crate::CliError::test_execution(format!(
             "{} test(s) failed",
             results.failed()
         )))
     }
 }
 
-fn run_record(_config: &CliConfig, args: &probador::RecordArgs) {
+fn run_record(_config: &CliConfig, args: &crate::RecordArgs) {
     println!("Recording test: {}", args.test);
     println!("Format: {:?}", args.format);
     println!("FPS: {}", args.fps);
@@ -174,28 +188,28 @@ fn run_record(_config: &CliConfig, args: &probador::RecordArgs) {
     println!("Recording configuration ready. Run test with --record flag to capture.");
 }
 
-fn run_report(config: &CliConfig, args: &probador::ReportArgs) {
-    probador::handlers::report::execute_report(config, args);
+fn run_report(config: &CliConfig, args: &crate::ReportArgs) {
+    crate::handlers::report::execute_report(config, args);
 }
 
-fn run_coverage(config: &CliConfig, args: &probador::CoverageArgs) -> CliResult<()> {
-    probador::handlers::coverage::execute_coverage(config, args)
+fn run_coverage(config: &CliConfig, args: &crate::CoverageArgs) -> CliResult<()> {
+    crate::handlers::coverage::execute_coverage(config, args)
 }
 
-fn run_init(config: &CliConfig, args: &probador::InitArgs) {
-    probador::handlers::init::execute_init(config, args);
+fn run_init(config: &CliConfig, args: &crate::InitArgs) {
+    crate::handlers::init::execute_init(config, args);
 }
 
-fn run_config(config: &CliConfig, args: &probador::ConfigArgs) {
-    probador::handlers::config::execute_config(config, args);
+fn run_config(config: &CliConfig, args: &crate::ConfigArgs) {
+    crate::handlers::config::execute_config(config, args);
 }
 
 // =============================================================================
 // WASM Development Commands
 // =============================================================================
 
-fn run_serve(args: &probador::ServeArgs) -> CliResult<()> {
-    use probador::{DevServer, DevServerConfig, ModuleValidator, ServeSubcommand};
+fn run_serve(args: &crate::ServeArgs) -> CliResult<()> {
+    use crate::{DevServer, DevServerConfig, ModuleValidator, ServeSubcommand};
 
     // Handle subcommands
     if let Some(ref subcommand) = args.subcommand {
@@ -216,7 +230,7 @@ fn run_serve(args: &probador::ServeArgs) -> CliResult<()> {
         validator.print_results(&result);
 
         if !result.is_ok() {
-            return Err(probador::CliError::test_execution(format!(
+            return Err(crate::CliError::test_execution(format!(
                 "Module validation failed: {} error(s) found. Fix imports before serving.",
                 result.errors.len()
             )));
@@ -247,20 +261,19 @@ fn run_serve(args: &probador::ServeArgs) -> CliResult<()> {
     }
 
     // Run server (blocking)
-    let rt = tokio::runtime::Runtime::new().map_err(|e| {
-        probador::CliError::test_execution(format!("Failed to create runtime: {e}"))
-    })?;
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| crate::CliError::test_execution(format!("Failed to create runtime: {e}")))?;
 
     rt.block_on(async {
         server
             .run()
             .await
-            .map_err(|e| probador::CliError::test_execution(format!("Server error: {e}")))
+            .map_err(|e| crate::CliError::test_execution(format!("Server error: {e}")))
     })
 }
 
-fn run_serve_tree(args: &probador::TreeArgs, _default_dir: &std::path::Path) -> CliResult<()> {
-    use probador::{build_tree, render_tree, TreeConfig};
+fn run_serve_tree(args: &crate::TreeArgs, _default_dir: &std::path::Path) -> CliResult<()> {
+    use crate::{build_tree, render_tree, TreeConfig};
 
     let config = TreeConfig::default()
         .with_depth(args.depth)
@@ -269,7 +282,7 @@ fn run_serve_tree(args: &probador::TreeArgs, _default_dir: &std::path::Path) -> 
         .with_mime_types(args.mime_types);
 
     let tree = build_tree(&args.path, &config)
-        .map_err(|e| probador::CliError::test_execution(format!("Failed to build tree: {e}")))?;
+        .map_err(|e| crate::CliError::test_execution(format!("Failed to build tree: {e}")))?;
 
     let output = render_tree(&tree, &config);
     print!("{output}");
@@ -277,14 +290,14 @@ fn run_serve_tree(args: &probador::TreeArgs, _default_dir: &std::path::Path) -> 
     Ok(())
 }
 
-fn run_serve_viz(args: &probador::VizArgs, _default_dir: &std::path::Path) -> CliResult<()> {
-    use probador::{build_tree, render_tree, TreeConfig};
+fn run_serve_viz(args: &crate::VizArgs, _default_dir: &std::path::Path) -> CliResult<()> {
+    use crate::{build_tree, render_tree, TreeConfig};
 
     // VizArgs only has path and port - use defaults for other options
     let config = TreeConfig::default();
 
     let tree = build_tree(&args.path, &config)
-        .map_err(|e| probador::CliError::test_execution(format!("Failed to build tree: {e}")))?;
+        .map_err(|e| crate::CliError::test_execution(format!("Failed to build tree: {e}")))?;
 
     let output = render_tree(&tree, &config);
     print!("{output}");
@@ -292,8 +305,8 @@ fn run_serve_viz(args: &probador::VizArgs, _default_dir: &std::path::Path) -> Cl
     Ok(())
 }
 
-fn run_serve_score(args: &probador::ScoreArgs, _default_dir: &std::path::Path) -> CliResult<()> {
-    use probador::{score, ScoreCalculator, ScoreOutputFormat};
+fn run_serve_score(args: &crate::ScoreArgs, _default_dir: &std::path::Path) -> CliResult<()> {
+    use crate::{score, ScoreCalculator, ScoreOutputFormat};
 
     // If --live flag is set, run actual browser validation
     if args.live {
@@ -310,7 +323,7 @@ fn run_serve_score(args: &probador::ScoreArgs, _default_dir: &std::path::Path) -
         }
         ScoreOutputFormat::Json => {
             let output = score::render_score_json(&project_score).map_err(|e| {
-                probador::CliError::report_generation(format!("JSON serialization error: {e}"))
+                crate::CliError::report_generation(format!("JSON serialization error: {e}"))
             })?;
             println!("{output}");
         }
@@ -329,8 +342,8 @@ fn run_serve_score(args: &probador::ScoreArgs, _default_dir: &std::path::Path) -
 /// 2. MIME types: Are JS/WASM served with correct MIME types? (wrong MIME = FAIL)
 /// 3. Console errors: Any console.error or uncaught exceptions? (errors = FAIL)
 /// 4. WASM initialization: Does the WASM module load? (load failure = FAIL)
-fn run_live_browser_validation(args: &probador::ScoreArgs) -> CliResult<()> {
-    use probador::DevServerConfig;
+fn run_live_browser_validation(args: &crate::ScoreArgs) -> CliResult<()> {
+    use crate::DevServerConfig;
 
     eprintln!("\n══════════════════════════════════════════════════════════════");
     eprintln!("  LIVE BROWSER VALIDATION (Falsification Mode)");
@@ -341,7 +354,7 @@ fn run_live_browser_validation(args: &probador::ScoreArgs) -> CliResult<()> {
     if html_files.is_empty() {
         eprintln!("✗ FAIL: No HTML files found in {}", args.path.display());
         eprintln!("\n  Cannot validate an app without HTML entry points.");
-        return Err(probador::CliError::test_execution(
+        return Err(crate::CliError::test_execution(
             "No HTML files found - nothing to validate".to_string(),
         ));
     }
@@ -368,9 +381,8 @@ fn run_live_browser_validation(args: &probador::ScoreArgs) -> CliResult<()> {
         cross_origin_isolated: true,
     };
 
-    let rt = tokio::runtime::Runtime::new().map_err(|e| {
-        probador::CliError::test_execution(format!("Failed to create runtime: {e}"))
-    })?;
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| crate::CliError::test_execution(format!("Failed to create runtime: {e}")))?;
 
     let validation_errors = rt.block_on(async {
         run_browser_validation_async(&args.path, &html_files, port, config, &pages_with_wasm).await
@@ -383,7 +395,7 @@ fn run_live_browser_validation(args: &probador::ScoreArgs) -> CliResult<()> {
 fn validate_module_imports(
     path: &std::path::Path,
 ) -> CliResult<std::collections::HashSet<std::path::PathBuf>> {
-    use probador::ModuleValidator;
+    use crate::ModuleValidator;
 
     eprintln!("[1/4] Module Resolution Check");
     let validator = ModuleValidator::new(path);
@@ -391,7 +403,7 @@ fn validate_module_imports(
     let imports = validator.scan_imports();
     let pages_with_wasm: std::collections::HashSet<_> = imports
         .iter()
-        .filter(|imp| imp.import_type == probador::ImportType::Wasm)
+        .filter(|imp| imp.import_type == crate::ImportType::Wasm)
         .map(|imp| imp.source_file.clone())
         .collect();
 
@@ -409,7 +421,7 @@ fn validate_module_imports(
     let validation_result = validator.validate();
     if !validation_result.is_ok() {
         print_module_import_errors(&validation_result);
-        return Err(probador::CliError::test_execution(format!(
+        return Err(crate::CliError::test_execution(format!(
             "Module resolution failed: {} broken import(s)",
             validation_result.errors.len()
         )));
@@ -423,7 +435,7 @@ fn validate_module_imports(
 }
 
 /// Print detailed module import errors.
-fn print_module_import_errors(result: &probador::ModuleValidationResult) {
+fn print_module_import_errors(result: &crate::ModuleValidationResult) {
     eprintln!("  ✗ FAIL: {} broken import(s) found\n", result.errors.len());
     for error in &result.errors {
         eprintln!(
@@ -455,13 +467,11 @@ fn resolve_server_port(port: u16) -> CliResult<u16> {
         return Ok(port);
     }
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| {
-        probador::CliError::test_execution(format!("Failed to find available port: {e}"))
+        crate::CliError::test_execution(format!("Failed to find available port: {e}"))
     })?;
     listener
         .local_addr()
-        .map_err(|e| {
-            probador::CliError::test_execution(format!("Failed to get local address: {e}"))
-        })
+        .map_err(|e| crate::CliError::test_execution(format!("Failed to get local address: {e}")))
         .map(|addr| addr.port())
 }
 
@@ -484,7 +494,7 @@ fn report_browser_validation_results(errors: &[String]) -> CliResult<()> {
             eprintln!("  {}. {error}", i + 1);
         }
         eprintln!();
-        Err(probador::CliError::test_execution(format!(
+        Err(crate::CliError::test_execution(format!(
             "Live validation failed: {} issue(s) found",
             errors.len()
         )))
@@ -499,10 +509,10 @@ async fn run_browser_validation_async(
     serve_dir: &std::path::Path,
     html_files: &[std::path::PathBuf],
     port: u16,
-    config: probador::DevServerConfig,
+    config: crate::DevServerConfig,
     pages_with_wasm: &std::collections::HashSet<std::path::PathBuf>,
 ) -> CliResult<Vec<String>> {
-    use probador::DevServer;
+    use crate::DevServer;
     use std::time::Duration;
 
     let server = DevServer::new(config);
@@ -708,17 +718,16 @@ async fn check_page_wasm_init(
     errors
 }
 
-fn run_build(args: &probador::BuildArgs) -> CliResult<()> {
-    use probador::dev_server::run_wasm_pack_build;
+fn run_build(args: &crate::BuildArgs) -> CliResult<()> {
+    use crate::dev_server::run_wasm_pack_build;
 
     // Check if brick-based generation is requested
     if args.bricks.is_some() {
         return run_brick_generation(args);
     }
 
-    let rt = tokio::runtime::Runtime::new().map_err(|e| {
-        probador::CliError::test_execution(format!("Failed to create runtime: {e}"))
-    })?;
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| crate::CliError::test_execution(format!("Failed to create runtime: {e}")))?;
 
     rt.block_on(async {
         run_wasm_pack_build(
@@ -729,17 +738,17 @@ fn run_build(args: &probador::BuildArgs) -> CliResult<()> {
             args.profiling,
         )
         .await
-        .map_err(|e| probador::CliError::test_execution(e))
+        .map_err(crate::CliError::test_execution)
     })
 }
 
 /// Run brick-based code generation (PROBAR-SPEC-009-P7)
-fn run_brick_generation(args: &probador::BuildArgs) -> CliResult<()> {
-    use jugar_probar::brick::Brick;
-    use probador::generate::{
+fn run_brick_generation(args: &crate::BuildArgs) -> CliResult<()> {
+    use crate::generate::{
         create_whisper_event_brick, create_whisper_worker_brick, generate_from_bricks,
         GenerateConfig,
     };
+    use jugar_probar::brick::Brick;
 
     println!("Zero-Artifact Code Generation (PROBAR-SPEC-009-P7)");
     println!("===================================================\n");
@@ -774,7 +783,7 @@ fn run_brick_generation(args: &probador::BuildArgs) -> CliResult<()> {
     println!("Generating artifacts...");
 
     let result = generate_from_bricks(Some(&worker), Some(&events), None, &config)
-        .map_err(|e| probador::CliError::test_execution(e))?;
+        .map_err(crate::CliError::test_execution)?;
 
     println!("\nGenerated files:");
     for file in &result.files_written {
@@ -794,9 +803,7 @@ fn run_brick_generation(args: &probador::BuildArgs) -> CliResult<()> {
             for (assertion, reason) in &verification.failed {
                 println!("    - {assertion:?}: {reason}");
             }
-            return Err(probador::CliError::test_execution(
-                "Brick verification failed",
-            ));
+            return Err(crate::CliError::test_execution("Brick verification failed"));
         }
     }
 
@@ -806,14 +813,13 @@ fn run_brick_generation(args: &probador::BuildArgs) -> CliResult<()> {
     Ok(())
 }
 
-fn run_watch(args: &probador::WatchArgs) -> CliResult<()> {
-    use probador::{dev_server::run_wasm_pack_build, DevServer, DevServerConfig, FileWatcher};
+fn run_watch(args: &crate::WatchArgs) -> CliResult<()> {
+    use crate::{dev_server::run_wasm_pack_build, DevServer, DevServerConfig, FileWatcher};
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
-    let rt = tokio::runtime::Runtime::new().map_err(|e| {
-        probador::CliError::test_execution(format!("Failed to create runtime: {e}"))
-    })?;
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| crate::CliError::test_execution(format!("Failed to create runtime: {e}")))?;
 
     let path = args.path.clone();
     let target = args.target.as_str().to_string();
@@ -824,7 +830,7 @@ fn run_watch(args: &probador::WatchArgs) -> CliResult<()> {
     rt.block_on(async {
         run_wasm_pack_build(&path, &target, release, None, false)
             .await
-            .map_err(|e| probador::CliError::test_execution(e))
+            .map_err(crate::CliError::test_execution)
     })?;
 
     // Start server if requested
@@ -887,7 +893,7 @@ fn run_watch(args: &probador::WatchArgs) -> CliResult<()> {
                     );
 
                     if let Some(ref tx) = reload_tx {
-                        let _ = tx.send(probador::dev_server::HotReloadMessage::FileChanged {
+                        let _ = tx.send(crate::dev_server::HotReloadMessage::FileChanged {
                             path: changed_file.clone(),
                         });
                     }
@@ -901,21 +907,19 @@ fn run_watch(args: &probador::WatchArgs) -> CliResult<()> {
                             let duration_ms = build_start.elapsed().as_millis() as u64;
                             println!("Build successful!");
                             if let Some(ref tx) = reload_tx {
-                                let _ = tx.send(
-                                    probador::dev_server::HotReloadMessage::RebuildComplete {
+                                let _ =
+                                    tx.send(crate::dev_server::HotReloadMessage::RebuildComplete {
                                         duration_ms,
-                                    },
-                                );
+                                    });
                             }
                         }
                         Err(e) => {
                             eprintln!("Build failed: {e}");
                             if let Some(ref tx) = reload_tx {
-                                let _ = tx.send(
-                                    probador::dev_server::HotReloadMessage::RebuildFailed {
+                                let _ =
+                                    tx.send(crate::dev_server::HotReloadMessage::RebuildFailed {
                                         error: e,
-                                    },
-                                );
+                                    });
                             }
                         }
                     }
@@ -925,13 +929,13 @@ fn run_watch(args: &probador::WatchArgs) -> CliResult<()> {
                 });
             })
             .await
-            .map_err(|e| probador::CliError::test_execution(format!("Watch error: {e}")))
+            .map_err(|e| crate::CliError::test_execution(format!("Watch error: {e}")))
     })
 }
 
-fn run_av_sync(config: &CliConfig, args: &probador::AvSyncArgs) -> CliResult<()> {
-    use probador::handlers::av_sync;
-    use probador::AvSyncSubcommand;
+fn run_av_sync(config: &CliConfig, args: &crate::AvSyncArgs) -> CliResult<()> {
+    use crate::handlers::av_sync;
+    use crate::AvSyncSubcommand;
 
     match &args.subcommand {
         AvSyncSubcommand::Check(check_args) => av_sync::execute_check(config, check_args),
@@ -939,34 +943,34 @@ fn run_av_sync(config: &CliConfig, args: &probador::AvSyncArgs) -> CliResult<()>
     }
 }
 
-fn run_audio(config: &CliConfig, args: &probador::AudioArgs) -> CliResult<()> {
-    use probador::handlers::audio;
-    use probador::AudioSubcommand;
+fn run_audio(config: &CliConfig, args: &crate::AudioArgs) -> CliResult<()> {
+    use crate::handlers::audio;
+    use crate::AudioSubcommand;
 
     match &args.subcommand {
         AudioSubcommand::Check(check_args) => audio::execute_check(config, check_args),
     }
 }
 
-fn run_video(config: &CliConfig, args: &probador::VideoArgs) -> CliResult<()> {
-    use probador::handlers::video;
-    use probador::VideoSubcommand;
+fn run_video(config: &CliConfig, args: &crate::VideoArgs) -> CliResult<()> {
+    use crate::handlers::video;
+    use crate::VideoSubcommand;
 
     match &args.subcommand {
         VideoSubcommand::Check(check_args) => video::execute_check(config, check_args),
     }
 }
 
-fn run_animation(config: &CliConfig, args: &probador::AnimationArgs) -> CliResult<()> {
-    use probador::handlers::animation;
-    use probador::AnimationSubcommand;
+fn run_animation(config: &CliConfig, args: &crate::AnimationArgs) -> CliResult<()> {
+    use crate::handlers::animation;
+    use crate::AnimationSubcommand;
 
     match &args.subcommand {
         AnimationSubcommand::Check(check_args) => animation::execute_check(config, check_args),
     }
 }
 
-fn run_playbook(config: &CliConfig, args: &probador::PlaybookArgs) -> CliResult<()> {
+fn run_playbook(config: &CliConfig, args: &crate::PlaybookArgs) -> CliResult<()> {
     if config.verbosity != Verbosity::Quiet {
         println!("Running playbook(s)...");
     }
@@ -985,7 +989,7 @@ fn run_playbook(config: &CliConfig, args: &probador::PlaybookArgs) -> CliResult<
     if all_passed {
         Ok(())
     } else {
-        Err(probador::CliError::test_execution(
+        Err(crate::CliError::test_execution(
             "One or more playbooks failed validation".to_string(),
         ))
     }
@@ -995,7 +999,7 @@ fn run_playbook(config: &CliConfig, args: &probador::PlaybookArgs) -> CliResult<
 /// Returns true if validation passed.
 fn process_single_playbook(
     config: &CliConfig,
-    args: &probador::PlaybookArgs,
+    args: &crate::PlaybookArgs,
     file: &std::path::Path,
 ) -> CliResult<bool> {
     use jugar_probar::playbook::StateMachineValidator;
@@ -1024,7 +1028,7 @@ fn process_single_playbook(
     format_playbook_output(args, file, &playbook, &validation_result);
 
     if args.fail_fast && !validation_result.is_valid {
-        return Err(probador::CliError::test_execution(
+        return Err(crate::CliError::test_execution(
             "Playbook validation failed (--fail-fast)".to_string(),
         ));
     }
@@ -1036,16 +1040,12 @@ fn load_playbook(file: &std::path::Path) -> CliResult<jugar_probar::playbook::Pl
     use jugar_probar::playbook::Playbook;
 
     let yaml_content = std::fs::read_to_string(file).map_err(|e| {
-        probador::CliError::test_execution(format!(
-            "Failed to read playbook {}: {e}",
-            file.display(),
-        ))
+        crate::CliError::test_execution(format!("Failed to read playbook {}: {e}", file.display(),))
     })?;
     Playbook::from_yaml(&yaml_content).map_err(|e| {
-        probador::CliError::test_execution(format!(
-            "Failed to parse playbook {}: {e}",
-            file.display(),
-        ))
+        crate::CliError::test_execution(
+            format!("Failed to parse playbook {}: {e}", file.display(),),
+        )
     })
 }
 
@@ -1068,7 +1068,7 @@ fn print_playbook_summary(
 
 fn handle_playbook_export(
     config: &CliConfig,
-    args: &probador::PlaybookArgs,
+    args: &crate::PlaybookArgs,
     playbook: &jugar_probar::playbook::Playbook,
 ) -> CliResult<()> {
     use jugar_probar::playbook::{to_dot, to_svg};
@@ -1078,13 +1078,13 @@ fn handle_playbook_export(
     };
 
     let diagram = match format {
-        probador::DiagramFormat::Dot => to_dot(playbook),
-        probador::DiagramFormat::Svg => to_svg(playbook),
+        crate::DiagramFormat::Dot => to_dot(playbook),
+        crate::DiagramFormat::Svg => to_svg(playbook),
     };
 
     if let Some(ref output_path) = args.export_output {
         std::fs::write(output_path, &diagram).map_err(|e| {
-            probador::CliError::report_generation(format!("Failed to write diagram: {e}"))
+            crate::CliError::report_generation(format!("Failed to write diagram: {e}"))
         })?;
         if config.verbosity != Verbosity::Quiet {
             println!("  Diagram exported to: {}", output_path.display());
@@ -1097,7 +1097,7 @@ fn handle_playbook_export(
 
 fn handle_playbook_mutate(
     config: &CliConfig,
-    args: &probador::PlaybookArgs,
+    args: &crate::PlaybookArgs,
     playbook: &jugar_probar::playbook::Playbook,
 ) {
     use jugar_probar::playbook::MutationGenerator;
@@ -1154,13 +1154,13 @@ fn parse_mutation_classes(
 }
 
 fn format_playbook_output(
-    args: &probador::PlaybookArgs,
+    args: &crate::PlaybookArgs,
     file: &std::path::Path,
     playbook: &jugar_probar::playbook::Playbook,
     validation: &jugar_probar::playbook::ValidationResult,
 ) {
     match args.format {
-        probador::PlaybookOutputFormat::Json => {
+        crate::PlaybookOutputFormat::Json => {
             let result = serde_json::json!({
                 "file": file.display().to_string(),
                 "machine_id": playbook.machine.id,
@@ -1174,10 +1174,10 @@ fn format_playbook_output(
                 serde_json::to_string_pretty(&result).unwrap_or_default()
             );
         }
-        probador::PlaybookOutputFormat::Junit => {
+        crate::PlaybookOutputFormat::Junit => {
             print_playbook_junit(file, playbook, validation);
         }
-        probador::PlaybookOutputFormat::Text => {} // Already printed in summary
+        crate::PlaybookOutputFormat::Text => {} // Already printed in summary
     }
 }
 
@@ -1215,15 +1215,13 @@ fn print_playbook_junit(
 // =============================================================================
 
 /// Run browser/WASM stress tests per PROBAR-SPEC-WASM-001 Section H
-fn run_stress(_config: &CliConfig, args: &probador::StressArgs) -> CliResult<()> {
-    use probador::{
-        render_stress_json, render_stress_report, StressConfig, StressMode, StressRunner,
-    };
+fn run_stress(_config: &CliConfig, args: &crate::StressArgs) -> CliResult<()> {
+    use crate::{render_stress_json, render_stress_report, StressConfig, StressMode, StressRunner};
 
     let mode_str = args.get_mode();
     let mode: StressMode = mode_str
         .parse()
-        .map_err(|e: String| probador::CliError::invalid_argument(e))?;
+        .map_err(|e: String| crate::CliError::invalid_argument(e))?;
 
     let config = match mode {
         StressMode::Atomics => StressConfig::atomics(args.duration, args.concurrency),
@@ -1248,7 +1246,7 @@ fn run_stress(_config: &CliConfig, args: &probador::StressArgs) -> CliResult<()>
     if result.passed {
         Ok(())
     } else {
-        Err(probador::CliError::test_execution(format!(
+        Err(crate::CliError::test_execution(format!(
             "Stress test {} failed: {}",
             mode, result.actual_value
         )))
@@ -1260,37 +1258,37 @@ fn run_stress(_config: &CliConfig, args: &probador::StressArgs) -> CliResult<()>
 // =============================================================================
 
 #[cfg(feature = "llm")]
-fn run_llm(args: &probador::LlmArgs) -> CliResult<()> {
+fn run_llm(args: &crate::LlmArgs) -> CliResult<()> {
     let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| probador::CliError::Generic(format!("Failed to create async runtime: {e}")))?;
+        .map_err(|e| crate::CliError::Generic(format!("Failed to create async runtime: {e}")))?;
 
     match &args.subcommand {
-        probador::LlmSubcommand::Test(test_args) => {
-            rt.block_on(probador::handlers::llm::execute_llm_test(test_args))
+        crate::LlmSubcommand::Test(test_args) => {
+            rt.block_on(crate::handlers::llm::execute_llm_test(test_args))
         }
-        probador::LlmSubcommand::Load(load_args) => {
-            rt.block_on(probador::handlers::llm::execute_llm_load(load_args))
+        crate::LlmSubcommand::Load(load_args) => {
+            rt.block_on(crate::handlers::llm::execute_llm_load(load_args))
         }
-        probador::LlmSubcommand::Bench(bench_args) => {
-            rt.block_on(probador::handlers::llm::execute_llm_bench(bench_args))
+        crate::LlmSubcommand::Bench(bench_args) => {
+            rt.block_on(crate::handlers::llm::execute_llm_bench(bench_args))
         }
-        probador::LlmSubcommand::Report(report_args) => {
-            probador::handlers::llm::execute_llm_report(report_args)
+        crate::LlmSubcommand::Report(report_args) => {
+            crate::handlers::llm::execute_llm_report(report_args)
         }
-        probador::LlmSubcommand::Experiment(exp_args) => {
-            probador::handlers::llm::execute_llm_experiment(exp_args)
+        crate::LlmSubcommand::Experiment(exp_args) => {
+            crate::handlers::llm::execute_llm_experiment(exp_args)
         }
-        probador::LlmSubcommand::DataAudit(audit_args) => {
-            probador::handlers::llm::execute_data_audit(audit_args)
+        crate::LlmSubcommand::DataAudit(audit_args) => {
+            crate::handlers::llm::execute_data_audit(audit_args)
         }
-        probador::LlmSubcommand::Sweep(sweep_args) => {
-            rt.block_on(probador::handlers::llm::execute_llm_sweep(sweep_args))
+        crate::LlmSubcommand::Sweep(sweep_args) => {
+            rt.block_on(crate::handlers::llm::execute_llm_sweep(sweep_args))
         }
-        probador::LlmSubcommand::GenDataset(gen_args) => {
-            probador::handlers::llm::execute_llm_gen_dataset(gen_args)
+        crate::LlmSubcommand::GenDataset(gen_args) => {
+            crate::handlers::llm::execute_llm_gen_dataset(gen_args)
         }
-        probador::LlmSubcommand::Score(score_args) => {
-            probador::handlers::llm::execute_llm_score(score_args)
+        crate::LlmSubcommand::Score(score_args) => {
+            crate::handlers::llm::execute_llm_score(score_args)
         }
     }
 }
@@ -1303,21 +1301,19 @@ fn run_llm(args: &probador::LlmArgs) -> CliResult<()> {
 ///
 /// Implements the 10-point compliance checklist from the Advanced Probador
 /// Testing Concepts specification.
-fn run_comply(config: &CliConfig, args: &probador::ComplyArgs) -> CliResult<()> {
+fn run_comply(config: &CliConfig, args: &crate::ComplyArgs) -> CliResult<()> {
     // Handle subcommands if present
     if let Some(ref subcommand) = args.subcommand {
         return match subcommand {
-            probador::ComplySubcommand::Check(check_args) => run_comply_check(config, check_args),
-            probador::ComplySubcommand::Migrate(migrate_args) => {
+            crate::ComplySubcommand::Check(check_args) => run_comply_check(config, check_args),
+            crate::ComplySubcommand::Migrate(migrate_args) => {
                 run_comply_migrate(config, migrate_args)
             }
-            probador::ComplySubcommand::Diff(diff_args) => run_comply_diff(config, diff_args),
-            probador::ComplySubcommand::Enforce(enforce_args) => {
+            crate::ComplySubcommand::Diff(diff_args) => run_comply_diff(config, diff_args),
+            crate::ComplySubcommand::Enforce(enforce_args) => {
                 run_comply_enforce(config, enforce_args)
             }
-            probador::ComplySubcommand::Report(report_args) => {
-                run_comply_report(config, report_args)
-            }
+            crate::ComplySubcommand::Report(report_args) => run_comply_report(config, report_args),
         };
     }
 
@@ -1334,11 +1330,11 @@ fn run_comply(config: &CliConfig, args: &probador::ComplyArgs) -> CliResult<()> 
 // =============================================================================
 // Comply Subcommand Handlers
 // NOTE: Compliance check functions (check_c001 through check_c010) and
-// ComplianceResult are now imported from probador::handlers::comply
+// ComplianceResult are now imported from crate::handlers::comply
 // =============================================================================
 
 /// Run comply check subcommand
-fn run_comply_check(config: &CliConfig, args: &probador::ComplyCheckArgs) -> CliResult<()> {
+fn run_comply_check(config: &CliConfig, args: &crate::ComplyCheckArgs) -> CliResult<()> {
     use jugar_probar::strict::{E2ETestChecklist, WasmStrictMode};
 
     if config.verbosity != Verbosity::Quiet {
@@ -1355,7 +1351,7 @@ fn run_comply_check(config: &CliConfig, args: &probador::ComplyCheckArgs) -> Cli
     let _checklist = E2ETestChecklist::new().with_strict_mode(strict_mode);
 
     // Build a ComplyArgs for compatibility
-    let compat_args = probador::ComplyArgs {
+    let compat_args = crate::ComplyArgs {
         subcommand: None,
         path: args.path.clone(),
         checks: args.checks.clone(),
@@ -1372,8 +1368,8 @@ fn run_comply_check(config: &CliConfig, args: &probador::ComplyCheckArgs) -> Cli
 }
 
 /// Internal check logic (shared between top-level and check subcommand)
-fn run_comply_checks_internal(config: &CliConfig, args: &probador::ComplyArgs) -> CliResult<()> {
-    type CheckFn = Box<dyn Fn(&std::path::Path, &probador::ComplyArgs) -> ComplianceResult>;
+fn run_comply_checks_internal(config: &CliConfig, args: &crate::ComplyArgs) -> CliResult<()> {
+    type CheckFn = Box<dyn Fn(&std::path::Path, &crate::ComplyArgs) -> ComplianceResult>;
 
     let checks_to_run = build_compliance_checks();
     let filtered_checks: Vec<(&str, &str, CheckFn)> =
@@ -1402,7 +1398,7 @@ fn run_comply_checks_internal(config: &CliConfig, args: &probador::ComplyArgs) -
 fn build_compliance_checks() -> Vec<(
     &'static str,
     &'static str,
-    Box<dyn Fn(&std::path::Path, &probador::ComplyArgs) -> ComplianceResult>,
+    Box<dyn Fn(&std::path::Path, &crate::ComplyArgs) -> ComplianceResult>,
 )> {
     vec![
         (
@@ -1477,10 +1473,10 @@ fn execute_compliance_checks(
     checks: &[(
         &str,
         &str,
-        Box<dyn Fn(&std::path::Path, &probador::ComplyArgs) -> ComplianceResult>,
+        Box<dyn Fn(&std::path::Path, &crate::ComplyArgs) -> ComplianceResult>,
     )],
     config: &CliConfig,
-    args: &probador::ComplyArgs,
+    args: &crate::ComplyArgs,
 ) -> (Vec<ComplianceResult>, bool) {
     let mut results = Vec::new();
     let mut all_passed = true;
@@ -1533,7 +1529,7 @@ fn print_check_result(
 fn output_compliance_results(
     config: &CliConfig,
     results: &[ComplianceResult],
-    format: &probador::ComplyOutputFormat,
+    format: &crate::ComplyOutputFormat,
     report_path: Option<&std::path::Path>,
     all_passed: bool,
 ) -> CliResult<()> {
@@ -1549,29 +1545,29 @@ fn output_compliance_results(
     if let Some(path) = report_path {
         let report = generate_comply_report(results, format);
         std::fs::write(path, &report).map_err(|e| {
-            probador::CliError::report_generation(format!("Failed to write report: {e}"))
+            crate::CliError::report_generation(format!("Failed to write report: {e}"))
         })?;
     }
 
     match format {
-        probador::ComplyOutputFormat::Json | probador::ComplyOutputFormat::Junit => {
+        crate::ComplyOutputFormat::Json | crate::ComplyOutputFormat::Junit => {
             let report = generate_comply_report(results, format);
             println!("{report}");
         }
-        probador::ComplyOutputFormat::Text => {}
+        crate::ComplyOutputFormat::Text => {}
     }
 
     if all_passed {
         Ok(())
     } else {
-        Err(probador::CliError::test_execution(format!(
+        Err(crate::CliError::test_execution(format!(
             "Compliance check failed: {passed_count}/{total_count} checks passed",
         )))
     }
 }
 
 /// Run comply migrate subcommand
-fn run_comply_migrate(config: &CliConfig, args: &probador::ComplyMigrateArgs) -> CliResult<()> {
+fn run_comply_migrate(config: &CliConfig, args: &crate::ComplyMigrateArgs) -> CliResult<()> {
     use std::process::Command;
 
     if config.verbosity != Verbosity::Quiet {
@@ -1589,7 +1585,7 @@ fn run_comply_migrate(config: &CliConfig, args: &probador::ComplyMigrateArgs) ->
 
         if let Ok(output) = status {
             if !output.stdout.is_empty() {
-                return Err(probador::CliError::config(
+                return Err(crate::CliError::config(
                     "Uncommitted changes detected. Use --force to override.".to_string(),
                 ));
             }
@@ -1632,7 +1628,7 @@ max_wasm_size = 5242880
             target_version
         );
         std::fs::write(&config_path, config_content)
-            .map_err(|e| probador::CliError::config(format!("Failed to create config: {e}")))?;
+            .map_err(|e| crate::CliError::config(format!("Failed to create config: {e}")))?;
         eprintln!("  Created: {}", config_path.display());
     }
 
@@ -1641,7 +1637,7 @@ max_wasm_size = 5242880
 }
 
 /// Run comply diff subcommand
-fn run_comply_diff(config: &CliConfig, args: &probador::ComplyDiffArgs) -> CliResult<()> {
+fn run_comply_diff(config: &CliConfig, args: &crate::ComplyDiffArgs) -> CliResult<()> {
     if config.verbosity != Verbosity::Quiet {
         eprintln!("\n══════════════════════════════════════════════════════════════");
         eprintln!("  PROBAR COMPLY DIFF - Version Changelog");
@@ -1714,7 +1710,7 @@ fn run_comply_diff(config: &CliConfig, args: &probador::ComplyDiffArgs) -> CliRe
 }
 
 /// Run comply enforce subcommand
-fn run_comply_enforce(config: &CliConfig, args: &probador::ComplyEnforceArgs) -> CliResult<()> {
+fn run_comply_enforce(config: &CliConfig, args: &crate::ComplyEnforceArgs) -> CliResult<()> {
     if config.verbosity != Verbosity::Quiet {
         eprintln!("\n══════════════════════════════════════════════════════════════");
         eprintln!("  PROBAR COMPLY ENFORCE - Git Hooks");
@@ -1724,7 +1720,7 @@ fn run_comply_enforce(config: &CliConfig, args: &probador::ComplyEnforceArgs) ->
     let hooks_dir = args.path.join(".git/hooks");
 
     if !hooks_dir.exists() {
-        return Err(probador::CliError::config(
+        return Err(crate::CliError::config(
             "Not a git repository (no .git/hooks directory)".to_string(),
         ));
     }
@@ -1735,7 +1731,7 @@ fn run_comply_enforce(config: &CliConfig, args: &probador::ComplyEnforceArgs) ->
         // Remove hooks
         if pre_commit_path.exists() {
             std::fs::remove_file(&pre_commit_path)
-                .map_err(|e| probador::CliError::config(format!("Failed to remove hook: {e}")))?;
+                .map_err(|e| crate::CliError::config(format!("Failed to remove hook: {e}")))?;
             eprintln!("Removed pre-commit hook");
         } else {
             eprintln!("No pre-commit hook found");
@@ -1791,18 +1787,18 @@ echo "Probar quality gates passed!"
 "##;
 
     std::fs::write(&pre_commit_path, hook_content)
-        .map_err(|e| probador::CliError::config(format!("Failed to write hook: {e}")))?;
+        .map_err(|e| crate::CliError::config(format!("Failed to write hook: {e}")))?;
 
     // Make executable
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(&pre_commit_path)
-            .map_err(|e| probador::CliError::config(format!("Failed to get perms: {e}")))?
+            .map_err(|e| crate::CliError::config(format!("Failed to get perms: {e}")))?
             .permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&pre_commit_path, perms)
-            .map_err(|e| probador::CliError::config(format!("Failed to set perms: {e}")))?;
+            .map_err(|e| crate::CliError::config(format!("Failed to set perms: {e}")))?;
     }
 
     eprintln!(
@@ -1818,7 +1814,7 @@ echo "Probar quality gates passed!"
 }
 
 /// Run comply report subcommand
-fn run_comply_report(config: &CliConfig, args: &probador::ComplyReportArgs) -> CliResult<()> {
+fn run_comply_report(config: &CliConfig, args: &crate::ComplyReportArgs) -> CliResult<()> {
     use std::fs;
     type CheckFn = fn(&std::path::Path) -> ComplianceResult;
 
@@ -1829,12 +1825,12 @@ fn run_comply_report(config: &CliConfig, args: &probador::ComplyReportArgs) -> C
     }
 
     // Run all checks to generate report
-    let check_args = probador::ComplyArgs {
+    let check_args = crate::ComplyArgs {
         subcommand: None,
         path: args.path.clone(),
         checks: None,
         fail_fast: false,
-        format: probador::ComplyOutputFormat::Text,
+        format: crate::ComplyOutputFormat::Text,
         max_wasm_size: 5_242_880,
         strict: false,
         report: None,
@@ -1875,9 +1871,9 @@ fn run_comply_report(config: &CliConfig, args: &probador::ComplyReportArgs) -> C
     let timestamp = chrono::Utc::now().to_rfc3339();
 
     let report = match args.format {
-        probador::ComplyReportFormat::Text => {
+        crate::ComplyReportFormat::Text => {
             format!(
-                r#"============================================================
+                r"============================================================
 Probador WASM Compliance Report
 ============================================================
 
@@ -1890,7 +1886,7 @@ Checks:
 Summary: {}/{} passed
 
 ============================================================
-"#,
+",
                 args.path.display(),
                 env!("CARGO_PKG_VERSION"),
                 timestamp,
@@ -1913,7 +1909,7 @@ Summary: {}/{} passed
                 total
             )
         }
-        probador::ComplyReportFormat::Json => serde_json::json!({
+        crate::ComplyReportFormat::Json => serde_json::json!({
             "project": args.path.display().to_string(),
             "version": env!("CARGO_PKG_VERSION"),
             "timestamp": timestamp,
@@ -1927,9 +1923,9 @@ Summary: {}/{} passed
             "summary": { "passed": passed, "total": total }
         })
         .to_string(),
-        probador::ComplyReportFormat::Markdown => {
+        crate::ComplyReportFormat::Markdown => {
             format!(
-                r#"# Probador WASM Compliance Report
+                r"# Probador WASM Compliance Report
 
 **Project**: {}
 **Version**: {}
@@ -1951,7 +1947,7 @@ Summary: {}/{} passed
 
 ---
 *Generated by probador {}*
-"#,
+",
                 args.path.display(),
                 env!("CARGO_PKG_VERSION"),
                 timestamp,
@@ -1974,9 +1970,9 @@ Summary: {}/{} passed
                 env!("CARGO_PKG_VERSION")
             )
         }
-        probador::ComplyReportFormat::Html => {
+        crate::ComplyReportFormat::Html => {
             format!(
-                r#"<!DOCTYPE html>
+                r"<!DOCTYPE html>
 <html>
 <head>
     <title>Probador Compliance Report</title>
@@ -2001,7 +1997,7 @@ Summary: {}/{} passed
         {}
     </table>
 </body>
-</html>"#,
+</html>",
                 args.path.display(),
                 env!("CARGO_PKG_VERSION"),
                 timestamp,
@@ -2031,7 +2027,7 @@ Summary: {}/{} passed
 
     if let Some(ref output_path) = args.output {
         fs::write(output_path, &report).map_err(|e| {
-            probador::CliError::report_generation(format!("Failed to write report: {e}"))
+            crate::CliError::report_generation(format!("Failed to write report: {e}"))
         })?;
         eprintln!("Report written to: {}", output_path.display());
     } else {
@@ -2045,10 +2041,14 @@ Summary: {}/{} passed
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
 mod tests {
     use super::*;
-    use probador::{
+    // `Cli::parse_from` needs the `Parser` trait in scope. It used to arrive
+    // via the `use clap::Parser;` that `main.rs` needed for `Cli::parse()`;
+    // this module no longer parses argv itself, so the trait is imported here.
+    use crate::{
         ConfigArgs, CoverageArgs, InitArgs, PaletteArg, RecordArgs, RecordFormat, ReportArgs,
         ReportFormat,
     };
+    use clap::Parser as _;
     use std::path::PathBuf;
 
     mod build_config_tests {
@@ -2273,7 +2273,7 @@ mod tests {
 
     mod run_tests_tests {
         use super::*;
-        use probador::TestArgs;
+        use crate::TestArgs;
 
         #[test]
         #[ignore = "Spawns cargo test --list subprocess - causes nested builds in CI"]

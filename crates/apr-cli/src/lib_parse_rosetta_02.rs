@@ -206,6 +206,7 @@
     fn test_extract_paths_probar() {
         use ProbarSubcommand;
         let cmd = Commands::Extended(ExtendedCommands::Probar {
+            color: probador::ColorArg::Auto,
             command: ProbarSubcommand::Tensor {
                 file: PathBuf::from("model.apr"),
                 output: PathBuf::from("./probar-export"),

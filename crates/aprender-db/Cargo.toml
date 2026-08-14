@@ -54,7 +54,6 @@ zstd = { version = "0.13", optional = true }
 
 # Server (HTTP API)
 axum = { version = "0.7", optional = true }
-clap = { version = "4.5", features = ["derive"], optional = true }
 serde_yaml_ng = { version = "0.10", optional = true }
 
 # Error handling
@@ -119,11 +118,6 @@ web-sys = { version = "0.3", features = [
 tonic = { version = "0.12", optional = true }
 prost = { version = "0.13", optional = true }
 
-[[bin]]
-name = "aprender-db"
-path = "src/main.rs"
-required-features = ["server"]
-
 [features]
 # Default: SIMD with tokio/rayon, parquet I/O, and server binary (native builds)
 default = ["simd", "tokio", "rayon", "parquet-io", "server"]
@@ -132,7 +126,9 @@ default = ["simd", "tokio", "rayon", "parquet-io", "server"]
 parquet-io = ["dep:parquet"]
 
 # Server binary (HTTP API + CLI)
-server = ["dep:axum", "dep:clap", "dep:serde_yaml_ng", "tokio", "parquet-io"]
+# `clap` is no longer part of this feature: argument parsing for
+# `apr db serve` lives in apr-cli, and the server itself takes a config path.
+server = ["dep:axum", "dep:serde_yaml_ng", "tokio", "parquet-io"]
 
 # SIMD-only backend (12 dependencies, -0.4 MB vs SQLite, 18s compile)
 simd = []

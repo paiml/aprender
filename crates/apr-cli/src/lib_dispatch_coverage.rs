@@ -334,6 +334,7 @@
     #[test]
     fn test_dispatch_analysis_probar_rejects_unknown_format() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
+            color: probador::ColorArg::Auto,
             command: ProbarSubcommand::Tensor {
                 file: PathBuf::from("/tmp/nonexistent_probar_model.apr"),
                 output: PathBuf::from("/tmp/nonexistent_probar_out"),
@@ -361,6 +362,7 @@
     fn test_dispatch_analysis_probar_accepts_known_formats() {
         for format in ["json", "png", "both", "all"] {
             let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
+            color: probador::ColorArg::Auto,
                 command: ProbarSubcommand::Tensor {
                     file: PathBuf::from("/tmp/nonexistent_probar_model.apr"),
                     output: PathBuf::from("/tmp/nonexistent_probar_out"),

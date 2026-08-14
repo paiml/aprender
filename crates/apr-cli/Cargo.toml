@@ -63,12 +63,6 @@ path = "src/lib.rs"
 name = "apr"
 path = "src/main.rs"
 
-# Task #91: dry-run scaffold for the SHIP-TWO-001 MODEL-2 corpus ingest.
-# Minimal, network-free. Does not depend on any apr-cli optional feature.
-[[bin]]
-name = "apr-corpus-ingest"
-path = "src/bin/apr-corpus-ingest.rs"
-
 [features]
 # crates.io install: minimal features (inspect, validate, lint, etc.)
 # Full features enabled locally via workspace Cargo.toml default-members
@@ -207,6 +201,22 @@ trueno-zram-core = { workspace = true, optional = true }
 
 # Model registry and caching (Ollama-like model management)
 pacha = { workspace = true }
+
+# ── Re-homed standalone binaries (APR-MONO: one installed binary, `apr`) ──
+# Each of these crates used to ship its own `[[bin]]`; the binaries are gone and
+# their clap definitions live in the crate's lib, embedded here verbatim with
+# `#[command(subcommand)]` / `#[command(flatten)]` so there is exactly one
+# definition of each argument surface (defect class #2418).
+#   aprender-cbtop     -> `apr compute`     (was `cbtop`)
+#   aprender-cgp       -> `apr perf`        (was `cgp`)
+#   aprender-db        -> `apr db`          (was `trueno-db`)
+#   aprender-ptx-debug -> `apr ptx-debug`   (was `trueno-ptx-debug`)
+#   aprender-test-cli  -> `apr probar`      (was `probador`)
+cbtop = { workspace = true }
+cgp = { workspace = true }
+trueno-db = { workspace = true }
+trueno-ptx-debug = { workspace = true }
+probador = { workspace = true }
 
 # PTX analysis and bug detection (PtxAnalyzer + PtxBugAnalyzer).
 # Points at the IN-TREE crate, which ships `[lib] name = "trueno_explain"` — the

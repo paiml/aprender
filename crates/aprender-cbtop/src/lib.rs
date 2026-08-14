@@ -60,6 +60,10 @@ pub mod baseline;
 pub mod brick;
 pub mod bricks;
 pub mod cache_analysis;
+
+/// Command surface for `apr compute` (was the standalone `cbtop` binary).
+pub mod cli;
+
 pub mod config;
 pub mod context_regression;
 pub mod continuous_batcher;

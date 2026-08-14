@@ -14,13 +14,16 @@ categories = ["development-tools::testing", "command-line-utilities", "wasm"]
 default = ["browser"]
 # Enable real browser control for live validation (requires chromium)
 browser = ["jugar-probar/browser"]
+# `apr probar llm` — LLM inference testing (correctness, load, bench, report).
+# This feature was REFERENCED by `#[cfg(feature = "llm")]` in three places
+# (handlers/mod.rs, and both arms of the Llm dispatch) but never DECLARED, so
+# `handlers::llm` never compiled and the command's only reachable behaviour was
+# an error telling the user to "Rebuild with --features llm" — a feature that
+# did not exist. Declaring it makes that message true.
+llm = ["jugar-probar/llm"]
 
 [lib]
 name = "probador"
-
-[[bin]]
-name = "aprender-test-cli"
-path = "src/main.rs"
 
 [dependencies]
 # Core library (was: jugar-probar) — dep key preserves Rust identifier
