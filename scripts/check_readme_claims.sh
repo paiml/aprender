@@ -30,8 +30,8 @@ measured_crate_count() {
   # "workspace crates" means. NOT `find crates/ -type d`.
   #
   # Those two numbers genuinely differ, and the directory count is the wrong
-  # one: 82 directories, 81 with a Cargo.toml, 78 workspace members (4 are
-  # `exclude`d from the workspace, 1 has no manifest). README.md:43 documents
+  # one: 81 directories, 80 with a Cargo.toml, 78 workspace members (3 are
+  # non-members, 1 has no manifest). README.md:43 documents
   # the correct method AND warns against the directory count in the same
   # sentence - this function was using exactly the method the README told it
   # not to, so it reported the README as drifted while the README was right.

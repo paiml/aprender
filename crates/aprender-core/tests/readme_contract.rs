@@ -81,18 +81,21 @@ fn test_readme_no_stale_install_refs() {
 /// PREVIOUSLY THIS GATE PROVED THE WRONG PROPOSITION. It counted directory
 /// entries under `crates/` (82) and asserted the README contained `**82**`.
 /// The README duly said "82 workspace crates" and the gate went green — while
-/// `cargo metadata --no-deps` reports **78** packages. Four `crates/` entries
-/// are `exclude`d in the root Cargo.toml (old workspace-root shells
-/// aprender-viz-ttop / aprender-present / aprender-test, plus the dev-only
-/// aprender-train-canary), and a fifth (aprender-contracts-staging) has no
-/// Cargo.toml at all. A directory is not a workspace crate.
+/// `cargo metadata --no-deps` reports **78** packages. Three `crates/` entries
+/// are not workspace members (old workspace-root shells aprender-viz-ttop /
+/// aprender-present, which are `exclude`d, plus the dev-only
+/// aprender-train-canary, which is simply unlisted), and a fourth
+/// (aprender-contracts-staging) has no Cargo.toml at all. A directory is not a
+/// workspace crate.
 ///
 /// The old comment justified the choice as "not `cargo metadata`, which returns
 /// MORE packages than directories" — the opposite of the truth.
 ///
 /// Hand-rolled counting cannot be made to agree with cargo. Four methods, four
-/// answers, measured 2026-07-27:
-///     ls crates/                    -> 82   (directories, incl. a non-crate)
+/// answers, re-measured 2026-08-14 after #2470 deleted a fourth shell
+/// (crates/aprender-test, the vendored upstream probar workspace root — it had
+/// no [package] at all, so it was never one of the 78):
+///     ls crates/                    -> 81   (directories, incl. a non-crate)
 ///     members + root                -> 84
 ///     members - exclude + root      -> 81
 ///     cargo metadata --no-deps      -> 78   <- the only authoritative one

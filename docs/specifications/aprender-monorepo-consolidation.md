@@ -1299,10 +1299,21 @@ Contract: `cgp-monorepo-consolidation-v1.yaml` FALSIFY-MONO-010.
 
 | # | Crate Name | Workspace Path | Old Name | Shim Version |
 |---|-----------|---------------|----------|-------------|
-| 49 | `aprender-test` | `crates/aprender-test/` | `probar` | probar 1.1 |
+| 49 | `aprender-test-lib` | `crates/aprender-test-lib/` | `probar` | probar 1.1 |
 | 50 | `aprender-test-derive` | `crates/aprender-test-derive/` | `probar-derive` | probar-derive 1.1 |
 | 51 | `aprender-test-cli` | `crates/aprender-test-cli/` | `probar-cli` | probar-cli 1.1 |
 | 52 | `aprender-test-js-gen` | `crates/aprender-test-js-gen/` | `probar-js-gen` | probar-js-gen 1.1 |
+| 53 | `aprender-test-showcase` | `crates/aprender-test-showcase/` | `showcase-calculator` | — |
+
+**Row 49 corrected in #2470.** This table used to name the library crate
+`aprender-test` at `crates/aprender-test/`. That was never true in the tree: the
+library landed as package **`aprender-test-lib`** (whose `[lib] name` is
+`jugar_probar`, not `aprender_test`), while `crates/aprender-test/` held the
+vendored upstream *workspace root* — a manifest with no `[package]`, declaring
+`probar = { version = "=1.0.3", path = "crates/probar" }` against a directory
+that never existed here. It was `exclude`d and unbuildable for the life of the
+monorepo, and was deleted in #2470; its documentation is archived at
+`docs/aprender-test/`.
 
 ### A.10 Contracts & Build Infrastructure (was provable-contracts)
 

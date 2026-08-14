@@ -97,15 +97,19 @@ members = [
     # Remaining excluded (workspace root shells with no src):
     # "crates/aprender-viz-ttop",
     # "crates/aprender-present",
-    # "crates/aprender-test",
 ]
 exclude = [
     "tools/ccpa-sft-export",
     "fuzz",
     # Old workspace root shells (no package, just held sub-crates):
+    # crates/aprender-test was a third one; it was DELETED in #2470. It was the
+    # vendored upstream `paiml/probar` workspace root, with no [package] section
+    # and a `probar = { path = "crates/probar" }` dep pointing at a directory that
+    # never existed here. All four of its members had already been relocated to
+    # crates/aprender-test-{lib,derive,cli,js-gen}. Its documentation survives at
+    # docs/aprender-test/; see that directory's README.md.
     "crates/aprender-viz-ttop",
     "crates/aprender-present",
-    "crates/aprender-test",
     # aprender-train-canary is intentionally NOT a member — see the exclusion
     # note above. It is a publish=false, dev-only GPU/burn benchmark whose
     # Cargo.toml pins `[patch.crates-io] trueno = { path = "/home/noah/src/trueno" }`

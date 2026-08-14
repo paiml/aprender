@@ -18,7 +18,7 @@ here disagrees with its command, the command wins.
 | Fact | Derive with | Sample (2026-08-13) |
 |------|-------------|---------------------|
 | Workspace crates | `cargo metadata --no-deps --format-version 1 \| python3 -c "import json,sys;print(len(json.load(sys.stdin)['packages']))"` | 78 — 77 under `crates/` plus the root facade |
-| Dirs under `crates/` | `ls -1d crates/*/ \| wc -l` | 82. **This is not the crate count**: 4 are `exclude`d in the root `Cargo.toml`, and `aprender-contracts-staging` has no manifest. A directory is not a crate |
+| Dirs under `crates/` | `ls -1d crates/*/ \| wc -l` | 81. **This is not the crate count**: 3 are non-members (`aprender-viz-ttop` and `aprender-present` are `exclude`d, `aprender-train-canary` is simply unlisted), and `aprender-contracts-staging` has no manifest. A directory is not a crate |
 | `apr` subcommands | `apr --help`; registry is `contracts/apr-cli-commands-v1.yaml` §`commands`, mirrored by `crates/apr-cli/tests/cli_commands.rs::registered_commands` | 103, in 10 categories |
 | Provable contracts | `find contracts -name '*.yaml' \| wc -l` | 1768 |
 | Workspace lib tests | the `Summary` line of CI's `workspace-test` job (see Build Commands for the exact nextest invocation) | **80,604 passed**, 130 skipped, across 69 binaries — CI run `31631488466`, `main` @ `d40756541`, 2026-08-12 |
