@@ -1474,6 +1474,7 @@ mod tests {
             vendor: None,
             nvidia_smi_path: None,
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         let result = analyzer.collect();
@@ -1491,6 +1492,7 @@ mod tests {
             vendor: Some(GpuVendor::Intel),
             nvidia_smi_path: None,
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         let result = analyzer.collect();
@@ -1508,6 +1510,7 @@ mod tests {
             vendor: Some(GpuVendor::Nvidia),
             nvidia_smi_path: Some("/usr/bin/nvidia-smi".to_string()),
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         assert!(analyzer.available());
@@ -1521,6 +1524,7 @@ mod tests {
             vendor: None,
             nvidia_smi_path: None,
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         assert!(!analyzer.available());
@@ -1535,6 +1539,7 @@ mod tests {
             vendor: Some(GpuVendor::Amd),
             nvidia_smi_path: None,
             rocm_smi_path: Some("/opt/rocm/bin/rocm-smi".to_string()),
+            last_collect: None,
         };
 
         assert!(analyzer.available());
@@ -1549,6 +1554,7 @@ mod tests {
             vendor: Some(GpuVendor::Amd),
             nvidia_smi_path: None,
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         assert!(analyzer.available());
@@ -1577,6 +1583,7 @@ mod tests {
             vendor: Some(GpuVendor::Apple),
             nvidia_smi_path: None,
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         assert!(analyzer.available());
@@ -1590,6 +1597,7 @@ mod tests {
             vendor: Some(GpuVendor::Apple),
             nvidia_smi_path: None,
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         let result = analyzer.collect();
@@ -1798,6 +1806,7 @@ mod tests {
             vendor: Some(GpuVendor::Nvidia),
             nvidia_smi_path: None,
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         let result = analyzer.query_nvidia();
@@ -1813,6 +1822,7 @@ mod tests {
             vendor: Some(GpuVendor::Amd),
             nvidia_smi_path: None,
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         // This may succeed or fail depending on system
@@ -1827,6 +1837,7 @@ mod tests {
             vendor: Some(GpuVendor::Amd),
             nvidia_smi_path: None,
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         // Without rocm_smi_path, query_amd_rocm_smi should error
@@ -1842,6 +1853,7 @@ mod tests {
             vendor: Some(GpuVendor::Amd),
             nvidia_smi_path: None,
             rocm_smi_path: None,
+            last_collect: None,
         };
 
         // May succeed or fail depending on system hardware
