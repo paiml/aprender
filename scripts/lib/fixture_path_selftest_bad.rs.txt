@@ -1,0 +1,3 @@
+let has = file_exists("/home/noah/src/realizar/src/quantize.rs");
+Command::new("cargo").current_dir("/home/noah/src/realizar");
+let m = Path::new("/Users/dev/models/x.gguf").exists();

@@ -642,6 +642,19 @@ jobs:
       # deleting a line.
       - name: Every deny.toml exemption must still be live
         run: bash scripts/check_deny_exemptions_live.sh
+      # A test gated on a path outside the workspace is green on every machine
+      # that lacks it, which is every machine but one. The monorepo merged 20
+      # sibling repos in-tree, so gates like
+      #   file_exists("/home/noah/src/realizar/src/quantize.rs")
+      # now probe a path that CANNOT exist again -- realizar is
+      # crates/aprender-serve. Five such gates remain and none of them reads the
+      # file it probes; the path only decides whether to skip. Ratcheted, because
+      # repointing them makes dormant tests run for the first time and belongs in
+      # its own change. Text-only check, no build.
+      - name: Tests must not gate on paths outside the workspace
+        run: bash scripts/check_test_fixture_paths.sh
+      - name: Fixture-path guard case table
+        run: bash scripts/check_test_fixture_paths.sh --self-test
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
