@@ -727,7 +727,14 @@ impl GGUFConfig {
 
         let intermediate_dim = Self::infer_intermediate_dim(model, hidden_dim);
 
-        let context_length = model.context_length().unwrap_or(0);
+        // A GGUF that omits the context-length key used to yield 0 here, and
+        // nothing downstream treats 0 as "unset": every use site is a bound
+        // check of the form `if prompt.len() > config.context_length`, so a 0
+        // refuses EVERY non-empty prompt. Validation could not catch it either
+        // -- validate_metadata_bounds only checked the upper bound. 2048 is the
+        // default the rest of this crate already uses (config_gguf.rs:74/126/151,
+        // runtime.rs:414/442).
+        let context_length = model.context_length().unwrap_or(DEFAULT_CONTEXT_LENGTH);
 
         // C-02 (Meyer DbC): rope_theta from GGUF metadata, or architecture-specific default.
         let rope_theta = model
@@ -829,36 +836,8 @@ impl ValidatedModelConfig {
     ///
     /// Returns `RealizarError::InvalidShape` if any structural invariant is violated.
     pub fn validate(config: GGUFConfig) -> Result<Self> {
-        if config.hidden_dim == 0 {
-            return Err(RealizarError::InvalidShape {
-                reason: "hidden_dim must be > 0".to_string(),
-            });
-        }
-        if config.num_layers == 0 {
-            return Err(RealizarError::InvalidShape {
-                reason: "num_layers must be > 0".to_string(),
-            });
-        }
-        if config.vocab_size == 0 {
-            return Err(RealizarError::InvalidShape {
-                reason: "vocab_size must be > 0".to_string(),
-            });
-        }
-        if config.num_heads == 0 {
-            return Err(RealizarError::InvalidShape {
-                reason: "num_heads must be > 0".to_string(),
-            });
-        }
-        if config.num_kv_heads == 0 {
-            return Err(RealizarError::InvalidShape {
-                reason: "num_kv_heads must be > 0".to_string(),
-            });
-        }
-        if config.intermediate_dim == 0 {
-            return Err(RealizarError::InvalidShape {
-                reason: "intermediate_dim must be > 0".to_string(),
-            });
-        }
+        check_dims_nonzero(&config)?;
+
         // GH-305: When head_dim is explicitly set (from GGUF metadata), hidden_dim may not
         // equal num_heads * head_dim (e.g., Qwen3-0.6B: hidden=1024, heads=16, head_dim=128).
         // Only enforce divisibility when head_dim is NOT explicitly overridden.
@@ -1127,6 +1106,10 @@ impl std::ops::Deref for ValidatedModelConfig {
 ///
 /// Extracted from `ValidatedModelConfig::validate()` for complexity compliance.
 /// Catches corrupted/impossible configs before they cause OOM or panics.
+/// Context length assumed when a GGUF omits the key. Matches the default the
+/// rest of this crate already uses (config_gguf.rs, runtime.rs).
+const DEFAULT_CONTEXT_LENGTH: usize = 2048;
+
 fn validate_metadata_bounds(config: &GGUFConfig) -> Result<()> {
     check_usize_max(config.hidden_dim, 65_536, "hidden_dim")?;
     check_usize_max(config.num_layers, 256, "num_layers")?;
@@ -1135,6 +1118,8 @@ fn validate_metadata_bounds(config: &GGUFConfig) -> Result<()> {
     check_usize_max(config.vocab_size, 1_000_000, "vocab_size")?;
     check_usize_max(config.intermediate_dim, 262_144, "intermediate_dim")?;
     check_usize_max(config.context_length, 2_097_152, "context_length")?;
+
+    check_context_length_usable(config.context_length)?;
 
     // rope_theta: must be >= 1.0 when set (0.0 means "not configured")
     if config.rope_theta > 0.0 && config.rope_theta < 1.0 {
@@ -1178,6 +1163,47 @@ fn check_usize_max(value: usize, max: usize, field: &str) -> Result<()> {
     if value > max {
         return Err(RealizarError::InvalidShape {
             reason: format!("{field} {value} exceeds max {max} (model-metadata-bounds-v1)"),
+        });
+    }
+    Ok(())
+}
+
+/// The six "must be > 0" dimension checks, table-driven.
+///
+/// They were six identical `if x == 0 { return Err(..) }` blocks inline in
+/// `validate`, which is what put that function at cognitive 28 against a
+/// threshold of 25 -- blocking any commit that touched this file, including ones
+/// that changed none of them. Messages are byte-identical to the originals.
+fn check_dims_nonzero(config: &GGUFConfig) -> Result<()> {
+    for (value, name) in [
+        (config.hidden_dim, "hidden_dim"),
+        (config.num_layers, "num_layers"),
+        (config.vocab_size, "vocab_size"),
+        (config.num_heads, "num_heads"),
+        (config.num_kv_heads, "num_kv_heads"),
+        (config.intermediate_dim, "intermediate_dim"),
+    ] {
+        if value == 0 {
+            return Err(RealizarError::InvalidShape {
+                reason: format!("{name} must be > 0"),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Lower bound on `context_length`, the mirror of the `check_usize_max` above.
+///
+/// Every consumer compares `prompt.len() > config.context_length`, so a zero does
+/// not mean "unbounded" or "unset" -- it refuses every non-empty prompt, at
+/// generate time, with nothing pointing back at the model metadata. Bounding only
+/// the upper side is how a GGUF missing the context-length key reached users.
+fn check_context_length_usable(value: usize) -> Result<()> {
+    if value == 0 {
+        return Err(RealizarError::InvalidShape {
+            reason: "context_length is 0: the model declares no usable context, so \
+                     every prompt would be rejected (model-metadata-bounds-v1)"
+                .to_string(),
         });
     }
     Ok(())
