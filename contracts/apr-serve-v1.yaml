@@ -57,6 +57,11 @@ equations:
     - Unknown paths return 404 (not 500)
     - Method mismatch returns 405
     - Routes are case-sensitive and exact-match
+    - Every route that generates from a prompt gives the model the tokenizer's encoding
+      of that prompt, and decodes the reply with the same tokenizer — a route that
+      cannot resolve a tokenizer fails with a non-2xx status naming why, and never
+      substitutes UTF-8 byte values for token ids
+    - Two routes on one server return the same token ids for the same string
     preconditions:
     - server is in Ready state
     postconditions:
@@ -170,6 +175,48 @@ falsification_tests:
   prediction: Two concurrent requests produce same results as sequential
   test: Run 10 identical requests concurrently, assert all outputs identical
   if_fails: KV-cache shared between concurrent requests
+- id: FALSIFY-SRV-005
+  name: test_batch_completions_multibyte_prompt_matches_tokenize_route
+  rule: A generating route gives the model the tokenizer's ids, not UTF-8 bytes
+  prediction: 'POST /v1/batch/completions with prompts ["世界"], on a server whose vocabulary
+    holds 世 at id 1 and 界 at id 2, returns a result whose leading prompt ids are exactly
+    [1, 2] — the same ids POST /tokenize returns for "世界" on that same server.'
+  test_harness: cargo test -p aprender-serve --lib test_batch_completions_multibyte_prompt_matches_tokenize_route
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX (aprender#2465 finding 3): the handler tokenized with p.bytes().map(|b|
+    b as u32), so "世界" reached the model as its six UTF-8 byte values [228, 184, 150,
+    231, 149, 140], naming six unrelated vocabulary entries, and the route still answered
+    200 OK with a plausible-looking completion computed from a sequence no client sent.'
+- id: FALSIFY-SRV-006
+  name: test_batch_completions_ascii_prompt_matches_tokenize_route
+  rule: The byte-value defect is not confined to multi-byte input
+  prediction: 'POST /v1/batch/completions with prompts ["Hello"], on a server whose vocabulary
+    holds "Hello" as the single id 3, returns leading prompt ids [3] — one token, matching
+    POST /tokenize.'
+  test_harness: cargo test -p aprender-serve --lib test_batch_completions_ascii_prompt_matches_tokenize_route
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX: five ids [72, 101, 108, 108, 111] — the ASCII byte values — so even
+    pure-ASCII prompts were answered from the wrong tokens.'
+- id: FALSIFY-SRV-007
+  name: test_batch_completions_text_is_decoded_by_the_tokenizer
+  rule: The reply text is the tokenizer's decoding of the returned ids
+  prediction: 'The text field of a /v1/batch/completions result for prompt "世界" begins
+    with "世界".'
+  test_harness: cargo test -p aprender-serve --lib test_batch_completions_text_is_decoded_by_the_tokenizer
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX: tokens.iter().map(|&t| t as u8 as char) read each id as a byte and
+    each byte as a codepoint, returning the Latin-1 mojibake "ä¸\u{96}ç\u{95}\u{8c}\0".'
+- id: FALSIFY-SRV-008
+  name: test_batch_completions_refuses_an_empty_prompt
+  rule: An empty prompt is refused as a client error, not reported as a server fault
+  prediction: 'POST /v1/batch/completions with prompts [""] returns 400 and a body naming
+    which prompt was empty ("Prompt 0").'
+  test_harness: cargo test -p aprender-serve --lib test_batch_completions_refuses_an_empty_prompt
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX: the empty byte sequence was handed to the model as a prompt and the
+    failure surfaced from the inference layer as 500 "Generation failed: Invalid shape:
+    Prompt cannot be empty" — a request fully determined by the client reported as a
+    server bug, inviting a retry of the identical request.'
 
 kani_harnesses:
 - id: KANI-SRV-001

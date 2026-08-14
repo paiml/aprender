@@ -287,6 +287,16 @@ jobs:
             "$IMAGE" \
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
+        # #2465: the four FALSIFY-AUTH targets were appended here because they
+        # were DARK — `falsify_auth_002` appeared nowhere in .github/, scripts/
+        # or Makefile, and neither did the contract loader
+        # `apr_serve_api_key_auth_contract` that is supposed to promote
+        # apr-serve-api-key-auth-v1 from DRAFT to ACTIVE. All 17 tests pass; they
+        # simply never ran. This is also the line that hides such targets: adding
+        # a `tests/*.rs` file does nothing until its name appears HERE, and only
+        # one PR at a time may edit this single physical line without hitting a
+        # merge-queue conflict.
+        #
         # perf/ci-nextest (rank 3 — integration collapse): INTENTIONALLY SKIPPED.
         # The investigation ranked collapsing these 8 `cargo test -p X --test Y`
         # invocations into ONE `cargo nextest run -E '...'` as rank 3 (low lever:
@@ -314,7 +324,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli'
+            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast'
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.

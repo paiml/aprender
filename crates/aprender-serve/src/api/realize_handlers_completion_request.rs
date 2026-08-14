@@ -259,6 +259,7 @@
             10,
             5,
             100, // max_tokens = 100, completion_tokens = 5 < 100 => "stop"
+            None,
         );
         assert_eq!(resp.choices[0].finish_reason, "stop");
         assert_eq!(resp.usage.prompt_tokens, 10);
@@ -278,6 +279,7 @@
             5,
             100,
             100, // max_tokens = 100, completion_tokens = 100 >= 100 => "length"
+            None,
         );
         assert_eq!(resp.choices[0].finish_reason, "length");
     }
@@ -291,13 +293,14 @@
             1,
             200,
             100, // completion_tokens = 200 > max_tokens = 100 => "length"
+            None,
         );
         assert_eq!(resp.choices[0].finish_reason, "length");
     }
 
     #[test]
     fn test_completion_resp_zero_tokens() {
-        let resp = completion_resp("cmpl", "m".to_string(), String::new(), 0, 0, 100);
+        let resp = completion_resp("cmpl", "m".to_string(), String::new(), 0, 0, 100, None);
         assert_eq!(resp.choices[0].finish_reason, "stop");
         assert_eq!(resp.usage.total_tokens, 0);
         assert!(resp.choices[0].text.is_empty());
@@ -305,10 +308,39 @@
 
     #[test]
     fn test_completion_resp_single_choice() {
-        let resp = completion_resp("prefix", "model".to_string(), "text".to_string(), 1, 1, 10);
+        let resp = completion_resp(
+            "prefix",
+            "model".to_string(),
+            "text".to_string(),
+            1,
+            1,
+            10,
+            None,
+        );
         assert_eq!(resp.choices.len(), 1);
         assert_eq!(resp.choices[0].index, 0);
         assert!(resp.choices[0].logprobs.is_none());
+    }
+
+    /// #2465(2): `completion_resp` is where stop sequences are applied for every
+    /// `/v1/completions` backend. A stop that matches must truncate at its EARLIEST
+    /// position AND report `finish_reason: "stop"` even at the token budget — the
+    /// pre-fix builder ignored `stops` and answered `"length"` with the stop string
+    /// still in the text.
+    #[test]
+    fn test_completion_resp_applies_stops_and_stop_beats_length() {
+        let stops = vec!["-c".to_string(), "-b".to_string()];
+        let resp = completion_resp(
+            "cmpl",
+            "m".to_string(),
+            "a0-b0-c0".to_string(),
+            1,
+            100,
+            100, // budget exhausted: without a stop match this would be "length"
+            Some(&stops),
+        );
+        assert_eq!(resp.choices[0].text, "a0");
+        assert_eq!(resp.choices[0].finish_reason, "stop");
     }
 
     // =========================================================================

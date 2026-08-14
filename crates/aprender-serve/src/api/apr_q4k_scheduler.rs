@@ -3,6 +3,33 @@
 //! Spawns a dedicated thread that owns the CudaExecutor and model weights.
 //! Requests are sent via channel; responses returned via oneshot.
 //! This sidesteps CudaExecutor being `!Send` (raw CUDA pointers).
+//!
+//! # Cancellation (aprender#2465(1) — aprender#2376(3) on the path the fix missed)
+//!
+//! This backend serves `POST /v1/chat/completions`, `POST /v1/completions`,
+//! `POST /generate` and — because the Ollama handlers delegate to the OpenAI chat
+//! handler — `/api/chat` and `/api/generate`. Every one of those reached
+//! [`generate_q4k`] with **no cancellation signal at all**: [`AprQ4kRequest`] had no
+//! `cancel` field, so the decode loop's only exit was EOS and an abandoned request
+//! burned the GPU to `max_tokens` for nobody.
+//!
+//! Neither of the two mechanisms documented in
+//! `crates/aprender-serve/src/api/cancel_scope.rs` covered it on its own:
+//!
+//! - the handler's response future being dropped cannot reach a loop running on
+//!   *another thread* — moving work off-task is not the same as stopping it; and
+//! - the send-failure mechanism that stops streaming loops does not apply either,
+//!   because this scheduler accumulates `output_tokens` and sends **one**
+//!   [`AprQ4kResponse`] at the end. There is no per-token send left to fail.
+//!
+//! So the request carries the token and [`q4k_decode`] polls it once per decode
+//! step, exactly like `layers/model_model.rs::generate` and
+//! `gguf/inference/generate_quantized.rs`.
+//!
+//! Contract: `contracts/apr-serve-cancellation-v1.yaml`
+//! (FALSIFY-SERVE-CANCEL-009/010/011).
+
+use crate::generate::CancelToken;
 
 /// Request to generate tokens from a prompt.
 #[cfg(feature = "cuda")]
@@ -16,6 +43,12 @@ pub struct AprQ4kRequest {
     /// EOS token IDs — generation stops when any of these are produced.
     /// ALB-109: Qwen3 uses 151643 (<|endoftext|>), not 0 or 2.
     pub eos_ids: Vec<u32>,
+    /// aprender#2465(1): the requesting HTTP handler's cancellation token.
+    ///
+    /// Required rather than `Option`, so a new call site cannot silently submit
+    /// work that runs on after its client hangs up. Pass the request's
+    /// `Extension<CancelToken>`; [`CancelToken::never`] means "run to completion".
+    pub cancel: CancelToken,
     /// Channel to send the response back.
     pub response_tx: tokio::sync::oneshot::Sender<Result<AprQ4kResponse, String>>,
 }
@@ -209,6 +242,7 @@ pub fn spawn_apr_q4k_inference_thread(
                     req.max_tokens,
                     req.temperature,
                     &req.eos_ids,
+                    &req.cancel,
                 );
                 let _ = req.response_tx.send(result);
             }
@@ -232,6 +266,7 @@ fn generate_q4k(
     max_tokens: usize,
     temperature: f32,
     eos_ids: &[u32],
+    cancel: &CancelToken,
 ) -> Result<AprQ4kResponse, String> {
     use crate::cli::inference::{argmax, sample_with_temperature};
     use crate::gpu::adapters::apr_q4k::forward_token_apr_q4k;
@@ -262,44 +297,43 @@ fn generate_q4k(
     }
 
     // Sample first token
-    let mut next_token = if temperature <= 0.01 {
+    let first_token = if temperature <= 0.01 {
         argmax(&last_logits)
     } else {
         sample_with_temperature(&last_logits, temperature, 40)
     };
 
-    let mut output_tokens = vec![next_token];
+    // Autoregressive decode. The loop itself lives in `q4k_decode` so that the
+    // loop which ships is the loop the falsifiers drive (aprender#2465(1)) —
+    // everything CUDA-specific stays here, inside the step closure.
+    let output_tokens = q4k_decode(
+        first_token,
+        prompt_ids.len(),
+        max_tokens,
+        eos_ids,
+        cancel,
+        |token, position, step| {
+            let logits = forward_token_apr_q4k(
+                executor,
+                config,
+                embedding_weight,
+                output_norm_weight,
+                layer_norm_weights,
+                layer_qkv_biases,
+                &mut kv_cache_k,
+                &mut kv_cache_v,
+                token,
+                position,
+            )
+            .map_err(|e| format!("Decode failed at step {step}: {e}"))?;
 
-    // Autoregressive decode
-    for step in 0..max_tokens.saturating_sub(1) {
-        // ALB-109: Configurable EOS — Qwen3 uses 151643, not 0/2
-        if eos_ids.contains(&next_token) {
-            break;
-        }
-
-        let position = prompt_ids.len() + step;
-        let logits = forward_token_apr_q4k(
-            executor,
-            config,
-            embedding_weight,
-            output_norm_weight,
-            layer_norm_weights,
-            layer_qkv_biases,
-            &mut kv_cache_k,
-            &mut kv_cache_v,
-            next_token,
-            position,
-        )
-        .map_err(|e| format!("Decode failed at step {step}: {e}"))?;
-
-        next_token = if temperature <= 0.01 {
-            argmax(&logits)
-        } else {
-            sample_with_temperature(&logits, temperature, 40)
-        };
-
-        output_tokens.push(next_token);
-    }
+            Ok(if temperature <= 0.01 {
+                argmax(&logits)
+            } else {
+                sample_with_temperature(&logits, temperature, 40)
+            })
+        },
+    )?;
 
     let gen_time = gen_start.elapsed();
     let tokens_generated = output_tokens.len();
@@ -316,3 +350,71 @@ fn generate_q4k(
         tokens_per_second,
     })
 }
+
+/// The Q4K scheduler's autoregressive decode loop.
+///
+/// `first_token` is the token sampled from the prefill logits; it is always part
+/// of the output, so an uncancelled run returns exactly `max_tokens` tokens
+/// (`first_token` plus `max_tokens - 1` decode steps) unless EOS or cancellation
+/// stops it earlier.
+///
+/// `step(token, position, step_idx)` performs one decode step and returns the next
+/// sampled token. In production it closes over the `CudaExecutor` and the uploaded
+/// Q4K weights; in the falsifiers it is a pure function. That is the whole point of
+/// the split: it is the same loop either way, so FALSIFY-SERVE-CANCEL-009/010 can
+/// assert **token counts** on the shipped control flow without a GPU. Nothing about
+/// the scheduler's thread/channel/oneshot architecture changes.
+///
+/// # Cancellation
+///
+/// `cancel` is polled once at the top of each decode step, **before** that step's
+/// forward pass — matching `layers/model_model.rs::generate` and
+/// `gguf/inference/generate_quantized.rs`. Polling at the bottom instead would cost
+/// one wasted forward pass per cancelled request, which FALSIFY-SERVE-CANCEL-010
+/// detects.
+///
+/// # Errors
+///
+/// Propagates whatever `step` returns, unchanged.
+pub(crate) fn q4k_decode<F>(
+    first_token: u32,
+    prompt_len: usize,
+    max_tokens: usize,
+    eos_ids: &[u32],
+    cancel: &CancelToken,
+    mut step: F,
+) -> Result<Vec<u32>, String>
+where
+    F: FnMut(u32, usize, usize) -> Result<u32, String>,
+{
+    let mut next_token = first_token;
+    let mut output_tokens = vec![next_token];
+
+    for step_idx in 0..max_tokens.saturating_sub(1) {
+        // aprender#2465(1)/#2376(3): CANCELLATION POLL. The HTTP client may be
+        // gone. This loop runs on the dedicated CUDA thread, so neither the
+        // handler future's drop nor a failed per-token send can reach it — the
+        // poll is the only thing that stops it burning the GPU to max_tokens.
+        // aprender#2465(1)/#2376(3): CANCELLATION POLL. The HTTP client may be
+        // gone. This loop runs on the dedicated CUDA thread, so neither the
+        // handler future's drop nor a failed per-token send can reach it — the
+        // poll is the only thing that stops it burning the GPU to max_tokens.
+        if cancel.is_cancelled() {
+            break;
+        }
+
+        // ALB-109: Configurable EOS — Qwen3 uses 151643, not 0/2
+        if eos_ids.contains(&next_token) {
+            break;
+        }
+
+        next_token = step(next_token, prompt_len + step_idx, step_idx)?;
+        output_tokens.push(next_token);
+    }
+
+    Ok(output_tokens)
+}
+
+#[cfg(test)]
+#[path = "tests/apr_q4k_cancel_2465.rs"]
+mod apr_q4k_cancel_2465;

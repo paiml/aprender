@@ -143,6 +143,32 @@ fn test_generate_conversion_tests_full_count() {
 
 // ── Mock binary tests ────────────────────────────────────────────
 
+
+/// Wait until a just-written script is actually spawnable.
+///
+/// `fs::write` closes our handle, but a CONCURRENT FORK elsewhere in the test
+/// binary can inherit that write fd and hold it until its own exec. Spawning in
+/// that window fails with ETXTBSY ("Text file busy") — observed on a loaded box
+/// as `Expected Corroborated, got: Err(Io(Os { code: 26, kind: ExecutableFileBusy }))`
+/// in `test_commutativity_execute_corroborated`. O_CLOEXEC closes the fd at the
+/// child's exec, not before, so the window is real and only opens under load.
+///
+/// Absorbing it HERE, in the fixture, keeps the retry out of production code: the
+/// code under test spawns exactly once, as it does in the field.
+#[cfg(unix)]
+fn wait_until_spawnable(path: &std::path::Path) {
+    const ETXTBSY: i32 = 26;
+    for _ in 0..100 {
+        match std::process::Command::new(path).arg("--\u{2060}probe").output() {
+            Err(e) if e.raw_os_error() == Some(ETXTBSY) => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            _ => return,
+        }
+    }
+    panic!("mock at {} still ETXTBSY after 100 attempts", path.display());
+}
+
 fn create_mock_apr(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
     let path = dir.join("mock_apr");
     std::fs::write(&path, format!("#!/bin/bash\n{script}")).unwrap();
@@ -153,6 +179,8 @@ fn create_mock_apr(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
     }
     // Flush filesystem metadata to avoid ETXTBSY in Docker overlayfs (CI containers)
     let _ = std::fs::File::open(&path).and_then(|f| f.sync_all());
+    #[cfg(unix)]
+    wait_until_spawnable(&path);
     path
 }
 

@@ -424,7 +424,17 @@ pub async fn realize_reload_handler(
 
 // ── openai_completions_handler backend dispatch ─────────────────────
 
-/// Build a CompletionResponse from generated tokens.
+/// Build a CompletionResponse from generated tokens, applying the request's stop
+/// sequences (`stops`) to the text and to `finish_reason`.
+///
+/// aprender#2465 finding 2: `stops` is a REQUIRED parameter, not an optional extra.
+/// Every `/v1/completions` backend that answers with this builder used to decide
+/// `finish_reason` here and apply stop sequences (or forget to) somewhere else —
+/// `registry_completions`, the CPU dense backend that answers `apr serve` for
+/// .apr/.safetensors models, forgot entirely, so `"stop"` was accepted by the API
+/// and had no effect at all. Threading the stops through the ONE builder every
+/// backend already calls makes forgetting them a compile error rather than a
+/// silently ignored field.
 fn completion_resp(
     id_prefix: &str,
     model: String,
@@ -432,12 +442,10 @@ fn completion_resp(
     prompt_tokens: usize,
     completion_tokens: usize,
     max_tokens: usize,
+    stops: Option<&[String]>,
 ) -> CompletionResponse {
-    let finish_reason = if completion_tokens >= max_tokens {
-        "length"
-    } else {
-        "stop"
-    };
+    let (text, finish_reason) = apply_stop_sequences(text, stops, completion_tokens, max_tokens);
+    let finish_reason = finish_reason.as_str();
     CompletionResponse {
         id: format!("{id_prefix}-{}", epoch_millis()),
         object: "text_completion".to_string(),
@@ -458,7 +466,12 @@ fn completion_resp(
 }
 
 /// Try the batch completion path (PARITY-054). Returns None if batch not available or failed.
+///
+/// aprender#2465 finding 2: takes `stops` because this path ALSO answers
+/// `/v1/completions` — it returned the batch scheduler's text verbatim, stop string
+/// and all.
 #[cfg(feature = "gpu")]
+#[allow(clippy::too_many_arguments)]
 async fn try_batch_completion(
     state: &AppState,
     tokenizer: &crate::tokenizer::BPETokenizer,
@@ -467,6 +480,7 @@ async fn try_batch_completion(
     max_tokens: usize,
     temperature: f32,
     start: std::time::Instant,
+    stops: Option<&[String]>,
 ) -> Result<Option<CompletionResponse>, RErr> {
     if !state.batch_enabled() {
         return Ok(None);
@@ -506,6 +520,7 @@ async fn try_batch_completion(
         prompt_tokens,
         completion_tokens,
         max_tokens,
+        stops,
     )))
 }
 
@@ -532,6 +547,36 @@ pub(crate) fn truncate_at_stop(text: String, stops: Option<&[String]>) -> String
         Some(pos) => text[..pos].to_string(),
         None => text,
     }
+}
+
+/// aprender#2465 finding 2: the WHOLE of OpenAI stop semantics, in one place —
+/// truncate at the earliest stop position and report the matching `finish_reason`.
+///
+/// Returns `(text, finish_reason)`. A matched stop string wins over the token
+/// budget (`"stop"` even when `completion_tokens >= max_tokens`); `"length"` is
+/// only for "ran to the budget with no stop match". Both halves are delegated —
+/// [`truncate_at_stop`] and [`FinishReason::from_generation`] — so `/v1/completions`
+/// and `/v1/chat/completions` cannot drift: `openai_handlers::finalize_chat_text`
+/// is this function, and so is [`completion_resp`].
+///
+/// The defect this exists to prevent is not a wrong implementation of stops — it is
+/// a backend that never calls one. `/v1/completions` on the dense CPU backend
+/// accepted `"stop"` and generated straight past it, returning the stop string
+/// inside the completion with `finish_reason: "length"`, because applying stops was
+/// a separate line each backend had to remember.
+pub(crate) fn apply_stop_sequences(
+    text: String,
+    stops: Option<&[String]>,
+    completion_tokens: usize,
+    max_tokens: usize,
+) -> (String, FinishReason) {
+    let orig_len = text.len();
+    let text = truncate_at_stop(text, stops);
+    let stopped = text.len() < orig_len;
+    (
+        text,
+        FinishReason::from_generation(stopped, completion_tokens, max_tokens),
+    )
 }
 
 /// Build the dense-`Model` [`GenerationConfig`] for an OpenAI request.
@@ -630,6 +675,7 @@ async fn try_cached_completions(
         max_tokens,
         temperature,
         start,
+        request.stop.as_deref(),
     )
     .await?
     {
@@ -663,12 +709,12 @@ async fn try_cached_completions(
     let text = tokenizer
         .decode(&token_ids)
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    // PMAT-754: apply OpenAI stop sequences (this backend previously ignored them).
-    let text = truncate_at_stop(text, request.stop.as_deref());
     state
         .metrics
         .record_success(completion_tokens, start.elapsed());
 
+    // PMAT-754 / #2465(2): stops are applied by `completion_resp`, which also gets
+    // `finish_reason` right when a stop matched at the token budget.
     Ok(Some(completion_resp(
         "cmpl-cached",
         "cached-q4k".to_string(),
@@ -676,6 +722,7 @@ async fn try_cached_completions(
         prompt_tokens,
         completion_tokens,
         max_tokens,
+        request.stop.as_deref(),
     )))
 }
 
@@ -731,12 +778,11 @@ fn try_quantized_completions(
     let text = tokenizer
         .decode(&token_ids)
         .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    // PMAT-754: apply OpenAI stop sequences (this backend previously ignored them).
-    let text = truncate_at_stop(text, request.stop.as_deref());
     state
         .metrics
         .record_success(completion_tokens, start.elapsed());
 
+    // PMAT-754 / #2465(2): stops are applied by `completion_resp`.
     Ok(Some(completion_resp(
         "cmpl-q4k",
         request.model.clone(),
@@ -744,6 +790,7 @@ fn try_quantized_completions(
         prompt_tokens,
         completion_tokens,
         max_tokens,
+        request.stop.as_deref(),
     )))
 }
 

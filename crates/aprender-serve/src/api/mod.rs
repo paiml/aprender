@@ -55,7 +55,12 @@ pub(crate) use cancel_scope::cancel_on_disconnect;
 pub use cancel_scope::request_cancel_token;
 
 // PMAT-802: Extracted handlers
-#[cfg(feature = "cuda")]
+//
+// aprender#2465(1): NOT `#[cfg(feature = "cuda")]` on the module. Every
+// CUDA-dependent item inside is individually gated; the decode loop
+// (`q4k_decode`) and its cancellation falsifiers are not, so they compile and
+// run under the default feature set. Gating the whole module put the only
+// cancellation-free decode loop in the crate outside every CI test job.
 pub mod apr_q4k_scheduler;
 #[cfg(feature = "cuda")]
 pub mod cuda_batch_scheduler;
