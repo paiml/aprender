@@ -43,17 +43,30 @@ proof_obligations:
       streamed event's data is parseable JSON, never the literal "data: {...}".
   - type: invariant
     property: >
-      STOP-APPLIED (DISCHARGED for NON-STREAMING — PMAT-754/755/756): every NON-STREAMING
-      completion AND chat backend applies the request's stop sequences (post-decode
-      truncation at the EARLIEST stop position) via the shared truncate_at_stop() helper, so
-      the returned (non-streamed) text never contains a stop string. /v1/completions:
-      try_cached_completions, try_quantized_completions (PMAT-754), try_gpu_completions,
-      try_apr_q4k_completions (PMAT-755). /v1/chat/completions: build_chat_response runs
-      finalize_chat_text() across ALL 7 build_chat_response call sites
-      (gpu/quantized/cached/q4k/qwen3_moe/registry), AND the inline try_safetensors_cuda_backend
-      builder (which bypasses build_chat_response) also calls finalize_chat_text — together
-      with finish_reason="stop" when a stop string truncated (precedence over "length")
-      (PMAT-756).
+      STOP-APPLIED (DISCHARGED for NON-STREAMING — PMAT-754/755/756, REPAIRED #2465(2)):
+      every NON-STREAMING completion AND chat backend applies the request's stop sequences
+      (post-decode truncation at the EARLIEST stop position) via the shared truncate_at_stop()
+      helper, so the returned (non-streamed) text never contains a stop string.
+      This invariant read DISCHARGED while it was FALSE, and the reason is instructive: it
+      was written as an ENUMERATION of backends that each had to remember a separate
+      truncate_at_stop() line, and the enumeration was incomplete. registry_completions —
+      the CPU dense backend that answers /v1/completions for every .apr / .safetensors /
+      registry model, and the ONLY one reachable without a GPU feature — was never in the
+      list and never called the helper; nor was try_batch_completion, nor the inline
+      cuda_model fallback in completions_inner. #2465(2) replaced the enumeration with a
+      funnel: completion_resp() takes `stops` as a REQUIRED parameter and calls
+      apply_stop_sequences() (= truncate_at_stop + FinishReason::from_generation), so a
+      backend that forgets stops no longer compiles. /v1/completions: registry_completions,
+      try_batch_completion, try_cached_completions, try_quantized_completions (PMAT-754),
+      try_gpu_completions, try_apr_q4k_completions (PMAT-755), try_cuda_gguf_completions
+      (PMAT-761), and the inline cuda_model fallback. /v1/chat/completions:
+      build_chat_response runs finalize_chat_text() across ALL 7 build_chat_response call
+      sites (gpu/quantized/cached/q4k/qwen3_moe/registry), AND the inline
+      try_safetensors_cuda_backend builder (which bypasses build_chat_response) also calls
+      finalize_chat_text — which is now a one-line delegation to the SAME
+      apply_stop_sequences, so the two surfaces cannot drift by one being fixed and not the
+      other. finish_reason="stop" when a stop string truncated (precedence over "length")
+      (PMAT-756) is likewise computed in that one function.
       STREAMING (PRE-GENERATED paths DISCHARGED — PMAT-758/759): chat_completions_stream.rs
       (PMAT-758) AND pregenerated_sse_response (PMAT-759, the cuda/gpu/cached chat streaming
       backends + registry fallback) now apply stop via streaming_text_deltas(). STILL OPEN:
@@ -362,10 +375,16 @@ proof_obligations:
 falsification_tests:
   - id: FALSIFY-STOP-TRUNCATE-754
     name: pmat754_stop_truncation_tests
-    prediction: 'truncate_at_stop(text, stops) truncates at the EARLIEST stop position (not the first-listed): truncate_at_stop("hello world", ["world","hello"]) == ""; keeps text when no stop matches; ignores empty stop strings; unchanged when stops is None. try_cached_completions / try_quantized_completions apply it so their output never contains a stop string.'
+    prediction: 'truncate_at_stop(text, stops) truncates at the EARLIEST stop position (not the first-listed): truncate_at_stop("hello world", ["world","hello"]) == ""; keeps text when no stop matches; ignores empty stop strings; unchanged when stops is None. Since #2465(2) the completion backends reach it through apply_stop_sequences()/completion_resp() rather than each calling it themselves, so their output never contains a stop string.'
     test_harness: 'cargo test -p aprender-serve --lib pmat754_stop_truncation_tests'
     expected_output: "test result: ok"
     if_fails: 'A completion backend returns text containing the stop string (or runs to max_tokens past it), violating OpenAI stop semantics — the pre-PMAT-754 behavior in the cached/quantized backends.'
+  - id: FALSIFY-COMPLETION-STOP-2465
+    name: completions_stop_2465
+    prediction: 'Over the REAL router and a real (tiny, deterministic) dense model, POST /v1/completions {"prompt":"a1-b1-c1","max_tokens":4,"temperature":0} returns the full "a0-b0-c0a0-b0-c0a0-b0-c0a0-b0-c0" with finish_reason "length" (the CONTROL — every stop assertion is compared against it, so none can pass by generation being broken). The SAME request with stop:["-b"] returns exactly "a0" — cut at the EARLIEST stop position, never containing "-b" — with finish_reason "stop" (a matched stop beats the exhausted token budget). stop:["-c","-b"] cuts at the earlier "-b", not the first-LISTED "-c". An unmatched stop and an empty stop string both leave the completion whole. stream:true reassembles to the same stopped text, so no SSE delta leaks the stop string.'
+    test_harness: 'cargo test -p aprender-serve --lib completions_stop_2465'
+    expected_output: "test result: ok"
+    if_fails: 'The 0.63.0 behaviour: /v1/completions accepts a stop sequence and cannot end a completion. registry_completions (the CPU dense backend — the one reachable without any GPU feature) never read request.stop, so the response was byte-identical to the no-stop control, stop string included, labelled finish_reason "length". Verbatim pre-fix body: {"choices":[{"finish_reason":"length","index":0,"text":"a0-b0-c0a0-b0-c0a0-b0-c0a0-b0-c0"}],...}'
   - id: FALSIFY-CHAT-STOP-756
     name: pmat756_chat_stop_tests
     prediction: 'finalize_chat_text(text, stops, completion_tokens, max_tokens) truncates the chat message at the earliest stop position via the shared truncate_at_stop helper and sets finish_reason: a matched stop string => "stop" (even when completion_tokens >= max_tokens — stop precedence over length); no stop match + max_tokens hit => "length"; no stop match under max_tokens => "stop"; stops=None leaves text untouched. build_chat_response runs it for all 7 /v1/chat/completions backends so the returned message never contains a stop string.'

@@ -59,3 +59,5 @@ mod explain_2375; // aprender#2375(2): /v1/explain must not fabricate SHAP value
 mod openai_compat_2375; // Dogfood 0.63.0 (#2375): /v1/completions streams, finish_reason is measured, `n` is honoured or refused, /v1/predict stops lying
 mod route_surface_2376; // aprender#2376(7,8): advertised surface == mounted surface; every error body is a JSON envelope
 mod stream_and_metrics_2375; // aprender#2375(1 regression, 4, 7) + temperature:0 — streaming chat through the real router, /v1/metrics measures
+mod completions_stop_2465; // aprender#2465(2): /v1/completions must END at a stop sequence
+mod batch_completions_tokenizer_2465; // aprender#2465(3): /v1/batch/completions tokenized from UTF-8 byte values, not tokens

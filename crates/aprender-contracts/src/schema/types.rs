@@ -465,6 +465,25 @@ pub struct FalsificationTest {
     /// (e.g. shell snippets under `command: |`).
     #[serde(default, alias = "command")]
     pub test: Option<String>,
+    /// How to run the test, in the `test_harness:` spelling. 619 entries in
+    /// `contracts/` use this field INSTEAD of `test:` — 94 of them holding a
+    /// real `cargo test` invocation, the rest a shell harness (`grep -q …`,
+    /// `test -f …`, `bash …`).
+    ///
+    /// #2465: this field did not exist on the struct, and `FalsificationTest`
+    /// is not `deny_unknown_fields`, so serde dropped it silently. Every one
+    /// of those 619 entries reached `strict_test_binding` with `test: None`
+    /// and was skipped — the gate reported them as neither bound nor broken.
+    #[serde(default)]
+    pub test_harness: Option<String>,
+    /// The bare test-fn name, when the contract names it here rather than in
+    /// an invocation. Deliberately NOT a serde `alias` of `rule`: several
+    /// legacy contracts (e.g. `publish-manifest-v1`) ship `name:` (a slug)
+    /// and `description:` (prose) side by side, and aliasing both onto one
+    /// field collapses to a `duplicate field` parse error. Consumed as a
+    /// binding source of last resort — see `strict_test_binding`.
+    #[serde(default)]
+    pub name: Option<String>,
     /// What failure means. Alias `fails_if` accepted for legacy contracts.
     /// Defaulted because several legacy diagnostic contracts omit it.
     #[serde(default, alias = "fails_if")]

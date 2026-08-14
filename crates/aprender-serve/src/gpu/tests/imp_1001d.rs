@@ -44,6 +44,10 @@ fn test_imp_1001d_gpu_model_with_cuda_backend() {
         top_k: 50,
         stop_tokens: vec![],
         trace: false,
+        // aprender#2376(3) added this field and missed this initializer, because
+        // no CI job builds the `cuda` test profile. `cargo check --features cuda`
+        // alone does not catch it — `cargo check` does not build #[cfg(test)].
+        cancel: crate::generate::CancelToken::never(),
     };
 
     let result = model.generate(&prompt, &gen_config);

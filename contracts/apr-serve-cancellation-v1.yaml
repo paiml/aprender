@@ -1,10 +1,11 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-08-13'
   author: PAIML Engineering
   description: apr serve must stop generating when the HTTP client disconnects
   references:
   - aprender#2376 finding 3
+  - aprender#2465 finding 1
   lessons_learned:
   - 'aprender#2376(3): one abandoned request pinned a core at ~250% CPU for the remaining
     life of the process, with zero open connections'
@@ -23,6 +24,20 @@ metadata:
   - 'The falsifier for the streamed deltas called true_streaming_sse_response directly
     and stayed green through all of it. A guard that never routes a request cannot see
     a defect that lives in the middleware.'
+  - 'aprender#2465(1): the #2376 fix wired every backend in the chat dispatch EXCEPT
+    the APR Q4K CUDA scheduler, and left an in-code justification saying the hand-off
+    to the scheduler thread meant there was no in-handler loop to poll. Moving a loop
+    to another thread does not stop it. Both documented mechanisms were inapplicable
+    at once — the response future drop cannot reach another thread, and the scheduler
+    returns ONE accumulated response so there is no per-token send to fail — which is
+    exactly why a path can look covered while having no cancellation at all.'
+  - 'The audit named two holes (/v1/chat/completions, /v1/completions). There were
+    THREE: POST /generate submits to the same scheduler from api/batch.rs. Enumerate
+    the SUBMISSION sites of the shared work queue, not the handlers the report listed.'
+  - 'The whole apr_q4k_scheduler module was #[cfg(feature = "cuda")], which put the
+    only cancellation-free decode loop in the crate outside every CI test job. Gating
+    the module rather than its CUDA-dependent items is what made the hole invisible.
+    A guard that cannot be compiled cannot fail.'
 
 equations:
   tokens_generated_bound:
@@ -186,13 +201,52 @@ falsification_tests:
     runs every handler in a spawned task. Either could truncate or reshape a completed
     response. A failure here means the fix changed what a working request returns.'
 
+- id: FALSIFY-SERVE-CANCEL-009
+  name: q4k_scheduler_decode_stops_at_the_cancel_point_not_max_tokens
+  prediction: 'q4k_decode with max_tokens=64 and CancelToken::with_budget(8) emits 9
+    tokens (the prefill token plus 8 decode steps), performs exactly 8 forward passes
+    and polls 9 times; the same call with CancelToken::never() emits 64 tokens over 63
+    forward passes at contiguous positions, and the cancelled output is a prefix of it.'
+  test_harness: cargo test -p aprender-serve --lib q4k_scheduler_decode_stops_at_the_cancel_point_not_max_tokens
+  expected_output: 'test result: ok'
+  if_fails: 'PRE-FIX (aprender#2465(1)): AprQ4kRequest had no cancel field and the Q4K
+    decode loop''s only exit was EOS, so /v1/chat/completions, /v1/completions,
+    /generate, /api/chat and /api/generate all ran the GPU to max_tokens for a client
+    that had hung up. Mutation-verified by deleting the poll: emitted 64 tokens where 9
+    were required.'
+- id: FALSIFY-SERVE-CANCEL-010
+  name: q4k_scheduler_decode_cancelled_before_start_does_no_forward_passes
+  prediction: 'q4k_decode with an already-cancelled token and max_tokens=64 performs
+    ZERO forward passes and returns only the token already sampled from the prefill
+    logits; the same call with a live uncancelled token performs all 63.'
+  test_harness: cargo test -p aprender-serve --lib q4k_scheduler_decode_cancelled_before_start_does_no_forward_passes
+  expected_output: 'test result: ok'
+  if_fails: 'The poll is at the BOTTOM of the loop body rather than the top, costing
+    one wasted GPU forward pass per cancelled request. Mutation-verified by deleting
+    the poll: performed 63 forward passes where 0 were required.'
+- id: FALSIFY-SERVE-CANCEL-011
+  name: every_apr_q4k_submission_site_forwards_the_request_cancel_token
+  prediction: 'Each of the three AprQ4kRequest construction sites — api/cuda_chat_backend.rs,
+    api/gpu_completions_handler.rs, api/batch.rs — forwards the request''s own
+    CancelToken, and each file constructs exactly one.'
+  test_harness: cargo test -p aprender-serve --lib every_apr_q4k_submission_site_forwards_the_request_cancel_token
+  expected_output: 'test result: ok'
+  if_fails: 'A submission site hands the scheduler CancelToken::never(), which is the
+    shipped defect spelled explicitly. This falsifier reads source because all three
+    sites are #[cfg(feature = "cuda")] and no CI job executes them; making `cancel` a
+    required field catches OMISSION at compile time, but only this catches a site that
+    supplies a dead token. An exact per-file count is asserted so that a moved handler
+    fails rather than silently matching nothing. Mutation-verified by setting the
+    /v1/completions site to CancelToken::never(): RED, naming the file and printing the
+    offending literal.'
+
 proof_obligations:
 - type: invariant
   property: An uncancelled decode loop produces exactly its budget
   formal: for all cfg with cfg.cancel = never, tokens_generated(cfg) = min(cfg.max_tokens,
     context_length - len(prompt))
-  applies_to: Model::generate, OwnedQuantizedModel::generate_with_cache
-  discharged_by: FALSIFY-SERVE-CANCEL-001, FALSIFY-SERVE-CANCEL-003
+  applies_to: Model::generate, OwnedQuantizedModel::generate_with_cache, q4k_decode
+  discharged_by: FALSIFY-SERVE-CANCEL-001, FALSIFY-SERVE-CANCEL-003, FALSIFY-SERVE-CANCEL-009
   notes: >-
     The converse half. Without it a falsifier could pass because generation is
     broken and emits nothing, which is indistinguishable from "cancellation
@@ -202,8 +256,9 @@ proof_obligations:
   formal: for all cfg, tokens_generated(cfg) <= polls_until_cancel(cfg.cancel) and
     cancel.polls() <= tokens_generated + 1
   applies_to: every decode loop that takes a GenerationConfig, QuantizedGenerateConfig,
-    GpuGenerateConfig or apr_transformer GenerateConfig
-  discharged_by: FALSIFY-SERVE-CANCEL-001, FALSIFY-SERVE-CANCEL-002, FALSIFY-SERVE-CANCEL-003
+    GpuGenerateConfig, apr_transformer GenerateConfig or AprQ4kRequest
+  discharged_by: FALSIFY-SERVE-CANCEL-001, FALSIFY-SERVE-CANCEL-002, FALSIFY-SERVE-CANCEL-003,
+    FALSIFY-SERVE-CANCEL-009, FALSIFY-SERVE-CANCEL-010
   notes: >-
     Bounds the wasted work at one token. The poll must be at the TOP of the loop
     body: at the bottom it costs one extra forward pass per cancelled request,
@@ -248,6 +303,24 @@ proof_obligations:
     "does not alter" includes the response BODY of a stream that is still being
     produced when the handler returns.
 
+- type: invariant
+  property: A decode loop that runs on a SEPARATE thread is cancelled by the token, not
+    by the drop
+  formal: for every work item submitted to a scheduler thread, item.cancel is the
+    requesting handler's token and the scheduler's loop polls it once per decode step
+  applies_to: api/apr_q4k_scheduler.rs::q4k_decode, and every AprQ4kRequest submission
+    site (api/cuda_chat_backend.rs, api/gpu_completions_handler.rs, api/batch.rs)
+  discharged_by: FALSIFY-SERVE-CANCEL-009, FALSIFY-SERVE-CANCEL-010, FALSIFY-SERVE-CANCEL-011
+  notes: >-
+    aprender#2465(1). Off-loading a loop is not stopping it: the response future's
+    drop cannot reach another thread, and a scheduler that accumulates its output
+    and sends ONE response has no per-token send left to fail. Both of the
+    mechanisms this contract already documents were therefore inapplicable at the
+    same time, and the code carried a comment asserting the hand-off was itself
+    sufficient. Any future scheduler-thread backend inherits this obligation:
+    the request struct must carry the token as a REQUIRED field, so omitting it is
+    a compile error rather than a silent regression.
+
 kani_harnesses:
 - id: KANI-SERVE-CANCEL-001
   obligation: Cancellation is observed within one decode step of being requested
@@ -270,5 +343,7 @@ qa_gate:
   - A completed request returns the same body with and without the layer
   - Every streaming backend hands its decode loop openai_handlers::streaming_token_sink,
     so a dropped response body stops it
-  pass_criteria: All seven FALSIFY-SERVE-CANCEL falsifiers pass, and each has been
+  - Every work item submitted to a scheduler THREAD carries the requesting handler's
+    CancelToken as a required field, and that scheduler's decode loop polls it
+  pass_criteria: All eleven FALSIFY-SERVE-CANCEL falsifiers pass, and each has been
     mutation-verified by removing the mechanism it covers and observing RED

@@ -222,6 +222,9 @@ tier3:
 	@bash scripts/check_runner_labels.sh
 	@echo "Checking the toolchain-ceiling guard's comparator (aprender#2370)..."
 	@bash scripts/check_clippy_current_stable.sh --self-test
+	@echo "Checking no contract cites a test that does not exist (aprender#2465)..."
+	@bash scripts/check_contract_test_binding.sh --self-test
+	@bash scripts/check_contract_test_binding.sh
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \

@@ -1,0 +1,13 @@
+contracts/apr-export-num-layers-v1.yaml	1
+contracts/apr-pretrain-cuda-forward-parity-v1.yaml	3
+contracts/apr-pretrain-cuda-rope-theta-cache-key-v1.yaml	1
+contracts/apr-stochastic-lr-v1.yaml	2
+contracts/apr-tokenize-repair-manifest-v1.yaml	6
+contracts/apr-vs-gguf-forward-parity-v1.yaml	2
+contracts/decode-hot-path-zero-syscalls-v1.yaml	1
+contracts/lora-merge-forward-equivalence-v1.yaml	3
+contracts/orchestrate-env-test-hermeticity-v1.yaml	1
+contracts/publish-manifest-v1.yaml	1
+contracts/qwen3-moe-forward-v1.yaml	1
+contracts/trace-ffn-sub-block-gguf-v1.yaml	4
+contracts/trace-moe-gpu-sub-stages-v1.yaml	1
