@@ -179,8 +179,12 @@ sha2 = "0.10"
 minijinja = { version = "2.14", features = ["loader", "serde"] }
 
 # Contracts
-provable-contracts = "0.3"
-provable-contracts-macros = "0.3"
+# APR-MONO self-containment: `provable-contracts` was merged in-tree as
+# `crates/aprender-contracts` (lib name `provable_contracts`). Declaring it from
+# crates.io compiled a SECOND copy of the contract engine alongside the in-tree
+# one — exactly the duplicate-crate + publish-cycle the consolidation removed.
+provable-contracts = { path = "crates/aprender-contracts", version = "0.63.0", package = "aprender-contracts" }
+provable-contracts-macros = { path = "crates/aprender-contracts-macros", version = "0.63.0", package = "aprender-contracts-macros" }
 aprender-contracts-macros = { path = "crates/aprender-contracts-macros", version = "0.63.0" }
 
 # YAML
@@ -210,6 +214,14 @@ renacer-core = { path = "crates/aprender-profile-core", version = "0.63.0", pack
 repartir = { path = "crates/aprender-distribute", version = "0.63.0", package = "aprender-distribute" }
 simular = { path = "crates/aprender-simulate", version = "0.63.0", package = "aprender-simulate" }
 probar = { path = "crates/aprender-test-lib", version = "0.63.0", package = "aprender-test-lib" }
+# `jugar-probar` is the crates.io/lib name of the same in-tree crate as `probar`
+# above. Both aliases resolve to ONE package; consumers that spelled it
+# `jugar-probar = "0.4"|"0.5"|"1.0"` were building three extra copies.
+jugar-probar = { path = "crates/aprender-test-lib", version = "0.63.0", package = "aprender-test-lib" }
+# NOTE: the matching `jugar-probar-derive` alias already exists further down this
+# same table (it points at crates/aprender-test-derive). crates/aprender-test-lib
+# was pinning `jugar-probar-derive = "=1.0.3"` from crates.io regardless — the
+# alias was sitting there unused.
 aprender-train = { path = "crates/aprender-train", version = "0.63.0" }
 entrenar = { path = "crates/aprender-train", version = "0.63.0", package = "aprender-train" }
 aprender-train-common = { path = "crates/aprender-train-common", version = "0.63.0" }

@@ -94,7 +94,7 @@ tracing-subscriber = "0.3"
 futures = "0.3"
 
 # TUI testing via probador
-jugar-probar = { version = "0.4", default-features = false, features = ["tui"] }
+jugar-probar = { workspace = true, features = ["tui"] }
 
 [lints]
 workspace = true

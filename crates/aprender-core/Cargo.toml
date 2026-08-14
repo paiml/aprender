@@ -150,7 +150,7 @@ js-sys = { version = "0.3", optional = true }
 minijinja = { version = "2.14.0", features = ["loader", "serde"] }
 
 # UCBD: compile-time contract enforcement via #[contract] proc macro
-provable-contracts-macros = "0.3"
+provable-contracts-macros = { workspace = true }
 
 # Toyota Way: ONE source of truth for quantization (Step E)
 # NOTE: Currently blocked by cyclic dependency (realizar optionally depends on aprender).
@@ -173,9 +173,9 @@ criterion = { workspace = true }
 # until aprender-core does).
 renacer = { path = "../aprender-profile", package = "aprender-profile" }
 tempfile = "3.14"  # For format module tests
-jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
+jugar-probar = { workspace = true }  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
-provable-contracts = "0.3"  # Contract enforcement (dev-only)
+provable-contracts = { workspace = true }  # Contract enforcement (dev-only)
 # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only).
 # Same publish-time cycle break as renacer above.
 entrenar = { path = "../aprender-train", package = "aprender-train" }

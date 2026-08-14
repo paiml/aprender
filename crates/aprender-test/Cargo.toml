@@ -79,15 +79,16 @@ syn = { version = "2.0", features = ["full", "visit", "parsing", "extra-traits"]
 bincode = "1.3"
 
 # GPU compute (trueno - SIMD-accelerated tensor operations)
-trueno = { version = "0.16.5", features = ["gpu"] }
+# APR-MONO: in-tree sibling, not crates.io (package aprender-compute, [lib] name = "trueno")
+trueno = { path = "../aprender-compute", package = "aprender-compute", features = ["gpu"] }
 
 # TUI Testing (EDD compliance)
 # Uses custom TextGrid/MockTty - no external TUI deps
 crossterm = "0.28"
 
 # ComputeBlock testing (presentar-terminal integration)
-presentar-terminal = "0.3"
-presentar-core = "0.3"
+presentar-terminal = { path = "../aprender-present-terminal", package = "aprender-present-terminal" }
+presentar-core = { path = "../aprender-present-core", package = "aprender-present-core" }
 
 # Deterministic replay
 serde_yaml_ng = "0.10"

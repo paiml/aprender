@@ -498,8 +498,19 @@ audit:
 # Validate dependencies (duplicates + security)
 deps-validate:
 	@echo "🔍 Validating dependencies..."
-	@cargo tree --duplicate | grep -v "^$$" || echo "✅ No duplicate dependencies"
-	@cargo audit || echo "⚠️  Security issues found"
+	@# `cmd | grep ... || echo` reads GREP's status, not cargo's, so this target
+	@# exited 0 while printing 1,828 lines of duplicates. Nothing invoked it either.
+	@# Same class as #2336/#2360. Redirect, then read the real status.
+	@cargo tree --duplicates > /tmp/apr-dup.txt 2>&1; \
+	if [ -s /tmp/apr-dup.txt ]; then \
+		echo "FAIL: duplicate dependencies present:"; cat /tmp/apr-dup.txt; exit 1; \
+	fi; \
+	echo "OK: no duplicate dependencies"
+	@cargo audit > /tmp/apr-audit.txt 2>&1; rc=$$?; \
+	if [ $$rc -ne 0 ]; then \
+		echo "FAIL: cargo audit reported issues:"; cat /tmp/apr-audit.txt; exit 1; \
+	fi; \
+	echo "OK: cargo audit clean"
 
 # Run cargo-deny checks (licenses, bans, advisories, sources)
 deny:
