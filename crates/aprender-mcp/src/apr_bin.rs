@@ -18,6 +18,28 @@
 //! [`apr_binary`] fixes both: when the running executable *is* `apr`, the
 //! server delegates to **itself**, so `apr mcp` from 0.63.0 runs 0.63.0.
 //!
+//! # Which call sites actually resolve (#2465 finding 4)
+//!
+//! This paragraph used to claim the resolution covered "all eight subprocess
+//! tools". It did not, and the three exceptions sat in this repository for
+//! two releases underneath a comment asserting they could not exist:
+//!
+//! | spawn site | resolved since |
+//! |---|---|
+//! | `validate`, `qa`, `tensors`, `trace`, `bench` (via [`crate::tools::subprocess::run_apr`]) | #2424 |
+//! | `apr.run`, no `progressToken` (via `run_apr_cancellable`) | #2424 |
+//! | `apr.finetune`, no `progressToken` (via `run_apr`) | #2424 |
+//! | `apr.run` **streaming** (`tools/run.rs`) | **#2465** |
+//! | `apr.finetune` **streaming** (`tools/finetune.rs`) | **#2465** |
+//! | `apr.serve` (`tools/serve.rs`, its only spawn) | **#2465** |
+//!
+//! Every spawn in the crate now goes through [`apr_binary`]; before #2465 the
+//! streaming paths and all of `apr.serve` passed a literal `"apr"`. A count of
+//! *tools* hid this, because two of the three defective sites were the second
+//! spawn path of a tool whose first path was already fixed — which is why
+//! `scripts/check_apr_bin_pinned.sh` now derives the set of program-spawning
+//! functions from the source instead of trusting a tally in a comment.
+//!
 //! # Resolution order
 //!
 //! 1. `$APR_BIN`, if set and non-empty. Escape hatch for embedders and for
@@ -68,6 +90,32 @@ pub fn resolve(override_var: Option<OsString>, current_exe: Option<PathBuf>) -> 
 /// be worse than falling back to `$PATH`.
 fn is_apr_binary(path: &Path) -> bool {
     path.file_stem().is_some_and(|stem| stem == "apr")
+}
+
+/// Serialises every test that sets `$APR_BIN` or spawns through
+/// [`apr_binary`].
+///
+/// `std::env` is process-global while `cargo test` runs test functions on
+/// threads of a single process, so an unsynchronised test can strip another
+/// test's override in the window between `set_var` and `Command::spawn` — and
+/// what the victim then executes is a `$PATH` lookup, i.e. the exact defect
+/// under test, surfacing as a flake rather than a failure. The two tests that
+/// predate this lock coped by making their shim mimic the real CLI's exit
+/// codes so a collision would still pass; a collision that still passes is
+/// how a real regression would get through.
+#[cfg(test)]
+static APR_BIN_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Acquire [`APR_BIN_ENV_LOCK`], tolerating poisoning.
+///
+/// A panicking test elsewhere must not convert every `$APR_BIN` test in the
+/// crate into a `PoisonError`, which would report a failure in code that is
+/// fine and hide the one that is not.
+#[cfg(test)]
+pub(crate) fn lock_apr_bin_env() -> std::sync::MutexGuard<'static, ()> {
+    APR_BIN_ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

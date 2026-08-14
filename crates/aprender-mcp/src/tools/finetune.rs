@@ -28,10 +28,12 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::apr_bin::apr_binary;
 use crate::server::NotificationSink;
 use crate::tools::args::{self, try_arg};
 use crate::tools::subprocess::{run_apr, spawn_streaming};
 use crate::types::{InputSchema, JsonRpcNotification, ToolCallResult, ToolDefinition};
+use std::ffi::OsStr;
 
 /// Tool name registered with MCP clients.
 pub const NAME: &str = "apr.finetune";
@@ -95,7 +97,10 @@ pub fn call_with_sink(
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     match (sink, progress_token) {
-        (Some(sink), Some(token)) => stream_with_sink("apr", &argv, sink, &token),
+        // #2465: `apr_binary()`, never the literal `"apr"`. The `run_apr`
+        // fallback below has resolved since #2424; this arm did not, so the
+        // streaming path spawned whatever `$PATH` produced.
+        (Some(sink), Some(token)) => stream_with_sink(apr_binary(), &argv, sink, &token),
         _ => run_apr(&argv),
     }
 }
@@ -148,9 +153,14 @@ pub fn build_argv(args: &serde_json::Value) -> Result<Vec<String>, String> {
 /// `progress_token`. Each stdout line is JSON-parsed if possible; otherwise
 /// forwarded as a plain string. The returned `ToolCallResult` is the
 /// aggregated stdout (same shape as `run_apr`'s success body).
+///
+/// Generic over the program so production callers pass
+/// [`crate::apr_bin::apr_binary`] (a `PathBuf`) while tests inject a mock by
+/// name. It was `&str`, which is why the one production call site could be —
+/// and was — a bare `"apr"`.
 #[must_use]
-pub fn stream_with_sink(
-    program: &str,
+pub fn stream_with_sink<P: AsRef<OsStr>>(
+    program: P,
     args: &[&str],
     sink: &NotificationSink,
     progress_token: &serde_json::Value,
@@ -284,6 +294,66 @@ mod tests {
         let result = call(&serde_json::json!({ "base_model": "b.apr", "lora_rank": "high" }));
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("lora_rank"));
+    }
+
+    /// FALSIFIER (#2465 finding 4): the STREAMING path must execute the
+    /// binary [`crate::apr_bin::apr_binary`] resolves, not a literal `"apr"`.
+    ///
+    /// #2424 fixed the `run_apr` fallback and left this arm spawning `"apr"`,
+    /// so a client that supplied a `progressToken` got a `$PATH` lookup.
+    ///
+    /// Behavioural: `$APR_BIN` designates `echo`, so the child's stdout IS the
+    /// argv it received. One notification carrying
+    /// `finetune <base_model> --json` proves the designated program ran with
+    /// this call's arguments — an outcome no `apr` on `$PATH` can produce, so
+    /// reverting the fix fails the test whether or not `apr` is installed.
+    #[test]
+    #[cfg(unix)]
+    fn falsify_2465_streaming_path_executes_the_resolved_binary() {
+        use std::sync::{Arc, Mutex};
+
+        let _guard = crate::apr_bin::lock_apr_bin_env();
+
+        let captured: Arc<Mutex<Vec<JsonRpcNotification>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured_clone = Arc::clone(&captured);
+        let sink: NotificationSink = Box::new(move |n| {
+            captured_clone
+                .lock()
+                .expect("sink mutex not poisoned")
+                .push(n);
+        });
+
+        // Edition 2021 — `set_var` is safe here.
+        std::env::set_var(crate::apr_bin::APR_BIN_ENV, "echo");
+        let result = call_with_sink(
+            &serde_json::json!({ "base_model": "MARKER-BASE.gguf" }),
+            Some(&sink),
+            Some(serde_json::json!("tok-2465")),
+        );
+        std::env::remove_var(crate::apr_bin::APR_BIN_ENV);
+
+        assert!(
+            result.is_error.is_none(),
+            "the designated binary exits 0; got: {}",
+            result.content[0].text
+        );
+
+        let notifs = captured.lock().expect("mutex").clone();
+        assert_eq!(
+            notifs.len(),
+            1,
+            "echo writes exactly one line, so exactly one progress notification"
+        );
+        let payload = notifs[0]
+            .params
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("<no string message: {:?}>", notifs[0].params));
+        assert_eq!(
+            payload, "finetune MARKER-BASE.gguf --json",
+            "the streaming path must spawn the RESOLVED binary with this call's argv"
+        );
     }
 
     /// FALSIFY-MCP-PROGRESS-001 (unit): `stream_with_sink` fires one

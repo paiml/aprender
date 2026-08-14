@@ -37,8 +37,10 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::apr_bin::apr_binary;
 use crate::tools::args::{self, try_arg};
 use crate::types::{ContentBlock, InputSchema, ToolCallResult, ToolDefinition};
+use std::ffi::OsStr;
 use std::io::Read;
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::process::{Command, Stdio};
@@ -127,23 +129,34 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
         },
     };
 
-    spawn_and_confirm("apr", &serve_argv(model_path, port), port, READY_TIMEOUT)
+    // #2465: `apr_binary()`, never the literal `"apr"`. Unlike every other
+    // subprocess tool, `apr.serve` has no non-streaming fallback that pins the
+    // binary — this was its ONLY spawn, so 100% of `apr.serve` calls resolved
+    // through `$PATH` even after #2424.
+    spawn_and_confirm(
+        apr_binary(),
+        &serve_argv(model_path, port),
+        port,
+        READY_TIMEOUT,
+    )
 }
 
 /// Spawn `program <args...>` as a background HTTP daemon on `port` and wait
 /// up to `ready_timeout` for it to prove it is running.
 ///
-/// Generic over the program name so the readiness/liveness contract can be
-/// exercised in unit tests without a built `apr` on `PATH` — the same shape
+/// Generic over the program so production passes
+/// [`crate::apr_bin::apr_binary`] while unit tests exercise the
+/// readiness/liveness contract with `false`/`sh`/`sleep` — the same shape
 /// `subprocess::spawn_cancellable` uses.
 #[must_use]
-pub fn spawn_and_confirm(
-    program: &str,
+pub fn spawn_and_confirm<P: AsRef<OsStr>>(
+    program: P,
     args: &[String],
     port: u16,
     ready_timeout: Duration,
 ) -> ToolCallResult {
-    let cmd_display = format!("{program} {}", args.join(" "));
+    let program = program.as_ref();
+    let cmd_display = format!("{} {}", program.to_string_lossy(), args.join(" "));
 
     // The daemon outlives this call, so its stderr must not go to a pipe
     // nobody drains (a full pipe buffer would wedge the server). Route it to
@@ -380,6 +393,48 @@ mod tests {
     fn payload_of(result: &ToolCallResult) -> serde_json::Value {
         serde_json::from_str(&result.content[0].text)
             .unwrap_or_else(|e| panic!("payload must be JSON: {e}; got {}", result.content[0].text))
+    }
+
+    /// FALSIFIER (#2465 finding 4): `apr.serve` must spawn the binary
+    /// [`crate::apr_bin::apr_binary`] resolves, not a literal `"apr"`.
+    ///
+    /// Unlike every other subprocess tool, `apr.serve` had no second, already
+    /// pinned code path — this was its ONLY spawn, so after #2424 one hundred
+    /// percent of `apr.serve` calls still went through `$PATH`, under a module
+    /// comment in `apr_bin.rs` asserting all eight subprocess tools resolved.
+    ///
+    /// Behavioural: `$APR_BIN` designates `env`, which reports on its OWN
+    /// stderr that it cannot execute the first argv element (`serve`) and
+    /// exits 127. `spawn_and_confirm` folds that stderr tail into the error,
+    /// so `env:` in the message is a fingerprint the designated program left
+    /// behind by running. A real `apr serve run` prints no such thing, and on
+    /// a host with no `apr` at all the spawn fails outright — both RED.
+    #[cfg(unix)]
+    #[test]
+    fn falsify_2465_serve_spawns_the_resolved_binary() {
+        let _guard = crate::apr_bin::lock_apr_bin_env();
+        let port = free_port();
+
+        // Edition 2021 — `set_var` is safe here.
+        std::env::set_var(crate::apr_bin::APR_BIN_ENV, "env");
+        let result = call(&serde_json::json!({
+            "model_path": "MARKER-MODEL.gguf",
+            "port": port,
+        }));
+        std::env::remove_var(crate::apr_bin::APR_BIN_ENV);
+
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "a child that exits 127 is not a running server; got: {}",
+            result.content[0].text
+        );
+        let text = &result.content[0].text;
+        assert!(
+            text.contains("env:"),
+            "apr.serve must spawn the RESOLVED binary — its stderr is the \
+             proof it ran; got: {text}"
+        );
     }
 
     /// The silent-success defect: 0.63.0 dropped the `Child` without checking

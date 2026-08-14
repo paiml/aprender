@@ -519,8 +519,13 @@ mod tests {
 
     /// Spawning `apr` with an unrecognised subcommand yields a tool error
     /// (non-zero exit), not a panic.
+    ///
+    /// Takes the `$APR_BIN` lock even though it sets nothing: it spawns
+    /// through `apr_binary()`, so a concurrent test's override would make it
+    /// run that test's shim instead (#2465).
     #[test]
     fn spawn_failure_maps_to_tool_error() {
+        let _guard = crate::apr_bin::lock_apr_bin_env();
         let result = run_apr(&["this-subcommand-does-not-exist"]);
         assert_eq!(result.is_error, Some(true));
     }
@@ -545,6 +550,8 @@ mod tests {
     fn falsify_2384_run_apr_executes_the_resolved_binary() {
         use std::io::Write;
         use std::os::unix::fs::PermissionsExt;
+
+        let _guard = crate::apr_bin::lock_apr_bin_env();
 
         // Unique per process: a fixed path lets two concurrent runs of this
         // test binary delete each other's shim mid-flight.
