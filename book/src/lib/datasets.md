@@ -6,7 +6,7 @@ Public module of the `aprender-core` crate.
 
 ## Source
 
-[`crates/aprender-core/src/datasets.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/datasets.rs)
+[`crates/aprender-core/src/datasets/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/datasets/mod.rs)
 
 ## Example
 

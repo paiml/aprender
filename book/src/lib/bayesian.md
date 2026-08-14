@@ -6,7 +6,7 @@ Public module of the `aprender-core` crate.
 
 ## Source
 
-[`crates/aprender-core/src/bayesian.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/bayesian.rs) or directory.
+[`crates/aprender-core/src/bayesian/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/bayesian/mod.rs) or directory.
 
 ## Example
 

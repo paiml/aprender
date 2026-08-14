@@ -6,7 +6,7 @@ Public module of the `aprender-core` crate.
 
 ## Source
 
-[`crates/aprender-core/src/autograd.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/autograd.rs) or directory.
+[`crates/aprender-core/src/autograd/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/autograd/mod.rs) or directory.
 
 ## Example
 

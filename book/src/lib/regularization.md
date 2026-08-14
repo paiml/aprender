@@ -6,7 +6,7 @@ Public module of the `aprender-core` crate.
 
 ## Source
 
-[`crates/aprender-core/src/regularization.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/regularization.rs) or directory.
+[`crates/aprender-core/src/regularization/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/regularization/mod.rs) or directory.
 
 ## Example
 

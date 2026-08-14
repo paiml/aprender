@@ -6,7 +6,7 @@ Public module of the `aprender-core` crate.
 
 ## Source
 
-[`crates/aprender-core/src/decomposition.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/decomposition.rs) or directory.
+[`crates/aprender-core/src/decomposition/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/decomposition/mod.rs) or directory.
 
 ## Example
 

@@ -6,7 +6,7 @@ Public module of the `aprender-core` crate.
 
 ## Source
 
-[`crates/aprender-core/src/tree.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/tree.rs) or directory.
+[`crates/aprender-core/src/tree/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/tree/mod.rs) or directory.
 
 ## Example
 

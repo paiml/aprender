@@ -6,7 +6,7 @@ Public module of the `aprender-core` crate.
 
 ## Source
 
-[`crates/aprender-core/src/time_series.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/time_series.rs) or directory.
+[`crates/aprender-core/src/time_series/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/time_series/mod.rs) or directory.
 
 ## Example
 

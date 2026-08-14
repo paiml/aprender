@@ -25,5 +25,5 @@ Run `apr serve --help` for the complete option list.
 
 ## See also
 
-- Source: [`crates/apr-cli/src/commands/serve.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/serve.rs)
+- Source: [`crates/apr-cli/src/commands/serve/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/serve/mod.rs)
 - Contract: [`contracts/apr-page-cli-serve-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-serve-v1.yaml)

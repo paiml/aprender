@@ -6,7 +6,7 @@ Public module of the `aprender-core` crate.
 
 ## Source
 
-[`crates/aprender-core/src/linear_model.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/linear_model.rs) or directory.
+[`crates/aprender-core/src/linear_model/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/aprender-core/src/linear_model/mod.rs) or directory.
 
 ## Example
 

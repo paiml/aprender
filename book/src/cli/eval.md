@@ -25,5 +25,5 @@ Run `apr eval --help` for the complete option list.
 
 ## See also
 
-- Source: [`crates/apr-cli/src/commands/eval.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/eval.rs)
+- Source: [`crates/apr-cli/src/commands/eval/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/eval/mod.rs)
 - Contract: [`contracts/apr-page-cli-eval-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-eval-v1.yaml)

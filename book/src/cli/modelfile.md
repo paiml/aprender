@@ -25,5 +25,5 @@ Run `apr modelfile --help` for the complete option list.
 
 ## See also
 
-- Source: [`crates/apr-cli/src/commands/modelfile.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/modelfile.rs)
+- Source: [`crates/apr-cli/src/commands/modelfile/mod.rs`](https://github.com/paiml/aprender/blob/main/crates/apr-cli/src/commands/modelfile/mod.rs)
 - Contract: [`contracts/apr-page-cli-modelfile-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-page-cli-modelfile-v1.yaml)

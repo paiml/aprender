@@ -16,14 +16,17 @@ apr run qwen2.5-coder-1.5b "What is 2+2?"
 
 ## What is Aprender?
 
-Aprender is a next-generation ML framework in pure Rust — 80 workspace crates,
-82 CLI commands, 25,300+ tests, 1134 provable contracts. Install once, get everything:
+Aprender is a next-generation ML framework in pure Rust — 78 workspace crates,
+105 CLI commands, 1771 provable contracts. Install once, get everything:
 inference, training, serving, profiling, model operations.
+
+(Counts are samples, not gates — nothing checks the numbers on this page. Re-derive
+with `cargo metadata --no-deps`, `apr --help`, and `find contracts -name '*.yaml'`.)
 
 ## This Book
 
 - **Getting Started** — Install, run your first model, fine-tune, serve
-- **CLI Reference** — All 82 `apr` commands with `--help` output
+- **CLI Reference** — All 105 `apr` commands with `--help` output
 - **Architecture** — Monorepo layout, crate map, provable contracts
 - **Cookbook** — Recipes and workflows (separate repo: [apr-cookbook](https://github.com/paiml/apr-cookbook))
 - **EXTREME TDD** — The methodology used to build aprender (296 chapters)
@@ -31,7 +34,8 @@ inference, training, serving, profiling, model operations.
 ---
 
 This book also documents the **EXTREME TDD methodology** — the practices used to achieve
-25,300+ tests with zero failures across 80 crates.
+80,604 passing lib tests across 78 workspace crates (CI `workspace-test`, run
+`31631488466`, `main` @ `d40756541`, 2026-08-12).
 
 ## What You'll Learn
 
@@ -75,12 +79,12 @@ EXTREME TDD is built on these core principles:
 
 This methodology has produced exceptional results in aprender:
 
-- **184 passing tests** across all modules
-- **~97% code coverage** (well above 90% target)
-- **93.3/100 TDG score** (Technical Debt Gradient - A grade)
+- **80,604 passing lib tests** across the workspace (CI `workspace-test`, 2026-08-12)
+- **88.78% line coverage** — measured 2026-07-29 by coverage-nightly on `95145584f`.
+  The "~97%" this page used to quote predates the coverage pipeline ever working:
+  it reported 0/0 until #2333, so no run ever produced that number.
 - **Zero clippy warnings** at all times
 - **<0.01s test-fast time** for rapid feedback
-- **Zero production defects** from day one
 
 ## How This Book is Organized
 

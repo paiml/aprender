@@ -18,9 +18,9 @@ here disagrees with its command, the command wins.
 | Fact | Derive with | Sample (2026-08-13) |
 |------|-------------|---------------------|
 | Workspace crates | `cargo metadata --no-deps --format-version 1 \| python3 -c "import json,sys;print(len(json.load(sys.stdin)['packages']))"` | 78 — 77 under `crates/` plus the root facade |
-| Dirs under `crates/` | `ls -1d crates/*/ \| wc -l` | 82. **This is not the crate count**: 4 are `exclude`d in the root `Cargo.toml`, and `aprender-contracts-staging` has no manifest. A directory is not a crate |
-| `apr` subcommands | `apr --help`; registry is `contracts/apr-cli-commands-v1.yaml` §`commands`, mirrored by `crates/apr-cli/tests/cli_commands.rs::registered_commands` | 103, in 10 categories |
-| Provable contracts | `find contracts -name '*.yaml' \| wc -l` | 1768 |
+| Dirs under `crates/` | `ls -1d crates/*/ \| wc -l` | 82. **This is not the crate count**: `aprender-contracts-staging` has no manifest; of the remaining 81, three (`aprender-viz-ttop`, `aprender-present`, `aprender-test`) are in the root `Cargo.toml`'s `exclude` list and `aprender-train-canary` is simply absent from `members` without being excluded. 82 − 1 − 4 = 77, plus the root facade = 78. A directory is not a crate |
+| `apr` subcommands | `apr --help`; registry is `contracts/apr-cli-commands-v1.yaml` §`commands`, mirrored by `crates/apr-cli/tests/cli_commands.rs::registered_commands` | 105, in 11 categories (`apr --help` prints 106 rows — the extra one is clap's built-in `help`) |
+| Provable contracts | `find contracts -name '*.yaml' \| wc -l` | 1771 |
 | Workspace lib tests | the `Summary` line of CI's `workspace-test` job (see Build Commands for the exact nextest invocation) | **80,604 passed**, 130 skipped, across 69 binaries — CI run `31631488466`, `main` @ `d40756541`, 2026-08-12 |
 | Released version | `git tag --sort=-creatordate \| head -1` · `gh release list` | **v0.63.0**, 2026-08-01 ("provenance") |
 
@@ -299,9 +299,11 @@ paths this file used to give have not existed since APR-MONO):
 - `crates/aprender-core/src/format/converter/mod.rs` - `transpose_q4k_for_matmul()`, `transpose_q6k_for_matmul()`
 
 ```rust
-use aprender::format::layout_contract::{CONTRACT, LayoutContract};
-CONTRACT.should_transpose_gguf("output.weight");  // true for 2D, false for 1D
-CONTRACT.validate_apr_shape("lm_head.weight", &[vocab, hidden], vocab, hidden)?;
+// There is no `CONTRACT` const — this snippet used to import one and did not compile.
+use aprender::format::layout_contract::LayoutContract;
+let contract = LayoutContract::default();
+contract.should_transpose_gguf("output.weight");  // true for 2D, false for 1D
+contract.validate_apr_shape("lm_head.weight", &[vocab, hidden], vocab, hidden)?;
 ```
 
 ### Code Scheduled for Deletion
@@ -482,7 +484,7 @@ Clippy's lint set is **not monotonic**: the #2370 tree is clean on 1.93/1.96/1.9
 
 ## APR CLI (`cargo install aprender`)
 
-103 commands across 10 categories as of 2026-08-13; the registry is
+105 commands across 11 categories as of 2026-08-14; the registry is
 `contracts/apr-cli-commands-v1.yaml` (§`commands`), mirrored by
 `crates/apr-cli/tests/cli_commands.rs::registered_commands` and enforced by
 FALSIFY-CLI-001/002. Note the contract's own `scope:` string still says "77 commands" —

@@ -40,15 +40,18 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 
 | Metric | Count | Source of truth |
 |-------:|------:|---|
-| Workspace crates | **78** workspace crates | `cargo metadata --no-deps` (NOT `ls crates/` — 4 are `exclude`d, 1 has no Cargo.toml) |
+| Workspace crates | **78** workspace crates | `cargo metadata --no-deps` (NOT `ls crates/` — that counts 82 dirs: 1 has no Cargo.toml, 3 are `exclude`d, 1 is absent from `members`) |
 | Provable contracts | **1771** provable contracts | `find contracts/ -name '*.yaml'` |
-| CLI commands | **105** CLI commands | `apr --help` |
-| Book CLI chapters | **105** chapters | `ls book/src/cli/*.md` (parity with CLI) |
-| Book lib chapters | **69** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
+| CLI commands | **105** CLI commands | `apr --help` (prints 106 rows; the extra is clap's built-in `help`) |
+| Book CLI chapters | **107** chapters | `ls book/src/cli/*.md` |
+| Book lib chapters | **71** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
 
-These numbers are enforced by [`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml).
-Drift between this table and live repo state fails `bash scripts/check_readme_claims.sh`
-→ see [FALSIFY-README-001..006](contracts/readme-claims-v1.yaml).
+The first three rows are enforced by [`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml):
+drift fails `bash scripts/check_readme_claims.sh` (FALSIFY-README-001..004).
+**The two book-chapter rows are not.** FALSIFY-README-005/006 run
+`scripts/check_book_cli_parity.sh` and `scripts/check_book_lib_parity.sh`, which compare
+the book against the CLI and against `pub mod` — neither one reads the numbers printed
+here, and both were passing while these two rows were stale. Re-derive them by hand.
 
 ### Command surface
 
@@ -184,7 +187,7 @@ gotchas (NDJSON commits, LFS batch sizing, Q4_K stride constraints).
 
 ```toml
 [dependencies]
-aprender = "0.35"
+aprender = "0.63"
 ```
 
 ```rust
@@ -221,8 +224,8 @@ paiml/aprender/
 │   ├── aprender-contracts/         # Provable contracts engine
 │   ├── aprender-profile/           # Profiling
 │   ├── aprender-db/ aprender-graph/ aprender-rag/
-│   └── ... (82 crates total)
-├── contracts/                      # 1158 provable YAML contracts
+│   └── ... (78 workspace crates total, in 82 directories)
+├── contracts/                      # 1771 provable YAML contracts
 └── book/                           # mdBook documentation
 ```
 
@@ -253,17 +256,17 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1767 contracts across inference, training, quantization, attention, FFN,
+1771 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates
 
 | Old | New | Status |
 |-----|-----|--------|
-| `trueno = "0.18"` | `aprender-compute = "0.33"` | Shim available |
-| `entrenar = "0.7"` | `aprender-train = "0.33"` | Shim available |
-| `realizar = "0.8"` | `aprender-serve = "0.33"` | Shim available |
-| `batuta = "0.7"` | `aprender-orchestrate = "0.33"` | Shim available |
+| `trueno = "0.18"` | `aprender-compute = "0.63"` | Shim available |
+| `entrenar = "0.7"` | `aprender-train = "0.63"` | Shim available |
+| `realizar = "0.8"` | `aprender-serve = "0.63"` | Shim available |
+| `batuta = "0.7"` | `aprender-orchestrate = "0.63"` | Shim available |
 
 Old repositories are archived. All development happens here.
 
