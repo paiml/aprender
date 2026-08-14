@@ -18,15 +18,16 @@ falsification test attempts to **disprove** correctness rather than confirm it.
 
 ## Contract Inventory
 
-Ten YAML contracts live in `contracts/`:
+1771 YAML contracts live in `contracts/` (`find contracts -name '*.yaml' | wc -l`).
+Ten of the foundational ones:
 
 | Contract | Purpose | Enforcement |
 |----------|---------|-------------|
-| `tensor-layout-v1.yaml` | Row-major layout, transpose rules | `src/format/layout_contract.rs` |
-| `special-tokens-registry-v1.yaml` | BOS/EOS/PAD per model family | `src/format/special_tokens_contract_falsify.rs` |
+| `tensor-layout-v1.yaml` | Row-major layout, transpose rules | `crates/aprender-core/src/format/layout_contract.rs` |
+| `special-tokens-registry-v1.yaml` | BOS/EOS/PAD per model family | `crates/aprender-core/src/format/special_tokens_contract_falsify.rs` |
 | `model-metadata-bounds-v1.yaml` | Upper bounds on config fields | `realizar::ValidatedModelConfig` |
-| `chat-template-semantics-v1.yaml` | Chat template format contracts | `src/text/chat_template.rs` |
-| `tokenizer-vocab-v1.yaml` | Tokenizer vocabulary contracts | `src/text/` |
+| `chat-template-semantics-v1.yaml` | Chat template format contracts | `crates/aprender-core/src/text/chat_template/mod.rs` |
+| `tokenizer-vocab-v1.yaml` | Tokenizer vocabulary contracts | `crates/aprender-core/src/text/` |
 | `classification-finetune-v1.yaml` | Fine-tuning contracts | `entrenar` |
 | `kernel-fusion-v1.yaml` | Kernel fusion contracts | `trueno` |
 | `layer-parity-v1.yaml` | Layer equivalence verification | Cross-stack |
@@ -134,15 +135,18 @@ that attempt to break each invariant. Run with:
 cargo test -- falsify_mf_qwen35
 ```
 
-See also: `cargo run --example design_by_contract` for a runnable demo.
+See also: `cargo run -p aprender-core --example design_by_contract` for a runnable
+demo. The `-p` is required — six member crates ship an example by that name and the
+workspace root ships none, so the bare form fails with "no example target named
+`design_by_contract` in default-run packages".
 
 ## References
 
-- **Full specification**: `docs/specifications/enforce-provable-DbC.md`
-- **Unified architecture**: `docs/specifications/unified-contract-by-design.md`
-- [trueno DbC](../../trueno/docs/design-by-contract.md)
-- [realizar DbC](../../realizar/docs/design-by-contract.md)
-- [entrenar DbC](../../entrenar/docs/design-by-contract.md)
+- **Full specification**: `docs/specifications/archive/enforce-provable-DbC.md`
+- **Unified architecture**: `docs/specifications/archive/unified-contract-by-design.md`
+- [trueno DbC](../crates/aprender-compute/docs/design-by-contract.md)
+- [realizar DbC](../crates/aprender-serve/docs/design-by-contract.md)
+- [entrenar DbC](../crates/aprender-train/docs/design-by-contract.md)
 
 ## Theoretical Foundations
 
