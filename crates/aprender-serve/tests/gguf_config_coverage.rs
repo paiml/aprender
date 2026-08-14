@@ -276,6 +276,7 @@ fn test_cov_gguf_config_missing_embedding_length() {
 #[test]
 fn test_cov_scratch_buffer_from_config() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 2048,
@@ -312,6 +313,7 @@ fn test_cov_scratch_buffer_from_config() {
 #[test]
 fn test_cov_scratch_buffer_q8k_buffers() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 2048,
@@ -344,6 +346,7 @@ fn test_cov_scratch_buffer_q8k_buffers() {
 #[test]
 fn test_cov_scratch_buffer_reset() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "test".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 128,
@@ -381,6 +384,7 @@ fn test_cov_scratch_buffer_reset() {
 #[test]
 fn test_cov_scratch_buffer_small_model() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "tiny".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 64,
@@ -410,6 +414,7 @@ fn test_cov_scratch_buffer_small_model() {
 #[test]
 fn test_cov_owned_scratch_buffer_from_config() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 2048,
@@ -440,6 +445,7 @@ fn test_cov_owned_scratch_buffer_from_config() {
 #[test]
 fn test_cov_owned_scratch_buffer_qkv_size() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 2048,
@@ -468,6 +474,7 @@ fn test_cov_owned_scratch_buffer_qkv_size() {
 #[test]
 fn test_cov_owned_scratch_buffer_reset() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "test".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 128,
@@ -502,6 +509,7 @@ fn test_cov_owned_scratch_buffer_reset() {
 #[test]
 fn test_cov_owned_scratch_buffer_q8k_buffers() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 2048,
