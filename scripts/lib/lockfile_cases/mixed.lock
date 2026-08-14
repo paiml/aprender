@@ -1,0 +1,18 @@
+[[package]]
+name = "serde"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "trueno"
+version = "0.17.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "aprender-compute"
+version = "0.63.0"
+
+[[package]]
+name = "aprender"
+version = "0.27.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"

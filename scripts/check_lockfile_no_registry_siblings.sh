@@ -78,78 +78,34 @@ collisions() {
 
 # ---------------------------------------------------------------------------
 if [ "${1:-}" = "--self-test" ]; then
-  TD="$(mktemp -d)"; [ -d "$TD" ] || { printf 'FAIL: no temp dir\n' >&2; exit 1; }
-  trap 'rm -rf "${TD:?}"' EXIT
+  # Fixtures live in scripts/lib/lockfile_cases/ rather than inline heredocs:
+  # bashrs parses an embedded heredoc as shell, so TOML `name = "serde"` reads as
+  # SC1007 "space after =" -- 21 phantom errors. Same reason the awk and python
+  # helpers are separate files.
+  CASES="${LIB_DIR}/lockfile_cases"
   fails=0
 
-  cat > "$TD/lock" <<'LOCK'
-[[package]]
-name = "serde"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "trueno"
-version = "0.17.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "aprender-compute"
-version = "0.63.0"
-
-[[package]]
-name = "aprender"
-version = "0.27.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-LOCK
-
-  got="$(registry_names "$TD/lock" | sort | tr '\n' ' ')"
-  # MUST include registry entries, MUST NOT include the path-sourced one.
+  got="$(registry_names "$CASES/mixed.lock" | sort | tr '\n' ' ')"
   if [ "$got" = "aprender serde trueno " ]; then
     printf 'ok    row 1 registry packages extracted; path package excluded\n'
   else
     printf 'FAIL  row 1 got [%s], expected [aprender serde trueno ]\n' "$got"; fails=1
   fi
 
-  # Row 2: a lockfile with no registry sources at all must yield nothing —
-  # and the caller must treat that as suspicious, not as a pass.
-  cat > "$TD/lock2" <<'LOCK'
-[[package]]
-name = "aprender-core"
-version = "0.63.0"
-LOCK
-  if [ -z "$(registry_names "$TD/lock2")" ]; then
+  if [ -z "$(registry_names "$CASES/all_local.lock")" ]; then
     printf 'ok    row 2 no registry sources yields nothing\n'
   else
     printf 'FAIL  row 2 invented a registry package\n'; fails=1
   fi
 
-  # Row 3: `source` belonging to the NEXT package must not leak backwards.
-  cat > "$TD/lock3" <<'LOCK'
-[[package]]
-name = "local-thing"
-version = "0.1.0"
-
-[[package]]
-name = "remote-thing"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-LOCK
-  got="$(registry_names "$TD/lock3" | tr '\n' ' ')"
+  got="$(registry_names "$CASES/source_after_local.lock" | tr '\n' ' ')"
   if [ "$got" = "remote-thing " ]; then
     printf 'ok    row 3 source does not leak to the preceding package\n'
   else
     printf 'FAIL  row 3 got [%s], expected [remote-thing ]\n' "$got"; fails=1
   fi
 
-  # Row 4: a git-sourced package is not a crates.io package.
-  cat > "$TD/lock4" <<'LOCK'
-[[package]]
-name = "git-thing"
-version = "0.1.0"
-source = "git+https://example.invalid/x#abc"
-LOCK
-  if [ -z "$(registry_names "$TD/lock4")" ]; then
+  if [ -z "$(registry_names "$CASES/git_source.lock")" ]; then
     printf 'ok    row 4 git source is not a registry source\n'
   else
     printf 'FAIL  row 4 counted a git dependency as registry\n'; fails=1
@@ -161,7 +117,7 @@ LOCK
 fi
 
 # ---------------------------------------------------------------------------
-printf '=== no in-tree crate name may resolve from crates.io (check_lockfile_no_registry_siblings.sh) ===\n'
+printf '=== no workspace-local crate name may resolve from crates.io (check_lockfile_no_registry_siblings.sh) ===\n'
 
 if [ ! -f "$REPO_ROOT/Cargo.lock" ]; then
   printf 'FAIL: Cargo.lock is missing; this guard needs the committed lockfile.\n'
@@ -177,7 +133,7 @@ n_lock="$(printf '%s\n' "$LOCKNAMES" | sort -u | grep -c . || true)"
 # intersection trivially empty — the precise way a guard like this reports clean
 # while measuring nothing.
 if [ "$n_names" -lt 200 ]; then
-  printf '\nFAIL (vacuity): only %s in-tree crate name(s) found, expected 200+.\n' "$n_names"
+  printf '\nFAIL (vacuity): only %s workspace-local crate name(s) found, expected 200+.\n' "$n_names"
   printf 'The name extractor is broken. Fix it rather than this number.\n'
   exit 1
 fi
@@ -190,7 +146,7 @@ fi
 FOUND="$(collisions "$REPO_ROOT")"
 count="$(printf '%s\n' "$FOUND" | grep -c . || true)"
 
-printf '%s in-tree name(s), %s registry package(s) in Cargo.lock\n' "$n_names" "$n_lock"
+printf '%s workspace-local name(s), %s registry package(s) in Cargo.lock\n' "$n_names" "$n_lock"
 
 if [ "${1:-}" = "--update" ]; then
   printf '%s\n' "$FOUND" | grep . > "$BASELINE_FILE" || : > "$BASELINE_FILE"
@@ -207,7 +163,7 @@ baseline_count="$(grep -c . "$BASELINE_FILE" || true)"
 printf '%s collision(s), baseline %s\n' "$count" "$baseline_count"
 
 if [ "$count" -gt "$baseline_count" ]; then
-  printf '\nFAIL: registry copies of in-tree crates grew %s -> %s.\n' "$baseline_count" "$count"
+  printf '\nFAIL: registry copies of workspace-local crates grew %s -> %s.\n' "$baseline_count" "$count"
   printf 'A crates.io package now shares a name with a workspace crate. Cargo will\n'
   printf 'happily compile both, and their types are mutually incompatible.\n\n'
   comm -13 <(sort "$BASELINE_FILE") <(printf '%s\n' "$FOUND" | grep . | sort) | sed 's|^|  NEW: |'
@@ -219,6 +175,6 @@ if [ "$count" -lt "$baseline_count" ]; then
   printf '\nImproved: %s -> %s. Run --update to record it.\n' "$baseline_count" "$count"
 fi
 
-printf '\nPASS (ratcheted). Currently resolved from crates.io despite being in-tree:\n'
+printf '\nPASS (ratcheted). Currently resolved from crates.io despite being workspace-local:\n'
 printf '%s\n' "$FOUND" | grep . | sed 's|^|  |'
 exit 0
