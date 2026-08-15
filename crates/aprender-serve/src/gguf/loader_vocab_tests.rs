@@ -251,6 +251,48 @@ mod tests {
         assert_eq!(apr_bytes[4], 2, "version major");
     }
 
+    /// An unrecognized GGML quant type must ABORT the APR write, not be labelled F32.
+    ///
+    /// `apr_qtype_to_dtype` used `.map_or("F32", ..)`, and its result is written
+    /// straight into the APR tensor index. A model carrying a quant type this
+    /// build does not know therefore had its quantized bytes emitted LABELLED
+    /// F32 — a structurally valid file whose reader decodes Q-blocks as raw
+    /// floats and produces garbage weights, silently. Same class as the GPU
+    /// `unwrap_or(Q4K)` that `gpu_unsupported_quant_qtype` exists to prevent;
+    /// the conversion path simply had no equivalent gate.
+    ///
+    /// Asserts on `to_apr_bytes()` rather than on the helper, so it proves the
+    /// failure PROPAGATES rather than merely that the helper can return Err.
+    #[test]
+    fn unknown_qtype_aborts_apr_write_instead_of_labelling_it_f32() {
+        let (mut model, _) = build_model_via_gguf_roundtrip();
+
+        // Control: the untouched model converts cleanly, so a later failure is
+        // attributable to the qtype and not to the fixture.
+        model
+            .to_apr_bytes()
+            .expect("control: unmodified model must convert");
+
+        // 99 is not in GgmlQuantType::from_id's table.
+        model.lm_head_weight.qtype = 99;
+
+        // `.map(|b| b.len())` so a regression reports "wrote N bytes" instead of
+        // dumping the whole APR file into the failure message.
+        let err = model
+            .to_apr_bytes()
+            .map(|b| format!("wrote {} bytes instead of failing", b.len()))
+            .expect_err("an unknown quant type must abort the APR write");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("99"),
+            "the error must name the offending quant type: {msg}"
+        );
+        assert!(
+            !msg.is_empty() && msg.to_lowercase().contains("quant"),
+            "the error must say what went wrong: {msg}"
+        );
+    }
+
     #[test]
     fn test_to_apr_bytes_tensor_count_nonzero() {
         let (model, _) = build_model_via_gguf_roundtrip();
