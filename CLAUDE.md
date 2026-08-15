@@ -19,7 +19,7 @@ here disagrees with its command, the command wins.
 |------|-------------|---------------------|
 | Workspace crates | `cargo metadata --no-deps --format-version 1 \| python3 -c "import json,sys;print(len(json.load(sys.stdin)['packages']))"` | 78 — 77 under `crates/` plus the root facade |
 | Dirs under `crates/` | `ls -1d crates/*/ \| wc -l` | 82. **This is not the crate count**: 4 are `exclude`d in the root `Cargo.toml`, and `aprender-contracts-staging` has no manifest. A directory is not a crate |
-| `apr` subcommands | `apr --help`; registry is `contracts/apr-cli-commands-v1.yaml` §`commands`, mirrored by `crates/apr-cli/tests/cli_commands.rs::registered_commands` | 103, in 10 categories |
+| `apr` subcommands | `apr --help`; registry is `contracts/apr-cli-commands-v1.yaml` §`commands`, mirrored by `crates/apr-cli/tests/cli_commands.rs::registered_commands` | 111, in 10 categories |
 | Provable contracts | `find contracts -name '*.yaml' \| wc -l` | 1768 |
 | Workspace lib tests | the `Summary` line of CI's `workspace-test` job (see Build Commands for the exact nextest invocation) | **80,604 passed**, 130 skipped, across 69 binaries — CI run `31631488466`, `main` @ `d40756541`, 2026-08-12 |
 | Released version | `git tag --sort=-creatordate \| head -1` · `gh release list` | **v0.63.0**, 2026-08-01 ("provenance") |
@@ -482,7 +482,7 @@ Clippy's lint set is **not monotonic**: the #2370 tree is clean on 1.93/1.96/1.9
 
 ## APR CLI (`cargo install aprender`)
 
-103 commands across 10 categories as of 2026-08-13; the registry is
+111 commands across 10 categories as of 2026-08-15; the registry is
 `contracts/apr-cli-commands-v1.yaml` (§`commands`), mirrored by
 `crates/apr-cli/tests/cli_commands.rs::registered_commands` and enforced by
 FALSIFY-CLI-001/002. Note the contract's own `scope:` string still says "77 commands" —

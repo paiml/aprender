@@ -21,7 +21,21 @@ metadata:
 kind: CLICommandContract
 name: apr-cli-commands
 version: "1.1.0"
-scope: "all apr CLI subcommands (105 commands; count is derived from the `commands:` list below and checked against `apr --help` by FALSIFY-CLI-005 — do not hand-maintain a number here)"
+scope: |
+  All apr CLI subcommands. The authoritative list is this file's own
+  `commands:` block; it is mirrored by
+  crates/apr-cli/tests/cli_commands.rs::registered_commands and checked
+  against `apr --help` by FALSIFY-CLI-005.
+
+  Deliberately no hand-maintained total here. There was one, and it read
+  "77 commands" followed by a prose changelog of every addition since --
+  while the list below held 111. A count inside the contract that certifies
+  counts, drifting 34 behind its own data, with no guard watching it: a
+  fourth copy of a number three other places already agree on.
+
+  To get the number, parse the list. Note `grep -c '^  - name:'` is WRONG
+  -- it returns 117 because other same-indent `name:` keys exist in this
+  file. Parse the YAML.
 binary: "apr"
 install: "cargo install aprender"
 
