@@ -590,6 +590,15 @@ jobs:
         run: bash scripts/check_package_includes.sh
       - name: Package-includes guard case table
         run: bash scripts/check_package_includes.sh --self-test
+      # .gitignore DECLARES, the index CONTRADICTS, and nothing compared them.
+      # `.gitignore:62` says `**/.pmat-work/`; git tracked 461 of those anyway,
+      # 315 MB of regenerable pmat scratch read by nothing in the build. Ratchet
+      # only -- 320 remain and they are not all removable (proptest-regressions
+      # MUST stay tracked; there the ignore RULE is what is wrong). Text-only.
+      - name: No tracked file may be declared ignored
+        run: bash scripts/check_no_tracked_ignored_files.sh
+      - name: Tracked-ignored guard case table
+        run: bash scripts/check_no_tracked_ignored_files.sh --self-test
       # Poka-yoke: APR-MONO made every sibling a path alias under crates/, but
       # `trueno = "0.16"` still BUILDS - cargo resolves the crates.io copy
       # alongside the in-tree one, so the tree compiles two mutually
