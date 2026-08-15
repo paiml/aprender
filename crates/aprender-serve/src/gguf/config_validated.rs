@@ -189,6 +189,22 @@ mod tests {
         assert!(err.to_string().contains("2097152"), "{err}");
     }
 
+    /// The mirror of the too-large case above. `context_length` was bounded on
+    /// one side only, and every consumer compares `prompt.len() > context_length`,
+    /// so a zero refused every non-empty prompt instead of failing at load. A
+    /// GGUF that omits the key produced exactly that.
+    #[test]
+    fn test_validated_config_rejects_context_length_zero() {
+        let mut cfg = valid_llama_config();
+        cfg.context_length = 0;
+        let err = ValidatedModelConfig::validate(cfg).unwrap_err();
+        assert!(err.to_string().contains("context_length"), "{err}");
+        assert!(
+            err.to_string().contains("every prompt would be rejected"),
+            "the error must say what a 0 actually does to the user: {err}"
+        );
+    }
+
     #[test]
     fn test_validated_config_rejects_rope_theta_too_small() {
         let mut cfg = valid_llama_config();

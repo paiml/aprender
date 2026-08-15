@@ -16,6 +16,7 @@ use realizar::gguf::{ArchConstraints, ContiguousKVCache, GGUFConfig, OwnedQuanti
 /// Helper function to create a test GGUFConfig with specified layers and hidden_dim
 fn make_test_config(num_layers: usize, hidden_dim: usize) -> GGUFConfig {
     GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "test".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim,

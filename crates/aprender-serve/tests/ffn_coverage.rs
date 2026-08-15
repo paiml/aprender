@@ -56,6 +56,7 @@ fn create_test_tensor(in_dim: usize, out_dim: usize) -> OwnedQuantizedTensor {
 /// Create test config
 fn test_config() -> GGUFConfig {
     GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "test".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 64,
@@ -82,6 +83,8 @@ fn create_gelu_layer(config: &GGUFConfig) -> OwnedQuantizedLayer {
     let qkv_out_dim = hidden_dim + 2 * kv_dim;
 
     OwnedQuantizedLayer {
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
         attn_norm_weight: vec![1.0f32; hidden_dim],
         attn_norm_bias: None,
         qkv_weight: OwnedQKVWeights::Fused(create_test_tensor(hidden_dim, qkv_out_dim)),
@@ -109,6 +112,8 @@ fn create_fused_swiglu_layer(config: &GGUFConfig) -> OwnedQuantizedLayer {
     let qkv_out_dim = hidden_dim + 2 * kv_dim;
 
     OwnedQuantizedLayer {
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
         attn_norm_weight: vec![1.0f32; hidden_dim], // RMSNorm: no bias
         attn_norm_bias: None,
         qkv_weight: OwnedQKVWeights::Fused(create_test_tensor(hidden_dim, qkv_out_dim)),
@@ -136,6 +141,8 @@ fn create_nonfused_swiglu_layer(config: &GGUFConfig) -> OwnedQuantizedLayer {
     let qkv_out_dim = hidden_dim + 2 * kv_dim;
 
     OwnedQuantizedLayer {
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
         attn_norm_weight: vec![1.0f32; hidden_dim],
         attn_norm_bias: None,
         qkv_weight: OwnedQKVWeights::Fused(create_test_tensor(hidden_dim, qkv_out_dim)),
@@ -163,6 +170,8 @@ fn create_layernorm_swiglu_layer(config: &GGUFConfig) -> OwnedQuantizedLayer {
     let qkv_out_dim = hidden_dim + 2 * kv_dim;
 
     OwnedQuantizedLayer {
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
         attn_norm_weight: vec![1.0f32; hidden_dim],
         attn_norm_bias: Some(vec![0.0f32; hidden_dim]), // Bias = LayerNorm
         qkv_weight: OwnedQKVWeights::Fused(create_test_tensor(hidden_dim, qkv_out_dim)),

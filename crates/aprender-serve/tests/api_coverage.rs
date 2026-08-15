@@ -880,12 +880,14 @@ fn test_completion_choice_with_logprobs() {
 #[test]
 fn test_model_metadata_response_full() {
     let response = ModelMetadataResponse {
+        architecture: None,
+        model_max_context_length: None,
         id: "phi-2".to_string(),
         name: "Phi-2".to_string(),
-        format: "gguf".to_string(),
-        size_bytes: 2_700_000_000,
+        format: Some("gguf".to_string()),
+        size_bytes: Some(2_700_000_000),
         quantization: Some("Q4_K_M".to_string()),
-        context_length: 2048,
+        context_length: Some(2048),
         lineage: Some(ModelLineage {
             uri: "pacha://phi-2:latest".to_string(),
             version: "1.0.0".to_string(),
@@ -900,7 +902,7 @@ fn test_model_metadata_response_full() {
     let deserialized: ModelMetadataResponse =
         serde_json::from_str(&json).expect("should deserialize");
 
-    assert_eq!(deserialized.format, "gguf");
+    assert_eq!(deserialized.format.as_deref(), Some("gguf"));
     assert!(deserialized.lineage.is_some());
     let lineage = deserialized.lineage.unwrap();
     assert_eq!(lineage.parent, Some("phi-1.5".to_string()));
@@ -909,12 +911,14 @@ fn test_model_metadata_response_full() {
 #[test]
 fn test_model_metadata_response_minimal() {
     let response = ModelMetadataResponse {
+        architecture: None,
+        model_max_context_length: None,
         id: "simple".to_string(),
         name: "Simple Model".to_string(),
-        format: "apr".to_string(),
-        size_bytes: 100_000,
+        format: Some("apr".to_string()),
+        size_bytes: Some(100_000),
         quantization: None,
-        context_length: 512,
+        context_length: Some(512),
         lineage: None,
         loaded: false,
     };
@@ -2645,12 +2649,14 @@ fn test_reload_request_only_path() {
 #[test]
 fn test_model_metadata_response_no_quantization() {
     let response = ModelMetadataResponse {
+        architecture: None,
+        model_max_context_length: None,
         id: "fp16-model".to_string(),
         name: "Full Precision Model".to_string(),
-        format: "safetensors".to_string(),
-        size_bytes: 10_000_000_000,
+        format: Some("safetensors".to_string()),
+        size_bytes: Some(10_000_000_000),
         quantization: None,
-        context_length: 8192,
+        context_length: Some(8192),
         lineage: None,
         loaded: true,
     };
@@ -3533,12 +3539,14 @@ fn test_prediction_with_score_one() {
 #[test]
 fn test_model_metadata_full_with_all_fields() {
     let response = ModelMetadataResponse {
+        architecture: None,
+        model_max_context_length: None,
         id: "model-v2".to_string(),
         name: "Test Model V2".to_string(),
-        format: "apr".to_string(),
-        size_bytes: 5_000_000_000,
+        format: Some("apr".to_string()),
+        size_bytes: Some(5_000_000_000),
         quantization: Some("Q4_K_M".to_string()),
-        context_length: 32768,
+        context_length: Some(32768),
         lineage: Some(ModelLineage {
             uri: "pacha://test:v2".to_string(),
             version: "2.0.0".to_string(),
@@ -3553,7 +3561,7 @@ fn test_model_metadata_full_with_all_fields() {
     let deserialized: ModelMetadataResponse =
         serde_json::from_str(&json).expect("should deserialize");
 
-    assert_eq!(deserialized.context_length, 32768);
+    assert_eq!(deserialized.context_length, Some(32768));
     assert!(deserialized.lineage.is_some());
     let lineage = deserialized.lineage.unwrap();
     assert_eq!(lineage.recipe, Some("finetune-chat".to_string()));
@@ -4590,12 +4598,14 @@ fn test_completion_response_with_logprobs() {
 fn test_model_metadata_response_variations() {
     // GGUF model with quantization
     let gguf = ModelMetadataResponse {
+        architecture: None,
+        model_max_context_length: None,
         id: "llama-7b-q4".to_string(),
         name: "LLaMA 7B Q4_K_M".to_string(),
-        format: "gguf".to_string(),
-        size_bytes: 4_000_000_000,
+        format: Some("gguf".to_string()),
+        size_bytes: Some(4_000_000_000),
         quantization: Some("Q4_K_M".to_string()),
-        context_length: 4096,
+        context_length: Some(4096),
         lineage: Some(ModelLineage {
             uri: "pacha://llama:7b".to_string(),
             version: "1.0.0".to_string(),
@@ -4611,12 +4621,14 @@ fn test_model_metadata_response_variations() {
 
     // SafeTensors model without quantization
     let safetensors = ModelMetadataResponse {
+        architecture: None,
+        model_max_context_length: None,
         id: "bert-base".to_string(),
         name: "BERT Base".to_string(),
-        format: "safetensors".to_string(),
-        size_bytes: 440_000_000,
+        format: Some("safetensors".to_string()),
+        size_bytes: Some(440_000_000),
         quantization: None,
-        context_length: 512,
+        context_length: Some(512),
         lineage: None,
         loaded: false,
     };
