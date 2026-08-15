@@ -225,6 +225,9 @@ tier3:
 	@echo "Checking no contract cites a test that does not exist (aprender#2465)..."
 	@bash scripts/check_contract_test_binding.sh --self-test
 	@bash scripts/check_contract_test_binding.sh
+	@echo "Checking no source file under src/ is undeclared (aprender#2473)..."
+	@bash scripts/check_orphaned_source_files.sh --self-test
+	@bash scripts/check_orphaned_source_files.sh
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \

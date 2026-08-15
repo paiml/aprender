@@ -444,6 +444,20 @@ jobs:
       # compile its own test suite. Text-only check, no build.
       - name: No exclude pattern may swallow a src/ directory
         run: bash scripts/check_exclude_anchored.sh
+      # Poka-yoke: a .rs file under src/ that no `mod`/`include!`/`#[path]`
+      # declares is never compiled, and every gate we run is blind to it - fmt
+      # skips it, clippy skips it, the test count does not move, coverage cannot
+      # report a file that was never built. #2473: 15 of 16 *_tests.rs files in
+      # aprender-test-lib were wired into nothing, so ~26,000 lines and 1,741
+      # test functions sat in the tree looking exactly like tests. Appending
+      # `this is not rust;` to any of them left `cargo check` exiting 0.
+      # Ratcheted against a baseline of pre-existing orphans; the list may only
+      # shrink. Self-test runs FIRST, per Verification Discipline #7 (re-run the
+      # case table, never re-read the pattern). Text-only, no build, ~1.5s.
+      - name: Orphan guard's own case table must pass before it judges the tree
+        run: bash scripts/check_orphaned_source_files.sh --self-test
+      - name: No source file under src/ may be undeclared
+        run: bash scripts/check_orphaned_source_files.sh
       # Poka-yoke: capturing `cmd 2>&1` into one variable and then parsing it as
       # JSON puts the command's diagnostics in front of its data. On 2026-08-11
       # the nightly story reported `no format_parity gate found in --json output
