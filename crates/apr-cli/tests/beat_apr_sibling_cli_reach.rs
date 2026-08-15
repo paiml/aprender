@@ -1,5 +1,5 @@
-//! FALSIFY-CLI-REACH-002: `trueno-rag` and `trueno-zram` capability must be
-//! reachable through `apr`.
+//! FALSIFY-CLI-REACH-002: `trueno-rag`, `trueno-zram` and `simular` capability
+//! must be reachable through `apr`.
 //!
 //! Both crates declared their whole command surface inside a `main.rs`. A
 //! command enum in a binary target is importable by nothing, so the standalone
@@ -229,3 +229,118 @@ fn apr_zram_benchmark_runs_instead_of_panicking() {
 // an oracle that agrees with itself by construction. The structural guarantee
 // is instead that `apr`'s arm and `trueno-rag`'s `main` both call
 // `aprender_rag_cli::dispatch`; the tests above prove that path executes.
+
+/// Top-level commands `simular` declares.
+const SIM_COMMANDS: &[&str] = &[
+    "run",
+    "render",
+    "validate",
+    "verify",
+    "emc-check",
+    "emc-validate",
+    "list-emc",
+];
+
+#[test]
+fn every_simular_command_is_reachable_through_apr_sim() {
+    let help = help_body(&["sim", "--help"]);
+
+    let missing: Vec<&str> = SIM_COMMANDS
+        .iter()
+        .copied()
+        .filter(|c| !help.contains(c))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "`apr sim` does not offer {missing:?}; they are reachable only from the \
+         standalone `simular` binary.\n{help}"
+    );
+    assert!(
+        !help.contains("wharrgarbl"),
+        "help contains a name no command has, so `contains` proves nothing here"
+    );
+}
+
+#[test]
+fn apr_sim_validates_a_real_emc_file() {
+    let emc = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../aprender-simulate/docs/emc/ml/linear_regression.emc.yaml"
+    );
+    assert!(
+        std::path::Path::new(emc).is_file(),
+        "fixture moved: {emc} -- fix the path rather than weakening the test"
+    );
+
+    let out = apr()
+        .args(["sim", "emc-validate", emc])
+        .output()
+        .expect("apr sim emc-validate");
+    assert!(
+        out.status.success(),
+        "apr sim emc-validate exited {:?}\nstderr: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let body = String::from_utf8_lossy(&out.stdout);
+    // EMC-ML-001 comes out of the parsed YAML; clap cannot produce it.
+    assert!(
+        body.contains("EMC-ML-001"),
+        "the EMC id is absent, so the file was never parsed.\n{body}"
+    );
+    assert!(
+        body.contains("PASSED"),
+        "schema validation did not report a verdict.\n{body}"
+    );
+}
+
+/// simular's grammar used to be hand-rolled: `match args[1].as_str()` over a
+/// `Vec<String>`. It did not merely duplicate clap, it SILENTLY DISCARDED
+/// input -- `--seed notanumber` became `None` and the run proceeded on the
+/// default seed, in the one flag that pins reproducibility. Its own unit test
+/// asserted that behaviour ("Missing value and invalid value both result in
+/// None seed"), which is how the defect survived.
+///
+/// These assert the grammar is now declarative and rejecting, through `apr`.
+#[test]
+fn apr_sim_rejects_input_the_hand_rolled_parser_swallowed() {
+    for (args, what) in [
+        (
+            vec!["sim", "run", "experiment.yaml", "--seed", "not-a-number"],
+            "a non-numeric seed",
+        ),
+        (
+            vec!["sim", "run", "experiment.yaml", "--seed"],
+            "a seed flag with no value",
+        ),
+        (
+            vec!["sim", "run", "experiment.yaml", "--verbse"],
+            "a misspelled flag",
+        ),
+        (
+            vec!["sim", "verify", "experiment.yaml", "--runs", "many"],
+            "a non-numeric run count",
+        ),
+    ] {
+        let out = apr().args(&args).output().expect("apr sim");
+        assert!(
+            !out.status.success(),
+            "{what} was accepted: `apr {}` exited 0. Silently ignoring it is the \
+             defect this test exists for.",
+            args.join(" ")
+        );
+    }
+
+    // Control: a well-formed invocation of the SAME subcommand is not rejected
+    // by the parser. Without this, "everything fails" would pass the loop above.
+    let out = apr()
+        .args(["sim", "run", "--seed", "7", "definitely-not-here.yaml"])
+        .output()
+        .expect("apr sim run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("invalid value") && !stderr.contains("unexpected argument"),
+        "a well-formed invocation was rejected by the PARSER, so the rejections \
+         above are not specific to bad input.\nstderr: {stderr}"
+    );
+}

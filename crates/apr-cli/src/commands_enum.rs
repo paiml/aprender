@@ -809,6 +809,11 @@ pub enum Commands {
     /// zram device management (was the `trueno-zram` binary)
     #[command(subcommand)]
     Zram(aprender_zram_cli::Commands),
+
+    /// Discrete-event simulation: run, render, validate, verify, emc-check
+    /// (was the `simular` binary)
+    #[command(subcommand)]
+    Sim(simular::cli::Command),
 }
 
 /// Subcommands for `apr debug` (aprender#2377 finding 3).

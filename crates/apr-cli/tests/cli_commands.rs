@@ -140,6 +140,10 @@ fn registered_commands() -> Vec<&'static str> {
         "decrypt",
         "mcp",
         "code",
+        // APR-MONO: sibling CLIs that had no route through apr at all
+        "rag",
+        "zram",
+        "sim",
     ]
 }
 

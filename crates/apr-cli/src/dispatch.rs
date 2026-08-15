@@ -73,6 +73,16 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     .map_err(|e| CliError::ValidationFailed(format!("zram: {e}"))),
             )
         }
+        Commands::Sim(command) => {
+            let code = simular::cli::run_cli(simular::cli::Args {
+                command: command.clone(),
+            });
+            Some(if code == std::process::ExitCode::SUCCESS {
+                Ok(())
+            } else {
+                Err(CliError::ValidationFailed("sim command failed".to_string()))
+            })
+        }
         _ => None,
     }
 }

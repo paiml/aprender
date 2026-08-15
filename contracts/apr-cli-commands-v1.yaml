@@ -696,6 +696,28 @@ commands:
     requires_model: false
     side_effects: [stdio]
 
+  # ── Consolidated sibling CLIs (APR-MONO) ──
+  # Each was reachable ONLY from its own binary; the command enum lived in a
+  # main.rs, importable by nothing. apr now calls the SAME dispatch fn.
+
+  - name: rag
+    category: pipeline
+    description: "RAG pipeline: index, query, transcribe (was the trueno-rag binary)"
+    requires_model: false
+    side_effects: [filesystem]
+
+  - name: zram
+    category: tools
+    description: "zram device management (was the trueno-zram binary)"
+    requires_model: false
+    side_effects: [filesystem]
+
+  - name: sim
+    category: tools
+    description: "Discrete-event simulation (was the simular binary)"
+    requires_model: false
+    side_effects: [filesystem]
+
 # ── Falsification Conditions ──
 
 falsification:
