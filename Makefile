@@ -515,6 +515,7 @@ deps-validate:
 # Run cargo-deny checks (licenses, bans, advisories, sources)
 deny:
 	@echo "🔒 Running cargo-deny checks..."
+	@bash scripts/check_deny_exemptions_live.sh
 	@if command -v cargo-deny >/dev/null 2>&1; then \
 		cargo deny check; \
 	else \
