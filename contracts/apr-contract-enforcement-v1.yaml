@@ -1,0 +1,162 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-contract-enforcement-v1
+#
+# A contract may not name an enforcement command that cannot run.
+#
+# ORIGIN (#2504, SURF-14 / R11)
+# contracts/apr-cli-commands-v1.yaml declared, five times:
+#
+#     enforcement: "cargo test --test apr_cli_commands <fn>"
+#
+# There is no `apr_cli_commands` test target — the target is `cli_commands`
+# (crates/apr-cli/tests/cli_commands.rs). All five exited 101 with
+# `error: no test target named apr_cli_commands`. Two were wrong twice over,
+# naming `test_all_commands_help` where the function is
+# `test_all_commands_respond_to_help` (cli_commands.rs:201).
+#
+# The underlying tests are REAL and DO run — `cli_commands` is invoked at
+# ci.yml:327 inside `workspace-test`, which is inside `gate.needs`. Nothing was
+# unguarded. What was fiction is the contract's ACCOUNT of how it is enforced.
+#
+# WHY THAT IS A CONTRACT DEFECT AND NOT A TYPO
+# A contract exists to let a reader discriminate. Someone auditing whether
+# FALSIFY-CLI-003 is live runs the command the contract hands them, gets an
+# error, and cannot tell "the pointer is stale" from "the gate is missing".
+# The contract has destroyed exactly the signal it was written to provide.
+# This is R1 one level up: a claim verified against nothing.
+#
+# WHY NOTHING CAUGHT IT
+# These strings live under a top-level `falsification:` list. The typed
+# `Contract` struct has no such field — it has `falsification_tests`
+# (crates/aprender-contracts/src/schema/types.rs:33). serde drops the unknown
+# key silently, so `pv validate` never sees them, and the sibling guard
+# check_contract_test_binding.sh (#2465) reads `falsification_tests[].test`,
+# a different field entirely. The block is inert YAML that reads as governance.
+#
+# PROOF LADDER (crates/aprender-contracts/src/proof_status.rs):
+#   * L1 — YAML + obligations (this file).
+#   * L2 — falsification tests cover obligations. >>> ACHIEVED <<<: the guard
+#          ships an 8-case must-flag/must-not-flag table plus a vacuity arm, and
+#          BOTH guard-logic mutations were verified RED (neutered resolver;
+#          disabled vacuity floor). The guard was also confirmed RED on
+#          unmodified main against the 5 real defects before the fix landed.
+#   * L3 — Kani BMC. NOT APPLICABLE and deliberately not declared: the subject
+#          is a filesystem + `cargo metadata` resolution over unbounded strings,
+#          not a bounded arithmetic kernel. Declaring an un-backed Kani harness
+#          to inflate the level would be theater. This contract honestly
+#          reports L2.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-contract-enforcement
+version: "1.0.0"
+scope: >
+  Every `enforcement:` scalar under contracts/ that names a `cargo test`
+  invocation. Out of scope: enforcement strings naming CI job names, runtime
+  assertions, or build-time checks (182 of the 195 strings in the tree today) —
+  those have no single mechanical resolver and are a named follow-up, not a
+  silent omission.
+status: active
+
+metadata:
+  kind: pattern     # cross-cutting CI-lane guard over contract metadata, not a
+                    # math kernel. Set EXPLICITLY so `pv validate`'s `kernel`
+                    # default never silently applies (spec §5.3).
+  version: "1.0.0"
+  created: '2026-08-15'
+  last_modified: '2026-08-15'
+  author: PAIML Engineering
+  description: >
+    A contract that misreports how it is enforced provides no discrimination
+    between a stale pointer and a missing gate. This pins every cargo-shaped
+    enforcement string to a target and test function that actually exist,
+    resolved against `cargo metadata` rather than against a guess.
+
+contract: |
+  For every `enforcement:` scalar E in contracts/**/*.yaml such that E names a
+  `cargo test` invocation:
+
+    (1) if E names `--test T`, then T is a test target of some workspace
+        package, as reported by `cargo metadata --no-deps`;
+    (2) if E also names `-p P` (or `--package P`), then the package owning T
+        is exactly P;
+    (3) if E carries a trailing bare token F (a `cargo test` filter), then the
+        source file of T contains a definition `fn F(`.
+
+  Rule (3) is an exact function-name match, deliberately stricter than cargo's
+  own substring filtering. Accepting prefixes would let `test_all` "resolve"
+  against `test_all_commands_respond_to_help` — the precise near-miss shape
+  that produced #2504.
+
+equations:
+  - name: ENF-EQ-001
+    statement: "resolves(E) ⟺ target_exists(E) ∧ package_matches(E) ∧ fn_exists(E)"
+    description: >
+      Resolution is the conjunction of the three rules. Total over all
+      cargo-shaped enforcement strings: every E is either resolved or reported,
+      never skipped.
+
+proof_obligations:
+  - id: ENF-OB-001
+    statement: "No enforcement string names a --test target absent from cargo metadata."
+    discharged_by: falsification_tests[0]
+  - id: ENF-OB-002
+    statement: "No enforcement string names a test fn absent from its target's source."
+    discharged_by: falsification_tests[1]
+  - id: ENF-OB-003
+    statement: "No enforcement string names a -p package that does not own its target."
+    discharged_by: falsification_tests[2]
+  - id: ENF-OB-004
+    statement: >
+      The guard refuses to pass when it resolves zero enforcement strings — a
+      regex that stopped matching must never be indistinguishable from a clean
+      tree (#2476, #2485).
+    discharged_by: falsification_tests[3]
+
+falsification_tests:
+  - name: enforcement_target_must_exist
+    test_harness: "bash scripts/check_contract_enforcement.sh --self-test"
+    description: >
+      Fixture case bad_target.yaml names `--test ghost_target`. MUST be flagged.
+    mutation: "Neuter resolve_one() to `return 0` — VERIFIED RED."
+  - name: enforcement_fn_must_exist
+    test_harness: "bash scripts/check_contract_enforcement.sh --self-test"
+    description: >
+      Fixture cases bad_fn.yaml (`test_ghost_fn`) and bad_prefix.yaml
+      (`test_real`, a prefix of a real fn) MUST both be flagged.
+    mutation: "Neuter resolve_one() to `return 0` — VERIFIED RED."
+  - name: enforcement_package_must_own_target
+    test_harness: "bash scripts/check_contract_enforcement.sh --self-test"
+    description: >
+      Fixture case bad_pkg.yaml names `-p other` for a target owned by `fx`.
+      MUST be flagged.
+    mutation: "Neuter resolve_one() to `return 0` — VERIFIED RED."
+  - name: enforcement_guard_refuses_to_pass_vacuously
+    test_harness: "bash scripts/check_contract_enforcement.sh --self-test"
+    description: >
+      An empty contract directory MUST fail, never read as clean.
+    mutation: "Disable the MIN_CMDS floor — VERIFIED RED."
+
+non_goals:
+  - "Checking that the named test PASSES. That is workspace-test's job; this proves the command RESOLVES."
+  - "Resolving non-cargo enforcement strings (CI job names, runtime assertions, build-time checks)."
+  - "Teaching the typed schema about the `falsification:` key. That is the better long-term home for this check and is named as follow-up in #2504; it is a schema change with its own blast radius."
+
+binding_registry:
+  guard: scripts/check_contract_enforcement.sh
+  ci_job: guard-runner-labels          # inside gate.needs (.github/workflows/ci.yml)
+  make_target: tier3
+  issue: "https://github.com/paiml/aprender/issues/2504"
+
+verification_summary: >
+  L2. Guard confirmed RED on unmodified main against the 5 real defects
+  (13 cargo enforcement strings checked, 5 failing), and GREEN after the fix
+  (13/13 resolve). The corrected command was independently confirmed to run:
+  `cargo test -p apr-cli --test cli_commands test_all_commands_respond_to_help
+  --no-run` exits 0, where the original exited 101. Self-test: 8 resolution
+  cases + 1 vacuity arm; both guard-logic mutations verified RED.
+
+formal_verification_roadmap: >
+  L3/Kani not applicable — the subject is filesystem and cargo-metadata
+  resolution over unbounded strings, not a bounded kernel. The real next rung is
+  moving the check into `pv` once the typed schema admits the `falsification:`
+  key, at which point the resolver becomes a total function over a typed model
+  rather than a text scan, and gains a property-test surface.
