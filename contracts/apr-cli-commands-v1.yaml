@@ -64,6 +64,7 @@ commands:
     description: "Inference server (plan/run)"
     requires_model: true
     side_effects: [network, filesystem]
+    subcommands: [plan, run]
 
   - name: chat
     category: inference
@@ -89,6 +90,7 @@ commands:
     description: "Simple debugging output"
     requires_model: true
     side_effects: []
+    subcommands: [embed-viz]
 
   - name: validate
     category: inspection
@@ -139,12 +141,14 @@ commands:
     description: "Dataset inspection tools (audio-inspect)"
     requires_model: false
     side_effects: []
+    subcommands: [audio-inspect]
 
   - name: kernel
     category: analysis
     description: "Kernel-level parity measurements (parity)"
     requires_model: false
     side_effects: []
+    subcommands: [parity]
 
   - name: trace
     category: inspection
@@ -226,6 +230,8 @@ commands:
     side_effects: [filesystem]
 
   # ── Model Registry ──
+    subcommands: [chain, compare-inference, convert, diff-tensors, fingerprint, inspect, validate-stats, verify]
+
   - name: pull
     category: registry
     description: "Download and cache model from HuggingFace"
@@ -249,6 +255,7 @@ commands:
     description: "Registry operations (CRUX-A-01): inspect alias map, etc."
     requires_model: false
     side_effects: []
+    subcommands: [aliases]
 
   - name: publish
     category: registry
@@ -280,6 +287,7 @@ commands:
     description: "Training pipeline (plan/apply)"
     requires_model: false
     side_effects: [filesystem, gpu]
+    subcommands: [apply, archive, cluster-status, halving, plan, submit, sweep, watch]
 
   - name: pretrain
     category: training
@@ -292,6 +300,7 @@ commands:
     description: "Tokenizer training pipeline (plan/apply)"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [apply, encode-corpus, import-hf, plan, repair-manifest, train]
 
   - name: tune
     category: training
@@ -335,6 +344,7 @@ commands:
     description: "Manage canary tests for regression"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [check, create]
 
   - name: compare-hf
     category: evaluation
@@ -385,6 +395,7 @@ commands:
     description: "Data quality pipeline"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [audit, balance, decontaminate, dedup, split, x]
 
   - name: pipeline
     category: data
@@ -393,6 +404,8 @@ commands:
     side_effects: [filesystem]
 
   # ── TUI & Monitoring ──
+    subcommands: [apply, plan, status, validate]
+
   - name: tui
     category: ui
     description: "Interactive terminal UI"
@@ -410,6 +423,7 @@ commands:
     description: "List, show, and compare training experiment runs"
     requires_model: false
     side_effects: []
+    subcommands: [diff, ls, show]
 
   - name: experiment
     category: ui
@@ -418,6 +432,8 @@ commands:
     side_effects: []
 
   # ── Miscellaneous ──
+    subcommands: [view]
+
   - name: showcase
     category: misc
     description: "Qwen2.5-Coder showcase demo"
@@ -435,6 +451,7 @@ commands:
         description: "Parse a Modelfile and emit config as JSON or human-readable text"
         requires_model: false
         side_effects: []
+    subcommands: [parse]
 
   - name: probar
     category: misc
@@ -451,6 +468,7 @@ commands:
         description: "Export tensor activations for visual regression testing (PMAT-481)"
         requires_model: true
         side_effects: [filesystem]
+    subcommands: [tensor]
 
   - name: diagnose
     category: misc
@@ -719,36 +737,42 @@ commands:
     description: "RAG pipeline: index, query, transcribe (was the trueno-rag binary)"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [demo, extract-frames, index, info, query, transcribe]
 
   - name: zram
     category: tools
     description: "zram device management (was the trueno-zram binary)"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [benchmark, create, remove, status]
 
   - name: sim
     category: tools
     description: "Discrete-event simulation (was the simular binary)"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [emc-check, emc-validate, list-emc, render, run, validate, verify]
 
   - name: cgp
     category: tools
     description: "Compute-graph profiling (was the aprender-cgp binary)"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [baseline, bench, compete, contract, diff, doctor, explain, profile, roofline, trace, tui]
 
   - name: qa-playbook
     category: tools
     description: "Model QA playbook runner (was the apr-qa binary)"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [bootstrap, certify, export-csv, export-evidence, generate, kernel-coverage, list, lock-playbooks, parity, report, run, score, tickets, tools, validate-contract]
 
   - name: pv
     category: tools
     description: "Provable-contracts CLI (also ships as the standalone pv binary)"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [audit, book, certify, check-parity, codegen, coq, coverage, diff, equations, explain, extract-pytorch, flux, fuzz, generate, graph, infer, invariants, kaizen, kani, lean, lean-status, lint, migrate, mirai, pipeline, probar, proof-status, query, roofline, scaffold, score, status, tla, unlock, validate, verify-bindings, verify-pipeline, verify-structure]
 
 # ── Falsification Conditions ──
 
