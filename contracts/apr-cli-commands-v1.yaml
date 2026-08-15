@@ -718,6 +718,18 @@ commands:
     requires_model: false
     side_effects: [filesystem]
 
+  - name: cgp
+    category: tools
+    description: "Compute-graph profiling (was the aprender-cgp binary)"
+    requires_model: false
+    side_effects: [filesystem]
+
+  - name: qa-playbook
+    category: tools
+    description: "Model QA playbook runner (was the apr-qa binary)"
+    requires_model: false
+    side_effects: [filesystem]
+
 # ── Falsification Conditions ──
 
 falsification:

@@ -11,7 +11,10 @@ use std::time::Instant;
 
 fn cgp_cmd() -> Command {
     let mut cmd = Command::new(env!("CARGO"));
-    cmd.arg("run").arg("-p").arg("cgp").arg("--");
+    // PACKAGE name, not the [lib] name. APR-MONO renamed the package to
+    // aprender-cgp and left this as "cgp", so every test in this file died
+    // at cargo package resolution -- before a single byte of cgp was linked.
+    cmd.arg("run").arg("-p").arg("aprender-cgp").arg("--");
     cmd
 }
 

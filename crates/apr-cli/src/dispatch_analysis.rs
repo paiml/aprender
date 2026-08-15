@@ -784,7 +784,6 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
         ),
 
         _ => return None,
-        _ => return None,
     };
     Some(result)
 }

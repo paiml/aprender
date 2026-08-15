@@ -344,3 +344,113 @@ fn apr_sim_rejects_input_the_hand_rolled_parser_swallowed() {
          above are not specific to bad input.\nstderr: {stderr}"
     );
 }
+
+/// Top-level commands `aprender-cgp` declares.
+const CGP_COMMANDS: &[&str] = &[
+    "profile", "bench", "roofline", "diff", "contract", "trace", "explain", "tui", "baseline",
+    "doctor", "compete",
+];
+
+/// Top-level commands `apr-qa` declares.
+const QA_PLAYBOOK_COMMANDS: &[&str] = &[
+    "certify",
+    "run",
+    "tools",
+    "generate",
+    "score",
+    "report",
+    "list",
+    "lock-playbooks",
+    "tickets",
+    "parity",
+    "export-csv",
+    "export-evidence",
+    "bootstrap",
+    "validate-contract",
+    "kernel-coverage",
+];
+
+#[test]
+fn every_cgp_command_is_reachable_through_apr_cgp() {
+    let help = help_body(&["cgp", "--help"]);
+    let missing: Vec<&str> = CGP_COMMANDS
+        .iter()
+        .copied()
+        .filter(|c| !help.contains(c))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "`apr cgp` does not offer {missing:?}\n{help}"
+    );
+    assert!(!help.contains("wharrgarbl"), "contains proves nothing here");
+}
+
+#[test]
+fn every_apr_qa_command_is_reachable_through_apr_qa_playbook() {
+    // Named `qa-playbook`, not `qa`: `apr qa` is already the falsifiable-gates
+    // command that takes a model path. Two different tools, two names.
+    let help = help_body(&["qa-playbook", "--help"]);
+    let missing: Vec<&str> = QA_PLAYBOOK_COMMANDS
+        .iter()
+        .copied()
+        .filter(|c| !help.contains(c))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "`apr qa-playbook` does not offer {missing:?}\n{help}"
+    );
+    assert!(!help.contains("wharrgarbl"), "contains proves nothing here");
+}
+
+#[test]
+fn apr_cgp_doctor_probes_the_real_machine() {
+    let out = apr()
+        .args(["cgp", "doctor"])
+        .output()
+        .expect("apr cgp doctor");
+    assert!(
+        out.status.success(),
+        "apr cgp doctor exited {:?}\nstderr: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let body = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        body.contains("System Check"),
+        "no system check banner: the arm did not reach cgp.\n{body}"
+    );
+    // Every probe reports a verdict, so the report is not an empty shell. Which
+    // tools are present is machine-dependent; that SOME verdict is rendered is
+    // not.
+    assert!(
+        body.contains("[OK]") || body.contains("[MISSING]"),
+        "no probe reported a verdict, so nothing was actually checked.\n{body}"
+    );
+}
+
+#[test]
+fn apr_qa_playbook_list_reads_the_real_registry() {
+    let out = apr()
+        .args(["qa-playbook", "list"])
+        .output()
+        .expect("apr qa-playbook list");
+    assert!(
+        out.status.success(),
+        "apr qa-playbook list exited {:?}\nstderr: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let body = String::from_utf8_lossy(&out.stdout);
+    let total = body
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("Total: "))
+        .and_then(|t| t.split_whitespace().next())
+        .and_then(|n| n.parse::<usize>().ok())
+        .unwrap_or_else(|| panic!("no `Total: N models` line in output:\n{body}"));
+    // Excludes the outcome where the registry loads but is empty -- which is how
+    // a scan reports clean having examined nothing.
+    assert!(
+        total > 0,
+        "the registry listed 0 models, so `list` proved nothing.\n{body}"
+    );
+}

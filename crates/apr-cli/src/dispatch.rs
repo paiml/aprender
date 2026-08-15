@@ -83,6 +83,14 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 Err(CliError::ValidationFailed("sim command failed".to_string()))
             })
         }
+        Commands::Cgp(command) => Some(
+            cgp::cli::dispatch(command.clone(), cli.json)
+                .map_err(|e| CliError::ValidationFailed(format!("cgp: {e}"))),
+        ),
+        Commands::QaPlaybook(command) => {
+            aprender_qa_cli::cli::dispatch(command.clone());
+            Some(Ok(()))
+        }
         _ => None,
     }
 }

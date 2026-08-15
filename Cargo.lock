@@ -251,6 +251,7 @@ name = "apr-cli"
 version = "0.63.0"
 dependencies = [
  "anyhow",
+ "aprender-cgp",
  "aprender-common",
  "aprender-compute",
  "aprender-contracts",
@@ -263,6 +264,7 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-profile",
+ "aprender-qa-cli",
  "aprender-rag-cli",
  "aprender-registry",
  "aprender-serve",

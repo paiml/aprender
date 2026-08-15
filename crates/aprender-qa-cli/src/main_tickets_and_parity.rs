@@ -471,18 +471,31 @@ fn save_tool_results_json_or_exit(
         std::process::exit(1);
     }
 
+    // Built from a Serialize struct rather than serde_json::json!, because that
+    // macro expands to Result::unwrap internally and this repo bans unwrap via
+    // .clippy.toml disallowed-methods (GH-41). The ban fired here only after
+    // this file moved from the bin target into the lib -- the diagnostic was
+    // real the whole time, just charged to a target nothing linted.
+    #[derive(serde::Serialize)]
+    struct ToolResultJson<'a> {
+        tool: &'a str,
+        passed: bool,
+        exit_code: i32,
+        duration_ms: u64,
+        gate_id: &'a str,
+        stderr: &'a str,
+    }
+
     let results_json = serde_json::to_string_pretty(
         &results
             .iter()
-            .map(|r| {
-                serde_json::json!({
-                    "tool": r.tool,
-                    "passed": r.passed,
-                    "exit_code": r.exit_code,
-                    "duration_ms": r.duration_ms,
-                    "gate_id": r.gate_id,
-                    "stderr": r.stderr,
-                })
+            .map(|r| ToolResultJson {
+                tool: &r.tool,
+                passed: r.passed,
+                exit_code: r.exit_code,
+                duration_ms: r.duration_ms,
+                gate_id: &r.gate_id,
+                stderr: &r.stderr,
             })
             .collect::<Vec<_>>(),
     )

@@ -8,6 +8,7 @@
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 pub mod analysis;
+pub mod cli;
 pub mod doctor;
 pub mod metrics;
 pub mod profilers;

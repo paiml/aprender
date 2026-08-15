@@ -144,6 +144,8 @@ fn registered_commands() -> Vec<&'static str> {
         "rag",
         "zram",
         "sim",
+        "cgp",
+        "qa-playbook",
     ]
 }
 
