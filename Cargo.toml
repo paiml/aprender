@@ -246,6 +246,7 @@ aprender-profile = { path = "crates/aprender-profile", version = "0.63.0" }
 aprender-profile-core = { path = "crates/aprender-profile-core", version = "0.63.0" }
 aprender-zram-core = { path = "crates/aprender-zram-core", version = "0.63.0" }
 aprender-zram-adaptive = { path = "crates/aprender-zram-adaptive", version = "0.63.0" }
+aprender-zram-cli = { path = "crates/aprender-zram-cli", version = "0.63.0" }
 aprender-present-core = { path = "crates/aprender-present-core", version = "0.63.0" }
 aprender-present-terminal = { path = "crates/aprender-present-terminal", version = "0.63.0" }
 aprender-present-widgets = { path = "crates/aprender-present-widgets", version = "0.63.0" }
@@ -255,6 +256,7 @@ aprender-present-test = { path = "crates/aprender-present-test", version = "0.63
 aprender-db = { path = "crates/aprender-db", version = "0.63.0" }
 aprender-graph = { path = "crates/aprender-graph", version = "0.63.0" }
 aprender-rag = { path = "crates/aprender-rag", version = "0.63.0" }
+aprender-rag-cli = { path = "crates/aprender-rag-cli", version = "0.63.0" }
 aprender-data = { path = "crates/aprender-data", version = "0.63.0" }
 
 # Additional external deps needed by sub-crates
