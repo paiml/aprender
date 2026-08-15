@@ -226,7 +226,7 @@ fn score_lower_is_better(value: f64, excellent: f64, good: f64) -> u8 {
         let pct = (good - value) / (good - excellent);
         (75.0 + 25.0 * pct).round() as u8
     } else if good > 0.0 {
-        (75.0 * good / value).round().min(74.0).max(0.0) as u8
+        (75.0 * good / value).round().clamp(0.0, 74.0) as u8
     } else {
         0
     }

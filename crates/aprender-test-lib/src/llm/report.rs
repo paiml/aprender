@@ -93,7 +93,7 @@ pub fn update_performance_md(
         String::new()
     };
 
-    let new_rows: Vec<String> = results.iter().map(|r| to_markdown_row(r)).collect();
+    let new_rows: Vec<String> = results.iter().map(to_markdown_row).collect();
 
     let content = if existing.is_empty() {
         // Create fresh file

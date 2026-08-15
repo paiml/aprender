@@ -206,14 +206,13 @@ impl<'a, B: Brick> BrickTestAssertion<'a, B> {
 
     /// Assert no errors were collected (for soft assertions).
     pub fn assert_no_errors(&self) {
-        if !self.errors.is_empty() {
-            panic!(
-                "Brick '{}' had {} soft assertion failures:\n{}",
-                self.brick.brick_name(),
-                self.errors.len(),
-                self.errors.join("\n")
-            );
-        }
+        assert!(
+            self.errors.is_empty(),
+            "Brick '{}' had {} soft assertion failures:\n{}",
+            self.brick.brick_name(),
+            self.errors.len(),
+            self.errors.join("\n")
+        );
     }
 }
 

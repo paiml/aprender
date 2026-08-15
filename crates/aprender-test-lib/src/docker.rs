@@ -158,6 +158,11 @@ impl Browser {
     }
 
     /// Parses browser from string.
+    ///
+    /// Deliberately an inherent method returning `Option`, not `FromStr`: an
+    /// unrecognised browser name is an ordinary "not one of the three" answer
+    /// here, not an error worth an `Err` type. Renaming would break callers.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "chrome" | "chromium" => Some(Self::Chrome),
