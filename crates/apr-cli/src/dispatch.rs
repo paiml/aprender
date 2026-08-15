@@ -32,6 +32,12 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
         return Some(result);
     }
 
+    // Sibling CLIs whose whole command surface used to be reachable only from
+    // their own binary (trueno-rag, trueno-zram).
+    if let Some(result) = dispatch_sibling_cli_commands(cli) {
+        return Some(result);
+    }
+
     // Monorepo management (publish, shims, audit, archive) — dev-only
     #[cfg(feature = "dev")]
     if let Commands::Mono(command) = cli.command.as_ref() {
@@ -41,6 +47,34 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_post_side_effect_classification!(&());
     contract_post_output_format_fidelity!(&());
     None
+}
+
+/// Dispatch the commands whose implementation lives in a sibling crate's CLI
+/// library: `apr rag` -> `aprender_rag_cli`, `apr zram` -> `aprender_zram_cli`.
+///
+/// Each arm calls the SAME `dispatch` function the standalone binary calls, so
+/// `apr rag index` and `trueno-rag index` cannot drift apart. Before this, both
+/// command enums lived in a `main.rs`, which is importable by nothing -- the
+/// separate binary was the only way to reach any of it.
+fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    match cli.command.as_ref() {
+        Commands::Rag(command) => Some(
+            aprender_rag_cli::dispatch(command.clone())
+                .map_err(|e| CliError::ValidationFailed(format!("rag: {e}"))),
+        ),
+        Commands::Zram(command) => {
+            let format = if cli.json {
+                aprender_zram_cli::output::OutputFormat::Json
+            } else {
+                aprender_zram_cli::output::OutputFormat::Table
+            };
+            Some(
+                aprender_zram_cli::dispatch(command, format)
+                    .map_err(|e| CliError::ValidationFailed(format!("zram: {e}"))),
+            )
+        }
+        _ => None,
+    }
 }
 
 /// Dispatch runtime commands: check, run, serve.

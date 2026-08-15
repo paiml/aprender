@@ -801,6 +801,14 @@ pub enum Commands {
     #[cfg(feature = "dev")]
     #[command(subcommand)]
     Mono(crate::commands::mono::MonoCommands),
+
+    /// RAG pipeline: index, query, transcribe (was the `trueno-rag` binary)
+    #[command(subcommand)]
+    Rag(aprender_rag_cli::Commands),
+
+    /// zram device management (was the `trueno-zram` binary)
+    #[command(subcommand)]
+    Zram(aprender_zram_cli::Commands),
 }
 
 /// Subcommands for `apr debug` (aprender#2377 finding 3).

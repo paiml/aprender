@@ -8,10 +8,16 @@ use trueno_zram_core::benchmark::{
 };
 
 /// Arguments for benchmark command.
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct BenchmarkArgs {
     /// Number of pages to compress.
-    #[arg(short, long, default_value = "10000")]
+    ///
+    /// Short form is `-n`, not `-p`: `pattern` below explicitly claims `-p`,
+    /// and a derived `short` here claimed it too. clap catches that in a
+    /// `debug_assert`, so EVERY `trueno-zram benchmark` invocation -- including
+    /// `--help` -- panicked before reaching this code. Nothing ever ran the
+    /// command, so nothing noticed.
+    #[arg(short = 'n', long, default_value = "10000")]
     pub pages: usize,
 
     /// Algorithm to benchmark (lz4, zstd, all).
@@ -24,6 +30,10 @@ pub struct BenchmarkArgs {
 }
 
 /// Run compression benchmarks.
+///
+/// # Errors
+/// Returns an error if the data pattern or algorithm name is not recognised,
+/// or if the underlying `trueno_zram_core` benchmark fails.
 pub fn benchmark(args: &BenchmarkArgs) -> Result<(), Box<dyn std::error::Error>> {
     let pattern = DataPattern::parse(&args.pattern)
         .ok_or_else(|| format!("Unknown pattern: {}", args.pattern))?;
