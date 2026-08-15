@@ -259,6 +259,7 @@ aprender-rag = { path = "crates/aprender-rag", version = "0.63.0" }
 aprender-rag-cli = { path = "crates/aprender-rag-cli", version = "0.63.0" }
 aprender-qa-cli = { path = "crates/aprender-qa-cli", version = "0.63.0" }
 aprender-cgp = { path = "crates/aprender-cgp", version = "0.63.0" }
+aprender-contracts-cli = { path = "crates/aprender-contracts-cli", version = "0.63.0" }
 aprender-data = { path = "crates/aprender-data", version = "0.63.0" }
 
 # Additional external deps needed by sub-crates

@@ -12,6 +12,8 @@ use provable_contracts::graph::dependency_graph;
 use provable_contracts::schema::{parse_contract, Contract};
 use serde_json::Value;
 
+use crate::json_obj::obj;
+
 /// Run the certify command.
 pub fn run(
     contract_dir: &Path,
@@ -103,11 +105,14 @@ fn verify_composition_edges(
             if satisfied {
                 edges_satisfied += 1;
             }
-            edge_details.push(serde_json::json!({
-                "downstream": format!("{stem}.{eq_name}"),
-                "upstream": format!("{from_contract}.{from_eq}"),
-                "satisfied": satisfied,
-            }));
+            edge_details.push(obj([
+                ("downstream", Value::from(format!("{stem}.{eq_name}"))),
+                (
+                    "upstream",
+                    Value::from(format!("{from_contract}.{from_eq}")),
+                ),
+                ("satisfied", Value::from(satisfied)),
+            ]));
         }
     }
 
@@ -135,35 +140,72 @@ fn build_certificate(
         .filter(|(_, c)| c.equations.values().any(|e| e.guarantees.is_some()))
         .count();
 
-    serde_json::json!({
-        "version": "1.0.0",
-        "tool": format!("pv certify v{}", env!("CARGO_PKG_VERSION")),
-        "timestamp": chrono_free_timestamp(),
-        "contracts": {
-            "total": contracts.len(),
-            "with_assumes": with_assumes,
-            "with_guarantees": with_guarantees,
-            "topo_depth": graph.topo_order.len(),
-            "cycles": graph.cycles.len(),
-        },
-        "composition": {
-            "edges_total": edges_total,
-            "edges_satisfied": edges_satisfied,
-            "edges_broken": edges_total.saturating_sub(edges_satisfied),
-            "passed": composition_passed,
-            "edges": edge_details,
-        },
-        "config_analysis": config_proof,
-        "proofs": {
-            "format_safety": proof_status(index, "safetensors-format-safety-v1"),
-            "config_algebra": proof_status(index, "model-config-algebra-v1"),
-            "architecture_schema": proof_status(index, "apr-architecture-schema-v1"),
-            "shape_pipeline": proof_status(index, "tensor-shape-flow-v1"),
-            "tensor_names": proof_status(index, "tensor-names-v1"),
-        },
-        "certificate_level": if composition_passed && config_passed { "L3" } else { "L2" },
-        "passed": composition_passed && config_passed,
-    })
+    obj([
+        ("version", Value::from("1.0.0")),
+        (
+            "tool",
+            Value::from(format!("pv certify v{}", env!("CARGO_PKG_VERSION"))),
+        ),
+        ("timestamp", Value::from(chrono_free_timestamp())),
+        (
+            "contracts",
+            obj([
+                ("total", Value::from(contracts.len())),
+                ("with_assumes", Value::from(with_assumes)),
+                ("with_guarantees", Value::from(with_guarantees)),
+                ("topo_depth", Value::from(graph.topo_order.len())),
+                ("cycles", Value::from(graph.cycles.len())),
+            ]),
+        ),
+        (
+            "composition",
+            obj([
+                ("edges_total", Value::from(edges_total)),
+                ("edges_satisfied", Value::from(edges_satisfied)),
+                (
+                    "edges_broken",
+                    Value::from(edges_total.saturating_sub(edges_satisfied)),
+                ),
+                ("passed", Value::from(composition_passed)),
+                ("edges", Value::Array(edge_details.to_vec())),
+            ]),
+        ),
+        (
+            "config_analysis",
+            config_proof.cloned().unwrap_or(Value::Null),
+        ),
+        (
+            "proofs",
+            obj([
+                (
+                    "format_safety",
+                    proof_status(index, "safetensors-format-safety-v1"),
+                ),
+                (
+                    "config_algebra",
+                    proof_status(index, "model-config-algebra-v1"),
+                ),
+                (
+                    "architecture_schema",
+                    proof_status(index, "apr-architecture-schema-v1"),
+                ),
+                (
+                    "shape_pipeline",
+                    proof_status(index, "tensor-shape-flow-v1"),
+                ),
+                ("tensor_names", proof_status(index, "tensor-names-v1")),
+            ]),
+        ),
+        (
+            "certificate_level",
+            Value::from(if composition_passed && config_passed {
+                "L3"
+            } else {
+                "L2"
+            }),
+        ),
+        ("passed", Value::from(composition_passed && config_passed)),
+    ])
 }
 
 fn print_summary(
@@ -232,17 +274,27 @@ fn proof_status(index: &BTreeMap<&str, &Contract>, stem: &str) -> serde_json::Va
             .equations
             .values()
             .any(|e| e.lean_theorem.is_some());
-        serde_json::json!({
-            "found": true,
-            "equations": eq_count,
-            "with_assumes": has_assumes,
-            "with_guarantees": has_guarantees,
-            "has_kani": has_kani,
-            "has_lean": has_lean,
-            "verdict": if has_kani || has_lean { "PROVEN" } else { "SPECIFIED" },
-        })
+        obj([
+            ("found", Value::from(true)),
+            ("equations", Value::from(eq_count)),
+            ("with_assumes", Value::from(has_assumes)),
+            ("with_guarantees", Value::from(has_guarantees)),
+            ("has_kani", Value::from(has_kani)),
+            ("has_lean", Value::from(has_lean)),
+            (
+                "verdict",
+                Value::from(if has_kani || has_lean {
+                    "PROVEN"
+                } else {
+                    "SPECIFIED"
+                }),
+            ),
+        ])
     } else {
-        serde_json::json!({ "found": false, "verdict": "MISSING" })
+        obj([
+            ("found", Value::from(false)),
+            ("verdict", Value::from("MISSING")),
+        ])
     }
 }
 
@@ -280,20 +332,23 @@ pub fn analyze_config(cfg_path: &Path) -> Result<serde_json::Value, Box<dyn std:
 
     let all_pass = checks.iter().all(|(_, ok)| *ok);
 
-    Ok(serde_json::json!({
-        "config_path": cfg_path.display().to_string(),
-        "hidden_size": h,
-        "num_layers": l,
-        "num_heads": nh,
-        "num_kv_heads": nkv,
-        "vocab_size": v,
-        "head_dim": head_dim,
-        "expected_tensors": expected_tensors,
-        "algebra_checks": checks.iter().map(|(name, ok)| {
-            serde_json::json!({"check": name, "passed": ok})
-        }).collect::<Vec<_>>(),
-        "all_checks_pass": all_pass,
-    }))
+    let algebra_checks: Vec<Value> = checks
+        .iter()
+        .map(|(name, ok)| obj([("check", Value::from(*name)), ("passed", Value::from(*ok))]))
+        .collect();
+
+    Ok(obj([
+        ("config_path", Value::from(cfg_path.display().to_string())),
+        ("hidden_size", Value::from(h)),
+        ("num_layers", Value::from(l)),
+        ("num_heads", Value::from(nh)),
+        ("num_kv_heads", Value::from(nkv)),
+        ("vocab_size", Value::from(v)),
+        ("head_dim", Value::from(head_dim)),
+        ("expected_tensors", Value::from(expected_tensors)),
+        ("algebra_checks", Value::Array(algebra_checks)),
+        ("all_checks_pass", Value::from(all_pass)),
+    ]))
 }
 
 fn chrono_free_timestamp() -> String {

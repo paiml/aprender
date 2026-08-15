@@ -11,8 +11,10 @@ use std::path::Path;
 
 use provable_contracts::graph::dependency_graph;
 use provable_contracts::schema::Contract;
+use serde_json::Value;
 
 use crate::contract_walk::collect_contracts;
+use crate::json_obj::obj;
 
 /// Run the verify-pipeline command.
 pub fn run(contract_dir: &Path, format: &str) {
@@ -58,9 +60,9 @@ pub fn run(contract_dir: &Path, format: &str) {
     }
 }
 
-fn walk_composition_edges<'a>(
+fn walk_composition_edges(
     topo_order: &[String],
-    index: &BTreeMap<&str, &'a Contract>,
+    index: &BTreeMap<&str, &Contract>,
 ) -> (Vec<CompositionEdge>, usize, usize, Vec<CompositionEdge>) {
     let mut edges_total = 0usize;
     let mut edges_satisfied = 0usize;
@@ -110,24 +112,20 @@ fn walk_composition_edges<'a>(
                     continue;
                 };
 
-                if upstream_eq.guarantees.is_none() {
+                // `let ... else` rather than an `is_none()` guard followed by
+                // `.unwrap()`: the binding carries the proof that guarantees
+                // exist, so there is no unwrap left to justify.
+                let Some(guarantees) = upstream_eq.guarantees.as_ref() else {
                     let mut e = edge;
                     e.status = EdgeStatus::Broken("upstream has no guarantees".into());
                     edges_broken.push(e.clone());
                     chains.push(e);
                     continue;
-                }
+                };
 
                 // Edge satisfied: upstream has guarantees
                 let mut e = edge;
-                let guaranteed_shapes: Vec<String> = upstream_eq
-                    .guarantees
-                    .as_ref()
-                    .unwrap()
-                    .shapes
-                    .keys()
-                    .cloned()
-                    .collect();
+                let guaranteed_shapes: Vec<String> = guarantees.shapes.keys().cloned().collect();
                 e.status = EdgeStatus::Satisfied(guaranteed_shapes);
                 edges_satisfied += 1;
                 chains.push(e);
@@ -230,38 +228,44 @@ fn print_json(
     broken: &[CompositionEdge],
     graph: &provable_contracts::graph::DependencyGraph,
 ) {
-    let edges_json: Vec<serde_json::Value> = chains
+    let edges_json: Vec<Value> = chains
         .iter()
         .map(|e| {
             let (status, detail) = match &e.status {
                 EdgeStatus::Satisfied(shapes) => (
                     "satisfied",
-                    serde_json::json!({"guaranteed_shapes": shapes}),
+                    obj([("guaranteed_shapes", Value::from(shapes.clone()))]),
                 ),
-                EdgeStatus::Broken(reason) => ("broken", serde_json::json!({"reason": reason})),
-                EdgeStatus::Unknown => ("unknown", serde_json::json!({})),
+                EdgeStatus::Broken(reason) => {
+                    ("broken", obj([("reason", Value::from(reason.clone()))]))
+                }
+                EdgeStatus::Unknown => ("unknown", obj([])),
             };
-            serde_json::json!({
-                "downstream": e.downstream,
-                "upstream": e.upstream,
-                "assumed_shapes": e.assumed_shapes,
-                "status": status,
-                "detail": detail,
-            })
+            obj([
+                ("downstream", Value::from(e.downstream.clone())),
+                ("upstream", Value::from(e.upstream.clone())),
+                ("assumed_shapes", Value::from(e.assumed_shapes.clone())),
+                ("status", Value::from(status)),
+                ("detail", detail),
+            ])
         })
         .collect();
 
-    let report = serde_json::json!({
-        "contracts": graph.nodes.len(),
-        "topo_depth": graph.topo_order.len(),
-        "edges_total": total,
-        "edges_satisfied": satisfied,
-        "edges_broken": broken.len(),
-        "passed": broken.is_empty(),
-        "edges": edges_json,
-    });
+    let report = obj([
+        ("contracts", Value::from(graph.nodes.len())),
+        ("topo_depth", Value::from(graph.topo_order.len())),
+        ("edges_total", Value::from(total)),
+        ("edges_satisfied", Value::from(satisfied)),
+        ("edges_broken", Value::from(broken.len())),
+        ("passed", Value::from(broken.is_empty())),
+        ("edges", Value::Array(edges_json)),
+    ]);
 
-    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report)
+            .expect("a serde_json::Value of objects/arrays/strings/numbers always serializes")
+    );
 }
 
 #[cfg(test)]

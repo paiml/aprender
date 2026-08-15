@@ -180,6 +180,11 @@ pub enum Commands {
 #[derive(Subcommand, Debug)]
 pub enum DoctestCommands {
     /// Extract doctests from Python source files
+    ///
+    /// apr propagates its auto `--version` into every subcommand
+    /// (`propagate_version = true`), which collides with this real
+    /// `--version` argument, so the auto flag is disabled here.
+    #[command(disable_version_flag = true)]
     Extract {
         /// Input directory containing Python source files
         input: PathBuf,
@@ -190,7 +195,10 @@ pub enum DoctestCommands {
         #[arg(short, long, default_value = "unknown")]
         source: String,
         /// Version string or git SHA
-        #[arg(short, long, default_value = "unknown")]
+        // Long-only: apr propagates its global -v/--verbose and -q/--quiet
+        // into every subcommand, so a derived short here makes the whole
+        // clap tree invalid and the subcommand panics on any invocation.
+        #[arg(long, default_value = "unknown")]
         version: String,
     },
     /// Merge multiple doctest corpora into one

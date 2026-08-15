@@ -27,6 +27,11 @@ pub enum RegistryCommands {
         path: PathBuf,
     },
     /// Push (publish) a dataset to the registry
+    /// apr propagates its auto `--version` into every subcommand
+    /// (`propagate_version = true`), which collides with this real
+    /// `--version` argument. Nothing wants `apr data x registry push
+    /// --version` to print apr's version, so disable the auto flag here.
+    #[command(disable_version_flag = true)]
     Push {
         /// Path to the dataset file (parquet)
         input: PathBuf,
@@ -34,7 +39,10 @@ pub enum RegistryCommands {
         #[arg(short, long)]
         name: String,
         /// Dataset version (semver)
-        #[arg(short, long, default_value = "1.0.0")]
+        // Long-only: apr propagates its global -v/--verbose and -q/--quiet
+        // into every subcommand, so a derived short here makes the whole
+        // clap tree invalid and the subcommand panics on any invocation.
+        #[arg(long, default_value = "1.0.0")]
         version: String,
         /// Description of the dataset
         #[arg(short, long, default_value = "")]
@@ -50,6 +58,11 @@ pub enum RegistryCommands {
         registry: PathBuf,
     },
     /// Pull (download) a dataset from the registry
+    /// apr propagates its auto `--version` into every subcommand
+    /// (`propagate_version = true`), which collides with this real
+    /// `--version` argument. Nothing wants `apr data x registry push
+    /// --version` to print apr's version, so disable the auto flag here.
+    #[command(disable_version_flag = true)]
     Pull {
         /// Dataset name
         name: String,
@@ -57,7 +70,10 @@ pub enum RegistryCommands {
         #[arg(short, long)]
         output: PathBuf,
         /// Specific version to pull (defaults to latest)
-        #[arg(short, long)]
+        // Long-only: apr propagates its global -v/--verbose and -q/--quiet
+        // into every subcommand, so a derived short here makes the whole
+        // clap tree invalid and the subcommand panics on any invocation.
+        #[arg(long)]
         version: Option<String>,
         /// Path to registry directory
         #[arg(long, default_value = ".alimentar")]
@@ -80,11 +96,19 @@ pub enum RegistryCommands {
         path: PathBuf,
     },
     /// Delete a dataset version from the registry
+    /// apr propagates its auto `--version` into every subcommand
+    /// (`propagate_version = true`), which collides with this real
+    /// `--version` argument. Nothing wants `apr data x registry push
+    /// --version` to print apr's version, so disable the auto flag here.
+    #[command(disable_version_flag = true)]
     Delete {
         /// Dataset name
         name: String,
         /// Version to delete
-        #[arg(short, long)]
+        // Long-only: apr propagates its global -v/--verbose and -q/--quiet
+        // into every subcommand, so a derived short here makes the whole
+        // clap tree invalid and the subcommand panics on any invocation.
+        #[arg(long)]
         version: String,
         /// Path to registry directory
         #[arg(short, long, default_value = ".alimentar")]

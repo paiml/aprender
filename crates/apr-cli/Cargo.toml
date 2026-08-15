@@ -240,6 +240,7 @@ aprender-zram-cli = { workspace = true }
 simular = { workspace = true }
 aprender-qa-cli = { workspace = true }
 aprender-cgp = { workspace = true }
+aprender-contracts-cli = { workspace = true }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }

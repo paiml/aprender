@@ -255,6 +255,7 @@ dependencies = [
  "aprender-common",
  "aprender-compute",
  "aprender-contracts",
+ "aprender-contracts-cli",
  "aprender-contracts-macros",
  "aprender-core",
  "aprender-data",

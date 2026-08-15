@@ -730,6 +730,12 @@ commands:
     requires_model: false
     side_effects: [filesystem]
 
+  - name: pv
+    category: tools
+    description: "Provable-contracts CLI (also ships as the standalone pv binary)"
+    requires_model: false
+    side_effects: [filesystem]
+
 # ── Falsification Conditions ──
 
 falsification:

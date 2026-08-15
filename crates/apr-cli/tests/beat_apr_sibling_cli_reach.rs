@@ -454,3 +454,137 @@ fn apr_qa_playbook_list_reads_the_real_registry() {
         "the registry listed 0 models, so `list` proved nothing.\n{body}"
     );
 }
+
+#[test]
+fn apr_pv_reaches_the_contract_engine() {
+    // `pv` keeps shipping under its own name -- a decided design, not an
+    // oversight -- but its 38 commands lived in a main.rs, so `apr pv` could
+    // not exist at all.
+    let help = help_body(&["pv", "--help"]);
+    for c in [
+        "validate",
+        "lint",
+        "score",
+        "kani",
+        "proof-status",
+        "coverage",
+    ] {
+        assert!(help.contains(c), "`apr pv` does not offer {c}\n{help}");
+    }
+    assert!(!help.contains("wharrgarbl"), "contains proves nothing here");
+
+    // Execution: validate a contract that really is in the tree.
+    let contract = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../contracts/apr-cli-commands-v1.yaml"
+    );
+    assert!(
+        std::path::Path::new(contract).is_file(),
+        "fixture moved: {contract}"
+    );
+    let out = apr()
+        .args(["pv", "validate", contract])
+        .output()
+        .expect("apr pv validate");
+    assert!(
+        out.status.success(),
+        "apr pv validate exited {:?}\nstderr: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let body = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        body.contains("Contract is valid"),
+        "no verdict: the arm did not reach the contract engine.\n{body}"
+    );
+
+    // Excludes the outcome where `validate` says yes to anything: a file that
+    // is not a contract must be REFUSED.
+    let out = apr()
+        .args([
+            "pv",
+            "validate",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+        ])
+        .output()
+        .expect("apr pv validate");
+    assert!(
+        !out.status.success(),
+        "apr pv validate accepted a Cargo.toml as a contract, so the success \
+         above proves nothing"
+    );
+}
+
+/// FALSIFY-CLI-REACH-003: the WHOLE clap tree must be valid, not just the parts
+/// a given invocation happens to build.
+///
+/// clap validates a subcommand lazily, when something builds it. So embedding a
+/// sibling crate's command enum can leave a subcommand that panics on every
+/// invocation while `apr --help` and every other command look perfectly fine.
+/// Two such collisions shipped into this branch before this test existed:
+///
+///   apr data x registry push --help
+///     -> 'version' is in use by more than one argument   (exit 101)
+///   apr rag demo --help
+///     -> '-q' is in use by both 'query' and 'quiet'      (exit 101)
+///
+/// Both came from apr's `propagate_version` / global `-v`/`-q` meeting a real
+/// argument of the same name in an embedded crate. `debug_assert()` walks the
+/// entire tree in one call, so a third one cannot reach a user.
+#[test]
+fn the_entire_apr_command_tree_is_valid() {
+    // On its own thread with a raised stack: clap's validation recurses over
+    // all 111 commands and their nesting, which overflows a test thread's
+    // default 2 MiB in a debug build. apr-cli's own lib tests build the tree
+    // the same way.
+    std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(|| {
+            use clap::CommandFactory;
+            apr_cli::Cli::command().debug_assert();
+        })
+        .expect("spawn validation thread")
+        .join()
+        .expect("the apr command tree must be valid");
+}
+
+/// Non-vacuity for the test above: prove the subcommands it walks are actually
+/// reachable and numerous, so a `debug_assert()` over an empty or truncated
+/// tree cannot pass for a real check.
+#[test]
+fn the_validated_tree_is_the_whole_tree() {
+    let counts = std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(|| {
+            use clap::CommandFactory;
+            let cmd = apr_cli::Cli::command();
+            let top: Vec<String> = cmd
+                .get_subcommands()
+                .map(|c| c.get_name().to_string())
+                .collect();
+            let data_children = cmd
+                .get_subcommands()
+                .find(|c| c.get_name() == "data")
+                .map_or(0, |d| d.get_subcommands().count());
+            (top, data_children)
+        })
+        .expect("spawn")
+        .join()
+        .expect("build the tree");
+    let (top, data_children) = counts;
+    let top: Vec<&str> = top.iter().map(String::as_str).collect();
+    let _ = &top;
+    assert!(
+        top.len() > 100,
+        "only {} top-level subcommands walked; the tree is truncated",
+        top.len()
+    );
+    for expected in ["rag", "zram", "sim", "cgp", "qa-playbook", "pv", "data"] {
+        assert!(top.contains(&expected), "{expected} missing from the tree");
+    }
+    // and the nested level, which is where both real collisions lived
+    assert!(
+        data_children > 0,
+        "`data` has no children, so nesting was never walked"
+    );
+}

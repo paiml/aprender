@@ -106,7 +106,10 @@ pub enum Commands {
     /// Run a demo RAG query
     Demo {
         /// Query string
-        #[arg(short, long, default_value = "What is machine learning?")]
+        // Long-only: apr propagates its global -v/--verbose and -q/--quiet
+        // into every subcommand, so a derived short here makes the whole
+        // clap tree invalid and the subcommand panics on any invocation.
+        #[arg(long, default_value = "What is machine learning?")]
         query: String,
 
         /// Number of results to return

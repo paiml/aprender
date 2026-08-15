@@ -91,6 +91,10 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             aprender_qa_cli::cli::dispatch(command.clone());
             Some(Ok(()))
         }
+        Commands::Pv(command) => Some(
+            aprender_contracts_cli::dispatch(command.clone())
+                .map_err(|e| CliError::ValidationFailed(format!("pv: {e}"))),
+        ),
         _ => None,
     }
 }
