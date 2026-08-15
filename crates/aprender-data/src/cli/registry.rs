@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Registry commands for dataset sharing and discovery.
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum RegistryCommands {
     /// Initialize a new registry
     Init {

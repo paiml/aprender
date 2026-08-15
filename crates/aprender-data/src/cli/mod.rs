@@ -27,13 +27,21 @@ pub use registry::RegistryCommands;
 #[derive(Parser)]
 #[command(name = "alimentar")]
 #[command(author, version, about, long_about = None)]
-struct Cli {
+pub struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    pub command: Commands,
 }
 
-#[derive(Subcommand)]
-enum Commands {
+/// The alimentar command surface.
+///
+/// PUBLIC so `apr data` can expose it. APR-MONO consolidated this crate in-tree,
+/// but the capability stayed reachable only through the standalone `alimentar`
+/// binary: `apr data` shipped 5 commands (audit, split, decontaminate, dedup,
+/// balance) against alimentar's 20, so 18 were unreachable from `apr` at all.
+/// Deleting the binary before exposing these would have removed the capability
+/// rather than relocating it.
+#[derive(Subcommand, Debug)]
+pub enum Commands {
     /// Convert between data formats
     Convert {
         /// Input file path
@@ -169,7 +177,7 @@ enum Commands {
 
 /// Python doctest extraction commands
 #[cfg(feature = "doctest")]
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum DoctestCommands {
     /// Extract doctests from Python source files
     Extract {
@@ -199,9 +207,15 @@ pub enum DoctestCommands {
 #[allow(clippy::too_many_lines)]
 /// Run the alimentar CLI.
 pub fn run() -> ExitCode {
-    let cli = Cli::parse();
+    dispatch(Cli::parse().command)
+}
 
-    let result = match cli.command {
+/// Execute one alimentar command. Split out of `run()` so `apr data` dispatches
+/// the SAME implementation rather than re-declaring the clap tree or shelling
+/// out to a second binary -- one implementation, two names.
+#[allow(clippy::too_many_lines)]
+pub fn dispatch(command: Commands) -> ExitCode {
+    let result = match command {
         Commands::Convert { input, output } => basic::cmd_convert(&input, &output),
         Commands::Info { path } => basic::cmd_info(&path),
         Commands::Head { path, rows } => basic::cmd_head(&path, rows),
