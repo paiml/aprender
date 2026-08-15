@@ -56,6 +56,7 @@ max_transitive = 500
 exclude = [
     "**/generated_contracts.rs",
     "**/browser.rs",
+    "**/browser_tests.rs",
     "**/api_coverage.rs",
     "**/gpu_coverage.rs",
     "**/apr_coverage.rs",
