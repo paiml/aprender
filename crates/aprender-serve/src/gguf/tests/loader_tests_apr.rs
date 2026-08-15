@@ -302,12 +302,30 @@ fn test_to_apr_bytes_various_qtypes() {
         };
 
         let result = model.to_apr_bytes();
-        assert!(
-            result.is_ok(),
-            "to_apr_bytes should succeed for qtype {}: {:?}",
-            qtype,
-            result.err()
-        );
+        // qtype 99 is not a GGML quant type. This used to assert `is_ok()` for
+        // EVERY value in the list including 99 -- pinning the defect in place:
+        // `apr_qtype_to_dtype` mapped an unknown qtype to "F32" and the writer
+        // emitted quantized bytes under that label, so the file was structurally
+        // valid and its weights were garbage. The test asserting is_ok() on an
+        // invalid input is what made that permanent.
+        if crate::gguf::GgmlQuantType::from_id(qtype).is_some() {
+            assert!(
+                result.is_ok(),
+                "to_apr_bytes should succeed for known qtype {}: {:?}",
+                qtype,
+                result.err()
+            );
+        } else {
+            let err = result
+                .map(|b| format!("wrote {} bytes", b.len()))
+                .expect_err(&format!(
+                    "to_apr_bytes must REFUSE unknown qtype {qtype} rather than label it F32"
+                ));
+            assert!(
+                err.to_string().contains(&qtype.to_string()),
+                "the error must name the offending qtype: {err}"
+            );
+        }
     }
 }
 
