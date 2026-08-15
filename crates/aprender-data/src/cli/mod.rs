@@ -210,9 +210,11 @@ pub fn run() -> ExitCode {
     dispatch(Cli::parse().command)
 }
 
-/// Execute one alimentar command. Split out of `run()` so `apr data` dispatches
-/// the SAME implementation rather than re-declaring the clap tree or shelling
-/// out to a second binary -- one implementation, two names.
+/// Execute one alimentar command.
+///
+/// Split out of `run()` so `apr data` dispatches the SAME implementation
+/// rather than re-declaring the clap tree or shelling out to a second binary
+/// -- one implementation, two names.
 #[allow(clippy::too_many_lines)]
 pub fn dispatch(command: Commands) -> ExitCode {
     let result = match command {
