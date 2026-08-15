@@ -514,6 +514,19 @@ jobs:
       # itself either. Text-only, no build.
       - name: README claims must match measurement
         run: bash scripts/check_readme_claims.sh
+
+      # Three guards that existed and could not block a merge. The publish-safety
+      # one is the gate credited with keeping a 28 MB test.apr out of a published
+      # package, and it was `make`-only -- invoked by whoever remembered to type
+      # it. Its size check also looked at 2 of 72 publishable crates and never
+      # measured a size, so the 5.4 MB of .pmat-baseline.json it now catches had
+      # been shipping to crates.io unseen.
+      - name: Publish safety (binary/oversize files in published packages)
+        run: bash scripts/check_publish_safety.sh
+      - name: Every include!() file is tracked by git (CB-510)
+        run: bash scripts/check_include_files.sh
+      - name: Book rust examples compile
+        run: bash scripts/check_book_examples_compile.sh
       # Poka-yoke: APR-MONO made every sibling a path alias under crates/, but
       # `trueno = "0.16"` still BUILDS - cargo resolves the crates.io copy
       # alongside the in-tree one, so the tree compiles two mutually

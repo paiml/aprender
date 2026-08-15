@@ -13,6 +13,7 @@ license = "MIT"
 keywords = ["machine-learning", "neural-networks", "autograd", "lora", "quantization"]
 categories = ["science", "mathematics"]
 exclude = [
+    ".pmat-baseline.json",
     "book/",
     "docs/",
     "examples/",
