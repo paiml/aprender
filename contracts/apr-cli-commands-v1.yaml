@@ -422,14 +422,27 @@ commands:
         requires_model: false
         side_effects: []
 
-  - name: probar
+  - name: test
     category: misc
+    aliases: [probar]
     description: |
-      Probar testing framework — visual regression, replay, compliance, audio/video, more.
-      GH-876 Milestone 1: `apr probar tensor` (PMAT-481 tensor visual regression).
-      Follow-up milestones add the remaining probador subcommands (test, record,
-      report, coverage, init, config, serve, build, watch, playbook, comply,
-      av-sync, audio, video, animation, stress, llm).
+      Test harness for web, LLM, media and replay — powered by probador.
+
+      Renamed from `probar` (Spanish "to try"), which named the VERB and so told
+      a reader nothing about the subject. Follows the `apr data` precedent: a
+      plain noun for the user-facing command, the Spanish name kept for the
+      engine and credited in the description. `apr probar` remains as a HIDDEN
+      alias so existing scripts keep working.
+
+      Subcommands group by what is UNDER TEST, not by verb:
+        web     WASM/browser build and runtime  (serve, build, watch, comply, stress)
+        llm     inference correctness/throughput/cost against an endpoint
+                (test, load, bench, sweep, score, experiment, data-audit)
+        media   rendered output vs ground truth (av-sync, audio, video, animation)
+        replay  the runner itself             (record, playbook, coverage, report)
+
+      Only `tensor` is routed today (PMAT-481 visual regression); the rest land
+      as they are delegated to the probador library.
     requires_model: false
     side_effects: [filesystem]
     subcommands:

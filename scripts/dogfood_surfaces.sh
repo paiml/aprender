@@ -236,6 +236,37 @@ surface_tools() {
     pv_check "$REPO_ROOT/contracts/apr-cli-commands-v1.yaml" "CLI command contract"
 }
 
+# The contract and the binary must agree as SETS, not merely in count. Two lists
+# of the same length can disagree completely, and a count check would pass. This
+# is the CLI twin of the MCP contract/codegen identity that FALSIFY-MCP-008
+# asserts; nothing asserted it for the CLI, which is how the falsification spec
+# came to claim "exactly 36 top-level commands" while the binary shipped 105.
+cli_contract_matches_binary() {
+    local apr="$1" contract="$REPO_ROOT/contracts/apr-cli-commands-v1.yaml"
+    local bin_list con_list only_con only_bin
+    [ -x "$apr" ] || { skp "apr not built; contract/binary command match not checked"; return; }
+    [ -f "$contract" ] || { bad "CLI command contract missing"; return; }
+
+    bin_list=$(enumerate_subcommands "$apr")
+    con_list=$(python3 -c '
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for n in sorted({c["name"] for c in (d.get("commands") or [])}):
+    print(n)
+' "$contract" 2>/dev/null)
+
+    only_con=$(comm -23 <(printf "%s\n" "$con_list") <(printf "%s\n" "$bin_list") | grep -c . || true)
+    only_bin=$(comm -13 <(printf "%s\n" "$con_list") <(printf "%s\n" "$bin_list") | grep -c . || true)
+
+    if [ "$only_con" -eq 0 ] && [ "$only_bin" -eq 0 ]; then
+        ok "CLI contract matches the binary ($(printf '%s\n' "$bin_list" | grep -c .) commands, exact set match)"
+    else
+        bad "CLI contract/binary DRIFT: $only_con contract-only, $only_bin binary-only"
+        comm -23 <(printf "%s\n" "$con_list") <(printf "%s\n" "$bin_list") | head -5 | sed 's|^|      contract-only: |'
+        comm -13 <(printf "%s\n" "$con_list") <(printf "%s\n" "$bin_list") | head -5 | sed 's|^|      binary-only:   |'
+    fi
+}
+
 # --- probes ----------------------------------------------------------------
 
 # A --help that exits 0, is non-empty, and mentions the thing it documents.
@@ -331,6 +362,7 @@ for line in sys.stdin:
         sn=$(printf '%s\n' "$subs" | grep -c .)
         vacuity_guard "apr subcommands" "$sn" "$MIN_APR_COMMANDS"
         printf '%s apr subcommand(s)\n' "$sn"
+        cli_contract_matches_binary "$apr"
         while IFS= read -r s; do
             [ -n "$s" ] || continue
             probe_help_sub "$apr" "$s"

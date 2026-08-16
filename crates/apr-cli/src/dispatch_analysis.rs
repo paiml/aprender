@@ -121,8 +121,8 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         // GH-876 Milestone 1: Probar is now a subcommand container.
         // The existing flat-args behavior moved under `apr probar tensor <FILE>`.
-        ExtendedCommands::Probar { command } => match command {
-            ProbarSubcommand::Tensor {
+        ExtendedCommands::Test { command } => match command {
+            TestSubcommand::Tensor {
                 file,
                 output,
                 format,

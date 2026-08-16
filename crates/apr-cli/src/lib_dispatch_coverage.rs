@@ -333,8 +333,8 @@
     /// different export than requested and exited 0.
     #[test]
     fn test_dispatch_analysis_probar_rejects_unknown_format() {
-        let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
-            command: ProbarSubcommand::Tensor {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Test {
+            command: TestSubcommand::Tensor {
                 file: PathBuf::from("/tmp/nonexistent_probar_model.apr"),
                 output: PathBuf::from("/tmp/nonexistent_probar_out"),
                 format: "bogus".to_string(),
@@ -360,8 +360,8 @@
     #[test]
     fn test_dispatch_analysis_probar_accepts_known_formats() {
         for format in ["json", "png", "both", "all"] {
-            let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
-                command: ProbarSubcommand::Tensor {
+            let cli = make_cli(Commands::Extended(ExtendedCommands::Test {
+                command: TestSubcommand::Tensor {
                     file: PathBuf::from("/tmp/nonexistent_probar_model.apr"),
                     output: PathBuf::from("/tmp/nonexistent_probar_out"),
                     format: format.to_string(),
