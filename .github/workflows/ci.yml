@@ -447,6 +447,15 @@ jobs:
             -w /workspace \
             "$IMAGE" \
             cargo deny check
+      # Poka-yoke: Cargo.lock was 15 days stale on main (last touched 2026-08-01,
+      # manifests changed 08-10 and 08-11). Every CI job runs cargo WITHOUT
+      # --locked, so cargo rewrote the lock in place and stayed green; the only
+      # jobs that pass --locked are in binary-release.yml, i.e. the RELEASE path,
+      # which was broken on main. Resolution only, no build, ~1s.
+      - name: Cargo.lock must match the manifests
+        run: bash scripts/check_lockfile_current.sh
+      - name: "lockfile guard must still turn RED (case table)"
+        run: bash scripts/check_lockfile_current.sh --self-test
       # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
       # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
       # `set -uo pipefail` deliberately (it must run every beat and tally the
