@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 anyhow = "1.0"
+clap = { workspace = true }
 colored = "2.1"
 walkdir = "2.4"
 regex = "1.10"

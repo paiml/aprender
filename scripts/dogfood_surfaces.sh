@@ -155,6 +155,87 @@ vacuity_guard() {
     fi
 }
 
+# --- deterministic toolchain ------------------------------------------------
+#
+# This repo ships its own deterministic tools, and the rule is to USE them
+# rather than hand-roll a weaker equivalent:
+#
+#   pv       contract validation / lint / score  (never yq, never a python YAML walk)
+#   bashrs   shell quality                       (never shellcheck)
+#   probar   endpoint + playbook testing         (never a hand-rolled curl loop)
+#   pmat     code search and quality analysis    (never grep for discovery)
+#
+# Each is asserted PRESENT rather than skipped-if-missing. A sweep that silently
+# drops its own verification tools reports a clean pass having checked less --
+# the vacuous-scan defect this whole script exists to avoid.
+
+require_tool() {
+    local tool="$1" why="$2" ver
+    if command -v "$tool" > /dev/null 2>&1; then
+        ver=$("$tool" --version 2>&1 | head -1)
+        ok "$tool present ($ver)"
+        return 0
+    fi
+    bad "$tool MISSING -- $why. Install it; do not hand-roll a substitute."
+    return 1
+}
+
+# Validate a contract with pv. Never parse contract YAML by hand.
+pv_check() {
+    local contract="$1" label="$2" out rc
+    if [ ! -f "$contract" ]; then
+        bad "$label: $contract does not exist"
+        return
+    fi
+    out=$(pv validate "$contract" 2>&1); rc=$?
+    if [ "$rc" -eq 0 ]; then
+        ok "$label validates (pv validate)"
+    else
+        bad "$label FAILED pv validate: $(printf '%s' "$out" | tail -1)"
+    fi
+}
+
+# Shell quality. bashrs is the mandated linter; `bash -n` is the authority on
+# whether the file PARSES. bashrs has known false positives on hand-written bash
+# (em-dashes in prose read as SC1100; a regex string sharing a line with `[ ]`
+# reads as unescaped parens), so both are reported and neither alone is enough.
+bashrs_check() {
+    local script="$1" errs
+    if [ ! -f "$script" ]; then
+        bad "bashrs: $script does not exist"
+        return
+    fi
+    errs=$(bashrs lint "$script" 2>&1 | grep -cE '\[error\]')
+    if bash -n "$script" 2>/dev/null; then
+        ok "$(basename "$script") parses (bash -n); bashrs errors=$errs"
+    else
+        bad "$(basename "$script") FAILS bash -n -- it is not valid shell"
+    fi
+}
+
+surface_tools() {
+    printf '\n=== deterministic toolchain ===\n'
+    require_tool pv     "contract validation must use pv, not a python YAML walk"
+    require_tool bashrs "shell linting must use bashrs, not shellcheck"
+    require_tool pmat   "code search must use pmat query, not grep"
+
+    # This script is shell, and is held to the rule it enforces.
+    bashrs_check "$REPO_ROOT/scripts/dogfood_surfaces.sh"
+    bashrs_check "$REPO_ROOT/scripts/check_no_hand_rolled_parsers.sh"
+
+    # Every contract, through the tool that exists for exactly this.
+    local out rc
+    out=$(pv lint "$REPO_ROOT/contracts/" 2>&1); rc=$?
+    if [ "$rc" -eq 0 ]; then
+        ok "pv lint contracts/ ($(printf '%s' "$out" | grep -oE '[0-9]+ errors' | head -1))"
+    else
+        bad "pv lint contracts/ FAILED: $(printf '%s' "$out" | tail -1)"
+    fi
+
+    # The CLI surface has a contract too.
+    pv_check "$REPO_ROOT/contracts/apr-cli-commands-v1.yaml" "CLI command contract"
+}
+
 # --- probes ----------------------------------------------------------------
 
 # A --help that exits 0, is non-empty, and mentions the thing it documents.
@@ -224,6 +305,7 @@ for line in sys.stdin:
         print(d["executable"])
 ' | LC_ALL=C sort -u)
 
+    ARTIFACTS="$artifacts"
     local an
     an=$(printf '%s\n' "$artifacts" | grep -c .)
     vacuity_guard "built executables" "$an" "$MIN_BINARIES"
@@ -292,8 +374,25 @@ surface_http() {
         esac
     done <<< "$routes"
 
-    if [ -z "${DOGFOOD_LIVE_SERVER:-}" ]; then
-        skp "live HTTP probe (set DOGFOOD_LIVE_SERVER=1 with a model to exercise responses)"
+    # A LIVE probe goes through probar -- this project's endpoint tester
+    # (`probar llm test` runs correctness against an LLM endpoint). Hand-rolling
+    # a curl loop here would be the same muda as hand-parsing a contract.
+    # probar ships as the aprender-test-cli binary ([lib] name = probador).
+    if [ -n "${DOGFOOD_LIVE_SERVER:-}" ]; then
+        local probar out rc
+        probar=$(printf '%s\n' "${ARTIFACTS:-}" | grep -E '/aprender-test-cli$' | head -1)
+        if [ -z "$probar" ]; then
+            bad "DOGFOOD_LIVE_SERVER is set but probar (aprender-test-cli) is not built"
+        else
+            out=$("$probar" llm test --endpoint "$DOGFOOD_LIVE_SERVER" 2>&1); rc=$?
+            if [ "$rc" -eq 0 ]; then
+                ok "probar llm test against $DOGFOOD_LIVE_SERVER"
+            else
+                bad "probar llm test FAILED: $(printf '%s' "$out" | tail -1)"
+            fi
+        fi
+    else
+        skp "live endpoint probe (set DOGFOOD_LIVE_SERVER=<url> to run probar llm test)"
     fi
 }
 
@@ -305,27 +404,15 @@ surface_mcp() {
     vacuity_guard "MCP tools" "$n" "$MIN_MCP_TOOLS"
     printf '%s MCP tool(s)\n' "$n"
 
-    # The contract and the code must agree. Either alone can drift; the pair
-    # cannot drift silently.
-    contract_n=$(python3 - "$REPO_ROOT/contracts/apr-mcp-tool-schemas-v1.yaml" <<'PY'
-import sys,yaml
-try: d=yaml.safe_load(open(sys.argv[1]))
-except Exception: print(-1); raise SystemExit
-def walk(o):
-    if isinstance(o,dict):
-        if isinstance(o.get('tools'),list): return o['tools']
-        for v in o.values():
-            r=walk(v)
-            if r: return r
-    return None
-print(len(walk(d) or []))
-PY
-)
-    if [ "$contract_n" = "$n" ]; then
-        ok "contract lists $contract_n tools, code registers $n"
-    else
-        bad "contract lists $contract_n MCP tools but code registers $n -- they have drifted"
-    fi
+    # The contract is validated by `pv`, not by a YAML parser of our own.
+    # CLAUDE.md is explicit: re-implementing in bash/yq/python what pv already
+    # does is muda and will be rejected. The first draft of this script parsed
+    # the contract with python and counted `tools:` entries by hand -- waste,
+    # AND redundant: FALSIFY-MCP-008 already asserts byte-identity between the
+    # codegen constants and the live `tools/list` response at four layers.
+    # Reimplementing a weaker version of an existing falsifier is the opposite
+    # of dogfooding.
+    pv_check "$REPO_ROOT/contracts/apr-mcp-tool-schemas-v1.yaml" "MCP tool schema contract"
 
     local t
     while IFS= read -r t; do
@@ -408,6 +495,18 @@ fi
 
 printf '=== dogfood: every shipped interface (dogfood_surfaces.sh) ===\n'
 
+# Structural ban first: no binary may hand-roll argv parsing. The behavioural
+# probes below feed each binary an unknown flag and demand rejection, which
+# catches the worst hand-rolled parsers -- but a careful one that happens to
+# reject unknown flags today can regress tomorrow. Banning the construct makes
+# the guarantee independent of a probe hitting the broken case.
+if bash "$REPO_ROOT/scripts/check_no_hand_rolled_parsers.sh" > /dev/null 2>&1; then
+    ok "no binary hand-rolls argv parsing"
+else
+    bad "hand-rolled argv parsing found (run scripts/check_no_hand_rolled_parsers.sh)"
+fi
+
+surface_tools
 [ "$want_cli" -eq 1 ]  && surface_cli
 [ "$want_http" -eq 1 ] && surface_http
 [ "$want_mcp" -eq 1 ]  && surface_mcp
