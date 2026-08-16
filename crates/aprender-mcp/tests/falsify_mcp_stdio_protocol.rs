@@ -20,10 +20,16 @@
 #![allow(clippy::disallowed_methods)] // serde_json::json! expands to code that hits unwrap()
 
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
+
+/// Declared resolution of the `apr` binary. This package builds no binaries,
+/// so `CARGO_BIN_EXE_apr` never exists for this target and the target-dir
+/// guess that used to stand in for it either ran a stray commit's binary or
+/// panicked outright — see `tests/common/mod.rs` for the measurement.
+mod common;
+use common::apr_binary;
 
 /// Hard cap on a whole stdio session. Anything slower is a hang, not a slow
 /// machine — `apr.version` is answered in-process with no subprocess spawn.
@@ -31,38 +37,6 @@ const SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 
 const INITIALIZE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"falsifier","version":"1"}}}"#;
 const TOOLS_CALL_VERSION: &str = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"apr.version","arguments":{}}}"#;
-
-/// Locate the workspace-built `apr`, building it on demand when the test
-/// crate is exercised in isolation. Same approach as
-/// `falsify_mcp_dogfood_001.rs`.
-fn apr_binary() -> PathBuf {
-    // ALWAYS build; never short-circuit on "the file exists".
-    //
-    // Returning an existing `cargo_bin("apr")` unconditionally means a binary
-    // left in the shared target dir by ANY other commit is silently preferred.
-    // That happened: these six falsifiers all failed against
-    // `apr 0.63.0 (d16c608b1)` while the worktree was at 11f958f25 — the exact
-    // pre-fix symptom ("stream did not contain valid UTF-8", exit 1), so the
-    // fix under test looked broken when it was simply not the code running.
-    // All six pass once the binary's embedded SHA matches HEAD.
-    //
-    // `cargo build` is a cheap no-op when the binary is already current, so
-    // this costs nothing in the common case and removes the failure mode.
-    // Same doctrine as scripts/apr_bin.sh, which hard-fails on a stale SHA.
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    let pkg_spec = format!("aprender@{}", env!("CARGO_PKG_VERSION"));
-    let status = Command::new(&cargo)
-        .args(["build", "--bin", "apr", "-p", &pkg_spec, "--quiet"])
-        .status()
-        .expect("invoke `cargo build --bin apr`");
-    assert!(
-        status.success(),
-        "cargo build --bin apr -p {pkg_spec} failed"
-    );
-    let path = assert_cmd::cargo::cargo_bin("apr");
-    assert!(path.is_file(), "apr binary missing after cargo build");
-    path
-}
 
 /// One complete stdio session: write `input`, CLOSE stdin (the whole point —
 /// this is the EOF the server used to exit through), then read stdout to EOF.

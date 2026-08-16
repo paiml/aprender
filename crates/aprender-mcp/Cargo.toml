@@ -73,10 +73,14 @@ jsonschema = "0.28"
 # FALSIFY-MCP-008 harness reads the YAML contract directly to assert byte
 # identity between codegen output and live tools/list schemas.
 serde_yaml = { workspace = true }
-# FALSIFY-MCP-DOGFOOD-001: locate the workspace-built `apr` binary in the
-# end-to-end stdio conformance test. Already in the workspace lockfile via
-# aprender-profile dev-deps; no new transitive cost.
-assert_cmd = "2.0"
+# NOTE: no `assert_cmd`. FALSIFY-MCP-DOGFOOD-001 and -MCP-010/-011 drive the
+# real `apr` binary, and this used to locate it with
+# `assert_cmd::cargo::cargo_bin("apr")`. That reads `CARGO_BIN_EXE_apr`, which
+# cargo sets only for binaries the SAME package builds — this package is
+# lib-only, so it was never set, and the target-dir guess it falls back to ran
+# whichever commit's `apr` was lying in the shared target dir (or panicked when
+# none was). Those tests now build `apr` and use the path cargo reports:
+# tests/common/mod.rs.
 
 [lints]
 workspace = true

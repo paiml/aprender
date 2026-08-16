@@ -38,9 +38,10 @@ format-compression = []
 format-encryption = []
 
 [dev-dependencies]
-assert_cmd = "2"
+# assert_cmd/predicates dropped with the CLI test targets: this crate has no
+# [[bin]] (removed by contracts/apr-mono-binary-rule-v1.yaml), so there is no
+# binary left to drive.
 criterion = { workspace = true }
-predicates = "3"
 proptest = "1"
 tempfile = "3"
 # Note: Chaos testing uses renacer CLI tool (not library)

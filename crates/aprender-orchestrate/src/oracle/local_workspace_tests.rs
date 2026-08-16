@@ -543,34 +543,97 @@ opt-level = 3
 // Coverage Gap Tests — get_git_status
 // =========================================================================
 
-#[test]
-fn test_get_git_status_current_repo() {
-    let oracle = LocalWorkspaceOracle::with_base_dir(std::env::temp_dir()).unwrap();
-    let status = oracle.get_git_status(Path::new("."));
+/// Create a throwaway git repo on a known branch with `files` committed.
+///
+/// The directory name carries the pid so concurrent test processes never
+/// share state, and the repo is built from scratch so the assertions below
+/// do not depend on the developer's own working tree.
+fn init_git_fixture(name: &str, files: &[(&str, &str)]) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("{}_{}", name, std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
 
-    // In a git repo (local dev), branch should be a real name.
-    // Outside a git repo (clean-room container), git is absent or cwd
-    // has no .git — branch will be empty or "unknown".  Both are valid.
-    let in_git_repo = std::process::Command::new("git")
-        .args(["rev-parse", "--git-dir"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if in_git_repo {
-        assert!(!status.branch.is_empty());
-        assert_ne!(status.branch, "unknown");
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap_or_else(|e| panic!("git {args:?} failed to spawn: {e}"));
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "test@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    git(&["config", "commit.gpgsign", "false"]);
+    // Explicit branch name: the git default (master vs main) is host config.
+    git(&["checkout", "-q", "-b", "fixture-branch"]);
+
+    for (path, contents) in files {
+        std::fs::write(dir.join(path), contents).unwrap();
     }
-    // Outside a git repo we just verify it doesn't panic (already exercised above)
+    git(&["add", "."]);
+    git(&["commit", "-q", "--no-verify", "-m", "init"]);
+
+    dir
+}
+
+#[test]
+fn test_get_git_status_clean_repo() {
+    let repo = init_git_fixture("oracle_git_status_clean", &[("a.txt", "a"), ("b.txt", "b")]);
+    let oracle = LocalWorkspaceOracle::with_base_dir(std::env::temp_dir()).unwrap();
+
+    let status = oracle.get_git_status(&repo);
+
+    assert_eq!(status.branch, "fixture-branch");
+    assert!(!status.has_changes, "freshly committed repo reports changes");
+    assert_eq!(status.modified_count, 0);
+    // No upstream configured, so `git log @{u}..HEAD` fails and counts as 0.
+    assert_eq!(status.unpushed_commits, 0);
+    assert!(status.up_to_date);
+
+    let _ = std::fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn test_get_git_status_dirty_repo() {
+    let repo = init_git_fixture("oracle_git_status_dirty", &[("a.txt", "a"), ("b.txt", "b")]);
+    // Modify both tracked files — tracked modifications can never be hidden
+    // by a host-level core.excludesFile the way untracked ones can.
+    std::fs::write(repo.join("a.txt"), "a changed").unwrap();
+    std::fs::write(repo.join("b.txt"), "b changed").unwrap();
+
+    let oracle = LocalWorkspaceOracle::with_base_dir(std::env::temp_dir()).unwrap();
+    let status = oracle.get_git_status(&repo);
+
+    assert_eq!(status.branch, "fixture-branch");
+    assert!(status.has_changes);
+    assert_eq!(status.modified_count, 2, "expected exactly the 2 modified files");
+    assert!(!status.up_to_date);
+
+    let _ = std::fs::remove_dir_all(&repo);
 }
 
 #[test]
 fn test_get_git_status_non_git_dir() {
-    let oracle = LocalWorkspaceOracle::with_base_dir(std::env::temp_dir()).unwrap();
-    let status = oracle.get_git_status(Path::new("/tmp"));
+    let dir = std::env::temp_dir().join(format!("oracle_git_status_nongit_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
 
-    // Should return defaults without panic (branch may be empty for non-git dirs)
-    let _ = status.branch;
-    let _ = status.has_changes;
+    let oracle = LocalWorkspaceOracle::with_base_dir(std::env::temp_dir()).unwrap();
+    let status = oracle.get_git_status(&dir);
+
+    // git exits non-zero with empty stdout outside a repo; the fallback to
+    // "unknown" only fires when git cannot be spawned at all.
+    assert_eq!(status.branch, "");
+    assert!(!status.has_changes);
+    assert_eq!(status.modified_count, 0);
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // =========================================================================
