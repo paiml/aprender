@@ -100,6 +100,20 @@ members = [
     # "crates/aprender-test",
 ]
 exclude = [
+    # Pulls burn 0.21 -> rusqlite 0.37 -> libsqlite3-sys 0.35, while aprender-rag
+    # pins rusqlite 0.32 -> libsqlite3-sys 0.30. A `-sys` crate that links the
+    # native `sqlite3` may appear only ONCE in a dependency graph, so this crate
+    # cannot be a workspace member until one side moves. That is why the comment
+    # below says to build it manually — the reason was never written down.
+    'crates/aprender-train-canary',
+    # 29,541 lines that NO cargo command has ever built. Bringing it in as a
+    # member surfaced `error[E0433]: could not find visualize in renacer` — it
+    # does not compile, and has not for as long as it has been invisible.
+    # Excluded EXPLICITLY (it was previously neither member nor excluded, so
+    # `cargo metadata` simply failed) and tracked in #2470. Its stale path dep on
+    # `../../crates/trueno-zram-core` is fixed in this commit so whoever revives
+    # it is not chasing a phantom.
+    'crates/aprender-zram/bins/trueno-ublk',
     "tools/ccpa-sft-export",
     "fuzz",
     # Old workspace root shells (no package, just held sub-crates):

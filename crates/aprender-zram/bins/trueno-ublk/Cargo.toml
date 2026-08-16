@@ -1,11 +1,11 @@
 [package]
 name = "trueno-ublk"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-authors.workspace = true
-repository.workspace = true
+version = "0.63.0"
+edition = "2021"
+rust-version = "0.63.0"
+license = "MIT"
+authors = ["PAIML"]
+repository = "https://github.com/paiml/aprender"
 description = "Pure Rust ublk block device for compressed RAM storage (educational - use kernel zram for production)"
 keywords = ["ublk", "zram", "compression", "gpu", "block-device"]
 categories = ["command-line-utilities", "compression", "filesystem"]
@@ -36,7 +36,12 @@ path = "examples/batched_benchmark.rs"
 
 [dependencies]
 # Internal crates (cuda disabled - API mismatch with trueno-gpu)
-trueno-zram-core = { version = "0.3.0", path = "../../crates/trueno-zram-core" }
+# APR-MONO: the path was `../../crates/trueno-zram-core`, a PRE-CONSOLIDATION
+# location that has not existed since the merge — the crate is now the workspace
+# member `aprender-zram-core` (whose [lib] name is still `trueno_zram_core`).
+# Nothing caught it because this manifest was neither a workspace member nor
+# excluded, so no cargo command ever loaded it.
+trueno-zram-core = { package = "aprender-zram-core", path = "../../../aprender-zram-core" }
 
 # CLI
 clap = { workspace = true }
@@ -115,3 +120,15 @@ default = []
 
 [lints]
 workspace = true
+
+# APR-MONO: excluded from the root workspace (see the root manifest).
+#
+# This does NOT make the crate loadable standalone, and that is inherent rather
+# than an oversight: it inherits SEVEN workspace dependencies (clap, tokio, serde,
+# serde_json, thiserror, proptest, and the in-tree sibling `renacer`), so a
+# standalone root would have to duplicate the workspace dependency table for a
+# crate that does not compile anyway (`error[E0433]: could not find visualize in
+# renacer`). `cargo metadata` on this manifest still fails; the ROOT workspace no
+# longer does, which was the actual defect. Reviving this crate means resolving
+# renacer first — tracked in #2470.
+[workspace]

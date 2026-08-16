@@ -59,7 +59,11 @@ score = ["clap", "serde", "serde_json", "serde_yaml_ng"]
 ptop-release = ["ptop"]  # Use for release builds - triggers stricter enforcement
 
 [dependencies.sysinfo]
-version = "0.32"
+# 0.32 does NOT have ProcessRefreshKind::nothing() (added in 0.33), and
+# refresh_processes' arity changed. The code here was written against 0.33+, so
+# `--features ptop` failed to compile with 28 errors while the default build was
+# clean — and nothing in .github/workflows builds ptop, so it was invisible.
+version = "0.33"
 optional = true
 
 [dependencies.clap]
