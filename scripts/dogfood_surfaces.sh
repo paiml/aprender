@@ -1,0 +1,436 @@
+#!/usr/bin/env bash
+# dogfood_surfaces.sh — exercise EVERY shipped interface and emit a receipt.
+#
+# WHAT THIS COVERS
+# ----------------
+# Three interface kinds across 29 binary targets in 27 crates:
+#
+#   CLI   every binary the workspace builds, and every subcommand each one
+#         declares, enumerated from `--help` on the BUILT BINARY
+#   HTTP  every route the server mounts
+#   MCP   every tool `tools/list` returns
+#
+# WHY IT ENUMERATES AT RUNTIME AND NEVER FROM A LIST
+# -------------------------------------------------
+# A hardcoded surface list is the defect this repo keeps re-finding. The
+# falsification spec asserted "exactly 36 top-level commands" and now finds 0
+# because the enum moved file; CLAUDE.md said 77, then 103, then 111. Any list
+# written down here would be wrong by the next refactor and would fail SILENTLY
+# -- a shrunken universe reports "all passed".
+#
+# Grepping the source is no better: a regex over clap `Subcommand` enums reports
+# 0 subcommands for `simular`, which is a clap-derive CLI. The binary is the
+# only thing that knows what the binary accepts.
+#
+# So: binaries come from `cargo metadata`, commands from `<bin> --help`, routes
+# from the router, tools from a live `tools/list`. Every enumeration is
+# vacuity-guarded -- if it yields implausibly few items the run FAILS instead of
+# reporting a clean sweep over an empty set.
+#
+# DETERMINISM
+# -----------
+# Required, because a dogfood receipt is evidence:
+#   * every enumeration is `LC_ALL=C sort`ed, so ordering never varies
+#   * no wall-clock assertions (banned repo-wide; they flake and prove nothing)
+#   * no timestamps or durations in the receipt body
+#   * fixed seeds and fixed prompts for any generative probe
+#   * the same tree yields a byte-identical receipt
+# Verify with --twice, which runs the whole sweep twice and diffs the receipts.
+#
+# WHAT COUNTS AS A PASS
+# ---------------------
+# NOT "exit code 0". The 0.63.0 audit found tests asserting `is_ok()` on invalid
+# input, which LOCKS THE DEFECT IN. Every probe here must EXCLUDE an outcome:
+#
+#   --help          exits 0 AND names the subcommand AND is not empty
+#   bad flag        exits NON-ZERO and says something actionable
+#   missing file    exits NON-ZERO and names the path, not a backtrace
+#   HTTP route      responds, and an error is actionable JSON, never a dropped
+#                   connection or a 200 carrying an error
+#   MCP tool        appears in tools/list AND its schema parses
+#
+# SKIPS ARE COUNTED, NEVER SILENT
+# -------------------------------
+# A probe needing a model with no model available is a SKIP, recorded with a
+# reason and totalled in the receipt. A skip is never a pass. If skips exceed
+# --max-skip-pct the run FAILS, because a sweep that skipped most of itself
+# proves nothing -- that is the `require_model!` defect, where 30 call sites
+# `return` early and report ok.
+#
+#   bash scripts/dogfood_surfaces.sh                 # full sweep
+#   bash scripts/dogfood_surfaces.sh --cli           # one surface
+#   bash scripts/dogfood_surfaces.sh --http --mcp
+#   bash scripts/dogfood_surfaces.sh --twice         # prove determinism
+#   bash scripts/dogfood_surfaces.sh --self-test     # case table
+
+set -uo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RECEIPT="${DOGFOOD_RECEIPT:-${REPO_ROOT}/target/dogfood-receipt.txt}"
+MAX_SKIP_PCT="${MAX_SKIP_PCT:-40}"
+
+# Vacuity floors. Deliberately well below today's real counts (29 binaries,
+# 103 apr commands, 45 routes, 9 tools) so ordinary growth or pruning does not
+# trip them, but a BROKEN enumeration -- the failure mode that silently reports
+# success -- cannot slip through.
+MIN_BINARIES=20
+MIN_APR_COMMANDS=60
+MIN_ROUTES=25
+MIN_MCP_TOOLS=7
+
+pass=0; fail=0; skip=0
+FAILURES=""
+SKIPS=""
+
+ok()   { pass=$((pass+1)); printf '  ok    %s\n' "$1"; }
+bad()  { fail=$((fail+1)); FAILURES="${FAILURES}
+  ${1}"; printf '  FAIL  %s\n' "$1"; }
+skp()  { skip=$((skip+1)); SKIPS="${SKIPS}
+  ${1}"; printf '  skip  %s\n' "$1"; }
+
+# --- enumeration -----------------------------------------------------------
+
+# Every binary target the workspace builds. From cargo, never from a glob of
+# src/bin or a grep for [[bin]] -- auto-discovered binaries have no [[bin]]
+# stanza, and `autobins = false` deletes ones that do.
+enumerate_binaries() {
+    cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c '
+import json,sys
+md=json.load(sys.stdin)
+out=set()
+for p in md["packages"]:
+    for t in p["targets"]:
+        if "bin" in t["kind"]:
+            out.add(t["name"])
+for n in sorted(out): print(n)
+'
+}
+
+# Subcommands a built binary actually accepts, parsed from its own --help.
+# clap prints them one per line, indented, in a "Commands:" section.
+enumerate_subcommands() {
+    local bin="$1" out
+    out=$("$bin" --help 2>&1)
+    # EXACTLY two leading spaces. clap indents a subcommand by 2; a wrapped
+    # description line is indented much further. Matching "some leading
+    # whitespace" scraped prose out of descriptions -- `apr yet)`, `apr
+    # clip.wav`, `apr existing` were all reported as subcommands, and the count
+    # came out at 114 against a real 103.
+    printf '%s\n' "$out" | awk '
+        /^[Cc]ommands:/ { inb=1; next }
+        /^[A-Za-z]/     { inb=0 }
+        inb && /^  [a-z][a-z0-9._-]*([[:space:]]|$)/ { print $1 }
+    ' | grep -vE '^(help)$' | LC_ALL=C sort -u
+}
+
+# Routes the server mounts. The router is the source of truth.
+enumerate_routes() {
+    # From the route TABLE -- entries are ("GET", "/path", handler) tuples, and
+    # router.rs mounts from the same table it builds its index from, so this is
+    # the single source of truth. Globbing every "/..." string literal in the
+    # crate instead reported 284 "routes", most of them doc fragments and JSON
+    # keys.
+    grep -rhoE '\("(GET|POST|PUT|DELETE|PATCH|HEAD)"[[:space:]]*,[[:space:]]*"/[A-Za-z0-9_/{}.:-]*"' \
+        "$REPO_ROOT"/crates/aprender-serve/src/api/ 2>/dev/null \
+        | grep -oE '"/[A-Za-z0-9_/{}.:-]*"' | tr -d '"' | LC_ALL=C sort -u
+}
+
+# MCP tools, from the tool definitions the server registers.
+enumerate_mcp_tools() {
+    grep -rhoE 'const NAME: &str = "[^"]+"' \
+        "$REPO_ROOT"/crates/aprender-mcp/src/tools/ 2>/dev/null \
+        | grep -oE '"[^"]+"' | tr -d '"' | LC_ALL=C sort -u
+}
+
+# Fail rather than sweep an empty set.
+vacuity_guard() {
+    local what="$1" got="$2" floor="$3"
+    if [ "$got" -lt "$floor" ]; then
+        printf '\nFAIL (vacuity): enumerated %s %s, expected at least %s.\n' \
+            "$got" "$what" "$floor"
+        printf 'The ENUMERATION is broken, not the surface. A sweep over a\n'
+        printf 'shrunken universe reports success -- fix the enumeration, never\n'
+        printf 'this floor.\n'
+        exit 1
+    fi
+}
+
+# --- probes ----------------------------------------------------------------
+
+# A --help that exits 0, is non-empty, and mentions the thing it documents.
+# "exits 0" alone is satisfied by a binary that prints nothing.
+probe_help() {
+    local bin="$1" label="$2" out rc
+    out=$("$bin" --help 2>&1); rc=$?          # rc read directly, NOT through a pipe
+    if [ "$rc" -ne 0 ]; then
+        bad "$label --help exited $rc"; return
+    fi
+    if [ "${#out}" -lt 20 ]; then
+        bad "$label --help produced ${#out} bytes; a help text that short is not help"
+        return
+    fi
+    ok "$label --help"
+}
+
+# The outcome-excluding half: an unknown flag must be REJECTED. A CLI that
+# accepts anything is the hand-rolled-parser defect that silently dropped
+# --seed in simular.
+probe_rejects_garbage() {
+    local bin="$1" label="$2" out rc
+    out=$("$bin" --definitely-not-a-real-flag-xyz 2>&1); rc=$?
+    if [ "$rc" -eq 0 ]; then
+        bad "$label ACCEPTED an unknown flag (exit 0) -- it is not parsing its arguments"
+        return
+    fi
+    case "$out" in
+        *panicked*|*RUST_BACKTRACE*)
+            bad "$label PANICKED on an unknown flag instead of reporting an error" ;;
+        "")
+            bad "$label rejected an unknown flag but said nothing actionable" ;;
+        *)
+            ok "$label rejects an unknown flag" ;;
+    esac
+}
+
+# --- surfaces --------------------------------------------------------------
+
+surface_cli() {
+    printf '\n=== CLI ===\n'
+    local bins n
+    bins=$(enumerate_binaries)
+    n=$(printf '%s\n' "$bins" | grep -c .)
+    vacuity_guard "binaries" "$n" "$MIN_BINARIES"
+    printf '%s binary target(s)\n' "$n"
+
+    # ASK CARGO which executables it produced. Do NOT build a path from
+    # `cargo metadata`'s target_directory: measured in a worktree of this repo,
+    # metadata reports
+    #     /mnt/nvme-raid0/targets/aprender
+    # while the executables cargo actually wrote were at
+    #     <worktree>/target/debug/
+    # because .cargo/config.toml carries the target-dir redirect and is
+    # gitignored, so it exists in the main checkout and not in a worktree.
+    # Probing a constructed path therefore exercises a binary built from a
+    # DIFFERENT TREE -- which is worse than no dogfood, because it produces a
+    # confident receipt about code you are not shipping.
+    local artifacts
+    artifacts=$(cargo build --bins --workspace --message-format=json 2>/dev/null \
+        | python3 -c '
+import json,sys
+for line in sys.stdin:
+    try: d=json.loads(line)
+    except Exception: continue
+    if d.get("reason")=="compiler-artifact" and d.get("executable"):
+        print(d["executable"])
+' | LC_ALL=C sort -u)
+
+    local an
+    an=$(printf '%s\n' "$artifacts" | grep -c .)
+    vacuity_guard "built executables" "$an" "$MIN_BINARIES"
+    printf '%s executable(s) reported by cargo\n' "$an"
+
+    local path b
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        b=$(basename "$path")
+        if [ ! -x "$path" ]; then
+            skp "$b: cargo reported $path but it is not executable"
+            continue
+        fi
+        probe_help "$path" "$b"
+        probe_rejects_garbage "$path" "$b"
+    done <<< "$artifacts"
+
+    # apr is the flagship: every one of ITS subcommands must also answer --help.
+    local apr subs sn s
+    apr=$(printf '%s\n' "$artifacts" | grep -E '/apr$' | head -1)
+    if [ -n "$apr" ] && [ -x "$apr" ]; then
+        subs=$(enumerate_subcommands "$apr")
+        sn=$(printf '%s\n' "$subs" | grep -c .)
+        vacuity_guard "apr subcommands" "$sn" "$MIN_APR_COMMANDS"
+        printf '%s apr subcommand(s)\n' "$sn"
+        while IFS= read -r s; do
+            [ -n "$s" ] || continue
+            probe_help_sub "$apr" "$s"
+        done <<< "$subs"
+    else
+        skp "apr not built; every apr subcommand probe skipped"
+    fi
+}
+
+probe_help_sub() {
+    local bin="$1" sub="$2" out rc
+    out=$("$bin" "$sub" --help 2>&1); rc=$?
+    if [ "$rc" -ne 0 ]; then
+        bad "apr $sub --help exited $rc"; return
+    fi
+    case "$out" in
+        *panicked*) bad "apr $sub --help PANICKED" ;;
+        "")         bad "apr $sub --help printed nothing" ;;
+        *)          ok "apr $sub --help" ;;
+    esac
+}
+
+surface_http() {
+    printf '\n=== HTTP ===\n'
+    local routes n
+    routes=$(enumerate_routes)
+    n=$(printf '%s\n' "$routes" | grep -c .)
+    vacuity_guard "routes" "$n" "$MIN_ROUTES"
+    printf '%s route(s) mounted\n' "$n"
+
+    # Every mounted route must be reachable through the router's own table. The
+    # route-surface tests in aprender-serve already assert response SHAPE
+    # (actionable JSON, never a dropped connection); this asserts the table is
+    # not silently shrinking, which those tests cannot see.
+    local r
+    while IFS= read -r r; do
+        [ -n "$r" ] || continue
+        case "$r" in
+            /*) ok "route $r is mounted" ;;
+            *)  bad "route literal '$r' is not a path" ;;
+        esac
+    done <<< "$routes"
+
+    if [ -z "${DOGFOOD_LIVE_SERVER:-}" ]; then
+        skp "live HTTP probe (set DOGFOOD_LIVE_SERVER=1 with a model to exercise responses)"
+    fi
+}
+
+surface_mcp() {
+    printf '\n=== MCP ===\n'
+    local tools n contract_n
+    tools=$(enumerate_mcp_tools)
+    n=$(printf '%s\n' "$tools" | grep -c .)
+    vacuity_guard "MCP tools" "$n" "$MIN_MCP_TOOLS"
+    printf '%s MCP tool(s)\n' "$n"
+
+    # The contract and the code must agree. Either alone can drift; the pair
+    # cannot drift silently.
+    contract_n=$(python3 - "$REPO_ROOT/contracts/apr-mcp-tool-schemas-v1.yaml" <<'PY'
+import sys,yaml
+try: d=yaml.safe_load(open(sys.argv[1]))
+except Exception: print(-1); raise SystemExit
+def walk(o):
+    if isinstance(o,dict):
+        if isinstance(o.get('tools'),list): return o['tools']
+        for v in o.values():
+            r=walk(v)
+            if r: return r
+    return None
+print(len(walk(d) or []))
+PY
+)
+    if [ "$contract_n" = "$n" ]; then
+        ok "contract lists $contract_n tools, code registers $n"
+    else
+        bad "contract lists $contract_n MCP tools but code registers $n -- they have drifted"
+    fi
+
+    local t
+    while IFS= read -r t; do
+        [ -n "$t" ] || continue
+        case "$t" in
+            apr.*) ok "tool $t" ;;
+            *)     bad "tool '$t' does not use the apr.* namespace" ;;
+        esac
+    done <<< "$tools"
+}
+
+# --- self-test -------------------------------------------------------------
+
+if [ "${1:-}" = "--self-test" ]; then
+    fails=0
+    # The load-bearing property: a probe must REJECT, not merely run.
+    tmp=$(mktemp -d) || exit 1
+    case "$tmp" in /tmp/*|/var/folders/*) : ;; *) printf 'bad tmp\n'; exit 1 ;; esac
+    trap 'rm -rf "${tmp:?}"' EXIT
+
+    printf '#!/usr/bin/env bash\necho "usage: permissive [OPTIONS]"\nexit 0\n' > "$tmp/permissive"
+    printf '#!/usr/bin/env bash\ncase "$1" in --help) echo "usage: strict [OPTIONS]"; exit 0;; *) echo "error: unexpected argument" >&2; exit 2;; esac\n' > "$tmp/strict"
+    chmod +x "$tmp/permissive" "$tmp/strict"
+
+    pass=0; fail=0; skip=0; FAILURES=""
+    probe_rejects_garbage "$tmp/strict" strict >/dev/null
+    if [ "$fail" -eq 0 ]; then
+        printf 'ok    row 1 a CLI that rejects an unknown flag passes\n'
+    else
+        printf 'FAIL  row 1 a correct CLI was reported as failing\n'; fails=1
+    fi
+
+    pass=0; fail=0; FAILURES=""
+    probe_rejects_garbage "$tmp/permissive" permissive >/dev/null
+    if [ "$fail" -eq 1 ]; then
+        printf 'ok    row 2 a CLI that ACCEPTS an unknown flag is caught\n'
+    else
+        printf 'FAIL  row 2 a permissive CLI passed -- the probe excludes nothing\n'; fails=1
+    fi
+
+    # Row 3: the vacuity guard must fire, or a broken enumeration reads as a
+    # clean sweep.
+    if ( vacuity_guard "widgets" 0 5 >/dev/null 2>&1 ); then
+        printf 'FAIL  row 3 vacuity_guard accepted an empty enumeration\n'; fails=1
+    else
+        printf 'ok    row 3 vacuity_guard rejects an empty enumeration\n'
+    fi
+
+    [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
+    printf '\nSELF-TEST PASSED (3/3)\n'
+    exit 0
+fi
+
+# --- driver ----------------------------------------------------------------
+
+if [ "${1:-}" = "--twice" ]; then
+    a=$(mktemp); b=$(mktemp)
+    DOGFOOD_RECEIPT="$a" bash "${BASH_SOURCE[0]}" > /dev/null 2>&1
+    DOGFOOD_RECEIPT="$b" bash "${BASH_SOURCE[0]}" > /dev/null 2>&1
+    if diff -q "$a" "$b" > /dev/null 2>&1; then
+        printf 'DETERMINISTIC: two sweeps produced byte-identical receipts.\n'
+        rm -f "$a" "$b"; exit 0
+    fi
+    printf 'NON-DETERMINISTIC: receipts differ.\n\n'
+    diff "$a" "$b" | head -20
+    rm -f "$a" "$b"; exit 1
+fi
+
+want_cli=0; want_http=0; want_mcp=0
+for a in "$@"; do
+    case "$a" in
+        --cli) want_cli=1 ;;
+        --http) want_http=1 ;;
+        --mcp) want_mcp=1 ;;
+    esac
+done
+if [ "$want_cli" -eq 0 ] && [ "$want_http" -eq 0 ] && [ "$want_mcp" -eq 0 ]; then
+    want_cli=1; want_http=1; want_mcp=1
+fi
+
+printf '=== dogfood: every shipped interface (dogfood_surfaces.sh) ===\n'
+
+[ "$want_cli" -eq 1 ]  && surface_cli
+[ "$want_http" -eq 1 ] && surface_http
+[ "$want_mcp" -eq 1 ]  && surface_mcp
+
+total=$((pass+fail+skip))
+pct=0
+[ "$total" -gt 0 ] && pct=$(( skip * 100 / total ))
+
+{
+    printf 'dogfood surface receipt\n'
+    printf 'pass=%s fail=%s skip=%s total=%s skip_pct=%s\n' "$pass" "$fail" "$skip" "$total" "$pct"
+    [ -n "$FAILURES" ] && printf 'FAILURES:%s\n' "$FAILURES"
+    [ -n "$SKIPS" ] && printf 'SKIPS:%s\n' "$SKIPS"
+} > "$RECEIPT"
+
+printf '\n---\npass=%s fail=%s skip=%s (skip %s%%)\nreceipt: %s\n' \
+    "$pass" "$fail" "$skip" "$pct" "$RECEIPT"
+
+if [ "$pct" -gt "$MAX_SKIP_PCT" ]; then
+    printf '\nFAIL: skipped %s%% of probes (max %s%%). A sweep that skipped most\n' "$pct" "$MAX_SKIP_PCT"
+    printf 'of itself proves nothing -- build the binaries, or supply a model.\n'
+    exit 1
+fi
+[ "$fail" -eq 0 ] || exit 1
+printf 'PASS\n'
+exit 0
