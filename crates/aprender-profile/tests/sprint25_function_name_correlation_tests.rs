@@ -39,7 +39,7 @@ fn test_function_name_correlation_basic() {
     fs::write(&source_map, map_content).expect("test");
 
     // Run with --function-time and --transpiler-map
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--function-time")
@@ -85,7 +85,7 @@ fn test_function_name_with_source_context() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--function-time").arg("--").arg("true");
 
     cmd.assert()
@@ -117,7 +117,7 @@ fn test_show_transpiler_context_flag() {
     fs::write(&source_map, map_content).expect("test");
 
     // Test that --show-transpiler-context is accepted
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--function-time")
@@ -154,7 +154,7 @@ fn test_fallback_to_rust_names() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--function-time")
@@ -197,7 +197,7 @@ fn test_function_correlation_with_source_flag() {
     fs::write(&source_map, map_content).expect("test");
 
     // Combine --transpiler-map + --function-time + --source
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--function-time")
@@ -231,7 +231,7 @@ fn test_typescript_source_language() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--function-time")
@@ -267,7 +267,7 @@ fn test_multiple_temp_variables() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--function-time").arg("--").arg("true");
 
     cmd.assert().success();
@@ -296,7 +296,7 @@ fn test_function_correlation_with_statistics() {
     fs::write(&source_map, map_content).expect("test");
 
     // Combine --transpiler-map + --function-time + -c
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--function-time")
@@ -327,7 +327,7 @@ fn test_empty_function_map() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--function-time").arg("--").arg("true");
 
     // Should still work, just no function name translation
@@ -357,7 +357,7 @@ fn test_source_map_without_function_time() {
 
     // Source map loaded but --function-time NOT enabled
     // Should still succeed, just not use function mapping
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("echo").arg("test");
 
     cmd.assert().success();

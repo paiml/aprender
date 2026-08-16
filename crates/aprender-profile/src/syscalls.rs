@@ -135,6 +135,13 @@ static SYSCALL_TABLE_X86_64: &[(i64, &str)] = &[
     (217, "getdents64"),
     (218, "set_tid_address"),
     (228, "clock_gettime"),
+    // 229/230 were missing: the table jumped 228 -> 231, so clock_nanosleep
+    // rendered as an unnamed syscall. sprint20_realtime_anomaly_tests
+    // deliberately sleeps 50ms and asserts an anomaly is reported; the
+    // detector never saw the sleep, and the test only passed when unrelated
+    // microsecond jitter on `write` happened to exceed 3 sigma.
+    (229, "clock_getres"),
+    (230, "clock_nanosleep"),
     (231, "exit_group"),
     (257, "openat"),
     (262, "newfstatat"),
@@ -363,6 +370,73 @@ mod tests {
             let name = syscall_name(num);
             // clone3 (435) is below our range, so all should be unknown
             prop_assert_eq!(name, "unknown");
+        }
+    }
+}
+
+#[cfg(test)]
+mod table_completeness {
+    //! The x86_64 table jumped 228 -> 231, so `clock_nanosleep` (230) rendered
+    //! as an unnamed `syscall_230` and a deliberate 50ms sleep was invisible to
+    //! the profiler. Nothing caught it: removing the entries again left all 107
+    //! syscall tests green, because every existing test asserts a PROPERTY
+    //! (determinism, non-empty) rather than a specific mapping.
+    //!
+    //! A property test over `0..500` cannot catch a missing entry -- "unknown"
+    //! is a valid answer across most of that range. Only naming numbers can.
+
+    use super::*;
+
+    /// Syscalls this tracer must be able to name, numbers fixed by the x86_64
+    /// ABI. These are the ones a profiler actually meets.
+    const MUST_NAME: &[(i64, &str)] = &[
+        (0, "read"),
+        (1, "write"),
+        (60, "exit"),
+        (202, "futex"),
+        (228, "clock_gettime"),
+        (229, "clock_getres"),
+        (230, "clock_nanosleep"),
+        (231, "exit_group"),
+        (257, "openat"),
+    ];
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn every_common_syscall_resolves_to_its_abi_name() {
+        let missing: Vec<String> = MUST_NAME
+            .iter()
+            .filter(|(n, want)| syscall_name(*n) != *want)
+            .map(|(n, want)| format!("{n} should be {want}, got {}", syscall_name(*n)))
+            .collect();
+        assert!(missing.is_empty(), "syscall table is missing or wrong for: {missing:?}");
+    }
+
+    /// Non-vacuity. If `syscall_name` produced a name for anything asked of it,
+    /// the assertion above would pass while proving nothing.
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn an_unassigned_number_is_still_unknown() {
+        assert_eq!(
+            syscall_name(9_999),
+            "unknown",
+            "an unassigned syscall number resolved to a name, so the check above \
+             cannot distinguish a populated table from a permissive one"
+        );
+    }
+
+    /// The gap that produced the bug was contiguous. The clock family is where
+    /// the tracer's timing anomalies live, so assert it is whole.
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn the_clock_syscall_range_has_no_holes() {
+        for n in 228..=231 {
+            assert_ne!(
+                syscall_name(n),
+                "unknown",
+                "syscall {n} is unnamed; the 228-231 range is where clock_nanosleep \
+                 went missing and made a 50ms sleep invisible to the profiler"
+            );
         }
     }
 }

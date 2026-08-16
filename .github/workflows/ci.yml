@@ -575,6 +575,13 @@ jobs:
         run: bash scripts/check_guards_are_wired.sh
       - name: Wiring guard case table
         run: bash scripts/check_guards_are_wired.sh --self-test
+      # aprender-profile appeared in this file ZERO times while carrying 58
+      # integration test targets. Running them found 110 failures -- 109 from a
+      # single stale binary name left by the APR-MONO rename, dead since. Gated
+      # now so the crate cannot go dark again. --lib only: the integration
+      # targets shell out to the built binary and take minutes.
+      - name: aprender-profile lib tests (was gated by nothing)
+        run: cargo test -p aprender-profile --lib
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
       # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
