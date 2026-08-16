@@ -9,6 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+clap = { workspace = true }
 trueno-zram-core.workspace = true
 thiserror.workspace = true
 serde.workspace = true

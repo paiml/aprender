@@ -426,6 +426,19 @@ jobs:
       # correct everywhere else). Run the table; do not re-read the regex.
       - name: "`apr`-pinning guard must still turn RED (case table + surfaces)"
         run: bash scripts/check_apr_bin_pinned.sh --self-test
+      # Hand-rolled argv parsing is banned. simular's `match args[1]` silently
+      # DROPPED --seed: unknown flags fell through a catch-all, a valueless flag
+      # was discarded, and an unparseable value became the default instead of an
+      # error. The command exits 0 and does the wrong thing.
+      #
+      # Structural, and complementary to dogfood_surfaces.sh, which probes
+      # BEHAVIOUR (feed each binary an unknown flag, demand rejection). The probe
+      # catches today's broken parsers; this bans the construct, so the guarantee
+      # does not rely on a probe happening to hit the broken case.
+      - name: No binary may hand-roll argv parsing
+        run: bash scripts/check_no_hand_rolled_parsers.sh
+      - name: "hand-rolled-parser guard must still turn RED (case table)"
+        run: bash scripts/check_no_hand_rolled_parsers.sh --self-test
       # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
       # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
       # `set -uo pipefail` deliberately (it must run every beat and tally the
