@@ -66,8 +66,25 @@ for p in md["packages"]:
             src+=open(f, errors="ignore").read()
         except OSError:
             pass
-    # Declarative parsing: a derived Parser, or a call to ::parse().
-    declarative = re.search(r"derive\([^)]*\bParser\b|\bCli::parse\(\)|::parse\(\)", src) is not None
+    # Declarative parsing means CLAP derive. Two signals, both required:
+    #   1. the package actually depends on clap
+    #   2. the source derives clap Parser
+    #
+    # An earlier version accepted a bare ::parse() as proof of clap. That is a
+    # FALSE NEGATIVE and it hid the worst offender in the repo: the simular
+    # main.rs calls run_cli(Args::parse()) where Args::parse is its OWN
+    # hand-rolled function. The guard reported simular as clap while it was
+    # still doing match args[1] with .parse().ok().unwrap_or(default) on
+    # --seed, the exact defect the rule exists to ban. Row 4 of the case table
+    # pins this. NOTE: no apostrophes in this block, it is inside a
+    # single-quoted heredoc and one would terminate it.
+    deps = set()
+    for k in ("dependencies",):
+        for dep in p.get(k, []) or []:
+            deps.add(dep.get("name",""))
+    has_clap = "clap" in deps
+    derives_parser = re.search(r"derive\([^)]*\bParser\b", src) is not None
+    declarative = has_clap and derives_parser
     reads_argv  = re.search(r"env::args\(\)", src) is not None
     if reads_argv and not declarative:
         out.append(p["name"])
@@ -83,14 +100,22 @@ if [ "${1:-}" = "--self-test" ]; then
     case "$TD" in /tmp/*|/var/folders/*) : ;; *) printf 'bad tmp\n'; exit 1 ;; esac
     trap 'rm -rf "${TD:?}"' EXIT
 
+    # $4 = "clap" to give the fixture a real clap dependency. A crate that
+    # derives Parser necessarily depends on clap, so a fixture that derives it
+    # WITHOUT the dep is not a realistic clap crate -- and row 3 correctly
+    # failed until this was added.
     make_crate() {
-        local dir="$1" name="$2" body="$3"
+        local dir="$1" name="$2" body="$3" dep="${4:-}"
         mkdir -p "$dir/src"
         {
             printf '[package]\n'
             printf 'name = "%s"\n' "$name"
             printf 'version = "0.0.0"\n'
             printf 'edition = "2021"\n'
+            if [ "$dep" = "clap" ]; then
+                printf '\n[dependencies]\n'
+                printf 'clap = { version = "4", features = ["derive"] }\n'
+            fi
         } > "$dir/Cargo.toml"
         printf '%s\n' "$body" > "$dir/src/main.rs"
     }
@@ -120,7 +145,7 @@ fn main() {
 'use clap::Parser;
 #[derive(Parser)]
 struct Cli { #[arg(long)] name: String }
-fn main() { let _c = Cli::parse(); }'
+fn main() { let _c = Cli::parse(); }' clap
     if [ -z "$(hand_rolled_in "$W2")" ]; then
         printf 'ok    row 2 a clap-derive CLI is NOT reported\n'
     else
@@ -138,15 +163,38 @@ struct Cli { #[arg(long)] name: String }
 fn main() {
     let _prog = env::args().next();
     let _c = Cli::parse();
-}'
+}' clap
     if [ -z "$(hand_rolled_in "$W3")" ]; then
         printf 'ok    row 3 a clap CLI that also reads argv is NOT reported\n'
     else
         printf 'FAIL  row 3 false positive on a clap CLI that reads argv\n'; fails=1
     fi
 
+    # Row 4 is the one that matters most: a crate whose own type has a `parse()`
+    # method must NOT be mistaken for clap. This is the real simular defect --
+    # `run_cli(Args::parse())` where Args::parse is hand-written. An earlier
+    # detector accepted any `::parse()` and so reported the repo's worst
+    # hand-rolled parser as compliant.
+    W4="$TD/w4"
+    make_crate "$W4" fake-parse-probe \
+'use std::env;
+struct Args { verbose: bool }
+impl Args {
+    fn parse() -> Self {
+        let a: Vec<String> = env::args().collect();
+        Args { verbose: a.iter().any(|s| s == "-v") }
+    }
+}
+fn main() { let _a = Args::parse(); }'
+    got="$(hand_rolled_in "$W4" | tr '\n' ' ')"
+    if [ "$got" = "fake-parse-probe " ]; then
+        printf 'ok    row 4 a hand-rolled Args::parse() is NOT mistaken for clap\n'
+    else
+        printf 'FAIL  row 4 got [%s]; a hand-rolled parse() passed as clap\n' "$got"; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (3/3)\n'
+    printf '\nSELF-TEST PASSED (4/4)\n'
     exit 0
 fi
 

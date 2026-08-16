@@ -9,7 +9,7 @@ mod commands;
 mod output;
 mod schema;
 
-pub use args::{Args, Command, RenderFormat};
+pub use args::{Cli, Commands, RenderFormat};
 pub use commands::run_cli;
 pub use output::{
     print_emc_report, print_emc_validation_results, print_experiment_result, print_help,
