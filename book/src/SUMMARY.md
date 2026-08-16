@@ -344,7 +344,7 @@
 - [apr pipeline](./cli/pipeline.md)
 - [apr ppl](./cli/ppl.md)
 - [apr pretrain](./cli/pretrain.md)
-- [apr probar](./cli/probar.md)
+- [apr test](./cli/test.md)
 - [apr profile](./cli/profile.md)
 - [apr prometheus-lint](./cli/prometheus-lint.md)
 - [apr prune](./cli/prune.md)
