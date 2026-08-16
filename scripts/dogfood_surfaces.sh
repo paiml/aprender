@@ -123,7 +123,36 @@ enumerate_subcommands() {
     ' | grep -vE '^(help)$' | LC_ALL=C sort -u
 }
 
-# Routes the server mounts. The router is the source of truth.
+# Routes the server ADVERTISES at runtime. The running server is the source of
+# truth; the source table is only a fallback.
+#
+# Measured against a live `apr serve` on a real model, the static scan below was
+# wrong in BOTH directions:
+#
+#   in the source table, never mounted : /v1/logprobs /v1/perplexity  (conditional)
+#   live but MISSED by the source scan : /  /metrics/dispatch/reset
+#                                        /v1/batch/completions
+#                                        /v1/chat/completions          <-- the
+#                                        /v1/chat/completions/stream       primary
+#                                                                          endpoint
+#
+# A sweep that claims to cover the HTTP surface while omitting
+# /v1/chat/completions is not covering the HTTP surface. Same lesson as binaries
+# (ask cargo) and subcommands (ask the binary): ask the server.
+enumerate_routes_live() {
+    local base="$1"
+    curl -sf -m 5 "$base/" 2>/dev/null | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(1)
+out=set()
+for r in d.get("routes",[]):
+    out.add(r.split(" ",1)[1] if " " in r else r)
+for p in sorted(out): print(p)
+'
+}
+
+# Fallback: the source table. APPROXIMATE -- see the note above.
 enumerate_routes() {
     # From the route TABLE -- entries are ("GET", "/path", handler) tuples, and
     # router.rs mounts from the same table it builds its index from, so this is
@@ -387,11 +416,21 @@ probe_help_sub() {
 
 surface_http() {
     printf '\n=== HTTP ===\n'
-    local routes n
-    routes=$(enumerate_routes)
+    local routes n src
+    if [ -n "${DOGFOOD_LIVE_SERVER:-}" ]; then
+        routes=$(enumerate_routes_live "$DOGFOOD_LIVE_SERVER")
+        src="live server"
+        if [ -z "$routes" ]; then
+            bad "DOGFOOD_LIVE_SERVER=$DOGFOOD_LIVE_SERVER did not answer with a route index"
+            routes=$(enumerate_routes); src="source table (live probe failed)"
+        fi
+    else
+        routes=$(enumerate_routes)
+        src="source table (APPROXIMATE -- set DOGFOOD_LIVE_SERVER for the real set)"
+    fi
     n=$(printf '%s\n' "$routes" | grep -c .)
     vacuity_guard "routes" "$n" "$MIN_ROUTES"
-    printf '%s route(s) mounted\n' "$n"
+    printf '%s route(s), from the %s\n' "$n" "$src"
 
     # Every mounted route must be reachable through the router's own table. The
     # route-surface tests in aprender-serve already assert response SHAPE
@@ -412,15 +451,39 @@ surface_http() {
     # probar ships as the aprender-test-cli binary ([lib] name = probador).
     if [ -n "${DOGFOOD_LIVE_SERVER:-}" ]; then
         local probar out rc
+        # Resolve probar independently of $ARTIFACTS: that variable is only
+        # populated by surface_cli, so running `--http` alone used to report
+        # "probar is not built" when it was merely not looked for. Ask cargo.
         probar=$(printf '%s\n' "${ARTIFACTS:-}" | grep -E '/aprender-test-cli$' | head -1)
         if [ -z "$probar" ]; then
-            bad "DOGFOOD_LIVE_SERVER is set but probar (aprender-test-cli) is not built"
+            probar=$(cargo build -p aprender-test-cli --bin aprender-test-cli \
+                        --message-format=json 2>/dev/null | python3 -c '
+import json,sys
+for line in sys.stdin:
+    try: d=json.loads(line)
+    except Exception: continue
+    if d.get("reason")=="compiler-artifact" and d.get("executable"):
+        print(d["executable"])
+' | grep -E '/aprender-test-cli$' | head -1)
+        fi
+        if [ -z "$probar" ] || [ ! -x "$probar" ]; then
+            bad "probar (aprender-test-cli) could not be built; endpoint probe unavailable"
         else
-            out=$("$probar" llm test --endpoint "$DOGFOOD_LIVE_SERVER" 2>&1); rc=$?
-            if [ "$rc" -eq 0 ]; then
-                ok "probar llm test against $DOGFOOD_LIVE_SERVER"
+            # `probar llm test` requires --config <CONFIG>; there is no
+            # committed config for it yet. A missing INPUT is a skip with a
+            # reason, not a failure -- reporting FAIL here would blame the
+            # server for a gap in this harness. Authoring that config is the
+            # remaining work to make this probe real.
+            if [ -n "${DOGFOOD_PROBAR_CONFIG:-}" ]; then
+                out=$("$probar" llm test --config "$DOGFOOD_PROBAR_CONFIG" \
+                                          --url "$DOGFOOD_LIVE_SERVER" 2>&1); rc=$?
+                if [ "$rc" -eq 0 ]; then
+                    ok "probar llm test against $DOGFOOD_LIVE_SERVER"
+                else
+                    bad "probar llm test FAILED: $(printf '%s' "$out" | tail -1)"
+                fi
             else
-                bad "probar llm test FAILED: $(printf '%s' "$out" | tail -1)"
+                skp "probar llm test needs a config (set DOGFOOD_PROBAR_CONFIG); routes were still probed individually"
             fi
         fi
     else
