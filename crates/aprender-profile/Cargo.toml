@@ -189,10 +189,6 @@ name = "validate_golden_trace"
 path = "examples/validate_golden_trace.rs"
 
 [[example]]
-name = "simd_visualization"
-path = "examples/simd_visualization.rs"
-
-[[example]]
 name = "process_tracer_demo"
 path = "examples/process_tracer_demo.rs"
 

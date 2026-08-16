@@ -1,6 +1,6 @@
 [package]
 name = "aprender-train-canary"
-version.workspace = true
+version = "0.63.0"  # concrete: an EXCLUDED crate cannot inherit from the workspace
 edition = "2021"
 publish = false
 
@@ -11,3 +11,10 @@ burn = { version = "0.21.0-pre.2", features = ["wgpu"] }
 # follow — an absolute path to a now-archived sibling checkout that exists only
 # on one dev box.
 trueno = { path = "../aprender-compute", package = "aprender-compute", features = ["parallel", "gpu"] }
+
+# APR-MONO: excluded from the workspace (see the root manifest for the
+# libsqlite3-sys reason), so it needs its OWN workspace root. Without this
+# stanza cargo walks up, finds the root manifest that excludes it, and refuses
+# to load it at all -- `cargo metadata`/`check`/`tree` all fail on this
+# directory, which is why nothing ever noticed the dependency above was wrong.
+[workspace]

@@ -12,6 +12,7 @@ use realizar::gguf::{ArchConstraints, GGUFConfig, ValidatedModelConfig};
 /// Construct a known-valid base config (LLaMA-7B-like).
 fn valid_base_config() -> GGUFConfig {
     GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 4096,
@@ -178,6 +179,7 @@ proptest! {
         prop_assume!(intermediate_dim <= 262_144);
 
         let cfg = GGUFConfig {
+    query_pre_attn_scalar: None,
             architecture: "llama".to_string(),
             constraints: ArchConstraints::from_architecture("llama"),
             hidden_dim,

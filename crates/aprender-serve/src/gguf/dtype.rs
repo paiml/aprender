@@ -1,7 +1,27 @@
 
 /// GH-321: Convert GGML qtype to APR dtype string using unified enum.
-fn apr_qtype_to_dtype(qtype: u32) -> &'static str {
-    crate::gguf::GgmlQuantType::from_id(qtype).map_or("F32", crate::gguf::GgmlQuantType::as_str)
+///
+/// FAILS on an unrecognized qtype. This used to be
+/// `.map_or("F32", ..)`, and the result is written straight into the APR
+/// tensor index by `write_apr_tensor_entry` -- so a model carrying a quant type
+/// this build does not know had its quantized bytes emitted LABELLED F32.
+/// The file is structurally valid; the reader then interprets Q-whatever blocks
+/// as raw f32 and produces garbage weights, with nothing anywhere reporting an
+/// error. That is the PMAT-781/783 silent-garbage class, at the conversion
+/// boundary instead of the GPU one.
+///
+/// The doc comment on `gpu_unsupported_quant_qtype` directly above states the
+/// policy this now follows: an unsupported quant must fail loudly rather than be
+/// silently decoded as something else.
+fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
+    crate::gguf::GgmlQuantType::from_id(qtype)
+        .map(crate::gguf::GgmlQuantType::as_str)
+        .ok_or_else(|| RealizarError::FormatError {
+            reason: format!(
+                "unknown GGML quant type {qtype}: refusing to write it to APR as F32, \
+                 which would emit quantized bytes that the reader decodes as raw floats"
+            ),
+        })
 }
 
 /// PMAT-783/PMAT-785: GGML quant types WITHOUT a verified GPU GEMV kernel.
@@ -132,7 +152,7 @@ impl OwnedQuantizedModel {
         use crate::apr::{ALIGNMENT, HEADER_SIZE, MAGIC};
 
         // Collect all tensors
-        let tensors = self.collect_apr_model_tensors();
+        let tensors = self.collect_apr_model_tensors()?;
 
         // Build metadata JSON
         let metadata = serde_json::json!({
@@ -206,7 +226,7 @@ impl OwnedQuantizedModel {
 
     /// Collect all model tensors as (name, dtype, shape, data) tuples for APR serialization
     #[allow(clippy::cast_possible_truncation)]
-    fn collect_apr_model_tensors(&self) -> Vec<(String, String, Vec<usize>, Vec<u8>)> {
+    fn collect_apr_model_tensors(&self) -> Result<Vec<(String, String, Vec<usize>, Vec<u8>)>> {
         let mut tensors = Vec::new();
 
         // Token embedding (F32)
@@ -228,7 +248,7 @@ impl OwnedQuantizedModel {
         let kv_dim = self.config.num_kv_heads * head_dim;
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            self.collect_apr_layer_tensors(&mut tensors, layer_idx, layer, kv_dim);
+            self.collect_apr_layer_tensors(&mut tensors, layer_idx, layer, kv_dim)?;
         }
 
         // Output norm (F32)
@@ -247,12 +267,12 @@ impl OwnedQuantizedModel {
         // LM head (quantized)
         tensors.push((
             "output.weight".to_string(),
-            apr_qtype_to_dtype(self.lm_head_weight.qtype).to_string(),
+            apr_qtype_to_dtype(self.lm_head_weight.qtype)?.to_string(),
             vec![self.config.vocab_size, self.config.hidden_dim],
             self.lm_head_weight.data.clone(),
         ));
 
-        tensors
+        Ok(tensors)
     }
 
     /// Collect tensors for a single transformer layer
@@ -262,7 +282,7 @@ impl OwnedQuantizedModel {
         layer_idx: usize,
         layer: &OwnedQuantizedLayer,
         kv_dim: usize,
-    ) {
+    ) -> Result<()> {
         // Attention norm (F32)
         let norm_bytes: Vec<u8> = layer
             .attn_norm_weight
@@ -281,19 +301,19 @@ impl OwnedQuantizedModel {
             OwnedQKVWeights::Separate { q, k, v } => {
                 tensors.push((
                     format!("blk.{layer_idx}.attn_q.weight"),
-                    apr_qtype_to_dtype(q.qtype).to_string(),
+                    apr_qtype_to_dtype(q.qtype)?.to_string(),
                     vec![self.config.hidden_dim, self.config.hidden_dim],
                     q.data.clone(),
                 ));
                 tensors.push((
                     format!("blk.{layer_idx}.attn_k.weight"),
-                    apr_qtype_to_dtype(k.qtype).to_string(),
+                    apr_qtype_to_dtype(k.qtype)?.to_string(),
                     vec![kv_dim, self.config.hidden_dim],
                     k.data.clone(),
                 ));
                 tensors.push((
                     format!("blk.{layer_idx}.attn_v.weight"),
-                    apr_qtype_to_dtype(v.qtype).to_string(),
+                    apr_qtype_to_dtype(v.qtype)?.to_string(),
                     vec![kv_dim, self.config.hidden_dim],
                     v.data.clone(),
                 ));
@@ -301,7 +321,7 @@ impl OwnedQuantizedModel {
             OwnedQKVWeights::Fused(t) => {
                 tensors.push((
                     format!("blk.{layer_idx}.attn_qkv.weight"),
-                    apr_qtype_to_dtype(t.qtype).to_string(),
+                    apr_qtype_to_dtype(t.qtype)?.to_string(),
                     vec![t.out_dim, t.in_dim],
                     t.data.clone(),
                 ));
@@ -311,7 +331,7 @@ impl OwnedQuantizedModel {
         // Output projection (quantized)
         tensors.push((
             format!("blk.{layer_idx}.attn_output.weight"),
-            apr_qtype_to_dtype(layer.attn_output_weight.qtype).to_string(),
+            apr_qtype_to_dtype(layer.attn_output_weight.qtype)?.to_string(),
             vec![self.config.hidden_dim, self.config.hidden_dim],
             layer.attn_output_weight.data.clone(),
         ));
@@ -331,7 +351,7 @@ impl OwnedQuantizedModel {
         if let Some(ref gate) = layer.ffn_gate_weight {
             tensors.push((
                 format!("blk.{layer_idx}.ffn_gate.weight"),
-                apr_qtype_to_dtype(gate.qtype).to_string(),
+                apr_qtype_to_dtype(gate.qtype)?.to_string(),
                 vec![self.config.intermediate_dim, self.config.hidden_dim],
                 gate.data.clone(),
             ));
@@ -339,17 +359,19 @@ impl OwnedQuantizedModel {
 
         tensors.push((
             format!("blk.{layer_idx}.ffn_up.weight"),
-            apr_qtype_to_dtype(layer.ffn_up_weight.qtype).to_string(),
+            apr_qtype_to_dtype(layer.ffn_up_weight.qtype)?.to_string(),
             vec![self.config.intermediate_dim, self.config.hidden_dim],
             layer.ffn_up_weight.data.clone(),
         ));
 
         tensors.push((
             format!("blk.{layer_idx}.ffn_down.weight"),
-            apr_qtype_to_dtype(layer.ffn_down_weight.qtype).to_string(),
+            apr_qtype_to_dtype(layer.ffn_down_weight.qtype)?.to_string(),
             vec![self.config.hidden_dim, self.config.intermediate_dim],
             layer.ffn_down_weight.data.clone(),
         ));
+
+        Ok(())
     }
 }
 

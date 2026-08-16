@@ -10,3 +10,11 @@ path = "test_032_exception_suppression.rs"
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
+
+# APR-MONO: this manifest is nested inside the workspace but is NOT a member and
+# NOT in the root `exclude` list, so cargo treated it as part of the parent
+# workspace and every command against it failed with "current package believes
+# it's in a workspace when it's not". An explicit empty `[workspace]` makes it
+# its own root, which is how crates/aprender-gpu/fuzz already worked.
+[workspace]
+members = ["."]
