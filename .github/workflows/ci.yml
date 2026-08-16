@@ -439,9 +439,26 @@ jobs:
       # warning was in every workspace-test log and nobody read it, so it is a
       # hard failure now. Runs nextest's real parser on a 3-line crate.
       - name: nextest must ignore no key in .config/nextest.toml
-        run: bash scripts/check_nextest_config_keys.sh
+        # Runs INSIDE the image: cargo-nextest is installed there, not on the
+        # host runner (the first version of this step failed with "SKIP:
+        # cargo-nextest not installed" -> exit 1, which is the guard failing
+        # closed in the wrong place). The probe crate has ZERO dependencies, so
+        # CARGO_NET_OFFLINE=1 is safe and no registry mount is needed.
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            -e CARGO_NET_OFFLINE=1 \
+            "$IMAGE" \
+            bash scripts/check_nextest_config_keys.sh
       - name: "nextest-key guard must still turn RED (case table)"
-        run: bash scripts/check_nextest_config_keys.sh --self-test
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            -e CARGO_NET_OFFLINE=1 \
+            "$IMAGE" \
+            bash scripts/check_nextest_config_keys.sh --self-test
       # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
       # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
       # `set -uo pipefail` deliberately (it must run every beat and tally the
