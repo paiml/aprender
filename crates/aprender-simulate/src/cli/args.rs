@@ -1,42 +1,91 @@
 //! CLI argument parsing.
 //!
-//! This module provides the argument parser for the simular CLI.
-//! Extracted to enable comprehensive testing of argument parsing logic.
+//! The accepted grammar is **declarative**: it is the `Cli` and `Commands`
+//! types below, parsed by clap derive. Nothing in this module inspects `argv`
+//! by hand.
+//!
+//! ## Why declarative
+//!
+//! This module previously hand-rolled a `match args[1]` parser, and every one of
+//! its failure modes was silent — the command exited 0 and did the wrong thing:
+//!
+//! - `--seed notanumber` used `.parse().ok().unwrap_or(default)`, so a typo
+//!   became the DEFAULT seed rather than an error. A simulation is only
+//!   reproducible if the seed it reports is the seed you asked for.
+//! - `--seed` with no value was discarded by the `else { i += 1 }` arm.
+//! - An unknown flag fell through a `_ => i += 1` catch-all and vanished.
+//! - `verify --runs N` was only honoured when `--runs` sat at exactly `argv[3]`.
+//!
+//! clap rejects all four. The grammar is data, not control flow, so it cannot
+//! drift out of sync with itself the way the hand-rolled arms did. Enforced
+//! repo-wide by `scripts/check_no_hand_rolled_parsers.sh`.
 
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 /// CLI arguments container.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Args {
-    /// The command to execute.
-    pub command: Command,
+#[derive(Debug, Clone, PartialEq, Parser)]
+#[command(
+    name = "simular",
+    version,
+    about = "Unified Simulation Engine for the Sovereign AI Stack",
+    // `help` and `version` are real subcommands below, so that `simular help`
+    // keeps printing simular's own help text (see `output::print_help`) rather
+    // than clap's auto-generated one. The `-h`/`--help` and `-V`/`--version`
+    // FLAGS are still clap's.
+    disable_help_subcommand = true
+)]
+pub struct Cli {
+    /// The command to execute. `None` means no subcommand was given at all.
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+}
+
+impl Cli {
+    /// The selected subcommand, defaulting to [`Commands::Help`].
+    ///
+    /// An empty `argv` showed the help text before the clap conversion; that
+    /// behaviour (help on stdout, exit 0) is preserved here rather than in
+    /// clap's `arg_required_else_help`, which would exit 2 instead.
+    #[must_use]
+    pub fn into_command(self) -> Commands {
+        self.command.unwrap_or(Commands::Help)
+    }
 }
 
 /// Available CLI commands.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Command {
+#[derive(Debug, Clone, PartialEq, Subcommand)]
+pub enum Commands {
     /// Run an experiment
     Run {
         /// Path to the experiment YAML file.
         experiment_path: PathBuf,
         /// Optional seed override.
+        #[arg(long = "seed", value_name = "N")]
         seed_override: Option<u64>,
         /// Enable verbose output.
+        #[arg(short = 'v', long)]
         verbose: bool,
     },
     /// Render simulation to SVG + keyframes
     Render {
-        /// Simulation domain (orbit, `monte_carlo`, optimization).
+        /// Simulation domain (orbit, `bouncing_balls`).
+        #[arg(long, default_value = "orbit")]
         domain: String,
         /// Output format: svg-frames or svg-keyframes.
+        #[arg(long, value_enum, default_value = "svg-keyframes")]
         format: RenderFormat,
         /// Output directory.
+        #[arg(long, default_value = ".")]
         output: PathBuf,
         /// Frames per second.
+        #[arg(long, default_value_t = 60)]
         fps: u32,
         /// Simulation duration in seconds.
+        #[arg(long, default_value_t = 10.0)]
         duration: f64,
         /// Random seed for deterministic output.
+        #[arg(long, default_value_t = 42)]
         seed: u64,
     },
     /// Validate experiment YAML against EDD v2 schema
@@ -49,6 +98,7 @@ pub enum Command {
         /// Path to the experiment YAML file.
         experiment_path: PathBuf,
         /// Number of verification runs.
+        #[arg(long, default_value_t = 3, value_name = "N")]
         runs: usize,
     },
     /// Check EMC compliance
@@ -67,211 +117,13 @@ pub enum Command {
     Help,
     /// Show version
     Version,
-    /// Parse error (missing args, unknown command)
-    Error(String),
 }
 
 /// SVG render output format.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
 pub enum RenderFormat {
     /// One SVG file per frame.
     SvgFrames,
     /// One template SVG + keyframes JSON.
     SvgKeyframes,
-}
-
-impl Args {
-    /// Parse command-line arguments from an iterator.
-    ///
-    /// This method is testable as it accepts any iterator of strings,
-    /// not just `std::env::args()`.
-    #[must_use]
-    pub fn parse_from<I, S>(args: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        let args: Vec<String> = args.into_iter().map(|s| s.as_ref().to_string()).collect();
-        Self::parse_from_vec(&args)
-    }
-
-    /// Parse command-line arguments from the environment.
-    #[must_use]
-    pub fn parse() -> Self {
-        Self::parse_from(std::env::args())
-    }
-
-    /// Internal parsing from a vector of strings.
-    fn parse_from_vec(args: &[String]) -> Self {
-        if args.len() < 2 {
-            return Self {
-                command: Command::Help,
-            };
-        }
-
-        let command = match args[1].as_str() {
-            "run" => Self::parse_run_command(args),
-            "render" => Self::parse_render_command(args),
-            "validate" => Self::parse_validate_command(args),
-            "verify" => Self::parse_verify_command(args),
-            "emc-check" => Self::parse_emc_check_command(args),
-            "emc-validate" => Self::parse_emc_validate_command(args),
-            "list-emc" => Command::ListEmc,
-            "-h" | "--help" | "help" => Command::Help,
-            "-V" | "--version" | "version" => Command::Version,
-            unknown => Command::Error(format!("Unknown command: {unknown}")),
-        };
-
-        Self { command }
-    }
-
-    /// Check if a positional arg is a help flag.
-    fn is_help_flag(arg: &str) -> bool {
-        arg == "--help" || arg == "-h"
-    }
-
-    /// Parse the 'run' command arguments.
-    fn parse_run_command(args: &[String]) -> Command {
-        if args.len() < 3 || Self::is_help_flag(&args[2]) {
-            return Command::Help;
-        }
-
-        let mut seed_override = None;
-        let mut verbose = false;
-
-        let mut i = 3;
-        while i < args.len() {
-            match args[i].as_str() {
-                "--seed" => {
-                    if i + 1 < args.len() {
-                        if let Ok(seed) = args[i + 1].parse() {
-                            seed_override = Some(seed);
-                        }
-                        i += 2;
-                    } else {
-                        i += 1;
-                    }
-                }
-                "-v" | "--verbose" => {
-                    verbose = true;
-                    i += 1;
-                }
-                _ => i += 1,
-            }
-        }
-
-        Command::Run {
-            experiment_path: PathBuf::from(&args[2]),
-            seed_override,
-            verbose,
-        }
-    }
-
-    /// Parse the 'validate' command arguments.
-    fn parse_validate_command(args: &[String]) -> Command {
-        if args.len() < 3 || Self::is_help_flag(&args[2]) {
-            return Command::Help;
-        }
-
-        Command::Validate {
-            experiment_path: PathBuf::from(&args[2]),
-        }
-    }
-
-    /// Parse the 'verify' command arguments.
-    fn parse_verify_command(args: &[String]) -> Command {
-        if args.len() < 3 || Self::is_help_flag(&args[2]) {
-            return Command::Help;
-        }
-
-        let mut runs = 3;
-        if args.len() > 3 && args[3] == "--runs" && args.len() > 4 {
-            if let Ok(n) = args[4].parse() {
-                runs = n;
-            }
-        }
-
-        Command::Verify {
-            experiment_path: PathBuf::from(&args[2]),
-            runs,
-        }
-    }
-
-    /// Parse the 'emc-check' command arguments.
-    fn parse_emc_check_command(args: &[String]) -> Command {
-        if args.len() < 3 || Self::is_help_flag(&args[2]) {
-            return Command::Help;
-        }
-
-        Command::EmcCheck {
-            experiment_path: PathBuf::from(&args[2]),
-        }
-    }
-
-    /// Parse the 'emc-validate' command arguments.
-    fn parse_emc_validate_command(args: &[String]) -> Command {
-        if args.len() < 3 || Self::is_help_flag(&args[2]) {
-            return Command::Help;
-        }
-
-        Command::EmcValidate {
-            emc_path: PathBuf::from(&args[2]),
-        }
-    }
-
-    /// Collect all `--key value` pairs from args starting at position `start`.
-    fn collect_flags(args: &[String], start: usize) -> std::collections::HashMap<String, String> {
-        let mut flags = std::collections::HashMap::new();
-        let mut i = start;
-        while i < args.len() {
-            if args[i].starts_with("--") && i + 1 < args.len() {
-                flags.insert(args[i].clone(), args[i + 1].clone());
-                i += 2;
-            } else {
-                i += 1;
-            }
-        }
-        flags
-    }
-
-    /// Parse the 'render' command arguments.
-    fn parse_render_command(args: &[String]) -> Command {
-        if args.len() >= 3 && Self::is_help_flag(&args[2]) {
-            return Command::Help;
-        }
-        let flags = Self::collect_flags(args, 2);
-
-        let domain = flags
-            .get("--domain")
-            .cloned()
-            .unwrap_or_else(|| "orbit".to_string());
-        let format = match flags.get("--format").map(String::as_str) {
-            Some("svg-frames") => RenderFormat::SvgFrames,
-            _ => RenderFormat::SvgKeyframes,
-        };
-        let output = flags
-            .get("--output")
-            .map_or_else(|| PathBuf::from("."), PathBuf::from);
-        let fps = flags
-            .get("--fps")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(60);
-        let duration = flags
-            .get("--duration")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(10.0);
-        let seed = flags
-            .get("--seed")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(42);
-
-        Command::Render {
-            domain,
-            format,
-            output,
-            fps,
-            duration,
-            seed,
-        }
-    }
 }

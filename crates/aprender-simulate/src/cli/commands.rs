@@ -14,20 +14,25 @@ use super::output::{
     print_version,
 };
 use super::schema::validate_emc_schema;
-use super::{Args, Command};
+use super::{Cli, Commands};
 
 /// Main CLI entry point.
 ///
 /// Dispatches to the appropriate command handler based on parsed arguments.
+///
+/// There is no parse-failure arm: clap reports a bad argument itself, so a
+/// failure never reaches here as a value. The old `Command::Error(String)`
+/// variant turned a parse failure INTO a command, which is how unknown input
+/// used to reach a handler at all.
 #[must_use]
-pub fn run_cli(args: Args) -> ExitCode {
-    match args.command {
-        Command::Run {
+pub fn run_cli(cli: Cli) -> ExitCode {
+    match cli.into_command() {
+        Commands::Run {
             experiment_path,
             seed_override,
             verbose,
         } => run_experiment(&experiment_path, seed_override, verbose),
-        Command::Render {
+        Commands::Render {
             domain,
             format,
             output,
@@ -35,26 +40,21 @@ pub fn run_cli(args: Args) -> ExitCode {
             duration,
             seed,
         } => render_svg(&domain, &format, &output, fps, duration, seed),
-        Command::Validate { experiment_path } => validate_experiment(&experiment_path),
-        Command::Verify {
+        Commands::Validate { experiment_path } => validate_experiment(&experiment_path),
+        Commands::Verify {
             experiment_path,
             runs,
         } => verify_reproducibility(&experiment_path, runs),
-        Command::EmcCheck { experiment_path } => emc_check(&experiment_path),
-        Command::EmcValidate { emc_path } => emc_validate(&emc_path),
-        Command::ListEmc => list_emc(),
-        Command::Help => {
+        Commands::EmcCheck { experiment_path } => emc_check(&experiment_path),
+        Commands::EmcValidate { emc_path } => emc_validate(&emc_path),
+        Commands::ListEmc => list_emc(),
+        Commands::Help => {
             print_help();
             ExitCode::SUCCESS
         }
-        Command::Version => {
+        Commands::Version => {
             print_version();
             ExitCode::SUCCESS
-        }
-        Command::Error(msg) => {
-            eprintln!("Error: {msg}");
-            print_help();
-            ExitCode::FAILURE
         }
     }
 }

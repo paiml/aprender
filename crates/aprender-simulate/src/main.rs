@@ -2,9 +2,10 @@
 //!
 //! Minimal entry point. All logic is in the `cli` module.
 
-use simular::cli::{run_cli, Args};
+use clap::Parser;
+use simular::cli::{run_cli, Cli};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    run_cli(Args::parse())
+    run_cli(Cli::parse())
 }
