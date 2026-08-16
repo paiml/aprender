@@ -92,9 +92,40 @@ allow = [
 ]
 confidence-threshold = 0.8
 
+# NCSA, scoped to the ONE crate that carries it rather than added to `allow`
+# above. Provenance:
+#
+#     libfuzzer-sys (MIT OR Apache-2.0) AND NCSA
+#       <- rav1e  <- ravif  <- image  <- aprender-test-lib
+#
+# i.e. it arrives through an AV1 encoder pulled in by `image`, not through
+# anything this project chose directly. NCSA is OSI-approved and FSF Free/Libre
+# and is permissive, so it is acceptable here -- but as an EXCEPTION, so that a
+# future NCSA dependency arriving by some other path is still flagged for a
+# decision instead of being silently admitted.
+[[licenses.exceptions]]
+name = "libfuzzer-sys"
+allow = ["NCSA"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Sibling dev-dependencies in this monorepo are DELIBERATELY path-only, with no
+# `version` field:
+#
+#     aprender-core     -> aprender-train, aprender-profile      (dev)
+#     aprender-compute  -> aprender-core, aprender-simulate, ... (dev)
+#     aprender-serve    -> aprender-cuda-edge                    (dev)
+#
+# That is how the crates.io publish cycle is broken: `cargo publish` strips
+# dev-dependencies, so a path-only dev-dep cannot create a circular version
+# requirement. Giving them a `version` would reintroduce the cycle.
+#
+# cargo-deny reports a path dep with no version as a WILDCARD, so without this
+# it flags all 10 as banned -- every one of them a deliberate, load-bearing
+# choice. `wildcards = "deny"` still applies to real (non-path) dependencies,
+# which is the case worth banning.
+allow-wildcard-paths = true
 highlight = "all"
 
 [sources]

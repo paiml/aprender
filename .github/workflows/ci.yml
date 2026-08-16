@@ -426,6 +426,27 @@ jobs:
       # correct everywhere else). Run the table; do not re-read the regex.
       - name: "`apr`-pinning guard must still turn RED (case table + surfaces)"
         run: bash scripts/check_apr_bin_pinned.sh --self-test
+      # deny.toml is 7.2 KB of licence / banned-crate / source-allowlist policy
+      # that ran in NO workflow -- only `make deny`, which is not a prerequisite
+      # of any tier, so nothing but a human typing it ever invoked it. Meanwhile
+      # cargo-deny 0.20.2 ships INSIDE the CI image already.
+      #
+      # Because nothing ran it, the policy drifted out of sync with the repo's
+      # own deliberate architecture and now fails on main:
+      #     advisories ok, bans FAILED, licenses FAILED, sources ok
+      # Both failures were config drift, not defects (see the deny.toml comments).
+      # Fixed there; wired here so it cannot drift unnoticed again.
+      #
+      # `ci / security` from the reusable workflow runs `cargo audit`, which does
+      # NOT read deny.toml -- so this covers licences, bans and sources, which
+      # nothing else does.
+      - name: cargo-deny (licences, bans, sources, advisories)
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            "$IMAGE" \
+            cargo deny check
       # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
       # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
       # `set -uo pipefail` deliberately (it must run every beat and tally the
