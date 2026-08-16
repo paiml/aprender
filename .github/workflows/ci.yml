@@ -456,6 +456,17 @@ jobs:
       # the fixture binaries are shell scripts that print a version string.
       - name: apr_bin.sh must resolve the HEAD-built binary, whatever its profile
         run: bash scripts/check_apr_bin_resolution.sh
+      # CLAUDE.md mandates bashrs over shellcheck; CI honoured that for SEVEN of
+      # 72 scripts (`bashrs lint scripts/check_book_*.sh` in book.yml).
+      # apr_bin.sh -- sourced by every gate in this repo -- was not one of them,
+      # and pmat reports Functions:0 / Cyclomatic:0 for it because pmat does not
+      # parse shell. Ratcheted rather than fixed: turning the glob on outright
+      # surfaces ~851 diagnostics, most of them bashrs false positives on
+      # hand-written bash, and a gate that cannot go green gets disabled.
+      - name: bashrs must see every script in scripts/ (shrink-only)
+        run: |
+          cargo install bashrs --locked --quiet || true
+          bash scripts/check_shell_lint_ratchet.sh
       # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
       # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
       # `set -uo pipefail` deliberately (it must run every beat and tally the
