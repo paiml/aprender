@@ -64,6 +64,13 @@ metadata:
   created: '2026-08-15'
   last_modified: '2026-08-15'
   author: PAIML Engineering
+  references:
+    - 'scripts/check_contract_enforcement.sh — the resolver (implementation)'
+    - 'contracts/apr-cli-commands-v1.yaml — the contract whose five conditions were unrunnable (#2504)'
+    - 'crates/apr-cli/tests/cli_commands.rs — the real test target the five strings should have named'
+    - 'crates/aprender-contracts/src/schema/types.rs:33 — `falsification_tests`; the absent `falsification` field is why serde dropped these strings'
+    - 'scripts/check_contract_test_binding.sh — sibling guard (#2465) covering falsification_tests[].test, a different field'
+    - 'https://github.com/paiml/aprender/issues/2504 — SURF-14 / R11'
   description: >
     A contract that misreports how it is enforced provides no discrimination
     between a stale pointer and a missing gate. This pins every cargo-shaped
@@ -112,28 +119,26 @@ proof_obligations:
     discharged_by: falsification_tests[3]
 
 falsification_tests:
-  - name: enforcement_target_must_exist
-    test_harness: "bash scripts/check_contract_enforcement.sh --self-test"
-    description: >
-      Fixture case bad_target.yaml names `--test ghost_target`. MUST be flagged.
-    mutation: "Neuter resolve_one() to `return 0` — VERIFIED RED."
-  - name: enforcement_fn_must_exist
-    test_harness: "bash scripts/check_contract_enforcement.sh --self-test"
-    description: >
-      Fixture cases bad_fn.yaml (`test_ghost_fn`) and bad_prefix.yaml
-      (`test_real`, a prefix of a real fn) MUST both be flagged.
-    mutation: "Neuter resolve_one() to `return 0` — VERIFIED RED."
-  - name: enforcement_package_must_own_target
-    test_harness: "bash scripts/check_contract_enforcement.sh --self-test"
-    description: >
-      Fixture case bad_pkg.yaml names `-p other` for a target owned by `fx`.
-      MUST be flagged.
-    mutation: "Neuter resolve_one() to `return 0` — VERIFIED RED."
-  - name: enforcement_guard_refuses_to_pass_vacuously
-    test_harness: "bash scripts/check_contract_enforcement.sh --self-test"
-    description: >
-      An empty contract directory MUST fail, never read as clean.
-    mutation: "Disable the MIN_CMDS floor — VERIFIED RED."
+  - id: enforcement_target_must_exist
+    obligation: ENF-OB-001
+    test_harness: 'bash scripts/check_contract_enforcement.sh --self-test'
+    prediction: 'Fixture case bad_target.yaml names `--test ghost_target`, absent from cargo metadata; the resolver flags it and the self-test reports bad_target.'
+    if_fails: 'The --test token is not being extracted, or the cargo metadata target table is empty; check target_table() output before suspecting the regex.'
+  - id: enforcement_fn_must_exist
+    obligation: ENF-OB-002
+    test_harness: 'bash scripts/check_contract_enforcement.sh --self-test'
+    prediction: 'bad_fn.yaml (`test_ghost_fn`) and bad_prefix.yaml (`test_real`, a strict prefix of a real fn) are BOTH flagged; the prefix case must not resolve.'
+    if_fails: 'The fn match has loosened to a substring, which is exactly how `test_all` would silently "resolve" against test_all_commands_respond_to_help — the #2504 near-miss.'
+  - id: enforcement_package_must_own_target
+    obligation: ENF-OB-003
+    test_harness: 'bash scripts/check_contract_enforcement.sh --self-test'
+    prediction: 'bad_pkg.yaml names `-p other` for a target owned by package `fx`; the ownership comparison flags it.'
+    if_fails: 'The -p token is unparsed or compared against the wrong column of the target table.'
+  - id: enforcement_guard_refuses_to_pass_vacuously
+    obligation: ENF-OB-004
+    test_harness: 'bash scripts/check_contract_enforcement.sh --self-test'
+    prediction: 'An empty contract directory yields zero cargo enforcement strings and the guard EXITS NON-ZERO rather than reporting a clean tree.'
+    if_fails: 'The MIN_CMDS floor is disarmed; a regex that stopped matching would now be indistinguishable from a clean tree (#2476, #2485).'
 
 non_goals:
   - "Checking that the named test PASSES. That is workspace-test's job; this proves the command RESOLVES."
@@ -146,13 +151,23 @@ binding_registry:
   make_target: tier3
   issue: "https://github.com/paiml/aprender/issues/2504"
 
-verification_summary: >
-  L2. Guard confirmed RED on unmodified main against the 5 real defects
-  (13 cargo enforcement strings checked, 5 failing), and GREEN after the fix
-  (13/13 resolve). The corrected command was independently confirmed to run:
-  `cargo test -p apr-cli --test cli_commands test_all_commands_respond_to_help
-  --no-run` exits 0, where the original exited 101. Self-test: 8 resolution
-  cases + 1 vacuity arm; both guard-logic mutations verified RED.
+# VERIFICATION NARRATIVE (prose lives in a comment; the field below is typed)
+#   Guard confirmed RED on unmodified main against the 5 real defects
+#   (13 cargo enforcement strings checked, 5 failing), and GREEN after the fix
+#   (13/13 resolve). The corrected command was independently confirmed to run:
+#   `cargo test -p apr-cli --test cli_commands test_all_commands_respond_to_help
+#   --no-run` exits 0, where the original exited 101. Self-test: 8 resolution
+#   cases + 1 vacuity arm; both guard-logic mutations verified RED.
+#
+#   L3/Kani is counted as NOT APPLICABLE, not as un-proved: the subject is
+#   filesystem + `cargo metadata` resolution over unbounded strings, not a
+#   bounded arithmetic kernel. Declaring an un-backed Kani harness to inflate
+#   the level would be theater.
+verification_summary:
+  total_obligations: 4
+  l2_property_tested: 4
+  l3_kani_proved: 0
+  l4_not_applicable: 4
 
 formal_verification_roadmap: >
   L3/Kani not applicable — the subject is filesystem and cargo-metadata
