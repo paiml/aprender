@@ -1,0 +1,22 @@
+# Guards deliberately not named by any workflow. SHRINK-ONLY: this list may
+# lose entries, never gain them. Each needs a reason, not just an entry.
+#
+# check_book_examples_executable.sh
+#   Runs every runnable example in the book, one subprocess each -- minutes, and
+#   RED on main with 4 failures:
+#     apr dataset audio-inspect --help          (genuine: the command errors)
+#     apr kernel parity --impl tiled ...        (genuine: the command errors)
+#     apr debug embed-viz --model ... x2        (environment: the .gguf is not
+#                                                on this box, so it may pass on
+#                                                a runner that has it)
+#   Wiring it before fixing the two genuine ones puts a known-red long job in
+#   gate.needs. Fix the examples first, then wire it.
+#
+# check_package_includes.sh
+#   The CB-510 guard, and VACUOUS on main today:
+#       OK: All 0 include!() files are included in cargo package
+#   exit 0 having examined nothing. Wiring it now adds a gate that measures
+#   zero -- the exact defect class it exists to prevent. #2483 is the fix;
+#   wire it when that lands.
+check_book_examples_executable.sh
+check_package_includes.sh

@@ -525,6 +525,20 @@ jobs:
         run: bash scripts/check_publish_safety.sh
       - name: Every include!() file is tracked by git (CB-510)
         run: bash scripts/check_include_files.sh
+      # #2512: these two were invoked by NO workflow -- one Makefile-only
+      # (`make tier3`, which CI does not run), one reachable from nothing at all.
+      # Both pass today and are cheap, so there was never a reason for them to be
+      # dark; nothing was watching.
+      - name: Every contract cites a test that exists (strict-test-binding)
+        run: bash scripts/check_contract_test_binding.sh
+      - name: aprender-core builds for wasm32
+        run: bash scripts/check_wasm32_core_builds.sh
+      # The meta-guard. Four guards were found unwired by accident while looking
+      # for something else; without this the fifth is found the same way.
+      - name: Every check_*.sh is named by a workflow
+        run: bash scripts/check_guards_are_wired.sh
+      - name: Wiring guard case table
+        run: bash scripts/check_guards_are_wired.sh --self-test
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
       # Poka-yoke: APR-MONO made every sibling a path alias under crates/, but
