@@ -208,6 +208,7 @@ fn create_test_config() -> GGUFConfig {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     }
 }
 
@@ -243,6 +244,8 @@ fn create_test_layer(config: &GGUFConfig) -> OwnedQuantizedLayer {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     }
 }
 
@@ -268,7 +271,11 @@ fn test_cov_header_invalid_magic() {
 fn test_cov_header_unsupported_version() {
     let mut data = Vec::new();
     data.extend_from_slice(&GGUF_MAGIC.to_le_bytes());
-    data.extend_from_slice(&2u32.to_le_bytes()); // Version 2 not supported
+    // Was `2`, asserted to be unsupported. GGUF v2 and v3 are both real and both
+    // load, so this test asserted the opposite of the truth from the day the
+    // support landed -- and never once ran to say so. Use a version that genuinely
+    // does not exist, which is what the test name means.
+    data.extend_from_slice(&99u32.to_le_bytes());
     data.extend_from_slice(&0u64.to_le_bytes());
     data.extend_from_slice(&0u64.to_le_bytes());
 
@@ -1051,6 +1058,8 @@ fn test_cov_owned_layer_with_biases() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     assert!(layer.attn_norm_bias.is_some());
@@ -1516,6 +1525,7 @@ fn create_inference_test_model() -> OwnedQuantizedModel {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     // Q4_0 block size: 18 bytes for 32 elements
@@ -1562,6 +1572,8 @@ fn create_inference_test_model() -> OwnedQuantizedModel {
             ffn_norm_bias: None,
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
         });
     }
 
@@ -1611,11 +1623,15 @@ fn test_cov_model_forward_multiple_tokens() {
 }
 
 #[test]
-#[should_panic(expected = "subtract with overflow")]
+#[should_panic(expected = "precondition violated")]
 fn test_cov_model_forward_empty_tokens() {
     let model = create_inference_test_model();
 
-    // Forward pass with empty token list panics due to seq_len - 1 underflow
+    // This used to expect the panic message "subtract with overflow" -- a
+    // `seq_len - 1` underflow. The operation is now guarded by an explicit
+    // rmsnorm precondition, so the message changed and this test failed the
+    // first time it was ever compiled. The guarantee worth pinning is that an
+    // empty token list is REFUSED, not which arithmetic accident refuses it.
     let token_ids: [u32; 0] = [];
     let _ = model.forward(&token_ids);
 }
@@ -1792,6 +1808,8 @@ fn test_cov_ffn_without_gate() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     assert!(layer.ffn_gate_weight.is_none());
@@ -1984,6 +2002,7 @@ fn test_cov_config_with_gqa() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     assert_eq!(config.num_heads / config.num_kv_heads, 4);
@@ -2008,6 +2027,7 @@ fn test_cov_config_with_mqa() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     assert_eq!(config.num_kv_heads, 1);
@@ -2039,6 +2059,7 @@ fn test_cov_config_large_context() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     assert_eq!(config.context_length, 131072);
@@ -2163,6 +2184,8 @@ fn test_cov_layer_with_all_biases() {
         ffn_norm_bias: Some(vec![0.0; hidden]),
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     assert!(layer.attn_norm_bias.is_some());
@@ -2197,6 +2220,8 @@ fn test_cov_layer_minimal_no_biases() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     assert!(layer.attn_norm_bias.is_none());
@@ -2252,6 +2277,8 @@ fn test_cov_layer_separate_qkv() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        post_attn_norm_weight: None,
+        post_ffw_norm_weight: None,
     };
 
     match layer.qkv_weight {
@@ -2388,6 +2415,7 @@ fn test_cov_config_head_dim_calculation() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let head_dim = config.hidden_dim / config.num_heads;
@@ -2416,6 +2444,7 @@ fn test_cov_config_intermediate_ratio() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let ratio = config.intermediate_dim as f32 / config.hidden_dim as f32;

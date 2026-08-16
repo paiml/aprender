@@ -439,6 +439,7 @@ fn test_tensor_info_empty_dims() {
 #[test]
 fn test_gguf_config_llama() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 4096,
@@ -463,6 +464,7 @@ fn test_gguf_config_llama() {
 #[test]
 fn test_gguf_config_llama2() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 4096,
@@ -485,6 +487,7 @@ fn test_gguf_config_llama2() {
 #[test]
 fn test_gguf_config_phi() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "phi".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 2560,
@@ -507,6 +510,7 @@ fn test_gguf_config_phi() {
 #[test]
 fn test_gguf_config_mistral() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "mistral".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 4096,
@@ -530,6 +534,7 @@ fn test_gguf_config_mistral() {
 #[test]
 fn test_gguf_config_head_dim_calculation() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "test".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 512,
@@ -552,6 +557,7 @@ fn test_gguf_config_head_dim_calculation() {
 #[test]
 fn test_gguf_config_gqa_ratio() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "test".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 1024,
@@ -575,6 +581,7 @@ fn test_gguf_config_gqa_ratio() {
 #[test]
 fn test_gguf_config_clone() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "cloneable".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 256,
@@ -599,6 +606,7 @@ fn test_gguf_config_clone() {
 #[test]
 fn test_gguf_config_debug() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "debug".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 128,
@@ -622,6 +630,7 @@ fn test_gguf_config_debug() {
 #[test]
 fn test_gguf_config_rope_theta_values() {
     let config_10k = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "test".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 256,
@@ -641,6 +650,7 @@ fn test_gguf_config_rope_theta_values() {
     assert_eq!(config_10k.rope_theta, 10000.0);
 
     let config_1m = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "test".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 256,
@@ -666,6 +676,7 @@ fn test_gguf_config_rope_theta_values() {
 
 fn make_test_config(hidden_dim: usize, num_heads: usize) -> GGUFConfig {
     GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "test".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim,
@@ -832,6 +843,7 @@ fn test_tensor_info_long_name() {
 #[test]
 fn test_gguf_config_very_small_model() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "tiny".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 16,
@@ -854,6 +866,7 @@ fn test_gguf_config_very_small_model() {
 #[test]
 fn test_gguf_config_very_large_model() {
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "huge".to_string(),
         constraints: ArchConstraints::from_architecture("llama"),
         hidden_dim: 16384,
@@ -913,6 +926,7 @@ fn test_gguf_config_different_eps_values() {
     let eps_values = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7];
     for eps in eps_values {
         let config = GGUFConfig {
+            query_pre_attn_scalar: None,
             architecture: "test".to_string(),
             constraints: ArchConstraints::from_architecture("llama"),
             hidden_dim: 256,

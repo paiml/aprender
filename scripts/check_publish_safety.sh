@@ -16,6 +16,8 @@
 
 set -uo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 errors=0
 checked=0
 
@@ -99,23 +101,58 @@ else
     echo "OK"
 fi
 
-# Check 6: No large binary files (>1MB) in publishable packages
+# Check 6: No large or binary files in publishable packages
+#
+# This check had two holes, and the defect it is credited with catching (a 28 MB
+# test.apr) would slip through both today:
+#
+#   1. It iterated `for pkg in aprender apr-cli` -- 2 of the 72 publishable
+#      crates. The 0.63.0 CB-510 recurrence was in aprender-serve, which is not
+#      one of them. A 2 MB blob planted in aprender-core passed cleanly.
+#   2. Its name and comment say ">1MB" and it never measured a size. It grepped
+#      an extension list, so a 100 MB .txt passed and a 1 KB .bin failed. The
+#      threshold in the title did not exist in the code.
+#
+# Now: every publishable crate, and an actual byte threshold alongside the
+# extension list.
 echo -n "  Package size check... "
 checked=$((checked + 1))
 large_files=""
-for pkg in aprender apr-cli; do
-    # Check for binary/model files that shouldn't be in packages
-    binaries=$(cargo package -p "$pkg" --list --allow-dirty 2>/dev/null \
-        | grep -E '\.(apr|gguf|safetensors|bin|pt|onnx|wav|mp3|db|db-shm|db-wal)$' || true)
-    if [ -n "$binaries" ]; then
-        large_files="${large_files}${pkg}: ${binaries}\n"
-    fi
+MAX_PACKAGED_BYTES=1048576
+
+pub_pkgs=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
+    | python3 "${REPO_ROOT:-.}/scripts/lib/publishable_crates.py" | cut -f1)
+
+for pkg in $pub_pkgs; do
+    listing=$(cargo package -p "$pkg" --list --allow-dirty 2>/dev/null < /dev/null) || continue
+    [ -n "$listing" ] || continue
+    pkg_dir=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
+        | python3 "${REPO_ROOT:-.}/scripts/lib/publishable_crates.py" \
+        | awk -F'\t' -v p="$pkg" '$1==p{print $2}')
+    [ -n "$pkg_dir" ] || continue
+
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        # SIZE, not extension. The old rule failed on an extension list and
+        # never measured anything, which is both too strict and too loose: it
+        # would reject a 77-byte golden .apr fixture while passing a 3.6 MB
+        # .pmat-baseline.json. Every real instance of this defect -- the 28 MB
+        # test.apr, and the 5.4 MB of baseline JSON found when this check was
+        # first pointed at all 72 crates -- is a SIZE problem.
+        if [ -f "$pkg_dir/$f" ]; then
+            sz=$(stat -c%s "$pkg_dir/$f" 2>/dev/null || echo 0)
+            if [ "$sz" -gt "$MAX_PACKAGED_BYTES" ]; then
+                large_files="${large_files}${pkg}: ${f} (${sz} bytes > ${MAX_PACKAGED_BYTES})\n"
+            fi
+        fi
+    done <<< "$listing"
 done
+
 if [ -n "$large_files" ]; then
     echo "FAIL"
-    echo "FAIL: Binary/model files found in packages:"
+    echo "FAIL: large or binary files found in published packages:"
     echo -e "$large_files"
-    echo "Fix: add to Cargo.toml [package] exclude or .gitignore"
+    echo "Fix: add to Cargo.toml [package] exclude (root-anchored) or .gitignore"
     errors=$((errors + 1))
 else
     echo "OK"

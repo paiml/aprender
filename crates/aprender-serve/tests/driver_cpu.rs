@@ -73,6 +73,8 @@ fn create_llama_style_test_model(config: &GGUFConfig) -> OwnedQuantizedModel {
     let mut layers = Vec::with_capacity(config.num_layers);
     for _ in 0..config.num_layers {
         layers.push(OwnedQuantizedLayer {
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
             attn_norm_weight: attn_norm_weight.clone(),
             attn_norm_bias: None, // RMSNorm has no bias
             qkv_weight: OwnedQKVWeights::Fused(qkv_weight.clone()),
@@ -130,6 +132,8 @@ fn create_phi2_style_test_model(config: &GGUFConfig) -> OwnedQuantizedModel {
     let mut layers = Vec::with_capacity(config.num_layers);
     for _ in 0..config.num_layers {
         layers.push(OwnedQuantizedLayer {
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
             attn_norm_weight: attn_norm_weight.clone(),
             attn_norm_bias: Some(attn_norm_bias.clone()), // LayerNorm has bias
             qkv_weight: OwnedQKVWeights::Fused(qkv_weight.clone()),
@@ -173,6 +177,7 @@ fn create_phi2_style_test_model(config: &GGUFConfig) -> OwnedQuantizedModel {
 fn test_driver_cpu_forward_llama_single_token() {
     // Illuminates: forward/core.rs:forward(), RMSNorm path, SwiGLU path
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         hidden_dim: 64,
         intermediate_dim: 128,
@@ -212,6 +217,7 @@ fn test_driver_cpu_forward_llama_single_token() {
 fn test_driver_cpu_forward_llama_multi_token() {
     // Illuminates: forward/core.rs multi-position attention loop
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         hidden_dim: 64,
         intermediate_dim: 128,
@@ -245,6 +251,7 @@ fn test_driver_cpu_forward_llama_multi_token() {
 fn test_driver_cpu_forward_phi2_single_token() {
     // Illuminates: forward/core.rs LayerNorm path, GELU path
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "phi".to_string(),
         hidden_dim: 64,
         intermediate_dim: 128,
@@ -280,6 +287,7 @@ fn test_driver_cpu_forward_gqa_attention() {
     // num_kv_heads < num_heads triggers GQA
     // Note: GQA has known bugs with small dimensions - using catch_unwind for coverage
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         hidden_dim: 64,
         intermediate_dim: 128,
@@ -317,6 +325,7 @@ fn test_driver_cpu_forward_gqa_attention() {
 fn test_driver_cpu_forward_cached_single() {
     // Illuminates: forward_cached() - KV cache code path
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         hidden_dim: 64,
         intermediate_dim: 128,
@@ -348,6 +357,7 @@ fn test_driver_cpu_forward_cached_single() {
 fn test_driver_cpu_forward_cached_sequence() {
     // Illuminates: forward_cached() with accumulated KV cache
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         hidden_dim: 64,
         intermediate_dim: 128,
@@ -393,6 +403,7 @@ fn test_driver_cpu_forward_cached_gqa() {
     // Illuminates: attention_with_cache_gqa code path
     // Note: GQA has known bugs with small dimensions - using catch_unwind for coverage
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         hidden_dim: 64,
         intermediate_dim: 128,
@@ -510,6 +521,7 @@ fn test_driver_loader_metadata_u32() {
 fn test_driver_cpu_forward_max_context() {
     // Test near context length boundary
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         hidden_dim: 32, // Small for speed
         intermediate_dim: 64,
@@ -542,6 +554,7 @@ fn test_driver_cpu_forward_max_context() {
 fn test_driver_cpu_forward_cached_long_generation() {
     // Simulate longer generation to exercise cache
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         hidden_dim: 32,
         intermediate_dim: 64,
@@ -573,6 +586,7 @@ fn test_driver_cpu_forward_cached_long_generation() {
 fn test_driver_cpu_neox_rope() {
     // Test NEOX-style RoPE (type 2)
     let config = GGUFConfig {
+        query_pre_attn_scalar: None,
         architecture: "llama".to_string(),
         hidden_dim: 64,
         intermediate_dim: 128,
