@@ -727,16 +727,32 @@ jobs:
               echo "cargo-mutants exit: $MUT_EXIT"
               OUTCOMES=mutants.out/outcomes.json
               if [ ! -f "$OUTCOMES" ]; then
-                # No outcomes file means cargo-mutants found no mutants in the
-                # diff (e.g. diff only touched non-Rust / non-mutable lines).
-                echo "No mutants.out/outcomes.json — 0 mutants in diff. Pass."
+                # #2481 F-7: this used to be an unconditional `exit 0` on the
+                # theory that no outcomes file means no mutants in the diff.
+                # That is one reason the file can be absent. The other is that
+                # cargo-mutants CRASHED before writing it -- and that passed
+                # too. MUT_EXIT distinguishes them, and it was captured on the
+                # line above and then never tested.
+                if [ "$MUT_EXIT" -ne 0 ]; then
+                  echo "::error::cargo-mutants exited $MUT_EXIT and wrote no outcomes.json. The gate cannot tell whether the diff was clean or the run died, so it refuses rather than passing."
+                  exit 1
+                fi
+                echo "No mutants.out/outcomes.json and cargo-mutants exited 0 — 0 mutants in diff. Pass."
                 exit 0
               fi
               MISSED=$(grep -o "\"summary\"[^}]*\"missed\":[0-9]*" "$OUTCOMES" \
                 | grep -o "\"missed\":[0-9]*" | grep -o "[0-9]*" | head -1)
               TIMEOUT=$(grep -o "\"timeout\":[0-9]*" "$OUTCOMES" \
                 | grep -o "[0-9]*" | head -1)
-              MISSED=${MISSED:-0}; TIMEOUT=${TIMEOUT:-0}
+              # #2481 F-7: `MISSED=${MISSED:-0}` made an UNPARSEABLE outcomes.json
+              # read as "zero missed" -- so a cargo-mutants JSON format change
+              # would silently disarm this gate rather than break it. Not being
+              # able to measure is not the same as measuring zero.
+              if [ -z "$MISSED" ] || [ -z "$TIMEOUT" ]; then
+                echo "::error::could not parse missed/timeout out of $OUTCOMES. The gate refuses rather than assuming zero — check whether cargo-mutants changed its JSON shape."
+                head -40 "$OUTCOMES" || true
+                exit 1
+              fi
               echo "Diff-scoped mutation result: missed=$MISSED timeout=$TIMEOUT (max allowed missed=$MUTANTS_MAX_MISSED)"
               UNCAUGHT=$((MISSED + TIMEOUT))
               if [ "$UNCAUGHT" -gt "$MUTANTS_MAX_MISSED" ]; then
