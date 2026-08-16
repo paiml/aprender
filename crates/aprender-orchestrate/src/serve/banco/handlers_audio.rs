@@ -27,7 +27,7 @@ pub async fn audio_formats_handler() -> Json<AudioFormatsResponse> {
             AudioFormat { extension: "ogg".to_string(), mime: "audio/ogg".to_string() },
         ],
         sample_rate: 16000,
-        engine: if cfg!(feature = "speech") { "whisper-apr" } else { "dry-run" }.to_string(),
+        engine: "none".to_string(),
     })
 }
 
@@ -35,88 +35,27 @@ pub async fn audio_formats_handler() -> Json<AudioFormatsResponse> {
 // whisper-apr transcription (speech feature)
 // ============================================================================
 
-#[cfg(feature = "speech")]
+/// Transcription is not part of aprender.
+///
+/// This used to dispatch to `whisper-apr` behind a `speech` feature, with a
+/// `[dry-run]` stub when the feature was off. whisper-apr is a standalone
+/// project and no longer a dependency here, so the honest answer is a refusal
+/// naming where the capability actually lives -- not a body that looks like a
+/// transcription and is not one, and not an instruction to enable a feature
+/// that no longer exists.
 fn transcribe_audio(
     request: &TranscribeRequest,
 ) -> Result<Json<TranscribeResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Decode base64 audio data
-    let audio_bytes = base64_decode(&request.audio_data).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new(format!("Invalid base64 audio: {e}"), "invalid_audio", 400)),
-        )
-    })?;
-
-    let ext = request.format.as_deref().unwrap_or("wav");
-
-    // Load audio samples
-    let samples = whisper_apr::audio::load_audio_samples(&audio_bytes, ext).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new(format!("Audio decode failed: {e}"), "audio_error", 400)),
-        )
-    })?;
-
-    // Create transcription options
-    let options = whisper_apr::TranscribeOptions {
-        language: request.language.clone(),
-        task: if request.translate.unwrap_or(false) {
-            whisper_apr::Task::Translate
-        } else {
-            whisper_apr::Task::Transcribe
-        },
-        ..Default::default()
-    };
-
-    // Create a tiny whisper model for transcription
-    let model = whisper_apr::WhisperApr::tiny();
-    let result = model.transcribe(&samples, options).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(
-                format!("Transcription failed: {e}"),
-                "transcription_error",
-                500,
-            )),
-        )
-    })?;
-
-    Ok(Json(TranscribeResponse {
-        text: result.text,
-        language: result.language,
-        duration_secs: samples.len() as f32 / 16000.0,
-        segments: result
-            .segments
-            .into_iter()
-            .map(|s| TranscribeSegment { start: s.start, end: s.end, text: s.text })
-            .collect(),
-    }))
-}
-
-// ============================================================================
-// Dry-run transcription (no speech feature)
-// ============================================================================
-
-#[cfg(not(feature = "speech"))]
-fn transcribe_audio(
-    request: &TranscribeRequest,
-) -> Result<Json<TranscribeResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let audio_len = request.audio_data.len();
-    // Estimate duration from base64 size (rough: 16kHz mono 16-bit = 32KB/sec)
-    let estimated_bytes = audio_len * 3 / 4; // base64 → raw
-    let estimated_duration = estimated_bytes as f32 / 32000.0;
-
-    Ok(Json(TranscribeResponse {
-        text: format!(
-            "[dry-run] Would transcribe {} bytes of {} audio (~{:.1}s). Enable --features speech for real transcription.",
-            audio_len,
-            request.format.as_deref().unwrap_or("wav"),
-            estimated_duration
-        ),
-        language: request.language.clone().unwrap_or_else(|| "en".to_string()),
-        duration_secs: estimated_duration,
-        segments: vec![],
-    }))
+    let _ = request;
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse {
+            error: "transcription_not_supported".to_string(),
+            message: "aprender does not transcribe audio. whisper-apr is a \
+                      standalone project; use it directly."
+                .to_string(),
+        }),
+    ))
 }
 
 /// Simple base64 decoder (no external dependency).

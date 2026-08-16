@@ -140,7 +140,6 @@ trueno-viz = { workspace = true, optional = true }
 # `presentar_terminal::`/`presentar_core::` uses come from the path deps above).
 
 # Speech recognition (native-only)
-whisper-apr = { version = "0.2", optional = true }
 
 # Tiny kernel (native-only)
 pepita = { version = "0.1", optional = true }
@@ -252,7 +251,6 @@ rag = ["trueno-rag", "oracle-mode"]
 viz = ["trueno-viz", "native"]
 
 # Speech recognition (Whisper ASR)
-speech = ["whisper-apr", "native"]
 
 # Tiny kernel integration
 kernel = ["pepita", "native"]
@@ -303,7 +301,7 @@ agents-full = ["agents-inference", "agents-rag"]
 # Full sovereign stack (all components)
 sovereign-stack = [
     "trueno-integration", "oracle-mode", "inference", "distributed",
-    "ml", "rag", "viz", "speech", "compression",
+    "ml", "rag", "viz", "compression",
     "simulation", "transpilers",
     "testing",
     "tui", "highlighting",

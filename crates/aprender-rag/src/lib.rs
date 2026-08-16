@@ -122,8 +122,6 @@ pub use embed::{EmbeddingModelType, FastEmbedder};
 pub use error::{Error, Result};
 pub use fusion::FusionStrategy;
 pub use index::{BM25Index, SparseIndex, VectorStore};
-#[cfg(feature = "transcription")]
-pub use loader::transcription::{TranscriptionBackend, TranscriptionConfig, TranscriptionLoader};
 #[cfg(feature = "ocr")]
 pub use loader::ImageLoader;
 pub use loader::{DocumentLoader, LoaderRegistry, SubtitleLoader, TextLoader};

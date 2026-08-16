@@ -490,12 +490,10 @@ that prose is stale; the list is authoritative.
 Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `mcp`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
 
 ```bash
-apr run hf://openai/whisper-tiny --input audio.wav
 apr validate model.apr --quality
 apr convert model.safetensors --quantize int8 -o model-int8.apr
 apr export model.apr --format gguf -o model.gguf
 apr merge model1.apr model2.apr --strategy weighted --weights 0.7,0.3 -o merged.apr
-apr import hf://openai/whisper-tiny -o whisper.apr --arch whisper
 apr qa model.gguf --assert-tps 100 --json
 ```
 
