@@ -109,12 +109,15 @@ fn try_wgpu_generate(
     }
 
     // Upload F32 weights for norms, biases, and non-Q4K tensors.
-    // Q4K projection weights are skipped (already uploaded as raw Q4K).
-    let weights = wgpu_adapter::dequant_model_weights(model)?;
+    //
+    // #2378 finding 8: this used to call `dequant_model_weights(model)` and then
+    // skip the UPLOAD for names already sent as raw Q4K. The skip was too late --
+    // an F32 Vec had already been materialized for every one of those tensors and
+    // was then dropped. On a Q4_K model that is the bulk of the weights.
+    // `_except` skips the dequantization itself, so the allocation never happens.
+    let weights = wgpu_adapter::dequant_model_weights_except(model, &q4k_names)?;
     for (name, data, _rows, _cols) in &weights {
-        if !q4k_names.contains(name) {
-            fwd.upload_weight(name, data);
-        }
+        fwd.upload_weight(name, data);
     }
 
     // Get output norm and LM head weights

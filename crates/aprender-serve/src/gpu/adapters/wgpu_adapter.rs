@@ -53,6 +53,30 @@ fn dequant_done_message(weight_count: usize, total_bytes: usize) -> String {
 pub fn dequant_model_weights(
     model: &OwnedQuantizedModel,
 ) -> Result<Vec<(String, Vec<f32>, usize, usize)>> {
+    dequant_model_weights_except(model, &std::collections::HashSet::new())
+}
+
+/// Dequantize every weight EXCEPT those named in `skip`.
+///
+/// #2378 finding 8. `try_wgpu_generate` uploads Q4_K projection weights as raw
+/// Q4_K bytes, then called `dequant_model_weights` for the rest -- but that
+/// materialized an F32 `Vec` for EVERY tensor including the Q4_K ones, and only
+/// the *upload* was skipped. The dequantization and the allocation had already
+/// happened; the result was built and thrown away.
+///
+/// That is the remaining half of the memory problem `batch_wgpu.rs` documents
+/// ("called TWICE (28 GB each)", 56 GB -> 28 GB). Calling it once was the first
+/// half; not dequantizing what was never going to be uploaded is this one.
+///
+/// `dequant_model_weights` delegates here with an empty set, so the two other
+/// call sites keep their exact previous behaviour.
+///
+/// # Errors
+/// Propagates any tensor that cannot be dequantized.
+pub fn dequant_model_weights_except<S: std::hash::BuildHasher>(
+    model: &OwnedQuantizedModel,
+    skip: &std::collections::HashSet<String, S>,
+) -> Result<Vec<(String, Vec<f32>, usize, usize)>> {
     let config = &model.config;
     let hidden = config.hidden_dim;
     let num_heads = config.num_heads;
@@ -62,6 +86,19 @@ pub fn dequant_model_weights(
     let num_layers = model.layers().len();
 
     let mut weights = Vec::new();
+
+    // A MACRO, not a helper fn, and that is the whole point: macro arguments
+    // expand inside the `if`, so `dequant_tensor_public(..)?` is never evaluated
+    // for a skipped tensor. A function would evaluate its arguments first and
+    // dequantize exactly what we are trying not to dequantize.
+    macro_rules! push_w {
+        ($name:expr, $data:expr, $rows:expr, $cols:expr $(,)?) => {{
+            let n: String = $name;
+            if !skip.contains(&n) {
+                weights.push((n, $data, $rows, $cols));
+            }
+        }};
+    }
 
     eprintln!(
         "{}",
@@ -79,15 +116,15 @@ pub fn dequant_model_weights(
         let prefix = format!("layer.{i}");
 
         // Norm weights (already F32)
-        weights.push((
+        push_w!(
             format!("{prefix}.attn_norm"),
             layer.attn_norm_weight.clone(),
             1,
             hidden,
-        ));
+        );
 
         if let Some(ref ffn_norm) = layer.ffn_norm_weight {
-            weights.push((format!("{prefix}.ffn_norm"), ffn_norm.clone(), 1, hidden));
+            push_w!(format!("{prefix}.ffn_norm"), ffn_norm.clone(), 1, hidden);
         }
 
         // QKV weights — dequantize from quantized format
@@ -102,29 +139,29 @@ pub fn dequant_model_weights(
                 let q_data = f32_data[..q_dim * hidden].to_vec();
                 let k_data = f32_data[q_dim * hidden..(q_dim + kv_dim) * hidden].to_vec();
                 let v_data = f32_data[(q_dim + kv_dim) * hidden..total_out * hidden].to_vec();
-                weights.push((format!("{prefix}.q_proj"), q_data, q_dim, hidden));
-                weights.push((format!("{prefix}.k_proj"), k_data, kv_dim, hidden));
-                weights.push((format!("{prefix}.v_proj"), v_data, kv_dim, hidden));
+                push_w!(format!("{prefix}.q_proj"), q_data, q_dim, hidden);
+                push_w!(format!("{prefix}.k_proj"), k_data, kv_dim, hidden);
+                push_w!(format!("{prefix}.v_proj"), v_data, kv_dim, hidden);
             },
             crate::gguf::OwnedQKVWeights::Separate { q, k, v } => {
-                weights.push((
+                push_w!(
                     format!("{prefix}.q_proj"),
                     dequant_tensor_public(q)?,
                     q_dim,
                     hidden,
-                ));
-                weights.push((
+                );
+                push_w!(
                     format!("{prefix}.k_proj"),
                     dequant_tensor_public(k)?,
                     kv_dim,
                     hidden,
-                ));
-                weights.push((
+                );
+                push_w!(
                     format!("{prefix}.v_proj"),
                     dequant_tensor_public(v)?,
                     kv_dim,
                     hidden,
-                ));
+                );
             },
         }
 
@@ -132,51 +169,51 @@ pub fn dequant_model_weights(
         if let Some(ref bias) = layer.qkv_bias {
             // Fused QKV bias: split into q_bias, k_bias, v_bias
             if bias.len() >= q_dim + 2 * kv_dim {
-                weights.push((format!("{prefix}.q_bias"), bias[..q_dim].to_vec(), 1, q_dim));
-                weights.push((
+                push_w!(format!("{prefix}.q_bias"), bias[..q_dim].to_vec(), 1, q_dim);
+                push_w!(
                     format!("{prefix}.k_bias"),
                     bias[q_dim..q_dim + kv_dim].to_vec(),
                     1,
                     kv_dim,
-                ));
-                weights.push((
+                );
+                push_w!(
                     format!("{prefix}.v_bias"),
                     bias[q_dim + kv_dim..q_dim + 2 * kv_dim].to_vec(),
                     1,
                     kv_dim,
-                ));
+                );
             }
         }
 
         // O projection
-        weights.push((
+        push_w!(
             format!("{prefix}.o_proj"),
             dequant_tensor_public(&layer.attn_output_weight)?,
             hidden,
             q_dim,
-        ));
+        );
 
         // FFN weights
         if let Some(ref gate) = layer.ffn_gate_weight {
-            weights.push((
+            push_w!(
                 format!("{prefix}.gate_proj"),
                 dequant_tensor_public(gate)?,
                 intermediate,
                 hidden,
-            ));
+            );
         }
-        weights.push((
+        push_w!(
             format!("{prefix}.up_proj"),
             dequant_tensor_public(&layer.ffn_up_weight)?,
             intermediate,
             hidden,
-        ));
-        weights.push((
+        );
+        push_w!(
             format!("{prefix}.down_proj"),
             dequant_tensor_public(&layer.ffn_down_weight)?,
             hidden,
             intermediate,
-        ));
+        );
 
         if (i + 1) % 7 == 0 || i == num_layers - 1 {
             eprintln!("  Dequantized layer {}/{}", i + 1, num_layers);
@@ -184,12 +221,12 @@ pub fn dequant_model_weights(
     }
 
     // LM head
-    weights.push((
+    push_w!(
         "lm_head".to_string(),
         dequant_tensor_public(model.lm_head_weight())?,
         config.vocab_size,
         hidden,
-    ));
+    );
 
     // PMAT-345: Weight layout analysis.
     // GGUF stores [ne0, ne1] with data layout data[i0 + i1*ne0].
@@ -356,5 +393,110 @@ mod ticket_free_output_tests {
             "done line still addresses the user in ticket numbers: {line}"
         );
         assert_eq!(line, "GPU weights ready: 337 tensors, 6174.9 MB F32");
+    }
+}
+
+#[cfg(test)]
+mod dequant_skip_2378 {
+    //! FALSIFY-2378-8: a tensor uploaded as raw Q4_K must not also be
+    //! dequantized to F32 and thrown away.
+    //!
+    //! `try_wgpu_generate` uploads Q4_K projection weights as raw Q4_K bytes,
+    //! then called `dequant_model_weights` and skipped the UPLOAD for those
+    //! names. The skip was too late: an F32 `Vec` had already been materialized
+    //! for each and immediately dropped. On a Q4_K model that is the bulk of
+    //! the weights, and it is the remaining half of the memory problem
+    //! `batch_wgpu.rs` documents ("called TWICE (28 GB each)").
+    //!
+    //! Host-side, so this needs no GPU -- which is the point. The defect was
+    //! filed as GPU-path and is measurable without one.
+
+    use super::*;
+    use crate::gguf::test_helpers::create_test_model_with_config;
+    use crate::gguf::GGUFConfig;
+
+    /// hidden_dim must be a multiple of QK_K for the fixture to produce real
+    /// Q4_K tensors, which is the whole precondition of this test.
+    fn q4k_config() -> GGUFConfig {
+        GGUFConfig {
+            architecture: "test".to_string(),
+            constraints: crate::gguf::ArchConstraints::from_architecture("test"),
+            hidden_dim: 256,
+            intermediate_dim: 512,
+            num_layers: 1,
+            num_heads: 4,
+            num_kv_heads: 4,
+            vocab_size: 100,
+            context_length: 1024,
+            rope_theta: 10000.0,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: None,
+        }
+    }
+
+    fn f32_elements(w: &[(String, Vec<f32>, usize, usize)]) -> usize {
+        w.iter().map(|(_, d, _, _)| d.len()).sum()
+    }
+
+    #[test]
+    fn a_skipped_tensor_is_never_dequantized() {
+        // THE discriminating test. An earlier version of this compared f32
+        // element COUNTS between the filtered and unfiltered results -- and a
+        // mutation that evaluated the dequant eagerly and merely skipped the
+        // push passed it, because the OUTPUT is identical either way. It
+        // measured the result, not the work.
+        //
+        // This makes the work observable instead: corrupt a Q4_K tensor so that
+        // dequantizing it FAILS. If the filter is lazy the corrupt tensor is
+        // never touched and the call succeeds; if it is eager the call errors.
+        let mut model = create_test_model_with_config(&q4k_config());
+
+        let raw: std::collections::HashSet<String> = raw_q4k_weights(&model)
+            .into_iter()
+            .map(|(n, _, _, _)| n)
+            .collect();
+        assert!(
+            !raw.is_empty(),
+            "the fixture has no Q4_K weights, so the skip is untested"
+        );
+
+        // Corrupt the up-projection of layer 0 and confirm it is in the skip set.
+        model.layers[0].ffn_up_weight.data.truncate(3);
+        let corrupted: Vec<&String> = raw.iter().filter(|n| n.contains("up_proj")).collect();
+        assert!(
+            !corrupted.is_empty(),
+            "the corrupted tensor is not among the raw-Q4K uploads, so this test \
+             is aimed at the wrong tensor: {raw:?}"
+        );
+
+        // CONTROL: unfiltered must FAIL. Without this, "filtered succeeded"
+        // could just mean the corruption was harmless.
+        assert!(
+            dequant_model_weights(&model).is_err(),
+            "the corrupted tensor dequantized fine, so this test cannot \
+             distinguish lazy from eager"
+        );
+
+        // THE CLAIM: skipping it means never dequantizing it.
+        assert!(
+            dequant_model_weights_except(&model, &raw).is_ok(),
+            "a tensor uploaded as raw Q4_K was dequantized anyway -- the skip \
+             happens after the work rather than instead of it"
+        );
+    }
+
+    #[test]
+    fn an_empty_skip_set_is_the_old_behaviour() {
+        // dequant_model_weights delegates with an empty set; the other two call
+        // sites rely on that being byte-identical to what they had before.
+        let model = create_test_model_with_config(&q4k_config());
+        let a = dequant_model_weights(&model).expect("a");
+        let b = dequant_model_weights_except(&model, &std::collections::HashSet::new()).expect("b");
+        assert_eq!(a.len(), b.len());
+        assert_eq!(f32_elements(&a), f32_elements(&b));
     }
 }
