@@ -702,7 +702,7 @@ falsification:
   - name: FALSIFY-CLI-001
     description: "Command listed in contract but missing from `apr --help`"
     check: "Every command.name in this YAML must appear in `apr --help` output"
-    enforcement: "cargo test -p apr-cli --test cli_commands test_all_contract_commands_exist"
+    enforcement: "cargo test -p apr-cli --test canary_target_that_does_not_exist test_all_contract_commands_exist"
 
   - name: FALSIFY-CLI-002
     description: "Command in `apr --help` but missing from contract"
