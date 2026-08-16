@@ -84,7 +84,13 @@ jobs:
   # registry unreachable. Mirrored in the `mutants` job below.
   workspace-test:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    timeout-minutes: 85  # bumped to match 75min step + 10min overhead
+    # 100, not 85. The step below sets `timeout-minutes: 75`, but "Set up runner"
+    # (image pull) has measured at 20 minutes, so 20 + 75 = 95 > 85 and the JOB
+    # timeout always fired first -- producing a bare "The operation was canceled"
+    # that names no step. Job 95162862834 died exactly on the 85-minute mark this
+    # way. The step timeout must be the one that can fire, because it points at
+    # the step; the job timeout is the backstop behind it.
+    timeout-minutes: 100
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
@@ -456,6 +462,16 @@ jobs:
         run: bash scripts/check_lockfile_current.sh
       - name: "lockfile guard must still turn RED (case table)"
         run: bash scripts/check_lockfile_current.sh --self-test
+      # Poka-yoke: nextest IGNORES an unknown config key with a warning instead
+      # of failing. `slow-warning = "60s"` is not a nextest key, so profile.ci
+      # had no per-test timeout and a hung run died at the job's 85-minute
+      # timeout naming nothing -- evicting #2502 from the merge queue. The
+      # warning was in every workspace-test log and nobody read it, so it is a
+      # hard failure now. Runs nextest's real parser on a 3-line crate.
+      - name: nextest must ignore no key in .config/nextest.toml
+        run: bash scripts/check_nextest_config_keys.sh
+      - name: "nextest-key guard must still turn RED (case table)"
+        run: bash scripts/check_nextest_config_keys.sh --self-test
       # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
       # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
       # `set -uo pipefail` deliberately (it must run every beat and tally the
