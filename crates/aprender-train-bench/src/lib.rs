@@ -28,6 +28,10 @@ pub use sweep::{SweepConfig, SweepResult, Sweeper};
 use entrenar_common::Result;
 
 /// Run a temperature sweep.
+///
+/// # Errors
+///
+/// Always -- see [`Sweeper::run`] and #2519. Nothing in this crate trains.
 pub fn temperature_sweep(
     range: std::ops::Range<f32>,
     step: f32,
@@ -38,6 +42,10 @@ pub fn temperature_sweep(
 }
 
 /// Compare multiple distillation strategies.
+///
+/// # Errors
+///
+/// Always -- see [`strategies::compare`] and #2519.
 pub fn compare_strategies(strategies: &[DistillStrategy]) -> Result<StrategyComparison> {
     strategies::compare(strategies)
 }
@@ -46,9 +54,18 @@ pub fn compare_strategies(strategies: &[DistillStrategy]) -> Result<StrategyComp
 mod tests {
     use super::*;
 
+    // #2519: this asserted `is_ok()` on a sweep that never trained, which is
+    // exactly the shape of test that locks a fabrication in -- it passes
+    // precisely because the output is invented.
     #[test]
-    fn test_temperature_sweep_returns_results() {
+    fn test_temperature_sweep_refuses_without_training() {
         let result = temperature_sweep(1.0..4.0, 1.0, 1);
-        assert!(result.is_ok());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_compare_strategies_refuses_without_training() {
+        let result = compare_strategies(&[DistillStrategy::kd_only()]);
+        assert!(result.is_err());
     }
 }

@@ -7,7 +7,7 @@
 
 use clap::{Parser, Subcommand};
 use entrenar_bench::{
-    cost::{generate_sample_points, Constraints, CostModel, CostPerformanceAnalysis},
+    cost::{load_points, Constraints, CostModel, CostPerformanceAnalysis, CostPerformancePoint},
     strategies::{compare, DistillStrategy},
     sweep::{SweepConfig, Sweeper},
 };
@@ -115,6 +115,10 @@ enum Commands {
         /// GPU type for cost calculation
         #[arg(long, default_value = "a100-80gb")]
         gpu: String,
+
+        /// Path to benchmark results file (JSON) to recommend from
+        #[arg(long)]
+        results: Option<std::path::PathBuf>,
     },
 }
 
@@ -146,12 +150,14 @@ fn main() {
             min_accuracy,
             max_memory,
             gpu,
+            results,
         } => recommend_command(
             max_gpu_hours,
             max_cost,
             min_accuracy,
             max_memory,
             &gpu,
+            results.as_deref(),
             &config,
         ),
     };
@@ -392,9 +398,42 @@ fn ablation_command(
     Ok(())
 }
 
+/// Load the measured runs an analysis is about, or say why there are none.
+///
+/// #2519: both callers used to do
+///
+///     // Generate sample data points (in a real scenario, load from results file)
+///     let points = generate_sample_points(&cost_model);
+///
+/// while `cost-performance` accepted -- and ignored -- a `--results` flag, and
+/// `recommend` had no way to supply results at all. The eight
+/// "configurations" were a literal table in `cost.rs`, so `recommend` answered
+/// `Top recommendation: LoRA r=32` from numbers nobody measured. The Pareto
+/// analysis itself is genuine; it just never had real input.
+fn require_results(
+    results_path: Option<&std::path::Path>,
+) -> entrenar_common::Result<Vec<CostPerformancePoint>> {
+    let Some(path) = results_path else {
+        return Err(entrenar_common::EntrenarError::ConfigValue {
+            field: "results".into(),
+            message: "no benchmark results to analyse: this crate does not run \
+                      training, so it has nothing of its own to report. It \
+                      previously substituted a hardcoded eight-configuration \
+                      table and recommended a winner from it"
+                .into(),
+            suggestion: "Pass --results <file.json>: a JSON array of measured runs \
+                         with name, gpu_hours, cost_usd, accuracy, loss, memory_gb. \
+                         Tracked in #2519."
+                .into(),
+        });
+    };
+
+    load_points(path)
+}
+
 fn cost_performance_command(
     gpu: &str,
-    _results_path: Option<&std::path::Path>,
+    results_path: Option<&std::path::Path>,
     cli: &entrenar_common::Cli,
 ) -> entrenar_common::Result<()> {
     // Parse GPU type
@@ -408,8 +447,7 @@ fn cost_performance_command(
         );
     }
 
-    // Generate sample data points (in a real scenario, load from results file)
-    let points = generate_sample_points(&cost_model);
+    let points = require_results(results_path)?;
     let analysis = CostPerformanceAnalysis::from_points(points);
 
     if cli.format == entrenar_common::OutputFormat::Json {
@@ -570,6 +608,7 @@ fn recommend_command(
     min_accuracy: Option<f64>,
     max_memory: Option<f64>,
     gpu: &str,
+    results_path: Option<&std::path::Path>,
     cli: &entrenar_common::Cli,
 ) -> entrenar_common::Result<()> {
     let cost_model = parse_gpu_model(gpu)?;
@@ -584,7 +623,7 @@ fn recommend_command(
     }
 
     let constraints = build_constraints(max_gpu_hours, max_cost, min_accuracy, max_memory);
-    let points = generate_sample_points(&cost_model);
+    let points = require_results(results_path)?;
     let analysis = CostPerformanceAnalysis::from_points(points);
     let recommendations = analysis.recommend(&constraints);
 
