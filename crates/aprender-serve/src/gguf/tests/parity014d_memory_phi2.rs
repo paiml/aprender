@@ -194,10 +194,26 @@ fn test_parity014e_batch_benchmark_design() {
 fn test_parity015a_gpu_batch_matmul_actual() {
     use crate::gpu::HybridScheduler;
 
-    // Create test matrices matching phi-2 FFN dimensions
-    let batch_size = 32;
-    let hidden_dim = 2560;
-    let intermediate_dim = 10240;
+    // SCALED DOWN from phi-2 FFN dimensions (batch 32, hidden 2560, intermediate
+    // 10240). This test asserts a SHAPE property of the batched matmul, and a shape
+    // property does not need production-sized tensors. At phi-2 size the matmul is
+    // 32*2560*10240 = 839M MACs; `HybridScheduler::new()` succeeds without a GPU
+    // (`GpuCompute::auto()` falls back to CPU), so on a CPU-only runner this ran
+    // through `cpu_matmul` and cost minutes of workspace-test wall clock — times
+    // three under nextest's `retries = 2`. These dimensions do the same work
+    // 1600x smaller.
+    //
+    // The dimensions are chosen so m*k*n stays ABOVE `HybridScheduler`'s
+    // `gpu_threshold` (64*64*64 = 262_144): 8*128*512 = 524_288, so the
+    // GPU-vs-CPU dispatch decision this test exercises (and prints) is UNCHANGED
+    // on a GPU-equipped host.
+    //
+    // The GFLOPS reporting was removed rather than rescaled: at this size the
+    // number is meaningless, and a printed rate invites someone to cite it.
+    // Benchmarks belong in `benches/`, not in `--lib` tests.
+    let batch_size = 8;
+    let hidden_dim = 128;
+    let intermediate_dim = 512;
 
     // Create batched input: [batch_size, hidden_dim]
     let input: Vec<f32> = (0..batch_size * hidden_dim)
@@ -220,9 +236,7 @@ fn test_parity015a_gpu_batch_matmul_actual() {
         println!("  GPU available: {}", scheduler.has_gpu());
 
         // Perform actual matmul
-        let start = std::time::Instant::now();
         let result = scheduler.matmul(&input, &weight, batch_size, hidden_dim, intermediate_dim);
-        let elapsed = start.elapsed();
 
         match result {
             Ok(output) => {
@@ -232,14 +246,16 @@ fn test_parity015a_gpu_batch_matmul_actual() {
                     "PARITY-015a: Output should be [batch_size, intermediate_dim]"
                 );
 
-                let ops = 2.0 * batch_size as f64 * hidden_dim as f64 * intermediate_dim as f64;
-                let gflops = ops / elapsed.as_secs_f64() / 1e9;
-                println!("  Time: {:?}", elapsed);
-                println!("  GFLOPS: {:.2}", gflops);
                 println!("  Status: VERIFIED - GPU batch matmul works");
             },
             Err(e) => {
-                println!("  Error: {} (expected if no GPU)", e);
+                // This arm used to swallow the error and PASS, which made the
+                // assertion above unreachable for any defect surfacing as `Err`.
+                // The "expected if no GPU" it used to claim was also false: with no
+                // GPU, `HybridScheduler::matmul` takes the `cpu_matmul` path, which
+                // returns `Ok` unconditionally. The input here is small and valid,
+                // so an `Err` is a real defect, not a capability gap.
+                panic!("PARITY-015a: matmul failed on valid input: {}", e);
             },
         }
     } else {

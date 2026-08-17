@@ -164,7 +164,6 @@ fn test_parity018a_dequantized_weight_cache_production() {
 #[serial_test::serial]
 fn test_parity018b_batch_ffn_gpu_method() {
     use crate::gpu::HybridScheduler;
-    use std::time::Instant;
 
     // Test batch_ffn_gpu as a standalone method
     // This will be integrated into OwnedQuantizedModelCachedSync
@@ -230,9 +229,26 @@ fn test_parity018b_batch_ffn_gpu_method() {
         output
     }
 
-    let batch_size = 32;
-    let hidden_dim = 2560;
-    let intermediate_dim = 10240;
+    // SCALED DOWN from phi-2 dimensions (batch 32, hidden 2560, intermediate 10240).
+    // This test asserts a SHAPE property of the up -> bias -> GELU -> down chain,
+    // and a shape property does not need production-sized tensors. At phi-2 size
+    // each projection is 32*2560*10240 = 839M MACs; `HybridScheduler::new()`
+    // succeeds without a GPU (`GpuCompute::auto()` falls back to CPU), so on a
+    // CPU-only runner both projections ran through `cpu_matmul` and this test
+    // alone cost minutes of workspace-test wall clock — times three under
+    // nextest's `retries = 2`. These dimensions do the same work 1600x smaller.
+    //
+    // The dimensions are chosen so m*k*n stays ABOVE `HybridScheduler`'s
+    // `gpu_threshold` (64*64*64 = 262_144): up and down are both
+    // 8*128*512 = 524_288, so the GPU-vs-CPU dispatch decision this test
+    // exercises is UNCHANGED on a GPU-equipped host.
+    //
+    // The throughput/GFLOPS reporting was removed rather than rescaled: at this
+    // size the number is meaningless, and a printed rate invites someone to cite
+    // it. Benchmarks belong in `benches/`, not in `--lib` tests.
+    let batch_size = 8;
+    let hidden_dim = 128;
+    let intermediate_dim = 512;
 
     // Create test data
     let hidden_states: Vec<f32> = (0..batch_size * hidden_dim)
@@ -248,7 +264,6 @@ fn test_parity018b_batch_ffn_gpu_method() {
     println!("\nPARITY-018b: batch_ffn_gpu Method");
 
     if let Ok(mut scheduler) = HybridScheduler::new() {
-        let start = Instant::now();
         let output = batch_ffn_gpu(
             &hidden_states,
             &up_weight,
@@ -260,7 +275,6 @@ fn test_parity018b_batch_ffn_gpu_method() {
             intermediate_dim,
             &mut scheduler,
         );
-        let elapsed = start.elapsed();
 
         assert_eq!(
             output.len(),
@@ -268,13 +282,8 @@ fn test_parity018b_batch_ffn_gpu_method() {
             "PARITY-018b: Output should be [batch, hidden]"
         );
 
-        let flops = 2.0 * batch_size as f64 * hidden_dim as f64 * intermediate_dim as f64 * 2.0;
-        let gflops = flops / (elapsed.as_secs_f64() * 1e9);
-
         println!("  Input: [{}x{}]", batch_size, hidden_dim);
         println!("  Output: [{}x{}]", batch_size, hidden_dim);
-        println!("  Time: {:?}", elapsed);
-        println!("  GFLOPS: {:.2}", gflops);
         println!("  Status: VERIFIED - batch_ffn_gpu works");
     } else {
         println!("  Status: SKIP - GPU not available");

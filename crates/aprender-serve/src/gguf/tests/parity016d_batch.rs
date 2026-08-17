@@ -158,7 +158,6 @@ fn test_parity016e_performance_projection() {
 #[test]
 fn test_parity017a_gpu_batch_ffn_implementation() {
     use crate::gpu::HybridScheduler;
-    use std::time::Instant;
 
     // Implement the actual gpu_batch_ffn function
     // This processes [batch, hidden] -> [batch, hidden] through FFN with GPU
@@ -201,10 +200,26 @@ fn test_parity017a_gpu_batch_ffn_implementation() {
         Ok(output)
     }
 
-    // Test with phi-2 dimensions
-    let batch_size = 32;
-    let hidden_dim = 2560;
-    let intermediate_dim = 10240;
+    // SCALED DOWN from phi-2 dimensions (batch 32, hidden 2560, intermediate 10240).
+    // This test asserts a SHAPE property of the up -> GELU -> down chain, and a
+    // shape property does not need production-sized tensors. At phi-2 size each
+    // projection is 32*2560*10240 = 839M MACs; `HybridScheduler::new()` succeeds
+    // without a GPU (`GpuCompute::auto()` falls back to CPU), so on a CPU-only
+    // runner both projections ran through `cpu_matmul` and this test alone cost
+    // minutes of workspace-test wall clock — times three under nextest's
+    // `retries = 2`. These dimensions do the same work 1600x smaller.
+    //
+    // The dimensions are chosen so m*k*n stays ABOVE `HybridScheduler`'s
+    // `gpu_threshold` (64*64*64 = 262_144): up and down are both
+    // 8*128*512 = 524_288, so the GPU-vs-CPU dispatch decision this test
+    // exercises is UNCHANGED on a GPU-equipped host.
+    //
+    // The throughput/GFLOPS reporting was removed rather than rescaled: at this
+    // size the number is meaningless, and a printed rate invites someone to cite
+    // it. Benchmarks belong in `benches/`, not in `--lib` tests.
+    let batch_size = 8;
+    let hidden_dim = 128;
+    let intermediate_dim = 512;
 
     // Create test data
     let input: Vec<f32> = (0..batch_size * hidden_dim)
@@ -223,7 +238,6 @@ fn test_parity017a_gpu_batch_ffn_implementation() {
     println!("  Down: [{}x{}]", intermediate_dim, hidden_dim);
 
     if let Ok(mut scheduler) = HybridScheduler::new() {
-        let start = Instant::now();
         let result = gpu_batch_ffn(
             &input,
             &up_weight,
@@ -233,7 +247,6 @@ fn test_parity017a_gpu_batch_ffn_implementation() {
             intermediate_dim,
             &mut scheduler,
         );
-        let elapsed = start.elapsed();
 
         match result {
             Ok(output) => {
@@ -243,19 +256,20 @@ fn test_parity017a_gpu_batch_ffn_implementation() {
                     "PARITY-017a: Output should be [batch, hidden]"
                 );
 
-                // Calculate FLOPS for full FFN (up + down)
-                let flops =
-                    2.0 * batch_size as f64 * hidden_dim as f64 * intermediate_dim as f64 * 2.0;
-                let gflops = flops / (elapsed.as_secs_f64() * 1e9);
-
                 println!("  Output: [{}x{}]", batch_size, hidden_dim);
-                println!("  Time: {:?}", elapsed);
-                println!("  GFLOPS: {:.2}", gflops);
                 println!("  Status: VERIFIED - GPU batch FFN works");
             },
             Err(e) => {
-                println!("  Error: {}", e);
-                println!("  Status: SKIP - GPU path failed");
+                // This arm used to `println!("SKIP - GPU path failed")` and PASS,
+                // which made the assertion above unreachable for any defect that
+                // surfaces as an `Err` — the test excluded no outcome on a
+                // GPU-equipped host. Verified by mutation: truncating
+                // `HybridScheduler::matmul`'s output by one element makes the down
+                // projection return `InvalidShape`, and the test reported `ok` at
+                // BOTH the scaled and the original [32x2560] dimensions. The input
+                // here is small and valid, so an `Err` is a real defect, not a
+                // capability gap.
+                panic!("PARITY-017a: gpu_batch_ffn failed on valid input: {}", e);
             },
         }
     } else {
