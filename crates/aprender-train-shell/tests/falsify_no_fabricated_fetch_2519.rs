@@ -161,8 +161,20 @@ fn distill_cannot_start_training_on_models_that_were_never_fetched() {
 /// reproduction in #2519, and it must exit non-zero.
 #[test]
 fn the_single_command_surface_exits_non_zero() {
-    let exe = env!("CARGO_BIN_EXE_aprender-train-shell");
-    let output = std::process::Command::new(exe)
+    // Resolved at RUNTIME by asking cargo, not with
+    // env!("CARGO_BIN_EXE_aprender-train-shell"). That macro is evaluated at
+    // COMPILE time and failed the build in CI --
+    //
+    //     error: environment variable `CARGO_BIN_EXE_aprender-train-shell`
+    //            not defined at compile time
+    //
+    // while compiling fine locally under the identical
+    // `cargo test -p aprender-train-shell --test <name>` command. Rather than
+    // keep guessing at the difference, this uses the pattern already proven for
+    // aprender-mcp: ask cargo which executable it produced. Same doctrine as
+    // scripts/apr_bin.sh -- never construct or assume a binary path.
+    let exe = cargo_built_binary();
+    let output = std::process::Command::new(&exe)
         .args(["-c", "fetch does-not-exist/totally-fake-7b"])
         .output()
         .expect("binary should run");
@@ -198,4 +210,46 @@ fn role_flags_are_still_parsed() {
             ..
         }
     ));
+}
+
+/// Ask cargo for this package's binary, and fail loudly if it cannot say.
+///
+/// A test that silently skipped when the binary was unavailable would be the
+/// skip-class escape this repo bans -- and would have hidden the very defect
+/// #2519 is about.
+fn cargo_built_binary() -> std::path::PathBuf {
+    let out = std::process::Command::new(env!("CARGO"))
+        .args([
+            "build",
+            "-p",
+            "aprender-train-shell",
+            "--bin",
+            "aprender-train-shell",
+            "--message-format=json-render-diagnostics",
+        ])
+        .output()
+        .expect("cargo build must run");
+    assert!(
+        out.status.success(),
+        "cargo build failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut found: Option<std::path::PathBuf> = None;
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        // Deliberately a substring match rather than a JSON dependency: this
+        // test crate must not grow one for a path lookup.
+        if !line.contains("\"compiler-artifact\"") {
+            continue;
+        }
+        if let Some(i) = line.find("\"executable\":\"") {
+            let rest = &line[i + 14..];
+            if let Some(j) = rest.find('"') {
+                let p = std::path::PathBuf::from(&rest[..j]);
+                if p.file_name().is_some_and(|n| n == "aprender-train-shell") {
+                    found = Some(p);
+                }
+            }
+        }
+    }
+    found.expect("cargo reported no executable for aprender-train-shell")
 }
