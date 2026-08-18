@@ -567,6 +567,29 @@ jobs:
       - name: In-tree siblings must be pathed, never pulled from crates.io
         run: bash scripts/check_workspace_siblings_pathed.sh
 
+      # `cargo deny` ran in ZERO workflows -- only `make deny`. Positive control:
+      # 9 workflows mention `cargo`, 0 mentioned `deny`. Meanwhile the `security`
+      # job runs `cargo audit` with continue-on-error, which cannot fail the build
+      # AND does not read deny.toml. The whole advisory surface was one tool that
+      # ignores the exemption file, in a job that cannot fail, plus one tool that
+      # honours it running nowhere -- so all 29 exemptions gated nothing.
+      #
+      # Install-if-missing: free once the runner has it, self-healing if a runner
+      # is rebuilt from a base image without it.
+      - name: Install cargo-deny (if absent)
+        run: |
+          if ! command -v cargo-deny > /dev/null 2>&1; then
+            cargo install cargo-deny --locked
+          fi
+          cargo deny --version
+      - name: Advisories must pass, with deny.toml exemptions honoured
+        run: cargo deny check advisories
+      # Separate from the check above on purpose: a newly-FIXED upstream must
+      # never fail anyone's build. It fails only this guard, whose remedy is
+      # deleting a line.
+      - name: Every deny.toml exemption must still be live
+        run: bash scripts/check_deny_exemptions_live.sh
+
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
   gate:
