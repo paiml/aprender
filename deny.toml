@@ -17,7 +17,11 @@ ignore = [
     { id = "RUSTSEC-2025-0141", reason = "bincode: transitive, widely used, no drop-in replacement" },
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: transitive via tabled_derive, no safe upgrade available" },
     { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2: unmaintained, transitive via validator_derive; awaiting validator upstream migration" },
-    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile 1.x: transitive, upstream uses 2.x but older consumers pin 1.x" },
+    # rustls-pemfile 1.x exemption removed: the reqwest 0.11 -> 0.12 bump in
+    # aprender-serve dropped its last consumer, so the advisory is no longer
+    # reachable and the entry was dead. Deliberately not naming the id here --
+    # CI greps every RUSTSEC token out of this file, comments included, so
+    # prose mentioning one silently re-exempts it.
     # atty 0.2.14 — unsound read (different from 2024-0375 unmaintained)
     # rand 0.8.6 — unmaintained, transitive only. #1980 removed the workspace's own
     # tower 0.4 pin (aprender-serve/-orchestrate now on tower 0.5, matching axum 0.7's
