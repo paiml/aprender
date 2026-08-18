@@ -465,6 +465,21 @@ jobs:
       # compile its own test suite. Text-only check, no build.
       - name: No exclude pattern may swallow a src/ directory
         run: bash scripts/check_exclude_anchored.sh
+      # Poka-yoke: a contract may not name an enforcement command that cannot
+      # run. #2504: apr-cli-commands-v1.yaml declared five falsification
+      # conditions enforced by `cargo test --test apr_cli_commands ...`; there
+      # is no such target, so all five exited 101. The underlying tests are real
+      # and DO run (line 327, inside workspace-test) — what was fiction is the
+      # contract's account of HOW, which destroys the discrimination between
+      # "stale pointer" and "missing gate" that a contract exists to provide.
+      # Nothing caught it because these strings sit under a `falsification:`
+      # key the typed Contract struct does not have, so serde drops them and
+      # `pv validate` never sees them. Self-test first (Verification Discipline
+      # #7). Needs `cargo metadata` only — no build.
+      - name: Enforcement guard's own case table must pass before it judges
+        run: bash scripts/check_contract_enforcement.sh --self-test
+      - name: No contract may name an enforcement command that cannot run
+        run: bash scripts/check_contract_enforcement.sh
       # Poka-yoke: capturing `cmd 2>&1` into one variable and then parsing it as
       # JSON puts the command's diagnostics in front of its data. On 2026-08-11
       # the nightly story reported `no format_parity gate found in --json output
