@@ -98,7 +98,7 @@ ureq = { version = "2", features = ["json"], optional = true }
 crossterm = { version = "0.28", optional = true }
 
 # HTTP client for real model server benchmarking (blocking for bench harness)
-reqwest = { version = "0.11", features = ["json", "blocking"], optional = true }
+reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }
 
 # Serialization (for REST API, not ML code)
 serde = { version = "1", features = ["derive"] }
@@ -206,7 +206,7 @@ hyper = { version = "1.4", features = ["full"] }
 mime = "0.3"
 
 # For external HTTP benchmarking (REAL model server calls)
-reqwest = { version = "0.11", features = ["json", "blocking"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
 
 # For CLI integration tests
 assert_cmd = "2.0"
