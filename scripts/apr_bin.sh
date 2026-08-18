@@ -75,6 +75,8 @@ apr_bin_target_dir() {
     local here
     here=$(git rev-parse --show-toplevel 2>/dev/null) || here=$(pwd)
     [ -n "$here" ] || here=$(pwd)
+    # bashrs:allow SEC010 - $here is `git rev-parse --show-toplevel` or `pwd`,
+    # never user-controlled input.
     (cd "$here" && cargo metadata --no-deps --format-version 1 2>/dev/null) \
         | jq -r '.target_directory // empty' 2>/dev/null
 }
