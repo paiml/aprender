@@ -618,10 +618,21 @@ jobs:
       #
       # Install-if-missing: free once the runner has it, self-healing if a runner
       # is rebuilt from a base image without it.
+      #
+      # PRIVATE INSTALL ROOT (scripts/check_cargo_install_private_root.sh):
+      # mac-server runs 16 runners under one $HOME, so a shared `cargo install`
+      # replaces a binary another running job is about to exec (aprender#2353:
+      # cargo-llvm-cov ENOENT, empty coverage figure). Install into a per-run
+      # root and put it FIRST on PATH so the freshly installed binary is the one
+      # that runs, here and in the steps that follow.
       - name: Install cargo-deny (if absent)
+        env:
+          CARGO_INSTALL_ROOT: /tmp/cargo-deny-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           if ! command -v cargo-deny > /dev/null 2>&1; then
             cargo install cargo-deny --locked
+            echo "$CARGO_INSTALL_ROOT/bin" >> "$GITHUB_PATH"
+            export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
           fi
           cargo deny --version
       - name: Advisories must pass, with deny.toml exemptions honoured
