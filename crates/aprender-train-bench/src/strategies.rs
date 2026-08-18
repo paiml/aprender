@@ -1,7 +1,6 @@
 //! Distillation strategy comparison.
 
-use crate::stats::StatisticalAnalyzer;
-use entrenar_common::Result;
+use entrenar_common::{EntrenarError, Result};
 
 /// A distillation strategy to benchmark.
 #[derive(Debug, Clone)]
@@ -77,6 +76,15 @@ impl DistillStrategy {
     }
 
     /// Simulate training with this strategy.
+    //
+    // #2519: retained ONLY for the unit tests that pin its per-variant literal
+    // table, so it stays on the record as a lookup rather than a run. Scoped to
+    // test builds so no production path can present it as a result again. Note
+    // what it ignores: every field of every variant. `KDOnly { alpha: 0.0 }`
+    // (no distillation at all) and `KDOnly { alpha: 0.7 }` get byte-identical
+    // metrics, which is why the `ablation` subcommand printed `Δ Loss +0.0000`
+    // for "+ KD (T=4)" over the CE-only baseline.
+    #[cfg(test)]
     fn simulate(&self, seed: u64) -> StrategyMetrics {
         let noise = (seed as f64 * 0.1).sin() * 0.02;
 
@@ -157,93 +165,58 @@ pub struct PairwiseComparison {
 }
 
 /// Compare multiple strategies.
+///
+/// # Errors
+///
+/// If `strategies` is empty, and otherwise always: nothing here trains, so
+/// there is no honest comparison to return -- see the #2519 note in the body.
 pub fn compare(strategies: &[DistillStrategy]) -> Result<StrategyComparison> {
-    let runs_per_strategy = 5;
-    let mut results = Vec::new();
-    let mut all_losses: Vec<(String, Vec<f64>)> = Vec::new();
-
-    for strategy in strategies {
-        let mut losses = Vec::new();
-        let mut accuracies = Vec::new();
-        let mut times = Vec::new();
-
-        for run in 0..runs_per_strategy {
-            let metrics = strategy.simulate(run as u64);
-            losses.push(metrics.final_loss);
-            accuracies.push(metrics.final_accuracy);
-            times.push(metrics.training_time_hours);
-        }
-
-        let n = losses.len() as f64;
-        let mean_loss = losses.iter().sum::<f64>() / n;
-        let mean_accuracy = accuracies.iter().sum::<f64>() / n;
-        let mean_time = times.iter().sum::<f64>() / n;
-
-        let std_loss =
-            (losses.iter().map(|x| (x - mean_loss).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
-        let std_accuracy = (accuracies
-            .iter()
-            .map(|x| (x - mean_accuracy).powi(2))
-            .sum::<f64>()
-            / (n - 1.0))
-            .sqrt();
-
-        results.push(StrategyResult {
-            name: strategy.name().to_string(),
-            mean_loss,
-            std_loss,
-            mean_accuracy,
-            std_accuracy,
-            mean_time_hours: mean_time,
-            runs: runs_per_strategy,
+    // Kept: an empty strategy list is a genuine caller mistake with its own
+    // distinct diagnosis, and it is still worth naming separately from the
+    // refusal below.
+    if strategies.is_empty() {
+        return Err(EntrenarError::ConfigValue {
+            field: "strategies".into(),
+            message: "No strategies to compare".into(),
+            suggestion: "Pass at least one of: kd, progressive, attention, combined".into(),
         });
-
-        all_losses.push((strategy.name().to_string(), losses));
     }
 
-    // Find best
-    let best_by_loss = results
-        .iter()
-        .min_by(|a, b| {
-            a.mean_loss
-                .partial_cmp(&b.mean_loss)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|r| r.name.clone());
-
-    let best_by_accuracy = results
-        .iter()
-        .max_by(|a, b| {
-            a.mean_accuracy
-                .partial_cmp(&b.mean_accuracy)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|r| r.name.clone());
-
-    // Pairwise comparisons
-    let mut significance = Vec::new();
-    for i in 0..all_losses.len() {
-        for j in (i + 1)..all_losses.len() {
-            let (name1, losses1) = &all_losses[i];
-            let (name2, losses2) = &all_losses[j];
-
-            let test = StatisticalAnalyzer::welch_t_test(losses1, losses2);
-
-            significance.push(PairwiseComparison {
-                strategy1: name1.clone(),
-                strategy2: name2.clone(),
-                p_value: test.p_value,
-                significant: test.significant,
-                effect_size: test.effect_size,
-            });
-        }
-    }
-
-    Ok(StrategyComparison {
-        results,
-        best_by_loss,
-        best_by_accuracy,
-        significance,
+    // #2519: this used to read
+    //
+    //     for run in 0..runs_per_strategy {
+    //         let metrics = strategy.simulate(run as u64);
+    //
+    // -- five "runs" of a per-variant LITERAL TABLE (`Combined -> 0.71/0.831`),
+    // plus a sinusoid of the run index standing in for run-to-run variance. It
+    // then fed those numbers to a real Welch t-test and printed p-values.
+    //
+    // Measured before this change, with no model and no data:
+    //
+    //     Combined  0.714 ± 0.003 ★   83.3% ± 0.2% ★
+    //     KD-only vs Combined: p=0.0000 ✓ (effect=35.69)
+    //     ✓ Recommendation: Combined for best accuracy
+    //
+    // The p-value is the sharpest part of the defect: a correct statistical
+    // test applied to invented samples reports overwhelming significance,
+    // because the "variance" is a deterministic curve. The statistics were
+    // never wrong -- their input was fabricated, and the honest-looking
+    // machinery around it is what made the output persuasive.
+    //
+    // Refusing is strictly better than fabricating. Whether this binary should
+    // exist at all is tracked in #2519; this change does not prejudge it.
+    Err(EntrenarError::ConfigValue {
+        field: "strategies".into(),
+        message: format!(
+            "cannot compare {} distillation strategies: this crate never trains any \
+             of them. It previously returned a per-variant literal table, ran a real \
+             t-test over it and recommended a winner, which is why it is now an \
+             error rather than a plausible-looking comparison",
+            strategies.len()
+        ),
+        suggestion: "Train each strategy for real (`apr distill`) and compare the \
+                     metrics those runs report. Tracked in #2519."
+            .into(),
     })
 }
 
@@ -300,6 +273,59 @@ impl StrategyComparison {
 mod tests {
     use super::*;
 
+    /// Build a `StrategyComparison` from values supplied by the caller, so the
+    /// formatter tests below exercise `to_table` without a comparison having to
+    /// invent the numbers it formats.
+    fn comparison_from(entries: &[(&str, f64, f64)]) -> StrategyComparison {
+        let results: Vec<StrategyResult> = entries
+            .iter()
+            .map(|&(name, mean_loss, mean_accuracy)| StrategyResult {
+                name: name.to_string(),
+                mean_loss,
+                std_loss: 0.0,
+                mean_accuracy,
+                std_accuracy: 0.0,
+                mean_time_hours: 2.0,
+                runs: 1,
+            })
+            .collect();
+
+        let best_by_loss = results
+            .iter()
+            .min_by(|a, b| {
+                a.mean_loss
+                    .partial_cmp(&b.mean_loss)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|r| r.name.clone());
+        let best_by_accuracy = results
+            .iter()
+            .max_by(|a, b| {
+                a.mean_accuracy
+                    .partial_cmp(&b.mean_accuracy)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|r| r.name.clone());
+
+        let significance = results
+            .windows(2)
+            .map(|pair| PairwiseComparison {
+                strategy1: pair[0].name.clone(),
+                strategy2: pair[1].name.clone(),
+                p_value: 0.5,
+                significant: false,
+                effect_size: 0.0,
+            })
+            .collect();
+
+        StrategyComparison {
+            results,
+            best_by_loss,
+            best_by_accuracy,
+            significance,
+        }
+    }
+
     #[test]
     fn test_strategy_names() {
         assert_eq!(DistillStrategy::kd_only().name(), "KD-only");
@@ -308,36 +334,34 @@ mod tests {
         assert_eq!(DistillStrategy::combined().name(), "Combined");
     }
 
+    // #2519: `test_compare_strategies` and `test_combined_is_best` used to
+    // assert `compare()` was Ok and that "Combined" won -- they asserted the
+    // literal table, so they would have gone RED on any honest fix. They now
+    // pin the refusal.
     #[test]
-    fn test_compare_strategies() {
+    fn test_compare_refuses_to_compare() {
         let strategies = vec![
             DistillStrategy::kd_only(),
             DistillStrategy::progressive(),
             DistillStrategy::combined(),
         ];
 
-        let comparison = compare(&strategies).expect("operation should succeed");
-
-        assert_eq!(comparison.results.len(), 3);
-        assert!(comparison.best_by_loss.is_some());
-        assert!(comparison.best_by_accuracy.is_some());
+        let err = compare(&strategies).expect_err("comparing untrained strategies must fail");
+        assert!(format!("{err}").contains("never trains"));
     }
 
     #[test]
-    fn test_combined_is_best() {
+    fn test_compare_does_not_name_a_winner() {
         let strategies = vec![DistillStrategy::kd_only(), DistillStrategy::combined()];
 
-        let comparison = compare(&strategies).expect("operation should succeed");
-
-        // Combined should generally be best
-        assert_eq!(comparison.best_by_accuracy.as_deref(), Some("Combined"));
+        // The old output ended in "Recommendation: Combined for best accuracy",
+        // derived from two hardcoded pairs of numbers.
+        assert!(compare(&strategies).is_err());
     }
 
     #[test]
     fn test_comparison_table() {
-        let strategies = vec![DistillStrategy::kd_only(), DistillStrategy::progressive()];
-
-        let comparison = compare(&strategies).expect("operation should succeed");
+        let comparison = comparison_from(&[("KD-only", 0.82, 0.782), ("Progressive", 0.75, 0.818)]);
         let table = comparison.to_table();
 
         assert!(table.contains("KD-only"));
@@ -468,16 +492,14 @@ mod tests {
 
     #[test]
     fn test_comparison_significance_markers() {
-        let strategies = vec![DistillStrategy::kd_only(), DistillStrategy::combined()];
-
-        let comparison = compare(&strategies).expect("operation should succeed");
+        let comparison = comparison_from(&[("KD-only", 0.82, 0.782), ("Combined", 0.71, 0.831)]);
 
         // Should have one pairwise comparison
         assert_eq!(comparison.significance.len(), 1);
     }
 
     #[test]
-    fn test_compare_all_strategies() {
+    fn test_compare_all_strategies_still_refuses() {
         let strategies = vec![
             DistillStrategy::kd_only(),
             DistillStrategy::progressive(),
@@ -485,18 +507,42 @@ mod tests {
             DistillStrategy::combined(),
         ];
 
-        let comparison = compare(&strategies).expect("operation should succeed");
+        // Asking for more strategies does not make any of them run.
+        let err = compare(&strategies).expect_err("must refuse");
+        assert!(format!("{err}").contains('4'));
+    }
 
-        // 4 choose 2 = 6 pairwise comparisons
-        assert_eq!(comparison.significance.len(), 6);
-        assert_eq!(comparison.results.len(), 4);
+    #[test]
+    fn test_compare_empty_fails_for_its_own_reason() {
+        // Non-vacuity: the refusal above is not a blanket "always Err" -- an
+        // empty list is still diagnosed as an empty list.
+        let err = compare(&[]).expect_err("an empty strategy list must fail");
+        let text = format!("{err}");
+        assert!(text.contains("No strategies to compare"), "got: {text}");
+        assert!(!text.contains("never trains"), "got: {text}");
+    }
+
+    #[test]
+    fn test_simulate_ignores_every_strategy_field() {
+        // #2519's discriminating symptom: `simulate` matches only on the enum
+        // VARIANT, so a run with no distillation at all (alpha = 0.0, T = 1.0)
+        // is indistinguishable from one with alpha = 0.7, T = 4.0. That is why
+        // `ablation` printed "Δ Loss +0.0000" for adding KD.
+        let no_kd = DistillStrategy::KDOnly {
+            temperature: 1.0,
+            alpha: 0.0,
+        };
+        let with_kd = DistillStrategy::KDOnly {
+            temperature: 4.0,
+            alpha: 0.7,
+        };
+
+        assert_eq!(no_kd.simulate(0).final_loss, with_kd.simulate(0).final_loss);
     }
 
     #[test]
     fn test_comparison_table_star_markers() {
-        let strategies = vec![DistillStrategy::kd_only(), DistillStrategy::combined()];
-
-        let comparison = compare(&strategies).expect("operation should succeed");
+        let comparison = comparison_from(&[("KD-only", 0.82, 0.782), ("Combined", 0.71, 0.831)]);
         let table = comparison.to_table();
 
         // Should have star marker for best
