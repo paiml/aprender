@@ -283,7 +283,14 @@ fn falsify_cgp_047_crash_handling() {
 // FALSIFY-CGP-062: cgp diff must not require re-profiling
 // Given: two saved profile JSONs
 // When: cgp diff --baseline a.json --current b.json
-// Then: completes in < 100ms (pure analysis, no execution)
+// Then: reads the JSONs directly and reports a verdict -- no wall-clock
+// budget here. `cgp_cmd()` runs `cargo run`, so a timed run measures
+// cargo's own freshness check and process-spawn cost, not the diff
+// analysis; on shared/loaded CI hosts that overhead alone exceeded every
+// budget tried. The structural claim -- "pure analysis, no re-profiling" --
+// is instead checked by requiring the tool's own reported "Diff completed
+// in Nms" line to be small, which is the diff's self-measured time, not
+// ours around a subprocess.
 // ══════════════════════════════════════════════════════════════════════
 #[test]
 fn falsify_cgp_062_diff_speed() {
@@ -303,19 +310,6 @@ fn falsify_cgp_062_diff_speed() {
     std::fs::write("/tmp/cgp-falsify-062-b.json", baseline.to_string()).unwrap();
     std::fs::write("/tmp/cgp-falsify-062-c.json", current.to_string()).unwrap();
 
-    // First run: compile if needed (don't count)
-    let _ = cgp_cmd()
-        .args([
-            "diff",
-            "--baseline",
-            "/tmp/cgp-falsify-062-b.json",
-            "--current",
-            "/tmp/cgp-falsify-062-c.json",
-        ])
-        .output();
-
-    // Timed run: must be < 100ms
-    let start = Instant::now();
     let output = cgp_cmd()
         .args([
             "diff",
@@ -326,14 +320,36 @@ fn falsify_cgp_062_diff_speed() {
         ])
         .output()
         .expect("Failed to run cgp diff");
-    let elapsed = start.elapsed();
 
     assert!(output.status.success());
-    // Allow 500ms for subprocess overhead (100ms is for the analysis, not cargo run)
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Non-vacuity: a broken diff that silently produced no comparison would
+    // still exit 0. Require the verdict line this tool actually prints.
     assert!(
-        elapsed.as_millis() < 500,
-        "FALSIFY-CGP-062 FAILED: diff took {}ms (limit: 500ms with subprocess overhead)",
-        elapsed.as_millis()
+        stdout.contains("improvement(s)") || stdout.contains("regression(s)"),
+        "FALSIFY-CGP-062: no verdict summary in output.\nOutput:\n{stdout}"
+    );
+
+    // The structural claim: diff is pure JSON analysis, not re-profiling.
+    // Assert the TOOL's OWN self-measured time (the "Diff completed in
+    // Nms" line), not wall-clock around the subprocess -- `cgp_cmd()` goes
+    // through `cargo run`, whose freshness check and process-spawn cost
+    // dominate any external timer and are not what this claim is about.
+    let self_reported_ms: u64 = stdout
+        .lines()
+        .find_map(|l| {
+            l.trim()
+                .strip_prefix("Diff completed in ")?
+                .strip_suffix("ms")
+        })
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| {
+            panic!("FALSIFY-CGP-062: no 'Diff completed in Nms' line.\nOutput:\n{stdout}")
+        });
+    assert!(
+        self_reported_ms < 100,
+        "FALSIFY-CGP-062 FAILED: tool reported {self_reported_ms}ms for pure JSON analysis"
     );
 
     let _ = std::fs::remove_file("/tmp/cgp-falsify-062-b.json");
@@ -1195,12 +1211,18 @@ fn falsify_cgp_contract_001_self_verify() {
 // ══════════════════════════════════════════════════════════════════════
 #[test]
 fn falsify_cgp_contract_002_contracts_dir() {
+    // `cargo test -p aprender-cgp` sets CWD to THIS crate's own directory
+    // (crates/aprender-cgp), so the path is relative to there, not the repo
+    // root. `../../contracts/cgp/` never existed -- verified empty in every
+    // checkout. aprender-cgp itself has no contracts/ dir; the real cgp
+    // contracts live under aprender-compute (formerly trueno) since the
+    // APR-MONO merge, a sibling of this crate under crates/.
     let output = cgp_cmd()
         .args([
             "contract",
             "verify",
             "--contracts-dir",
-            "../../contracts/cgp/",
+            "../aprender-compute/contracts/cgp/",
         ])
         .output()
         .expect("Failed to run cgp contract verify");

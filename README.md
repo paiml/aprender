@@ -41,10 +41,10 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **78** workspace crates | `cargo metadata --no-deps` (NOT `ls crates/` — 4 are `exclude`d, 1 has no Cargo.toml) |
-| Provable contracts | **1771** provable contracts | `find contracts/ -name '*.yaml'` |
+| Provable contracts | **1772** provable contracts | `find contracts/ -name '*.yaml'` |
 | CLI commands | **111** CLI commands | `apr --help` |
-| Book CLI chapters | **107** chapters | `ls book/src/cli/*.md` — 4 short of the 111 CLI commands; the six consolidated sibling CLIs are undocumented |
-| Book lib chapters | **69** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
+| Book CLI chapters | **113** chapters | `ls book/src/cli/*.md` |
+| Book lib chapters | **71** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
 
 These numbers are enforced by [`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml).
 Drift between this table and live repo state fails `bash scripts/check_readme_claims.sh`

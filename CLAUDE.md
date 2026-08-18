@@ -485,8 +485,9 @@ Clippy's lint set is **not monotonic**: the #2370 tree is clean on 1.93/1.96/1.9
 111 commands across 10 categories as of 2026-08-15; the registry is
 `contracts/apr-cli-commands-v1.yaml` (§`commands`), mirrored by
 `crates/apr-cli/tests/cli_commands.rs::registered_commands` and enforced by
-FALSIFY-CLI-001/002. Note the contract's own `scope:` string still says "77 commands" —
-that prose is stale; the list is authoritative.
+FALSIFY-CLI-001/002. The contract deliberately hand-maintains no count — parse
+the `commands:` list, never `grep -c '^  - name:'` (117; other same-indent
+`name:` keys exist in the file).
 Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `mcp`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
 
 ```bash
