@@ -800,6 +800,28 @@ jobs:
             "$IMAGE" \
             bash -c '
               set -uo pipefail
+              # The sovereign-ci image bakes cargo-nextest but NOT cargo-mutants,
+              # so `cargo mutants` exited 101 (no such command) on every run. Before
+              # #2514 hardened the outcomes.json check, that 101 was read as
+              # "0 mutants in diff. Pass." -- the gate passed BECAUSE the tool was
+              # absent. Installing it here is a stopgap; it belongs baked into the
+              # image (paiml/infra), which is tracked separately.
+              #
+              # Assert it RUNS after installing. An install that half-succeeds must
+              # not reach the gate looking like a clean diff -- that is the same
+              # failure mode #2514 just closed.
+              if ! cargo mutants --version > /dev/null 2>&1; then
+                echo "cargo-mutants absent from image; installing"
+                cargo install cargo-mutants --locked --version 27.1.0 > /tmp/mi.log 2>&1 || {
+                  echo "::error::cargo-mutants install failed; the gate cannot run"
+                  tail -20 /tmp/mi.log
+                  exit 1
+                }
+              fi
+              cargo mutants --version || {
+                echo "::error::cargo-mutants still not runnable after install"
+                exit 1
+              }
               # --in-diff pr.diff: mutate only PR-touched lines.
               # cargo-mutants exits non-zero when mutants survive; we still
               # parse outcomes.json so the threshold (MUTANTS_MAX_MISSED) is
