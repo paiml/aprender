@@ -925,6 +925,10 @@ mod tests {
         fn test_memory_view_read_at() {
             let view = MemoryView::new(1024);
             let memory = vec![0u8, 0, 0, 0, 42, 0, 0, 0];
+            // SAFETY: `read_at` requires the caller to guarantee the bytes at
+            // `offset` are a valid bit pattern for `T`. `T` is `u32`, which has
+            // no invalid bit patterns, and offset 4 + 4 bytes is within this
+            // 8-byte buffer, so any read here is sound.
             let value: u32 = unsafe { view.read_at(&memory, 4).unwrap() };
             assert_eq!(value, 42);
         }
@@ -933,6 +937,10 @@ mod tests {
         fn test_memory_view_read_at_out_of_bounds() {
             let view = MemoryView::new(1024);
             let memory = vec![0u8; 4];
+            // SAFETY: `T` is `u32`, which has no invalid bit patterns. This
+            // offset is deliberately out of bounds, which is exactly what the
+            // test asserts: `read_at` bounds-checks and returns Err before it
+            // dereferences anything, so no read occurs.
             let result: ProbarResult<u32> = unsafe { view.read_at(&memory, 8) };
             assert!(result.is_err());
         }
@@ -1166,6 +1174,10 @@ mod tests {
             let data = Box::new(vec![1, 2, 3, 4, 5]);
             let raw = Box::into_raw(data);
             // Only one free via ownership
+            // SAFETY: `raw` came from `Box::into_raw` on the line above, so it
+            // is a valid, uniquely-owned, correctly-aligned pointer to a live
+            // allocation of the same type. It is reconstituted exactly once
+            // here, which is the point the test is making.
             let recovered = unsafe { Box::from_raw(raw) };
             assert_eq!(recovered.len(), 5, "Single ownership prevents double-free");
             // Rust ownership model prevents double-free at compile time
