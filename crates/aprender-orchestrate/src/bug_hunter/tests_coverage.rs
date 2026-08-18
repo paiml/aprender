@@ -998,13 +998,24 @@ fn test_bh_mod_018_nonexistent_file() {
 
 #[test]
 fn test_bh_mod_019_hunt_quick_mode() {
-    let config = HuntConfig {
-        mode: HuntMode::Quick,
-        targets: vec![PathBuf::from("src")],
-        ..Default::default()
-    };
-    let result = hunt(Path::new("."), config);
+    let fixture = hunt_fixture("mod_019_quick");
+
+    let result = hunt(&fixture, hunt_fixture_config(HuntMode::Quick));
+
     assert_eq!(result.mode, HuntMode::Quick);
+    // Quick mode is pattern-only: it must find the fixture's unwrap() and must
+    // NOT run the coverage/lcov phase that Hunt mode owns.
+    assert!(
+        result.findings.iter().any(|f| f.title.contains("unwrap()")),
+        "Quick mode missed the planted unwrap(): {:?}",
+        result.findings.iter().map(|f| &f.title).collect::<Vec<_>>()
+    );
+    assert!(
+        !result.findings.iter().any(|f| f.discovered_by == HuntMode::Hunt),
+        "Quick mode must not run Hunt-mode coverage analysis"
+    );
+
+    let _ = std::fs::remove_dir_all(&fixture);
 }
 
 // =========================================================================

@@ -1181,35 +1181,97 @@ mod tests {
     }
 
     // =========================================================================
-    // Section 9: Performance Regression Tests (QA 61-70)
+    // Section 9: Work-Bound Structural Tests (QA 61-70)
     // =========================================================================
+    //
+    // These assert the *structural* work bound, never wall-clock time. A
+    // `elapsed.as_secs() < N` assertion cancels nothing about machine speed and
+    // flakes under CI load; it is banned in this repo. State the bound as a
+    // value instead: creation is a single zero-fill, and one `random_fill_pass`
+    // call applies exactly one frame of fill - nothing skipped, deferred into a
+    // later batch, or repeated.
 
     #[test]
-    fn h0_perf_01_1080p_creation_fast() {
-        let start = std::time::Instant::now();
-        let _buffer = GpuPixelBuffer::new_1080p();
-        let elapsed = start.elapsed();
+    fn h0_perf_01_1080p_creation_allocates_zeroed_buffer() {
+        let buffer = GpuPixelBuffer::new_1080p();
 
-        // Should create in under 5s (generous for loaded systems)
+        // Creation is a single O(total_pixels) zero-fill: exact allocation,
+        // every pixel uncovered, no frames consumed.
+        assert_eq!(buffer.pixels.len(), 1920 * 1080);
+        assert_eq!(buffer.frame, 0);
         assert!(
-            elapsed.as_secs() < 5,
-            "1080p buffer creation took {:?}",
-            elapsed
+            buffer.pixels.iter().all(|&p| p == 0.0),
+            "1080p buffer must be fully uncovered at creation"
         );
     }
 
     #[test]
-    fn h0_perf_02_fill_pass_reasonable_time() {
-        let mut buffer = GpuPixelBuffer::new(100, 100, 42);
+    fn h0_perf_02_fill_pass_does_exactly_one_frame_of_work() {
+        const W: u32 = 64;
+        const H: u32 = 64;
+        const SEED: u64 = 42;
+        const PROB: f32 = 0.05;
+        const PASSES: u32 = 20;
 
-        let start = std::time::Instant::now();
-        for _ in 0..100 {
-            buffer.random_fill_pass(0.01);
+        let seed32 = (SEED & 0xFFFF_FFFF) as u32;
+        let mut buffer = GpuPixelBuffer::new(W, H, SEED);
+        let mut previous = buffer.pixels.clone();
+        let mut newly_covered_total = 0usize;
+
+        for pass in 1..=PASSES {
+            buffer.random_fill_pass(PROB);
+
+            // One call advances exactly one frame - no hidden extra sweeps.
+            assert_eq!(
+                buffer.frame, pass,
+                "call {pass} did not advance the frame counter by exactly 1"
+            );
+
+            for idx in 0..(W * H) {
+                let before = previous[idx as usize];
+                let after = buffer.pixels[idx as usize];
+
+                // This frame's draw is a pure function of (seed, idx, frame),
+                // so exactly which pixels the pass owes work to is known ahead
+                // of the call.
+                let owed = before == 0.0 && PcgRng::should_fill(seed32, idx, pass, PROB);
+
+                if owed {
+                    // No work skipped: every pixel this frame selected is now
+                    // covered, holding its position gradient.
+                    let x = idx % W;
+                    let y = idx / W;
+                    let gradient = ((x + y) as f32 / (W + H) as f32).max(0.001);
+                    assert_eq!(
+                        after, gradient,
+                        "pass {pass} skipped pixel {idx} that frame {pass} selected"
+                    );
+                    newly_covered_total += 1;
+                } else {
+                    // No work deferred, repeated, or invented: everything else
+                    // is byte-identical to before the call. Covers monotonicity
+                    // (no pixel un-covers) and rules out a pass that batches
+                    // several frames of fill into one sweep.
+                    assert_eq!(
+                        after, before,
+                        "pass {pass} changed pixel {idx} that frame {pass} did not select"
+                    );
+                }
+            }
+
+            previous.clone_from(&buffer.pixels);
         }
-        let elapsed = start.elapsed();
 
-        // 100 frames on 10k pixels - generous for loaded systems
-        assert!(elapsed.as_secs() < 30, "100 fill passes took {:?}", elapsed);
+        // Non-vacuity: the checks above must discriminate, not be satisfied by
+        // a buffer that stayed all-zero or saturated on the first pass.
+        assert!(
+            newly_covered_total > 0,
+            "no pixel was ever covered - the per-pass check is vacuous"
+        );
+        assert!(
+            newly_covered_total < (W * H) as usize,
+            "every pixel covered - PROB/PASSES too high to exercise both branches"
+        );
     }
 
     // =========================================================================

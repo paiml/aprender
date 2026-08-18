@@ -26,6 +26,10 @@ pub mod synthetic;
 pub mod trie;
 pub mod validation;
 
+// Library-level robustness suite salvaged from the deleted CLI test targets.
+#[cfg(test)]
+mod robustness_tests;
+
 // Re-exports for convenience
 pub use config::{suggest_with_fallback, ShellConfig};
 pub use error::ShellError;

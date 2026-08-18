@@ -15,6 +15,7 @@ name = "trueno_ptx_debug"
 
 [dependencies]
 thiserror = "2.0"
+clap.workspace = true
 
 # Inherit workspace lints
 [lints.rust]
