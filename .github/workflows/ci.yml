@@ -810,6 +810,14 @@ jobs:
               # Assert it RUNS after installing. An install that half-succeeds must
               # not reach the gate looking like a clean diff -- that is the same
               # failure mode #2514 just closed.
+              # Private install root, per scripts/check_cargo_install_private_root.sh.
+              # This install already runs INSIDE the ephemeral container (CARGO_HOME
+              # is /usr/local/cargo and the container is --rm), so it cannot reach
+              # the host toolchain -- but the guard reads workflow text and cannot
+              # see that, and "the guard cannot tell" is not a reason to exempt.
+              # Declaring the root makes it true rather than merely argued.
+              export CARGO_INSTALL_ROOT=/tmp/cargo-mutants-root
+              export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
               if ! cargo mutants --version > /dev/null 2>&1; then
                 echo "cargo-mutants absent from image; installing"
                 cargo install cargo-mutants --locked --version 27.1.0 > /tmp/mi.log 2>&1 || {
