@@ -11,9 +11,12 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
-/// Get a command for the probador binary
+/// Get a command for the CLI binary
+///
+/// The package renamed its bin target to `aprender-test-cli` in the monorepo
+/// consolidation; `probador` survives only as the [lib] name.
 fn probador() -> Command {
-    Command::cargo_bin("probador").expect("probador binary should exist")
+    Command::cargo_bin("aprender-test-cli").expect("aprender-test-cli binary should exist")
 }
 
 // ============================================================================
@@ -22,11 +25,16 @@ fn probador() -> Command {
 
 #[test]
 fn test_version_flag() {
+    // Compared against CARGO_PKG_VERSION rather than a literal: the hardcoded
+    // "1.0.0" here predated the workspace-inherited version and could only rot.
     probador()
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("1.0.0"));
+        .stdout(predicate::str::contains(format!(
+            "probador {}",
+            env!("CARGO_PKG_VERSION")
+        )));
 }
 
 #[test]

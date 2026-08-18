@@ -302,7 +302,50 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
         router = router.layer(tower_http::cors::CorsLayer::permissive());
     }
 
+    // #2506 (SURF-7/R14): contain handler panics.
+    //
+    // OUTERMOST, deliberately: a panic in any layer below -- including the
+    // sanitizer and the cancel middleware -- must still become a response.
+    // Mounted after `cors` for the same reason, so a panic cannot escape by
+    // being raised in a layer that was added later.
+    //
+    // Before this, `catch_unwind` and `CatchPanicLayer` existed nowhere in this
+    // crate and `tower-http`'s `catch-panic` feature was not enabled, so a
+    // panicking handler unwound out of the service: no status, no body, nothing
+    // a client could act on. That is also the one error shape that escaped
+    // `route_surface_2376`'s "every error is actionable JSON" invariant --
+    // it never became a response at all.
+    router = router.layer(tower_http::catch_panic::CatchPanicLayer::custom(
+        panic_to_json_500,
+    ));
+
     router.with_state(state)
+}
+
+/// Turn a caught panic into the same JSON envelope every other error uses.
+///
+/// The panic payload is deliberately NOT forwarded: it is a Rust-internals
+/// detail, and #2376 finding 7 already bans bodies naming things a client
+/// cannot act on. It goes to the host's stderr instead, which is where this
+/// server's telemetry belongs.
+pub(crate) fn panic_to_json_500(err: Box<dyn std::any::Any + Send + 'static>) -> axum::response::Response {
+    use axum::response::IntoResponse as _;
+    let detail = err
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| err.downcast_ref::<&'static str>().copied())
+        .unwrap_or("<non-string panic payload>");
+    eprintln!("apr serve: handler panicked: {detail}");
+
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({
+            "error": "internal_error",
+            "message": "The server hit an internal error handling this request. \
+                        This is a bug; the request was not completed.",
+        })),
+    )
+        .into_response()
 }
 
 /// The client-safe replacement body for an error response that is not already JSON.

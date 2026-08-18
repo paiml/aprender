@@ -1,6 +1,6 @@
 //! Command parsing and execution for the REPL.
 
-use crate::state::{HistoryEntry, LoadedModel, ModelRole, SessionState};
+use crate::state::{HistoryEntry, ModelRole, SessionState};
 use entrenar_common::{EntrenarError, Result};
 
 /// A parsed command.
@@ -182,7 +182,10 @@ pub fn execute(cmd: &Command, state: &mut SessionState) -> Result<String> {
     let start = std::time::Instant::now();
 
     let result = match cmd {
-        Command::Fetch { model_id, role } => execute_fetch(model_id, *role, state),
+        // #2519: `role` is no longer read -- nothing can be loaded, so nothing
+        // can be assigned a teacher/student role. It stays in the parsed command
+        // because `parse` still validates the flags.
+        Command::Fetch { model_id, .. } => execute_fetch(model_id),
         Command::Inspect { target } => execute_inspect(target, state),
         Command::Memory {
             batch_size,
@@ -228,35 +231,47 @@ pub fn execute(cmd: &Command, state: &mut SessionState) -> Result<String> {
     result
 }
 
-fn execute_fetch(model_id: &str, role: ModelRole, state: &mut SessionState) -> Result<String> {
-    // Simulate model fetching
-    let model = LoadedModel {
-        id: model_id.to_string(),
-        path: std::path::PathBuf::from(format!("/tmp/models/{}", model_id.replace('/', "_"))),
-        architecture: detect_architecture(model_id),
-        parameters: estimate_params(model_id),
-        layers: estimate_layers(model_id),
-        hidden_dim: 4096,
-        role,
-    };
-
-    let name = if role == ModelRole::Teacher {
-        "teacher"
-    } else if role == ModelRole::Student {
-        "student"
-    } else {
-        model_id.split('/').next_back().unwrap_or(model_id)
-    };
-
-    state.add_model(name.to_string(), model.clone());
-
-    Ok(format!(
-        "✓ Fetched {}\n  Architecture: {}\n  Parameters: {:.1}B\n  Layers: {}",
-        model_id,
-        model.architecture,
-        model.parameters as f64 / 1e9,
-        model.layers
-    ))
+fn execute_fetch(model_id: &str) -> Result<String> {
+    // #2519: this used to open with
+    //
+    //     // Simulate model fetching
+    //     let model = LoadedModel {
+    //         architecture: detect_architecture(model_id),
+    //         parameters: estimate_params(model_id),
+    //         layers: estimate_layers(model_id),
+    //         hidden_dim: 4096,
+    //
+    // and returned "✓ Fetched {model_id}". Two separate things were wrong.
+    //
+    // First, nothing was fetched: this crate has no HTTP client and no
+    // HuggingFace dependency, so no bytes ever moved. Measured before this
+    // change, on a model ID that cannot exist:
+    //
+    //     ✓ Fetched does-not-exist/totally-fake-7b
+    //       Architecture: unknown
+    //       Parameters: 7.0B
+    //       Layers: 32
+    //
+    // Second, those figures are read out of the model ID STRING: "7b" in the
+    // name yields 7.0B and 32 layers, and hidden_dim was the literal 4096. The
+    // architecture line is the one part that behaved -- it warns and reports
+    // `unknown` -- which is why it is the only guess kept anywhere near honest.
+    //
+    // Refusing is strictly better than fabricating. Whether this binary should
+    // exist at all is tracked in #2519; this change does not prejudge it.
+    Err(EntrenarError::ConfigValue {
+        field: "fetch".into(),
+        message: format!(
+            "cannot fetch `{model_id}`: this shell has no HuggingFace client, so it \
+             downloads nothing. It previously reported success for any string at all, \
+             with a parameter count and layer count string-matched out of the model \
+             ID itself"
+        ),
+        suggestion: "Download with `apr pull <model_id>` or `apr import hf://<model_id>`, \
+                     then read the real file with `apr inspect` / `apr tensors`. \
+                     Tracked in #2519."
+            .into(),
+    })
 }
 
 fn execute_inspect(target: &InspectTarget, state: &SessionState) -> Result<String> {
@@ -447,6 +462,12 @@ fn execute_help(topic: Option<&str>) -> Result<String> {
 /// for inference uses tensor-name-based `ArchitectureDetector::detect()`.
 /// Order matters: more specific patterns must come before generic ones
 /// (e.g., "mistral" before "llama" since Mistral inherits LLaMA naming).
+//
+// #2519: `execute_fetch` was the only production caller of the three guessers
+// below, so they are now referenced only by the tests that pin their behaviour.
+// Scoped to test builds so no production path can present a substring match on
+// a model ID as a fact about a model.
+#[cfg(test)]
 const ARCH_PATTERNS: &[(&[&str], &str)] = &[
     (&["qwen"], "qwen"),
     (&["phi"], "phi"),
@@ -457,6 +478,7 @@ const ARCH_PATTERNS: &[(&[&str], &str)] = &[
     (&["gpt"], "gpt"),
 ];
 
+#[cfg(test)]
 fn detect_architecture(model_id: &str) -> String {
     let lower = model_id.to_lowercase();
     for (patterns, arch) in ARCH_PATTERNS {
@@ -471,6 +493,7 @@ fn detect_architecture(model_id: &str) -> String {
     "unknown".to_string()
 }
 
+#[cfg(test)]
 fn estimate_params(model_id: &str) -> u64 {
     let lower = model_id.to_lowercase();
     if lower.contains("70b") {
@@ -488,6 +511,7 @@ fn estimate_params(model_id: &str) -> u64 {
     }
 }
 
+#[cfg(test)]
 fn estimate_layers(model_id: &str) -> u32 {
     let lower = model_id.to_lowercase();
     if lower.contains("70b") {
@@ -506,6 +530,8 @@ fn estimate_layers(model_id: &str) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // #2519: only the tests construct models now that nothing is fetched.
+    use crate::state::LoadedModel;
 
     #[test]
     fn test_parse_fetch() {
@@ -576,13 +602,24 @@ mod tests {
         ));
     }
 
+    // #2519: this used to assert `is_ok()` and that a "teacher" appeared in the
+    // session -- for a model nothing had downloaded. A test of that shape locks
+    // the fabrication in: it passes only because the output is invented.
     #[test]
-    fn test_execute_fetch() {
+    fn test_execute_fetch_refuses_and_loads_nothing() {
         let mut state = SessionState::new();
-        let result = execute_fetch("meta-llama/Llama-2-7b", ModelRole::Teacher, &mut state);
+        let err = execute(
+            &Command::Fetch {
+                model_id: "meta-llama/Llama-2-7b".to_string(),
+                role: ModelRole::Teacher,
+            },
+            &mut state,
+        )
+        .expect_err("fetch must not claim to have downloaded a model");
 
-        assert!(result.is_ok());
-        assert!(state.get_model("teacher").is_some());
+        assert!(format!("{err}").contains("no HuggingFace client"));
+        assert!(state.get_model("teacher").is_none());
+        assert!(state.loaded_models().is_empty());
     }
 
     #[test]

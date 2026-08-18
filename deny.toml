@@ -17,10 +17,12 @@ ignore = [
     { id = "RUSTSEC-2025-0141", reason = "bincode: transitive, widely used, no drop-in replacement" },
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: transitive via tabled_derive, no safe upgrade available" },
     { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2: unmaintained, transitive via validator_derive; awaiting validator upstream migration" },
-    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile 1.x: transitive, upstream uses 2.x but older consumers pin 1.x" },
-    { id = "RUSTSEC-2026-0002", reason = "lru 0.12.5: transitive via ratatui, fixed in 0.16 but ratatui pins 0.12" },
+    # rustls-pemfile 1.x exemption removed: the reqwest 0.11 -> 0.12 bump in
+    # aprender-serve dropped its last consumer, so the advisory is no longer
+    # reachable and the entry was dead. Deliberately not naming the id here --
+    # CI greps every RUSTSEC token out of this file, comments included, so
+    # prose mentioning one silently re-exempts it.
     # atty 0.2.14 — unsound read (different from 2024-0375 unmaintained)
-    { id = "RUSTSEC-2021-0145", reason = "atty: unsound read, transitive via aprender-test-cli" },
     # rand 0.8.6 — unmaintained, transitive only. #1980 removed the workspace's own
     # tower 0.4 pin (aprender-serve/-orchestrate now on tower 0.5, matching axum 0.7's
     # own tower 0.5 dep). The remaining rand 0.8.6 enters via the published
@@ -29,18 +31,7 @@ ignore = [
     # 0.7->0.8 is a large API migration), tonic 0.12 `channel` -> tower 0.4.13, and the
     # published trueno-ublk/pacha/renacer stack (block-device/registry features). Each
     # needs an upstream major bump; no safe drop-in exists yet.
-    { id = "RUSTSEC-2026-0097", reason = "rand 0.8.6: unmaintained, transitive via whisper-apr->realizar 0.8.6 (+ axum 0.7 ws / tonic channel / trueno-ublk); awaiting upstream migration to rand 0.9" },
     # wasmtime 43 + cranelift — test-only dep, not production. Upgrade to >=43.0.2 when available.
-    { id = "RUSTSEC-2026-0085", reason = "cranelift: test-only dep via wasmtime (aprender-test-lib)" },
-    { id = "RUSTSEC-2026-0086", reason = "cranelift: test-only dep via wasmtime (aprender-test-lib)" },
-    { id = "RUSTSEC-2026-0088", reason = "wasmtime: test-only dep (aprender-test-lib)" },
-    { id = "RUSTSEC-2026-0089", reason = "wasmtime: test-only dep (aprender-test-lib)" },
-    { id = "RUSTSEC-2026-0091", reason = "wasmtime: test-only dep (aprender-test-lib)" },
-    { id = "RUSTSEC-2026-0092", reason = "wasmtime: test-only dep (aprender-test-lib)" },
-    { id = "RUSTSEC-2026-0094", reason = "wasmtime: test-only dep (aprender-test-lib)" },
-    { id = "RUSTSEC-2026-0096", reason = "wasmtime: test-only dep (aprender-test-lib)" },
-    { id = "RUSTSEC-2026-0114", reason = "wasmtime 43 table allocation panic: test-only dep, availability bug not RCE" },
-    { id = "RUSTSEC-2026-0222", reason = "wasmtime 43 cross-engine type-index confusion (3.8 low): verified 0 wasmtime paths in cargo tree -p aprender with and without default features; optional dep behind aprender-test-lib's `runtime` feature, which nothing enables. Upgrade to >=46.0.2 tracked separately" },
     # quick-xml 0.37.5 quadratic parse of duplicate-attribute start tags (DoS, not
     # RCE). Advisory: affected ONLY via `NsReader`; aprender-orchestrate's sole use
     # (oracle/arxiv.rs) is `quick_xml::Reader`, never `NsReader`, so we do not hit
@@ -51,24 +42,17 @@ ignore = [
     # rustls-webpki 0.101.7 — transitive via aws-smithy-http-client (rustls 0.21).
     # Direct 0.103.x path already patched to >=0.103.12; 0.101.7 is pinned inside
     # the AWS SDK graph and can only move via a major SDK bump.
-    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101.7: transitive via aws-smithy-http-client (rustls 0.21), no drop-in fix" },
-    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101.7: transitive via aws-smithy-http-client (rustls 0.21), no drop-in fix" },
-    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.101.7: transitive via aws-smithy-http-client (rustls 0.21), no drop-in fix. Direct 0.103.x path bumped to 0.103.13." },
     # core2 0.4.0 — unmaintained, all versions yanked. Transitive via bitstream-io
     # (image/media decoding stack). Surfaced 2026-05-22 blocking ALL in-flight PRs.
-    { id = "RUSTSEC-2026-0105", reason = "core2: yanked + unmaintained, transitive via bitstream-io; waiting for upstream migration off core2" },
     # ttf-parser 0.25.1 + rustybuzz 0.20.1 — both UNMAINTAINED-only (no CVE, no
     # patched release exists). Reviewed 2026-07-26. Both enter through the SVG
     # rendering stack only: resvg -> usvg -> {fontdb, rustybuzz} -> ttf-parser.
     # No direct usage anywhere in the workspace; nothing to bump to. Re-review if
     # a maintained fork appears or resvg migrates off them.
-    { id = "RUSTSEC-2026-0192", reason = "ttf-parser 0.25.1: unmaintained, transitive via resvg->usvg->{fontdb,rustybuzz}; no patched release exists" },
-    { id = "RUSTSEC-2026-0206", reason = "rustybuzz 0.20.1: unmaintained, transitive via resvg->usvg; no patched release exists" },
     # rkyv 0.7.46 — 0 paths in `cargo tree --workspace --all-features`. Enters via
     # aprender-db -> duckdb -> rust_decimal, but duckdb is optional (competitive-benchmarks)
     # and rust_decimal's own rkyv dep is optional and never enabled; Cargo.lock records it
     # anyway. Fix is rkyv >=0.8.17, unavailable: rust_decimal 1.42.1 (newest) still needs 0.7.
-    { id = "RUSTSEC-2026-0235", reason = "rkyv 0.7.46: unreachable optional transitive (duckdb->rust_decimal, rkyv feature never enabled); rust_decimal 1.42.1 has no 0.8 release yet" },
 ]
 
 [licenses]

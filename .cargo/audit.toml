@@ -99,4 +99,22 @@ ignore = [
     # maintained fork appears or resvg migrates off them.
     "RUSTSEC-2026-0192",  # ttf-parser 0.25.1 unmaintained
     "RUSTSEC-2026-0206",  # rustybuzz 0.20.1 unmaintained
+
+    # h2 0.3.x empty DATA frames. The 0.3 line has NO patched release -- upstream
+    # fixed it in 0.4.16 only. Both other exposures were REMOVED rather than
+    # exempted: h2 0.4.15 was updated to 0.4.16, and the reqwest 0.11 path was
+    # deleted by moving aprender-serve's two stray 0.11 pins to 0.12 (the rest of
+    # the workspace was already on 0.12). What remains enters solely through
+    # aprender-data's OPTIONAL, non-default `s3` feature:
+    #   aws-sdk-s3 -> aws-smithy-http-client -> hyper 0.14 -> h2 0.3.27
+    # Updating the AWS SDK does not help: aws-smithy-http-client 1.3.0 still pins
+    # hyper 0.14, and that upgrade raises MSRV to 1.94.1 while CI pins 1.93.0.
+    # cargo-deny already passes without an exemption because it walks the ACTIVATED
+    # graph; cargo-audit scans Cargo.lock, which lists feature-gated deps too.
+    # Reachability measured on this branch, not assumed:
+    #   cargo tree -p aprender-data              | grep -cE "h2 v0.3|hyper v0.14"  -> 0
+    #   cargo tree -p aprender-data --features s3| grep -cE "h2 v0.3|hyper v0.14"  -> 4
+    #   cargo tree --workspace                   | grep -cE "h2 v0.3"              -> 0
+    # REMOVE WHEN aws-smithy-http-client drops hyper 0.14.
+    "RUSTSEC-2026-0258",  # h2 0.3.27 via optional s3 feature only
 ]

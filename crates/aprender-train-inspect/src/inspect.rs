@@ -1,6 +1,6 @@
 //! Model inspection utilities.
 
-use crate::architecture::{ArchitectureDetector, ArchitectureInfo};
+use crate::architecture::ArchitectureInfo;
 use entrenar_common::{EntrenarError, Result};
 use std::collections::HashMap;
 use std::path::Path;
@@ -105,35 +105,52 @@ pub fn inspect_model(path: impl AsRef<Path>) -> Result<ModelInfo> {
         });
     }
 
-    let metadata = std::fs::metadata(path).map_err(|e| EntrenarError::Io {
+    // Kept although the size is no longer used for anything: it still surfaces
+    // a permission or I/O error against the real path, which is a genuine check.
+    // Reporting the SIZE was never the problem; inferring the model's
+    // architecture from it was.
+    let _metadata = std::fs::metadata(path).map_err(|e| EntrenarError::Io {
         context: format!("reading model metadata: {}", path.display()),
         source: e,
     })?;
 
     let format = detect_format(path);
 
-    // For real implementation, would parse the actual file
-    // Here we return simulated data based on file size
-    let estimated_params = estimate_params_from_size(metadata.len(), &format);
-
-    let tensors = generate_mock_tensors(estimated_params);
-    let tensor_names: Vec<String> = tensors.iter().map(|t| t.name.clone()).collect();
-
-    let shapes: HashMap<String, Vec<usize>> = tensors
-        .iter()
-        .map(|t| (t.name.clone(), t.shape.clone()))
-        .collect();
-
-    let detector = ArchitectureDetector::new().with_tensors(tensor_names);
-    let architecture = detector.detect_from_shapes(&shapes);
-
-    Ok(ModelInfo {
-        path: path.to_path_buf(),
-        size_bytes: metadata.len(),
-        format,
-        architecture,
-        total_params: estimated_params,
-        tensors,
+    // #2519: this used to read
+    //
+    //     // For real implementation, would parse the actual file
+    //     // Here we return simulated data based on file size
+    //     let estimated_params = estimate_params_from_size(metadata.len(), &format);
+    //     let tensors = generate_mock_tensors(estimated_params);
+    //
+    // -- it INVENTED the tensor list from the file's SIZE and then ran
+    // architecture detection over the invented shapes. Measured: 5 KB of
+    // /dev/urandom named `.safetensors` exited 0 and reported
+    //
+    //     Architecture llama | Hidden Dimension 768 | Layers 1
+    //     Vocab Size 256     | Tensors 9
+    //
+    // A real one-tensor safetensors file got the SAME nine tensors, because the
+    // answer never depended on the file's contents. This crate is published to
+    // crates.io, so that output reached users as if it were an inspection.
+    //
+    // Worth noting what this defeated: `architecture.rs` carries an N-05
+    // hardening that derives hidden-dim from tensors rather than hardcoding
+    // 4096. It does derive honestly -- from tensors that were fabricated one
+    // call earlier. The hardening was applied one layer above the lie.
+    //
+    // Refusing is strictly better than fabricating. Whether this binary should
+    // exist at all is a separate question, tracked in #2519; this change does
+    // not prejudge it, it only stops the tool from answering questions it
+    // cannot answer.
+    Err(EntrenarError::UnsupportedFormat {
+        format: format!(
+            "{format:?}: `inspect` cannot parse model files. It previously \
+             synthesised a tensor list from the file SIZE and reported that as \
+             the model's architecture, which is why it is now an error rather \
+             than a plausible-looking answer. Use `apr inspect` or `apr tensors`, \
+             which read the file. Tracked in #2519."
+        ),
     })
 }
 
@@ -149,6 +166,9 @@ fn detect_format(path: &Path) -> ModelFormat {
     }
 }
 
+// #2519: retained ONLY for the unit tests that assert its arithmetic. Scoped
+// to test builds so no production path can synthesise model facts again.
+#[cfg(test)]
 fn estimate_params_from_size(size_bytes: u64, format: &ModelFormat) -> u64 {
     let bytes_per_param = match format {
         ModelFormat::SafeTensors | ModelFormat::PyTorch => 2, // Assume FP16
@@ -160,6 +180,9 @@ fn estimate_params_from_size(size_bytes: u64, format: &ModelFormat) -> u64 {
     size_bytes / bytes_per_param as u64
 }
 
+// #2519: retained ONLY for the unit tests that assert its arithmetic. Scoped
+// to test builds so no production path can synthesise model facts again.
+#[cfg(test)]
 fn generate_mock_tensors(total_params: u64) -> Vec<TensorInfo> {
     // Generate representative tensor structure
     let hidden_dim = if total_params > 10_000_000_000 {

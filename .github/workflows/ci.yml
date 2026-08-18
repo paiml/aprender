@@ -324,7 +324,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo build --examples --workspace --keep-going'
+            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo build --examples --workspace --keep-going'
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
@@ -465,6 +465,21 @@ jobs:
       # compile its own test suite. Text-only check, no build.
       - name: No exclude pattern may swallow a src/ directory
         run: bash scripts/check_exclude_anchored.sh
+      # Poka-yoke: a contract may not name an enforcement command that cannot
+      # run. #2504: apr-cli-commands-v1.yaml declared five falsification
+      # conditions enforced by `cargo test --test apr_cli_commands ...`; there
+      # is no such target, so all five exited 101. The underlying tests are real
+      # and DO run (line 327, inside workspace-test) — what was fiction is the
+      # contract's account of HOW, which destroys the discrimination between
+      # "stale pointer" and "missing gate" that a contract exists to provide.
+      # Nothing caught it because these strings sit under a `falsification:`
+      # key the typed Contract struct does not have, so serde drops them and
+      # `pv validate` never sees them. Self-test first (Verification Discipline
+      # #7). Needs `cargo metadata` only — no build.
+      - name: Enforcement guard's own case table must pass before it judges
+        run: bash scripts/check_contract_enforcement.sh --self-test
+      - name: No contract may name an enforcement command that cannot run
+        run: bash scripts/check_contract_enforcement.sh
       # Poka-yoke: capturing `cmd 2>&1` into one variable and then parsing it as
       # JSON puts the command's diagnostics in front of its data. On 2026-08-11
       # the nightly story reported `no format_parity gate found in --json output
@@ -546,8 +561,35 @@ jobs:
         run: bash scripts/check_publish_safety.sh
       - name: Every include!() file is tracked by git (CB-510)
         run: bash scripts/check_include_files.sh
+      # #2512: these two were invoked by NO workflow -- one Makefile-only
+      # (`make tier3`, which CI does not run), one reachable from nothing at all.
+      # Both pass today and are cheap, so there was never a reason for them to be
+      # dark; nothing was watching.
+      - name: Every contract cites a test that exists (strict-test-binding)
+        run: bash scripts/check_contract_test_binding.sh
+      - name: aprender-core builds for wasm32
+        run: bash scripts/check_wasm32_core_builds.sh
+      # The meta-guard. Four guards were found unwired by accident while looking
+      # for something else; without this the fifth is found the same way.
+      - name: Every check_*.sh is named by a workflow
+        run: bash scripts/check_guards_are_wired.sh
+      - name: Wiring guard case table
+        run: bash scripts/check_guards_are_wired.sh --self-test
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
+      # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
+      # from the published crate while git still tracks it, so the crate compiles
+      # in-tree and fails for everyone installing from crates.io. This guard is
+      # Gate 1 of the pre-release skill and it could not fail: it scanned `src/`
+      # and packaged `-p aprender`, the PRE-MONOREPO layout. Root `src/` now holds
+      # 2 files with zero include!(), so it reported "All 0 include!() files are
+      # included" for every release since consolidation, while 1798 live under
+      # crates/. Now checks all 10 publishable crates that have include!() against
+      # their OWN package listing, and refuses to pass on an empty scan.
+      - name: include!() targets must survive cargo package (CB-510)
+        run: bash scripts/check_package_includes.sh
+      - name: Package-includes guard case table
+        run: bash scripts/check_package_includes.sh --self-test
       # Poka-yoke: APR-MONO made every sibling a path alias under crates/, but
       # `trueno = "0.16"` still BUILDS - cargo resolves the crates.io copy
       # alongside the in-tree one, so the tree compiles two mutually
@@ -566,6 +608,40 @@ jobs:
         run: bash scripts/check_workspace_siblings_pathed.sh --self-test
       - name: In-tree siblings must be pathed, never pulled from crates.io
         run: bash scripts/check_workspace_siblings_pathed.sh
+
+      # `cargo deny` ran in ZERO workflows -- only `make deny`. Positive control:
+      # 9 workflows mention `cargo`, 0 mentioned `deny`. Meanwhile the `security`
+      # job runs `cargo audit` with continue-on-error, which cannot fail the build
+      # AND does not read deny.toml. The whole advisory surface was one tool that
+      # ignores the exemption file, in a job that cannot fail, plus one tool that
+      # honours it running nowhere -- so all 29 exemptions gated nothing.
+      #
+      # Install-if-missing: free once the runner has it, self-healing if a runner
+      # is rebuilt from a base image without it.
+      #
+      # PRIVATE INSTALL ROOT (scripts/check_cargo_install_private_root.sh):
+      # mac-server runs 16 runners under one $HOME, so a shared `cargo install`
+      # replaces a binary another running job is about to exec (aprender#2353:
+      # cargo-llvm-cov ENOENT, empty coverage figure). Install into a per-run
+      # root and put it FIRST on PATH so the freshly installed binary is the one
+      # that runs, here and in the steps that follow.
+      - name: Install cargo-deny (if absent)
+        env:
+          CARGO_INSTALL_ROOT: /tmp/cargo-deny-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          if ! command -v cargo-deny > /dev/null 2>&1; then
+            cargo install cargo-deny --locked
+            echo "$CARGO_INSTALL_ROOT/bin" >> "$GITHUB_PATH"
+            export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
+          fi
+          cargo deny --version
+      - name: Advisories must pass, with deny.toml exemptions honoured
+        run: cargo deny check advisories
+      # Separate from the check above on purpose: a newly-FIXED upstream must
+      # never fail anyone's build. It fails only this guard, whose remedy is
+      # deleting a line.
+      - name: Every deny.toml exemption must still be live
+        run: bash scripts/check_deny_exemptions_live.sh
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
@@ -724,6 +800,36 @@ jobs:
             "$IMAGE" \
             bash -c '
               set -uo pipefail
+              # The sovereign-ci image bakes cargo-nextest but NOT cargo-mutants,
+              # so `cargo mutants` exited 101 (no such command) on every run. Before
+              # #2514 hardened the outcomes.json check, that 101 was read as
+              # "0 mutants in diff. Pass." -- the gate passed BECAUSE the tool was
+              # absent. Installing it here is a stopgap; it belongs baked into the
+              # image (paiml/infra), which is tracked separately.
+              #
+              # Assert it RUNS after installing. An install that half-succeeds must
+              # not reach the gate looking like a clean diff -- that is the same
+              # failure mode #2514 just closed.
+              # Private install root, per scripts/check_cargo_install_private_root.sh.
+              # This install already runs INSIDE the ephemeral container (CARGO_HOME
+              # is /usr/local/cargo and the container is --rm), so it cannot reach
+              # the host toolchain -- but the guard reads workflow text and cannot
+              # see that, and "the guard cannot tell" is not a reason to exempt.
+              # Declaring the root makes it true rather than merely argued.
+              export CARGO_INSTALL_ROOT=/tmp/cargo-mutants-root
+              export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
+              if ! cargo mutants --version > /dev/null 2>&1; then
+                echo "cargo-mutants absent from image; installing"
+                cargo install cargo-mutants --locked --version 27.1.0 > /tmp/mi.log 2>&1 || {
+                  echo "::error::cargo-mutants install failed; the gate cannot run"
+                  tail -20 /tmp/mi.log
+                  exit 1
+                }
+              fi
+              cargo mutants --version || {
+                echo "::error::cargo-mutants still not runnable after install"
+                exit 1
+              }
               # --in-diff pr.diff: mutate only PR-touched lines.
               # cargo-mutants exits non-zero when mutants survive; we still
               # parse outcomes.json so the threshold (MUTANTS_MAX_MISSED) is
@@ -734,16 +840,32 @@ jobs:
               echo "cargo-mutants exit: $MUT_EXIT"
               OUTCOMES=mutants.out/outcomes.json
               if [ ! -f "$OUTCOMES" ]; then
-                # No outcomes file means cargo-mutants found no mutants in the
-                # diff (e.g. diff only touched non-Rust / non-mutable lines).
-                echo "No mutants.out/outcomes.json — 0 mutants in diff. Pass."
+                # #2481 F-7: this used to be an unconditional `exit 0` on the
+                # theory that no outcomes file means no mutants in the diff.
+                # That is one reason the file can be absent. The other is that
+                # cargo-mutants CRASHED before writing it -- and that passed
+                # too. MUT_EXIT distinguishes them, and it was captured on the
+                # line above and then never tested.
+                if [ "$MUT_EXIT" -ne 0 ]; then
+                  echo "::error::cargo-mutants exited $MUT_EXIT and wrote no outcomes.json. The gate cannot tell whether the diff was clean or the run died, so it refuses rather than passing."
+                  exit 1
+                fi
+                echo "No mutants.out/outcomes.json and cargo-mutants exited 0 — 0 mutants in diff. Pass."
                 exit 0
               fi
               MISSED=$(grep -o "\"summary\"[^}]*\"missed\":[0-9]*" "$OUTCOMES" \
                 | grep -o "\"missed\":[0-9]*" | grep -o "[0-9]*" | head -1)
               TIMEOUT=$(grep -o "\"timeout\":[0-9]*" "$OUTCOMES" \
                 | grep -o "[0-9]*" | head -1)
-              MISSED=${MISSED:-0}; TIMEOUT=${TIMEOUT:-0}
+              # #2481 F-7: `MISSED=${MISSED:-0}` made an UNPARSEABLE outcomes.json
+              # read as "zero missed" -- so a cargo-mutants JSON format change
+              # would silently disarm this gate rather than break it. Not being
+              # able to measure is not the same as measuring zero.
+              if [ -z "$MISSED" ] || [ -z "$TIMEOUT" ]; then
+                echo "::error::could not parse missed/timeout out of $OUTCOMES. The gate refuses rather than assuming zero — check whether cargo-mutants changed its JSON shape."
+                head -40 "$OUTCOMES" || true
+                exit 1
+              fi
               echo "Diff-scoped mutation result: missed=$MISSED timeout=$TIMEOUT (max allowed missed=$MUTANTS_MAX_MISSED)"
               UNCAUGHT=$((MISSED + TIMEOUT))
               if [ "$UNCAUGHT" -gt "$MUTANTS_MAX_MISSED" ]; then

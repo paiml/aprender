@@ -1,6 +1,6 @@
 //! Hyperparameter sweep executor (Kaizen principle).
 
-use entrenar_common::Result;
+use entrenar_common::{EntrenarError, Result};
 
 /// Sweep configuration.
 #[derive(Debug, Clone)]
@@ -117,55 +117,58 @@ impl Sweeper {
     }
 
     /// Run the sweep.
+    ///
+    /// # Errors
+    ///
+    /// Always. There is no training loop behind this type, so there is no
+    /// honest answer to return -- see the #2519 note in the body.
     pub fn run(&self) -> Result<SweepResult> {
-        let values = self.config.parameter.values();
-        let mut data_points = Vec::new();
-
-        for value in &values {
-            let mut metrics = Vec::new();
-
-            for run in 0..self.config.runs_per_point {
-                // Simulate training with this configuration
-                let result = self.simulate_training(*value, run);
-                metrics.push(result);
-            }
-
-            // Aggregate metrics across runs
-            let mean_loss = metrics.iter().map(|m| m.loss).sum::<f64>() / metrics.len() as f64;
-            let mean_accuracy =
-                metrics.iter().map(|m| m.accuracy).sum::<f64>() / metrics.len() as f64;
-            let std_loss = self.calculate_std(&metrics.iter().map(|m| m.loss).collect::<Vec<_>>());
-            let std_accuracy =
-                self.calculate_std(&metrics.iter().map(|m| m.accuracy).collect::<Vec<_>>());
-
-            data_points.push(DataPoint {
-                parameter_value: *value,
-                mean_loss,
-                std_loss,
-                mean_accuracy,
-                std_accuracy,
-                runs: metrics.len(),
-            });
-        }
-
-        // Find optimal
-        let optimal = data_points
-            .iter()
-            .min_by(|a, b| {
-                a.mean_loss
-                    .partial_cmp(&b.mean_loss)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .cloned();
-
-        Ok(SweepResult {
-            parameter_name: self.config.parameter.name().to_string(),
-            data_points,
-            optimal,
-            config: self.config.clone(),
+        // #2519: this used to read
+        //
+        //     for run in 0..self.config.runs_per_point {
+        //         // Simulate training with this configuration
+        //         let result = self.simulate_training(*value, run);
+        //
+        // and then reported the aggregate as a sweep result, ★-marking the
+        // minimum as `Optimal`. `simulate_training` is a closed-form parabola
+        // whose vertex is the hardcoded constant its own comment names
+        // ("Temperature ~4.0 is optimal"); the sweep has no model, no data and
+        // no training loop, so the "measurement" never depended on anything.
+        //
+        // Measured before this change, with no arguments at all:
+        //
+        //     Optimal: temperature = 4.00 (loss=0.6043, accuracy=80.7%)
+        //     ... 3.50 -> 0.6543   4.50 -> 0.6543   (symmetric about the vertex)
+        //
+        // That is worse than a wrong number: it tells a user WHICH
+        // HYPERPARAMETER TO USE. Anyone tuning a real distillation on this
+        // output is being misled by arithmetic, not by an experiment.
+        //
+        // Refusing is strictly better than fabricating. Whether this binary
+        // should exist at all is a separate question, tracked in #2519; this
+        // change does not prejudge it, it only stops the tool from answering a
+        // question it never asked the hardware.
+        Err(EntrenarError::ConfigValue {
+            field: self.config.parameter.name().to_string(),
+            message: format!(
+                "cannot sweep `{}`: this crate has no training loop, no model and \
+                 no dataset. It previously returned a closed-form curve centred on \
+                 a baked-in constant and ★-marked its vertex as the best value, \
+                 which is why it is now an error rather than a plausible-looking \
+                 table",
+                self.config.parameter.name()
+            ),
+            suggestion: "Run real training (`apr finetune`, `apr distill`) once per \
+                         point and sweep over the metrics those runs report. \
+                         Tracked in #2519."
+                .into(),
         })
     }
 
+    // #2519: retained ONLY for the unit tests that pin its arithmetic, so the
+    // closed form stays on the record as arithmetic. Scoped to test builds so
+    // no production path can present it as a measurement again.
+    #[cfg(test)]
     fn simulate_training(&self, param_value: f64, run: usize) -> TrainingMetrics {
         // Simulated training - in real implementation would run actual training
         // Using a simple model where:
@@ -203,6 +206,12 @@ impl Sweeper {
         }
     }
 
+    // #2519: genuine arithmetic -- the standard deviation itself was never the
+    // problem, only the fabricated samples fed to it. `run()` was its sole
+    // production caller, so it is now referenced only by the unit tests that
+    // assert it; scoped to test builds to keep the crate warning-free without
+    // deleting a correct function.
+    #[cfg(test)]
     fn calculate_std(&self, values: &[f64]) -> f64 {
         if values.len() < 2 {
             return 0.0;
@@ -304,6 +313,39 @@ impl SweepResult {
 mod tests {
     use super::*;
 
+    /// Build a `SweepResult` from values supplied by the caller, so the
+    /// formatter tests below exercise `to_table` without a sweep having to
+    /// invent the numbers it formats.
+    fn result_from(parameter_name: &str, points: &[(f64, f64, f64)]) -> SweepResult {
+        let data_points: Vec<DataPoint> = points
+            .iter()
+            .map(|&(parameter_value, mean_loss, mean_accuracy)| DataPoint {
+                parameter_value,
+                mean_loss,
+                std_loss: 0.0,
+                mean_accuracy,
+                std_accuracy: 0.0,
+                runs: 1,
+            })
+            .collect();
+
+        let optimal = data_points
+            .iter()
+            .min_by(|a, b| {
+                a.mean_loss
+                    .partial_cmp(&b.mean_loss)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .cloned();
+
+        SweepResult {
+            parameter_name: parameter_name.to_string(),
+            data_points,
+            optimal,
+            config: SweepConfig::temperature(1.0..3.0, 1.0),
+        }
+    }
+
     #[test]
     fn test_sweep_config_temperature() {
         let config = SweepConfig::temperature(1.0..5.0, 1.0);
@@ -319,32 +361,40 @@ mod tests {
         assert_eq!(config.parameter.name(), "alpha");
     }
 
+    // #2519: `test_sweeper_runs` and `test_sweeper_finds_optimal_temperature`
+    // used to assert `run()` was Ok and that its optimum sat near 4.0 -- i.e.
+    // they asserted the fabrication, and would have gone RED on any honest fix.
+    // They now pin the refusal, and the closed form is pinned separately below
+    // as arithmetic rather than as a result.
     #[test]
-    fn test_sweeper_runs() {
+    fn test_sweeper_refuses_to_sweep() {
         let config = SweepConfig::temperature(1.0..3.0, 1.0).with_runs(2);
         let sweeper = Sweeper::new(config);
-        let result = sweeper.run().expect("operation should succeed");
 
-        assert!(!result.data_points.is_empty());
-        assert!(result.optimal.is_some());
+        let err = sweeper
+            .run()
+            .expect_err("a sweep with no model and no data must not return results");
+        assert!(format!("{err}").contains("no training loop"));
     }
 
     #[test]
-    fn test_sweeper_finds_optimal_temperature() {
-        let config = SweepConfig::temperature(2.0..6.0, 1.0).with_runs(1);
-        let sweeper = Sweeper::new(config);
-        let result = sweeper.run().expect("operation should succeed");
+    fn test_simulated_training_is_a_closed_form_not_a_measurement() {
+        // The vertex of the parabola is the hardcoded constant, and the curve is
+        // symmetric about it: equal deviations either side give the SAME loss.
+        // No experiment behaves like this, which is the whole #2519 finding.
+        let sweeper = Sweeper::new(SweepConfig::temperature(1.0..8.0, 0.5));
 
-        // Optimal should be around 4.0
-        let optimal = result.optimal.expect("operation should succeed");
-        assert!((optimal.parameter_value - 4.0).abs() < 1.5);
+        let below = sweeper.simulate_training(3.5, 0);
+        let above = sweeper.simulate_training(4.5, 0);
+        assert_eq!(below.loss, above.loss);
+
+        let vertex = sweeper.simulate_training(4.0, 0);
+        assert!(vertex.loss < below.loss);
     }
 
     #[test]
     fn test_sweep_result_table() {
-        let config = SweepConfig::temperature(1.0..3.0, 1.0);
-        let sweeper = Sweeper::new(config);
-        let result = sweeper.run().expect("operation should succeed");
+        let result = result_from("temperature", &[(1.0, 0.9, 0.74), (2.0, 0.8, 0.76)]);
 
         let table = result.to_table();
         assert!(table.contains("temperature"));
@@ -419,9 +469,7 @@ mod tests {
 
     #[test]
     fn test_sweep_result_fields() {
-        let config = SweepConfig::temperature(1.0..3.0, 1.0);
-        let sweeper = Sweeper::new(config);
-        let result = sweeper.run().expect("operation should succeed");
+        let result = result_from("temperature", &[(1.0, 0.9, 0.74)]);
 
         assert_eq!(result.parameter_name, "temperature");
         assert!(!result.data_points.is_empty());
@@ -457,9 +505,7 @@ mod tests {
 
     #[test]
     fn test_sweep_result_table_optimal() {
-        let config = SweepConfig::temperature(3.0..5.0, 1.0);
-        let sweeper = Sweeper::new(config);
-        let result = sweeper.run().expect("operation should succeed");
+        let result = result_from("temperature", &[(3.0, 0.70, 0.787), (4.0, 0.60, 0.807)]);
 
         let table = result.to_table();
 
@@ -469,41 +515,31 @@ mod tests {
     }
 
     #[test]
-    fn test_sweep_deterministic() {
+    fn test_sweep_refusal_is_deterministic() {
+        // The refusal must not depend on the seed either: there is nothing to
+        // seed. Same error code, both times.
         let config = SweepConfig::temperature(1.0..3.0, 1.0).with_seed(42);
-        let sweeper = Sweeper::new(config.clone());
-        let result1 = sweeper.run().expect("operation should succeed");
+        let err1 = Sweeper::new(config.clone()).run().expect_err("must refuse");
+        let err2 = Sweeper::new(config).run().expect_err("must refuse");
 
-        let sweeper2 = Sweeper::new(config);
-        let result2 = sweeper2.run().expect("operation should succeed");
-
-        // Same seed should produce same results
-        assert_eq!(
-            result1.data_points[0].mean_loss,
-            result2.data_points[0].mean_loss
-        );
+        assert_eq!(err1.code(), err2.code());
     }
 
     #[test]
-    fn test_alpha_sweep_finds_optimal() {
+    fn test_alpha_sweep_also_refuses() {
+        // Both sweep parameters refuse -- the alpha curve was the same closed
+        // form with its vertex at the other hardcoded constant (0.7).
         let config = SweepConfig::alpha(0.3..0.9, 0.2).with_runs(1);
-        let sweeper = Sweeper::new(config);
-        let result = sweeper.run().expect("operation should succeed");
+        let err = Sweeper::new(config).run().expect_err("must refuse");
 
-        // Optimal should be around 0.7
-        let optimal = result.optimal.expect("operation should succeed");
-        assert!((optimal.parameter_value - 0.7).abs() < 0.3);
+        assert!(format!("{err}").contains("alpha"));
     }
 
     #[test]
-    fn test_sweep_multiple_runs() {
+    fn test_sweep_refuses_regardless_of_runs_per_point() {
+        // Asking for more repeats of a computation that never ran does not make
+        // it a measurement.
         let config = SweepConfig::temperature(3.0..5.0, 1.0).with_runs(3);
-        let sweeper = Sweeper::new(config);
-        let result = sweeper.run().expect("operation should succeed");
-
-        // Each data point should have 3 runs
-        for point in &result.data_points {
-            assert_eq!(point.runs, 3);
-        }
+        assert!(Sweeper::new(config).run().is_err());
     }
 }

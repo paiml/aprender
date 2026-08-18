@@ -2,7 +2,9 @@
 //!
 //! Provides Pareto frontier analysis for balancing training cost vs model performance.
 
+use entrenar_common::{EntrenarError, Result};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// A single configuration with cost and performance metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,8 +22,13 @@ pub struct CostPerformancePoint {
     /// Memory usage in GB
     pub memory_gb: f64,
     /// Whether this point is on the Pareto frontier
+    ///
+    /// Defaulted on load: it is computed by [`CostPerformanceAnalysis::from_points`],
+    /// so a results file is not expected to supply it.
+    #[serde(default)]
     pub is_pareto_optimal: bool,
     /// Configuration parameters
+    #[serde(default)]
     pub config: ConfigParams,
 }
 
@@ -403,8 +410,59 @@ fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
+/// Load measured cost-performance points from a JSON file.
+///
+/// The Pareto machinery above is genuine -- it only ever needed real input.
+/// This is that input: an array of measured runs, e.g.
+///
+/// ```json
+/// [{"name":"LoRA r=32","gpu_hours":18.0,"cost_usd":39.78,
+///   "accuracy":0.87,"loss":0.33,"memory_gb":24.0}]
+/// ```
+///
+/// # Errors
+///
+/// If the file cannot be read, does not parse as an array of
+/// [`CostPerformancePoint`], or contains no points.
+pub fn load_points(path: &Path) -> Result<Vec<CostPerformancePoint>> {
+    let text = std::fs::read_to_string(path).map_err(|e| EntrenarError::Io {
+        context: format!("reading benchmark results: {}", path.display()),
+        source: e,
+    })?;
+
+    let points: Vec<CostPerformancePoint> =
+        serde_json::from_str(&text).map_err(|e| EntrenarError::Serialization {
+            message: format!(
+                "{}: expected a JSON array of cost-performance points: {e}",
+                path.display()
+            ),
+        })?;
+
+    if points.is_empty() {
+        return Err(EntrenarError::ConfigValue {
+            field: "results".into(),
+            message: format!("{}: contains no data points", path.display()),
+            suggestion: "Provide at least one measured run".into(),
+        });
+    }
+
+    Ok(points)
+}
+
 /// Generate sample data points for testing/demo
-pub fn generate_sample_points(cost_model: &CostModel) -> Vec<CostPerformancePoint> {
+//
+// #2519: this eight-entry literal table was the production input to
+// `cost-performance` and `recommend` -- `main.rs` called it under the comment
+// "in a real scenario, load from results file" while IGNORING the `--results`
+// flag it already accepted. Measured before this change, with no inputs:
+//
+//     ✓ Top recommendation: LoRA r=32   (18.0 GPU-hours, $39.78, 87.0%)
+//
+// Every one of those numbers is written above. `load_points` is now the only
+// way in, and this stays scoped to test builds so no production path can
+// recommend a configuration nobody measured.
+#[cfg(test)]
+fn generate_sample_points(cost_model: &CostModel) -> Vec<CostPerformancePoint> {
     // Sample configurations representing different trade-offs
     vec![
         // Full fine-tuning (expensive, high accuracy)
@@ -650,6 +708,52 @@ mod tests {
         let constraints = Constraints::new().with_max_cost(50.0);
         let recommendations = analysis.recommend(&constraints);
         assert!(!recommendations.is_empty());
+    }
+
+    #[test]
+    fn test_load_points_reads_measured_runs() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("results.json");
+        std::fs::write(
+            &path,
+            r#"[{"name":"A","gpu_hours":10.0,"cost_usd":22.1,"accuracy":0.8,
+                 "loss":0.3,"memory_gb":16.0},
+                {"name":"B","gpu_hours":20.0,"cost_usd":44.2,"accuracy":0.9,
+                 "loss":0.2,"memory_gb":24.0}]"#,
+        )
+        .expect("write results");
+
+        let points = load_points(&path).expect("results should load");
+        assert_eq!(points.len(), 2);
+        // The values come from the file, not from a table in this crate.
+        assert_eq!(points[1].name, "B");
+        assert!((points[1].accuracy - 0.9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_load_points_missing_file() {
+        let err = load_points(Path::new("/nonexistent/results.json"))
+            .expect_err("a missing results file must be an error");
+        assert!(format!("{err}").contains("results.json"));
+    }
+
+    #[test]
+    fn test_load_points_rejects_garbage() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("results.json");
+        std::fs::write(&path, "not json at all").expect("write results");
+
+        assert!(load_points(&path).is_err());
+    }
+
+    #[test]
+    fn test_load_points_rejects_empty_array() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("results.json");
+        std::fs::write(&path, "[]").expect("write results");
+
+        let err = load_points(&path).expect_err("an empty results file must be an error");
+        assert!(format!("{err}").contains("no data points"));
     }
 
     #[test]

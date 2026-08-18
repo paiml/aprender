@@ -72,6 +72,11 @@ mod assertion;
 )]
 mod bridge;
 mod browser;
+/// Real CDP-backed driver. Before this existed, `ProbarDriver` had exactly
+/// one implementation -- `MockDriver` -- so every layer built on the trait
+/// drove a mock (issue #2473).
+#[cfg(feature = "browser")]
+mod chromium_driver;
 #[allow(
     clippy::missing_errors_doc,
     clippy::must_use_candidate,
@@ -612,6 +617,8 @@ pub use cdp_coverage::{
     CoverageConfig, CoverageRange, CoverageReport, CoveredFunction, FunctionCoverage, JsCoverage,
     LineCoverage, ScriptCoverage, SourceMapEntry, WasmCoverage, WasmSourceMap,
 };
+#[cfg(feature = "browser")]
+pub use chromium_driver::ChromiumDriver;
 pub use clock::{
     create_clock, Clock, ClockController, ClockError, ClockOptions, ClockState, FakeClock,
 };

@@ -41,7 +41,7 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **78** workspace crates | `cargo metadata --no-deps` (NOT `ls crates/` — 4 are `exclude`d, 1 has no Cargo.toml) |
-| Provable contracts | **1771** provable contracts | `find contracts/ -name '*.yaml'` |
+| Provable contracts | **1772** provable contracts | `find contracts/ -name '*.yaml'` |
 | CLI commands | **105** CLI commands | `apr --help` |
 | Book CLI chapters | **105** chapters | `ls book/src/cli/*.md` (parity with CLI) |
 | Book lib chapters | **69** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
@@ -222,7 +222,7 @@ paiml/aprender/
 │   ├── aprender-profile/           # Profiling
 │   ├── aprender-db/ aprender-graph/ aprender-rag/
 │   └── ... (82 crates total)
-├── contracts/                      # 1771 provable YAML contracts
+├── contracts/                      # 1772 provable YAML contracts
 └── book/                           # mdBook documentation
 ```
 
@@ -253,7 +253,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1771 contracts across inference, training, quantization, attention, FFN,
+1772 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates

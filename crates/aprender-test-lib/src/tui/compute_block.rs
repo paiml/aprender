@@ -168,13 +168,12 @@ impl<'a, B: ComputeBlock> ComputeBlockAssertion<'a, B> {
 
     /// Assert no errors were collected.
     pub fn assert_no_errors(&self) {
-        if !self.errors.is_empty() {
-            panic!(
-                "ComputeBlock had {} soft assertion failures:\n{}",
-                self.errors.len(),
-                self.errors.join("\n")
-            );
-        }
+        assert!(
+            self.errors.is_empty(),
+            "ComputeBlock had {} soft assertion failures:\n{}",
+            self.errors.len(),
+            self.errors.join("\n")
+        );
     }
 }
 

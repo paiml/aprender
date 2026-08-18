@@ -6,9 +6,12 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
-/// Helper to create batuta command with drift check disabled (for pre-release testing)
+/// Helper to create the CLI command with drift check disabled (for pre-release testing)
+///
+/// The bin target was renamed to `aprender-orchestrate` in the monorepo
+/// consolidation; `batuta` survives only as the [lib] name.
 fn batuta_cmd() -> Command {
-    let mut cmd = Command::cargo_bin("batuta").unwrap();
+    let mut cmd = Command::cargo_bin("aprender-orchestrate").unwrap();
     cmd.arg("--unsafe-skip-drift-check");
     cmd
 }

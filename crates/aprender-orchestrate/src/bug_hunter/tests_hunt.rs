@@ -1,20 +1,97 @@
 
 // =========================================================================
+// Shared fixture for hunt()-level tests
+// =========================================================================
+
+/// Build a throwaway project fixture for `hunt` / `hunt_ensemble` tests.
+///
+/// These tests used to run against `Path::new(".")` — the real crate — so each
+/// one shelled out to `cargo clippy --all-targets`, `pmat query` and `git blame`
+/// over the whole source tree (measured 40s-172s apiece). The fixture is
+/// deliberately *not* a cargo package: with no `Cargo.toml`, analyze mode's
+/// `cargo clippy` exits immediately instead of compiling a crate, so nothing
+/// here needs nextest's `serial-build` group.
+///
+/// The planted source carries one deterministic trigger per hunt mode:
+/// `unwrap()` for Analyze, a `len()` comparison plus a cast-arithmetic line for
+/// Falsify, three nested `if`s for DeepHunt. `lcov.info` gives Hunt mode
+/// coverage to chew on; the absent `fuzz/` dir makes Fuzz mode report missing
+/// fuzz targets.
+fn hunt_fixture(name: &str) -> PathBuf {
+    let dir =
+        std::env::temp_dir().join(format!("test_bh_fixture_{}_{}", name, std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("src")).expect("create fixture src dir");
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "pub fn probe(v: &[u8]) -> usize {
+    let first = v.first().copied().unwrap();
+    if v.len() > 0 {
+        let idx = v.len() - 1 as usize;
+        if idx > 2 {
+            if idx > first as usize {
+                return idx;
+            }
+        }
+    }
+    0
+}
+",
+    )
+    .expect("write fixture source");
+    // Six uncovered lines in one file clears report_uncovered_hotspots' threshold.
+    std::fs::write(
+        dir.join("lcov.info"),
+        "SF:src/lib.rs\nDA:1,0\nDA:2,0\nDA:3,0\nDA:4,0\nDA:5,0\nDA:6,0\nend_of_record\n",
+    )
+    .expect("write fixture lcov");
+    dir
+}
+
+/// Hermetic hunt config for `hunt_fixture`: scan only `src`, keep every finding,
+/// and leave the pmat SATD subprocess out of it. BH-23's pmat integration is
+/// covered by BH-MOD-053; shelling out to pmat here bought no coverage and cost
+/// tens of seconds per test.
+fn hunt_fixture_config(mode: HuntMode) -> HuntConfig {
+    HuntConfig {
+        mode,
+        targets: vec![PathBuf::from("src")],
+        min_suspiciousness: 0.0,
+        pmat_satd: false,
+        ..Default::default()
+    }
+}
+
+// =========================================================================
 // BH-MOD-001: Hunt Function
 // =========================================================================
 
 #[test]
 fn test_bh_mod_001_hunt_returns_result() {
-    let config = HuntConfig {
-        mode: HuntMode::Analyze,
-        ..Default::default()
-    };
-    let result = hunt(Path::new("."), config);
+    let fixture = hunt_fixture("mod_001_returns");
+
+    let result = hunt(&fixture, hunt_fixture_config(HuntMode::Analyze));
+
     assert_eq!(result.mode, HuntMode::Analyze);
+    // Analyze mode must reach the pattern scan, not merely echo the mode back.
+    assert!(
+        result.findings.iter().any(|f| f.title.contains("unwrap()")),
+        "Analyze mode missed the planted unwrap(): {:?}",
+        result.findings.iter().map(|f| &f.title).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        result.stats.total_findings,
+        result.findings.len(),
+        "finalize() must count every finding"
+    );
+
+    let _ = std::fs::remove_dir_all(&fixture);
 }
 
 #[test]
 fn test_bh_mod_001_hunt_all_modes() {
+    let fixture = hunt_fixture("mod_001_all_modes");
+
     for mode in [
         HuntMode::Falsify,
         HuntMode::Hunt,
@@ -22,14 +99,22 @@ fn test_bh_mod_001_hunt_all_modes() {
         HuntMode::Fuzz,
         HuntMode::DeepHunt,
     ] {
-        let config = HuntConfig {
-            mode,
-            targets: vec![PathBuf::from("src")],
-            ..Default::default()
-        };
-        let result = hunt(Path::new("."), config);
+        let result = hunt(&fixture, hunt_fixture_config(mode));
         assert_eq!(result.mode, mode);
+        // Dispatch must land in the mode's own handler. On this fixture every
+        // mode tags at least one finding with itself: Falsify emits mutation
+        // targets (or the cargo-mutants-unavailable notice), Hunt the lcov
+        // hotspot, Analyze the unwrap() pattern, Fuzz the missing fuzz/ dir,
+        // DeepHunt the nested conditionals.
+        assert!(
+            result.findings.iter().any(|f| f.discovered_by == mode),
+            "{} mode produced no finding of its own: {:?}",
+            mode,
+            result.findings.iter().map(|f| (&f.id, f.discovered_by)).collect::<Vec<_>>()
+        );
     }
+
+    let _ = std::fs::remove_dir_all(&fixture);
 }
 
 // =========================================================================
@@ -38,10 +123,23 @@ fn test_bh_mod_001_hunt_all_modes() {
 
 #[test]
 fn test_bh_mod_002_hunt_ensemble() {
-    let config = HuntConfig::default();
-    let result = hunt_ensemble(Path::new("."), config);
-    // Should have findings from multiple modes
-    assert!(result.duration_ms > 0);
+    let fixture = hunt_fixture("mod_002_ensemble");
+
+    let result = hunt_ensemble(&fixture, hunt_fixture_config(HuntMode::Analyze));
+
+    // The ensemble runs Analyze + Hunt + Falsify and merges the three result
+    // sets, so all three must be represented. (The previous assertion was
+    // `duration_ms > 0` — a wall-clock check that could not fail.)
+    for mode in [HuntMode::Analyze, HuntMode::Hunt, HuntMode::Falsify] {
+        assert!(
+            result.findings.iter().any(|f| f.discovered_by == mode),
+            "ensemble dropped every {} finding: {:?}",
+            mode,
+            result.findings.iter().map(|f| (&f.id, f.discovered_by)).collect::<Vec<_>>()
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&fixture);
 }
 
 // =========================================================================

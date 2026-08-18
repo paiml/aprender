@@ -247,19 +247,50 @@ fn test_bh_mod_045_hunt_coverage_weight_with_file() {
 
 #[test]
 fn test_bh_mod_046_apply_spec_quality_gate_no_pmat() {
-    // When pmat is unavailable, apply_spec_quality_gate returns early at line 282
+    // apply_spec_quality_gate must bail before touching any claim when
+    // build_quality_index yields nothing. An empty directory guarantees that:
+    // pmat finds no functions to index (and if pmat is absent entirely,
+    // pmat_available() short-circuits to the same None).
+    //
+    // This used to point at /tmp, which made `pmat query` walk the whole
+    // system temp dir — 14s for a gate that never fires.
+    use super::spec::{ClaimStatus, CodeLocation, SpecClaim};
+
+    let fixture =
+        std::env::temp_dir().join(format!("test_bh_mod_046_empty_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&fixture);
+    std::fs::create_dir_all(&fixture).expect("create empty fixture dir");
+
+    // A claim WITH an implementation, so the early return is what keeps the
+    // finding list empty rather than there being nothing to inspect.
     let mut parsed_spec = ParsedSpec {
-        claims: vec![],
+        claims: vec![SpecClaim {
+            id: "NOPMAT-01".to_string(),
+            title: "Claim with an implementation".to_string(),
+            line: 1,
+            section_path: vec!["Section 1".to_string()],
+            implementations: vec![CodeLocation {
+                file: PathBuf::from("src/lib.rs"),
+                line: 1,
+                context: "probe".to_string(),
+            }],
+            findings: Vec::new(),
+            status: ClaimStatus::Pending,
+        }],
         original_content: String::new(),
         path: PathBuf::new(),
     };
-    let mut result = HuntResult::new("/tmp", HuntMode::Analyze, HuntConfig::default());
+    let mut result = HuntResult::new(&fixture, HuntMode::Analyze, HuntConfig::default());
 
-    // This exercises the early return path — build_quality_index returns None
-    apply_spec_quality_gate(&mut parsed_spec, Path::new("/tmp"), &mut result, "*");
+    apply_spec_quality_gate(&mut parsed_spec, &fixture, &mut result, "*");
 
-    // No findings should be added since pmat is not available
-    assert!(result.findings.is_empty());
+    assert!(
+        result.findings.is_empty(),
+        "gate must add nothing when the quality index is unavailable: {:?}",
+        result.findings.iter().map(|f| &f.id).collect::<Vec<_>>()
+    );
+
+    let _ = std::fs::remove_dir_all(&fixture);
 }
 
 // =========================================================================
@@ -525,106 +556,156 @@ fn test_bh_mod_052_hunt_mode_with_junit_xml() {
 
 #[test]
 fn test_bh_mod_053_hunt_pmat_quality_on_real_project() {
-    // Run hunt with use_pmat_quality on the REAL project directory so
-    // build_quality_index succeeds (pmat is available and project has code).
-    // This covers lines 107-117 in hunt().
-    let config = HuntConfig {
-        mode: HuntMode::Quick,
-        targets: vec![PathBuf::from("src")],
-        min_suspiciousness: 0.0,
-        use_pmat_quality: true,
-        pmat_query: Some("hunt".to_string()),
-        quality_weight: 0.5,
-        ..Default::default()
-    };
+    // Exercises hunt()'s BH-21/BH-24 quality phase. This used to run against
+    // the REAL crate, so every execution paid a full `pmat query` over the
+    // whole source tree (40s). A fixture pmat indexes in milliseconds reaches
+    // the same branch.
+    let fixture = hunt_fixture("mod_053_pmat_quality");
 
-    let result = hunt(Path::new("."), config);
+    let baseline = hunt(&fixture, hunt_fixture_config(HuntMode::Quick));
+
+    let config = HuntConfig {
+        use_pmat_quality: true,
+        pmat_query: Some("probe".to_string()),
+        quality_weight: 0.5,
+        ..hunt_fixture_config(HuntMode::Quick)
+    };
+    let result = hunt(&fixture, config);
+
     assert_eq!(result.mode, HuntMode::Quick);
-    // If pmat was available, the index timing should be recorded
-    // (May be 0 if pmat query was fast, but the path was exercised)
-    // At minimum, the hunt completes without error.
+    // The quality phase reweights findings in place; it must never add or drop
+    // one. Diffing against the pmat-off run pins that down on any machine,
+    // whether or not pmat is installed.
+    let locations = |r: &HuntResult| {
+        let mut keys: Vec<String> = r
+            .findings
+            .iter()
+            .map(|f| format!("{}|{}|{}", f.file.display(), f.line, f.title))
+            .collect();
+        keys.sort();
+        keys
+    };
+    assert!(!baseline.findings.is_empty(), "fixture produced no findings to weight");
+    assert_eq!(
+        locations(&result),
+        locations(&baseline),
+        "pmat quality phase must reweight findings, not change the set"
+    );
+
+    let _ = std::fs::remove_dir_all(&fixture);
 }
 
 // =========================================================================
 // BH-MOD-054: Coverage Gap Tests — apply_spec_quality_gate with real project
 // =========================================================================
 
-#[test]
-fn test_bh_mod_054_apply_spec_quality_gate_real_project() {
-    // Construct a ParsedSpec with claims that have implementations
-    // pointing to real files in the project. Call apply_spec_quality_gate
-    // on the real project path so build_quality_index returns Some.
+/// Write a one-file fixture project that pmat can index in milliseconds.
+///
+/// The BH-25 quality-gate tests used to run `pmat query` over the real crate
+/// (15-20s each) and then assert nothing at all. A fixture lets them assert the
+/// gate's actual predicate instead.
+fn quality_gate_fixture(name: &str, source: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("test_bh_qgate_{}_{}", name, std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("src")).expect("create qgate fixture src dir");
+    std::fs::write(dir.join("src/lib.rs"), source).expect("write qgate fixture source");
+    dir
+}
+
+/// A `ParsedSpec` with a single claim implemented at `src/lib.rs:1`.
+///
+/// The path is relative because that is the form `pmat query` reports, and
+/// `lookup_quality` matches index keys exactly.
+fn quality_gate_spec(claim_id: &str) -> ParsedSpec {
     use super::spec::{ClaimStatus, CodeLocation, SpecClaim};
 
-    let mut parsed_spec = ParsedSpec {
+    ParsedSpec {
         path: PathBuf::from("test_spec.md"),
         claims: vec![SpecClaim {
-            id: "CLAIM-01".to_string(),
+            id: claim_id.to_string(),
             title: "Test Claim".to_string(),
             line: 1,
             section_path: vec!["Section 1".to_string()],
             implementations: vec![CodeLocation {
-                file: PathBuf::from("src/bug_hunter/mod.rs"),
-                line: 66,
-                context: "hunt function".to_string(),
+                file: PathBuf::from("src/lib.rs"),
+                line: 1,
+                context: "fixture function".to_string(),
             }],
             findings: Vec::new(),
             status: ClaimStatus::Pending,
         }],
-        original_content: "# Spec\n## Section 1\n### CLAIM-01: Test\n".to_string(),
-    };
+        original_content: format!("# Spec\n## Section 1\n### {}: Test\n", claim_id),
+    }
+}
 
-    let mut result = HuntResult::new(".", HuntMode::Analyze, HuntConfig::default());
-    let initial_count = result.findings.len();
+#[test]
+fn test_bh_mod_054_apply_spec_quality_gate_real_project() {
+    // A claim implemented by a small, well-graded function must NOT trip the
+    // gate. Previously this ran pmat over the real crate and asserted nothing.
+    let fixture = quality_gate_fixture(
+        "clean",
+        "pub fn tidy(n: u32) -> u32 {\n    n.saturating_add(1)\n}\n",
+    );
 
-    // Call the function on the real project path — pmat is available
-    apply_spec_quality_gate(&mut parsed_spec, Path::new("."), &mut result, "hunt");
+    let mut parsed_spec = quality_gate_spec("CLAIM-01");
+    let mut result = HuntResult::new(&fixture, HuntMode::Analyze, HuntConfig::default());
 
-    // The function either:
-    // 1. build_quality_index returns Some → iterates claims → may add findings
-    // 2. build_quality_index returns None → returns early
-    // Either way, this exercises the code path
-    let _ = result.findings.len() >= initial_count; // No panic
+    apply_spec_quality_gate(&mut parsed_spec, &fixture, &mut result, "tidy");
+
+    assert!(
+        result.findings.is_empty(),
+        "gate fired on well-graded code: {:?}",
+        result.findings.iter().map(|f| (&f.id, &f.title)).collect::<Vec<_>>()
+    );
+
+    let _ = std::fs::remove_dir_all(&fixture);
 }
 
 #[test]
 fn test_bh_mod_054_apply_spec_quality_gate_low_quality_finding() {
-    // Test the inner branch where pmat returns low-quality code (grade D/F or complexity > 20).
-    // We construct a scenario with real project files and a claim pointing to them.
-    use super::spec::{ClaimStatus, CodeLocation, SpecClaim};
+    // The inner branch: pmat grades the implementing function as low quality
+    // (grade D/F or complexity > 20), so the gate must emit BH-QGATE-<claim>.
+    let mut source = String::from("pub fn tangled(n: u32) -> u32 {\n    let mut acc = 0;\n");
+    for i in 1..=25 {
+        source.push_str(&format!(
+            "    if n % {i} == 0 {{ acc += {i}; }} else if n > {i} {{ acc -= 1; }}\n"
+        ));
+    }
+    source.push_str("    acc\n}\n");
+    let fixture = quality_gate_fixture("tangled", &source);
 
-    let mut parsed_spec = ParsedSpec {
-        path: PathBuf::from("test_spec.md"),
-        claims: vec![SpecClaim {
-            id: "LQ-01".to_string(),
-            title: "Low Quality Claim".to_string(),
-            line: 1,
-            section_path: vec!["Quality".to_string()],
-            implementations: vec![
-                // Point to a real file — pmat will look up quality
-                CodeLocation {
-                    file: PathBuf::from("src/bug_hunter/mod.rs"),
-                    line: 990,
-                    context: "analyze_common_patterns".to_string(),
-                },
-                // Also include a nonexistent file to exercise the None path
-                CodeLocation {
-                    file: PathBuf::from("src/nonexistent.rs"),
-                    line: 1,
-                    context: "missing file".to_string(),
-                },
-            ],
-            findings: Vec::new(),
-            status: ClaimStatus::Pending,
-        }],
-        original_content: "# Spec\n## Quality\n### LQ-01: Low Quality\n".to_string(),
-    };
+    let mut parsed_spec = quality_gate_spec("LQ-01");
+    let mut result = HuntResult::new(&fixture, HuntMode::Analyze, HuntConfig::default());
 
-    let mut result = HuntResult::new(".", HuntMode::Analyze, HuntConfig::default());
+    // Ask the same question the gate asks, so both outcomes stay assertable on
+    // machines with and without pmat installed.
+    let index = super::pmat_quality::build_quality_index(&fixture, "tangled", 200);
+    apply_spec_quality_gate(&mut parsed_spec, &fixture, &mut result, "tangled");
 
-    apply_spec_quality_gate(&mut parsed_spec, Path::new("."), &mut result, "*");
+    match index {
+        Some(index) => {
+            let graded = super::pmat_quality::lookup_quality(&index, Path::new("src/lib.rs"), 1)
+                .expect("pmat indexed src/lib.rs but no function covers line 1");
+            assert!(
+                graded.complexity > 20 || graded.tdg_grade == "D" || graded.tdg_grade == "F",
+                "fixture is no longer low quality (grade {}, complexity {})",
+                graded.tdg_grade,
+                graded.complexity
+            );
+            assert!(
+                result.findings.iter().any(|f| f.id == "BH-QGATE-LQ-01"),
+                "gate missed low-quality implementation: {:?}",
+                result.findings.iter().map(|f| &f.id).collect::<Vec<_>>()
+            );
+        }
+        None => assert!(
+            result.findings.is_empty(),
+            "gate must add nothing without a quality index: {:?}",
+            result.findings.iter().map(|f| &f.id).collect::<Vec<_>>()
+        ),
+    }
 
-    // Whether or not the specific function is graded D/F, the code paths are exercised
+    let _ = std::fs::remove_dir_all(&fixture);
 }
 
 #[test]
@@ -671,12 +752,10 @@ fn test_bh_mod_054_apply_spec_quality_gate_no_pmat() {
 
 #[test]
 fn test_bh_mod_055_hunt_with_spec_pmat_quality_real_project() {
-    // Write a spec file in a temp dir but run hunt_with_spec against the
-    // real project so that both the pmat quality branch in hunt() (lines 102-119)
-    // and apply_spec_quality_gate (lines 276-321) get exercised.
-    let temp = std::env::temp_dir().join("test_bh_mod_055_spec_real");
-    let _ = std::fs::remove_dir_all(&temp);
-    let _ = std::fs::create_dir_all(&temp);
+    // Drives both the pmat quality branch in hunt() and apply_spec_quality_gate
+    // through hunt_with_spec. It used to hunt the real crate with pmat enabled
+    // (18s); the fixture reaches the same branches.
+    let fixture = hunt_fixture("mod_055_spec");
 
     let spec_content = "\
 # Bug Hunter Spec
@@ -687,26 +766,30 @@ fn test_bh_mod_055_hunt_with_spec_pmat_quality_real_project() {
 
 The hunt function should support all modes.
 ";
-    let spec_path = temp.join("spec.md");
-    std::fs::write(&spec_path, spec_content).unwrap();
+    let spec_path = fixture.join("spec.md");
+    std::fs::write(&spec_path, spec_content).expect("write fixture spec");
 
     let config = HuntConfig {
-        mode: HuntMode::Quick,
-        targets: vec![PathBuf::from("src")],
         use_pmat_quality: true,
-        pmat_query: Some("hunt".to_string()),
+        pmat_query: Some("probe".to_string()),
         quality_weight: 0.5,
-        ..Default::default()
+        ..hunt_fixture_config(HuntMode::Quick)
     };
 
-    // Use the real project path but spec from temp
-    let result = hunt_with_spec(Path::new("."), &spec_path, None, config);
-    assert!(result.is_ok());
-    let (hunt_result, parsed_spec) = result.unwrap();
-    assert!(!parsed_spec.claims.is_empty());
-    assert_eq!(hunt_result.mode, HuntMode::Quick);
+    let result = hunt_with_spec(&fixture, &spec_path, None, config);
+    let (hunt_result, parsed_spec) = result.expect("hunt_with_spec on the fixture");
 
-    let _ = std::fs::remove_dir_all(&temp);
+    assert_eq!(parsed_spec.claims.len(), 1, "spec parser lost the BH-01 claim");
+    assert_eq!(hunt_result.mode, HuntMode::Quick);
+    // The spec has no implementations in the fixture, so hunt_with_spec must
+    // fall back to the configured targets and still scan the source.
+    assert!(
+        hunt_result.findings.iter().any(|f| f.title.contains("unwrap()")),
+        "spec-driven hunt scanned nothing: {:?}",
+        hunt_result.findings.iter().map(|f| &f.title).collect::<Vec<_>>()
+    );
+
+    let _ = std::fs::remove_dir_all(&fixture);
 }
 
 // =========================================================================

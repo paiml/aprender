@@ -240,12 +240,26 @@ fn test_bh_mod_024_hunt_with_spec_nonexistent() {
 
 #[test]
 fn test_bh_mod_025_hunt_ensemble() {
-    let config = HuntConfig {
-        targets: vec![PathBuf::from("src")],
-        ..Default::default()
-    };
-    let result = hunt_ensemble(Path::new("."), config);
-    assert!(result.duration_ms > 0);
+    let fixture = hunt_fixture("mod_025_ensemble");
+
+    let result = hunt_ensemble(&fixture, hunt_fixture_config(HuntMode::Analyze));
+
+    // BH-MOD-002 covers the merge; this covers hunt_ensemble's dedup contract:
+    // no two findings may share (file, line, category, title). Falsify mode
+    // globs `src/*.rs` and `src/**/*.rs`, both of which match src/lib.rs, so
+    // the input to the dedup genuinely contains repeats.
+    let mut keys: Vec<String> = result
+        .findings
+        .iter()
+        .map(|f| format!("{}|{}|{:?}|{}", f.file.display(), f.line, f.category, f.title))
+        .collect();
+    let total = keys.len();
+    assert!(total > 0, "ensemble found nothing on the fixture");
+    keys.sort();
+    keys.dedup();
+    assert_eq!(keys.len(), total, "hunt_ensemble emitted duplicate findings");
+
+    let _ = std::fs::remove_dir_all(&fixture);
 }
 
 // =========================================================================

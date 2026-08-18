@@ -44,6 +44,7 @@
 
 pub mod analyzer;
 pub mod bugs;
+pub mod cli;
 pub mod falsification;
 pub mod output;
 pub mod parser;

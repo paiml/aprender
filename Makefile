@@ -227,6 +227,9 @@ tier3:
 	@echo "Checking no contract cites a test that does not exist (aprender#2465)..."
 	@bash scripts/check_contract_test_binding.sh --self-test
 	@bash scripts/check_contract_test_binding.sh
+	@echo "Checking no contract names an enforcement command that cannot run (aprender#2504)..."
+	@bash scripts/check_contract_enforcement.sh --self-test
+	@bash scripts/check_contract_enforcement.sh
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \
@@ -517,6 +520,7 @@ deps-validate:
 # Run cargo-deny checks (licenses, bans, advisories, sources)
 deny:
 	@echo "🔒 Running cargo-deny checks..."
+	@bash scripts/check_deny_exemptions_live.sh
 	@if command -v cargo-deny >/dev/null 2>&1; then \
 		cargo deny check; \
 	else \

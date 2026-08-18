@@ -1,43 +1,45 @@
-//! trueno-ptx-debug CLI
+//! aprender-ptx-debug CLI
 //!
 //! Pure Rust PTX debugging and static analysis tool.
 //!
 //! Usage:
-//!   trueno-ptx-debug analyze <file.ptx> [--falsify] [--min-score N]
-//!   trueno-ptx-debug gen-fkr <file.ptx> [-o tests.rs]
+//!   aprender-ptx-debug analyze <file.ptx> [--falsify] [--min-score N]
+//!   aprender-ptx-debug gen-fkr <file.ptx> [-o tests.rs]
+//!
+//! Argument parsing is declarative and lives in `trueno_ptx_debug::cli`.
 
-use std::env;
 use std::fs;
 use std::process;
 
+// Imported anonymously: `clap::Parser` would otherwise collide with the PTX
+// `Parser` used below.
+use clap::Parser as _;
+
 use trueno_ptx_debug::bugs::BugRegistry;
+use trueno_ptx_debug::cli::{
+    exit_code_for_parse_error, version_string, AnalyzeArgs, Cli, Command, GenFkrArgs,
+};
 use trueno_ptx_debug::falsification::FalsificationRegistry;
 use trueno_ptx_debug::output::{generate_fkr_tests, generate_html_report, AnalysisResult};
 use trueno_ptx_debug::parser::Parser;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 2 {
-        print_usage();
-        process::exit(1);
-    }
-
-    let result = match args[1].as_str() {
-        "analyze" => cmd_analyze(&args[2..]),
-        "gen-fkr" => cmd_gen_fkr(&args[2..]),
-        "help" | "--help" | "-h" => {
-            print_usage();
-            Ok(())
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            // clap picks stdout for --help/--version and stderr for real
+            // failures; the exit code is chosen the same way.
+            let _ = err.print();
+            process::exit(exit_code_for_parse_error(&err));
         }
-        "version" | "--version" | "-V" => {
-            println!("trueno-ptx-debug {}", env!("CARGO_PKG_VERSION"));
+    };
+
+    let result = match cli.command {
+        Command::Analyze(args) => cmd_analyze(args),
+        Command::GenFkr(args) => cmd_gen_fkr(args),
+        Command::Version => {
+            print!("{}", version_string());
             Ok(())
-        }
-        _ => {
-            eprintln!("Unknown command: {}", args[1]);
-            print_usage();
-            process::exit(1);
         }
     };
 
@@ -45,137 +47,6 @@ fn main() {
         eprintln!("Error: {}", e);
         process::exit(1);
     }
-}
-
-fn print_usage() {
-    println!(
-        r"trueno-ptx-debug - Pure Rust PTX debugging and static analysis tool
-
-USAGE:
-    trueno-ptx-debug <COMMAND> [OPTIONS]
-
-COMMANDS:
-    analyze <file.ptx>    Analyze PTX file for bugs and issues
-        --falsify         Run full 100-point falsification framework
-        --min-score N     Fail if score < N (default: 70)
-        --html <file>     Write HTML report to file
-        --json            Output JSON format
-
-    gen-fkr <file.ptx>    Generate FKR tests for jugar-probar
-        -o <file.rs>      Output file (default: stdout)
-
-    help                  Show this help message
-    version               Show version information
-
-EXIT CODES:
-    0 - Analysis passed (score >= 90)
-    1 - Analysis passed with warnings (score 70-89)
-    2 - Analysis failed (score < 70)
-    3 - Critical bugs detected
-    10 - Parse error
-    11 - I/O error
-
-EXAMPLES:
-    trueno-ptx-debug analyze kernel.ptx --falsify
-    trueno-ptx-debug analyze kernel.ptx --min-score 90 --html report.html
-    trueno-ptx-debug gen-fkr kernel.ptx -o tests/kernel_fkr.rs
-"
-    );
-}
-
-/// Parsed arguments for the `analyze` subcommand.
-struct AnalyzeArgs {
-    file_path: String,
-    #[allow(dead_code)]
-    run_falsify: bool,
-    min_score: f64,
-    html_output: Option<String>,
-    json_output: bool,
-}
-
-/// Consume the next positional argument from `args[i+1]`, returning an error
-/// if the slice is exhausted.  Returns the new index and the consumed value.
-fn consume_valued_option(args: &[String], i: usize, flag: &str) -> Result<(usize, String), String> {
-    let next = i + 1;
-    if next >= args.len() {
-        return Err(format!("{} requires a value", flag));
-    }
-    Ok((next, args[next].clone()))
-}
-
-/// Apply a single CLI token to the in-progress `AnalyzeArgs` builder.
-/// Returns the (possibly advanced) index after consuming the token.
-fn apply_analyze_flag(
-    args: &[String],
-    i: usize,
-    run_falsify: &mut bool,
-    min_score: &mut f64,
-    html_output: &mut Option<String>,
-    json_output: &mut bool,
-    file_path: &mut Option<String>,
-) -> Result<usize, String> {
-    match args[i].as_str() {
-        "--falsify" => {
-            *run_falsify = true;
-            Ok(i)
-        }
-        "--json" => {
-            *json_output = true;
-            Ok(i)
-        }
-        "--min-score" => {
-            let (next, val) = consume_valued_option(args, i, "--min-score")?;
-            *min_score = val
-                .parse()
-                .map_err(|_| "Invalid min-score value".to_string())?;
-            Ok(next)
-        }
-        "--html" => {
-            let (next, val) = consume_valued_option(args, i, "--html")?;
-            *html_output = Some(val);
-            Ok(next)
-        }
-        arg if !arg.starts_with('-') => {
-            *file_path = Some(arg.to_string());
-            Ok(i)
-        }
-        arg => Err(format!("Unknown option: {}", arg)),
-    }
-}
-
-/// Parse the CLI arguments for the `analyze` subcommand.
-fn parse_analyze_args(args: &[String]) -> Result<AnalyzeArgs, String> {
-    if args.is_empty() {
-        return Err("Missing PTX file argument".into());
-    }
-
-    let mut file_path = None;
-    let mut run_falsify = false;
-    let mut min_score = 70.0;
-    let mut html_output = None;
-    let mut json_output = false;
-
-    let mut i = 0;
-    while i < args.len() {
-        i = apply_analyze_flag(
-            args,
-            i,
-            &mut run_falsify,
-            &mut min_score,
-            &mut html_output,
-            &mut json_output,
-            &mut file_path,
-        )?;
-        i += 1;
-    }
-
-    Ok(AnalyzeArgs {
-        file_path: file_path.ok_or("Missing PTX file argument")?,
-        run_falsify,
-        min_score,
-        html_output,
-        json_output,
-    })
 }
 
 /// Print analysis results as JSON.
@@ -234,19 +105,18 @@ fn exit_for_score(
     }
 }
 
-fn cmd_analyze(args: &[String]) -> Result<(), String> {
-    let opts = parse_analyze_args(args)?;
-    let result = analyze_ptx_file(&opts.file_path)?;
+fn cmd_analyze(opts: AnalyzeArgs) -> Result<(), String> {
+    let result = analyze_ptx_file(&opts.file)?;
 
     // Output results
-    if opts.json_output {
+    if opts.json {
         print_json_report(&result, &result.falsification_report);
     } else {
         print_text_report(&result, &result.falsification_report);
     }
 
     // Write HTML report if requested
-    if let Some(html_path) = opts.html_output {
+    if let Some(html_path) = opts.html {
         let html = generate_html_report(&result);
         fs::write(&html_path, html).map_err(|e| format!("Failed to write {}: {}", html_path, e))?;
         println!("\nHTML report written to: {}", html_path);
@@ -259,55 +129,6 @@ fn cmd_analyze(args: &[String]) -> Result<(), String> {
     );
 
     Ok(())
-}
-
-/// Parsed arguments for the `gen-fkr` subcommand.
-struct GenFkrArgs {
-    file_path: String,
-    output_file: Option<String>,
-}
-
-/// Apply a single CLI token to the in-progress `GenFkrArgs` builder.
-/// Returns the (possibly advanced) index after consuming the token.
-fn apply_gen_fkr_flag(
-    args: &[String],
-    i: usize,
-    output_file: &mut Option<String>,
-    file_path: &mut Option<String>,
-) -> Result<usize, String> {
-    match args[i].as_str() {
-        "-o" => {
-            let (next, val) = consume_valued_option(args, i, "-o")?;
-            *output_file = Some(val);
-            Ok(next)
-        }
-        arg if !arg.starts_with('-') => {
-            *file_path = Some(arg.to_string());
-            Ok(i)
-        }
-        arg => Err(format!("Unknown option: {}", arg)),
-    }
-}
-
-/// Parse the CLI arguments for the `gen-fkr` subcommand.
-fn parse_gen_fkr_args(args: &[String]) -> Result<GenFkrArgs, String> {
-    if args.is_empty() {
-        return Err("Missing PTX file argument".into());
-    }
-
-    let mut file_path = None;
-    let mut output_file = None;
-
-    let mut i = 0;
-    while i < args.len() {
-        i = apply_gen_fkr_flag(args, i, &mut output_file, &mut file_path)?;
-        i += 1;
-    }
-
-    Ok(GenFkrArgs {
-        file_path: file_path.ok_or("Missing PTX file argument")?,
-        output_file,
-    })
 }
 
 /// Read a PTX file, parse it, run analysis, and return the result.
@@ -342,9 +163,8 @@ fn write_or_print(content: &str, output_path: Option<String>, label: &str) -> Re
     Ok(())
 }
 
-fn cmd_gen_fkr(args: &[String]) -> Result<(), String> {
-    let opts = parse_gen_fkr_args(args)?;
-    let result = analyze_ptx_file(&opts.file_path)?;
+fn cmd_gen_fkr(opts: GenFkrArgs) -> Result<(), String> {
+    let result = analyze_ptx_file(&opts.file)?;
     let fkr_tests = generate_fkr_tests(&result);
-    write_or_print(&fkr_tests, opts.output_file, "FKR tests")
+    write_or_print(&fkr_tests, opts.output, "FKR tests")
 }

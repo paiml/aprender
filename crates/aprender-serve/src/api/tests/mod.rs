@@ -57,6 +57,7 @@ mod ollama_compat_http; // Dogfood 0.63.0 (#2396/#2402): /api/tags|show|version 
 mod embed_and_envelope_2376; // aprender#2376(1 seventh route, 7, 8) + #2396(2): embeddings on a quantized server, one error envelope, / and /ready
 mod explain_2375; // aprender#2375(2): /v1/explain must not fabricate SHAP values and a 0.95 prediction
 mod openai_compat_2375; // Dogfood 0.63.0 (#2375): /v1/completions streams, finish_reason is measured, `n` is honoured or refused, /v1/predict stops lying
+mod panic_containment_2506; // SURF-7/R14: a handler panic must be a JSON 500, not a dropped connection
 mod route_surface_2376; // aprender#2376(7,8): advertised surface == mounted surface; every error body is a JSON envelope
 mod stream_and_metrics_2375; // aprender#2375(1 regression, 4, 7) + temperature:0 — streaming chat through the real router, /v1/metrics measures
 mod completions_stop_2465; // aprender#2465(2): /v1/completions must END at a stop sequence

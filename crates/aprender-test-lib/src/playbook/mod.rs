@@ -38,6 +38,10 @@
 //!           selector: "#welcome"
 //! ```
 
+/// Real browser-backed executor. Before this, `ActionExecutor` had NO
+/// production implementation -- only `MockExecutor`, inside test modules.
+#[cfg(feature = "browser")]
+pub mod chromium_executor;
 pub mod complexity;
 pub mod executor;
 pub mod mutation;
@@ -46,6 +50,8 @@ pub mod schema;
 pub mod state_machine;
 
 // Re-export primary types
+#[cfg(feature = "browser")]
+pub use chromium_executor::ChromiumExecutor;
 pub use complexity::{check_complexity_violation, ComplexityAnalyzer, ComplexityResult};
 pub use executor::{
     ActionExecutor, AssertionFailure, ExecutionResult, ExecutorError, PlaybookExecutor,
