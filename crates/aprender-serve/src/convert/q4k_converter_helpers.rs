@@ -1,20 +1,58 @@
 
 impl GgufToAprQ4KConverter {
     /// Calculate byte size for a GGML tensor based on quantization type and element count.
-    fn ggml_tensor_byte_size_h(qtype: u32, num_elements: usize) -> usize {
-        match qtype {
-            0 => num_elements * 4,                     // F32
-            1 => num_elements * 2,                     // F16
-            2 => num_elements.div_ceil(32) * 18,       // Q4_0
-            3 => num_elements.div_ceil(32) * 20,       // Q4_1
-            6 => num_elements.div_ceil(32) * 22,       // Q5_0
-            7 => num_elements.div_ceil(32) * 24,       // Q5_1
-            8 => num_elements.div_ceil(32) * 34,       // Q8_0
-            12 => num_elements.div_ceil(256) * 144,    // Q4_K
-            13 => num_elements.div_ceil(256) * 176,    // Q5_K
-            14 => num_elements.div_ceil(256) * 210,    // Q6_K
-            _ => num_elements * 4,                     // Default to F32
-        }
+    ///
+    /// The result slices raw bytes out of the GGUF file (see the caller's bounds
+    /// check), so a wrong answer here is not cosmetic -- it either rejects a
+    /// valid file as out-of-bounds or copies past the tensor into the next one.
+    ///
+    /// This used to end in `_ => num_elements * 4, // Default to F32`, which
+    /// silently mis-sized every type absent from the list. Q2_K was the worst:
+    /// its real size is `div_ceil(256) * 84`, so the fallback claimed **12.2x**
+    /// too many bytes. BF16 was 2x. This crate already knew those numbers --
+    /// `gguf/metadata.rs` reads Q2_K with `SUPER_BLOCK_BYTES = 84` and Q3_K with
+    /// `110` -- so one crate, reading one file through two paths, disagreed with
+    /// itself about its own tensor sizes.
+    ///
+    /// An unknown type is now an ERROR. Guessing F32 is exactly the
+    /// silent-dtype-fallback F-DOD-005 bans, and the honest failure for a GGUF
+    /// we cannot size is to say so.
+    fn ggml_tensor_byte_size_h(qtype: u32, num_elements: usize) -> Result<usize> {
+        use crate::gguf::{
+            GGUF_TYPE_BF16, GGUF_TYPE_F16, GGUF_TYPE_F32, GGUF_TYPE_Q2_K, GGUF_TYPE_Q3_K,
+            GGUF_TYPE_Q4_0, GGUF_TYPE_Q4_1, GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_1,
+            GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0,
+        };
+        use crate::quantize::QK_K;
+
+        // Named, not bare numerals: these are the same super-block sizes
+        // gguf/metadata.rs reads with, and the two must not drift apart again.
+        const QK: usize = 32; // legacy (non-K) block size
+        let size = match qtype {
+            GGUF_TYPE_F32 => num_elements * 4,
+            GGUF_TYPE_F16 | GGUF_TYPE_BF16 => num_elements * 2,
+            GGUF_TYPE_Q4_0 => num_elements.div_ceil(QK) * 18,
+            GGUF_TYPE_Q4_1 => num_elements.div_ceil(QK) * 20,
+            GGUF_TYPE_Q5_0 => num_elements.div_ceil(QK) * 22,
+            GGUF_TYPE_Q5_1 => num_elements.div_ceil(QK) * 24,
+            GGUF_TYPE_Q8_0 => num_elements.div_ceil(QK) * 34,
+            GGUF_TYPE_Q2_K => num_elements.div_ceil(QK_K) * 84,
+            GGUF_TYPE_Q3_K => num_elements.div_ceil(QK_K) * 110,
+            GGUF_TYPE_Q4_K => num_elements.div_ceil(QK_K) * 144,
+            GGUF_TYPE_Q5_K => num_elements.div_ceil(QK_K) * 176,
+            GGUF_TYPE_Q6_K => num_elements.div_ceil(QK_K) * 210,
+            other => {
+                return Err(RealizarError::FormatError {
+                    reason: format!(
+                        "GGUF tensor uses ggml type {other}, whose byte size this converter \
+                         does not know. Refusing to guess: assuming F32 would mis-size the \
+                         tensor and read past it into the next one. Add the super-block size \
+                         for this type to ggml_tensor_byte_size_h."
+                    ),
+                })
+            }
+        };
+        Ok(size)
     }
 
     /// Helper to extract string from GGUF metadata
@@ -291,9 +329,9 @@ impl GgufToAprQ4KConverter {
             let num_elements: usize = shape.iter().product();
             let qtype = tensor_meta.qtype;
 
-            // Calculate byte size based on qtype (GGML dtype)
-            // GGML types: 0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 12=Q4_K, 13=Q5_K, 14=Q6_K
-            let byte_size = Self::ggml_tensor_byte_size_h(qtype, num_elements);
+            // Calculate byte size based on qtype (GGML dtype). Errors rather
+            // than guessing F32 for a type it does not know -- see the fn doc.
+            let byte_size = Self::ggml_tensor_byte_size_h(qtype, num_elements)?;
 
             // Extract raw bytes
             let tensor_start = gguf_model.tensor_data_start + tensor_meta.offset as usize;
