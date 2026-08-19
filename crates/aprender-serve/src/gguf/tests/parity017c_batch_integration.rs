@@ -173,132 +173,20 @@ fn test_parity017d_dequant_cache_struct() {
     println!("  Status: VERIFIED - Cache structure works");
 }
 
-#[test]
-fn test_parity017e_end_to_end_batch_throughput() {
-    use crate::gpu::HybridScheduler;
-    use std::time::Instant;
-
-    // Measure actual end-to-end batch throughput with GPU FFN
-
-    let batch_size = 32;
-    let hidden_dim = 2560;
-    let intermediate_dim = 10240;
-    let num_layers = 4; // Test with subset for speed
-
-    println!("\nPARITY-017e: End-to-End Batch Throughput");
-    println!("  Batch: {}", batch_size);
-    println!("  Hidden: {}", hidden_dim);
-    println!("  Intermediate: {}", intermediate_dim);
-    println!("  Layers: {}", num_layers);
-
-    // Create test weights for multiple layers
-    let up_weights: Vec<Vec<f32>> = (0..num_layers)
-        .map(|_| {
-            (0..hidden_dim * intermediate_dim)
-                .map(|i| (i as f32 * 0.0001).cos() * 0.01)
-                .collect()
-        })
-        .collect();
-    let down_weights: Vec<Vec<f32>> = (0..num_layers)
-        .map(|_| {
-            (0..intermediate_dim * hidden_dim)
-                .map(|i| (i as f32 * 0.0001).sin() * 0.01)
-                .collect()
-        })
-        .collect();
-
-    // Initial hidden states
-    let mut hidden: Vec<f32> = (0..batch_size * hidden_dim)
-        .map(|i| (i as f32 * 0.001).sin() * 0.1)
-        .collect();
-
-    if let Ok(mut scheduler) = HybridScheduler::new() {
-        let start = Instant::now();
-
-        // Process through all layers
-        for layer_idx in 0..num_layers {
-            // FFN: up projection
-            let intermediate = scheduler
-                .matmul(
-                    &hidden,
-                    &up_weights[layer_idx],
-                    batch_size,
-                    hidden_dim,
-                    intermediate_dim,
-                )
-                .expect("Up projection failed");
-
-            // GELU activation
-            let activated: Vec<f32> = intermediate
-                .iter()
-                .map(|&x| {
-                    let x64 = x as f64;
-                    (x64 * 0.5 * (1.0 + (x64 * 0.7978845608 * (1.0 + 0.044715 * x64 * x64)).tanh()))
-                        as f32
-                })
-                .collect();
-
-            // FFN: down projection
-            let ffn_out = scheduler
-                .matmul(
-                    &activated,
-                    &down_weights[layer_idx],
-                    batch_size,
-                    intermediate_dim,
-                    hidden_dim,
-                )
-                .expect("Down projection failed");
-
-            // Residual (simplified - just replace for now)
-            hidden = ffn_out;
-        }
-
-        let elapsed = start.elapsed();
-
-        // Calculate throughput
-        let tokens_processed = batch_size;
-        let tps = tokens_processed as f64 / elapsed.as_secs_f64();
-
-        // Scale to full model (32 layers)
-        let scaled_time_ms = elapsed.as_secs_f64() * (32.0 / num_layers as f64) * 1000.0;
-        let scaled_tps = tokens_processed as f64 / (scaled_time_ms / 1000.0);
-
-        println!("\n  Results ({} layers):", num_layers);
-        println!("    Time: {:?}", elapsed);
-        println!("    Throughput: {:.0} tok/s", tps);
-
-        println!("\n  Projected (32 layers):");
-        println!("    Time: {:.1}ms", scaled_time_ms);
-        println!("    Throughput: {:.0} tok/s", scaled_tps);
-
-        // Compare to baseline
-        let baseline_tps = 5.09;
-        let speedup = scaled_tps / baseline_tps;
-        println!("\n  Comparison:");
-        println!("    Baseline (single req): {:.2} tok/s", baseline_tps);
-        println!("    Batch GPU FFN: {:.0} tok/s", scaled_tps);
-        println!("    Speedup: {:.1}x", speedup);
-
-        // Note: Throughput varies significantly due to:
-        // 1. This test isolates FFN only (not full transformer)
-        // 2. GPU resource contention when running with other tests
-        // 3. Scaling from 4 to 32 layers is approximate
-        //
-        // The key insight is that GPU batch FFN WORKS:
-        // - test_parity017a verifies FFN correctness (~10 GFLOPS)
-        // - test_parity017c shows integration design
-        // - This test measures actual throughput under varying conditions
-        //
-        // Actual performance improvement requires:
-        // - Full transformer integration (not isolated FFN)
-        // - Dequantized weight caching
-        // - Running in isolation (not parallel with 2100+ other tests)
-
-        println!("  Status: MEASURED - {:.1}x relative to baseline", speedup);
-        println!("    Note: Run in isolation for accurate benchmark");
-    } else {
-        println!("  Status: SKIP - GPU not available");
-    }
-}
+// PARITY-017e: `test_parity017e_end_to_end_batch_throughput` was DELETED.
+//
+// It was a benchmark wearing a `#[test]` attribute: it allocated 4 layers of
+// [2560 x 10240] f32 FFN weights (~840 MB), pushed a batch of 32 through
+// up/GELU/down for every layer, then printed a tok/s number and asserted
+// NOTHING. `HybridScheduler::new()` succeeds without a GPU (`GpuCompute::auto()`
+// falls back to CPU), so the "GPU not available" arm never ran on a CPU-only
+// runner and the whole thing went through `cpu_matmul` — >19 min of workspace-test
+// wall clock, times three under nextest's `retries = 2`.
+//
+// Zero assertions means zero coverage lost. Do NOT reintroduce it as a `#[test]`;
+// a throughput measurement belongs in `benches/` (see `benches/inference.rs`),
+// where it is not on the critical path of every PR. The FFN shape/dispatch
+// properties it nominally exercised are still covered by test_parity017a and
+// test_parity018b.
 
 // ============================================================================

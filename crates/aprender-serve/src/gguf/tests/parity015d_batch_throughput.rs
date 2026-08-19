@@ -1,82 +1,16 @@
 
-/// Test PARITY-015d: End-to-end batch forward timing
-///
-/// Measures actual timing of batch forward pass components.
-#[test]
-fn test_parity015d_batch_forward_timing() {
-    use crate::gpu::HybridScheduler;
-
-    /// Timing breakdown for batch forward pass
-    struct ForwardTiming {
-        component: &'static str,
-        time_us: u64,
-        ops: u64,
-    }
-
-    impl ForwardTiming {
-        fn throughput_mops(&self) -> f64 {
-            if self.time_us > 0 {
-                self.ops as f64 / self.time_us as f64
-            } else {
-                0.0
-            }
-        }
-    }
-
-    // Simulate timing for phi-2 batch forward
-    let batch_size = 32;
-    let hidden_dim = 2560;
-    let intermediate_dim = 10240;
-    let num_layers = 32;
-
-    // Create test data
-    let input: Vec<f32> = vec![0.1; batch_size * hidden_dim];
-    let weight: Vec<f32> = vec![0.01; hidden_dim * intermediate_dim];
-
-    let mut timings = Vec::new();
-
-    // Time actual GPU matmul if available
-    if let Ok(mut scheduler) = HybridScheduler::new() {
-        let start = std::time::Instant::now();
-        let _ = scheduler.matmul(&input, &weight, batch_size, hidden_dim, intermediate_dim);
-        let elapsed = start.elapsed();
-
-        let ops = 2 * batch_size * hidden_dim * intermediate_dim;
-        timings.push(ForwardTiming {
-            component: "FFN Up (GPU/CPU)",
-            time_us: elapsed.as_micros() as u64,
-            ops: ops as u64,
-        });
-    }
-
-    println!("\nPARITY-015d: Batch Forward Timing Analysis");
-    println!("  Batch size: {}", batch_size);
-    println!("  Model: phi-2 ({} layers)", num_layers);
-
-    for timing in &timings {
-        println!(
-            "  {}: {}µs ({:.1} MOPS)",
-            timing.component,
-            timing.time_us,
-            timing.throughput_mops()
-        );
-    }
-
-    // Estimate full forward pass time
-    let ffn_time_us = timings.first().map_or(10000, |t| t.time_us);
-    let estimated_layer_us = ffn_time_us * 2; // up + down projections
-    let estimated_total_us = estimated_layer_us * num_layers as u64;
-    let estimated_total_ms = estimated_total_us as f64 / 1000.0;
-
-    let tokens_per_batch = batch_size;
-    let tps = tokens_per_batch as f64 / (estimated_total_ms / 1000.0);
-
-    println!("  Estimated per-layer: {}µs", estimated_layer_us);
-    println!("  Estimated total: {:.1}ms", estimated_total_ms);
-    println!("  Estimated TPS: {:.0} tok/s", tps);
-
-    println!("  Status: VERIFIED - Timing analysis complete");
-}
+// PARITY-015d: `test_parity015d_batch_forward_timing` was DELETED.
+//
+// It was a benchmark wearing a `#[test]` attribute: it ran a [32 x 2560] @
+// [2560 x 10240] matmul, discarded the result with `let _ =`, printed a MOPS
+// figure extrapolated to 32 layers, and asserted NOTHING — it could not fail
+// even if `matmul` returned `Err`. `HybridScheduler::new()` succeeds without a
+// GPU (`GpuCompute::auto()` falls back to CPU), so on a CPU-only runner this
+// went through `cpu_matmul` and cost minutes of workspace-test wall clock,
+// times three under nextest's `retries = 2`.
+//
+// Zero assertions means zero coverage lost. Do NOT reintroduce it as a `#[test]`;
+// a throughput measurement belongs in `benches/` (see `benches/inference.rs`).
 
 /// Test PARITY-015e: Integration verification
 ///
@@ -333,12 +267,29 @@ fn test_parity016b_dequant_weight_cache_integration() {
 #[test]
 fn test_parity016c_batch_ffn_with_scheduler() {
     use crate::gpu::HybridScheduler;
-    use std::time::Instant;
 
     // Actually run batch FFN through HybridScheduler
-    let batch_size = 32;
-    let hidden_dim = 2560;
-    let intermediate_dim = 10240;
+    //
+    // SCALED DOWN from phi-2 dimensions (batch 32, hidden 2560, intermediate 10240).
+    // This test asserts a SHAPE property of the batched up projection, and a shape
+    // property does not need production-sized tensors. At phi-2 size the matmul is
+    // 32*2560*10240 = 839M MACs; `HybridScheduler::new()` succeeds without a GPU
+    // (`GpuCompute::auto()` falls back to CPU), so on a CPU-only runner this ran
+    // through `cpu_matmul` and cost minutes of workspace-test wall clock — times
+    // three under nextest's `retries = 2`. These dimensions do the same work
+    // 1600x smaller.
+    //
+    // The dimensions are chosen so m*k*n stays ABOVE `HybridScheduler`'s
+    // `gpu_threshold` (64*64*64 = 262_144): 8*128*512 = 524_288, so the
+    // GPU-vs-CPU dispatch decision this test exercises (and prints) is UNCHANGED
+    // on a GPU-equipped host.
+    //
+    // The GFLOPS reporting was removed rather than rescaled: at this size the
+    // number is meaningless, and a printed rate invites someone to cite it.
+    // Benchmarks belong in `benches/`, not in `--lib` tests.
+    let batch_size = 8;
+    let hidden_dim = 128;
+    let intermediate_dim = 512;
 
     // Create input batch
     let input: Vec<f32> = (0..batch_size * hidden_dim)
@@ -360,41 +311,44 @@ fn test_parity016c_batch_ffn_with_scheduler() {
         println!("  Should use GPU: {}", should_use_gpu);
         println!("  GPU available: {}", scheduler.has_gpu());
 
-        // Time the matmul
-        let start = Instant::now();
         let result = scheduler.matmul(&input, &up_weight, batch_size, hidden_dim, intermediate_dim);
-        let elapsed = start.elapsed();
 
-        if let Ok(output) = result {
-            assert_eq!(
-                output.len(),
-                batch_size * intermediate_dim,
-                "PARITY-016c: Output should be [batch, intermediate]"
-            );
+        match result {
+            Ok(output) => {
+                assert_eq!(
+                    output.len(),
+                    batch_size * intermediate_dim,
+                    "PARITY-016c: Output should be [batch, intermediate]"
+                );
 
-            let gflops = (2.0 * batch_size as f64 * hidden_dim as f64 * intermediate_dim as f64)
-                / (elapsed.as_secs_f64() * 1e9);
+                println!("  Output shape: [{}x{}]", batch_size, intermediate_dim);
 
-            println!("  Output shape: [{}x{}]", batch_size, intermediate_dim);
-            println!("  Time: {:?}", elapsed);
-            println!("  GFLOPS: {:.2}", gflops);
+                // Apply GELU activation (element-wise)
+                let activated: Vec<f32> = output
+                    .iter()
+                    .map(|&x| {
+                        // Approximate GELU
+                        let x64 = x as f64;
+                        (x64
+                            * 0.5
+                            * (1.0 + (x64 * 0.7978845608 * (1.0 + 0.044715 * x64 * x64)).tanh()))
+                            as f32
+                    })
+                    .collect();
 
-            // Apply GELU activation (element-wise)
-            let activated: Vec<f32> = output
-                .iter()
-                .map(|&x| {
-                    // Approximate GELU
-                    let x64 = x as f64;
-                    (x64 * 0.5 * (1.0 + (x64 * 0.7978845608 * (1.0 + 0.044715 * x64 * x64)).tanh()))
-                        as f32
-                })
-                .collect();
-
-            // For full FFN, would do down projection here
-            println!("  GELU applied: {} elements", activated.len());
-            println!("  Status: VERIFIED - Batch FFN works");
-        } else {
-            println!("  Status: SKIP - Matmul failed (may be CPU fallback)");
+                // For full FFN, would do down projection here
+                println!("  GELU applied: {} elements", activated.len());
+                println!("  Status: VERIFIED - Batch FFN works");
+            },
+            Err(e) => {
+                // This arm used to `println!("SKIP")` and PASS, which made the
+                // assertion above unreachable for any defect surfacing as `Err`. The
+                // "may be CPU fallback" it used to claim was also false: the CPU
+                // fallback path is `cpu_matmul`, which returns `Ok` unconditionally.
+                // The input here is small and valid, so an `Err` is a real defect,
+                // not a capability gap.
+                panic!("PARITY-016c: matmul failed on valid input: {}", e);
+            },
         }
     } else {
         println!("  Status: SKIP - GPU not available");
