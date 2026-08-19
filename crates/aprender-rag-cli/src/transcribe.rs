@@ -93,20 +93,20 @@ fn run_transcription_or_report(
     prompt: Option<&str>,
     hotwords: &[String],
 ) -> Result<()> {
-    #[cfg(feature = "transcription")]
-    {
-        run_transcription_batch(to_process, jobs, model, backend, root, prompt, hotwords)?;
-    }
-    #[cfg(not(feature = "transcription"))]
-    {
-        let _ = (to_process, jobs, model, backend, root, prompt, hotwords);
-        println!(
-            "\nTranscription requires the 'transcription' feature.\n\
-             Build with: cargo build --release --features transcription\n\n\
-             {} files need transcription. Run with --dry-run to list them.",
-            to_process.len()
-        );
-    }
+    // The `transcription` feature and its implementation went with whisper-apr,
+    // which is a standalone project rather than part of this framework. The
+    // cfg blocks that used to live here referenced `aprender_rag::
+    // TranscriptionLoader`, which no longer exists, behind a feature no
+    // manifest declares -- so the code could never compile even if selected,
+    // while the cfg attribute itself tripped `unexpected_cfgs`
+    // under clippy's -D warnings.
+    let _ = (jobs, model, backend, root, prompt, hotwords);
+    println!(
+        "\nTranscription is not available in this build: it lives in the\n\
+         standalone whisper.apr project, not in aprender.\n\n\
+         {} files need transcription. Run with --dry-run to list them.",
+        to_process.len()
+    );
     Ok(())
 }
 
@@ -177,113 +177,5 @@ pub(crate) fn run_transcribe(
         elapsed.as_secs_f64(),
         media_files.len() as f64 / elapsed.as_secs_f64().max(0.001)
     );
-    Ok(())
-}
-
-/// Run transcription on a batch of media files (requires transcription feature).
-#[cfg(feature = "transcription")]
-fn run_transcription_batch(
-    files: &[PathBuf],
-    jobs: usize,
-    model: Option<&str>,
-    backend_type: BackendType,
-    root: &Path,
-    prompt: Option<&str>,
-    hotwords: &[String],
-) -> Result<()> {
-    use aprender_rag::{
-        DocumentLoader, TranscriptionBackend, TranscriptionConfig, TranscriptionLoader,
-    };
-    use rayon::prelude::*;
-    use std::sync::Mutex;
-
-    let backend = match backend_type {
-        BackendType::Cpu => TranscriptionBackend::Cpu,
-        BackendType::Gpu => TranscriptionBackend::Gpu,
-        BackendType::Cuda => TranscriptionBackend::Cuda,
-    };
-
-    let config = TranscriptionConfig {
-        model_path: model.map(PathBuf::from),
-        backend,
-        prompt: prompt.map(String::from),
-        hotwords: hotwords.to_vec(),
-        ..TranscriptionConfig::default()
-    };
-    let loader = TranscriptionLoader::new(config);
-
-    if loader.has_model() {
-        println!(
-            "\nWhisper model loaded. Transcribing {} files...",
-            files.len()
-        );
-    } else {
-        println!(
-            "\nNo model specified (use --model <path.apr>). \
-             Only files with sidecars will be loaded."
-        );
-    }
-
-    let batch_start = std::time::Instant::now();
-    let manifest = Mutex::new(TranscribeManifest::load(root));
-    let success = Mutex::new(0usize);
-    let errors = Mutex::new(0usize);
-
-    let process_file = |file: &PathBuf| {
-        let filename = file.file_name().and_then(|n| n.to_str()).unwrap_or("?");
-
-        match loader.load(file) {
-            Ok(_doc) => {
-                *success.lock().expect("success counter mutex poisoned") += 1;
-                manifest
-                    .lock()
-                    .expect("manifest mutex poisoned")
-                    .completed
-                    .push(file.to_string_lossy().to_string());
-                println!("  {} ... ok", filename);
-            }
-            Err(e) => {
-                *errors.lock().expect("error counter mutex poisoned") += 1;
-                manifest
-                    .lock()
-                    .expect("manifest mutex poisoned")
-                    .failed
-                    .push(file.to_string_lossy().to_string());
-                println!("  {} ... FAILED: {e}", filename);
-            }
-        }
-    };
-
-    if jobs > 1 {
-        println!("Using {} parallel transcription jobs", jobs);
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(jobs)
-            .build()
-            .context("Failed to create thread pool")?;
-        pool.install(|| {
-            files.par_iter().for_each(process_file);
-        });
-    } else {
-        files.iter().for_each(process_file);
-    }
-
-    // Final manifest save
-    let manifest = manifest.into_inner().expect("manifest mutex poisoned");
-    manifest.save(root)?;
-
-    let success = success
-        .into_inner()
-        .expect("success counter mutex poisoned");
-    let errors = errors.into_inner().expect("error counter mutex poisoned");
-    let elapsed = batch_start.elapsed();
-    println!(
-        "\nComplete: {} succeeded, {} failed out of {} total ({:.1}s, {:.1} files/sec)",
-        success,
-        errors,
-        files.len(),
-        elapsed.as_secs_f64(),
-        files.len() as f64 / elapsed.as_secs_f64().max(0.001),
-    );
-
     Ok(())
 }

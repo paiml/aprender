@@ -764,7 +764,9 @@ commands:
     description: "Discrete-event simulation (was the simular binary)"
     requires_model: false
     side_effects: [filesystem]
-    subcommands: [emc-check, emc-validate, list-emc, render, run, validate, verify]
+    # `version` comes from #2527's simular clap conversion, which the batch
+    # takes over #2493's. FALSIFY-CLI-006 caught the omission.
+    subcommands: [emc-check, emc-validate, list-emc, render, run, validate, verify, version]
 
   - name: cgp
     category: tools
