@@ -9,37 +9,53 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use super::args::RenderFormat;
-use super::output::{print_emc_report, print_emc_validation_results, print_experiment_result};
+use super::output::{
+    print_emc_report, print_emc_validation_results, print_experiment_result, print_help,
+    print_version,
+};
 use super::schema::validate_emc_schema;
-use super::{Args, Command};
+use super::{Cli, Commands};
 
 /// Main CLI entry point.
 ///
 /// Dispatches to the appropriate command handler based on parsed arguments.
+///
+/// There is no parse-failure arm: clap reports a bad argument itself, so a
+/// failure never reaches here as a value. The old `Command::Error(String)`
+/// variant turned a parse failure INTO a command, which is how unknown input
+/// used to reach a handler at all.
 #[must_use]
-pub fn run_cli(args: Args) -> ExitCode {
-    match args.command {
-        Command::Run {
+pub fn run_cli(cli: Cli) -> ExitCode {
+    match cli.into_command() {
+        Commands::Run {
             experiment_path,
             seed_override,
             verbose,
         } => run_experiment(&experiment_path, seed_override, verbose),
-        Command::Render {
+        Commands::Render {
             domain,
             format,
             output,
             fps,
             duration,
             seed,
-        } => render_svg(&domain, format, &output, fps, duration, seed),
-        Command::Validate { experiment_path } => validate_experiment(&experiment_path),
-        Command::Verify {
+        } => render_svg(&domain, &format, &output, fps, duration, seed),
+        Commands::Validate { experiment_path } => validate_experiment(&experiment_path),
+        Commands::Verify {
             experiment_path,
             runs,
         } => verify_reproducibility(&experiment_path, runs),
-        Command::EmcCheck { experiment_path } => emc_check(&experiment_path),
-        Command::EmcValidate { emc_path } => emc_validate(&emc_path),
-        Command::ListEmc => list_emc(),
+        Commands::EmcCheck { experiment_path } => emc_check(&experiment_path),
+        Commands::EmcValidate { emc_path } => emc_validate(&emc_path),
+        Commands::ListEmc => list_emc(),
+        Commands::Help => {
+            print_help();
+            ExitCode::SUCCESS
+        }
+        Commands::Version => {
+            print_version();
+            ExitCode::SUCCESS
+        }
     }
 }
 
@@ -378,7 +394,7 @@ pub fn emc_validate(path: &Path) -> ExitCode {
 
 /// Shared mutable state for frame rendering.
 struct RenderCtx<'a> {
-    format: RenderFormat,
+    format: &'a RenderFormat,
     output: &'a Path,
     svg: &'a mut crate::renderers::svg::SvgRenderer,
     keyframes: &'a mut crate::renderers::keyframes::KeyframeRecorder,
@@ -412,7 +428,7 @@ fn write_frame(
 /// Render a simulation to SVG frames or SVG + keyframes JSON.
 pub fn render_svg(
     domain: &str,
-    format: RenderFormat,
+    format: &RenderFormat,
     output: &Path,
     fps: u32,
     duration: f64,
@@ -467,7 +483,7 @@ pub fn render_svg(
         return ExitCode::from(1);
     }
 
-    if format == RenderFormat::SvgKeyframes {
+    if *format == RenderFormat::SvgKeyframes {
         let json = ctx.keyframes.to_json();
         let path = output.join("keyframes.json");
         if let Err(e) = std::fs::write(&path, &json) {

@@ -12,7 +12,8 @@ keywords = ["simulation", "physics", "monte-carlo", "optimization", "reproducibl
 categories = ["simulation", "science", "mathematics"]
 
 [dependencies]
-# Declarative CLI grammar -- see cli/args.rs for why hand-rolled parsing was removed
+# CLI argument parsing (declarative only — hand-rolled argv parsing is banned,
+# see scripts/check_no_hand_rolled_parsers.sh and src/cli/args.rs)
 clap = { workspace = true }
 
 # Serialization

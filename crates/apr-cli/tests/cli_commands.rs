@@ -94,7 +94,10 @@ fn registered_commands() -> Vec<&'static str> {
         "runs",
         "experiment",
         "showcase",
-        "probar",
+        // Renamed from "probar" (#2525). `apr probar` survives as a HIDDEN
+        // clap alias, and clap omits hidden aliases from --help -- so the
+        // name that must appear in this list is the visible one.
+        "test",
         "modelfile",
         "diagnose",
         "ollama-chat-lint",

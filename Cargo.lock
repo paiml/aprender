@@ -471,6 +471,7 @@ version = "0.63.0"
 dependencies = [
  "anyhow",
  "bashrs",
+ "clap",
  "colored 2.2.0",
  "regex",
  "serial_test",
@@ -1108,6 +1109,7 @@ name = "aprender-qa-certify"
 version = "0.63.0"
 dependencies = [
  "chrono",
+ "clap",
  "proptest",
  "serde",
  "thiserror 2.0.18",
@@ -1857,6 +1859,7 @@ name = "aprender-zram-generator"
 version = "0.63.0"
 dependencies = [
  "aprender-zram-core",
+ "clap",
  "serde",
  "thiserror 2.0.18",
  "toml 0.8.23",

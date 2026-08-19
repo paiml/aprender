@@ -204,9 +204,9 @@
     /// Test extract_model_paths: Probar returns file path (via tensor subcommand)
     #[test]
     fn test_extract_paths_probar() {
-        use ProbarSubcommand;
-        let cmd = Commands::Extended(ExtendedCommands::Probar {
-            command: ProbarSubcommand::Tensor {
+        use TestSubcommand;
+        let cmd = Commands::Extended(ExtendedCommands::Test {
+            command: TestSubcommand::Tensor {
                 file: PathBuf::from("model.apr"),
                 output: PathBuf::from("./probar-export"),
                 format: "both".to_string(),

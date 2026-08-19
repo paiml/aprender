@@ -25,7 +25,9 @@ pub struct BenchmarkArgs {
     pub algorithm: String,
 
     /// Data pattern (zero, random, text, mixed).
-    #[arg(short = 'p', long, default_value = "mixed")]
+    // Long-only: `-p` is taken by `pages` above. See the note in
+    // aprender-train-lora's `method` -- same defect, same crate family.
+    #[arg(long, default_value = "mixed")]
     pub pattern: String,
 }
 
