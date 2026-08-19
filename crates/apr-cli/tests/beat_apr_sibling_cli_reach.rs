@@ -351,25 +351,6 @@ const CGP_COMMANDS: &[&str] = &[
     "doctor", "compete",
 ];
 
-/// Top-level commands `apr-qa` declares.
-const QA_PLAYBOOK_COMMANDS: &[&str] = &[
-    "certify",
-    "run",
-    "tools",
-    "generate",
-    "score",
-    "report",
-    "list",
-    "lock-playbooks",
-    "tickets",
-    "parity",
-    "export-csv",
-    "export-evidence",
-    "bootstrap",
-    "validate-contract",
-    "kernel-coverage",
-];
-
 #[test]
 fn every_cgp_command_is_reachable_through_apr_cgp() {
     let help = help_body(&["cgp", "--help"]);
@@ -381,23 +362,6 @@ fn every_cgp_command_is_reachable_through_apr_cgp() {
     assert!(
         missing.is_empty(),
         "`apr cgp` does not offer {missing:?}\n{help}"
-    );
-    assert!(!help.contains("wharrgarbl"), "contains proves nothing here");
-}
-
-#[test]
-fn every_apr_qa_command_is_reachable_through_apr_qa_playbook() {
-    // Named `qa-playbook`, not `qa`: `apr qa` is already the falsifiable-gates
-    // command that takes a model path. Two different tools, two names.
-    let help = help_body(&["qa-playbook", "--help"]);
-    let missing: Vec<&str> = QA_PLAYBOOK_COMMANDS
-        .iter()
-        .copied()
-        .filter(|c| !help.contains(c))
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "`apr qa-playbook` does not offer {missing:?}\n{help}"
     );
     assert!(!help.contains("wharrgarbl"), "contains proves nothing here");
 }
@@ -425,33 +389,6 @@ fn apr_cgp_doctor_probes_the_real_machine() {
     assert!(
         body.contains("[OK]") || body.contains("[MISSING]"),
         "no probe reported a verdict, so nothing was actually checked.\n{body}"
-    );
-}
-
-#[test]
-fn apr_qa_playbook_list_reads_the_real_registry() {
-    let out = apr()
-        .args(["qa-playbook", "list"])
-        .output()
-        .expect("apr qa-playbook list");
-    assert!(
-        out.status.success(),
-        "apr qa-playbook list exited {:?}\nstderr: {}",
-        out.status.code(),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let body = String::from_utf8_lossy(&out.stdout);
-    let total = body
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("Total: "))
-        .and_then(|t| t.split_whitespace().next())
-        .and_then(|n| n.parse::<usize>().ok())
-        .unwrap_or_else(|| panic!("no `Total: N models` line in output:\n{body}"));
-    // Excludes the outcome where the registry loads but is empty -- which is how
-    // a scan reports clean having examined nothing.
-    assert!(
-        total > 0,
-        "the registry listed 0 models, so `list` proved nothing.\n{body}"
     );
 }
 
@@ -579,7 +516,9 @@ fn the_validated_tree_is_the_whole_tree() {
         "only {} top-level subcommands walked; the tree is truncated",
         top.len()
     );
-    for expected in ["rag", "zram", "sim", "cgp", "qa-playbook", "pv", "data"] {
+    // `qa-playbook` removed: it routed into aprender-qa-cli, which is
+    // `publish = false`, making apr-cli impossible to publish (#2539).
+    for expected in ["rag", "zram", "sim", "cgp", "pv", "data"] {
         assert!(top.contains(&expected), "{expected} missing from the tree");
     }
     // and the nested level, which is where both real collisions lived
