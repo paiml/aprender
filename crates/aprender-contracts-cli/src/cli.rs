@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::Subcommand;
 
 /// Available subcommands for the `pv` CLI
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone, Debug)]
 pub enum Commands {
     /// Explain a contract in detail
     Explain {

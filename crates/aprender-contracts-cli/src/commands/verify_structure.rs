@@ -89,11 +89,6 @@ pub fn run(
     Ok(())
 }
 
-fn check(label: &str, ok: bool) {
-    let icon = if ok { "✓" } else { "✗" };
-    println!("  {icon} {label}");
-}
-
 fn find_contract(dir: &Path, stem: &str) -> Option<std::path::PathBuf> {
     let direct = dir.join(format!("{stem}.yaml"));
     if direct.exists() {

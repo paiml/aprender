@@ -12,6 +12,8 @@
 // Allow common patterns in test code
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
+pub mod cli;
+
 use aprender_qa_gen::models::ModelMetadata;
 use aprender_qa_gen::{ModelId, ModelRegistry, ScenarioGenerator};
 use aprender_qa_report::{

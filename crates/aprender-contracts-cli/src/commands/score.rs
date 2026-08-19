@@ -11,6 +11,9 @@ use provable_contracts::scoring;
 use provable_contracts::scoring::drift;
 use provable_contracts::scoring::pvscore_10dim;
 use provable_contracts::scoring::{CodebaseScore, ContractScore, Grade, ScoringWeights};
+use serde_json::Value;
+
+use crate::json_obj::obj;
 
 #[allow(clippy::too_many_arguments)]
 pub fn run(
@@ -179,7 +182,7 @@ fn run_directory(
 
         match format {
             "json" => {
-                let output = serde_json::json!({ "codebase": codebase });
+                let output = obj([("codebase", serde_json::to_value(&codebase)?)]);
                 println!("{}", serde_json::to_string_pretty(&output)?);
             }
             "markdown" => {
@@ -224,12 +227,15 @@ fn print_directory_scores(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         "json" => {
-            let output = serde_json::json!({
-                "contracts": scores.len(),
-                "mean_score": mean,
-                "mean_grade": scoring::Grade::from_score(mean).to_string(),
-                "scores": scores,
-            });
+            let output = obj([
+                ("contracts", Value::from(scores.len())),
+                ("mean_score", Value::from(mean)),
+                (
+                    "mean_grade",
+                    Value::from(scoring::Grade::from_score(mean).to_string()),
+                ),
+                ("scores", serde_json::to_value(scores)?),
+            ]);
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
         "markdown" => {
@@ -278,11 +284,11 @@ fn print_summary_only(
     let grade = scoring::Grade::from_score(mean);
     match format {
         "json" => {
-            let output = serde_json::json!({
-                "contracts": scores.len(),
-                "mean_score": mean,
-                "mean_grade": grade.to_string(),
-            });
+            let output = obj([
+                ("contracts", Value::from(scores.len())),
+                ("mean_score", Value::from(mean)),
+                ("mean_grade", Value::from(grade.to_string())),
+            ]);
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
         "markdown" => {

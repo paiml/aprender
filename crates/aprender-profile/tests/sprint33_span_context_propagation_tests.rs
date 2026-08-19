@@ -11,7 +11,7 @@ use assert_cmd::Command;
 /// Test 1: --trace-parent CLI flag is accepted
 #[test]
 fn test_trace_parent_cli_flag_accepted() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -30,7 +30,7 @@ fn test_trace_parent_cli_flag_accepted() {
 /// Test 2: Valid traceparent format is parsed correctly
 #[test]
 fn test_trace_parent_valid_format() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -56,7 +56,7 @@ fn test_trace_parent_valid_format() {
 /// Test 3: Invalid traceparent format falls back to new root trace
 #[test]
 fn test_trace_parent_invalid_format_fallback() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -83,7 +83,7 @@ fn test_trace_parent_invalid_format_fallback() {
 /// Test 4: All-zero trace-id is rejected
 #[test]
 fn test_trace_parent_all_zero_trace_id() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -110,7 +110,7 @@ fn test_trace_parent_all_zero_trace_id() {
 /// Test 5: All-zero parent-id is rejected
 #[test]
 fn test_trace_parent_all_zero_parent_id() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -137,7 +137,7 @@ fn test_trace_parent_all_zero_parent_id() {
 /// Test 6: Invalid version is rejected
 #[test]
 fn test_trace_parent_invalid_version() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -164,7 +164,7 @@ fn test_trace_parent_invalid_version() {
 /// Test 7: Backward compatibility - works without trace context
 #[test]
 fn test_backward_compatibility_no_trace_context() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -185,7 +185,7 @@ fn test_backward_compatibility_no_trace_context() {
 /// Test 8: trace-parent requires otlp-endpoint
 #[test]
 fn test_trace_parent_requires_otlp() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--trace-parent")
         .arg("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
@@ -206,7 +206,7 @@ fn test_trace_parent_requires_otlp() {
 /// Test 9: Sampled flag (01) is detected
 #[test]
 fn test_trace_parent_sampled_flag_set() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -229,7 +229,7 @@ fn test_trace_parent_sampled_flag_set() {
 /// Test 10: Not sampled flag (00) is detected
 #[test]
 fn test_trace_parent_not_sampled_flag() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -252,7 +252,7 @@ fn test_trace_parent_not_sampled_flag() {
 /// Test 11: Combine with statistics mode
 #[test]
 fn test_trace_parent_with_statistics() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -276,7 +276,7 @@ fn test_trace_parent_with_statistics() {
 /// Test 12: Combine with source correlation
 #[test]
 fn test_trace_parent_with_source() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -300,7 +300,7 @@ fn test_trace_parent_with_source() {
 /// Test 13: Combine with timing mode
 #[test]
 fn test_trace_parent_with_timing() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -324,7 +324,7 @@ fn test_trace_parent_with_timing() {
 /// Test 14: Combine with filtering
 #[test]
 fn test_trace_parent_with_filtering() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -349,7 +349,7 @@ fn test_trace_parent_with_filtering() {
 /// Test 15: Combine with compute tracing (Sprint 32)
 #[test]
 fn test_trace_parent_with_compute_tracing() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -375,7 +375,7 @@ fn test_trace_parent_with_compute_tracing() {
 /// Test 16: Combine with transpiler decision tracing (Sprint 31)
 #[test]
 fn test_trace_parent_with_decision_tracing() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")
@@ -399,7 +399,7 @@ fn test_trace_parent_with_decision_tracing() {
 /// Test 17: Full observability stack (all Sprint 30-33 features)
 #[test]
 fn test_trace_parent_full_observability_stack() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg("http://localhost:4317")

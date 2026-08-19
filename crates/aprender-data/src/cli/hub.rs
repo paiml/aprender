@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use clap::Subcommand;
 
 /// Import source options.
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum ImportSource {
     /// Import from a local file (CSV, JSON, JSONL, Parquet, Arrow)
     Local {
@@ -81,7 +81,7 @@ pub(crate) fn cmd_import_local(
 
 /// HuggingFace Hub commands.
 #[cfg(feature = "hf-hub")]
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum HubCommands {
     /// Push (upload) a dataset to HuggingFace Hub
     #[allow(clippy::doc_markdown)]

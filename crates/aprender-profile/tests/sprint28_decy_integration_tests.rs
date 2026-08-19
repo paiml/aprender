@@ -35,7 +35,7 @@ fn test_c_source_language_accepted() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("true");
 
     cmd.assert().success();
@@ -63,7 +63,7 @@ fn test_c_source_with_function_time() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--function-time").arg("--").arg("true");
 
     cmd.assert()
@@ -101,7 +101,7 @@ fn test_c_source_with_line_mappings() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--rewrite-stacktrace").arg("--").arg("true");
 
     cmd.assert()
@@ -139,7 +139,7 @@ fn test_c_source_with_context() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--function-time")
@@ -182,7 +182,7 @@ fn test_c_source_with_rewrite_errors() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--rewrite-errors").arg("--").arg("true");
 
     cmd.assert().success();
@@ -209,7 +209,7 @@ fn test_c_source_with_statistics() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("-c").arg("--").arg("echo").arg("test");
 
     cmd.assert().success();
@@ -241,7 +241,7 @@ fn test_c_decy_temp_variables() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--function-time").arg("--").arg("true");
 
     cmd.assert().success();
@@ -277,7 +277,7 @@ fn test_c_source_all_flags() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--function-time")
@@ -309,7 +309,7 @@ fn test_c_source_empty_mappings() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("true");
 
     cmd.assert().success();
@@ -344,7 +344,7 @@ fn test_c_header_file_source() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--function-time").arg("--").arg("true");
 
     cmd.assert().success().stdout(predicate::str::contains("types.h"));

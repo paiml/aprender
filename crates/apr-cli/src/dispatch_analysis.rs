@@ -121,8 +121,8 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         // GH-876 Milestone 1: Probar is now a subcommand container.
         // The existing flat-args behavior moved under `apr probar tensor <FILE>`.
-        ExtendedCommands::Probar { command } => match command {
-            ProbarSubcommand::Tensor {
+        ExtendedCommands::Test { command } => match command {
+            TestSubcommand::Tensor {
                 file,
                 output,
                 format,
@@ -368,6 +368,116 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             ))),
         },
 
+        _ => return dispatch_analysis_commands_rest(cli),
+    };
+    Some(result)
+}
+
+/// Run one alimentar command through `alimentar::cli::dispatch` -- the SAME
+/// function the standalone binary calls, so `apr data x <cmd>` and
+/// `alimentar <cmd>` cannot drift.
+///
+/// The command is re-parsed from argv rather than moved out of the parsed value:
+/// the apr dispatch chain takes `&Cli`, and alimentar's arg types are not all
+/// Clone. Anchored on the `data`/`x` PAIR, not a fixed index -- a first version
+/// used fixed indices, ate the subcommand, and every invocation failed with
+/// "unrecognized subcommand <path>".
+fn dispatch_alimentar_passthrough(
+    cmd: &alimentar::cli::Commands,
+) -> std::result::Result<(), CliError> {
+    let raw: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    let start = raw
+        .windows(2)
+        .position(|w| w[0] == *"data" && w[1] == *"x")
+        .map(|p| p + 2)
+        .ok_or_else(|| {
+            CliError::ValidationFailed("could not locate `data x` in the command line".to_string())
+        })?;
+    let mut argv: Vec<std::ffi::OsString> = vec![raw[0].clone()];
+    argv.extend_from_slice(&raw[start..]);
+    let _ = cmd;
+    let code =
+        alimentar::cli::dispatch(<alimentar::cli::Cli as clap::Parser>::parse_from(argv).command);
+    if code == std::process::ExitCode::SUCCESS {
+        Ok(())
+    } else {
+        Err(CliError::ValidationFailed(
+            "alimentar command failed".to_string(),
+        ))
+    }
+}
+
+fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Result<(), CliError> {
+    match command {
+        DataCommands::Alimentar(cmd) => dispatch_alimentar_passthrough(cmd),
+        DataCommands::Audit {
+            file,
+            num_classes,
+            input_column,
+            label_column,
+            preamble_prefix,
+        } => data::run_audit(
+            file,
+            *num_classes,
+            input_column,
+            label_column,
+            preamble_prefix.as_deref(),
+            json,
+        ),
+        DataCommands::Split {
+            file,
+            train,
+            val,
+            test,
+            label_column,
+            seed,
+            output,
+        } => data::run_split(file, label_column, *train, *val, *test, *seed, output, json),
+        DataCommands::Balance {
+            file,
+            strategy,
+            label_column,
+            num_classes,
+            seed,
+            output,
+        } => data::run_balance(
+            file,
+            label_column,
+            strategy,
+            *num_classes,
+            *seed,
+            output.as_deref(),
+            json,
+        ),
+        DataCommands::Decontaminate {
+            file,
+            reference,
+            ngram,
+            threshold,
+            json: json_flag,
+        } => data::run_decontaminate(file, reference, *ngram, *threshold, *json_flag || json),
+        DataCommands::Dedup {
+            file,
+            output,
+            json: json_flag,
+        } => data::run_dedup(file, output, *json_flag || json),
+    }
+}
+
+/// Second half of the `apr` extended-command match.
+///
+/// `dispatch_analysis_commands` carried all 56 arms at cognitive complexity 35
+/// against a threshold of 25 -- measured identical on origin/main -- so the
+/// pre-commit gate rejected EVERY change to this file regardless of content. It
+/// had blocked three unrelated commits before this one. Split with a tail call
+/// rather than an `if let` guard: the guard form costs as much complexity as the
+/// arms it removes, which is why an earlier attempt moved the number the wrong
+/// way (35 -> 34 after extracting 40 arms).
+fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
+    let Commands::Extended(ref ext) = *cli.command.as_ref() else {
+        return None;
+    };
+    let result = match ext {
         ExtendedCommands::OtlpLint {
             otlp_file,
             require_apr_span,
@@ -806,62 +916,6 @@ fn dispatch_experiment_command(
 }
 
 /// Dispatch `apr data` subcommands to alimentar-backed implementations.
-fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Result<(), CliError> {
-    match command {
-        DataCommands::Audit {
-            file,
-            num_classes,
-            input_column,
-            label_column,
-            preamble_prefix,
-        } => data::run_audit(
-            file,
-            *num_classes,
-            input_column,
-            label_column,
-            preamble_prefix.as_deref(),
-            json,
-        ),
-        DataCommands::Split {
-            file,
-            train,
-            val,
-            test,
-            label_column,
-            seed,
-            output,
-        } => data::run_split(file, label_column, *train, *val, *test, *seed, output, json),
-        DataCommands::Balance {
-            file,
-            strategy,
-            label_column,
-            num_classes,
-            seed,
-            output,
-        } => data::run_balance(
-            file,
-            label_column,
-            strategy,
-            *num_classes,
-            *seed,
-            output.as_deref(),
-            json,
-        ),
-        DataCommands::Decontaminate {
-            file,
-            reference,
-            ngram,
-            threshold,
-            json: json_flag,
-        } => data::run_decontaminate(file, reference, *ngram, *threshold, *json_flag || json),
-        DataCommands::Dedup {
-            file,
-            output,
-            json: json_flag,
-        } => data::run_dedup(file, output, *json_flag || json),
-    }
-}
-
 #[cfg(feature = "training")]
 /// Dispatch `apr train` subcommands to entrenar-backed implementations.
 #[provable_contracts_macros::contract(

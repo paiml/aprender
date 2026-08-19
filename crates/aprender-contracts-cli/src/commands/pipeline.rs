@@ -1,6 +1,9 @@
 use std::path::Path;
 
 use provable_contracts::pipeline::{self, IssueSeverity};
+use serde_json::Value;
+
+use crate::json_obj::obj;
 
 /// Run the `pv pipeline` command: validate a pipeline contract.
 pub fn run(path: &Path, format: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -106,28 +109,37 @@ fn print_json(pipeline: &pipeline::PipelineContract, issues: &[pipeline::Pipelin
         .iter()
         .filter(|i| i.severity == IssueSeverity::Warning)
         .count();
-    let issue_arr: Vec<serde_json::Value> = issues
+    let issue_arr: Vec<Value> = issues
         .iter()
         .map(|i| {
-            serde_json::json!({
-                "severity": match i.severity {
-                    IssueSeverity::Error => "error",
-                    IssueSeverity::Warning => "warning",
-                },
-                "message": i.message,
-            })
+            obj([
+                (
+                    "severity",
+                    Value::from(match i.severity {
+                        IssueSeverity::Error => "error",
+                        IssueSeverity::Warning => "warning",
+                    }),
+                ),
+                ("message", Value::from(i.message.clone())),
+            ])
         })
         .collect();
 
-    let output = serde_json::json!({
-        "description": pipeline.metadata.description,
-        "version": pipeline.metadata.version,
-        "stage_count": pipeline.stages.len(),
-        "obligation_count": pipeline.cross_boundary_obligations.len(),
-        "error_count": error_count,
-        "warning_count": warning_count,
-        "issues": issue_arr,
-    });
+    let output = obj([
+        (
+            "description",
+            Value::from(pipeline.metadata.description.clone()),
+        ),
+        ("version", Value::from(pipeline.metadata.version.clone())),
+        ("stage_count", Value::from(pipeline.stages.len())),
+        (
+            "obligation_count",
+            Value::from(pipeline.cross_boundary_obligations.len()),
+        ),
+        ("error_count", Value::from(error_count)),
+        ("warning_count", Value::from(warning_count)),
+        ("issues", Value::Array(issue_arr)),
+    ]);
 
     println!(
         "{}",

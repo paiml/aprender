@@ -8,7 +8,7 @@ use serde::Serialize;
 use trueno_zram_core::zram::{format_size, SysfsOps, ZramOps};
 
 /// Arguments for status command.
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct StatusArgs {
     /// Specific device to show (omit for all devices).
     #[arg(short, long)]
@@ -28,6 +28,9 @@ struct StatusOutput {
 }
 
 /// Show zram device status.
+///
+/// # Errors
+/// Returns an error if zram device state cannot be read.
 pub fn status(args: &StatusArgs, format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
     let ops = SysfsOps::new();
 

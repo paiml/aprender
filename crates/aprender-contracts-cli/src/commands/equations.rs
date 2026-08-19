@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::str::FromStr;
 
 use provable_contracts::latex::{latex_escape, math_to_latex};
 use provable_contracts::schema::{parse_contract, Contract, Equation};
@@ -16,9 +17,11 @@ pub enum OutputFormat {
     Asm,
 }
 
-impl OutputFormat {
+impl FromStr for OutputFormat {
+    type Err = String;
+
     /// Parse a format name string into an `OutputFormat` variant
-    pub fn from_str(s: &str) -> Result<Self, String> {
+    fn from_str(s: &str) -> Result<Self, String> {
         match s {
             "text" => Ok(Self::Text),
             "latex" => Ok(Self::Latex),

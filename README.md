@@ -41,10 +41,10 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **78** workspace crates | `cargo metadata --no-deps` (NOT `ls crates/` — 4 are `exclude`d, 1 has no Cargo.toml) |
-| Provable contracts | **1772** provable contracts | `find contracts/ -name '*.yaml'` |
-| CLI commands | **105** CLI commands | `apr --help` |
-| Book CLI chapters | **105** chapters | `ls book/src/cli/*.md` (parity with CLI) |
-| Book lib chapters | **69** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
+| Provable contracts | **1778** provable contracts | `find contracts/ -name '*.yaml'` |
+| CLI commands | **111** CLI commands | `apr --help` |
+| Book CLI chapters | **113** chapters | `ls book/src/cli/*.md` |
+| Book lib chapters | **71** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
 
 These numbers are enforced by [`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml).
 Drift between this table and live repo state fails `bash scripts/check_readme_claims.sh`
@@ -212,7 +212,7 @@ paiml/aprender/
 ├── Cargo.toml                      # Workspace root + `cargo install aprender`
 ├── crates/
 │   ├── aprender-core/              # ML library (use aprender::*)
-│   ├── apr-cli/                    # CLI logic (105 subcommands)
+│   ├── apr-cli/                    # CLI logic (111 subcommands)
 │   ├── aprender-compute/           # SIMD/GPU compute kernels
 │   ├── aprender-gpu/               # CUDA PTX
 │   ├── aprender-serve/             # Inference server
@@ -222,7 +222,7 @@ paiml/aprender/
 │   ├── aprender-profile/           # Profiling
 │   ├── aprender-db/ aprender-graph/ aprender-rag/
 │   └── ... (82 crates total)
-├── contracts/                      # 1772 provable YAML contracts
+├── contracts/                      # 1778 provable YAML contracts
 └── book/                           # mdBook documentation
 ```
 
@@ -253,7 +253,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1772 contracts across inference, training, quantization, attention, FFN,
+1778 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates

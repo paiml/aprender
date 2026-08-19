@@ -205,16 +205,6 @@ fn execute_inference(
         );
     }
 
-    // GH-516: Whisper speech recognition — detect audio input + whisper model
-    #[cfg(feature = "whisper")]
-    if let Some(input) = input_path {
-        let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let is_audio = matches!(ext, "wav" | "mp3" | "flac" | "ogg" | "m4a");
-        if is_audio {
-            return execute_with_whisper(model_path, input, options);
-        }
-    }
-
     // Try realizar inference if feature enabled
     #[cfg(feature = "inference")]
     {
@@ -391,58 +381,6 @@ fn execute_with_realizar(
         used_gpu: Some(result.used_gpu),
         generated_tokens,
         token_texts,
-    })
-}
-
-/// GH-516: Execute whisper speech recognition using our own whisper-apr crate.
-/// Zero external deps — whisper.apr is our implementation.
-#[cfg(feature = "whisper")]
-fn execute_with_whisper(
-    model_path: &Path,
-    audio_path: &Path,
-    options: &RunOptions,
-) -> Result<InferenceOutput> {
-    use whisper_apr::audio::decode::load_audio_file;
-
-    let start = std::time::Instant::now();
-
-    if options.verbose {
-        eprintln!("[WHISPER] Loading model: {}", model_path.display());
-        eprintln!("[WHISPER] Audio input: {}", audio_path.display());
-    }
-
-    // Load audio
-    let audio = load_audio_file(audio_path)
-        .map_err(|e| CliError::InferenceFailed(format!("Audio load failed: {e}")))?;
-
-    if options.verbose {
-        eprintln!("[WHISPER] Audio: {} samples ({:.1}s at 16kHz)", audio.len(), audio.len() as f64 / 16000.0);
-    }
-
-    // Load model from .apr file
-    let model_data = std::fs::read(model_path)?;
-    let whisper = whisper_apr::WhisperApr::load_from_apr(&model_data)
-        .map_err(|e| CliError::InferenceFailed(format!("Whisper model load failed: {e}")))?;
-
-    if options.verbose {
-        eprintln!("[WHISPER] Model loaded, transcribing...");
-    }
-
-    // Transcribe — handles mel extraction + encoder + decoder internally
-    let result = whisper.transcribe(&audio, Default::default())
-        .map_err(|e| CliError::InferenceFailed(format!("Transcription failed: {e}")))?;
-
-    let duration = start.elapsed();
-
-    let word_count = result.text.split_whitespace().count();
-    Ok(InferenceOutput {
-        text: result.text,
-        tokens_generated: Some(word_count),
-        inference_ms: Some(duration.as_secs_f64() * 1000.0),
-        tok_per_sec: Some(word_count as f64 / duration.as_secs_f64()),
-        used_gpu: Some(false),
-        generated_tokens: None,
-        token_texts: None,
     })
 }
 

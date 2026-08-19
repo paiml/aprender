@@ -31,8 +31,6 @@ default = []
 embeddings = ["aprender-rag/embeddings"]
 # Enable NVIDIA Embed Nemotron 8B support (GH-3)
 nemotron = ["aprender-rag/nemotron"]
-# Enable GPU-accelerated transcription via aprender (GH-2)
-transcription = ["aprender-rag/transcription"]
 # LLM-as-judge evaluation via Anthropic API (PMAT-015)
 eval = ["aprender-rag/eval"]
 # SQLite+FTS5 index export (PMAT-017)

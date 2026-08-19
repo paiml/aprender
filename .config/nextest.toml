@@ -1,15 +1,41 @@
 # cargo-nextest CI profile
-# Deployed from paiml/infra — do not edit manually.
+# Deployed from paiml/infra — CHANGED HERE deliberately; fold back upstream.
 # Spec: docs/specifications/unified-ci-pipeline.md
-
+#
+# `slow-warning` was not a nextest key. nextest does not reject an unknown key,
+# it prints `ignoring unknown configuration key: profile.ci.slow-warning` and
+# carries on -- so this profile had NO per-test timeout at all, and the warning
+# sat unread in every workspace-test log. Consequence, merge_group job
+# 95162862834 for #2502:
+#
+#     12:50:58  Starting 80806 tests across 69 binaries
+#     13:36:07  ##[error]The operation was canceled.
+#
+# 45 minutes inside nextest, killed by the JOB's `timeout-minutes: 85`, naming
+# no test; the queue entry was evicted 31 seconds later. `check_nextest_config_keys.sh`
+# now fails on any key nextest ignores.
 [profile.ci]
 retries = 2
 fail-fast = true
-slow-warning = "60s"
-status-level = "fail"
+# Measured on an idle 48-core box, 80806 tests, 353s wall: slowest single test
+# is 202.7s (aprender-orchestrate bug_hunter::test_bh_mod_001_hunt_all_modes),
+# only 2 tests exceed 120s and NONE exceeds 300s. terminate-after = 20 periods
+# = 1200s is ~6x the slowest real test, so it cannot kill a legitimately slow
+# one, while a genuine hang dies at 20 minutes WITH A NAME instead of taking
+# the whole 85-minute job down anonymously.
+slow-timeout = { period = "60s", terminate-after = 20 }
+# Must be "slow", not "fail". nextest's status levels are ordered
+#   none < fail < retry < slow < pass < all
+# so "fail" is BELOW "slow" and suppresses the SLOW lines entirely. Measured on
+# a probe crate: status-level="fail" emits 0 SLOW lines, "slow" emits 3. Setting
+# the timeout above without this would fix the kill and keep hiding the warning
+# that precedes it.
+status-level = "slow"
 
 [profile.ci.junit]
-path = "target/nextest/ci/junit.xml"
+# Relative to the store dir (target/nextest/<profile>/), NOT to the workspace
+# root -- the old value produced target/nextest/ci/target/nextest/ci/junit.xml.
+path = "junit.xml"
 store-success-output = false
 store-failure-output = true
 
