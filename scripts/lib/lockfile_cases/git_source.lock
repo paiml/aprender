@@ -1,0 +1,4 @@
+[[package]]
+name = "git-thing"
+version = "0.1.0"
+source = "git+https://example.invalid/x#abc"

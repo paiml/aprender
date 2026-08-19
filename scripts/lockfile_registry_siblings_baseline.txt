@@ -1,0 +1,7 @@
+aprender
+batuta-common
+provable-contracts-macros
+realizar
+renacer-core
+trueno
+trueno-quant
