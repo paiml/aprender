@@ -74,8 +74,12 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             )
         }
         Commands::Sim(command) => {
-            let code = simular::cli::run_cli(simular::cli::Args {
-                command: command.clone(),
+            // #2493 and #2527 each converted simular to clap independently and
+            // chose different type names; the batch takes #2527's (richer case
+            // table, and it owns the parser ban). Its root is `Cli` with an
+            // Option<Commands>, not `Args` with a bare `command`.
+            let code = simular::cli::run_cli(simular::cli::Cli {
+                command: Some(command.clone()),
             });
             Some(if code == std::process::ExitCode::SUCCESS {
                 Ok(())

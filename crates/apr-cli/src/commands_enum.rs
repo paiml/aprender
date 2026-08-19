@@ -812,8 +812,16 @@ pub enum Commands {
 
     /// Discrete-event simulation: run, render, validate, verify, emc-check
     /// (was the `simular` binary)
-    #[command(subcommand)]
-    Sim(simular::cli::Command),
+    // disable_help_subcommand: simular's `Commands` carries an explicit `Help`
+    // variant. Standalone that is fine -- its own `Cli` sets
+    // disable_help_subcommand = true, so clap does not also generate one. That
+    // attribute lives on `Cli`, which apr never constructs: it embeds the
+    // `Commands` enum directly, so clap's auto-`help` came back and collided:
+    //     Command sim: command name `help` is duplicated
+    // clap's duplicate check is #[cfg(debug_assertions)], so a release build
+    // would have SHIPPED the ambiguity instead of panicking.
+    #[command(subcommand, disable_help_subcommand = true)]
+    Sim(simular::cli::Commands),
 
     /// Compute-graph profiling: profile, bench, roofline, doctor
     /// (was the `aprender-cgp` binary)
