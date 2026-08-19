@@ -47,23 +47,48 @@ measured_contract_count() {
 }
 
 measured_cli_command_count() {
-  # Count subcommands in `apr --help` output at HEAD (not a stale
-  # `cargo install aprender` binary on PATH — that reflects a prior
-  # crates.io version, which may differ from the repo's current state).
+  # Counted from the COMMAND CONTRACT, not by building and running apr.
   #
-  # Use `cargo run --quiet -p apr-cli --bin apr` so the number tracks
-  # the committed source. Slow on cold build; fast after dev-profile warm.
+  # This used to be `cargo run --quiet -p apr-cli --bin apr -- --help`. Two
+  # problems, both of which bit on 2026-08-19:
   #
-  # `help` is EXCLUDED. clap generates it automatically; it is not one of
-  # apr's commands, has no chapter, no contract and no implementation in
-  # crates/apr-cli/src/commands/. Counting it made this check report 104
-  # against a README claiming 103 - the README was right and this function
-  # was off by exactly clap's freebie.
-  local subcmd_line_re='^  [a-z][-a-z0-9]* '
-  (cd "$REPO_ROOT" && cargo run --quiet -p apr-cli --bin apr -- --help 2>&1) \
-    | grep -E "$subcmd_line_re" \
-    | grep -vE '^  help( |$)' \
-    | wc -l | tr -d ' '
+  #   1. ci.yml runs this script in a bare `run:` step whose own comment says
+  #      "Text-only, no build." A full `cargo run` of apr-cli is not text-only:
+  #      it took 14 minutes in guard-runner-labels and then failed, and cargo is
+  #      not reliably on PATH for raw run: steps on these runners (the same
+  #      note appears in coverage-nightly.yml).
+  #   2. When it failed, the caller did `|| return $?` with NO message, so the
+  #      job went red printing nothing at all for FALSIFY-README-003 -- between
+  #      a PASS for 002 and a PASS for 004. A red gate with no stated reason.
+  #
+  # The contract is the designated registry for this surface
+  # (contracts/apr-cli-commands-v1.yaml, §commands), and its equivalence to the
+  # real binary is ALREADY enforced elsewhere: FALSIFY-CLI-001 asserts every
+  # listed command responds to --help, FALSIFY-CLI-002 asserts every command in
+  # `apr --help` is listed. Those run in `cargo test -p apr-cli --test
+  # cli_commands`, gated on ci.yml's integration line. So reading the contract
+  # here preserves the guarantee and drops the build; if the two ever diverge,
+  # CLI-001/002 fail, which is where that defect belongs.
+  #
+  # Parse the YAML. `grep -c '^  - name:'` reports 111 because other same-indent
+  # `name:` keys exist in the file -- the contract says so in its own prose.
+  #
+  # `help` is EXCLUDED, as before: clap generates it automatically, it is not
+  # one of apr's commands and has no chapter, contract or implementation.
+  # Counting it once made this check report 104 against a README claiming 103 --
+  # the README was right and this function was off by exactly clap's freebie.
+  # The contract does not list `help`, so this is now true by construction.
+  python3 -c '
+import sys, yaml
+with open(sys.argv[1]) as fh:
+    doc = yaml.safe_load(fh)
+cmds = doc.get("commands") or []
+names = {c.get("name") for c in cmds if isinstance(c, dict) and c.get("name")}
+names.discard("help")
+if not names:
+    sys.exit(1)          # empty parse is a FAILED measurement, never a zero count
+print(len(names))
+' "$REPO_ROOT/contracts/apr-cli-commands-v1.yaml"
 }
 
 measured_cookbook_link_present() {
@@ -150,15 +175,27 @@ check_contract_count() {
 }
 
 check_cli_command_count() {
-  local measured claimed
-  measured=$(measured_cli_command_count) || return $?
+  local measured claimed rc
+  # Never swallow a failed measurement. The previous form was
+  #     measured=$(measured_cli_command_count) || return $?
+  # which returned SILENTLY -- no PASS, no FAIL, no diagnostic -- so a broken
+  # measurement produced a red job with nothing printed for this check at all.
+  # A measurement that cannot run is its own failure mode and must say so.
+  measured=$(measured_cli_command_count); rc=$?
+  if [[ "$rc" -ne 0 || -z "$measured" ]]; then
+    echo "FAIL FALSIFY-README-003 cli_command_count: MEASUREMENT FAILED (rc=$rc) —" \
+         "could not count commands in contracts/apr-cli-commands-v1.yaml." \
+         "This is a broken check, not a README drift; do not 'fix' the README." >&2
+    return 1
+  fi
   claimed=$(claimed_cli_command_count)
   if [[ -z "$claimed" ]]; then
     echo "FAIL FALSIFY-README-003 cli_command_count: README lacks '**K** CLI commands' claim" >&2
     return 1
   fi
   if [[ "$measured" != "$claimed" ]]; then
-    echo "FAIL FALSIFY-README-003 cli_command_count: README claims $claimed, apr --help lists $measured" >&2
+    echo "FAIL FALSIFY-README-003 cli_command_count: README claims $claimed," \
+         "contracts/apr-cli-commands-v1.yaml lists $measured commands" >&2
     return 1
   fi
   echo "PASS FALSIFY-README-003 cli_command_count: $measured"

@@ -547,7 +547,12 @@ jobs:
       # contracts` and took `head -1`, while the README carried THREE different
       # contract counts (1771 in the table, 1158 at line 225, 1767 at line 256).
       # It now checks every contract-count claim, so the README cannot contradict
-      # itself either. Text-only, no build.
+      # itself either. Text-only, no build -- and as of 2026-08-19 that is
+      # actually true: the CLI-count check used to `cargo run -p apr-cli` from
+      # this bare (non-container) step, which took 14 minutes and then failed,
+      # since cargo is not reliably on PATH for raw run: steps here. It now
+      # reads contracts/apr-cli-commands-v1.yaml, whose equivalence to the real
+      # binary is enforced by FALSIFY-CLI-001/002 in the integration line.
       - name: README claims must match measurement
         run: bash scripts/check_readme_claims.sh
 
