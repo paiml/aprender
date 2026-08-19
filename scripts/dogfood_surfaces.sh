@@ -433,7 +433,16 @@ surface_http() {
         # "probar is not built" when it was merely not looked for. Ask cargo.
         probar=$(printf '%s\n' "${ARTIFACTS:-}" | grep -E '/aprender-test-cli$' | head -1)
         if [ -z "$probar" ]; then
+            # --features llm is REQUIRED, not optional. `Commands::Llm` is
+            # declared with no #[cfg], so clap advertises `llm` and renders its
+            # --help either way; only the HANDLER is gated. Building without
+            # the feature therefore yields a binary that parses `llm test`
+            # and then returns "LLM features not enabled", which this sweep
+            # used to report as a FAILED probe -- blaming the server for a gap
+            # in the harness, the very thing the config comment below warns
+            # against.
             probar=$(cargo build -p aprender-test-cli --bin aprender-test-cli \
+                        --features llm \
                         --message-format=json 2>/dev/null | python3 -c '
 import json,sys
 for line in sys.stdin:
@@ -446,11 +455,14 @@ for line in sys.stdin:
         if [ -z "$probar" ] || [ ! -x "$probar" ]; then
             bad "probar (aprender-test-cli) could not be built; endpoint probe unavailable"
         else
-            # `probar llm test` requires --config <CONFIG>; there is no
-            # committed config for it yet. A missing INPUT is a skip with a
-            # reason, not a failure -- reporting FAIL here would blame the
-            # server for a gap in this harness. Authoring that config is the
-            # remaining work to make this probe real.
+            # `probar llm test` requires --config <CONFIG>. That config now
+            # EXISTS (tests/fixtures/probar-llm-endpoint.yaml), so default to
+            # it rather than skipping: a probe that never runs is not a probe.
+            # An explicit DOGFOOD_PROBAR_CONFIG still wins. A missing INPUT is
+            # still a skip with a reason, never a failure -- reporting FAIL
+            # would blame the server for a gap in this harness.
+            : "${DOGFOOD_PROBAR_CONFIG:=${REPO_ROOT}/tests/fixtures/probar-llm-endpoint.yaml}"
+            [ -f "${DOGFOOD_PROBAR_CONFIG}" ] || DOGFOOD_PROBAR_CONFIG=""
             if [ -n "${DOGFOOD_PROBAR_CONFIG:-}" ]; then
                 out=$("$probar" llm test --config "$DOGFOOD_PROBAR_CONFIG" \
                                           --url "$DOGFOOD_LIVE_SERVER" 2>&1); rc=$?
