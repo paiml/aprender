@@ -775,13 +775,6 @@ commands:
     side_effects: [filesystem]
     subcommands: [baseline, bench, compete, contract, diff, doctor, explain, profile, roofline, trace, tui]
 
-  - name: qa-playbook
-    category: tools
-    description: "Model QA playbook runner (was the apr-qa binary)"
-    requires_model: false
-    side_effects: [filesystem]
-    subcommands: [bootstrap, certify, export-csv, export-evidence, generate, kernel-coverage, list, lock-playbooks, parity, report, run, score, tickets, tools, validate-contract]
-
   - name: pv
     category: tools
     description: "Provable-contracts CLI (also ships as the standalone pv binary)"

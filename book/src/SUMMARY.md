@@ -354,7 +354,6 @@
 - [apr publish](./cli/publish.md)
 - [apr pull](./cli/pull.md)
 - [apr pv](./cli/pv.md)
-- [apr qa-playbook](./cli/qa-playbook.md)
 - [apr qa](./cli/qa.md)
 - [apr qualify](./cli/qualify.md)
 - [apr quant-preservation-lint](./cli/quant-preservation-lint.md)
