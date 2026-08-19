@@ -13,6 +13,7 @@ use crate::edd::{
     FalsificationCriterionResult, FalsificationSummary, ReproducibilitySummary,
     VerificationSummary, VerificationTestSummary,
 };
+use clap::Parser;
 use std::path::PathBuf;
 
 // ============================================================================
@@ -20,51 +21,44 @@ use std::path::PathBuf;
 // ============================================================================
 
 #[test]
-fn test_parse_no_args_shows_help() {
-    let args = Args::parse_from(["simular"]);
-    assert_eq!(args.command, Command::Help);
+fn test_parse_no_args_is_an_error_not_a_help_value() {
+    // The hand-rolled parser returned Command::Help here, deferring the failure
+    // to whoever remembered to match on it. clap fails at the parse boundary.
+    let err = Args::try_parse_from(["simular"]).expect_err("no subcommand must fail");
+    assert_eq!(
+        err.kind(),
+        clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+    );
 }
 
 #[test]
 fn test_parse_help_flag() {
-    let args = Args::parse_from(["simular", "-h"]);
-    assert_eq!(args.command, Command::Help);
+    for flag in ["-h", "--help"] {
+        let err = Args::try_parse_from(["simular", flag]).expect_err("help exits via Err");
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::DisplayHelp,
+            "{flag} must render help"
+        );
+    }
 }
 
 #[test]
-fn test_parse_help_long_flag() {
-    let args = Args::parse_from(["simular", "--help"]);
-    assert_eq!(args.command, Command::Help);
-}
-
-#[test]
-fn test_parse_help_command() {
-    let args = Args::parse_from(["simular", "help"]);
-    assert_eq!(args.command, Command::Help);
+fn test_parse_help_subcommand() {
+    let err = Args::try_parse_from(["simular", "help"]).expect_err("help exits via Err");
+    assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
 }
 
 #[test]
 fn test_parse_version_flag() {
-    let args = Args::parse_from(["simular", "-V"]);
-    assert_eq!(args.command, Command::Version);
-}
-
-#[test]
-fn test_parse_version_long_flag() {
-    let args = Args::parse_from(["simular", "--version"]);
-    assert_eq!(args.command, Command::Version);
-}
-
-#[test]
-fn test_parse_version_command() {
-    let args = Args::parse_from(["simular", "version"]);
-    assert_eq!(args.command, Command::Version);
-}
-
-#[test]
-fn test_parse_unknown_command() {
-    let args = Args::parse_from(["simular", "unknown-cmd"]);
-    assert!(matches!(args.command, Command::Error(ref msg) if msg.contains("Unknown command")));
+    for flag in ["-V", "--version"] {
+        let err = Args::try_parse_from(["simular", flag]).expect_err("version exits via Err");
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::DisplayVersion,
+            "{flag} must render the version"
+        );
+    }
 }
 
 #[test]
@@ -138,8 +132,8 @@ fn test_parse_run_command_with_all_options() {
 
 #[test]
 fn test_parse_run_command_missing_path() {
-    let args = Args::parse_from(["simular", "run"]);
-    assert_eq!(args.command, Command::Help);
+    let err = Args::try_parse_from(["simular", "run"]).expect_err("path is required");
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
 }
 
 #[test]
@@ -154,37 +148,60 @@ fn test_parse_subcommand_help_flags() {
     ];
     for sub in subs {
         for flag in ["--help", "-h"] {
-            let a = Args::parse_from(["simular", sub, flag]);
-            assert_eq!(a.command, Command::Help, "{sub} {flag}");
+            let err = Args::try_parse_from(["simular", sub, flag]).expect_err("help exits via Err");
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::DisplayHelp,
+                "{sub} {flag}"
+            );
         }
     }
 }
 
 #[test]
 fn test_parse_run_command_seed_edge_cases() {
-    // Missing value and invalid value both result in None seed
-    for argv in [
-        vec!["simular", "run", "experiment.yaml", "--seed"],
-        vec![
-            "simular",
-            "run",
-            "experiment.yaml",
-            "--seed",
-            "not-a-number",
-        ],
-    ] {
-        match Args::parse_from(argv).command {
-            Command::Run { seed_override, .. } => assert_eq!(seed_override, None),
-            _ => panic!("Expected Run command"),
-        }
+    // This test previously ASSERTED the defect: its own comment read "Missing
+    // value and invalid value both result in None seed". A mistyped --seed
+    // silently fell back to the experiment default, in the one flag that pins
+    // reproducibility. Both forms are now hard parse errors.
+    let err = Args::try_parse_from(["simular", "run", "experiment.yaml", "--seed"])
+        .expect_err("--seed without a value must fail");
+    assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+
+    let err = Args::try_parse_from([
+        "simular",
+        "run",
+        "experiment.yaml",
+        "--seed",
+        "not-a-number",
+    ])
+    .expect_err("--seed with a non-numeric value must fail");
+    assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+
+    // Control: a well-formed seed still parses, so the two assertions above
+    // are about the BAD input and not about --seed being broken outright.
+    match Args::try_parse_from(["simular", "run", "experiment.yaml", "--seed", "7"])
+        .expect("a valid seed must parse")
+        .command
+    {
+        Command::Run { seed_override, .. } => assert_eq!(seed_override, Some(7)),
+        other => panic!("Expected Run command, got {other:?}"),
     }
 }
 
 #[test]
 fn test_parse_run_command_unknown_flag() {
-    let args = Args::parse_from(["simular", "run", "experiment.yaml", "--unknown"]);
-    // Unknown flags are ignored
-    match args.command {
+    // Was: "Unknown flags are ignored" -- so `--verbse` did nothing, silently.
+    let err = Args::try_parse_from(["simular", "run", "experiment.yaml", "--unknown"])
+        .expect_err("an unknown flag must fail");
+    assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+
+    // Control: the same invocation without the bogus flag still parses, so the
+    // assertion above is about the FLAG, not about `run` being broken.
+    match Args::try_parse_from(["simular", "run", "experiment.yaml"])
+        .expect("a well-formed run must parse")
+        .command
+    {
         Command::Run {
             experiment_path, ..
         } => {
@@ -222,18 +239,26 @@ fn test_parse_verify_command_with_runs() {
 
 #[test]
 fn test_parse_verify_command_missing_path() {
-    let args = Args::parse_from(["simular", "verify"]);
-    assert_eq!(args.command, Command::Help);
+    let err = Args::try_parse_from(["simular", "verify"]).expect_err("path is required");
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
 }
 
 #[test]
 fn test_parse_verify_command_runs_without_value() {
-    let args = Args::parse_from(["simular", "verify", "experiment.yaml", "--runs"]);
-    match args.command {
-        Command::Verify { runs, .. } => {
-            assert_eq!(runs, 3); // default when value missing
-        }
-        _ => panic!("Expected Verify command"),
+    // Was: "default when value missing" -- i.e. `--runs` with no value silently
+    // ran 3 verifications instead of failing.
+    let err = Args::try_parse_from(["simular", "verify", "experiment.yaml", "--runs"])
+        .expect_err("--runs without a value must fail");
+    assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+
+    // Control: --runs is honoured wherever it appears, which the old
+    // position-sensitive parser did not manage.
+    match Args::try_parse_from(["simular", "verify", "experiment.yaml", "--runs", "5"])
+        .expect("valid --runs must parse")
+        .command
+    {
+        Command::Verify { runs, .. } => assert_eq!(runs, 5),
+        other => panic!("Expected Verify command, got {other:?}"),
     }
 }
 
@@ -250,8 +275,8 @@ fn test_parse_emc_check_command() {
 
 #[test]
 fn test_parse_emc_check_missing_path() {
-    let args = Args::parse_from(["simular", "emc-check"]);
-    assert_eq!(args.command, Command::Help);
+    let err = Args::try_parse_from(["simular", "emc-check"]).expect_err("path is required");
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
 }
 
 #[test]
@@ -267,8 +292,8 @@ fn test_parse_emc_validate_command() {
 
 #[test]
 fn test_parse_emc_validate_missing_path() {
-    let args = Args::parse_from(["simular", "emc-validate"]);
-    assert_eq!(args.command, Command::Help);
+    let err = Args::try_parse_from(["simular", "emc-validate"]).expect_err("path is required");
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
 }
 
 #[test]
@@ -286,9 +311,9 @@ fn test_args_clone() {
 
 #[test]
 fn test_command_debug() {
-    let cmd = Command::Help;
+    let cmd = Command::ListEmc;
     let debug_str = format!("{cmd:?}");
-    assert!(debug_str.contains("Help"));
+    assert!(debug_str.contains("ListEmc"));
 }
 
 // ============================================================================
@@ -570,8 +595,6 @@ fn test_args_equality() {
 
 #[test]
 fn test_command_equality() {
-    assert_eq!(Command::Help, Command::Help);
-    assert_eq!(Command::Version, Command::Version);
     assert_eq!(Command::ListEmc, Command::ListEmc);
 
     let run1 = Command::Run {
@@ -615,14 +638,19 @@ fn test_command_equality() {
 
 #[test]
 fn test_command_inequality() {
-    assert_ne!(Command::Help, Command::Version);
-
     let run = Command::Run {
         experiment_path: PathBuf::from("test.yaml"),
         seed_override: None,
         verbose: false,
     };
-    assert_ne!(run, Command::Help);
+    assert_ne!(run, Command::ListEmc);
+
+    let run_other_seed = Command::Run {
+        experiment_path: PathBuf::from("test.yaml"),
+        seed_override: Some(1),
+        verbose: false,
+    };
+    assert_ne!(run, run_other_seed, "seed must participate in equality");
 }
 
 // ============================================================================
@@ -635,19 +663,9 @@ use super::commands::{
 };
 use std::process::ExitCode;
 
-#[test]
-fn test_run_cli_help() {
-    let args = Args::parse_from(["simular", "help"]);
-    let exit = run_cli(args);
-    assert_eq!(exit, ExitCode::SUCCESS);
-}
-
-#[test]
-fn test_run_cli_version() {
-    let args = Args::parse_from(["simular", "version"]);
-    let exit = run_cli(args);
-    assert_eq!(exit, ExitCode::SUCCESS);
-}
+// `help` and `version` are no longer run_cli's business: clap renders both and
+// terminates at the parse boundary, so there is no Command value to dispatch.
+// Their coverage lives in test_parse_help_flag / test_parse_version_flag.
 
 #[test]
 fn test_run_cli_list_emc() {

@@ -2,6 +2,7 @@
 //!
 //! Minimal entry point. All logic is in the `cli` module.
 
+use clap::Parser;
 use simular::cli::{run_cli, Args};
 use std::process::ExitCode;
 

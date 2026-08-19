@@ -224,6 +224,17 @@ dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
 alimentar = { workspace = true }
+# APR-MONO: the ONE binary must reach every capability. These two crates each
+# shipped their whole command surface behind a separate binary (trueno-rag,
+# trueno-zram) that nothing could import; apr now dispatches into the SAME
+# `dispatch` fn those binaries call, so the surfaces cannot drift.
+aprender-rag-cli = { workspace = true }
+aprender-zram-cli = { workspace = true }
+# simular: hand-rolled parser, wired as a verbatim passthrough (apr sim ...)
+simular = { workspace = true }
+aprender-qa-cli = { workspace = true }
+aprender-cgp = { workspace = true }
+aprender-contracts-cli = { workspace = true }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }

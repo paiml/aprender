@@ -6,7 +6,7 @@ use clap::Args;
 use trueno_zram_core::zram::{format_size, parse_size, SysfsOps, ZramConfig, ZramOps};
 
 /// Arguments for creating a zram device.
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct CreateArgs {
     /// Device number (0-16).
     #[arg(short, long, default_value = "0", value_parser = clap::value_parser!(u32).range(0..=16))]
@@ -26,6 +26,9 @@ pub struct CreateArgs {
 }
 
 /// Create and configure a zram device.
+///
+/// # Errors
+/// Returns an error if the zram device cannot be created or configured.
 pub fn create(args: &CreateArgs) -> Result<(), Box<dyn std::error::Error>> {
     let size_bytes = parse_size(&args.size)?;
 

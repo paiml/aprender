@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// Federated split coordination commands.
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum FedCommands {
     /// Generate a manifest from local dataset (runs on each node)
     Manifest {

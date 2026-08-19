@@ -9,10 +9,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use super::args::RenderFormat;
-use super::output::{
-    print_emc_report, print_emc_validation_results, print_experiment_result, print_help,
-    print_version,
-};
+use super::output::{print_emc_report, print_emc_validation_results, print_experiment_result};
 use super::schema::validate_emc_schema;
 use super::{Args, Command};
 
@@ -34,7 +31,7 @@ pub fn run_cli(args: Args) -> ExitCode {
             fps,
             duration,
             seed,
-        } => render_svg(&domain, &format, &output, fps, duration, seed),
+        } => render_svg(&domain, format, &output, fps, duration, seed),
         Command::Validate { experiment_path } => validate_experiment(&experiment_path),
         Command::Verify {
             experiment_path,
@@ -43,19 +40,6 @@ pub fn run_cli(args: Args) -> ExitCode {
         Command::EmcCheck { experiment_path } => emc_check(&experiment_path),
         Command::EmcValidate { emc_path } => emc_validate(&emc_path),
         Command::ListEmc => list_emc(),
-        Command::Help => {
-            print_help();
-            ExitCode::SUCCESS
-        }
-        Command::Version => {
-            print_version();
-            ExitCode::SUCCESS
-        }
-        Command::Error(msg) => {
-            eprintln!("Error: {msg}");
-            print_help();
-            ExitCode::FAILURE
-        }
     }
 }
 
@@ -394,7 +378,7 @@ pub fn emc_validate(path: &Path) -> ExitCode {
 
 /// Shared mutable state for frame rendering.
 struct RenderCtx<'a> {
-    format: &'a RenderFormat,
+    format: RenderFormat,
     output: &'a Path,
     svg: &'a mut crate::renderers::svg::SvgRenderer,
     keyframes: &'a mut crate::renderers::keyframes::KeyframeRecorder,
@@ -428,7 +412,7 @@ fn write_frame(
 /// Render a simulation to SVG frames or SVG + keyframes JSON.
 pub fn render_svg(
     domain: &str,
-    format: &RenderFormat,
+    format: RenderFormat,
     output: &Path,
     fps: u32,
     duration: f64,
@@ -483,7 +467,7 @@ pub fn render_svg(
         return ExitCode::from(1);
     }
 
-    if *format == RenderFormat::SvgKeyframes {
+    if format == RenderFormat::SvgKeyframes {
         let json = ctx.keyframes.to_json();
         let path = output.join("keyframes.json");
         if let Err(e) = std::fs::write(&path, &json) {

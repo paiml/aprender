@@ -11,7 +11,7 @@ fn contracts_dir() -> PathBuf {
 
 #[test]
 fn dispatch_query_semantic() {
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "softmax".to_string(),
         contract_dir: contracts_dir(),
         regex: false,
@@ -51,7 +51,7 @@ fn dispatch_query_semantic() {
 
 #[test]
 fn dispatch_query_literal() {
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "RMSNorm".to_string(),
         contract_dir: contracts_dir(),
         regex: false,
@@ -91,7 +91,7 @@ fn dispatch_query_literal() {
 
 #[test]
 fn dispatch_query_with_score() {
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "attention".to_string(),
         contract_dir: contracts_dir(),
         regex: false,
@@ -131,7 +131,7 @@ fn dispatch_query_with_score() {
 
 #[test]
 fn dispatch_query_with_proof_status() {
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "softmax".to_string(),
         contract_dir: contracts_dir(),
         regex: false,
@@ -173,7 +173,7 @@ fn dispatch_query_with_proof_status() {
 fn dispatch_query_with_binding() {
     let binding =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts/aprender/binding.yaml");
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "softmax".to_string(),
         contract_dir: contracts_dir(),
         regex: false,
@@ -213,7 +213,7 @@ fn dispatch_query_with_binding() {
 
 #[test]
 fn dispatch_query_markdown_format() {
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "rmsnorm".to_string(),
         contract_dir: contracts_dir(),
         regex: false,
@@ -253,7 +253,7 @@ fn dispatch_query_markdown_format() {
 
 #[test]
 fn dispatch_query_exit_code_success() {
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "softmax".to_string(),
         contract_dir: contracts_dir(),
         regex: false,
@@ -293,7 +293,7 @@ fn dispatch_query_exit_code_success() {
 
 #[test]
 fn dispatch_query_exit_code_no_match() {
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "zzz_nonexistent_query_zzz".to_string(),
         contract_dir: contracts_dir(),
         regex: false,
@@ -333,7 +333,7 @@ fn dispatch_query_exit_code_no_match() {
 
 #[test]
 fn dispatch_query_min_level() {
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "softmax".to_string(),
         contract_dir: contracts_dir(),
         regex: false,
@@ -373,7 +373,7 @@ fn dispatch_query_min_level() {
 
 #[test]
 fn dispatch_query_tier_filter() {
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "kernel".to_string(),
         contract_dir: contracts_dir(),
         regex: false,
@@ -413,7 +413,7 @@ fn dispatch_query_tier_filter() {
 
 #[test]
 fn dispatch_query_class_filter() {
-    let result = run_command(Commands::Query(query_args::QueryArgs {
+    let result = dispatch(Commands::Query(query_args::QueryArgs {
         query: "attention".to_string(),
         contract_dir: contracts_dir(),
         regex: false,

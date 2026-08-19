@@ -39,12 +39,36 @@ fn get_actual_gemm_timing(size: u32) -> Option<(f64, f64)> {
         .and_then(parse_benchmark_line)
 }
 
+/// Locate the cargo target directory the same way `apr_bin.sh` does: ask
+/// cargo, never construct. `/mnt/nvme-raid0/targets/trueno` was the
+/// pre-APR-MONO name and is empty on every checkout since the consolidation;
+/// `./target` assumes CWD-relative resolution, which the dev box's
+/// `.cargo/config.toml` target-dir redirect breaks (it is gitignored, so it
+/// exists in the main checkout and not in a worktree).
+pub(crate) fn cargo_target_dir() -> Option<String> {
+    let output =
+        std::process::Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
+            .args(["metadata", "--no-deps", "--format-version", "1"])
+            .output()
+            .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).ok()?;
+    json.get("target_directory")?.as_str().map(str::to_string)
+}
+
 /// Locate and execute the benchmark_matrix_suite binary; returns stdout on success.
 fn run_benchmark_suite() -> Option<String> {
-    let candidates = [
-        "/mnt/nvme-raid0/targets/trueno/release/examples/benchmark_matrix_suite",
-        "./target/release/examples/benchmark_matrix_suite",
-    ];
+    let target_dir = cargo_target_dir();
+    let owned_candidate =
+        target_dir.map(|d| format!("{d}/release/examples/benchmark_matrix_suite"));
+    let candidates: Vec<&str> = owned_candidate
+        .as_deref()
+        .into_iter()
+        .chain(["./target/release/examples/benchmark_matrix_suite"])
+        .collect();
     let binary_path = candidates
         .iter()
         .find(|p| std::path::Path::new(p).exists())?;

@@ -37,6 +37,19 @@ fn parse_ngram_size(raw: &str) -> Result<usize, String> {
 /// Thin CLI wrappers around alimentar's data utilities.
 #[derive(Subcommand, Debug)]
 pub enum DataCommands {
+    /// Every alimentar data command: convert, info, head, schema, mix, fim,
+    /// filter-text, view, import, hub, registry, drift, quality, fed, doctest,
+    /// extract, merge.
+    ///
+    /// APR-MONO consolidated alimentar in-tree, but its capability stayed
+    /// reachable only through the standalone `alimentar` binary -- `apr data`
+    /// shipped 5 commands against alimentar's 20, so 18 had no route through
+    /// `apr` at all. This dispatches the SAME `alimentar::cli::dispatch`, so
+    /// there is one implementation behind two names rather than a second clap
+    /// tree that can drift from the first.
+    #[command(subcommand, name = "x")]
+    Alimentar(alimentar::cli::Commands),
+
     /// Audit a JSONL classification dataset for quality issues
     Audit {
         /// Path to JSONL data file

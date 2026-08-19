@@ -801,6 +801,35 @@ pub enum Commands {
     #[cfg(feature = "dev")]
     #[command(subcommand)]
     Mono(crate::commands::mono::MonoCommands),
+
+    /// RAG pipeline: index, query, transcribe (was the `trueno-rag` binary)
+    #[command(subcommand)]
+    Rag(aprender_rag_cli::Commands),
+
+    /// zram device management (was the `trueno-zram` binary)
+    #[command(subcommand)]
+    Zram(aprender_zram_cli::Commands),
+
+    /// Discrete-event simulation: run, render, validate, verify, emc-check
+    /// (was the `simular` binary)
+    #[command(subcommand)]
+    Sim(simular::cli::Command),
+
+    /// Compute-graph profiling: profile, bench, roofline, doctor
+    /// (was the `aprender-cgp` binary)
+    #[command(subcommand)]
+    Cgp(cgp::cli::Commands),
+
+    /// Model QA playbook runner: certify, run, score, parity
+    /// (was the `apr-qa` binary; `apr qa` is the falsifiable-gates command)
+    #[command(name = "qa-playbook", subcommand)]
+    QaPlaybook(aprender_qa_cli::cli::Commands),
+
+    /// Provable-contracts: validate, lint, score, kani, proof-status
+    /// (the `pv` binary keeps shipping under its own name; this is the
+    /// in-apr route to the same commands)
+    #[command(subcommand)]
+    Pv(aprender_contracts_cli::cli::Commands),
 }
 
 /// Subcommands for `apr debug` (aprender#2377 finding 3).
