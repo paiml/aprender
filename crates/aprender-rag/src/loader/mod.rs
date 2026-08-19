@@ -25,15 +25,11 @@
 mod image;
 mod subtitle;
 mod text;
-#[cfg(feature = "transcription")]
-pub mod transcription;
 
 #[cfg(feature = "ocr")]
 pub use image::ImageLoader;
 pub use subtitle::SubtitleLoader;
 pub use text::TextLoader;
-#[cfg(feature = "transcription")]
-pub use transcription::TranscriptionLoader;
 
 use crate::{Document, Error, Result};
 use std::path::Path;
