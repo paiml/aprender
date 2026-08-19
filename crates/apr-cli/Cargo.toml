@@ -124,10 +124,6 @@ batuta = { version = "0.63.0", path = "../aprender-orchestrate", package = "apre
 # GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s
 realizar = { workspace = true, optional = true }
 
-# Whisper speech recognition (GH-516: apr run --input audio.wav)
-# Zero external deps — our own implementation in ../whisper.apr
-# GH-344: path dep via .cargo/config.toml.dev-overrides when available
-
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
 # 2026-04-05 PMAT-507: bumped 0.16.0→0.17 to match aprender root Cargo.toml (was diamond dep)
