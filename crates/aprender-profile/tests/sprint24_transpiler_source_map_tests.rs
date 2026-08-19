@@ -36,7 +36,7 @@ fn test_transpiler_map_flag_accepted() {
     fs::write(&source_map, map_content).expect("test");
 
     // Test that --transpiler-map flag is accepted
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("echo").arg("test");
 
     // Should not error on flag parsing
@@ -89,7 +89,7 @@ fn test_transpiler_map_basic_parsing() {
     fs::write(&source_map, map_content).expect("test");
 
     // Run with source map
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("echo").arg("test");
 
     cmd.assert().success();
@@ -107,7 +107,7 @@ fn test_transpiler_map_invalid_json() {
     // Create invalid JSON
     fs::write(&source_map, "{ this is not valid json }").expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("echo").arg("test");
 
     cmd.assert().failure().stderr(predicate::str::contains("Invalid source map JSON"));
@@ -119,7 +119,7 @@ fn test_transpiler_map_invalid_json() {
 
 #[test]
 fn test_transpiler_map_missing_file() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg("/nonexistent/path/to/map.json")
         .arg("--")
@@ -152,7 +152,7 @@ fn test_transpiler_map_function_name_lookup() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("echo").arg("test");
 
     cmd.assert().success();
@@ -192,7 +192,7 @@ fn test_transpiler_map_line_number_lookup() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("echo").arg("test");
 
     cmd.assert().success();
@@ -228,7 +228,7 @@ fn test_transpiler_map_with_tracing() {
     fs::write(&source_map, map_content).expect("test");
 
     // Test that tracing still works with source map loaded
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("echo").arg("hello");
 
     cmd.assert().success().stdout(predicate::str::contains("write("));
@@ -253,7 +253,7 @@ fn test_transpiler_map_empty_mappings() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("true");
 
     cmd.assert().success();
@@ -288,7 +288,7 @@ fn test_transpiler_map_python_source() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("echo").arg("test");
 
     cmd.assert().success();
@@ -311,7 +311,7 @@ fn test_transpiler_map_missing_required_fields() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("echo").arg("test");
 
     cmd.assert().failure().stderr(predicate::str::contains("Invalid source map"));
@@ -336,7 +336,7 @@ fn test_transpiler_map_unsupported_version() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("echo").arg("test");
 
     cmd.assert().failure().stderr(predicate::str::contains("Unsupported source map version"));

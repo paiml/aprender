@@ -11,43 +11,58 @@ use tempfile::TempDir;
 
 #[test]
 fn test_realtime_anomaly_detects_slow_syscall() {
-    // Test that --anomaly-realtime detects and reports slow syscalls in real-time
+    // The detector builds a PER-SYSCALL baseline and flags samples >3 sigma from
+    // it. The original fixture slept 50ms via nanosleep and asserted an anomaly
+    // -- but clock_nanosleep occurs exactly ONCE, so there is no baseline for it
+    // to deviate from, and it could never be flagged. The test passed only when
+    // unrelated microsecond jitter on `write` happened to exceed 3 sigma, which
+    // is why it was flaky and why its comment already read "increased for test
+    // stability".
+    //
+    // Fixed by giving the anomaly a baseline: many small writes establish one,
+    // then a single large write is the outlier. Same syscall, so the detector
+    // can actually see it.
+    //
+    // (Separately, clock_nanosleep was rendering as an unnamed `syscall_230` --
+    // the x86_64 table jumped 228 -> 231. Fixed in src/syscalls.rs.)
     let tmp_dir = TempDir::new().expect("test");
     let test_program = tmp_dir.path().join("realtime_anomaly_test");
 
-    // Create program with baseline fast syscalls + one anomalous slow syscall
     let source = r#"
 #include <unistd.h>
-#include <time.h>
+#include <stdlib.h>
 int main() {
-    // Establish baseline: 50 fast writes
-    for (int i = 0; i < 50; i++) {
+    // Baseline: 200 one-byte writes.
+    for (int i = 0; i < 200; i++) {
         write(1, "x", 1);
     }
-
-    // Simulate slow I/O (anomaly)
-    struct timespec ts = {0, 50000000};  // 50ms sleep (increased for test stability)
-    nanosleep(&ts, NULL);
-    write(1, "slow", 4);
-
+    // The anomaly: one write three orders of magnitude larger, same syscall so
+    // it lands in the same baseline.
+    char *big = malloc(4 * 1024 * 1024);
+    for (int i = 0; i < 4 * 1024 * 1024; i++) big[i] = 'y';
+    write(1, big, 4 * 1024 * 1024);
+    free(big);
     return 0;
 }
 "#;
     let source_file = tmp_dir.path().join("realtime_anomaly_test.c");
     fs::write(&source_file, source).expect("test");
 
-    std::process::Command::new("gcc")
+    let compile = std::process::Command::new("gcc")
         .arg(&source_file)
         .arg("-o")
         .arg(&test_program)
         .output()
         .expect("Failed to compile test program");
+    assert!(
+        compile.status.success(),
+        "fixture did not compile, so this test would assert about nothing: {}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
 
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("aprender-profile");
     cmd.arg("--anomaly-realtime").arg("-T").arg("--").arg(&test_program);
-
-    // Should show real-time anomaly alert
-    cmd.assert().success().stderr(predicate::str::contains("⚠️  ANOMALY"));
+    cmd.assert().success().stderr(predicate::str::contains("\u{26a0}\u{fe0f}  ANOMALY"));
 }
 
 #[test]
