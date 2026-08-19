@@ -828,11 +828,6 @@ pub enum Commands {
     #[command(subcommand)]
     Cgp(cgp::cli::Commands),
 
-    /// Model QA playbook runner: certify, run, score, parity
-    /// (was the `apr-qa` binary; `apr qa` is the falsifiable-gates command)
-    #[command(name = "qa-playbook", subcommand)]
-    QaPlaybook(aprender_qa_cli::cli::Commands),
-
     /// Provable-contracts: validate, lint, score, kani, proof-status
     /// (the `pv` binary keeps shipping under its own name; this is the
     /// in-apr route to the same commands)

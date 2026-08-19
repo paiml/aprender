@@ -148,7 +148,6 @@ fn registered_commands() -> Vec<&'static str> {
         "zram",
         "sim",
         "cgp",
-        "qa-playbook",
         "pv",
     ]
 }
@@ -695,9 +694,15 @@ fn every_declared_subcommand_exists_in_the_binary() {
         declared.len()
     );
     let total: usize = declared.iter().map(|(_, k)| k.len()).sum();
+    // Vacuity floor, NOT an exact count -- it exists to catch a broken parser,
+    // not to freeze the surface. Lowered 120 -> 105 when `apr qa-playbook` and
+    // its 15 subcommands were removed (#2539: it routed into aprender-qa-cli,
+    // which is `publish = false`, making apr-cli impossible to publish). The
+    // real count went 128 -> 113; keep the floor comfortably below it so
+    // ordinary command changes do not trip a check about parser health.
     assert!(
-        total >= 120,
-        "only {total} depth-2 paths parsed; expected 127+"
+        total >= 105,
+        "only {total} depth-2 paths parsed; the contract parser is broken"
     );
 
     for (parent, kids) in &declared {
@@ -736,7 +741,7 @@ fn every_subcommand_in_the_binary_is_declared() {
     // Vacuity companion: if no parent reported children, "nothing undeclared"
     // would be true and meaningless.
     assert!(
-        seen >= 120,
+        seen >= 105,
         "only {seen} depth-2 paths seen in the binary; the help parser is broken"
     );
     assert!(
