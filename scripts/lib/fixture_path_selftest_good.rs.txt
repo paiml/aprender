@@ -1,0 +1,4 @@
+let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/x.gguf");
+let t = "/tmp/scratch.bin";
+let e = std::env::var("APR_MODEL_DIR").unwrap_or_default();
+let rel = "tests/fixtures/model.apr";
