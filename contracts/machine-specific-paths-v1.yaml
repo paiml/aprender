@@ -133,7 +133,12 @@ falsification_tests:
   - id: FALSIFY-MSP-005
     rule: "The ratchet is wired into the per-PR gate, not merely present"
     prediction: "ci.yml invokes check_hardcoded_paths.sh in guard-runner-labels, which `gate` lists in its needs"
-    test: "grep -q 'check_hardcoded_paths.sh' .github/workflows/ci.yml"
+    # NOT `grep -q 'check_hardcoded_paths.sh' ci.yml` -- that is satisfied by a
+    # COMMENT, i.e. by exactly the "reference, not execution" this row exists to
+    # exclude. An adversarial review demonstrated it. Anchor on a real `run:`
+    # line, and separately require the containing job to be one `gate` depends
+    # on, so commenting the invocation out or detaching the job both go RED.
+    test: "grep -qE '^[[:space:]]+run: bash scripts/check_hardcoded_paths\\.sh$' .github/workflows/ci.yml && grep -qE '^[[:space:]]*needs:.*guard-runner-labels' .github/workflows/ci.yml"
     if_fails: "A reference is not an execution. An unwired guard is counted as enforcement in every audit while running nowhere."
 
   - id: FALSIFY-MSP-006
