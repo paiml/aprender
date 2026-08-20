@@ -13,6 +13,7 @@ pub mod flux;
 pub mod fuzz;
 pub mod generate;
 pub mod graph;
+pub mod inert;
 pub mod infer;
 pub mod invariants;
 pub mod kaizen;

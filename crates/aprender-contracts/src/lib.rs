@@ -46,6 +46,7 @@ pub mod flux_gen;
 pub mod fuzz_gen;
 pub mod generate;
 pub mod graph;
+pub mod inert;
 pub mod infer;
 pub mod invariant_gen;
 pub mod kani_gen;

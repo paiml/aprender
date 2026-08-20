@@ -660,6 +660,30 @@ jobs:
       # dark; nothing was watching.
       - name: Every contract cites a test that exists (strict-test-binding)
         run: bash scripts/check_contract_test_binding.sh
+      # Poka-yoke: PROVABILITY-001 is gated on `kind() == Kernel && !is_registry()`
+      # (crates/aprender-contracts/src/schema/validator.rs:22), so every other
+      # kind may carry zero falsification_tests and still lint clean. 759 of the
+      # 1726 contracts `pv lint` walks do exactly that, and `pv lint contracts/`
+      # reports 0 errors. Most of the 759 are catalogs -- a registry, a
+      # model-family descriptor, a contracts/work/ record -- which assert
+      # nothing a test could refute; demanding falsifiers of them would be
+      # theater in the other direction. 413 are not catalogs: they assert an
+      # equation, a proof obligation, or a `falsification:` block that serde
+      # drops in silence (the #2504 mechanism), and ship nothing that could
+      # refute it. `pv inert` separates the two populations and pins the second.
+      # No new bash guard: the classification needs the parsed Contract AND the
+      # raw YAML, which is `pv`'s job, not a shell script's (CLAUDE.md: never
+      # work around pv with a shell script).
+      #
+      # Belt and braces: the same ratchet also runs as the library unit test
+      # `inert_ratchet_holds` under `cargo nextest run --workspace --lib`
+      # (:289, job workspace-test). This step exists so an operator reading the
+      # guard job sees the number, and so the CLI surface itself stays wired.
+      # Self-test first (Verification Discipline #7).
+      - name: Inert-contract classifier's own case table
+        run: cargo run -q -p aprender-contracts-cli --bin pv -- inert --self-test
+      - name: No contract may assert something with no way to refute it (ratchet)
+        run: cargo run -q -p aprender-contracts-cli --bin pv -- inert contracts --max 413
       - name: aprender-core builds for wasm32
         run: bash scripts/check_wasm32_core_builds.sh
       # The meta-guard. Four guards were found unwired by accident while looking

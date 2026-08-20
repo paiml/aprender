@@ -76,6 +76,31 @@ pub enum Commands {
         /// Path to the new contract YAML file
         new: PathBuf,
     },
+    /// Classify contracts by whether their claims can be refuted, and ratchet
+    /// the count that cannot
+    ///
+    /// `pv lint` reports 0 errors on a tree where 759 of 1726 contracts carry
+    /// zero falsification tests, because PROVABILITY-001 applies only to
+    /// non-registry `kind: kernel` contracts. Most of those 759 are legitimate
+    /// catalogs. This command separates the catalogs from the contracts that
+    /// assert something and ship no way to refute it, and pins the latter.
+    Inert {
+        /// Directory containing contract YAML files
+        #[arg(default_value = "contracts")]
+        contract_dir: PathBuf,
+        /// Output format: text (default) or json
+        #[arg(long, default_value = "text")]
+        format: String,
+        /// Ratchet: exit non-zero when the inert count exceeds this ceiling
+        #[arg(long)]
+        max: Option<usize>,
+        /// List every inert contract with its trigger fields
+        #[arg(long)]
+        list: bool,
+        /// Run the classifier's own must-match/must-not-match case table
+        #[arg(long = "self-test")]
+        self_test: bool,
+    },
     /// Show cross-contract obligation coverage report
     Coverage {
         /// Directory containing contract YAML files

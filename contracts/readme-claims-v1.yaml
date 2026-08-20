@@ -1,6 +1,6 @@
 metadata:
   id: C-README-CLAIMS
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-24"
   author: PAIML Engineering
   kind: pattern
@@ -51,6 +51,29 @@ equations:
     - "the quoted count must match the live `--help` subcommand list"
     preconditions:
     - "apr-cli builds clean on HEAD"
+  falsification_coverage_ceiling:
+    formula: |
+      readme_inert_ceiling == pv_inert(contracts/).inert == INERT_BASELINE
+    domain: |
+      The README's account of contract coverage must be true. Until
+      2026-08-20 it read "Every CLI command and kernel is bound to a YAML
+      contract with equations, preconditions, postconditions, and
+      falsification tests" — false for 759 of the 1726 contracts `pv lint`
+      walks, which carry zero falsification tests and still validate clean
+      because PROVABILITY-001 applies only to non-registry `kind: kernel`
+      contracts (schema/validator.rs:22).
+
+      Most of those 759 are catalogs and assert nothing a test could
+      refute; 413 assert something — an equation, a proof obligation, or a
+      `falsification:` block serde drops in silence — and ship no falsifier.
+      The README now states that 413 as a CEILING, and the ceiling is only
+      honest while it equals the number CI enforces.
+    invariants:
+    - "README.md contains the literal `pv inert contracts --max N` with N == INERT_BASELINE"
+    - "README.md states the ceiling in prose as `at most **N**` with the same N"
+    - "README.md no longer contains the retracted universal claim"
+    preconditions:
+    - "provable_contracts::inert::INERT_BASELINE is the number CI passes to --max"
   apr_cookbook_link_present:
     formula: |
       readme_mentions("../apr-cookbook") AND readme_mentions("apr-cookbook")
@@ -73,6 +96,10 @@ proof_obligations:
 - type: invariant
   property: README CLI command count matches apr --help
   formal: "readme_cli_command_count == lines_starting_with_lowercase(apr --help)"
+  applies_to: metadata
+- type: invariant
+  property: README's inert-contract ceiling matches the enforced ratchet
+  formal: "readme_inert_ceiling == INERT_BASELINE == max_arg(pv inert contracts)"
   applies_to: metadata
 - type: invariant
   property: README links to apr-cookbook
@@ -179,6 +206,33 @@ falsification_tests:
   - new_pub_mod_without_chapter
   - chapter_removed_but_pub_mod_remains
 
+- id: FALSIFY-README-008
+  name: readme_inert_ceiling_matches_the_ratchet
+  rule: |
+    The README's falsification-coverage claim must be true and must not drift
+    from the number CI enforces. The retracted claim ("Every CLI command and
+    kernel is bound to a YAML contract with ... falsification tests") was
+    false for 759 of the 1726 contracts `pv lint` walks. Its replacement
+    states a ceiling of 413 inert contracts — contracts that assert something
+    with no falsifier — and that ceiling is only meaningful while it equals
+    `provable_contracts::inert::INERT_BASELINE`, the value CI passes to
+    `pv inert contracts --max N`.
+  prediction: |
+    README.md contains BOTH `pv inert contracts --max <INERT_BASELINE>` and
+    `at most **<INERT_BASELINE>**`, and does NOT contain the retracted
+    universal claim.
+  test: |
+    cargo test -p aprender-contracts --lib readme_inert_ceiling_matches_the_ratchet
+  if_fails: |
+    Either the ratchet baseline moved without the README (lower the README
+    number to match `provable_contracts::inert::INERT_BASELINE`), or someone
+    re-introduced the universal claim. Re-derive with
+    `pv inert contracts` and edit README.md — never the reverse.
+  ship_blocking: true
+  counter_example_classes:
+  - stale_ceiling_after_baseline_lowered
+  - retracted_universal_claim_reinstated
+  - prose_and_command_number_disagree
 kani_harnesses: []
 qa_gate:
   id: QA-README-001
@@ -189,7 +243,8 @@ qa_gate:
   - contract_count
   - cli_command_count
   - apr_cookbook_link_present
+  - falsification_coverage_ceiling
   - book_cli_chapter_coverage
   - book_lib_chapter_coverage
-  pass_criteria: All 6 falsification tests pass
+  pass_criteria: All 7 falsification tests pass
   falsification: Any single claim mismatch fails the gate

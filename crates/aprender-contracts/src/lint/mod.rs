@@ -14,6 +14,7 @@ pub mod config;
 pub mod diff;
 pub mod finding;
 mod gates;
+pub use gates::collect_yaml_files as collect_contract_yaml_files;
 mod gates_extended;
 pub mod rules;
 pub mod sarif;

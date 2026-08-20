@@ -239,7 +239,7 @@ Reproduced from [candle-vs-apr](https://github.com/paiml/candle-vs-apr) and
 
 ## Provable contracts
 
-Every CLI command and kernel is bound to a YAML contract with equations,
+Kernels and CLI commands are bound to YAML contracts carrying equations,
 preconditions, postconditions, and falsification tests:
 
 ```yaml
@@ -255,6 +255,22 @@ falsification_tests:
 
 1777 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
+
+Coverage is partial, and measured rather than assumed. `pv validate` applies
+the provability invariant only to non-registry `kind: kernel` contracts, so a
+catalog — a registry, a model-family descriptor, a work record — validates
+clean with no falsification tests, which is correct: it asserts nothing a test
+could refute. Most contracts do carry a falsification test; the catalogs
+account for most of the rest. What is left over is the backlog: contracts that
+assert something — an equation, a proof obligation, or a `falsification:` block
+misspelled just enough for the schema to drop it in silence — and ship nothing
+that could refute it. There are at most **413** of those, and CI refuses to let
+that ceiling rise:
+
+```bash
+pv inert contracts             # falsifiable / catalog / inert breakdown
+pv inert contracts --max 413   # the ratchet CI runs (ci.yml, job guard-runner-labels)
+```
 
 ## Migration from old crates
 

@@ -80,6 +80,13 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             contract, binding, ..
         } => commands::audit::run(&contract, binding.as_deref()),
         Commands::Diff { old, new } => commands::diff::run(&old, &new),
+        Commands::Inert {
+            contract_dir,
+            format,
+            max,
+            list,
+            self_test,
+        } => commands::inert::run(&contract_dir, &format, max, list, self_test),
         Commands::Coverage {
             contract_dir,
             binding,

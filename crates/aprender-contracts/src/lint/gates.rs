@@ -44,7 +44,14 @@ pub(crate) fn load_contracts(dir: &Path) -> (Vec<(String, Contract)>, Vec<(Strin
 }
 
 /// Recursively collect `.yaml` contract files, skipping non-contract directories.
-fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+///
+/// Re-exported as [`crate::lint::collect_contract_yaml_files`] so every gate and
+/// every `pv` subcommand that needs "the set of files `pv lint` judges" reads it
+/// from ONE definition. Divergent walkers are a measured defect class here: the
+/// `validate_contracts` integration test walks a DIFFERENT set (top-level only,
+/// and it does not skip `binding.yaml`), which is why it fails on `main` while
+/// `pv lint` reports zero errors.
+pub fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
