@@ -639,7 +639,7 @@ falsification_tests:
     session: "ship-two-001 PARTIAL → DISCHARGED via apr export → llama-cli round-trip"
     host: noah-Lambda-Vector  # RTX 4090, lambda-labs tier
     binary: /mnt/nvme-raid0/targets/aprender/release/apr  # built --features cuda
-    llama_cli_path: /home/noah/.local/bin/llama-cli
+    llama_cli_path: $HOME/.local/bin/llama-cli
     command_chain:
       - "apr export /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --format gguf -o /tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf"
       - "xxd /tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf | head -1"

@@ -129,7 +129,7 @@ falsification:
     evidence: |
       Operator-dispatched Phase 6 bench against post-M32d binary:
 
-        APR_MODEL=/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf \
+        APR_MODEL=${APR_MODELS:?}/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf \
         PHASE6_COMPLIANCE_ENFORCED=1 \
         PHASE6_MAX_TURNS=20 PHASE6_WALL_SECONDS=3600 \
         APR_TIMEOUT_S=900 APR_AGENT_HTTP_TIMEOUT_S=1500 \

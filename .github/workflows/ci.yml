@@ -790,6 +790,25 @@ jobs:
         run: bash scripts/check_test_fixture_paths.sh
       - name: Fixture-path guard case table
         run: bash scripts/check_test_fixture_paths.sh --self-test
+      # #2532: the guard above has a universe of crates/**/tests?/**/*.rs, which
+      # structurally excludes 100% of the 324 machine-specific paths pmat found
+      # in SHIPPED code -- 46 of them inside contracts/ itself. Seventeen crux
+      # falsification tests opened with a GOLD= path under a worktree that no
+      # longer exists on ANY machine, then `[ -f "$GOLD" ] || exit 2`, so they
+      # skipped everywhere while `pv validate` and `pv lint contracts/` both
+      # reported PASS. The two guards' universes are complementary, not nested.
+      # contracts/ is now at ZERO and has no baseline to raise. Text-only, no build.
+      #
+      # The whole-tree ratchet lives in `--full` and is NOT wired here: it shells
+      # out to `pmat analyze hardcoded-paths` (pmat#1017, the detector of record),
+      # and the clean-room pool measured pmat 3.31.0 on 2026-08-20, which has no
+      # such subcommand. Wiring it today would red every PR; `|| true` would make
+      # it a gate that cannot fail. Add the `--full` step here once the fleet
+      # carries pmat >= 3.32.0.
+      - name: No contract may name a machine-specific path
+        run: bash scripts/check_hardcoded_paths.sh
+      - name: Machine-specific-path guard case table
+        run: bash scripts/check_hardcoded_paths.sh --self-test
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".

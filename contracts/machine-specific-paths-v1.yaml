@@ -1,0 +1,171 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-20'
+  author: PAIML Engineering
+  description: |
+    Path portability — a shipped artifact may not name a path that exists on at
+    most one machine. This contract owns the class where code, config or a
+    contract itself hardcodes a developer's home directory, so the artifact
+    works on the author's box and is inert everywhere else. It pins the tier
+    that matters most for enforcement integrity: contracts/ itself, which must
+    be at ZERO, and ratchets the wider shipped tier that pmat measures.
+  references:
+    - "paiml/aprender#2532 — 324 machine-specific paths in shipped code, 46 of them in contracts/"
+    - "pmat#1017 — `pmat analyze hardcoded-paths`, the detector of record; this contract does not re-implement it"
+    - "scripts/check_hardcoded_paths.sh — the ratchet"
+    - ".github/workflows/ci.yml — wired per-PR in guard-runner-labels, which `gate` lists in needs"
+    - "scripts/check_test_fixture_paths.sh — the sibling guard, same defect class one tier down (crates/**/tests?/**/*.rs)"
+    - "contracts/crate-hygiene-v1.yaml — adjacent Cargo.toml hygiene; deliberately not merged, different subject and kind"
+  depends_on: []
+
+five_whys:
+  symptom: >-
+    46 of 324 shipped machine-specific paths were inside contracts/. Seventeen
+    crux falsification tests open with
+    `GOLD=/home/<user>/src/aprender-worktrees/crux-spec/evidence/crux/...json`
+    followed by `[ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }`. That
+    worktree no longer exists on the authoring host either, so those tests skip
+    on every machine in the world while `pv validate` and `pv lint contracts/`
+    both report PASS.
+  why_1: >-
+    The path was written from the shell the author happened to be in, and a path
+    that resolves once is indistinguishable from a path that resolves always.
+  why_2: >-
+    Nothing failed loudly. The contract's own skip clause converts an absent
+    path into a silent exit, so the defect removed the test from the population
+    rather than reddening it.
+  why_3: >-
+    pv is blind to the class. `pv validate` is schema validation and `pv lint
+    contracts/` never mentions a home directory once across 1727 contracts; a
+    polluted contract scores identically to a portable one.
+  why_4: >-
+    The one guard that watches this class, check_test_fixture_paths.sh, has a
+    universe of crates/**/tests?/**/*.rs, which structurally excludes 100% of
+    the 324 shipped findings. Its green result was read as coverage of the class
+    rather than coverage of one tier of it.
+  why_5: >-
+    Enforcement was audited by asking whether a guard exists, not by asking what
+    its universe is and whether the defect can hide outside it.
+  root_cause: >-
+    An unportable path is a defect whose only symptom is absence — of a run, of
+    a file, of a failure. It must be detected statically at the literal, because
+    every dynamic signal it produces looks like a skip.
+
+equations:
+  contracts_name_no_machine:
+    formula: |
+      forall file F in contracts/**/*.{yaml,yml}, forall literal L in F:
+        not match(L, "/(home|Users)/<named-user>/")
+    domain: "every YAML file under contracts/ (1778 today), scanned line by line"
+    codomain: "bool — exit code of scripts/check_hardcoded_paths.sh"
+    invariants:
+      - "Zero is the only defensible bound for this tier: a contract is enforcement, and enforcement that runs on one machine is not enforcement"
+      - "There is deliberately no baseline file to raise for this tier"
+      - "$HOME/..., ~/..., ${VAR}/..., /tmp/..., /usr/... and repo-relative paths all pass — none names a machine"
+      - "A scan that examined fewer than MIN_CONTRACT_FILES files goes RED rather than reporting clean"
+    preconditions:
+      - "contract_file_count >= MIN_CONTRACT_FILES"
+    postconditions:
+      - "machine_specific_path_count == 0"
+
+  shipped_tier_ratchets_down:
+    formula: |
+      pmat_shipped_count(tree) <= baseline, baseline monotonically non-increasing
+    domain: "`pmat analyze hardcoded-paths -p . -f json` over the git-tracked tree (14193 files, 643k literals)"
+    codomain: "bool — exit code of scripts/check_hardcoded_paths.sh --full"
+    invariants:
+      - "Detection belongs to pmat; the guard holds only the number (re-implementing the detector would be muda)"
+      - "A run that scanned fewer than MIN_FILES_SCANNED files goes RED — pmat is fail-closed outside a git repo and the guard must not launder that into a pass"
+      - "pmat's universe is `git ls-files`: an untracked file is invisible, so the guard is a pre-merge gate, not a pre-commit one"
+      - "324 on origin/main @ 5c08e771f; 278 after this contract's remediation of the contracts/ tier"
+    preconditions:
+      - "pmat_files_scanned >= MIN_FILES_SCANNED"
+    postconditions:
+      - "pmat_shipped_count <= baseline"
+
+proof_obligations:
+  - type: invariant
+    property: "No contract names a machine-specific absolute path"
+    formal: "scripts/check_hardcoded_paths.sh exits 0 with count == 0"
+    applies_to: contracts_name_no_machine
+  - type: invariant
+    property: "The guard demonstrably turns RED on the pre-fix shape and stays green on portable shapes"
+    formal: "The self-test case table flags 4/4 defect shapes and 0/9 portable shapes"
+    applies_to: contracts_name_no_machine
+  - type: invariant
+    property: "The guard is not vacuous"
+    formal: "It exits non-zero when it scanned fewer files than its floor"
+    applies_to: contracts_name_no_machine
+  - type: invariant
+    property: "The guard is enforced per-PR, not merely present in the tree"
+    formal: "ci.yml invokes check_hardcoded_paths.sh in a job that `gate` depends on"
+    applies_to: contracts_name_no_machine
+  - type: bound
+    property: "Shipped machine-specific paths may not grow"
+    formal: "pmat shipped_count <= scripts/hardcoded_path_shipped_baseline.txt"
+    applies_to: shipped_tier_ratchets_down
+
+falsification_tests:
+  - id: FALSIFY-MSP-001
+    rule: "The ratchet exists and is executable"
+    prediction: "scripts/check_hardcoded_paths.sh is a regular file with the execute bit set"
+    test: "test -x scripts/check_hardcoded_paths.sh"
+    if_fails: "The ratchet was deleted or unmarked — the contract tier is unguarded again and the 46 paths can return."
+
+  - id: FALSIFY-MSP-002
+    rule: "No contract names a machine-specific path"
+    prediction: "The guard exits 0 and reports `0 machine-specific path(s), allowed 0` over 1778 contract files"
+    test: "bash scripts/check_hardcoded_paths.sh"
+    if_fails: "A contract cites a path that resolves on at most one machine. Its falsification tests will self-skip everywhere else while pv reports PASS. Repoint it at ${APR_MODELS:?}, ${APR_LEADERBOARD_ROOT:?}, ${APR_CRUX_GOLDENS:-evidence/crux}, $HOME/... or a repo-relative path. There is no baseline to raise."
+
+  - id: FALSIFY-MSP-003
+    rule: "The ratchet turns RED on the shipped defect shapes and green on the portable ones (mutation-verified, not merely green)"
+    prediction: "Given a fixture holding the four shapes found in contracts/ — a named home in a `test:` body, another user's home, a /Users path, and one in a comment — the guard exits non-zero; given nine portable shapes it exits 0"
+    test: "bash scripts/check_hardcoded_paths.sh --self-test"
+    if_fails: "The guard has become blind or has started flagging portable paths. Either way the zero it reports on contracts/ proves nothing."
+
+  - id: FALSIFY-MSP-004
+    rule: "The ratchet fails closed when it finds nothing to scan"
+    prediction: "With the vacuity floor set above the number of contract files present, the guard exits non-zero"
+    test: "! MIN_CONTRACT_FILES=999999 bash scripts/check_hardcoded_paths.sh >/dev/null 2>&1"
+    if_fails: "A guard that reports OK on an empty scan is indistinguishable from a clean tree — the coverage-floor 0/0 failure mode."
+
+  - id: FALSIFY-MSP-005
+    rule: "The ratchet is wired into the per-PR gate, not merely present"
+    prediction: "ci.yml invokes check_hardcoded_paths.sh in guard-runner-labels, which `gate` lists in its needs"
+    test: "grep -q 'check_hardcoded_paths.sh' .github/workflows/ci.yml"
+    if_fails: "A reference is not an execution. An unwired guard is counted as enforcement in every audit while running nowhere."
+
+  - id: FALSIFY-MSP-006
+    rule: "Shipped machine-specific paths may not grow (whole-tree ratchet, pmat-backed)"
+    prediction: "pmat reports shipped_count <= 278 over >= 14000 scanned files; a new hardcoded home in examples/, benches/, scripts/ or crates/**/src/ raises it and the guard exits non-zero"
+    test: "bash scripts/check_hardcoded_paths.sh --full"
+    if_fails: "The shipped tier grew. Fix the literal; do not raise scripts/hardcoded_path_shipped_baseline.txt. NOTE: this test needs pmat >= 3.32.0 and is therefore NOT wired into ci.yml — the clean-room pool measured 3.31.0 on 2026-08-20, in which `pmat analyze hardcoded-paths` does not exist. Promote it into ci.yml the day the fleet is upgraded."
+
+kani_harnesses:
+  - id: KANI-MSP-001
+    obligation: "contracts_name_no_machine"
+    property: "For any byte string S accepted as a contract literal, the machine-path predicate is decided by prefix alone: a literal beginning /home/<c>/ or /Users/<c>/ with c an identifier character is rejected, and every other literal is accepted"
+    bound: 32
+    strategy: bounded_int
+
+  - id: KANI-MSP-002
+    obligation: "shipped_tier_ratchets_down"
+    property: "For any (count, baseline) pair of naturals, the ratchet accepts iff count <= baseline, so no sequence of accepted commits can raise the baseline"
+    bound: 16
+    strategy: bounded_int
+
+qa_gate:
+  id: F-MSP-001
+  name: "machine-specific paths contract"
+  description: >-
+    Blocks any contract naming a path rooted in a named user's home, and holds
+    the wider shipped tier at or below its baseline. Detection of the wider tier
+    is pmat's (pmat#1017); the guard only carries the number.
+  checks:
+    - contracts_name_no_machine
+    - shipped_tier_ratchets_down
+  pass_criteria: "All 6 falsification tests pass"
+  falsification: >-
+    Any contract YAML line matching /(home|Users)/<named-user>/, or a pmat
+    shipped_count above scripts/hardcoded_path_shipped_baseline.txt.
