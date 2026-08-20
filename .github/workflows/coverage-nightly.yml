@@ -156,9 +156,29 @@ jobs:
           # (COV_FLOOR, the last measured value) rather than the aspirational 95%
           # target, so a red here means coverage went DOWN - not that we have not
           # reached 95% yet. set -o pipefail above makes the tee transparent.
+          # Do NOT let a failing `make` abort before the output is written.
+          # The default shell here is `bash -e`, so with `set -o pipefail` a
+          # coverage failure killed this step at the `make` line -- the two
+          # lines below never ran, `steps.cov.outputs.pct` stayed UNSET, and
+          # the report steps (`if: always()`) rendered a BLANK figure:
+          #     **Line coverage: ** (target >= 95%)
+          # An empty number where a percentage belongs reads as "nothing to
+          # see"; the whole point of the `${pct:-unknown}` fallback was to say
+          # so out loud. Observed on the 2026-08-19 run, where the real cause
+          # was a corrupted llvm-cov target dir after the power outage.
+          #
+          # ${PIPESTATUS[0]} is `make`'s status, NOT tee's -- reading `$?`
+          # through a pipe is the recurring defect this repo has shipped twice
+          # (#2336 qwen-story-daily, #2360 make publish).
+          set +e
           make coverage COV_TARGET_DIR= 2>&1 | tee /tmp/cov.log
+          cov_rc=${PIPESTATUS[0]}
+          set -e
           pct="$(grep -oE 'TOTAL: [0-9]+/[0-9]+ lines covered \([0-9]+%\)' /tmp/cov.log | tail -1 | grep -oE '[0-9]+%' || true)"
           echo "pct=${pct:-unknown}" >> "$GITHUB_OUTPUT"
+          # Still fails the job on a real coverage regression: the gate stays
+          # ARMED, it just reports a value first.
+          exit "$cov_rc"
 
       # pmat (crates.io) for the dogfooded gap analysis — BEST-EFFORT. cargo isn't
       # on PATH for raw run: steps on these runners, so source the cargo env; and
