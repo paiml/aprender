@@ -349,7 +349,7 @@ coverage-check: coverage
 # contracts/ and is the documented entry point (never hand-rolled bash).
 contracts:
 	@echo "== provable contracts: pv lint contracts/ =="
-	@pv lint contracts/ 2>&1 | tail -5
+	@. scripts/pv_bin.sh && "$$PV" lint contracts/ 2>&1 | tail -5
 	@echo "== contract engine tests =="
 	@cargo test -p aprender-contracts --lib 2>&1 | grep -E "test result" | tail -1
 

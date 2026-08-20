@@ -216,7 +216,7 @@ pv_check() {
         bad "$label: $contract does not exist"
         return
     fi
-    out=$(pv validate "$contract" 2>&1); rc=$?
+    out=$("$PV" validate "$contract" 2>&1); rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "$label validates (pv validate)"
     else
@@ -244,7 +244,12 @@ bashrs_check() {
 
 surface_tools() {
     printf '\n=== deterministic toolchain ===\n'
-    require_tool pv     "contract validation must use pv, not a python YAML walk"
+    # PINNED, not PATH. This line used to `require_tool pv`, which resolves
+    # through PATH, and then printed `pv present (pv 0.49.0)` into the RELEASE
+    # RECEIPT as evidence of correctness while the tree was at 0.63.0.
+    . "$(dirname "${BASH_SOURCE[0]}")/pv_bin.sh" || {
+        bad "pv could not be resolved from HEAD"; return 1; }
+    ok "pv pinned to HEAD build ($("$PV" --version))"
     require_tool bashrs "shell linting must use bashrs, not shellcheck"
     require_tool pmat   "code search must use pmat query, not grep"
 
@@ -254,7 +259,7 @@ surface_tools() {
 
     # Every contract, through the tool that exists for exactly this.
     local out rc
-    out=$(pv lint "$REPO_ROOT/contracts/" 2>&1); rc=$?
+    out=$("$PV" lint "$REPO_ROOT/contracts/" 2>&1); rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "pv lint contracts/ ($(printf '%s' "$out" | grep -oE '[0-9]+ errors' | head -1))"
     else
