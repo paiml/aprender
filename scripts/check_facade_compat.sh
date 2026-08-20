@@ -202,6 +202,7 @@ for pkg in provable-contracts provable-contracts-macros; do
     fi
 done
 
+WS_VER="$(awk -F'\"' '/^version *=/{print $2; exit}' Cargo.toml)"
 printf -- '\n--- CURRENCY: the facade installs the CURRENT pv --------------------\n'
 WANT="$( python3 "$FACTS" --version-of "$ROOT_MD" aprender-contracts-cli )"
 ( cd "$FACADE_WS" && cargo build --quiet -p provable-contracts-cli --bin pv --target-dir "$TD" ) >/dev/null 2>&1
@@ -211,6 +212,67 @@ if [ "$GOT" = "pv $WANT" ]; then
 else
     printf 'FAIL  facade pv reported [%s], expected [pv %s]\n' "$GOT" "$WANT"; rc=1
 fi
+
+
+printf -- '\n--- PUBLISH ORDER: what building here does NOT prove ------------------\n'
+# STAGED CHECK, same shape as pre-release Gate 5 (aprender#2543): it cannot pass
+# before the cascade reaches the upstream crate, and saying so is the point.
+#
+# Everything above builds inside THIS workspace, where `upstream` resolves
+# through its `path`. A published consumer resolves it from the REGISTRY. Those
+# are different builds, and only the second is what `cargo install
+# provable-contracts-cli` actually does.
+#
+# The CLI facade calls `aprender_contracts_cli::run()`. That symbol lives in a
+# lib.rs added on THIS branch, so it is NOT in any already-published version.
+# A facade whose constraint names an already-published version therefore cannot
+# compile for a real consumer no matter how green this script is -- which is
+# exactly the failure an adversarial review found, and exactly what building
+# through the path dep hides.
+for pkg in provable-contracts provable-contracts-macros provable-contracts-cli; do
+    up_ver=$(awk -F'"' '/^upstream *=/{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/){print $i; exit}}' \
+        "crates/facades/$pkg/Cargo.toml" 2>/dev/null)
+    [ -n "$up_ver" ] || { printf 'ok    %s: no pinned upstream version\n' "$pkg"; continue; }
+    if [ "$up_ver" = "$WS_VER" ]; then
+        printf 'ok    %s: upstream pinned to the workspace version (%s)\n' "$pkg" "$up_ver"
+    else
+        printf 'FAIL  %s: upstream pinned to %s but workspace is %s -- a facade must\n' "$pkg" "$up_ver" "$WS_VER"
+        printf '      track the version published from THIS tree, or it resolves an older\n'
+        printf '      registry copy that lacks the symbols it calls.\n'
+        rc=1
+    fi
+done
+# LAST PUBLISHED WITHOUT THE LIB. aprender-contracts-cli 0.63.0 is on crates.io
+# as a BIN-ONLY crate: `pub fn run()` lives in a lib.rs added after it shipped.
+# So a facade constrained to 0.63.0 resolves a registry copy with no such symbol
+# and cannot compile for a consumer, however green the path-dep build is.
+#
+# This is a STAGE verdict, not a defect -- the same shape as pre-release Gate 5
+# (#2543), which also cannot pass before the version bump. Reporting it as a
+# FAILURE here would block a PR over an ordering fact and train people to ignore
+# the guard; reporting it as a PASS would be the lie. So: named, not fatal.
+CLI_LAST_BINONLY="0.63.0"
+cli_ver=$(awk -F'"' '/^upstream *=/{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/){print $i; exit}}' \
+    crates/facades/provable-contracts-cli/Cargo.toml 2>/dev/null)
+if [ "$cli_ver" = "$CLI_LAST_BINONLY" ]; then
+    printf 'STAGE provable-contracts-cli is NOT YET PUBLISHABLE (expected at this stage).\n'
+    printf '      It pins upstream %s, which is on crates.io BIN-ONLY -- `pub fn run()`\n' "$cli_ver"
+    printf '      was added after that release, so a registry consumer gets a crate\n'
+    printf '      without the symbol the facade calls. Publishable once the workspace\n'
+    printf '      bumps and aprender-contracts-cli ships a version carrying the lib.\n'
+    printf '      Do NOT publish this facade in the 0.63.0 cascade.\n'
+else
+    printf 'ok    provable-contracts-cli pins %s (> the bin-only %s) -- carries the lib\n' \
+        "$cli_ver" "$CLI_LAST_BINONLY"
+fi
+printf 'note  PUBLISH ORDER IS A HARD CONSTRAINT, not a preference:\n'
+printf '        1. aprender-contracts, -macros, -cli   (carry the lib + symbols)\n'
+printf '        2. provable-contracts{,-macros,-cli}   (the facades, which resolve #1\n'
+printf '           from the registry)\n'
+printf '      Publishing a facade before its upstream yields a crate that cannot\n'
+printf '      compile for anyone. This script CANNOT verify step 2 offline -- it has\n'
+printf '      no registry to resolve against -- so treat a green run here as\n'
+printf '      "structurally correct", never as "publishable".\n'
 
 printf '\n'
 if [ "$rc" -eq 0 ]; then
