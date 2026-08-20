@@ -242,8 +242,57 @@ impl OwnedQuantizedModel {
             }
             Ok(())
         }
+        /// #2535: the MoE variant — attention only. The dense FFN slots are
+        /// documented placeholders on a MoE model, not truncated data, so
+        /// checking them misreports a complete file as corrupt.
+        fn check_layer_attention_only(layer: &OwnedQuantizedLayer, prefix: &str) -> Result<()> {
+            match &layer.qkv_weight {
+                OwnedQKVWeights::Fused(t) => check(t, &format!("{prefix}.qkv"))?,
+                OwnedQKVWeights::Separate { q, k, v } => {
+                    check(q, &format!("{prefix}.q"))?;
+                    check(k, &format!("{prefix}.k"))?;
+                    check(v, &format!("{prefix}.v"))?;
+                },
+            }
+            check(&layer.attn_output_weight, &format!("{prefix}.attn_output"))?;
+            Ok(())
+        }
+        // #2535: a Mixture-of-Experts model has NO dense FFN tensors. Its FFN
+        // weights live in per-expert `ffn_{up,gate,down}_exps`, routed by
+        // `ffn_gate_inp`, and `QuantizedTransformer::from_gguf_for_moe`
+        // deliberately fills the dense slots with PLACEHOLDER refs
+        // (offset=0, byte_size=0, num_elements=0). Its doc comment states the
+        // contract outright:
+        //
+        //     consumers MUST check `moe_layers[i].is_some()` before attempting
+        //     any dense FFN dequantization
+        //
+        // This validator was such a consumer and did not check. It saw the
+        // placeholders, concluded `data.is_empty() && dims > 0`, and failed the
+        // load of a PERFECTLY GOOD file with:
+        //
+        //     truncated/corrupt model: tensor 'layer.0.ffn_up' declares
+        //     16384x2048 but has no data (file is incomplete)
+        //
+        // Measured on Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf: the file is
+        // complete — a direct GGUF parse showed the last tensor ending at byte
+        // 18,556,689,568, exactly the file size, and `apr validate` reported
+        // "VALID: 579 tensors checked, 0 contract violations". The diagnosis
+        // was simply wrong, and it sends the user to re-download 18.5 GB that
+        // cannot help.
+        //
+        // The dense-FFN checks are therefore skipped for MoE. Attention
+        // (q/k/v/attn_output) and lm_head are still checked: those tensors are
+        // real on MoE models, so the fail-closed truncation guarantee of
+        // PMAT-750 is preserved everywhere it actually applies.
+        let is_moe =
+            crate::tensor_names::normalize_architecture(&self.config.architecture) == "qwen3_moe";
         for (i, layer) in self.layers.iter().enumerate() {
-            check_layer(layer, &format!("layer.{i}"))?;
+            if is_moe {
+                check_layer_attention_only(layer, &format!("layer.{i}"))?;
+            } else {
+                check_layer(layer, &format!("layer.{i}"))?;
+            }
         }
         for (i, layer) in self.encoder_layers.iter().enumerate() {
             check_layer(layer, &format!("encoder_layer.{i}"))?;
