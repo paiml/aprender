@@ -91,10 +91,6 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cgp::cli::dispatch(command.clone(), cli.json)
                 .map_err(|e| CliError::ValidationFailed(format!("cgp: {e}"))),
         ),
-        Commands::QaPlaybook(command) => {
-            aprender_qa_cli::cli::dispatch(command.clone());
-            Some(Ok(()))
-        }
         Commands::Pv(command) => Some(
             aprender_contracts_cli::dispatch(command.clone())
                 .map_err(|e| CliError::ValidationFailed(format!("pv: {e}"))),

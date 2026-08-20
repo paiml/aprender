@@ -232,7 +232,6 @@ aprender-rag-cli = { workspace = true }
 aprender-zram-cli = { workspace = true }
 # simular: hand-rolled parser, wired as a verbatim passthrough (apr sim ...)
 simular = { workspace = true }
-aprender-qa-cli = { workspace = true }
 aprender-cgp = { workspace = true }
 aprender-contracts-cli = { workspace = true }
 half = "2.4.1"

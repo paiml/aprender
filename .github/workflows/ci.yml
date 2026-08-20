@@ -734,6 +734,15 @@ jobs:
         run: bash scripts/check_workspace_siblings_pathed.sh --self-test
       - name: In-tree siblings must be pathed, never pulled from crates.io
         run: bash scripts/check_workspace_siblings_pathed.sh
+      # A publishable crate depending on a `publish = false` one is invisible to
+      # build/test/clippy -- the path dep resolves locally -- and only fails at
+      # `cargo publish`, i.e. mid-release-cascade. #2493 did exactly this
+      # (apr-cli -> aprender-qa-cli) and the tree was green throughout. The
+      # v0.50.0 cascade died this way at 29 of 68 crates. Text-only, no build.
+      - name: Publishable crates may not depend on unpublishable ones
+        run: bash scripts/check_publishable_deps_publishable.sh
+      - name: Publishable-deps guard case table
+        run: bash scripts/check_publishable_deps_publishable.sh --self-test
 
       # `cargo deny` ran in ZERO workflows -- only `make deny`. Positive control:
       # 9 workflows mention `cargo`, 0 mentioned `deny`. Meanwhile the `security`
