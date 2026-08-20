@@ -23,7 +23,6 @@ metadata:
   - 'crates/aprender-core/src/format/v2/tensor_index_impl.rs:173 — AprQ8 layout (scale f32 + i8 x N)'
   - 'crates/aprender-core/src/format/converter/write_model_config.rs:148 — symmetric import-side Q8_0 rejection'
 
-kind: KernelContract
 name: apr-gguf-export-symmetry
 version: 1.0.0
 scope: aprender-core APR→GGUF export dtype mapping (metadata.rs + fusion.rs)

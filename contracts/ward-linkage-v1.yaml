@@ -14,7 +14,6 @@ metadata:
     so that aprender's AgglomerativeClustering(Linkage::Ward) produces the same
     merge order (and thus the same partition) as the reference implementations.
 
-kind: KernelContract
 name: ward-linkage
 version: "1.0.0"
 scope: "crates/aprender-core/src/cluster/agglomerative.rs"

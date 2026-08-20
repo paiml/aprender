@@ -13,7 +13,6 @@ metadata:
 # Defines invariants for archiving the 20 old repositories after
 # monorepo consolidation is complete.
 
-kind: ArchiveContract
 name: archive-repos
 version: "1.0.0"
 scope: "20 old repositories to archive after monorepo migration"

@@ -1144,7 +1144,6 @@ metadata:
     - tensor-layout-v1
     - tensor-names-v1
 
-kind: KernelContract
 name: qwen3-moe-forward-gpu
 version: "1.7.2"
 status: ACTIVE_ALGORITHM_LEVEL_WITH_DOCUMENTED_DIVERGENCE   # 47/48 layers cos≥0.99; v1.7.2's L47 SwiGLU-f32 attribution REFUTED by #1818; true root cause = CPU/CUDA activation-qtype algorithm mismatch (CPU Q8K vs CUDA f32) per #1822 bisection — see v1.8.0 amendment_history

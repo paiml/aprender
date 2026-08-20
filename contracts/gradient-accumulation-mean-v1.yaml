@@ -10,7 +10,6 @@ metadata:
     Correctness contract for gradient accumulation in the aprender-train Trainer. Pillar-2/3
     (PyTorch/Unsloth training parity): K-step accumulation must reproduce a single batch of the
     effective size, not inflate the effective learning rate.
-kind: KernelContract
 name: gradient-accumulation-mean
 version: "1.0.0"
 scope: "crates/aprender-train/src/train/trainer/train_loop/basic.rs"

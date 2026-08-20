@@ -11,7 +11,7 @@ use std::time::Instant;
 use crate::audit::audit_contract;
 use crate::binding::{parse_binding, BindingRegistry};
 use crate::error::Severity;
-use crate::schema::{parse_contract, validate_contract, Contract};
+use crate::schema::{is_contract_yaml, parse_contract, validate_contract, Contract};
 use crate::scoring::{score_contract, ContractScore};
 
 use super::finding::LintFinding;
@@ -62,12 +62,7 @@ fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
                 continue;
             }
             collect_yaml_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("yaml")
-            && !matches!(
-                path.file_name().and_then(|n| n.to_str()),
-                Some("binding.yaml" | "binding.yml")
-            )
-        {
+        } else if is_contract_yaml(&path) {
             out.push(path);
         }
     }

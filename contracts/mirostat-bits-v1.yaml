@@ -21,7 +21,6 @@ metadata:
   - 'llama.cpp src/llama-sampling.cpp llama_sampler_mirostat_v2_apply — uses -log2f(p) for both the tau-truncation and the mu update'
   - 'crates/aprender-serve/src/generate/algorithms.rs — sample_mirostat (fixed sites: truncation surprise + observed surprise)'
 
-kind: KernelContract
 name: mirostat-bits
 version: 1.0.0
 scope: aprender-serve Mirostat 2.0 sampler — surprise measured in bits (log2), not nats (ln)

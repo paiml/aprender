@@ -13,7 +13,6 @@ metadata:
     (aprender-serve BpeTokenizer::encode -> bpe_encode -> byte_to_bpe_char). Pillar-4
     (Ollama/serve) correctness: a non-ASCII prompt must reach the model intact, not be
     silently dropped before inference.
-kind: KernelContract
 name: bpe-encode-bytes-to-unicode
 version: "1.0.0"
 scope: "crates/aprender-serve/src/apr/tokenizer.rs"

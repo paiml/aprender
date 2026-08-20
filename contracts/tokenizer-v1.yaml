@@ -18,7 +18,6 @@ metadata:
     File-loading / UTF-8-edge / config-driven-special-token / GGUF-padding
     obligations are runtime/empirical and marked l4_not_applicable.
 
-kind: AlgorithmContract
 name: tokenizer
 version: "1.1.0"
 scope: "crates/aprender-core/src/text/ + crates/aprender-core/src/format/converter/tokenizer_loader.rs"

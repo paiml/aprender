@@ -15,7 +15,6 @@ metadata:
   - 'candle-core BlockQ3K::to_float -- Rust reference cross-checked against'
   - 'contracts/tensor-layout-v1.yaml -- dequant emits ggml-native element order; transpose stays at the GGUF->APR import boundary (LAYOUT-001/002)'
 
-kind: KernelContract
 name: q3k-dequant
 version: 1.0.0
 scope: aprender-serve quantize::dequantize_q3_k + gguf::metadata::get_tensor_f32 dispatch

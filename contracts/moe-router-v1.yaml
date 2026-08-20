@@ -7,7 +7,6 @@ metadata:
     - "Shazeer et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer."
   description: "MoE router: softmax → top-k → renormalize"
 
-kind: KernelContract
 name: moe-router
 version: "1.0.0"
 scope: "crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"

@@ -7,7 +7,6 @@ metadata:
     - "OpenTelemetry specification v1.0."
   description: "Distributed tracing and observability"
 
-kind: AlgorithmContract
 name: tracing-observability
 version: "1.0.0"
 scope: "crates/aprender-profile/src/ + crates/aprender-profile-core/src/"

@@ -11,7 +11,6 @@ metadata:
     - "PMAT-088 — original clean_chat_output prompt-injection prevention contract"
   description: "Chat-completion response post-processing: strip self-emitted turn markers and stop sequences"
 
-kind: KernelContract
 name: clean-chat-output
 version: "1.0.0"
 scope: "crates/aprender-serve/src/api/realize_handlers.rs::clean_chat_output"

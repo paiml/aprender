@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::error::ContractError;
-use crate::schema::types::Contract;
+use crate::schema::types::{Contract, CONTRACT_TOP_LEVEL_FIELDS};
 
 /// Parse a YAML contract file into a [`Contract`] struct.
 ///
@@ -17,10 +17,99 @@ pub fn parse_contract(path: &Path) -> Result<Contract, ContractError> {
     parse_contract_str(&content)
 }
 
+/// Files under `contracts/` that are NOT `Contract` documents.
+///
+/// `contracts/binding.yaml` is a `BindingRegistry` (equation → implementing
+/// function), not a contract. It has no `metadata:` block, so parsing it as a
+/// `Contract` fails with ``missing field `metadata` `` — which is exactly how
+/// `cargo test -p aprender-contracts --test validate_contracts` failed 3 of its
+/// 10 tests on `main` while `pv lint contracts/` reported zero errors: the two
+/// walkers disagreed about what a contract file is.
+const NON_CONTRACT_FILENAMES: [&str; 2] = ["binding.yaml", "binding.yml"];
+
+/// Is `path` a `.yaml` file the contract schema owns?
+///
+/// The single source of truth for "which files under `contracts/` are
+/// contracts". `pv lint`'s directory walker and the `validate_contracts`
+/// integration test both call it, so neither can drift into walking a file the
+/// other skips. Directory-level exclusions (`kaizen/`, `legacy/`,
+/// `pipelines/`, `publish-manifests/`) are a separate concern and stay with the
+/// recursive walker in `lint::gates`.
+#[must_use]
+pub fn is_contract_yaml(path: &Path) -> bool {
+    if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+        return false;
+    }
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    !name.starts_with('.') && !NON_CONTRACT_FILENAMES.contains(&name)
+}
+
 /// Parse a YAML contract from a string.
+///
+/// Two passes on purpose. `Contract` is intentionally NOT
+/// `#[serde(deny_unknown_fields)]` — 1224 of the 1726 contracts `pv lint`
+/// walks carry a downstream-owned top-level block (`family:`, `sections:`,
+/// `surface:`, …) and denying them would stop ~71% of the corpus from parsing
+/// in one commit. But serde's tolerance is also what let a top-level `kind:`
+/// (119 contracts) and a misspelled `falsification:` block vanish without a
+/// sound. So the second pass reads the raw mapping and records which top-level
+/// keys serde did not consume, in [`Contract::unknown_top_level_keys`]; the
+/// validator turns the never-legitimate ones into errors (SCHEMA-018 /
+/// SCHEMA-019) and leaves the rest alone.
+///
+/// # Errors
+///
+/// Returns [`ContractError::Yaml`] if the YAML is malformed or does not match
+/// the contract schema.
 pub fn parse_contract_str(yaml: &str) -> Result<Contract, ContractError> {
-    let contract: Contract = serde_yaml::from_str(yaml)?;
+    let mut contract: Contract = serde_yaml::from_str(yaml)?;
+    contract.unknown_top_level_keys = unknown_top_level_keys(yaml);
+    contract.strict_yaml_error = strict_yaml_error(yaml);
     Ok(contract)
+}
+
+/// Top-level mapping keys of `yaml` that are not fields of [`Contract`].
+///
+/// Deliberately deserializes into `BTreeMap<String, IgnoredAny>` rather than
+/// `serde_yaml::Value`: `IgnoredAny` drains each value without building it, so
+/// this pass reads ONLY the top-level key names and cannot be derailed by
+/// anything nested. That matters — `contracts/apr-cli-commands-v1.yaml` defines
+/// `subcommands:` twice inside `commands:`, which makes a strict
+/// `serde_yaml::Value` parse fail; capturing keys through `Value` silently
+/// returned "no unknown keys" for that file and its top-level
+/// `kind: CLICommandContract` went unreported. A `BTreeMap` also just
+/// overwrites a duplicate top-level key instead of erroring.
+///
+/// Returns an empty list when the document is not a mapping at all — that case
+/// is already a hard parse error above, so this never masks one.
+fn unknown_top_level_keys(yaml: &str) -> Vec<String> {
+    use serde::de::IgnoredAny;
+    use std::collections::BTreeMap;
+
+    let Ok(map) = serde_yaml::from_str::<BTreeMap<String, IgnoredAny>>(yaml) else {
+        return Vec::new();
+    };
+    map.into_keys()
+        .filter(|k| !CONTRACT_TOP_LEVEL_FIELDS.contains(&k.as_str()))
+        .collect()
+}
+
+/// The error a STRICT reader gets on YAML the contract schema accepted.
+///
+/// `Contract`'s derived deserializer walks only the fields it knows and skips
+/// the rest, so a document can be well-formed to it and malformed to anyone
+/// else. The one shape this catches today is a duplicate mapping key: YAML
+/// requires keys to be unique, and every consumer that builds a real map (a
+/// `serde_yaml::Value`, `yq`, a Python `dict`) keeps exactly one of them and
+/// throws the other away without a word.
+///
+/// `None` means the document round-trips through a strict reader.
+fn strict_yaml_error(yaml: &str) -> Option<String> {
+    serde_yaml::from_str::<serde_yaml::Value>(yaml)
+        .err()
+        .map(|e| e.to_string())
 }
 
 #[cfg(test)]
