@@ -1,0 +1,55 @@
+# `provable-contracts-macros` — COMPATIBILITY FACADE for
+# `aprender-contracts-macros`. See ../Cargo.toml for the workspace rationale.
+[package]
+name = "provable-contracts-macros"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Compatibility facade: renamed to `aprender-contracts-macros`, whose proc macros this crate re-exports."
+keywords = ["verification", "contracts", "proc-macro", "compile-time"]
+categories = ["development-tools::testing"]
+readme = "README.md"
+build = "build.rs"
+
+[lib]
+# MUST match `aprender-contracts-macros`'s `[lib] name`.
+name = "provable_contracts_macros"
+path = "src/lib.rs"
+# NOT `proc-macro = true`. MEASURED: a `proc-macro = true` crate that re-exports
+# someone else's macros fails to compile —
+#   error: `proc-macro` crate types currently cannot export any items other
+#          than functions tagged with `#[proc_macro]` ...
+# A plain lib re-exporting proc macros works and consumers can INVOKE them
+# through it, which is what `compat/invoke.rs` proves.
+
+[dependencies]
+# path + version: the path is what CI builds, the version is what a published
+# facade resolves. `scripts/check_facade_compat.sh` fails if this version ever
+# drifts from the aprender workspace version — these manifests are excluded
+# from the root workspace, so `cargo set-version` does NOT reach them.
+upstream = { path = "../../aprender-contracts-macros", version = "0.63.0", package = "aprender-contracts-macros" }
+
+[features]
+default = []
+# Private. See the sibling facade's `__facade_probe_mutant`.
+__facade_probe_mutant = []
+
+[lints]
+workspace = true
+
+# ---------------------------------------------------------------------------
+# COMPAT CORPUS — invokes all five 0.3.1 attribute macros through this facade.
+# Re-exporting a proc macro and being able to INVOKE it through the re-export
+# are different claims; this target settles the second one at compile time.
+# ---------------------------------------------------------------------------
+[[test]]
+name = "compat_invoke"
+path = "compat/invoke.rs"
+
+# Non-vacuity control for the corpus above. Not part of the 0.3.1 record.
+[[test]]
+name = "compat_probe"
+path = "compat/probe.rs"

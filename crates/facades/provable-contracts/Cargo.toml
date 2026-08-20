@@ -1,0 +1,191 @@
+# `provable-contracts` — COMPATIBILITY FACADE for `aprender-contracts`.
+# See ../Cargo.toml for why this is not a member of the aprender workspace.
+[package]
+name = "provable-contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Compatibility facade: renamed to `aprender-contracts`, which this crate re-exports verbatim."
+keywords = ["verification", "formal-methods", "kani", "contracts", "ml-kernels"]
+categories = ["development-tools::testing", "mathematics"]
+readme = "README.md"
+build = "build.rs"
+# The compat corpus below is wired explicitly; nothing else in this crate is a
+# discoverable target.
+autoexamples = false
+
+[lib]
+# MUST match `aprender-contracts`'s `[lib] name`. Old dependents write
+# `use provable_contracts::…`; anything else defeats the facade.
+name = "provable_contracts"
+path = "src/lib.rs"
+
+[dependencies]
+# Renamed to `upstream` on purpose: `aprender-contracts`'s lib target is ALSO
+# called `provable_contracts`, so binding it under a distinct extern name keeps
+# `pub use upstream::*` unambiguous against this crate's own name.
+# path + version: the path is what CI builds, the version is what a published
+# facade resolves. `scripts/check_facade_compat.sh` fails if this version ever
+# drifts from the aprender workspace version — these manifests are excluded
+# from the root workspace, so `cargo set-version` does NOT reach them.
+upstream = { path = "../../aprender-contracts", version = "0.63.0", package = "aprender-contracts" }
+
+[dev-dependencies]
+# Used by three of the vendored 0.3.1 example programs. They were regular
+# dependencies of provable-contracts 0.3.1, so its examples could name them;
+# the facade does not re-export third-party crates, so the compat corpus takes
+# them as dev-dependencies instead. Versions match the aprender workspace.
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+[features]
+default = []
+kani = ["upstream/kani"]
+# Private. Compiles the RED arm of `compat/probe.rs`, which names an item the
+# facade does not export. `scripts/check_facade_compat.sh --self-test` requires
+# that build to FAIL — the mutation control for the compile half of the gate.
+# A cargo feature rather than a `--cfg` flag on purpose: changing RUSTFLAGS
+# re-fingerprints the whole dependency graph, a feature re-compiles this crate
+# alone, so the control costs seconds rather than a cold rebuild.
+__facade_probe_mutant = []
+
+[lints]
+workspace = true
+
+# ---------------------------------------------------------------------------
+# COMPAT CORPUS — the 28 example programs published INSIDE
+# provable-contracts 0.3.1 (sha256 of the .crate:
+# 49c4074b55824441df3872f57aecaeb69902a568dabffb59da9b15533a91cca4),
+# vendored byte-for-byte. They are real downstream consumer code: they call
+# 20 of the re-exported modules by name and destructure their return types,
+# so they fail to COMPILE on a signature drift, not merely on a removed
+# export. `scripts/check_facade_compat.sh` builds them in CI.
+#
+# Do not edit these files. They are a fixed record of the 0.3.1 API.
+#
+# 27 of the 28 are wired below. The 28th, `design_by_contract.rs`, is present
+# but NOT wired: its first statement is
+#     include_str!("../../../contracts/softmax-kernel-v1.yaml")
+# which depends on the ORIGINAL repository layout. It could not compile from
+# inside the published 0.3.1 package either — that .crate ships no `contracts/`
+# directory. The obstacle is environmental, not an API question, so wiring it
+# would test the filesystem rather than the facade.
+# `scripts/check_facade_compat.sh` asserts 28 files present and 27 wired, so
+# this exemption cannot quietly grow.
+# ---------------------------------------------------------------------------
+
+# Non-vacuity control for the corpus above. Not part of the 0.3.1 record.
+[[test]]
+name = "compat_probe"
+path = "compat/probe.rs"
+
+[[example]]
+name = "compat_0_3_1_audit"
+path = "compat/0.3.1/examples/audit.rs"
+
+[[example]]
+name = "compat_0_3_1_codegen"
+path = "compat/0.3.1/examples/codegen.rs"
+
+[[example]]
+name = "compat_0_3_1_coq"
+path = "compat/0.3.1/examples/coq.rs"
+
+[[example]]
+name = "compat_0_3_1_coverage"
+path = "compat/0.3.1/examples/coverage.rs"
+
+[[example]]
+name = "compat_0_3_1_cross_project_query"
+path = "compat/0.3.1/examples/cross_project_query.rs"
+
+[[example]]
+name = "compat_0_3_1_doc_integrity"
+path = "compat/0.3.1/examples/doc_integrity.rs"
+
+[[example]]
+name = "compat_0_3_1_explain"
+path = "compat/0.3.1/examples/explain.rs"
+
+[[example]]
+name = "compat_0_3_1_extract_pytorch"
+path = "compat/0.3.1/examples/extract_pytorch.rs"
+
+[[example]]
+name = "compat_0_3_1_flux"
+path = "compat/0.3.1/examples/flux.rs"
+
+[[example]]
+name = "compat_0_3_1_fuzz"
+path = "compat/0.3.1/examples/fuzz.rs"
+
+[[example]]
+name = "compat_0_3_1_infrastructure_contracts"
+path = "compat/0.3.1/examples/infrastructure_contracts.rs"
+
+[[example]]
+name = "compat_0_3_1_invariants"
+path = "compat/0.3.1/examples/invariants.rs"
+
+[[example]]
+name = "compat_0_3_1_lean_codegen"
+path = "compat/0.3.1/examples/lean_codegen.rs"
+
+[[example]]
+name = "compat_0_3_1_lean_proofs"
+path = "compat/0.3.1/examples/lean_proofs.rs"
+
+[[example]]
+name = "compat_0_3_1_lean_status"
+path = "compat/0.3.1/examples/lean_status.rs"
+
+[[example]]
+name = "compat_0_3_1_lint"
+path = "compat/0.3.1/examples/lint.rs"
+
+[[example]]
+name = "compat_0_3_1_mirai"
+path = "compat/0.3.1/examples/mirai.rs"
+
+[[example]]
+name = "compat_0_3_1_pipeline"
+path = "compat/0.3.1/examples/pipeline.rs"
+
+[[example]]
+name = "compat_0_3_1_proof_status"
+path = "compat/0.3.1/examples/proof_status.rs"
+
+[[example]]
+name = "compat_0_3_1_query"
+path = "compat/0.3.1/examples/query.rs"
+
+[[example]]
+name = "compat_0_3_1_scaffold"
+path = "compat/0.3.1/examples/scaffold.rs"
+
+[[example]]
+name = "compat_0_3_1_scaffold_generation"
+path = "compat/0.3.1/examples/scaffold_generation.rs"
+
+[[example]]
+name = "compat_0_3_1_score"
+path = "compat/0.3.1/examples/score.rs"
+
+[[example]]
+name = "compat_0_3_1_score_contracts"
+path = "compat/0.3.1/examples/score_contracts.rs"
+
+[[example]]
+name = "compat_0_3_1_tla"
+path = "compat/0.3.1/examples/tla.rs"
+
+[[example]]
+name = "compat_0_3_1_validate"
+path = "compat/0.3.1/examples/validate.rs"
+
+[[example]]
+name = "compat_0_3_1_validate_contracts"
+path = "compat/0.3.1/examples/validate_contracts.rs"

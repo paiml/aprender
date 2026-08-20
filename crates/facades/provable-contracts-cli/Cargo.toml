@@ -1,0 +1,39 @@
+# `provable-contracts-cli` — COMPATIBILITY FACADE for `aprender-contracts-cli`.
+#
+# This is the one that actually bit someone: paiml/infra pinned
+# `provable-contracts-cli = "0.3.1"`, which resolved cleanly and installed a
+# `pv` sixty versions behind. 0.3.1 predates the `safety`/`liveness`
+# proof-obligation kinds, so current contracts failed there with an
+# unknown-variant error and the guard read as BROKEN rather than OUT OF DATE.
+#
+# `cargo install provable-contracts-cli` must therefore install a CURRENT `pv`,
+# not a shim that errors. It can, because `aprender-contracts-cli` exposes
+# `pub fn run()` from a library (crates/aprender-contracts-cli/src/lib.rs) —
+# the binary is a four-line shell around it and so is this one.
+[package]
+name = "provable-contracts-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Compatibility facade: renamed to `aprender-contracts-cli`. Installs the current `pv`."
+keywords = ["verification", "formal-methods", "contracts", "cli"]
+categories = ["development-tools::testing", "command-line-utilities"]
+readme = "README.md"
+build = "build.rs"
+
+[[bin]]
+name = "pv"
+path = "src/main.rs"
+
+[dependencies]
+# path + version: the path is what CI builds, the version is what a published
+# facade resolves. `scripts/check_facade_compat.sh` fails if this version ever
+# drifts from the aprender workspace version — these manifests are excluded
+# from the root workspace, so `cargo set-version` does NOT reach them.
+upstream = { path = "../../aprender-contracts-cli", version = "0.63.0", package = "aprender-contracts-cli" }
+
+[lints]
+workspace = true
