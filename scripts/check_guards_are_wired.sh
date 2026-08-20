@@ -44,7 +44,28 @@ unwired_in() {
     for g in "$root"/scripts/check_*.sh; do
         [ -f "$g" ] || continue
         base=$(basename "$g")
-        if ! grep -rqF -- "$base" "$root"/.github/workflows/ 2>/dev/null; then
+        # EXECUTION, not mention. `grep -rqF -- "$base"` matched the script's
+        # NAME anywhere in the workflows tree -- including inside a `#` comment.
+        # So a guard could be documented and never run, and this meta-guard,
+        # whose entire purpose is to catch exactly that, reported it as wired.
+        #
+        # Require a non-comment line that INVOKES it: `bash scripts/x.sh`,
+        # `sh scripts/x.sh`, `./scripts/x.sh`, or a bare `scripts/x.sh` as a
+        # command.
+        #
+        # `sed 's/#.*$//'` strips from the FIRST `#`, not just whole-line
+        # comments. My first version filtered only lines matching `^\s*#`, and
+        # a TRAILING comment defeated it: `run: echo skipped # bash
+        # scripts/check_msrv.sh` still matched and reported the guard as wired.
+        # That is the same mention-vs-execution defect this function exists to
+        # fix, one level down, and it was caught by mutation-testing the fix
+        # rather than by reading it. Erring strict is correct here: a `#` inside
+        # a quoted YAML string would make a wired guard look unwired, which is a
+        # loud false alarm rather than a silent miss.
+        if ! grep -rh --include='*.yml' --include='*.yaml' -- "$base" \
+                "$root"/.github/workflows/ 2>/dev/null \
+             | sed 's/#.*$//' \
+             | grep -qE "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*${base}([[:space:]]|$|['\"])" ; then
             printf '%s\n' "$base"
         fi
     done | LC_ALL=C sort
