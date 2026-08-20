@@ -315,11 +315,33 @@ mod tests {
     proptest! {
         #[test]
         fn prop_greedy_is_argmax(logits in proptest::collection::vec(-10.0f32..10.0, 1..16)) {
+            // TIES. The old form compared this index against
+            //     logits.iter().enumerate().max_by(..).unwrap().0
+            // which returns the LAST maximum, while `greedy_scalar` keeps the
+            // FIRST (`if v > best_val`, strictly greater). On a tie the two
+            // disagree by construction, so the property failed at random —
+            // whenever proptest happened to generate duplicate maxima. Observed
+            // in CI on `[9.086451, 9.086451]` after 127 successes, red on a PR
+            // that touches nothing near sampling.
+            //
+            // Index equality was never the real property, and a required check
+            // that reds at random is worse than one that cannot red at all: it
+            // trains everyone to re-run until green. Assert what actually has
+            // to hold, and pin the tie-break rule explicitly rather than
+            // inheriting whatever `max_by` happens to do.
             let result = greedy_scalar(&logits);
-            let argmax = logits.iter().enumerate()
-                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                .unwrap().0;
-            prop_assert_eq!(result, argmax);
+
+            // 1. greedy returns AN index holding the maximum value.
+            let best = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            prop_assert_eq!(logits[result], best);
+
+            // 2. and specifically the FIRST such index. Sampling must be
+            //    deterministic for a fixed input, so the tie-break is part of
+            //    the contract, not an implementation detail. This is STRICTLY
+            //    STRONGER than the old assertion, which could not even be
+            //    stated on ties.
+            let first_max = logits.iter().position(|&v| v == best).unwrap();
+            prop_assert_eq!(result, first_max);
         }
 
         #[test]
