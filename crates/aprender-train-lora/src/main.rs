@@ -36,7 +36,13 @@ enum Commands {
         vram: f64,
 
         /// Fine-tuning method: full, lora, qlora, auto
-        #[arg(short = 'm', long, default_value = "auto")]
+        // Long-only. `-m` is taken by `model` above via `#[arg(short, long)]`,
+        // and claiming it here made the two ambiguous: debug builds PANICKED in
+        // clap's debug_asserts, and release builds -- what `cargo install`
+        // produces -- shipped a `plan --help` listing BOTH `-m, --model` and
+        // `-m, --method`. The short was never usable; only `-m` for the more
+        // common `model` is kept, and it is now unambiguous.
+        #[arg(long, default_value = "auto")]
         method: String,
     },
 

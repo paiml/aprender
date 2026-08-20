@@ -17,7 +17,7 @@ use tempfile::TempDir;
 #[test]
 fn test_ml_outliers_flag_accepted() {
     // Test that --ml-outliers flag is accepted
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--ml-outliers").arg("--").arg("echo").arg("test");
 
     // Should not error on flag parsing
@@ -30,7 +30,7 @@ fn test_ml_outliers_flag_accepted() {
 
 #[test]
 fn test_ml_outliers_with_statistics() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--ml-outliers").arg("--").arg("echo").arg("test");
 
     cmd.assert().success();
@@ -73,7 +73,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--ml-outliers").arg("--").arg(&test_program);
 
     // Should detect anomalies in output
@@ -86,7 +86,7 @@ int main() {
 
 #[test]
 fn test_explain_flag_provides_explainability() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--ml-outliers").arg("--explain").arg("--").arg("echo").arg("test");
 
     cmd.assert().success().stderr(
@@ -100,7 +100,7 @@ fn test_explain_flag_provides_explainability() {
 
 #[test]
 fn test_ml_outliers_json_export() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--format").arg("json").arg("--ml-outliers").arg("--").arg("echo").arg("test");
 
     cmd.assert().success().stdout(
@@ -114,7 +114,7 @@ fn test_ml_outliers_json_export() {
 
 #[test]
 fn test_ml_outliers_with_filtering() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--ml-outliers").arg("-e").arg("trace=file").arg("--").arg("ls").arg("-la");
 
     cmd.assert().success();
@@ -149,7 +149,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--ml-outliers").arg("--").arg(&test_program);
 
     // Should handle gracefully (no panic)
@@ -163,7 +163,7 @@ int main() {
 #[test]
 fn test_backward_compatibility_without_ml_outliers() {
     // Ensure existing functionality works without --ml-outliers flag
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--").arg("echo").arg("test");
 
     cmd.assert().success();
@@ -175,7 +175,7 @@ fn test_backward_compatibility_without_ml_outliers() {
 
 #[test]
 fn test_ml_outliers_with_timing() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("-T").arg("--ml-outliers").arg("--").arg("echo").arg("hello");
 
     cmd.assert().success();
@@ -187,7 +187,7 @@ fn test_ml_outliers_with_timing() {
 
 #[test]
 fn test_ml_outliers_compare_with_kmeans() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c")
         .arg("--ml-outliers")
         .arg("--ml-anomaly") // Also enable KMeans for comparison
@@ -205,7 +205,7 @@ fn test_ml_outliers_compare_with_kmeans() {
 
 #[test]
 fn test_ml_outliers_with_source_correlation() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--source").arg("--ml-outliers").arg("--").arg("echo").arg("test");
 
     // Should correlate anomalies with source locations
@@ -218,7 +218,7 @@ fn test_ml_outliers_with_source_correlation() {
 
 #[test]
 fn test_ml_outliers_threshold_configuration() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c")
         .arg("--ml-outliers")
         .arg("--ml-outlier-threshold")
@@ -236,7 +236,7 @@ fn test_ml_outliers_threshold_configuration() {
 
 #[test]
 fn test_ml_outliers_num_trees_configuration() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c")
         .arg("--ml-outliers")
         .arg("--ml-outlier-trees")

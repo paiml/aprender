@@ -21,7 +21,21 @@ metadata:
 kind: CLICommandContract
 name: apr-cli-commands
 version: "1.1.0"
-scope: "all apr CLI subcommands (105 commands; count is derived from the `commands:` list below and checked against `apr --help` by FALSIFY-CLI-005 — do not hand-maintain a number here)"
+scope: |
+  All apr CLI subcommands. The authoritative list is this file's own
+  `commands:` block; it is mirrored by
+  crates/apr-cli/tests/cli_commands.rs::registered_commands and checked
+  against `apr --help` by FALSIFY-CLI-005.
+
+  Deliberately no hand-maintained total here. There was one, and it read
+  "77 commands" followed by a prose changelog of every addition since --
+  while the list below held 111. A count inside the contract that certifies
+  counts, drifting 34 behind its own data, with no guard watching it: a
+  fourth copy of a number three other places already agree on.
+
+  To get the number, parse the list. Note `grep -c '^  - name:'` is WRONG
+  -- it returns 117 because other same-indent `name:` keys exist in this
+  file. Parse the YAML.
 binary: "apr"
 install: "cargo install aprender"
 
@@ -50,6 +64,7 @@ commands:
     description: "Inference server (plan/run)"
     requires_model: true
     side_effects: [network, filesystem]
+    subcommands: [plan, run]
 
   - name: chat
     category: inference
@@ -75,6 +90,7 @@ commands:
     description: "Simple debugging output"
     requires_model: true
     side_effects: []
+    subcommands: [embed-viz]
 
   - name: validate
     category: inspection
@@ -125,12 +141,14 @@ commands:
     description: "Dataset inspection tools (audio-inspect)"
     requires_model: false
     side_effects: []
+    subcommands: [audio-inspect]
 
   - name: kernel
     category: analysis
     description: "Kernel-level parity measurements (parity)"
     requires_model: false
     side_effects: []
+    subcommands: [parity]
 
   - name: trace
     category: inspection
@@ -212,6 +230,8 @@ commands:
     side_effects: [filesystem]
 
   # ── Model Registry ──
+    subcommands: [chain, compare-inference, convert, diff-tensors, fingerprint, inspect, validate-stats, verify]
+
   - name: pull
     category: registry
     description: "Download and cache model from HuggingFace"
@@ -235,6 +255,7 @@ commands:
     description: "Registry operations (CRUX-A-01): inspect alias map, etc."
     requires_model: false
     side_effects: []
+    subcommands: [aliases]
 
   - name: publish
     category: registry
@@ -266,6 +287,7 @@ commands:
     description: "Training pipeline (plan/apply)"
     requires_model: false
     side_effects: [filesystem, gpu]
+    subcommands: [apply, archive, cluster-status, halving, plan, submit, sweep, watch]
 
   - name: pretrain
     category: training
@@ -278,6 +300,7 @@ commands:
     description: "Tokenizer training pipeline (plan/apply)"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [apply, encode-corpus, import-hf, plan, repair-manifest, train]
 
   - name: tune
     category: training
@@ -321,6 +344,7 @@ commands:
     description: "Manage canary tests for regression"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [check, create]
 
   - name: compare-hf
     category: evaluation
@@ -371,6 +395,7 @@ commands:
     description: "Data quality pipeline"
     requires_model: false
     side_effects: [filesystem]
+    subcommands: [audit, balance, decontaminate, dedup, split, x]
 
   - name: pipeline
     category: data
@@ -379,6 +404,8 @@ commands:
     side_effects: [filesystem]
 
   # ── TUI & Monitoring ──
+    subcommands: [apply, plan, status, validate]
+
   - name: tui
     category: ui
     description: "Interactive terminal UI"
@@ -396,6 +423,7 @@ commands:
     description: "List, show, and compare training experiment runs"
     requires_model: false
     side_effects: []
+    subcommands: [diff, ls, show]
 
   - name: experiment
     category: ui
@@ -404,6 +432,8 @@ commands:
     side_effects: []
 
   # ── Miscellaneous ──
+    subcommands: [view]
+
   - name: showcase
     category: misc
     description: "Qwen2.5-Coder showcase demo"
@@ -421,15 +451,29 @@ commands:
         description: "Parse a Modelfile and emit config as JSON or human-readable text"
         requires_model: false
         side_effects: []
+    subcommands: [parse]
 
-  - name: probar
+  - name: test
     category: misc
+    aliases: [probar]
     description: |
-      Probar testing framework — visual regression, replay, compliance, audio/video, more.
-      GH-876 Milestone 1: `apr probar tensor` (PMAT-481 tensor visual regression).
-      Follow-up milestones add the remaining probador subcommands (test, record,
-      report, coverage, init, config, serve, build, watch, playbook, comply,
-      av-sync, audio, video, animation, stress, llm).
+      Test harness for web, LLM, media and replay — powered by probador.
+
+      Renamed from `probar` (Spanish "to try"), which named the VERB and so told
+      a reader nothing about the subject. Follows the `apr data` precedent: a
+      plain noun for the user-facing command, the Spanish name kept for the
+      engine and credited in the description. `apr probar` remains as a HIDDEN
+      alias so existing scripts keep working.
+
+      Subcommands group by what is UNDER TEST, not by verb:
+        web     WASM/browser build and runtime  (serve, build, watch, comply, stress)
+        llm     inference correctness/throughput/cost against an endpoint
+                (test, load, bench, sweep, score, experiment, data-audit)
+        media   rendered output vs ground truth (av-sync, audio, video, animation)
+        replay  the runner itself             (record, playbook, coverage, report)
+
+      Only `tensor` is routed today (PMAT-481 visual regression); the rest land
+      as they are delegated to the probador library.
     requires_model: false
     side_effects: [filesystem]
     subcommands:
@@ -437,6 +481,7 @@ commands:
         description: "Export tensor activations for visual regression testing (PMAT-481)"
         requires_model: true
         side_effects: [filesystem]
+    subcommands: [tensor]
 
   - name: diagnose
     category: misc
@@ -695,6 +740,54 @@ commands:
     description: "Run MCP (Model Context Protocol) server over stdio"
     requires_model: false
     side_effects: [stdio]
+
+  # ── Consolidated sibling CLIs (APR-MONO) ──
+  # Each was reachable ONLY from its own binary; the command enum lived in a
+  # main.rs, importable by nothing. apr now calls the SAME dispatch fn.
+
+  - name: rag
+    category: pipeline
+    description: "RAG pipeline: index, query, transcribe (was the trueno-rag binary)"
+    requires_model: false
+    side_effects: [filesystem]
+    subcommands: [demo, extract-frames, index, info, query, transcribe]
+
+  - name: zram
+    category: tools
+    description: "zram device management (was the trueno-zram binary)"
+    requires_model: false
+    side_effects: [filesystem]
+    subcommands: [benchmark, create, remove, status]
+
+  - name: sim
+    category: tools
+    description: "Discrete-event simulation (was the simular binary)"
+    requires_model: false
+    side_effects: [filesystem]
+    # `version` comes from #2527's simular clap conversion, which the batch
+    # takes over #2493's. FALSIFY-CLI-006 caught the omission.
+    subcommands: [emc-check, emc-validate, list-emc, render, run, validate, verify, version]
+
+  - name: cgp
+    category: tools
+    description: "Compute-graph profiling (was the aprender-cgp binary)"
+    requires_model: false
+    side_effects: [filesystem]
+    subcommands: [baseline, bench, compete, contract, diff, doctor, explain, profile, roofline, trace, tui]
+
+  - name: qa-playbook
+    category: tools
+    description: "Model QA playbook runner (was the apr-qa binary)"
+    requires_model: false
+    side_effects: [filesystem]
+    subcommands: [bootstrap, certify, export-csv, export-evidence, generate, kernel-coverage, list, lock-playbooks, parity, report, run, score, tickets, tools, validate-contract]
+
+  - name: pv
+    category: tools
+    description: "Provable-contracts CLI (also ships as the standalone pv binary)"
+    requires_model: false
+    side_effects: [filesystem]
+    subcommands: [audit, book, certify, check-parity, codegen, coq, coverage, diff, equations, explain, extract-pytorch, flux, fuzz, generate, graph, infer, invariants, kaizen, kani, lean, lean-status, lint, migrate, mirai, pipeline, probar, proof-status, query, roofline, scaffold, score, status, tla, unlock, validate, verify-bindings, verify-pipeline, verify-structure]
 
 # ── Falsification Conditions ──
 

@@ -75,6 +75,8 @@ apr_bin_target_dir() {
     local here
     here=$(git rev-parse --show-toplevel 2>/dev/null) || here=$(pwd)
     [ -n "$here" ] || here=$(pwd)
+    # bashrs:allow SEC010 - $here is `git rev-parse --show-toplevel` or `pwd`,
+    # never user-controlled input.
     (cd "$here" && cargo metadata --no-deps --format-version 1 2>/dev/null) \
         | jq -r '.target_directory // empty' 2>/dev/null
 }
@@ -90,6 +92,35 @@ apr_bin_resolve() {
     local td
     td=$(apr_bin_target_dir)
     [ -n "$td" ] || return 1
+
+    # Prefer the candidate that was actually built from HEAD, not a fixed
+    # profile order.
+    #
+    # This used to return `release/apr` whenever it existed, then hand it to the
+    # freshness check, which refused it. Measured: with `debug/apr` built from
+    # HEAD sitting beside a stale `release/apr`, the resolver picked release and
+    # HARD-FAILED -- telling the caller to `cargo install` while a provably
+    # correct binary was in the next directory. Every gate that sources this
+    # file broke that way, and the trigger is just "you ran `cargo build
+    # --release` here once", which is most checkouts.
+    #
+    # The candidate SET is unchanged, so the "never search PATH" property this
+    # file exists for still holds. Only the ORDER within that set is now
+    # evidence-driven. Fixed order is kept as the fallback so a checkout where
+    # nothing matches HEAD still resolves something and gets the STALE report
+    # rather than "no apr binary found", which would be a worse diagnosis.
+    local head_sha=""
+    head_sha=$(git rev-parse --short HEAD 2>/dev/null) || head_sha=""
+    if [ -n "$head_sha" ]; then
+        local cand
+        for cand in "$td/release/apr" "$td/debug/apr" "${CARGO_HOME:-$HOME/.cargo}/bin/apr"; do
+            [ -x "$cand" ] || continue
+            case "$("$cand" --version 2>&1)" in
+                *"$head_sha"*) printf '%s\n' "$cand"; return 0 ;;
+            esac
+        done
+    fi
+
     if [ -x "$td/release/apr" ]; then
         printf '%s\n' "$td/release/apr"
         return 0
@@ -155,6 +186,13 @@ apr_bin_assert_fresh() {
         printf '  HEAD     : %s\n' "$head"
         printf '  The binary was NOT built from this commit, so anything it\n'
         printf '  validates says nothing about this checkout.\n'
+        printf '  candidates in the target dir:\n'
+        local _td _c
+        _td=$(apr_bin_target_dir)
+        for _c in "$_td/release/apr" "$_td/debug/apr" "${CARGO_HOME:-$HOME/.cargo}/bin/apr"; do
+            [ -x "$_c" ] || continue
+            printf '    %-40s %s\n' "$_c" "$("$_c" --version 2>&1 | head -1)"
+        done
         if [ -n "$shadows" ]; then
             printf '  every apr on PATH (first wins):\n'
             printf '%s\n' "$shadows" | while IFS= read -r p; do

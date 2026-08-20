@@ -33,7 +33,7 @@ fn test_rewrite_stacktrace_flag_accepted() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--rewrite-stacktrace").arg("--").arg("true");
 
     // Should accept the flag without error
@@ -78,7 +78,7 @@ fn test_stack_trace_rewriting_with_mappings() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--rewrite-stacktrace")
@@ -119,7 +119,7 @@ fn test_display_python_context() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--rewrite-stacktrace")
@@ -163,7 +163,7 @@ fn test_temp_variable_rewriting() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--rewrite-stacktrace")
@@ -204,7 +204,7 @@ fn test_rewrite_stacktrace_with_function_time() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--rewrite-stacktrace")
@@ -245,7 +245,7 @@ fn test_rewrite_stacktrace_typescript() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--rewrite-stacktrace")
@@ -286,7 +286,7 @@ fn test_backward_compatibility_without_rewrite() {
     fs::write(&source_map, map_content).expect("test");
 
     // Use source map WITHOUT --rewrite-stacktrace
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--").arg("true");
 
     // Should still succeed
@@ -312,7 +312,7 @@ fn test_rewrite_stacktrace_empty_mappings() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map").arg(&source_map).arg("--rewrite-stacktrace").arg("--").arg("true");
 
     // Should succeed even with no mappings
@@ -341,7 +341,7 @@ fn test_rewrite_stacktrace_with_statistics() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--rewrite-stacktrace")
@@ -407,7 +407,7 @@ fn test_multiple_line_mappings() {
     }"#;
     fs::write(&source_map, map_content).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--transpiler-map")
         .arg(&source_map)
         .arg("--rewrite-stacktrace")

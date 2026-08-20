@@ -10,7 +10,7 @@ fn contracts_dir() -> PathBuf {
 
 #[test]
 fn dispatch_validate() {
-    let result = run_command(Commands::Validate {
+    let result = dispatch(Commands::Validate {
         contract: test_contract(),
     });
     assert!(result.is_ok());
@@ -18,7 +18,7 @@ fn dispatch_validate() {
 
 #[test]
 fn dispatch_scaffold() {
-    let result = run_command(Commands::Scaffold {
+    let result = dispatch(Commands::Scaffold {
         contract: test_contract(),
         r#trait: false,
         output: None,
@@ -28,7 +28,7 @@ fn dispatch_scaffold() {
 
 #[test]
 fn dispatch_kani() {
-    let result = run_command(Commands::Kani {
+    let result = dispatch(Commands::Kani {
         contract: test_contract(),
     });
     assert!(result.is_ok());
@@ -36,7 +36,7 @@ fn dispatch_kani() {
 
 #[test]
 fn dispatch_status() {
-    let result = run_command(Commands::Status {
+    let result = dispatch(Commands::Status {
         contract: test_contract(),
     });
     assert!(result.is_ok());
@@ -45,7 +45,7 @@ fn dispatch_status() {
 #[test]
 fn dispatch_diff() {
     let c = test_contract();
-    let result = run_command(Commands::Diff {
+    let result = dispatch(Commands::Diff {
         old: c.clone(),
         new: c,
     });
@@ -54,7 +54,7 @@ fn dispatch_diff() {
 
 #[test]
 fn dispatch_lean() {
-    let result = run_command(Commands::Lean {
+    let result = dispatch(Commands::Lean {
         contract: test_contract(),
         output_dir: None,
     });
@@ -63,7 +63,7 @@ fn dispatch_lean() {
 
 #[test]
 fn dispatch_lean_status() {
-    let result = run_command(Commands::LeanStatus {
+    let result = dispatch(Commands::LeanStatus {
         path: test_contract(),
     });
     assert!(result.is_ok());
@@ -71,7 +71,7 @@ fn dispatch_lean_status() {
 
 #[test]
 fn dispatch_lean_status_directory() {
-    let result = run_command(Commands::LeanStatus {
+    let result = dispatch(Commands::LeanStatus {
         path: contracts_dir(),
     });
     assert!(result.is_ok());
@@ -79,7 +79,7 @@ fn dispatch_lean_status_directory() {
 
 #[test]
 fn dispatch_proof_status() {
-    let result = run_command(Commands::ProofStatus {
+    let result = dispatch(Commands::ProofStatus {
         path: test_contract(),
         binding: None,
         format: "text".to_string(),
@@ -92,7 +92,7 @@ fn dispatch_proof_status() {
 
 #[test]
 fn dispatch_proof_status_json() {
-    let result = run_command(Commands::ProofStatus {
+    let result = dispatch(Commands::ProofStatus {
         path: test_contract(),
         binding: None,
         format: "json".to_string(),
@@ -105,7 +105,7 @@ fn dispatch_proof_status_json() {
 
 #[test]
 fn dispatch_proof_status_directory() {
-    let result = run_command(Commands::ProofStatus {
+    let result = dispatch(Commands::ProofStatus {
         path: contracts_dir(),
         binding: None,
         format: "text".to_string(),
@@ -120,7 +120,7 @@ fn dispatch_proof_status_directory() {
 fn dispatch_proof_status_with_binding() {
     let binding =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts/aprender/binding.yaml");
-    let result = run_command(Commands::ProofStatus {
+    let result = dispatch(Commands::ProofStatus {
         path: contracts_dir(),
         binding: Some(binding),
         format: "json".to_string(),
@@ -133,7 +133,7 @@ fn dispatch_proof_status_with_binding() {
 
 #[test]
 fn dispatch_score_single() {
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: test_contract(),
         binding: None,
         format: "text".to_string(),
@@ -149,7 +149,7 @@ fn dispatch_score_single() {
 
 #[test]
 fn dispatch_score_directory() {
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: contracts_dir(),
         binding: None,
         format: "json".to_string(),
@@ -165,7 +165,7 @@ fn dispatch_score_directory() {
 
 #[test]
 fn dispatch_score_min_threshold_fails() {
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: test_contract(),
         binding: None,
         format: "text".to_string(),
@@ -181,7 +181,7 @@ fn dispatch_score_min_threshold_fails() {
 
 #[test]
 fn dispatch_score_custom_weights() {
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: test_contract(),
         binding: None,
         format: "text".to_string(),
@@ -200,7 +200,7 @@ fn dispatch_score_custom_weights() {
 
 #[test]
 fn dispatch_score_markdown() {
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: test_contract(),
         binding: None,
         format: "markdown".to_string(),
@@ -216,7 +216,7 @@ fn dispatch_score_markdown() {
 
 #[test]
 fn dispatch_score_directory_markdown() {
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: contracts_dir(),
         binding: None,
         format: "markdown".to_string(),
@@ -232,7 +232,7 @@ fn dispatch_score_directory_markdown() {
 
 #[test]
 fn dispatch_score_summary() {
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: contracts_dir(),
         binding: None,
         format: "text".to_string(),
@@ -248,7 +248,7 @@ fn dispatch_score_summary() {
 
 #[test]
 fn dispatch_score_summary_json() {
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: contracts_dir(),
         binding: None,
         format: "json".to_string(),
@@ -264,7 +264,7 @@ fn dispatch_score_summary_json() {
 
 #[test]
 fn dispatch_score_summary_markdown() {
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: contracts_dir(),
         binding: None,
         format: "markdown".to_string(),
@@ -282,7 +282,7 @@ fn dispatch_score_summary_markdown() {
 fn dispatch_score_with_binding() {
     let binding =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts/aprender/binding.yaml");
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: contracts_dir(),
         binding: Some(binding),
         format: "text".to_string(),
@@ -300,7 +300,7 @@ fn dispatch_score_with_binding() {
 fn dispatch_score_with_binding_json() {
     let binding =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts/aprender/binding.yaml");
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: contracts_dir(),
         binding: Some(binding),
         format: "json".to_string(),
@@ -318,7 +318,7 @@ fn dispatch_score_with_binding_json() {
 fn dispatch_score_with_binding_markdown() {
     let binding =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts/aprender/binding.yaml");
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: contracts_dir(),
         binding: Some(binding),
         format: "markdown".to_string(),
@@ -334,7 +334,7 @@ fn dispatch_score_with_binding_markdown() {
 
 #[test]
 fn dispatch_score_directory_threshold_fails() {
-    let result = run_command(Commands::Score {
+    let result = dispatch(Commands::Score {
         path: contracts_dir(),
         binding: None,
         format: "text".to_string(),
@@ -351,7 +351,7 @@ fn dispatch_score_directory_threshold_fails() {
 #[test]
 fn dispatch_book() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let result = run_command(Commands::Book {
+    let result = dispatch(Commands::Book {
         contract_dir: contracts_dir(),
         output: dir.path().to_path_buf(),
         update_summary: false,
@@ -364,7 +364,7 @@ fn dispatch_book() {
 #[test]
 fn dispatch_lean_with_output_dir() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let result = run_command(Commands::Lean {
+    let result = dispatch(Commands::Lean {
         contract: test_contract(),
         output_dir: Some(dir.path().to_path_buf()),
     });
@@ -373,7 +373,7 @@ fn dispatch_lean_with_output_dir() {
 
 #[test]
 fn dispatch_proof_status_markdown() {
-    let result = run_command(Commands::ProofStatus {
+    let result = dispatch(Commands::ProofStatus {
         path: contracts_dir(),
         binding: None,
         format: "markdown".to_string(),
@@ -386,7 +386,7 @@ fn dispatch_proof_status_markdown() {
 
 #[test]
 fn dispatch_roofline_text() {
-    let result = run_command(Commands::Roofline {
+    let result = dispatch(Commands::Roofline {
         contract_dir: contracts_dir(),
         params: 7_000_000_000,
         bits: 4,
@@ -398,7 +398,7 @@ fn dispatch_roofline_text() {
 
 #[test]
 fn dispatch_roofline_json() {
-    let result = run_command(Commands::Roofline {
+    let result = dispatch(Commands::Roofline {
         contract_dir: contracts_dir(),
         params: 7_000_000_000,
         bits: 4,
@@ -410,7 +410,7 @@ fn dispatch_roofline_json() {
 
 #[test]
 fn dispatch_roofline_invalid_hw() {
-    let result = run_command(Commands::Roofline {
+    let result = dispatch(Commands::Roofline {
         contract_dir: contracts_dir(),
         params: 7_000_000_000,
         bits: 4,
@@ -424,7 +424,7 @@ fn dispatch_roofline_invalid_hw() {
 fn dispatch_pipeline_text() {
     let pipeline_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../aprender-contracts-staging/contracts/pipelines/inference-forward-v1.yaml");
-    let result = run_command(Commands::Pipeline {
+    let result = dispatch(Commands::Pipeline {
         pipeline: pipeline_path,
         format: "text".to_string(),
     });
@@ -435,7 +435,7 @@ fn dispatch_pipeline_text() {
 fn dispatch_pipeline_json() {
     let pipeline_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../aprender-contracts-staging/contracts/pipelines/inference-forward-v1.yaml");
-    let result = run_command(Commands::Pipeline {
+    let result = dispatch(Commands::Pipeline {
         pipeline: pipeline_path,
         format: "json".to_string(),
     });

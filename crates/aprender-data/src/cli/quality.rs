@@ -8,7 +8,7 @@ use super::basic::load_dataset;
 use crate::quality::{ColumnQuality, QualityChecker};
 
 /// Quality checking commands.
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum QualityCommands {
     /// Check data quality of a dataset
     Check {

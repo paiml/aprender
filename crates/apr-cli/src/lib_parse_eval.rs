@@ -243,7 +243,7 @@
     /// --assert / --tolerance).
     #[test]
     fn test_parse_probar_command() {
-        use ProbarSubcommand;
+        use TestSubcommand;
         let args = vec![
             "apr",
             "probar",
@@ -260,8 +260,8 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Probar { command }) => match command {
-                ProbarSubcommand::Tensor {
+            Commands::Extended(ExtendedCommands::Test { command }) => match command {
+                TestSubcommand::Tensor {
                     file,
                     output,
                     format,
@@ -286,12 +286,12 @@
     /// Test parsing 'apr probar tensor' with defaults
     #[test]
     fn test_parse_probar_defaults() {
-        use ProbarSubcommand;
+        use TestSubcommand;
         let args = vec!["apr", "probar", "tensor", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Probar { command }) => match command {
-                ProbarSubcommand::Tensor {
+            Commands::Extended(ExtendedCommands::Test { command }) => match command {
+                TestSubcommand::Tensor {
                     output,
                     format,
                     golden,

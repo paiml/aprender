@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::str::FromStr;
 
 use provable_contracts::graph::{dependency_graph, graph_nodes, DependencyGraph};
 
@@ -17,9 +18,11 @@ pub enum GraphFormat {
     Mermaid,
 }
 
-impl GraphFormat {
+impl FromStr for GraphFormat {
+    type Err = String;
+
     /// Parse a format name string into a `GraphFormat` variant
-    pub fn from_str(s: &str) -> Result<Self, String> {
+    fn from_str(s: &str) -> Result<Self, String> {
         match s {
             "text" => Ok(Self::Text),
             "dot" => Ok(Self::Dot),

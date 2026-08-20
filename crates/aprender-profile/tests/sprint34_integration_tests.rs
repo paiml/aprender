@@ -34,7 +34,7 @@ fn test_compute_jaeger_export() {
     setup_jaeger();
 
     // Run Renacer with compute tracing
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -81,7 +81,7 @@ fn test_compute_adaptive_sampling() {
     clear_jaeger_data().expect("Failed to clear Jaeger");
 
     // Run with default adaptive sampling (100μs)
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -139,7 +139,7 @@ fn test_compute_trace_all_flag() {
     clear_jaeger_data().expect("Failed to clear Jaeger");
 
     // Run with --trace-compute-all (no sampling)
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -187,7 +187,7 @@ fn test_compute_span_attributes() {
     clear_jaeger_data().expect("Failed to clear Jaeger");
 
     // Run with compute tracing
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -237,7 +237,7 @@ fn test_compute_parent_child_relationship() {
     clear_jaeger_data().expect("Failed to clear Jaeger");
 
     // Run with compute tracing
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -293,7 +293,7 @@ fn test_compute_multiple_blocks() {
     clear_jaeger_data().expect("Failed to clear Jaeger");
 
     // Run with compute tracing on a program that should generate multiple compute blocks
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -340,7 +340,7 @@ fn test_distributed_trace_context_propagation() {
     let traceparent = format!("00-{}-{}-01", trace_id, parent_span_id);
 
     // Run Renacer with injected trace context
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -399,7 +399,7 @@ fn test_distributed_env_var_extraction() {
     let traceparent = format!("00-{}-{}-00", trace_id, parent_span_id);
 
     // Run Renacer (should auto-detect TRACEPARENT)
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .env("TRACEPARENT", &traceparent)
         .arg("--otlp-endpoint")
@@ -437,7 +437,7 @@ fn test_w3c_traceparent_validation() {
     setup_jaeger();
 
     // Test invalid traceparent format (should be rejected)
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -473,7 +473,7 @@ fn test_distributed_trace_flags() {
     let parent_span_id = "fedcba0987654321";
     let traceparent = format!("00-{}-{}-01", trace_id, parent_span_id);
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -510,7 +510,7 @@ fn test_distributed_service_name() {
     let traceparent = format!("00-{}-{}-01", trace_id, parent_span_id);
 
     // Run with trace context
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -552,7 +552,7 @@ fn test_full_observability_stack() {
     let traceparent = format!("00-{}-{}-01", trace_id, parent_span_id);
 
     // Run with ALL features: distributed + compute + stats
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -608,7 +608,7 @@ fn test_full_stack_span_hierarchy() {
     let traceparent = format!("00-{}-{}-01", trace_id, parent_span_id);
 
     // Run with all features
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)
@@ -683,7 +683,7 @@ fn test_full_stack_performance_overhead() {
 
     // Run WITHOUT tracing (baseline)
     let start = std::time::Instant::now();
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--")
         .arg("./tests/fixtures/simple_program")
@@ -695,7 +695,7 @@ fn test_full_stack_performance_overhead() {
 
     // Run WITH full tracing
     let start = std::time::Instant::now();
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--otlp-endpoint")
         .arg(OTLP_ENDPOINT)

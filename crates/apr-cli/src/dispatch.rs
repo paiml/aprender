@@ -32,6 +32,12 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
         return Some(result);
     }
 
+    // Sibling CLIs whose whole command surface used to be reachable only from
+    // their own binary (trueno-rag, trueno-zram).
+    if let Some(result) = dispatch_sibling_cli_commands(cli) {
+        return Some(result);
+    }
+
     // Monorepo management (publish, shims, audit, archive) — dev-only
     #[cfg(feature = "dev")]
     if let Commands::Mono(command) = cli.command.as_ref() {
@@ -41,6 +47,60 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_post_side_effect_classification!(&());
     contract_post_output_format_fidelity!(&());
     None
+}
+
+/// Dispatch the commands whose implementation lives in a sibling crate's CLI
+/// library: `apr rag` -> `aprender_rag_cli`, `apr zram` -> `aprender_zram_cli`.
+///
+/// Each arm calls the SAME `dispatch` function the standalone binary calls, so
+/// `apr rag index` and `trueno-rag index` cannot drift apart. Before this, both
+/// command enums lived in a `main.rs`, which is importable by nothing -- the
+/// separate binary was the only way to reach any of it.
+fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    match cli.command.as_ref() {
+        Commands::Rag(command) => Some(
+            aprender_rag_cli::dispatch(command.clone())
+                .map_err(|e| CliError::ValidationFailed(format!("rag: {e}"))),
+        ),
+        Commands::Zram(command) => {
+            let format = if cli.json {
+                aprender_zram_cli::output::OutputFormat::Json
+            } else {
+                aprender_zram_cli::output::OutputFormat::Table
+            };
+            Some(
+                aprender_zram_cli::dispatch(command, format)
+                    .map_err(|e| CliError::ValidationFailed(format!("zram: {e}"))),
+            )
+        }
+        Commands::Sim(command) => {
+            // #2493 and #2527 each converted simular to clap independently and
+            // chose different type names; the batch takes #2527's (richer case
+            // table, and it owns the parser ban). Its root is `Cli` with an
+            // Option<Commands>, not `Args` with a bare `command`.
+            let code = simular::cli::run_cli(simular::cli::Cli {
+                command: Some(command.clone()),
+            });
+            Some(if code == std::process::ExitCode::SUCCESS {
+                Ok(())
+            } else {
+                Err(CliError::ValidationFailed("sim command failed".to_string()))
+            })
+        }
+        Commands::Cgp(command) => Some(
+            cgp::cli::dispatch(command.clone(), cli.json)
+                .map_err(|e| CliError::ValidationFailed(format!("cgp: {e}"))),
+        ),
+        Commands::QaPlaybook(command) => {
+            aprender_qa_cli::cli::dispatch(command.clone());
+            Some(Ok(()))
+        }
+        Commands::Pv(command) => Some(
+            aprender_contracts_cli::dispatch(command.clone())
+                .map_err(|e| CliError::ValidationFailed(format!("pv: {e}"))),
+        ),
+        _ => None,
+    }
 }
 
 /// Dispatch runtime commands: check, run, serve.
