@@ -55,6 +55,16 @@ jobs:
       # paiml/infra commit f4fccf9 (PR #66, "use exec script not symlink").
       # 2026-05-12: re-enabled — image verified to ship `/usr/local/bin/rustc-sccache`
       # (sccache 0.14.0), shared cache at `/home/noah/data/sccache` (warm, ~11GB).
+      # 2026-08-20: that "warm, ~11GB" was NOT health — it was the cache pinned
+      # at sccache's DEFAULT 10 GiB cap. /var/log/ci-metrics/sccache-*.json has
+      # recorded cache_size and max_cache_size on every job all along (18,292
+      # files); nothing ever compared them. All of the newest 4000 samples read
+      # cache_size within ~2 KB of max_cache_size, i.e. an LRU evicting on every
+      # write. paiml-mcp-agent-toolkit-coverage was running 1240 compile requests
+      # for 5 hits and 811 misses. Cap raised to 50G in paiml/infra#230 and
+      # paiml/.github#50; the workspace-test job below passes the SAME value,
+      # because a server capped lower EVICTS the shared cache back down to its
+      # own cap — a mixed cap is strictly worse than a uniform small one.
       enable_sccache: true
       use_nextest: true
       # NOTE: coverage_min (the opt-in coverage ratchet from the build-system audit)
@@ -270,6 +280,7 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
             -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
@@ -288,6 +299,7 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
             -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
@@ -327,6 +339,7 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
             -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
