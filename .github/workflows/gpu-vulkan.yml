@@ -1,0 +1,235 @@
+# wgpu / Vulkan GPU falsifier on the intel host's 2x Radeon Pro W5700X.
+#
+# STATUS: NOT YET PR-BLOCKING. See "Why this is not in ci.yml's gate" below.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# What this lane exists to prove
+# ─────────────────────────────────────────────────────────────────────────────
+# aprender ships a wgpu backend and, until this lane, compiled ZERO GPU tests in
+# CI: `ci.yml`'s "Compute tests" step runs `cargo test -p aprender-compute --lib`
+# WITHOUT `--features gpu`, and the whole `tests_gpu` module is
+# `#[cfg(feature = "gpu")]`. Measured: `cargo test -q -p aprender-compute --lib
+# -- --list | grep -c tests_gpu` = 0. That also silently disarmed
+# `contracts/apr-wgpu-adapter-enumeration-excludes-gles-v1.yaml`, whose
+# falsification tests all require that feature.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Why it asserts the ADAPTER and not just the answer
+# ─────────────────────────────────────────────────────────────────────────────
+# Three container configurations were measured on the intel host and ALL THREE
+# exited 0 with a correct compute result:
+#   (A) --device /dev/dri            -> RADV NAVI10, DiscreteGpu   [real GPU]
+#   (B) no /dev/dri                  -> llvmpipe, Cpu              [software]
+#   (C) --device present, perms denied -> llvmpipe, Cpu            [software]
+# Wall-clock does not separate them either (A 27.5ms vs C 29.4ms). A lane that
+# only checked the compute result would pass on the CPU in cases B and C.
+#
+# Two things make this fail closed instead:
+#   1. VK_ICD_FILENAMES pins the loader to the RADV ICD, so a missing or denied
+#      device yields "0 adapters" and a hard error (measured rc=3) rather than a
+#      silent llvmpipe fallback.
+#   2. APRENDER_REQUIRE_DISCRETE_GPU=1 turns "no adapter" into a test FAILURE
+#      rather than a skip, and the falsifier rejects llvmpipe/lavapipe/
+#      swiftshader/softpipe BY NAME.
+# Verified locally (RTX 4090 host, 2026-08-20): with the ICD pointed at a
+# nonexistent file and the env var set, the falsifier exits 101 with
+# "no wgpu adapter is available" — it cannot go green without a GPU.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Power cost (the site supply peaks at 11.5 kW; each W5700X caps at 250 W)
+# ─────────────────────────────────────────────────────────────────────────────
+# Short and bursty by construction: 4 tests, no benchmark, no sustained compute.
+#   - Idle draw measured on the two GPUs: 10 W and 8-9 W.
+#   - During a comparable gate-sized workload the 1-second-averaged hwmon
+#     reading did not move across 6 samples; a 32-test GPU run peaked at +3 W
+#     on one GPU for 3.4 s.
+#   - Falsifier runtime measured locally: 0.28 s for all 4 tests.
+#   - Whole `docker run` including container start + ICD enumeration: ~7.1 s.
+#   - Measured energy ~0.036 Wh. Absolute worst case, if BOTH GPUs somehow ran
+#     at their 250 W cap for the full 7.1 s, is 2 x 250 W x 7.1 s = 0.99 Wh.
+# Only renderD128 is passed through, leaving the second W5700X (renderD129)
+# completely free.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Why this is not in ci.yml's `gate` yet
+# ─────────────────────────────────────────────────────────────────────────────
+# It needs an image that does not exist yet. The shared
+# `localhost:5000/sovereign-ci:stable` has NO Vulkan userspace at all —
+# measured inside it: `vulkaninfo` missing, `/usr/share/vulkan/icd.d/` absent,
+# `/dev/dri` absent. A derived `sovereign-ci-vulkan:stable`
+# (base + libvulkan1 + mesa-vulkan-drivers + vulkan-tools, ~197 MB of new
+# layers on ONE host, with the lavapipe ICD deleted) must be built and pushed
+# on the intel host first. That is infra-repo work, deliberately NOT done here.
+#
+# The shared image's digest is intentionally NOT touched: 65% of that 197 MB is
+# libllvm15, present only for the lavapipe software driver this lane exists to
+# exclude, and the fleet pins sovereign-ci by digest in 4 places in
+# paiml/.github — so widening the shared image would cost every repo at once for
+# a driver we blacklist. Fleet cost of the derived-image approach is zero bytes
+# and zero digest changes.
+#
+# Until that image lands this workflow runs ONLY on manual dispatch and on a
+# nightly schedule — never on `pull_request` — so it cannot red a PR, cannot
+# enter the merge queue, and cannot evict a queue slot. `gate.needs` in ci.yml
+# is deliberately unchanged. Promoting it to required is a one-line follow-up
+# once the image is in the registry; `contracts/apr-feature-surface-v1.yaml`
+# row `gpu-lane-asserts-adapter-by-name` keeps the lane's assertions honest in
+# the meantime.
+name: gpu-vulkan
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 05:20 UTC daily — after the nightly sovereign-ci image rebuild.
+    - cron: '20 5 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpu-vulkan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gpu-vulkan:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    # All 16 runners are on the intel host and share one dockerd, so every
+    # clean-room runner already reaches /dev/dri. No new runner label: the
+    # repo's own scripts/check_runner_labels.sh DISCRIM regex does not accept
+    # `vulkan`, so adding one would fail guard-runner-labels.
+    timeout-minutes: 45
+    env:
+      # Derived image — NOT the shared sovereign-ci:stable.
+      IMAGE: localhost:5000/sovereign-ci-vulkan:stable
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
+      RENDER_NODE: /dev/dri/renderD128
+      VK_ICD: /usr/share/vulkan/icd.d/radeon_icd.x86_64.json
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Verbatim from ci.yml's workspace-test job: a hard-killed job skips
+        # even `if: always()` steps, leaving root-owned files that make the
+        # NEXT run's `git clean -ffdx` fail with EACCES.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached locally; no prior docker job ran here, so no leftovers."
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Assert the Vulkan image exists (fail loudly, never skip)
+        # A missing image must be a RED job, not a silent skip. Skipping is the
+        # escape-hatch class this lane was built to remove.
+        run: |
+          if ! docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker pull "$IMAGE" > /dev/null 2>&1 || true
+          fi
+          docker image inspect "$IMAGE" > /dev/null 2>&1 || {
+            echo "::error::$IMAGE not in the registry. Build it on the intel host from"
+            echo "::error::machines/intel/sovereign-ci/Dockerfile.vulkan (base + libvulkan1 +"
+            echo "::error::mesa-vulkan-drivers, lavapipe ICD deleted), then push it."
+            exit 1
+          }
+
+      - name: Assert the render node is present on the host
+        run: |
+          test -e "$RENDER_NODE" || {
+            echo "::error::$RENDER_NODE missing on this runner host — no GPU passthrough possible."
+            exit 1
+          }
+          echo "render node present: $RENDER_NODE"
+
+      - name: Pre-build chown — fix per-RUN root ownership
+        # Docker creates missing bind-mount source dirs as root; cargo runs as
+        # uid 1000 inside the container. Separate target dir from
+        # aprender-ci/ on purpose: sharing workspace-test's would cause
+        # feature-unification rebuild churn and lock contention.
+        run: |
+          docker run --rm \
+            -v "/mnt/nvme-raid0/targets/aprender-gpu/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            "$IMAGE" \
+            bash -c 'chown -R 1000:1000 /workspace/target /usr/local/cargo/registry 2>/dev/null || true'
+
+      - name: Record GPU power before (11.5 kW site budget)
+        run: |
+          for h in /sys/class/drm/card*/device/hwmon/hwmon*/power1_average; do
+            [ -e "$h" ] && echo "before $h = $(cat "$h") uW"
+          done || true
+
+      - name: wgpu/Vulkan falsifier on RADV
+        # Fail-closed by construction:
+        #   VK_ICD_FILENAMES        -> missing/denied device becomes 0 adapters
+        #   APRENDER_REQUIRE_DISCRETE_GPU=1 -> 0 adapters becomes a FAILURE
+        # XDG_RUNTIME_DIR is set only to suppress a benign wgpu stderr warning.
+        run: |
+          docker run --rm \
+            --device "$RENDER_NODE" \
+            -e VK_ICD_FILENAMES="$VK_ICD" \
+            -e APRENDER_REQUIRE_DISCRETE_GPU=1 \
+            -e XDG_RUNTIME_DIR=/tmp \
+            -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-gpu/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "/home/noah/data/sccache:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            "$IMAGE" \
+            cargo test -p aprender-compute --features gpu --test gpu_vulkan_falsifier -- --test-threads=1 --nocapture
+
+      - name: CONTROL — the same falsifier with NO GPU passthrough MUST fail
+        # This is the mutation verification, executed on EVERY run rather than
+        # once by a human. It is what makes the lane a ratchet instead of a
+        # radar: if the falsifier can pass without a GPU, it is not testing one.
+        # Nearly free — the build is already warm from the step above.
+        # rc is captured on its own line, never read through a pipe.
+        run: |
+          docker run --rm \
+            -e VK_ICD_FILENAMES="$VK_ICD" \
+            -e APRENDER_REQUIRE_DISCRETE_GPU=1 \
+            -e XDG_RUNTIME_DIR=/tmp \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-gpu/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "/home/noah/data/sccache:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            "$IMAGE" \
+            cargo test -p aprender-compute --features gpu --test gpu_vulkan_falsifier -- --test-threads=1 \
+            > /tmp/gpu-control.log 2>&1
+          rc=$?
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::falsifier PASSED without /dev/dri — it does not actually test a GPU."
+            tail -40 /tmp/gpu-control.log
+            exit 1
+          fi
+          echo "OK control: falsifier correctly failed without passthrough (rc=$rc)"
+
+      - name: Record GPU power after
+        if: always()
+        run: |
+          for h in /sys/class/drm/card*/device/hwmon/hwmon*/power1_average; do
+            [ -e "$h" ] && echo "after $h = $(cat "$h") uW"
+          done || true
+
+      - name: Fix file ownership
+        if: always()
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/targets/aprender-gpu/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            "$IMAGE" \
+            bash -c 'chown -R 1000:1000 /workspace /workspace/target 2>/dev/null || true'

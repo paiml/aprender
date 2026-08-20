@@ -1,0 +1,437 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-feature-surface-v1
+#
+# SOURCE OF TRUTH for the cargo-feature SURFACE of `cargo install aprender`:
+# which features exist, which are default, what the README claims about them,
+# and — the defect that motivated this contract — whether a feature that GATES
+# CODE actually ENABLES the backend that code needs.
+#
+# Shape: parity-matrix (`metadata.kind: pattern` + `categories:` rows), so the
+# executor is `pv check-parity` — the in-tree dogfooded tool. No bash runner
+# script re-implements any of this (CLAUDE.md § "DOGFOOD pv, NEVER bash").
+#
+# ── The defect this contract ratchets ────────────────────────────────────────
+# `crates/apr-cli/Cargo.toml` declared `wgpu = ["inference"]`: a feature that
+# forwarded to NO backend while 12 `#[cfg(feature = "wgpu")]` sites in apr-cli
+# referenced entrenar items that are themselves `#[cfg(feature = "gpu")]`. The
+# result was not a harmless alias — `cargo check -p apr-cli --features wgpu`
+# exited 101 with E0432/E0433, so `cargo install aprender --features wgpu` was
+# IMPOSSIBLE, while README.md advertised wgpu as the default. Nothing had ever
+# built it: the feature appeared in no meta-feature, no CI job, no Makefile
+# target, and the single `wgpu|vulkan` match in .github/workflows/ was a
+# comment.
+#
+# ── A premise worth recording, because it inverts the obvious assertion ──────
+# The `wgpu` CRATE is in EVERY apr build, even `--no-default-features`:
+# aprender-serve's `default = ["server", "cli", "gpu"]` forwards `trueno/gpu`,
+# which is `["wgpu", ...]`. So "the wgpu crate is in the dependency graph" is a
+# VACUOUS assertion — true before and after any fix. Likewise, the resolved
+# dependency GRAPH under `--features wgpu` is byte-identical to `--features
+# inference` both before AND after the correct fix (measured), because the only
+# edge the fix adds under `--no-default-features` was already forced on. A
+# contract built on either of those would have been green theater. The two
+# predicates that actually discriminate are recorded below: the feature must
+# COMPILE, and it must switch on entrenar's `gpu` feature.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-08-20'
+  author: PAIML Engineering
+  kind: pattern
+  description: >
+    Falsifiable contract over the aprender cargo-feature surface. A feature
+    that gates code must enable the backend that code needs and must compile;
+    every `--features X` the README advertises must exist; a default install
+    line must not name a non-default feature; and the GPU lane that exercises
+    the wgpu backend must assert the adapter by name so it cannot pass on a
+    software rasteriser. Every row carries a mechanical cross_check_command
+    executed by `pv check-parity`.
+  references:
+    - 'README.md § Quick Start — the advertised install/feature surface'
+    - 'crates/apr-cli/Cargo.toml [features] — the apr-cli feature table'
+    - 'Cargo.toml [features] — root facade passthroughs + default'
+    - 'crates/aprender-compute/Cargo.toml — gpu = ["wgpu", ...] (the real backend)'
+    - 'crates/aprender-serve/Cargo.toml — default = [server, cli, gpu] (why wgpu is always linked)'
+    - 'crates/aprender-compute/tests/gpu_vulkan_falsifier.rs — the runtime half'
+    - '.github/workflows/gpu-vulkan.yml — the RADV lane'
+    - 'contracts/apr-zero-feature-gate-v1.yaml — no_feature_gate_errors equation'
+    - 'contracts/apr-wgpu-adapter-enumeration-excludes-gles-v1.yaml — PMAT-925 GLES mask'
+    - 'contracts/readme-claims-v1.yaml — quantitative README claim ratchet'
+    - 'CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash"'
+  depends_on: []
+
+parity_matrix_kind: FeatureSurfaceContract
+
+harness_policy:
+  dogfood_tool: aprender-contracts-cli
+  binary: pv
+  executor: pv check-parity
+  forbidden_alternatives: [bash-runner, yq-wrapper, python-script]
+  rationale_ref: 'CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash"'
+  vacuity_policy: >
+    `pv check-parity` SKIPs a row whose command emits non-numeric output, and a
+    SKIP does NOT fail the run (check_parity.rs:148-156 vs :53-56). A row with
+    neither expected_min_hits nor expected_max_hits also auto-passes. Both are
+    live gate-that-cannot-fail hazards. Every command below therefore (a) is
+    dash-compatible — `/bin/sh` is dash here and process substitution is a
+    SYNTAX ERROR that silently becomes a SKIP — (b) always terminates in a form
+    that prints an integer, and (c) carries an explicit bound. Every assertion
+    row is paired with a `-universe` row proving the scanned set is non-empty,
+    or a `control-` row proving the probe can produce the opposite verdict.
+  comment_exclusion_policy: >
+    Source-text probes exclude comment lines (`grep -v "^[[:space:]]*//"`).
+    Without this, a comment DESCRIBING a removed defect re-triggers the very
+    row that documents it — observed during authoring: both the serve
+    feature-gate row and the falsifier skip-hatch row matched their own
+    explanatory comments and read RED on a clean tree.
+
+equations:
+  feature_gates_its_own_backend:
+    formula: |
+      forall F in features(apr-cli):
+        (exists #[cfg(feature = "F")] in apr-cli/src referencing sibling item
+           gated on #[cfg(feature = "G")])
+          => F forwards sibling/G
+    domain: cargo feature resolution of crates/apr-cli
+    invariants:
+      - "a feature that gates code must enable the backend that code needs"
+      - "`cargo install aprender --features F` must COMPILE for every declared F"
+    preconditions:
+      - "cargo tree/check resolve without network access"
+  readme_feature_names_exist:
+    formula: |
+      forall X in {tokens after `--features` in README.md}:
+        X in features(root Cargo.toml)
+    domain: README.md, root Cargo.toml
+    invariants:
+      - "the README never advertises a feature cargo would reject"
+    preconditions:
+      - "README.md names at least one --features target"
+  default_install_claims_are_default:
+    formula: |
+      forall L in {README lines invoking `cargo install aprender` WITHOUT --features}:
+        no root-feature name on L is absent from root.features.default
+    domain: README.md, root Cargo.toml
+    invariants:
+      - "a default-install line must not advertise a non-default feature"
+    preconditions:
+      - "at least one such install line exists"
+  gpu_lane_asserts_adapter_identity:
+    formula: |
+      the GPU falsifier rejects software rasterisers BY NAME and treats
+      "no adapter" as FAILURE when APRENDER_REQUIRE_DISCRETE_GPU=1
+    domain: crates/aprender-compute/tests/, .github/workflows/gpu-vulkan.yml
+    invariants:
+      - "a GPU lane must not be able to pass on llvmpipe"
+      - "a GPU lane must not be able to pass with no GPU at all"
+    preconditions: []
+
+headline:
+  audit_date: '2026-08-20'
+  total_rows: 18
+  counts:
+    shipped: 18
+    partial: 0
+    missing: 0
+
+categories:
+
+  # ── P1: the central defect — the feature must COMPILE ─────────────────────
+  - id: wgpu-feature-compiles
+    name: "`cargo check -p apr-cli --features wgpu` produces zero errors"
+    status: SHIPPED
+    evidence_path: crates/apr-cli/Cargo.toml
+    rationale: >
+      THE ratchet. Before the fix this emitted E0432 (unresolved import
+      `entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline`) and E0433
+      (`wgpu_training` not found in `autograd`) — both items exist but are
+      `#[cfg(feature = "gpu")]` on the entrenar side, which apr-cli's
+      `wgpu = ["inference"]` never enabled. MUTATION-VERIFIED 2026-08-20:
+      reverting line 92 to `wgpu = ["inference"]` returns 3 (rc=101);
+      the fixed form returns 0 (rc=0).
+      NOTE: a workspace `--all-features` build does NOT catch this — feature
+      unification enables aprender-train's own `gpu` feature directly, so the
+      symbols resolve for the wrong reason. The package+feature pair must be
+      pinned exactly as below.
+    cross_check_command: |
+      cargo check -p apr-cli --features wgpu > /tmp/pv-wgpu-check.log 2>&1
+      grep -cE "^error" /tmp/pv-wgpu-check.log || true
+    expected_max_hits: 0
+    ticket: APR-WGPU-001
+
+  - id: wgpu-cfg-sites-universe
+    name: "NON-VACUITY: the `wgpu` feature actually gates code in apr-cli"
+    status: SHIPPED
+    rationale: >
+      Guards the row above. A clean compile is only meaningful while the
+      feature gates real code — if every `#[cfg(feature = "wgpu")]` site were
+      deleted, `--features wgpu` would compile vacuously and the ratchet would
+      pass for the wrong reason. Measured 12 sites on 2026-08-20.
+    cross_check_command: |
+      grep -rhoE 'feature *= *"wgpu"' crates/apr-cli/src/ | grep -c . || true
+    expected_min_hits: 5
+
+  # ── P2: the feature must reach the BACKEND, not just compile ──────────────
+  - id: wgpu-enables-train-gpu-backend
+    name: "`--features wgpu` switches on entrenar's `gpu` feature"
+    status: SHIPPED
+    evidence_path: crates/apr-cli/Cargo.toml
+    rationale: >
+      Compiling is necessary but not sufficient — this asserts the backend
+      edge itself is present. Uses the INVERTED tree form (`-i`) on purpose:
+      `cargo tree --prefix none | sort -u` elides revisited subtrees with `(*)`
+      and reported a 0-line delta both before AND after a fix that demonstrably
+      works, which would have made this row impossible to satisfy.
+      MUTATION-VERIFIED 2026-08-20: 2 with the fix, 0 with `wgpu =
+      ["inference"]`.
+    cross_check_command: |
+      cargo tree -p apr-cli --features wgpu -e features -i aprender-train 2>/dev/null \
+        | grep -c 'aprender-train feature "gpu"' || true
+    expected_min_hits: 1
+    ticket: APR-WGPU-001
+
+  - id: control-cuda-enables-train-cuda-backend
+    name: "NON-VACUITY CONTROL: the same probe form detects the already-correct `cuda` wiring"
+    status: SHIPPED
+    rationale: >
+      Proves the inverted-tree probe can report NON-ZERO, on a feature that was
+      already wired correctly (`cuda = ["inference", "realizar/cuda",
+      "entrenar/cuda", ...]`). If this row ever reads 0 the PROBE is broken,
+      not the code. Measured 3 on 2026-08-20.
+    cross_check_command: |
+      cargo tree -p apr-cli --features cuda -e features -i aprender-train 2>/dev/null \
+        | grep -c 'aprender-train feature "cuda"' || true
+    expected_min_hits: 1
+
+  - id: control-default-build-lacks-train-gpu-backend
+    name: "NON-VACUITY CONTROL: the same probe reports ZERO without `--features wgpu`"
+    status: SHIPPED
+    rationale: >
+      The other direction. Proves `wgpu-enables-train-gpu-backend` measures the
+      FEATURE and is not merely counting an edge that is always present — which
+      is exactly the trap the wgpu CRATE itself sets (it is in every build via
+      aprender-serve's default `gpu`). Measured 0 on 2026-08-20.
+    cross_check_command: |
+      cargo tree -p apr-cli -e features -i aprender-train 2>/dev/null \
+        | grep -c 'aprender-train feature "gpu"' || true
+    expected_max_hits: 0
+
+  - id: wgpu-in-full-meta-feature
+    name: "the `full` meta-feature includes `wgpu`"
+    status: SHIPPED
+    evidence_path: crates/apr-cli/Cargo.toml
+    rationale: >
+      Zero build coverage is what let the feature rot: `full` listed inference,
+      cuda, cuda-batch, visualization, zram, training, training-gpu, code, xet
+      and trueno-explain but NOT wgpu, so even a full build never compiled it.
+      Adding it means the existing full build now covers the feature.
+    cross_check_command: |
+      grep -E '^full *= *\[' crates/apr-cli/Cargo.toml | grep -c '"wgpu"' || true
+    expected_min_hits: 1
+    ticket: APR-WGPU-001
+
+  - id: wgpu-build-lint-debt-does-not-grow
+    name: "the `--features wgpu` build's clippy debt ratchets DOWN, never up"
+    status: SHIPPED
+    evidence_path: crates/aprender-train/src/finetune/wgpu_pipeline.rs
+    rationale: >
+      DISCOVERED BY THIS CHANGE, and recorded rather than hidden. Making the
+      feature compile also compiles aprender-train's wgpu modules for the FIRST
+      TIME — nothing had ever built them, so nothing had ever linted them.
+      `cargo clippy -p apr-cli --features wgpu --lib -- -D warnings` reports 11
+      lines on 2026-08-20; the DEFAULT-feature build reports 0, so this debt is
+      entirely in the newly-reachable code.
+      They are NOT cosmetic and are deliberately NOT fixed here: five fields
+      (`fwd`, `lm_head_gpu`, `lm_head_t_gpu`, `num_layers`, `vocab_size`) are
+      never read, `dispatch_lora_addmm` is never used, and a `RefCell`
+      reference is held across an await point in transformer/wgpu_block.rs.
+      The dead-code cluster is independent evidence for the caveat that this
+      change makes the feature COMPILE but does not prove it WORKS. Silencing
+      any of them with `#[allow]` is forbidden (memory:
+      bin-to-lib move RE-ATTRIBUTES lint debt — never discharge with #[allow]).
+      This row is a RATCHET: the bound may only ever be lowered, in the PR that
+      actually fixes the underlying issue. It does not affect the required CI
+      gate, which lints with default features only (aprender's ci.yml sets no
+      `clippy_args`, so the reusable sovereign-ci workflow runs bare
+      `cargo clippy -- -D warnings`, where `wgpu` is off).
+    cross_check_command: |
+      cargo clippy -p apr-cli --features wgpu --lib -- -D warnings > /tmp/pv-wgpu-clippy.log 2>&1
+      grep -cE "^error" /tmp/pv-wgpu-clippy.log || true
+    expected_max_hits: 11
+    ticket: APR-WGPU-005
+
+  - id: control-default-build-is-lint-clean
+    name: "NON-VACUITY CONTROL: the default-feature build has ZERO clippy errors"
+    status: SHIPPED
+    rationale: >
+      Proves the row above measures debt in the NEWLY-REACHABLE wgpu code and
+      is not just counting pre-existing workspace noise, and proves the probe
+      can report 0. Measured 0 on 2026-08-20.
+    cross_check_command: |
+      cargo clippy -p apr-cli --lib -- -D warnings > /tmp/pv-def-clippy.log 2>&1
+      grep -cE "^error" /tmp/pv-def-clippy.log || true
+    expected_max_hits: 0
+
+  # ── P3: README truthfulness ───────────────────────────────────────────────
+  - id: default-install-line-claims-only-default-features
+    name: "a `cargo install aprender` line without --features names no non-default feature"
+    status: SHIPPED
+    evidence_path: README.md
+    rationale: >
+      README.md:23 read `cargo install aprender  # CPU + wgpu (default)` while
+      root `default = ["cli"]`. MUTATION-VERIFIED 2026-08-20: restoring that
+      line returns 1; the corrected line returns 0.
+      Scoped to install-command lines rather than to any line containing
+      "(default)": the looser form false-fires on ordinary prose, because
+      `inference` and `training` are simultaneously feature names and English
+      words (observed while authoring this contract).
+    cross_check_command: |
+      DEF=$(sed -n '/^\[features\]/,/^\[lib\]/p' Cargo.toml \
+            | sed -n 's/^default *= *\[\(.*\)\].*/\1/p' | tr -d '"' | tr ',' '\n' | tr -d ' ')
+      grep -E '^cargo install aprender' README.md | grep -v -- '--features' \
+        | grep -ohE '\b(wgpu|cuda|cuda-batch|inference|training|training-gpu|visualization|zram|xet|whisper|ptx|full)\b' \
+        | sort -u | grep -vxF "$DEF" | grep -c . || true
+    expected_max_hits: 0
+    ticket: APR-WGPU-002
+
+  - id: default-install-line-universe
+    name: "NON-VACUITY: the README contains at least one default-install line"
+    status: SHIPPED
+    rationale: >
+      Without this, DELETING the install line would satisfy the row above on
+      n=0. Measured 2 on 2026-08-20 (the Quick Start line and the Install
+      section line).
+    cross_check_command: |
+      grep -E '^cargo install aprender' README.md | grep -vc -- '--features' || true
+    expected_min_hits: 1
+
+  - id: readme-named-features-exist
+    name: "every `--features X` in README.md names a real root feature"
+    status: SHIPPED
+    evidence_path: README.md
+    rationale: >
+      Forward ratchet. GREEN today (cuda, wgpu, full all exist) — note this row
+      only became meaningful for `wgpu` once the feature compiled; before the
+      fix the README advertised a command that could not be executed.
+    cross_check_command: |
+      FEATS=$(sed -n '/^\[features\]/,/^\[lib\]/p' Cargo.toml | sed -n 's/^\([a-z0-9-]*\) *=.*/\1/p' | sort -u)
+      grep -oE -- '--features [a-z0-9-]+' README.md | awk '{print $2}' | sort -u \
+        | grep -vxF "$FEATS" | grep -c . || true
+    expected_max_hits: 0
+
+  - id: readme-named-features-universe
+    name: "NON-VACUITY: README names at least 3 `--features` targets"
+    status: SHIPPED
+    rationale: 'Measured 3 on 2026-08-20 (cuda, full, wgpu).'
+    cross_check_command: |
+      grep -oE -- '--features [a-z0-9-]+' README.md | awk '{print $2}' | sort -u | grep -c . || true
+    expected_min_hits: 3
+
+  # ── P4: general form — cfg-gated features must be declared ────────────────
+  - id: cfg-gated-features-declared
+    name: "every `#[cfg(feature = \"X\")]` in apr-cli/src names a declared apr-cli feature"
+    status: SHIPPED
+    rationale: >
+      The general form of the wgpu defect's first half. Accepts implicit
+      optional-dependency features (`trueno-explain` is declared only as
+      `optional = true`, never in [features]) — without that allowance the rule
+      would false-RED.
+    cross_check_command: |
+      DECL=$( { sed -n '/^\[features\]/,/^\[target/p' crates/apr-cli/Cargo.toml | sed -n 's/^\([a-z0-9_-]*\) *=.*/\1/p'; \
+                grep -oE '^[a-z0-9_-]+ *= *\{[^}]*optional *= *true' crates/apr-cli/Cargo.toml | sed 's/ *=.*//'; } | sort -u )
+      grep -rhoE 'feature *= *"[a-z0-9_-]+"' crates/apr-cli/src/ \
+        | grep -oE '"[a-z0-9_-]+"' | tr -d '"' | sort -u \
+        | grep -vxF "$DECL" | grep -c . || true
+    expected_max_hits: 0
+
+  - id: cfg-gated-features-universe
+    name: "NON-VACUITY: apr-cli/src has at least 10 distinct cfg feature names"
+    status: SHIPPED
+    rationale: 'Measured 14 on 2026-08-20.'
+    cross_check_command: |
+      grep -rhoE 'feature *= *"[a-z0-9_-]+"' crates/apr-cli/src/ \
+        | grep -oE '"[a-z0-9_-]+"' | tr -d '"' | sort -u | grep -c . || true
+    expected_min_hits: 10
+
+  # ── P5: no unreachable remedy in the wgpu serve path ──────────────────────
+  - id: no-wgpu-feature-gate-error-string
+    name: "apr-cli prints no 'Build with --features wgpu' message"
+    status: SHIPPED
+    evidence_path: crates/apr-cli/src/commands/serve/handlers.rs
+    rationale: >
+      `apr serve --backend wgpu` on a default build used to run the full GGUF
+      load AND the full F32 dequantization of every weight, and only THEN print
+      "WGPU feature not enabled. Build with --features wgpu" — a remedy that
+      exited 101. Both halves are fixed: the availability check is hoisted
+      above the load (fail fast) and the message is gone. Binds
+      apr-zero-feature-gate-v1's `no_feature_gate_errors` equation, which
+      prohibits exactly this string but whose own falsifiers cannot go RED
+      (they pipe into `|| echo "FAIL: $cmd"`, so the test's exit status is
+      always 0).
+      MUTATION-VERIFIED 2026-08-20: adding a `println!` with that string
+      returns 1; removing it returns 0.
+      SCOPE: deliberately `wgpu`-scoped. Seven further `Build with --features
+      inference` strings exist elsewhere in apr-cli (check.rs, trace.rs,
+      vector_stats.rs, check_qkv_ffn_detection.rs x2, check_tensor_stage_json.rs,
+      trace_likely_has_repeated.rs). They are real violations of the same
+      equation but are NOT touched by this change; widening this row to bare
+      "Build with --features" reads 7 and would ship a permanently-RED gate.
+    cross_check_command: |
+      grep -rh -- 'Build with --features wgpu' crates/apr-cli/src/ 2>/dev/null \
+        | grep -v '^[[:space:]]*//' | grep -c . || true
+    expected_max_hits: 0
+    ticket: APR-WGPU-003
+
+  # ── P6: the GPU lane cannot silently pass on a software rasteriser ────────
+  - id: gpu-lane-asserts-adapter-by-name
+    name: "the GPU falsifier rejects software rasterisers by name"
+    status: SHIPPED
+    evidence_path: crates/aprender-compute/tests/gpu_vulkan_falsifier.rs
+    rationale: >
+      `GpuDevice::new_async()` requests an adapter with
+      `force_fallback_adapter: false` and NO `device_type` filter — which only
+      means "do not FORCE the software adapter", not "exclude one". Measured on
+      the intel host: with `/dev/dri` absent, with `/dev/dri` present but
+      permission-denied, and with correct passthrough, ALL THREE exit 0 with a
+      correct compute result, and wall-clock does not separate them (27.5 ms on
+      RADV vs 29.4 ms on permission-denied llvmpipe). Adapter identity is the
+      only discriminator, so it must be asserted in the test.
+    cross_check_command: |
+      grep -cE 'llvmpipe|lavapipe|swiftshader' crates/aprender-compute/tests/gpu_vulkan_falsifier.rs || true
+    expected_min_hits: 3
+
+  - id: gpu-falsifier-fails-closed-on-missing-adapter
+    name: "the GPU falsifier treats a missing adapter as FAILURE, not skip"
+    status: SHIPPED
+    evidence_path: crates/aprender-compute/tests/gpu_vulkan_falsifier.rs
+    rationale: >
+      The 32 tests in src/backends/gpu/tests_gpu/ all carry
+      `else { eprintln!("GPU not available, skipping test"); return; }` and 28
+      additionally swallow the kernel `Err`, so they pass with no GPU AND pass
+      when the kernel errors. The falsifier must consult
+      APRENDER_REQUIRE_DISCRETE_GPU and assert instead of returning.
+      MUTATION-VERIFIED 2026-08-20 on the local RTX 4090 host: with
+      VK_ICD_FILENAMES pointed at a nonexistent file and the env var set, the
+      falsifier exits 101 ("no wgpu adapter is available"); with the env var
+      unset it exits 0. It cannot go green without a GPU.
+    cross_check_command: |
+      grep -h 'APRENDER_REQUIRE_DISCRETE_GPU' crates/aprender-compute/tests/gpu_vulkan_falsifier.rs \
+        | grep 'env::var' | grep -c . || true
+    expected_min_hits: 1
+
+  - id: gpu-lane-pins-icd-and-sets-require-env
+    name: "the gpu-vulkan lane pins the RADV ICD and demands a discrete GPU"
+    status: SHIPPED
+    evidence_path: .github/workflows/gpu-vulkan.yml
+    rationale: >
+      Two independent fail-closed mechanisms, both required in the workflow.
+      Pinning VK_ICD_FILENAMES to the RADV ICD turns a missing or denied
+      /dev/dri into "0 adapters" and a hard error (measured rc=3) instead of a
+      silent llvmpipe fallback; APRENDER_REQUIRE_DISCRETE_GPU=1 turns that into
+      a test failure. The lane also runs the no-passthrough CONTROL on every
+      run, so the mutation verification is executed continuously rather than
+      once by a human.
+    cross_check_command: |
+      grep -c 'VK_ICD_FILENAMES\|APRENDER_REQUIRE_DISCRETE_GPU=1' .github/workflows/gpu-vulkan.yml || true
+    expected_min_hits: 4
