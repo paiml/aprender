@@ -175,6 +175,29 @@ classify() {
     own="$(registry_max_version "$crate")"
     # V is already on the registry: the siblings this build resolves are the
     # published copies of the SAME version number, i.e. the stale API.
+    #
+    # REVIEW RAISED, AND REJECTED WITH REASONING (do not "fix" this again):
+    # an adversarial review called this a short-circuit that makes CASCADE_READY
+    # unreachable, on the grounds that siblings are never consulted. Reordering
+    # it to test siblings first was tried and BREAKS self-test row 10.
+    #
+    # The reason is that two states are genuinely indistinguishable from
+    # registry versions alone:
+    #   (1) pre-bump  — own==V, siblings==V, but the LOCAL tree has added
+    #                   symbols that published V does not carry. Gate 5 FAILS.
+    #   (4) cascade complete — own==V, siblings==V, local tree matches.
+    # Same numbers, opposite verdicts. A version comparison cannot separate them
+    # because the difference is unpublished local source, not a version.
+    #
+    # PRE_BUMP is therefore the deliberately CONSERVATIVE answer: it predicts
+    # "Gate 5 will fail here", which is correct in case (1) and merely pessimistic
+    # in case (4). The opposite default would tell a release engineer the gate
+    # should pass and leave them debugging 71 symbol errors — the exact failure
+    # #2543 exists to prevent.
+    #
+    # CASCADE_READY is NOT unreachable: it is the state where siblings are live
+    # at V and this crate is not yet published (own<V), which is precisely when
+    # `cargo package` can resolve the current API. Self-test row 12 covers it.
     if [ "$own" = "$ver" ]; then printf 'PRE_BUMP\n'; return 0; fi
 
     all_at_v=1
