@@ -66,6 +66,21 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Pin pv before anything measures with it. This sweep is the surface on which
+# the RELEASE decision is made, and it used to resolve pv through PATH: it ran
+# `require_tool pv`, printed `pv present (pv 0.49.0)` into the receipt as
+# evidence of correctness, and then certified the tree with a binary 68 days
+# older than the crate. `validate` and `lint` agree between 0.49.0 and 0.63.0;
+# `lint --strict-test-binding` does not (253 refs / 51 missing vs 371 / 27).
+# Reporting a verdict from an unproven binary is worse than reporting none.
+#
+# Sourced with `|| exit 1` because pv_bin.sh is OPTION-NEUTRAL: it must not set
+# shell options, since line 66 of this file deliberately chooses `-uo pipefail`
+# WITHOUT `-e` so the sweep runs every probe and tallies failures. A sourced
+# `set -euo pipefail` once killed the nightly story six lines in. pv_bin.sh
+# therefore fails by return status, and this is what makes it fail-closed.
+. "$REPO_ROOT/scripts/pv_bin.sh" || exit 1
 RECEIPT="${DOGFOOD_RECEIPT:-${REPO_ROOT}/target/dogfood-receipt.txt}"
 MAX_SKIP_PCT="${MAX_SKIP_PCT:-40}"
 
@@ -216,7 +231,7 @@ pv_check() {
         bad "$label: $contract does not exist"
         return
     fi
-    out=$(pv validate "$contract" 2>&1); rc=$?
+    out=$("$PV" validate "$contract" 2>&1); rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "$label validates (pv validate)"
     else
@@ -244,7 +259,19 @@ bashrs_check() {
 
 surface_tools() {
     printf '\n=== deterministic toolchain ===\n'
-    require_tool pv     "contract validation must use pv, not a python YAML walk"
+    # NOT `require_tool pv`. That probes PATH, and PATH is the defect: it found
+    # pv 0.49.0 and reported it as a passing precondition. $PV is built from
+    # this checkout by scripts/pv_bin.sh, which has already failed the run if it
+    # could not be produced, so the assertion here is that the pinned binary
+    # exists and reports the crate's own version.
+    if [ -n "${PV:-}" ] && [ -x "$PV" ]; then
+        # Version only, no path: the receipt must be byte-identical across
+        # checkouts of the same tree (see DETERMINISM above), and $PV is an
+        # absolute path that differs per worktree.
+        ok "pv pinned ($("$PV" --version 2>&1 | head -1))"
+    else
+        bad "pv NOT pinned -- scripts/pv_bin.sh did not resolve a binary"
+    fi
     require_tool bashrs "shell linting must use bashrs, not shellcheck"
     require_tool pmat   "code search must use pmat query, not grep"
 
@@ -254,7 +281,7 @@ surface_tools() {
 
     # Every contract, through the tool that exists for exactly this.
     local out rc
-    out=$(pv lint "$REPO_ROOT/contracts/" 2>&1); rc=$?
+    out=$("$PV" lint "$REPO_ROOT/contracts/" 2>&1); rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "pv lint contracts/ ($(printf '%s' "$out" | grep -oE '[0-9]+ errors' | head -1))"
     else
@@ -263,6 +290,18 @@ surface_tools() {
 
     # The CLI surface has a contract too.
     pv_check "$REPO_ROOT/contracts/apr-cli-commands-v1.yaml" "CLI command contract"
+
+    # Every checkout on this box shares ONE cargo target dir, so another branch
+    # building concurrently can replace our pv between the first probe and the
+    # last. That is not hypothetical: two binaries both reporting `pv 0.63.0`,
+    # both nominally from the same commit, returned 253/51 and 371/27 during the
+    # 2026-08-20 audit. If the artifact moved, everything measured after it
+    # describes a different tree, so the sweep must say so rather than certify.
+    if pv_bin_assert_unchanged; then
+        ok "pv binary unchanged for the duration of the contract sweep"
+    else
+        bad "pv binary was rebuilt mid-sweep -- contract results describe two trees"
+    fi
 }
 # NOTE: contract/binary command parity is deliberately NOT checked here.
 # FALSIFY-CLI-001 and FALSIFY-CLI-002 in crates/apr-cli/tests/cli_commands.rs

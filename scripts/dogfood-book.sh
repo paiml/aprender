@@ -14,6 +14,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Pin pv. This script used to call a BARE `pv validate`, which resolves through
+# PATH; on the dev box PATH holds pv 0.49.0 (2026-06-13) while the crate is
+# 0.63.0. `validate` happens to agree between the two, which is exactly why the
+# bare call survived every manual check - `lint --strict-test-binding` does NOT
+# (253 refs / 51 missing vs 371 / 27). A close-out gate that certifies the book
+# must certify it with the binary this checkout builds.
+#
+# pv_bin.sh is option-neutral by design and fails by RETURN STATUS, so this
+# `|| exit 1` is what makes it fail-closed - see the header of that file for the
+# nightly it once killed by setting shell options in a sourced library.
+. "$ROOT/scripts/pv_bin.sh" || exit 1
+
 PASS_COUNT=0
 WARN_COUNT=0
 FAIL_COUNT=0
@@ -89,7 +101,7 @@ fi
 # Phase 4: pv validate completeness contract
 # ---------------------------------------------------------------------------
 step "Phase 4: contract validity"
-if pv validate contracts/apr-book-completeness-v1.yaml > /tmp/dogfood-pv.log 2>&1; then
+if "$PV" validate contracts/apr-book-completeness-v1.yaml > /tmp/dogfood-pv.log 2>&1; then
   if grep -qE '(^|[^0-9])0 error\(s\), 0 warning\(s\)' /tmp/dogfood-pv.log; then
     pass "pv validate apr-book-completeness-v1.yaml: clean"
   else
@@ -99,7 +111,7 @@ else
   fail "pv validate apr-book-completeness-v1.yaml: validation errors"
 fi
 
-if pv validate contracts/apr-page-cli-run-v1.yaml > /dev/null 2>&1; then
+if "$PV" validate contracts/apr-page-cli-run-v1.yaml > /dev/null 2>&1; then
   pass "pv validate apr-page-cli-run-v1.yaml: clean (sample)"
 else
   warn "pv validate apr-page-cli-run-v1.yaml had issues (sample)"

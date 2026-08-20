@@ -660,6 +660,30 @@ jobs:
       # dark; nothing was watching.
       - name: Every contract cites a test that exists (strict-test-binding)
         run: bash scripts/check_contract_test_binding.sh
+      # Poka-yoke: the previous guard's verdict is only worth what the BINARY
+      # that produced it is worth. `pv` on the dev box is 0.49.0 (2026-06-13)
+      # while the crate is 0.63.0, and on strict-test-binding they disagree --
+      # 253 refs / 51 missing versus 371 / 27, same tree, same second. Three
+      # surfaces resolved pv through PATH, including scripts/dogfood_surfaces.sh
+      # (the release-certifying sweep, which printed `pv present (pv 0.49.0)`
+      # into the receipt as evidence) and Makefile `contracts`, the hard release
+      # gate, via the `\t@pv ...` recipe form that stayed invisible to the apr
+      # guard until someone re-mutated inside the Makefile. Self-test first
+      # (Verification Discipline #7). Text-only, no build.
+      - name: pv-pinning guard's own case table must pass before it judges
+        run: bash scripts/check_pv_bin_pinned.sh --self-test
+      - name: No surface may resolve `pv` through PATH or an absolute path
+        run: bash scripts/check_pv_bin_pinned.sh
+      # The scan above proves nothing SPELLS a bare pv; it says nothing about
+      # whether the resolver every surface now depends on actually works. A repo
+      # can be 100% pinned to a resolver that hands back the wrong binary and
+      # every text scan stays green. This runs pv_bin.sh: it must resolve
+      # cargo's own output, REFUSE a synthesized stale pv (not the dev box's
+      # real 0.49.0 -- that check would be vacuous on any other machine),
+      # notice the artifact being replaced mid-run, and leave the caller's shell
+      # options untouched. Same split as check_apr_bin_pinned/-resolution.
+      - name: pv_bin.sh must resolve the HEAD-built pv and refuse a stale one
+        run: bash scripts/check_pv_bin_resolution.sh
       - name: aprender-core builds for wasm32
         run: bash scripts/check_wasm32_core_builds.sh
       # The meta-guard. Four guards were found unwired by accident while looking

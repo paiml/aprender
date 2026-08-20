@@ -347,9 +347,18 @@ coverage-check: coverage
 # CLAUDE.md, and the dogfood protocol looked for a target that did not exist, so
 # it WARNed instead of checking. `pv lint` runs validate + audit + score across
 # contracts/ and is the documented entry point (never hand-rolled bash).
+#
+# PINNED. The recipe below used to invoke a BARE pv, i.e. whatever PATH held. On
+# the dev box that is pv 0.49.0 (installed 2026-06-13) while this crate is
+# 0.63.0, and the two disagree on the gate that matters: 253 test refs / 51
+# missing versus 371 / 27, on the same tree in the same second. `make contracts`
+# is the HARD release gate the dogfood protocol looks for, so it must measure
+# with the binary this checkout defines. `cargo run --bin pv` is the only
+# resolution that cannot pick up another branch's artifact out of the shared
+# target dir. See scripts/pv_bin.sh; enforced by scripts/check_pv_bin_pinned.sh.
 contracts:
 	@echo "== provable contracts: pv lint contracts/ =="
-	@pv lint contracts/ 2>&1 | tail -5
+	@cargo run -q -p aprender-contracts-cli --bin pv -- lint contracts/ 2>&1 | tail -5
 	@echo "== contract engine tests =="
 	@cargo test -p aprender-contracts --lib 2>&1 | grep -E "test result" | tail -1
 
