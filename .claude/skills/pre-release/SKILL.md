@@ -1,4 +1,10 @@
 ---
+# EXPLICIT name (#2332 class, applied here by #2543). Without it the skill takes
+# its name from the directory and there is nothing to point at when a user-scope
+# skill claims the same triggers — the sibling apr-dogfood skill was edited for
+# months while a shadowing copy was what actually ran. This file is amended by
+# #2543 and must be reachable for the amendment to mean anything.
+name: pre-release
 allowed-tools: Bash(cargo:*), Bash(grep:*), Bash(make:*), Bash(bash:*), Bash(batuta:*), Bash(pmat:*), Bash(git:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(cat:*), Bash(awk:*), Bash(sed:*), Bash(diff:*), Bash(rustup:*), Read, Glob, Grep
 description: Pre-release QA for apr-cli — runs all gates that prevent crates.io publish breakage
 effort: high          # MACS F4: pinned for reproducible cost/behavior - gates a crates.io publish; a wrong verdict here costs a yank
@@ -60,15 +66,70 @@ Verify the declared `rust-version` is accurate:
 2. Check actual toolchain: `rustc --version`
 3. Verify both Cargo.toml files declare the same MSRV
 
-### Gate 5: Standalone Package Build (GH-344/345)
+### Gate 5: Standalone Package Build (GH-344/345) — STAGE-DEPENDENT (#2543)
 
-Verify the package builds from crates.io deps alone (no sibling path overrides):
+**Read this before running it.** `cargo package` re-resolves every dependency
+against crates.io, so each workspace sibling resolves to its *already published*
+copy rather than to this tree. `apr-cli` has 26 workspace-sibling dependencies,
+five of which publish in the LAST cascade tier — so Gate 5 for `apr-cli` is not
+merely "late", it is meaningful only after the cascade has finished. Run it at
+the wrong stage and you get dozens of **symbol**-not-found errors:
+
+```
+error[E0432]: unresolved import `aprender::format::q4k_output_size_estimate`
+error[E0432]: unresolved import `entrenar_lora::plan_with_rank`
+error[E0433]: could not find `CancelToken` in `generate`
+```
+
+Those three symbols are genuine post-0.63.0 additions (verified against the
+published 0.63.0 tarballs). Nothing is broken. **Do not abort a cut over this.**
+
+STAGE-PRECONDITION: cargo package -p apr-cli requires stage CASCADE_READY
+STAGE-PRECONDITION: cargo package -p apr-format requires stage MEANINGFUL
+
+Ask the tree which stage it is at before interpreting any result:
+
+```
+bash scripts/check_gate5_stage.sh --explain apr-cli
+```
+
+| Verdict | What Gate 5 means right now |
+|---|---|
+| `MEANINGFUL` | No workspace-sibling deps. A failure is a real defect. |
+| `PRE_BUMP` | The workspace version is already on crates.io, so siblings resolve to the stale API at the same version number. **Symbol errors are expected.** Bump, then re-check. |
+| `POST_BUMP_PRE_CASCADE` | Version bumped, siblings not published at it yet. Cargo says `failed to select a version … candidate versions found which didn't match` — *not* `no matching package named`, which is the distinct error for a crate that was never published at all. Expected until the cascade reaches them. |
+| `CASCADE_READY` | Every sibling is live at this version. A failure here is a real defect. |
+
+**The stage-independent substitute.** `apr-format` is a workspace leaf with zero
+sibling dependencies, so it packages identically at every stage and still proves
+the tarball/`include!()`/manifest machinery works:
+
+```
+cargo package -p apr-format --allow-dirty 2>&1 | tail -5
+```
+
+Run that pre-bump. Run the real gate
 
 ```
 cargo package -p apr-cli --allow-dirty 2>&1 | tail -5
 ```
 
-This compiles from the packaged tarball against crates.io dependencies. If it fails, `cargo install apr-cli` will fail for users.
+only once `check_gate5_stage.sh --explain apr-cli` reports `CASCADE_READY` —
+i.e. at the END of the publish cascade, not at apr-cli's own tier. `apr-cli` is
+tier 10 of 13 in `scripts/cascade-publish.sh` but depends on five crates that
+publish in tier 13, so tier 10 is still too early.
+
+**Do NOT substitute Gate 11 here.** Gate 11 is itself pre-bump-only: after the
+version bump `cargo publish -p aprender --dry-run --no-verify` fails with the
+very `candidate versions found which didn't match` string Gate 11's own text
+declares a FAILURE.
+
+The old wording of this gate said "if it fails, `cargo install apr-cli` will fail
+for users". That is false pre-bump — apr-cli 0.63.0 built fine on docs.rs from
+published deps alone while this gate was red on the tree.
+
+Enforced by `scripts/check_gate5_stage.sh` (contract
+`contracts/publish-workspace-v1.yaml`, FALSIFY-PUB-005/006/007).
 
 ### Gate 6: Test Suite
 
@@ -148,6 +209,16 @@ versions found which didn't match`. FAIL on either: a sibling path-dep needs a `
 sibling **dev**-dep must be made path-only (no version) so cargo strips it from the published manifest
 and the cycle breaks. Also dry-run `apr-cli`, `aprender-core`, `aprender-serve` if `aprender` passes,
 to confirm the foundational tier. See memory/feedback_crates_io_devdep_publish_cycles.md.
+
+**Gate 11 is PRE-BUMP ONLY (#2543).** Its pass criterion is stage-dependent in
+the mirror image of Gate 5: once the workspace version is bumped, *every* crate
+— including the flagship `aprender` — dry-runs to `failed to select a version
+for the requirement … candidate versions found which didn't match`, because no
+sibling is published at the new version yet. That is the exact string this gate
+declares a FAILURE, so post-bump Gate 11 self-reports a defect that does not
+exist. Run Gate 11 before `cargo set-version`; after the bump, the equivalent
+signal is Gate 5 on a zero-sibling crate plus
+`scripts/check_gate5_stage.sh --explain <crate>`.
 
 ## Verdict
 
