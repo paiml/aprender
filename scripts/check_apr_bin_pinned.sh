@@ -146,6 +146,34 @@ ABS_APR='(^|[[:space:]"'"'"'=(`]|:-|:=)(/|~/|\$HOME/)[A-Za-z0-9_.$/-]*/apr([[:sp
 # echo/printf exemption below covers that.
 PATHRES='(command[[:space:]]+-v[[:space:]]+apr|which[[:space:]]+apr|type[[:space:]]+(-[A-Za-z]+[[:space:]]+)?apr)([[:space:]]|[;)&|]|$)'
 
+# ---------------------------------------------------------------------------
+# CLASS 4/5: the same two defects, for `pv`.
+#
+# `pv` on PATH was 0.49.0 while the tree was 0.63.0, and they DISAGREED on the
+# gate that matters: strict-test-binding reported 253 refs / 51 missing under the
+# stale binary vs 371 / 27 under HEAD. Both surfaces where the RELEASE decision
+# is made were using the stale one -- dogfood_surfaces.sh printed
+# `pv present (pv 0.49.0)` into the release receipt AS EVIDENCE OF CORRECTNESS,
+# and Makefile `contracts:` ran a bare `pv lint contracts/` as the gate.
+#
+# Same OPEN/WRAP machinery as `apr`, deliberately: that class was wrong five
+# times and the openers are what keep prose out. Do not hand-tune these; add a
+# case-table row and re-run --self-test.
+#
+# No ABS_PV class: unlike apr there is no hardcoded absolute pv path in the tree,
+# and pv_bin.sh asks cargo rather than naming a path. If one ever appears, the
+# apr ABS class is the template.
+# OPEN_PV extends OPEN with shell KEYWORDS. `if pv validate ...; then` is the
+# live form at scripts/dogfood-book.sh:92,102 and OPEN does not admit it: `^`
+# then `if ` is not whitespace, so the bare invocation sailed through. Found by
+# probing the pattern against the known-bad line rather than by trusting a green
+# run -- the guard reported "every reference is pinned" while two were not.
+# OPEN itself is left ALONE: it backs BARE_APR, whose 62-case table has been
+# gotten wrong five times, and widening it is not this change's business.
+OPEN_PV="(${OPEN}|(^|[[:space:];&|(])(if|elif|while|until|then|do|else)[[:space:]]+)"
+BARE_PV="${OPEN_PV}[[:space:]]*@?[[:space:]]*${WRAP}*pv[[:space:]]+[a-z\"'\$/~.-]"
+PATHRES_PV='(command[[:space:]]+-v[[:space:]]+pv|which[[:space:]]+pv|type[[:space:]]+(-[A-Za-z]+[[:space:]]+)?pv|require_tool[[:space:]]+pv)([[:space:]]|[;)&|]|$)'
+
 MIN_EXPECTED="${MIN_EXPECTED:-80}"
 
 violations=0
@@ -197,12 +225,21 @@ emit_lines() {
                     else if ($0 ~ /```(bash|sh|shell|console)[[:space:]]*$/) { infence = 1 }
                     next
                 }
-                infence && /apr/ { printf "%d:%s\n", NR, $0; next }
-                /!`/ && /apr/ { printf "%d:%s\n", NR, $0 }
+                infence && /apr|pv/ { printf "%d:%s\n", NR, $0; next }
+                /!`/ && /apr|pv/ { printf "%d:%s\n", NR, $0 }
             ' "$f"
             ;;
         *)
-            awk '/apr/ { printf "%d:%s\n", NR, $0 }' "$f"
+            # WIDENED to /apr|pv/. This pre-filter fed ONLY lines containing
+            # "apr" to the pattern checks, so when the pv classes were added they
+            # were inert on any line without the word "apr" in it -- including
+            # the one that mattered most, Makefile `@pv lint contracts/`, the
+            # release gate. The guard reported "every reference is pinned" while
+            # that line was bare. Caught by mutating the Makefile and confirming
+            # the mutation ENGAGED (line 352 rewritten, guard still rc=0), not by
+            # reading the code. A filter upstream of a correct pattern is the
+            # same class as a correct pattern that is never run.
+            awk '/apr|pv/ { printf "%d:%s\n", NR, $0 }' "$f"
             ;;
     esac
 }
@@ -221,6 +258,22 @@ ltrim() {
 # out while keeping
 #   echo '{"jsonrpc":"2.0"}' | apr mcp
 # in - the pipe and the invocation are OUTSIDE the quotes.
+# PV-specific probe: ALWAYS strip quoted strings.
+#
+# demessage() below strips them only for lines starting with echo/printf, which
+# was enough for `apr` because prose rarely reads "apr <lowercase-word>". It is
+# NOT enough for `pv`: this repo's own reporters (ok/bad/warn/pass/fail/step)
+# take message strings, and `ok "$label validates (pv validate)"` is prose that
+# matched BARE_PV and produced a false positive at dogfood_surfaces.sh:221.
+#
+# Stripping cannot hide a real bare invocation: `pv validate "$c"` still reads
+# `pv validate` after the quotes go. It does blind us to the rare `pv "$@"`
+# form, which is the correct trade -- a false positive on every reporter line
+# would get this guard disabled, and a disabled guard catches nothing.
+demessage_pv() {
+    printf '%s' "$1" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g"
+}
+
 demessage() {
     local t="$1"
     case "$t" in
@@ -238,13 +291,13 @@ report() {
 }
 
 check_file() {
-    local f="$1" hit lineno text trimmed probe self=0
+    local f="$1" hit lineno text trimmed probe probe_pv self=0
     scanned=$((scanned + 1))
     # This file quotes deliberate violations verbatim in its case table, and
     # apr_bin.sh names the stale absolute paths it exists to detect. Both are
     # data, not invocations. (check_pass_grep_anchored.sh exempts itself for the
     # same reason.) The case table is what proves these two are still honest.
-    case "$f" in */apr_bin.sh|*/check_apr_bin_pinned.sh) self=1 ;; esac
+    case "$f" in */apr_bin.sh|*/pv_bin.sh|*/check_apr_bin_pinned.sh) self=1 ;; esac
     [ "$self" -eq 1 ] && return 0
     while IFS= read -r hit; do
         lineno="${hit%%:*}"
@@ -284,6 +337,13 @@ check_file() {
         # CLASS 3 --------------------------------------------------------
         # apr_bin.sh probes `type -aP apr` on purpose, to NAME the shadows;
         # it is exempted wholesale above.
+        probe_pv="$(demessage_pv "$trimmed")"
+        if [[ $probe_pv =~ $BARE_PV ]]; then
+            report "$f" "$lineno" "BARE-PV" "$trimmed"
+        fi
+        if [[ $probe_pv =~ $PATHRES_PV ]]; then
+            report "$f" "$lineno" "PATHRES-PV" "$trimmed"
+        fi
         if [[ $probe =~ $PATHRES ]]; then
             report 'PATH-APR' "$f" "$lineno" "$trimmed"
         fi
@@ -399,6 +459,49 @@ if [ "${1:-}" = "--self-test" ]; then
         fi
     }
 
+    # PV rows. probe_case uses demessage(); check_file uses demessage_pv() for
+    # the pv classes, so a pv row driven through probe_case would test a pipeline
+    # that does not ship -- the exact trap probe_case's own comment warns about.
+    probe_case_pv() {
+        local re="$1" line="$2" want="$3" label="$4" p t
+        ltrim "$line"; t="$LTRIM"
+        p="$(demessage_pv "$t")"
+        case "$t" in '#'*) p='' ;; esac
+        case "$t" in name:*|-\ name:*) p='' ;; esac
+        if [ "$want" = match ]; then
+            if ! [[ $p =~ $re ]]; then
+                printf 'CASE-TABLE FAIL [%s] expected MATCH, got none: %s\n' "$label" "$line" >&2
+                fails=$((fails + 1))
+            fi
+        else
+            if [[ $p =~ $re ]]; then
+                printf 'CASE-TABLE FAIL [%s] expected NO match, got one: %s\n' "$label" "$line" >&2
+                fails=$((fails + 1))
+            fi
+        fi
+    }
+    must_match_pv=(
+        $'\t@pv lint contracts/'   # real TAB: the Makefile recipe form
+        'if pv validate contracts/x.yaml; then'
+        'out=$(pv lint "$ROOT/contracts/" 2>&1)'
+        '        run: pv validate contracts/x.yaml'
+        'while pv status x.yaml; do'
+    )
+    must_not_match_pv=(
+        $'\t@. scripts/pv_bin.sh && "$$PV" lint contracts/'
+        'out=$("$PV" validate "$c" 2>&1)'
+        '# Use pv (not bash) for contract validation'
+        'ok "$label validates (pv validate)"'
+        'bad "pv lint contracts/ FAILED: $out"'
+        'if "$PV" validate contracts/x.yaml; then'
+    )
+    must_match_pathres_pv=( 'PV=$(command -v pv)' 'require_tool pv "x"' 'which pv' )
+    must_not_match_pathres_pv=( '. scripts/pv_bin.sh || exit 1' 'echo "resolved $PV"' )
+    for c in "${must_match_pv[@]}";          do probe_case_pv "$BARE_PV" "$c" match bare-pv; done
+    for c in "${must_not_match_pv[@]}";      do probe_case_pv "$BARE_PV" "$c" nomatch bare-pv; done
+    for c in "${must_match_pathres_pv[@]}";  do probe_case_pv "$PATHRES_PV" "$c" match pathres-pv; done
+    for c in "${must_not_match_pathres_pv[@]}"; do probe_case_pv "$PATHRES_PV" "$c" nomatch pathres-pv; done
+
     for c in "${must_match_bare[@]}"; do probe_case "$BARE_APR" "$c" match bare; done
     for c in "${must_not_match_bare[@]}"; do
         # The allowlist is part of the class-1 decision, so apply it here too.
@@ -502,7 +605,9 @@ APR="${APR:-/home/noah/.cargo/bin/apr}"'
     fi
     printf 'self-test OK: %s regex cases and 9 surface probes.\n' \
         "$(( ${#must_match_bare[@]} + ${#must_not_match_bare[@]} + ${#must_match_abs[@]} \
-             + ${#must_not_match_abs[@]} + ${#must_match_pathres[@]} + ${#must_not_match_pathres[@]} ))"
+             + ${#must_not_match_abs[@]} + ${#must_match_pathres[@]} + ${#must_not_match_pathres[@]} \
+             + ${#must_match_pv[@]} + ${#must_not_match_pv[@]} \
+             + ${#must_match_pathres_pv[@]} + ${#must_not_match_pathres_pv[@]} ))"
     exit 0
 fi
 

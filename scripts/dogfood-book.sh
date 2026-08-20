@@ -86,10 +86,16 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# PINNED. These two `pv validate` calls resolved through PATH, which on this
+# box was 0.49.0 while the tree was 0.63.0 -- and the two disagree on
+# strict-test-binding (253/51 vs 371/27). A book gate reading the stale
+# binary reports a meaningless pass.
+. "$(dirname "${BASH_SOURCE[0]}")/pv_bin.sh" || exit 1
+
 # Phase 4: pv validate completeness contract
 # ---------------------------------------------------------------------------
 step "Phase 4: contract validity"
-if pv validate contracts/apr-book-completeness-v1.yaml > /tmp/dogfood-pv.log 2>&1; then
+if "$PV" validate contracts/apr-book-completeness-v1.yaml > /tmp/dogfood-pv.log 2>&1; then
   if grep -qE '(^|[^0-9])0 error\(s\), 0 warning\(s\)' /tmp/dogfood-pv.log; then
     pass "pv validate apr-book-completeness-v1.yaml: clean"
   else
@@ -99,7 +105,7 @@ else
   fail "pv validate apr-book-completeness-v1.yaml: validation errors"
 fi
 
-if pv validate contracts/apr-page-cli-run-v1.yaml > /dev/null 2>&1; then
+if "$PV" validate contracts/apr-page-cli-run-v1.yaml > /dev/null 2>&1; then
   pass "pv validate apr-page-cli-run-v1.yaml: clean (sample)"
 else
   warn "pv validate apr-page-cli-run-v1.yaml had issues (sample)"

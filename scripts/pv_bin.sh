@@ -1,0 +1,82 @@
+# pv_bin.sh — resolve THE pv built from HEAD, and prove it.
+#
+# Source it, never execute it:
+#     . scripts/pv_bin.sh || exit 1
+#     "$PV" lint contracts/
+#
+# WHY THIS EXISTS. `pv` on PATH was 0.49.0 while the in-tree crate was 0.63.0,
+# and the two disagreed on the gate that matters: strict-test-binding reported
+# 253 refs / 51 missing under the stale binary and 371 / 27 under HEAD. Both
+# surfaces where the RELEASE decision is made were using the stale one:
+#   scripts/dogfood_surfaces.sh  printed `pv present (pv 0.49.0)` into the
+#                                release receipt AS EVIDENCE OF CORRECTNESS
+#   Makefile `contracts:`        ran a bare `pv lint contracts/` as the gate
+#
+# This is the same defect the repo already solved for `apr` (CLAUDE.md "Step 0 —
+# pin the binary, ALWAYS"; four apr binaries once coexisted and a bare `apr`
+# resolved to a 26-day-old copy). Same remedy, same shape as scripts/apr_bin.sh.
+#
+# CARGO IS THE FRESHNESS AUTHORITY, not a version string. A version match is not
+# freshness: during this work pv was rebuilt three times at the SAME version with
+# two distinct md5s, and the two binaries gave different answers on an identical
+# tree. So we `cargo build` first and take the artifact cargo produces; the
+# version assert below is a second line of defence against a PATH fallback, not
+# the primary proof.
+#
+# OPTION-NEUTRAL BY CONSTRUCTION: this file sets no shell options. `set -euo
+# pipefail` in a SOURCED file mutates the CALLER's shell — that leak once killed
+# the nightly six lines in (see CLAUDE.md, scripts/check_sourced_libs_option_neutral.sh).
+# Failure is signalled by RETURN STATUS only.
+
+pv_bin_die() {
+    printf 'pv_bin: %s\n' "$*" >&2
+    return 1
+}
+
+pv_bin_root() {
+    git rev-parse --show-toplevel 2>/dev/null || pwd
+}
+
+# Build from HEAD and hand back the artifact cargo produced.
+pv_bin_resolve() {
+    if [ -n "${PV_BIN:-}" ]; then
+        printf '%s\n' "$PV_BIN"
+        return 0
+    fi
+    pv_bin_root_dir=$(pv_bin_root)
+    ( cd "$pv_bin_root_dir" && cargo build -q -p aprender-contracts-cli --bin pv ) >&2 \
+        || { pv_bin_die "cargo build of aprender-contracts-cli failed"; return 1; }
+    pv_bin_td=$( cd "$pv_bin_root_dir" \
+        && cargo metadata --no-deps --format-version 1 2>/dev/null \
+        | jq -r '.target_directory // empty' 2>/dev/null )
+    [ -n "$pv_bin_td" ] || { pv_bin_die "could not read cargo target_directory"; return 1; }
+    for pv_bin_cand in "$pv_bin_td/debug/pv" "$pv_bin_td/release/pv"; do
+        [ -x "$pv_bin_cand" ] && { printf '%s\n' "$pv_bin_cand"; return 0; }
+    done
+    pv_bin_die "no pv binary under $pv_bin_td after a successful build"
+    return 1
+}
+
+# Second line of defence: the resolved binary must report the version the tree
+# declares. Catches a PATH fallback or a hand-copied artifact.
+pv_bin_assert_fresh() {
+    pv_bin_b="$1"
+    [ -x "$pv_bin_b" ] || { pv_bin_die "not executable: $pv_bin_b"; return 1; }
+    pv_bin_declared=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' \
+        "$(pv_bin_root)/crates/aprender-contracts-cli/Cargo.toml" 2>/dev/null)
+    if [ -z "$pv_bin_declared" ]; then
+        pv_bin_declared=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' \
+            "$(pv_bin_root)/Cargo.toml" 2>/dev/null)
+    fi
+    [ -n "$pv_bin_declared" ] || { pv_bin_die "could not read declared pv version"; return 1; }
+    pv_bin_actual=$("$pv_bin_b" --version 2>&1 | awk '{print $NF}')
+    [ "$pv_bin_actual" = "$pv_bin_declared" ] || {
+        pv_bin_die "resolved pv reports $pv_bin_actual, tree declares $pv_bin_declared ($pv_bin_b)"
+        return 1
+    }
+    return 0
+}
+
+PV=$(pv_bin_resolve) || return 1 2>/dev/null || exit 1
+pv_bin_assert_fresh "$PV" || return 1 2>/dev/null || exit 1
+export PV
