@@ -403,7 +403,32 @@ fn execute_distill(dry_run: bool, state: &SessionState) -> Result<String> {
             student.id, student.parameters as f64 / 1e9
         ))
     } else {
-        Ok("Training started... (simulated)".to_string())
+        // #2519 named this line directly: "distill returns `Training
+        // started... (simulated)`". It is a success string for work that never
+        // happens — this crate has no training loop, no optimizer and no
+        // dataset; it depends on `entrenar` only for its error type.
+        //
+        // Before the `fetch` fix this was reachable by fetching two fake
+        // models; afterwards it was still reachable through `--session`, which
+        // is how it survived. Refusing removes it from every door at once.
+        Err(EntrenarError::ConfigValue {
+            field: "distill".into(),
+            message: format!(
+                // Deliberately does NOT quote the old success string. The
+                // falsifier asserts on substrings, and a refusal that repeats
+                // the phrase it is refusing cannot be told apart from the
+                // defect by any mechanical check.
+                "cannot distill `{}` into `{}`: this shell has no training loop, \
+                 no optimizer and no dataset. It previously reported that \
+                 training had begun, and exited 0 without training anything",
+                teacher.map_or("<teacher>", |t| t.id.as_str()),
+                student.map_or("<student>", |s| s.id.as_str()),
+            ),
+            suggestion: "Run the real trainer: `apr distill` / `apr finetune`. \
+                         `distill --dry-run` here still prints the configuration. \
+                         Tracked in #2519."
+                .into(),
+        })
     }
 }
 
