@@ -49,7 +49,21 @@ while IFS= read -r f; do
     [ -n "$f" ] || continue
     n_integration=$((n_integration + 1))
     name=$(basename "$f" .rs)
-    if ! printf '%s\n' "$REFERENCED" | grep -qx "$name"; then
+    # NOT `printf ... | grep -qx`. `grep -q` exits at the FIRST match, closing
+    # the pipe; printf then dies of SIGPIPE (141). This script runs under
+    # `set -o pipefail` (line 29), so the PIPELINE inherits printf's 141 even
+    # though grep MATCHED — `!` inverts that into a false "UNGATED BEAT".
+    #
+    # It is a race (does printf finish writing before grep exits?), so it
+    # reproduces intermittently: this guard passed locally and failed in CI on
+    # the same tree, emitting
+    #     scripts/check_beats_gated.sh: line 52: printf: write error: Broken pipe
+    # A required check that goes red at random is worse than one that cannot go
+    # red at all — it trains everyone to re-run until green.
+    #
+    # Verified: `set -o pipefail; printf "$BIG" | grep -qx "1"` returns 141 on
+    # 5/5 attempts. A here-string has no pipe and therefore no SIGPIPE.
+    if ! grep -qx "$name" <<<"$REFERENCED"; then
         echo "✗ UNGATED BEAT: $f"
         echo "    No workflow runs it. It is an integration test TARGET, so"
         echo "    \`cargo test --lib\` does NOT reach it  -  it executes only if a"
@@ -95,7 +109,8 @@ while IFS= read -r f; do
     segs=$(grep -hE -- "--test[[:space:]]+${name}([^A-Za-z0-9_]|$)" "$WORKFLOWS"/*.yml 2>/dev/null \
            | sed 's/&&/\n/g' \
            | grep -E -- "--test[[:space:]]+${name}([^A-Za-z0-9_]|$)")
-    if [ -n "$segs" ] && ! printf '%s\n' "$segs" | grep -qE -- '--ignored|--include-ignored'; then
+    # Same SIGPIPE-under-pipefail hazard as line 52 — here-string, no pipe.
+    if [ -n "$segs" ] && ! grep -qE -- '--ignored|--include-ignored' <<<"$segs"; then
         echo "✗ VACUOUSLY GATED BEAT: $f"
         echo "    A workflow names it, so rule 1 is satisfied - but the beat is"
         echo "    \`#[ignore]\`d and NO invocation passes \`--ignored\`, so the run"
