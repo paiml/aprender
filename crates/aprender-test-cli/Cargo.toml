@@ -14,6 +14,17 @@ categories = ["development-tools::testing", "command-line-utilities", "wasm"]
 default = ["browser"]
 # Enable real browser control for live validation (requires chromium)
 browser = ["jugar-probar/browser"]
+# `apr test llm` / `aprender-test-cli llm` -- endpoint correctness and load
+# testing. main.rs gates Commands::Llm on #[cfg(feature = "llm")] and, when it
+# is off, tells the user to "Rebuild with --features llm". That feature did not
+# exist on THIS crate, so the advice was impossible to follow:
+#
+#     error: the package 'aprender-test-cli' does not contain this feature: llm
+#     help: packages with the missing feature: aprender-test-lib, aprender-verify-ml
+#
+# The subcommand was advertised in --help and permanently unreachable. The
+# feature exists on the dependency; forward to it, exactly as `browser` does.
+llm = ["jugar-probar/llm"]
 
 [lib]
 name = "probador"

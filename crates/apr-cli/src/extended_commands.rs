@@ -526,16 +526,37 @@ pub enum ExtendedCommands {
         #[arg(long)]
         simulated: bool,
     },
-    /// Probar testing framework (GH-876 — visual regression, replay, more).
+    /// Test harness for web, LLM, media and replay — powered by probador.
     ///
-    /// GH-876 Milestone 1: `apr probar tensor` migrates the existing flat
-    /// `apr probar <FILE>` behavior (PMAT-481 tensor visual regression).
-    /// The remaining probador subcommands (test, record, coverage, playbook,
-    /// comply, av-sync, audio, video, animation, stress, llm) land in
-    /// follow-up PRs that delegate to the probador library.
-    Probar {
+    /// Named for what it tests, not for the act of testing. `probar` is Spanish
+    /// for "to try"; it named the VERB, so `apr probar --help` told a reader
+    /// nothing about the subject. This follows the precedent already set by
+    /// `apr data` ("Data quality pipeline ... powered by alimentar"): a plain
+    /// noun for the user-facing command, the Spanish name kept for the engine
+    /// and credited in the description.
+    ///
+    /// The harness covers four distinct things, and the subcommands group by
+    /// what is UNDER TEST rather than by verb:
+    ///
+    ///   web     the WASM/browser build and its runtime behaviour
+    ///           (serve, build, watch, comply, stress)
+    ///   llm     inference correctness, throughput and cost against an endpoint
+    ///           (test, load, bench, sweep, score, experiment, data-audit)
+    ///   media   rendered output against ground truth
+    ///           (av-sync, audio, video, animation)
+    ///   replay  the runner itself — recording, state machines, reporting
+    ///           (record, playbook, coverage, report)
+    ///
+    /// Only `tensor` is routed today (PMAT-481 visual regression); the rest
+    /// land as they are delegated to the probador library. Renaming now costs
+    /// one path — after those land it is a breaking change across the whole
+    /// testing surface.
+    ///
+    /// `apr probar` stays as a hidden alias so existing scripts keep working.
+    #[command(alias = "probar")]
+    Test {
         #[command(subcommand)]
-        command: ProbarSubcommand,
+        command: TestSubcommand,
     },
     /// Compare APR model against HuggingFace source
     #[command(name = "compare-hf")]
@@ -1573,7 +1594,7 @@ pub enum ModelfileSubcommand {
 /// existing behavior). Subsequent milestones add the remaining 14 probador
 /// subcommands as separate PRs that delegate to the probador library.
 #[derive(Subcommand, Debug)]
-pub enum ProbarSubcommand {
+pub enum TestSubcommand {
     /// Export tensor activations for visual regression testing (PMAT-481).
     ///
     /// Generates JSON/PNG per-layer test artifacts that can be compared

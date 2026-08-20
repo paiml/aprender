@@ -212,7 +212,7 @@ fn test_cli_stats_command() {
 
     std::fs::write(&msgpack_path, rmp_serde::to_vec(&traces).expect("test")).expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd.arg("stats").arg(&msgpack_path).output().expect("Failed to execute");
 
     assert!(output.status.success(), "stats command should succeed");
@@ -229,7 +229,7 @@ fn test_cli_export_command_help() {
     // AC: renacer export --help shows usage
     use assert_cmd::Command;
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd.arg("export").arg("--help").output().expect("Failed to execute");
 
     assert!(output.status.success());

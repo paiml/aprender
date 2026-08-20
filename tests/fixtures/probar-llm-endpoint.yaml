@@ -1,0 +1,75 @@
+# probar llm test config for the dogfood sweep's live endpoint probe.
+#
+#   bash scripts/dogfood_surfaces.sh --http \
+#     DOGFOOD_LIVE_SERVER=http://127.0.0.1:PORT \
+#     DOGFOOD_PROBAR_CONFIG=tests/fixtures/probar-llm-endpoint.yaml
+#
+# WHAT THIS TESTS, AND WHAT IT DELIBERATELY DOES NOT
+# --------------------------------------------------
+# It tests that the ENDPOINT works: that /v1/chat/completions accepts a
+# well-formed request, honours `temperature` and `max_tokens`, and returns text
+# the client can act on. It is NOT a model-quality benchmark, and it must never
+# become one -- a dogfood gate that fails when a model is merely mediocre stops
+# telling you anything about the server.
+#
+# WHY THE ASSERTIONS LOOK SO WEAK
+# -------------------------------
+# Because a narrow one fails for the wrong reason. #2359 in this repo: a golden
+# gate on bare "Hello" under greedy decoding FLIPPED between backends and was
+# diagnosed as a GPU correctness defect for four neighbouring prompts before
+# someone noticed the gate had merely sampled a near-tie. The lesson recorded
+# there is that a golden assertion needs a WIDE argmax margin.
+#
+# So every case below:
+#   * pins temperature: 0.0 (greedy -- no sampling entropy)
+#   * asks a question whose answer is overwhelmingly probable for ANY model that
+#     is working at all, so the margin is wide
+#   * asserts a SUBSTRING or a loose regex, never an exact string
+#
+# If one of these fails, the endpoint is broken -- not the model's taste.
+#
+# RUN THIS AGAINST A RELEASE BUILD
+# --------------------------------
+# Measured against a DEBUG `apr serve run` on a 0.5B Q4_K_M model, the first
+# case PASSED in 110 SECONDS for 16 tokens. That is the debug build, not a
+# performance defect -- do not report it as one. A release binary is the only
+# meaningful target for this probe; a debug one makes the sweep look hung.
+
+tests:
+  # The single most important route in the server, and the one my static route
+  # scan originally missed entirely.
+  - name: chat_completions_answers_a_wide_margin_arithmetic_question
+    temperature: 0.0
+    max_tokens: 16
+    messages:
+      - role: user
+        content: "What is 2+2? Reply with only the number."
+    # "4" is not a near-tie for any working model. If this fails, generation is
+    # broken, not merely unlucky.
+    expect_contains: "4"
+
+  # A system prompt must actually reach the model. Without this, a server that
+  # silently dropped the system role would pass every other case here.
+  - name: system_prompt_is_honoured
+    temperature: 0.0
+    max_tokens: 24
+    messages:
+      - role: system
+        content: "You always reply with exactly one word: BANANA"
+      - role: user
+        content: "Say anything."
+    # Case-insensitive so casing drift is not a failure; the word itself carries
+    # the signal because nothing else in the prompt suggests it.
+    expect_pattern: "(?i)banana"
+
+  # Non-vacuity for the whole file. Every case above would still pass if the
+  # server echoed a fixed canned string containing "4" and "banana". This one
+  # asks for something none of the others mention, so a canned responder fails
+  # it while a working endpoint passes.
+  - name: distinct_prompt_gets_a_distinct_answer_not_a_canned_one
+    temperature: 0.0
+    max_tokens: 24
+    messages:
+      - role: user
+        content: "Complete this exactly: the capital of France is ___"
+    expect_pattern: "(?i)paris"

@@ -801,6 +801,43 @@ pub enum Commands {
     #[cfg(feature = "dev")]
     #[command(subcommand)]
     Mono(crate::commands::mono::MonoCommands),
+
+    /// RAG pipeline: index, query, transcribe (was the `trueno-rag` binary)
+    #[command(subcommand)]
+    Rag(aprender_rag_cli::Commands),
+
+    /// zram device management (was the `trueno-zram` binary)
+    #[command(subcommand)]
+    Zram(aprender_zram_cli::Commands),
+
+    /// Discrete-event simulation: run, render, validate, verify, emc-check
+    /// (was the `simular` binary)
+    // disable_help_subcommand: simular's `Commands` carries an explicit `Help`
+    // variant. Standalone that is fine -- its own `Cli` sets
+    // disable_help_subcommand = true, so clap does not also generate one. That
+    // attribute lives on `Cli`, which apr never constructs: it embeds the
+    // `Commands` enum directly, so clap's auto-`help` came back and collided:
+    //     Command sim: command name `help` is duplicated
+    // clap's duplicate check is #[cfg(debug_assertions)], so a release build
+    // would have SHIPPED the ambiguity instead of panicking.
+    #[command(subcommand, disable_help_subcommand = true)]
+    Sim(simular::cli::Commands),
+
+    /// Compute-graph profiling: profile, bench, roofline, doctor
+    /// (was the `aprender-cgp` binary)
+    #[command(subcommand)]
+    Cgp(cgp::cli::Commands),
+
+    /// Model QA playbook runner: certify, run, score, parity
+    /// (was the `apr-qa` binary; `apr qa` is the falsifiable-gates command)
+    #[command(name = "qa-playbook", subcommand)]
+    QaPlaybook(aprender_qa_cli::cli::Commands),
+
+    /// Provable-contracts: validate, lint, score, kani, proof-status
+    /// (the `pv` binary keeps shipping under its own name; this is the
+    /// in-apr route to the same commands)
+    #[command(subcommand)]
+    Pv(aprender_contracts_cli::cli::Commands),
 }
 
 /// Subcommands for `apr debug` (aprender#2377 finding 3).

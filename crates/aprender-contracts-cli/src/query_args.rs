@@ -2,7 +2,7 @@ use clap::Args;
 use std::path::PathBuf;
 
 /// Arguments for the `pv query` command — extracted for file health compliance.
-#[derive(Args)]
+#[derive(Args, Clone, Debug)]
 pub struct QueryArgs {
     /// Search query string
     pub query: String,

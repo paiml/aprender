@@ -1,6 +1,11 @@
 //! Update README.md certification table from models.csv.
 //!
 //! Usage: apr-qa-readme-sync [--csv PATH] [--readme PATH]
+//!
+//! Argument parsing is DECLARATIVE (clap derive). It used to be a hand-rolled
+//! `while i < args.len()` loop whose `_ => {}` catch-all silently swallowed
+//! unknown flags, stray positionals, and `--csv` given without a value.
+//! See `scripts/check_no_hand_rolled_parsers.sh`.
 
 #![forbid(unsafe_code)]
 
@@ -9,6 +14,7 @@ use aprender_qa_certify::{
     START_MARKER,
 };
 use chrono::Utc;
+use clap::Parser;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -26,50 +32,22 @@ fn find_project_root() -> Option<PathBuf> {
     }
 }
 
-/// Parsed CLI arguments
-struct CliArgs {
-    csv_path: Option<PathBuf>,
-    readme_path: Option<PathBuf>,
-    show_help: bool,
-}
+/// Update the README.md certification table from models.csv.
+#[derive(Debug, Parser)]
+#[command(
+    name = "apr-qa-readme-sync",
+    version,
+    about = "Updates README.md certification table from models.csv",
+    long_about = None
+)]
+struct Cli {
+    /// Path to models.csv (default: docs/certifications/models.csv)
+    #[arg(long, value_name = "PATH")]
+    csv: Option<PathBuf>,
 
-fn parse_args() -> CliArgs {
-    let args: Vec<String> = env::args().collect();
-    let mut result = CliArgs {
-        csv_path: None,
-        readme_path: None,
-        show_help: false,
-    };
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--csv" if i + 1 < args.len() => {
-                i += 1;
-                result.csv_path = Some(PathBuf::from(&args[i]));
-            }
-            "--readme" if i + 1 < args.len() => {
-                i += 1;
-                result.readme_path = Some(PathBuf::from(&args[i]));
-            }
-            "--help" | "-h" => {
-                result.show_help = true;
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    result
-}
-
-fn print_help() {
-    eprintln!("Usage: apr-qa-readme-sync [--csv PATH] [--readme PATH]");
-    eprintln!();
-    eprintln!("Updates README.md certification table from models.csv");
-    eprintln!();
-    eprintln!("Options:");
-    eprintln!("  --csv PATH     Path to models.csv (default: docs/certifications/models.csv)");
-    eprintln!("  --readme PATH  Path to README.md (default: README.md)");
-    eprintln!("  --help, -h     Show this help");
+    /// Path to README.md (default: README.md)
+    #[arg(long, value_name = "PATH")]
+    readme: Option<PathBuf>,
 }
 
 fn validate_readme_markers(content: &str) -> Result<(), CertifyError> {
@@ -86,14 +64,7 @@ fn validate_readme_markers(content: &str) -> Result<(), CertifyError> {
     Ok(())
 }
 
-fn run() -> Result<(), CertifyError> {
-    let args = parse_args();
-
-    if args.show_help {
-        print_help();
-        return Ok(());
-    }
-
+fn run(cli: Cli) -> Result<(), CertifyError> {
     // Find project root
     let root = find_project_root().ok_or_else(|| {
         CertifyError::MarkerNotFound(
@@ -101,10 +72,10 @@ fn run() -> Result<(), CertifyError> {
         )
     })?;
 
-    let csv_path = args
-        .csv_path
+    let csv_path = cli
+        .csv
         .unwrap_or_else(|| root.join("docs/certifications/models.csv"));
-    let readme_path = args.readme_path.unwrap_or_else(|| root.join("README.md"));
+    let readme_path = cli.readme.unwrap_or_else(|| root.join("README.md"));
 
     // Read CSV
     eprintln!("Reading CSV from: {}", csv_path.display());
@@ -134,11 +105,139 @@ fn run() -> Result<(), CertifyError> {
 }
 
 fn main() -> ExitCode {
-    match run() {
+    let cli = Cli::parse();
+
+    match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("Error: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::error::ErrorKind;
+    use clap::{CommandFactory, Parser};
+    use std::path::PathBuf;
+
+    /// Catches duplicate short options and other grammar defects.
+    ///
+    /// clap only runs this under `#[cfg(debug_assertions)]`, so without an
+    /// explicit test a release build ships the ambiguity.
+    #[test]
+    fn test_cli_definition_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn test_no_args_leaves_both_paths_unset() {
+        let cli = Cli::try_parse_from(["apr-qa-readme-sync"]).expect("no args must parse");
+        assert!(cli.csv.is_none(), "csv default is resolved at runtime");
+        assert!(
+            cli.readme.is_none(),
+            "readme default is resolved at runtime"
+        );
+    }
+
+    #[test]
+    fn test_both_flags_are_honoured() {
+        let cli = Cli::try_parse_from([
+            "apr-qa-readme-sync",
+            "--csv",
+            "/tmp/models.csv",
+            "--readme",
+            "/tmp/README.md",
+        ])
+        .expect("both flags must parse");
+        assert_eq!(cli.csv, Some(PathBuf::from("/tmp/models.csv")));
+        assert_eq!(cli.readme, Some(PathBuf::from("/tmp/README.md")));
+    }
+
+    /// An unknown flag must be an ERROR.
+    ///
+    /// The hand-rolled loop had a `_ => {}` catch-all, so a typo'd flag was
+    /// silently dropped and the tool ran with defaults.
+    #[test]
+    fn test_unknown_flag_is_error() {
+        let err = Cli::try_parse_from(["apr-qa-readme-sync", "--definitely-not-a-real-flag-xyz"])
+            .expect_err("an unknown flag must be rejected");
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+        assert_ne!(err.exit_code(), 0, "must exit non-zero");
+    }
+
+    /// A near-miss of a real flag must be rejected too, not silently ignored.
+    #[test]
+    fn test_misspelled_known_flag_is_error() {
+        let err = Cli::try_parse_from(["apr-qa-readme-sync", "--csvv", "/tmp/models.csv"])
+            .expect_err("--csvv must be rejected");
+        assert_ne!(err.exit_code(), 0, "must exit non-zero");
+    }
+
+    /// A stray positional must be an ERROR. This binary takes no positionals,
+    /// and the hand-rolled loop ignored them.
+    #[test]
+    fn test_stray_positional_is_error() {
+        let err = Cli::try_parse_from(["apr-qa-readme-sync", "models.csv"])
+            .expect_err("a stray positional must be rejected");
+        assert_ne!(err.exit_code(), 0, "must exit non-zero");
+    }
+
+    /// `--csv` with no value must be an ERROR, not a silent fallback to the
+    /// default. The hand-rolled arm was guarded by `if i + 1 < args.len()`, so
+    /// a trailing `--csv` fell into the catch-all and vanished.
+    #[test]
+    fn test_flag_without_value_is_error() {
+        for flag in ["--csv", "--readme"] {
+            let parsed = Cli::try_parse_from(["apr-qa-readme-sync", flag]);
+            assert!(
+                parsed.is_err(),
+                "{flag} with no value must be an error, not a silent default"
+            );
+            let err = parsed.expect_err("checked is_err above");
+            assert_ne!(
+                err.exit_code(),
+                0,
+                "{flag} with no value must exit non-zero"
+            );
+            assert_ne!(
+                err.kind(),
+                ErrorKind::DisplayHelp,
+                "{flag} with no value is not a help request"
+            );
+        }
+    }
+
+    /// `--help` must exit 0 and print real help.
+    #[test]
+    fn test_help_exits_zero_with_substantial_output() {
+        let err = Cli::try_parse_from(["apr-qa-readme-sync", "--help"])
+            .expect_err("--help short-circuits parsing via an Err carrying the help text");
+        assert_eq!(err.kind(), ErrorKind::DisplayHelp);
+        assert_eq!(err.exit_code(), 0, "--help must exit 0");
+
+        let rendered = err.render().to_string();
+        assert!(
+            rendered.len() > 100,
+            "help must be substantial, got {} bytes",
+            rendered.len()
+        );
+        for expected in ["--csv", "--readme", "models.csv"] {
+            assert!(
+                rendered.contains(expected),
+                "help must document {expected}, got:\n{rendered}"
+            );
+        }
+    }
+
+    /// `-h` was accepted by the old parser and must still be.
+    #[test]
+    fn test_short_help_still_accepted() {
+        let err = Cli::try_parse_from(["apr-qa-readme-sync", "-h"])
+            .expect_err("-h short-circuits parsing");
+        assert_eq!(err.kind(), ErrorKind::DisplayHelp);
+        assert_eq!(err.exit_code(), 0, "-h must exit 0");
     }
 }

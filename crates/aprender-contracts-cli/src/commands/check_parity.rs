@@ -72,7 +72,7 @@ fn check_headline(doc: &Value, rows: &[Value]) -> Vec<String> {
         match row.get("status").and_then(Value::as_str) {
             Some("SHIPPED") => shipped += 1,
             Some("PARTIAL") => partial += 1,
-            Some("NONE") | Some("MISSING") => missing += 1,
+            Some("NONE" | "MISSING") => missing += 1,
             _ => {}
         }
     }

@@ -37,7 +37,7 @@ echo "[RESULT] type_inference: inferred i32" >&2
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
@@ -71,7 +71,7 @@ echo "[RESULT] optimization: inlined" >&2
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
@@ -105,7 +105,7 @@ echo "[RESULT] type_check: type is valid" >&2
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
@@ -153,7 +153,7 @@ echo "[RESULT] pattern_compile: compiled" >&2
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
@@ -189,7 +189,7 @@ echo "[RESULT] trait_solve: bound satisfied" >&2
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
@@ -216,7 +216,7 @@ fn test_backward_compatibility_otlp_without_decisions() {
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--otlp-endpoint").arg("http://localhost:4317").arg("--").arg(&test_program);
 
     // Should work fine - OTLP without decisions
@@ -246,7 +246,7 @@ echo "[RESULT] const_eval: evaluated to 42" >&2
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--trace-transpiler-decisions").arg("--").arg(&test_program);
 
     // Should work fine - decisions without OTLP
@@ -280,7 +280,7 @@ echo "Done"
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
@@ -315,7 +315,7 @@ echo "Result"
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")
@@ -350,7 +350,7 @@ echo "Output"
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317")
         .arg("--otlp-service-name")
@@ -386,7 +386,7 @@ echo "Output"
             .expect("Failed to set permissions");
     }
 
-    let mut cmd = Command::cargo_bin("renacer").expect("Failed to find renacer binary");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("Failed to find renacer binary");
     cmd.arg("--otlp-endpoint")
         .arg("http://localhost:4317")
         .arg("--trace-transpiler-decisions")

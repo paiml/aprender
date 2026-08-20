@@ -8,7 +8,7 @@
 # exactly what happened when #2357 hardened Gates 1 and 13 below.
 name: apr-dogfood
 allowed-tools: Bash(cargo:*), Bash(apr:*), Bash(pmat:*), Bash(gh:*), Bash(git:*), Bash(find:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(grep:*), Bash(diff:*), Bash(timeout:*), Bash(jq:*), Bash(python3:*), Bash(echo:*), Bash(cat:*), Bash(rm:*), Bash(ssh:*), Read, Glob, Grep, Agent
-description: Dogfood apr-cli — rebuild, install, exercise all commands against real models, check quality, find next work
+description: Dogfood the SHIPPED SURFACE — every binary, every apr subcommand, every HTTP route, every MCP tool — then models, quality, and next work. Run before any release.
 effort: high          # MACS F4: pinned for reproducible cost/behavior - exercises the whole CLI against real models and judges the output
 
 ---
@@ -24,6 +24,64 @@ effort: high          # MACS F4: pinned for reproducible cost/behavior - exercis
 - `contracts/apr-qa-differential-v1.yaml` — ollama parity, tokenizer, concurrency (5 tests)
 **Spec**: `docs/specifications/apr-cli-qa-spec.md` (v2.0)
 **Source**: Extended from `apr-cookbook/.claude/skills/qa/SKILL.md` (12 protocols)
+
+## Gate 0 — every shipped interface (RUN THIS FIRST)
+
+Before any of the model work below, sweep the whole surface:
+
+```bash
+bash scripts/dogfood_surfaces.sh          # all three interfaces
+bash scripts/dogfood_surfaces.sh --twice  # prove the receipt is deterministic
+```
+
+This exists because the rest of this skill did not cover it. Measured on
+2026-08-16, before it was written, this file referenced **26** distinct `apr`
+subcommands and contained **zero** occurrences of `mcp`, `MCP`, `/v1/`, `curl`,
+`endpoint`, `route`, or `chat/completions`. The `pre-release` skill likewise.
+The 0.63.0 audit that probed 104 commands, 9 MCP tools and 45 routes was done by
+hand and was not reproducible.
+
+What it sweeps, all enumerated at RUNTIME and never from a list in this file:
+
+| surface | source of truth | count on 2026-08-16 |
+|---|---|---|
+| binaries | `cargo build --message-format=json` (executables cargo REPORTS) | 26 built |
+| `apr` subcommands | `apr --help` | 105 |
+| HTTP routes | the `("GET", "/path", handler)` route table in `api/router.rs` | 34 |
+| MCP tools | `const NAME` in `aprender-mcp/src/tools/` + the contract | 9 |
+
+Three rules it enforces that ordinary probing does not:
+
+1. **A pass must EXCLUDE an outcome.** `--help` exiting 0 is not a pass; a
+   binary that prints nothing also exits 0. Each binary must also REJECT an
+   unknown flag, which is what catches a parser that is not parsing.
+2. **Never construct a binary path.** Ask cargo. In a worktree, `cargo
+   metadata` reports `/mnt/nvme-raid0/targets/aprender` while cargo actually
+   writes to `<worktree>/target/debug` — `.cargo/config.toml` holds the
+   redirect and is gitignored, so it exists in the main checkout and not in a
+   worktree. Probing a constructed path exercises a binary from a different
+   tree and produces a confident receipt about code you are not shipping. The
+   first version of this script had that bug.
+3. **Skips are counted and bounded.** A skip is never a pass, and a run that
+   skips more than `MAX_SKIP_PCT` FAILS — a sweep that skipped most of itself
+   proves nothing.
+
+Every enumeration is vacuity-guarded: too few items and the run FAILS, because a
+sweep over a shrunken universe otherwise reports a clean pass.
+
+**What it found on its first run** (all confirmed by hand):
+
+- `aprender-train-lora` and `trueno-zram` PANICKED on any argument. Both
+  declared a short option twice — `-m` for `model` and `method`, `-p` for
+  `pages` and `pattern`. clap's check is `#[cfg(debug_assertions)]`, so release
+  builds do not panic: `aprender-train-lora plan --help` in release lists BOTH
+  `-m, --model` and `-m, --method`. Debug panics, release ships the ambiguity.
+- `aprender-compute-xtask --help` exits 1 (hand-rolled `env::args()` parsing).
+- `aprender-zram-generator --help` produces **0 bytes** and it accepts an
+  unknown flag at exit 0 — it is a systemd generator taking
+  `normal_dir early_dir late_dir` positionally, so an unrecognised flag is
+  treated as a directory path.
+
 
 ## Context
 

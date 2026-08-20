@@ -41,7 +41,7 @@ fn main() {
     assert!(compile_status.success(), "Failed to compile test program");
 
     // Run renacer with --trace-transpiler-decisions flag
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--trace-transpiler-decisions")
         .arg("-c") // Use statistics mode to suppress noise
@@ -91,7 +91,7 @@ fn main() {
         .expect("Failed to compile");
 
     // Run without --trace-transpiler-decisions flag
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd.arg("-c").arg("--").arg(&test_bin).output().expect("Failed to execute");
 
     assert!(output.status.success());
@@ -126,7 +126,7 @@ fn main() {
         .status()
         .expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--trace-transpiler-decisions")
         .arg("-c")
@@ -168,7 +168,7 @@ fn main() {
         .status()
         .expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     let output = cmd
         .arg("--trace-transpiler-decisions")
         .arg("-c")

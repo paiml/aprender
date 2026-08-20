@@ -17,7 +17,7 @@ use tempfile::TempDir;
 #[test]
 fn test_dl_anomaly_flag_accepted() {
     // Test that --dl-anomaly flag is accepted
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--dl-anomaly").arg("--").arg("echo").arg("test");
 
     // Should not error on flag parsing
@@ -30,7 +30,7 @@ fn test_dl_anomaly_flag_accepted() {
 
 #[test]
 fn test_dl_anomaly_with_statistics() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--dl-anomaly").arg("--").arg("echo").arg("test");
 
     cmd.assert().success();
@@ -73,7 +73,7 @@ int main() {
         .output()
         .expect("Failed to compile test program");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--dl-anomaly").arg("--").arg(&test_program);
 
     // Should detect anomalies in output
@@ -89,7 +89,7 @@ int main() {
 
 #[test]
 fn test_dl_threshold_configuration() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c")
         .arg("--dl-anomaly")
         .arg("--dl-threshold")
@@ -107,7 +107,7 @@ fn test_dl_threshold_configuration() {
 
 #[test]
 fn test_dl_anomaly_json_export() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("--format").arg("json").arg("--dl-anomaly").arg("--").arg("echo").arg("test");
 
     cmd.assert().success().stdout(
@@ -121,7 +121,7 @@ fn test_dl_anomaly_json_export() {
 
 #[test]
 fn test_dl_anomaly_with_filtering() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--dl-anomaly").arg("-e").arg("trace=file").arg("--").arg("ls").arg("-la");
 
     cmd.assert().success();
@@ -156,7 +156,7 @@ int main() {
         .output()
         .expect("test");
 
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--dl-anomaly").arg("--").arg(&test_program);
 
     // Should handle gracefully (no panic)
@@ -170,7 +170,7 @@ int main() {
 #[test]
 fn test_backward_compatibility_without_dl_anomaly() {
     // Ensure existing functionality works without --dl-anomaly flag
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--").arg("echo").arg("test");
 
     cmd.assert().success();
@@ -182,7 +182,7 @@ fn test_backward_compatibility_without_dl_anomaly() {
 
 #[test]
 fn test_dl_anomaly_with_timing() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("-T").arg("--dl-anomaly").arg("--").arg("echo").arg("hello");
 
     cmd.assert().success();
@@ -194,7 +194,7 @@ fn test_dl_anomaly_with_timing() {
 
 #[test]
 fn test_dl_anomaly_with_other_ml() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c")
         .arg("--dl-anomaly")
         .arg("--ml-anomaly") // Also enable KMeans
@@ -213,7 +213,7 @@ fn test_dl_anomaly_with_other_ml() {
 
 #[test]
 fn test_dl_anomaly_with_explainability() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c").arg("--dl-anomaly").arg("--explain").arg("--").arg("echo").arg("test");
 
     // Should provide explanations
@@ -226,7 +226,7 @@ fn test_dl_anomaly_with_explainability() {
 
 #[test]
 fn test_dl_hidden_size_configuration() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c")
         .arg("--dl-anomaly")
         .arg("--dl-hidden-size")
@@ -244,7 +244,7 @@ fn test_dl_hidden_size_configuration() {
 
 #[test]
 fn test_dl_epochs_configuration() {
-    let mut cmd = Command::cargo_bin("renacer").expect("test");
+    let mut cmd = Command::cargo_bin("aprender-profile").expect("test");
     cmd.arg("-c")
         .arg("--dl-anomaly")
         .arg("--dl-epochs")

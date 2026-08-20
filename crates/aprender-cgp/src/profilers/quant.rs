@@ -319,18 +319,18 @@ fn extract_between<'a>(s: &'a str, start: &str, end: &str) -> Option<&'a str> {
     Some(&s[start_idx..end_idx])
 }
 
-/// Find benchmark binary at standard paths.
+/// Find benchmark binary at standard paths. Asks cargo for the target
+/// directory rather than hardcoding one -- see `analysis::compare` for why:
+/// `/mnt/nvme-raid0/targets/trueno` is the pre-APR-MONO name and empty on
+/// every checkout since the consolidation.
 fn find_bench_binary() -> Option<String> {
-    let candidates = [
-        "/mnt/nvme-raid0/targets/trueno/release/examples/benchmark_matrix_suite",
-        "./target/release/examples/benchmark_matrix_suite",
-    ];
-    for path in &candidates {
-        if std::path::Path::new(path).exists() {
-            return Some(path.to_string());
-        }
-    }
-    None
+    let target_dir = crate::analysis::compare::cargo_target_dir();
+    let owned_candidate =
+        target_dir.map(|d| format!("{d}/release/examples/benchmark_matrix_suite"));
+    owned_candidate
+        .into_iter()
+        .chain(["./target/release/examples/benchmark_matrix_suite".to_string()])
+        .find(|p| std::path::Path::new(p).exists())
 }
 
 #[cfg(test)]

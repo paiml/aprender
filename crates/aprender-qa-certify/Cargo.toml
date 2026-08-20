@@ -10,6 +10,7 @@ rust-version.workspace = true
 publish = false  # Internal QA harness; reached through `apr qa`, not `cargo add`
 
 [dependencies]
+clap = { workspace = true }
 thiserror.workspace = true
 chrono.workspace = true
 serde = { workspace = true, features = ["derive"] }
