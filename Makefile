@@ -9,6 +9,24 @@
 
 # Use bash for shell commands
 SHELL := /bin/bash
+# Recipes ran as `bash -c` with NO pipefail, so any `cmd | tail`/`| grep` reported
+# the LAST command's status and a failing producer was laundered to success. That
+# is the defect class this repo keeps rediscovering (see the Verification
+# Discipline section of CLAUDE.md: "Never read $? through a pipe").
+#
+# Measured on this Makefile before the change: 577 recipe lines, 14 with a pipe.
+# The worst was the release gate itself, `contracts:` -> `pv lint contracts/ 2>&1
+# | tail -5`, which could never fail the build no matter what pv reported.
+#
+# DELIBERATELY `-o pipefail` ONLY, not `-eu -o pipefail`. Measured exposure of the
+# other two flags on this file: 248 recipe lines use `;` chains (-e would abort
+# them mid-recipe) and 74 reference `$$VAR` (-u would error on any unset one).
+# Changing three variables at once across 577 lines is how a "small" fix becomes
+# an outage. pipefail is provably orthogonal to both -- verified with fixtures:
+# a `;` chain and an unset var both still exit 0 under pipefail alone -- so it
+# closes the laundering class and touches nothing else. Add -e/-u later, one at
+# a time, each with its own blast-radius measurement.
+.SHELLFLAGS := -o pipefail -c
 
 # Disable built-in rules for performance
 .SUFFIXES:
