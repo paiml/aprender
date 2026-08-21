@@ -97,7 +97,7 @@ proof_obligations:
     formal: "forall d in downgrades. exists r in rows. r.entry_point = d.entry_point and r.verdict = UNMEASURED"
   - type: invariant
     property: "the ratchet is keyed by entry point, so losing a SPECIFIC row is detectable at constant totals"
-    formal: "forall e in baseline.rows. exists r in rows. r.entry_point = e"
+    formal: "forall e in rows@origin/main. exists r in rows. r.entry_point = e.entry_point"
   - type: invariant
     property: "every falsification test NAMES a command a reader can RUN (structural only - nothing here executes it)"
     formal: "forall t in falsification_tests. runner(t.test) or runner(t.test_harness)"
@@ -131,7 +131,7 @@ proof_obligations:
   # the CHANGE is owned.
   - type: invariant
     property: "a row's DECLARED verdict may take any value, and may not CHANGE without a record naming the move"
-    formal: "forall r in rows. r.verdict in baseline.verdicts(r.entry_point) or exists g in downgrades. g.entry_point = r.entry_point and g.from_verdict in baseline.verdicts(r.entry_point) and g.to_verdict = r.verdict and today <= g.recheck_by"
+    formal: "forall r in rows. r.verdict = verdict@origin/main(r.entry_point) or exists g in downgrades. g.entry_point = r.entry_point and g.from_verdict = verdict@origin/main(r.entry_point) and g.to_verdict = r.verdict and today <= g.recheck_by"
   - type: invariant
     property: "a transition record names BOTH ends of a real move"
     formal: "forall g in downgrades. (g.from_verdict = none) = (g.to_verdict = none) and g.from_verdict != g.to_verdict"
@@ -141,9 +141,34 @@ proof_obligations:
   - type: invariant
     property: "the ledger may not owe more re-measurements than it holds measurements"
     formal: "|{g in downgrades : today <= g.recheck_by}| <= measured(rows, today)"
+  # THE THIRD CLASS INVARIANT, and the one the four preceding rounds are all
+  # instances of. Each of them bounded ONE author-writable quantity -- dates,
+  # then row sets, then the baseline file, then the permission set -- and the
+  # next round found the lever one level up, because:
+  #
+  #   ANY STATE THE AUTHOR WRITES AND THE GATE READS CAN BE MOVED IN THE SAME
+  #   COMMIT.
+  #
+  # A sibling baseline file cannot audit the PR that edits it. `main` is
+  # protected -- changing it takes a PR, a review and a passing gate -- so the
+  # ledger as it exists at origin/main is the ONE prior state an author cannot
+  # rewrite from inside their own commit. Every expected value below is DERIVED
+  # from it rather than read from a file beside the thing under test.
+  - type: invariant
+    property: "the COMPARAND is the ledger on PROTECTED main, never a sibling file the same commit can edit"
+    formal: "prior = eval(ledger@origin/main) and (exists ledger@origin/main or BOOTSTRAP) and BOOTSTRAP -> not exists any competitive-parity contract@origin/main"
+  - type: invariant
+    property: "the non-win floor has GIVE: an honest win costs a recorded transition and nothing more"
+    formal: "non_wins(rows) >= non_wins(rows@main) - |{g in downgrades : today <= g.recheck_by and g.to_verdict = BETTER}|"
+  - type: invariant
+    property: "the coverage schedule is dated, strictly increasing, and always owes a FUTURE step"
+    formal: "forall i. steps[i].by < steps[i+1].by and steps[i].covered_min < steps[i+1].covered_min and exists s in steps. s.by > today"
+  - type: invariant
+    property: "the coverage floor that has come due is MET, and a step may not be deleted, lowered or deferred against main"
+    formal: "covered(rows) >= max{s.covered_min : s in steps and s.by <= today} and forall s in steps@main. exists t in steps. t.covered_min >= s.covered_min and t.by <= s.by"
   - type: invariant
     property: "the ratchet's COMPARAND is a commit, and its absence is an error rather than an empty set"
-    formal: "base_refs = {merge_base(origin/main, HEAD)} union commits(merge_base..HEAD) and (exists b in base_refs. exists(baseline, b) or RED)"
+    formal: "comparand = origin/main (or its first parent when HEAD IS origin/main) and (readable(comparand) or RED)"
 
 falsification_tests:
   - id: FALSIFY-PARITY-001
@@ -190,7 +215,8 @@ falsification_tests:
     rule: "deletion is more expensive than recording a loss"
     prediction: >-
       Deleting the standard-scaler WORSE row lowers __MEASURED__ by one, and
-      scripts/check_competitive_parity.sh exits non-zero against its baseline.
+      scripts/check_competitive_parity.sh exits non-zero against the ledger on
+      protected `main`.
     if_fails: >-
       PMAT-733 repeats: the cheapest way to raise the ratio is to remove the
       comparison that lowers it.
@@ -336,46 +362,50 @@ falsification_tests:
       could differ.
     test: "cargo test -p aprender-contracts --lib parity_002_refuses"
   - id: FALSIFY-PARITY-015
-    rule: "the BASELINE FILE is itself ratcheted, against git"
+    rule: "the RATCHET's prior state is not a file this commit can edit"
     prediction: >-
-      Hand-deleting a `ROW=` key from scripts/competitive_parity_baseline.txt
-      while its entry point is still live fails
-      scripts/check_competitive_parity.sh, naming the key -- even though the
-      hand-edited baseline then AGREES with the ledger and every working-copy
-      check is silent. The prior value is read from git -- the merge base with
-      the upstream default branch UNIONED WITH EVERY COMMIT ON THE BRANCH --
-      which the editor does not control.
+      There is no baseline file. `scripts/competitive_parity_baseline.txt` was
+      deleted with `--update-baseline`, and `grep -rn competitive_parity_baseline
+      scripts/` returns only prose explaining why. Every prior value -- the row
+      set, the declared-measured set, each row's declared verdict, the non-win
+      count, the scope set, the coverage schedule -- is produced by running the
+      same `pv parity-ledger` over `git show <upstream>:<ledger>`.
     if_fails: >-
-      Every --update-baseline refusal is optional: the baseline is unbound
-      plaintext read with `cat`, so dropping the key and then deleting the row
-      leaves the working copy agreeing with itself.
+      Every refusal in the ratchet reads a value the same commit can rewrite.
+      Round 4 tried to bind that file to git and the binding read {merge-base}
+      UNION {every commit on the branch}, which INCLUDES HEAD -- so a single
+      commit renaming the baseline, deleting the StandardScaler 0.69x row,
+      dropping its keys and lowering NON_WINS_MIN 5 -> 4 exits 0.
     test: "bash scripts/check_competitive_parity.sh --self-test"
   - id: FALSIFY-PARITY-016
     rule: "the COMPARAND exists, or the run is RED"
     prediction: >-
-      In a sandbox git repo where scripts/competitive_parity_baseline.txt is
-      committed nowhere, cp_baseline_at returns rc=3 (NO COMPARAND) rather than
-      rc=0 with empty output, and the check exits 1 naming the absence. Adding
-      a commit that carries the file returns it to rc=0.
+      In a checkout with no upstream default-branch ref -- `actions/checkout` at
+      `fetch-depth: 1`, which leaves no origin/main, no local main and a
+      detached HEAD -- `cp_comparand_unreachable` returns true and the check
+      exits 1 naming the absence. Restoring the ref returns it to rc=0. A
+      shallow checkout that still HAS the ref and the commit behind it is NOT
+      refused, because a gate that reds for a reason unrelated to its property
+      trains people to re-run it.
     if_fails: >-
-      This is FATAL A. The file does not exist on origin/main, so the old
-      {merge-base, HEAD} pair collapsed to HEAD alone: delete the StandardScaler
-      0.69x row, COMMIT the lowered baseline, and the ratchet printed OK at
-      rc=0. A skipped ref is an ACCEPTANCE, and a comparison git cannot answer
-      must be RED, never empty. Renaming the baseline file defeated it the same
-      way, silently.
+      A collapsed comparand is indistinguishable from "there is no prior
+      ledger", which is the BOOTSTRAP branch -- the strongest possible pass --
+      produced by a `fetch-depth:` line in a different file. This is FATAL A
+      arriving through the checkout configuration instead of through the file.
     test: "bash scripts/check_competitive_parity.sh --self-test"
   - id: FALSIFY-PARITY-017
-    rule: "the comparand survives the OWN-COMMIT evasion"
+    rule: "the comparand survives the OWN-COMMIT evasion, by construction"
     prediction: >-
-      In a sandbox repo with two commits carrying the baseline, dropping a key
-      in the second commit still names that key: cp_base_refs lists the merge
-      base AND every commit between it and HEAD, so the prior set is the union
-      and the earlier commit still holds the key.
+      Committing the change no longer normalises it, whatever the branch looks
+      like: the comparand is a ref on the protected branch, and nothing an
+      author does inside their own PR moves it. Deliberately NOT unioned with
+      the branch's own commits -- doing so ADDS prior verdicts, and an added
+      prior verdict is a PERMISSION, so a two-commit branch could grant itself a
+      relabel in commit 1 and take it in commit 2.
     if_fails: >-
-      Judging against HEAD alone is defeated by putting the drop in its own
-      commit, after which HEAD agrees with the drop -- which is exactly how
-      FATAL A was demonstrated end to end.
+      Judging against HEAD, or against anything HEAD contributes to, is defeated
+      by putting the change in its own commit -- which is exactly how FATAL A
+      was demonstrated end to end.
     test: "bash scripts/check_competitive_parity.sh --self-test"
   - id: FALSIFY-PARITY-018
     rule: "a VERDICT CHANGE is not free"
@@ -419,6 +449,95 @@ falsification_tests:
       as a whole no longer measuring anything.
     test: "cargo test -p aprender-contracts --lib excuse_budget"
 
+  # -------------------------------------------------- THE COMPARAND, ROUND 5
+  - id: FALSIFY-PARITY-021
+    rule: "the comparand is the ledger on PROTECTED main, not a sibling file"
+    prediction: >-
+      In a sandbox repo whose origin/main carries a ledger, deleting a row from
+      the working-copy ledger fails scripts/check_competitive_parity.sh naming
+      the entry point -- with NO baseline file anywhere in the tree, and with
+      the deletion committed in its own commit, which defeated the previous
+      design. There is nothing left in the working tree whose edit lowers the
+      bar: cp_prior_report reads `git show <upstream>:<ledger>` and evaluates
+      it with the same `pv` that evaluates HEAD's.
+    if_fails: >-
+      The root cause of all four preceding rounds reopens. Each bounded one
+      author-writable quantity -- dates, row sets, the baseline FILE, the
+      transition permission set -- and a sibling file the same commit edits
+      cannot audit that commit. Measured on the parent: renaming the baseline,
+      deleting the StandardScaler 0.69x row, dropping its keys and lowering
+      NON_WINS_MIN 5 -> 4 in ONE commit exits 0.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
+  - id: FALSIFY-PARITY-022
+    rule: "the transition PERMISSION SET is derived from main, not written beside the change"
+    prediction: >-
+      Re-declaring the StandardScaler row from WORSE to NOT_COMPARABLE fails
+      with UNRECORDED VERDICT CHANGE, and there is no line an author can add to
+      any tracked file in the same commit that makes it pass except a
+      `downgrades:` record naming the exact move -- which is itself dated,
+      owned, closed-vocabulary and expiring.
+    if_fails: >-
+      Measured on the parent commit (4813bd41e): the same relabel plus one
+      hand-written line `VERDICT_ROW=63:NOT_COMPARABLE<TAB>lib:...
+      StandardScaler...` in scripts/competitive_parity_baseline.txt, committed
+      together, exits 0 with the loss gone. Removing only that line makes the
+      identical tree exit 1. The permission was self-issued.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
+  - id: FALSIFY-PARITY-023
+    rule: "BOOTSTRAP is reachable at most once per repository, and never by renaming"
+    prediction: >-
+      With no competitive-parity contract anywhere under contracts/ at the
+      upstream ref, the run prints a loud BOOTSTRAP banner and proceeds with an
+      empty prior set. With ANY competitive-parity contract present there --
+      including one at a DIFFERENT path from the one under test -- the bootstrap
+      branch is unreachable: the comparand is discovered by contract KIND at the
+      upstream ref, so renaming the ledger does not manufacture a new window.
+      A second parity contract on main is ambiguous and is RED, not a bootstrap.
+    if_fails: >-
+      The escape is renewable, and a renewable bootstrap is `registry: true`
+      wearing its fifth hat. The previous design keyed the window on the PATH
+      of a sibling file, so `git mv` reopened it silently.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
+  - id: FALSIFY-PARITY-024
+    rule: "an honest WIN can be recorded without deleting a loss"
+    prediction: >-
+      Re-declaring a WORSE row as BETTER, with a `downgrades:` record naming
+      from_verdict WORSE / to_verdict BETTER, a reason, an owner and a bounded
+      recheck_by, PASSES -- the non-win floor is `non_wins(main) - recorded
+      upgrades`, so the win pays for itself. The SAME relabel with no record
+      fails, and so does deleting the row instead. Symmetrically, adding a new
+      WORSE row never breaches any floor.
+    if_fails: >-
+      The mirror image of the fabrication engine. `NON_WINS_MIN=5` over 5 rows
+      is SATURATED: the gate MECHANICALLY FORBIDS recording an honest win, so
+      the cheapest compliant action for a genuine improvement is to not record
+      it. A ratchet must permit honesty in BOTH directions or it manufactures
+      the dishonesty it was built to detect.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
+  - id: FALSIFY-PARITY-025
+    rule: "the coverage ratchet exists, is argued, comes due, and cannot be walked back"
+    prediction: >-
+      Deleting `parity.coverage` emits PARITY-021; so does an empty
+      `rationale:` or `dissent:`. A schedule whose steps do not strictly
+      increase in BOTH `by` and `covered_min` emits PARITY-022. A schedule with
+      no step dated after today makes `pv parity-ledger` exit non-zero
+      (PARITY-023) even though every step validates. A ledger covering fewer
+      distinct entry points than the step that has come due exits non-zero
+      (PARITY-024). And deleting, lowering or postponing a step relative to the
+      schedule on main fails the ratchet.
+    if_fails: >-
+      Nothing requires an in-scope entry point to HAVE a row, so five
+      impeccable rows over 41 in-scope entry points satisfy every other rule in
+      this file forever. Coverage asserted over ~4.5% of the surface, with
+      every gate green, by omission rather than invention -- and omission is
+      cheaper than fabrication because it requires no edit at all.
+    limitation: >-
+      COVERAGE IS NOT MEASUREMENT. Forty-one rows all reading UNMEASURED would
+      satisfy this rule completely while measuring nothing. See
+      `parity.coverage.dissent` objection (4); a measured-coverage floor is
+      recorded there as ABSENT work.
+    test: "cargo test -p aprender-contracts --lib parity_021_ parity_022_ parity_023_ parity_024_"
+
 parity:
   scope: >-
     In-scope entry points are enumerated at RUNTIME from a SHA-pinned `apr`
@@ -428,6 +547,83 @@ parity:
     name a library surface (`lib:` prefix) that no subcommand exposes -- two of
     the five seeds are exactly that, and pretending otherwise would have meant
     dropping them.
+
+  # THE COVERAGE RATCHET.
+  #
+  # THE QUESTION NOBODY WAS ANSWERING. Five rows, over 41 scope entries, over
+  # 111 live subcommands. Every rule above makes the rows that EXIST honest --
+  # pinned versions, closed vocabularies, bounded dates, owned transitions --
+  # and not one of them makes a row EXIST. So "competitive parity" was being
+  # asserted over ~4.5% of the CLI surface, permanently, with every gate green.
+  # That is the same failure as a fabricated row, reached by omission instead of
+  # by invention, and it is cheaper: it requires no edit at all.
+  #
+  # THE DECISION, and it is a decision rather than a measurement.
+  #
+  #   COVERED = the number of DISTINCT in-scope entry points carrying at least
+  #   one row. A dated, strictly increasing schedule of floors lives HERE, in
+  #   the contract, where a reviewer meets it beside the rows it governs. A step
+  #   comes due on its date (PARITY-024). The schedule must always contain a
+  #   step still in the future (PARITY-023), so it can never be set once at the
+  #   achievable value and left -- which is how a coverage floor normally dies.
+  #
+  # Landable TODAY at what the ledger already has: the first step is dated the
+  # day this landed at covered_min 4, which the five rows meet (two of them
+  # share the `apr run` scope key). A gate nobody can pass gets disabled, and a
+  # disabled gate is worse than none because it is counted.
+  #
+  # NOT AUTHOR-WRITABLE IN THE SAME COMMIT, which is the whole point of round 5:
+  # the schedule is read back from the ledger on protected `main` and a step may
+  # not be deleted, lowered, or dated further out than `main` has it. Raising it
+  # is free; that asymmetry is the ratchet.
+  coverage:
+    rationale: >-
+      An ABSOLUTE COUNT of distinct covered entry points, on a dated schedule,
+      rather than a ratio. A ratio (covered / in_scope) tracks scope growth by
+      itself, which is its appeal -- but its denominator is a quantity the same
+      author controls, so a ratio floor has TWO levers on it and the second one
+      is the exact move (shrinking the denominator) that PMAT-733 is about. An
+      integer has one lever, is readable without arithmetic, and cannot drift by
+      a hundredth of a point a release. The schedule is dated rather than
+      constant because a constant floor set at what the ledger already holds is
+      inert on the day it lands and inert forever after; PARITY-023 makes the
+      ledger permanently owe a future increase, and the 180-day horizon on every
+      date in this document caps how far that debt can be pushed out. The floor
+      lives in the contract rather than in a sibling file because a sibling file
+      the author edits in the same commit cannot audit that commit -- the root
+      cause this whole round exists to remove.
+    dissent: >-
+      FOUR OBJECTIONS, RECORDED RATHER THAN ANSWERED AWAY. (1) An absolute count
+      does NOT track scope growth: 8 covered against 41 in-scope is 19.5%, and
+      if the CLI grows to 60 in-scope entry points the same 8 is 13% with the
+      gate still green. The ratio genuinely degrades and nothing here reds. Only
+      partial mitigation: the scope set is itself shrink-never against `main`,
+      and every run prints `entry points in scope`, so the dilution is visible
+      even though it is not blocking. (2) The numbers 4 -> 8 are a JUDGEMENT,
+      not a capacity measurement. Nobody has measured what an honest row costs
+      to produce, so "double it in six months" is an assertion. It was chosen
+      because it is landable today and because a step that does not at least
+      double is indistinguishable from no step. If it proves unreachable, the
+      honest response is UNMEASURED rows with owners and bounds -- which this
+      ledger explicitly permits and which costs no benchmark -- and NOT lowering
+      the step, which the guard refuses against `main`. (3) The schedule is
+      renewable every 180 days, and renewal is exactly where the ratchet can be
+      argued down: the guard refuses a step that is deleted, lowered, or dated
+      later than `main` has it, but it cannot refuse a NEW step that rises only
+      trivially. The RATE of increase is therefore a review question, not a
+      mechanical one. Stated plainly rather than implied by the rule's
+      existence. (4) The deepest objection: coverage is not measurement. Forty-
+      one rows all reading UNMEASURED would be 100% covered and would measure
+      nothing. That is bounded only indirectly -- the declared-measured set is
+      shrink-never against `main`, and the excuse budget refuses a ledger owing
+      more re-measurements than it holds measurements -- so a ledger CAN grow
+      wide and shallow. A measured-coverage floor is the obvious next control
+      and is recorded here as ABSENT work rather than pretended into existence.
+    steps:
+      - by: "2026-08-21"
+        covered_min: 4
+      - by: "2027-02-14"
+        covered_min: 8
 
   # RECORDED DOWNGRADES.
   #

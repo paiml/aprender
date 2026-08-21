@@ -875,6 +875,27 @@ jobs:
             sleep "$delay"
             delay=$((delay + 6))  # linear backoff: 4,10,16,22,28,34,...
           done
+      # The COMPARAND must be present, or the ratchet has nothing to ratchet
+      # against.
+      #
+      # This gate judges the working tree against the ledger on PROTECTED
+      # `main` -- the one prior state a commit cannot rewrite from inside
+      # itself. That is a REF, so it has to be in the checkout. `fetch-depth: 0`
+      # above fetches every branch and therefore supplies it today; this step
+      # exists because the guard's strength then depends on a setting three
+      # lines up, and the day someone trims the checkout to speed the job up,
+      # the comparand would collapse to "no prior ledger" -- which reads as
+      # BOOTSTRAP, the strongest possible pass. The script refuses that
+      # (cp_comparand_unreachable) and this makes the refusal unnecessary in
+      # the normal case rather than relying on it.
+      #
+      # `|| true`-free on purpose: on a PR the ref always exists. A failure
+      # here is a real inability to reach the comparand and must be RED.
+      - name: Ensure the comparand ref (origin/main) is present
+        run: |
+          git fetch --no-tags --prune --no-recurse-submodules \
+            origin +refs/heads/main:refs/remotes/origin/main
+          git rev-parse --verify origin/main
       # Verification Discipline #7: the guard's own case table runs BEFORE the
       # guard judges anything. Text-only, no build, ~0.1s.
       - name: Parity-ratchet guard case table must pass before it judges

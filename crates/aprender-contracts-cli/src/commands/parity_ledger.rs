@@ -81,10 +81,28 @@ fn emit_machine_readable(ledger: &ParityLedger, today: &str, expired: usize, err
         "__OVERDUE_DOWNGRADES__={}",
         ledger.overdue_downgrades(today).len()
     );
+    println!(
+        "__DECLARED_MEASURED__={}",
+        ledger.declared_measured_rows().len()
+    );
+    println!("__COVERED__={}", ledger.covered_count());
+    let (_, cov_floor) = ledger.coverage_status(today);
+    println!("__COVERAGE_FLOOR__={cov_floor}");
+    println!("__UPGRADES__={}", ledger.recorded_upgrades(today));
+    let steps = ledger.coverage.as_ref().map_or(0, |c| c.steps.len());
+    println!("__COVERAGE_STEPS__={steps}");
     for row in &ledger.rows {
         emit_key("__ROW__", row.entry_point.trim());
         if row.effective_verdict(today).is_measured() {
             emit_key("__MEASURED_ROW__", row.entry_point.trim());
+        }
+        // The DECLARED-measured set, which is what a LATER tree is ratcheted
+        // against. Read `declared_measured_rows` for why the prior side must be
+        // clock-independent: computed from effective verdicts, the bar the
+        // current tree has to clear would fall on its own as `main`'s rows aged,
+        // on a day nobody touched either file.
+        if row.verdict.is_some_and(Verdict::is_measured) {
+            emit_key("__DECLARED_MEASURED_ROW__", row.entry_point.trim());
         }
         // The DECLARED verdict, never the effective one.
         //
@@ -126,6 +144,18 @@ fn emit_machine_readable(ledger: &ParityLedger, today: &str, expired: usize, err
             emit_key(
                 "__TRANSITION__",
                 &format!("{from}{FIELD_SEP}{to}{FIELD_SEP}{}", d.entry_point.trim()),
+            );
+        }
+    }
+    // The coverage SCHEDULE, as a set. The ratchet reads it from the ledger on
+    // protected `main` and refuses a step that has been deleted, lowered, or
+    // dated further out — the schedule is the floor, so it needs the same
+    // shrink-never treatment the row set gets.
+    if let Some(cov) = ledger.coverage.as_ref() {
+        for s in &cov.steps {
+            emit_key(
+                "__COVERAGE_STEP__",
+                &format!("{}{FIELD_SEP}{}", s.by.trim(), s.covered_min),
             );
         }
     }
@@ -345,6 +375,16 @@ pub fn run(path: &Path, today: Option<&str>) -> Result<(), Box<dyn std::error::E
     }
     block_on_staleness(ledger, &today)?;
     block_on_excuse_budget(ledger, &today)?;
+    // The coverage ratchet is evaluated HERE and not in `validate_contract`,
+    // for the same reason expiry is: `pv validate` answers a question about the
+    // file, and "has this step come due?" is a question about the world.
+    let debt = provable_contracts::schema::parity_coverage_debt(ledger, &today);
+    if !debt.is_empty() {
+        for d in &debt {
+            eprintln!("{d}");
+        }
+        return Err(format!("{} coverage-ratchet violation(s) as of {today}", debt.len()).into());
+    }
 
     // A ledger of nothing but wins is untested in the direction that matters --
     // and this repo has already deleted its only two losing rows once

@@ -25,6 +25,14 @@ falsification_tests:
     test: "cargo test -p aprender-contracts --lib parity_"
 parity:
   scope: "fixture"
+  coverage:
+    rationale: "fixture: an absolute count on a dated schedule"
+    dissent: "fixture: an absolute count does not track scope growth"
+    steps:
+      - by: "2026-01-01"
+        covered_min: 1
+      - by: "2026-11-30"
+        covered_min: 2
   rows:
     - entry_point: "apr run --gpu"
       competitor: "ollama"
@@ -1095,5 +1103,184 @@ metadata:
             errors_of(&y).is_empty(),
             "recording an honest improvement must be possible: {:?}",
             errors_of(&y)
+        );
+    }
+
+    // -- PARITY-021..024: THE COVERAGE RATCHET -------------------------------
+    //
+    // Nothing in PARITY-000..020 requires an in-scope entry point to HAVE a
+    // row. Five rows over 41 scope entries over 111 live subcommands satisfies
+    // every one of them, forever, over ~4.5% of the surface -- the same failure
+    // as a fabricated row, reached by omission instead of by invention, and
+    // cheaper because it needs no edit at all.
+
+    /// A date `n` days from today, so these fixtures do not rot on the clock.
+    fn today_plus(n: i64) -> String {
+        use crate::schema::parity::{civil_from_days, days_from_civil, parse_iso_date, today_utc};
+        let t = today_utc().expect("clock is after the epoch");
+        let (y, m, d) = parse_iso_date(&t).expect("today_utc is ISO");
+        let (yy, mm, dd) =
+            civil_from_days(days_from_civil(i64::from(y), u32::from(m), u32::from(d)) + n);
+        format!("{yy:04}-{mm:02}-{dd:02}")
+    }
+
+    /// The fixture with a coverage schedule built relative to TODAY.
+    fn yaml_with_steps(steps: &str) -> String {
+        let base = good_yaml();
+        let i = base.find("    steps:\n").expect("fixture has a schedule");
+        let j = base.find("  rows:\n").expect("fixture has rows");
+        format!("{}{steps}{}", &base[..i], &base[j..])
+    }
+
+    #[test]
+    fn parity_021_an_absent_coverage_block_is_an_error() {
+        let base = good_yaml();
+        let i = base.find("  coverage:\n").expect("fixture has coverage");
+        let j = base.find("  rows:\n").expect("fixture has rows");
+        let y = format!("{}{}", &base[..i], &base[j..]);
+        assert!(
+            rules(&y).contains(&"PARITY-021".to_string()),
+            "a ledger with no coverage ratchet must be refused: {:?}",
+            rules(&y)
+        );
+    }
+
+    #[test]
+    fn parity_021_the_reasoning_and_the_dissent_are_both_required() {
+        for field in ["rationale", "dissent"] {
+            let y = good_yaml()
+                .lines()
+                .filter(|l| !l.trim_start().starts_with(&format!("{field}:")))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(
+                rules(&y).contains(&"PARITY-021".to_string()),
+                "coverage.{field} must be required -- a floor with no recorded objection \
+                 reads as unanimous: {:?}",
+                rules(&y)
+            );
+        }
+    }
+
+    #[test]
+    fn parity_022_a_schedule_must_strictly_increase_in_both_coordinates() {
+        // Same date twice.
+        let y = yaml_with_steps(
+            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 1\n      \
+             - by: \"2026-01-01\"\n        covered_min: 2\n",
+        );
+        assert!(
+            rules(&y).contains(&"PARITY-022".to_string()),
+            "{:?}",
+            rules(&y)
+        );
+        // Later date, LOWER requirement.
+        let y = yaml_with_steps(
+            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 5\n      \
+             - by: \"2026-06-01\"\n        covered_min: 2\n",
+        );
+        assert!(
+            rules(&y).contains(&"PARITY-022".to_string()),
+            "{:?}",
+            rules(&y)
+        );
+        // A floor of zero is satisfied by an empty ledger.
+        let y = yaml_with_steps("    steps:\n      - by: \"2026-01-01\"\n        covered_min: 0\n");
+        assert!(
+            rules(&y).contains(&"PARITY-022".to_string()),
+            "{:?}",
+            rules(&y)
+        );
+        // An unreadable date.
+        let y = yaml_with_steps("    steps:\n      - by: \"soon\"\n        covered_min: 1\n");
+        assert!(
+            rules(&y).contains(&"PARITY-022".to_string()),
+            "{:?}",
+            rules(&y)
+        );
+        // ...and the GREEN direction: a real, strictly increasing schedule.
+        let y = yaml_with_steps(
+            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 1\n      \
+             - by: \"2026-06-01\"\n        covered_min: 2\n",
+        );
+        assert!(
+            !rules(&y).contains(&"PARITY-022".to_string()),
+            "a strictly increasing schedule must pass: {:?}",
+            rules(&y)
+        );
+    }
+
+    #[test]
+    fn parity_023_a_schedule_that_owes_nothing_has_stopped_ratcheting() {
+        use crate::schema::parity_coverage_debt;
+        let past = today_plus(-10);
+        let y = yaml_with_steps(&format!(
+            "    steps:\n      - by: \"{past}\"\n        covered_min: 1\n"
+        ));
+        let c = parse_contract_str(&y).expect("parses");
+        let l = c.parity.as_ref().expect("ledger");
+        let today = crate::schema::parity::today_utc().expect("clock");
+        let debt = parity_coverage_debt(l, &today);
+        assert!(
+            debt.iter().any(|d| d.contains("PARITY-023")),
+            "every step already due must be refused: {debt:?}"
+        );
+        // GREEN: add a step still in the future and the debt clears.
+        let fut = today_plus(30);
+        let y = yaml_with_steps(&format!(
+            "    steps:\n      - by: \"{past}\"\n        covered_min: 1\n      \
+             - by: \"{fut}\"\n        covered_min: 2\n"
+        ));
+        let c = parse_contract_str(&y).expect("parses");
+        let l = c.parity.as_ref().expect("ledger");
+        assert!(
+            parity_coverage_debt(l, &today).is_empty(),
+            "a schedule owing a future increase must pass: {:?}",
+            parity_coverage_debt(l, &today)
+        );
+    }
+
+    #[test]
+    fn parity_024_a_step_that_has_come_due_must_be_met() {
+        use crate::schema::parity_coverage_debt;
+        let today = crate::schema::parity::today_utc().expect("clock");
+        // The fixture covers exactly ONE entry point (`apr run`). A step
+        // demanding two, dated in the past, is unmet.
+        let y = yaml_with_steps(&format!(
+            "    steps:\n      - by: \"{}\"\n        covered_min: 2\n      - by: \"{}\"\n        covered_min: 3\n",
+            today_plus(-1),
+            today_plus(30)
+        ));
+        let c = parse_contract_str(&y).expect("parses");
+        let l = c.parity.as_ref().expect("ledger");
+        let debt = parity_coverage_debt(l, &today);
+        assert!(
+            debt.iter().any(|d| d.contains("PARITY-024")),
+            "an unmet step that has come due must be refused: {debt:?}"
+        );
+        // THE BOUNDARY IS EXACT: a step dated TODAY has come due.
+        let y = yaml_with_steps(&format!(
+            "    steps:\n      - by: \"{today}\"\n        covered_min: 2\n      - by: \"{}\"\n        covered_min: 3\n",
+            today_plus(30)
+        ));
+        let c = parse_contract_str(&y).expect("parses");
+        let l = c.parity.as_ref().expect("ledger");
+        assert!(
+            parity_coverage_debt(l, &today)
+                .iter()
+                .any(|d| d.contains("PARITY-024")),
+            "a step dated TODAY is DUE today"
+        );
+        // ...and one dated TOMORROW is not.
+        let y = yaml_with_steps(&format!(
+            "    steps:\n      - by: \"{}\"\n        covered_min: 2\n",
+            today_plus(1)
+        ));
+        let c = parse_contract_str(&y).expect("parses");
+        let l = c.parity.as_ref().expect("ledger");
+        assert!(
+            parity_coverage_debt(l, &today).is_empty(),
+            "a step dated TOMORROW is not yet due: {:?}",
+            parity_coverage_debt(l, &today)
         );
     }

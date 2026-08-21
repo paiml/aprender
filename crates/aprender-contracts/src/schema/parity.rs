@@ -81,7 +81,7 @@
 //! The horizon is MONOTONE in time — a date only ever becomes less future — so
 //! a document that parses today parses forever after.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -326,10 +326,151 @@ pub struct ParityLedger {
     /// downgrade.
     #[serde(default)]
     pub downgrades: Vec<Downgrade>,
+    /// The COVERAGE RATCHET — see [`CoverageRatchet`].
+    ///
+    /// `Option`, and required by `PARITY-021` rather than by the type, ON
+    /// PURPOSE. The comparand for every other rule here is the ledger as it
+    /// exists on protected `main`, and that ledger has to keep PARSING under a
+    /// newer schema or the comparison silently becomes "no prior state" —
+    /// which is the vacuous-comparand failure this whole design exists to
+    /// close. A newly-required field expressed as a non-`Option` type would
+    /// make every older `main` ledger a PARSE error, and a parse error emits
+    /// no sets at all. So new blocks arrive as `Option` + a validator rule:
+    /// the CURRENT tree is refused loudly, and the PRIOR tree is still
+    /// readable as a comparand.
+    #[serde(default)]
+    pub coverage: Option<CoverageRatchet>,
     /// Every key in the YAML that this struct does not name — see
     /// [`Downgrade::extra`].
     #[serde(flatten)]
     pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
+}
+
+/// The COVERAGE RATCHET: a dated, author-visible schedule of how much of the
+/// in-scope surface must carry a ledger row.
+///
+/// # The question this answers, and why it could not be deferred
+///
+/// Five rows over 41 scope entries over 111 live subcommands. "Competitive
+/// parity" was being asserted over ~4.5% of the CLI surface, forever, with
+/// every gate green — because nothing anywhere required an in-scope entry
+/// point to HAVE a row. Every rule in this file makes the rows that exist
+/// honest; none of them makes rows exist. A ledger of five impeccable rows
+/// that never grows is the same failure as a ledger of five dishonest ones,
+/// arrived at by omission instead of by fabrication.
+///
+/// # Why a SCHEDULE and not a ratio
+///
+/// A ratio (`covered / in_scope >= x`) tracks scope growth automatically, and
+/// that is exactly its problem: the denominator is a quantity the author also
+/// controls, so a ratio is payable by shrinking scope. Scope shrinking is
+/// separately guarded, but a floor whose numerator AND denominator are both
+/// author-influenced is a floor with two levers on it. An absolute count has
+/// one lever, is readable without arithmetic, and — being an integer in a
+/// reviewed file — cannot drift by a hundredth of a point per release.
+///
+/// The dissent is recorded rather than argued away: an absolute count does NOT
+/// track scope growth, so a release that adds 20 subcommands dilutes the
+/// achieved ratio while the gate stays green. See the `dissent:` field, which
+/// the contract carries in prose so a reader meets it at the same time as the
+/// rule.
+///
+/// # What makes it RATCHET rather than sit still
+///
+/// `steps` is a strictly increasing schedule of `(by, covered_min)` pairs.
+/// `PARITY-023` requires at least one step dated in the FUTURE, so the ledger
+/// always owes an increase; and because every date in this document is bounded
+/// at [`MAX_FUTURE_DAYS`] from today, that future step can never be more than
+/// half a year out. The schedule therefore has to be renewed — visibly, in a
+/// reviewed diff, against a protected-`main` comparand that refuses to let a
+/// step be deleted or dated later.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CoverageRatchet {
+    /// Why this shape was chosen. Prose; read by humans, required by
+    /// `PARITY-021` so the decision cannot arrive unexplained.
+    #[serde(default)]
+    pub rationale: Option<String>,
+    /// The case AGAINST this shape, in the same file as the rule.
+    ///
+    /// Required (`PARITY-021`) because a floor with no recorded objection
+    /// reads as unanimous, and the next author has no way to tell whether the
+    /// obvious alternative was rejected or never considered.
+    #[serde(default)]
+    pub dissent: Option<String>,
+    /// The schedule, strictly increasing in both `by` and `covered_min`.
+    #[serde(default)]
+    pub steps: Vec<CoverageStep>,
+    /// Keys this struct does not name — see [`Downgrade::extra`]. Present so
+    /// `PARITY-016` sweeps dates written into fields the schema has never
+    /// heard of.
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
+}
+
+/// One step of the [`CoverageRatchet`]: from `by` onward, at least
+/// `covered_min` distinct in-scope entry points must carry a row.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CoverageStep {
+    /// The date this step COMES DUE. A [`LedgerDate`], so it is bounded
+    /// against today at parse time like every other date here.
+    #[serde(default)]
+    pub by: LedgerDate,
+    /// Distinct covered entry points required from `by` onward.
+    #[serde(default)]
+    pub covered_min: usize,
+    /// Keys this struct does not name — see [`Downgrade::extra`].
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
+}
+
+impl CoverageRatchet {
+    /// The highest `covered_min` whose step has COME DUE as of `today`.
+    ///
+    /// Zero when no step has come due yet, which is what makes the mechanism
+    /// landable on the day it is introduced: the first step may be dated
+    /// today at the coverage the ledger already has.
+    ///
+    /// An unparseable `by` counts as DUE (fail closed) rather than as
+    /// not-yet-due: a date nobody can read must not buy a deferral.
+    #[must_use]
+    pub fn floor_as_of(&self, today: &str) -> usize {
+        self.steps
+            .iter()
+            .filter(|s| !s.is_future(today))
+            .map(|s| s.covered_min)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The nearest step still in the FUTURE as of `today`, if any.
+    ///
+    /// `PARITY-023` refuses a schedule with none: a ratchet that owes nothing
+    /// has stopped ratcheting, and the failure mode of a coverage floor is
+    /// precisely that it is set once at the achievable value and never moved.
+    #[must_use]
+    pub fn next_step(&self, today: &str) -> Option<&CoverageStep> {
+        self.steps
+            .iter()
+            .filter(|s| s.is_future(today))
+            .min_by(|a, b| a.by.trim().cmp(b.by.trim()))
+    }
+
+    /// The highest `covered_min` anywhere in the schedule.
+    #[must_use]
+    pub fn ceiling(&self) -> usize {
+        self.steps.iter().map(|s| s.covered_min).max().unwrap_or(0)
+    }
+}
+
+impl CoverageStep {
+    /// Is this step still in the future as of `today`?
+    ///
+    /// Fails CLOSED: a `by` that is not an ISO date is NOT in the future, so
+    /// it counts toward the floor immediately rather than deferring it.
+    #[must_use]
+    pub fn is_future(&self, today: &str) -> bool {
+        days_between(today, self.by.trim()).is_some_and(|d| d > 0)
+    }
 }
 
 /// Why a row's VERDICT changed, from a CLOSED vocabulary. Prose is not
@@ -771,6 +912,100 @@ impl ParityLedger {
             .iter()
             .filter(|d| !d.is_overdue(today))
             .collect()
+    }
+
+    /// Rows whose DECLARED verdict is a measurement, regardless of the clock.
+    ///
+    /// # Why the comparand uses DECLARED and the current tree uses EFFECTIVE
+    ///
+    /// The prior state is read from the ledger on protected `main`, and it is
+    /// read TODAY — days or weeks after it landed. If the prior "was measured"
+    /// set were computed from EFFECTIVE verdicts, the mere passage of time
+    /// would erase entries from the set the current tree has to satisfy, and
+    /// the bar would fall on a day nobody touched either file. A ratchet whose
+    /// bar decays on the calendar is not a ratchet.
+    ///
+    /// So: prior = DECLARED (time-stable), current = EFFECTIVE (the clock is
+    /// allowed to make the current tree owe MORE, never less). A row that
+    /// expired since `main` must therefore be re-measured or carry a recorded
+    /// transition — which is the same debt an expired row already owes to
+    /// `block_on_staleness`, arriving through a second, independent path.
+    #[must_use]
+    pub fn declared_measured_rows(&self) -> Vec<&ParityRow> {
+        self.rows
+            .iter()
+            .filter(|r| r.verdict.is_some_and(Verdict::is_measured))
+            .collect()
+    }
+
+    /// The scope KEY of an entry point: what `scripts/competitive_parity_scope.txt`
+    /// lists, which a row may QUALIFY.
+    ///
+    /// `apr run --gpu` and `apr run --gpu (concurrency=1 single-request
+    /// decode)` are genuinely different comparison surfaces and both are
+    /// legitimate rows, but the SCOPE is a list of entry points and both key
+    /// back to `apr run`. Without this collapse, two rows on one subcommand
+    /// would read as two covered entry points and the coverage ratchet would
+    /// be payable by splitting a row in half.
+    ///
+    /// `lib:` and `bin:` entries are already exact and pass through unchanged.
+    #[must_use]
+    pub fn scope_key(entry_point: &str) -> String {
+        let e = entry_point.trim();
+        match e.strip_prefix("apr ") {
+            Some(rest) => {
+                let sub = rest.split_whitespace().next().unwrap_or("");
+                format!("apr {sub}")
+            }
+            None => e.to_string(),
+        }
+    }
+
+    /// The DISTINCT scope keys this ledger covers.
+    #[must_use]
+    pub fn covered_entry_points(&self) -> BTreeSet<String> {
+        self.rows
+            .iter()
+            .map(|r| Self::scope_key(r.entry_point.trim()))
+            .collect()
+    }
+
+    /// How many distinct in-scope entry points carry at least one row.
+    #[must_use]
+    pub fn covered_count(&self) -> usize {
+        self.covered_entry_points().len()
+    }
+
+    /// The coverage floor that has COME DUE as of `today`, and the coverage
+    /// actually achieved, as `(achieved, floor)`.
+    ///
+    /// A ledger with no `coverage:` block has floor 0 here; `PARITY-021`
+    /// refuses the absent block separately, so this never silently blesses it.
+    #[must_use]
+    pub fn coverage_status(&self, today: &str) -> (usize, usize) {
+        let floor = self.coverage.as_ref().map_or(0, |c| c.floor_as_of(today));
+        (self.covered_count(), floor)
+    }
+
+    /// In-date records describing a move TO `BETTER`, counted per unique entry
+    /// point.
+    ///
+    /// This is the GIVE in the non-win floor. `NON_WINS_MIN=5` over 5 rows was
+    /// SATURATED — the gate mechanically forbade recording an honest win,
+    /// which is the fabrication failure arrived at from the other side. The
+    /// floor is now `prior_non_wins - recorded_upgrades`, so turning a
+    /// measured loss into a measured win costs exactly the same owned, dated,
+    /// closed-vocabulary record every other verdict change costs, and nothing
+    /// more.
+    #[must_use]
+    pub fn recorded_upgrades(&self, today: &str) -> usize {
+        let e: HashSet<&str> = self
+            .in_date_records(today)
+            .iter()
+            .filter(|d| d.to_verdict == Some(Verdict::Better))
+            .map(|d| d.entry_point.trim())
+            .collect();
+        e.len()
     }
 
     /// The EXCUSE BUDGET, as `(spent, allowed)`.

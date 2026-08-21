@@ -125,8 +125,169 @@ fn validate_competitive_parity(contract: &Contract, violations: &mut Vec<Violati
     }
 
     validate_parity_downgrades(ledger, &mut push);
+    validate_parity_coverage(ledger, &mut push);
     validate_parity_falsification_bindings(contract, &mut push);
     validate_parity_date_horizon(contract, &mut push);
+}
+
+/// The COVERAGE RATCHET: PARITY-021 (it exists, and is argued), PARITY-022
+/// (the schedule is a schedule), PARITY-023 (it still owes an increase) and
+/// PARITY-024 (the step that has come due is MET).
+///
+/// # What this closes
+///
+/// Nothing in PARITY-000..020 requires an in-scope entry point to have a row.
+/// Five rows over 41 scope entries over 111 live subcommands is "competitive
+/// parity" asserted over ~4.5% of the surface, forever, with every gate green.
+/// Every other rule makes the rows that EXIST honest; this is the only one
+/// that makes rows exist.
+///
+/// # Why the floor is dated rather than constant
+///
+/// A constant floor set at what the ledger already has is inert on the day it
+/// lands and inert forever after — which is how a coverage floor normally
+/// dies. A dated schedule is landable at today's coverage AND owes an
+/// increase, and `PARITY-023` refuses a schedule that has stopped owing one.
+/// Because every date here is bounded at `MAX_FUTURE_DAYS` from today, the
+/// furthest that debt can be pushed out is half a year, and pushing it out at
+/// all is a visible edit to a reviewed file judged against protected `main`.
+fn validate_parity_coverage<F>(ledger: &crate::schema::parity::ParityLedger, push: &mut F)
+where
+    F: FnMut(&str, String, String),
+{
+    use crate::schema::parity::days_between;
+
+    let Some(cov) = ledger.coverage.as_ref() else {
+        push(
+            "PARITY-021",
+            "parity.coverage is missing. Every other rule on this kind makes the rows that \
+             EXIST honest; none of them makes rows exist, so a ledger of five impeccable rows \
+             over 41 in-scope entry points satisfies all of them forever. Declare a coverage \
+             ratchet: `steps:` (a dated, strictly increasing schedule of covered_min), plus \
+             `rationale:` and `dissent:`"
+                .to_string(),
+            "parity.coverage".to_string(),
+        );
+        return;
+    };
+
+    // PARITY-021: the decision is ARGUED, and the argument against it is in the
+    // same file. A floor with no recorded objection reads as unanimous, and the
+    // next author cannot tell whether the obvious alternative was rejected or
+    // never considered.
+    for (field, value) in [
+        ("rationale", cov.rationale.as_deref()),
+        ("dissent", cov.dissent.as_deref()),
+    ] {
+        if value.is_none_or(|s| s.trim().is_empty()) {
+            push(
+                "PARITY-021",
+                format!(
+                    "parity.coverage.{field} must be written out. The ratio being ratcheted is \
+                     a judgement call, not a measurement: record why this shape was chosen and \
+                     what the case against it is, in the contract, where a reader meets it at \
+                     the same time as the rule"
+                ),
+                format!("parity.coverage.{field}"),
+            );
+        }
+    }
+
+    if cov.steps.is_empty() {
+        push(
+            "PARITY-022",
+            "parity.coverage.steps must not be empty - an empty schedule is a floor of zero \
+             that can never come due"
+                .to_string(),
+            "parity.coverage.steps".to_string(),
+        );
+        return;
+    }
+
+    // PARITY-022: it must be a SCHEDULE — real dates, strictly increasing in
+    // both coordinates. Two steps on the same date, or a later date with a
+    // lower requirement, is not a ratchet; it is two floors of which the
+    // reader has to guess the operative one.
+    let mut prev: Option<(&str, usize)> = None;
+    for (i, step) in cov.steps.iter().enumerate() {
+        let at = format!("parity.coverage.steps[{i}]");
+        let by = step.by.trim();
+        if crate::schema::parity::parse_iso_date(by).is_none() {
+            push(
+                "PARITY-022",
+                format!(
+                    "coverage step `by` must be an ISO date (YYYY-MM-DD), got {by:?}. An \
+                     unreadable date is treated as ALREADY DUE, so this does not buy a deferral \
+                     - it only makes the schedule unreviewable"
+                ),
+                format!("{at}.by"),
+            );
+        }
+        if step.covered_min == 0 {
+            push(
+                "PARITY-022",
+                "coverage step covered_min must be at least 1 - a floor of zero is satisfied by \
+                 an empty ledger"
+                    .to_string(),
+                format!("{at}.covered_min"),
+            );
+        }
+        if let Some((pby, pmin)) = prev {
+            let ordered = days_between(pby, by).is_some_and(|d| d > 0);
+            if !ordered || step.covered_min <= pmin {
+                push(
+                    "PARITY-022",
+                    format!(
+                        "coverage steps must be STRICTLY increasing in both `by` and \
+                         `covered_min`; step {i} ({by} -> {}) does not advance on step {} ({pby} \
+                         -> {pmin}). A schedule that repeats or reverses is not a ratchet",
+                        step.covered_min,
+                        i - 1
+                    ),
+                    at,
+                );
+            }
+        }
+        prev = Some((by, step.covered_min));
+    }
+}
+
+/// PARITY-023 and PARITY-024 — evaluated against a DATE, so they live with the
+/// other check-time rules rather than in `validate_contract`, which answers a
+/// question about the file rather than about the world.
+///
+/// Returns the messages to report; empty means the ratchet is satisfied.
+#[must_use]
+pub fn parity_coverage_debt(
+    ledger: &crate::schema::parity::ParityLedger,
+    today: &str,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let Some(cov) = ledger.coverage.as_ref() else {
+        return out; // PARITY-021 already reports the absent block.
+    };
+    let (achieved, floor) = ledger.coverage_status(today);
+    if achieved < floor {
+        out.push(format!(
+            "PARITY-024: the coverage ratchet requires {floor} distinct in-scope entry \
+             point(s) to carry a row as of {today}, and this ledger covers {achieved}. Add \
+             rows - a verdict of UNMEASURED with an owner and a bound is a legitimate row and \
+             costs no measurement. Lowering the step instead is refused against the schedule on \
+             protected `main`."
+        ));
+    }
+    if cov.next_step(today).is_none() {
+        out.push(format!(
+            "PARITY-023: the coverage schedule owes no future increase as of {today} - every \
+             step has come due. A ratchet that owes nothing has stopped ratcheting, which is \
+             exactly how a coverage floor dies: set once at the achievable value and never \
+             moved. Add a step with a later `by` and a higher `covered_min`. Note that every \
+             date here is bounded at {} days from today, so the next step can never be more \
+             than half a year out, and moving one further out is refused against `main`.",
+            crate::schema::parity::MAX_FUTURE_DAYS
+        ));
+    }
+    out
 }
 
 /// One row: PARITY-002 (a named, unique, CANONICAL key), -004, -005, -006,

@@ -240,8 +240,11 @@ PASS when it prints `competitive-parity ratchet OK`. What it asserts:
   exists in the SHA-pinned binary's own `apr --help`;
 * every row of `contracts/apr-competitive-parity-v1.yaml` has a verdict from the
   closed vocabulary and is INSIDE its `valid_until` **as of today**;
-* `__MEASURED__` and `__NON_WINS__` have not fallen below
-  `scripts/competitive_parity_baseline.txt`.
+* the row set, the declared-measured set, every row's declared verdict, the
+  non-win count, the scope set and the coverage schedule have not fallen below
+  what the ledger on **protected `origin/main`** records. There is no baseline
+  file: a sibling file the same commit edits cannot audit that commit, so the
+  comparand is the one prior state a PR cannot rewrite from inside itself.
 
 **Read the failure correctly.** This gate does NOT require a win. `WORSE`,
 `NOT_COMPARABLE` and `UNMEASURED` are first-class verdicts and `WORSE` counts as
@@ -253,9 +256,22 @@ that apr lost. The two ways this gate goes red at release time and what each mea
 | `__MEASURED__ fell` with `__EXPIRED__ > 0` | a measurement aged out during the release window | re-measure, or re-record the row as `UNMEASURED` with a new `valid_until` and an owner |
 | `__MEASURED__ fell` with `__EXPIRED__ = 0` | a row was removed from the ledger | put it back. Recording a loss is compliant; deleting one is the PMAT-733 defect (the StandardScaler 0.69x row was deleted the day it was measured) |
 
-Do NOT "fix" this by deleting a row or by editing
-`scripts/competitive_parity_baseline.txt` downward. `--update-baseline` refuses
-to lower any figure, and a hand-edit is the same act with the safety removed.
+Do NOT "fix" this by deleting a row. There is nothing in the tree to edit
+downward any more -- the bar is the ledger on `origin/main` -- so the only ways
+through are to re-measure the row, or to record the change: a `downgrades:`
+entry naming `from_verdict` / `to_verdict`, a reason from the closed vocabulary,
+an owner and a bounded `recheck_by`.
+
+**Recording a genuine WIN is allowed and costs exactly that one record.** The
+non-win floor is `non_wins(main) - recorded upgrades`, precisely so the gate
+cannot forbid honesty in the winning direction; the previous constant floor
+(`NON_WINS_MIN=5` over 5 rows) was saturated and did exactly that.
+
+A run that prints `BOOTSTRAP: no competitive-parity contract exists at
+origin/main` is ratcheting against NOTHING. That is legitimate exactly once,
+before the ledger has ever landed on the default branch, and it is unreachable
+afterwards. If you see it at release time on a repo that already has a ledger on
+`main`, treat it as a RED: something moved the comparand.
 
 ## Verdict
 

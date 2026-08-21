@@ -474,3 +474,104 @@ fn downgrade_reason_vocabulary_lists_every_variant() {
         "an honest re-measurement must be recordable without lying about why"
     );
 }
+
+/// A minimal transition record. `unchecked` on the dates for the same reason
+/// `row` uses it: several fixtures deliberately probe expiry arithmetic.
+fn downgrade(entry: &str, recheck_by: &str) -> Downgrade {
+    Downgrade {
+        entry_point: entry.into(),
+        reason: Some(DowngradeReason::Remeasured),
+        from_verdict: None,
+        to_verdict: None,
+        owner: "pillar-x".into(),
+        recorded_on: LedgerDate::unchecked("2026-08-21"),
+        recheck_by: LedgerDate::unchecked(recheck_by),
+        detail: None,
+        extra: std::collections::BTreeMap::new(),
+    }
+}
+
+// -- COVERAGE: the scope-key collapse, and why it is load-bearing ------------
+
+#[test]
+fn parity_021_scope_key_collapses_a_qualified_entry_point() {
+    // Two rows on the same subcommand are two legitimate comparison surfaces
+    // and ONE covered entry point. Without the collapse the coverage ratchet
+    // would be payable by splitting a row in half.
+    assert_eq!(ParityLedger::scope_key("apr run --gpu"), "apr run");
+    assert_eq!(
+        ParityLedger::scope_key("apr run --gpu (concurrency=1 single-request decode)"),
+        "apr run"
+    );
+    // `lib:` and `bin:` keys are already exact and must pass through intact --
+    // truncating them would merge unrelated library surfaces into one.
+    assert_eq!(
+        ParityLedger::scope_key("lib:aprender-core::Lasso::fit"),
+        "lib:aprender-core::Lasso::fit"
+    );
+    assert_eq!(ParityLedger::scope_key("bin:pv"), "bin:pv");
+    // Surrounding whitespace is not a different entry point.
+    assert_eq!(ParityLedger::scope_key("  apr qa  "), "apr qa");
+}
+
+#[test]
+fn parity_024_covered_count_is_distinct_entry_points_not_rows() {
+    let mut l = ParityLedger::default();
+    let mut a = row(Some(Verdict::Worse), "2026-12-31");
+    a.entry_point = "apr run --gpu".into();
+    let mut b = row(Some(Verdict::Unmeasured), "2026-12-31");
+    b.entry_point = "apr run --gpu (concurrency=1 single-request decode)".into();
+    let mut c = row(Some(Verdict::Parity), "2026-12-31");
+    c.entry_point = "lib:aprender-core::Lasso::fit".into();
+    l.rows = vec![a, b, c];
+    assert_eq!(l.rows.len(), 3, "three rows");
+    assert_eq!(
+        l.covered_count(),
+        2,
+        "two DISTINCT entry points -- splitting a row must not buy coverage"
+    );
+}
+
+#[test]
+fn parity_023_recorded_upgrades_are_the_give_in_the_non_win_floor() {
+    // NON_WINS_MIN=5 over 5 rows was SATURATED: recording an honest BETTER was
+    // mechanically forbidden. The floor now moves with the recorded upgrades,
+    // and only IN-DATE ones count -- an expired excuse pays for nothing, the
+    // same rule the downgrade path already uses.
+    let mut l = ParityLedger::default();
+    let mut up = downgrade("apr run", "2026-12-31");
+    up.from_verdict = Some(Verdict::Worse);
+    up.to_verdict = Some(Verdict::Better);
+    l.downgrades = vec![up];
+    assert_eq!(l.recorded_upgrades("2026-08-21"), 1);
+    // OVERDUE -> pays for nothing.
+    assert_eq!(l.recorded_upgrades("2027-01-01"), 0);
+    // A record that is NOT an upgrade is not counted, so a downgrade cannot be
+    // spent twice -- once to excuse leaving the measured set and once to lower
+    // the non-win floor.
+    let mut down = downgrade("apr qa", "2026-12-31");
+    down.from_verdict = Some(Verdict::Worse);
+    down.to_verdict = Some(Verdict::Unmeasured);
+    l.downgrades.push(down);
+    assert_eq!(l.recorded_upgrades("2026-08-21"), 1);
+}
+
+#[test]
+fn parity_022_declared_measured_is_clock_independent() {
+    // The PRIOR side of the ratchet is read from `main` days or weeks after it
+    // landed. Computed from EFFECTIVE verdicts it would shed entries as those
+    // rows aged, and the bar the current tree must clear would fall on a day
+    // nobody touched either file.
+    let mut l = ParityLedger::default();
+    l.rows = vec![row(Some(Verdict::Worse), "2020-01-01")];
+    assert_eq!(
+        l.measured_count("2026-08-21"),
+        0,
+        "effective: the expired row is not measured today"
+    );
+    assert_eq!(
+        l.declared_measured_rows().len(),
+        1,
+        "declared: what the protected state SAID, whatever the clock says now"
+    );
+}
