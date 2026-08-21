@@ -693,7 +693,9 @@ jobs:
       # aprender#2558: nothing detected two crates declaring the same `[[bin]]
       # name`. FOUR things claimed `pv` -- the crates.io pipe viewer, /usr/bin/pv,
       # aprender-contracts-cli and the provable-contracts-cli facade -- all
-      # writing ~/.cargo/bin/pv, with `cargo install` overwriting silently. The
+      # writing ~/.cargo/bin/pv. MEASURED: `cargo install` FAILS CLOSED on that
+      # collision (exit 101, first binary survives); it does NOT overwrite, so
+      # the hazard is a BLOCKED install rather than a silent clobber. The
       # facade gave up the name; this stops the next one being noticed by
       # accident. Scans BOTH workspaces: crates/facades is `exclude`d from the
       # root, so a root-only scan is inert by construction. `apr` is a
@@ -703,6 +705,29 @@ jobs:
         run: bash scripts/check_duplicate_bin_names.sh --self-test
       - name: No two crates may claim one bin name
         run: bash scripts/check_duplicate_bin_names.sh
+      # aprender#2559: the release cascade could not SEE the facades. TIERS[] in
+      # scripts/cascade-publish.sh was exactly the 70 publishable crates of the
+      # ROOT workspace -- a perfect match, no drift -- so nothing indicated the
+      # three publishable crates in the second, `exclude`d workspace were
+      # missing. FINAL VERIFICATION iterated the same TIERS[], so their absence
+      # printed as "ALL crates at 0.63.0". This step also checks the ORDER: a
+      # facade resolves its upstream from the REGISTRY, so publishing it first
+      # yields a crate that cannot compile for anyone -- while inside this tree
+      # it resolves through `path` and looks perfectly fine. Case table first.
+      - name: Cascade-coverage case table
+        run: bash scripts/check_cascade_covers_all_crates.sh --self-test
+      - name: The release cascade must cover and order every publishable crate
+        run: bash scripts/check_cascade_covers_all_crates.sh
+      # The bump half of the same defect. `cargo set-version --workspace` cannot
+      # reach an `exclude`d workspace and does not warn, so three files in
+      # crates/facades/ have to ride in every bump commit. scripts/bump-version.sh
+      # does that; these two rows keep its case table live and assert the tree is
+      # version-consistent right now (which check_facade_compat.sh R3/R5 also
+      # backstop from the compat side).
+      - name: Version-bump case table (reaches the excluded workspace)
+        run: bash scripts/bump-version.sh --self-test
+      - name: Every workspace is at a consistent version
+        run: bash scripts/bump-version.sh --check
       # The meta-guard. Four guards were found unwired by accident while looking
       # for something else; without this the fifth is found the same way.
       - name: Every check_*.sh is named by a workflow

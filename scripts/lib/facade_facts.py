@@ -30,9 +30,14 @@ what cargo will actually build or publish.
                   instead of reporting a clean run over nothing.
   R7 NO BINARIES  no facade declares a `[[bin]]` target. aprender#2558: FOUR
                   crates declared a bin named `pv` (this repo owned two of
-                  them) and `cargo install` overwrites ~/.cargo/bin/pv without
-                  warning. The facades yield the name; `aprender-contracts-cli`
-                  keeps it. Enforced here AND, across both workspaces, by
+                  them), all targeting ~/.cargo/bin/pv. MEASURED: `cargo
+                  install` does NOT overwrite across packages -- it FAILS
+                  CLOSED (exit 101, "binary `pv` already exists in destination
+                  as part of <package>") and the FIRST binary survives. So the
+                  hazard is BLOCKING, not clobbering: a user holding the old
+                  facade cannot install the real tool. The facades yield the
+                  name; `aprender-contracts-cli` keeps it. Enforced here AND,
+                  across both workspaces, by
                   scripts/check_duplicate_bin_names.sh.
 
 The read-only accessors share this file so the guard never has to embed a
