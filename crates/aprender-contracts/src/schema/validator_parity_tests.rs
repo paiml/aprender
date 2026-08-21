@@ -397,17 +397,195 @@ metadata:
     /// 2099-12-31. It used to leave `pv validate` green, which made "staleness
     /// blocks" voluntary. It must now be an ERROR.
     #[test]
-    fn parity_011_rejects_the_2099_exemption() {
-        let y = good_yaml().replace(
+    fn parity_011_rejects_a_window_wider_than_the_ceiling() {
+        // 2026-01-01 -> 2026-09-30 is 272 days: over the 180-day span ceiling,
+        // and DELIBERATELY inside the future horizon, so this test still probes
+        // PARITY-011 rather than being intercepted by LedgerDate's parse bound.
+        // The old fixture used 2099-12-31, which the horizon now refuses first
+        // -- a stronger control, but it would have left this rule unprobed.
+        let y = good_yaml()
+            .replace(r#"measured_on: "2026-07-31""#, r#"measured_on: "2026-01-01""#)
+            .replace(
+                r#"valid_until: "2026-11-30""#,
+                r#"valid_until: "2026-09-30""#,
+            );
+        assert_ne!(y, good_yaml(), "the mutation must actually apply");
+        assert_eq!(
+            crate::schema::parity::days_between("2026-01-01", "2026-09-30"),
+            Some(272),
+            "the fixture must actually exceed the 180-day ceiling"
+        );
+        assert!(
+            rules(&y).contains(&"PARITY-011".to_string()),
+            "a 272-day window must be refused: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// 2099 is no longer a LINT. It is a PARSE ERROR.
+    ///
+    /// This is the class fix, asserted where it now lives: `LedgerDate` refuses
+    /// an out-of-horizon date at deserialization, so the document does not
+    /// exist to be validated. PARITY-011's pairwise ceiling never bounded 2099
+    /// on its own — it bounds `valid_until - measured_on`, and `measured_on` was
+    /// itself author-supplied and unbounded, so `2099-01-01` / `2099-06-01` sat
+    /// comfortably inside a 180-day window and 2099 was still the exemption.
+    #[test]
+    fn the_2099_exemption_is_now_a_parse_error_on_every_date_field() {
+        for field in [
+            r#"measured_on: "2026-07-31""#,
             r#"valid_until: "2026-11-30""#,
-            r#"valid_until: "2099-12-31""#,
+        ] {
+            let name = field.split(':').next().expect("field name");
+            let mutated = format!("{name}: \"2099-12-31\"");
+            let y = good_yaml().replace(field, &mutated);
+            assert_ne!(y, good_yaml(), "the mutation must actually apply to {name}");
+            let err = parse_contract_str(&y)
+                .expect_err("2099 must not PARSE, whichever date field carries it");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("horizon"),
+                "the refusal must name the horizon, not some incidental yaml \
+                 problem (a red for the wrong reason proves nothing): {msg}"
+            );
+        }
+        // GREEN direction: the unmutated fixture parses, so the assertions
+        // above are about the date and not about the fixture.
+        parse_contract_str(&good_yaml()).expect("the fixture itself parses");
+    }
+
+    /// The horizon boundary, from BOTH sides, computed from TODAY so the test
+    /// keeps testing the same thing next year.
+    #[test]
+    fn the_future_horizon_boundary_is_exact_on_both_sides() {
+        use crate::schema::parity::MAX_FUTURE_DAYS;
+        let at = |days: i64| {
+            good_yaml().replace(
+                r#"valid_until: "2026-11-30""#,
+                &format!(r#"valid_until: "{}""#, days_from_today(days)),
+            )
+        };
+        // measured_on must move back with it, or PARITY-011's span ceiling --
+        // a DIFFERENT rule -- is what fires and the test proves nothing.
+        let at = |days: i64| {
+            at(days).replace(
+                r#"measured_on: "2026-07-31""#,
+                &format!(r#"measured_on: "{}""#, days_from_today(days - 1)),
+            )
+        };
+        assert!(
+            parse_contract_str(&at(MAX_FUTURE_DAYS)).is_ok(),
+            "exactly {MAX_FUTURE_DAYS} days ahead must be ACCEPTED"
+        );
+        let err = parse_contract_str(&at(MAX_FUTURE_DAYS + 1))
+            .expect_err("one day past the horizon must be REFUSED");
+        assert!(
+            err.to_string().contains("horizon"),
+            "refused for the right reason: {err}"
+        );
+    }
+
+    /// PARITY-016 is the half of the class fix that covers fields which DO NOT
+    /// EXIST YET.
+    ///
+    /// `LedgerDate` bounds the four date fields the schema names today, but a
+    /// newtype only helps a field that USES it: the next author writing
+    /// `certified_on: String` is the next exemption, which is exactly how the
+    /// previous three fixes each created the next hole. So the sweep is keyed
+    /// on the VALUE, not the field name — it walks the whole serialized
+    /// document, and `#[serde(flatten)] extra` captures keys serde does not
+    /// know instead of dropping them, so an unknown YAML field is swept too.
+    #[test]
+    fn parity_016_bounds_a_date_field_that_does_not_exist_in_the_schema() {
+        let y = good_yaml().replace(
+            r#"      evidence: "contracts/beat-ollama-decode-throughput-speed-v1.yaml""#,
+            "      evidence: \"contracts/x.yaml\"\n      certified_on: \"2099-12-31\"",
+        );
+        assert_ne!(y, good_yaml(), "the mutation must actually apply");
+        let c = parse_contract_str(&y)
+            .expect("an UNKNOWN field is not a parse error - it is caught by the sweep");
+        let found: Vec<_> = validate_contract(&c)
+            .into_iter()
+            .filter(|v| v.rule == "PARITY-016")
+            .collect();
+        assert_eq!(
+            found.len(),
+            1,
+            "a date field the schema has never heard of must still be bounded: {:?}",
+            validate_contract(&c)
+        );
+        assert!(
+            found[0].location.as_deref().unwrap_or("").contains("certified_on"),
+            "the violation must NAME the offending path: {:?}",
+            found[0].location
+        );
+        // GREEN: the same unknown field with an in-horizon date is fine, so the
+        // rule discriminates on the DATE and not on the field being unknown.
+        let ok = good_yaml().replace(
+            r#"      evidence: "contracts/beat-ollama-decode-throughput-speed-v1.yaml""#,
+            "      evidence: \"contracts/x.yaml\"\n      certified_on: \"2026-01-01\"",
+        );
+        let c = parse_contract_str(&ok).expect("parses");
+        assert!(
+            !validate_contract(&c).iter().any(|v| v.rule == "PARITY-016"),
+            "an in-horizon date in the same unknown field must be accepted"
+        );
+    }
+
+    /// Prose is not swept. The whole scalar must BE the date.
+    #[test]
+    fn parity_016_does_not_fire_on_a_date_mentioned_inside_prose() {
+        let y = good_yaml().replace(
+            r#"      evidence: "contracts/beat-ollama-decode-throughput-speed-v1.yaml""#,
+            "      evidence: \"contracts/x.yaml\"\n      note: \"roadmap target 2099-12-31\"",
+        );
+        let c = parse_contract_str(&y).expect("parses");
+        assert!(
+            !validate_contract(&c).iter().any(|v| v.rule == "PARITY-016"),
+            "a date inside a sentence is prose, not a machine-read bound: {:?}",
+            validate_contract(&c)
+        );
+    }
+
+    /// PARITY-017: `measured_on` may not be in the future.
+    ///
+    /// The horizon is uniform at 180 days so that no field is unbounded; this
+    /// pins the dates that record a PAST event to the past, so a row cannot be
+    /// dated forward to buy a full horizon of freshness on a measurement nobody
+    /// has taken.
+    #[test]
+    fn parity_017_refuses_a_measurement_dated_in_the_future() {
+        let y = good_yaml().replace(
+            r#"measured_on: "2026-07-31""#,
+            &format!(r#"measured_on: "{}""#, days_from_today(1)),
         );
         assert_ne!(y, good_yaml(), "the mutation must actually apply");
         assert!(
-            rules(&y).contains(&"PARITY-011".to_string()),
-            "2099-12-31 must be refused: {:?}",
+            rules(&y).contains(&"PARITY-017".to_string()),
+            "a measurement taken tomorrow must be refused: {:?}",
             rules(&y)
         );
+        // GREEN: today itself is fine. The boundary is `> today`, not `>=`.
+        let y = good_yaml().replace(
+            r#"measured_on: "2026-07-31""#,
+            &format!(r#"measured_on: "{}""#, days_from_today(0)),
+        );
+        assert!(
+            !rules(&y).contains(&"PARITY-017".to_string()),
+            "a measurement taken TODAY must be accepted: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// An ISO date `days` from today. See `parity_tests.rs` for why this is
+    /// arithmetic rather than a literal.
+    fn days_from_today(days: i64) -> String {
+        use crate::schema::parity::{civil_from_days, days_from_civil, parse_iso_date, today_utc};
+        let today = today_utc().expect("system clock is after the epoch");
+        let (y, m, d) = parse_iso_date(&today).expect("today_utc emits an ISO date");
+        let (y, m, d) =
+            civil_from_days(days_from_civil(i64::from(y), u32::from(m), u32::from(d)) + days);
+        format!("{y:04}-{m:02}-{d:02}")
     }
 
     /// The boundary is checked from BOTH sides, so the ceiling cannot be
@@ -585,16 +763,153 @@ metadata:
     /// A downgrade dated far enough ahead is a deletion that kept its
     /// paperwork. The same ceiling as PARITY-011, for the same reason.
     #[test]
-    fn parity_013_downgrade_cannot_be_dated_to_2099() {
+    fn parity_013_downgrade_window_wider_than_the_ceiling_is_refused() {
+        // 272 days, and deliberately inside the future horizon so that this
+        // probes PARITY-013's span ceiling rather than LedgerDate's parse bound.
+        let y = downgraded_yaml(concat!(
+            "      reason: RECEIPT_MISSING\n",
+            "      owner: \"pillar-4\"\n",
+            "      recorded_on: \"2026-01-01\"\n",
+            "      recheck_by: \"2026-09-30\"\n",
+        ));
+        assert!(
+            rules(&y).contains(&"PARITY-013".to_string()),
+            "a 272-day recheck window must be refused: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// `recheck_by: 2099-12-31` is now a PARSE ERROR, not a lint.
+    ///
+    /// This was the THIRD bypass and both adversarial reviewers found it
+    /// independently: `recheck_by` was validated only against `recorded_on` and
+    /// NEVER against today, so the escape valve never came due — and because
+    /// the old `MEASURED_MIN` floor was deleted outright when the record was
+    /// introduced, a series of such downgrades could drain the ledger to zero
+    /// measured rows with every gate green.
+    #[test]
+    fn a_downgrade_cannot_be_dated_to_2099_at_all() {
+        for line in [
+            "      recorded_on: \"2099-12-30\"\n      recheck_by: \"2026-10-31\"\n",
+            "      recorded_on: \"2026-08-21\"\n      recheck_by: \"2099-12-31\"\n",
+        ] {
+            let y = downgraded_yaml(&format!(
+                "      reason: RECEIPT_MISSING\n      owner: \"pillar-4\"\n{line}"
+            ));
+            let err = parse_contract_str(&y).expect_err("2099 must not PARSE in a downgrade");
+            assert!(
+                err.to_string().contains("horizon"),
+                "refused for the right reason: {err}"
+            );
+        }
+    }
+
+    /// PARITY-018 (mechanism, not rule id): an OVERDUE downgrade stops paying.
+    ///
+    /// A downgrade is a debt with a due date. Once `recheck_by` has passed it
+    /// no longer excuses the row's absence from the MEASURED set, and
+    /// `pv parity-ledger` blocks. Nothing compared `recheck_by` to today
+    /// before this.
+    #[test]
+    fn an_overdue_downgrade_is_overdue_and_an_in_date_one_is_not() {
+        let y = downgraded_yaml(GOOD_DOWNGRADE);
+        let c = parse_contract_str(&y).expect("parses");
+        let l = c.parity.as_ref().expect("ledger");
+        assert_eq!(l.downgrades.len(), 1);
+        assert!(
+            !l.downgrades[0].is_overdue("2026-10-31"),
+            "on the due date itself the debt is still in date"
+        );
+        assert!(
+            l.downgrades[0].is_overdue("2026-11-01"),
+            "the day after recheck_by, the debt is due"
+        );
+        assert_eq!(l.overdue_downgrades("2026-11-01").len(), 1);
+        assert_eq!(l.overdue_downgrades("2026-10-31").len(), 0);
+    }
+
+    /// Fail CLOSED: a downgrade whose `recheck_by` will not parse is OVERDUE,
+    /// not immortal. The alternative -- "cannot tell, so accept" -- is the hole
+    /// every unbounded date in this file lived in.
+    #[test]
+    fn a_downgrade_with_an_unparseable_recheck_by_is_overdue() {
         let y = downgraded_yaml(concat!(
             "      reason: RECEIPT_MISSING\n",
             "      owner: \"pillar-4\"\n",
             "      recorded_on: \"2026-08-21\"\n",
-            "      recheck_by: \"2099-12-31\"\n",
+            "      recheck_by: \"whenever\"\n",
         ));
+        let c = parse_contract_str(&y).expect("non-ISO text parses; PARITY-013 reports it");
+        let l = c.parity.as_ref().expect("ledger");
+        assert!(l.downgrades[0].is_overdue("2026-08-21"));
+        assert!(rules(&y).contains(&"PARITY-013".to_string()));
+    }
+
+    /// PARITY-002: a key containing a NEWLINE is refused at the SOURCE.
+    ///
+    /// The ratchet's set membership travels as `__ROW__=<key>` lines that a
+    /// shell reads back, so a key that may contain a newline is a line
+    /// injection primitive: one fabricated row prints several well-formed key
+    /// lines and can satisfy a DELETED row's baseline key at constant totals --
+    /// the set ratchet defeated by precisely the move it exists to block.
+    #[test]
+    fn parity_002_refuses_a_control_character_in_a_ratchet_key() {
+        let y = good_yaml().replace(
+            r#"entry_point: "apr run --gpu""#,
+            "entry_point: \"apr qa\\n__ROW__=lib:aprender-core::StandardScaler::fit_transform\"",
+        );
+        assert_ne!(y, good_yaml(), "the mutation must actually apply");
+        let c = parse_contract_str(&y).expect("parses - the refusal is a RULE, not a yaml error");
+        let ep = &c.parity.as_ref().expect("ledger").rows[0].entry_point;
         assert!(
-            rules(&y).contains(&"PARITY-013".to_string()),
-            "an unbounded recheck_by must be refused: {:?}",
+            ep.contains('\n'),
+            "the fixture must really carry a newline, or this proves nothing: {ep:?}"
+        );
+        assert!(
+            rules(&y).contains(&"PARITY-002".to_string()),
+            "a newline in a ratchet key must be refused: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// ...and so is a key that is not in canonical form.
+    #[test]
+    fn parity_002_refuses_a_key_with_surrounding_whitespace() {
+        let y = good_yaml().replace(
+            r#"entry_point: "apr run --gpu""#,
+            r#"entry_point: "apr run --gpu ""#,
+        );
+        assert_ne!(y, good_yaml(), "the mutation must actually apply");
+        assert!(
+            rules(&y).contains(&"PARITY-002".to_string()),
+            "the emitted key and the baseline key must be byte-identical by \
+             CONSTRUCTION, so the authored bytes must already be canonical: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// PARITY-015 admits only a binding that starts with a RUNNER.
+    #[test]
+    fn parity_015_refuses_prose_dressed_as_a_binding() {
+        let y = good_yaml().replace(
+            r#"test: "cargo test -p aprender-contracts --lib parity_""#,
+            r#"test: "see the case table in the shell script""#,
+        );
+        assert_ne!(y, good_yaml(), "the mutation must actually apply");
+        assert!(
+            rules(&y).contains(&"PARITY-015".to_string()),
+            "if prose counts as a binding, the rule only proves the key is \
+             present: {:?}",
+            rules(&y)
+        );
+        // GREEN: a `./` path is a runner too.
+        let y = good_yaml().replace(
+            r#"test: "cargo test -p aprender-contracts --lib parity_""#,
+            r#"test: "./scripts/check_competitive_parity.sh --self-test""#,
+        );
+        assert!(
+            !rules(&y).contains(&"PARITY-015".to_string()),
+            "a ./ path is runnable: {:?}",
             rules(&y)
         );
     }

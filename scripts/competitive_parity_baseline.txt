@@ -1,28 +1,43 @@
 # Competitive-parity ratchet baseline. A SET, not a count.
 #
 # Written by scripts/check_competitive_parity.sh --update-baseline.
-# Do not hand-edit: the mechanism is that losing a SPECIFIC row is
-# visible even when every total is unchanged. A count ratchet is
-# payable in the wrong currency -- delete the StandardScaler 0.69x row,
-# add a cheaper one, and __MEASURED__ never moves. That is PMAT-733.
+# Do not hand-edit -- and hand-editing is no longer merely discouraged: this
+# file is ratcheted against its own committed version at the merge base with
+# the upstream default branch, so the refusals in --update-baseline run in
+# CHECK mode too and an edit that lowers the bar is named there.
 #
-#   ROW=             must still EXIST. Droppable only when the entry
+# The mechanism is that losing a SPECIFIC row is visible even when every total
+# is unchanged. A count ratchet is payable in the wrong currency -- delete the
+# StandardScaler 0.69x row, add a cheaper one, and __MEASURED__ never moves.
+# That is PMAT-733.
+#
+#   ROW=<bytes>:<key>
+#                    must still EXIST. Droppable only when the entry
 #                    point has left the live `apr` enumeration.
-#   MEASURED_ROW=    SHRINK-NEVER. Must still be MEASURED, or carry a
-#                    recorded `downgrades:` entry in the ledger. The key
-#                    STAYS while the row exists, so a downgrade is a debt
-#                    with a due date, not a one-off payment that the
-#                    baseline absorbs and the next commit can delete.
+#   MEASURED_ROW=<bytes>:<key>
+#                    SHRINK-NEVER. Must still be MEASURED, or carry a
+#                    recorded `downgrades:` entry in the ledger that is
+#                    still IN DATE. The key STAYS while the row exists,
+#                    so a downgrade is a debt with a due date, not a
+#                    one-off payment the baseline absorbs and the next
+#                    commit can quietly delete.
+#
+# Keys are LENGTH-PREFIXED with their byte count, in the same wire format
+# `pv parity-ledger` emits, and one function parses both. A key travelling as
+# "the rest of the line" is a line-injection primitive: an entry_point
+# containing a newline prints several well-formed key lines from ONE row and
+# can satisfy a DELETED row's key from a fabricated one, at constant totals.
+# The prefix is checked, so a line that is not the whole key is dropped.
 NON_WINS_MIN=5
 IN_SCOPE_MIN=41
 
-ROW=apr run --gpu
-ROW=lib:aprender-core::StandardScaler::fit_transform
-ROW=apr code
-ROW=lib:aprender-core::Lasso::fit
-ROW=apr run --gpu (concurrency=1 single-request decode)
+ROW=13:apr run --gpu
+ROW=48:lib:aprender-core::StandardScaler::fit_transform
+ROW=8:apr code
+ROW=29:lib:aprender-core::Lasso::fit
+ROW=51:apr run --gpu (concurrency=1 single-request decode)
 
-MEASURED_ROW=apr code
-MEASURED_ROW=apr run --gpu
-MEASURED_ROW=lib:aprender-core::Lasso::fit
-MEASURED_ROW=lib:aprender-core::StandardScaler::fit_transform
+MEASURED_ROW=8:apr code
+MEASURED_ROW=13:apr run --gpu
+MEASURED_ROW=29:lib:aprender-core::Lasso::fit
+MEASURED_ROW=48:lib:aprender-core::StandardScaler::fit_transform

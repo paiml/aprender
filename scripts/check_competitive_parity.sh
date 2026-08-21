@@ -60,6 +60,31 @@
 # recheck date. And PARITY-012 requires the downgraded row to still be PRESENT,
 # so "delete the row and file paperwork" is not a route.
 #
+# THE KEY CHANNEL IS VERIFIED, NOT TRUSTED
+# ----------------------------------------
+# Set membership travels from `pv` to this script as text, so the channel is
+# part of the mechanism. Under the first wire format (`__ROW__=<rest of line>`)
+# an entry_point containing a NEWLINE printed several well-formed key lines from
+# ONE row, so a fabricated row could satisfy a DELETED row's baseline key at
+# constant totals -- the set ratchet defeated by exactly the move it was built
+# to block. Three independent controls, because any one of them is a single edit
+# from useless: PARITY-002 refuses the character at the SOURCE; every key is
+# LENGTH-PREFIXED (`__ROW__=<bytes>:<key>`) and a line whose declared length
+# does not match what follows is DROPPED; and the NUMBER of key lines is
+# cross-checked against the emitter's own __ROWS__ / __MEASURED__, which an
+# injection can only inflate.
+#
+# THE BASELINE FILE IS ITSELF RATCHETED
+# -------------------------------------
+# Every --update-baseline refusal below guards a code path nobody is obliged to
+# take: the baseline is unbound plaintext read with `cat`, so hand-editing it
+# moves the bar and skips all of them -- drop the ROW key AND the ledger row and
+# the working copy agrees with itself, silently. So the same refusals now run in
+# CHECK mode against a value the editor does not control: the file AS COMMITTED,
+# read from the merge base with the upstream default branch (unioned with HEAD,
+# so the check is neither vacuous on a new branch nor defeated by making the
+# drop in its own commit).
+#
 # WHAT IT ENFORCES
 # ----------------
 #   1. `pv parity-ledger` passes  — freshness evaluated AT CHECK TIME, for every
@@ -130,16 +155,72 @@ cp_extract() {
     grep -E "^${key}=[0-9]+$" <<<"$text" | head -1 | cut -d= -f2
 }
 
-# Every VALUE of an anchored `KEY=<value>` line, prefix-stripped, one per line.
+# Every VALUE of an anchored, LENGTH-PREFIXED `KEY=<bytes>:<value>` line, one
+# per line, with the declared length VERIFIED.
 #
 # NOT `cut -d= -f2`. Entry points contain `=` -- the llama.cpp row is literally
 # `apr run --gpu (concurrency=1 single-request decode)` -- and cutting on the
 # delimiter truncates that key to `apr run --gpu (concurrency`. A set-membership
 # test over truncated keys reports a row as PRESENT whenever a different row
 # shares its prefix, which reintroduces the exact hole the set is closing.
+#
+# NOR is stripping the `^KEY=` prefix sufficient, which is what this used to do.
+# The value travelled as the REST OF THE LINE, so a key containing a NEWLINE
+# printed several well-formed key lines from ONE row: an `entry_point` written
+#
+#     apr qa
+#     __ROW__=lib:aprender-core::StandardScaler::fit_transform
+#
+# satisfies the DELETED StandardScaler row's baseline key from a fabricated row,
+# at constant totals -- the set ratchet defeated by precisely the move it was
+# built to block. Three independent controls close that, because any one of them
+# is a single edit from useless:
+#
+#   (a) PARITY-002/012 refuse a non-printable-ASCII character in a key at the
+#       SOURCE, so the newline never reaches the channel;
+#   (b) this function verifies the declared byte length against what follows,
+#       so a line that is not the WHOLE key is DROPPED (never repaired -- a
+#       dropped __ROW__ makes the baseline check fail, which is the safe
+#       direction);
+#   (c) the caller cross-checks the NUMBER of key lines against the emitter's
+#       own count (`__ROWS__`, `__MEASURED__`), and an injection can only ADD
+#       lines.
+#
+# Verified, not trusted: a length prefix nobody checks is a comment.
 cp_keys() {
-    local key="$1" text="$2"
-    grep -E "^${key}=" <<<"$text" | sed "s/^${key}=//"
+    local key="$1" text="$2" line rest declared value
+    local LC_ALL=C   # ${#value} must count BYTES, matching the emitter's len()
+    while IFS= read -r line; do
+        rest=${line#"$key="}
+        [ "$rest" != "$line" ] || continue
+        declared=${rest%%:*}
+        case "$declared" in ''|*[!0-9]*) continue ;; esac
+        value=${rest#*:}
+        [ "${#value}" = "$declared" ] || continue
+        printf '%s\n' "$value"
+    done < <(grep -E "^${key}=[0-9]+:" <<<"$text")
+}
+
+# Count of well-formed key lines for `key`, for the cross-check against the
+# emitter's own total. `grep -c` on the RAW lines would count malformed ones
+# too, which is the opposite of what this is for.
+cp_key_count() {
+    cp_keys "$1" "$2" | grep -c .
+}
+
+# Write a set out in the SAME `KEY=<bytes>:<value>` wire format `pv` emits, so
+# the baseline and the report are parsed by one function and cannot drift.
+#
+# It also binds the baseline a little further: hand-editing a key now means
+# getting its byte length right too, and a mismatched length makes cp_keys DROP
+# the line -- which reads as a missing ROW, which is RED.
+cp_emit_keys() {
+    local key="$1" set="$2" line
+    local LC_ALL=C
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        printf '%s=%s:%s\n' "$key" "${#line}" "$line"
+    done <<<"$set"
 }
 
 # Lines present in `want` and absent from `have`. Both are newline-separated
@@ -170,6 +251,84 @@ cp_unjustified_drops() {
         grep -qxF -- "$k" <<<"$live_downgrades" && continue
         printf '%s\n' "$k"
     done <<<"$baseline_measured"
+}
+
+# The commit this working tree should be ratcheted AGAINST.
+#
+# WHY THE BASELINE FILE ALONE IS NOT A BASELINE. Every `--update-baseline`
+# refusal in this script -- refusing to drop a live ROW, refusing an
+# unjustified MEASURED_ROW drop, refusing to lower NON_WINS_MIN -- guards a code
+# path nobody is obliged to take. The file is unbound plaintext read straight
+# off disk with `cat`, so hand-editing it moves the bar and skips every refusal.
+# A guard whose enforcement is optional is decoration.
+#
+# The fix is not a checksum stored beside it (which the same edit updates) but a
+# value the editor does not control: the file AS COMMITTED. `git show` of the
+# merge base with the upstream default branch gives the bar as it stood before
+# this change set, so the refusals now run in CHECK mode, on every run, against
+# git -- and the hand-edit is exactly as expensive as `--update-baseline`.
+#
+# Merge base, not HEAD: ratcheting against HEAD is defeated by making the drop
+# in its own commit, after which HEAD agrees with the drop. Against the merge
+# base, every commit on the branch is judged against main.
+# Every commit the working-tree baseline is judged against: the merge base with
+# the upstream default branch, AND HEAD.
+#
+# BOTH, unioned, because each covers the other's blind spot. The merge base
+# alone is vacuous while the file is new on this branch (it did not exist
+# there), and it is the merge base that survives the "make the drop in its own
+# commit" evasion. HEAD alone is defeated by that evasion and is non-vacuous
+# from the first commit. Requiring the keys of both is strictly stronger than
+# either and never weaker: a key legitimately gone from the world still passes
+# `cp_removal_allowed`.
+cp_base_refs() {
+    local r
+    for r in origin/main origin/master main master; do
+        git rev-parse --verify --quiet "$r" >/dev/null 2>&1 || continue
+        git merge-base "$r" HEAD 2>/dev/null
+        break
+    done
+    git rev-parse --verify --quiet HEAD 2>/dev/null
+}
+
+# The baseline file's content at `ref`, or empty when the file did not exist
+# there yet.
+#
+# Sets rc=2 -- distinct from "absent" -- when git itself cannot answer, because
+# "the comparison could not be made" must be RED and not silently empty. An
+# empty base set makes every regression check vacuously true, which is the
+# coverage-floor failure (`|| true` over a measurement that reported 0/0).
+cp_baseline_at() {
+    local path="$1" ref
+    git rev-parse --git-dir >/dev/null 2>&1 || return 2
+    while IFS= read -r ref; do
+        [ -n "$ref" ] || continue
+        git cat-file -e "$ref:$path" 2>/dev/null || continue
+        git show "$ref:$path" 2>/dev/null || return 2
+    done < <(cp_base_refs)
+    return 0
+}
+
+# Baseline keys that were dropped from the COMMITTED baseline and are not
+# accounted for. One key per line; empty output means the edit is legitimate.
+#
+#   $1 prior keys   $2 current keys   $3 live universe
+#   $4 excused keys (a live downgrade pays for a MEASURED_ROW drop; pass '' for
+#      the ROW set, where nothing pays for a drop except the entry point
+#      actually having left the binary)
+#   $5 repo root, for the `lib:` symbol probe
+#
+# Extracted as a pure function so the --self-test table probes the real code
+# path. The refusal it implements is the same one --update-baseline applies;
+# the point of running it HERE is that the hand-edit route no longer skips it.
+cp_unbound_baseline_drops() {
+    local prior="$1" cur="$2" uni="$3" excused="${4:-}" root="${5:-$REPO_ROOT}" k
+    while IFS= read -r k; do
+        [ -n "$k" ] || continue
+        [ -n "$excused" ] && grep -qxF -- "$k" <<<"$excused" && continue
+        cp_removal_allowed "$k" "$uni" "$root" && continue
+        printf '%s\n' "$k"
+    done < <(cp_set_minus "$prior" "$cur")
 }
 
 # Ratchet comparison: is `actual` acceptable against `floor`?
@@ -323,15 +482,21 @@ cp_self_test() {
     [ -z "$(cp_extract __MEASURED__ '__NON_WINS__=4')" ] \
         && ok 'a different key does not match' || bad 'a different key does not match'
 
-    printf 'case table: cp_keys (a SET, and `=` inside a key must survive)\n'
+    printf 'case table: cp_keys (a SET; `=` inside a key survives; length VERIFIED)\n'
     local pvout
-    pvout=$'ROW  WORSE -> WORSE fresh valid_until=2026-09-30 apr code\n__ROWS__=5\n__ROW__=apr run --gpu\n__ROW__=apr run --gpu (concurrency=1 single-request decode)\n__MEASURED_ROW__=apr run --gpu\n__DOWNGRADE__=apr code'
+    pvout=$'ROW  WORSE -> WORSE fresh valid_until=2026-09-30 apr code\n__ROWS__=5\n__ROW__=13:apr run --gpu\n__ROW__=51:apr run --gpu (concurrency=1 single-request decode)\n__MEASURED_ROW__=13:apr run --gpu\n__DOWNGRADE__=8:apr code'
     [ "$(cp_keys __ROW__ "$pvout" | wc -l)" = "2" ] \
         && ok 'both __ROW__ values are read' || bad 'both __ROW__ values are read'
     # THE TRAP: `cut -d= -f2` truncates this to "apr run --gpu (concurrency".
     grep -qxF 'apr run --gpu (concurrency=1 single-request decode)' \
         <<<"$(cp_keys __ROW__ "$pvout")" \
         && ok 'a key CONTAINING = survives intact' || bad 'a key CONTAINING = survives intact'
+    # ...and a key containing a COLON, which is what the length prefix is
+    # delimited by. `lib:aprender-core::Lasso::fit` is four of them.
+    [ "$(cp_keys __ROW__ '__ROW__=29:lib:aprender-core::Lasso::fit')" \
+        = 'lib:aprender-core::Lasso::fit' ] \
+        && ok 'a key CONTAINING : survives the length delimiter' \
+        || bad 'a key CONTAINING : survives the length delimiter'
     [ "$(cp_keys __MEASURED_ROW__ "$pvout")" = "apr run --gpu" ] \
         && ok '__MEASURED_ROW__ is a different set from __ROW__' \
         || bad '__MEASURED_ROW__ is a different set from __ROW__'
@@ -340,11 +505,59 @@ cp_self_test() {
     # MUST NOT match: the human ROW line mentions the same entry point.
     [ -z "$(cp_keys __EXPIRED_ROW__ "$pvout")" ] \
         && ok 'an absent key yields the empty set' || bad 'an absent key yields the empty set'
-    [ "$(cp_keys __ROWS__ "$pvout")" = "5" ] \
-        && ok '__ROWS__ does not bleed into __ROW__' || bad '__ROWS__ does not bleed into __ROW__'
+    [ -z "$(cp_keys __ROWS__ "$pvout")" ] \
+        && ok '__ROWS__ is a COUNT line, not a key line' || bad '__ROWS__ is a COUNT line, not a key line'
     grep -qxF 'apr code' <<<"$(cp_keys __ROW__ "$pvout")" \
         && bad 'the prose ROW line is not a __ROW__ key' \
         || ok 'the prose ROW line is not a __ROW__ key'
+    # MUST BE DROPPED. The length is VERIFIED, not decorative -- a prefix that
+    # nobody checks is a comment. Dropping (rather than repairing) is the safe
+    # direction: a missing __ROW__ reads as a DELETED row, which is RED.
+    [ -z "$(cp_keys __ROW__ '__ROW__=99:apr code')" ] \
+        && ok 'a key whose declared length is too long is DROPPED' \
+        || bad 'a key whose declared length is too long is DROPPED'
+    [ -z "$(cp_keys __ROW__ '__ROW__=3:apr code')" ] \
+        && ok 'a key whose declared length is too short is DROPPED' \
+        || bad 'a key whose declared length is too short is DROPPED'
+    [ -z "$(cp_keys __ROW__ '__ROW__=apr code')" ] \
+        && ok 'an UNPREFIXED key (the old wire format) is DROPPED' \
+        || bad 'an UNPREFIXED key (the old wire format) is DROPPED'
+
+    printf 'case table: cp_keys == THE KEY-INJECTION MUTATION\n'
+    # An entry_point containing a NEWLINE printed several well-formed key lines
+    # from ONE row under the old `__KEY__=<rest of line>` format, so a
+    # fabricated row could satisfy a DELETED row's baseline key at constant
+    # totals -- the set ratchet defeated by the move it exists to block.
+    local inject
+    inject=$'__ROW__=apr qa\n__ROW__=lib:aprender-core::StandardScaler::fit_transform'
+    [ "$(grep -c '^__ROW__=' <<<"$inject")" = "2" ] \
+        && ok 'the injection DOES print two well-formed lines in the old format' \
+        || bad 'the injection DOES print two well-formed lines in the old format'
+    [ -z "$(cp_keys __ROW__ "$inject")" ] \
+        && ok 'neither survives length verification' || bad 'neither survives length verification'
+    # The residual: an injected line CAN carry a correct prefix. Length alone
+    # does not stop that, which is why control (c) -- the count cross-check --
+    # exists, and why PARITY-002 refuses the character at the source.
+    local crafted
+    crafted=$'__ROW__=6:apr qa\n__ROW__=48:lib:aprender-core::StandardScaler::fit_transform'
+    [ "$(cp_key_count __ROW__ "$crafted")" = "2" ] \
+        && ok 'a CRAFTED prefix survives length verification (so counts must cross-check)' \
+        || bad 'a CRAFTED prefix survives length verification (so counts must cross-check)'
+    [ "$(cp_key_count __ROW__ '__ROW__=6:apr qa')" = "1" ] \
+        && ok 'the honest emission of that row is ONE key line, so the count DIFFERS' \
+        || bad 'the honest emission of that row is ONE key line, so the count DIFFERS'
+
+    printf 'case table: cp_emit_keys (baseline and report share ONE wire format)\n'
+    [ "$(cp_emit_keys ROW 'apr code')" = 'ROW=8:apr code' ] \
+        && ok 'emits the byte length' || bad 'emits the byte length'
+    # ROUND TRIP: what the baseline writer emits is exactly what cp_keys reads.
+    # If these two ever drift the ratchet compares nothing, silently.
+    local rt
+    rt=$'apr run --gpu\nlib:aprender-core::Lasso::fit\napr run --gpu (concurrency=1 single-request decode)'
+    [ "$(cp_keys ROW "$(cp_emit_keys ROW "$rt")")" = "$rt" ] \
+        && ok 'writer and reader round-trip exactly' || bad 'writer and reader round-trip exactly'
+    [ -z "$(cp_emit_keys ROW '')" ] \
+        && ok 'the empty set emits nothing' || bad 'the empty set emits nothing'
 
     printf 'case table: cp_set_minus\n'
     local a b
@@ -405,6 +618,49 @@ cp_self_test() {
     [ -n "$(cp_set_minus "$bm" 'apr run --gpu')" ] \
         && ok 'a vanished row is caught by the ROW set, not by the drop rule' \
         || bad 'a vanished row is caught by the ROW set, not by the drop rule'
+
+    printf 'case table: cp_unbound_baseline_drops (the baseline is itself ratcheted)\n'
+    # Without this the whole mechanism is optional: the baseline is unbound
+    # plaintext read with `cat`, so drop the key AND the row and the working
+    # copy agrees with itself. Judged against the COMMITTED file, which the
+    # editor does not control.
+    local bsand buni prior cur
+    bsand=$(mktemp -d) || return 2
+    mkdir -p "$bsand/crates/x/src"
+    printf 'pub struct StillHere;\n' > "$bsand/crates/x/src/lib.rs"
+    buni=$'apr run\napr serve\napr qa\nbin:pv\nbin:apr'
+    prior=$'apr run --gpu\napr serve\nlib:aprender-core::StillHere::fit'
+    # (a) nothing dropped -> silent.
+    [ -z "$(cp_unbound_baseline_drops "$prior" "$prior" "$buni" '' "$bsand")" ] \
+        && ok 'an unedited baseline is silent' || bad 'an unedited baseline is silent'
+    # (b) a key hand-deleted while the entry point is STILL LIVE -> named.
+    cur=$'apr run --gpu\nlib:aprender-core::StillHere::fit'
+    [ "$(cp_unbound_baseline_drops "$prior" "$cur" "$buni" '' "$bsand")" = 'apr serve' ] \
+        && ok 'a hand-deleted key for a LIVE entry point is named' \
+        || bad 'a hand-deleted key for a LIVE entry point is named'
+    # (c) a key whose entry point has genuinely left the binary -> silent.
+    [ -z "$(cp_unbound_baseline_drops 'apr finetune' '' "$buni" '' "$bsand")" ] \
+        && ok 'a key whose subcommand is GONE may be dropped' \
+        || bad 'a key whose subcommand is GONE may be dropped'
+    # (d) a lib: key whose symbol still exists -> named.
+    [ "$(cp_unbound_baseline_drops 'lib:aprender-core::StillHere::fit' '' "$buni" '' "$bsand")" \
+        = 'lib:aprender-core::StillHere::fit' ] \
+        && ok 'a lib: key whose symbol still exists is named' \
+        || bad 'a lib: key whose symbol still exists is named'
+    # (e) EXCUSED: a MEASURED_ROW drop paid for by a live downgrade -> silent.
+    [ -z "$(cp_unbound_baseline_drops 'apr serve' '' "$buni" 'apr serve' "$bsand")" ] \
+        && ok 'a MEASURED_ROW drop with a live downgrade is excused' \
+        || bad 'a MEASURED_ROW drop with a live downgrade is excused'
+    # ...and a downgrade for a DIFFERENT row excuses nothing.
+    [ "$(cp_unbound_baseline_drops 'apr serve' '' "$buni" 'apr qa' "$bsand")" = 'apr serve' ] \
+        && ok 'a downgrade for another row excuses nothing' \
+        || bad 'a downgrade for another row excuses nothing'
+    # (f) THE WHOLE POINT: the drop is invisible to the working-copy checks,
+    #     because after a hand-edit the baseline and the ledger AGREE.
+    [ -z "$(cp_set_minus "$cur" "$cur")" ] \
+        && ok 'the hand-edited baseline agrees with the ledger (so 5a is silent)' \
+        || bad 'the hand-edited baseline agrees with the ledger (so 5a is silent)'
+    rm -rf "${bsand:?}"
 
     printf 'case table: cp_meets_floor\n'
     if cp_meets_floor 4 4; then ok 'equal meets the floor'; else bad 'equal meets the floor'; fi
@@ -587,6 +843,26 @@ LIVE_ROWS=$(cp_keys __ROW__ "$PV_OUT")
 LIVE_MEASURED=$(cp_keys __MEASURED_ROW__ "$PV_OUT")
 LIVE_DOWNGRADES=$(cp_keys __DOWNGRADE__ "$PV_OUT")
 
+# -- 1b. the sets must agree with the emitter's own counts ------------------
+# Control (c) on the key channel. A key line can only ever be ADDED to the
+# stream by an injection (a newline inside a key printing extra well-formed key
+# lines), so an injected line that got its length prefix right still puts the
+# set out of step with the count the emitter computed from the parsed ledger.
+# Cheap, and independent of both the character rule and the length prefix.
+for pair in "__ROW__:$ROWS" "__MEASURED_ROW__:$MEASURED"; do
+    k=${pair%%:*}; want=${pair#*:}
+    got=$(cp_key_count "$k" "$PV_OUT")
+    if ! [ "$got" = "$want" ]; then
+        printf '✗ KEY CHANNEL CORRUPT: %d well-formed %s line(s) against a declared %s.\n' \
+               "$got" "$k" "${want:-<none>}" >&2
+        printf '    The set and the count come from the same parsed ledger, so they can only\n' >&2
+        printf '    disagree if the text channel between them was perturbed -- an entry_point\n' >&2
+        printf '    containing a newline prints EXTRA key lines and can satisfy a deleted\n' >&2
+        printf '    row s baseline key from a fabricated row. Refusing to judge the sets.\n' >&2
+        fail=1
+    fi
+done
+
 # -- 2. the live universe ---------------------------------------------------
 UNIVERSE=$(cp_live_universe)
 UNIVERSE_RC=$?
@@ -634,6 +910,60 @@ NON_WINS_MIN=$(grep -E '^NON_WINS_MIN=[0-9]+$' "$BASELINE" | head -1 | cut -d= -
 IN_SCOPE_MIN=$(grep -E '^IN_SCOPE_MIN=[0-9]+$' "$BASELINE" | head -1 | cut -d= -f2)
 BASE_ROWS=$(cp_keys ROW "$BASELINE_TEXT")
 BASE_MEASURED=$(cp_keys MEASURED_ROW "$BASELINE_TEXT")
+
+# -- 5x. the BASELINE FILE is itself ratcheted, against git ------------------
+# Without this, every refusal below is optional: the baseline is unbound
+# plaintext, so hand-editing it moves the bar and takes no code path that could
+# refuse. Judged against the merge base with the upstream default branch, so a
+# drop cannot be normalised by putting it in its own commit. Runs in BOTH modes:
+# `--update-baseline` regenerates the ROW set from what is LIVE and compares it
+# against the file on disk, so a hand-edited file would launder a deletion
+# through the tool as well.
+PRIOR_BASELINE=$(cp_baseline_at "$BASELINE")
+PRIOR_RC=$?
+if [ "$PRIOR_RC" -ne 0 ]; then
+    printf '✗ could not read %s from git (rc=%d).\n' "$BASELINE" "$PRIOR_RC" >&2
+    printf '    The baseline file is unbound plaintext; the only thing that binds it is\n' >&2
+    printf '    its committed history, so a comparison that could not be MADE must be red\n' >&2
+    printf '    rather than absent. Run this inside the git checkout.\n' >&2
+    exit 1
+fi
+PRIOR_ROWS=$(cp_keys ROW "$PRIOR_BASELINE")
+PRIOR_MEASURED=$(cp_keys MEASURED_ROW "$PRIOR_BASELINE")
+PRIOR_NON_WINS_MIN=$(grep -E '^NON_WINS_MIN=[0-9]+$' <<<"$PRIOR_BASELINE" | head -1 | cut -d= -f2)
+PRIOR_IN_SCOPE_MIN=$(grep -E '^IN_SCOPE_MIN=[0-9]+$' <<<"$PRIOR_BASELINE" | head -1 | cut -d= -f2)
+
+while IFS= read -r gone; do
+    [ -n "$gone" ] || continue
+    printf '✗ BASELINE HAND-EDITED: ROW=%s was in the committed baseline and is not in\n' "$gone" >&2
+    printf '    the working copy, and the entry point is still live. Editing this file is\n' >&2
+    printf '    not a way to lower the bar: the refusals in --update-baseline are the same\n' >&2
+    printf '    refusals, and they now run here too, against git. Without this the whole\n' >&2
+    printf '    ratchet is optional -- drop the key here, delete the row, and the working\n' >&2
+    printf '    copy agrees with itself.\n' >&2
+    fail=1
+done < <(cp_unbound_baseline_drops "$PRIOR_ROWS" "$BASE_ROWS" "$UNIVERSE" '')
+
+while IFS= read -r gone; do
+    [ -n "$gone" ] || continue
+    printf '✗ BASELINE HAND-EDITED: MEASURED_ROW=%s was in the committed baseline and is\n' "$gone" >&2
+    printf '    not in the working copy, with no downgrade in date for it. MEASURED_ROW is\n' >&2
+    printf '    shrink-never precisely so that a downgrade is a DEBT the key keeps carrying,\n' >&2
+    printf '    rather than a payment the baseline absorbs and the next commit deletes.\n' >&2
+    fail=1
+done < <(cp_unbound_baseline_drops "$PRIOR_MEASURED" "$BASE_MEASURED" "$UNIVERSE" "$LIVE_DOWNGRADES")
+
+if [ -n "$PRIOR_NON_WINS_MIN" ] && ! cp_meets_floor "$NON_WINS_MIN" "$PRIOR_NON_WINS_MIN"; then
+    printf '✗ BASELINE HAND-EDITED: NON_WINS_MIN %s -> %s is a LOWERING.\n' \
+           "$PRIOR_NON_WINS_MIN" "${NON_WINS_MIN:-<none>}" >&2
+    fail=1
+fi
+if [ -n "$PRIOR_IN_SCOPE_MIN" ] && ! cp_meets_floor "$IN_SCOPE_MIN" "$PRIOR_IN_SCOPE_MIN"; then
+    printf '✗ BASELINE HAND-EDITED: IN_SCOPE_MIN %s -> %s is a LOWERING.\n' \
+           "$PRIOR_IN_SCOPE_MIN" "${IN_SCOPE_MIN:-<none>}" >&2
+    fail=1
+fi
+[ "$fail" -eq 0 ] || [ "$MODE" != "--update-baseline" ] || exit 1
 
 # A baseline with no ROW set at all would make checks 5a-5c vacuously true --
 # the "measurement that did not happen" failure, which must be RED and not
@@ -753,9 +1083,9 @@ if [ "$MODE" = "--update-baseline" ]; then
         printf 'NON_WINS_MIN=%s\n' "$NON_WINS"
         printf 'IN_SCOPE_MIN=%s\n' "$IN_SCOPE"
         printf '\n'
-        printf '%s\n' "$LIVE_ROWS" | grep -v '^$' | sed 's/^/ROW=/'
+        cp_emit_keys ROW "$LIVE_ROWS"
         printf '\n'
-        printf '%s\n' "$NEW_MEASURED" | grep -v '^$' | sed 's/^/MEASURED_ROW=/'
+        cp_emit_keys MEASURED_ROW "$NEW_MEASURED"
     } > "$BASELINE"
     printf '✓ baseline updated: %s row(s), %s measured, NON_WINS_MIN=%s IN_SCOPE_MIN=%s\n' \
            "$ROWS" "$MEASURED" "$NON_WINS" "$IN_SCOPE"

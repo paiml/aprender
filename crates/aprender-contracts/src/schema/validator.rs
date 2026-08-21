@@ -121,49 +121,205 @@ fn validate_competitive_parity(contract: &Contract, violations: &mut Vec<Violati
 
     let mut seen_entry_points: HashSet<&str> = HashSet::new();
     for (i, row) in ledger.rows.iter().enumerate() {
-        let at = |f: &str| format!("parity.rows[{i}].{f}");
-
-        // PARITY-002: a named, unique entry point.
-        if row.entry_point.trim().is_empty() {
-            push(
-                "PARITY-002",
-                format!("parity.rows[{i}].entry_point must name the apr entry point"),
-                at("entry_point"),
-            );
-        } else if !seen_entry_points.insert(row.entry_point.trim()) {
-            push(
-                "PARITY-002",
-                format!(
-                    "duplicate entry_point {:?} - two rows for one entry point let a \
-                     favourable one mask an unfavourable one",
-                    row.entry_point.trim()
-                ),
-                at("entry_point"),
-            );
-        }
-
-        validate_parity_version_pin(row, i, &mut push);
-        validate_parity_required_fields(row, i, &mut push);
-
-        // PARITY-006: a verdict from the closed vocabulary. An UNKNOWN string
-        // never reaches here -- serde rejects the document -- so this fires only
-        // on an absent verdict.
-        if row.verdict.is_none() {
-            push(
-                "PARITY-006",
-                format!(
-                    "parity.rows[{i}].verdict is required - one of \
-                     BETTER / PARITY / WORSE / NOT_COMPARABLE / UNMEASURED"
-                ),
-                at("verdict"),
-            );
-        }
-
-        validate_parity_row_dates(row, i, &mut push);
+        validate_parity_row(row, i, &mut seen_entry_points, &mut push);
     }
 
     validate_parity_downgrades(ledger, &mut push);
     validate_parity_falsification_bindings(contract, &mut push);
+    validate_parity_date_horizon(contract, &mut push);
+}
+
+/// One row: PARITY-002 (a named, unique, CANONICAL key), -004, -005, -006,
+/// -007, -011 and -017.
+fn validate_parity_row<'a>(
+    row: &'a crate::schema::parity::ParityRow,
+    i: usize,
+    seen_entry_points: &mut HashSet<&'a str>,
+    push: &mut impl FnMut(&str, String, String),
+) {
+    let at = |f: &str| format!("parity.rows[{i}].{f}");
+
+    if row.entry_point.trim().is_empty() {
+        push(
+            "PARITY-002",
+            format!("parity.rows[{i}].entry_point must name the apr entry point"),
+            at("entry_point"),
+        );
+    } else if !seen_entry_points.insert(row.entry_point.trim()) {
+        push(
+            "PARITY-002",
+            format!(
+                "duplicate entry_point {:?} - two rows for one entry point let a \
+                 favourable one mask an unfavourable one",
+                row.entry_point.trim()
+            ),
+            at("entry_point"),
+        );
+    }
+    validate_key_is_canonical(&row.entry_point, &at("entry_point"), "PARITY-002", push);
+
+    validate_parity_version_pin(row, i, push);
+    validate_parity_required_fields(row, i, push);
+
+    // PARITY-006: a verdict from the closed vocabulary. An UNKNOWN string never
+    // reaches here -- serde rejects the document -- so this fires only on an
+    // absent verdict.
+    if row.verdict.is_none() {
+        push(
+            "PARITY-006",
+            format!(
+                "parity.rows[{i}].verdict is required - one of \
+                 BETTER / PARITY / WORSE / NOT_COMPARABLE / UNMEASURED"
+            ),
+            at("verdict"),
+        );
+    }
+
+    validate_parity_row_dates(row, i, push);
+}
+
+/// PARITY-002 / PARITY-012: a ratchet KEY must be canonical.
+///
+/// See [`crate::schema::parity::is_canonical_key`] for the whole argument. The
+/// short version: the ratchet's set membership travels over a text channel as
+/// `__ROW__=<key>` lines, so an `entry_point` containing a NEWLINE prints
+/// several well-formed key lines from one row and satisfies a DELETED row's
+/// baseline keys — the set ratchet defeated at constant totals, which is what
+/// it was built to prevent. Refusing the character at the source is one of the
+/// two independent controls; the emitter's length prefix is the other.
+fn validate_key_is_canonical(
+    key: &str,
+    location: &str,
+    rule: &str,
+    push: &mut impl FnMut(&str, String, String),
+) {
+    if key.is_empty() {
+        return; // the "must be named" arm has already fired
+    }
+    if let Some((idx, ch)) = crate::schema::parity::bad_key_byte(key) {
+        push(
+            rule,
+            format!(
+                "{location} contains {ch:?} (U+{:04X}) at character {idx} - a ratchet key must \
+                 be printable ASCII. The set ratchet carries membership over a TEXT channel \
+                 (`__ROW__=<key>` lines that a shell reads back), so a key containing a newline \
+                 prints SEVERAL well-formed key lines from ONE row and can satisfy a deleted \
+                 row's baseline keys at constant totals - the set ratchet defeated by the same \
+                 move it was built to block",
+                u32::from(ch),
+            ),
+            location.to_string(),
+        );
+    } else if key.trim() != key {
+        push(
+            rule,
+            format!(
+                "{location} {key:?} has leading or trailing whitespace - write the key in \
+                 canonical form. The emitted key and the baseline key must be byte-identical by \
+                 CONSTRUCTION; normalising on the way out (the previous emitter called `.trim()`) \
+                 means the authored bytes and the compared bytes can differ, so a key can be \
+                 perturbed in the file and still match"
+            ),
+            location.to_string(),
+        );
+    }
+}
+
+/// PARITY-016: NO date anywhere in this document may be beyond the horizon.
+///
+/// # This rule, not the four field rules, is the class control
+///
+/// Every previous fix in this file bounded one author-supplied date against
+/// ANOTHER author-supplied date, and each fix added a new unbounded field:
+/// `valid_until` was capped from `measured_on` (unbounded), `recheck_by` from
+/// `recorded_on` (unbounded). A difference bounds nothing when the author
+/// writes both ends. [`crate::schema::parity::LedgerDate`] fixes that for the
+/// four fields that exist TODAY — but a newtype only helps a field that USES
+/// it, and the next author adding `certified_on: String` is the next
+/// exemption.
+///
+/// So this sweep does not look at fields at all. It SERIALIZES the whole
+/// contract and walks every scalar in it, at any depth, under any key. Any
+/// string that is exactly a strict ISO date and lands past the horizon is an
+/// error, whether it is a typed field, a field added next year, or a key serde
+/// does not know (`parity.rows[].extra` captures those instead of dropping
+/// them, precisely so this walk can see them). A field that does not exist yet
+/// is bounded before it is written, which is the only version of this rule
+/// that survives the next commit.
+///
+/// Prose is exempt because the whole scalar must BE the date: a `note:`
+/// reading "measured 2099-01-01" is 25 characters, not 10, and never matches.
+fn validate_parity_date_horizon(contract: &Contract, push: &mut impl FnMut(&str, String, String)) {
+    let Some(today) = crate::schema::parity::today_utc() else {
+        push(
+            "PARITY-016",
+            "the system clock is before the Unix epoch, so no date in this ledger can be \
+             bounded against today. Refusing rather than passing: a bound that cannot be \
+             EVALUATED must be red, not absent"
+                .to_string(),
+            "parity".to_string(),
+        );
+        return;
+    };
+    let Ok(doc) = serde_yaml::to_value(contract) else {
+        push(
+            "PARITY-016",
+            "this contract could not be re-serialized, so its dates could not be swept for \
+             the future horizon. A sweep that did not run must be red, not silent"
+                .to_string(),
+            "parity".to_string(),
+        );
+        return;
+    };
+    walk_dates(&doc, "", &today, push);
+}
+
+/// Recursive half of [`validate_parity_date_horizon`].
+fn walk_dates(
+    node: &serde_yaml::Value,
+    path: &str,
+    today: &str,
+    push: &mut impl FnMut(&str, String, String),
+) {
+    use crate::schema::parity::{LedgerDate, MAX_FUTURE_DAYS};
+    match node {
+        serde_yaml::Value::String(s) => {
+            if let Some(over) = LedgerDate::overshoot(s, today) {
+                push(
+                    "PARITY-016",
+                    format!(
+                        "{path} is the date {:?}, {over} day(s) past the {MAX_FUTURE_DAYS}-day \
+                         horizon from today ({today}). EVERY date in this document is bounded \
+                         against TODAY - not against another date the same author wrote. \
+                         Bounding a DIFFERENCE leaves both ends free: `measured_on: 2099-01-01` \
+                         with `valid_until: 2099-06-01` satisfied the 180-day window and made \
+                         the row permanently fresh. This sweep is deliberately keyed on the \
+                         VALUE and not on the field name, so a date field added later - under \
+                         any name, of any type - is bounded before it is written",
+                        s.trim(),
+                    ),
+                    if path.is_empty() { "<root>" } else { path }.to_string(),
+                );
+            }
+        }
+        serde_yaml::Value::Sequence(items) => {
+            for (i, item) in items.iter().enumerate() {
+                walk_dates(item, &format!("{path}[{i}]"), today, push);
+            }
+        }
+        serde_yaml::Value::Mapping(map) => {
+            for (k, v) in map {
+                let key = k.as_str().map_or_else(|| format!("{k:?}"), str::to_string);
+                let child = if path.is_empty() {
+                    key
+                } else {
+                    format!("{path}.{key}")
+                };
+                walk_dates(v, &child, today, push);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// PARITY-004: a PINNED competitor version.
@@ -286,6 +442,12 @@ fn validate_parity_row_dates(
     let at = |field: &str| format!("parity.rows[{i}].{field}");
     let measured = crate::schema::parity::parse_iso_date(row.measured_on.trim());
     let until = crate::schema::parity::parse_iso_date(row.valid_until.trim());
+    validate_not_in_the_future(
+        row.measured_on.trim(),
+        &at("measured_on"),
+        "a measurement cannot have been taken tomorrow",
+        push,
+    );
 
     if measured.is_none() {
         push(
@@ -341,6 +503,48 @@ fn validate_parity_row_dates(
     }
 }
 
+/// PARITY-017: a date recording that something HAPPENED may not be in the
+/// future.
+///
+/// The horizon (PARITY-016) is uniform — 180 days ahead for every date —
+/// because a uniform rule is the one nobody has to remember. This is the
+/// refinement that uniformity gives up: `measured_on` and `recorded_on` name
+/// past events and belong strictly at or before today. Without it, a row could
+/// be dated `today + 179` with a `valid_until` a day later, staying fresh for
+/// the full horizon on a measurement that has not happened.
+///
+/// It is a per-field rule, and therefore the WEAK kind of control — a new field
+/// of this shape must be added here by hand. That is acceptable only because
+/// forgetting it is bounded: an unlisted field is still inside the horizon, so
+/// the worst a forgotten entry costs is 180 days, never 2099.
+fn validate_not_in_the_future(
+    value: &str,
+    location: &str,
+    why: &str,
+    push: &mut impl FnMut(&str, String, String),
+) {
+    let Some(today) = crate::schema::parity::today_utc() else {
+        return; // PARITY-016 already reported the unusable clock.
+    };
+    let Some(ahead) = crate::schema::parity::days_between(&today, value) else {
+        return; // Not an ISO date: PARITY-007 / PARITY-013 reports it.
+    };
+    if ahead > 0 {
+        push(
+            "PARITY-017",
+            format!(
+                "{location} ({value}) is {ahead} day(s) in the FUTURE as of {today} - {why}. \
+                 The horizon (PARITY-016) bounds every date at {} days ahead so that no field \
+                 is unbounded; this rule additionally pins the dates that record a PAST event \
+                 to the past, so a row cannot be dated forward to buy itself a full horizon of \
+                 freshness on a measurement nobody has taken",
+                crate::schema::parity::MAX_FUTURE_DAYS,
+            ),
+            location.to_string(),
+        );
+    }
+}
+
 /// Enforce the DOWNGRADE record (PARITY-012..014).
 ///
 /// A shrink-never floor on `__MEASURED__` mechanically forbids the honest
@@ -354,61 +558,71 @@ fn validate_parity_downgrades(
 ) {
     let mut seen: HashSet<&str> = HashSet::new();
     for (i, d) in ledger.downgrades.iter().enumerate() {
-        let at = |field: &str| format!("parity.downgrades[{i}].{field}");
-        let key = d.entry_point.trim();
+        validate_parity_downgrade_target(ledger, d, i, &mut seen, push);
+        validate_parity_downgrade_record(d, i, push);
+    }
+}
 
-        // PARITY-012: the downgrade must name a row that is STILL PRESENT.
-        //
-        // This is the hinge. Without it, "delete the row and record a
-        // downgrade" would be a cheaper compliant move than measuring, and the
-        // whole mechanism would be back where PMAT-733 left it. A downgrade
-        // says "this comparison still exists and I currently cannot stand
-        // behind its number"; it can never say "this comparison is gone".
-        if key.is_empty() {
+/// PARITY-012 / PARITY-014: the TARGET half of a downgrade.
+///
+/// PARITY-012 is the hinge. Without it, "delete the row and record a downgrade"
+/// would be a cheaper compliant move than measuring, and the whole mechanism
+/// would be back where PMAT-733 left it. A downgrade says "this comparison
+/// still exists and I currently cannot stand behind its number"; it can never
+/// say "this comparison is gone".
+///
+/// PARITY-014 refuses a record beside a row that still claims a measurement —
+/// that is a pre-authorisation for a correction nobody has made.
+fn validate_parity_downgrade_target<'a>(
+    ledger: &'a crate::schema::parity::ParityLedger,
+    d: &'a crate::schema::parity::Downgrade,
+    i: usize,
+    seen: &mut HashSet<&'a str>,
+    push: &mut impl FnMut(&str, String, String),
+) {
+    let at = |field: &str| format!("parity.downgrades[{i}].{field}");
+    let key = d.entry_point.trim();
+
+    if key.is_empty() {
+        push(
+            "PARITY-012",
+            format!("parity.downgrades[{i}].entry_point is required"),
+            at("entry_point"),
+        );
+    } else if !ledger.rows.iter().any(|r| r.entry_point.trim() == key) {
+        push(
+            "PARITY-012",
+            format!(
+                "parity.downgrades[{i}].entry_point {key:?} matches no row in this ledger - \
+                 a downgrade justifies a row that is STILL PRESENT going UNMEASURED; it \
+                 cannot justify a row's DELETION, which is the move this contract exists \
+                 to make expensive"
+            ),
+            at("entry_point"),
+        );
+    } else if !seen.insert(key) {
+        push(
+            "PARITY-012",
+            format!("parity.downgrades[{i}].entry_point {key:?} is recorded twice"),
+            at("entry_point"),
+        );
+    }
+    validate_key_is_canonical(&d.entry_point, &at("entry_point"), "PARITY-012", push);
+
+    if let Some(row) = ledger.rows.iter().find(|r| r.entry_point.trim() == key) {
+        if row.verdict.is_some_and(Verdict::is_measured) {
             push(
-                "PARITY-012",
-                format!("parity.downgrades[{i}].entry_point is required"),
-                at("entry_point"),
-            );
-        } else if !ledger.rows.iter().any(|r| r.entry_point.trim() == key) {
-            push(
-                "PARITY-012",
+                "PARITY-014",
                 format!(
-                    "parity.downgrades[{i}].entry_point {key:?} matches no row in this ledger - \
-                     a downgrade justifies a row that is STILL PRESENT going UNMEASURED; it \
-                     cannot justify a row's DELETION, which is the move this contract exists \
-                     to make expensive"
+                    "parity.downgrades[{i}] records a downgrade for {key:?}, but that row \
+                     still declares verdict {} - a downgrade may only accompany a row \
+                     declared UNMEASURED, or it is a pre-authorisation for a correction \
+                     nobody has made",
+                    row.verdict.unwrap_or(Verdict::Unmeasured)
                 ),
                 at("entry_point"),
             );
-        } else if !seen.insert(key) {
-            push(
-                "PARITY-012",
-                format!("parity.downgrades[{i}].entry_point {key:?} is recorded twice"),
-                at("entry_point"),
-            );
         }
-
-        // PARITY-014: the row it names must actually be declared UNMEASURED.
-        // A downgrade recorded against a row still claiming a measurement is a
-        // false record - it pre-authorises a future downgrade nobody reviewed.
-        if let Some(row) = ledger.rows.iter().find(|r| r.entry_point.trim() == key) {
-            if row.verdict.is_some_and(Verdict::is_measured) {
-                push(
-                    "PARITY-014",
-                    format!(
-                        "parity.downgrades[{i}] records a downgrade for {key:?}, but that row \
-                         still declares verdict {} - a downgrade may only accompany a row \
-                         declared UNMEASURED, or it is a pre-authorisation for a correction \
-                         nobody has made",
-                        row.verdict.unwrap_or(Verdict::Unmeasured)
-                    ),
-                    at("entry_point"),
-                );
-            }
-        }
-
-        validate_parity_downgrade_record(d, i, push);
     }
 }
 
@@ -451,6 +665,12 @@ fn validate_parity_downgrade_record(
             at("owner"),
         );
     }
+    validate_not_in_the_future(
+        d.recorded_on.trim(),
+        &at("recorded_on"),
+        "a downgrade cannot have been recorded tomorrow",
+        push,
+    );
     for (field, value) in [
         ("recorded_on", d.recorded_on.trim()),
         ("recheck_by", d.recheck_by.trim()),
@@ -491,38 +711,75 @@ fn validate_parity_downgrade_record(
     }
 }
 
-/// PARITY-015: every falsification test must carry an EXECUTABLE binding.
+/// The CLOSED vocabulary of runners a falsification binding may start with.
 ///
-/// The provability invariant on this kind is `falsification_tests.len() >=
-/// proof_obligations.len()`, which — on its own — is satisfiable by writing
-/// more YAML. Entries carrying only `id` / `rule` / `prediction` discharge an
-/// obligation with PROSE, and #2465 is this repo's standing lesson that an
-/// unbound falsification entry reads as "neither bound nor broken". Requiring
-/// `test:` or `test_harness:` does not make the prediction true, but it does
-/// mean the count can no longer be inflated for free: each new entry must name
-/// something a reader can run.
+/// A binding is a command a reader is meant to RUN, so its first token must be
+/// something runnable. Without this, `test: "see the case table"` is a
+/// "binding" and PARITY-015 degenerates into "the key is present".
+const FALSIFICATION_RUNNERS: [&str; 6] = ["cargo", "bash", "sh", "make", "pv", "apr"];
+
+/// PARITY-015: every falsification test must NAME an executable binding.
+///
+/// # What this rule proves, stated plainly, because it is less than it looks
+///
+/// It is a STRUCTURAL check and nothing more. It proves that a `test:` or
+/// `test_harness:` string EXISTS and begins with a runner from a closed
+/// vocabulary. **It does not run the command, does not check that the command
+/// exists, and does not check that it passes.** A binding naming a test that
+/// was deleted last week satisfies this rule.
+///
+/// So the provability invariant on this kind — `falsification_tests.len() >=
+/// proof_obligations.len()` — is still satisfiable by writing YAML; what this
+/// rule changes is only the PRICE. An entry can no longer be pure prose: it
+/// must name something with the shape of a command, which a reader can copy
+/// and run to discover the lie. That is worth having and it is not proof, and
+/// the contract says so in the same words rather than letting the rule's name
+/// imply otherwise.
+///
+/// Making it real means EXECUTING the bindings (`pv probar`-style) and failing
+/// on a binding whose command does not exist or does not pass. That is a
+/// separate, larger piece of work and it is recorded as such — not quietly
+/// implied by this rule's existence. #2465 is this repo's standing lesson that
+/// an unbound falsification entry reads as "neither bound nor broken"; an
+/// unRUN one reads the same way, one level up.
 fn validate_parity_falsification_bindings(
     contract: &Contract,
     push: &mut impl FnMut(&str, String, String),
 ) {
     for (i, t) in contract.falsification_tests.iter().enumerate() {
-        let bound = [t.test.as_deref(), t.test_harness.as_deref()]
+        let id = if t.id.trim().is_empty() {
+            "<no id>"
+        } else {
+            t.id.trim()
+        };
+        let binding = [t.test.as_deref(), t.test_harness.as_deref()]
             .into_iter()
             .flatten()
-            .any(|s| !s.trim().is_empty());
-        if !bound {
+            .map(str::trim)
+            .find(|s| !s.is_empty());
+        let Some(binding) = binding else {
             push(
                 "PARITY-015",
                 format!(
-                    "falsification_tests[{i}] ({}) has no executable binding - add `test:` or \
+                    "falsification_tests[{i}] ({id}) has no executable binding - add `test:` or \
                      `test_harness:` naming a command a reader can RUN. Without one the \
                      provability invariant (falsification_tests >= proof_obligations) is \
-                     discharged by writing more YAML",
-                    if t.id.trim().is_empty() {
-                        "<no id>"
-                    } else {
-                        t.id.trim()
-                    }
+                     discharged by writing more YAML. NOTE what this rule does NOT do: it never \
+                     RUNS the command. It is a structural check on the shape of the entry"
+                ),
+                format!("falsification_tests[{i}].test"),
+            );
+            continue;
+        };
+        let runner = binding.split_whitespace().next().unwrap_or("");
+        if !FALSIFICATION_RUNNERS.contains(&runner) && !runner.starts_with("./") {
+            push(
+                "PARITY-015",
+                format!(
+                    "falsification_tests[{i}] ({id}) binding {binding:?} does not start with a \
+                     runner - one of {FALSIFICATION_RUNNERS:?} or a `./` path. A binding is a \
+                     command a reader RUNS; if prose counts as a binding then the rule only \
+                     proves the key is present, which is the prose problem with an extra step"
                 ),
                 format!("falsification_tests[{i}].test"),
             );

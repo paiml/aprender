@@ -99,8 +99,25 @@ proof_obligations:
     property: "the ratchet is keyed by entry point, so losing a SPECIFIC row is detectable at constant totals"
     formal: "forall e in baseline.rows. exists r in rows. r.entry_point = e"
   - type: invariant
-    property: "every falsification test names a command a reader can RUN"
-    formal: "forall t in falsification_tests. t.test != nil or t.test_harness != nil"
+    property: "every falsification test NAMES a command a reader can RUN (structural only - nothing here executes it)"
+    formal: "forall t in falsification_tests. runner(t.test) or runner(t.test_harness)"
+
+  # THE CLASS INVARIANT. Read the four above it as instances of what this one
+  # forbids: each bounded one author-supplied date against ANOTHER
+  # author-supplied date, and a difference bounds nothing when the same author
+  # writes both ends.
+  - type: invariant
+    property: "NO date anywhere in this document is more than 180 days after TODAY"
+    formal: "forall d in dates(document). days(d - today) <= 180"
+  - type: invariant
+    property: "a date recording a PAST event is not in the future"
+    formal: "forall r in rows. r.measured_on <= today and forall g in downgrades. g.recorded_on <= today"
+  - type: invariant
+    property: "the escape valve COMES DUE: an overdue downgrade stops excusing its row"
+    formal: "forall g in downgrades. today > g.recheck_by -> g not in emitted_downgrades"
+  - type: invariant
+    property: "a ratchet key cannot perturb the channel that carries it"
+    formal: "forall r in rows. printable_ascii(r.entry_point) and trim(r.entry_point) = r.entry_point"
 
 falsification_tests:
   - id: FALSIFY-PARITY-001
@@ -165,16 +182,15 @@ falsification_tests:
     test: "cargo test -p aprender-contracts --lib registry_true_cannot_exempt_a_parity_contract"
 
   - id: FALSIFY-PARITY-007
-    rule: "valid_until is bounded above"
+    rule: "a row's validity WINDOW is bounded"
     prediction: >-
-      Rewriting any row's valid_until to "2099-12-31" -- the mutation that used
-      to leave `pv validate` GREEN and made "staleness blocks" voluntary --
-      emits PARITY-011 and exits non-zero. The ceiling is 180 days from
-      measured_on: 2027-01-27 is accepted and 2027-01-28 is refused.
+      A row whose valid_until is more than 180 days after its measured_on emits
+      PARITY-011. The ceiling is exact on both sides: measured_on + 180d is
+      accepted, +181d is refused.
     if_fails: >-
       Check-time freshness is only as strong as the dates it reads, so an
-      unbounded expiry is an exemption with a date on it and every row can be
-      made permanently MEASURED for free.
+      unbounded expiry window is an exemption with a date on it and every row
+      can be made permanently MEASURED for free.
     test: "cargo test -p aprender-contracts --lib parity_011_"
   - id: FALSIFY-PARITY-008
     rule: "a downgrade is machine-checkable and cannot launder a deletion"
@@ -203,15 +219,111 @@ falsification_tests:
       total stays green.
     test: "bash scripts/check_competitive_parity.sh --self-test"
   - id: FALSIFY-PARITY-010
-    rule: "the provability invariant is not dischargeable by prose"
+    rule: "a falsification entry NAMES a runnable command (STRUCTURAL CHECK ONLY)"
     prediction: >-
       Deleting the `test:` line from any falsification entry in this file emits
-      PARITY-015. `test_harness:` counts as a binding; whitespace does not.
+      PARITY-015, and so does replacing it with prose ("see the case table"):
+      the first token must be a runner from a closed vocabulary (cargo / bash /
+      sh / make / pv / apr, or a `./` path). `test_harness:` counts as a
+      binding; whitespace does not.
     if_fails: >-
       `falsification_tests.len() >= proof_obligations.len()` is satisfiable by
       writing more YAML, so the obligation this kind cannot be exempted from is
       discharged with sentences.
+    limitation: >-
+      STATED PLAINLY, BECAUSE THE RULE'S NAME OVERSELLS IT. PARITY-015 checks
+      that a binding EXISTS and has the SHAPE of a command. It does not run it,
+      does not check that the named test exists, and does not check that it
+      passes. A binding naming a test deleted last week satisfies this rule, so
+      the provability invariant on this kind remains satisfiable by writing
+      YAML -- what changed is only the price, from a sentence to something a
+      reader can copy and run to discover the lie. Making it real means
+      EXECUTING the bindings (`pv probar`-style) and failing on one whose
+      command is absent or red. That is separate, larger work; it is recorded
+      here as absent rather than implied by this rule's existence. Do not read
+      "the provability invariant holds on this contract" as proof of anything
+      beyond the obligation COUNT.
     test: "cargo test -p aprender-contracts --lib parity_015_"
+
+  # ------------------------------------------------------------- THE CLASS
+  # Three fixes preceded these, and every one introduced a NEW author-supplied
+  # date bounded only against another author-supplied date. FALSIFY-PARITY-011
+  # is the one that makes the whole family impossible; the rest are its
+  # instances and its refinements.
+  - id: FALSIFY-PARITY-011
+    rule: "no date, in ANY field, may be far in the future OF TODAY"
+    prediction: >-
+      Writing "2099-12-31" into measured_on, valid_until, recorded_on or
+      recheck_by makes the document fail to PARSE (LedgerDate refuses it at
+      deserialization, naming the horizon) -- it is no longer a lint that a
+      companion date can be moved to satisfy. Writing it into a field the
+      schema has NEVER HEARD OF (`certified_on: "2099-12-31"`) parses and emits
+      PARITY-016, naming the path. The horizon boundary is exact on both sides:
+      today+180 is accepted, today+181 is refused. A date inside PROSE is not
+      swept.
+    if_fails: >-
+      The family reopens. PARITY-011 bounds `valid_until - measured_on` and
+      PARITY-013 bounds `recheck_by - recorded_on`, and BOTH anchors are
+      author-supplied: measured_on 2099-01-01 with valid_until 2099-06-01 sits
+      inside the 180-day window, so 2099 is still the exemption. Worse, the
+      NEXT date field added is the next exemption, which is exactly how each of
+      the previous three fixes created the next hole.
+    test: "cargo test -p aprender-contracts --lib the_2099_exemption_is_now_a_parse_error_on_every_date_field parity_016_ the_future_horizon_boundary_is_exact_on_both_sides"
+  - id: FALSIFY-PARITY-012
+    rule: "a measurement cannot have been taken tomorrow"
+    prediction: >-
+      measured_on or recorded_on set to today+1 emits PARITY-017; today itself
+      is accepted, so the boundary is `> today` and not `>= today`.
+    if_fails: >-
+      A row dated forward buys itself a full horizon of freshness on a
+      measurement nobody has taken -- the uniform horizon alone permits
+      measured_on today+179 with valid_until today+180.
+    test: "cargo test -p aprender-contracts --lib parity_017_"
+  - id: FALSIFY-PARITY-013
+    rule: "the escape valve COMES DUE"
+    prediction: >-
+      A downgrade whose recheck_by has passed is reported OVERDUE, is no longer
+      emitted as `__DOWNGRADE__=`, and makes `pv parity-ledger` exit non-zero.
+      An unparseable recheck_by counts as overdue (fail closed). On the due
+      date itself it is still in date.
+    if_fails: >-
+      recheck_by was validated only against recorded_on and NEVER against
+      today, so the one move that lets __MEASURED__ fall was permanent the
+      moment it was written -- and with the old MEASURED_MIN floor deleted
+      outright, a series of downgrades could drain the ledger to zero measured
+      rows while every gate stayed green. Both adversarial reviewers found this
+      independently.
+    test: "cargo test -p aprender-contracts --lib an_overdue_downgrade a_downgrade_with_an_unparseable_recheck_by"
+  - id: FALSIFY-PARITY-014
+    rule: "a ratchet key cannot perturb the channel that carries it"
+    prediction: >-
+      An entry_point containing a newline emits PARITY-002; so does one with
+      surrounding whitespace. Independently, `pv parity-ledger` LENGTH-PREFIXES
+      every key (`__ROW__=<bytes>:<key>`) and the ratchet drops any line whose
+      declared length does not match, then cross-checks the NUMBER of key lines
+      against the emitter's own __ROWS__ / __MEASURED__.
+    if_fails: >-
+      One fabricated row prints several well-formed key lines and satisfies a
+      DELETED row's baseline key at constant totals -- the set ratchet defeated
+      by precisely the move it exists to block. The previous emitter also
+      `.trim()`ed on the way out, so the authored key and the compared key
+      could differ.
+    test: "cargo test -p aprender-contracts --lib parity_002_refuses"
+  - id: FALSIFY-PARITY-015
+    rule: "the BASELINE FILE is itself ratcheted, against git"
+    prediction: >-
+      Hand-deleting a `ROW=` key from scripts/competitive_parity_baseline.txt
+      while its entry point is still live fails
+      scripts/check_competitive_parity.sh, naming the key -- even though the
+      hand-edited baseline then AGREES with the ledger and every working-copy
+      check is silent. The prior value is read from git (the merge base with
+      the upstream default branch, unioned with HEAD), which the editor does
+      not control.
+    if_fails: >-
+      Every --update-baseline refusal is optional: the baseline is unbound
+      plaintext read with `cat`, so dropping the key and then deleting the row
+      leaves the working copy agreeing with itself.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
 
 parity:
   scope: >-

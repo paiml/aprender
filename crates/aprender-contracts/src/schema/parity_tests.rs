@@ -12,12 +12,117 @@ fn row(verdict: Option<Verdict>, valid_until: &str) -> ParityRow {
         invocation_competitor: "ollama run m".into(),
         dimension: "decode_tok_s".into(),
         verdict,
-        measured_on: "2026-07-31".into(),
-        valid_until: valid_until.into(),
+        // `unchecked` on purpose: these fixtures probe expiry arithmetic, and
+        // several deliberately carry dates the horizon would refuse. There is
+        // no `From<&str>` for LedgerDate precisely so that a construction which
+        // skips the bound has to SAY it does, in the diff.
+        measured_on: LedgerDate::unchecked("2026-07-31"),
+        valid_until: LedgerDate::unchecked(valid_until),
         owner: "pillar-4".into(),
         evidence: "contracts/x.yaml".into(),
         note: None,
+        extra: std::collections::BTreeMap::new(),
     }
+}
+
+/// An ISO date `days` from today, so a fixture that must sit inside or outside
+/// the future horizon says so ARITHMETICALLY and keeps saying it in a year.
+///
+/// The alternative — a literal like `2099-12-31` — would be an out-of-horizon
+/// date today and an in-horizon one eventually, so the test would silently
+/// stop testing. Deliberately NOT a clock override: an override is one more
+/// unbounded knob, which is the class this whole change closes.
+fn days_from_today(days: i64) -> String {
+    let today = today_utc().expect("system clock is after the epoch");
+    let (y, m, d) = parse_iso_date(&today).expect("today_utc emits an ISO date");
+    let (y, m, d) = civil_from_days(days_from_civil(i64::from(y), u32::from(m), u32::from(d)) + days);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+// ---------------------------------------------------------------------------
+// LedgerDate — the class control, at the type level
+
+/// The bound lives in `Deserialize`, so it cannot be skipped by a caller who
+/// forgets a rule. Probed here directly on the TYPE rather than through a
+/// contract fixture, so a future refactor that moves the check out of the type
+/// and into a validator turns this red.
+#[test]
+fn ledger_date_refuses_a_value_past_the_future_horizon() {
+    let inside = days_from_today(MAX_FUTURE_DAYS);
+    let outside = days_from_today(MAX_FUTURE_DAYS + 1);
+    assert_ne!(inside, outside, "the two fixtures must differ");
+
+    let ok: LedgerDate =
+        serde_yaml::from_str(&format!("{inside:?}")).expect("exactly the horizon is accepted");
+    assert_eq!(ok.trim(), inside);
+
+    let err = serde_yaml::from_str::<LedgerDate>(&format!("{outside:?}"))
+        .expect_err("one day past the horizon is refused");
+    assert!(
+        err.to_string().contains("horizon"),
+        "refused for the RIGHT reason -- a red for the wrong reason proves \
+         nothing: {err}"
+    );
+}
+
+/// A PAST date is always fine, however old. The bound is a horizon, not a
+/// window: an honest record of an old measurement must stay writable, and it is
+/// `is_expired` that then degrades it.
+#[test]
+fn ledger_date_accepts_any_past_date() {
+    for d in ["1970-01-01", "2020-02-29", "2026-01-01"] {
+        serde_yaml::from_str::<LedgerDate>(&format!("{d:?}"))
+            .unwrap_or_else(|e| panic!("{d} must be accepted: {e}"));
+    }
+}
+
+/// Non-ISO text is NOT a parse error — PARITY-007/013 report it, quoting the
+/// value. An unparseable date cannot be a futurity exemption because
+/// `is_expired` fails closed on it.
+#[test]
+fn ledger_date_leaves_non_iso_text_to_the_validator() {
+    let d: LedgerDate = serde_yaml::from_str("\"whenever\"").expect("prose parses");
+    assert_eq!(d.trim(), "whenever");
+    assert!(parse_iso_date(d.trim()).is_none());
+    assert!(LedgerDate::overshoot(d.trim(), "2026-08-21").is_none());
+}
+
+/// The horizon is MONOTONE: a date only ever becomes less future, so a document
+/// accepted today is accepted forever after. Asserted rather than assumed,
+/// because the alternative is a gate that reds by the calendar.
+#[test]
+fn the_future_horizon_never_turns_an_accepted_date_red_later() {
+    let d = days_from_today(MAX_FUTURE_DAYS);
+    assert!(LedgerDate::overshoot(&d, &days_from_today(0)).is_none());
+    for later in [1, 30, 365, 10_000] {
+        assert!(
+            LedgerDate::overshoot(&d, &days_from_today(later)).is_none(),
+            "{d} must stay acceptable {later} day(s) from now"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ratchet keys
+
+#[test]
+fn a_key_containing_a_control_character_is_not_canonical() {
+    assert!(is_canonical_key("apr run --gpu"));
+    assert!(is_canonical_key(
+        "apr run --gpu (concurrency=1 single-request decode)"
+    ));
+    assert!(is_canonical_key("lib:aprender-core::Lasso::fit"));
+    // THE INJECTION. One row, several well-formed `__ROW__=` lines.
+    assert!(!is_canonical_key("apr qa\n__ROW__=lib:aprender-core::X::f"));
+    assert!(!is_canonical_key("apr\tqa"));
+    assert!(!is_canonical_key("apr code "));
+    assert!(!is_canonical_key(" apr code"));
+    assert!(!is_canonical_key(""));
+    // Non-ASCII: keeps the emitter's BYTE length equal to a shell's character
+    // count under any locale.
+    assert!(!is_canonical_key("apr café"));
+    assert_eq!(bad_key_byte("apr qa"), None);
+    assert_eq!(bad_key_byte("a\nb"), Some((1, '\n')));
 }
 
 // ---------------------------------------------------------------------------

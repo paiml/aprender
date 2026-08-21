@@ -39,8 +39,203 @@
 //! verdict, and [`ParityRow::effective_verdict`] degrades an expired row to
 //! [`Verdict::Unmeasured`] — which lowers `__MEASURED__`, which fails the
 //! ratchet. That is the mechanism that would have caught 1.371×.
+//!
+//! # EVERY DATE IS ANCHORED TO TODAY — the class, not the three instances
+//!
+//! Three defects were found and fixed here before this one, and every fix
+//! introduced a NEW author-supplied field that nothing bounded against today:
+//!
+//! | fix | the new field | how it was bypassed |
+//! |---|---|---|
+//! | set ratchet | the emitted `__ROW__` key | `.trim()` on the way out, and a newline in a key injected extra key lines |
+//! | `valid_until` cap | `measured_on` | PARITY-011 bounds a DIFFERENCE; both ends were author-supplied, so `2099-01-01`/`2099-06-01` sat inside it |
+//! | downgrade record | `recheck_by` | validated against `recorded_on`, never against today, so the debt never came due |
+//!
+//! Patching a fourth pairwise ceiling would have produced a fourth. The rule
+//! adopted instead is a single invariant, applied uniformly:
+//!
+//! > **No date anywhere in this document may be more than
+//! > [`MAX_FUTURE_DAYS`] days after TODAY.** Not after another date the same
+//! > author wrote — after TODAY, the one anchor an author does not control.
+//!
+//! It is enforced in two places, deliberately overlapping:
+//!
+//! * [`LedgerDate`] refuses an out-of-horizon value at **parse** time, so the
+//!   four fields that exist today cannot HOLD one. This is poka-yoke: a field
+//!   declared `LedgerDate` is bounded by existing, the way [`Verdict`] is
+//!   closed by being an enum rather than by a lint that checks the spelling.
+//! * `PARITY-016` sweeps the whole **serialized document** — every scalar, at
+//!   any depth, under any key — because a newtype only helps a field that USES
+//!   it, and the next author writing `certified_on: String` is the next
+//!   exemption. The sweep is keyed on the VALUE, so a field that does not
+//!   exist yet is bounded before it is written. `#[serde(flatten)] extra` on
+//!   each struct captures keys serde does not know instead of dropping them,
+//!   so a date added to the YAML alone is swept too.
+//!
+//! `PARITY-017` then pins the dates that record a PAST event (`measured_on`,
+//! `recorded_on`) to the past, and [`Downgrade::is_overdue`] makes the escape
+//! valve come due. The three compose: no row can be fresh for more than 180
+//! days from today, and no downgrade can excuse one for longer, whatever the
+//! file says.
+//!
+//! The horizon is MONOTONE in time — a date only ever becomes less future — so
+//! a document that parses today parses forever after.
 
 use serde::{Deserialize, Serialize};
+
+/// The FUTURE HORIZON, in days after **today**, that any date in this ledger
+/// may reach.
+///
+/// # Why this is a horizon and not another pairwise ceiling
+///
+/// Three defects were fixed in this file before this one, and every fix
+/// introduced a NEW author-supplied date bounded only against ANOTHER
+/// author-supplied date:
+///
+/// * `valid_until` was capped at [`MAX_VALIDITY_DAYS`] from `measured_on` —
+///   but `measured_on` is author-supplied and was itself unbounded, so
+///   `measured_on: 2099-01-01` with `valid_until: 2099-06-01` sat inside the
+///   ceiling and 2099 was STILL the exemption;
+/// * `recheck_by` was capped from `recorded_on` — same shape, same hole, so
+///   the escape valve never came due;
+/// * and the next field of that shape would have been the next exemption.
+///
+/// A difference between two numbers the same author writes bounds NOTHING.
+/// The only anchor an author does not control is **today**, so that is the
+/// anchor: no date in this ledger may be more than `MAX_FUTURE_DAYS` days
+/// after the UTC date on which the document is READ. [`LedgerDate`] enforces
+/// it at PARSE time, so an out-of-horizon value cannot be constructed, and
+/// `PARITY-016` sweeps the whole serialized document, so a field added LATER —
+/// by anyone, under any name, of any type — is bounded before it is written.
+///
+/// The number is [`MAX_VALIDITY_DAYS`] because the bounds then COMPOSE into
+/// the property that actually matters: with `measured_on <= today`
+/// (PARITY-017), `valid_until - measured_on <= 180` (PARITY-011) and every
+/// date inside this horizon, no row can be fresh for more than 180 days from
+/// today whatever the file says.
+///
+/// The bound is MONOTONE in time — a date only ever becomes less future — so a
+/// document that parses today parses forever after. It can never turn a
+/// previously accepted file red by the clock moving on.
+pub const MAX_FUTURE_DAYS: i64 = MAX_VALIDITY_DAYS;
+
+/// An ISO `YYYY-MM-DD` date that **cannot hold a far-future value**.
+///
+/// This is the class control, and it is a TYPE rather than a validator rule on
+/// purpose: a rule is something the next author must remember to write for the
+/// next field, and the record here is that they will not. A field declared
+/// `LedgerDate` is bounded by existing, and `serde` refuses the document
+/// otherwise — the same mechanism that makes [`Verdict`] a closed vocabulary
+/// rather than a lint.
+///
+/// # What it does NOT reject
+///
+/// A string that is not a well-formed ISO date is ACCEPTED here and reported
+/// by `PARITY-007` / `PARITY-013`, which name the field and quote the value.
+/// That is deliberate: rejecting it at parse would replace several precise
+/// diagnostics with one YAML error, and an unparseable date is not a futurity
+/// exemption — [`ParityRow::is_expired`] fails CLOSED on it, so it expires the
+/// row rather than blessing it. The only thing this type refuses is the one
+/// thing no downstream rule can recover from: a syntactically perfect date far
+/// enough ahead to outlive review.
+#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LedgerDate(String);
+
+impl LedgerDate {
+    /// The raw string as written.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The string with surrounding whitespace removed — what every rule
+    /// compares.
+    #[must_use]
+    pub fn trim(&self) -> &str {
+        self.0.trim()
+    }
+
+    /// True when nothing was written at all (the `#[serde(default)]` case).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.trim().is_empty()
+    }
+
+    /// Construct WITHOUT the horizon check. Test-only, and named so a reader
+    /// of a diff can see it: production values arrive through `Deserialize`,
+    /// which cannot skip the bound.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn unchecked(s: &str) -> Self {
+        Self(s.to_string())
+    }
+
+    /// How many days past the horizon `s` is, or `None` when it is inside it
+    /// (or is not an ISO date at all, or `today` is unusable).
+    ///
+    /// Shared by [`LedgerDate`]'s `Deserialize` and by `PARITY-016`, so the
+    /// type bound and the document sweep cannot disagree about where the line
+    /// is.
+    #[must_use]
+    pub fn overshoot(s: &str, today: &str) -> Option<i64> {
+        let s = s.trim();
+        parse_iso_date(s)?;
+        let ahead = days_between(today, s)?;
+        (ahead > MAX_FUTURE_DAYS).then_some(ahead - MAX_FUTURE_DAYS)
+    }
+}
+
+impl std::fmt::Debug for LedgerDate {
+    /// Prints as the bare string, so `{:?}` in a diagnostic quotes what the
+    /// author wrote rather than `LedgerDate("…")`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+impl std::fmt::Display for LedgerDate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl Serialize for LedgerDate {
+    /// Transparent: the serialized document must contain the bare date string,
+    /// because `PARITY-016` sweeps that document and a wrapper object would
+    /// hide the scalar from the sweep.
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for LedgerDate {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let raw = String::deserialize(d)?;
+        // Fail CLOSED on a broken clock. "Cannot tell how far ahead this is"
+        // must never resolve to "accept it": that is the shape of every gate
+        // in this repo that reported success while measuring nothing.
+        let today = today_utc().ok_or_else(|| {
+            D::Error::custom(
+                "system clock is before the Unix epoch, so no date in this ledger can be \
+                 bounded against today - refusing to parse rather than accept an unbounded \
+                 date",
+            )
+        })?;
+        if let Some(over) = Self::overshoot(&raw, &today) {
+            return Err(D::Error::custom(format!(
+                "date {:?} is {over} day(s) past the {MAX_FUTURE_DAYS}-day horizon from today \
+                 ({today}). Every date in a competitive-parity ledger is bounded against TODAY, \
+                 not against another date the same author wrote: bounding a DIFFERENCE leaves \
+                 both ends free, which is how `measured_on: 2099-01-01` would keep a row \
+                 permanently fresh inside a 180-day window. Re-date the row, or record it \
+                 UNMEASURED",
+                raw.trim(),
+            )));
+        }
+        Ok(Self(raw))
+    }
+}
 
 /// The CLOSED verdict vocabulary. A value outside this set is a parse error,
 /// not a lint — `serde` rejects the document, so no ledger can invent a verdict.
@@ -129,6 +324,10 @@ pub struct ParityLedger {
     /// downgrade.
     #[serde(default)]
     pub downgrades: Vec<Downgrade>,
+    /// Every key in the YAML that this struct does not name — see
+    /// [`Downgrade::extra`].
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
 }
 
 /// Why a row that used to be MEASURED is now `UNMEASURED`, from a CLOSED
@@ -189,17 +388,32 @@ pub struct Downgrade {
     /// Who owes the re-measurement.
     #[serde(default)]
     pub owner: String,
-    /// ISO `YYYY-MM-DD` the downgrade was recorded.
+    /// ISO `YYYY-MM-DD` the downgrade was recorded. Bounded against TODAY by
+    /// its TYPE, and additionally forbidden from being in the future at all
+    /// (PARITY-017) — a record cannot have been made tomorrow.
     #[serde(default)]
-    pub recorded_on: String,
+    pub recorded_on: LedgerDate,
     /// ISO `YYYY-MM-DD` by which the row must be re-measured or the downgrade
-    /// re-argued. Bounded like `valid_until`, so a downgrade cannot be made
-    /// permanent by dating it to 2099.
+    /// re-argued.
+    ///
+    /// This was the third bypass: it was bounded only against `recorded_on`,
+    /// which is author-supplied, so the escape valve never came due. It is now
+    /// a [`LedgerDate`] — bounded against TODAY — as well as being capped from
+    /// `recorded_on`, and PARITY-018 makes an OVERDUE recheck degrade the row
+    /// the same way an expired `valid_until` does.
     #[serde(default)]
-    pub recheck_by: String,
+    pub recheck_by: LedgerDate,
     /// Free-text elaboration. NOT the machine-checkable part.
     #[serde(default)]
     pub detail: Option<String>,
+    /// Every key in the YAML that this struct does not name.
+    ///
+    /// Captured rather than DROPPED so that `PARITY-016` sweeps it: serde
+    /// silently discards unknown fields, so a `recheck_by_v2: "2099-01-01"`
+    /// added to the file alone would be invisible to a sweep of the typed
+    /// struct. It is not invisible to a sweep of this map.
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
 }
 
 /// One competitive comparison, dated at both ends.
@@ -230,12 +444,19 @@ pub struct ParityRow {
     #[serde(default)]
     pub verdict: Option<Verdict>,
     /// ISO `YYYY-MM-DD` the measurement was taken.
+    ///
+    /// This was the SECOND bypass's real anchor: PARITY-011 bounded
+    /// `valid_until - measured_on`, and `measured_on` itself was unbounded, so
+    /// `2099-01-01` / `2099-06-01` sat comfortably inside the ceiling. It is
+    /// now a [`LedgerDate`] (bounded against TODAY at parse time) and
+    /// PARITY-017 additionally refuses any date in the future: a measurement
+    /// cannot have been taken tomorrow.
     #[serde(default)]
-    pub measured_on: String,
+    pub measured_on: LedgerDate,
     /// ISO `YYYY-MM-DD` after which the row is stale. Required for EVERY
     /// verdict class — see the module docs.
     #[serde(default)]
-    pub valid_until: String,
+    pub valid_until: LedgerDate,
     /// Who re-measures it when it expires.
     #[serde(default)]
     pub owner: String,
@@ -245,6 +466,63 @@ pub struct ParityRow {
     /// Free-text qualification (host, n=, known gaps).
     #[serde(default)]
     pub note: Option<String>,
+    /// Every key in the YAML that this struct does not name — see
+    /// [`Downgrade::extra`]. Captured so `PARITY-016` can bound a date field
+    /// that does not exist yet.
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
+}
+
+/// The first byte of `key` that disqualifies it as a RATCHET KEY, if any.
+///
+/// # Why a key needs a character class at all
+///
+/// The ratchet's set membership is carried over a text channel: `pv
+/// parity-ledger` prints `__ROW__=<key>` and a shell reads the lines back. A
+/// key that may contain a NEWLINE is therefore a line-injection primitive —
+/// an `entry_point` written as the block scalar
+///
+/// ```text
+/// apr qa
+/// __ROW__=lib:aprender-core::StandardScaler::fit_transform
+/// __MEASURED_ROW__=lib:aprender-core::StandardScaler::fit_transform
+/// ```
+///
+/// prints three well-formed key lines from ONE fabricated row, so the deleted
+/// StandardScaler row's baseline keys are satisfied by a row that is not it.
+/// That defeats the set ratchet completely, at constant totals, which is the
+/// exact defect the set ratchet was built to close.
+///
+/// Two independent controls close it, and BOTH are required because either
+/// alone is one edit from useless: this one refuses the character at the
+/// SOURCE (PARITY-002 / PARITY-012), and the emitter length-prefixes every key
+/// so a consumer can prove the line it read is the whole key.
+///
+/// The admitted class is printable ASCII (`0x20..=0x7E`) with no leading or
+/// trailing space. Entry points are command lines and Rust paths; nothing in
+/// the live enumeration is outside it, and restricting it means the byte
+/// length the emitter prints is also the character length a shell counts,
+/// under any locale.
+#[must_use]
+pub fn bad_key_byte(key: &str) -> Option<(usize, char)> {
+    key.chars()
+        .enumerate()
+        .find(|&(_, c)| !(' '..='~').contains(&c))
+}
+
+/// Is `key` already in canonical form — printable ASCII, no surrounding
+/// whitespace, non-empty?
+///
+/// Canonicality is REQUIRED of the author rather than imposed by the reader.
+/// The previous emitter called `.trim()` on its way out, which meant the
+/// emitted key and the authored key could differ: a key could be perturbed in
+/// the file and still match the baseline. Requiring the authored bytes to be
+/// canonical makes the emitted key and the baseline key byte-identical by
+/// CONSTRUCTION rather than by a normalisation that some future caller forgets
+/// to apply.
+#[must_use]
+pub fn is_canonical_key(key: &str) -> bool {
+    !key.is_empty() && key.trim() == key && bad_key_byte(key).is_none()
 }
 
 impl ParityRow {
@@ -255,7 +533,10 @@ impl ParityRow {
     /// the hole the 1.371× claim lived in for eight weeks.
     #[must_use]
     pub fn is_expired(&self, today: &str) -> bool {
-        match (parse_iso_date(&self.valid_until), parse_iso_date(today)) {
+        match (
+            parse_iso_date(self.valid_until.trim()),
+            parse_iso_date(today),
+        ) {
             (Some(until), Some(now)) => now > until,
             _ => true,
         }
@@ -272,7 +553,50 @@ impl ParityRow {
     }
 }
 
+impl Downgrade {
+    /// True when `today` is strictly after `recheck_by` — the debt has come
+    /// due and the justification has lapsed.
+    ///
+    /// An unparseable or empty `recheck_by` counts as OVERDUE — fail closed,
+    /// for the same reason [`ParityRow::is_expired`] does.
+    ///
+    /// # Why this exists (the third bypass, in full)
+    ///
+    /// `recheck_by` was validated only against `recorded_on` and NEVER against
+    /// today. Nothing anywhere asked whether the recheck had come due, so a
+    /// downgrade — the one move that lets `__MEASURED__` fall — was permanent
+    /// the moment it was written. Both adversarial reviewers found this
+    /// independently, and the aggravating half is that the old
+    /// `MEASURED_MIN` floor was deleted outright when the record was
+    /// introduced, so a series of downgrades could drain the ledger to zero
+    /// measured rows while every gate stayed green.
+    ///
+    /// An overdue downgrade stops being emitted as `__DOWNGRADE__=`, which
+    /// makes the drop it was paying for UNJUSTIFIED again, which is RED — and
+    /// `pv parity-ledger` fails outright, exactly as an expired row does.
+    /// Staleness blocks; the paperwork does not exempt it.
+    #[must_use]
+    pub fn is_overdue(&self, today: &str) -> bool {
+        match (
+            parse_iso_date(self.recheck_by.trim()),
+            parse_iso_date(today),
+        ) {
+            (Some(due), Some(now)) => now > due,
+            _ => true,
+        }
+    }
+}
+
 impl ParityLedger {
+    /// Downgrades whose `recheck_by` has passed as of `today`, in file order.
+    #[must_use]
+    pub fn overdue_downgrades(&self, today: &str) -> Vec<&Downgrade> {
+        self.downgrades
+            .iter()
+            .filter(|d| d.is_overdue(today))
+            .collect()
+    }
+
     /// Rows whose effective verdict counts as measured, as of `today`.
     #[must_use]
     pub fn measured_count(&self, today: &str) -> usize {
