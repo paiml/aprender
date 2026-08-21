@@ -1,7 +1,28 @@
-# Competitive-parity ratchet baseline. SHRINK-NEVER.
-# Written by scripts/check_competitive_parity.sh --update-baseline,
-# which refuses to lower any of these. Do not hand-edit downward:
-# the whole mechanism is that deleting a losing row costs you a point.
-MEASURED_MIN=4
+# Competitive-parity ratchet baseline. A SET, not a count.
+#
+# Written by scripts/check_competitive_parity.sh --update-baseline.
+# Do not hand-edit: the mechanism is that losing a SPECIFIC row is
+# visible even when every total is unchanged. A count ratchet is
+# payable in the wrong currency -- delete the StandardScaler 0.69x row,
+# add a cheaper one, and __MEASURED__ never moves. That is PMAT-733.
+#
+#   ROW=             must still EXIST. Droppable only when the entry
+#                    point has left the live `apr` enumeration.
+#   MEASURED_ROW=    SHRINK-NEVER. Must still be MEASURED, or carry a
+#                    recorded `downgrades:` entry in the ledger. The key
+#                    STAYS while the row exists, so a downgrade is a debt
+#                    with a due date, not a one-off payment that the
+#                    baseline absorbs and the next commit can delete.
 NON_WINS_MIN=5
 IN_SCOPE_MIN=41
+
+ROW=apr run --gpu
+ROW=lib:aprender-core::StandardScaler::fit_transform
+ROW=apr code
+ROW=lib:aprender-core::Lasso::fit
+ROW=apr run --gpu (concurrency=1 single-request decode)
+
+MEASURED_ROW=apr code
+MEASURED_ROW=apr run --gpu
+MEASURED_ROW=lib:aprender-core::Lasso::fit
+MEASURED_ROW=lib:aprender-core::StandardScaler::fit_transform

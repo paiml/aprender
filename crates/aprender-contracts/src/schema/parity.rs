@@ -104,6 +104,102 @@ pub struct ParityLedger {
     pub scope: Option<String>,
     #[serde(default)]
     pub rows: Vec<ParityRow>,
+    /// RECORDED DOWNGRADES — the escape valve that keeps honesty affordable.
+    ///
+    /// A pure shrink-never floor on `__MEASURED__` mechanically FORBIDS the
+    /// honest correction: the `apr code` row cites
+    /// `evidence/phase-5/arena-scores.json`, which does not exist in this
+    /// repository, and its own `note:` says it should be `UNMEASURED` — yet
+    /// filing it as `UNMEASURED` would breach the floor. A ratchet that
+    /// punishes increasing honesty produces dishonest ledgers, which is the
+    /// same failure as PMAT-733 approached from the opposite side.
+    ///
+    /// So the two properties are SEPARATED:
+    ///
+    /// * the SET of rows that exist may never shrink (delete a row and the
+    ///   ratchet names the missing key, whatever the totals say);
+    /// * the SET of rows whose verdict is MEASURED may shrink, but ONLY with a
+    ///   [`Downgrade`] naming the row, a reason from a CLOSED vocabulary, an
+    ///   owner, and a date by which it must be re-measured.
+    ///
+    /// The reason is a serde enum, not prose: an unknown reason is a PARSE
+    /// error, so "recorded a reason" cannot be discharged by writing a
+    /// sentence. And [`Downgrade::entry_point`] must match a row that is still
+    /// present (PARITY-012), so deleting a row can never be laundered as a
+    /// downgrade.
+    #[serde(default)]
+    pub downgrades: Vec<Downgrade>,
+}
+
+/// Why a row that used to be MEASURED is now `UNMEASURED`, from a CLOSED
+/// vocabulary. Prose is not accepted; an unknown value fails to parse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DowngradeReason {
+    /// The cited receipt does not exist where it is cited, so the number is a
+    /// remembered one. This is the `apr code` case exactly.
+    ReceiptMissing,
+    /// The harness that produced the number is no longer in the tree, so the
+    /// measurement cannot be reproduced without recovering it.
+    HarnessDeleted,
+    /// No date is attached to the measurement anywhere, so its freshness is
+    /// unknowable rather than merely old.
+    MeasurementUndated,
+    /// The competitor build that produced the number was never captured, so
+    /// the comparison has no fixed oracle.
+    CompetitorUnpinnable,
+    /// The host class the measurement requires is not available to re-run it.
+    HostUnavailable,
+    /// The comparison has been replaced by a different, better-specified row.
+    Superseded,
+}
+
+impl DowngradeReason {
+    /// The canonical spelling, as it must appear in YAML.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ReceiptMissing => "RECEIPT_MISSING",
+            Self::HarnessDeleted => "HARNESS_DELETED",
+            Self::MeasurementUndated => "MEASUREMENT_UNDATED",
+            Self::CompetitorUnpinnable => "COMPETITOR_UNPINNABLE",
+            Self::HostUnavailable => "HOST_UNAVAILABLE",
+            Self::Superseded => "SUPERSEDED",
+        }
+    }
+}
+
+impl std::fmt::Display for DowngradeReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A recorded, dated, owned downgrade of one row to `UNMEASURED`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Downgrade {
+    /// Must EXACTLY match a [`ParityRow::entry_point`] still present in the
+    /// ledger (PARITY-012). Deleting the row dangles the downgrade, so a
+    /// deletion can never be dressed up as an honest correction.
+    #[serde(default)]
+    pub entry_point: String,
+    /// `None` ⇒ PARITY-013; an unknown STRING is a parse error.
+    #[serde(default)]
+    pub reason: Option<DowngradeReason>,
+    /// Who owes the re-measurement.
+    #[serde(default)]
+    pub owner: String,
+    /// ISO `YYYY-MM-DD` the downgrade was recorded.
+    #[serde(default)]
+    pub recorded_on: String,
+    /// ISO `YYYY-MM-DD` by which the row must be re-measured or the downgrade
+    /// re-argued. Bounded like `valid_until`, so a downgrade cannot be made
+    /// permanent by dating it to 2099.
+    #[serde(default)]
+    pub recheck_by: String,
+    /// Free-text elaboration. NOT the machine-checkable part.
+    #[serde(default)]
+    pub detail: Option<String>,
 }
 
 /// One competitive comparison, dated at both ends.
@@ -202,6 +298,61 @@ impl ParityLedger {
     pub fn expired_rows(&self, today: &str) -> Vec<&ParityRow> {
         self.rows.iter().filter(|r| r.is_expired(today)).collect()
     }
+
+    /// The recorded downgrade for `entry_point`, if any.
+    ///
+    /// Compared on the TRIMMED string, because YAML block scalars leave
+    /// trailing whitespace and a downgrade that silently fails to match its row
+    /// would read as "recorded" while justifying nothing.
+    #[must_use]
+    pub fn downgrade_for(&self, entry_point: &str) -> Option<&Downgrade> {
+        let key = entry_point.trim();
+        self.downgrades.iter().find(|d| d.entry_point.trim() == key)
+    }
+}
+
+/// The furthest a `valid_until` (or a `recheck_by`) may be set beyond the date
+/// it is anchored to, in days.
+///
+/// WHY A BOUND EXISTS AT ALL. Check-time freshness is only as strong as the
+/// dates it reads. Rewriting all five `valid_until` values to `2099-12-31`
+/// satisfied every rule in the first design: the row is not expired, so it
+/// counts as MEASURED forever, and "staleness blocks" becomes voluntary. An
+/// unbounded expiry field is an exemption with a date on it.
+///
+/// WHY 180. The five seeded rows span 55–109 days between `measured_on` and
+/// `valid_until`, so a two-quarter ceiling admits every honest row already
+/// written with ~65% headroom while refusing anything that is trying to outlive
+/// review. It is deliberately anchored to `measured_on`, not to today: a row
+/// recording an OLD measurement honestly must stay writable, and it is
+/// `is_expired` — not this bound — that then makes it degrade.
+pub const MAX_VALIDITY_DAYS: i64 = 180;
+
+/// Days from `from` to `to` (negative when `to` precedes `from`), or `None`
+/// when either side is not a strict ISO calendar date.
+#[must_use]
+pub fn days_between(from: &str, to: &str) -> Option<i64> {
+    let (fy, fm, fd) = parse_iso_date(from)?;
+    let (ty, tm, td) = parse_iso_date(to)?;
+    Some(
+        days_from_civil(i64::from(ty), u32::from(tm), u32::from(td))
+            - days_from_civil(i64::from(fy), u32::from(fm), u32::from(fd)),
+    )
+}
+
+/// Convert a proleptic Gregorian `(y, m, d)` to days-since-1970-01-01.
+///
+/// Hinnant, "chrono-Compatible Low-Level Date Algorithms", `days_from_civil` —
+/// the exact inverse of [`civil_from_days`], which this module already carries.
+#[must_use]
+pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400; // [0, 399]
+    let mp = i64::from(if m > 2 { m - 3 } else { m + 9 }); // [0, 11]
+    let doy = (153 * mp + 2) / 5 + i64::from(d) - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
+    era * 146_097 + doe - 719_468
 }
 
 /// Parse a strict ISO `YYYY-MM-DD` calendar date, returning `(y, m, d)`.

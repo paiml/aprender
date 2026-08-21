@@ -89,6 +89,19 @@ proof_obligations:
     property: "the ledger records at least one non-win"
     formal: "exists r in rows. r.verdict != BETTER"
 
+  - type: invariant
+    property: "a row's validity window is BOUNDED, so freshness cannot be dated away"
+    formal: "forall r in rows. days(r.valid_until - r.measured_on) <= 180"
+  - type: invariant
+    property: "MEASURED may fall only against a downgrade naming a row that STILL EXISTS"
+    formal: "forall d in downgrades. exists r in rows. r.entry_point = d.entry_point and r.verdict = UNMEASURED"
+  - type: invariant
+    property: "the ratchet is keyed by entry point, so losing a SPECIFIC row is detectable at constant totals"
+    formal: "forall e in baseline.rows. exists r in rows. r.entry_point = e"
+  - type: invariant
+    property: "every falsification test names a command a reader can RUN"
+    formal: "forall t in falsification_tests. t.test != nil or t.test_harness != nil"
+
 falsification_tests:
   - id: FALSIFY-PARITY-001
     rule: "competitor_version is pinned"
@@ -99,6 +112,7 @@ falsification_tests:
     if_fails: >-
       The pin rule is not reachable from the contract, so the ledger's oracles
       drift under the claims exactly as `uv run --with scikit-learn` does today.
+    test: "cargo test -p aprender-contracts --lib parity_004_"
   - id: FALSIFY-PARITY-002
     rule: "the verdict vocabulary is closed"
     prediction: >-
@@ -107,6 +121,7 @@ falsification_tests:
     if_fails: >-
       The vocabulary is advisory, so a ledger can invent a verdict that no
       consumer knows how to weigh.
+    test: "cargo test -p aprender-contracts --lib parity_006_ unknown_verdict_is_a_parse_error"
   - id: FALSIFY-PARITY-003
     rule: "freshness is required on EVERY verdict class"
     prediction: >-
@@ -116,6 +131,7 @@ falsification_tests:
       A win can be recorded with no expiry, which is precisely how the 1.371x
       ollama claim stayed published for eight weeks after it stopped
       reproducing.
+    test: "cargo test -p aprender-contracts --lib parity_007_"
   - id: FALSIFY-PARITY-004
     rule: "freshness is evaluated at CHECK TIME"
     prediction: >-
@@ -126,6 +142,7 @@ falsification_tests:
       Freshness is a schema decoration evaluated once at authoring time, so the
       ledger ages silently -- the failure mode of all 24 dated beat contracts,
       which are 48-71 days old with no expiry.
+    test: "cargo test -p aprender-contracts --lib expiry_ an_expired_better_row_degrades_to_unmeasured"
   - id: FALSIFY-PARITY-005
     rule: "deletion is more expensive than recording a loss"
     prediction: >-
@@ -134,6 +151,7 @@ falsification_tests:
     if_fails: >-
       PMAT-733 repeats: the cheapest way to raise the ratio is to remove the
       comparison that lowers it.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
   - id: FALSIFY-PARITY-006
     rule: "registry: true buys no exemption on this kind"
     prediction: >-
@@ -144,6 +162,56 @@ falsification_tests:
     if_fails: >-
       The new kind inherits the escape hatch that leaves 481 in-tree contracts
       with `proven: 0`, and the ledger proves nothing.
+    test: "cargo test -p aprender-contracts --lib registry_true_cannot_exempt_a_parity_contract"
+
+  - id: FALSIFY-PARITY-007
+    rule: "valid_until is bounded above"
+    prediction: >-
+      Rewriting any row's valid_until to "2099-12-31" -- the mutation that used
+      to leave `pv validate` GREEN and made "staleness blocks" voluntary --
+      emits PARITY-011 and exits non-zero. The ceiling is 180 days from
+      measured_on: 2027-01-27 is accepted and 2027-01-28 is refused.
+    if_fails: >-
+      Check-time freshness is only as strong as the dates it reads, so an
+      unbounded expiry is an exemption with a date on it and every row can be
+      made permanently MEASURED for free.
+    test: "cargo test -p aprender-contracts --lib parity_011_"
+  - id: FALSIFY-PARITY-008
+    rule: "a downgrade is machine-checkable and cannot launder a deletion"
+    prediction: >-
+      Filing a row UNMEASURED with a `downgrades:` entry naming it, a reason
+      from the closed vocabulary, an owner and a bounded recheck_by VALIDATES.
+      Removing the reason emits PARITY-013; writing prose in it fails to PARSE;
+      naming an entry_point with no matching row emits PARITY-012; recording one
+      beside a row that still claims a measurement emits PARITY-014.
+    if_fails: >-
+      Either the honest correction is mechanically forbidden (a ratchet that
+      punishes increasing honesty produces dishonest ledgers -- the `apr code`
+      row's own note says it should be UNMEASURED) or "record a reason" is
+      dischargeable by writing a sentence, which makes deleting a row and
+      filing paperwork cheaper than measuring.
+    test: "cargo test -p aprender-contracts --lib downgrade_ parity_012_ parity_013_ parity_014_"
+  - id: FALSIFY-PARITY-009
+    rule: "the ratchet is a SET, not a count"
+    prediction: >-
+      Deleting one ledger row and adding a DIFFERENT one -- so __ROWS__,
+      __MEASURED__ and __NON_WINS__ are all unchanged -- still fails
+      scripts/check_competitive_parity.sh, which names the missing entry_point.
+    if_fails: >-
+      PMAT-733 is payable in the wrong currency: the StandardScaler 0.69x row
+      can be deleted and paid for with a cheaper fabricated one while every
+      total stays green.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
+  - id: FALSIFY-PARITY-010
+    rule: "the provability invariant is not dischargeable by prose"
+    prediction: >-
+      Deleting the `test:` line from any falsification entry in this file emits
+      PARITY-015. `test_harness:` counts as a binding; whitespace does not.
+    if_fails: >-
+      `falsification_tests.len() >= proof_obligations.len()` is satisfiable by
+      writing more YAML, so the obligation this kind cannot be exempted from is
+      discharged with sentences.
+    test: "cargo test -p aprender-contracts --lib parity_015_"
 
 parity:
   scope: >-
@@ -154,6 +222,38 @@ parity:
     name a library surface (`lib:` prefix) that no subcommand exposes -- two of
     the five seeds are exactly that, and pretending otherwise would have meant
     dropping them.
+
+  # RECORDED DOWNGRADES.
+  #
+  # This block is the escape valve that keeps honesty affordable, and it is the
+  # narrow one. `MEASURED_MIN=4` with no give mechanically FORBADE the honest
+  # correction below: the `apr code` row's own note said it should be
+  # UNMEASURED and filing it that way would have breached the floor. A ratchet
+  # that punishes increasing honesty produces dishonest ledgers, which is
+  # PMAT-733 approached from the opposite side.
+  #
+  # What keeps it narrow: `entry_point` must match a row that is STILL PRESENT
+  # (PARITY-012), so deleting a row can never be dressed up as a downgrade;
+  # `reason` is a serde enum, so an invented reason fails to PARSE rather than
+  # lint; `owner` and a bounded `recheck_by` mean a downgrade is a debt with a
+  # due date rather than a quiet retirement. The SET of rows may never shrink.
+  # Only the set of MEASURED rows may, and only against this record.
+  downgrades:
+    - entry_point: "apr code"
+      reason: RECEIPT_MISSING
+      owner: "pillar-5-code"
+      recorded_on: "2026-08-21"
+      recheck_by: "2026-11-30"
+      detail: >-
+        The receipt cited by BOTH contracts/beat-claude-code-parity-v1.yaml and
+        docs/BEATS.md -- evidence/phase-5/arena-scores.json -- does not exist in
+        this repository (`find . -name arena-scores.json` returns nothing), and
+        no date is attached to the Arena run in either file. The number
+        (teacher 1/5, student 0/5) is remembered, not receipted, and it lives in
+        a companion repo that nothing here can re-run. Clearing this means
+        vendoring the receipt with a date attached, or re-running the Arena in
+        this tree. Until then the row stays, its direction stays on the record
+        in `note:`, and it counts as what it is: UNMEASURED.
 
   rows:
     # ---------------------------------------------------------------- PARITY
@@ -232,7 +332,7 @@ parity:
         claude (teacher) on the identical 5 fixtures, same Arena harness, same
         oracle
       dimension: "oracle_pass_rate"
-      verdict: WORSE
+      verdict: UNMEASURED
       measured_on: "2026-06-25"
       valid_until: "2026-09-30"
       owner: "pillar-5-code"
@@ -251,9 +351,14 @@ parity:
         or re-verify it; and no date is attached to the Arena run in either file
         (2026-06-25 above is the contract's created date, used as a
         conservative lower bound). Under a strict protocol this is
-        UNMEASURED-with-a-remembered-number; it is filed WORSE because the
-        direction is not in dispute anywhere, and it expires soon precisely
-        because the receipt must be vendored or the row must degrade.
+        UNMEASURED-with-a-remembered-number, and that is now what it is
+        filed as. It was filed WORSE until the ratchet stopped forbidding the
+        correction: a floor with no give made DOWNGRADING mechanically
+        impossible, so the row's own note contradicted its own verdict. The
+        downgrade is recorded below under `downgrades:` with reason
+        RECEIPT_MISSING and a bounded recheck date -- the direction of the
+        result is not in dispute anywhere, but a direction is not a
+        measurement, and this ledger only counts measurements.
 
     - entry_point: "lib:aprender-core::Lasso::fit"
       competitor: "scikit-learn"

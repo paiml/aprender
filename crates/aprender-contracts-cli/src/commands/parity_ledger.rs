@@ -22,6 +22,37 @@ use provable_contracts::schema::{
     parse_contract, validate_contract, ContractKind, ParityLedger, Verdict,
 };
 
+/// The anchored `__KEY__=value` block the shell ratchet greps.
+///
+/// The `__ROW__=` / `__MEASURED_ROW__=` / `__DOWNGRADE__=` lines carry SETS, not
+/// counts, and that distinction is the whole of the ratchet's first fix. A count
+/// ratchet is payable in the wrong currency: delete the StandardScaler row and
+/// add a cheaper one, and `__MEASURED__` is unchanged while the only recorded
+/// 0.69x loss has left the tree. That is PMAT-733 with the arithmetic balanced.
+/// Keyed by entry_point, losing a SPECIFIC row is detectable no matter what is
+/// added beside it.
+///
+/// Entry points contain `=` (`apr run --gpu (concurrency=1 ...)`), so a consumer
+/// must strip the `^__KEY__=` PREFIX rather than cut on `=`.
+fn emit_machine_readable(ledger: &ParityLedger, today: &str, expired: usize, errors: usize) {
+    println!("__TODAY__={today}");
+    println!("__ROWS__={}", ledger.rows.len());
+    println!("__MEASURED__={}", ledger.measured_count(today));
+    println!("__NON_WINS__={}", ledger.non_win_count(today));
+    println!("__EXPIRED__={expired}");
+    println!("__ERRORS__={errors}");
+    println!("__DOWNGRADES__={}", ledger.downgrades.len());
+    for row in &ledger.rows {
+        println!("__ROW__={}", row.entry_point.trim());
+        if row.effective_verdict(today).is_measured() {
+            println!("__MEASURED_ROW__={}", row.entry_point.trim());
+        }
+    }
+    for d in &ledger.downgrades {
+        println!("__DOWNGRADE__={}", d.entry_point.trim());
+    }
+}
+
 /// Evaluate `path` as of `today` (defaults to the UTC date now).
 ///
 /// # Errors
@@ -80,14 +111,19 @@ pub fn run(path: &Path, today: Option<&str>) -> Result<(), Box<dyn std::error::E
         );
     }
 
-    // Anchored, machine-readable, one value per line. Keep these stable: the
-    // ratchet greps them.
-    println!("__TODAY__={today}");
-    println!("__ROWS__={}", ledger.rows.len());
-    println!("__MEASURED__={}", ledger.measured_count(&today));
-    println!("__NON_WINS__={}", ledger.non_win_count(&today));
-    println!("__EXPIRED__={}", expired.len());
-    println!("__ERRORS__={}", errors.len());
+    for d in &ledger.downgrades {
+        println!(
+            "DOWN {:<15} -> {:<15} recheck_by={} {}",
+            d.reason.map_or("(none)".to_string(), |r| r.to_string()),
+            d.owner.trim(),
+            d.recheck_by.trim(),
+            d.entry_point.trim(),
+        );
+    }
+
+    // The anchored block the shell ratchet greps. Keep these keys stable; see
+    // `emit_machine_readable` for why the row lines are SETS and not counts.
+    emit_machine_readable(ledger, &today, expired.len(), errors.len());
 
     if !errors.is_empty() {
         return Err(format!("ledger has {} validation error(s)", errors.len()).into());

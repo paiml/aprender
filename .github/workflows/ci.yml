@@ -848,6 +848,33 @@ jobs:
         # needs real git history in the checkout, not a shallow tarball.
         with:
           fetch-depth: 0
+      - name: Pull sovereign-ci image (with retry + local-cache fallback)
+        # Every other docker job in this file carries this step and this one did
+        # not, which meant a cold runner (or a localhost:5000 restart, which
+        # paiml/infra sees regularly) would fail the parity job on `docker run`
+        # with an image-not-found rather than on anything about the ledger. A
+        # required check that reds for infrastructure reasons trains people to
+        # re-run it, which is how a real red gets re-run away too.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image $IMAGE already cached locally — skipping pull"
+            exit 0
+          fi
+          max_attempts=15
+          delay=4
+          for i in $(seq 1 $max_attempts); do
+            if docker pull "$IMAGE"; then
+              echo "Image pulled successfully on attempt $i"
+              exit 0
+            fi
+            if [ $i -eq $max_attempts ]; then
+              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts (~13min) AND image not in local cache"
+              exit 1
+            fi
+            echo "Pull attempt $i/$max_attempts failed; sleeping ${delay}s"
+            sleep "$delay"
+            delay=$((delay + 6))  # linear backoff: 4,10,16,22,28,34,...
+          done
       # Verification Discipline #7: the guard's own case table runs BEFORE the
       # guard judges anything. Text-only, no build, ~0.1s.
       - name: Parity-ratchet guard case table must pass before it judges
@@ -867,8 +894,18 @@ jobs:
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
+            -e APR_BIN_STRICT=1 \
             "$IMAGE" \
             bash -c 'cargo build --bin apr && bash scripts/check_competitive_parity.sh'
+        # APR_BIN_STRICT=1: `apr_bin_assert_fresh` FAILS OPEN without it — outside
+        # a git checkout it prints "not a git checkout, freshness not asserted"
+        # and returns 0 (scripts/apr_bin.sh:165-169), so any binary satisfies the
+        # guard whose whole job is refusing unproven ones. The docker container
+        # mounts the workspace, so git IS present and the strict branch should
+        # never fire; that is exactly why it must be set — the day the mount or
+        # the fetch-depth changes, this must go RED rather than silently start
+        # enumerating the universe from an unverified binary. The check script
+        # exports it too, so a human run is strict as well.
       - name: Fix file ownership
         if: always()
         run: |

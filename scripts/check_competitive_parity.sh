@@ -23,25 +23,70 @@
 # the 0.69x row was the cheapest way to comply. Under this one it is the most
 # expensive thing you can do.
 #
+# THE BASELINE IS A SET, NOT A COUNT
+# ----------------------------------
+# The first version of this ratchet enforced `__MEASURED__ >= 4` and never
+# recorded WHICH entry points held a verdict. A count is payable in the wrong
+# currency: DELETE the StandardScaler 0.69x row, ADD a cheaper fabricated one,
+# and every total is unchanged while the only losing measurement in the history
+# has left the tree again. That is PMAT-733 with the arithmetic balanced, and it
+# is the move this file exists to block.
+#
+# So the baseline holds SETS keyed by entry_point:
+#
+#   ROW=<entry_point>           every row that must still EXIST. Shrink-never.
+#   MEASURED_ROW=<entry_point>  every row whose verdict must still be MEASURED
+#                               -- unless a downgrade is RECORDED for it. Also
+#                               shrink-never, which is what makes a downgrade a
+#                               DEBT rather than a one-off payment: the key
+#                               stays, so the row must either come back to
+#                               measured or keep its record. A baseline that
+#                               absorbed the drop would let the next commit
+#                               delete the `downgrades:` entry unnoticed.
+#
+# HONESTY MUST STAY AFFORDABLE
+# ----------------------------
+# The mirror-image failure is a floor with no give. `MEASURED_MIN=4` made
+# DOWNGRADING mechanically forbidden, and the live case was already in the
+# ledger: the `apr code` row's own note says it should be UNMEASURED -- its
+# cited receipt, evidence/phase-5/arena-scores.json, does not exist in this
+# repository -- yet correcting it would have breached the floor. A ratchet that
+# punishes increasing honesty produces dishonest ledgers.
+#
+# The two properties are therefore SEPARATED. The set of rows that EXIST may
+# never shrink. The set of rows that are MEASURED may shrink, but only against a
+# `downgrades:` record in the ledger naming that row, with a reason from a
+# CLOSED serde vocabulary (prose fails to PARSE), an owner, and a bounded
+# recheck date. And PARITY-012 requires the downgraded row to still be PRESENT,
+# so "delete the row and file paperwork" is not a route.
+#
 # WHAT IT ENFORCES
 # ----------------
 #   1. `pv parity-ledger` passes  — freshness evaluated AT CHECK TIME, for every
 #      verdict class. An expired BETTER row degrades to UNMEASURED and blocks.
 #      This is the half the first design got backwards: it bounded only
 #      UNMEASURED rows, and MEASURED is exactly where both withdrawn claims
-#      lived (ollama 1.371x; StandardScaler).
-#   2. __MEASURED__ >= the baseline. Monotone, shrink-never.
-#   3. __NON_WINS__ >= the baseline. A ledger that is all wins is untested in
+#      lived (ollama 1.371x; StandardScaler). PARITY-011 additionally CAPS how
+#      far ahead `valid_until` may be set, because check-time freshness is only
+#      as strong as the dates it reads: rewriting every expiry to "2099-12-31"
+#      satisfied the first design completely.
+#   2. Every baseline ROW= key still exists. Set-keyed, so losing a SPECIFIC row
+#      is RED at constant totals.
+#   3. Every baseline MEASURED_ROW= key is still measured, OR carries a recorded
+#      downgrade in the ledger's `downgrades:` block.
+#   4. __NON_WINS__ >= the baseline. A ledger that is all wins is untested in
 #      the direction that matters.
-#   4. The scope file is bound to the LIVE enumeration from a SHA-PINNED `apr`
+#   5. The scope file is bound to the LIVE enumeration from a SHA-PINNED `apr`
 #      (`. scripts/apr_bin.sh`), so a scope entry naming a subcommand that no
 #      longer exists is RED rather than quietly true.
-#   5. Every ledger row's entry_point is IN scope, so a row cannot be scored
+#   6. Every ledger row's entry_point is IN scope, so a row cannot be scored
 #      against a universe it is not part of.
-#   6. `--update-baseline` REFUSES to write a lower __MEASURED__/__NON_WINS__,
-#      and refuses to shrink the scope unless each dropped entry has actually
-#      left the runtime enumeration. That is the PMAT-733 countermeasure: you
-#      cannot raise the ratio by deleting the denominator either.
+#   7. `--update-baseline` REFUSES to drop a ROW key that is still live, refuses
+#      to drop a MEASURED_ROW key with no recorded downgrade, refuses to lower
+#      __NON_WINS__, and refuses to shrink the scope unless each dropped entry
+#      has actually left the runtime enumeration. That is the PMAT-733
+#      countermeasure from both ends: you cannot raise the ratio by deleting the
+#      numerator or by shrinking the denominator.
 #
 #   bash scripts/check_competitive_parity.sh                    # check
 #   bash scripts/check_competitive_parity.sh --self-test        # case table
@@ -53,6 +98,15 @@
 # a different binary than the one under test is the stale-`apr` defect wearing a
 # different hat.
 set -uo pipefail
+
+# The universe is enumerated from a SHA-pinned `apr`, and `apr_bin_assert_fresh`
+# FAILS OPEN outside a git checkout unless this is set -- it prints "not a git
+# checkout, freshness not asserted" and returns 0, so any binary passes the
+# guard whose entire job is refusing unproven binaries. Exported HERE rather
+# than relied on from the CI job's `env:`, because the gate must be strict when
+# a human runs it too, and a variable set only in one workflow is a property of
+# that workflow rather than of this check.
+export APR_BIN_STRICT=1
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LEDGER="contracts/apr-competitive-parity-v1.yaml"
@@ -74,6 +128,48 @@ BASELINE="scripts/competitive_parity_baseline.txt"
 cp_extract() {
     local key="$1" text="$2"
     grep -E "^${key}=[0-9]+$" <<<"$text" | head -1 | cut -d= -f2
+}
+
+# Every VALUE of an anchored `KEY=<value>` line, prefix-stripped, one per line.
+#
+# NOT `cut -d= -f2`. Entry points contain `=` -- the llama.cpp row is literally
+# `apr run --gpu (concurrency=1 single-request decode)` -- and cutting on the
+# delimiter truncates that key to `apr run --gpu (concurrency`. A set-membership
+# test over truncated keys reports a row as PRESENT whenever a different row
+# shares its prefix, which reintroduces the exact hole the set is closing.
+cp_keys() {
+    local key="$1" text="$2"
+    grep -E "^${key}=" <<<"$text" | sed "s/^${key}=//"
+}
+
+# Lines present in `want` and absent from `have`. Both are newline-separated
+# sets; blank lines are ignored. Exact whole-line matching (`grep -qxF`), never
+# substring: `apr run --gpu` must NOT satisfy a requirement for
+# `apr run --gpu (concurrency=1 single-request decode)`.
+cp_set_minus() {
+    local want="$1" have="$2" line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        grep -qxF -- "$line" <<<"$have" || printf '%s\n' "$line"
+    done <<<"$want"
+}
+
+# Which baseline-MEASURED keys stopped being measured WITHOUT a recorded
+# downgrade? One key per line; empty output means every drop is paid for.
+#
+# This is the whole of the honest-downgrade rule, in one place so the case table
+# can probe it directly. (a) a key that dropped AND has a downgrade record is
+# silent; (b) a key that dropped with NO record is named. A key that is still
+# measured is silent whether or not a record exists -- PARITY-014 refuses that
+# combination on the contract side, which is where it belongs.
+cp_unjustified_drops() {
+    local baseline_measured="$1" live_measured="$2" live_downgrades="$3" k
+    while IFS= read -r k; do
+        [ -n "$k" ] || continue
+        grep -qxF -- "$k" <<<"$live_measured" && continue
+        grep -qxF -- "$k" <<<"$live_downgrades" && continue
+        printf '%s\n' "$k"
+    done <<<"$baseline_measured"
 }
 
 # Ratchet comparison: is `actual` acceptable against `floor`?
@@ -226,6 +322,89 @@ cp_self_test() {
         && ok 'empty value does not match' || bad 'empty value does not match'
     [ -z "$(cp_extract __MEASURED__ '__NON_WINS__=4')" ] \
         && ok 'a different key does not match' || bad 'a different key does not match'
+
+    printf 'case table: cp_keys (a SET, and `=` inside a key must survive)\n'
+    local pvout
+    pvout=$'ROW  WORSE -> WORSE fresh valid_until=2026-09-30 apr code\n__ROWS__=5\n__ROW__=apr run --gpu\n__ROW__=apr run --gpu (concurrency=1 single-request decode)\n__MEASURED_ROW__=apr run --gpu\n__DOWNGRADE__=apr code'
+    [ "$(cp_keys __ROW__ "$pvout" | wc -l)" = "2" ] \
+        && ok 'both __ROW__ values are read' || bad 'both __ROW__ values are read'
+    # THE TRAP: `cut -d= -f2` truncates this to "apr run --gpu (concurrency".
+    grep -qxF 'apr run --gpu (concurrency=1 single-request decode)' \
+        <<<"$(cp_keys __ROW__ "$pvout")" \
+        && ok 'a key CONTAINING = survives intact' || bad 'a key CONTAINING = survives intact'
+    [ "$(cp_keys __MEASURED_ROW__ "$pvout")" = "apr run --gpu" ] \
+        && ok '__MEASURED_ROW__ is a different set from __ROW__' \
+        || bad '__MEASURED_ROW__ is a different set from __ROW__'
+    [ "$(cp_keys __DOWNGRADE__ "$pvout")" = "apr code" ] \
+        && ok '__DOWNGRADE__ is read' || bad '__DOWNGRADE__ is read'
+    # MUST NOT match: the human ROW line mentions the same entry point.
+    [ -z "$(cp_keys __EXPIRED_ROW__ "$pvout")" ] \
+        && ok 'an absent key yields the empty set' || bad 'an absent key yields the empty set'
+    [ "$(cp_keys __ROWS__ "$pvout")" = "5" ] \
+        && ok '__ROWS__ does not bleed into __ROW__' || bad '__ROWS__ does not bleed into __ROW__'
+    grep -qxF 'apr code' <<<"$(cp_keys __ROW__ "$pvout")" \
+        && bad 'the prose ROW line is not a __ROW__ key' \
+        || ok 'the prose ROW line is not a __ROW__ key'
+
+    printf 'case table: cp_set_minus\n'
+    local a b
+    a=$'x\ny\nz'
+    b=$'x\nz'
+    [ "$(cp_set_minus "$a" "$b")" = "y" ] \
+        && ok 'names exactly the missing member' || bad 'names exactly the missing member'
+    [ -z "$(cp_set_minus "$b" "$a")" ] \
+        && ok 'a subset is silent' || bad 'a subset is silent'
+    [ -z "$(cp_set_minus '' "$a")" ] \
+        && ok 'the empty want-set is silent' || bad 'the empty want-set is silent'
+    [ "$(cp_set_minus "$a" '' | wc -l)" = "3" ] \
+        && ok 'an empty have-set loses everything' || bad 'an empty have-set loses everything'
+    # SUBSTRING TRAP. `apr run --gpu` present must NOT satisfy the qualified key.
+    [ "$(cp_set_minus 'apr run --gpu (concurrency=1 single-request decode)' 'apr run --gpu')" \
+        = 'apr run --gpu (concurrency=1 single-request decode)' ] \
+        && ok 'a PREFIX in have does not satisfy want' || bad 'a PREFIX in have does not satisfy want'
+    [ -z "$(cp_set_minus 'apr run' $'apr run\napr run --gpu')" ] \
+        && ok 'exact whole-line membership counts' || bad 'exact whole-line membership counts'
+
+    printf 'case table: cp_set_minus == THE DEFECT-1 MUTATION\n'
+    # Delete one row, add a DIFFERENT one. Counts identical (3 -> 3); the set
+    # must still name the loss. This is d7e08043b in miniature.
+    local before after
+    before=$'apr run --gpu\nlib:aprender-core::StandardScaler::fit_transform\napr code'
+    after=$'apr run --gpu\napr qa\napr code'
+    [ "$(grep -c . <<<"$before")" = "$(grep -c . <<<"$after")" ] \
+        && ok 'the mutation keeps the COUNT identical (so a count ratchet is blind)' \
+        || bad 'the mutation keeps the COUNT identical (so a count ratchet is blind)'
+    [ "$(cp_set_minus "$before" "$after")" = 'lib:aprender-core::StandardScaler::fit_transform' ] \
+        && ok 'the SET names the deleted row anyway' || bad 'the SET names the deleted row anyway'
+
+    printf 'case table: cp_unjustified_drops (the DEFECT-3 give)\n'
+    local bm lm ld
+    bm=$'apr run --gpu\napr code\nlib:aprender-core::Lasso::fit'
+    # (a) `apr code` dropped WITH a record -> silent.
+    lm=$'apr run --gpu\nlib:aprender-core::Lasso::fit'
+    ld=$'apr code'
+    [ -z "$(cp_unjustified_drops "$bm" "$lm" "$ld")" ] \
+        && ok '(a) a downgrade WITH a recorded reason PASSES' \
+        || bad '(a) a downgrade WITH a recorded reason PASSES'
+    # (b) the same drop with NO record -> named.
+    [ "$(cp_unjustified_drops "$bm" "$lm" '')" = 'apr code' ] \
+        && ok '(b) the same downgrade with NO record FAILS' \
+        || bad '(b) the same downgrade with NO record FAILS'
+    # A record for a DIFFERENT row does not launder this one.
+    [ "$(cp_unjustified_drops "$bm" "$lm" 'apr run --gpu')" = 'apr code' ] \
+        && ok 'a record for another row does not launder this drop' \
+        || bad 'a record for another row does not launder this drop'
+    # Nothing dropped -> silent, records or not.
+    [ -z "$(cp_unjustified_drops "$bm" "$bm" '')" ] \
+        && ok 'no drop is silent' || bad 'no drop is silent'
+    # TWO drops, ONE record -> the unpaid one is named.
+    [ "$(cp_unjustified_drops "$bm" 'apr run --gpu' 'apr code')" = 'lib:aprender-core::Lasso::fit' ] \
+        && ok 'one record does not pay for two drops' || bad 'one record does not pay for two drops'
+    # Silently dropping the ROW ENTIRELY is caught by cp_set_minus, not here --
+    # asserted so the division of labour is a test rather than a comment.
+    [ -n "$(cp_set_minus "$bm" 'apr run --gpu')" ] \
+        && ok 'a vanished row is caught by the ROW set, not by the drop rule' \
+        || bad 'a vanished row is caught by the ROW set, not by the drop rule'
 
     printf 'case table: cp_meets_floor\n'
     if cp_meets_floor 4 4; then ok 'equal meets the floor'; else bad 'equal meets the floor'; fi
@@ -403,6 +582,11 @@ MEASURED=$(cp_extract __MEASURED__ "$PV_OUT")
 NON_WINS=$(cp_extract __NON_WINS__ "$PV_OUT")
 ROWS=$(cp_extract __ROWS__ "$PV_OUT")
 
+# The SETS. These, not the counts, are what makes a specific deletion visible.
+LIVE_ROWS=$(cp_keys __ROW__ "$PV_OUT")
+LIVE_MEASURED=$(cp_keys __MEASURED_ROW__ "$PV_OUT")
+LIVE_DOWNGRADES=$(cp_keys __DOWNGRADE__ "$PV_OUT")
+
 # -- 2. the live universe ---------------------------------------------------
 UNIVERSE=$(cp_live_universe)
 UNIVERSE_RC=$?
@@ -445,20 +629,68 @@ while IFS= read -r row; do
 done <<<"$ROW_ENTRIES"
 
 # -- 5. the baseline --------------------------------------------------------
-# shellcheck source=scripts/competitive_parity_baseline.txt
-MEASURED_MIN=$(grep -E '^MEASURED_MIN=[0-9]+$' "$BASELINE" | head -1 | cut -d= -f2)
+BASELINE_TEXT=$(cat "$BASELINE")
 NON_WINS_MIN=$(grep -E '^NON_WINS_MIN=[0-9]+$' "$BASELINE" | head -1 | cut -d= -f2)
 IN_SCOPE_MIN=$(grep -E '^IN_SCOPE_MIN=[0-9]+$' "$BASELINE" | head -1 | cut -d= -f2)
+BASE_ROWS=$(cp_keys ROW "$BASELINE_TEXT")
+BASE_MEASURED=$(cp_keys MEASURED_ROW "$BASELINE_TEXT")
+
+# A baseline with no ROW set at all would make checks 5a-5c vacuously true --
+# the "measurement that did not happen" failure, which must be RED and not
+# absent (the coverage floor reported 0/0 for months while `|| true` kept it
+# green). Refuse before judging anything against it.
+if [ -z "$BASE_ROWS" ]; then
+    if [ "$MODE" = "--update-baseline" ]; then
+        # Bootstrap: seeding the very first set. Loud, because emptying the ROW
+        # lines and re-seeding is the one route that would launder a deletion
+        # through this tool -- and it is a visible diff on a tracked file, which
+        # is what makes the loudness sufficient rather than the only defence.
+        printf '! BOOTSTRAP: %s currently records no ROW= keys, so nothing is being\n' "$BASELINE" >&2
+        printf '  ratcheted against. Review the emitted set against the ledger.\n' >&2
+    else
+        printf '✗ %s records no ROW= keys.\n' "$BASELINE" >&2
+        printf '    The ratchet is a SET keyed by entry point; with an empty set every\n' >&2
+        printf '    membership check passes vacuously and deleting any row is free.\n' >&2
+        printf '    A check that cannot fail is worse than no check, because it is\n' >&2
+        printf '    counted. Regenerate with --update-baseline.\n' >&2
+        exit 1
+    fi
+fi
 
 if [ "$MODE" = "--update-baseline" ]; then
     refuse=0
-    cp_meets_floor "$MEASURED" "$MEASURED_MIN" || {
-        printf '✗ REFUSING to lower MEASURED_MIN %s -> %s.\n' "$MEASURED_MIN" "$MEASURED" >&2
-        printf '    Deleting a comparison to raise the ratio is the failure this gate\n' >&2
-        printf '    exists to block (PMAT-733). Record the loss instead: WORSE and\n' >&2
-        printf '    UNMEASURED are first-class verdicts, and WORSE still COUNTS.\n' >&2
+
+    # A ROW may leave the baseline only when the ENTRY POINT itself has left the
+    # live enumeration -- the same test the scope uses. Deleting a comparison to
+    # raise the ratio is the failure this gate exists to block (PMAT-733).
+    while IFS= read -r gone; do
+        [ -n "$gone" ] || continue
+        if cp_removal_allowed "$gone" "$UNIVERSE"; then
+            printf '  row drop OK: %s has left the enumeration\n' "$gone"
+        else
+            printf '✗ REFUSING to drop the row for %s: the entry point is still live.\n' "$gone" >&2
+            printf '    Record the loss instead. WORSE and UNMEASURED are first-class\n' >&2
+            printf '    verdicts and BOTH keep the row; only DELETION is refused.\n' >&2
+            refuse=1
+        fi
+    done < <(cp_set_minus "$BASE_ROWS" "$LIVE_ROWS")
+
+    # A MEASURED_ROW may leave the measured set only against a RECORDED
+    # downgrade. This is the give that keeps the honest correction possible --
+    # without it, filing the `apr code` row as UNMEASURED (which its own note
+    # says it should be) is mechanically forbidden, and a ratchet that punishes
+    # increasing honesty produces dishonest ledgers.
+    while IFS= read -r dropped; do
+        [ -n "$dropped" ] || continue
+        printf '✗ REFUSING to drop %s from the MEASURED set: no downgrade is recorded.\n' \
+               "$dropped" >&2
+        printf '    Add a `downgrades:` entry to %s naming it, with a reason from the\n' "$LEDGER" >&2
+        printf '    closed vocabulary (RECEIPT_MISSING / HARNESS_DELETED / ...), an\n' >&2
+        printf '    owner, and a bounded recheck_by. Prose is not a reason: the\n' >&2
+        printf '    vocabulary is a serde enum, so an invented one fails to PARSE.\n' >&2
         refuse=1
-    }
+    done < <(cp_unjustified_drops "$BASE_MEASURED" "$LIVE_MEASURED" "$LIVE_DOWNGRADES")
+
     cp_meets_floor "$NON_WINS" "$NON_WINS_MIN" || {
         printf '✗ REFUSING to lower NON_WINS_MIN %s -> %s.\n' "$NON_WINS_MIN" "$NON_WINS" >&2
         printf '    A ledger trending toward all-wins is trending toward the state\n' >&2
@@ -482,27 +714,83 @@ if [ "$MODE" = "--update-baseline" ]; then
     fi
     [ "$refuse" -eq 0 ] || exit 1
 
+    # MEASURED_ROW is SHRINK-NEVER, and that is what makes a downgrade a DEBT
+    # rather than a one-off payment. If the baseline dropped the key once a
+    # downgrade was recorded, the paperwork could be filed, absorbed, and then
+    # deleted in the next commit with nothing left to notice. Keeping the key
+    # means the row must EITHER come back to measured OR keep its record, for as
+    # long as the row exists. The only keys that leave are those whose ROW left
+    # legitimately (the entry point is gone from the live enumeration).
+    NEW_MEASURED=$(
+        {
+            printf '%s\n' "$BASE_MEASURED"
+            printf '%s\n' "$LIVE_MEASURED"
+        } | grep -v '^$' | LC_ALL=C sort -u
+    )
+    NEW_MEASURED=$(
+        while IFS= read -r k; do
+            [ -n "$k" ] || continue
+            grep -qxF -- "$k" <<<"$LIVE_ROWS" && printf '%s\n' "$k"
+        done <<<"$NEW_MEASURED"
+    )
+
     {
-        printf '# Competitive-parity ratchet baseline. SHRINK-NEVER.\n'
-        printf '# Written by scripts/check_competitive_parity.sh --update-baseline,\n'
-        printf '# which refuses to lower any of these. Do not hand-edit downward:\n'
-        printf '# the whole mechanism is that deleting a losing row costs you a point.\n'
-        printf 'MEASURED_MIN=%s\n' "$MEASURED"
+        printf '# Competitive-parity ratchet baseline. A SET, not a count.\n'
+        printf '#\n'
+        printf '# Written by scripts/check_competitive_parity.sh --update-baseline.\n'
+        printf '# Do not hand-edit: the mechanism is that losing a SPECIFIC row is\n'
+        printf '# visible even when every total is unchanged. A count ratchet is\n'
+        printf '# payable in the wrong currency -- delete the StandardScaler 0.69x row,\n'
+        printf '# add a cheaper one, and __MEASURED__ never moves. That is PMAT-733.\n'
+        printf '#\n'
+        printf '#   ROW=             must still EXIST. Droppable only when the entry\n'
+        printf '#                    point has left the live `apr` enumeration.\n'
+        printf '#   MEASURED_ROW=    SHRINK-NEVER. Must still be MEASURED, or carry a\n'
+        printf '#                    recorded `downgrades:` entry in the ledger. The key\n'
+        printf '#                    STAYS while the row exists, so a downgrade is a debt\n'
+        printf '#                    with a due date, not a one-off payment that the\n'
+        printf '#                    baseline absorbs and the next commit can delete.\n'
         printf 'NON_WINS_MIN=%s\n' "$NON_WINS"
         printf 'IN_SCOPE_MIN=%s\n' "$IN_SCOPE"
+        printf '\n'
+        printf '%s\n' "$LIVE_ROWS" | grep -v '^$' | sed 's/^/ROW=/'
+        printf '\n'
+        printf '%s\n' "$NEW_MEASURED" | grep -v '^$' | sed 's/^/MEASURED_ROW=/'
     } > "$BASELINE"
-    printf '✓ baseline updated: MEASURED_MIN=%s NON_WINS_MIN=%s IN_SCOPE_MIN=%s\n' \
-           "$MEASURED" "$NON_WINS" "$IN_SCOPE"
+    printf '✓ baseline updated: %s row(s), %s measured, NON_WINS_MIN=%s IN_SCOPE_MIN=%s\n' \
+           "$ROWS" "$MEASURED" "$NON_WINS" "$IN_SCOPE"
     exit 0
 fi
 
-cp_meets_floor "$MEASURED" "$MEASURED_MIN" || {
-    printf '✗ __MEASURED__ fell: %s < baseline %s.\n' "${MEASURED:-<none>}" "${MEASURED_MIN:-<none>}" >&2
-    printf '    Either a row was DELETED, or a row EXPIRED. Both are the same\n' >&2
-    printf '    defect from the ledger'"'"'s point of view: a claim that no longer has\n' >&2
-    printf '    a fresh dated measurement behind it.\n' >&2
+# -- 5a. every baseline ROW must still EXIST --------------------------------
+# THE FIX FOR THE COUNT RATCHET. Keyed by entry point, so deleting the
+# StandardScaler row and adding a different one -- identical __ROWS__,
+# __MEASURED__ and __NON_WINS__ -- names the missing key instead of passing.
+while IFS= read -r missing; do
+    [ -n "$missing" ] || continue
+    printf '✗ ROW DELETED: %s is in %s and no longer in the ledger.\n' "$missing" "$BASELINE" >&2
+    printf '    Totals prove nothing here: a row can be deleted and paid for with a\n' >&2
+    printf '    cheaper one at constant __MEASURED__. That is exactly what d7e08043b\n' >&2
+    printf '    did (PMAT-733), and it removed the only two losing rows in the\n' >&2
+    printf '    history. Record the loss -- WORSE and UNMEASURED both KEEP the row.\n' >&2
+    printf '    If the entry point genuinely left the binary, use --update-baseline,\n' >&2
+    printf '    which will only allow it once the enumeration agrees.\n' >&2
     fail=1
-}
+done < <(cp_set_minus "$BASE_ROWS" "$LIVE_ROWS")
+
+# -- 5b. every baseline MEASURED_ROW is measured, or downgraded ON RECORD ----
+while IFS= read -r dropped; do
+    [ -n "$dropped" ] || continue
+    printf '✗ UNJUSTIFIED DOWNGRADE: %s was MEASURED and is not, with no record.\n' "$dropped" >&2
+    printf '    Downgrading is ALLOWED -- a floor with no give forbids the honest\n' >&2
+    printf '    correction, and that produces dishonest ledgers. It is not allowed\n' >&2
+    printf '    SILENTLY. Add a `downgrades:` entry to %s naming this row, with a\n' "$LEDGER" >&2
+    printf '    reason from the closed vocabulary, an owner and a bounded recheck_by.\n' >&2
+    printf '    (If instead the row simply EXPIRED, re-measure it: an expired row\n' >&2
+    printf '    also fails `pv parity-ledger` above.)\n' >&2
+    fail=1
+done < <(cp_unjustified_drops "$BASE_MEASURED" "$LIVE_MEASURED" "$LIVE_DOWNGRADES")
+
 cp_meets_floor "$NON_WINS" "$NON_WINS_MIN" || {
     printf '✗ __NON_WINS__ fell: %s < baseline %s.\n' "${NON_WINS:-<none>}" "${NON_WINS_MIN:-<none>}" >&2
     printf '    Losses may be FIXED, not deleted. Turn a WORSE into a PARITY by\n' >&2
@@ -518,8 +806,11 @@ cp_meets_floor "$IN_SCOPE" "$IN_SCOPE_MIN" || {
 
 printf '\n'
 printf 'entry points in scope : %s (floor %s)\n' "$IN_SCOPE" "$IN_SCOPE_MIN"
-printf 'ledger rows           : %s\n' "${ROWS:-<none>}"
-printf 'measured (fresh)      : %s (floor %s)\n' "${MEASURED:-<none>}" "$MEASURED_MIN"
+printf 'ledger rows           : %s (baseline set: %s)\n' \
+       "${ROWS:-<none>}" "$(grep -c . <<<"$BASE_ROWS")"
+printf 'measured (fresh)      : %s (baseline set: %s)\n' \
+       "${MEASURED:-<none>}" "$(grep -c . <<<"$BASE_MEASURED")"
+printf 'downgrades on record  : %s\n' "$(grep -c . <<<"$LIVE_DOWNGRADES")"
 printf 'non-wins recorded     : %s (floor %s)\n' "${NON_WINS:-<none>}" "$NON_WINS_MIN"
 
 if [ "$fail" -ne 0 ]; then
