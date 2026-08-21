@@ -127,7 +127,17 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
         },
     };
 
-    spawn_and_confirm("apr", &serve_argv(model_path, port), port, READY_TIMEOUT)
+    // aprender#2563: a bare "apr" here is resolved through $PATH, so this tool
+    // spawns whatever `apr` the user happens to have installed -- which during the
+    // 0.63.0 dogfood was a 26-day-old 0.60.0. The MCP server then reports results
+    // for code it is not running. apr_binary() is the resolver that already exists
+    // for exactly this, and every other tool in this crate uses it.
+    spawn_and_confirm(
+        &crate::apr_bin::apr_binary().to_string_lossy(),
+        &serve_argv(model_path, port),
+        port,
+        READY_TIMEOUT,
+    )
 }
 
 /// Spawn `program <args...>` as a background HTTP daemon on `port` and wait
