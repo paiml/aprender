@@ -457,3 +457,237 @@ fn test_all_workspace_dirs_have_cargo_toml() {
         missing
     );
 }
+
+// ===========================================================================
+// #2543 — Gate 5 of the pre-release skill is STAGE-DEPENDENT.
+//
+// `cargo package -p <crate>` re-resolves every dependency against crates.io, so
+// a workspace sibling resolves to its already-published copy. Before the version
+// bump that copy carries the SAME version number as the tree while missing every
+// symbol the tree has added since, and the verify build fails with dozens of
+// E0432/E0433 SYMBOL-not-found errors. Nothing is broken; the gate is simply
+// unsatisfiable at that stage, and a release engineer who meets it cold reads it
+// as a blocker and aborts the cut.
+//
+// The remedy is an explicit, machine-checked ordering declaration in the skill:
+//
+//     STAGE-PRECONDITION: cargo package -p <crate> requires stage <STAGE>
+//
+// These three tests are FALSIFY-PUB-005/006/007 of
+// contracts/publish-workspace-v1.yaml. The shell guard
+// scripts/check_gate5_stage.sh enforces the same predicate in the guard job and
+// additionally offers `--explain <crate>` to a release engineer.
+// ===========================================================================
+
+/// Non-dev (normal + build) workspace-sibling dependency count for every
+/// workspace member. Those are the edges `cargo package`'s verify build must
+/// resolve from the registry.
+fn workspace_sibling_counts() -> std::collections::HashMap<String, usize> {
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("cargo metadata failed");
+    let metadata: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
+            .expect("failed to parse cargo metadata");
+    let packages = metadata["packages"].as_array().expect("no packages");
+    let members: HashSet<&str> = packages.iter().filter_map(|p| p["name"].as_str()).collect();
+
+    packages
+        .iter()
+        .map(|pkg| {
+            let name = pkg["name"].as_str().unwrap_or("").to_string();
+            (name, non_dev_sibling_count(pkg, &members))
+        })
+        .collect()
+}
+
+/// `kind` is null for a normal dependency, `"build"` for a build dependency and
+/// `"dev"` for a dev dependency. Dev edges are excluded: they are stripped from
+/// the published manifest when path-only, and `cargo package`'s verify build
+/// does not compile them.
+fn is_non_dev(dep: &serde_json::Value) -> bool {
+    matches!(dep["kind"].as_str(), None | Some("build"))
+}
+
+fn non_dev_sibling_count(pkg: &serde_json::Value, members: &HashSet<&str>) -> usize {
+    pkg["dependencies"]
+        .as_array()
+        .map(|deps| {
+            deps.iter()
+                .filter(|d| is_non_dev(d))
+                .filter_map(|d| d["name"].as_str())
+                .filter(|dn| members.contains(dn))
+                .collect::<HashSet<&str>>()
+                .len()
+        })
+        .unwrap_or(0)
+}
+
+fn pre_release_skill() -> String {
+    let path = workspace_root().join(".claude/skills/pre-release/SKILL.md");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("pre-release skill must be readable at {path:?}: {e}"))
+}
+
+const STAGES: [&str; 4] = [
+    "MEANINGFUL",
+    "PRE_BUMP",
+    "POST_BUMP_PRE_CASCADE",
+    "CASCADE_READY",
+];
+
+/// `(crate, stage)` for every `STAGE-PRECONDITION:` declaration in the skill.
+fn stage_declarations(skill: &str) -> Vec<(String, String)> {
+    skill
+        .lines()
+        .filter_map(|l| {
+            let rest = l
+                .trim()
+                .strip_prefix("STAGE-PRECONDITION: cargo package -p ")?;
+            let (krate, tail) = rest.split_once(' ')?;
+            let stage = tail.strip_prefix("requires stage ")?.trim();
+            Some((krate.to_string(), stage.to_string()))
+        })
+        .collect()
+}
+
+/// Crates named by a real `cargo package -p <crate>` command — the declaration
+/// lines quote the command too and must NOT be mistaken for it.
+fn gate5_crates(skill: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in skill.lines().filter(|l| !l.contains("STAGE-PRECONDITION:")) {
+        for segment in line.split("cargo package -p ").skip(1) {
+            let krate: String = segment
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            if !krate.is_empty() && !out.contains(&krate) {
+                out.push(krate);
+            }
+        }
+    }
+    out
+}
+
+/// FALSIFY-PUB-005: every Gate-5 `cargo package -p <crate>` command in the
+/// pre-release skill either names a crate with zero workspace-sibling
+/// dependencies (the gate is then valid at any stage) or is accompanied by an
+/// explicit STAGE-PRECONDITION declaration.
+#[test]
+fn falsify_pub_005_gate5_declares_its_stage() {
+    let skill = pre_release_skill();
+    let counts = workspace_sibling_counts();
+    let crates = gate5_crates(&skill);
+
+    // Vacuity arm: "no Gate-5 command found" is a FAIL mode, not a pass. If
+    // Gate 5 is reworded out of recognition this test must go red rather than
+    // quietly measure nothing.
+    assert!(
+        !crates.is_empty(),
+        "FALSIFY-PUB-005 measured NOTHING: the pre-release skill names no \
+         `cargo package -p <crate>` command. Gate 5 was renamed or deleted."
+    );
+
+    let declared: std::collections::HashMap<String, String> =
+        stage_declarations(&skill).into_iter().collect();
+
+    let mut undeclared = Vec::new();
+    for krate in &crates {
+        let count = *counts.get(krate).unwrap_or_else(|| {
+            panic!("FALSIFY-PUB-005: Gate 5 names `{krate}`, which is not a workspace member")
+        });
+        if count > 0 && !declared.contains_key(krate) {
+            undeclared.push(format!("{krate} ({count} workspace-sibling deps)"));
+        }
+    }
+
+    assert!(
+        undeclared.is_empty(),
+        "FALSIFY-PUB-005 (#2543): Gate 5 runs `cargo package` on {undeclared:?} with no \
+         stage precondition stated. `cargo package` resolves those siblings from crates.io, \
+         so the gate is unsatisfiable until they are published at the workspace version. \
+         Add: `STAGE-PRECONDITION: cargo package -p <crate> requires stage CASCADE_READY`."
+    );
+}
+
+/// FALSIFY-PUB-006: a stage declaration must be TRUE against the dependency
+/// graph. `MEANINGFUL` claims the gate is valid at any stage, which is only
+/// true for a crate with no workspace-sibling dependencies.
+#[test]
+fn falsify_pub_006_gate5_stage_claim_matches_graph() {
+    let skill = pre_release_skill();
+    let counts = workspace_sibling_counts();
+    let decls = stage_declarations(&skill);
+
+    assert!(
+        !decls.is_empty(),
+        "FALSIFY-PUB-006 measured NOTHING: no STAGE-PRECONDITION declaration found."
+    );
+
+    let mut violations = Vec::new();
+    let (mut saw_meaningful, mut saw_staged) = (false, false);
+    for (krate, stage) in &decls {
+        assert!(
+            STAGES.contains(&stage.as_str()),
+            "FALSIFY-PUB-006: `{krate}` declares unknown stage `{stage}`; expected one of {STAGES:?}"
+        );
+        let count = *counts.get(krate).unwrap_or_else(|| {
+            panic!("FALSIFY-PUB-006: STAGE-PRECONDITION names `{krate}`, not a workspace member")
+        });
+        match (stage.as_str(), count) {
+            ("MEANINGFUL", 0) => saw_meaningful = true,
+            ("MEANINGFUL", n) => violations.push(format!(
+                "{krate} is declared MEANINGFUL but has {n} workspace-sibling dep(s)"
+            )),
+            (_, 0) => violations.push(format!(
+                "{krate} has 0 workspace-sibling deps, so `{stage}` is false — it is MEANINGFUL"
+            )),
+            (_, _) => saw_staged = true,
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "FALSIFY-PUB-006 (#2543): {violations:?}"
+    );
+
+    // Non-vacuity control: the assertion above passes trivially on a corpus of
+    // one kind. Both classes must actually be exercised.
+    assert!(
+        saw_meaningful && saw_staged,
+        "FALSIFY-PUB-006 is vacuous: the skill declares only one class of stage \
+         (meaningful={saw_meaningful}, stage-dependent={saw_staged}). It must carry at least one \
+         zero-sibling MEANINGFUL crate AND one sibling-dependent crate for the distinction to bite."
+    );
+}
+
+/// FALSIFY-PUB-007: the two crates the amended Gate 5 relies on must actually
+/// differ. `apr-format` is the stage-independent substitute precisely because it
+/// resolves nothing from the workspace; `apr-cli` is the worst case in the tree.
+/// If either fact changes, the gate's advice is wrong and must be rewritten.
+#[test]
+fn falsify_pub_007_gate5_leaf_and_hub_differ() {
+    let counts = workspace_sibling_counts();
+
+    let leaf = *counts
+        .get("apr-format")
+        .expect("apr-format must be a workspace member");
+    let hub = *counts
+        .get("apr-cli")
+        .expect("apr-cli must be a workspace member");
+
+    assert_eq!(
+        leaf, 0,
+        "FALSIFY-PUB-007 (#2543): apr-format now has {leaf} workspace-sibling dep(s). It is the \
+         stage-independent Gate 5 substitute *because* it has none. Pick another leaf crate and \
+         update the pre-release skill."
+    );
+    assert!(
+        hub > 0,
+        "FALSIFY-PUB-007 (#2543): apr-cli reports {hub} workspace-sibling deps. If that is really \
+         zero, Gate 5 is no longer stage-dependent and the whole precondition should be removed \
+         rather than left as folklore."
+    );
+}

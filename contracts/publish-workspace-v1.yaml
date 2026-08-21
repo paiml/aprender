@@ -1,73 +1,237 @@
-metadata:
-  version: 1.0.0
-  created: '2026-04-06'
-  author: PAIML Engineering
-  registry: true
-  references:
-  - 'Potvin & Levenberg, Why Google Stores Billions of Lines of Code in a Single Repository, CACM 2016'
-  description: >
-    |
-
 # APR-MONO: Workspace Publish Provable Contract
 #
-# Defines the invariants for publishing workspace crates to crates.io.
-# Enforced by: scripts/publish-workspace.sh + manual verification
+# KIND: kernel (metadata.kind omitted == kernel).
+#
+# It used to be `registry: true`, which exempts a contract from PROVABILITY-001.
+# Under that exemption this file carried FOUR falsification entries under a
+# top-level `falsification:` key the typed Contract struct does not have — serde
+# dropped the whole block, `pv validate` reported "Contract is valid", and
+# `pv status` reported "Falsification tests: 0". It scored 0.36 (grade F) on
+# Falsify while reading, to a human, as governance. That is the #2504 defect,
+# and it lived here too. Kernel is the only kind on which a misnamed or missing
+# block is an ERROR, so this contract is now a kernel.
+#
+# It ALSO contradicted the tree it governed: its tier table said aprender-core
+# publishes at T7 and serving at T9, while scripts/cascade-publish.sh has them at
+# T2 and T8; it cited version 0.29.0 and "69 workspace crates + 45 shim crates"
+# against a 78-member workspace at 0.63.0. Both are corrected below.
 
-kind: PublishContract
-name: publish-workspace
-version: "1.0.0"
-scope: "crates.io publishing of 69 workspace crates + 45 shim crates"
+metadata:
+  version: "2.0.0"
+  created: "2026-04-06"
+  updated: "2026-08-20"
+  author: PAIML Engineering
+  description: |
+    Invariants for publishing the aprender monorepo to crates.io, and — new in
+    2.0.0 (#2543) — the STAGE at which each pre-release gate is meaningful.
 
-description: |
-  Contract for publishing the monorepo workspace to crates.io in correct
-  topological order. Violations cause broken `cargo install aprender`.
+    `cargo package -p <crate>` re-resolves every dependency against crates.io, so
+    a workspace sibling resolves to its already-published copy rather than to the
+    tree. Before the version bump that copy carries the SAME version number while
+    missing every symbol added since it was published, and the verify build fails
+    with dozens of E0432/E0433 symbol-not-found errors. Nothing is broken: the
+    gate is unsatisfiable at that stage. A release engineer meeting it cold reads
+    it as a blocker and aborts the cut, which is what #2543 reports.
 
-preconditions:
-  - "cargo login has been run with PAIML crates.io token"
-  - "All workspace crates pass `cargo check --workspace`"
-  - "All integration tests pass (monorepo_invariants + cli_commands)"
-  - "`cargo package -p <crate>` succeeds for each crate (no missing files)"
-  - "Version field matches [workspace.package] version = 0.29.0"
-
-postconditions:
-  - "`cargo install aprender` produces working `apr` binary"
-  - "`cargo install aprender --version 0.29.0` succeeds on clean machine"
-  - "All shim crates resolve: `trueno = 0.19` → `aprender-compute = 0.29`"
-  - "No crate has [patch.crates-io] in its published Cargo.toml"
+    The constraint is ORDERING, so it is made explicit and machine-checked rather
+    than coded around. Gate 11 is the mirror image and is PRE-bump only.
+  references:
+    - "paiml/aprender#2543 (Gate 5 cannot pass before the version bump)"
+    - "paiml/aprender#2504 (a `falsification:` key serde drops silently)"
+    - "Potvin & Levenberg, Why Google Stores Billions of Lines of Code in a Single Repository, CACM 2016"
+    - "scripts/cascade-publish.sh (the 13-tier publish order this contract describes)"
+    - "scripts/check_gate5_stage.sh (the guard that enforces FALSIFY-PUB-005/006/007)"
+    - ".claude/skills/pre-release/SKILL.md (Gate 5 and Gate 11)"
+  depends_on: []
 
 equations:
   topological_order:
     formula: |
-      publish(C) requires: forall D in deps(C): published(D)
-
-      Tier ordering:
-        T0: leaf crates (no workspace deps)
-        T1: aprender-compute + sub-crates
-        T2: contracts + shared libs
-        T3: data + storage
-        T4-T6: visualization, test, zram
-        T7: aprender-core (ML library)
-        T8: training
-        T9: serving + orchestration
-        T10: apr-cli, then aprender (root facade)
+      publish(C) requires: forall D in non_dev_workspace_deps(C): published_at(D, V)
+    domain: "workspace members of the aprender monorepo (78 as of 0.63.0)"
+    codomain: "bool"
     invariants:
-      - "A crate is NEVER published before its workspace dependencies"
-      - "aprender (root) is ALWAYS published LAST"
-      - "Each publish waits ≥15s for crates.io index propagation"
+      - "A crate is NEVER published before its workspace dependencies are live at V"
+      - "aprender (the root facade) is ALWAYS published LAST"
+      - "Each publish waits for crates.io index propagation before dependents fetch"
+      - "The tier table in scripts/cascade-publish.sh is the single source of truth for order"
+    preconditions:
+      - "cargo login has been run with a non-stale crates.io token"
+      - "cargo check --workspace passes"
+      - "the workspace version is GREATER than the published max version of every member"
+    postconditions:
+      - "cargo install aprender produces a working apr binary from crates.io alone"
+      - "no published Cargo.toml contains a [patch.crates-io] section"
 
-falsification:
-  - name: FALSIFY-PUB-001
-    description: "Crate published before its dependency"
-    check: "cargo install aprender fails with 'version not found' for a dep"
+  gate_stage_dependence:
+    formula: |
+      meaningful(gate=cargo_package(C), stage=S) <=>
+          sibling_deps(C) = {} OR forall D in sibling_deps(C): published_at(D, version(C))
+    domain: "(pre-release gate, workspace member, release stage)"
+    codomain: "bool"
+    invariants:
+      - "A crate with zero non-dev workspace-sibling deps is stage-independent: MEANINGFUL"
+      - "PRE_BUMP: the workspace version is already published, so siblings resolve to the stale API"
+      - "POST_BUMP_PRE_CASCADE: the version is bumped but siblings are not live at it yet"
+      - "CASCADE_READY: every sibling is live at V; only now is a Gate 5 failure a defect"
+      - "A gate whose stage precondition is unstated is indistinguishable from a broken build"
+      - "Gate 11 (cargo publish --dry-run) is PRE_BUMP-only: post-bump it self-reports FAILURE"
+    preconditions:
+      - "sibling_deps(C) counts normal and build dependencies on workspace members, never dev"
+      - "the pre-release skill names at least one cargo package -p <crate> command"
+    postconditions:
+      - "every stage-dependent Gate-5 crate carries a STAGE-PRECONDITION declaration"
+      - "a MEANINGFUL declaration is made only for a crate with zero sibling deps"
 
-  - name: FALSIFY-PUB-002
-    description: "Shim crate fails to re-export"
-    check: "`trueno = '0.19'` in a Cargo.toml causes type mismatch"
+proof_obligations:
+  - type: ordering
+    property: "No crate is published before every non-dev workspace dependency is live at the target version"
+    formal: "forall C, D: D in non_dev_workspace_deps(C) => publish_time(D) < publish_time(C)"
+    applies_to: all
 
-  - name: FALSIFY-PUB-003
-    description: "`cargo install aprender` fails on clean machine"
-    check: "Post-publish smoke test in clean Docker container"
+  - type: precondition
+    property: "Every pre-release gate that runs `cargo package -p <crate>` on a crate with workspace-sibling dependencies states the release stage at which it is satisfiable"
+    formal: "forall C in gate5_crates(skill): sibling_deps(C) = {} or declared_stage(C) != none"
+    applies_to: all
 
-  - name: FALSIFY-PUB-004
-    description: "Published crate contains [patch.crates-io]"
-    check: "cargo download + inspect Cargo.toml for patch section"
+  - type: soundness
+    property: "A declared stage is true against the dependency graph: MEANINGFUL if and only if the crate has no workspace-sibling dependencies"
+    formal: "forall C: declared_stage(C) = MEANINGFUL <=> sibling_deps(C) = {}"
+    applies_to: all
+
+  - type: completeness
+    property: "The stage classifier can distinguish the stages it names; a classifier collapsing to one verdict is a failure"
+    formal: "|{ classify(C, R) : (C,R) in fixture_states }| >= 3"
+    applies_to: all
+
+falsification_tests:
+  # --- Legacy post-publish claims (1.0.0). These are LIVE checks that can only
+  # run against a real cascade, so they are marked LIVE-PENDING rather than
+  # dressed up as runnable shell, which is what they used to be.
+  - id: FALSIFY-PUB-001
+    rule: |
+      A crate published before one of its workspace dependencies.
+    prediction: |
+      `cargo install aprender` fails resolving a dependency at the target version.
+    test: |
+      LIVE-PENDING: post-cascade `cargo install aprender --version <V>` on a clean machine
+    if_fails: |
+      The cascade tier order in scripts/cascade-publish.sh is wrong for that edge.
+      Re-run the drain pass; do NOT reorder tiers mid-cut.
+
+  - id: FALSIFY-PUB-002
+    rule: |
+      A shim crate fails to re-export the consolidated in-tree crate.
+    prediction: |
+      A downstream `trueno = "0.19"` produces a type mismatch against aprender-compute.
+    test: |
+      LIVE-PENDING: build a downstream consumer against the published shim
+    if_fails: |
+      The shim's re-export surface drifted from the in-tree crate. Fix the shim,
+      not the consumer.
+
+  - id: FALSIFY-PUB-003
+    rule: |
+      The published flagship does not install on a clean machine.
+    prediction: |
+      `cargo install aprender` fails in a container with no local checkout.
+    test: |
+      LIVE-PENDING: post-publish smoke test in a clean container
+    if_fails: |
+      A path dependency, an excluded include!() target, or a missing version field
+      survived the gates. See CB-510 and scripts/check_package_includes.sh.
+
+  - id: FALSIFY-PUB-004
+    rule: |
+      A published crate carries a [patch.crates-io] section.
+    prediction: |
+      The downloaded .crate tarball's Cargo.toml contains a patch section.
+    test: |
+      LIVE-PENDING: download the published tarball and inspect its Cargo.toml
+    if_fails: |
+      A dev-only .cargo/config.toml leaked into the package. Remove it before publish.
+
+  # --- #2543: the ordering constraint, made machine-checked. -----------------
+  - id: FALSIFY-PUB-005
+    rule: |
+      Every `cargo package -p <crate>` command in the pre-release skill either names
+      a crate with zero non-dev workspace-sibling dependencies, or is accompanied by
+      an explicit `STAGE-PRECONDITION: cargo package -p <crate> requires stage <S>`
+      declaration.
+    prediction: |
+      Delete the STAGE-PRECONDITION line for apr-cli and the test FAILS naming
+      "apr-cli (26 workspace-sibling deps)". It cannot pass on an empty scan: a
+      skill file with no `cargo package -p` command at all also FAILS, because
+      "nothing to check" is how this gate would go dark.
+    test: |
+      cargo test -p aprender-core --test monorepo_invariants falsify_pub_005_gate5_declares_its_stage
+    test_harness: |
+      bash scripts/check_gate5_stage.sh
+    if_fails: |
+      A pre-release gate runs `cargo package` on a crate whose siblings are resolved
+      from crates.io without saying when that is satisfiable. The next release
+      engineer will read the resulting symbol errors as a blocker and abort the cut.
+      Add the STAGE-PRECONDITION line; do not weaken the gate.
+
+  - id: FALSIFY-PUB-006
+    rule: |
+      A declared stage must be TRUE against the dependency graph: MEANINGFUL claims
+      the gate is valid at any stage, which holds only for a crate with no
+      workspace-sibling dependencies.
+    prediction: |
+      Change apr-cli's declaration to MEANINGFUL and the test FAILS with
+      "apr-cli is declared MEANINGFUL but has 26 workspace-sibling dep(s)".
+      Non-vacuity: the test also fails if the skill declares only one class of
+      stage, so the distinction cannot be satisfied by a uniform corpus.
+    test: |
+      cargo test -p aprender-core --test monorepo_invariants falsify_pub_006_gate5_stage_claim_matches_graph
+    test_harness: |
+      bash scripts/check_gate5_stage.sh
+    if_fails: |
+      The skill's stage claim and cargo metadata disagree. The graph is the
+      authority — correct the declaration, or the crate's dependencies.
+
+  - id: FALSIFY-PUB-007
+    rule: |
+      The two crates the amended Gate 5 relies on must actually differ: apr-format
+      (the stage-independent substitute) has zero workspace-sibling dependencies and
+      apr-cli (the stage-dependent gate) has more than zero. The stage classifier
+      must likewise produce more than one verdict.
+    prediction: |
+      Point the leaf assertion at aprender-core (7 siblings) and it FAILS with
+      "apr-format now has 7 workspace-sibling dep(s)". Replace the classifier body
+      with a constant `MEANINGFUL` and `check_gate5_stage.sh --self-test` FAILS row
+      13 with "only 1 distinct verdict(s) — a constant-return classifier".
+    test: |
+      cargo test -p aprender-core --test monorepo_invariants falsify_pub_007_gate5_leaf_and_hub_differ
+    test_harness: |
+      bash scripts/check_gate5_stage.sh --self-test
+    if_fails: |
+      Either apr-format acquired a workspace dependency (pick a new leaf and update
+      the skill), or apr-cli lost all of them (delete the precondition rather than
+      leaving it as folklore), or the classifier has collapsed to a constant.
+
+kani_harnesses:
+  - id: KANI-PUB-001
+    obligation: "gate_stage_dependence"
+    property: "For any sibling-count n and any declared stage s, accept(n, s) holds iff (n = 0 <=> s = MEANINGFUL)"
+    bound: 8
+    strategy: bounded_int
+
+  - id: KANI-PUB-002
+    obligation: "topological_order"
+    property: "No publish schedule over a bounded DAG places a crate before one of its non-dev workspace dependencies"
+    bound: 8
+    strategy: bounded_int
+
+qa_gate:
+  id: F-PUB-001
+  name: "workspace publish + gate stage contract"
+  description: "Publish order, and the release stage at which each pre-release gate is meaningful."
+  checks:
+    - topological_order
+    - gate_stage_dependence
+  pass_criteria: "All 7 falsification tests pass"
+  falsification: |
+    A pre-release gate is red for a reason that is expected at the current stage and
+    nothing says so, or a stage declaration contradicts cargo metadata.
