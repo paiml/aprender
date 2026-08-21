@@ -413,8 +413,10 @@ falsification_tests:
       Re-declaring `lib:aprender-core::StandardScaler::fit_transform` from
       WORSE to NOT_COMPARABLE -- which leaves __ROWS__, __MEASURED__ and
       __NON_WINS__ all unchanged -- fails scripts/check_competitive_parity.sh
-      with UNRECORDED VERDICT CHANGE, and `--update-baseline` REFUSES to
-      absorb it. Adding a `downgrades:` entry with from_verdict: WORSE,
+      with UNRECORDED VERDICT CHANGE. There is no way to absorb it: the `from`
+      end is read from the ledger on protected `main`, and the only
+      re-baselining verb this guard ever had (`--update-baseline`) was deleted
+      with the baseline file. Adding a `downgrades:` entry with from_verdict: WORSE,
       to_verdict: NOT_COMPARABLE, a reason, an owner and a bounded recheck_by
       clears both. Nothing anywhere requires the verdict to be BETTER.
     if_fails: >-
@@ -538,15 +540,100 @@ falsification_tests:
       recorded there as ABSENT work.
     test: "cargo test -p aprender-contracts --lib parity_021_ parity_022_ parity_023_ parity_024_"
 
+  # ---------------------------------------------- ROUND 5: THE LAST TWO FATALS
+  - id: FALSIFY-PARITY-026
+    rule: "the bootstrap window is decided by the PARSED kind, not by matching text"
+    prediction: >-
+      The window that says "no prior ledger exists at the protected ref" -- the
+      strongest pass this gate can give, because nothing is ratcheted against
+      -- is keyed on `metadata.kind` AFTER serde has read the document.
+      Re-spelling the kind at the comparand as `kind: "competitive-parity"`, or
+      appending a trailing comment, or reflowing metadata into flow style,
+      changes NO meaning and the ledger is still discovered: the gate still
+      ratchets and does NOT print BOOTSTRAP. Measured against the regex this
+      replaces (`^[[:space:]]*kind:[[:space:]]*competitive-parity[[:space:]]*$`),
+      the quoted, commented and flow-style forms all match ZERO -- so under the
+      previous implementation each of them opened the window. A file at the
+      protected ref that will not parse is RED (never a bootstrap) and must be
+      repaired in the tree under test.
+    if_fails: >-
+      A renewable bootstrap is `registry: true` wearing another hat. Round 4
+      correctly moved the window from a sibling file's PATH (which `git mv`
+      reopened) to the KIND, and then matched the kind with a regex over the
+      file text -- so any reflow, quote or comment reopened it, permanently and
+      invisibly, on a document nobody had to change the meaning of.
+    limitation: >-
+      Discovery at the comparand is only as complete as the files there are
+      readable. An unparseable file at `main` that was in truth a parity ledger
+      and is repaired IN THIS TREE into some other kind would escape, because
+      discovery cannot read the original to contradict the repair. That
+      requires a malformed contract already on `main` plus a semantic edit to
+      it inside a reviewed diff.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
+  - id: FALSIFY-PARITY-027
+    rule: "an entry point may not delete itself out of the audited surface"
+    prediction: >-
+      The live universe is enumerated from `apr --help` of a binary built FROM
+      THE BRANCH, so the author writes it. Removing `apr qa` from that
+      enumeration fails the ratchet with STALE SCOPE while it is still in
+      scripts/competitive_parity_scope.txt; ALSO deleting the scope line fails
+      with SCOPE SHRANK; and doing both WITH an in-date `removals:` record
+      naming `apr qa` still fails, because scope then falls below the
+      `scope_min` step that has come due. A `removals:` record beside an entry
+      point that is STILL LIVE fails on its own (and PARITY-026 refuses one
+      beside a row that still exists); a RENAMED record whose `replacement` is
+      not live fails; one whose replacement is live but out of scope fails.
+    if_fails: >-
+      PMAT-733 executed one level down: instead of deleting the measurement,
+      delete the thing measured. Deleting the subcommand, its scope line and
+      its row in ONE commit removed a losing comparison at rc=0 with nothing
+      recorded anywhere -- and the rule did not merely fail to stop that, it
+      BLESSED it, hardest exactly when the deleted entry point carried a loss.
+    limitation: >-
+      Anchored to the protected ref through the ROW set and the SCOPE set,
+      which are already read from `main`, rather than by building `apr` at the
+      protected ref (a second full workspace build per run, plus a red whose
+      cause would be "main does not build here"). The cost: an entry point that
+      was live at `main` and was never in `main`'s scope can still be deleted
+      with nothing recorded. It appears in no quantity this gate computes.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
+  - id: FALSIFY-PARITY-028
+    rule: "the SECOND joint: the audited surface must keep widening"
+    prediction: >-
+      `parity.coverage.steps[].scope_min` is required on every step (PARITY-022
+      when absent), must be at least 1, must strictly increase, and may not sit
+      below its own step's `covered_min`. A tree whose scope file holds fewer
+      entries than the step that has come due fails the ratchet with SCOPE
+      FLOOR NOT MET; deleting, lowering or postponing a scope step relative to
+      the schedule on `main` fails with SCOPE STEP WALKED BACK. Shrinking the
+      LIVE UNIVERSE does not satisfy the floor, because the floor is an
+      absolute integer and never mentions the universe.
+    if_fails: >-
+      Coverage was bounded at neither joint. `covered_min` bounds rows against
+      scope; nothing bounded scope against the surface, so 5 rows over 41 scope
+      entries over 111 live subcommands satisfied every rule here forever, and
+      a release adding twenty subcommands diluted the real ratio with the gate
+      green. The ratio `in_scope / live_universe` is NOT used for exactly the
+      reason FALSIFY-PARITY-027 exists: its denominator is written by the
+      branch under test.
+    limitation: >-
+      The RATE is a review question, not a mechanical one. The guard refuses a
+      step that is deleted, lowered or dated later than `main` has it; it
+      cannot refuse a renewal that rises only trivially.
+    test: "cargo test -p aprender-contracts --lib parity_022_"
+
 parity:
   scope: >-
     In-scope entry points are enumerated at RUNTIME from a SHA-pinned `apr`
     binary plus the workspace's bin targets; the frozen list is
-    scripts/competitive_parity_scope.txt and the ratchet refuses to shrink it
-    unless the entry point has actually left the live enumeration. Rows may also
-    name a library surface (`lib:` prefix) that no subcommand exposes -- two of
-    the five seeds are exactly that, and pretending otherwise would have meant
-    dropping them.
+    scripts/competitive_parity_scope.txt. The list may only shrink when the
+    entry point has actually left the live enumeration AND a `removals:` record
+    names it -- absence alone was an excuse the branch wrote for itself, since
+    the branch builds the binary the enumeration comes from. It must also MEET
+    the `scope_min` step that has come due, so the surface widens rather than
+    merely refusing to narrow. Rows may also name a library surface (`lib:`
+    prefix) that no subcommand exposes -- two of the five seeds are exactly
+    that, and pretending otherwise would have meant dropping them.
 
   # THE COVERAGE RATCHET.
   #

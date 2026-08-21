@@ -14,9 +14,23 @@
 #
 # It is NOT a reach measurement. A prior read-only quorum computed a top-37 by
 # invocation reach; that ranking was not re-derived here and is not asserted.
-# What IS asserted is that this list is a subset of the real binary, that it may
-# only GROW, and that shrinking it requires the entry point to have actually
-# left the enumeration (scripts/check_competitive_parity.sh --update-baseline).
+# What IS asserted is that this list is a subset of the real binary, and that it
+# may only GROW.
+#
+# HOW IT MAY SHRINK, since round 5. Two conditions, both required:
+#   (1) the entry point has actually left the live enumeration, AND
+#   (2) `parity.removals:` in contracts/apr-competitive-parity-v1.yaml names
+#       this exact line, with a closed-vocabulary reason, an owner and a date.
+# Condition (1) alone was the hole: the enumeration comes from `apr --help` of a
+# binary built FROM THE BRANCH, so deleting the subcommand wrote its own excuse.
+# There is no `--update-baseline`; the comparand is this file as it exists on
+# protected `main`, and nothing in a commit can rewrite that.
+#
+# The list must also MEET A FLOOR, not merely refuse to shrink:
+# `parity.coverage.steps[].scope_min` carries a dated schedule (41 today, 55 by
+# 2027-02-14) and the guard refuses a tree below the step that has come due.
+# That is the second joint - five rows over 41 scope entries over 111 live
+# subcommands was bounded at neither end.
 #
 # FINDING while building this list: `apr probar` is advertised in CLAUDE.md's
 # key-command list and is NOT in `apr --help` on 38f4c50e4. It is therefore not
