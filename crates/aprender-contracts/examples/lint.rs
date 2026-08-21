@@ -128,7 +128,8 @@ fn count_contracts(report: &LintReport) -> usize {
             | GateDetail::Verify { .. }
             | GateDetail::Enforce { .. }
             | GateDetail::ReverseCoverage { .. }
-            | GateDetail::Composition { .. } => {}
+            | GateDetail::Composition { .. }
+            | GateDetail::DuplicateStems { .. } => {}
         }
     }
     0
@@ -234,6 +235,17 @@ fn gate_summary(detail: &GateDetail) -> String {
             edges_satisfied,
             edges_broken,
         } => format!("{edges_checked} edges, {edges_satisfied} satisfied, {edges_broken} broken"),
+        GateDetail::DuplicateStems {
+            divergent,
+            baselined,
+            unbaselined,
+            stale,
+            ..
+        } => format!(
+            "{divergent} ambiguous stems, {baselined} baselined, {} unbaselined, {} stale",
+            unbaselined.len(),
+            stale.len()
+        ),
     }
 }
 

@@ -261,6 +261,7 @@ fn count_contracts(report: &LintReport) -> usize {
             | GateDetail::Enforce { .. }
             | GateDetail::ReverseCoverage { .. }
             | GateDetail::Composition { .. }
+            | GateDetail::DuplicateStems { .. }
             | GateDetail::Skipped { .. } => {}
         }
     }

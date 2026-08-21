@@ -12,6 +12,7 @@ pub mod cache;
 mod composition_gate;
 pub mod config;
 pub mod diff;
+pub mod duplicate_stems;
 pub mod finding;
 mod gates;
 mod gates_extended;
@@ -97,6 +98,20 @@ pub enum GateDetail {
         edges_checked: usize,
         edges_satisfied: usize,
         edges_broken: usize,
+    },
+    /// PV-DUP-001: contract stems claimed by several files with divergent content.
+    #[serde(rename = "duplicate_stems")]
+    DuplicateStems {
+        /// Total ambiguous stems found in the tree.
+        divergent: usize,
+        /// How many of those are recorded in the ratchet baseline.
+        baselined: usize,
+        /// Ambiguous stems NOT in the baseline — these fail the gate.
+        unbaselined: Vec<String>,
+        /// Baseline entries that no longer diverge — these fail the gate too.
+        stale: Vec<String>,
+        /// Every ambiguous stem, with its variant count and paths, for the report.
+        divergent_stems: Vec<String>,
     },
     #[serde(rename = "skipped")]
     Skipped { reason: String },
@@ -249,9 +264,26 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
         gates.push(skipped_gate("reverse-coverage", "validation failed"));
     }
 
-    // Gate 8: composition (assumes/guarantees chain verification)
+    // Gate 8: duplicate stems (PV-DUP-001). Must run BEFORE composition — it tells
+    // the composition gate which stems are unresolvable, which is the difference
+    // between a defined verdict and one decided by `read_dir` order.
+    let duplicates = duplicate_stems::scan_duplicate_stems(config.contract_dir);
+    let ambiguous = duplicate_stems::ambiguous_stems(&duplicates);
     if validation_passed {
-        let (comp_result, mut comp_findings) = composition_gate::run_composition_gate(&contracts);
+        let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
+        let baseline = duplicate_stems::read_baseline(project_root);
+        let (dup_result, mut dup_findings) =
+            duplicate_stems::run_duplicate_stem_gate(&duplicates, &baseline);
+        gates.push(dup_result);
+        all_findings.append(&mut dup_findings);
+    } else {
+        gates.push(skipped_gate("duplicate-stems", "validation failed"));
+    }
+
+    // Gate 9: composition (assumes/guarantees chain verification)
+    if validation_passed {
+        let (comp_result, mut comp_findings) =
+            composition_gate::run_composition_gate(&contracts, &ambiguous);
         gates.push(comp_result);
         all_findings.append(&mut comp_findings);
     } else {

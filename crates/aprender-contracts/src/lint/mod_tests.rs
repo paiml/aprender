@@ -10,7 +10,9 @@ fn lint_passes_on_real_contracts() {
     let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(report.passed, "lint should pass: {report:?}");
-    assert_eq!(report.gates.len(), 8);
+    // 9 gates: validate, audit, score, verify, enforce, enforcement-level,
+    // reverse-coverage, duplicate-stems (PV-DUP-001), composition.
+    assert_eq!(report.gates.len(), 9);
 }
 
 #[test]
@@ -160,7 +162,7 @@ fn lint_validation_failure_skips_audit_and_score() {
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 8);
+    assert_eq!(report.gates.len(), 9);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -168,7 +170,8 @@ fn lint_validation_failure_skips_audit_and_score() {
     assert!(report.gates[4].skipped); // enforce skipped
     assert!(report.gates[5].skipped); // enforcement-level skipped
     assert!(report.gates[6].skipped); // reverse-coverage skipped
-    assert!(report.gates[7].skipped); // composition skipped
+    assert!(report.gates[7].skipped); // duplicate-stems skipped
+    assert!(report.gates[8].skipped); // composition skipped
 }
 
 #[test]

@@ -91,6 +91,36 @@ pub fn print_gate(num: usize, gate: &provable_contracts::lint::GateResult) {
         bold(&gate.name),
         gate.duration_ms
     );
+    print_duplicate_stem_detail(&gate.detail);
+}
+
+/// Ambiguous stems are printed in full on EVERY run. A count alone would let 48
+/// unresolvable contracts sit behind a green tick, which is how they got here.
+fn print_duplicate_stem_detail(detail: &GateDetail) {
+    let GateDetail::DuplicateStems {
+        unbaselined,
+        stale,
+        divergent_stems,
+        ..
+    } = detail
+    else {
+        return;
+    };
+    for line in divergent_stems {
+        println!("      {} {line}", yellow("ambiguous:"));
+    }
+    for stem in unbaselined {
+        println!(
+            "      {} `{stem}` diverges and is NOT in the baseline — deduplicate it",
+            red("NEW:")
+        );
+    }
+    for stem in stale {
+        println!(
+            "      {} `{stem}` no longer diverges — remove it from the baseline",
+            red("STALE:")
+        );
+    }
 }
 
 pub fn gate_summary(detail: &GateDetail) -> String {
@@ -134,6 +164,17 @@ pub fn gate_summary(detail: &GateDetail) -> String {
             edges_satisfied,
             edges_broken,
         } => format!("{edges_checked} edges, {edges_satisfied} satisfied, {edges_broken} broken"),
+        GateDetail::DuplicateStems {
+            divergent,
+            baselined,
+            unbaselined,
+            stale,
+            ..
+        } => format!(
+            "{divergent} ambiguous stems, {baselined} baselined, {} unbaselined, {} stale",
+            unbaselined.len(),
+            stale.len()
+        ),
         GateDetail::Skipped { reason } => format!("skipped: {reason}"),
     }
 }

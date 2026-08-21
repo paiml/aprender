@@ -27,6 +27,16 @@ pub(crate) fn load_contracts(dir: &Path) -> (Vec<(String, Contract)>, Vec<(Strin
     let mut parse_errors = Vec::new();
     let mut yaml_paths = Vec::new();
     collect_yaml_files(dir, &mut yaml_paths);
+    // DETERMINISM: `read_dir` order is unspecified (on ext4 it is a filename-hash
+    // order, so it changes when a DIRECTORY IS RENAMED even though no file content
+    // changed). Sorting by full path imposes a total order, so everything derived
+    // from `yaml_paths` — finding order, per-contract timings, and the order two
+    // files sharing a stem are seen in — is a function of the tree's contents only.
+    //
+    // This alone does NOT make a duplicate stem safe to collapse: the sort key still
+    // contains the directory name, so a rename still permutes which copy comes last.
+    // Collapsing is handled by refusing ambiguous stems — see `duplicate_stems.rs`.
+    yaml_paths.sort();
 
     for path in &yaml_paths {
         let stem = path
@@ -44,7 +54,10 @@ pub(crate) fn load_contracts(dir: &Path) -> (Vec<(String, Contract)>, Vec<(Strin
 }
 
 /// Recursively collect `.yaml` contract files, skipping non-contract directories.
-fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+///
+/// Emits entries in `read_dir` order, which is UNSPECIFIED. Every caller must
+/// impose its own total order before deriving a verdict from the result.
+pub(super) fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
