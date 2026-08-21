@@ -1,0 +1,1 @@
+# Fixture allowlist declaring nothing, so every duplicate must FAIL.

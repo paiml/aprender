@@ -1,0 +1,196 @@
+metadata:
+  version: 1.1.0
+  created: '2026-08-20'
+  author: PAIML Engineering
+  description: "Renamed-crate continuity — the property that a crates.io name we abandoned still resolves to working, CURRENT code. APR-MONO renamed provable-contracts{,-macros,-cli} to aprender-contracts*; the old names stayed published, frozen at 0.3.1, with ~10K downloads and live pins. This contract owns the class of defects where a stale name resolves SILENTLY: no error, no warning, and a consumer running code sixty versions behind while believing it is current."
+  kind: pattern
+  references:
+    - "aprender#2546 — the report: paiml/infra pinned provable-contracts-cli 0.3.1 and installed a pv sixty versions behind"
+    - "rust-lang/crates.io#2902 — crates.io has no rename mechanism; facade crates are the established convention"
+    - "rust-lang/cargo#6313 — output filename collision, why the facades are not workspace members"
+    - "scripts/check_facade_compat.sh — the enforcing guard"
+    - "aprender#2558 — four crates claimed the bin name pv; the CLI facade went lib-only and scripts/check_duplicate_bin_names.sh was added"
+    - "aprender#2553 — the CLI facade could not compile when published: it called a symbol the last release does not carry"
+    - "scripts/check_duplicate_bin_names.sh — the duplicate-bin-name guard, scanning BOTH workspaces"
+    - "crates/facades/ — the three facade crates and the vendored 0.3.1 compat corpus"
+    - ".github/workflows/ci.yml — wired per-PR in guard-runner-labels, which `gate` lists in its needs"
+
+five_whys:
+  symptom: "`provable-contracts-cli = \"0.3.1\"` resolved cleanly and installed a `pv` sixty versions behind. It surfaced only because 0.3.1 predates the `safety`/`liveness` proof-obligation kinds, so current contracts failed there with an unknown-variant error and the guard read as BROKEN rather than OUT OF DATE."
+  why_1: "The published crate was abandoned in place. A frozen version resolves exactly as well as a maintained one — cargo has no notion of 'this name moved'."
+  why_2: "The rename happened in the monorepo consolidation, where the in-tree name is all that is visible. Nothing in the repo referred to the published names, so nothing could go red about them."
+  why_3: "The old repository, paiml/provable-contracts, was archived. A facade published from there could not be maintained, and a facade nobody maintains rots into the same silence one version later."
+  why_4: "Compatibility was assessed by comparing EXPORT LISTS — 37 items on both sides. An export list says nothing about the signatures inside those items, so 'drop-in' was an inference dressed as a measurement."
+  why_5: "There was no mechanized notion of 'code written against the old name still compiles'. The only artifacts that could answer it — the 0.3.1 example programs — were on crates.io, not in this tree."
+  root_cause: "A published name was treated as decommissioned when nothing had decommissioned it. The remedy is to carry the name forward from THIS repository and to prove the compatibility claim by compiling the old release's own consumer code against the facade, so a shape change breaks the facade in the same CI run instead of rotting silently."
+
+equations:
+  old_consumer_code_still_compiles:
+    formula: "for every program P published in provable-contracts 0.3.1: compiles(P, facade) == true"
+    domain: "the 28 example programs shipped inside the provable-contracts 0.3.1 .crate (sha256 49c4074b55824441df3872f57aecaeb69902a568dabffb59da9b15533a91cca4), vendored verbatim under crates/facades/provable-contracts/compat/0.3.1/examples/"
+    codomain: "exit code of `cargo check --workspace --all-targets` in crates/facades"
+    invariants:
+      - "The corpus is real downstream consumer code: it names 20 re-exported modules and destructures their return types, so a drifted SIGNATURE fails, not merely a removed export"
+      - "27 of the 28 are wired. design_by_contract.rs is not: its first statement is include_str!(\"../../../contracts/…\"), which depends on the original repository layout and could not compile inside the published 0.3.1 package either — that .crate ships no contracts/ directory"
+      - "The exemption cannot grow: the guard asserts the wired count against a floor"
+      - "The vendored files are a fixed record of the 0.3.1 API and are not edited"
+
+  proc_macros_still_expand_through_the_facade:
+    formula: "for each m in {contract, requires, ensures, invariant, must_contract}: expands(m, via = facade) == true"
+    domain: "the five #[proc_macro_attribute] entry points of provable-contracts-macros 0.3.1"
+    codomain: "exit code of the compat_invoke test target"
+    invariants:
+      - "Re-exporting a proc macro and being able to INVOKE it through the re-export are different claims; only the second one matters to a consumer"
+      - "The facade is NOT `proc-macro = true`. MEASURED: such a crate cannot forward anyone else's macros — 'proc-macro crate types currently cannot export any items other than functions tagged with #[proc_macro]'"
+      - "#[requires] must still REJECT a violating input, not merely compile: a no-op macro would satisfy a compile-only assertion"
+
+  the_cli_facade_ships_no_binary_and_signposts_the_replacement:
+    formula: "bins(provable-contracts-cli) == {} AND every signpost surface names both working routes AND both routes exist"
+    domain: "the provable-contracts-cli facade's cargo targets, its four signpost surfaces (Cargo.toml description, README.md, src/lib.rs, build.rs), and the two replacements they name"
+    codomain: "exit code of scripts/check_facade_compat.sh rows C1, C2, C3"
+    invariants:
+      - "SUPERSEDES `facade_installs_the_current_tool` (aprender#2558). That equation required the facade's own `pv --version` to equal the workspace version. It is void because the facade no longer ships `pv` at all"
+      - "MEASURED on crates.io 2026-08-21: FOUR things claimed the name `pv` — the crates.io pipe viewer (7,065 downloads since 2019, bin_names [pv], has_lib false), /usr/bin/pv, aprender-contracts-cli, and this facade. All write ~/.cargo/bin/pv; `cargo install` overwrites with no warning"
+      - "Download RATES, not totals, decide which claimant yields: provable-contracts-macros 258.7/day, provable-contracts 60.0/day, provable-contracts-cli 3.1/day. The 57K-download population being carried forward is the library and the macros, and NEITHER involves a binary"
+      - "`cargo install provable-contracts-cli` now FAILS with 'there are no binaries to install'. That is the intended outcome, so the failure must be SIGNPOSTED: description, README, lib.rs and build.rs each name `cargo install aprender-contracts-cli` and `apr pv`, and the lib carries a #[deprecated] so rustc warns a caller who reads nothing"
+      - "C3 is what stops this degenerating into a well-worded dead end: the named routes must be REAL — aprender-contracts-cli declares [[bin]] name = 'pv', apr-cli declares the `Pv` subcommand"
+      - "The check was REPLACED, not deleted. Deleting a check to make a change pass is a move this repository has made twice and regretted"
+
+  the_signpost_facade_depends_on_nothing:
+    formula: "deps(provable-contracts-cli) == {}"
+    domain: "the provable-contracts-cli facade's dependency list, read from cargo metadata"
+    codomain: "exit code of scripts/check_facade_compat.sh row R3 (SIGNPOST arm)"
+    invariants:
+      - "THE FACADE COULD NOT COMPILE WHEN PUBLISHED. Its bin form called `aprender_contracts_cli::run()`, but `pub fn run()` lives in a lib.rs added after the last release, so the published aprender-contracts-cli 0.63.0 is BIN-ONLY. VERIFIED against the registry 2026-08-21: crates.io API reports has_lib false, bin_names ['pv']; a scratch crate depending on `= \"0.63.0\"` fails with error[E0433] 'cannot find module or crate `upstream`', rc=101"
+      - "Going lib-only DISSOLVED that blocker rather than deferring it: a facade that calls run() from nowhere needs no dependency, so there is no missing symbol and no version to be too old (aprender#2553)"
+      - "This row is inverted relative to the other two facades and exists as a REGRESSION DETECTOR: a dependency reappearing here would silently restore the blocker"
+      - "Zero dependencies also frees this crate from the publish-order constraint that binds the other two"
+
+  no_two_crates_claim_one_bin_name:
+    formula: "for every bin name B declared in ANY workspace of this repository: |{packages declaring B}| <= 1, OR B is declared intentional with exactly that claimant set"
+    domain: "every `[[bin]]` target in the root workspace AND in crates/facades, read from two `cargo metadata --no-deps` documents"
+    codomain: "exit code of scripts/check_duplicate_bin_names.sh"
+    invariants:
+      - "Nothing detected this class before aprender#2558. A shadowed artifact is worse than a missing one: edits look effective and change nothing"
+      - "`apr` is declared TWICE ON PURPOSE — by crates/apr-cli (src/main.rs) and by the root `aprender` facade (src/bin/apr.rs, required-features = ['cli']). A naive duplicate check reds on main immediately and gets disabled within a week, so INTENT is modelled in scripts/duplicate_bin_names_allowlist.txt"
+      - "The declared claimant set must match the observed one EXACTLY: an undeclared duplicate FAILS, a declared one passes, a THIRD claimant on a declared name FAILS, and a stale entry FAILS. An allowlist that only grows stops describing the tree"
+      - "It MUST scan both workspaces. crates/facades is `exclude`d from the root workspace, so `cargo metadata` on the root cannot see the facade — a root-only guard would have been inert against the very collision that motivated it. W1 requires 2+ documents and W2 requires a `provable-contracts*` package among them, so the coverage claim is itself falsifiable"
+
+  facade_cannot_collide_with_the_crate_it_fronts:
+    formula: "lib_name(facade) == lib_name(upstream) AND facade NOT IN members(aprender workspace)"
+    domain: "the three facade packages and the aprender workspace member list"
+    codomain: "exit code of scripts/check_facade_compat.sh"
+    invariants:
+      - "The lib names MUST be equal — a facade whose lib is named anything else does not answer `use provable_contracts::…`"
+      - "Therefore the facade MUST NOT be a workspace member. MEASURED as a member: 'warning: output filename collision at <target>/debug/libprovable_contracts.rlib … this may become a hard error in the future'"
+      - "The facade `pv` would likewise overwrite the real `pv` in a shared target dir — a shadowed artifact is worse than a missing one"
+      - "Being outside the workspace means `cargo set-version` does not reach these manifests, so the upstream version pin is checked separately"
+
+proof_obligations:
+  - type: invariant
+    property: "Code written against provable-contracts 0.3.1 still compiles against the facade"
+    formal: "cargo check --workspace --all-targets in crates/facades exits 0"
+    applies_to: old_consumer_code_still_compiles
+  - type: invariant
+    property: "The compile gate demonstrably turns RED"
+    formal: "With --features __facade_probe_mutant, naming an unexported item, the build exits non-zero"
+    applies_to: old_consumer_code_still_compiles
+  - type: invariant
+    property: "The compat corpus is not vacuous"
+    formal: "The guard fails when fewer than 27 example targets are wired"
+    applies_to: old_consumer_code_still_compiles
+  - type: invariant
+    property: "All five 0.3.1 attribute macros expand through the macros facade"
+    formal: "cargo test -p provable-contracts-macros --test compat_invoke exits 0"
+    applies_to: proc_macros_still_expand_through_the_facade
+  - type: invariant
+    property: "The CLI facade ships no binary at all"
+    formal: "`cargo build -p provable-contracts-cli --bin pv` fails with 'no bin target named `pv`'"
+    applies_to: the_cli_facade_ships_no_binary_and_signposts_the_replacement
+  - type: invariant
+    property: "A failed install is signposted rather than a dead end"
+    formal: "Cargo.toml, README.md, src/lib.rs and build.rs each name `cargo install aprender-contracts-cli` and `apr pv`, and the lib carries a #[deprecated] item"
+    applies_to: the_cli_facade_ships_no_binary_and_signposts_the_replacement
+  - type: invariant
+    property: "The routes the signpost names actually exist"
+    formal: "aprender-contracts-cli declares [[bin]] name = 'pv' and crates/apr-cli declares the `Pv` subcommand"
+    applies_to: the_cli_facade_ships_no_binary_and_signposts_the_replacement
+  - type: invariant
+    property: "The signpost facade carries no dependency, so it is publishable at any point in the cascade"
+    formal: "scripts/check_facade_compat.sh row R3 (SIGNPOST arm) reports no upstream dependency"
+    applies_to: the_signpost_facade_depends_on_nothing
+  - type: invariant
+    property: "No bin name is claimed by two packages without declared intent"
+    formal: "scripts/check_duplicate_bin_names.sh exits 0 over both workspaces"
+    applies_to: no_two_crates_claim_one_bin_name
+  - type: invariant
+    property: "The duplicate-bin scan cannot be inert: it must see the excluded facade workspace"
+    formal: "Rows W1 and W2 FAIL when the facade metadata document is absent from the scan"
+    applies_to: no_two_crates_claim_one_bin_name
+  - type: invariant
+    property: "The facades keep the upstream lib names and stay out of the aprender workspace"
+    formal: "scripts/check_facade_compat.sh structural rows R1 and R2 pass"
+    applies_to: facade_cannot_collide_with_the_crate_it_fronts
+  - type: invariant
+    property: "The upstream version pin cannot drift silently past a release"
+    formal: "Each facade requires its upstream at exactly the aprender workspace version"
+    applies_to: facade_cannot_collide_with_the_crate_it_fronts
+  - type: invariant
+    property: "The guard is enforced per-PR, not merely present"
+    formal: "ci.yml invokes the guard in a job that `gate` depends on"
+    applies_to: old_consumer_code_still_compiles
+
+falsification_tests:
+  - id: FALSIFY-FACADE-001
+    rule: "The guard exists and is executable"
+    prediction: "scripts/check_facade_compat.sh is a regular file with the execute bit set"
+    test: "test -x scripts/check_facade_compat.sh"
+    if_fails: "The guard was deleted or unmarked — renamed-crate continuity is unenforced again"
+
+  - id: FALSIFY-FACADE-002
+    rule: "0.3.1 consumer code, the five attribute macros, the version pins and the CLI currency all hold on this tree"
+    prediction: "The guard exits 0"
+    test: "bash scripts/check_facade_compat.sh"
+    if_fails: "One of: a re-exported signature drifted, a macro no longer expands through the facade, a version pin drifted past a release, or `cargo install provable-contracts-cli` would no longer install a current pv. The failing row names which."
+
+  - id: FALSIFY-FACADE-003
+    rule: "The structural checker demonstrably turns RED (mutation-verified, not merely green)"
+    prediction: "Fed a version-drifted, wrong-lib-named, workspace-member or empty-corpus fixture, the checker exits non-zero and names the rule"
+    test: "bash scripts/check_facade_compat.sh --self-test"
+    if_fails: "The checker has become vacuous — it would accept the manifests that reintroduce the rlib collision or the stale pin"
+
+  - id: FALSIFY-FACADE-004
+    rule: "The guard is wired into the per-PR gate, not merely present in the tree"
+    prediction: "ci.yml invokes check_facade_compat.sh in guard-runner-labels, which `gate` lists in its needs"
+    test: "grep -q 'check_facade_compat.sh' .github/workflows/ci.yml"
+    if_fails: "A reference is not an execution — the guard would sit unexecuted while being counted as enforcement"
+
+  - id: FALSIFY-FACADE-005
+    rule: "The compat corpus is the 0.3.1 record, not a convenient subset"
+    prediction: "All 28 example programs published in provable-contracts 0.3.1 are present in the tree"
+    test: "test \"$(ls crates/facades/provable-contracts/compat/0.3.1/examples/*.rs | wc -l)\" = 28"
+    if_fails: "Someone deleted a compat program instead of fixing what it revealed. The guard's floor catches an unwiring; this catches a deletion."
+
+  - id: FALSIFY-FACADE-007
+    rule: "No two crates in this repository declare the same bin name without declared intent"
+    prediction: "The duplicate-bin guard exits 0 over BOTH workspaces"
+    test: "bash scripts/check_duplicate_bin_names.sh"
+    if_fails: "Two packages claim one ~/.cargo/bin/<name>. MEASURED: `cargo install` does NOT overwrite across packages -- it fails closed with exit 101 and the first binary survives -- so the duplicate BLOCKS an install for anyone holding the other package, rather than clobbering it silently. Either rename one, or r"
+
+  - id: FALSIFY-FACADE-008
+    rule: "The duplicate-bin guard demonstrably turns RED, including on a cross-workspace collision and on a single-workspace (inert) scan"
+    prediction: "The case table passes 9/9: an undeclared duplicate, a facade/root collision, a third claimant, a stale entry, a one-workspace scan, a scan without the facades, and a scan finding no bins are all REJECTED, while the intentional `apr` duplicate PASSES"
+    test: "bash scripts/check_duplicate_bin_names.sh --self-test"
+    if_fails: "The guard has become vacuous, or the declared-intent modelling has stopped discriminating between the deliberate `apr` duplicate and an accidental one."
+
+  - id: FALSIFY-FACADE-009
+    rule: "The CLI facade ships no binary and its deprecation is legible"
+    prediction: "`cargo build -p provable-contracts-cli --bin pv` fails with 'no bin target named `pv`', and every signpost surface names both working routes"
+    test: "bash scripts/check_facade_compat.sh"
+    if_fails: "Either the facade re-acquired the `pv` name — putting a second claimant on ~/.cargo/bin/pv — or 463 downloads/month now hit `there are no binaries to install` with nothing telling them where the tool went."
+
+  - id: FALSIFY-FACADE-006
+    rule: "A facade may never become an aprender workspace member"
+    prediction: "No aprender workspace member is named provable-contracts*"
+    test: "! cargo metadata --no-deps --format-version 1 | grep -q '\"name\":\"provable-contracts'"
+    if_fails: "The rlib/bin name collision is back. `cargo build` warns 'output filename collision … may become a hard error', and the facade pv overwrites the real pv in the shared target dir."

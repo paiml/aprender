@@ -679,6 +679,30 @@ jobs:
         run: bash scripts/check_contract_test_binding.sh
       - name: aprender-core builds for wasm32
         run: bash scripts/check_wasm32_core_builds.sh
+      # aprender#2546: `provable-contracts*` were renamed to `aprender-contracts*`
+      # and the published names left frozen at 0.3.1. A pin on the old name
+      # resolved SILENTLY and installed a tool sixty versions behind. The names
+      # are now carried forward as facades in crates/facades/, which is a
+      # separate workspace -- `cargo check --workspace` does NOT reach it, so
+      # without this step the facades are dark by construction. The self-test
+      # (text-only, no build) runs first, per the convention above.
+      - name: Renamed-crate facades case table
+        run: bash scripts/check_facade_compat.sh --self-test
+      - name: provable-contracts 0.3.1 code still compiles against the facades
+        run: bash scripts/check_facade_compat.sh
+      # aprender#2558: nothing detected two crates declaring the same `[[bin]]
+      # name`. FOUR things claimed `pv` -- the crates.io pipe viewer, /usr/bin/pv,
+      # aprender-contracts-cli and the provable-contracts-cli facade -- all
+      # writing ~/.cargo/bin/pv, with `cargo install` overwriting silently. The
+      # facade gave up the name; this stops the next one being noticed by
+      # accident. Scans BOTH workspaces: crates/facades is `exclude`d from the
+      # root, so a root-only scan is inert by construction. `apr` is a
+      # deliberate duplicate and passes via a declared-intent allowlist. The
+      # text-only case table runs first, per the convention above.
+      - name: Duplicate bin-name case table
+        run: bash scripts/check_duplicate_bin_names.sh --self-test
+      - name: No two crates may claim one bin name
+        run: bash scripts/check_duplicate_bin_names.sh
       # The meta-guard. Four guards were found unwired by accident while looking
       # for something else; without this the fifth is found the same way.
       - name: Every check_*.sh is named by a workflow

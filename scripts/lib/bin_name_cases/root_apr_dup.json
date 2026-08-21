@@ -1,0 +1,88 @@
+{
+ "packages": [
+  {
+   "name": "apr-cli",
+   "targets": [
+    {
+     "kind": [
+      "lib"
+     ],
+     "name": "apr_cli"
+    },
+    {
+     "kind": [
+      "bin"
+     ],
+     "name": "apr"
+    },
+    {
+     "kind": [
+      "bin"
+     ],
+     "name": "apr-corpus-ingest"
+    }
+   ],
+   "version": "0.63.0"
+  },
+  {
+   "name": "aprender",
+   "targets": [
+    {
+     "kind": [
+      "lib"
+     ],
+     "name": "aprender_facade"
+    },
+    {
+     "kind": [
+      "bin"
+     ],
+     "name": "apr"
+    }
+   ],
+   "version": "0.63.0"
+  },
+  {
+   "name": "aprender-contracts-cli",
+   "targets": [
+    {
+     "kind": [
+      "lib"
+     ],
+     "name": "aprender_contracts_cli"
+    },
+    {
+     "kind": [
+      "bin"
+     ],
+     "name": "pv"
+    }
+   ],
+   "version": "0.63.0"
+  },
+  {
+   "name": "aprender-serve",
+   "targets": [
+    {
+     "kind": [
+      "bin"
+     ],
+     "name": "realizar-serve"
+    }
+   ],
+   "version": "0.63.0"
+  },
+  {
+   "name": "aprender-train",
+   "targets": [
+    {
+     "kind": [
+      "bin"
+     ],
+     "name": "entrenar"
+    }
+   ],
+   "version": "0.63.0"
+  }
+ ]
+}

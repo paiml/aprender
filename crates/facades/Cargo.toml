@@ -1,0 +1,52 @@
+# Facade workspace — the crates.io names that APR-MONO renamed.
+#
+# `provable-contracts`, `provable-contracts-macros` and `provable-contracts-cli`
+# are published names with real dependents (~10K downloads; paiml/infra pinned
+# `provable-contracts-cli = "0.3.1"` and silently installed a `pv` sixty
+# versions behind — aprender#2546). crates.io has no rename mechanism
+# (rust-lang/crates.io#2902), so the names are carried forward as facades that
+# delegate to the in-tree crates.
+#
+# WHY A SEPARATE WORKSPACE, NOT ROOT MEMBERS
+# ------------------------------------------
+# `aprender-contracts` carries `[lib] name = "provable_contracts"` and
+# `aprender-contracts-macros` carries `[lib] name = "provable_contracts_macros"`.
+# A facade MUST carry the same lib name or old `use provable_contracts::…` code
+# does not resolve — that is the entire point of the facade. Two primary
+# packages sharing one lib name in one workspace collide on the uplifted rlib.
+# MEASURED, `cargo build -p provable-contracts -p aprender-contracts` with the
+# facade as a root member:
+#
+#   warning: output filename collision at
+#            /mnt/nvme-raid0/targets/aprender/debug/libprovable_contracts.rlib
+#     = note: this may become a hard error in the future; see
+#             https://github.com/rust-lang/cargo/issues/6313
+#
+# Only PRIMARY packages are uplifted, so making the facades the sole members of
+# their own workspace removes the collision entirely while keeping them in this
+# repo — which is the point: a shape change in `aprender-contracts` breaks the
+# facade in the SAME CI run instead of rotting in an archived repo.
+#
+# Built by `scripts/check_facade_compat.sh`, wired into ci.yml's
+# `guard-runner-labels` job.
+[workspace]
+members = [
+    "provable-contracts",
+    "provable-contracts-macros",
+    "provable-contracts-cli",
+]
+resolver = "2"
+
+[workspace.package]
+# The facades version INDEPENDENTLY of the aprender workspace. 0.3.1 -> 0.4.0
+# signals "something changed" (per aprender#2546) without claiming a 0.63.0
+# history these crate names do not have.
+version = "0.4.0"
+edition = "2021"
+rust-version = "1.91"
+license = "MIT"
+repository = "https://github.com/paiml/aprender"
+authors = ["Noah Gift <noah@paiml.com>"]
+
+[workspace.lints.clippy]
+all = "warn"
