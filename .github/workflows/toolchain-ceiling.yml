@@ -35,6 +35,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # THE FLOOR. This file's own header has said since aprender#2370 that
+  # "scripts/check_msrv.sh guards the FLOOR" -- but that script ran in NO
+  # workflow. Its only two mentions in the whole repo were comments: this one,
+  # and Makefile:132. So the ceiling was gated, the floor was not, and the
+  # sentence asserting otherwise was the only thing standing in for the gate.
+  #
+  # Found by check_guards_are_wired.sh once its predicate was changed from
+  # "the name appears somewhere in .github/workflows/" (which a comment
+  # satisfies) to "a non-comment line INVOKES it". The meta-guard was itself
+  # the thing that could not see this.
+  #
+  # It belongs here rather than on every PR: it compiles the whole workspace on
+  # the declared MSRV toolchain (~1 min warm, longer cold), and MSRV drift is a
+  # dependency-graph event, not a per-commit one. Same cadence as the ceiling it
+  # is the counterpart to.
+  msrv-floor:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Workspace builds on its DECLARED MSRV
+        run: bash scripts/check_msrv.sh
+
   clippy-current-stable:
     # clean-room pool, same as coverage-nightly: this is a full-workspace clippy
     # run on a toolchain that is NOT the pinned one, so it cold-builds.
