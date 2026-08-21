@@ -91,6 +91,20 @@ fn emit_machine_readable(ledger: &ParityLedger, today: &str, expired: usize, err
     println!("__UPGRADES__={}", ledger.recorded_upgrades(today));
     let steps = ledger.coverage.as_ref().map_or(0, |c| c.steps.len());
     println!("__COVERAGE_STEPS__={steps}");
+    // The SCOPE floor that has come due, and how many steps declare one. The
+    // scope file is a SIBLING of this contract, so the ratchet - not this
+    // command - is the only thing that can compare the floor against the
+    // actual scope. What is emitted here is the floor itself.
+    let scope_floor = ledger
+        .coverage
+        .as_ref()
+        .map_or(0, |c| c.scope_floor_as_of(today));
+    println!("__SCOPE_FLOOR__={scope_floor}");
+    let scope_steps = ledger.coverage.as_ref().map_or(0, |c| {
+        c.steps.iter().filter(|s| s.scope_min.is_some()).count()
+    });
+    println!("__SCOPE_STEPS__={scope_steps}");
+    println!("__REMOVALS__={}", ledger.removals.len());
     for row in &ledger.rows {
         emit_key("__ROW__", row.entry_point.trim());
         if row.effective_verdict(today).is_measured() {
@@ -157,6 +171,32 @@ fn emit_machine_readable(ledger: &ParityLedger, today: &str, expired: usize, err
                 "__COVERAGE_STEP__",
                 &format!("{}{FIELD_SEP}{}", s.by.trim(), s.covered_min),
             );
+            // The SCOPE schedule travels on its OWN channel rather than as a
+            // third field of the coverage one. The ratchet compares each
+            // schedule against protected `main` with the same shrink-never
+            // rule, and a composite `by\tcovered\tscope` would make raising
+            // ONE of the two floors read as deleting a step of the other.
+            if let Some(scope_min) = s.scope_min {
+                emit_key(
+                    "__SCOPE_STEP__",
+                    &format!("{}{FIELD_SEP}{scope_min}", s.by.trim()),
+                );
+            }
+        }
+    }
+    // RECORDED REMOVALS. The ratchet spends one of these against a row or a
+    // scope entry that has left, and only when the entry point is ALSO absent
+    // from the live enumeration - the record makes the deletion owned, the
+    // enumeration keeps it true.
+    for r in &ledger.removals {
+        emit_key("__REMOVAL__", r.entry_point.trim());
+        if let Some(rep) = r.replacement.as_deref().map(str::trim) {
+            if !rep.is_empty() {
+                emit_key(
+                    "__REMOVAL_REPLACEMENT__",
+                    &format!("{}{FIELD_SEP}{rep}", r.entry_point.trim()),
+                );
+            }
         }
     }
     let (spent, allowed) = ledger.excuse_budget(today);
@@ -410,5 +450,211 @@ pub fn run(path: &Path, today: Option<&str>) -> Result<(), Box<dyn std::error::E
         ledger.measured_count(&today),
         ledger.non_win_count(&today),
     );
+    Ok(())
+}
+
+/// DISCOVERY: which contracts under `root` are competitive-parity LEDGERS,
+/// answered by PARSING them.
+///
+/// # The defect this replaces
+///
+/// The ratchet decides whether a prior ledger exists at the protected ref, and
+/// "no prior ledger" is the BOOTSTRAP branch — the strongest possible pass,
+/// because nothing is ratcheted against. That question was answered by a
+/// `git grep` for the regular expression
+///
+/// ```text
+/// ^[[:space:]]*kind:[[:space:]]*competitive-parity[[:space:]]*$
+/// ```
+///
+/// over the protected tree. The INTENT was right, and was itself a fix: round
+/// 4 keyed the window on a sibling file's PATH, so `git mv` manufactured a
+/// fresh bootstrap silently, and keying on the KIND removes that. But a regex
+/// over text is not the parsed kind, and every difference between the two is a
+/// renewable bootstrap:
+///
+/// * `kind: "competitive-parity"` — quoted, identical meaning, regex misses;
+/// * `kind: competitive-parity  # the ledger` — a trailing comment, misses;
+/// * the mapping reflowed to flow style
+///   (`metadata: {kind: competitive-parity, ...}`) — misses;
+/// * `kind: competitive-parity` written inside a PROSE block scalar of some
+///   unrelated contract — MATCHES, manufacturing an AMBIGUOUS COMPARAND out of
+///   a sentence.
+///
+/// Every one of those is a semantically null edit that reopens the strongest
+/// pass in the system. The fix is not a better regular expression; it is to
+/// stop reading the text. The kind is `metadata.kind` after `serde` has read
+/// the document, and that is what this reports.
+///
+/// # A file that will not parse is RED, never a bootstrap
+///
+/// The two failure directions are not symmetric. "Unreadable" collapsing to
+/// "no prior ledger" hands the caller the bootstrap for a reason unrelated to
+/// any ledger's contents — the same shape as the `fetch-depth: 1` collapse the
+/// comparand-reachability check exists to refuse. So this exits non-zero
+/// naming every offender, and the caller must treat that as fatal rather than
+/// as an empty set.
+///
+/// # Errors
+/// Returns `Err` when `root` cannot be read or any contract under it will not
+/// parse.
+pub fn discover(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if !root.is_dir() {
+        return Err(format!(
+            "{} is not a directory. Discovery answers \"which contracts of this kind exist at \
+             the protected ref?\", and an unreadable tree must not answer \"none\" - that is \
+             the BOOTSTRAP branch, which is the strongest possible pass.",
+            root.display()
+        )
+        .into());
+    }
+
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    collect_yaml(root, &mut files)?;
+    files.sort();
+
+    let mut parity: Vec<String> = Vec::new();
+    let mut unparseable: Vec<(String, String)> = Vec::new();
+    for f in &files {
+        let rel = f
+            .strip_prefix(root)
+            .unwrap_or(f)
+            .to_string_lossy()
+            .into_owned();
+        match declared_kind(f) {
+            Err(e) => unparseable.push((rel, e)),
+            Ok(None) => {}
+            Ok(Some(ContractKind::CompetitiveParity)) => {
+                // A file that DECLARES this kind must also parse as a whole
+                // contract. Discovery could stop at the kind, but then a
+                // parity ledger with a broken `parity:` block would be
+                // discovered and then fail one step later inside
+                // `cp_prior_report`, which reports it as COMPARAND
+                // UNEVALUABLE. Same verdict, worse diagnosis; catching it here
+                // names the file at the ref that owns it.
+                if let Err(e) = parse_contract(f) {
+                    unparseable.push((rel, e.to_string()));
+                } else {
+                    parity.push(rel);
+                }
+            }
+            Ok(Some(_)) => {}
+        }
+    }
+
+    println!("__SCANNED__={}", files.len());
+    println!("__UNPARSEABLE__={}", unparseable.len());
+    for (rel, err) in &unparseable {
+        // Newlines in a serde error would inject key lines, exactly as an
+        // entry point containing one would; the length prefix is what the
+        // consumer verifies, so the whole value travels or none of it does.
+        emit_key("__UNPARSEABLE_FILE__", &format!("{rel}{FIELD_SEP}{err}"));
+    }
+    println!("__PARITY_CONTRACTS__={}", parity.len());
+    for rel in &parity {
+        emit_key("__PARITY_CONTRACT__", rel);
+    }
+
+    if !unparseable.is_empty() {
+        for (rel, err) in &unparseable {
+            eprintln!("UNPARSEABLE: {rel}: {err}");
+        }
+        return Err(format!(
+            "{} contract(s) under {} will not parse. This is RED and never a bootstrap: the \
+             caller is asking whether a prior competitive-parity ledger EXISTS at the protected \
+             ref, and a file it cannot read is not evidence that one does not.",
+            unparseable.len(),
+            root.display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// The kind a document DECLARES at `metadata.kind`, read structurally.
+///
+/// Three outcomes, and the boundaries between them are the whole design:
+///
+/// * `Err(_)` — the file is not YAML at all, or `metadata.kind` holds a value
+///   that is not a member of the closed [`ContractKind`] vocabulary. Both are
+///   RED. "I cannot read this document" and "I cannot read this kind" must
+///   never resolve to "it is not a parity ledger", because that answer opens
+///   the bootstrap.
+/// * `Ok(None)` — the document parses and demonstrably declares no kind:
+///   either it has no `metadata` mapping, or that mapping has no `kind` key.
+///   This is a PARSED conclusion about the document, not a guess from its
+///   path, and it is the honest answer for the 47 files under `contracts/`
+///   that are sidecars and ticket records rather than contracts. A file with
+///   no `metadata:` cannot be declaring `metadata.kind: competitive-parity`.
+/// * `Ok(Some(k))` — it declares `k`.
+///
+/// # Why a PROBE and not `parse_contract`
+///
+/// `Contract` requires `metadata.version` and `metadata.description`, so
+/// parsing the whole type would make those 47 sidecars errors and the gate
+/// would red on every run for a reason with nothing to do with parity. The
+/// standing lesson here is that a gate which reds for a reason unrelated to
+/// its property trains people to re-run it, and a red that gets re-run away is
+/// how a REAL red gets re-run away too. The probe asks exactly the question
+/// being asked and nothing else.
+///
+/// # Why this cannot be softened into "skip what does not parse"
+///
+/// That is what `contract_walk::collect_contracts` does, and it is the
+/// difference between a discovered ledger and a bootstrap. Malformed YAML is
+/// therefore an ERROR here even though the malformed file might have been a
+/// sidecar: the caller is asking whether a parity ledger EXISTS, and an
+/// unreadable file is not evidence that one does not.
+fn declared_kind(path: &Path) -> Result<Option<ContractKind>, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("cannot read: {e}"))?;
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str(&text).map_err(|e| format!("not valid YAML: {e}"))?;
+    let Some(kind) = doc.get("metadata").and_then(|m| m.get("kind")) else {
+        return Ok(None);
+    };
+    // `serde_yaml::from_value` over the closed enum, so `competitive-parity`
+    // is recognised however it was WRITTEN — quoted, followed by a comment, in
+    // flow style — and an invented kind is an error rather than a miss. This is
+    // the whole difference from the regex this replaces: the text is gone by
+    // the time the comparison happens.
+    serde_yaml::from_value::<ContractKind>(kind.clone())
+        .map(Some)
+        .map_err(|e| format!("metadata.kind {kind:?} is not a known contract kind: {e}"))
+}
+
+/// Every `.yaml` / `.yml` file under `dir`, recursively.
+///
+/// NOTHING IS SKIPPED BY NAME. `contract_walk::collect_contracts` drops
+/// `binding.yaml`, drops any stem containing `playbook`, and silently drops
+/// whatever fails to parse — all three are precisely the behaviours that must
+/// not appear here. A path-keyed exclusion is a renewable bootstrap by
+/// construction: name the ledger `parity-playbook-v1.yaml` and it stops being
+/// discoverable, which is the `git mv` hole one rename further on.
+///
+/// A directory that cannot be read is an ERROR rather than an empty result,
+/// for the same reason: silence here is the strongest pass in the system.
+fn collect_yaml(
+    dir: &Path,
+    out: &mut Vec<std::path::PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let entries =
+        std::fs::read_dir(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("cannot read an entry of {}: {e}", dir.display()))?;
+        let path = entry.path();
+        // `symlink_metadata`, so a symlinked DIRECTORY is not descended into
+        // and a cycle cannot hang the walk. A symlinked FILE still has its
+        // extension read and is parsed like any other.
+        let meta = std::fs::symlink_metadata(&path)
+            .map_err(|e| format!("cannot stat {}: {e}", path.display()))?;
+        if meta.is_dir() {
+            collect_yaml(&path, out)?;
+        } else if matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("yaml" | "yml")
+        ) {
+            out.push(path);
+        }
+    }
     Ok(())
 }

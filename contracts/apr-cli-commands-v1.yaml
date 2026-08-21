@@ -451,7 +451,6 @@ commands:
         description: "Parse a Modelfile and emit config as JSON or human-readable text"
         requires_model: false
         side_effects: []
-    subcommands: [parse]
 
   - name: test
     category: misc
@@ -481,7 +480,6 @@ commands:
         description: "Export tensor activations for visual regression testing (PMAT-481)"
         requires_model: true
         side_effects: [filesystem]
-    subcommands: [tensor]
 
   - name: diagnose
     category: misc

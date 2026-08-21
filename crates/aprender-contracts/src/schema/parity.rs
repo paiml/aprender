@@ -326,6 +326,22 @@ pub struct ParityLedger {
     /// downgrade.
     #[serde(default)]
     pub downgrades: Vec<Downgrade>,
+    /// RECORDED REMOVALS — the receipt an entry point's disappearance costs.
+    ///
+    /// See [`Removal`]. The short version: the ratchet excused a deleted row
+    /// whenever the entry point was absent from the live enumeration, and the
+    /// live enumeration is produced by a binary built FROM THE BRANCH — so the
+    /// author wrote the excuse. Deleting the subcommand, its scope line and
+    /// its row in one commit removed a losing comparison at rc=0 with nothing
+    /// recorded. Retirement stays possible; it stops being free.
+    ///
+    /// `Vec` with `#[serde(default)]`, never `Option`, for the reason recorded
+    /// on [`ParityLedger::coverage`]: an older ledger on protected `main` has
+    /// no `removals:` key and MUST keep parsing, or the comparand collapses to
+    /// "no prior state", which reads as BOOTSTRAP — the strongest possible
+    /// pass — produced by a schema edit.
+    #[serde(default)]
+    pub removals: Vec<Removal>,
     /// The COVERAGE RATCHET — see [`CoverageRatchet`].
     ///
     /// `Option`, and required by `PARITY-021` rather than by the type, ON
@@ -408,7 +424,8 @@ pub struct CoverageRatchet {
 }
 
 /// One step of the [`CoverageRatchet`]: from `by` onward, at least
-/// `covered_min` distinct in-scope entry points must carry a row.
+/// `covered_min` distinct in-scope entry points must carry a row, and at
+/// least `scope_min` entry points must BE in scope.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CoverageStep {
     /// The date this step COMES DUE. A [`LedgerDate`], so it is bounded
@@ -418,6 +435,37 @@ pub struct CoverageStep {
     /// Distinct covered entry points required from `by` onward.
     #[serde(default)]
     pub covered_min: usize,
+    /// Entry points required to BE IN SCOPE from `by` onward — the SECOND
+    /// joint.
+    ///
+    /// # The joint this closes
+    ///
+    /// `covered_min` bounds rows against SCOPE. Nothing bounded scope against
+    /// the WORLD, and the measured shape was 5 rows over 41 scope entries over
+    /// 111 live subcommands: bounding only the first joint leaves the whole
+    /// claim payable by never widening the audited surface. A release that
+    /// adds twenty subcommands dilutes the real ratio while `covered_min` is
+    /// still met exactly — the first objection recorded in this ledger's own
+    /// `dissent:`, now answered rather than only noted.
+    ///
+    /// # Why an ABSOLUTE COUNT again, and not `scope / live_universe`
+    ///
+    /// The live universe is enumerated from a binary built FROM THE BRANCH, so
+    /// the author writes it: a ratio against it is payable by DELETING a
+    /// subcommand, which is PMAT-733 with the arithmetic done from the far
+    /// end. An absolute integer has no denominator to shrink. Deletion is
+    /// separately made expensive (a `removals:` record plus the entry point
+    /// genuinely being gone), and the two controls compose: a deletion that
+    /// drops scope below this floor is refused by THIS rule even when the
+    /// record is present and honest.
+    ///
+    /// `Option`, and required by `PARITY-022` rather than by the type, for the
+    /// reason recorded on [`ParityLedger::coverage`]: a newly-required field
+    /// expressed in the TYPE would make every older `main` ledger a parse
+    /// error, and a parse error emits no sets at all — which reads as
+    /// BOOTSTRAP, the strongest possible pass.
+    #[serde(default)]
+    pub scope_min: Option<usize>,
     /// Keys this struct does not name — see [`Downgrade::extra`].
     #[serde(flatten)]
     pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
@@ -438,6 +486,27 @@ impl CoverageRatchet {
             .iter()
             .filter(|s| !s.is_future(today))
             .map(|s| s.covered_min)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The highest `scope_min` whose step has COME DUE as of `today`.
+    ///
+    /// Zero when no step that has come due declares one, which is what keeps
+    /// the field landable as an `Option` on a schema that older `main` ledgers
+    /// must keep parsing. `PARITY-022` refuses a schedule whose steps omit it,
+    /// so the zero is reachable only from a comparand, never from a tree under
+    /// test.
+    ///
+    /// An unparseable `by` counts as DUE (fail closed), exactly as in
+    /// [`CoverageRatchet::floor_as_of`]: a date nobody can read must not buy a
+    /// deferral.
+    #[must_use]
+    pub fn scope_floor_as_of(&self, today: &str) -> usize {
+        self.steps
+            .iter()
+            .filter(|s| !s.is_future(today))
+            .filter_map(|s| s.scope_min)
             .max()
             .unwrap_or(0)
     }
@@ -657,6 +726,145 @@ pub struct Downgrade {
     /// silently discards unknown fields, so a `recheck_by_v2: "2099-01-01"`
     /// added to the file alone would be invisible to a sweep of the typed
     /// struct. It is not invisible to a sweep of this map.
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
+}
+
+/// Why an entry point LEFT the world, from a CLOSED vocabulary. Prose is not
+/// accepted; an unknown value fails to parse.
+///
+/// # The hole this vocabulary prices
+///
+/// The ratchet excused a ROW deletion and a SCOPE deletion whenever the entry
+/// point was absent from the live enumeration — and the live enumeration comes
+/// from a binary built FROM THE BRANCH. The author writes the CLI, so the
+/// author wrote the excuse: deleting `apr qa` from the clap tree, from
+/// `scripts/competitive_parity_scope.txt` and from `rows:` in one commit
+/// removed a losing comparison at rc=0, with nothing recorded anywhere. That
+/// is PMAT-733 executed one level down — instead of deleting the measurement,
+/// delete the thing measured.
+///
+/// Removal is still ALLOWED, because entry points genuinely retire and a
+/// ratchet that forbids retirement is a ratchet that gets deleted. It is no
+/// longer FREE and no longer SILENT: it costs exactly what every other
+/// irreversible move in this ledger costs — an owned, dated record naming the
+/// exact thing, with a reason from a vocabulary `serde` enforces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum RemovalReason {
+    /// The entry point was retired outright: no successor exists and the
+    /// capability is gone from the product.
+    Retired,
+    /// The entry point still exists under a different name. `replacement` is
+    /// REQUIRED (PARITY-027) and must itself be live and in scope, so a
+    /// "rename" cannot point at nothing.
+    Renamed,
+    /// The entry point was folded into another one, which now carries the
+    /// capability. `replacement` is REQUIRED for the same reason.
+    MergedInto,
+}
+
+impl RemovalReason {
+    /// The string form, matching the serde representation.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Retired => "RETIRED",
+            Self::Renamed => "RENAMED",
+            Self::MergedInto => "MERGED_INTO",
+        }
+    }
+
+    /// Every variant, so a diagnostic can print the vocabulary.
+    #[must_use]
+    pub fn all() -> &'static [Self] {
+        &[Self::Retired, Self::Renamed, Self::MergedInto]
+    }
+
+    /// Does this reason REQUIRE a `replacement`?
+    #[must_use]
+    pub fn requires_replacement(self) -> bool {
+        matches!(self, Self::Renamed | Self::MergedInto)
+    }
+
+    /// The vocabulary as a comma-separated list, for diagnostics.
+    #[must_use]
+    pub fn vocabulary() -> String {
+        Self::all()
+            .iter()
+            .map(|r| r.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+impl std::fmt::Display for RemovalReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A RECORDED REMOVAL: the receipt an entry point's disappearance costs.
+///
+/// # Why this is a separate block from `downgrades:`
+///
+/// The standing doctrine here is that a second mechanism beside an existing
+/// one means two vocabularies, two expiry rules and two sets of paperwork, of
+/// which exactly one stays current — so the default is to GENERALISE
+/// [`Downgrade`] rather than add a sibling. It cannot be generalised here, and
+/// the reason is structural rather than stylistic: `PARITY-012` requires a
+/// downgrade's `entry_point` to match a row that is STILL PRESENT, and that
+/// requirement is load-bearing (it is what stops a deletion being dressed up
+/// as an honest correction). A removal names something that is precisely NOT
+/// present. One block cannot hold both rules, and weakening PARITY-012 to make
+/// room would reopen the hole it closes. So: two blocks, one shared date type,
+/// one shared canonicality rule, and `PARITY-026` keeps their entry-point sets
+/// DISJOINT so a record can never be spent on both sides.
+///
+/// # What a removal does NOT buy
+///
+/// It does not lower the coverage floor. A removal that drops
+/// [`ParityLedger::covered_count`] below the step that has come due is refused
+/// by `PARITY-024` with the record present, in date and entirely honest —
+/// which is the composition that matters: the record makes the deletion
+/// VISIBLE and OWNED, and the coverage ratchet makes it PAID FOR, by a
+/// replacement row somewhere else in the surface.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Removal {
+    /// The entry point that left, EXACTLY as it was written in the ledger row
+    /// or the scope file it is being spent against.
+    ///
+    /// Exact, never a prefix and never a scope key standing in for its rows:
+    /// `apr run` must not discharge the deletion of `apr run --gpu
+    /// (concurrency=1 single-request decode)`. Those are different comparison
+    /// surfaces — the whole reason a row may qualify its entry point — so one
+    /// record erasing several of them would restore the count-currency defect
+    /// the set ratchet exists to remove.
+    #[serde(default)]
+    pub entry_point: String,
+    /// `None` ⇒ PARITY-025; an unknown STRING is a parse error.
+    #[serde(default)]
+    pub reason: Option<RemovalReason>,
+    /// Who is accountable for the deletion.
+    #[serde(default)]
+    pub owner: String,
+    /// ISO `YYYY-MM-DD` the removal was recorded. Bounded against TODAY by its
+    /// TYPE, and additionally forbidden from being in the future at all
+    /// (PARITY-025) — a deletion cannot have been recorded tomorrow.
+    #[serde(default)]
+    pub recorded_on: LedgerDate,
+    /// The entry point that carries the capability now. REQUIRED when
+    /// [`RemovalReason::requires_replacement`] (PARITY-027), and checked by
+    /// the shell ratchet to be LIVE and IN SCOPE — so `RENAMED` cannot be used
+    /// to point a deletion at nothing.
+    #[serde(default)]
+    pub replacement: Option<String>,
+    /// Free-text elaboration. NOT the machine-checkable part.
+    #[serde(default)]
+    pub detail: Option<String>,
+    /// Every key in the YAML that this struct does not name — see
+    /// [`Downgrade::extra`]. Present so `PARITY-016` sweeps dates written into
+    /// fields the schema has never heard of.
     #[serde(flatten)]
     pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
 }

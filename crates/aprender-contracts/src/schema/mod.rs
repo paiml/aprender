@@ -7,7 +7,7 @@ mod validator;
 
 pub use parity::{
     CoverageRatchet, CoverageStep, Downgrade, DowngradeReason, LedgerDate, ParityLedger, ParityRow,
-    Verdict,
+    Removal, RemovalReason, Verdict,
 };
 pub use parser::{parse_contract, parse_contract_str};
 pub use types::*;

@@ -31,8 +31,10 @@ parity:
     steps:
       - by: "2026-01-01"
         covered_min: 1
+        scope_min: 2
       - by: "2026-11-30"
         covered_min: 2
+        scope_min: 4
   rows:
     - entry_point: "apr run --gpu"
       competitor: "ollama"
@@ -1200,13 +1202,147 @@ metadata:
         );
         // ...and the GREEN direction: a real, strictly increasing schedule.
         let y = yaml_with_steps(
-            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 1\n      \
-             - by: \"2026-06-01\"\n        covered_min: 2\n",
+            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 1\n        \
+             scope_min: 2\n      - by: \"2026-06-01\"\n        covered_min: 2\n        \
+             scope_min: 4\n",
         );
         assert!(
             !rules(&y).contains(&"PARITY-022".to_string()),
             "a strictly increasing schedule must pass: {:?}",
             rules(&y)
+        );
+    }
+
+    /// PARITY-022, the SECOND JOINT: `scope_min` is required on every step, is
+    /// strictly increasing, may not be zero, and may not be below its own
+    /// step's `covered_min`.
+    ///
+    /// The joint this closes, stated as the test's reason for existing: five
+    /// rows over 41 scope entries over 111 live subcommands. `covered_min`
+    /// bounds rows against scope and nothing bounded scope against the
+    /// surface, so the whole claim was payable by never widening the audited
+    /// set. Each case below is a way the second floor could be written and
+    /// enforce nothing.
+    #[test]
+    fn parity_022_scope_min_bounds_the_second_joint() {
+        // (a) ABSENT. The original state of the world: a schedule that speaks
+        //     only about coverage.
+        let y = yaml_with_steps(
+            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 1\n      \
+             - by: \"2026-06-01\"\n        covered_min: 2\n",
+        );
+        assert!(
+            rules(&y).contains(&"PARITY-022".to_string()),
+            "a schedule with no scope_min must be refused: {:?}",
+            rules(&y)
+        );
+        // (b) ZERO -- satisfied by an empty scope file, i.e. a 100% ratio over
+        //     nothing, which is PARITY-001's failure one file over.
+        let y = yaml_with_steps(
+            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 1\n        \
+             scope_min: 0\n",
+        );
+        assert!(
+            rules(&y).contains(&"PARITY-022".to_string()),
+            "scope_min: 0 must be refused: {:?}",
+            rules(&y)
+        );
+        // (c) NOT INCREASING -- a surface floor that repeats has stopped
+        //     widening, which is exactly how the audited fraction of a growing
+        //     CLI falls with every gate green.
+        let y = yaml_with_steps(
+            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 1\n        \
+             scope_min: 4\n      - by: \"2026-06-01\"\n        covered_min: 2\n        \
+             scope_min: 4\n",
+        );
+        assert!(
+            rules(&y).contains(&"PARITY-022".to_string()),
+            "a repeating scope_min must be refused: {:?}",
+            rules(&y)
+        );
+        // (d) DECREASING.
+        let y = yaml_with_steps(
+            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 1\n        \
+             scope_min: 4\n      - by: \"2026-06-01\"\n        covered_min: 2\n        \
+             scope_min: 3\n",
+        );
+        assert!(
+            rules(&y).contains(&"PARITY-022".to_string()),
+            "a decreasing scope_min must be refused: {:?}",
+            rules(&y)
+        );
+        // (e) BELOW ITS OWN covered_min -- unsatisfiable, because every row
+        //     must be in scope, so covered can never exceed scope. A floor
+        //     nobody can meet gets lowered, and lowering is what the schedule
+        //     exists to refuse.
+        let y = yaml_with_steps(
+            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 5\n        \
+             scope_min: 2\n",
+        );
+        assert!(
+            rules(&y).contains(&"PARITY-022".to_string()),
+            "scope_min below covered_min must be refused: {:?}",
+            rules(&y)
+        );
+        // (f) GREEN: present, non-zero, increasing, at least covered_min.
+        let y = yaml_with_steps(
+            "    steps:\n      - by: \"2026-01-01\"\n        covered_min: 1\n        \
+             scope_min: 4\n      - by: \"2026-06-01\"\n        covered_min: 2\n        \
+             scope_min: 6\n",
+        );
+        assert!(
+            !rules(&y).contains(&"PARITY-022".to_string()),
+            "a well-formed two-joint schedule must pass: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// The SCOPE FLOOR that has come due is read the same way the coverage
+    /// floor is: the highest value among steps that are no longer in the
+    /// future, and ZERO before the first one comes due.
+    ///
+    /// The zero matters and is asserted rather than assumed: it is what makes
+    /// the field landable as an `Option` on a schema that older ledgers on
+    /// protected `main` must keep PARSING, since a ledger that stops parsing
+    /// emits no sets and reads as BOOTSTRAP.
+    #[test]
+    fn parity_022_scope_floor_reads_the_step_that_has_come_due() {
+        let past = today_plus(-10);
+        let fut = today_plus(30);
+        let y = yaml_with_steps(&format!(
+            "    steps:\n      - by: \"{past}\"\n        covered_min: 1\n        \
+             scope_min: 7\n      - by: \"{fut}\"\n        covered_min: 2\n        \
+             scope_min: 9\n"
+        ));
+        let c = parse_contract_str(&y).expect("parses");
+        let l = c.parity.as_ref().expect("ledger");
+        let cov = l.coverage.as_ref().expect("coverage");
+        let today = crate::schema::parity::today_utc().expect("clock");
+        assert_eq!(
+            cov.scope_floor_as_of(&today),
+            7,
+            "the due step's scope_min is the floor; the future one is not yet owed"
+        );
+        // Nothing due yet -> zero, never the future value.
+        let y = yaml_with_steps(&format!(
+            "    steps:\n      - by: \"{fut}\"\n        covered_min: 1\n        scope_min: 9\n"
+        ));
+        let c = parse_contract_str(&y).expect("parses");
+        let l = c.parity.as_ref().expect("ledger");
+        let cov = l.coverage.as_ref().expect("coverage");
+        assert_eq!(cov.scope_floor_as_of(&today), 0);
+        // An UNREADABLE date counts as DUE, failing closed, exactly as the
+        // coverage floor does: a date nobody can read must not buy a deferral.
+        let y = yaml_with_steps(
+            "    steps:\n      - by: \"soon\"\n        covered_min: 1\n        scope_min: 9\n",
+        );
+        let c = parse_contract_str(&y).expect("parses");
+        let l = c.parity.as_ref().expect("ledger");
+        let cov = l.coverage.as_ref().expect("coverage");
+        assert_eq!(
+            cov.scope_floor_as_of(&today),
+            9,
+            "an unparseable `by` is DUE, not deferred"
         );
     }
 
@@ -1283,4 +1419,230 @@ metadata:
             "a step dated TOMORROW is not yet due: {:?}",
             parity_coverage_debt(l, &today)
         );
+    }
+
+    // -- PARITY-025..027: the REMOVAL record --------------------------------
+    //
+    // Round 5, fatal 2. The shell ratchet excused a deleted row whenever the
+    // entry point was absent from the LIVE ENUMERATION, and that enumeration
+    // comes from a binary built FROM THE BRANCH: deleting the subcommand, its
+    // scope line and its row in one commit removed a losing comparison at rc=0
+    // with nothing recorded. Retirement stays possible and stops being free.
+    // These rules are what make the record mean something a machine can check.
+
+    /// Splice a `removals:` block into the fixture, just before `rows:`.
+    fn yaml_with_removals(removals: &str) -> String {
+        let base = good_yaml();
+        let j = base.find("  rows:\n").expect("fixture has rows");
+        format!("{}{removals}{}", &base[..j], &base[j..])
+    }
+
+    fn one_removal(body: &str) -> String {
+        yaml_with_removals(&format!("  removals:\n    - {body}\n"))
+    }
+
+    #[test]
+    fn parity_025_a_removal_names_a_thing_an_owner_a_date_and_a_reason() {
+        let today = crate::schema::parity::today_utc().expect("clock");
+        // GREEN: a complete record for an entry point no row claims.
+        let y = one_removal(&format!(
+            "entry_point: \"apr legacy\"\n      reason: RETIRED\n      \
+             owner: \"noah\"\n      recorded_on: \"{today}\""
+        ));
+        assert!(
+            !rules(&y).contains(&"PARITY-025".to_string()),
+            "a complete removal record must pass: {:?}",
+            rules(&y)
+        );
+
+        // RED, one field at a time -- so each clause is mutation-verified by
+        // construction rather than by one lump assertion.
+        for (missing, body) in [
+            (
+                "entry_point",
+                format!(
+                    "entry_point: \"\"\n      reason: RETIRED\n      owner: \"noah\"\n      \
+                     recorded_on: \"{today}\""
+                ),
+            ),
+            (
+                "reason",
+                format!(
+                    "entry_point: \"apr legacy\"\n      owner: \"noah\"\n      \
+                     recorded_on: \"{today}\""
+                ),
+            ),
+            (
+                "owner",
+                format!(
+                    "entry_point: \"apr legacy\"\n      reason: RETIRED\n      \
+                     recorded_on: \"{today}\""
+                ),
+            ),
+            (
+                "recorded_on",
+                "entry_point: \"apr legacy\"\n      reason: RETIRED\n      owner: \"noah\""
+                    .to_string(),
+            ),
+        ] {
+            let y = one_removal(&body);
+            assert!(
+                rules(&y).contains(&"PARITY-025".to_string()),
+                "a removal missing {missing} must be refused: {:?}",
+                rules(&y)
+            );
+        }
+
+        // A DUPLICATE record for one entry point.
+        let y = yaml_with_removals(&format!(
+            "  removals:\n    - entry_point: \"apr legacy\"\n      reason: RETIRED\n      \
+             owner: \"noah\"\n      recorded_on: \"{today}\"\n    \
+             - entry_point: \"apr legacy\"\n      reason: RETIRED\n      owner: \"noah\"\n      \
+             recorded_on: \"{today}\"\n"
+        ));
+        assert!(
+            rules(&y).contains(&"PARITY-025".to_string()),
+            "a duplicated removal must be refused: {:?}",
+            rules(&y)
+        );
+
+        // A record dated TOMORROW: a deletion cannot have been recorded in the
+        // future. Reported by PARITY-017, which is the shared rule for every
+        // date naming a past event.
+        let tomorrow = today_plus(1);
+        let y = one_removal(&format!(
+            "entry_point: \"apr legacy\"\n      reason: RETIRED\n      owner: \"noah\"\n      \
+             recorded_on: \"{tomorrow}\""
+        ));
+        assert!(
+            rules(&y).contains(&"PARITY-017".to_string()),
+            "a removal recorded tomorrow must be refused: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// An INVENTED reason is a PARSE error, not a lint -- the same treatment
+    /// `Verdict` and `DowngradeReason` get. "Recorded a reason" must not be
+    /// dischargeable by writing a sentence.
+    #[test]
+    fn parity_025_the_reason_vocabulary_is_closed_by_serde() {
+        let today = crate::schema::parity::today_utc().expect("clock");
+        let y = one_removal(&format!(
+            "entry_point: \"apr legacy\"\n      reason: NOBODY_USED_IT\n      \
+             owner: \"noah\"\n      recorded_on: \"{today}\""
+        ));
+        assert!(
+            parse_contract_str(&y).is_err(),
+            "an invented removal reason must fail to PARSE, not merely lint"
+        );
+        // ...and every member of the vocabulary does parse, so the closure is
+        // proved in both directions rather than only in the refusing one.
+        for r in crate::schema::parity::RemovalReason::all() {
+            let y = one_removal(&format!(
+                "entry_point: \"apr legacy\"\n      reason: {r}\n      owner: \"noah\"\n      \
+                 recorded_on: \"{today}\"\n      replacement: \"apr new\""
+            ));
+            assert!(
+                parse_contract_str(&y).is_ok(),
+                "{r} must be a member of the vocabulary"
+            );
+        }
+    }
+
+    /// PARITY-026: the removal set and the ROW set are DISJOINT, and so are
+    /// the removal set and the downgrade set.
+    ///
+    /// The mirror of PARITY-012 and load-bearing in the same way. Without it a
+    /// removal record could sit beside the row it names, inert, until a later
+    /// commit spends it -- a permission issued long before the change and
+    /// therefore unreviewable at the moment it matters. That is exactly the
+    /// self-issued-permission shape round 5 removed from the verdict channel.
+    #[test]
+    fn parity_026_a_removal_may_not_name_a_row_that_is_still_present() {
+        let today = crate::schema::parity::today_utc().expect("clock");
+        let y = one_removal(&format!(
+            "entry_point: \"apr run --gpu\"\n      reason: RETIRED\n      owner: \"noah\"\n      \
+             recorded_on: \"{today}\""
+        ));
+        assert!(
+            rules(&y).contains(&"PARITY-026".to_string()),
+            "a removal beside a live row must be refused: {:?}",
+            rules(&y)
+        );
+        // GREEN: a different entry point, which no row claims.
+        let y = one_removal(&format!(
+            "entry_point: \"apr gone\"\n      reason: RETIRED\n      owner: \"noah\"\n      \
+             recorded_on: \"{today}\""
+        ));
+        assert!(
+            !rules(&y).contains(&"PARITY-026".to_string()),
+            "a removal for an absent entry point must pass: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// PARITY-027: a RENAMED / MERGED_INTO record must name the successor, and
+    /// may not name itself.
+    ///
+    /// A rename that points at nothing is a retirement, and calling it a
+    /// rename hides that the capability left. Naming itself discharges the
+    /// rule while describing nothing -- the shape of every field that is
+    /// "required" and satisfiable by an echo.
+    #[test]
+    fn parity_027_a_rename_must_name_a_successor_other_than_itself() {
+        let today = crate::schema::parity::today_utc().expect("clock");
+        for reason in ["RENAMED", "MERGED_INTO"] {
+            let y = one_removal(&format!(
+                "entry_point: \"apr gone\"\n      reason: {reason}\n      owner: \"noah\"\n      \
+                 recorded_on: \"{today}\""
+            ));
+            assert!(
+                rules(&y).contains(&"PARITY-027".to_string()),
+                "{reason} with no replacement must be refused: {:?}",
+                rules(&y)
+            );
+            let y = one_removal(&format!(
+                "entry_point: \"apr gone\"\n      reason: {reason}\n      owner: \"noah\"\n      \
+                 recorded_on: \"{today}\"\n      replacement: \"apr gone\""
+            ));
+            assert!(
+                rules(&y).contains(&"PARITY-027".to_string()),
+                "{reason} naming itself must be refused: {:?}",
+                rules(&y)
+            );
+            let y = one_removal(&format!(
+                "entry_point: \"apr gone\"\n      reason: {reason}\n      owner: \"noah\"\n      \
+                 recorded_on: \"{today}\"\n      replacement: \"apr here\""
+            ));
+            assert!(
+                !rules(&y).contains(&"PARITY-027".to_string()),
+                "{reason} naming a successor must pass: {:?}",
+                rules(&y)
+            );
+        }
+        // RETIRED needs no replacement: no successor exists, and demanding one
+        // would make the honest verdict the expensive one.
+        let y = one_removal(&format!(
+            "entry_point: \"apr gone\"\n      reason: RETIRED\n      owner: \"noah\"\n      \
+             recorded_on: \"{today}\""
+        ));
+        assert!(
+            !rules(&y).contains(&"PARITY-027".to_string()),
+            "RETIRED without a replacement must pass: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// A ledger with no `removals:` key at all still PARSES.
+    ///
+    /// Not a formality: every rule on this kind is judged against the ledger as
+    /// it exists on protected `main`, and that ledger predates this block. A
+    /// newly-required field expressed in the TYPE would make the comparand a
+    /// parse error, a parse error emits no sets, and no sets reads as
+    /// BOOTSTRAP -- the strongest possible pass, produced by a schema edit.
+    #[test]
+    fn parity_025_a_ledger_without_removals_still_parses() {
+        let c = parse_contract_str(&good_yaml()).expect("the fixture has no removals: block");
+        let l = c.parity.as_ref().expect("ledger");
+        assert!(l.removals.is_empty());
     }

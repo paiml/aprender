@@ -59,9 +59,19 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
         } => commands::explain::run(&contract, binding.as_deref(), &format),
         Commands::Validate { contract } => commands::validate::run(&contract),
         Commands::CheckParity { contract } => commands::check_parity::run(&contract),
-        Commands::ParityLedger { contract, today } => {
-            commands::parity_ledger::run(&contract, today.as_deref())
-        }
+        Commands::ParityLedger {
+            contract,
+            today,
+            discover,
+        } => match (discover, contract) {
+            (Some(dir), _) => commands::parity_ledger::discover(&dir),
+            (None, Some(path)) => commands::parity_ledger::run(&path, today.as_deref()),
+            // clap's `required_unless_present` already refuses this, and it is
+            // still spelled out rather than unwrapped: a debug-only assertion
+            // is the shape that ships an ambiguity in release (clap's own
+            // duplicate-short check is `#[cfg(debug_assertions)]`).
+            (None, None) => Err("parity-ledger needs a CONTRACT or --discover DIR".into()),
+        },
         Commands::Scaffold {
             contract,
             r#trait,

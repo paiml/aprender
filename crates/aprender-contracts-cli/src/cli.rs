@@ -21,10 +21,17 @@ pub enum Commands {
     /// Evaluate a competitive-parity LEDGER as of a date (freshness at CHECK TIME)
     #[command(name = "parity-ledger")]
     ParityLedger {
-        contract: PathBuf,
+        #[arg(required_unless_present = "discover")]
+        contract: Option<PathBuf>,
         /// Evaluate as of this ISO date instead of today (testing / replay)
         #[arg(long)]
         today: Option<String>,
+        /// DISCOVERY: parse every contract under DIR and report which are
+        /// competitive-parity ledgers. Exits non-zero if any will not parse —
+        /// "unreadable" must never read as "none exists", which is the
+        /// ratchet's bootstrap branch and its strongest possible pass.
+        #[arg(long, conflicts_with_all = ["contract", "today"], value_name = "DIR")]
+        discover: Option<PathBuf>,
     },
     /// Generate Rust trait + test scaffolding from a contract
     Scaffold {

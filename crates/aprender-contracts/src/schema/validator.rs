@@ -125,6 +125,7 @@ fn validate_competitive_parity(contract: &Contract, violations: &mut Vec<Violati
     }
 
     validate_parity_downgrades(ledger, &mut push);
+    validate_parity_removals(ledger, &mut push);
     validate_parity_coverage(ledger, &mut push);
     validate_parity_falsification_bindings(contract, &mut push);
     validate_parity_date_horizon(contract, &mut push);
@@ -209,9 +210,27 @@ where
     // lower requirement, is not a ratchet; it is two floors of which the
     // reader has to guess the operative one.
     let mut prev: Option<(&str, usize)> = None;
+    let mut prev_scope: Option<usize> = None;
     for (i, step) in cov.steps.iter().enumerate() {
         let at = format!("parity.coverage.steps[{i}]");
         let by = step.by.trim();
+        // PARITY-022, the SECOND JOINT. `covered_min` bounds rows against
+        // scope; nothing bounded scope against the world, and the measured
+        // shape was 5 rows over 41 scope entries over 111 live subcommands.
+        // Bounding one joint leaves the claim payable by never widening the
+        // audited surface, so the schedule carries both floors and both
+        // ratchet.
+        //
+        // Required on EVERY step rather than optional-with-a-default: a
+        // default is a number nobody chose, and a step that silently inherits
+        // one is how the second joint went unbounded in the first place. The
+        // TYPE keeps it optional so an older ledger on protected `main` still
+        // PARSES as a comparand; this rule is what refuses it in a tree under
+        // test.
+        validate_parity_scope_min(step, i, prev_scope, push);
+        if let Some(s) = step.scope_min {
+            prev_scope = Some(s);
+        }
         if crate::schema::parity::parse_iso_date(by).is_none() {
             push(
                 "PARITY-022",
@@ -249,6 +268,81 @@ where
             }
         }
         prev = Some((by, step.covered_min));
+    }
+}
+
+/// PARITY-022, THE SECOND JOINT: `scope_min` on one coverage step.
+///
+/// `covered_min` bounds ROWS against SCOPE. Nothing bounded SCOPE against the
+/// world, and the measured shape was five rows over 41 scope entries over 111
+/// live subcommands — so bounding one joint left the whole claim payable by
+/// never widening the audited surface, with every gate green while the audited
+/// fraction of a growing CLI fell.
+///
+/// Required on EVERY step rather than optional-with-a-default: a default is a
+/// number nobody chose, and a step that silently inherits one is how the second
+/// joint went unbounded in the first place. The TYPE keeps it `Option` so an
+/// older ledger on protected `main` still PARSES as a comparand; this rule is
+/// what refuses it in a tree under test.
+fn validate_parity_scope_min<F>(
+    step: &crate::schema::parity::CoverageStep,
+    i: usize,
+    prev_scope: Option<usize>,
+    push: &mut F,
+) where
+    F: FnMut(&str, String, String),
+{
+    let at = format!("parity.coverage.steps[{i}].scope_min");
+    let by = step.by.trim();
+    let Some(s) = step.scope_min else {
+        push(
+            "PARITY-022",
+            format!(
+                "coverage step {i} declares no `scope_min`. `covered_min` bounds ROWS against \
+                 SCOPE and nothing bounds SCOPE against the live surface - five rows over 41 \
+                 scope entries over 111 live subcommands satisfies every other rule here \
+                 forever. Declare the entry points that must BE in scope from {by} onward"
+            ),
+            at,
+        );
+        return;
+    };
+    if s == 0 {
+        push(
+            "PARITY-022",
+            "coverage step scope_min must be at least 1 - a scope floor of zero is satisfied by \
+             an empty scope file, which is a 100% ratio over nothing"
+                .to_string(),
+            at,
+        );
+        return;
+    }
+    if s < step.covered_min {
+        push(
+            "PARITY-022",
+            format!(
+                "coverage step {i} requires {} covered entry point(s) but only {s} in scope. \
+                 Every ledger row must be IN scope, so covered can never exceed scope: this \
+                 step is unsatisfiable as written",
+                step.covered_min
+            ),
+            at.clone(),
+        );
+    }
+    if let Some(ps) = prev_scope {
+        if s <= ps {
+            push(
+                "PARITY-022",
+                format!(
+                    "coverage steps must be STRICTLY increasing in `scope_min` too; step {i} \
+                     ({by} -> {s}) does not advance on step {} ({ps}). A surface floor that \
+                     repeats has stopped widening, which is how the audited fraction of a \
+                     growing CLI shrinks with every gate green",
+                    i - 1
+                ),
+                at,
+            );
+        }
     }
 }
 
@@ -721,6 +815,223 @@ fn validate_parity_downgrades(
     for (i, d) in ledger.downgrades.iter().enumerate() {
         validate_parity_downgrade_target(ledger, d, i, &mut seen, push);
         validate_parity_downgrade_record(d, i, push);
+    }
+}
+
+/// Enforce the REMOVAL record (PARITY-025..027).
+///
+/// # What this is for
+///
+/// The shell ratchet used to excuse a deleted ROW, and a deleted SCOPE line,
+/// on one condition: that the entry point was absent from the LIVE
+/// ENUMERATION. That enumeration comes from `apr --help` of a binary built
+/// FROM THE BRANCH, so the author of the deletion also authored its excuse.
+/// Deleting a subcommand, its scope line and its row in a single commit
+/// removed a losing comparison at rc=0 with nothing recorded anywhere — the
+/// PMAT-733 move performed one level down, on the thing measured instead of on
+/// the measurement.
+///
+/// Retirement stays possible, because a rule that forbids retiring a command
+/// is a rule that gets deleted. It stops being free: the shell ratchet now
+/// requires BOTH that the entry point is genuinely gone AND that a record here
+/// names it. These rules are what make that record mean something other than a
+/// line of text.
+///
+/// # The VALUE is not judged
+///
+/// As everywhere else on this kind: nothing here asks whether the removal was
+/// a good idea, and nothing refuses the removal of a row whose verdict was
+/// `WORSE`. A rule that admitted only convenient deletions would be the
+/// fabrication engine wearing a fourth hat. What is refused is a deletion that
+/// names no owner, no date and no reason a machine can check.
+fn validate_parity_removals(
+    ledger: &crate::schema::parity::ParityLedger,
+    push: &mut impl FnMut(&str, String, String),
+) {
+    let mut seen: HashSet<&str> = HashSet::new();
+    for (i, r) in ledger.removals.iter().enumerate() {
+        validate_parity_removal_shape(r, i, &mut seen, push);
+        validate_parity_removal_disjoint(ledger, r, i, push);
+        validate_parity_removal_replacement(r, i, push);
+    }
+}
+
+/// PARITY-025: the removal record's own shape — a named thing, an owner, a
+/// date, and a reason from the closed vocabulary.
+fn validate_parity_removal_shape<'a>(
+    r: &'a crate::schema::parity::Removal,
+    i: usize,
+    seen: &mut HashSet<&'a str>,
+    push: &mut impl FnMut(&str, String, String),
+) {
+    use crate::schema::parity::RemovalReason;
+
+    let at = |field: &str| format!("parity.removals[{i}].{field}");
+    let key = r.entry_point.trim();
+
+    if key.is_empty() {
+        push(
+            "PARITY-025",
+            format!("parity.removals[{i}].entry_point is required"),
+            at("entry_point"),
+        );
+    } else if !seen.insert(key) {
+        push(
+            "PARITY-025",
+            format!("parity.removals[{i}].entry_point {key:?} is recorded twice"),
+            at("entry_point"),
+        );
+    }
+    validate_key_is_canonical(&r.entry_point, &at("entry_point"), "PARITY-025", push);
+
+    if r.reason.is_none() {
+        push(
+            "PARITY-025",
+            format!(
+                "parity.removals[{i}].reason is required, from the closed vocabulary {}. \
+                 Prose is not accepted here for the same reason it is not accepted on a \
+                 downgrade: `serde` refuses an unknown value, so \"recorded a reason\" cannot \
+                 be discharged by writing a sentence",
+                RemovalReason::vocabulary()
+            ),
+            at("reason"),
+        );
+    }
+    if r.owner.trim().is_empty() {
+        push(
+            "PARITY-025",
+            format!(
+                "parity.removals[{i}].owner is required - a deletion with no owner is the \
+                 deletion this contract exists to make expensive"
+            ),
+            at("owner"),
+        );
+    }
+    if r.recorded_on.is_empty() {
+        push(
+            "PARITY-025",
+            format!("parity.removals[{i}].recorded_on is required (ISO YYYY-MM-DD)"),
+            at("recorded_on"),
+        );
+        return;
+    }
+    if crate::schema::parity::parse_iso_date(r.recorded_on.trim()).is_none() {
+        push(
+            "PARITY-025",
+            format!(
+                "parity.removals[{i}].recorded_on must be a real ISO date (YYYY-MM-DD), got {:?}",
+                r.recorded_on.trim()
+            ),
+            at("recorded_on"),
+        );
+    }
+    validate_not_in_the_future(
+        r.recorded_on.trim(),
+        &at("recorded_on"),
+        "a removal cannot have been recorded tomorrow",
+        push,
+    );
+}
+
+/// PARITY-026: the removal set is DISJOINT from the row set and from the
+/// downgrade set.
+///
+/// The mirror of PARITY-012, and load-bearing in the same way. PARITY-012
+/// stops a DELETION being dressed as a downgrade by requiring the row to still
+/// exist; this stops a LIVE row being pre-authorised for deletion by requiring
+/// that it does not. Without it a removal record could sit in the ledger
+/// beside the row it names, doing nothing visible, until the commit that
+/// deletes the row spends it — a permission issued long before the change and
+/// therefore unreviewable at the moment it matters. That is the
+/// self-issued-permission shape round 5 removed from the verdict channel,
+/// rebuilt one block over.
+fn validate_parity_removal_disjoint(
+    ledger: &crate::schema::parity::ParityLedger,
+    r: &crate::schema::parity::Removal,
+    i: usize,
+    push: &mut impl FnMut(&str, String, String),
+) {
+    let at = format!("parity.removals[{i}].entry_point");
+    let key = r.entry_point.trim();
+    if key.is_empty() {
+        return;
+    }
+    if ledger.rows.iter().any(|row| row.entry_point.trim() == key) {
+        push(
+            "PARITY-026",
+            format!(
+                "parity.removals[{i}].entry_point {key:?} still matches a row in this ledger. \
+                 A removal record says \"this entry point is GONE\"; while the row is present \
+                 that is false, and a record parked beside a live row is a pre-authorisation \
+                 for a deletion nobody has made yet"
+            ),
+            at.clone(),
+        );
+    }
+    if ledger
+        .downgrades
+        .iter()
+        .any(|d| d.entry_point.trim() == key)
+    {
+        push(
+            "PARITY-026",
+            format!(
+                "parity.removals[{i}].entry_point {key:?} is also recorded in \
+                 parity.downgrades. The two blocks make opposite claims - a downgrade requires \
+                 the row to be PRESENT (PARITY-012) and a removal requires it to be GONE - so \
+                 one record must not be spendable on both sides"
+            ),
+            at,
+        );
+    }
+}
+
+/// PARITY-027: a `RENAMED` or `MERGED_INTO` removal must name where the
+/// capability went, and may not name itself.
+///
+/// A rename that points at nothing is a retirement, and calling it a rename
+/// hides that the capability left. Naming itself discharges the rule while
+/// describing nothing — the shape of every "required" field that is
+/// satisfiable by an echo. The shell ratchet additionally requires the
+/// successor to be LIVE and IN SCOPE, which is a question about the world and
+/// so cannot be answered here.
+fn validate_parity_removal_replacement(
+    r: &crate::schema::parity::Removal,
+    i: usize,
+    push: &mut impl FnMut(&str, String, String),
+) {
+    use crate::schema::parity::RemovalReason;
+
+    let at = format!("parity.removals[{i}].replacement");
+    let key = r.entry_point.trim();
+    let replacement = r.replacement.as_deref().map(str::trim).unwrap_or("");
+    if replacement.is_empty() {
+        if r.reason.is_some_and(RemovalReason::requires_replacement) {
+            push(
+                "PARITY-027",
+                format!(
+                    "parity.removals[{i}].replacement is required for reason {} - a rename that \
+                     points at nothing is a retirement, and calling it a rename hides that the \
+                     capability left. Name the entry point that carries it now, or record the \
+                     removal as RETIRED",
+                    r.reason.unwrap_or(RemovalReason::Retired)
+                ),
+                at,
+            );
+        }
+        return;
+    }
+    validate_key_is_canonical(replacement, &at, "PARITY-027", push);
+    if replacement == key {
+        push(
+            "PARITY-027",
+            format!(
+                "parity.removals[{i}].replacement {replacement:?} is the entry point being \
+                 removed. A record naming itself as its own successor discharges the rule \
+                 while describing nothing"
+            ),
+            at,
+        );
     }
 }
 
@@ -1224,8 +1535,6 @@ fn validate_equations(contract: &Contract, violations: &mut Vec<Violation>) {
 }
 
 fn validate_proof_obligations(contract: &Contract, violations: &mut Vec<Violation>) {
-    use crate::schema::types::ObligationType;
-
     let mut seen_ids = HashSet::new();
     for (i, ob) in contract.proof_obligations.iter().enumerate() {
         if ob.property.is_empty() {
@@ -1246,8 +1555,26 @@ fn validate_proof_obligations(contract: &Contract, violations: &mut Vec<Violatio
                 });
             }
         }
+        validate_obligation_field_types(contract, ob, i, violations);
+    }
+}
 
-        // DbC field/type constraints
+/// SCHEMA-014..017: which DbC fields are legal on which obligation TYPE.
+///
+/// Split out of `validate_proof_obligations` as a pure extraction (no rule
+/// changed) because that function sat at cognitive 30 against the repo's
+/// threshold of 25 and blocked every commit touching this file — pre-existing
+/// debt, charged to whoever next edits the file, which is the shape the
+/// bin→lib lint-reattribution lesson warns about.
+fn validate_obligation_field_types(
+    contract: &Contract,
+    ob: &crate::schema::types::ProofObligation,
+    i: usize,
+    violations: &mut Vec<Violation>,
+) {
+    use crate::schema::types::ObligationType;
+
+    {
         if ob.requires.is_some() && ob.obligation_type != ObligationType::Postcondition {
             violations.push(Violation {
                 severity: Severity::Error,

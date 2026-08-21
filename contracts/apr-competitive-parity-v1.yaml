@@ -593,13 +593,24 @@ parity:
       the author edits in the same commit cannot audit that commit -- the root
       cause this whole round exists to remove.
     dissent: >-
-      FOUR OBJECTIONS, RECORDED RATHER THAN ANSWERED AWAY. (1) An absolute count
-      does NOT track scope growth: 8 covered against 41 in-scope is 19.5%, and
-      if the CLI grows to 60 in-scope entry points the same 8 is 13% with the
-      gate still green. The ratio genuinely degrades and nothing here reds. Only
-      partial mitigation: the scope set is itself shrink-never against `main`,
-      and every run prints `entry points in scope`, so the dilution is visible
-      even though it is not blocking. (2) The numbers 4 -> 8 are a JUDGEMENT,
+      FOUR OBJECTIONS, RECORDED RATHER THAN ANSWERED AWAY. (1) ANSWERED IN ROUND
+      5, and the original objection is kept below so the answer can be read
+      against it. As written, an absolute `covered_min` does NOT track scope
+      growth: 8 covered against 41 in-scope is 19.5%, and if the CLI grows to 60
+      in-scope entry points the same 8 is 13% with the gate still green. The
+      mitigation offered at the time was partial -- the scope set is shrink-never
+      against `main`, and every run prints `entry points in scope`, so the
+      dilution is visible without blocking. That was not enough, because it left
+      the SECOND JOINT (scope against the live surface) unbounded, and 5 rows
+      over 41 scope entries over 111 live subcommands is bounded at neither end.
+      `scope_min` on the same steps closes it: the audited surface itself has a
+      dated, ratcheting floor. It is an absolute count for a REASON SHARPER than
+      the one at the first joint -- the obvious ratio here is
+      `in_scope / live_universe`, and the live universe is enumerated from a
+      binary built FROM THE BRANCH, so a ratio against it would be payable by
+      DELETING subcommands. What remains genuinely open is the RATE: nothing
+      mechanical says 41 -> 55 is the right slope, and a renewal that rises
+      trivially is refused by nothing here. (2) The numbers 4 -> 8 are a JUDGEMENT,
       not a capacity measurement. Nobody has measured what an honest row costs
       to produce, so "double it in six months" is an assertion. It was chosen
       because it is landable today and because a step that does not at least
@@ -619,11 +630,32 @@ parity:
       more re-measurements than it holds measurements -- so a ledger CAN grow
       wide and shallow. A measured-coverage floor is the obvious next control
       and is recorded here as ABSENT work rather than pretended into existence.
+    # BOTH JOINTS, ON ONE SCHEDULE.
+    #
+    #   covered_min : distinct in-scope entry points that must carry a ROW.
+    #                 Bounds rows against scope.
+    #   scope_min   : entry points that must BE in scope. Bounds scope against
+    #                 the live surface -- the joint that was open until round 5.
+    #
+    # Both are landable on the day they land: 5 rows collapse to 4 distinct
+    # scope keys (two share `apr run`) and the scope file holds 41 entries, so
+    # the step dated today is met exactly as it stands. A gate nobody can pass
+    # on the day it lands gets disabled, and a disabled gate is worse than an
+    # absent one because it is counted.
+    #
+    # Both are ABSOLUTE COUNTS, never ratios: `covered / in_scope` and
+    # `in_scope / live_universe` both have denominators the same author writes,
+    # and the second one is written by the CLI source itself, so a ratio floor
+    # there is satisfiable by deleting a subcommand. That is the whole of round
+    # 5's fatal 2 arriving by another route, and an integer has no denominator
+    # to shrink.
     steps:
       - by: "2026-08-21"
         covered_min: 4
+        scope_min: 41
       - by: "2027-02-14"
         covered_min: 8
+        scope_min: 55
 
   # RECORDED DOWNGRADES.
   #
