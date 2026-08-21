@@ -154,6 +154,7 @@ pub(crate) fn run_validate_gate(
             warnings: total_warnings,
             error_messages,
         },
+        extra: None,
     };
     (result, findings)
 }
@@ -199,6 +200,7 @@ pub(crate) fn run_audit_gate(contracts: &[(String, Contract)]) -> (GateResult, V
             findings: total_findings,
             finding_messages,
         },
+        extra: None,
     };
     (result, findings)
 }
@@ -269,6 +271,7 @@ pub(crate) fn run_score_gate(
             threshold,
             below_threshold,
         },
+        extra: None,
     };
     (result, findings)
 }

@@ -104,6 +104,7 @@ pub(crate) fn run_composition_gate(
             edges_satisfied,
             edges_broken,
         },
+        extra: None,
     };
 
     (result, findings)

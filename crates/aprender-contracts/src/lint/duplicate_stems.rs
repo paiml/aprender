@@ -30,6 +30,15 @@
 //!    frozen against `scripts/contract_duplicate_stem_baseline.txt`. A stem that
 //!    diverges but is not in the baseline FAILS the gate; a baseline entry that no
 //!    longer diverges also FAILS, so the number can only go down.
+//!
+//! WHERE THE REPORT LIVES. This gate post-dates `GateDetail`, which is frozen at the
+//! eight variants `provable-contracts` 0.3.1 published and which 28 vendored 0.3.1
+//! programs `match` exhaustively (see the doc comment on `GateDetail`). So the census
+//! rides in `GateResult::extra` as `GateExtra::DuplicateStems` — same five fields,
+//! same JSON keys, a type 0.3.1 cannot see — and `detail` reports through `Validate`,
+//! whose three numbers are true for this gate as written. Nothing is quieter for it:
+//! `the_gate_names_every_ambiguous_stem_with_its_paths` fixes what must be reported
+//! independently of which channel carries it.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -38,7 +47,7 @@ use std::time::Instant;
 use super::rules::RuleSeverity;
 
 use super::finding::LintFinding;
-use super::{GateDetail, GateResult};
+use super::{GateDetail, GateExtra, GateResult};
 
 /// Path of the ratchet baseline, relative to the project root.
 pub const BASELINE_REL_PATH: &str = "scripts/contract_duplicate_stem_baseline.txt";
@@ -157,12 +166,32 @@ pub(crate) fn run_duplicate_stem_gate(
         ));
     }
 
+    // `detail` uses `Validate`, the truest of the eight FROZEN `GateDetail` variants
+    // (see the doc comment on `GateDetail`: a ninth variant is a compile error in the
+    // vendored 0.3.1 corpus). Every number below means exactly what the field name
+    // says, so an unmodified 0.3.1 renderer prints a true line for this gate:
+    //   contracts      contract FILES implicated in an ambiguous stem
+    //   errors         the failures — unbaselined stems plus stale baseline entries
+    //   warnings       ambiguous stems the ratchet currently tolerates
+    //   error_messages those failures, in words
+    // The gate's OWN shape — which stems, how many variants, at which paths — is not
+    // expressible in that vocabulary and is carried in `extra` instead, losing
+    // nothing: `GateExtra::DuplicateStems` has the same five fields, and the same
+    // JSON key names, that a dedicated `GateDetail` variant would have had.
+    let implicated_files = duplicates.iter().map(|d| d.paths.len()).sum();
+    let error_messages: Vec<String> = findings.iter().map(|f| f.message.clone()).collect();
     let result = GateResult {
         name: "duplicate-stems".into(),
         passed,
         skipped: false,
         duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(0),
-        detail: GateDetail::DuplicateStems {
+        detail: GateDetail::Validate {
+            contracts: implicated_files,
+            errors: unbaselined.len() + stale.len(),
+            warnings: found.intersection(baseline).count(),
+            error_messages,
+        },
+        extra: Some(GateExtra::DuplicateStems {
             divergent: duplicates.len(),
             baselined: found.intersection(baseline).count(),
             unbaselined,
@@ -178,7 +207,7 @@ pub(crate) fn run_duplicate_stem_gate(
                     )
                 })
                 .collect(),
-        },
+        }),
     };
     (result, findings)
 }

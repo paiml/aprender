@@ -7,7 +7,7 @@ use std::io::{IsTerminal, Write};
 use provable_contracts::lint::finding::LintFinding;
 use provable_contracts::lint::rules::RuleSeverity;
 use provable_contracts::lint::sarif::{findings_to_sarif, sarif_to_json};
-use provable_contracts::lint::{GateDetail, LintReport};
+use provable_contracts::lint::{GateDetail, GateExtra, LintReport};
 
 /// Whether to use ANSI colors (auto-detected or forced via --color).
 fn use_color() -> bool {
@@ -85,24 +85,51 @@ pub fn print_gate(num: usize, gate: &provable_contracts::lint::GateResult) {
     } else {
         &red("✗")
     };
-    let summary = gate_summary(&gate.detail);
+    let summary =
+        gate_extra_summary(gate.extra.as_ref()).unwrap_or_else(|| gate_summary(&gate.detail));
     println!(
         "  Gate {num}: {:<20} {icon}  ({summary}) [{:.0}ms]",
         bold(&gate.name),
         gate.duration_ms
     );
-    print_duplicate_stem_detail(&gate.detail);
+    print_duplicate_stem_detail(gate.extra.as_ref());
+}
+
+/// Summary line for a gate whose shape post-dates the frozen `GateDetail` vocabulary.
+///
+/// `None` means the gate has no out-of-band payload and `gate_summary` applies.
+///
+/// `GateExtra` is `#[non_exhaustive]`, so this MUST stay a fallible `match` with a
+/// `_` arm even while it has one variant: from outside `aprender-contracts` a
+/// single-variant `let` is a refutable pattern (E0005). That is the point of the
+/// attribute — the next post-0.3.1 gate adds a variant here and this renderer keeps
+/// compiling, which is exactly what `GateDetail` cannot do.
+fn gate_extra_summary(extra: Option<&GateExtra>) -> Option<String> {
+    match extra? {
+        GateExtra::DuplicateStems {
+            divergent,
+            baselined,
+            unbaselined,
+            stale,
+            ..
+        } => Some(format!(
+            "{divergent} ambiguous stems, {baselined} baselined, {} unbaselined, {} stale",
+            unbaselined.len(),
+            stale.len()
+        )),
+        _ => None,
+    }
 }
 
 /// Ambiguous stems are printed in full on EVERY run. A count alone would let 48
 /// unresolvable contracts sit behind a green tick, which is how they got here.
-fn print_duplicate_stem_detail(detail: &GateDetail) {
-    let GateDetail::DuplicateStems {
+fn print_duplicate_stem_detail(extra: Option<&GateExtra>) {
+    let Some(GateExtra::DuplicateStems {
         unbaselined,
         stale,
         divergent_stems,
         ..
-    } = detail
+    }) = extra
     else {
         return;
     };
@@ -164,17 +191,6 @@ pub fn gate_summary(detail: &GateDetail) -> String {
             edges_satisfied,
             edges_broken,
         } => format!("{edges_checked} edges, {edges_satisfied} satisfied, {edges_broken} broken"),
-        GateDetail::DuplicateStems {
-            divergent,
-            baselined,
-            unbaselined,
-            stale,
-            ..
-        } => format!(
-            "{divergent} ambiguous stems, {baselined} baselined, {} unbaselined, {} stale",
-            unbaselined.len(),
-            stale.len()
-        ),
         GateDetail::Skipped { reason } => format!("skipped: {reason}"),
     }
 }
