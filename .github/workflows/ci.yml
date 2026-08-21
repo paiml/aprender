@@ -808,17 +808,95 @@ jobs:
       - name: Fixture-path guard case table
         run: bash scripts/check_test_fixture_paths.sh --self-test
 
+  # Competitive-parity ratchet (permanent hard requirement).
+  #
+  # WHY IT IS ITS OWN JOB. The check needs a `apr` binary built from HEAD --
+  # the in-scope universe is enumerated at RUNTIME from `apr --help`, never from
+  # a hardcoded list -- so it cannot live in the text-only guard-runner-labels
+  # job. It is deliberately NOT folded into workspace-test either: contention on
+  # that job's per-run target dir would serialise two cargo builds behind one
+  # lock, and a parity failure must be attributable to the parity job rather
+  # than buried in a 27-minute test log.
+  #
+  # WHY IT MUST BE IN `gate.needs` AND IN THE GATE BODY. `gate` does not fail on
+  # a `needs` entry by itself -- it tests each result EXPLICITLY (see the job
+  # below). A job added to `needs` without a matching `if [ result != success ]`
+  # block produces a check that blocks nothing, which is the exact class of
+  # decoration this whole change exists to remove. Both edits are made.
+  #
+  # The target dir is per-PR and PERSISTENT (no run-id), so it is cold once per
+  # PR and warm afterwards. That is a deliberate cost: an enumeration that is
+  # not runtime is a claim about a binary nobody ran.
+  parity-ledger:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 60
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        # apr_bin.sh proves the binary was built from HEAD by comparing the SHA
+        # apr-cli's build.rs embeds against `git rev-parse --short HEAD`. That
+        # needs real git history in the checkout, not a shallow tarball.
+        with:
+          fetch-depth: 0
+      # Verification Discipline #7: the guard's own case table runs BEFORE the
+      # guard judges anything. Text-only, no build, ~0.1s.
+      - name: Parity-ratchet guard case table must pass before it judges
+        run: bash scripts/check_competitive_parity.sh --self-test
+      - name: Competitive-parity ratchet (fresh dated verdict per in-scope entry point)
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-parity/${PR_OR_REF}:/workspace/target" \
+            -v "/home/noah/data/sccache:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            "$IMAGE" \
+            bash -c 'cargo build --bin apr && bash scripts/check_competitive_parity.sh'
+      - name: Fix file ownership
+        if: always()
+        run: |
+          docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+            bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    needs: [ci, workspace-test, mutants, guard-runner-labels]
+    needs: [ci, workspace-test, mutants, guard-runner-labels, parity-ledger]
     if: always()
     steps:
       - name: Check required jobs
         run: |
           if [ "${{ needs.guard-runner-labels.result }}" != "success" ]; then
             echo "guard-runner-labels failed: ${{ needs.guard-runner-labels.result }}"
+            exit 1
+          fi
+          # Competitive parity is a PERMANENT hard requirement, so it is checked
+          # EXPLICITLY here and not only listed in `needs`. `gate` reads each
+          # result by name; a job present in `needs` but absent from this body
+          # cannot fail the gate, which is how a required check comes to block
+          # nothing.
+          if [ "${{ needs.parity-ledger.result }}" != "success" ]; then
+            echo "parity-ledger failed: ${{ needs.parity-ledger.result }}"
+            echo "A row was deleted, expired, or fell out of scope. Staleness blocks;"
+            echo "the verdict VALUE does not — WORSE is a compliant, countable verdict."
             exit 1
           fi
           if [ "${{ needs.ci.result }}" != "success" ]; then

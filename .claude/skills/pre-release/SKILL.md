@@ -220,12 +220,52 @@ exist. Run Gate 11 before `cargo set-version`; after the bump, the equivalent
 signal is Gate 5 on a zero-sibling crate plus
 `scripts/check_gate5_stage.sh --explain <crate>`.
 
+### Gate 12: Competitive-Parity Ledger (permanent hard requirement)
+
+Competitive parity is a **permanent hard requirement of every release**, not a
+nice-to-have, and it is checked here because the RELEASE is a decision surface
+CI does not cover: `ci / gate` runs on a PR, a release cut does not have to pass
+through one. A guard that skips the surface where the decision is made is
+theater.
+
+```
+bash scripts/check_competitive_parity.sh --self-test   # case table first
+cargo build --bin apr                                   # the universe is enumerated at RUNTIME
+bash scripts/check_competitive_parity.sh
+```
+
+PASS when it prints `competitive-parity ratchet OK`. What it asserts:
+
+* every in-scope entry point in `scripts/competitive_parity_scope.txt` still
+  exists in the SHA-pinned binary's own `apr --help`;
+* every row of `contracts/apr-competitive-parity-v1.yaml` has a verdict from the
+  closed vocabulary and is INSIDE its `valid_until` **as of today**;
+* `__MEASURED__` and `__NON_WINS__` have not fallen below
+  `scripts/competitive_parity_baseline.txt`.
+
+**Read the failure correctly.** This gate does NOT require a win. `WORSE`,
+`NOT_COMPARABLE` and `UNMEASURED` are first-class verdicts and `WORSE` counts as
+MEASURED. A failure means a row was DELETED, EXPIRED, or fell out of scope — never
+that apr lost. The two ways this gate goes red at release time and what each means:
+
+| Symptom | Meaning | Fix |
+|---|---|---|
+| `__MEASURED__ fell` with `__EXPIRED__ > 0` | a measurement aged out during the release window | re-measure, or re-record the row as `UNMEASURED` with a new `valid_until` and an owner |
+| `__MEASURED__ fell` with `__EXPIRED__ = 0` | a row was removed from the ledger | put it back. Recording a loss is compliant; deleting one is the PMAT-733 defect (the StandardScaler 0.69x row was deleted the day it was measured) |
+
+Do NOT "fix" this by deleting a row or by editing
+`scripts/competitive_parity_baseline.txt` downward. `--update-baseline` refuses
+to lower any figure, and a hand-edit is the same act with the safety removed.
+
 ## Verdict
 
 After running all gates, provide:
 
 1. A summary table: Gate | Status | Notes
-2. **GO** if all gates pass (or only have known-false-positive failures)
+2. **GO** if all gates pass (or only have known-false-positive failures).
+   Gate 12 is NOT waivable and has no known false positive: it is a
+   permanent hard requirement, and its verdict values are already allowed to be
+   losses, so there is nothing left for a waiver to excuse.
 3. **NO-GO** with specific blocking issues if any real gate fails
 4. If NO-GO, list the exact commands to fix each failure
 

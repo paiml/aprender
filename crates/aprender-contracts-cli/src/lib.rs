@@ -59,6 +59,9 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
         } => commands::explain::run(&contract, binding.as_deref(), &format),
         Commands::Validate { contract } => commands::validate::run(&contract),
         Commands::CheckParity { contract } => commands::check_parity::run(&contract),
+        Commands::ParityLedger { contract, today } => {
+            commands::parity_ledger::run(&contract, today.as_deref())
+        }
         Commands::Scaffold {
             contract,
             r#trait,

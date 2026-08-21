@@ -1,0 +1,326 @@
+# The COMPETITIVE-PARITY LEDGER.
+#
+# WHY THIS FILE IS NOT A LIST OF WINS
+# -----------------------------------
+# The mandate as literally worded -- "every entry point proven equal or better"
+# -- is a fabrication engine. A rule that admits only wins makes DELETING a
+# losing comparison the cheapest compliant action. This repository has already
+# done that, twice:
+#
+#   * StandardScaler measured wall-clock ratio 1.443 (apr 0.69x, a LOSS) on the
+#     canonical Intel CI runner on 2026-06-15. The same day, commit d7e08043b
+#     (squashed as edfa106d0, PR #2040, PMAT-733) deleted the test, the
+#     contract and both nightly workflow steps -- 395 deletions -- and replaced
+#     them with a YAML comment. `git log --all --diff-filter=D` over
+#     crates/*/tests/beat_* and contracts/beat-* returns that ONE commit. It is
+#     the only beat deletion in the history and it removed the only two losing
+#     rows.
+#
+#   * "apr beats ollama 1.371x on decode" was withdrawn on 2026-07-31 (commit
+#     6e569e16e, PR #2348) down to a measured 1.015-1.109x. docs/BEATS.md went
+#     on publishing "1.371x WON, gate >=1.10x" for another THIRTEEN days,
+#     because nothing compared the scoreboard to the contract.
+#
+# So the gate is INVERTED. It checks that a FRESH, DATED verdict EXISTS, from a
+# closed vocabulary. It never checks that the verdict says BETTER.
+#
+#   BETTER / PARITY / WORSE / NOT_COMPARABLE / UNMEASURED
+#
+# WORSE and UNMEASURED are first-class and recordable. Four of the five seeded
+# rows are non-wins and NONE is a BETTER, on purpose: a mechanism whose first
+# rows are all wins is untested in the direction that matters.
+#
+# EVERY ROW EXPIRES, INCLUDING THE GOOD ONES
+# ------------------------------------------
+# `valid_until` is evaluated at CHECK TIME for every verdict class. An expired
+# row degrades to UNMEASURED, which lowers __MEASURED__, which fails
+# scripts/check_competitive_parity.sh. The first design bounded only UNMEASURED
+# rows, which is backwards -- MEASURED is where both withdrawn claims lived, and
+# beat-ollama-decode-throughput-speed-v1.yaml still carries
+# `baseline_sourced_date: "2026-06-15"` against a baseline re-derived from a
+# 2026-07-31 run. The one contract in the repo whose baseline WAS refreshed has
+# a freshness field that lies about it.
+#
+# WHAT THE SEEDED ROWS ARE AND ARE NOT
+# ------------------------------------
+# All five are HISTORICAL NOTES promoted into the ledger, not fresh
+# measurements. Every one of them fails a strict measurement protocol on at
+# least one count -- named per row in `note:` -- and every one carries a
+# short `valid_until` and an owner so the ledger degrades loudly instead of
+# ageing quietly. Recording them as they are, gaps and all, is the point:
+# before this file there was no machine-readable way to record a non-win, so
+# every loss in this repo degraded into prose and then drifted.
+#
+# NOTHING HERE WAS RE-BENCHED FOR THIS COMMIT. The host is power-capped and
+# runs a merge queue; an honest UNMEASURED beats an invented number.
+
+metadata:
+  version: "1.0.0"
+  created: "2026-08-21"
+  author: "aprender"
+  kind: competitive-parity
+  description: >-
+    Competitive-parity ledger: one dated, verdict-bearing row per in-scope entry
+    point. The gate checks that a fresh verdict EXISTS, never that it says
+    BETTER, so recording a loss is compliant and deleting one is not.
+  references:
+    - "docs/BEATS.md - the public beat scoreboard"
+    - "PR #2040 / commit d7e08043b (PMAT-733) - the StandardScaler beat deletion"
+    - "PR #2348 / commit 6e569e16e - the 1.371x ollama withdrawal"
+    - "Popper, Logic of Scientific Discovery (1959) - only falsifiable claims count"
+
+proof_obligations:
+  - type: invariant
+    property: "every row names a competitor at an EXACT pinned version"
+    formal: "forall r in rows. pinned(r.competitor_version)"
+  - type: invariant
+    property: "every row carries a verdict from the closed five-value vocabulary"
+    formal: "forall r in rows. r.verdict in {BETTER,PARITY,WORSE,NOT_COMPARABLE,UNMEASURED}"
+  - type: invariant
+    property: "every row carries measured_on and valid_until, whatever its verdict"
+    formal: "forall r in rows. iso_date(r.measured_on) and iso_date(r.valid_until)"
+  - type: invariant
+    property: "an expired row counts as UNMEASURED regardless of what it claims"
+    formal: "forall r in rows. today > r.valid_until -> effective(r) = UNMEASURED"
+  - type: invariant
+    property: "deleting a row can only lower __MEASURED__, never raise it"
+    formal: "measured(rows \\ {r}) <= measured(rows)"
+  - type: invariant
+    property: "the ledger records at least one non-win"
+    formal: "exists r in rows. r.verdict != BETTER"
+
+falsification_tests:
+  - id: FALSIFY-PARITY-001
+    rule: "competitor_version is pinned"
+    prediction: >-
+      Rewriting any row's competitor_version to "latest", "unpinned",
+      "llama.cpp@main" or any prose without a digit makes `pv validate` emit
+      PARITY-004 and exit non-zero.
+    if_fails: >-
+      The pin rule is not reachable from the contract, so the ledger's oracles
+      drift under the claims exactly as `uv run --with scikit-learn` does today.
+  - id: FALSIFY-PARITY-002
+    rule: "the verdict vocabulary is closed"
+    prediction: >-
+      A row with `verdict: MOSTLY_BETTER` fails to PARSE, and a row with no
+      verdict at all emits PARITY-006.
+    if_fails: >-
+      The vocabulary is advisory, so a ledger can invent a verdict that no
+      consumer knows how to weigh.
+  - id: FALSIFY-PARITY-003
+    rule: "freshness is required on EVERY verdict class"
+    prediction: >-
+      Deleting `valid_until` from a BETTER row -- not just from an UNMEASURED
+      one -- emits PARITY-007. So does a valid_until on or before measured_on.
+    if_fails: >-
+      A win can be recorded with no expiry, which is precisely how the 1.371x
+      ollama claim stayed published for eight weeks after it stopped
+      reproducing.
+  - id: FALSIFY-PARITY-004
+    rule: "freshness is evaluated at CHECK TIME"
+    prediction: >-
+      With today past a row's valid_until, `pv parity` reports that row's
+      effective verdict as UNMEASURED and exits non-zero, whatever the file
+      says.
+    if_fails: >-
+      Freshness is a schema decoration evaluated once at authoring time, so the
+      ledger ages silently -- the failure mode of all 24 dated beat contracts,
+      which are 48-71 days old with no expiry.
+  - id: FALSIFY-PARITY-005
+    rule: "deletion is more expensive than recording a loss"
+    prediction: >-
+      Deleting the standard-scaler WORSE row lowers __MEASURED__ by one, and
+      scripts/check_competitive_parity.sh exits non-zero against its baseline.
+    if_fails: >-
+      PMAT-733 repeats: the cheapest way to raise the ratio is to remove the
+      comparison that lowers it.
+  - id: FALSIFY-PARITY-006
+    rule: "registry: true buys no exemption on this kind"
+    prediction: >-
+      Adding `registry: true` to this contract's metadata emits PARITY-000, and
+      `Contract::requires_proofs()` still returns true -- unlike a kernel
+      contract, where the same flag silently rewrites the kind to `registry` and
+      skips the provability invariant entirely.
+    if_fails: >-
+      The new kind inherits the escape hatch that leaves 481 in-tree contracts
+      with `proven: 0`, and the ledger proves nothing.
+
+parity:
+  scope: >-
+    In-scope entry points are enumerated at RUNTIME from a SHA-pinned `apr`
+    binary plus the workspace's bin targets; the frozen list is
+    scripts/competitive_parity_scope.txt and the ratchet refuses to shrink it
+    unless the entry point has actually left the live enumeration. Rows may also
+    name a library surface (`lib:` prefix) that no subcommand exposes -- two of
+    the five seeds are exactly that, and pretending otherwise would have meant
+    dropping them.
+
+  rows:
+    # ---------------------------------------------------------------- PARITY
+    - entry_point: "apr run --gpu"
+      competitor: "ollama"
+      competitor_version: "0.12.4"
+      invocation_apr: >-
+        APR_BIN=$(. scripts/apr_bin.sh) cargo test -p aprender-serve --test
+        beat_ollama_decode_throughput_speed -- --ignored --nocapture
+        (slope tok/s = (384-128)/(ms@384 - ms@128)*1000, median of 7)
+      invocation_competitor: >-
+        ollama run qwen2.5-coder:1.5b-instruct-q4_K_M "<prompt>" --verbose,
+        parse `eval rate`, median of 5, same session and same GPU
+      dimension: "decode_tok_s_ratio_apr_over_ollama"
+      verdict: PARITY
+      measured_on: "2026-07-31"
+      valid_until: "2026-10-31"
+      owner: "pillar-4-serve"
+      evidence: "contracts/beat-ollama-decode-throughput-speed-v1.yaml + commit 6e569e16e (PR #2348)"
+      note: >-
+        1.015-1.109x on lambda RTX 4090 sm_89, inside noise, so PARITY not
+        BETTER. Four dated medians on one host with the SAME GGUF both sides:
+        2026-06-15 412.3/300.7 = 1.371x; 2026-07-29 332.7/299.9 = 1.109x;
+        2026-07-31 342.4/328.6 = 1.042x; 2026-07-31 318.2/313.5 = 1.015x. The
+        ollama column reproduces across six weeks (300.7/299.9/328.6/313.5),
+        which is what makes the apr-side drift attributable. The 1.371x is
+        formally WITHDRAWN as unreproducible, not reattributed. GAPS, stated:
+        (a) no receipt artifact exists -- all four numbers live as prose in the
+        contract, the harness header and the commit message; `git show --stat
+        6e569e16e` touches 2 files and no evidence/ dir; (b) the ollama VERSION
+        was never captured -- 0.12.4 above is the build pinned going forward,
+        NOT proven to be the one that produced these numbers, which is why this
+        row expires in ten weeks; (c) ci_gating.mode is `manual` (no NVIDIA CI
+        runner), so nothing re-measures it on a schedule.
+
+    # ----------------------------------------------------------------- WORSE
+    # The canonical seed. Recording it re-instates precisely what PMAT-733
+    # deleted, which is the entire point of the inversion.
+    - entry_point: "lib:aprender-core::StandardScaler::fit_transform"
+      competitor: "scikit-learn"
+      competitor_version: "1.9.0"
+      invocation_apr: >-
+        git show d7e08043b^:crates/aprender-core/tests/beat_sklearn_scaler_speed.rs
+        (the harness no longer exists on main; it must be recovered from the
+        deleting commit) -- make_regression(n=200000, d=50, noise=0.1, seed=42),
+        median of 5 after warmup, same host / same run / same data
+      invocation_competitor: >-
+        uv run --with 'scikit-learn==1.9.0' --with numpy python3 -c
+        "StandardScaler().fit_transform(X)" on the identical array
+      dimension: "wall_clock_ratio_apr_over_sklearn"
+      verdict: WORSE
+      measured_on: "2026-06-15"
+      valid_until: "2026-09-30"
+      owner: "pillar-1-sklearn"
+      evidence: "commit d7e08043b (squashed edfa106d0, PR #2040) - the deletion commit's own message"
+      note: >-
+        apr 175.4 ms vs sklearn 121.5 ms, ratio 1.443 => apr 0.69x, on the
+        canonical Intel CI runner. The SAME task on a 16-core dev box measured
+        0.515 (apr 1.94x, a WIN) -- a ~2.8x relative swing between two x86
+        hosts, which is why a single scalar verdict must carry its host. GAPS,
+        stated: the number survives only in a commit message (no receipt); the
+        deleted harness shelled `uv run --with scikit-learn` with NO version
+        constraint, so 1.9.0 above is the pin going FORWARD and the build that
+        produced 121.5 ms is unrecoverable; n=5. This row is a HISTORICAL NOTE
+        with a re-measurement obligation, not a fresh measurement -- it expires
+        2026-09-30 and re-measuring it means restoring the harness from
+        d7e08043b^ and running it on the Intel runner.
+
+    - entry_point: "apr code"
+      competitor: "Claude Code"
+      competitor_version: "CCPA arena run @ paiml/claude-code-parity-apr M234"
+      invocation_apr: >-
+        apr code <fixture> -- CCPA live Arena, 5 real GitHub-issue fixtures,
+        scored by oracle-pass rate
+      invocation_competitor: >-
+        claude (teacher) on the identical 5 fixtures, same Arena harness, same
+        oracle
+      dimension: "oracle_pass_rate"
+      verdict: WORSE
+      measured_on: "2026-06-25"
+      valid_until: "2026-09-30"
+      owner: "pillar-5-code"
+      evidence: "contracts/beat-claude-code-parity-v1.yaml (kind: pattern, status TRACKING)"
+      note: >-
+        claude teacher 0.20 (1/5); `apr code` student 0.00 (0/5). The only
+        recorded loss in the repo that is NOT a speed comparison, and the only
+        one on a live P0 entry point. Leading hypothesis on record (V1_004,
+        M286-M294): the Qwen-Coder finetune family emits 0 tool_calls while
+        non-Coder Qwen3-30B-A3B-Instruct does, so the gap is
+        agentic-emission/model-family, not code quality. GAPS, stated, and they
+        are severe: the receipt cited by BOTH the contract and docs/BEATS.md --
+        evidence/phase-5/arena-scores.json -- DOES NOT EXIST in this repo
+        (`find . -name arena-scores.json` returns nothing); the measurement and
+        its enforcement live in the companion repo, so nothing here can re-run
+        or re-verify it; and no date is attached to the Arena run in either file
+        (2026-06-25 above is the contract's created date, used as a
+        conservative lower bound). Under a strict protocol this is
+        UNMEASURED-with-a-remembered-number; it is filed WORSE because the
+        direction is not in dispute anywhere, and it expires soon precisely
+        because the receipt must be vendored or the row must degrade.
+
+    - entry_point: "lib:aprender-core::Lasso::fit"
+      competitor: "scikit-learn"
+      competitor_version: "1.9.0"
+      invocation_apr: >-
+        Lasso::new(0.1).fit(&X, &y) then predict, 10000x20, release build,
+        median of 7, same host / same run
+      invocation_competitor: >-
+        uv run --with 'scikit-learn==1.9.0' python3 -c
+        "Lasso(alpha=0.1).fit(X, y).predict(X)" on the identical arrays
+      dimension: "wall_clock_ms"
+      verdict: WORSE
+      measured_on: "2026-06-13"
+      valid_until: "2026-09-30"
+      owner: "pillar-1-sklearn"
+      evidence: "docs/BEATS.md sklearn loss table (the ONE published magnitude that matches its measurement)"
+      note: >-
+        apr 11.49 ms vs sklearn 0.606 ms => apr ~19x SLOWER, on lambda-vector.
+        Root cause named: apr's coordinate descent is unoptimised against
+        sklearn's Cython CD. Seeded ahead of the other sklearn losses because it
+        is the only one whose PUBLISHED magnitude survives contact with its
+        source -- BEATS.md says "~19x slower" and the measurement says 19x. The
+        counter-example is instructive and is NOT seeded: PCA was measured at
+        1.79x slower on 2026-06-13 and a docs-ONLY commit (25c817aa3 /
+        4ce9d1cdc, 2026-06-25) whose stated purpose was asserting wins silently
+        republished it as "~18.6x slower", with KMeans moving 1.02x -> "~2x" in
+        the same diff and "llama.cpp ~1.55x faster (431 vs 277 tok/s)" appearing
+        out of nothing. An unfalsifiable row drifts in whichever direction the
+        surrounding narrative pushes -- including the LOSS direction. GAPS,
+        stated: no in-repo receipt (no test, no contract, no bench, no
+        evidence/); sklearn version was unpinned at measurement time; 69 days
+        old at seeding.
+
+    # ------------------------------------------------------------ UNMEASURED
+    # Seeded as UNMEASURED on purpose. docs/BEATS.md publishes this as a
+    # measured narrow loss ("~1.55x faster, 431 vs 277 tok/s, RTX 4090") and
+    # nothing anywhere supports 431 or 277: `git log --all -S"431 vs 277"`
+    # returns only 25c817aa3 and its squash, i.e. the numbers were BORN in the
+    # scoreboard, and the two documents that cite the loss cite BEATS.md by LINE
+    # NUMBER -- a closed citation loop. Importing 1.55x here would import the
+    # exact fabrication this ledger exists to prevent.
+    - entry_point: "apr run --gpu (concurrency=1 single-request decode)"
+      competitor: "llama.cpp"
+      competitor_version: "b4589 (llama-bench prints build number + commit on startup)"
+      invocation_apr: >-
+        apr run model.gguf --gpu --prompt <fixed> --max-tokens 128, steady-state
+        decode tok/s at concurrency 1
+      invocation_competitor: >-
+        llama-bench -m model.gguf -p 128 -n 128 -r 5 on the same GGUF and host;
+        capture the build line verbatim as the version receipt
+      dimension: "decode_tok_s_at_concurrency_1"
+      verdict: UNMEASURED
+      measured_on: "2026-08-21"
+      valid_until: "2026-10-15"
+      owner: "pillar-4-serve"
+      evidence: "NONE - this row exists to record that a published claim has no receipt"
+      note: >-
+        docs/BEATS.md publishes "llama.cpp ~1.55x faster (431 vs 277 tok/s, RTX
+        4090)". No source for 431 or 277 exists anywhere in the repository. The
+        nearest real llama.cpp receipt in-tree,
+        docs/qa/five-whys-gpu-performance-gap-2026-01-08.md, has genuine
+        methodology (llama-bench -p 32 -n 128, r=3 and r=5, with stddevs) but is
+        225 days stale and reports a different world entirely: 1.5B GPU apr 76.2
+        +/- 28.1 vs llama.cpp 348.64 +/- 3.12, plus an apr WIN at 32B. Neither
+        431 nor 277 appears in it. measured_on is the date this ABSENCE was
+        established, not a measurement date. The competitor_version pins the
+        build the re-measurement must use; it is not a claim about the published
+        numbers, which have no build attached at all. Direction of the risk
+        worth naming out loud: this is a fabrication in the LOSS direction, so
+        the inverted gate must not assume only wins get invented.

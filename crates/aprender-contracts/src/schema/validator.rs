@@ -42,7 +42,279 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
         validate_beat_benchmark(contract, &mut violations);
     }
 
+    // CompetitiveParity-only checks. Deliberately OUTSIDE the kernel/non-kernel
+    // split, and deliberately NOT guarded by `!contract.is_registry()`: the
+    // whole defect this kind closes is that `registry: true` bought an
+    // exemption from provability. Here it buys nothing -- PARITY-000 makes it a
+    // hard error, and the provability invariant runs either way.
+    if contract.kind() == ContractKind::CompetitiveParity {
+        validate_provability_invariant(contract, &mut violations);
+        validate_competitive_parity(contract, &mut violations);
+    }
+
     violations
+}
+
+/// Tokens that are NOT a version pin, however confidently they are written.
+/// Matched against `competitor_version` split on non-alphanumerics, so `main`
+/// rejects `llama.cpp@main` without rejecting a version containing "domain".
+const UNPINNED_VERSION_TOKENS: [&str; 12] = [
+    "latest", "unpinned", "unknown", "tbd", "todo", "na", "any", "current", "head", "main",
+    "master", "whatever",
+];
+
+/// Enforce the competitive-parity LEDGER shape (PARITY-000..010).
+///
+/// The rules exist to make a row falsifiable by someone who was not there: a
+/// named competitor at a PINNED version, both invocations written out, a
+/// verdict from the closed vocabulary, the date it was taken, the date it goes
+/// stale, an owner, and a pointer to the receipt. Note what is NOT a rule:
+/// nothing here requires the verdict to be `BETTER`. A rule that admitted only
+/// wins would make deleting a losing row the cheapest way to comply, which is
+/// how the StandardScaler 0.69x measurement left the tree (PMAT-733).
+#[allow(clippy::too_many_lines)]
+fn validate_competitive_parity(contract: &Contract, violations: &mut Vec<Violation>) {
+    let mut push = |rule: &str, message: String, location: String| {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: rule.to_string(),
+            message,
+            location: Some(location),
+        });
+    };
+
+    // PARITY-000: the registry escape hatch is CLOSED on this kind. `kind()`
+    // already refuses to rewrite anything but `Kernel`, so this cannot be
+    // reached by accident -- it exists so that WRITING the intent fails loudly
+    // rather than being silently ignored by a future reader who assumes, from
+    // 481 other contracts, that `registry: true` means "exempt".
+    if contract.metadata.registry {
+        push(
+            "PARITY-000",
+            "metadata.registry: true is not permitted on a competitive-parity contract - \
+             the registry flag exempts a contract from the provability invariant, and this \
+             kind exists precisely because that exemption made 481 contracts prove nothing"
+                .to_string(),
+            "metadata.registry".to_string(),
+        );
+    }
+
+    // PARITY-001: there must be a ledger, with rows.
+    let Some(ledger) = contract.parity.as_ref() else {
+        push(
+            "PARITY-001",
+            "competitive-parity contract must define a `parity:` block with `rows:`".to_string(),
+            "parity".to_string(),
+        );
+        return;
+    };
+    if ledger.rows.is_empty() {
+        push(
+            "PARITY-001",
+            "parity.rows must not be empty - an empty ledger is a 100% ratio over zero \
+             entry points"
+                .to_string(),
+            "parity.rows".to_string(),
+        );
+        return;
+    }
+
+    let mut seen_entry_points: HashSet<&str> = HashSet::new();
+    for (i, row) in ledger.rows.iter().enumerate() {
+        let at = |f: &str| format!("parity.rows[{i}].{f}");
+
+        // PARITY-002: a named, unique entry point.
+        if row.entry_point.trim().is_empty() {
+            push(
+                "PARITY-002",
+                format!("parity.rows[{i}].entry_point must name the apr entry point"),
+                at("entry_point"),
+            );
+        } else if !seen_entry_points.insert(row.entry_point.trim()) {
+            push(
+                "PARITY-002",
+                format!(
+                    "duplicate entry_point {:?} - two rows for one entry point let a \
+                     favourable one mask an unfavourable one",
+                    row.entry_point.trim()
+                ),
+                at("entry_point"),
+            );
+        }
+
+        // PARITY-003: a named competitor.
+        if row.competitor.trim().is_empty() {
+            push(
+                "PARITY-003",
+                format!("parity.rows[{i}].competitor must name the competing tool"),
+                at("competitor"),
+            );
+        }
+
+        // PARITY-004: a PINNED competitor version. Exactly one comparison in
+        // this repo pins one today (`bitsandbytes==0.49.2`); every
+        // `uv run --with scikit-learn` beat re-resolves its oracle nightly, so
+        // its "win" is against an unnamed build.
+        let ver = row.competitor_version.trim();
+        if ver.is_empty() {
+            push(
+                "PARITY-004",
+                format!(
+                    "parity.rows[{i}].competitor_version must pin an EXACT version \
+                     (`0.49.2`, a git SHA, an image digest) - an unpinned oracle drifts \
+                     under the claim"
+                ),
+                at("competitor_version"),
+            );
+        } else if let Some(bad) = unpinned_token(ver) {
+            push(
+                "PARITY-004",
+                format!(
+                    "parity.rows[{i}].competitor_version {ver:?} contains {bad:?}, which \
+                     names a moving target rather than a version"
+                ),
+                at("competitor_version"),
+            );
+        } else if !ver.chars().any(|c| c.is_ascii_digit()) {
+            push(
+                "PARITY-004",
+                format!(
+                    "parity.rows[{i}].competitor_version {ver:?} has no digit - a version \
+                     pin is a number, a SHA or a digest, not prose"
+                ),
+                at("competitor_version"),
+            );
+        }
+
+        // PARITY-005: both invocations, written out, so the comparison is
+        // reproducible by someone who was not in the room.
+        if row.invocation_apr.trim().is_empty() {
+            push(
+                "PARITY-005",
+                format!("parity.rows[{i}].invocation_apr must give the exact apr-side command"),
+                at("invocation_apr"),
+            );
+        }
+        if row.invocation_competitor.trim().is_empty() {
+            push(
+                "PARITY-005",
+                format!(
+                    "parity.rows[{i}].invocation_competitor must give the exact \
+                     competitor-side command"
+                ),
+                at("invocation_competitor"),
+            );
+        }
+
+        // PARITY-006: a verdict from the closed vocabulary. An UNKNOWN string
+        // never reaches here -- serde rejects the document -- so this fires only
+        // on an absent verdict.
+        if row.verdict.is_none() {
+            push(
+                "PARITY-006",
+                format!(
+                    "parity.rows[{i}].verdict is required - one of \
+                     BETTER / PARITY / WORSE / NOT_COMPARABLE / UNMEASURED"
+                ),
+                at("verdict"),
+            );
+        }
+
+        // PARITY-007: BOTH dates, strict ISO, ordered. This applies to EVERY
+        // verdict class. Bounding only UNMEASURED rows was the original design
+        // and it was backwards: MEASURED is where both withdrawn claims lived.
+        if crate::schema::parity::parse_iso_date(row.measured_on.trim()).is_none() {
+            push(
+                "PARITY-007",
+                format!(
+                    "parity.rows[{i}].measured_on must be a real ISO date (YYYY-MM-DD), got {:?}",
+                    row.measured_on
+                ),
+                at("measured_on"),
+            );
+        }
+        match crate::schema::parity::parse_iso_date(row.valid_until.trim()) {
+            None => push(
+                "PARITY-007",
+                format!(
+                    "parity.rows[{i}].valid_until must be a real ISO date (YYYY-MM-DD), got \
+                     {:?} - every verdict class expires, including BETTER and PARITY",
+                    row.valid_until
+                ),
+                at("valid_until"),
+            ),
+            Some(until) => {
+                if let Some(measured) =
+                    crate::schema::parity::parse_iso_date(row.measured_on.trim())
+                {
+                    if until <= measured {
+                        push(
+                            "PARITY-007",
+                            format!(
+                                "parity.rows[{i}].valid_until ({}) must be AFTER measured_on \
+                                 ({}) - a row that expires on the day it is taken is \
+                                 permanently stale",
+                                row.valid_until.trim(),
+                                row.measured_on.trim()
+                            ),
+                            at("valid_until"),
+                        );
+                    }
+                }
+            }
+        }
+
+        // PARITY-008: someone must be on the hook for re-measuring it.
+        if row.owner.trim().is_empty() {
+            push(
+                "PARITY-008",
+                format!(
+                    "parity.rows[{i}].owner must name who re-measures this row when it expires"
+                ),
+                at("owner"),
+            );
+        }
+
+        // PARITY-009: a pointer to the receipt.
+        if row.evidence.trim().is_empty() {
+            push(
+                "PARITY-009",
+                format!(
+                    "parity.rows[{i}].evidence must point at the receipt (a path, a commit, \
+                     or a contract id)"
+                ),
+                at("evidence"),
+            );
+        }
+
+        // PARITY-010: what was compared.
+        if row.dimension.trim().is_empty() {
+            push(
+                "PARITY-010",
+                format!(
+                    "parity.rows[{i}].dimension must name what was compared \
+                     (decode_tok_s, wall_clock_ratio, accuracy, ...)"
+                ),
+                at("dimension"),
+            );
+        }
+    }
+}
+
+/// The first unpinned token in `version`, if any.
+///
+/// Tokenises on non-alphanumerics so `main` matches `llama.cpp@main` but not
+/// `domain`. Known limitation: an all-alphabetic short git SHA would trip the
+/// no-digit arm of PARITY-004; write it as a full 40-char SHA (which always
+/// contains a digit in practice) or prefix it with the tag it belongs to.
+fn unpinned_token(version: &str) -> Option<&'static str> {
+    let lower = version.to_ascii_lowercase();
+    for tok in lower.split(|c: char| !c.is_ascii_alphanumeric()) {
+        if let Some(hit) = UNPINNED_VERSION_TOKENS.iter().find(|t| **t == tok) {
+            return Some(hit);
+        }
+    }
+    None
 }
 
 /// The four incumbents a BEAT may target (case-insensitive substring match, so
@@ -409,4 +681,9 @@ fn validate_qa_gate(contract: &Contract, violations: &mut Vec<Violation>) {
 #[cfg(test)]
 mod tests {
     include!("validator_tests.rs");
+}
+
+#[cfg(test)]
+mod parity_validator_tests {
+    include!("validator_parity_tests.rs");
 }

@@ -39,6 +39,10 @@ use serde::{Deserialize, Serialize};
 /// - `Schema`: a generic reference/schema document — exempt from provability,
 ///   validated only for `metadata.id`, `metadata.version`, `metadata.description`,
 ///   and `metadata.references`.
+/// - `CompetitiveParity`: the competitive-parity ledger — one dated, verdict-
+///   bearing row per in-scope entry point. **Carries proof obligations and is
+///   NOT exemptible by `metadata.registry: true`** (see [`ContractKind`] docs
+///   on the registry escape hatch below).
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -61,6 +65,30 @@ pub enum ContractKind {
     /// task, with a pinned baseline that fails CI on regression. The measurement
     /// backbone for the four-pillar "replace AND beat" mission (PMAT-741).
     BeatBenchmark,
+    /// The competitive-parity LEDGER: one row per in-scope entry point, each
+    /// naming a competitor, a PINNED competitor version, both invocations, a
+    /// verdict from the closed vocabulary
+    /// (`BETTER`/`PARITY`/`WORSE`/`NOT_COMPARABLE`/`UNMEASURED`), the date it
+    /// was measured, the date the measurement EXPIRES, an owner, and an
+    /// evidence pointer.
+    ///
+    /// WHY IT IS ITS OWN KIND, AND WHY IT CANNOT BE REGISTRY-EXEMPTED.
+    /// Before this kind existed there were exactly two roads and both led to a
+    /// contract that proves nothing:
+    ///
+    ///   * pick `kernel` (the `#[default]`) and set `registry: true` — then
+    ///     [`Contract::kind`] rewrites the kind to `Registry` and every
+    ///     provability check is skipped. 481 contracts in `contracts/` already
+    ///     sit on this road.
+    ///   * pick any NON-kernel kind — then `requires_proofs()` is false, so the
+    ///     obligation never applied in the first place.
+    ///
+    /// `CompetitiveParity` closes both: `requires_proofs()` returns true for it
+    /// (`types.rs`), the rewrite in `Contract::kind` only fires when the
+    /// declared kind is `Kernel` so it cannot reach here, and validator rule
+    /// PARITY-000 REJECTS `metadata.registry: true` on this kind outright — so
+    /// the escape hatch is not merely bypassed, it is a hard error.
+    CompetitiveParity,
 }
 
 impl std::fmt::Display for ContractKind {
@@ -78,6 +106,7 @@ impl std::fmt::Display for ContractKind {
             Self::Pattern => "pattern",
             Self::Schema => "schema",
             Self::BeatBenchmark => "beat-benchmark",
+            Self::CompetitiveParity => "competitive-parity",
         };
         write!(f, "{s}")
     }

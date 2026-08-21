@@ -1,0 +1,7 @@
+# Competitive-parity ratchet baseline. SHRINK-NEVER.
+# Written by scripts/check_competitive_parity.sh --update-baseline,
+# which refuses to lower any of these. Do not hand-edit downward:
+# the whole mechanism is that deleting a losing row costs you a point.
+MEASURED_MIN=4
+NON_WINS_MIN=5
+IN_SCOPE_MIN=41

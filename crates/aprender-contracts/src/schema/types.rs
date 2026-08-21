@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 
 pub use super::composition::{ShapeContract, ShapeExpr};
 pub use super::kind::ContractKind;
+pub use super::parity::ParityLedger;
 
 /// A complete YAML kernel contract.
 ///
@@ -49,6 +50,12 @@ pub struct Contract {
     /// CI fails when aprender regresses below it on the incumbent's canonical task.
     #[serde(default)]
     pub beat: Option<Beat>,
+    /// The competitive-parity LEDGER — present on `metadata.kind:
+    /// competitive-parity` contracts. See [`crate::schema::parity`] for why the
+    /// gate checks that a fresh dated verdict EXISTS rather than that it says
+    /// `BETTER`.
+    #[serde(default)]
+    pub parity: Option<ParityLedger>,
 }
 
 /// Parameters of a head-to-head BEAT benchmark (`metadata.kind: beat-benchmark`,
@@ -164,9 +171,28 @@ impl Contract {
         }
     }
 
-    /// True iff this contract must satisfy PROVABILITY-001 (kernel only).
+    /// True iff this contract must satisfy PROVABILITY-001.
+    ///
+    /// Two kinds carry it: [`ContractKind::Kernel`] and
+    /// [`ContractKind::CompetitiveParity`].
+    ///
+    /// The second is the point. Before it existed, every road led to a contract
+    /// that proves nothing: `kind()` below rewrites `kernel` + `registry: true`
+    /// into `Registry` (481 contracts already sit on that road, all with
+    /// `proven: 0`), and any OTHER kind escapes the exemption only by escaping
+    /// the obligation — `requires_proofs()` was false for all of them. So the
+    /// registry exemption keyed on Kernel and provability keyed on Kernel, and
+    /// a contract could be neither provable nor exempt-with-a-reason.
+    ///
+    /// `CompetitiveParity` cannot take either road: the rewrite in [`Self::kind`]
+    /// fires only when the DECLARED kind is `Kernel`, so `registry: true` cannot
+    /// reach it, and validator rule PARITY-000 rejects `registry: true` on this
+    /// kind outright so the intent cannot even be expressed.
     pub fn requires_proofs(&self) -> bool {
-        self.kind() == ContractKind::Kernel
+        matches!(
+            self.kind(),
+            ContractKind::Kernel | ContractKind::CompetitiveParity
+        )
     }
 
     /// Enforce the provability invariant: kernel contracts MUST have
@@ -175,6 +201,29 @@ impl Contract {
     pub fn provability_violations(&self) -> Vec<String> {
         if !self.requires_proofs() {
             return vec![];
+        }
+        // A competitive-parity LEDGER carries obligations and falsifiers but no
+        // Kani harnesses: there is no mathematical kernel to model-check, and
+        // demanding one would push authors back onto `registry: true` — the
+        // exact escape this kind exists to close. The obligation it DOES carry
+        // is the one that matters: every claim must have a falsifier, so a
+        // ledger cannot be a list of assertions.
+        if self.kind() == ContractKind::CompetitiveParity {
+            let mut violations = Vec::new();
+            if self.proof_obligations.is_empty() {
+                violations.push("Competitive-parity contract has no proof_obligations".into());
+            }
+            if self.falsification_tests.is_empty() {
+                violations.push("Competitive-parity contract has no falsification_tests".into());
+            }
+            if self.falsification_tests.len() < self.proof_obligations.len() {
+                violations.push(format!(
+                    "falsification_tests ({}) < proof_obligations ({})",
+                    self.falsification_tests.len(),
+                    self.proof_obligations.len(),
+                ));
+            }
+            return violations;
         }
         let mut violations = Vec::new();
         if self.proof_obligations.is_empty() {

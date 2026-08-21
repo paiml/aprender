@@ -391,7 +391,13 @@ pub(crate) fn run_enforcement_level_gate(
 /// Derive a contract's actual enforcement level from its content.
 fn compute_actual_level(contract: &Contract) -> EnforcementLevel {
     let has_falsification = !contract.falsification_tests.is_empty();
-    let has_kani = !contract.kani_harnesses.is_empty();
+    // A competitive-parity LEDGER has no mathematical kernel to model-check, so
+    // Standard here means "every claim carries a falsifier", not "+ Kani". The
+    // alternative is a permanent PV-ENF-001 warning that authors would silence
+    // by dropping back to a registry-exempt kind -- reopening the very escape
+    // hatch `ContractKind::CompetitiveParity` exists to close.
+    let has_kani = !contract.kani_harnesses.is_empty()
+        || contract.kind() == crate::schema::ContractKind::CompetitiveParity;
     let has_lean = contract
         .verification_summary
         .as_ref()

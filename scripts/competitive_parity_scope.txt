@@ -1,0 +1,74 @@
+# IN-SCOPE ENTRY POINTS for the competitive-parity ledger.
+#
+# HOW THIS LIST WAS DERIVED — and what that derivation does NOT claim.
+# Every `apr <sub>` line here was checked against the LIVE enumeration of a
+# SHA-pinned `apr` (`apr --help`, 111 subcommands on 38f4c50e4), and
+# scripts/check_competitive_parity.sh re-checks that on every run: an entry
+# naming a subcommand the binary does not have is RED, not a stale comment.
+#
+# The membership rule is: the commands README/CLAUDE.md advertise as the key
+# surface, UNION the nine commands that survive every reach weighting (run,
+# serve, inspect, pull, qa, publish, convert, profile, export), UNION the live
+# P0 surface (`apr code`), plus the three binaries a user can install and the
+# library surfaces named by ledger rows.
+#
+# It is NOT a reach measurement. A prior read-only quorum computed a top-37 by
+# invocation reach; that ranking was not re-derived here and is not asserted.
+# What IS asserted is that this list is a subset of the real binary, that it may
+# only GROW, and that shrinking it requires the entry point to have actually
+# left the enumeration (scripts/check_competitive_parity.sh --update-baseline).
+#
+# FINDING while building this list: `apr probar` is advertised in CLAUDE.md's
+# key-command list and is NOT in `apr --help` on 38f4c50e4. It is therefore not
+# an entry point and is not in scope. Same class as the `apr test llm` defect
+# (#2527): advertised, unreachable. Filed as a note rather than fixed here.
+#
+# Format, one per line:
+#   apr <subcommand>   -- must exist in `apr --help`
+#   bin:<name>         -- must be a workspace [[bin]] target
+#   lib:<path>::<Sym>  -- a library surface no subcommand exposes; removal
+#                         requires the symbol to be gone from crates/
+
+apr run
+apr chat
+apr serve
+apr pull
+apr publish
+apr code
+apr finetune
+apr prune
+apr distill
+apr merge
+apr quantize
+apr inspect
+apr debug
+apr validate
+apr diff
+apr tensors
+apr trace
+apr lint
+apr explain
+apr export
+apr import
+apr convert
+apr compile
+apr train
+apr tune
+apr eval
+apr bench
+apr profile
+apr qa
+apr mcp
+apr cbtop
+apr tui
+apr hex
+apr tree
+apr flow
+apr qualify
+
+bin:apr
+bin:pv
+bin:alimentar
+
+lib:aprender-core::StandardScaler::fit_transform
+lib:aprender-core::Lasso::fit

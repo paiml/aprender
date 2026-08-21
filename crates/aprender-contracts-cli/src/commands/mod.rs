@@ -22,6 +22,7 @@ pub mod lean_status;
 pub mod lint;
 pub mod migrate;
 pub mod mirai;
+pub mod parity_ledger;
 pub mod pipeline;
 pub mod probar;
 pub mod proof_status;

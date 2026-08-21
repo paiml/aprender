@@ -18,6 +18,14 @@ pub enum Commands {
     /// Execute cross_check_command per row of a parity-matrix contract (SEMANTIC gate)
     #[command(name = "check-parity")]
     CheckParity { contract: PathBuf },
+    /// Evaluate a competitive-parity LEDGER as of a date (freshness at CHECK TIME)
+    #[command(name = "parity-ledger")]
+    ParityLedger {
+        contract: PathBuf,
+        /// Evaluate as of this ISO date instead of today (testing / replay)
+        #[arg(long)]
+        today: Option<String>,
+    },
     /// Generate Rust trait + test scaffolding from a contract
     Scaffold {
         contract: PathBuf,
