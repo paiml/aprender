@@ -4,8 +4,16 @@
 #
 # WHY (aprender#2558) — FOUR THINGS CLAIM THE NAME `pv`
 # -----------------------------------------------------
-# MEASURED on crates.io 2026-08-21. All four write ~/.cargo/bin/pv and
-# `cargo install` overwrites without warning:
+# MEASURED on crates.io 2026-08-21. All four target ~/.cargo/bin/pv.
+#
+# NOTE, because an earlier revision of this file got it backwards: `cargo
+# install` does NOT overwrite across packages. It FAILS CLOSED -- exit 101,
+# "binary `pv` already exists in destination as part of <package>", and the
+# FIRST binary survives. Cargo tracks bin->owner in ~/.cargo/.crates.toml.
+# So the hazard is not clobbering; it is BLOCKING: a user holding the old
+# `provable-contracts-cli` who runs `cargo install aprender-contracts-cli`
+# gets exit 101 and NO tool -- the facade obstructs the very upgrade it
+# exists to enable. That is what removing this binary fixes.
 #
 #   1. crates.io `pv` — "Rust reimplementation of the unix pipeview (pv)
 #      utility", bin_names ["pv"], has_lib false, 7,065 downloads, first

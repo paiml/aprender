@@ -17,8 +17,13 @@ where the tool went.
 ## Why the binary was removed
 
 [aprender#2558](https://github.com/paiml/aprender/issues/2558). Measured on
-crates.io 2026-08-21, **four** things claimed the name `pv`. All of them write
-`~/.cargo/bin/pv`, and `cargo install` overwrites without warning:
+crates.io 2026-08-21, **four** things claimed the name `pv`, all targeting
+`~/.cargo/bin/pv`.
+
+`cargo install` does **not** overwrite across packages -- it fails closed with
+exit 101 and the first binary survives. The hazard is therefore *blocking*, not
+clobbering: holding the old name and installing the new one leaves you with
+**no tool at all**.
 
 | claimant | shape | downloads |
 | --- | --- | --- |

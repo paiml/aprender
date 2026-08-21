@@ -13,9 +13,10 @@
 //!
 //! ## Why the binary was removed (aprender#2558)
 //!
-//! Four things claimed the name `pv`, all of them writing `~/.cargo/bin/pv`,
-//! with `cargo install` overwriting silently — measured on crates.io
-//! 2026-08-21:
+//! Four things claimed the name `pv`, all targeting `~/.cargo/bin/pv` —
+//! measured on crates.io 2026-08-21. `cargo install` does NOT overwrite across
+//! packages; it fails closed (exit 101) and the first binary survives, so the
+//! hazard is BLOCKING the upgrade, not clobbering it:
 //!
 //! | claimant | shape | downloads |
 //! |---|---|---|
@@ -66,8 +67,9 @@ The tool is `aprender-contracts-cli` (this crate's new name):
     cargo install aprender-contracts-cli    # installs `pv`
     apr pv --help                           # the same CLI, inside `apr`
 
-Why: four different crates declared a binary named `pv` and `cargo install`
-overwrote ~/.cargo/bin/pv without warning. See
+Why: four different crates declared a binary named `pv`. `cargo install` fails
+closed on that collision (exit 101), so holding two of them BLOCKS the upgrade
+rather than clobbering it. See
 https://github.com/paiml/aprender/issues/2558";
 
 #[cfg(test)]

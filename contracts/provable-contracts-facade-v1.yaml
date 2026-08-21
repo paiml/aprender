@@ -175,7 +175,7 @@ falsification_tests:
     rule: "No two crates in this repository declare the same bin name without declared intent"
     prediction: "The duplicate-bin guard exits 0 over BOTH workspaces"
     test: "bash scripts/check_duplicate_bin_names.sh"
-    if_fails: "Two packages claim one ~/.cargo/bin/<name>, which `cargo install` overwrites without warning. Either rename one, or record the intent in scripts/duplicate_bin_names_allowlist.txt. This is the class that let FOUR crates claim `pv`."
+    if_fails: "Two packages claim one ~/.cargo/bin/<name>. MEASURED: `cargo install` does NOT overwrite across packages -- it fails closed with exit 101 and the first binary survives -- so the duplicate BLOCKS an install for anyone holding the other package, rather than clobbering it silently. Either rename one, or r"
 
   - id: FALSIFY-FACADE-008
     rule: "The duplicate-bin guard demonstrably turns RED, including on a cross-workspace collision and on a single-workspace (inert) scan"

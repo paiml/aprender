@@ -57,7 +57,8 @@
 #   equalled the workspace version. The CLI facade no longer ships a binary, so
 #   that promise is void -- FOUR crates declared a bin named `pv` (the crates.io
 #   pipe viewer, /usr/bin/pv, aprender-contracts-cli, and this facade), all
-#   writing ~/.cargo/bin/pv, with `cargo install` overwriting silently. At 463
+#   writing ~/.cargo/bin/pv. `cargo install` FAILS CLOSED on that collision
+#   (exit 101, first binary survives), so a duplicate BLOCKS an install. At 463
 #   downloads against the library's 57K, the CLI facade is the one that yields.
 #
 #   The promise is REPLACED, not deleted -- deleting a check to make a change
@@ -236,8 +237,11 @@ WS_VER="$(awk -F'\"' '/^version *=/{print $2; exit}' Cargo.toml)"
 #
 # That promise is now void because the CLI facade deliberately ships NO binary:
 # FOUR crates declared a bin named `pv` -- the crates.io pipe viewer, /usr/bin/pv,
-# aprender-contracts-cli, and this facade -- and `cargo install` overwrites
-# ~/.cargo/bin/pv silently. The 463-download facade is the one that yields.
+# aprender-contracts-cli, and this facade. MEASURED: `cargo install` FAILS CLOSED
+# on that collision (exit 101, first binary survives), so a second claimant BLOCKS
+# the install rather than clobbering it -- which is worse for the facade's own
+# purpose, since it obstructs the upgrade it exists to enable. The 463-download
+# facade is the one that yields.
 #
 # Deleting the block would be the move this repo has made twice and regretted.
 # So the promise is REPLACED, not dropped. The new promise is weaker but it is a
@@ -257,7 +261,8 @@ if ( cd "$FACADE_WS" && cargo build --quiet -p provable-contracts-cli --bin pv \
         --target-dir "$TD" ) > "$BINLOG" 2>&1; then
     printf 'FAIL  C1 the facade still BUILDS a bin named `pv`. It must not: that name is\n'
     printf '      claimed by aprender-contracts-cli, by the crates.io pipe viewer and by\n'
-    printf '      /usr/bin/pv, and `cargo install` overwrites ~/.cargo/bin/pv silently.\n'
+    printf '      /usr/bin/pv. `cargo install` FAILS CLOSED on that collision (exit 101),\n'
+    printf '      so a second claimant BLOCKS the install rather than clobbering it.\n'
     rc=1
 elif grep -q 'no bin target named `pv`' "$BINLOG"; then
     printf 'ok    C1 `cargo build --bin pv` fails with "no bin target named `pv`"\n'

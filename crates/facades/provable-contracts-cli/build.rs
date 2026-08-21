@@ -8,7 +8,7 @@ fn main() {
     println!(
         "cargo:warning=`provable-contracts-cli` is DEPRECATED and no longer ships the \
          `pv` binary (aprender#2558: four crates declared a bin named `pv` and \
-         `cargo install` overwrote ~/.cargo/bin/pv silently). Install the tool with \
+         `cargo install` fails closed on the collision, exit 101). Install the tool with \
          `cargo install aprender-contracts-cli`, or use `apr pv`."
     );
 }

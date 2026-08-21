@@ -15,7 +15,11 @@
 #   3. aprender-contracts-cli   — [[bin]] name = "pv"
 #   4. provable-contracts-cli   — [[bin]] name = "pv"   (the facade)
 #
-# All four write ~/.cargo/bin/pv and `cargo install` overwrites without warning.
+# All four target ~/.cargo/bin/pv. MEASURED: `cargo install` does NOT overwrite
+# across packages -- it fails closed with exit 101 ("binary `pv` already exists
+# in destination as part of <package>") and the FIRST binary survives. So a
+# duplicate bin name BLOCKS an install rather than clobbering one, which is why
+# this guard exists: the obstruction is silent until a user hits it.
 # A shadowed artifact is worse than a missing one: edits look effective and
 # change nothing. ~/.local/bin/apr shadowing a fresh install cost 24 days here
 # once, and a user-scope skill shadowing the repo's cost another investigation.
@@ -165,8 +169,9 @@ if [ "$rc" -eq 0 ]; then
 else
     # No apostrophe in the prose: bashrs reads the `'"'"'` escape as an
     # unterminated string (SC1078) and the ratchet counts errors, not opinions.
-    printf 'FAIL  see rows above. `cargo install` overwrites ~/.cargo/bin/<name>\n'
-    printf '      without warning; rename the binary on one of the crates, or\n'
+    printf 'FAIL  see rows above. Two packages claiming one ~/.cargo/bin/<name>\n'
+    printf '      makes `cargo install` FAIL CLOSED (exit 101) for anyone holding\n'
+    printf '      the other -- it blocks the install. Rename the binary on one, or\n'
     printf '      record the intent in %s\n' "$(basename "$ALLOW")"
 fi
 exit "$rc"

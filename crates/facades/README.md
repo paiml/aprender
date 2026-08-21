@@ -43,7 +43,8 @@ explicitly, or it is inert by construction.
 
 Four crates declared a bin named `pv` — the crates.io pipe viewer, `pv(1)`,
 `aprender-contracts-cli`, and this facade — all writing `~/.cargo/bin/pv`, which
-`cargo install` overwrites without warning ([#2558][i2558]). The facade yields
+`cargo install` fails closed on that collision with exit 101, so holding two of
+them BLOCKS an install rather than clobbering one ([#2558][i2558]). The facade yields
 the name. `cargo install provable-contracts-cli` now fails with *"there are no
 binaries to install"*; the tool is `cargo install aprender-contracts-cli`, or
 `apr pv`. See [its README](provable-contracts-cli/README.md).
