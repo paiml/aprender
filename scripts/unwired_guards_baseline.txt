@@ -1,1 +1,11 @@
 check_book_examples_executable.sh
+# check_mcp_never_path_resolves_apr.sh — BEHAVIOURAL, deliberately unwired.
+# It proves the property (shadow `apr` first on $PATH, drive a real tools/call,
+# assert the shadow is never executed, with a positive control) rather than the
+# syntax — but it needs a BUILT apr, a ~1 GB debug binary, so wiring it costs CI
+# minutes on every PR. The cheap static counterpart
+# check_mcp_no_bare_apr_literal.sh IS wired and catches the regression that
+# actually occurs (someone types "apr" instead of calling apr_binary()); it found
+# a third site the behavioural sweep missed. Run the behavioural one when a
+# binary already exists, or in nightly.
+check_mcp_never_path_resolves_apr.sh
