@@ -446,11 +446,14 @@ commands:
       CRUX-K-11: parse Ollama-style Modelfile DSL into apr config JSON.
     requires_model: false
     side_effects: []
-    subcommands:
-      - name: parse
-        description: "Parse a Modelfile and emit config as JSON or human-readable text"
-        requires_model: false
-        side_effects: []
+    # DE-DUPLICATED (round 5). This key was written TWICE - a nested block
+    # here and `subcommands: [parse]` below it - which is not valid YAML: a
+    # strict `serde_yaml::Value` parse of this file errors with `commands[61]:
+    # duplicate entry with key "subcommands"`. The typed parse silently kept
+    # the LAST one, so the nested block's descriptions were already dead data
+    # and the flow list is what every consumer has always read. Keeping the
+    # flow form is therefore the change with NO semantic delta.
+    subcommands: [parse]
 
   - name: test
     category: misc
@@ -475,11 +478,9 @@ commands:
       as they are delegated to the probador library.
     requires_model: false
     side_effects: [filesystem]
-    subcommands:
-      - name: tensor
-        description: "Export tensor activations for visual regression testing (PMAT-481)"
-        requires_model: true
-        side_effects: [filesystem]
+    # DE-DUPLICATED (round 5), same defect as `modelfile` above: this key was
+    # written twice and the nested block was already being discarded.
+    subcommands: [tensor]
 
   - name: diagnose
     category: misc
@@ -778,7 +779,7 @@ commands:
     description: "Provable-contracts CLI (also ships as the standalone pv binary)"
     requires_model: false
     side_effects: [filesystem]
-    subcommands: [audit, book, certify, check-parity, codegen, coq, coverage, diff, equations, explain, extract-pytorch, flux, fuzz, generate, graph, infer, invariants, kaizen, kani, lean, lean-status, lint, migrate, mirai, pipeline, probar, proof-status, query, roofline, scaffold, score, status, tla, unlock, validate, verify-bindings, verify-pipeline, verify-structure]
+    subcommands: [audit, book, certify, check-parity, codegen, coq, coverage, diff, equations, explain, extract-pytorch, flux, fuzz, generate, graph, infer, invariants, kaizen, kani, lean, lean-status, lint, migrate, mirai, parity-ledger, pipeline, probar, proof-status, query, roofline, scaffold, score, status, tla, unlock, validate, verify-bindings, verify-pipeline, verify-structure]
 
 # ── Falsification Conditions ──
 
