@@ -13,7 +13,7 @@
      "kind": [
       "lib"
      ],
-     "name": "aprender_contracts"
+     "name": "provable_contracts"
     },
     {
      "kind": [
@@ -207,6 +207,12 @@
       "lib"
      ],
      "name": "provable_contracts_cli"
+    },
+    {
+     "kind": [
+      "bin"
+     ],
+     "name": "pv"
     }
    ],
    "version": "0.4.0"

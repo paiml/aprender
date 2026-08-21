@@ -1,0 +1,3 @@
+# Fixture allowlist for the self-test. Mirrors the real
+# scripts/duplicate_bin_names_allowlist.txt entry.
+apr apr-cli aprender   # the facade pattern; same program either way

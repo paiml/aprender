@@ -199,19 +199,14 @@
    "version": "0.4.0"
   },
   {
-   "dependencies": [
-    {
-     "name": "aprender-contracts-cli",
-     "req": "^0.63.0"
-    }
-   ],
+   "dependencies": [],
    "name": "provable-contracts-cli",
    "targets": [
     {
      "kind": [
-      "bin"
+      "lib"
      ],
-     "name": "pv"
+     "name": "provable_contracts_cli"
     }
    ],
    "version": "0.4.0"

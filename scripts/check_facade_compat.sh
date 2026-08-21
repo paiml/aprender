@@ -36,6 +36,7 @@
 #   R5 crates/facades/Cargo.lock is current -- check_lockfile_current.sh resolves
 #      the root workspace only and cannot see a second lockfile
 #   R6 the 28 vendored 0.3.1 programs match their published sha256s
+#   R7 NO facade declares a `[[bin]]` -- aprender#2558, below
 #
 # COMPATIBILITY (rustc)
 #   Identical export LISTS do not imply identical SIGNATURES. The 28 example
@@ -51,10 +52,24 @@
 #   facade does not export. That build MUST fail. A compile gate that has only
 #   ever been green is indistinguishable from one that never invoked rustc.
 #
-# CURRENCY
-#   The facade `pv --version` must report the WORKSPACE version, not the
-#   facade's own. That is the whole remedy for #2546: `cargo install
-#   provable-contracts-cli` has to yield a current tool, not a shim.
+# SURFACE / SIGNPOST / ROUTES / CURRENCY  (rewritten by aprender#2558)
+#   This block used to build the facade's own `pv` and assert `pv --version`
+#   equalled the workspace version. The CLI facade no longer ships a binary, so
+#   that promise is void -- FOUR crates declared a bin named `pv` (the crates.io
+#   pipe viewer, /usr/bin/pv, aprender-contracts-cli, and this facade), all
+#   writing ~/.cargo/bin/pv, with `cargo install` overwriting silently. At 463
+#   downloads against the library's 57K, the CLI facade is the one that yields.
+#
+#   The promise is REPLACED, not deleted -- deleting a check to make a change
+#   pass is a move this repo has already regretted twice:
+#     C1 SURFACE   `cargo build --bin pv` in the facade workspace must FAIL,
+#                  with that exact cargo message and not some other error
+#     C2 SIGNPOST  description, README, lib.rs and build.rs must each name both
+#                  working routes, and the lib must carry a #[deprecated]
+#     C3 ROUTES    those routes must be REAL: aprender-contracts-cli declares
+#                  [[bin]] name = "pv", and apr-cli declares the `Pv` subcommand.
+#                  Without C3 the crate is a well-worded dead end.
+#     CURRENCY     the crate the redirect points at is at the workspace version.
 #
 # WHY BASH AND NOT pv
 # -------------------
@@ -114,7 +129,6 @@ if [ "${1:-}" = "--self-test" ]; then
     run_case 'row 3 a wrong lib name is REJECTED'          1 root_good.json facade_wrong_lib_name.json 'FAIL  R1'
     run_case 'row 4 facade as workspace member is REJECTED' 1 root_facade_is_member.json facade_good.json 'FAIL  R2'
     run_case 'row 5 an empty compat corpus is REJECTED'    1 root_good.json facade_empty_corpus.json 'FAIL  R4'
-
     # Row 6 probes the checker itself: the corpus floor must be a real floor.
     out="$( python3 "$FACTS" "$CASES/root_good.json" "$CASES/facade_good.json" 9999 2>&1 )"; rc=$?
     if [ "$rc" = 1 ] && grep -q 'FAIL  R4' <<< "$out"; then
@@ -123,8 +137,17 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 6 corpus floor ignored: exit %s\n' "$rc"; fails=1
     fi
 
+    # aprender#2558. Row 7 is the one that would have caught the state this
+    # branch started in: a facade declaring `[[bin]] name = "pv"` alongside
+    # aprender-contracts-cli's. Row 8 is its companion — the signpost facade
+    # must not re-acquire the upstream dependency, because depending on a
+    # BIN-ONLY published crate is the E0433 that made the bin form
+    # unpublishable in the first place (#2553).
+    run_case 'row 7 a facade declaring a [[bin]] is REJECTED' 1 root_good.json facade_cli_declares_bin.json 'FAIL  R7'
+    run_case 'row 8 the signpost facade depending on upstream is REJECTED' 1 root_good.json facade_cli_depends_upstream.json 'FAIL  R3'
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (6/6)\n'
+    printf '\nSELF-TEST PASSED (8/8)\n'
     exit 0
 fi
 
@@ -132,8 +155,8 @@ fi
 printf '=== crates.io compatibility facades (check_facade_compat.sh) ===\n\n'
 rc=0
 
-ROOT_MD="$(mktemp)"; FAC_MD="$(mktemp)"
-trap 'rm -f "${ROOT_MD:?}" "${FAC_MD:?}"' EXIT
+ROOT_MD="$(mktemp)"; FAC_MD="$(mktemp)"; BINLOG="$(mktemp)"
+trap 'rm -f "${ROOT_MD:?}" "${FAC_MD:?}" "${BINLOG:?}"' EXIT
 ( cd "$REPO_ROOT" && cargo metadata --no-deps --format-version 1 ) > "$ROOT_MD" 2>/dev/null
 ( cd "$FACADE_WS" && cargo metadata --no-deps --format-version 1 ) > "$FAC_MD" 2>/dev/null
 # VACUOUS guard: an empty or unparsable metadata document must be RED, never a
@@ -203,14 +226,101 @@ for pkg in provable-contracts provable-contracts-macros; do
 done
 
 WS_VER="$(awk -F'\"' '/^version *=/{print $2; exit}' Cargo.toml)"
-printf -- '\n--- CURRENCY: the facade installs the CURRENT pv --------------------\n'
-WANT="$( python3 "$FACTS" --version-of "$ROOT_MD" aprender-contracts-cli )"
-( cd "$FACADE_WS" && cargo build --quiet -p provable-contracts-cli --bin pv --target-dir "$TD" ) >/dev/null 2>&1
-GOT="$( "$TD/debug/pv" --version 2>/dev/null )"
-if [ "$GOT" = "pv $WANT" ]; then
-    printf 'ok    facade `pv --version` reports `%s` -- the workspace version, not 0.4.0\n' "$GOT"
+
+# --------------------------------------------------------------------------
+# WHAT REPLACED THE CURRENCY CHECK, AND WHY IT IS NOT A DELETION
+# --------------------------------------------------------------------------
+# Until aprender#2558 this block built `-p provable-contracts-cli --bin pv` and
+# asserted `pv --version` equalled the workspace version. Its promise was
+# "`cargo install provable-contracts-cli` yields a CURRENT tool, not a shim".
+#
+# That promise is now void because the CLI facade deliberately ships NO binary:
+# FOUR crates declared a bin named `pv` -- the crates.io pipe viewer, /usr/bin/pv,
+# aprender-contracts-cli, and this facade -- and `cargo install` overwrites
+# ~/.cargo/bin/pv silently. The 463-download facade is the one that yields.
+#
+# Deleting the block would be the move this repo has made twice and regretted.
+# So the promise is REPLACED, not dropped. The new promise is weaker but it is a
+# real promise and it is the one users actually need:
+#
+#   `cargo install provable-contracts-cli` now FAILS -- and the failure is
+#   SIGNPOSTED. Every surface a stranded user can see names a route that works.
+#
+# Three rows, each falsifiable:
+#   C1 the facade really ships no binary  (behavioural: `--bin pv` must FAIL)
+#   C2 every signpost surface names both routes  (text, four files)
+#   C3 the routes named are REAL  (aprender-contracts-cli declares bin `pv`;
+#      apr-cli declares the `Pv` subcommand)
+# C3 is the one that stops this degenerating into a nicely-worded dead end.
+printf -- '\n--- SURFACE: the CLI facade ships NO binary (aprender#2558) ----------\n'
+if ( cd "$FACADE_WS" && cargo build --quiet -p provable-contracts-cli --bin pv \
+        --target-dir "$TD" ) > "$BINLOG" 2>&1; then
+    printf 'FAIL  C1 the facade still BUILDS a bin named `pv`. It must not: that name is\n'
+    printf '      claimed by aprender-contracts-cli, by the crates.io pipe viewer and by\n'
+    printf '      /usr/bin/pv, and `cargo install` overwrites ~/.cargo/bin/pv silently.\n'
+    rc=1
+elif grep -q 'no bin target named `pv`' "$BINLOG"; then
+    printf 'ok    C1 `cargo build --bin pv` fails with "no bin target named `pv`"\n'
 else
-    printf 'FAIL  facade pv reported [%s], expected [pv %s]\n' "$GOT" "$WANT"; rc=1
+    # A build that failed for some OTHER reason would let C1 pass on a
+    # compile error and prove nothing about the bin surface.
+    printf 'FAIL  C1 the build failed, but NOT with "no bin target named `pv`" --\n'
+    printf '      this row proves nothing until that is fixed:\n'
+    sed 's/^/        /' "$BINLOG" | head -12
+    rc=1
+fi
+
+printf -- '\n--- SIGNPOST: a failed install must not be a dead end ----------------\n'
+# 463 downloads/month land on `there are no binaries to install`. Each of these
+# four surfaces is somewhere such a user can plausibly look, so each must carry
+# the redirect. Checked as text because that is what the user reads.
+CLI_FACADE="${REPO_ROOT}/crates/facades/provable-contracts-cli"
+for f in Cargo.toml README.md src/lib.rs build.rs; do
+    miss=""
+    grep -q 'cargo install aprender-contracts-cli' "$CLI_FACADE/$f" || miss="$miss cargo-install-route"
+    grep -q 'apr pv' "$CLI_FACADE/$f" || miss="$miss apr-pv-route"
+    if [ -z "$miss" ]; then
+        printf 'ok    C2 %s names both routes\n' "$f"
+    else
+        printf 'FAIL  C2 provable-contracts-cli/%s is missing:%s\n' "$f" "$miss"; rc=1
+    fi
+done
+# The `#[deprecated]` note specifically -- a doc comment is not a compiler
+# diagnostic, and the note is the only signpost that reaches a consumer who
+# reads nothing.
+if grep -q '#\[deprecated' "$REPO_ROOT/crates/facades/provable-contracts-cli/src/lib.rs"; then
+    printf 'ok    C2 the lib carries a #[deprecated] item, so a caller is warned by rustc\n'
+else
+    printf 'FAIL  C2 no #[deprecated] in the CLI facade lib -- the only signpost a\n'
+    printf '      non-reader receives is gone\n'; rc=1
+fi
+
+printf -- '\n--- ROUTES ARE REAL: the redirect must point somewhere ---------------\n'
+# C3. Without this the crate is a well-worded dead end: it would keep passing C2
+# while naming a tool that no longer exists. Read from cargo metadata and the
+# apr command enum, not from prose.
+if python3 "$FACTS" --has-bin "$ROOT_MD" aprender-contracts-cli pv; then
+    printf 'ok    C3 route 1 is real: aprender-contracts-cli declares [[bin]] name = "pv"\n'
+else
+    printf 'FAIL  C3 route 1 is DEAD: aprender-contracts-cli declares no bin named `pv`,\n'
+    printf '      but the facade tells 463 downloads/month to install it\n'; rc=1
+fi
+if grep -q 'Pv(aprender_contracts_cli::cli::Commands)' \
+        "$REPO_ROOT/crates/apr-cli/src/commands_enum.rs"; then
+    printf 'ok    C3 route 2 is real: apr-cli declares the `Pv` subcommand (`apr pv`)\n'
+else
+    printf 'FAIL  C3 route 2 is DEAD: no `Pv` variant in crates/apr-cli/src/commands_enum.rs,\n'
+    printf '      but the facade names `apr pv` as a replacement\n'; rc=1
+fi
+
+# CURRENCY did not disappear -- it moved to the crate that now owns the name.
+printf -- '\n--- CURRENCY: the tool the facade points AT is the current one -------\n'
+WANT="$( python3 "$FACTS" --version-of "$ROOT_MD" aprender-contracts-cli )"
+if [ "$WANT" = "$WS_VER" ]; then
+    printf 'ok    aprender-contracts-cli is at %s, the workspace version\n' "$WANT"
+else
+    printf 'FAIL  aprender-contracts-cli is at %s but the workspace is at %s -- the\n' "$WANT" "$WS_VER"
+    printf '      redirect would install a version this tree never published\n'; rc=1
 fi
 
 
@@ -242,28 +352,39 @@ for pkg in provable-contracts provable-contracts-macros provable-contracts-cli; 
         rc=1
     fi
 done
-# LAST PUBLISHED WITHOUT THE LIB. aprender-contracts-cli 0.63.0 is on crates.io
-# as a BIN-ONLY crate: `pub fn run()` lives in a lib.rs added after it shipped.
-# So a facade constrained to 0.63.0 resolves a registry copy with no such symbol
-# and cannot compile for a consumer, however green the path-dep build is.
+# THE STAGE BLOCKER THIS BRANCH USED TO CARRY, AND WHY IT IS GONE
+# ---------------------------------------------------------------
+# It read: "provable-contracts-cli is NOT YET PUBLISHABLE. It pins upstream
+# 0.63.0, which is on crates.io BIN-ONLY -- `pub fn run()` was added after that
+# release, so a registry consumer gets a crate without the symbol the facade
+# calls." That was correct. VERIFIED against the real registry, 2026-08-21:
 #
-# This is a STAGE verdict, not a defect -- the same shape as pre-release Gate 5
-# (#2543), which also cannot pass before the version bump. Reporting it as a
-# FAILURE here would block a PR over an ordering fact and train people to ignore
-# the guard; reporting it as a PASS would be the lie. So: named, not fatal.
-CLI_LAST_BINONLY="0.63.0"
+#   $ curl -s https://crates.io/api/v1/crates/aprender-contracts-cli/0.63.0
+#     → num 0.63.0  has_lib False  bin_names ['pv']  yanked False
+#   $ cargo check   # scratch crate, dep `= "0.63.0"` resolved from the REGISTRY
+#     error[E0433]: cannot find module or crate `upstream` in this scope   rc=101
+#
+# Going lib-only dissolved it rather than waiting it out: the facade calls
+# run() from nowhere and depends on aprender-contracts-cli not at all, so there
+# is no symbol to be missing and no version to be too old. Row R3 (SIGNPOST)
+# above is what keeps that true -- it FAILS if the dependency comes back.
+#
+# The row is kept, inverted, as a REGRESSION DETECTOR. A dependency reappearing
+# on this crate would silently restore the blocker, and a deleted check would
+# not notice.
 cli_ver=$(awk -F'"' '/^upstream *=/{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/){print $i; exit}}' \
     crates/facades/provable-contracts-cli/Cargo.toml 2>/dev/null)
-if [ "$cli_ver" = "$CLI_LAST_BINONLY" ]; then
-    printf 'STAGE provable-contracts-cli is NOT YET PUBLISHABLE (expected at this stage).\n'
-    printf '      It pins upstream %s, which is on crates.io BIN-ONLY -- `pub fn run()`\n' "$cli_ver"
-    printf '      was added after that release, so a registry consumer gets a crate\n'
-    printf '      without the symbol the facade calls. Publishable once the workspace\n'
-    printf '      bumps and aprender-contracts-cli ships a version carrying the lib.\n'
-    printf '      Do NOT publish this facade in the 0.63.0 cascade.\n'
+if [ -z "$cli_ver" ]; then
+    printf 'ok    provable-contracts-cli has NO upstream pin -- it is a lib-only signpost\n'
+    printf '      with zero dependencies, so it is publishable at ANY point in the\n'
+    printf '      cascade. The bin-only-0.63.0 STAGE blocker (#2553) is dissolved, not\n'
+    printf '      deferred.\n'
 else
-    printf 'ok    provable-contracts-cli pins %s (> the bin-only %s) -- carries the lib\n' \
-        "$cli_ver" "$CLI_LAST_BINONLY"
+    printf 'FAIL  provable-contracts-cli pins upstream %s. It must not depend on\n' "$cli_ver"
+    printf '      aprender-contracts-cli at all: that crate is published BIN-ONLY at\n'
+    printf '      0.63.0 (has_lib false), so a registry consumer gets E0433 and the\n'
+    printf '      facade cannot compile for anyone. See aprender#2553/#2558.\n'
+    rc=1
 fi
 printf 'note  PUBLISH ORDER IS A HARD CONSTRAINT, not a preference:\n'
 printf '        1. aprender-contracts, -macros, -cli   (carry the lib + symbols)\n'

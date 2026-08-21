@@ -13,7 +13,7 @@
      "kind": [
       "lib"
      ],
-     "name": "aprender_contracts"
+     "name": "provable_contracts"
     },
     {
      "kind": [
@@ -199,7 +199,12 @@
    "version": "0.4.0"
   },
   {
-   "dependencies": [],
+   "dependencies": [
+    {
+     "name": "aprender-contracts-cli",
+     "req": "^0.63.0"
+    }
+   ],
    "name": "provable-contracts-cli",
    "targets": [
     {

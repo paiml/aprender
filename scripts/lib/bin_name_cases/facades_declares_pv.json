@@ -1,12 +1,6 @@
 {
  "packages": [
   {
-   "dependencies": [
-    {
-     "name": "aprender-contracts",
-     "req": "^0.63.0"
-    }
-   ],
    "name": "provable-contracts",
    "targets": [
     {
@@ -16,15 +10,9 @@
      "name": "provable_contracts"
     }
    ],
-   "version": "0.4.0"
+   "version": "0.63.0"
   },
   {
-   "dependencies": [
-    {
-     "name": "aprender-contracts-macros",
-     "req": "^0.63.0"
-    }
-   ],
    "name": "provable-contracts-macros",
    "targets": [
     {
@@ -34,10 +22,9 @@
      "name": "provable_contracts_macros"
     }
    ],
-   "version": "0.4.0"
+   "version": "0.63.0"
   },
   {
-   "dependencies": [],
    "name": "provable-contracts-cli",
    "targets": [
     {
@@ -45,9 +32,15 @@
       "lib"
      ],
      "name": "provable_contracts_cli"
+    },
+    {
+     "kind": [
+      "bin"
+     ],
+     "name": "pv"
     }
    ],
-   "version": "0.4.0"
+   "version": "0.63.0"
   }
  ]
 }

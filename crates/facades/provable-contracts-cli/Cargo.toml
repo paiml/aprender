@@ -1,15 +1,58 @@
-# `provable-contracts-cli` — COMPATIBILITY FACADE for `aprender-contracts-cli`.
+# `provable-contracts-cli` — DEPRECATED SIGNPOST for `aprender-contracts-cli`.
 #
-# This is the one that actually bit someone: paiml/infra pinned
-# `provable-contracts-cli = "0.3.1"`, which resolved cleanly and installed a
-# `pv` sixty versions behind. 0.3.1 predates the `safety`/`liveness`
-# proof-obligation kinds, so current contracts failed there with an
-# unknown-variant error and the guard read as BROKEN rather than OUT OF DATE.
+# LIB-ONLY ON PURPOSE. This crate deliberately ships NO binary.
 #
-# `cargo install provable-contracts-cli` must therefore install a CURRENT `pv`,
-# not a shim that errors. It can, because `aprender-contracts-cli` exposes
-# `pub fn run()` from a library (crates/aprender-contracts-cli/src/lib.rs) —
-# the binary is a four-line shell around it and so is this one.
+# WHY (aprender#2558) — FOUR THINGS CLAIM THE NAME `pv`
+# -----------------------------------------------------
+# MEASURED on crates.io 2026-08-21. All four write ~/.cargo/bin/pv and
+# `cargo install` overwrites without warning:
+#
+#   1. crates.io `pv` — "Rust reimplementation of the unix pipeview (pv)
+#      utility", bin_names ["pv"], has_lib false, 7,065 downloads, first
+#      published 2019-10-27, latest 0.4.0 on 2025-07-19
+#   2. pv(1), the C pipe viewer in every distro, at /usr/bin/pv
+#   3. aprender-contracts-cli   — [[bin]] name = "pv"   (the real tool)
+#   4. provable-contracts-cli   — [[bin]] name = "pv"   (this crate, until now)
+#
+# The download RATES say which of those is worth defending. Totals mislead: the
+# pipe-viewer crate has a seven-year head start.
+#
+#   provable-contracts-macros  46,571 / 180d = 258.7/day
+#   provable-contracts         10,809 / 180d =  60.0/day
+#   provable-contracts-cli        463 / 151d =   3.1/day
+#   pv (pipe viewer)            7,065 / 2490d =  2.8/day
+#
+# The library and the macros are the 57K-download population being carried
+# forward and NEITHER involves a binary. The CLI facade is 463 downloads and is
+# the ONLY one of the three that collides on a name. Dropping the binary is
+# therefore cheap here rather than a sacrifice — and it removes one of the two
+# claims on `pv` that this repository controls.
+#
+# THE SAME CHANGE DISSOLVES A SECOND, SEPARATE DEFECT
+# ---------------------------------------------------
+# The bin form of this facade CALLED `aprender_contracts_cli::run()`. That
+# symbol lives in a lib.rs added after the last release, so the published
+# aprender-contracts-cli 0.63.0 is BIN-ONLY. VERIFIED, not assumed:
+#
+#   $ curl -s https://crates.io/api/v1/crates/aprender-contracts-cli/0.63.0
+#     → num 0.63.0  has_lib False  bin_names ['pv']  yanked False
+#
+#   $ cargo check   # scratch crate, dep `= "0.63.0"` from the REGISTRY
+#     error[E0433]: cannot find module or crate `upstream` in this scope
+#     rc=101
+#
+# So the facade could not compile for anyone installing it from crates.io,
+# however green a path-dep build in this tree looked. A lib-only facade calls
+# run() from nowhere and depends on aprender-contracts-cli not at all, so the
+# blocker is gone by construction rather than by waiting for a version bump.
+#
+# CONSEQUENCE, STATED PLAINLY RATHER THAN HIDDEN
+# ----------------------------------------------
+# `cargo install provable-contracts-cli` now fails with "there are no binaries
+# to install". That is the intended outcome, and those 463 downloads/month
+# deserve a signpost rather than a dead end — so the crate description, the
+# README, the build.rs warning and the `#[deprecated]` note on the lib all name
+# the two working routes: `cargo install aprender-contracts-cli`, or `apr pv`.
 [package]
 name = "provable-contracts-cli"
 version.workspace = true
@@ -18,22 +61,33 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Compatibility facade: renamed to `aprender-contracts-cli`. Installs the current `pv`."
-keywords = ["verification", "formal-methods", "contracts", "cli"]
-categories = ["development-tools::testing", "command-line-utilities"]
+# The description is the ONE line `cargo search`, `cargo install`'s error
+# context and the crates.io card all show. It has to carry the redirect.
+description = "DEPRECATED — ships no binary. The `pv` tool moved to `aprender-contracts-cli`: run `cargo install aprender-contracts-cli` (or use `apr pv`)."
+keywords = ["deprecated", "verification", "formal-methods", "contracts"]
+# NOT `command-line-utilities` any more: this crate ships no command.
+categories = ["development-tools::testing"]
 readme = "README.md"
 build = "build.rs"
 
-[[bin]]
-name = "pv"
-path = "src/main.rs"
+[lib]
+# Default name, spelled out so the no-bin/one-lib shape is explicit in the
+# manifest rather than inferred. provable-contracts-cli 0.3.1 had has_lib =
+# false, so no downstream `use provable_contracts_cli::…` code exists; this lib
+# is a signpost, not a compatibility surface.
+name = "provable_contracts_cli"
+path = "src/lib.rs"
 
-[dependencies]
-# path + version: the path is what CI builds, the version is what a published
-# facade resolves. `scripts/check_facade_compat.sh` fails if this version ever
-# drifts from the aprender workspace version — these manifests are excluded
-# from the root workspace, so `cargo set-version` does NOT reach them.
-upstream = { path = "../../aprender-contracts-cli", version = "0.63.0", package = "aprender-contracts-cli" }
+# NO [[bin]]. This is the whole point — see the header. A re-added `[[bin]] name
+# = "pv"` is rejected by scripts/check_duplicate_bin_names.sh (undeclared
+# duplicate of aprender-contracts-cli's `pv`) and by row R7 of
+# scripts/lib/facade_facts.py.
+
+# NO [dependencies]. The sibling facades re-export their upstream and so must
+# depend on it; this one has nothing to forward, and depending on a BIN-ONLY
+# published crate is precisely the E0433 above. Zero dependencies also means
+# this crate's publishability does not depend on the release cascade order.
+# scripts/check_facade_compat.sh row R3 FAILS if an upstream dep reappears.
 
 [lints]
 workspace = true
