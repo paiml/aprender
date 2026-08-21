@@ -81,6 +81,8 @@
 //! The horizon is MONOTONE in time — a date only ever becomes less future — so
 //! a document that parses today parses forever after.
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 /// The FUTURE HORIZON, in days after **today**, that any date in this ledger
@@ -330,8 +332,24 @@ pub struct ParityLedger {
     pub extra: std::collections::BTreeMap<String, serde_yaml::Value>,
 }
 
-/// Why a row that used to be MEASURED is now `UNMEASURED`, from a CLOSED
-/// vocabulary. Prose is not accepted; an unknown value fails to parse.
+/// Why a row's VERDICT changed, from a CLOSED vocabulary. Prose is not
+/// accepted; an unknown value fails to parse.
+///
+/// # Why this vocabulary covers more than downgrades now
+///
+/// The first version of this enum named only the ways a measurement can STOP
+/// being one, because the only guarded transition was `MEASURED ->
+/// UNMEASURED`. That left every OTHER relabelling free, and the free ones were
+/// the cheap ones: re-declaring both `WORSE` rows as `NOT_COMPARABLE` left
+/// `__ROWS__`, `__MEASURED__` and `__NON_WINS__` bit-for-bit identical while
+/// the StandardScaler 0.69x loss and the Lasso ~19x loss both became "no
+/// counterpart exists". Every total held; the DIRECTION of the result left the
+/// tree. That is PMAT-733 paid for in a currency the ratchet did not count.
+///
+/// So the record generalises from "downgrade" to "verdict transition", and the
+/// vocabulary has to be able to name an honest UPWARD move too — otherwise the
+/// only way to record a genuine re-measurement would be to lie about the
+/// reason, and a ratchet that punishes honesty produces dishonest ledgers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DowngradeReason {
@@ -351,6 +369,19 @@ pub enum DowngradeReason {
     HostUnavailable,
     /// The comparison has been replaced by a different, better-specified row.
     Superseded,
+    /// The comparison was RE-RUN and the number moved. The only reason that
+    /// can justify a transition INTO a better verdict, and the one that has to
+    /// exist for the honest fix to be recordable at all.
+    Remeasured,
+    /// The competitor turned out to have no counterpart for this dimension, so
+    /// no ratio is meaningful. This is the honest route to `NOT_COMPARABLE` —
+    /// and naming it is exactly what makes the dishonest route expensive:
+    /// re-declaring a measured LOSS as `NOT_COMPARABLE` now has to be written
+    /// down, owned, and given a date on which it is re-examined.
+    NoCounterpart,
+    /// The comparison itself was re-specified (different invocation, host
+    /// class, or dimension), so the old verdict is about a different question.
+    ComparisonRespecified,
 }
 
 impl DowngradeReason {
@@ -364,7 +395,36 @@ impl DowngradeReason {
             Self::CompetitorUnpinnable => "COMPETITOR_UNPINNABLE",
             Self::HostUnavailable => "HOST_UNAVAILABLE",
             Self::Superseded => "SUPERSEDED",
+            Self::Remeasured => "REMEASURED",
+            Self::NoCounterpart => "NO_COUNTERPART",
+            Self::ComparisonRespecified => "COMPARISON_RESPECIFIED",
         }
+    }
+
+    /// Every reason, for diagnostics that must list the closed vocabulary.
+    #[must_use]
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::ReceiptMissing,
+            Self::HarnessDeleted,
+            Self::MeasurementUndated,
+            Self::CompetitorUnpinnable,
+            Self::HostUnavailable,
+            Self::Superseded,
+            Self::Remeasured,
+            Self::NoCounterpart,
+            Self::ComparisonRespecified,
+        ]
+    }
+
+    /// The vocabulary rendered as ` / `-separated canonical spellings.
+    #[must_use]
+    pub fn vocabulary() -> String {
+        Self::all()
+            .iter()
+            .map(|r| r.as_str())
+            .collect::<Vec<_>>()
+            .join(" / ")
     }
 }
 
@@ -374,7 +434,40 @@ impl std::fmt::Display for DowngradeReason {
     }
 }
 
-/// A recorded, dated, owned downgrade of one row to `UNMEASURED`.
+/// A recorded, dated, owned VERDICT TRANSITION for one row.
+///
+/// # The generalisation, and why it is a generalisation rather than a sibling
+///
+/// This started life as a `MEASURED -> UNMEASURED` downgrade record, because
+/// that was the only transition anything guarded. It was also the only
+/// EXPENSIVE one. Every other relabelling was free, and the cheapest of them
+/// undid the whole point of the ledger: declare both `WORSE` rows
+/// `NOT_COMPARABLE` and `__ROWS__`, `__MEASURED__` and `__NON_WINS__` are all
+/// unchanged — 5, 3 and 5 before and after — while the StandardScaler 0.69x
+/// and the Lasso ~19x losses have become "the competitor has no counterpart".
+/// The totals are conserved and the DIRECTION of the result is gone, which is
+/// what PMAT-733 was actually about.
+///
+/// The fix is NOT to gate on the verdict's VALUE. The gate deliberately never
+/// checks that a verdict says `BETTER`, because a rule admitting only wins
+/// makes deleting a losing comparison the cheapest compliant action — that is
+/// the inversion this whole mechanism rests on, and it is load-bearing. What
+/// is gated is the TRANSITION: the value stays unconstrained, and CHANGING it
+/// stops being free.
+///
+/// So one record type covers both, because they are the same act — a row's
+/// declared verdict moved and somebody must own that:
+///
+/// * `to_verdict` absent ⇒ the legacy shape: a downgrade to `UNMEASURED`,
+///   which is what `PARITY-014` has always required.
+/// * `to_verdict` present ⇒ it must equal the row's declared verdict, and
+///   `from_verdict` must name where it moved from. The shell ratchet
+///   cross-checks that pair against the verdict recorded in the COMMITTED
+///   baseline, so a record cannot excuse a transition it does not describe.
+///
+/// A second mechanism beside this one would have meant two vocabularies, two
+/// expiry rules and two sets of paperwork, of which exactly one would have
+/// been kept current.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Downgrade {
     /// Must EXACTLY match a [`ParityRow::entry_point`] still present in the
@@ -385,6 +478,17 @@ pub struct Downgrade {
     /// `None` ⇒ PARITY-013; an unknown STRING is a parse error.
     #[serde(default)]
     pub reason: Option<DowngradeReason>,
+    /// The verdict this row USED to declare. Required whenever
+    /// [`Downgrade::to_verdict`] is present (PARITY-019), and cross-checked by
+    /// the shell ratchet against the verdict in the committed baseline: a
+    /// record claiming `WORSE -> NOT_COMPARABLE` does not excuse a
+    /// `PARITY -> BETTER` move.
+    #[serde(default)]
+    pub from_verdict: Option<Verdict>,
+    /// The verdict this row declares NOW. Absent ⇒ the legacy downgrade shape,
+    /// which `PARITY-014` reads as "the row must declare `UNMEASURED`".
+    #[serde(default)]
+    pub to_verdict: Option<Verdict>,
     /// Who owes the re-measurement.
     #[serde(default)]
     pub owner: String,
@@ -585,6 +689,28 @@ impl Downgrade {
             _ => true,
         }
     }
+
+    /// The verdict this record says the row now declares.
+    ///
+    /// Absent `to_verdict` means the legacy downgrade shape, whose destination
+    /// was always [`Verdict::Unmeasured`] — so it is not a special case, it is
+    /// a default.
+    #[must_use]
+    pub fn destination(&self) -> Verdict {
+        self.to_verdict.unwrap_or(Verdict::Unmeasured)
+    }
+
+    /// Does this record excuse the row's ABSENCE from `__MEASURED_ROW__`?
+    ///
+    /// Only a record whose destination is `UNMEASURED` does. A record for
+    /// `WORSE -> NOT_COMPARABLE` describes a row that is still MEASURED, and
+    /// letting it also pay for a later, unrelated drop out of the measured set
+    /// would make the second move free — which is the whole class of defect
+    /// this file keeps closing.
+    #[must_use]
+    pub fn excuses_unmeasured(&self) -> bool {
+        self.destination() == Verdict::Unmeasured
+    }
 }
 
 impl ParityLedger {
@@ -632,6 +758,52 @@ impl ParityLedger {
     pub fn downgrade_for(&self, entry_point: &str) -> Option<&Downgrade> {
         let key = entry_point.trim();
         self.downgrades.iter().find(|d| d.entry_point.trim() == key)
+    }
+
+    /// Records that are still IN DATE as of `today`, in file order.
+    ///
+    /// An overdue record excuses nothing — that is what makes the escape valve
+    /// a debt with a due date rather than a retirement — so every rule that
+    /// spends an excuse spends one of THESE.
+    #[must_use]
+    pub fn in_date_records(&self, today: &str) -> Vec<&Downgrade> {
+        self.downgrades
+            .iter()
+            .filter(|d| !d.is_overdue(today))
+            .collect()
+    }
+
+    /// The EXCUSE BUDGET, as `(spent, allowed)`.
+    ///
+    /// # The third lever, and the one nothing bounded
+    ///
+    /// [`Downgrade::is_overdue`] bounds how LONG a single excuse lasts.
+    /// Nothing bounded how MANY may be outstanding at once, and the two are
+    /// independent: a ledger can hold a fresh, in-date, correctly-owned,
+    /// closed-vocabulary record for EVERY row, at which point `__MEASURED__`
+    /// is zero, every baseline `MEASURED_ROW` drop is justified, `pv
+    /// parity-ledger` exits 0 and the gate is green over a ledger that
+    /// measures nothing. Each record is individually impeccable; the aggregate
+    /// is a ledger that has quietly stopped making claims.
+    ///
+    /// The bound has to have GIVE in it, because a floor with no give forbids
+    /// the honest correction and produces dishonest ledgers — that lesson is
+    /// already paid for. So the budget is not a constant: **a ledger may not
+    /// owe more re-measurements than it holds measurements.** Paying a debt
+    /// buys the capacity to take on another, which is exactly the incentive
+    /// wanted, and the ledger can never be more than half excused.
+    ///
+    /// Counted per unique `entry_point`, so duplicate records cannot inflate
+    /// the numerator (`PARITY-012` refuses duplicates anyway; this does not
+    /// depend on that rule holding).
+    #[must_use]
+    pub fn excuse_budget(&self, today: &str) -> (usize, usize) {
+        let spent: HashSet<&str> = self
+            .in_date_records(today)
+            .iter()
+            .map(|d| d.entry_point.trim())
+            .collect();
+        (spent.len(), self.measured_count(today))
     }
 }
 

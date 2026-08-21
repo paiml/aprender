@@ -253,7 +253,7 @@ cp_unjustified_drops() {
     done <<<"$baseline_measured"
 }
 
-# The commit this working tree should be ratcheted AGAINST.
+# The commits this working tree is ratcheted AGAINST — the COMPARAND.
 #
 # WHY THE BASELINE FILE ALONE IS NOT A BASELINE. Every `--update-baseline`
 # refusal in this script -- refusing to drop a live ROW, refusing an
@@ -263,49 +263,134 @@ cp_unjustified_drops() {
 # A guard whose enforcement is optional is decoration.
 #
 # The fix is not a checksum stored beside it (which the same edit updates) but a
-# value the editor does not control: the file AS COMMITTED. `git show` of the
-# merge base with the upstream default branch gives the bar as it stood before
-# this change set, so the refusals now run in CHECK mode, on every run, against
-# git -- and the hand-edit is exactly as expensive as `--update-baseline`.
+# value the editor does not control: the file AS COMMITTED.
 #
-# Merge base, not HEAD: ratcheting against HEAD is defeated by making the drop
-# in its own commit, after which HEAD agrees with the drop. Against the merge
-# base, every commit on the branch is judged against main.
-# Every commit the working-tree baseline is judged against: the merge base with
-# the upstream default branch, AND HEAD.
+# THE COMPARAND WAS VACUOUS IN THE CONFIGURATION CI RUNS IN
+# ---------------------------------------------------------
+# This used to be {merge-base, HEAD}, unioned, and it was defeated by the very
+# evasion it named. `scripts/competitive_parity_baseline.txt` does NOT exist on
+# origin/main -- it is new on this branch -- so the merge-base half contributed
+# NOTHING, and the union collapsed to HEAD alone. HEAD alone is defeated by
+# making the drop in its own commit: delete the StandardScaler 0.69x row, COMMIT
+# the lowered baseline, and HEAD agrees with the working copy, so the ratchet
+# prints OK at rc=0. PMAT-733 was payable in one commit. Both reviewers found
+# this independently.
 #
-# BOTH, unioned, because each covers the other's blind spot. The merge base
-# alone is vacuous while the file is new on this branch (it did not exist
-# there), and it is the merge base that survives the "make the drop in its own
-# commit" evasion. HEAD alone is defeated by that evasion and is non-vacuous
-# from the first commit. Requiring the keys of both is strictly stronger than
-# either and never weaker: a key legitimately gone from the world still passes
-# `cp_removal_allowed`.
+# Worse, the ABSENCE was silent. `cp_baseline_at` skipped a ref where the file
+# did not exist, and a skip is an ACCEPTANCE -- inside the function whose own
+# doc comment says a comparison that could not be MADE must be red rather than
+# empty. A file the author edits and commits in the same change cannot audit
+# that change; that is not a bug in the comparison, it is the absence of one.
+#
+# THE COMPARAND IS NOW THE WHOLE BRANCH
+# -------------------------------------
+# The merge base with the upstream default branch, UNION every commit between
+# it and HEAD. Three properties, none of which the old pair had together:
+#
+#   * NON-VACUOUS from the second commit that touches the file, whatever main
+#     contains. The bootstrap window -- main has no ledger at all -- is exactly
+#     the window in which nothing can have been deleted yet, because there is
+#     no prior state to delete from. The first commit introducing a ledger is
+#     not a deletion; the second commit removing a row from it is, and the
+#     first commit is in this list when the second one runs.
+#   * IMMUNE to the own-commit evasion. Committing the lowered baseline no
+#     longer normalises it: the commit before it still carries the key, and
+#     every commit on the branch is judged against the union.
+#   * MONOTONE. Adding refs can only ADD keys to the prior set, and the prior
+#     set is what must still be satisfied, so a longer branch is strictly
+#     stricter -- never a way to weaken the bar.
+#
+# WHAT IT STILL DOES NOT COVER, stated rather than left for a reviewer: branch
+# history is rewritable. `git commit --amend` on the commit that introduced the
+# ledger, or a rebase that squashes it away, removes evidence from this list.
+# That is bounded in time and not in the general case: the moment the ledger
+# lands on `main`, the merge base carries it, `main` is protected, and no
+# rewrite can reach it. Inside the bootstrap window the comparand is only as
+# strong as the branch's own history -- which is why a bootstrap must be
+# DECLARED, out loud, in the file itself (see BOOTSTRAP below).
 cp_base_refs() {
+    local r mb
+    mb=""
+    for r in origin/main origin/master main master; do
+        git rev-parse --verify --quiet "$r" >/dev/null 2>&1 || continue
+        mb=$(git merge-base "$r" HEAD 2>/dev/null) || mb=""
+        break
+    done
+    [ -n "$mb" ] && printf '%s\n' "$mb"
+    # Every commit on the branch, newest first, HEAD included. Capped because
+    # this costs two git calls per ref; a branch longer than the cap keeps the
+    # merge base plus its most recent 500 commits, which is strictly more than
+    # the two refs this replaced.
+    if [ -n "$mb" ]; then
+        git rev-list --max-count=500 "$mb..HEAD" 2>/dev/null
+    else
+        # No upstream default branch in this checkout (a bare clone of a fork, a
+        # sandbox). Fall back to HEAD's own history rather than to nothing: an
+        # absent comparand is RED, and it must be red for the RIGHT reason.
+        git rev-list --max-count=500 HEAD 2>/dev/null
+    fi
+}
+
+# The baseline file's content at every base ref, concatenated.
+#
+# Three outcomes, and the distinction between the last two is the whole of
+# FATAL A:
+#
+#   rc=0  at least one ref supplied content -- a real comparand.
+#   rc=2  git itself could not answer (not a checkout, object unreadable).
+#   rc=3  the file exists at NO base ref. NOT the same as "no keys": it means
+#         there is nothing to compare against, so every regression check below
+#         would pass vacuously. This used to be a silent skip, i.e. an
+#         ACCEPTANCE, which is the coverage-floor failure exactly (`|| true`
+#         over a measurement that reported 0/0 for months).
+#
+# A comparison git cannot answer must be RED, never empty.
+# TRUNCATED WHERE IT MATTERS, not merely shallow. `--is-shallow-repository`
+# alone is the wrong test and saying why is the point: the dev box's checkout
+# reports `true` with a graft boundary 739 commits back, while the merge base
+# this ratchet needs is four commits back and fully present. Refusing that run
+# would be a gate that reds for a reason unrelated to the property it guards,
+# which trains people to re-run it -- and a red that gets re-run away is how a
+# REAL red gets re-run away too.
+#
+# The property that matters is narrower: can a merge base with an upstream
+# default branch be COMPUTED? If it can, the union spans it and every commit
+# since, which is the entire comparand, and truncation older than that is
+# irrelevant. If it cannot -- `fetch-depth: 1`, which fetches ONE ref and leaves
+# no `origin/main`, no local `main`, and a detached HEAD -- cp_base_refs falls
+# back to HEAD's own history, the file is present there, rc=0 comes back, and
+# the comparand has collapsed to exactly the HEAD-alone behaviour that FATAL A
+# was. Green, for a reason nobody would ever see.
+#
+# .github/workflows/ci.yml sets `fetch-depth: 0` on this job today, which is why
+# this cannot fire there -- and is precisely why it must exist. A guard whose
+# strength depends on a setting in another file has to assert that setting, or
+# the day someone trims the checkout to speed it up the ratchet stops ratcheting
+# and nothing goes red.
+cp_history_is_truncated() {
+    [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = "true" ] || return 1
     local r
     for r in origin/main origin/master main master; do
         git rev-parse --verify --quiet "$r" >/dev/null 2>&1 || continue
-        git merge-base "$r" HEAD 2>/dev/null
-        break
+        git merge-base "$r" HEAD >/dev/null 2>&1 && return 1
+        return 0
     done
-    git rev-parse --verify --quiet HEAD 2>/dev/null
+    return 0
 }
 
-# The baseline file's content at `ref`, or empty when the file did not exist
-# there yet.
-#
-# Sets rc=2 -- distinct from "absent" -- when git itself cannot answer, because
-# "the comparison could not be made" must be RED and not silently empty. An
-# empty base set makes every regression check vacuously true, which is the
-# coverage-floor failure (`|| true` over a measurement that reported 0/0).
 cp_baseline_at() {
-    local path="$1" ref
+    local path="$1" ref got=0
     git rev-parse --git-dir >/dev/null 2>&1 || return 2
+    # rc=2, not rc=3: the history was not MEASURED as absent, it was not
+    # there to measure. Different claims; only one is a bug in the tree.
+    cp_history_is_truncated && return 2
     while IFS= read -r ref; do
         [ -n "$ref" ] || continue
         git cat-file -e "$ref:$path" 2>/dev/null || continue
         git show "$ref:$path" 2>/dev/null || return 2
+        got=1
     done < <(cp_base_refs)
+    [ "$got" -eq 1 ] || return 3
     return 0
 }
 
@@ -329,6 +414,148 @@ cp_unbound_baseline_drops() {
         cp_removal_allowed "$k" "$uni" "$root" && continue
         printf '%s\n' "$k"
     done < <(cp_set_minus "$prior" "$cur")
+}
+
+# ---------------------------------------------------------------------------
+# THE VERDICT-TRANSITION RATCHET
+#
+# EVERY DIMENSION EXCEPT `rows` WAS STILL A COUNT
+# -----------------------------------------------
+# Round 1 turned ROW and MEASURED_ROW into SETS precisely because a count is
+# payable in the wrong currency. The other dimensions were left as counts, and
+# they became the levers. The cheapest one, disclosed by the implementer and
+# re-proved here: relabel BOTH recorded WORSE rows as NOT_COMPARABLE.
+#
+#     before: __ROWS__=5 __MEASURED__=3 __NON_WINS__=5
+#     after:  __ROWS__=5 __MEASURED__=3 __NON_WINS__=5      rc=0
+#
+# Every total identical. Every baseline ROW key still present. Every
+# MEASURED_ROW key still measured -- NOT_COMPARABLE is a measurement. And the
+# StandardScaler 0.69x loss and the Lasso ~19x loss have both become "the
+# competitor has no counterpart", for free. What left the tree is the
+# DIRECTION of the result, which is what PMAT-733 was actually about.
+#
+# THE FIX IS NOT TO GATE ON THE VALUE
+# -----------------------------------
+# This gate deliberately NEVER checks that a verdict says BETTER, and that
+# inversion is load-bearing: a rule admitting only wins makes deleting a losing
+# comparison the cheapest compliant action, which is the move this repository
+# has already made once. Adding "and it may not stop being a loss" would
+# rebuild the fabrication engine on the other side of the fence.
+#
+# So the gate is on the TRANSITION. The VALUE stays completely unconstrained --
+# any verdict may become any other -- and CHANGING it stops being FREE. A
+# declared verdict that differs from every verdict in the COMMITTED baseline
+# must be accompanied by a record naming both ends, with a reason from a closed
+# serde vocabulary, an owner and a bounded recheck date. That is the machinery
+# the MEASURED -> UNMEASURED downgrade already uses, GENERALISED, rather than a
+# second mechanism beside it: two mechanisms means two vocabularies, two expiry
+# rules and two sets of paperwork, of which exactly one stays current.
+#
+# The DECLARED verdict, never the effective one: a row degrading to UNMEASURED
+# on its own expiry date is the clock moving, not an author relabelling, and
+# demanding paperwork for it would make the gate red on a day nobody touched
+# the file. Expiry is already handled, loudly, by `pv parity-ledger`.
+# ---------------------------------------------------------------------------
+
+# A composite key value is `FIELD<TAB>...<TAB>entry_point`. TAB is the
+# separator because PARITY-002 admits only printable ASCII (0x20..0x7E) in a
+# ratchet key, so a TAB can never occur INSIDE an entry point -- while spaces
+# and `=` both genuinely do (`apr run --gpu (concurrency=1 single-request
+# decode)`), which is why neither of those could be the separator.
+CP_TAB=$'\t'
+
+# The entry_point half of a `VERDICT<TAB>entry_point` value.
+cp_verdict_entry() { printf '%s\n' "${1#*"$CP_TAB"}"; }
+
+# The verdict half.
+cp_verdict_of() { printf '%s\n' "${1%%"$CP_TAB"*}"; }
+
+# Every DISTINCT entry_point named by a `V<TAB>entry` set.
+cp_verdict_entries() {
+    local line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        cp_verdict_entry "$line"
+    done <<<"$1" | LC_ALL=C sort -u
+}
+
+# Every verdict `$2` has ever been recorded as in the set `$1`, one per line.
+cp_verdicts_for() {
+    local set="$1" entry="$2" line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        [ "$(cp_verdict_entry "$line")" = "$entry" ] || continue
+        cp_verdict_of "$line"
+    done <<<"$set"
+}
+
+# Rows whose DECLARED verdict changed with no in-date record describing the
+# change. One `entry_point: WAS{,WAS...} -> NOW` line per unrecorded
+# transition; empty output means every change is owned.
+#
+#   $1 prior verdicts  `V<TAB>entry` lines from the COMMITTED baseline. A UNION
+#                      over every base ref, so a verdict this row has ALREADY
+#                      held is prior -- which makes reverting a relabel free,
+#                      as it should be: undoing a change needs no permission.
+#   $2 live verdicts   `V<TAB>entry` lines from `pv parity-ledger`
+#   $3 transitions     `FROM<TAB>TO<TAB>entry` lines, IN-DATE records only
+#
+# A row with NO prior verdict at all is a NEW row, not a change, and is silent:
+# adding comparisons must stay free or the ledger stops growing.
+cp_unrecorded_transitions() {
+    local prior="$1" live="$2" trans="$3" line entry now was paid
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        entry=$(cp_verdict_entry "$line")
+        now=$(cp_verdict_of "$line")
+        was=$(cp_verdicts_for "$prior" "$entry")
+        # Never recorded before -> a NEW row, not a transition.
+        [ -n "$was" ] || continue
+        # Unchanged, or back to a verdict this row has held before -> silent.
+        grep -qxF -- "$now" <<<"$was" && continue
+        # A record pays for it ONLY if it names this exact move. The `from`
+        # end is read from the COMMITTED baseline, which the working tree does
+        # not control, so a record cannot excuse a transition it does not
+        # describe.
+        paid=0
+        while IFS= read -r from; do
+            [ -n "$from" ] || continue
+            grep -qxF -- "$from$CP_TAB$now$CP_TAB$entry" <<<"$trans" && paid=1
+        done <<<"$was"
+        [ "$paid" -eq 1 ] && continue
+        printf '%s: %s -> %s\n' "$entry" "$(tr '\n' '/' <<<"$was" | sed 's:/$::')" "$now"
+    done <<<"$live"
+}
+
+# Prior VERDICT_ROW values missing from the working-copy baseline whose row is
+# still live. Nothing excuses one: the verdict history of a live row is
+# shrink-never, because dropping the record of what a row USED to say is what
+# makes the NEXT relabelling free. (`--update-baseline` therefore UNIONS rather
+# than overwrites, and drops only keys whose row has left the enumeration.)
+cp_unbound_verdict_drops() {
+    local prior="$1" cur="$2" uni="$3" root="${4:-$REPO_ROOT}" k
+    while IFS= read -r k; do
+        [ -n "$k" ] || continue
+        cp_removal_allowed "$(cp_verdict_entry "$k")" "$uni" "$root" && continue
+        printf '%s\n' "$k"
+    done < <(cp_set_minus "$prior" "$cur")
+}
+
+# THE HIGHEST `KEY=<int>` value in a prior-baseline text, or empty if there is
+# none.
+#
+# The prior baseline is a CONCATENATION over base refs, so every read of it has
+# to be a set or an EXTREMUM -- never "the first line", which is whichever ref
+# happened to be emitted first. This was `head -1` and it was wrong the moment
+# the comparand widened from one ref to a union: cp_base_refs emits newest
+# first, so `head -1` read the value from the commit UNDER TEST and the ratchet
+# compared the mutation against itself. Caught by RE-RUNNING mutation A after
+# widening the scope, never by reading the line -- extending a guard's scope
+# requires re-mutating in the new scope, because the old proof does not
+# transfer.
+cp_prior_floor() {
+    grep -E "^$1=[0-9]+\$" <<<"$2" | cut -d= -f2 | LC_ALL=C sort -n | tail -1
 }
 
 # Ratchet comparison: is `actual` acceptable against `floor`?
@@ -662,6 +889,241 @@ cp_self_test() {
         || bad 'the hand-edited baseline agrees with the ledger (so 5a is silent)'
     rm -rf "${bsand:?}"
 
+    printf 'case table: cp_base_refs / cp_baseline_at (the COMPARAND itself)\n'
+    # FATAL A. This pair had NO fixtures -- only their definitions and one call
+    # site -- so the table proved the COMPARATOR and never the COMPARAND. A
+    # control whose input is never tested is tested only where it cannot fail,
+    # and this one could not fail: the baseline file does not exist on
+    # origin/main, so the merge-base half found nothing, `cp_baseline_at`
+    # treated "absent here" as a SKIP (an acceptance), and the union collapsed
+    # to HEAD alone -- which is defeated by committing the lowered baseline.
+    #
+    # These cases run against a REAL throwaway git repo, because every property
+    # at issue is a property of git history and a string fixture cannot have one.
+    local gsand grc gout
+    gsand=$(mktemp -d) || return 2
+    (
+        cd "$gsand" || exit 2
+        git init -q .
+        git config user.email 'selftest@example.invalid'
+        git config user.name 'selftest'
+        printf 'x\n' > other.txt
+        git add -A && git commit -qm 'c1: no baseline here'
+        # `origin/main` as it really is: carrying no baseline file at all.
+        git update-ref refs/remotes/origin/main HEAD
+    ) >/dev/null 2>&1
+
+    # (a) THE CI CONFIGURATION: the path exists at no base ref -> rc=3.
+    gout=$(cd "$gsand" && cp_baseline_at b.txt)
+    grc=$?
+    [ "$grc" = 3 ] && [ -z "$gout" ] \
+        && ok 'a path with NO history is rc=3 (NO COMPARAND), not rc=0 empty' \
+        || bad "a path with NO history is rc=3 (NO COMPARAND), not rc=0 empty (got rc=$grc)"
+
+    # A working-copy-only file is the same state: uncommitted is not history.
+    printf 'ROW=1:A\n' > "$gsand/b.txt"
+    gout=$(cd "$gsand" && cp_baseline_at b.txt)
+    grc=$?
+    [ "$grc" = 3 ] \
+        && ok 'an UNCOMMITTED baseline is still NO COMPARAND' \
+        || bad "an UNCOMMITTED baseline is still NO COMPARAND (got rc=$grc)"
+
+    # (b) once committed, there IS a comparand.
+    (cd "$gsand" && git add -A && git commit -qm 'c2: seed ROW=A') >/dev/null 2>&1
+    gout=$(cd "$gsand" && cp_baseline_at b.txt)
+    grc=$?
+    [ "$grc" = 0 ] && grep -qxF 'ROW=1:A' <<<"$gout" \
+        && ok 'a committed baseline is rc=0 and carries its keys' \
+        || bad "a committed baseline is rc=0 and carries its keys (rc=$grc)"
+
+    # (c) THE OWN-COMMIT EVASION, which is how FATAL A was proved end to end:
+    #     drop the key and COMMIT the lowered file. Against HEAD alone the
+    #     comparand now agrees with the drop and the ratchet prints OK. Against
+    #     the branch UNION the earlier commit still holds the key.
+    printf 'ROW=1:B\n' > "$gsand/b.txt"
+    (cd "$gsand" && git add -A && git commit -qm 'c3: drop ROW=A, in its own commit') >/dev/null 2>&1
+    gout=$(cd "$gsand" && cp_baseline_at b.txt)
+    grc=$?
+    [ "$grc" = 0 ] && grep -qxF 'ROW=1:A' <<<"$gout" \
+        && ok 'a key dropped in its OWN COMMIT is still in the prior set' \
+        || bad 'a key dropped in its OWN COMMIT is still in the prior set'
+    # ...and that is exactly what makes the drop visible.
+    [ "$(cp_set_minus "$(cp_keys ROW "$gout")" 'B')" = 'A' ] \
+        && ok 'the own-commit drop is NAMED by the set difference' \
+        || bad 'the own-commit drop is NAMED by the set difference'
+
+    # (d) the ref list is the merge base PLUS every commit on the branch, so it
+    #     grows with the branch and can only ever ADD prior keys.
+    gout=$(cd "$gsand" && cp_base_refs | grep -c .)
+    [ "$gout" -ge 3 ] \
+        && ok 'cp_base_refs lists the merge base and every branch commit' \
+        || bad "cp_base_refs lists the merge base and every branch commit (got $gout)"
+
+    # (f) a checkout whose history is truncated WHERE THE COMPARAND LIVES does
+    #     not have the comparand, and must say so. Left alone it collapses
+    #     silently to HEAD-alone -- FATAL A again, arriving through a
+    #     `fetch-depth:` line in a different file.
+    local shal
+    shal=$(mktemp -d) || return 2
+    git clone -q --depth 1 "file://$gsand" "$shal/c" >/dev/null 2>&1
+    if [ -d "$shal/c/.git" ]; then
+        # A shallow clone that STILL has an upstream ref can compute a merge
+        # base, so the comparand is present and the run is fine. This is the dev
+        # box: `--is-shallow-repository` says true with a graft boundary 739
+        # commits back, and the merge base is four commits back.
+        (cd "$shal/c" && cp_history_is_truncated) \
+            && bad 'shallow WITH a computable merge base is not truncated' \
+            || ok 'shallow WITH a computable merge base is not truncated'
+        # `fetch-depth: 1` is the real hazard: one ref fetched, no origin/main,
+        # so cp_base_refs falls back to HEAD alone and says nothing about it.
+        (
+            cd "$shal/c" || exit 2
+            # Faithful to a PR checkout at `fetch-depth: 1`: HEAD is
+            # DETACHED at the SHA, there is no local `main`/`master`, and the
+            # single fetched ref leaves no `origin/main` either.
+            git checkout -q --detach HEAD
+            # `git show-ref` rather than `git for-each-ref`: bashrs parses
+            # the latter's `for-` prefix as the `for` KEYWORD and reports
+            # SC1035, which would add a sixth false-positive error to this
+            # file's lint count and make the real five harder to see.
+            refs=$(git show-ref | cut -d' ' -f2)
+            printf '%s\n' "$refs" | while IFS= read -r rr; do
+                case "$rr" in
+                    refs/heads/*|refs/remotes/*) git update-ref -d "$rr" ;;
+                esac
+            done
+            git remote remove origin
+        ) >/dev/null 2>&1
+        (cd "$shal/c" && cp_history_is_truncated) \
+            && ok 'shallow with NO upstream ref is truncated' \
+            || bad 'shallow with NO upstream ref is truncated'
+        gout=$(cd "$shal/c" && cp_baseline_at b.txt)
+        grc=$?
+        [ "$grc" = 2 ] \
+            && ok 'a truncated history is rc=2, never a quietly smaller comparand' \
+            || bad "a truncated history is rc=2, never a quietly smaller comparand (got rc=$grc)"
+    else
+        bad 'shallow-clone fixture could not be built'
+    fi
+    (cd "$gsand" && cp_history_is_truncated) \
+        && bad 'a FULL checkout is not reported as truncated' \
+        || ok 'a FULL checkout is not reported as truncated'
+    rm -rf "${shal:?}"
+    # (e) git unable to answer is rc=2 -- distinct from both rc=0 and rc=3,
+    #     because "could not be measured" and "measured as absent" are
+    #     different claims and only one of them is a bug in the tree.
+    local nogit
+    nogit=$(mktemp -d) || return 2
+    gout=$(cd "$nogit" && cp_baseline_at b.txt)
+    grc=$?
+    [ "$grc" = 2 ] \
+        && ok 'outside a git checkout is rc=2, distinct from rc=3' \
+        || bad "outside a git checkout is rc=2, distinct from rc=3 (got rc=$grc)"
+    rm -rf "${nogit:?}"
+    rm -rf "${gsand:?}"
+
+    printf 'case table: cp_unrecorded_transitions (relabelling is not free)\n'
+    # The lever that survived two rounds: every dimension except `rows` was a
+    # COUNT, so relabelling both WORSE rows NOT_COMPARABLE held __ROWS__,
+    # __MEASURED__ and __NON_WINS__ constant while two recorded losses left the
+    # tree. Note that no case below asserts anything about the verdict's VALUE.
+    local pv_ lv_ tr_ sc_
+    sc_="lib:aprender-core::StandardScaler::fit_transform"
+    pv_="WORSE${CP_TAB}${sc_}"$'\n'"PARITY${CP_TAB}apr run --gpu"
+    # (a) nothing changed -> silent.
+    lv_="$pv_"
+    [ -z "$(cp_unrecorded_transitions "$pv_" "$lv_" '')" ] \
+        && ok 'an unchanged ledger is silent' || bad 'an unchanged ledger is silent'
+    # (b) THE MOVE: WORSE -> NOT_COMPARABLE with no record -> named.
+    lv_="NOT_COMPARABLE${CP_TAB}${sc_}"$'\n'"PARITY${CP_TAB}apr run --gpu"
+    [ "$(cp_unrecorded_transitions "$pv_" "$lv_" '')" = "${sc_}: WORSE -> NOT_COMPARABLE" ] \
+        && ok 'WORSE -> NOT_COMPARABLE with no record is NAMED' \
+        || bad 'WORSE -> NOT_COMPARABLE with no record is NAMED'
+    # (c) the SAME move, with a record that names it exactly -> silent.
+    tr_="WORSE${CP_TAB}NOT_COMPARABLE${CP_TAB}${sc_}"
+    [ -z "$(cp_unrecorded_transitions "$pv_" "$lv_" "$tr_")" ] \
+        && ok 'a record naming exactly this move pays for it' \
+        || bad 'a record naming exactly this move pays for it'
+    # (d) a record naming a DIFFERENT destination pays for nothing. This is why
+    #     both ends are required (PARITY-019): one open end would launder every
+    #     future relabelling of the row.
+    tr_="WORSE${CP_TAB}BETTER${CP_TAB}${sc_}"
+    [ -n "$(cp_unrecorded_transitions "$pv_" "$lv_" "$tr_")" ] \
+        && ok 'a record for a DIFFERENT move pays for nothing' \
+        || bad 'a record for a DIFFERENT move pays for nothing'
+    # (e) a record for a different ROW pays for nothing.
+    tr_="WORSE${CP_TAB}NOT_COMPARABLE${CP_TAB}apr run --gpu"
+    [ -n "$(cp_unrecorded_transitions "$pv_" "$lv_" "$tr_")" ] \
+        && ok 'a record for another row pays for nothing' \
+        || bad 'a record for another row pays for nothing'
+    # (f) the UPWARD direction is gated identically. The gate never asks whether
+    #     a verdict IMPROVED -- fabricating a win is as expensive as erasing a
+    #     loss, and this repo has a fabricated win in its history too.
+    lv_="BETTER${CP_TAB}${sc_}"$'\n'"PARITY${CP_TAB}apr run --gpu"
+    [ "$(cp_unrecorded_transitions "$pv_" "$lv_" '')" = "${sc_}: WORSE -> BETTER" ] \
+        && ok 'WORSE -> BETTER with no record is NAMED too' \
+        || bad 'WORSE -> BETTER with no record is NAMED too'
+    # (g) a NEW row has no prior verdict, so it is an addition, not a change.
+    #     Adding comparisons must stay free or the ledger stops growing.
+    lv_="$pv_"$'\n'"WORSE${CP_TAB}apr qa"
+    [ -z "$(cp_unrecorded_transitions "$pv_" "$lv_" '')" ] \
+        && ok 'a brand-new row is an addition, not a transition' \
+        || bad 'a brand-new row is an addition, not a transition'
+    # (h) REVERTING is free: the prior set is a UNION over every base ref, so a
+    #     verdict this row has already held is not a new claim.
+    pv_="WORSE${CP_TAB}${sc_}"$'\n'"NOT_COMPARABLE${CP_TAB}${sc_}"
+    lv_="WORSE${CP_TAB}${sc_}"
+    [ -z "$(cp_unrecorded_transitions "$pv_" "$lv_" '')" ] \
+        && ok 'returning to a verdict the row has held before is free' \
+        || bad 'returning to a verdict the row has held before is free'
+
+    printf 'case table: cp_unbound_verdict_drops (forgetting is the cheapest relabel)\n'
+    # Cheaper than any relabelling, because it needs no record at all: delete
+    # the memory of what the row used to say and tomorrow's new verdict is a
+    # brand-new row's first verdict as far as case (g) above can tell.
+    local vsand vuni
+    vsand=$(mktemp -d) || return 2
+    mkdir -p "$vsand/crates/x/src"
+    printf 'pub struct StillHere;\n' > "$vsand/crates/x/src/lib.rs"
+    vuni=$'apr run\napr serve\napr qa\nbin:pv\nbin:apr'
+    pv_="WORSE${CP_TAB}apr serve"$'\n'"PARITY${CP_TAB}apr run --gpu"
+    [ -z "$(cp_unbound_verdict_drops "$pv_" "$pv_" "$vuni" "$vsand")" ] \
+        && ok 'an unedited verdict history is silent' \
+        || bad 'an unedited verdict history is silent'
+    [ "$(cp_unbound_verdict_drops "$pv_" "PARITY${CP_TAB}apr run --gpu" "$vuni" "$vsand")" \
+        = "WORSE${CP_TAB}apr serve" ] \
+        && ok 'a hand-deleted verdict for a LIVE row is NAMED' \
+        || bad 'a hand-deleted verdict for a LIVE row is NAMED'
+    [ -z "$(cp_unbound_verdict_drops "WORSE${CP_TAB}apr finetune" '' "$vuni" "$vsand")" ] \
+        && ok 'a verdict whose row has LEFT the enumeration may be dropped' \
+        || bad 'a verdict whose row has LEFT the enumeration may be dropped'
+    rm -rf "${vsand:?}"
+
+    printf 'case table: cp_prior_floor (a UNION is read by extremum, never by head -1)\n'
+    # The prior baseline is a CONCATENATION over base refs. `head -1` reads the
+    # NEWEST -- the commit under test -- so the ratchet compared the mutation
+    # against itself and a NON_WINS_MIN 5 -> 4 lowering went unnamed.
+    local u_
+    u_=$'NON_WINS_MIN=4\nIN_SCOPE_MIN=41\nNON_WINS_MIN=5\nIN_SCOPE_MIN=41'
+    [ "$(cp_prior_floor NON_WINS_MIN "$u_")" = 5 ] \
+        && ok 'the HIGHEST committed floor wins, not the first read' \
+        || bad 'the HIGHEST committed floor wins, not the first read'
+    [ "$(cp_prior_floor IN_SCOPE_MIN "$u_")" = 41 ] \
+        && ok 'an unchanged floor reads back unchanged' \
+        || bad 'an unchanged floor reads back unchanged'
+    # Numeric, not lexicographic: `sort` without -n puts 9 above 41.
+    [ "$(cp_prior_floor IN_SCOPE_MIN $'IN_SCOPE_MIN=9\nIN_SCOPE_MIN=41')" = 41 ] \
+        && ok 'the comparison is NUMERIC (41 > 9)' \
+        || bad 'the comparison is NUMERIC (41 > 9)'
+    # Absent -> empty, which the caller treats as "no prior floor to enforce"
+    # rather than as zero.
+    [ -z "$(cp_prior_floor NON_WINS_MIN 'IN_SCOPE_MIN=41')" ] \
+        && ok 'an absent floor is empty, not 0' || bad 'an absent floor is empty, not 0'
+    # Anchored: a prose line mentioning the key is not a value.
+    [ -z "$(cp_prior_floor NON_WINS_MIN '# NON_WINS_MIN=5 is the floor')" ] \
+        && ok 'a COMMENT mentioning the key is not a value' \
+        || bad 'a COMMENT mentioning the key is not a value'
+
     printf 'case table: cp_meets_floor\n'
     if cp_meets_floor 4 4; then ok 'equal meets the floor'; else bad 'equal meets the floor'; fi
     if cp_meets_floor 5 4; then ok 'above meets the floor'; else bad 'above meets the floor'; fi
@@ -842,6 +1304,10 @@ ROWS=$(cp_extract __ROWS__ "$PV_OUT")
 LIVE_ROWS=$(cp_keys __ROW__ "$PV_OUT")
 LIVE_MEASURED=$(cp_keys __MEASURED_ROW__ "$PV_OUT")
 LIVE_DOWNGRADES=$(cp_keys __DOWNGRADE__ "$PV_OUT")
+# `VERDICT<TAB>entry_point` for every row (the DECLARED verdict), and
+# `FROM<TAB>TO<TAB>entry_point` for every IN-DATE transition record.
+LIVE_VERDICTS=$(cp_keys __VERDICT_ROW__ "$PV_OUT")
+LIVE_TRANSITIONS=$(cp_keys __TRANSITION__ "$PV_OUT")
 
 # -- 1b. the sets must agree with the emitter's own counts ------------------
 # Control (c) on the key channel. A key line can only ever be ADDED to the
@@ -849,7 +1315,7 @@ LIVE_DOWNGRADES=$(cp_keys __DOWNGRADE__ "$PV_OUT")
 # lines), so an injected line that got its length prefix right still puts the
 # set out of step with the count the emitter computed from the parsed ledger.
 # Cheap, and independent of both the character rule and the length prefix.
-for pair in "__ROW__:$ROWS" "__MEASURED_ROW__:$MEASURED"; do
+for pair in "__ROW__:$ROWS" "__MEASURED_ROW__:$MEASURED" "__VERDICT_ROW__:$ROWS"; do
     k=${pair%%:*}; want=${pair#*:}
     got=$(cp_key_count "$k" "$PV_OUT")
     if ! [ "$got" = "$want" ]; then
@@ -890,10 +1356,17 @@ while IFS= read -r entry; do
 done <<<"$SCOPE_ENTRIES"
 
 # -- 4. every ledger row must be in scope -----------------------------------
-# Rows are read from `pv`'s own report, not by grepping YAML: a hand-rolled
-# YAML parser is banned here (check_no_hand_rolled_parsers.sh) and would drift
-# from the schema the moment a field moved.
-ROW_ENTRIES=$(grep -E '^ROW ' <<<"$PV_OUT" | sed -E 's/.*valid_until=[^ ]+ //')
+# Read from the MACHINE-READABLE channel (`$LIVE_ROWS`, the length-prefixed
+# `__ROW__=` set), not from the human report.
+#
+# This used to be `grep -E '^ROW ' | sed -E 's/.*valid_until=[^ ]+ //'` -- a
+# hand-rolled parser of a DISPLAY format, and spoofable in both directions. A
+# `note:` or an `owner:` containing a newline followed by `ROW  ` injects a row
+# into this check's input; and an entry point containing the literal text
+# `valid_until=x ` truncates the key the `sed` produces, so the scope lookup
+# runs against something the ledger never said. The anchored, length-prefixed
+# channel exists precisely so no consumer has to do this, and the same
+# `cp_keys` that parses the baseline parses it -- the two cannot drift.
 while IFS= read -r row; do
     [ -n "$row" ] || continue
     if ! grep -qxF -- "$(cp_scope_key "$row")" <<<"$SCOPE_ENTRIES"; then
@@ -902,7 +1375,7 @@ while IFS= read -r row; do
         printf '    ratio without measuring anything. Add it to %s.\n' "$SCOPE" >&2
         fail=1
     fi
-done <<<"$ROW_ENTRIES"
+done <<<"$LIVE_ROWS"
 
 # -- 5. the baseline --------------------------------------------------------
 BASELINE_TEXT=$(cat "$BASELINE")
@@ -910,6 +1383,7 @@ NON_WINS_MIN=$(grep -E '^NON_WINS_MIN=[0-9]+$' "$BASELINE" | head -1 | cut -d= -
 IN_SCOPE_MIN=$(grep -E '^IN_SCOPE_MIN=[0-9]+$' "$BASELINE" | head -1 | cut -d= -f2)
 BASE_ROWS=$(cp_keys ROW "$BASELINE_TEXT")
 BASE_MEASURED=$(cp_keys MEASURED_ROW "$BASELINE_TEXT")
+BASE_VERDICTS=$(cp_keys VERDICT_ROW "$BASELINE_TEXT")
 
 # -- 5x. the BASELINE FILE is itself ratcheted, against git ------------------
 # Without this, every refusal below is optional: the baseline is unbound
@@ -921,17 +1395,87 @@ BASE_MEASURED=$(cp_keys MEASURED_ROW "$BASELINE_TEXT")
 # through the tool as well.
 PRIOR_BASELINE=$(cp_baseline_at "$BASELINE")
 PRIOR_RC=$?
-if [ "$PRIOR_RC" -ne 0 ]; then
+if [ "$PRIOR_RC" -eq 2 ]; then
     printf '✗ could not read %s from git (rc=%d).\n' "$BASELINE" "$PRIOR_RC" >&2
     printf '    The baseline file is unbound plaintext; the only thing that binds it is\n' >&2
     printf '    its committed history, so a comparison that could not be MADE must be red\n' >&2
     printf '    rather than absent. Run this inside the git checkout.\n' >&2
+    if cp_history_is_truncated; then
+        printf '    THIS CHECKOUT CANNOT REACH ITS COMPARAND: the history is shallow AND no\n' >&2
+        printf '    upstream default branch is present, so no merge base can be computed and\n' >&2
+        printf '    the ratchet would fall back to HEAD alone -- exactly the collapsed\n' >&2
+        printf '    comparand that let a deleted row pass. Check out with full history\n' >&2
+        printf '    (actions/checkout `fetch-depth: 0`), or `git fetch --unshallow`.\n' >&2
+    fi
     exit 1
 fi
-PRIOR_ROWS=$(cp_keys ROW "$PRIOR_BASELINE")
-PRIOR_MEASURED=$(cp_keys MEASURED_ROW "$PRIOR_BASELINE")
-PRIOR_NON_WINS_MIN=$(grep -E '^NON_WINS_MIN=[0-9]+$' <<<"$PRIOR_BASELINE" | head -1 | cut -d= -f2)
-PRIOR_IN_SCOPE_MIN=$(grep -E '^IN_SCOPE_MIN=[0-9]+$' <<<"$PRIOR_BASELINE" | head -1 | cut -d= -f2)
+if [ "$PRIOR_RC" -eq 3 ]; then
+    # NO COMPARAND. The file exists at no base ref, so every regression check
+    # below would pass vacuously -- which is FATAL A: `origin/main` does not
+    # carry this file, both halves of the old {merge-base, HEAD} pair skipped,
+    # and a skip is an ACCEPTANCE. Deleting the StandardScaler 0.69x row and
+    # committing the lowered baseline printed OK at rc=0.
+    #
+    # Renaming the file is the same hole by another route: point $BASELINE at a
+    # path with no history and the comparand vanishes silently. It does not
+    # vanish silently any more.
+    #
+    # The one legitimate instance of this state is the very first commit that
+    # introduces the file, and it must be DECLARED -- in the file, in a commit
+    # that says so. The declaration is self-limiting rather than trusted: it
+    # only has effect while the path has no history at all, and once the file
+    # is on `main` the merge base carries it forever, so this branch is
+    # unreachable no matter what the file says.
+    BOOTSTRAP_DECL=$(grep -E '^BOOTSTRAP=..*$' "$BASELINE" | head -1 | cut -d= -f2-)
+    if [ -z "$BOOTSTRAP_DECL" ]; then
+        printf '✗ NO COMPARAND: %s exists at none of the base refs.\n' "$BASELINE" >&2
+        printf '    merge-base(origin/main, HEAD) and every commit on this branch were\n' >&2
+        printf '    searched and none of them has this path. Nothing is being ratcheted\n' >&2
+        printf '    against, so every check below would pass VACUOUSLY -- a file the\n' >&2
+        printf '    author edits and commits in the same change cannot audit that change.\n' >&2
+        printf '    A comparison git cannot answer must be RED, never empty.\n' >&2
+        printf '    If this really is the commit that introduces the file, declare it:\n' >&2
+        printf '      BOOTSTRAP=<why, in one line>   as a line in %s\n' "$BASELINE" >&2
+        printf '    and say so in the commit message. That declaration stops working the\n' >&2
+        printf '    moment the file has any history, which is permanent once it lands.\n' >&2
+        exit 1
+    fi
+    printf '! BOOTSTRAP: %s has no committed history at any base ref, so nothing is\n' "$BASELINE" >&2
+    printf '  being ratcheted against on THIS run. Declared reason: %s\n' "$BOOTSTRAP_DECL" >&2
+    printf '  The declaration is accepted exactly once per path-with-no-history. Review\n' >&2
+    printf '  the emitted sets against the ledger by hand; from the next commit the\n' >&2
+    printf '  branch itself is the comparand and this branch is unreachable.\n' >&2
+    # In bootstrap the file cannot be a LOWERED copy of the ledger, because
+    # there is nothing to lower it from -- but it can be a copy that omits rows
+    # the ledger has. That much IS checkable without history, so it is checked:
+    # the seeded ROW set must be exactly the live one.
+    while IFS= read -r missing; do
+        [ -n "$missing" ] || continue
+        printf '✗ BOOTSTRAP INCOMPLETE: the ledger has row %s and the baseline does not.\n' \
+               "$missing" >&2
+        printf '    A bootstrap seeds the CURRENT state; it is not an opportunity to seed\n' >&2
+        printf '    a smaller one. Regenerate with --update-baseline.\n' >&2
+        fail=1
+    done < <(cp_set_minus "$LIVE_ROWS" "$BASE_ROWS")
+fi
+# The prior baseline is a CONCATENATION over refs, so every read of it has to
+# be a set or an extremum -- never "the first line", which is whichever ref
+# happened to be emitted first.
+PRIOR_ROWS=$(cp_keys ROW "$PRIOR_BASELINE" | LC_ALL=C sort -u)
+PRIOR_MEASURED=$(cp_keys MEASURED_ROW "$PRIOR_BASELINE" | LC_ALL=C sort -u)
+PRIOR_VERDICTS=$(cp_keys VERDICT_ROW "$PRIOR_BASELINE" | LC_ALL=C sort -u)
+# THE HIGHEST floor any base ref committed, not the first one read.
+#
+# Caught by re-running mutation A after widening the comparand, which is the
+# standing lesson here: extending a guard's SCOPE requires re-mutating in the
+# new scope, because the old proof does not transfer. With the comparand a
+# single ref, `head -1` was the only value there was. With the comparand a
+# UNION, `head -1` is the NEWEST ref -- which is the one carrying the lowered
+# floor, so the check read the mutation's own value as the bar and the
+# NON_WINS_MIN 5 -> 4 lowering in mutation A went unnamed. A ratchet must read
+# the extremum of its history, never a member of it.
+PRIOR_NON_WINS_MIN=$(cp_prior_floor NON_WINS_MIN "$PRIOR_BASELINE")
+PRIOR_IN_SCOPE_MIN=$(cp_prior_floor IN_SCOPE_MIN "$PRIOR_BASELINE")
 
 while IFS= read -r gone; do
     [ -n "$gone" ] || continue
@@ -952,6 +1496,21 @@ while IFS= read -r gone; do
     printf '    rather than a payment the baseline absorbs and the next commit deletes.\n' >&2
     fail=1
 done < <(cp_unbound_baseline_drops "$PRIOR_MEASURED" "$BASE_MEASURED" "$UNIVERSE" "$LIVE_DOWNGRADES")
+
+# The verdict HISTORY of a live row is shrink-never, with nothing that pays for
+# a drop. Forgetting what a row used to say is what makes the next relabelling
+# free -- and it is a cheaper move than any of them, because it needs no record
+# at all: drop `VERDICT_ROW=54:WORSE<TAB>lib:...StandardScaler...` from the
+# baseline today and tomorrow's NOT_COMPARABLE is a brand-new row's first
+# verdict as far as the transition check can tell.
+while IFS= read -r gone; do
+    [ -n "$gone" ] || continue
+    printf '✗ BASELINE HAND-EDITED: VERDICT_ROW=%q was in the committed baseline and is\n' "$gone" >&2
+    printf '    not in the working copy, and that row is still live. The verdict a row USED\n' >&2
+    printf '    to declare is what makes changing it cost something; deleting the memory is\n' >&2
+    printf '    the cheapest relabelling of all, because it needs no record whatever.\n' >&2
+    fail=1
+done < <(cp_unbound_verdict_drops "$PRIOR_VERDICTS" "$BASE_VERDICTS" "$UNIVERSE")
 
 if [ -n "$PRIOR_NON_WINS_MIN" ] && ! cp_meets_floor "$NON_WINS_MIN" "$PRIOR_NON_WINS_MIN"; then
     printf '✗ BASELINE HAND-EDITED: NON_WINS_MIN %s -> %s is a LOWERING.\n' \
@@ -1042,6 +1601,21 @@ if [ "$MODE" = "--update-baseline" ]; then
             fi
         done < <(grep -vE '^[[:space:]]*(#|$)' <<<"$PREV_SCOPE")
     fi
+    # A VERDICT may be re-declared only against a record that names the move.
+    # Same refusal as check 5c, run here so `--update-baseline` cannot launder
+    # a relabelling into the baseline -- the tool must never be the cheap route
+    # to a state the check would refuse.
+    while IFS= read -r moved; do
+        [ -n "$moved" ] || continue
+        printf '✗ REFUSING to record the verdict change %s: no in-date record names it.\n' \
+               "$moved" >&2
+        printf '    The VALUE is unconstrained -- any verdict may become any other. The\n' >&2
+        printf '    CHANGE is not free: add a `downgrades:` entry with from_verdict /\n' >&2
+        printf '    to_verdict matching this move, a reason from the closed vocabulary, an\n' >&2
+        printf '    owner and a bounded recheck_by.\n' >&2
+        refuse=1
+    done < <(cp_unrecorded_transitions "$PRIOR_VERDICTS" "$LIVE_VERDICTS" "$LIVE_TRANSITIONS")
+
     [ "$refuse" -eq 0 ] || exit 1
 
     # MEASURED_ROW is SHRINK-NEVER, and that is what makes a downgrade a DEBT
@@ -1064,6 +1638,25 @@ if [ "$MODE" = "--update-baseline" ]; then
         done <<<"$NEW_MEASURED"
     )
 
+    # VERDICT_ROW accumulates: the UNION of every verdict a live row has ever
+    # been recorded as, never an overwrite. Overwriting would erase the memory
+    # of the previous verdict, and an erased memory is a free relabelling next
+    # commit -- the cheapest move of all, because it needs no record. Same
+    # retirement rule as MEASURED_ROW: only keys whose row has left the live
+    # enumeration are dropped.
+    NEW_VERDICTS=$(
+        {
+            printf '%s\n' "$BASE_VERDICTS"
+            printf '%s\n' "$LIVE_VERDICTS"
+        } | grep -v '^$' | LC_ALL=C sort -u
+    )
+    NEW_VERDICTS=$(
+        while IFS= read -r k; do
+            [ -n "$k" ] || continue
+            grep -qxF -- "$(cp_verdict_entry "$k")" <<<"$LIVE_ROWS" && printf '%s\n' "$k"
+        done <<<"$NEW_VERDICTS"
+    )
+
     {
         printf '# Competitive-parity ratchet baseline. A SET, not a count.\n'
         printf '#\n'
@@ -1080,15 +1673,30 @@ if [ "$MODE" = "--update-baseline" ]; then
         printf '#                    STAYS while the row exists, so a downgrade is a debt\n'
         printf '#                    with a due date, not a one-off payment that the\n'
         printf '#                    baseline absorbs and the next commit can delete.\n'
+        printf '#   VERDICT_ROW=     <VERDICT><TAB><entry_point>, ACCUMULATING. Every\n'
+        printf '#                    verdict a live row has ever been recorded as. A\n'
+        printf '#                    declared verdict outside this set for its row needs a\n'
+        printf '#                    `downgrades:` record naming from_verdict/to_verdict.\n'
+        printf '#                    The gate never checks the verdict VALUE -- a rule that\n'
+        printf '#                    admits only wins makes deleting a losing comparison the\n'
+        printf '#                    cheapest compliant action, which is PMAT-733 itself. It\n'
+        printf '#                    checks that CHANGING one is not free.\n'
+        # Carried through, never invented. A bootstrapper is told to run this
+        # tool, so the tool must not delete the declaration it just demanded --
+        # and it cannot ADD one, because it only copies a line the file already
+        # had. The declaration is inert anyway once the path has history.
+        [ -n "${BOOTSTRAP_DECL:-}" ] && printf 'BOOTSTRAP=%s\n' "$BOOTSTRAP_DECL"
         printf 'NON_WINS_MIN=%s\n' "$NON_WINS"
         printf 'IN_SCOPE_MIN=%s\n' "$IN_SCOPE"
         printf '\n'
         cp_emit_keys ROW "$LIVE_ROWS"
         printf '\n'
         cp_emit_keys MEASURED_ROW "$NEW_MEASURED"
+        printf '\n'
+        cp_emit_keys VERDICT_ROW "$NEW_VERDICTS"
     } > "$BASELINE"
-    printf '✓ baseline updated: %s row(s), %s measured, NON_WINS_MIN=%s IN_SCOPE_MIN=%s\n' \
-           "$ROWS" "$MEASURED" "$NON_WINS" "$IN_SCOPE"
+    printf '✓ baseline updated: %s row(s), %s measured, %s verdict value(s), NON_WINS_MIN=%s IN_SCOPE_MIN=%s\n' \
+           "$ROWS" "$MEASURED" "$(grep -c . <<<"$NEW_VERDICTS")" "$NON_WINS" "$IN_SCOPE"
     exit 0
 fi
 
@@ -1121,6 +1729,32 @@ while IFS= read -r dropped; do
     fail=1
 done < <(cp_unjustified_drops "$BASE_MEASURED" "$LIVE_MEASURED" "$LIVE_DOWNGRADES")
 
+# -- 5c. every DECLARED VERDICT CHANGE carries a record that names it --------
+# The lever that survived rounds 1 and 2: every dimension except `rows` was
+# still a count, so relabelling both WORSE rows to NOT_COMPARABLE left
+# __ROWS__, __MEASURED__ and __NON_WINS__ bit-for-bit identical at rc=0 while
+# the 0.69x and ~19x losses became "no counterpart exists".
+#
+# Note what is NOT checked: nothing here reads the verdict's VALUE. WORSE may
+# become BETTER, BETTER may become WORSE, anything may become anything. Gating
+# on the value would rebuild the fabrication engine -- a rule admitting only
+# wins is why the StandardScaler row was deleted in the first place. What is
+# gated is the CHANGE, against the same closed-vocabulary, owned, dated,
+# expiring record the MEASURED -> UNMEASURED downgrade already uses.
+while IFS= read -r moved; do
+    [ -n "$moved" ] || continue
+    printf '✗ UNRECORDED VERDICT CHANGE: %s\n' "$moved" >&2
+    printf '    The row still exists and every total is unchanged - which is exactly why\n' >&2
+    printf '    this needs its own check. Relabelling both WORSE rows NOT_COMPARABLE holds\n' >&2
+    printf '    __ROWS__, __MEASURED__ and __NON_WINS__ constant while the DIRECTION of the\n' >&2
+    printf '    result leaves the tree, and the direction is what PMAT-733 was about.\n' >&2
+    printf '    The value is NOT constrained: any verdict may become any other. Changing it\n' >&2
+    printf '    is not FREE. Add a `downgrades:` entry to %s naming this row with\n' "$LEDGER" >&2
+    printf '    from_verdict / to_verdict matching this move, a reason from the closed\n' >&2
+    printf '    vocabulary, an owner and a bounded recheck_by - then --update-baseline.\n' >&2
+    fail=1
+done < <(cp_unrecorded_transitions "$PRIOR_VERDICTS" "$LIVE_VERDICTS" "$LIVE_TRANSITIONS")
+
 cp_meets_floor "$NON_WINS" "$NON_WINS_MIN" || {
     printf '✗ __NON_WINS__ fell: %s < baseline %s.\n' "${NON_WINS:-<none>}" "${NON_WINS_MIN:-<none>}" >&2
     printf '    Losses may be FIXED, not deleted. Turn a WORSE into a PARITY by\n' >&2
@@ -1141,6 +1775,10 @@ printf 'ledger rows           : %s (baseline set: %s)\n' \
 printf 'measured (fresh)      : %s (baseline set: %s)\n' \
        "${MEASURED:-<none>}" "$(grep -c . <<<"$BASE_MEASURED")"
 printf 'downgrades on record  : %s\n' "$(grep -c . <<<"$LIVE_DOWNGRADES")"
+printf 'verdict history       : %s value(s) over %s row(s)\n' \
+       "$(grep -c . <<<"$BASE_VERDICTS")" "$(cp_verdict_entries "$BASE_VERDICTS" | grep -c .)"
+printf 'excuse budget         : %s spent of %s (in-date records vs measured rows)\n' \
+       "$(cp_extract __EXCUSES__ "$PV_OUT")" "$(cp_extract __EXCUSE_BUDGET__ "$PV_OUT")"
 printf 'non-wins recorded     : %s (floor %s)\n' "${NON_WINS:-<none>}" "$NON_WINS_MIN"
 
 if [ "$fail" -ne 0 ]; then

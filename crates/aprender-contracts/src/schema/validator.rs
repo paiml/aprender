@@ -610,19 +610,93 @@ fn validate_parity_downgrade_target<'a>(
     validate_key_is_canonical(&d.entry_point, &at("entry_point"), "PARITY-012", push);
 
     if let Some(row) = ledger.rows.iter().find(|r| r.entry_point.trim() == key) {
-        if row.verdict.is_some_and(Verdict::is_measured) {
-            push(
-                "PARITY-014",
-                format!(
-                    "parity.downgrades[{i}] records a downgrade for {key:?}, but that row \
-                     still declares verdict {} - a downgrade may only accompany a row \
-                     declared UNMEASURED, or it is a pre-authorisation for a correction \
-                     nobody has made",
-                    row.verdict.unwrap_or(Verdict::Unmeasured)
-                ),
-                at("entry_point"),
-            );
-        }
+        validate_parity_transition(d, row, i, push);
+    }
+}
+
+/// PARITY-014 / PARITY-019: the record must DESCRIBE the transition it excuses.
+///
+/// PARITY-014 refuses a record beside a row that does not declare the verdict
+/// the record says it does — that is a pre-authorisation for a correction
+/// nobody has made. In the legacy shape (`to_verdict` absent) the destination
+/// is `UNMEASURED`, which is exactly the rule as it was first written.
+///
+/// PARITY-019 is the new half, and it is what makes a transition record cost
+/// anything. The shell ratchet excuses a verdict change only against a record
+/// whose `from_verdict` matches the verdict in the COMMITTED baseline and
+/// whose `to_verdict` matches the verdict declared now. If either end could be
+/// left blank, one record would launder every future relabelling of that row:
+/// write `to_verdict` with no `from_verdict` and the record stops naming a
+/// direction, which is precisely the property that made deleting the
+/// StandardScaler row cheaper than keeping it.
+///
+/// The VALUES stay unconstrained. Nothing here says a verdict may not become
+/// `WORSE`, or must become `BETTER`; a rule admitting only wins is the
+/// fabrication engine this whole contract exists to disarm. What is refused is
+/// a change that names no direction, no owner and no date.
+fn validate_parity_transition(
+    d: &crate::schema::parity::Downgrade,
+    row: &crate::schema::parity::ParityRow,
+    i: usize,
+    push: &mut impl FnMut(&str, String, String),
+) {
+    let at = |field: &str| format!("parity.downgrades[{i}].{field}");
+    let key = d.entry_point.trim();
+    let declared = row.verdict.unwrap_or(Verdict::Unmeasured);
+    let destination = d.destination();
+
+    if declared != destination {
+        push(
+            "PARITY-014",
+            format!(
+                "parity.downgrades[{i}] records a transition for {key:?} ending at {destination}, \
+                 but that row declares verdict {declared}. A record must describe the state the \
+                 row is ACTUALLY in{} - otherwise it is a pre-authorisation for a correction \
+                 nobody has made",
+                if d.to_verdict.is_none() {
+                    ", and a record with no `to_verdict` is the legacy downgrade shape, whose \
+                     destination is UNMEASURED"
+                } else {
+                    ""
+                }
+            ),
+            at("entry_point"),
+        );
+    }
+
+    // PARITY-019: a transition names BOTH ends, and they differ.
+    match (d.from_verdict, d.to_verdict) {
+        (None, None) => {}
+        (Some(_), None) => push(
+            "PARITY-019",
+            format!(
+                "parity.downgrades[{i}] names from_verdict but no to_verdict. A transition record \
+                 names BOTH ends: the ratchet matches from_verdict against the verdict in the \
+                 COMMITTED baseline and to_verdict against the verdict declared now, so a record \
+                 with one end open excuses every future relabelling of {key:?} rather than the \
+                 one it was written for"
+            ),
+            at("to_verdict"),
+        ),
+        (None, Some(to)) => push(
+            "PARITY-019",
+            format!(
+                "parity.downgrades[{i}] declares to_verdict {to} for {key:?} with no \
+                 from_verdict. A record that names no direction is not a record of a change - it \
+                 is a standing permission to change"
+            ),
+            at("from_verdict"),
+        ),
+        (Some(from), Some(to)) if from == to => push(
+            "PARITY-019",
+            format!(
+                "parity.downgrades[{i}] records {key:?} moving from {from} to {to}, which is not \
+                 a move. A record exists to own a CHANGE; one that describes none excuses none, \
+                 and leaving it in the ledger spends budget that a real transition will need"
+            ),
+            at("from_verdict"),
+        ),
+        (Some(_), Some(_)) => {}
     }
 }
 
@@ -646,11 +720,10 @@ fn validate_parity_downgrade_record(
         push(
             "PARITY-013",
             format!(
-                "parity.downgrades[{i}].reason is required - one of RECEIPT_MISSING / \
-                 HARNESS_DELETED / MEASUREMENT_UNDATED / COMPETITOR_UNPINNABLE / \
-                 HOST_UNAVAILABLE / SUPERSEDED. Prose is not a reason: the vocabulary is \
-                 closed so that 'recorded a reason' cannot be discharged by writing a \
-                 sentence"
+                "parity.downgrades[{i}].reason is required - one of {}. Prose is not a \
+                 reason: the vocabulary is closed so that 'recorded a reason' cannot be \
+                 discharged by writing a sentence",
+                crate::schema::parity::DowngradeReason::vocabulary()
             ),
             at("reason"),
         );

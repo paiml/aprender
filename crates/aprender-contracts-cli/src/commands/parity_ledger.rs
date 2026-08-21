@@ -59,6 +59,16 @@ fn emit_key(tag: &str, key: &str) {
     println!("{tag}={}:{key}", key.len());
 }
 
+/// The separator inside a COMPOSITE key value (`VERDICT\tentry_point`).
+///
+/// TAB, and specifically not a space or a colon, because `PARITY-002` admits
+/// only printable ASCII (`0x20..=0x7E`) in a ratchet key — so a TAB cannot
+/// occur inside an `entry_point`, and a composite value splits unambiguously
+/// no matter what the author writes. Entry points genuinely contain both
+/// spaces and `=` (`apr run --gpu (concurrency=1 single-request decode)`), so
+/// either of those would have been a parser that works until it does not.
+const FIELD_SEP: char = '\t';
+
 fn emit_machine_readable(ledger: &ParityLedger, today: &str, expired: usize, errors: usize) {
     println!("__TODAY__={today}");
     println!("__ROWS__={}", ledger.rows.len());
@@ -76,6 +86,23 @@ fn emit_machine_readable(ledger: &ParityLedger, today: &str, expired: usize, err
         if row.effective_verdict(today).is_measured() {
             emit_key("__MEASURED_ROW__", row.entry_point.trim());
         }
+        // The DECLARED verdict, never the effective one.
+        //
+        // The ratchet compares this against the verdict in the committed
+        // baseline and demands a record for any DIFFERENCE. Emitting the
+        // EFFECTIVE verdict would make the mere passage of time look like an
+        // author's relabelling — every row degrades to UNMEASURED on its expiry
+        // date — so the gate would start demanding paperwork for something no
+        // author did, on a day nobody touched the file. Expiry is already
+        // handled, loudly, by `block_on_staleness`.
+        emit_key(
+            "__VERDICT_ROW__",
+            &format!(
+                "{}{FIELD_SEP}{}",
+                row.verdict.unwrap_or(Verdict::Unmeasured),
+                row.entry_point.trim()
+            ),
+        );
     }
     // Only downgrades that are still IN DATE are emitted. An overdue one stops
     // paying for the MEASURED_ROW drop it was justifying, so the ratchet names
@@ -84,11 +111,27 @@ fn emit_machine_readable(ledger: &ParityLedger, today: &str, expired: usize, err
     // and never against today, so a downgrade was permanent the moment it was
     // written, and with the old MEASURED floor deleted, a series of them could
     // drain the ledger to zero while every gate stayed green.
-    for d in &ledger.downgrades {
-        if !d.is_overdue(today) {
+    for d in ledger.in_date_records(today) {
+        // A record excuses a MEASURED_ROW drop only when it is a drop TO
+        // UNMEASURED. A `WORSE -> NOT_COMPARABLE` record describes a row that
+        // is still measured; letting it also pay for a later, unrelated exit
+        // from the measured set would make that second move free.
+        if d.excuses_unmeasured() {
             emit_key("__DOWNGRADE__", d.entry_point.trim());
         }
+        // The TRANSITION channel: `FROM<TAB>TO<TAB>entry_point`. The ratchet
+        // will only spend one of these against a transition it exactly
+        // describes, so a record cannot excuse a move it does not name.
+        if let (Some(from), Some(to)) = (d.from_verdict, d.to_verdict) {
+            emit_key(
+                "__TRANSITION__",
+                &format!("{from}{FIELD_SEP}{to}{FIELD_SEP}{}", d.entry_point.trim()),
+            );
+        }
     }
+    let (spent, allowed) = ledger.excuse_budget(today);
+    println!("__EXCUSES__={spent}");
+    println!("__EXCUSE_BUDGET__={allowed}");
 }
 
 /// Evaluate `path` as of `today` (defaults to the UTC date now).
@@ -155,8 +198,11 @@ fn report(ledger: &ParityLedger, today: &str) {
     }
     for d in &ledger.downgrades {
         println!(
-            "DOWN {:<15} -> {:<15} recheck_by={} {:<8} {}",
+            "DOWN {:<22} {:<15} -> {:<15} owner={} recheck_by={} {:<8} {}",
             d.reason.map_or("(none)".to_string(), |r| r.to_string()),
+            d.from_verdict
+                .map_or("(none)".to_string(), |v| v.to_string()),
+            d.destination().to_string(),
             d.owner.trim(),
             d.recheck_by.trim(),
             if d.is_overdue(today) {
@@ -220,6 +266,48 @@ fn block_on_staleness(
     Ok(())
 }
 
+/// The EXCUSE BUDGET: a ledger may not owe more re-measurements than it holds
+/// measurements.
+///
+/// `is_overdue` bounds how LONG one excuse lasts. Nothing bounded how MANY may
+/// be outstanding at once, and the two are independent — a fresh, in-date,
+/// correctly-owned, closed-vocabulary record for every row drives `__MEASURED__`
+/// to zero with every individual rule satisfied and every gate green. Each
+/// record impeccable, the aggregate a ledger that has stopped making claims.
+///
+/// A constant floor is the wrong shape here: `MEASURED_MIN=4` is exactly what
+/// made the honest `apr code` correction mechanically forbidden, and a ratchet
+/// that punishes increasing honesty produces dishonest ledgers. This bound
+/// scales with the ledger and has give in it — paying one debt buys the
+/// capacity to take on another — while making it impossible for more than half
+/// the rows to be excused at once.
+fn block_on_excuse_budget(
+    ledger: &ParityLedger,
+    today: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (spent, allowed) = ledger.excuse_budget(today);
+    if spent > allowed {
+        for d in ledger.in_date_records(today) {
+            eprintln!(
+                "EXCUSED: {} (reason {}, recheck_by {:?}, owner {:?})",
+                d.entry_point.trim(),
+                d.reason.map_or("(none)".to_string(), |r| r.to_string()),
+                d.recheck_by.trim(),
+                d.owner.trim(),
+            );
+        }
+        return Err(format!(
+            "{spent} row(s) are excused by an in-date record against {allowed} measured row(s). \
+             A ledger may not owe more re-measurements than it holds measurements: every \
+             individual record here can be impeccable - fresh, owned, closed-vocabulary reason - \
+             while the ledger as a whole has quietly stopped measuring anything. Pay a debt \
+             (re-measure a row) before taking on another."
+        )
+        .into());
+    }
+    Ok(())
+}
+
 pub fn run(path: &Path, today: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let today = resolve_today(today)?;
 
@@ -256,6 +344,7 @@ pub fn run(path: &Path, today: Option<&str>) -> Result<(), Box<dyn std::error::E
         return Err(format!("ledger has {} validation error(s)", errors.len()).into());
     }
     block_on_staleness(ledger, &today)?;
+    block_on_excuse_budget(ledger, &today)?;
 
     // A ledger of nothing but wins is untested in the direction that matters --
     // and this repo has already deleted its only two losing rows once
@@ -273,8 +362,10 @@ pub fn run(path: &Path, today: Option<&str>) -> Result<(), Box<dyn std::error::E
         .iter()
         .filter(|r| r.effective_verdict(&today) == Verdict::Better)
         .count();
+    let (spent, allowed) = ledger.excuse_budget(&today);
     println!(
-        "Ledger OK as of {today}: {} row(s), {} measured, {} non-win(s), {wins} win(s), 0 expired.",
+        "Ledger OK as of {today}: {} row(s), {} measured, {} non-win(s), {wins} win(s), 0 \
+         expired, {spent}/{allowed} excuse budget spent.",
         ledger.rows.len(),
         ledger.measured_count(&today),
         ledger.non_win_count(&today),

@@ -119,6 +119,32 @@ proof_obligations:
     property: "a ratchet key cannot perturb the channel that carries it"
     formal: "forall r in rows. printable_ascii(r.entry_point) and trim(r.entry_point) = r.entry_point"
 
+  # THE SECOND CLASS INVARIANT. Read the row/measured set rules as instances of
+  # what this one forbids: every dimension except `rows` was a COUNT, and a
+  # count is payable in the wrong currency. Relabelling both WORSE rows
+  # NOT_COMPARABLE conserved __ROWS__, __MEASURED__ and __NON_WINS__ exactly
+  # while the direction of two recorded losses left the tree.
+  #
+  # Note what is deliberately NOT asserted anywhere here: that a verdict is, or
+  # stays, BETTER. A rule admitting only wins makes deleting a losing comparison
+  # the cheapest compliant action, which is PMAT-733 itself. The VALUE is free;
+  # the CHANGE is owned.
+  - type: invariant
+    property: "a row's DECLARED verdict may take any value, and may not CHANGE without a record naming the move"
+    formal: "forall r in rows. r.verdict in baseline.verdicts(r.entry_point) or exists g in downgrades. g.entry_point = r.entry_point and g.from_verdict in baseline.verdicts(r.entry_point) and g.to_verdict = r.verdict and today <= g.recheck_by"
+  - type: invariant
+    property: "a transition record names BOTH ends of a real move"
+    formal: "forall g in downgrades. (g.from_verdict = none) = (g.to_verdict = none) and g.from_verdict != g.to_verdict"
+  - type: invariant
+    property: "a record describes the state the row is ACTUALLY in"
+    formal: "forall g in downgrades. exists r in rows. r.entry_point = g.entry_point and r.verdict = (g.to_verdict ?? UNMEASURED)"
+  - type: invariant
+    property: "the ledger may not owe more re-measurements than it holds measurements"
+    formal: "|{g in downgrades : today <= g.recheck_by}| <= measured(rows, today)"
+  - type: invariant
+    property: "the ratchet's COMPARAND is a commit, and its absence is an error rather than an empty set"
+    formal: "base_refs = {merge_base(origin/main, HEAD)} union commits(merge_base..HEAD) and (exists b in base_refs. exists(baseline, b) or RED)"
+
 falsification_tests:
   - id: FALSIFY-PARITY-001
     rule: "competitor_version is pinned"
@@ -316,14 +342,82 @@ falsification_tests:
       while its entry point is still live fails
       scripts/check_competitive_parity.sh, naming the key -- even though the
       hand-edited baseline then AGREES with the ledger and every working-copy
-      check is silent. The prior value is read from git (the merge base with
-      the upstream default branch, unioned with HEAD), which the editor does
-      not control.
+      check is silent. The prior value is read from git -- the merge base with
+      the upstream default branch UNIONED WITH EVERY COMMIT ON THE BRANCH --
+      which the editor does not control.
     if_fails: >-
       Every --update-baseline refusal is optional: the baseline is unbound
       plaintext read with `cat`, so dropping the key and then deleting the row
       leaves the working copy agreeing with itself.
     test: "bash scripts/check_competitive_parity.sh --self-test"
+  - id: FALSIFY-PARITY-016
+    rule: "the COMPARAND exists, or the run is RED"
+    prediction: >-
+      In a sandbox git repo where scripts/competitive_parity_baseline.txt is
+      committed nowhere, cp_baseline_at returns rc=3 (NO COMPARAND) rather than
+      rc=0 with empty output, and the check exits 1 naming the absence. Adding
+      a commit that carries the file returns it to rc=0.
+    if_fails: >-
+      This is FATAL A. The file does not exist on origin/main, so the old
+      {merge-base, HEAD} pair collapsed to HEAD alone: delete the StandardScaler
+      0.69x row, COMMIT the lowered baseline, and the ratchet printed OK at
+      rc=0. A skipped ref is an ACCEPTANCE, and a comparison git cannot answer
+      must be RED, never empty. Renaming the baseline file defeated it the same
+      way, silently.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
+  - id: FALSIFY-PARITY-017
+    rule: "the comparand survives the OWN-COMMIT evasion"
+    prediction: >-
+      In a sandbox repo with two commits carrying the baseline, dropping a key
+      in the second commit still names that key: cp_base_refs lists the merge
+      base AND every commit between it and HEAD, so the prior set is the union
+      and the earlier commit still holds the key.
+    if_fails: >-
+      Judging against HEAD alone is defeated by putting the drop in its own
+      commit, after which HEAD agrees with the drop -- which is exactly how
+      FATAL A was demonstrated end to end.
+    test: "bash scripts/check_competitive_parity.sh --self-test"
+  - id: FALSIFY-PARITY-018
+    rule: "a VERDICT CHANGE is not free"
+    prediction: >-
+      Re-declaring `lib:aprender-core::StandardScaler::fit_transform` from
+      WORSE to NOT_COMPARABLE -- which leaves __ROWS__, __MEASURED__ and
+      __NON_WINS__ all unchanged -- fails scripts/check_competitive_parity.sh
+      with UNRECORDED VERDICT CHANGE, and `--update-baseline` REFUSES to
+      absorb it. Adding a `downgrades:` entry with from_verdict: WORSE,
+      to_verdict: NOT_COMPARABLE, a reason, an owner and a bounded recheck_by
+      clears both. Nothing anywhere requires the verdict to be BETTER.
+    if_fails: >-
+      The second-cheapest PMAT-733: relabel both recorded losses
+      NOT_COMPARABLE, every total conserved, both losses gone. Only the
+      DIRECTION of the result leaves the tree, and the direction is what
+      PMAT-733 was about.
+    test: "cargo test -p aprender-contracts --lib parity_019_"
+  - id: FALSIFY-PARITY-019
+    rule: "a transition record must DESCRIBE the move it excuses"
+    prediction: >-
+      A record naming only `to_verdict`, or only `from_verdict`, or with
+      from_verdict == to_verdict, emits PARITY-019 and `pv parity-ledger`
+      exits non-zero. A record whose `to_verdict` differs from the row's
+      declared verdict emits PARITY-014.
+    if_fails: >-
+      One open-ended record launders every future relabelling of that row: a
+      record that names no direction is a standing permission to change rather
+      than a record of a change.
+    test: "cargo test -p aprender-contracts --lib parity_019_"
+  - id: FALSIFY-PARITY-020
+    rule: "the excuse budget is bounded, not just each excuse's LIFETIME"
+    prediction: >-
+      A ledger holding a fresh, owned, in-date, closed-vocabulary downgrade for
+      MORE rows than it has measured rows fails `pv parity-ledger` with the
+      excuse-budget error, even though every individual record validates and
+      no row has expired.
+    if_fails: >-
+      `is_overdue` bounds how LONG one excuse lasts and nothing bounds how MANY
+      are outstanding. A record per row drives __MEASURED__ to zero with every
+      rule satisfied and every gate green: each record impeccable, the ledger
+      as a whole no longer measuring anything.
+    test: "cargo test -p aprender-contracts --lib excuse_budget"
 
 parity:
   scope: >-
@@ -350,9 +444,42 @@ parity:
   # lint; `owner` and a bounded `recheck_by` mean a downgrade is a debt with a
   # due date rather than a quiet retirement. The SET of rows may never shrink.
   # Only the set of MEASURED rows may, and only against this record.
+  #
+  # IT IS ALSO THE VERDICT-TRANSITION RECORD, and that generalisation closed the
+  # last free lever. Every dimension except `rows` was still a COUNT, so
+  # re-declaring BOTH WORSE rows as NOT_COMPARABLE left __ROWS__=5,
+  # __MEASURED__=3 and __NON_WINS__=5 bit-for-bit identical while the
+  # StandardScaler 0.69x and the Lasso ~19x losses became "the competitor has no
+  # counterpart" -- every total conserved, the DIRECTION of the result gone, at
+  # rc=0. That is PMAT-733 paid for in a currency nothing counted.
+  #
+  # The fix is NOT to gate on the verdict's VALUE. This gate never checks that a
+  # verdict says BETTER, because a rule that admits only wins makes deleting a
+  # losing comparison the cheapest compliant action -- that inversion is the
+  # whole design. What is gated is the TRANSITION: the value stays completely
+  # unconstrained, and CHANGING it stops being free. A declared verdict outside
+  # the set the committed baseline records for that row needs a record here with
+  # `from_verdict` / `to_verdict` naming the exact move (PARITY-019), plus the
+  # same reason / owner / bounded recheck_by every downgrade already carries.
+  #
+  # One record type, not two beside each other: two mechanisms would mean two
+  # vocabularies, two expiry rules and two sets of paperwork, of which exactly
+  # one would be kept current.
+  #
+  # AND THERE IS A BUDGET (PARITY-020). `recheck_by` bounds how LONG one excuse
+  # lasts; nothing bounded how MANY may be outstanding, and the two are
+  # independent -- a fresh, owned, in-date, closed-vocabulary record for EVERY
+  # row drives __MEASURED__ to zero with every rule satisfied and every gate
+  # green. So: a ledger may not owe more re-measurements than it holds
+  # measurements. It scales with the ledger and has give in it (paying a debt
+  # buys the capacity to take another), which a constant floor does not -- and a
+  # constant floor is exactly what made the honest `apr code` correction below
+  # mechanically impossible in the first place.
   downgrades:
     - entry_point: "apr code"
       reason: RECEIPT_MISSING
+      from_verdict: WORSE
+      to_verdict: UNMEASURED
       owner: "pillar-5-code"
       recorded_on: "2026-08-21"
       recheck_by: "2026-11-30"

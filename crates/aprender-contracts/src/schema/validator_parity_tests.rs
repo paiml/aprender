@@ -977,3 +977,123 @@ metadata:
             rules(&y)
         );
     }
+
+    // ======================================================================
+    // PARITY-019: the verdict TRANSITION record.
+    //
+    // Every dimension except `rows` was a COUNT. Relabelling both WORSE rows
+    // NOT_COMPARABLE left __ROWS__, __MEASURED__ and __NON_WINS__ bit-for-bit
+    // identical while two recorded losses became "no counterpart exists". The
+    // fix is NOT to gate on the verdict's VALUE -- a rule that admits only wins
+    // is the fabrication engine -- but on the CHANGE.
+    // ======================================================================
+
+    /// The GREEN direction: a fully-described transition into a MEASURED
+    /// verdict is legal. This is the case the old PARITY-014 made impossible,
+    /// because it read every record as a downgrade to UNMEASURED.
+    #[test]
+    fn parity_019_a_described_transition_into_a_measured_verdict_is_legal() {
+        let y = good_yaml().replace("      verdict: PARITY\n", "      verdict: NOT_COMPARABLE\n")
+            + &format!(
+                "  downgrades:\n    - entry_point: \"apr run --gpu\"\n\
+                 {GOOD_DOWNGRADE}      from_verdict: WORSE\n      to_verdict: NOT_COMPARABLE\n"
+            );
+        assert!(
+            errors_of(&y).is_empty(),
+            "an owned, dated, both-ends-named transition must be legal: {:?}",
+            errors_of(&y)
+        );
+    }
+
+    /// A record naming only `to_verdict` names no direction, so it is a
+    /// standing permission to change rather than a record of a change.
+    #[test]
+    fn parity_019_to_without_from_is_refused() {
+        let y = good_yaml().replace("      verdict: PARITY\n", "      verdict: NOT_COMPARABLE\n")
+            + &format!(
+                "  downgrades:\n    - entry_point: \"apr run --gpu\"\n\
+                 {GOOD_DOWNGRADE}      to_verdict: NOT_COMPARABLE\n"
+            );
+        assert!(
+            rules(&y).contains(&"PARITY-019".to_string()),
+            "a to_verdict with no from_verdict must be refused: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// The mirror: `from_verdict` alone leaves the destination open, and the
+    /// ratchet matches on the PAIR.
+    #[test]
+    fn parity_019_from_without_to_is_refused() {
+        let y = downgraded_yaml(GOOD_DOWNGRADE) + "      from_verdict: WORSE\n";
+        assert!(
+            rules(&y).contains(&"PARITY-019".to_string()),
+            "a from_verdict with no to_verdict must be refused: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// A record describing no move excuses no move -- and it spends budget a
+    /// real transition will need.
+    #[test]
+    fn parity_019_a_move_to_itself_is_refused() {
+        let y = downgraded_yaml(GOOD_DOWNGRADE)
+            + "      from_verdict: UNMEASURED\n      to_verdict: UNMEASURED\n";
+        assert!(
+            rules(&y).contains(&"PARITY-019".to_string()),
+            "from == to is not a move: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// PARITY-014, generalised: the record must describe the state the row is
+    /// ACTUALLY in. A record claiming NOT_COMPARABLE beside a row declaring
+    /// PARITY is a pre-authorisation for a correction nobody made.
+    #[test]
+    fn parity_014_to_verdict_must_match_the_rows_declared_verdict() {
+        let y = good_yaml()
+            + &format!(
+                "  downgrades:\n    - entry_point: \"apr run --gpu\"\n\
+                 {GOOD_DOWNGRADE}      from_verdict: WORSE\n      to_verdict: NOT_COMPARABLE\n"
+            );
+        assert!(
+            rules(&y).contains(&"PARITY-014".to_string()),
+            "a record must describe the row's actual verdict: {:?}",
+            rules(&y)
+        );
+    }
+
+    /// The transition vocabulary is CLOSED at both ends: an invented verdict
+    /// fails to PARSE, exactly as `verdict:` does.
+    #[test]
+    fn parity_019_transition_vocabulary_is_closed() {
+        let y = downgraded_yaml(GOOD_DOWNGRADE)
+            + "      from_verdict: MOSTLY_WORSE\n      to_verdict: UNMEASURED\n";
+        assert!(
+            parse_contract_str(&y).is_err(),
+            "an invented from_verdict must fail to PARSE, not merely lint"
+        );
+    }
+
+    /// The upward reasons EXIST. Without `REMEASURED`, the only way to record
+    /// an honest re-measurement that improved a verdict would be to lie about
+    /// the reason -- and a ratchet that punishes honesty produces dishonest
+    /// ledgers.
+    #[test]
+    fn parity_019_an_upward_transition_is_recordable() {
+        let y = good_yaml().replace("      verdict: PARITY\n", "      verdict: BETTER\n")
+            + concat!(
+                "  downgrades:\n    - entry_point: \"apr run --gpu\"\n",
+                "      reason: REMEASURED\n",
+                "      owner: \"pillar-4\"\n",
+                "      recorded_on: \"2026-08-21\"\n",
+                "      recheck_by: \"2026-10-31\"\n",
+                "      from_verdict: WORSE\n",
+                "      to_verdict: BETTER\n",
+            );
+        assert!(
+            errors_of(&y).is_empty(),
+            "recording an honest improvement must be possible: {:?}",
+            errors_of(&y)
+        );
+    }

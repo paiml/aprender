@@ -317,3 +317,160 @@ fn today_utc_is_a_valid_iso_date() {
     let t = today_utc().expect("system clock is after the epoch");
     assert!(parse_iso_date(&t).is_some(), "today_utc gave {t:?}");
 }
+
+// ==========================================================================
+// THE EXCUSE BUDGET.
+//
+// `Downgrade::is_overdue` bounds how LONG one excuse lasts. Nothing bounded how
+// MANY may be outstanding at once, and the two are independent: a fresh,
+// in-date, owned, closed-vocabulary record for EVERY row drives `__MEASURED__`
+// to zero with every individual rule satisfied and every gate green. Each
+// record impeccable; the aggregate a ledger that has stopped making claims.
+// ==========================================================================
+
+fn excuse(entry: &str, recheck_by: &str) -> Downgrade {
+    Downgrade {
+        entry_point: entry.into(),
+        reason: Some(DowngradeReason::ReceiptMissing),
+        from_verdict: Some(Verdict::Worse),
+        to_verdict: Some(Verdict::Unmeasured),
+        owner: "pillar-4".into(),
+        recorded_on: LedgerDate::unchecked("2026-08-21"),
+        recheck_by: LedgerDate::unchecked(recheck_by),
+        detail: None,
+        extra: std::collections::BTreeMap::new(),
+    }
+}
+
+fn named_row(entry: &str, verdict: Option<Verdict>) -> ParityRow {
+    let mut r = row(verdict, "2099-01-01");
+    r.entry_point = entry.into();
+    r
+}
+
+/// The ledger in the tree today: one excuse against three measured rows.
+#[test]
+fn excuse_budget_allows_a_minority_of_excused_rows() {
+    let l = ParityLedger {
+        rows: vec![
+            named_row("a", Some(Verdict::Worse)),
+            named_row("b", Some(Verdict::Parity)),
+            named_row("c", Some(Verdict::NotComparable)),
+            named_row("d", Some(Verdict::Unmeasured)),
+        ],
+        downgrades: vec![excuse("d", "2099-01-01")],
+        ..ParityLedger::default()
+    };
+    assert_eq!(l.excuse_budget("2026-08-21"), (1, 3));
+}
+
+/// The drain-to-zero attack: an impeccable record for every row. Every
+/// individual rule holds and the aggregate must not.
+#[test]
+fn excuse_budget_refuses_a_ledger_excused_into_silence() {
+    let l = ParityLedger {
+        rows: vec![
+            named_row("a", Some(Verdict::Unmeasured)),
+            named_row("b", Some(Verdict::Unmeasured)),
+            named_row("c", Some(Verdict::Unmeasured)),
+        ],
+        downgrades: vec![
+            excuse("a", "2099-01-01"),
+            excuse("b", "2099-01-01"),
+            excuse("c", "2099-01-01"),
+        ],
+        ..ParityLedger::default()
+    };
+    let (spent, allowed) = l.excuse_budget("2026-08-21");
+    assert_eq!((spent, allowed), (3, 0));
+    assert!(spent > allowed, "three debts against no measurement");
+}
+
+/// The budget has GIVE: paying a debt buys the capacity to take another. A
+/// bound with no give is what made the honest `apr code` correction
+/// mechanically forbidden, and a ratchet that punishes honesty produces
+/// dishonest ledgers.
+#[test]
+fn excuse_budget_grows_as_debts_are_paid() {
+    let mut l = ParityLedger {
+        rows: vec![
+            named_row("a", Some(Verdict::Unmeasured)),
+            named_row("b", Some(Verdict::Unmeasured)),
+        ],
+        downgrades: vec![excuse("a", "2099-01-01"), excuse("b", "2099-01-01")],
+        ..ParityLedger::default()
+    };
+    let (spent, allowed) = l.excuse_budget("2026-08-21");
+    assert!(spent > allowed, "2 excused, 0 measured: over budget");
+
+    // Re-measure `a`.
+    l.rows[0].verdict = Some(Verdict::Worse);
+    l.downgrades.remove(0);
+    let (spent, allowed) = l.excuse_budget("2026-08-21");
+    assert_eq!((spent, allowed), (1, 1));
+    assert!(spent <= allowed, "paying one debt makes room for the other");
+}
+
+/// An OVERDUE record spends no budget -- it also excuses nothing, which is
+/// what makes the debt come due rather than the ledger silently loosen.
+#[test]
+fn excuse_budget_ignores_overdue_records() {
+    let l = ParityLedger {
+        rows: vec![
+            named_row("a", Some(Verdict::Unmeasured)),
+            named_row("b", Some(Verdict::Worse)),
+        ],
+        downgrades: vec![excuse("a", "2020-01-01")],
+        ..ParityLedger::default()
+    };
+    assert_eq!(l.excuse_budget("2026-08-21"), (0, 1));
+}
+
+/// Counted per unique entry point, so duplicate records cannot inflate the
+/// numerator. (PARITY-012 refuses duplicates anyway; this must not depend on
+/// that rule still holding.)
+#[test]
+fn excuse_budget_counts_rows_not_records() {
+    let l = ParityLedger {
+        rows: vec![
+            named_row("a", Some(Verdict::Unmeasured)),
+            named_row("b", Some(Verdict::Worse)),
+        ],
+        downgrades: vec![excuse("a", "2099-01-01"), excuse("a", "2099-01-01")],
+        ..ParityLedger::default()
+    };
+    assert_eq!(l.excuse_budget("2026-08-21"), (1, 1));
+}
+
+/// A record whose destination is not UNMEASURED describes a row that is still
+/// MEASURED. It must not also pay for a later, unrelated exit from the measured
+/// set -- that would make the second move free, which is the whole class of
+/// defect this file keeps closing.
+#[test]
+fn a_transition_record_does_not_double_as_an_unmeasured_excuse() {
+    let mut d = excuse("a", "2099-01-01");
+    d.to_verdict = Some(Verdict::NotComparable);
+    assert!(!d.excuses_unmeasured());
+    assert_eq!(d.destination(), Verdict::NotComparable);
+
+    let legacy = Downgrade {
+        to_verdict: None,
+        ..excuse("a", "2099-01-01")
+    };
+    assert!(legacy.excuses_unmeasured(), "the legacy shape still excuses");
+    assert_eq!(legacy.destination(), Verdict::Unmeasured);
+}
+
+/// The upward reasons are in the vocabulary, and the vocabulary renders every
+/// one of them -- so the diagnostic that lists it cannot drift from the enum.
+#[test]
+fn downgrade_reason_vocabulary_lists_every_variant() {
+    let v = DowngradeReason::vocabulary();
+    for r in DowngradeReason::all() {
+        assert!(v.contains(r.as_str()), "{} missing from {v}", r.as_str());
+    }
+    assert!(
+        v.contains("REMEASURED"),
+        "an honest re-measurement must be recordable without lying about why"
+    );
+}
