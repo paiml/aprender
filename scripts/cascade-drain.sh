@@ -56,10 +56,38 @@ fi
 # returns empty for EVERY crate and the drain reports 0/N forever.
 UA="aprender-release/${TARGET} (noah.gift@gmail.com)"
 
-CRATES=$(grep -oE 'TIERS\[[0-9]+\]="[^"]*"' scripts/cascade-publish.sh \
-         | sed 's/.*="//;s/"//' | tr ' ' '\n' | sort -u)
-TOTAL=$(printf '%s\n' "$CRATES" | grep -c .)
-[ "$TOTAL" -gt 0 ] || { echo "ERROR: no crates parsed from TIERS[]" >&2; exit 2; }
+# THE UNIVERSE IS READ FROM CARGO, NOT FROM THE CASCADE'S OWN TABLE.
+#
+# This used to be `grep -oE 'TIERS\[...' scripts/cascade-publish.sh`, which made
+# the drain's idea of "the release" a copy of the cascade's. A crate absent from
+# TIERS[] was therefore absent from TOTAL as well, so it was never published,
+# never counted, and never missed: the drain printed DRAIN COMPLETE n/n while
+# the three crates/facades crates sat unshipped (aprender#2559). Two checks
+# sharing one blind list is one check.
+#
+# Reading from `cargo metadata` across every workspace inverts that: if the
+# cascade under-covers, TOTAL exceeds what any pass can publish and the drain
+# says STUCK — loudly, instead of silently agreeing.
+#
+# Each row also carries its OWN expected version. The facades version
+# independently of the aprender line (0.4.0 vs 0.63.0, aprender#2546); a single
+# $TARGET would mark them permanently behind, and the drain would exit 2 STUCK
+# on an append-only registry — the most dangerous thing this script can report.
+UNIVERSE=$(python3 scripts/lib/cascade_universe.py "$REPO_ROOT") || {
+    echo "ERROR: cascade_universe.py failed; refusing to drain against an unknown universe" >&2
+    exit 2
+}
+# name<TAB>expected-version. Root-workspace crates are pinned to $TARGET so that
+# an explicit --target still overrides what cargo read from the manifests;
+# crates from any other workspace keep their own version.
+WANT=$(printf '%s\n' "$UNIVERSE" | REPO_ROOT="$REPO_ROOT" TARGET="$TARGET" awk -F'\t' '
+    { print $1 "\t" ($4 == ENVIRON["REPO_ROOT"] ? ENVIRON["TARGET"] : $2) }' | sort -u)
+TOTAL=$(printf '%s\n' "$WANT" | grep -c .)
+[ "$TOTAL" -gt 0 ] || { echo "ERROR: no crates in the publish universe" >&2; exit 2; }
+# Vacuity: a shrunken universe would let the drain report DRAIN COMPLETE over
+# almost nothing. 70 is the root workspace alone; anything less is a broken
+# enumeration, not a smaller repo.
+[ "$TOTAL" -ge 70 ] || { echo "ERROR vacuity: universe holds $TOTAL crates, expected 70 or more" >&2; exit 2; }
 
 # Count how many tiered crates are live on crates.io at $TARGET.
 #
@@ -79,9 +107,13 @@ TOTAL=$(printf '%s\n' "$CRATES" | grep -c .)
 # UA/TARGET pass via the environment rather than being spliced into the
 # single-quoted body: the old '"$UA"' splicing was unparseable (bashrs SC1078)
 # and broke on any character needing quoting.
+# Each line of $WANT is "<crate>\t<expected version>", so the worker compares
+# against the version THAT crate is supposed to reach rather than one global
+# target. Passing the pair through xargs keeps the single-quoted body free of
+# splicing (the SC1078 hazard the UA/TARGET env vars already document).
 count_pub() {
-    printf '%s\n' "$CRATES" | DRAIN_UA="$UA" DRAIN_TARGET="$TARGET" xargs -P 8 -I{} bash -c '
-        crate="$1"
+    printf '%s\n' "$WANT" | DRAIN_UA="$UA" xargs -P 8 -I{} bash -c '
+        IFS="$(printf "\t")" read -r crate DRAIN_TARGET <<< "$1"
         n=${#crate}
         if   [ "$n" -eq 1 ]; then p="1/${crate}"
         elif [ "$n" -eq 2 ]; then p="2/${crate}"
