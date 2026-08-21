@@ -266,7 +266,7 @@ assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.14"
 proptest = "1.6"
-jugar-probar = { workspace = true, features = ["tui"] }
+jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib", features = ["tui"] }
 regex = "1.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 axum-test = "16"

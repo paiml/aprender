@@ -173,9 +173,9 @@ criterion = { workspace = true }
 # until aprender-core does).
 renacer = { path = "../aprender-profile", package = "aprender-profile" }
 tempfile = "3.14"  # For format module tests
-jugar-probar = { workspace = true }  # TUI/GUI testing framework with coverage tracking (spec §8)
+jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
-provable-contracts = { workspace = true }  # Contract enforcement (dev-only)
+provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }  # Contract enforcement (dev-only)
 # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only).
 # Same publish-time cycle break as renacer above.
 entrenar = { path = "../aprender-train", package = "aprender-train" }
