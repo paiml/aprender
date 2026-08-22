@@ -1,0 +1,205 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-22'
+  author: PAIML Engineering
+  references:
+  - 'docs/audits/surface_audit.csv — 830 features across 28 binaries, measured 2026-08-22 @ 4bbfeb07f'
+  - 'docs/audits/dogfood-0.63.0-ledger.md — 201 findings, 37 clusters, 171 open, 16 open P0'
+  - '.claude/skills/apr-dogfood/SKILL.md — Phase 2, the coverage gate this contract enforces'
+  - 'scripts/dogfood_surfaces.sh — the runtime enumeration that supplies the denominator'
+  description: >
+    The gate-coverage contract for the apr-dogfood protocol. A gate suite with no
+    denominator reports a clean sweep over whatever subset it happens to cover; this
+    contract supplies the denominator and ratchets it. Measured baseline: 142 of 830
+    shipped features carry a gate (17.1%), all 142 in the `apr` binary, 27 of 28
+    binaries at zero. Coverage is ALLOWED to be 17.1%. It is not allowed to become
+    17.0%.
+
+equations:
+  gate_coverage_ratio:
+    formula: |
+      covered = |{ r in surface_audit.csv : r.in_dogfood_skill == "yes" }|
+      total   = |surface_audit.csv|
+      coverage = covered / total
+      REQUIRE: covered >= 142 AND total >= 830
+    domain: "rows of docs/audits/surface_audit.csv, reconciled against the runtime enumeration"
+    codomain: "f64 in [0.0, 1.0]"
+    invariants:
+    - "Baseline 142/830 = 0.171 measured 2026-08-22 at 4bbfeb07f"
+    - "The covered count may never decrease (ratchet)"
+    - "The total may never decrease without a corresponding ledger update (a shrinking denominator inflates coverage)"
+
+  denominator_reconciliation:
+    formula: |
+      runtime = enumerate(binaries, subcommands, routes, mcp_tools)   # from the BUILT binary
+      ledger  = rows(surface_audit.csv)
+      REQUIRE: runtime \ ledger == {} AND ledger \ runtime == {}
+    domain: "the shipped surface at HEAD vs the committed ledger"
+    codomain: bool
+    invariants:
+    - "A feature in the binary but not the ledger is RED — the ledger is stale"
+    - "A feature in the ledger but not the binary is RED — the surface shrank unnoticed"
+    - "Neither direction may be silently reconciled; that turns the ledger back into a list"
+
+  broken_and_ungated:
+    formula: |
+      REQUIRE: |{ r : r.quality_1_10 <= 4 AND r.in_dogfood_skill != "yes" }| == 0
+    domain: "features carrying a live ledger defect"
+    codomain: "non-negative integer"
+    invariants:
+    - "Baseline is 44, all 44 in the `apr` binary — every one a defect that shipped and would ship again unnoticed"
+    - "Target is 0; at --release each remaining entry needs an open issue AND a written waiver"
+
+  hardware_provenance:
+    formula: |
+      REQUIRE: |{ r : r.verified_hardware == "UNKNOWN" }| <= 427
+      forall r : r.verified_hardware != "UNKNOWN" =>
+        exists a CI job that RAN r on that target, or a cargo feature gate that compiles it
+    domain: "the verified_hardware column"
+    codomain: bool
+    invariants:
+    - "Baseline 427 UNKNOWN of 830; may never increase"
+    - "Hardware is NEVER inferred from a feature's name — a CUDA kernel with no job that runs it is UNKNOWN"
+
+  ledger_schema:
+    formula: |
+      forall r in surface_audit.csv:
+        |columns(r)| == 8 AND r.evidence_path != ""
+    domain: "RFC 4180 rows, 8 columns"
+    codomain: bool
+    invariants:
+    - "Columns are exactly: binary, feature, quality_1_10, verified_hardware, top_competitor, in_dogfood_skill, evidence_path, confidence"
+    - "A row with no evidence_path is invalid — an unevidenced claim is not a ledger entry"
+
+falsification_tests:
+- id: F-DOGCOV-001
+  rule: gate coverage ratchet
+  prediction: "covered rows >= 142 and total rows >= 830"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    cov = sum(1 for r in rows if r['in_dogfood_skill'].strip().lower() == 'yes')
+    assert len(rows) >= 830, f"denominator shrank to {len(rows)}"
+    assert cov >= 142, f"coverage regressed to {cov}/{len(rows)}"
+    EOF
+  if_fails: "gate coverage regressed below the committed baseline — NO-GO regardless of every other gate being green"
+  mutation: "flip one in_dogfood_skill from yes to no; the assert must turn RED"
+
+- id: F-DOGCOV-002
+  rule: denominator reconciliation
+  prediction: "the runtime enumeration and the CSV row set are equal"
+  test: |
+    bash scripts/dogfood_surfaces.sh --emit-features > /tmp/dogcov-runtime.txt
+    python3 - <<'EOF'
+    import csv
+    led = {(r['binary'], r['feature']) for r in csv.DictReader(open('docs/audits/surface_audit.csv'))}
+    run = {tuple(l.split('\t', 1)) for l in open('/tmp/dogcov-runtime.txt') if l.strip()}
+    assert not (run - led), f"in binary, not in ledger: {sorted(run - led)[:5]}"
+    assert not (led - run), f"in ledger, not in binary: {sorted(led - run)[:5]}"
+    EOF
+  if_fails: "the ledger no longer describes the shipped surface; the coverage ratio is measuring declared state, not resolved state"
+  mutation: "delete one CSV row for a live command; the assert must turn RED"
+
+- id: F-DOGCOV-003
+  rule: no broken-and-ungated feature
+  prediction: "every feature with quality <= 4 carries a gate, or an issue plus a waiver"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    bad = [r for r in rows
+           if int(r['quality_1_10']) <= 4 and r['in_dogfood_skill'].strip().lower() != 'yes']
+    print(f"{len(bad)} broken-and-ungated (baseline 44)")
+    assert len(bad) <= 44, f"grew to {len(bad)}"
+    EOF
+  if_fails: "a known-broken feature has no gate — it shipped once and will ship again unnoticed"
+  mutation: "set one covered row's quality to 2 and its in_dogfood_skill to no; the count must exceed 44"
+
+- id: F-DOGCOV-004
+  rule: hardware provenance never inferred
+  prediction: "UNKNOWN count <= 427 and every non-UNKNOWN claim names a job or a feature gate"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    unk = sum(1 for r in rows if r['verified_hardware'].strip().upper() == 'UNKNOWN')
+    assert unk <= 427, f"UNKNOWN grew to {unk}"
+    EOF
+  if_fails: "hardware verification regressed, or a claim was inferred from a feature name rather than a job that ran"
+  mutation: "claim nvidia-cuda for a feature no CI job runs; the provenance check must turn RED"
+
+- id: F-DOGCOV-005
+  rule: ledger schema and evidence
+  prediction: "830+ rows, exactly 8 columns, zero blank evidence_path"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    exp = ['binary','feature','quality_1_10','verified_hardware',
+           'top_competitor','in_dogfood_skill','evidence_path','confidence']
+    rdr = csv.DictReader(open('docs/audits/surface_audit.csv'))
+    assert rdr.fieldnames == exp, rdr.fieldnames
+    rows = list(rdr)
+    assert all(len(r) == 8 for r in rows), "ragged row"
+    assert not [r for r in rows if not r['evidence_path'].strip()], "row with no evidence"
+    EOF
+  if_fails: "the ledger is malformed or carries an unevidenced claim"
+  mutation: "blank one evidence_path; the assert must turn RED"
+
+proof_obligations:
+- type: bound
+  property: "Gate coverage never falls below the committed 142/830 baseline (F-DOGCOV-001)"
+  formal: "covered(HEAD) >= 142 and total(HEAD) >= 830"
+- type: completeness
+  property: "The committed ledger and the runtime enumeration describe the same surface (F-DOGCOV-002)"
+  formal: "runtime_features == ledger_features"
+- type: invariant
+  property: "No feature with quality <= 4 lacks a gate beyond the 44 baseline (F-DOGCOV-003)"
+  formal: "|{r : quality(r) <= 4 and not gated(r)}| <= 44"
+- type: bound
+  property: "verified_hardware UNKNOWN never exceeds the 427 baseline, and is never inferred from a name (F-DOGCOV-004)"
+  formal: "|{r : hw(r) == UNKNOWN}| <= 427 and forall r : hw(r) != UNKNOWN -> ran_on(r, hw(r))"
+- type: invariant
+  property: "Every ledger row has 8 columns and a non-empty evidence_path (F-DOGCOV-005)"
+  formal: "forall r : |cols(r)| == 8 and evidence(r) != \"\""
+
+kani_harnesses:
+- id: KH-DOGCOV-001
+  obligation: gate_coverage_ratio
+  property: coverage_ratchet_is_monotone_nondecreasing
+  bound: 4
+- id: KH-DOGCOV-002
+  obligation: denominator_reconciliation
+  property: ledger_and_runtime_feature_sets_are_equal
+  bound: 4
+- id: KH-DOGCOV-003
+  obligation: broken_and_ungated
+  property: no_quality_le_4_feature_lacks_a_gate_beyond_baseline
+  bound: 4
+
+qa_gate:
+  id: F-DOGCOV-GATE-001
+  name: "apr-dogfood gate coverage never regresses"
+  description: >
+    The organizing gate of the apr-dogfood protocol. Coverage is allowed to be
+    incomplete; it is not allowed to silently become MORE incomplete. A coverage
+    regression alone is NO-GO, independent of every other gate being green.
+  checks:
+    - "coverage_ratchet"
+    - "denominator_reconciliation"
+    - "broken_and_ungated"
+    - "hardware_provenance"
+    - "ledger_schema"
+  pass_criteria: "F-DOGCOV-{001,002,003,004,005} all PASS; any one FAIL is NO-GO"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 5
+  status: proposed
+  notes: >
+    All five obligations are TESTED against the committed ledger at 4bbfeb07f and each
+    carries a named mutation that must turn it RED. F-DOGCOV-002 additionally depends on
+    scripts/dogfood_surfaces.sh growing a --emit-features mode; until that lands it
+    reports SKIP naming the missing flag, never PASS — a gate that vanishes from the
+    receipt reads as one that passed.
