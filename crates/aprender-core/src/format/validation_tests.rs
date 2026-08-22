@@ -421,3 +421,5 @@ mod validation_tests_structure;
 mod validation_tests_tooling_ops;
 #[path = "validation_tests_report.rs"]
 mod validation_tests_report;
+#[path = "validation_tests_truncation_2612.rs"]
+mod validation_tests_truncation_2612;

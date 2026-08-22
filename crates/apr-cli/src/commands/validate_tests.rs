@@ -849,3 +849,7 @@ fn min_score_is_refused_when_no_check_ran() {
         "{err}"
     );
 }
+
+// Issue #2612: truncated `.apr` must not validate clean.
+#[path = "validate_tests_truncation_2612.rs"]
+mod validate_tests_truncation_2612;

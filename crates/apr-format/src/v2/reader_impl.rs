@@ -119,6 +119,57 @@ fn parse_tensor_index_section(
     Ok(tensor_index)
 }
 
+/// The minimum file length the container's own header + tensor index imply
+/// (issue #2612).
+///
+/// # The invariant
+///
+/// ```text
+/// data_offset + max(entry.offset + entry.size) <= file_length
+/// ```
+///
+/// Every byte of every tensor the index declares must exist inside the file.
+/// This is pure arithmetic over the container's self-description: it reads no
+/// tensor data, so it costs O(tensor_count) regardless of file size, and it
+/// holds for every APR v2 writer, because the on-disk order is header,
+/// metadata, index, data, footer — the declared extent of a complete file is
+/// always bounded by EOF.
+///
+/// The GGUF path has enforced the same invariant since GH-707 / S1-FIX
+/// (`Truncated GGUF: file is N bytes but tensor data starts at byte M`). The
+/// APR path had no equivalent, and the asymmetry is exactly why a `.apr`
+/// truncated to 4.5% of its length validated clean: header, metadata and index
+/// all live in FRONT of the data section, so every structure the reader
+/// actually parses survives the truncation intact.
+///
+/// # Errors
+///
+/// Returns [`V2FormatError`] when `data` is not an APR v2 container at all (too
+/// short for the header, or wrong magic) — the caller cannot conclude anything
+/// about truncation in that case — or when the tensor index itself cannot be
+/// parsed, which IS evidence of a damaged file and should be reported as such.
+pub fn required_file_len(data: &[u8]) -> Result<u64, V2FormatError> {
+    let header = AprV2Header::from_bytes(data)?;
+    let tensor_index =
+        parse_tensor_index_section(data, header.tensor_index_offset, header.tensor_count)?;
+
+    let mut required = header.data_offset;
+    for entry in &tensor_index {
+        let end = header
+            .data_offset
+            .checked_add(entry.offset)
+            .and_then(|start| start.checked_add(entry.size))
+            .ok_or_else(|| {
+                V2FormatError::InvalidTensorIndex(format!(
+                    "tensor '{}' extent overflows u64 (offset {}, size {})",
+                    entry.name, entry.offset, entry.size
+                ))
+            })?;
+        required = required.max(end);
+    }
+    Ok(required)
+}
+
 impl AprV2Reader {
     /// Read from bytes
     ///
