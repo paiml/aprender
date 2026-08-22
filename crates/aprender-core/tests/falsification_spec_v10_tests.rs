@@ -494,8 +494,13 @@ fn run_apr(args: &[&str]) -> (bool, String, String) {
 /// #2522: a skipped gate returns early and the harness prints `ok`. 30 call
 /// sites do this, so the suite could report "140 passed" while proving nothing
 /// -- the exact vacuity the repo's skip-class doctrine forbids ("a skip must be
-/// counted and bounded, never silent"). The count is now bounded by
-/// `f_meta_002_fixture_skip_class_is_bounded`, which is a shrink-only ratchet.
+/// counted and bounded, never silent").
+///
+/// This macro is only the tidiest form of that skip. `f_meta_002_skip_class_is_bounded`
+/// bounds the whole class -- these 30 plus the 32 hand-written
+/// `eprintln!("SKIP: ..."); return;` pairs elsewhere in the suite -- as a
+/// shrink-only ratchet. Counting only the macro would have been a ratchet on
+/// half the universe.
 macro_rules! require_model {
     ($path_opt:expr, $name:expr) => {
         match $path_opt {
@@ -515,11 +520,89 @@ macro_rules! require_model {
 // Section META: the suite's gates on itself (aprender#2522)
 // =============================================================================
 
-/// `require_model!` call sites, as measured on 2026-08-22 at `bb2bd5e73`.
-/// SHRINK-ONLY: every one of these is a gate that reports `ok` without testing
-/// anything when the fixture is absent, which is how this suite could be 38-red
-/// and 30-vacuous while reporting nothing to anyone.
-const FIXTURE_SKIP_SITE_BASELINE: usize = 30;
+/// Every site in this suite at which a `#[test]` can return without asserting.
+///
+/// SHRINK-ONLY. Each one is a gate that prints `ok` while proving nothing,
+/// which is how this suite could be 38-red and silently vacuous for months
+/// while reporting to nobody.
+///
+/// #2627: the first version of this ratchet counted `require_model!(` sites
+/// alone and called that "the fixture-skip class". It is not the class. A
+/// `require_model!` is only the tidiest of the early returns here; the suite
+/// also skips on `which_ollama().is_none()`, on `!apr_ok`, on a server that
+/// never became ready, on a GPU that is absent -- hand-written
+/// `eprintln!("SKIP: ..."); return;` pairs that the macro-only count could not
+/// see. Bounding 30 of them and naming the bound after the whole class is the
+/// same defect the suite exists to catch: a measurement whose universe is
+/// smaller than the thing it claims to cover.
+///
+/// The universe is now BOTH halves, measured together (see `count_skip_sites`):
+///
+/// | half | measured 2026-08-22 |
+/// |---|---|
+/// | `require_model!(` fixture gates | 30 |
+/// | other early `return;` inside a `#[test]` | 32 |
+/// | **total** | **62** |
+///
+/// What this still does NOT cover, stated rather than implied: a gate that
+/// asserts something trivially true, and a gate whose `assert!` is inside a
+/// conditional that never fires. Those are vacuous without returning early,
+/// and no textual count reaches them.
+const SKIP_SITE_BASELINE: usize = 62;
+
+/// How far below the baseline a measurement may drift before the ratchet
+/// demands it be re-recorded. A gain that is not locked in is a gain that gets
+/// silently spent.
+const SKIP_SITE_SLACK: usize = 5;
+
+/// Count the two halves of the silent-skip class in one fragment.
+///
+/// Returns `(require_model_sites, early_returns_in_tests)`.
+///
+/// The second half needs to know whether a `return;` sits inside a `#[test]`
+/// function or inside a plain helper: `collect_command_names` in the CLI
+/// fragment recurses and returns early three times as ordinary control flow,
+/// and counting those would make the ratchet fire on a refactor that changed
+/// no gate.
+///
+/// A test's extent is delimited by rustfmt's layout -- from the `fn` line that
+/// follows `#[test]` to the next line that is exactly `}` -- and deliberately
+/// NOT by counting braces. Brace counting was tried first and undercounted
+/// f_ollama_00 by four: `s.split([',', '}'])` on line 116 carries a `'}'` CHAR
+/// LITERAL, which drove the depth negative and ended the function 53 lines
+/// early. A miscount here is invisible in exactly the way this ratchet exists
+/// to prevent, so the rule that needs no lexer wins.
+fn count_skip_sites(text: &str) -> (usize, usize) {
+    let fixture = text.matches(concat!("require_model", "!(")).count();
+
+    let mut early = 0usize;
+    let mut saw_test_attr = false;
+    let mut in_test = false;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if in_test {
+            if line == "}" {
+                in_test = false;
+                saw_test_attr = false;
+            } else if !trimmed.starts_with("//") && trimmed.contains("return;") {
+                early += 1;
+            }
+            continue;
+        }
+        if trimmed.starts_with("#[test]") {
+            saw_test_attr = true;
+        } else if saw_test_attr && trimmed.starts_with("fn ") {
+            in_test = true;
+        } else if saw_test_attr && !trimmed.is_empty() && !trimmed.starts_with('#') {
+            // Other attributes (#[ignore], #[should_panic]) may sit between
+            // #[test] and fn; anything else means that #[test] was not ours.
+            saw_test_attr = false;
+        }
+    }
+
+    (fixture, early)
+}
 
 #[test]
 fn f_meta_001_every_include_is_included() {
@@ -563,31 +646,55 @@ fn f_meta_001_every_include_is_included() {
 }
 
 #[test]
-fn f_meta_002_fixture_skip_class_is_bounded() {
-    // The skip class may only shrink. A new `require_model!` site is a new gate
-    // that passes when its fixture is missing, and CI has no fixtures.
+fn f_meta_002_skip_class_is_bounded() {
+    // The skip class may only shrink. A new early return inside a #[test] is a
+    // new gate that reports `ok` when its precondition is absent, and CI has
+    // neither models, nor ollama, nor a GPU.
     //
     // Counted over the `includes/` fragments only. Counting the root file too
     // would make THIS function part of its own universe -- the same
     // self-matching defect F-CONTRACT-006 shipped with.
     let tests_dir = crate_dir("aprender-core").join("tests");
-    let mut sites = 0usize;
-    for name in suite_include_names() {
+    let mut fixture = 0usize;
+    let mut early = 0usize;
+    let names = suite_include_names();
+    assert!(
+        !names.is_empty(),
+        "F-META-002: the suite declares no fragments -- an empty universe is \
+         not a measurement"
+    );
+    for name in names {
         let text = std::fs::read_to_string(tests_dir.join("includes").join(&name))
             .unwrap_or_else(|e| panic!("suite include {name} unreadable: {e}"));
-        sites += text.matches(concat!("require_model", "!(")).count();
+        let (f, e) = count_skip_sites(&text);
+        fixture += f;
+        early += e;
     }
+    let sites = fixture + early;
+
+    // The counter itself must not be inert. `require_model!` is known to be a
+    // real, non-empty half of this class; if the scan returns zero for it the
+    // measurement is broken, not the suite.
     assert!(
-        sites <= FIXTURE_SKIP_SITE_BASELINE,
-        "F-META-002: {sites} `require_model!` sites against a baseline of \
-         {FIXTURE_SKIP_SITE_BASELINE}. A fixture-gated test reports `ok` when the \
-         fixture is absent -- convert it to a real assertion instead of raising \
-         the baseline."
+        fixture > 0 && early > 0,
+        "F-META-002: counted {fixture} fixture gates and {early} other early \
+         returns. A zero on either half means count_skip_sites stopped matching, \
+         not that the skips went away."
+    );
+
+    assert!(
+        sites <= SKIP_SITE_BASELINE,
+        "F-META-002: {sites} silent-skip sites ({fixture} `require_model!` + \
+         {early} other early returns inside #[test]) against a baseline of \
+         {SKIP_SITE_BASELINE}. A gate that returns before asserting reports `ok` \
+         while proving nothing -- convert it to a real assertion instead of \
+         raising the baseline."
     );
     assert!(
-        sites + 5 >= FIXTURE_SKIP_SITE_BASELINE,
-        "F-META-002: fixture-skip sites fell to {sites}. Lower \
-         FIXTURE_SKIP_SITE_BASELINE to {sites} so the gain is locked in."
+        sites + SKIP_SITE_SLACK >= SKIP_SITE_BASELINE,
+        "F-META-002: silent-skip sites fell to {sites} ({fixture} fixture + \
+         {early} other). Lower SKIP_SITE_BASELINE to {sites} so the gain is \
+         locked in."
     );
 }
 

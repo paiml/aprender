@@ -212,7 +212,16 @@ jobs:
           {
             echo "## Coverage — $(date -u +%Y-%m-%d)"
             echo ""
-            echo "**Line coverage: ${{ steps.cov.outputs.pct }}** (target ≥ ${COV_THRESHOLD:-95}%)"
+            # aprender#2627: this read `${COV_THRESHOLD:-95}`. COV_THRESHOLD is
+            # a *Makefile* variable; it is not exported, so the shell here never
+            # had it and the `:-95` fallback fired on every run since the line
+            # was written. The summary therefore always printed the aspirational
+            # 95% while `make coverage` enforces COV_FLOOR (88) -- the report
+            # named a gate that is not the gate. Read both from the Makefile so
+            # the summary cannot drift from what is enforced.
+            COV_FLOOR="$(make -s --eval='print-floor: ; @echo $(COV_FLOOR)' print-floor 2>/dev/null || echo unknown)"
+            COV_THRESHOLD="$(make -s --eval='print-target: ; @echo $(COV_THRESHOLD)' print-target 2>/dev/null || echo unknown)"
+            echo "**Line coverage: ${{ steps.cov.outputs.pct }}** (enforced floor ${COV_FLOOR}%, target ${COV_THRESHOLD}%)"
             echo ""
             echo "### Top uncovered functions (\`pmat query --coverage-gaps --exclude-tests\`)"
             echo '```'

@@ -391,6 +391,20 @@ jobs:
     runs-on: [self-hosted, X64, Linux, clean-room]
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
+      # Same definition as workspace-test (:106). aprender#2627: the
+      # model-tests step below was added with workspace-test's mount lines
+      # copied verbatim, but PR_OR_REF is JOB-level env there and this job
+      # never had it. An undefined shell variable is the empty string, so
+      # `.../registry/${PR_OR_REF}` collapsed to `.../registry/` -- the SHARED
+      # PARENT of every PR's registry, bind-mounted AS the cargo registry. Its
+      # children are PR numbers, not cache/index/src, so every dependency
+      # re-downloads and writes into the parent. The per-run target dir
+      # likewise collapsed to `.../aprender-ci//run-<id>`, outside the tree
+      # any other step reuses. Nothing errors; the step just silently stops
+      # being the thing its own comment describes. check_workflow_env_defined.sh
+      # now fails closed on any run: block interpolating a name its job does
+      # not define.
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
     steps:
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Same guard as workspace-test (:92) and mutants (:435). This job was
@@ -743,6 +757,17 @@ jobs:
       # targets shell out to the built binary and take minutes.
       - name: aprender-profile lib tests (was gated by nothing)
         run: cargo test -p aprender-profile --lib
+      # aprender#2627: `PR_OR_REF` is job-level env on workspace-test. The
+      # model-tests step below was written by copying workspace-test's docker
+      # mount lines into THIS job, which did not define it -- so both bind
+      # sources collapsed to a trailing-slash path and the per-PR registry /
+      # per-run target dir the step's own comment describes never engaged.
+      # Nothing errors on an unset shell variable; it is simply the empty
+      # string. Case table first, per the convention above.
+      - name: Workflow env-var case table
+        run: bash scripts/check_workflow_env_defined.sh --self-test
+      - name: "A `run:` block may only interpolate names its job defines"
+        run: bash scripts/check_workflow_env_defined.sh
       # aprender#2522: the `model-tests` feature gates three integration targets
       # with 156 gates between them, and NO workflow named any of them. The
       # workspace `--lib` line cannot reach an integration target, and the

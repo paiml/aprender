@@ -231,13 +231,24 @@ fn f_arch_006_realizar_has_independent_format_detection() {
     // #2522: `../realizar` was archived by APR-MONO; realizar is now the [lib]
     // name of crates/aprender-serve. The sibling lookup could only ever miss,
     // and the miss branch returns `ok`.
+    //
+    // #2627: repointing the path was only half the fix. The `if !exists {
+    // return; }` escape hatch came across VERBATIM, so the gate was still
+    // one file-move away from being permanently vacuous -- and this time it
+    // would be vacuous while LOOKING correct, because the path it names is a
+    // real one. "the file is missing" and "the file lacks the symbol" must not
+    // share the verdict `ok`; that equivalence is the whole reason 38 gates in
+    // this suite reported a symbol as absent when it had merely moved. Assert
+    // the target exists, then assert its contents.
     let realizar_format = crate_dir("aprender-serve").join("src").join("format.rs");
 
-    if !realizar_format.exists() {
-        // If realizar is not a sibling, skip gracefully
-        eprintln!("F-ARCH-006: realizar not found at sibling path, checking via code");
-        return;
-    }
+    assert!(
+        realizar_format.is_file(),
+        "F-ARCH-006: format detection must live in the serving crate, but {} \
+         does not exist. If it moved, repoint this gate -- do not let a missing \
+         target read as a pass.",
+        realizar_format.display()
+    );
 
     let content =
         std::fs::read_to_string(&realizar_format).expect("F-ARCH-006: format.rs readable");
