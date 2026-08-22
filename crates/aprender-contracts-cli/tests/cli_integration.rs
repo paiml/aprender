@@ -1,3 +1,29 @@
+//! SIDE EFFECT, DISCLOSED: this target DIRTIES TRACKED GENERATED CACHES.
+//!
+//! Running it writes `.pv/contracts.idx`, `.pv/contracts.idx.mtime` and
+//! `.pv/lint-previous.json` — all three are tracked in git. Isolated by
+//! bisection (`git checkout .pv/`, run this target, `git status`), so the
+//! attribution is measured rather than inferred.
+//!
+//! This matters because the PR that wires this target into ci.yml's integration
+//! step makes CI run it for the first time: a CI working tree that goes dirty
+//! can red an unrelated guard, or produce a diff nobody wrote. Restore with
+//! `git checkout .pv/` — never hand-edit those files.
+//!
+//! NOT CONTAINED, deliberately, and here is the reason rather than a shrug:
+//! `pv_surface_gate.rs` solves the same problem with `pv_in(dir, ..)`, which
+//! spawns the `pv` BINARY with `.current_dir(scratch)`. That fix does not
+//! transfer here, because this file does not spawn a subprocess at all — it
+//! calls `parse_contract` / `validate_contract` IN-PROCESS, so the cache path
+//! follows the test process's own cwd. Changing that cwd is process-wide and
+//! would race every other test in the binary, which cargo runs in threads.
+//! Containing it properly means giving the library an explicit cache-root
+//! parameter; that is a real change and does not belong in this PR.
+//!
+//! Note also that `pv_bin()` below is currently UNUSED — a leftover from when
+//! this file did shell out. Left in place rather than deleted so the deletion
+//! is not confused with the disclosure above.
+
 use std::path::Path;
 use std::process::Command;
 

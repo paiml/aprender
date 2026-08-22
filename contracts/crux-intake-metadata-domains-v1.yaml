@@ -229,7 +229,7 @@ falsification_tests:
     rule: "BEAT_INCUMBENTS is not silently substituted for CRUX_COMPETITORS"
     prediction: "The BEAT matcher rejects huggingface, vllm and llama_cpp, so the two lists cannot be merged as redundant"
     test: "cargo test -p aprender-contracts --lib crux_intake::beat_incumbents_cannot_name_the_crux_corpus"
-    if_fails: "A well-meant de-duplication has imported the BEAT list's inability to name 79% of the crux corpus"
+    if_fails: "A well-meant de-duplication has imported the BEAT list's inability to name 80% of the crux corpus"
 
   - id: FALSIFY-CRUX-INTAKE-006
     rule: "The corpus itself satisfies all three domains"

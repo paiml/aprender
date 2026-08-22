@@ -46,13 +46,20 @@
 //!            directions), real invocation of all 17 contract-taking
 //!            subcommands, contract-input rejection across the same 17,
 //!            `--version` parseability.
-//!   NOT COVERED (the other 37 subcommands' behaviour): `pv lint` warning
-//!            ratchet, `pv diff` semver suggestions, `pv score`, `pv certify`,
-//!            `pv coverage`, `pv query`, `pv graph`, `pv kaizen`, `pv migrate`,
-//!            and the generator subcommands' output *content*
-//!            (kani/probar/coq/flux/tla/lean/...) — for those, this file
-//!            asserts only that the command runs and decides, never that what
-//!            it emits is right.
+//!   NOT COVERED, and the two tiers differ — state them separately, because
+//!            conflating them is exactly the overstatement this gate exists to
+//!            prevent:
+//!              - the 16 OTHER contract-taking subcommands (17 real-invocation
+//!                minus `pv validate`) are run for real and must DECIDE rather
+//!                than panic, but nothing checks that what they emit is RIGHT:
+//!                `pv score`, `pv certify`, `pv coverage`, `pv status`,
+//!                `pv invariants`, and the generator subcommands' output
+//!                *content* (kani/probar/coq/flux/tla/lean/...).
+//!              - the remaining 21 subcommands are asserted only to be
+//!                DECLARED — `--help` exits 0 — and nothing more. A `pv lint`,
+//!                `pv diff`, `pv query`, `pv graph`, `pv kaizen` or
+//!                `pv migrate` whose body were `panic!()` would leave this
+//!                file GREEN. That is the honest ceiling of the 38/38 ring.
 //!
 //! DISCRIMINATION. `gate_self_test` at the bottom is the control on the control:
 //! it proves the rule table cannot be satisfied by a `pv` that prints every rule
