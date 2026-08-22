@@ -734,6 +734,17 @@ jobs:
         run: bash scripts/check_guards_are_wired.sh
       - name: Wiring guard case table
         run: bash scripts/check_guards_are_wired.sh --self-test
+      # The deepest check in the surface sweep -- real generation through
+      # /v1/chat/completions -- had never executed once: the probe binary was
+      # built without --features llm (clap advertises `llm` regardless, only the
+      # handler is gated, so it parsed and then errored "LLM features not
+      # enabled" and the sweep blamed the SERVER), and it skipped unless an
+      # operator exported a config that was already committed. Both failure
+      # modes look tidy in the output, which is why they lasted.
+      - name: dogfood live LLM probe is armed
+        run: bash scripts/check_dogfood_llm_probe_armed.sh
+      - name: dogfood LLM probe guard case table
+        run: bash scripts/check_dogfood_llm_probe_armed.sh --self-test
       # aprender-profile appeared in this file ZERO times while carrying 58
       # integration test targets. Running them found 110 failures -- 109 from a
       # single stale binary name left by the APR-MONO rename, dead since. Gated
