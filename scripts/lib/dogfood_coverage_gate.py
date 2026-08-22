@@ -176,12 +176,18 @@ def check_reconciliation(base, head, findings):
 # --------------------------------------------------------------------------
 # G2.3 -- floors, every one derived from the comparand.
 # --------------------------------------------------------------------------
-def _ratchet(findings, label, now, floor, direction):
-    """direction 'up' = now must be >= floor; 'down' = now must be <= floor."""
+def _ratchet(findings, label, now, floor, direction, gate="G2.3 floors"):
+    """direction 'up' = now must be >= floor; 'down' = now must be <= floor.
+
+    `gate` names the gate the finding belongs to. It is a parameter and not a
+    constant because the per-cluster floor reuses this helper: a G2.5 breakage
+    reported as "G2.3 floors FAIL" sends the reader to the wrong gate, and a
+    misattributed finding is only slightly better than no finding. Caught by
+    running M5 against the REAL 830-row ledger rather than only the fixture."""
     ok = now >= floor if direction == "up" else now <= floor
     arrow = ">=" if direction == "up" else "<="
     if not ok:
-        findings.append(f"G2.3 floors FAIL: {label} is {now}, must be {arrow} {floor} "
+        findings.append(f"{gate} FAIL: {label} is {now}, must be {arrow} {floor} "
                         f"(floor derived from the comparand, not from this tree)")
     return ok
 
@@ -315,7 +321,8 @@ def check_cluster_floors(base, head, base_clustered, findings, release):
         # Ratchet, derived from the comparand -- never from a literal here.
         for lab in sorted(base_c):
             ok &= _ratchet(findings, f"gates in cluster `{lab}`",
-                           head_c.get(lab, (0, 0))[1], base_c[lab][1], "up")
+                           head_c.get(lab, (0, 0))[1], base_c[lab][1], "up",
+                           gate="G2.5 per-cluster")
         # A cluster that vanishes takes its whole floor with it.
         gone = sorted(set(base_c) - set(head_c))
         if gone:
@@ -328,7 +335,8 @@ def check_cluster_floors(base, head, base_clustered, findings, release):
             ok = False
         ok &= _ratchet(findings, "clusters with ZERO gates",
                        sum(1 for _, g in head_c.values() if g == 0),
-                       sum(1 for _, g in base_c.values() if g == 0), "down")
+                       sum(1 for _, g in base_c.values() if g == 0), "down",
+                       gate="G2.5 per-cluster")
         armed = "ratchet armed from the comparand"
     else:
         # Self-closing: only reachable while `main` predates the cluster columns.

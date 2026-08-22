@@ -463,7 +463,7 @@ if [ "${1:-}" = "--self-test" ]; then
            -e 's|^demo,demo pad1,6,UNKNOWN,none,no,2,|demo,demo pad1,6,UNKNOWN,none,yes,2,|' \
            "$TD/$LEDGER" \
     && selftest_run "$TD" "gate moved between clusters" "RED" \
-         "gates in cluster \`solo-cluster\`" || FAILED=1
+         "G2.5 per-cluster FAIL: gates in cluster \`solo-cluster\`" || FAILED=1
   git -C "$TD" checkout -q -- "$LEDGER"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
