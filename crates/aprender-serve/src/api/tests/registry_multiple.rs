@@ -37,18 +37,13 @@ async fn test_registry_multiple_failures_no_state_leak() {
     let status2 = response2.status();
 
     // Both should fail gracefully with same behavior (no state corruption)
-    assert!(
-        (status1 == StatusCode::NOT_FOUND
-            || status1 == StatusCode::OK
-            || status1 == StatusCode::INTERNAL_SERVER_ERROR),
-        "First request should fail gracefully"
-    );
-    assert!(
-        (status2 == StatusCode::NOT_FOUND
-            || status2 == StatusCode::OK
-            || status2 == StatusCode::INTERNAL_SERVER_ERROR),
-        "Second request should fail gracefully"
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(status1);
+    crate::api::test_helpers::assert_no_model_status(status2);
 
     // If both fail, they should fail the same way (consistent behavior)
     if status1 != StatusCode::OK && status2 != StatusCode::OK {
@@ -98,14 +93,12 @@ async fn test_stream_resource_boundedness() {
 
     let response = result.expect("test value should be present").expect("test value should be present");
     // Must return a response, not hang
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST,
-        "Stream must return valid status, not hang indefinitely"
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Test that stream handler doesn't consume unbounded memory

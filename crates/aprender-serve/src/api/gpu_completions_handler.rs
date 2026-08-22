@@ -639,8 +639,9 @@ pub async fn openai_embeddings_handler(
     State(state): State<AppState>,
     Json(request): Json<EmbeddingRequest>,
 ) -> Result<Json<EmbeddingResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Delegate to native handler
-    realize_embed_handler(State(state), Json(request)).await
+    // Same body as /realize/embed, but named as the route the client called
+    // (aprender#2609).
+    crate::api::realize_handlers::embed_for_route(state, request, "/v1/embeddings")
 }
 
 #[cfg(test)]

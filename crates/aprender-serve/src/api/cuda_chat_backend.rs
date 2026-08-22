@@ -324,6 +324,103 @@ fn try_quantized_backend(
     ))
 }
 
+/// `AprTransformer` (f32 APR / SafeTensors CPU) backend for `/v1/chat/completions`
+/// and `/v1/chat/completions/stream`.
+///
+/// aprender#2609: the chat backend chain ran CUDA → cached → quantized →
+/// `registry_fallback`, and `registry_fallback` resolves the dense f32
+/// [`Model`](crate::layers::Model), which is `None` on an `AprTransformer` server.
+/// So both chat routes — one of them named in the server's own startup banner —
+/// were dead there while `/generate` and `/batch/generate` on the same process
+/// answered 200 with real text, because only those two had grown
+/// `try_apr_generate` / `try_apr_batch_generate`.
+///
+/// Streaming reuses [`pregenerated_sse_response`], exactly as `registry_fallback`
+/// does, so `stream: true` gets the same wire format as every other backend.
+///
+/// Returns `None` when no `AprTransformer` is resident, leaving the dense
+/// fallback unchanged.
+fn try_apr_transformer_backend(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    trace_level: Option<&str>,
+    start: Instant,
+    cancel: &CancelToken,
+) -> Option<Response> {
+    use crate::apr_transformer::GenerateConfig;
+
+    let apr_transformer = state.apr_transformer()?;
+    let tokenizer = match require_tokenizer(state) {
+        Ok(t) => t,
+        Err(r) => return Some(r),
+    };
+    let arch_hint = state.model_architecture();
+    let prompt_ids =
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
+            Ok(ids) => ids,
+            Err(r) => return Some(r),
+        };
+    let prompt_tokens = prompt_ids.len();
+    let max_tokens = request.max_tokens.unwrap_or(256);
+
+    let gen_config = GenerateConfig {
+        max_tokens,
+        temperature: request.temperature.unwrap_or(0.7),
+        cancel: cancel.clone(),
+        ..Default::default()
+    };
+
+    let generated = match apr_transformer.generate_with_cache(&prompt_ids, &gen_config) {
+        Ok(g) => g,
+        Err(e) => {
+            return Some(fail_response(
+                state,
+                super::generation_error_status(&e),
+                format!("APR generation failed: {e}"),
+            ))
+        },
+    };
+
+    let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
+    let completion_tokens = token_ids.len();
+
+    if request.stream {
+        state
+            .metrics
+            .record_success(completion_tokens, start.elapsed());
+        return Some(pregenerated_sse_response(
+            token_ids,
+            tokenizer,
+            request_id.to_string(),
+            request.model.clone(),
+            request.stop.as_deref(),
+            max_tokens,
+        ));
+    }
+
+    let text = match tokenizer.decode(&token_ids) {
+        Ok(t) => clean_chat_output(&t),
+        Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
+    };
+
+    let latency = start.elapsed();
+    state.metrics.record_success(completion_tokens, latency);
+    Some(build_chat_response(
+        request_id.to_string(),
+        request.model.clone(),
+        text,
+        prompt_tokens,
+        completion_tokens,
+        max_tokens,
+        request.stop.as_deref(),
+        trace_level,
+        latency,
+        request.tools.as_deref(),
+        request_tool_choice(request),
+    ))
+}
+
 /// Convert usize token IDs to u32, returning error string on overflow
 fn convert_token_ids(ids: &[usize]) -> Result<Vec<u32>, String> {
     ids.iter()
@@ -361,7 +458,16 @@ fn registry_fallback(
 
     let (model, tokenizer) = match state.get_model(model_id) {
         Ok((m, t)) => (m, t),
-        Err(e) => return fail_response(state, StatusCode::NOT_FOUND, e),
+        // aprender#2609: this was a hardcoded 404 — "route not found" — for a
+        // condition that is not about the route at all. The identical
+        // `RegistryError("No model available")` came back as 503 from `/generate`,
+        // `/stream/generate` and `/batch/generate` and as 404 from
+        // `/v1/chat/completions` and `/v1/chat/completions/stream`, so a client
+        // retry policy keyed on status treated one server-side outage as a
+        // permanent routing error on two of the five. `model_resolution_status`
+        // keeps 404 for the case that IS a client error — an unknown `model_id` in
+        // registry mode (`ModelNotFound`).
+        Err(e) => return fail_response(state, super::model_resolution_status(&e), e),
     };
 
     let prompt_text = format_chat_messages(&request.messages, Some(&request.model));
@@ -673,18 +779,44 @@ pub async fn openai_chat_completions_handler(
         return r;
     }
 
-    if let Some(r) = try_quantized_backend(
+    cpu_chat_backends(
         &state,
         &request,
         &request_id,
         trace_level.as_deref(),
         start,
         &cancel,
-    ) {
+    )
+}
+
+/// The CPU tail of the chat backend chain: quantized, then the f32
+/// `AprTransformer`, then the dense registry fallback.
+///
+/// Lifted out of [`openai_chat_completions_handler`] when aprender#2609 added the
+/// APR arm — the handler is a dispatch table and every backend added to it costs
+/// the same two branches, so the always-compiled tail lives here instead. The
+/// order mirrors what `/generate` walks (`try_quantized_generate`,
+/// `try_apr_generate`, `registry_generate`), which is the point: the two routes
+/// must be alive on exactly the same set of resident models.
+fn cpu_chat_backends(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    trace_level: Option<&str>,
+    start: Instant,
+    cancel: &CancelToken,
+) -> Response {
+    if let Some(r) =
+        try_quantized_backend(state, request, request_id, trace_level, start, cancel)
+    {
         return r;
     }
-
-    registry_fallback(&state, &request, &request_id, start, &cancel)
+    if let Some(r) =
+        try_apr_transformer_backend(state, request, request_id, trace_level, start, cancel)
+    {
+        return r;
+    }
+    registry_fallback(state, request, request_id, start, cancel)
 }
 
 /// aprender#1789 Option B: qwen3_moe MoE-aware dispatch for /v1/chat/completions.

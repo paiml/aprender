@@ -1,0 +1,162 @@
+contract: apr-serve-model-backend-coverage
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    Every routed generation endpoint must answer on every resident inference
+    backend, and one server-side model-availability condition must produce one
+    HTTP status across the whole surface.
+
+    aprender#2609 measured the published apr 0.63.0 answering
+    "Model registry error: No model available" on POST /stream/generate,
+    POST /batch/generate, POST /v1/chat/completions/stream and POST /v1/embeddings
+    — two of them printed by the server's own startup banner — while POST /generate
+    on the SAME process returned 200 with real tokens and /health reported
+    model_loaded: true. Worse, the identical condition came back as 404 from three
+    of them and 500 from the fourth, so a client could not distinguish "this
+    endpoint does not exist" from "this endpoint exists but has no model".
+
+    The class is structural, not incidental. AppState carries several mutually
+    exclusive model fields (model, quantized_model, apr_transformer, gpu/cuda
+    variants); a handler is alive on exactly the backends whose field it reads.
+    aprender#2376 and #2375 closed the gap for quantized_model on these routes,
+    which is why the four are green on a GGUF / Q4_K-APR server today. The THIRD
+    resident backend, apr_transformer (the f32 APR / SafeTensors CPU serve path
+    built by AppState::with_apr_transformer_and_vocab), still had no accessor on
+    /stream/generate, on the chat routes, or in resolve_embed_backend — so on that
+    server the same four routes were dead with the same message, again beside a
+    working /generate and a model_loaded: true /health.
+
+    The status half is a separate defect with a separate cause: it lives in the
+    DENSE fallback that every backend chain ends in, so no per-backend fix reached
+    it. model_resolution_status is the single mapping — RegistryError (the server
+    has no usable model) => 503, ModelNotFound (the client named a model this
+    server does not have) => 404 — and every route resolves through it.
+  references:
+  - "https://github.com/paiml/aprender/issues/2609"
+  - "crates/aprender-serve/src/api/mod.rs (model_resolution_status — the single mapping)"
+  - "crates/aprender-serve/src/api/stream_generate.rs (try_apr_stream_tokens)"
+  - "crates/aprender-serve/src/api/cuda_chat_backend.rs (try_apr_transformer_backend; registry_fallback status)"
+  - "crates/aprender-serve/src/api/realize_handlers_embed_completion.rs (EmbedBackend::Apr; embed_for_route)"
+  - "crates/aprender-serve/src/apr_transformer/hidden_states.rs (AprTransformer::forward_hidden_states)"
+  - "crates/aprender-serve/src/api/tests/apr_model_routes_2609.rs (falsifiers)"
+version: 1
+status: enforced
+date: 2026-08-22
+
+proof_obligations:
+  - type: invariant
+    property: >
+      BACKEND-COVERAGE (DISCHARGED — aprender#2609): on an AppState whose only
+      resident model is an AprTransformer, every routed generation endpoint —
+      /generate, /batch/generate, /stream/generate, /v1/chat/completions,
+      /v1/chat/completions/stream, /v1/embeddings — answers 200 with real output.
+      None of them may return a body containing "No model available" while
+      AppState::model_loaded() is true. The chain each handler walks is the same
+      order /generate walks: CUDA (cfg), quantized, APR, dense.
+  - type: invariant
+    property: >
+      ONE-CONDITION-ONE-STATUS (DISCHARGED — aprender#2609): a request to a MOUNTED
+      route on a server with no usable model at all resolves through
+      model_resolution_status and therefore returns 503 SERVICE_UNAVAILABLE — never
+      404 (which means the route does not exist, and a genuinely unrouted path
+      returns a different body entirely) and never 500 (which invites a retry of an
+      identical request against a server that cannot serve it). 404 is reserved for
+      RealizarError::ModelNotFound: the client named a model this server does not
+      have, which IS a client error.
+  - type: invariant
+    property: >
+      ERROR-NAMES-THE-CALLED-ROUTE (DISCHARGED — aprender#2609): an
+      unavailable-model body names the route the client actually called.
+      /v1/embeddings delegated its whole body to realize_embed_handler and so
+      answered "No model available: /realize/embed needs a loaded model", pointing
+      the caller at a route they never touched; every embedding route now passes its
+      own name into embed_inputs.
+  - type: invariant
+    property: >
+      HIDDEN-STATE-PARITY: all three embedding backends return the same quantity —
+      the final-layer hidden state after the output norm and before lm_head, the
+      tensor lm_head consumes. Model::forward_hidden (dense),
+      OwnedQuantizedModel::forward_hidden_states (quantized) and
+      AprTransformer::forward_hidden_states (APR f32) are therefore comparable after
+      mean-pooling, and the embedding width is always the model's hidden_dim, never
+      a constant. AprTransformer::forward_with_cache is defined as
+      forward_hidden_with_cache + project_lm_head, so the embedding path cannot
+      drift from the generation path by one being updated and the other not.
+  - type: invariant
+    property: >
+      CONTEXT-CEILING: AprTransformer::forward_hidden_states rejects a sequence
+      longer than the model's context_length with ContextLimitExceeded before
+      allocating a KV cache. Sizing a cache from a caller-supplied length with no
+      ceiling is what let one HTTP request abort the server process
+      (aprender#2376 finding 9), and an embedding route takes caller-supplied text.
+
+falsification_tests:
+  - id: FALSIFY-APR-BACKEND-COVERAGE-2609
+    name: apr_model_routes_2609
+    prediction: >
+      Over the REAL router and an AppState holding ONLY an AprTransformer:
+      /health reports model_loaded:true and /generate returns num_generated:1 (the
+      CONTROL — every dead-route assertion is compared against a server that
+      demonstrably generates, so none can pass by generation being broken); then
+      /generate, /batch/generate, /stream/generate, /v1/chat/completions,
+      /v1/chat/completions/stream and /v1/embeddings ALL return 200 and none of
+      their bodies contains "No model available". /stream/generate emits at least
+      one "event: token" and does not terminate with num_generated:0;
+      /v1/chat/completions/stream emits a chat.completion.chunk and a [DONE];
+      /v1/embeddings returns a vector of exactly the model's hidden_dim whose L2
+      norm is 1.
+    test_harness: 'cargo test -p aprender-serve --lib apr_model_routes_2609'
+    expected_output: "test result: ok"
+    if_fails: >
+      A routed endpoint is dead on a resident backend — the aprender#2609 shape:
+      "Model registry error: No model available" from a route the startup banner
+      advertises, on a process whose /generate answers and whose /health says
+      model_loaded:true. Verbatim pre-fix, on main @ bb2bd5e73:
+      POST /stream/generate -> 503 {"error":"Model registry error: No model available"};
+      POST /v1/chat/completions/stream -> 404 {"error":"Model registry error: No model available"};
+      POST /v1/embeddings -> 503 {"error":"No model available: /realize/embed needs a loaded model"};
+      while POST /generate -> 200 {"token_ids":[1,230],"text":"t1t230","num_generated":1}.
+  - id: FALSIFY-ONE-CONDITION-ONE-STATUS-2609
+    name: no_model_available_is_503_on_every_routed_endpoint
+    prediction: >
+      Over the REAL router and AppState::demo_mock() (no model of any kind), all six
+      routed generation endpoints report "No model available" AND return the SAME
+      status, 503 — no route returns 404 and no route returns 500. Separately, GET
+      /healthz (genuinely unrouted) still returns 404 with the route-not-found body,
+      so the fix does not blur the distinction it exists to preserve.
+    test_harness: 'cargo test -p aprender-serve --lib no_model_available_is_503_on_every_routed_endpoint'
+    expected_output: "test result: ok"
+    if_fails: >
+      A mounted route answers 404 or 500 for a server-side model-availability
+      condition, so a client retry policy keyed on status treats one outage as a
+      permanent routing error on some routes and a server bug on others. Verbatim
+      pre-fix, on main @ bb2bd5e73: /generate, /stream/generate and /batch/generate
+      returned 503 while /v1/chat/completions and /v1/chat/completions/stream
+      returned 404 for the byte-identical body
+      {"error":"Model registry error: No model available"}.
+  - id: FALSIFY-APR-HIDDEN-CONTEXT-CEILING-2609
+    name: apr_forward_hidden_states_refuses_an_over_context_sequence
+    prediction: >
+      AprTransformer::forward_hidden_states(&[1; context_length + 1]) returns
+      ContextLimitExceeded { provided: context_length + 1, maximum: context_length }
+      — before any KV cache is allocated — and forward_hidden_states(&[]) returns
+      InvalidShape rather than an empty success.
+    test_harness: 'cargo test -p aprender-serve --lib apr_forward_hidden_states_refuses_an_over_context_sequence'
+    expected_output: "test result: ok"
+    if_fails: >
+      The new hidden-state accessor sizes a KV cache from a caller-supplied length
+      with no ceiling, so one oversized POST /v1/embeddings body asks the allocator
+      for an arbitrary amount — the aprender#2376 finding 9 shape, where a single
+      HTTP request aborted the server process with no reply at all.
+  - id: FALSIFY-EMBED-ROUTE-NAME-2609
+    name: embed_unavailable_body_names_the_route_the_client_called
+    prediction: >
+      POST /v1/embeddings and POST /realize/embed on a model-less server each return
+      an error body naming the route the client called, not the route the handler
+      happens to delegate to.
+    test_harness: 'cargo test -p aprender-serve --lib embed_unavailable_body_names_the_route_the_client_called'
+    expected_output: "test result: ok"
+    if_fails: >
+      The error body sends the caller to a route they never used. Verbatim pre-fix:
+      POST /v1/embeddings -> {"error":"No model available: /realize/embed needs a loaded model"}.

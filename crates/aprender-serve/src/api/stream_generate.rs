@@ -104,10 +104,56 @@ fn try_quantized_stream_tokens(
     Ok(Some((generated, prompt_len, tokenizer)))
 }
 
+/// `AprTransformer` (f32 APR / SafeTensors CPU) backend for `POST /stream/generate`
+/// and `/realize/generate`.
+///
+/// aprender#2609: `/generate` and `/batch/generate` grew this backend
+/// (`try_apr_generate`, `try_apr_batch_generate`) and `/stream/generate` did not,
+/// so on an `AprTransformer` server the SSE route the startup banner advertises
+/// answered `"No model available"` while `/generate` on the SAME process returned
+/// real tokens and `/health` reported `model_loaded: true`. The backend chain here
+/// is now the same one `/generate` walks: quantized, then APR, then dense.
+///
+/// Returns `Ok(None)` when no `AprTransformer` is resident, so the dense path is
+/// unchanged.
+fn try_apr_stream_tokens(
+    state: &AppState,
+    request: &GenerateRequest,
+    cancel: &CancelToken,
+) -> Result<Option<(Vec<u32>, usize, std::sync::Arc<BPETokenizer>)>, ApiErr> {
+    use crate::apr_transformer::GenerateConfig;
+
+    let apr_transformer = match state.apr_transformer() {
+        Some(m) => m,
+        None => return Ok(None),
+    };
+    let tokenizer = require_tok(state)?;
+    let prompt_ids = tokenize_prompt(&tokenizer, &request.prompt)?;
+    let prompt_len = prompt_ids.len();
+
+    let gen_config = GenerateConfig {
+        max_tokens: request.max_tokens,
+        temperature: request.temperature,
+        cancel: cancel.clone(),
+        ..Default::default()
+    };
+
+    let generated = apr_transformer
+        .generate_with_cache(&prompt_ids, &gen_config)
+        .map_err(|e| {
+            api_err(
+                super::generation_error_status(&e),
+                format!("APR generation failed: {e}"),
+            )
+        })?;
+
+    Ok(Some((generated, prompt_len, tokenizer)))
+}
+
 /// Stream generate handler — generates tokens one by one via Server-Sent Events.
 ///
 /// Tries the quantized backend first (the `apr serve run model.gguf` path), then
-/// the dense f32 `Model`.
+/// the `AprTransformer` (f32 APR / SafeTensors), then the dense f32 `Model`.
 ///
 /// aprender#2376(3): the whole sequence is generated *before* the SSE stream is
 /// built, so this handler's synchronous decode is exactly the work an abandoned
@@ -124,6 +170,8 @@ pub async fn stream_generate_handler(
 
     let (token_ids, prompt_len, tokenizer_clone) =
         if let Some(resolved) = try_quantized_stream_tokens(&state, &request, &cancel)? {
+            resolved
+        } else if let Some(resolved) = try_apr_stream_tokens(&state, &request, &cancel)? {
             resolved
         } else {
             dense_stream_tokens(&state, &request, &cancel)?

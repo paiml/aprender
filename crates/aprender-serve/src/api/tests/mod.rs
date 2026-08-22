@@ -62,3 +62,4 @@ mod route_surface_2376; // aprender#2376(7,8): advertised surface == mounted sur
 mod stream_and_metrics_2375; // aprender#2375(1 regression, 4, 7) + temperature:0 — streaming chat through the real router, /v1/metrics measures
 mod completions_stop_2465; // aprender#2465(2): /v1/completions must END at a stop sequence
 mod batch_completions_tokenizer_2465; // aprender#2465(3): /v1/batch/completions tokenized from UTF-8 byte values, not tokens
+mod apr_model_routes_2609; // aprender#2609: routed endpoints on an AprTransformer server; one condition, one status

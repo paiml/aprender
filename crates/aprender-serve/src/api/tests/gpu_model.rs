@@ -344,11 +344,12 @@ async fn test_stream_handler_endpoint() {
 
     // May be 404 (endpoint not registered) or OK
     let status = response.status();
-    assert!(
-        status == StatusCode::OK || status == StatusCode::NOT_FOUND,
-        "Stream endpoint should be handled, got {}",
-        status
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(status);
 }
 
 /// Test chat completions with empty prompt after tokenization
