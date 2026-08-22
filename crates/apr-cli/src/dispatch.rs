@@ -136,7 +136,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             split_prompt,
             batch_jsonl,
             verbose,
-            backend,
+            backend: BackendArg { backend },
         } => {
             // GH-614: --backend cpu forces CPU-only inference
             let backend_forces_cpu = backend.as_deref() == Some("cpu");

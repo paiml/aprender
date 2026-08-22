@@ -1636,7 +1636,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             trace_output,
             trace_level,
             profile,
-            backend,
+            backend: BackendArg { backend },
         } => {
             if let Some(ref b) = backend {
                 eprintln!("Backend override: {b}");

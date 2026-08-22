@@ -9,6 +9,26 @@
 /// echoed back.
 pub const BACKEND_VALUES: [&str; 3] = ["cuda", "cpu", "wgpu"];
 
+/// The ONE `--backend` declaration, flattened into every command that offers the
+/// inference backend override (`apr run`, `apr chat`, `apr serve run`).
+///
+/// #2583: the `value_parser` above was applied by hand at each site, so
+/// `apr serve run` — added later — declared a bare
+/// `#[arg(long, value_name = "BACKEND")]` and accepted ANY string:
+/// `apr serve run --backend nonsense` parsed, `ServerConfig.backend` carried
+/// `"nonsense"`, and the server came up on whatever backend it would have picked
+/// anyway. Copying the `value_parser` to that third site would have left the same
+/// hand-copy hazard for the fourth (cf. #2585, where two `apr` bin targets were
+/// duplicated by hand and had already diverged), so the declaration itself is
+/// shared: a new consumer writes `#[command(flatten)] backend: BackendArg` and
+/// cannot express the unvalidated form.
+#[derive(clap::Args, Debug, Clone, Default, PartialEq, Eq)]
+pub struct BackendArg {
+    /// Compute backend override (cuda, cpu, wgpu)
+    #[arg(long, value_name = "BACKEND", value_parser = BACKEND_VALUES)]
+    pub backend: Option<String>,
+}
+
 /// Trace detail levels `--trace-level` accepts.
 ///
 /// Each value is dispatched on by string equality in `run_entry.rs`; an
@@ -150,9 +170,9 @@ pub enum Commands {
         /// Show verbose output (model loading, backend info)
         #[arg(short, long)]
         verbose: bool,
-        /// PMAT-488: Compute backend override (cuda, cpu, wgpu)
-        #[arg(long, value_name = "BACKEND", value_parser = BACKEND_VALUES)]
-        backend: Option<String>,
+        // PMAT-488 / #2583: shared `--backend` declaration (see `BackendArg`).
+        #[command(flatten)]
+        backend: BackendArg,
     },
     /// Inference server (plan/run)
     Serve {
