@@ -25,6 +25,20 @@ fn list_tensors_gguf(data: &[u8], options: TensorListOptions) -> Result<TensorLi
         message: format!("Failed to parse GGUF: {e}"),
     })?;
 
+    // #2569: every row below asserts that `size_bytes` of tensor data exist at a
+    // declared offset. Prove that before printing it. Run over ALL tensors, ahead
+    // of the `--filter` loop, so a filtered listing cannot hide a truncation.
+    let extents: Vec<(&str, u64, u64)> = reader
+        .tensors
+        .iter()
+        .map(|meta| {
+            let num_elements: u64 = meta.dims.iter().product();
+            let size_bytes = (num_elements as f64 * ggml_dtype_element_size(meta.dtype)) as u64;
+            (meta.name.as_str(), meta.offset, size_bytes)
+        })
+        .collect();
+    check_tensor_table_fits("GGUF", data.len() as u64, reader.data_offset as u64, extents)?;
+
     let mut tensors = Vec::new();
     let mut total_size = 0usize;
     let mut total_matching = 0usize;
@@ -60,9 +74,21 @@ fn list_tensors_gguf(data: &[u8], options: TensorListOptions) -> Result<TensorLi
             };
 
             if options.compute_stats {
-                if let Ok((f32_data, _shape)) = reader.get_tensor_f32(&meta.name) {
-                    compute_tensor_stats(&mut info, &f32_data);
-                }
+                // #2569: this was `if let Ok(...)`, so a tensor whose data could not
+                // be read printed em-dashes in the mean/std/range columns — byte-for-byte
+                // what a run WITHOUT `--stats` prints. The user asked for statistics;
+                // "could not compute them" and "you did not ask" must not render the
+                // same. Fail closed and name the tensor and the reason.
+                let (f32_data, _shape) = reader.get_tensor_f32(&meta.name).map_err(|e| {
+                    AprenderError::FormatError {
+                        message: format!(
+                            "--stats requested but tensor '{}' ({}) could not be read: {e}",
+                            meta.name,
+                            ggml_dtype_name(meta.dtype)
+                        ),
+                    }
+                })?;
+                compute_tensor_stats(&mut info, &f32_data);
             }
 
             tensors.push(info);
