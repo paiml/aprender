@@ -1056,7 +1056,6 @@ dependencies = [
  "gimli 0.32.3",
  "hex",
  "libc",
- "loom",
  "memmap2",
  "nix 0.30.1",
  "object 0.38.1",

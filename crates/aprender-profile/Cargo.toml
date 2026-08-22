@@ -205,7 +205,7 @@ chaos-network = ["chaos-basic"]
 chaos-byzantine = ["chaos-network"]
 
 # Full chaos engineering suite
-chaos-full = ["chaos-byzantine", "dep:loom", "dep:arbitrary"]
+chaos-full = ["chaos-byzantine", "dep:arbitrary"]
 
 # Fuzz testing support
 fuzz = ["dep:arbitrary"]
@@ -218,10 +218,6 @@ gpu-tracing = ["dep:wgpu", "dep:wgpu-profiler", "otlp"]
 
 # CUDA kernel-level tracing (Sprint 38)
 cuda-tracing = ["dep:cudarc", "otlp"]
-
-[dependencies.loom]
-version = "0.7"
-optional = true
 
 [dependencies.arbitrary]
 version = "1.3"
