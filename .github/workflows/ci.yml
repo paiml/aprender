@@ -701,6 +701,8 @@ jobs:
       # root, so a root-only scan is inert by construction. `apr` is a
       # deliberate duplicate and passes via a declared-intent allowlist. The
       # text-only case table runs first, per the convention above.
+      - name: No MCP tool may spawn a bare `apr` (aprender#2563)
+        run: bash scripts/check_mcp_no_bare_apr_literal.sh
       - name: Duplicate bin-name case table
         run: bash scripts/check_duplicate_bin_names.sh --self-test
       - name: No two crates may claim one bin name
