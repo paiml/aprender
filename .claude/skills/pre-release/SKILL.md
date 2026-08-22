@@ -220,6 +220,70 @@ exist. Run Gate 11 before `cargo set-version`; after the bump, the equivalent
 signal is Gate 5 on a zero-sibling crate plus
 `scripts/check_gate5_stage.sh --explain <crate>`.
 
+
+### Gate 12: Multi-Platform Dogfood (MANDATORY — aprender#2566)
+
+```bash
+bash scripts/check_multiplatform_dogfood.sh
+```
+
+**Every release is dogfooded on EVERY supported platform, not just the one the release
+engineer is sitting at.** This gate does not check that someone ran a sweep — it checks
+that a dated **receipt** exists for each host, for the version being cut. A receipt is
+evidence; a checklist tick is not. A receipt from a previous release is STALE and fails.
+
+| host | platform | why it is in the matrix |
+|---|---|---|
+| `lambda` | x86_64 Linux + RTX 4090 (sm_89) | consumer x86, AVX2 path |
+| `intel` | x86_64 Linux, Xeon W-3245 | **AVX-512 + VNNI** path |
+| `gx10` | aarch64 Linux + GB10 (sm_121) | ARM server, unified memory |
+| `mini` | arm64 macOS + Metal | Apple silicon, **no /proc**, APFS case-insensitive |
+
+Each host is in the matrix because it is a distinct combination of **ISA, OS and
+accelerator** — not because we happen to own it.
+
+**What one afternoon of this bought (the 0.64.0 cut).** The published crate had never
+been verified on either arm64 platform:
+
+- **#2567** — Q4_K GEMV, the hottest kernel in quantized inference, has **zero aarch64
+  SIMD**, and `matmul_q4k_f32_parallel` on non-x86 is a direct call to the *serial
+  scalar* routine. The numbers are correct and only the speed is wrong, so **no
+  correctness gate could ever have caught it.**
+- **#2568** — the OOM guard reads `/proc/meminfo` and `.unwrap_or(u64::MAX)`, so on macOS
+  the threshold becomes ~12.8 **exabytes** and the guard can never fire. Its only test
+  self-skips with `cfg!(target_os = "linux")` — the platform where it is broken.
+- **#2572** — `block v0.1.6` faces future-rustc rejection and sits under `wgpu -> metal`,
+  the only GPU backend macOS has. Entirely absent from the Linux dependency graph.
+
+Each is invisible from a single host **by construction**. That is the argument for this
+gate: not diligence theatre, but the only way to see this class of defect.
+
+**Recording a receipt.** Run the sweep on the host, then write
+`evidence/dogfood/<version>/<host>.json` with at least:
+
+```json
+{"host":"gx10","arch":"aarch64-unknown-linux-gnu","version_tested":"0.64.0",
+ "date":"2026-08-22","install_rc":0}
+```
+
+Richer fields (surface counts, findings, notable, verdict) are encouraged — the receipts
+already under `evidence/dogfood/` are the worked examples.
+
+**The sweep must `cargo install` the PUBLISHED crate**, not build the local tree.
+Building the tree tests what you have; installing tests what a user gets. On a box with a
+pre-existing `apr` the install correctly fails closed (rc=101) *before* compiling — use
+`--force` and record that in the receipt.
+
+**Watch the CI host.** `intel` runs all 16 self-hosted runners. Build there with
+`-j 6`, not the default 32: the merge-queue timeout counts runner wait, so a build that
+steals cores is indistinguishable from a flake and can evict queued PRs.
+
+**Non-vacuity:** the gate refuses a matrix of fewer than 4 hosts, because a shrinking
+matrix silently narrows what "verified" means. Mutation-verified in all three directions —
+a stale receipt version, a non-zero `install_rc`, and a shortened host list each turn it
+RED.
+
+
 ## Verdict
 
 After running all gates, provide:

@@ -1,1 +1,9 @@
 check_book_examples_executable.sh
+# check_multiplatform_dogfood.sh — a RELEASE gate, not a PR gate. Deliberately
+# unwired from CI: it asserts that a dated dogfood receipt exists for every
+# supported platform for the version being CUT, which is meaningless on a PR
+# (no version is being cut) and would red every PR from the moment it landed.
+# It is Gate 12 of .claude/skills/pre-release/SKILL.md and runs at release time.
+# Mutation-verified there in three directions (stale receipt version, non-zero
+# install_rc, shortened host matrix).
+check_multiplatform_dogfood.sh
