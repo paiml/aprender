@@ -300,3 +300,60 @@ fn check_tensor_table_fits_refuses_an_overflowing_extent() {
         .expect_err("size overflow must be refused, not wrapped");
     assert!(err.to_string().contains("overflow"), "got: {err}");
 }
+
+// ---- SafeTensors: the third format, missed by the first round of #2569 -------
+
+/// Build a minimal SafeTensors buffer: 8-byte LE header length, then JSON.
+fn safetensors_bytes(json: &str, body_len: usize) -> Vec<u8> {
+    let mut v = Vec::new();
+    v.extend_from_slice(&(json.len() as u64).to_le_bytes());
+    v.extend_from_slice(json.as_bytes());
+    v.extend(std::iter::repeat(0u8).take(body_len));
+    v
+}
+
+const ST_ONE: &str = r#"{"w":{"dtype":"F32","shape":[4],"data_offsets":[0,16]}}"#;
+
+#[test]
+fn safetensors_intact_file_still_lists() {
+    // POSITIVE CONTROL: 16 bytes declared, 16 bytes present.
+    let data = safetensors_bytes(ST_ONE, 16);
+    let r = list_tensors_from_bytes(&data, TensorListOptions::default());
+    assert!(r.is_ok(), "an intact SafeTensors file must still list: {r:?}");
+}
+
+#[test]
+fn safetensors_truncated_body_is_refused() {
+    // 16 bytes declared, 4 present. Before this fix `apr tensors` printed the
+    // declared row and exited 0 while `apr validate` rejected the same file.
+    let data = safetensors_bytes(ST_ONE, 4);
+    let err = list_tensors_from_bytes(&data, TensorListOptions::default())
+        .expect_err("a truncated SafeTensors body must be refused");
+    let msg = format!("{err}");
+    assert!(msg.contains("SafeTensors"), "error must name the format: {msg}");
+}
+
+#[test]
+fn safetensors_short_by_one_byte_is_refused() {
+    // The off-by-one that a last-tensor-first-byte check cannot see.
+    let data = safetensors_bytes(ST_ONE, 15);
+    assert!(
+        list_tensors_from_bytes(&data, TensorListOptions::default()).is_err(),
+        "a SafeTensors file one byte short must be refused"
+    );
+}
+
+#[test]
+fn safetensors_filter_cannot_hide_truncation() {
+    // The check runs BEFORE the filter loop on purpose: a filter matching
+    // nothing must not launder a truncated file into a success.
+    let data = safetensors_bytes(ST_ONE, 4);
+    let opts = TensorListOptions {
+        filter: Some("matches-nothing".to_string()),
+        ..TensorListOptions::default()
+    };
+    assert!(
+        list_tensors_from_bytes(&data, opts).is_err(),
+        "a filter matching zero tensors must not hide truncation"
+    );
+}

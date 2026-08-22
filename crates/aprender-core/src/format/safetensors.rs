@@ -248,6 +248,38 @@ fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<T
         obj.iter().filter(|(k, _)| *k != "__metadata__").collect();
     tensor_entries.sort_by_key(|(k, _)| *k);
 
+    // #2569 (second round): SafeTensors was the third format and the only one the
+    // first fix missed -- GGUF and both APR v2 paths were wired, this was not.
+    // Covering two of three formats reproduces, one format over, exactly the
+    // asymmetry #2569 was filed about (a truncated GGUF passed where a truncated
+    // APR did not).
+    //
+    // BEFORE the filter loop, deliberately and for the same reason as the GGUF
+    // call site: a `--filter` matching zero tensors must not launder a truncated
+    // file into rc=0. The check runs over every tensor in the index.
+    //
+    // SafeTensors offsets are RELATIVE to data_start and are [begin, end) pairs,
+    // so the extent is end - begin rather than a declared size -- an end that
+    // precedes its begin is itself corruption and is reported as a zero-length
+    // extent starting past the file, which the checker rejects.
+    {
+        let extents: Vec<(&str, u64, u64)> = tensor_entries
+            .iter()
+            .filter_map(|(name, value)| {
+                let o = value.get("data_offsets")?.as_array()?;
+                let begin = o.first()?.as_u64()?;
+                let end = o.get(1)?.as_u64()?;
+                Some((name.as_str(), begin, end.saturating_sub(begin)))
+            })
+            .collect();
+        check_tensor_table_fits(
+            "SafeTensors",
+            data.len() as u64,
+            data_start as u64,
+            extents,
+        )?;
+    }
+
     for (name, value) in tensor_entries {
         if !matches_filter(name, options.filter.as_ref()) {
             continue;
