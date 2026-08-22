@@ -108,6 +108,7 @@ already guards against per-enumeration, applied one level up.
 - apr pinned to HEAD: !`. scripts/apr_bin.sh >/dev/null 2>&1 && "$APR" --version || echo "NOT built from HEAD — every verdict below would describe a binary you are not running"`
 - Models available: !`find ~/models -maxdepth 2 \( -name "*.apr" -o -name "*.gguf" -o -name "*.safetensors" \) -type f 2>/dev/null | wc -l`
 - Surface ledger: !`test -f docs/audits/surface_audit.csv && wc -l < docs/audits/surface_audit.csv || echo "ABSENT — Phase 2 will FAIL"`
+- Clusters: !`test -f docs/audits/surface_audit.csv && python3 -c "import csv,collections;r=list(csv.DictReader(open('docs/audits/surface_audit.csv')));c=collections.Counter(x['cluster_label'] for x in r);g=collections.Counter(x['cluster_label'] for x in r if x['in_dogfood_skill'].strip().lower()=='yes');print(f'{sum(1 for k in c if g[k])}/{len(c)} clusters gated, {sum(g.values())}/{len(r)} features gated')" || echo "ABSENT"`
 
 ## Arguments
 
@@ -327,14 +328,27 @@ This is the staleness arm. Without it the coverage number measures *declared*
 state rather than *resolved* state — the exact enforcement-theater shape this
 whole protocol exists to prevent.
 
-Schema (8 columns, RFC 4180):
+Schema (10 columns, RFC 4180):
 
 ```
-binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,evidence_path,confidence
+binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence
 ```
 
-Every row requires `evidence_path`. A row with no evidence path is invalid and
-fails schema validation.
+Every row requires `evidence_path` **and** a non-empty `cluster_label`. A row with
+no evidence path is an unevidenced claim; a row with no cluster label sits outside
+every per-cluster floor. Both fail schema validation.
+
+**There is ONE ledger.** The clustered file *replaced* the 8-column one; it did not
+land beside it as `surface_audit_clustered.csv`. Two ledgers over one surface is
+the drift hazard this repo keeps re-finding — the second copy goes stale in
+silence and every consumer then has to be told which is authoritative. The
+clustered file was a superset in shape (same 830 rows, same order, two extra
+columns), so replacing cost nothing and keeping both would have bought a
+permanent divergence. Three cells *did* disagree — `apr run --backend
+{cpu,cuda,wgpu}` cited `commands_enum.rs:110` in the clustered snapshot and `:154`
+in the landed ledger; `:154` is the `backend:` arg and `:110` a chat-template arg,
+so the landed value won. That disagreement, found on the day the two files
+existed side by side, is the argument.
 
 ## G2.2 — Denominator reconciliation
 
@@ -360,7 +374,9 @@ Baselines below are **measured**, not chosen — computed from
 |---|---:|---:|---|
 | Overall coverage | **142/830 = 17.1%** | `>= 142` covered rows | **may never decrease** |
 | `apr` coverage | 142/367 = 38.7% | `>= 142` | may never decrease |
-| Per-binary coverage | **27 of 28 binaries at 0%** | ≥ 1 covered feature each | RED at `--release` |
+| Per-binary coverage | **27 of 28 binaries at 0%** | covered may never fall | ratchet only — superseded at `--release` by the per-cluster arm below |
+| **Per-cluster coverage** | **9 of 14 clusters at 0 earned gates**, under 142 of 830 features gated | ≥ 1 **earned** gate per `cluster_label` | **RED at `--release`**; ratchet always |
+| **Cluster membership** | 0 declared reassignments | a feature may not change `cluster_label` undeclared | RED — a silent move retires an obligation |
 | Quality ≤ 4, uncovered | **44** | `0` | RED — a known-broken feature with no gate |
 | `verified_hardware` UNKNOWN | **427** | `<= 427` | may never increase |
 | `confidence == low` and uncovered | **204** | `<= 204` | may never increase |
@@ -375,6 +391,69 @@ either never fires or fires constantly.
 The ratchet is the point: coverage is allowed to be 17.1%. It is not allowed to
 become 17.0%.
 
+## G2.5 — The per-cluster floor ⭐ THE THIRD FLOOR
+
+Three floors now, not two: **overall**, **per-binary**, **per-cluster**.
+
+### Why a binary is the wrong unit
+
+`aprender-orchestrate` ships 184 features that are three unrelated subsystems —
+95 Banco HTTP routes, a 56-feature agent stack, 17 Pacha secrets commands. A
+per-binary floor of "≥ 1 gate" lets **one gate on Pacha make all 184 look
+touched**. The cluster is the unit whose members share a module, a dispatch path
+and a failure mode, which is the property that makes a gate on one member
+evidence about the rest.
+
+### What is enforced
+
+```
+per-cluster ratchet   (always)   no cluster_label's gate count may fall
+                                 the zero-gate cluster count may not rise
+                                 a cluster_label on the comparand may not vanish
+per-cluster release arm          every cluster_label carries >= 1 gate   # RED at --release
+T2 reporting pairing  (always)   cluster coverage is reported WITH the feature %,
+                                 never one alone — ENFORCED, not documented
+```
+
+Every floor is derived from `git show origin/main:docs/audits/surface_audit.csv`,
+the same comparand the other floors use. **No cluster count is a literal in any
+gate file.** While `main` still carries the 8-column ledger the ratchet prints a
+`SCHEMA UPGRADE` banner instead of passing silently; that branch is self-closing
+and a half-migrated comparand is a hard failure, not an upgrade.
+
+### The four uses of the clustering
+
+1. **Stratified sampling frame.** 830 gates were never the target. Features in a
+   cluster share a failure mode, so a gate on one member is evidence about the
+   cluster. The goal is *n* gates per cluster allocated by expected defect yield,
+   with *n* scaling **sub-linearly** in cluster size. Nine clusters at zero is
+   nine clusters with **no evidence at all** — that is the gap, not the 688
+   uncovered rows.
+2. **Sibling sweep.** A defect in cluster X makes X's remaining members a
+   mandatory sweep list in the same ticket. See Phase 3.
+3. **Harness amortization.** 95 Banco routes is ONE HTTP harness, not 95 gates.
+   76 `pv` subcommands is ONE contract-CLI harness. Cluster size estimates
+   gates-per-unit-effort and should drive ticket **order**:
+   `http-orchestrate-banco` and `contracts-pv` are the two cheapest large wins in
+   the repo and both sit at zero.
+4. **Per-cluster floor replacing per-binary** as the release arm — the reason
+   above.
+
+### The three traps
+
+| | Trap | Enforcement |
+|---|---|---|
+| **T1** | `cluster_id` is a k-means label and **permutes on re-run**. An id in a contract, gate or waiver silently re-points at a different cluster next time the surface moves — the stale-hardcoded-list class in new clothes. | `cluster_label` is the durable key and is **human-owned** after first assignment, never regenerated. `scripts/check_no_cluster_id_keys.sh` is an **allowlist**: a standalone `cluster_id` token is a key unless the line is backticked, follows a comment marker, declares the schema, or carries `cluster-id-guard allow (<reason>)`. Its first version listed four banned syntaxes and passed twelve ordinary ones. Case table run in CI beside the scan. |
+| **T1b** | Cluster **membership** was unratcheted, so the release arm was satisfiable by relabelling: move an already-gated feature into a zero-gate cluster and the zero stops existing with no gate written. | A move must be declared in `docs/audits/cluster_reassignments.yaml` (from, to, reason), and the zero-gate set counts **earned** gates only — a gate that walked in from another cluster is evidence about where it came from. Declaring buys legibility; only writing a gate buys evidence. |
+| **T2** | **Cluster coverage ≠ feature coverage.** One gate in a 95-member cluster is 1%, not "covered". Reporting the proxy alone builds the vacuity failure one level up: a clean sweep over a proxy, looking *stricter* than what it replaced. **This is the most important trap.** | `enforce_pairing()` in `scripts/lib/dogfood_coverage_gate.py` reads the report back before printing it and fails the gate if any line states a cluster fraction without a feature fraction beside it. It also fails on an empty report. |
+| **T3** | Clustering is a **prior, never evidence.** It says where to look; it cannot assert a feature works. | Severity comes from the 0.63.0 ledger. `quality_1_10` is **never** derived from cluster membership. |
+
+`scripts/dogfood_cluster.py` produces the **k-selection evidence only** — the
+inertia/silhouette sweep and `docs/audits/surface_audit_elbow.png`. It does not
+write `cluster_id`/`cluster_label` and re-running it will not regenerate them.
+That follows from T1: the labels are human-owned, so the columns are deliberately
+not reproducible from the script.
+
 ## G2.4 — The 44
 
 44 features carry quality ≤ 4 (a live ledger defect) **and** have no gate. All 44
@@ -388,6 +467,34 @@ every entry must carry an open issue number and an explicit written waiver.
 # Phase 3 — Tiered gate execution
 
 Tier 0 and 1 are the daily loop. Tier 2 adds cost. Tier 3 is release-only.
+
+## G3.0 — The sibling sweep rule (process, not a script)
+
+**When a defect lands in cluster X, X's remaining uncovered members become a
+MANDATORY sweep list in the same ticket.**
+
+The prior is measured, not assumed: the 0.63.0 ledger collapsed **201 findings
+into 37 root causes — ~5.4 findings per cause**. Defects arrive in sibling
+groups. Clustering supplies that prior *mechanically and in advance* instead of
+retrospectively, after someone notices the fourth instance.
+
+The rule, exactly:
+
+1. A defect is found in a feature whose `cluster_label` is X.
+2. The ticket enumerates **every uncovered member of X**, by name, from
+   `docs/audits/surface_audit.csv`.
+3. Each swept sibling ends in one of three states, recorded in the ticket:
+   **also broken** (its own finding), **checked and sound** (evidence cited), or
+   **not reachable** (why, and what would make it reachable).
+4. A sweep that finds nothing is still a result. A sweep that was never
+   enumerated is an open obligation, and the ticket does not close.
+
+This is read-only, like the rest of the skill: the sweep produces findings and
+tickets, never fixes.
+
+**Do not skip the sweep because the cluster is large.** A 95-member cluster is
+exactly where the prior pays: one HTTP harness covers the sweep, which is
+point 3 of the four uses above.
 
 ## Tier 0 — Cheap, always (parallel)
 
@@ -1312,19 +1419,72 @@ body. Contains:
 1. Identity — crate, version, HEAD SHA, feature set used, exclusions **named**
 2. Surface — counts per kind, with the vacuity threshold beside each
 3. **Coverage — the Phase 2 table, overall / per binary / per band, vs. baseline**
+3b. **The allocation table (below) — every cluster, gate count, share of gate
+    effort, EARNED vs inherited gates, and cluster coverage REPORTED WITH THE
+    FEATURE FRACTION on the same line.** The pairing is checked mechanically:
+    point the gate at the receipt and it will refuse an unpaired ratio —
+    `DOGFOOD_RECEIPT=<path> bash scripts/check_dogfood_coverage.sh`
+3c. **Cluster reassignments — every feature that changed `cluster_label` since
+    the comparand, with from, to and reason.** Empty is the normal case. A move
+    makes a cluster's gate INHERITED, and an inherited gate does not close a zero
 4. **The 44 — uncovered features with quality ≤ 4, enumerated**
 5. Gate results — every gate, PASS/FAIL/SKIP/WARN, with the blocker named on SKIP
 6. Transport matrix — declared, parity, absence, invariance
 7. Fleet matrix — hardware verification per host (`--fleet`)
 8. Gaps — every enumeration not completed, and the exact artifact to close it
 
+## The allocation table — belongs IN the receipt, every run
+
+A standing reminder of where the marginal gate is worth least. Measured
+2026-08-22 from `docs/audits/surface_audit.csv`; re-derive with
+`python3 scripts/dogfood_baseline.py  # section: per_cluster` — **the CSV wins over
+this table**, which is a dated sample.
+
+| cluster | n | gates | share of all gate effort | cluster coverage |
+|---|---:|---:|---:|---:|
+| `apr-lint-diag` | 66 | 55 | 38.7% | 83.3% |
+| `http-apr-serve` | 44 | 39 | 27.5% | 88.6% |
+| `apr-core-commands` | 109 | 38 | 26.8% | 34.9% |
+| *(11 others)* | 611 | 10 | 7.0% | 1.6% |
+
+**93.0% of gate effort sits over 26.4% of the surface. 142 gates / 830 features.**
+
+Nobody chose that allocation; it accreted. Clustering is what makes it visible.
+Adding a 56th gate to `apr-lint-diag` buys less than the FIRST gate in
+`contracts-pv` (0 of 76) or `http-orchestrate-banco` (0 of 95).
+
+The nine clusters at zero, largest first: `http-orchestrate-banco` (95),
+`contracts-pv` (76), `data-pipeline` (76), `orchestrate-agent-stack` (56),
+`test-harness` (49), `rag-eval` (44), `qa-cgp` (37), `simulation` (18),
+`orchestrate-pacha-secrets` (17).
+
+**Report both numbers or neither (T2).** "5 of 14 clusters gated (35.7%)" without "142 of 830 features gated (17.1%)" beside it is a proxy masquerading as coverage, and the gate refuses to emit it — *on this line too*.
+
+The rule is about the NUMBER, not about a phrasing, and it is enforced on every
+surface that can emit one: the gate's own report, the receipt, the output of
+`scripts/dogfood_baseline.py`, and this file. A ratio whose denominator is the
+cluster count is a cluster-level claim whatever words surround it, and it must
+carry a ratio whose denominator is the feature count. Both denominators are
+derived from the ledger at run time; neither is a literal in a gate file.
+
+    python3 scripts/lib/dogfood_coverage_gate.py \
+        --head docs/audits/surface_audit.csv \
+        --pair-scan .claude/skills/apr-dogfood/SKILL.md \
+        --pair-scan <your-receipt>
+
+**Honest limit:** the pairing is per LINE, because "beside it" is what makes the
+two numbers readable together. A cluster ratio on one line and its feature ratio
+forty lines away satisfies neither a reader nor this rule. A line that genuinely
+must state one number alone opts out by saying so, with a reason, in the same
+shape as the T1 pragma: `t2-pairing allow (<reason>)`. Silence is not an opt-out.
+
 ## Verdict
 
 | | Condition |
 |---|---|
-| **GO** | Every gate green; coverage ≥ baseline; the 44 empty or fully waived |
+| **GO** | Every gate green; coverage ≥ baseline; every per-cluster floor held; the 44 empty or fully waived |
 | **WARN** | All gates green; a coverage floor unchanged but not improved |
-| **NO-GO** | Any gate red; **or** coverage below baseline; **or** an unwaived quality-≤4 uncovered feature |
+| **NO-GO** | Any gate red; **or** coverage below baseline; **or** a cluster lost a gate; **or** an unwaived quality-≤4 uncovered feature; **or** (at `--release`) a cluster with zero gates |
 
 Coverage regression alone is NO-GO. That is the whole design: the suite can be
 incomplete, and it may not silently become *more* incomplete.
@@ -1349,6 +1509,14 @@ a no-op rebuild of the same commit. A gate that fires on both measures nothing.
 | G2.1 freshness | Backdate the CSV behind HEAD |
 | G2.2 reconciliation | Delete one CSV row for a live command |
 | G2.3 floors | Flip one `in_dogfood_skill` from `yes` to `no` |
+| G2.5 per-cluster | Move a cluster's **only** gate to another cluster — totals unchanged, so only the per-cluster floor can explain the RED (asserted by finding text, not exit code) |
+| G2.5 membership | Move a **gated** feature into a zero-gate cluster and write one new gate in the cluster it left. Every count still holds — the pre-fix gate printed `clusters gated 3/3 (100.0%)` and exited 0 — so only the membership ratchet can explain the RED [t2-pairing allow (quoting the pre-fix verdict)] |
+| G2.5 earned | **Declare** that same move and arm `--release`: still RED, because the gate that walked in is inherited, not earned. Paired GREEN: at the same arm, *write* a gate in the zero cluster instead |
+| G2.5 / T2 pairing | Delete the feature fraction from the report emitter → RED |
+| T2 pairing, receipt | State a cluster ratio in the **receipt** with no feature fraction → RED. The rule was once applied to one generated string; a receipt is a different channel and looked stricter while measuring less |
+| T1 id ban | Key a contract on `cluster_id` instead of `cluster_label` → RED |
+| T1 allowlist | Key on the id with a form no blacklist listed — a pandas-style `groupby` on the id column → RED. Twelve such constructs were GREEN under the four-syntax version. (Writing that call out here would itself be a keying line: the guard is an allowlist and prose is exempt only when the token is *directly* backticked, so `key: ` + the id inside a code span still fails. That is the rule working, not a false positive.) |
+| G3.0 sweep | Close a defect ticket in cluster X with X's uncovered members unenumerated → the ticket does not close |
 | P6 / T2.9 parity | Stride the GPU cache by `q_dim` (the #749 bug) → red by step 8 |
 | P7 NaN sentinel | Disarm the threshold comparison |
 | T2.2 metamorphic | Perturb `absmax` on quant roundtrip 2 |
@@ -1374,6 +1542,16 @@ a no-op rebuild of the same commit. A gate that fires on both measures nothing.
 | Drop a blocked gate from the receipt | A vanished gate reads as a passed one |
 | Resolve a bare `apr` | #2384 — a 0.63.0 process ran a 0.60.0 backend; P0, closed 2026-08-11 by #2424, now a ratchet |
 | Set a coverage threshold before measuring | Either never fires or fires constantly |
+| Report cluster coverage without the feature % | T2 — the vacuity failure one level up, looking stricter while measuring less |
+| Enforce a reporting rule on ONE channel | The receipt, the baseline printer and this file are three more. One call site is three ways around it |
+| Move a gated feature into a zero-gate cluster | The zero stops EXISTING instead of being closed. Same move as deleting a losing benchmark row (d7e08043b, the only one in this repo's history) |
+| Re-cluster silently | Clusters are derived, so moves are legitimate — *declared* ones. `docs/audits/cluster_reassignments.yaml`, with from, to and a reason |
+| Key a contract, gate or waiver on `cluster_id` | T1 — k-means labels permute; the obligation silently re-points |
+| Ban a token by listing its syntaxes | "Nothing may key on this" is universal; no finite list of syntaxes carries a universal claim. Allowlist the legitimate positions instead |
+| Derive `quality_1_10` from cluster membership | T3 — clustering is a prior, never evidence |
+| Regenerate `cluster_label` from a re-run | The labels are human-owned; regenerating re-points every obligation citing them |
+| Keep a second, clustered copy of the ledger | Two ledgers over one surface; the copy goes stale in silence |
+| Close a cluster-X defect without sweeping X | 201 findings collapsed to 37 causes — ~5.4 per cause. The siblings are already broken |
 | Bypass a red gate to ship | Stop the line. Five-whys to the owning module |
 
 ---

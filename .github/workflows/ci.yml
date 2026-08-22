@@ -663,10 +663,44 @@ jobs:
       # unresolvable comparand. Text-only, no build.
       - name: Fetch origin/main for the dogfood coverage comparand
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      #
+      # DOGFOOD_RECEIPT extends the T2 pairing rule to the receipt when a run
+      # produces one. The rule is enforced on every channel a cluster-level ratio
+      # can leave through -- the gate report, the skill, the baseline printer and
+      # the receipt -- because a pairing rule applied at one call site is a
+      # pairing rule with three ways around it.
       - name: Dogfood coverage gate mutation table
         run: bash scripts/check_dogfood_coverage.sh --self-test
       - name: Dogfood coverage may not regress
         run: bash scripts/check_dogfood_coverage.sh
+      # The baseline printer holds its OWN output to the same pairing rule and
+      # re-derives every number the contract quotes.
+      - name: Dogfood baselines must re-derive from the ledger
+        run: python3 scripts/dogfood_baseline.py --check
+
+      # T1: nothing may key on `cluster_id`. The surface ledger gained
+      # cluster_id + cluster_label; the LABEL is human-owned and durable, the ID
+      # is a k-means label that PERMUTES whenever the input moves. An obligation
+      # keyed on the id silently re-points at a different set of features the
+      # next time the surface is re-clustered -- the stale-hardcoded-list failure
+      # class in new clothes.
+      #
+      # The guard is an ALLOWLIST, not a list of banned syntaxes. Its first
+      # version enumerated four keying forms and passed twelve ordinary ones --
+      # `groupby("cluster_id")`, `r.cluster_id`, `WHERE cluster_id = 3` and the
+      # rest. "Nothing may key on this" is a universal claim and no finite list
+      # of syntaxes carries one, so a standalone token is now a key unless the
+      # line says otherwise: backticked, after a comment marker, in a schema
+      # header, or carrying a stated pragma.
+      #
+      # It ships a must-match/must-not-match case table and CI runs the table
+      # beside the scan, because five `apr`-invocation patterns in this repo were
+      # wrong and every one was caught by its table rather than by review.
+      # Text-only, no build.
+      - name: "the `cluster_id` key guard case table"
+        run: bash scripts/check_no_cluster_id_keys.sh --self-test
+      - name: "Nothing may key on `cluster_id`"
+        run: bash scripts/check_no_cluster_id_keys.sh
 
       # FALSIFY-README-00*: README metric claims must match measurement. The
       # guard existed and ran nowhere -- its only caller was scripts/dogfood-book.sh,
