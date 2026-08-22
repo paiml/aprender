@@ -171,6 +171,12 @@ falsification_tests:
     test: "test \"$(ls crates/facades/provable-contracts/compat/0.3.1/examples/*.rs | wc -l)\" = 28"
     if_fails: "Someone deleted a compat program instead of fixing what it revealed. The guard's floor catches an unwiring; this catches a deletion."
 
+  - id: FALSIFY-FACADE-006
+    rule: "A facade may never become an aprender workspace member"
+    prediction: "No aprender workspace member is named provable-contracts*"
+    test: "! cargo metadata --no-deps --format-version 1 | grep -q '\"name\":\"provable-contracts'"
+    if_fails: "The rlib/bin name collision is back. `cargo build` warns 'output filename collision … may become a hard error', and the facade pv overwrites the real pv in the shared target dir."
+
   - id: FALSIFY-FACADE-007
     rule: "No two crates in this repository declare the same bin name without declared intent"
     prediction: "The duplicate-bin guard exits 0 over BOTH workspaces"
@@ -188,9 +194,3 @@ falsification_tests:
     prediction: "`cargo build -p provable-contracts-cli --bin pv` fails with 'no bin target named `pv`', and every signpost surface names both working routes"
     test: "bash scripts/check_facade_compat.sh"
     if_fails: "Either the facade re-acquired the `pv` name — putting a second claimant on ~/.cargo/bin/pv — or 463 downloads/month now hit `there are no binaries to install` with nothing telling them where the tool went."
-
-  - id: FALSIFY-FACADE-006
-    rule: "A facade may never become an aprender workspace member"
-    prediction: "No aprender workspace member is named provable-contracts*"
-    test: "! cargo metadata --no-deps --format-version 1 | grep -q '\"name\":\"provable-contracts'"
-    if_fails: "The rlib/bin name collision is back. `cargo build` warns 'output filename collision … may become a hard error', and the facade pv overwrites the real pv in the shared target dir."

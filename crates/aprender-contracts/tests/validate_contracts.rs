@@ -309,9 +309,18 @@ fn contract_data_integrity() {
     // in one commit, and leaving the target dark so the assertion can stay
     // aspirational is how it rotted in the first place.
     //
-    // So: the count may only go DOWN. A PR that adds a 471st violation fails.
+    // So: the count may only go DOWN. A PR that adds a 445th violation fails.
     // Lower CEILING whenever you clean up — never raise it.
-    const CEILING: usize = 470;
+    //
+    // 470 -> 444, measured on this tree after merging main: main's newly added
+    // `provable-contracts-facade-v1` carried a falsification-test ID out of order
+    // (…-005, -007, -008, -009, -006), which is what pushed the count to 471 and
+    // reddened this branch — the ceiling was pinned before that contract existed.
+    // Reordering it, plus correcting 26 `pass_criteria` strings that named a test
+    // count their own file did not have, took the corpus to 444. No rule was
+    // relaxed to get here; every one of the 26 was a number edited to match the
+    // file it describes.
+    const CEILING: usize = 444;
     assert!(
         errors.len() <= CEILING,
         "Data integrity violations rose to {} (ceiling {CEILING}) — this list may \

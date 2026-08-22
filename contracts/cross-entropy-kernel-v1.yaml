@@ -385,5 +385,5 @@ qa_gate:
   - log_softmax_bound
   - numerical_stability
   - simd_equivalence
-  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 16 falsification tests pass + Kani harnesses verify
   falsification: Remove max subtraction from log-sum-exp
