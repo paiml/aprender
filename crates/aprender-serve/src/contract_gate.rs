@@ -406,6 +406,9 @@ fn validate_completeness(
 /// If the estimated peak exceeds 80% of system RAM, returns an error
 /// so callers can route to a memory-efficient loading path.
 ///
+/// #2568: if the host's RAM cannot be determined this **refuses** the dequant.
+/// See [`dequant_verdict`] for why an unknown limit is not an infinite one.
+///
 /// # Arguments
 ///
 /// * `tensor_entries` — slice of `(byte_size, dtype)` for each tensor in the file
@@ -421,11 +424,46 @@ pub fn validate_f32_dequant_limits(
         estimated_f32_bytes += elements as u64 * 4;
     }
 
-    // Peak = file in Vec<u8> + all F32 dequantized tensors
-    let estimated_peak = file_size + estimated_f32_bytes;
+    dequant_verdict(file_size, estimated_f32_bytes, system_memory_bytes())
+}
 
-    let mem_total = system_memory_bytes().unwrap_or(u64::MAX);
-    let threshold = mem_total * 80 / 100;
+/// The dequant decision itself, isolated from *how* memory was measured.
+///
+/// `mem_total` is `None` when this platform has no memory probe (see
+/// [`system_memory_bytes`]). #2568: the shipped 0.63.0 code substituted
+/// `u64::MAX` there, which made the 80% threshold ~12.8 EiB and the comparison
+/// `estimated_peak > threshold` unsatisfiable — the OOM guard could never fire
+/// on macOS, the one platform where the probe returned `None`. A safety
+/// threshold must **fail closed**: an unknown limit is not an unlimited one, so
+/// the dequant is refused and the reason says which measurement is missing.
+fn dequant_verdict(
+    file_size: u64,
+    estimated_f32_bytes: u64,
+    mem_total: Option<u64>,
+) -> std::result::Result<(), ModelLoadError> {
+    // Peak = file in Vec<u8> + all F32 dequantized tensors
+    let estimated_peak = file_size.saturating_add(estimated_f32_bytes);
+
+    let Some(mem_total) = mem_total else {
+        return Err(ModelLoadError {
+            gate: "resource_limits",
+            reason: format!(
+                "cannot determine total system RAM on this platform ({}), so the F32 \
+                 dequant OOM guard cannot be evaluated; refusing to dequant ~{} GB \
+                 (file {} GB + dequant {} GB). An unknown memory limit is not an \
+                 unlimited one (#2568). Use the quantized inference path.",
+                std::env::consts::OS,
+                estimated_peak / (1 << 30),
+                file_size / (1 << 30),
+                estimated_f32_bytes / (1 << 30),
+            ),
+        });
+    };
+
+    // 80% of RAM, written as /5*4 so it cannot overflow for any u64 input
+    // (the old `mem_total * 80 / 100` panicked in debug builds on the
+    // u64::MAX fallback and wrapped in release builds).
+    let threshold = mem_total / 5 * 4;
 
     if estimated_peak > threshold {
         return Err(ModelLoadError {
@@ -458,18 +496,90 @@ fn estimate_elements(byte_size: usize, dtype: u8) -> usize {
     }
 }
 
-/// Read total system memory from /proc/meminfo (Linux).
+/// Absolute paths to try for macOS's `sysctl(8)`.
 ///
-/// Returns `None` on non-Linux or if /proc/meminfo is unreadable.
+/// Absolute, not PATH-resolved, on purpose: a `sysctl` shadowed earlier on
+/// `$PATH` could report an arbitrary number into a *safety* threshold.
+const SYSCTL_PATHS: &[&str] = &["/usr/sbin/sysctl", "/sbin/sysctl"];
+
+/// Total physical memory of this host, or `None` if it cannot be measured here.
+///
+/// | Platform | Probe |
+/// |----------|-------|
+/// | Linux (incl. Android, WSL) | `MemTotal:` in `/proc/meminfo` |
+/// | macOS | `sysctl -n hw.memsize` |
+/// | anything else | `None` — **callers must fail closed** |
+///
+/// #2568: this used to read `/proc/meminfo` and nothing else. macOS has no
+/// `/proc`, so it returned `None` there and the one caller
+/// ([`validate_f32_dequant_limits`]) turned that `None` into `u64::MAX`,
+/// disarming the OOM guard on every Mac. `None` now means exactly "unknown",
+/// and [`dequant_verdict`] refuses rather than assumes.
 pub fn system_memory_bytes() -> Option<u64> {
+    if let Some(bytes) = proc_meminfo_total_bytes() {
+        return Some(bytes);
+    }
+    sysctl_hw_memsize_bytes()
+}
+
+/// Linux probe: `MemTotal:` from `/proc/meminfo`.
+fn proc_meminfo_total_bytes() -> Option<u64> {
     let content = std::fs::read_to_string("/proc/meminfo").ok()?;
+    parse_meminfo_total_bytes(&content)
+}
+
+/// Parse `MemTotal: <n> kB` out of `/proc/meminfo` contents.
+///
+/// Split out from the file read so the parse is testable on any platform.
+/// A reported total of zero is treated as *unknown*, not as "no memory".
+fn parse_meminfo_total_bytes(content: &str) -> Option<u64> {
     for line in content.lines() {
-        if line.starts_with("MemTotal:") {
-            let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
-            return Some(kb * 1024);
+        if let Some(rest) = line.strip_prefix("MemTotal:") {
+            let kb: u64 = rest.split_whitespace().next()?.parse().ok()?;
+            return kb.checked_mul(1024).filter(|&b| b > 0);
         }
     }
     None
+}
+
+/// macOS probe: `sysctl -n hw.memsize`.
+///
+/// Runs the tool rather than calling `sysctlbyname(3)` so the whole path stays
+/// safe Rust and — apart from the kernel key itself — is exercised by tests on
+/// every platform via [`run_sysctl_memsize`].
+fn sysctl_hw_memsize_bytes() -> Option<u64> {
+    // A runtime `cfg!` rather than `#[cfg]`: the code below is then compiled
+    // and type-checked on Linux CI too, instead of only on a Mac.
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    run_sysctl_memsize(SYSCTL_PATHS)
+}
+
+/// Invoke the first `sysctl` in `paths` that exists and parse its output.
+fn run_sysctl_memsize(paths: &[&str]) -> Option<u64> {
+    for path in paths {
+        let Ok(output) = std::process::Command::new(path)
+            .args(["-n", "hw.memsize"])
+            .output()
+        else {
+            continue; // not installed at this path, or could not be spawned
+        };
+        if !output.status.success() {
+            continue; // e.g. Linux procps sysctl, which has no hw.memsize
+        }
+        if let Some(bytes) = parse_sysctl_memsize(&String::from_utf8_lossy(&output.stdout)) {
+            return Some(bytes);
+        }
+    }
+    None
+}
+
+/// Parse the single decimal number `sysctl -n hw.memsize` prints.
+///
+/// Zero is treated as *unknown* so a degenerate reading cannot disarm the guard.
+fn parse_sysctl_memsize(stdout: &str) -> Option<u64> {
+    stdout.trim().parse::<u64>().ok().filter(|&b| b > 0)
 }
 
 // ============================================================================
@@ -886,27 +996,165 @@ mod tests {
 
     #[test]
     fn test_small_model_passes_resource_check() {
-        // 7B Q4K: ~4 GB file, ~28 GB F32 dequant — fits in most systems
-        let tensors: Vec<(usize, u8)> = vec![
-            (144 * 1000, 12), // Q4K tensor: 256K elements
-        ];
-        // Should pass on any system with >40 GB RAM
-        let result = validate_f32_dequant_limits(&tensors, 4_000_000_000);
-        // We can't assert pass/fail without knowing test machine RAM,
-        // but we can verify it doesn't panic
-        let _ = result;
+        // A ~1 MB APR file whose F32 dequant is ~4 MB. This fits under 80% of
+        // any machine that can run the test suite, so — unlike the previous
+        // `let _ = result;` version, which excluded no outcome — it may assert.
+        let tensors: Vec<(usize, u8)> = vec![(144 * 1000, 12)]; // Q4K, 256K elements
+        let result = validate_f32_dequant_limits(&tensors, 1_000_000);
+        assert!(
+            result.is_ok(),
+            "a ~5 MB peak must pass the resource gate on any host that can run \
+             this test, got: {:?}",
+            result.err()
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // #2568: the OOM guard must FAIL CLOSED when RAM cannot be measured.
+    // These run on every platform — the decision is separated from the probe
+    // precisely so no target_os can skip them.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_dequant_verdict_fails_closed_when_memory_unknown() {
+        // Before #2568 the unknown case became u64::MAX and this returned Ok.
+        let err = dequant_verdict(1 << 30, 8 << 30, None)
+            .expect_err("unknown system memory MUST refuse the dequant, not allow it");
+        assert_eq!(err.gate, "resource_limits");
+        assert!(
+            err.reason.contains("cannot determine total system RAM"),
+            "the refusal must name the missing measurement, got: {}",
+            err.reason
+        );
     }
 
     #[test]
-    fn test_system_memory_bytes_returns_some_on_linux() {
-        // On Linux CI, /proc/meminfo should exist
-        if cfg!(target_os = "linux") {
-            let mem = system_memory_bytes();
-            assert!(
-                mem.is_some(),
-                "system_memory_bytes should return Some on Linux"
-            );
-            assert!(mem.unwrap() > 0, "system memory should be > 0");
+    fn test_dequant_verdict_fails_closed_even_for_a_tiny_model() {
+        // "Unknown" is not "unlimited" at ANY size: a 1-byte file is refused
+        // too, because the guard has nothing to compare against.
+        assert!(
+            dequant_verdict(1, 0, None).is_err(),
+            "an unmeasurable host must refuse every dequant, however small"
+        );
+    }
+
+    #[test]
+    fn test_dequant_verdict_refuses_over_80_percent() {
+        // 16 GiB host, 14 GiB peak: over the 12.8 GiB threshold.
+        let err = dequant_verdict(2 << 30, 12 << 30, Some(16 << 30))
+            .expect_err("14 GiB peak on a 16 GiB host must be refused");
+        assert!(
+            err.reason.contains("exceeds 80% of system RAM"),
+            "{}",
+            err.reason
+        );
+    }
+
+    #[test]
+    fn test_dequant_verdict_allows_under_80_percent() {
+        // 16 GiB host, 8 GiB peak: under the 12.8 GiB threshold.
+        assert!(dequant_verdict(2 << 30, 6 << 30, Some(16 << 30)).is_ok());
+    }
+
+    #[test]
+    fn test_dequant_verdict_threshold_does_not_overflow() {
+        // `mem_total * 80 / 100` panicked in debug builds at u64::MAX (that is
+        // what the old unwrap_or(u64::MAX) fed it). `/5*4` cannot.
+        assert!(dequant_verdict(0, 0, Some(u64::MAX)).is_ok());
+        assert!(
+            dequant_verdict(1, 0, Some(0)).is_err(),
+            "a host reporting 0 bytes of RAM fits nothing"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // #2568: the probe. NOTE — no `if cfg!(target_os = ...)` guard here.
+    // The deleted guard was the whole defect: it skipped macOS, the only
+    // platform where the probe was broken, so the test read as coverage while
+    // proving nothing there.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_system_memory_bytes_is_measurable_on_this_platform() {
+        let mem = system_memory_bytes();
+        assert!(
+            mem.is_some(),
+            "no memory probe for target_os={}: the F32 dequant OOM guard cannot \
+             be armed here. Add a probe to system_memory_bytes() (#2568) — do \
+             NOT skip this assertion by platform.",
+            std::env::consts::OS,
+        );
+        assert!(mem.expect("checked is_some above") > 0);
+    }
+
+    #[test]
+    fn test_parse_meminfo_total_bytes() {
+        let sample = "MemTotal:       131377776 kB\nMemFree:         2000 kB\n";
+        assert_eq!(parse_meminfo_total_bytes(sample), Some(131_377_776 * 1024));
+        // MemTotal absent, malformed, or zero => unknown, never a wrong number
+        assert_eq!(parse_meminfo_total_bytes("MemFree: 2000 kB\n"), None);
+        assert_eq!(parse_meminfo_total_bytes("MemTotal:       kB\n"), None);
+        assert_eq!(parse_meminfo_total_bytes("MemTotal:       0 kB\n"), None);
+        assert_eq!(parse_meminfo_total_bytes(""), None);
+    }
+
+    #[test]
+    fn test_parse_sysctl_memsize() {
+        // What `/usr/sbin/sysctl -n hw.memsize` prints on macOS 26.5.2 arm64.
+        assert_eq!(parse_sysctl_memsize("17179869184\n"), Some(17_179_869_184));
+        assert_eq!(
+            parse_sysctl_memsize("  17179869184  "),
+            Some(17_179_869_184)
+        );
+        assert_eq!(parse_sysctl_memsize(""), None);
+        assert_eq!(parse_sysctl_memsize("hw.memsize: 17179869184\n"), None);
+        assert_eq!(parse_sysctl_memsize("0\n"), None);
+    }
+
+    /// Exercise the macOS probe's exec+status+parse path on ANY platform by
+    /// pointing it at a stub that behaves like `sysctl -n hw.memsize`.
+    #[test]
+    fn test_run_sysctl_memsize_against_a_stub() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let good = dir.path().join("sysctl_ok");
+        std::fs::write(&good, "#!/bin/sh\necho 17179869184\n").expect("write stub");
+        set_executable(&good);
+
+        // A stub that exits non-zero must NOT be believed, even though it
+        // prints a number — that is the Linux `sysctl` case.
+        let bad = dir.path().join("sysctl_fail");
+        std::fs::write(&bad, "#!/bin/sh\necho 999\nexit 1\n").expect("write stub");
+        set_executable(&bad);
+
+        let missing = dir.path().join("sysctl_absent");
+        let (good, bad, missing) = (
+            good.to_string_lossy().into_owned(),
+            bad.to_string_lossy().into_owned(),
+            missing.to_string_lossy().into_owned(),
+        );
+
+        assert_eq!(run_sysctl_memsize(&[&good]), Some(17_179_869_184));
+        assert_eq!(
+            run_sysctl_memsize(&[&bad]),
+            None,
+            "non-zero exit must not be trusted"
+        );
+        assert_eq!(run_sysctl_memsize(&[&missing]), None);
+        // A missing/failing path falls through to the next candidate.
+        assert_eq!(
+            run_sysctl_memsize(&[&missing, &bad, &good]),
+            Some(17_179_869_184)
+        );
+        assert_eq!(run_sysctl_memsize(&[]), None);
+    }
+
+    fn set_executable(path: &std::path::Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod stub");
         }
     }
 }
