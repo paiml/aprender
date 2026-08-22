@@ -690,6 +690,14 @@ jobs:
         run: bash scripts/check_facade_compat.sh --self-test
       - name: provable-contracts 0.3.1 code still compiles against the facades
         run: bash scripts/check_facade_compat.sh
+      # aprender#2628: check_facade_compat.sh proves the facades COMPILE and are
+      # shaped right; it does not touch the cascade's publish-ORDER gate. That
+      # gate read its requirement with a line-shaped sed and returned READY when
+      # it could not parse one, so rewriting a dependency into the equivalent
+      # multi-line table -- which cargo treats as IDENTICAL -- disarmed it
+      # silently and the cascade would upload a facade before its upstream.
+      - name: The cascade's facade order gate arms on every spelling cargo accepts
+        run: bash scripts/check_facade_order_gate.sh
       # aprender#2558: nothing detected two crates declaring the same `[[bin]]
       # name`. FOUR things claimed `pv` -- the crates.io pipe viewer, /usr/bin/pv,
       # aprender-contracts-cli and the provable-contracts-cli facade -- all
