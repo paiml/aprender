@@ -45,7 +45,7 @@ fn create_test_parquet(path: &str, num_rows: i32) {
 
     let file = File::create(path).unwrap();
     let props = WriterProperties::builder()
-        .set_max_row_group_size(usize::try_from(num_rows).unwrap() / 2) // 2 row groups
+        .set_max_row_group_row_count(Some(usize::try_from(num_rows).unwrap() / 2)) // 2 row groups
         .build();
 
     let mut writer = ArrowWriter::try_new(file, schema, Some(props)).unwrap();

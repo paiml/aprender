@@ -539,6 +539,8 @@ deps-validate:
 deny:
 	@echo "🔒 Running cargo-deny checks..."
 	@bash scripts/check_deny_exemptions_live.sh
+	@bash scripts/check_no_ghsa_banned_crates.sh --self-test
+	@bash scripts/check_no_ghsa_banned_crates.sh
 	@if command -v cargo-deny >/dev/null 2>&1; then \
 		cargo deny check; \
 	else \
