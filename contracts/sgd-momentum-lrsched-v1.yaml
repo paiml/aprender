@@ -28,7 +28,6 @@ metadata:
   - 'crates/aprender-train/src/optim/sgd.rs — SGD::step scalar + SIMD paths (fix site)'
   - 'crates/aprender-train/src/optim/simd/axpy.rs — simd_axpy fused y += a*x'
 
-kind: KernelContract
 name: sgd-momentum-lrsched
 version: 1.0.0
 scope: crates/aprender-train/src/optim/sgd.rs — SGD momentum velocity buffer + lr application

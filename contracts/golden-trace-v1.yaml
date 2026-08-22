@@ -7,7 +7,6 @@ metadata:
     - "PMAT-QA golden output methodology."
   description: "Golden trace validation for inference correctness"
 
-kind: AlgorithmContract
 name: golden-trace
 version: "1.0.0"
 scope: "crates/aprender-serve/src/"

@@ -588,7 +588,7 @@ qa_gate:
   - tokenizer_training_correctness
   - pipe_stdin_support
   - model_path_resolution
-  pass_criteria: All 7 falsification tests pass
+  pass_criteria: All 9 falsification tests pass
   falsification: FALSIFY-ACLI-001 through FALSIFY-ACLI-007
 
 toyota_way_principles:

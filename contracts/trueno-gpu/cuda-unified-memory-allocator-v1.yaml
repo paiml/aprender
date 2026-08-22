@@ -18,7 +18,6 @@ metadata:
   - trueno-gpu/src/driver/memory/buffer.rs (GpuBuffer::new)
   - 'evidence/distill-7b-teacher-loadtest-gx10/findings.json (5-whys, Bug A)'
 
-kind: KernelContract
 name: cuda-unified-memory-allocator
 version: 1.0.0
 scope: trueno-gpu crate — GpuBuffer allocation policy

@@ -45,7 +45,6 @@ metadata:
   - 'crates/aprender-quant/src/dequantize.rs — dequantize_q4_k_to_f32 / q5 / q6 (fix site if RED)'
   - 'crates/aprender-quant/src/roundtrip_fidelity_tests.rs — falsifiers'
 
-kind: KernelContract
 name: quant-roundtrip-fidelity
 version: 1.0.0
 scope: crates/aprender-quant — k-quant quantize/dequantize round-trip fidelity

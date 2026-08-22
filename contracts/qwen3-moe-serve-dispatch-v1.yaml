@@ -10,7 +10,6 @@ metadata:
     - "paiml/claude-code-parity-apr M260 / M270 / M280 — empirical evidence that apr serve currently dispatches MoE GGUFs through the dense path"
   description: "apr serve chat-completions handler dispatch contract for qwen3_moe-arch GGUF models"
 
-kind: KernelContract
 name: qwen3-moe-serve-dispatch
 version: "1.2.0"
 scope: "crates/aprender-serve/src/api/cuda_chat_backend.rs + crates/aprender-serve/src/infer/inference_result.rs"

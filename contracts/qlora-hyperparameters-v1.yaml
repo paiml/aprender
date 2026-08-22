@@ -7,7 +7,6 @@ metadata:
   references:
     - "Provable contract for qlora-hyperparameters-v1"
 
-kind: AlgorithmContract
 name: qlora-hyperparameters
 version: "1.0.0"
 scope: "crates/aprender-train/src/finetune/"

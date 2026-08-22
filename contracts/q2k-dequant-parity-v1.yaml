@@ -22,7 +22,6 @@ metadata:
   - 'ggml-quants.c dequantize_row_q2_K / candle-core k_quants.rs BlockQ2K::to_float (reference)'
   - 'contracts/q3k-dequant-v1.yaml — sibling K-quant dequant contract'
 
-kind: KernelContract
 name: q2k-dequant-parity
 version: 1.0.0
 scope: aprender-core + aprender-serve Q2_K dequantization (GGML type 10)

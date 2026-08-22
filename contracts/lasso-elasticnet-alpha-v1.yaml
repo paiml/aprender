@@ -16,7 +16,6 @@ metadata:
     coefficients and intercept as scikit-learn, otherwise users porting code silently
     get under-regularized models.
 
-kind: KernelContract
 name: lasso-elasticnet-alpha
 version: "1.0.0"
 scope: "crates/aprender-core/src/linear_model/lasso_impl.rs, crates/aprender-core/src/linear_model/input.rs"

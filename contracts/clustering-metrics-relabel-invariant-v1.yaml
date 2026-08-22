@@ -29,7 +29,6 @@ metadata:
     0..n_distinct range and sets k = |distinct labels| before computing centroids,
     scatter, B/W, and the (k-1)/(n-k) divisors — exactly sklearn's semantics.
 
-kind: KernelContract
 name: clustering-metrics-relabel-invariant
 version: "1.0.0"
 scope: "crates/aprender-core/src/metrics/mod.rs"

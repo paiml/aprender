@@ -677,6 +677,26 @@ jobs:
       # dark; nothing was watching.
       - name: Every contract cites a test that exists (strict-test-binding)
         run: bash scripts/check_contract_test_binding.sh
+      # Poka-yoke (#2551): `cargo test -p aprender-contracts --test
+      # validate_contracts` is the only thing that parses and validates the
+      # contract corpus from Rust rather than through `pv lint`. It failed 3 of
+      # its 10 tests on main -- `contracts/binding.yaml` is a BindingRegistry,
+      # not a contract, and this target's walker did not skip it the way
+      # `pv lint`'s does -- and NO workflow ran it, so nobody saw. In the dark
+      # its pinned corpus totals also rotted: `assert_eq!(total_eq, 486)` against
+      # a real 2329. Both walkers now share `schema::is_contract_yaml` and the
+      # assertions are shrink-only ratchets. Cheap here: this job already builds
+      # aprender-contracts for the strict-test-binding guard above.
+      # All three were dark AND red. kani_harness_generation and
+      # probar_test_generation carried their own copies of the same walker with
+      # the same bug; probar_test_generation additionally died on the
+      # alphabetically FIRST contract it walked, so the other 1226 were never
+      # examined. All three share `schema::is_contract_yaml` now.
+      - name: Contract corpus integrity (three dark test targets, now green)
+        run: |
+          cargo test -p aprender-contracts --test validate_contracts
+          cargo test -p aprender-contracts --test kani_harness_generation
+          cargo test -p aprender-contracts --test probar_test_generation
       - name: aprender-core builds for wasm32
         run: bash scripts/check_wasm32_core_builds.sh
       # aprender#2546: `provable-contracts*` were renamed to `aprender-contracts*`

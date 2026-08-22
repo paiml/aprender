@@ -10,7 +10,6 @@ metadata:
     Provable contract for sparse matrix formats and SpMV/SpMM operations.
     Defines CSR format invariants, SpMV correctness, and error bounds.
 
-kind: AlgorithmContract
 name: sparse-spmv
 version: "1.0.0"
 scope: "crates/aprender-sparse — CSR, COO, BSR, SELL formats + SpMV/SpMM/SpGEMM"

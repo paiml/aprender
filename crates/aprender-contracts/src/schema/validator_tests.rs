@@ -277,6 +277,9 @@ falsification_tests: []
     #[path = "validator_tests_extra.rs"]
     mod extra;
 
+    #[path = "validator_tests_top_level.rs"]
+    mod top_level;
+
     // ── PMAT-741 BeatBenchmark validator (BEAT-001..007) ──────────────────────
 
     /// Wrap a `beat:` block body in a valid beat-benchmark metadata envelope so

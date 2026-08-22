@@ -185,5 +185,5 @@ qa_gate:
   - acceptance_bounds
   - adjusted_distribution
   - min_token_emission
-  pass_criteria: All 5 falsification tests pass + 3 Kani harnesses verify
+  pass_criteria: All 6 falsification tests pass + 3 Kani harnesses verify
   falsification: Replace min(1, q/p) with q/p to break acceptance probability bounds

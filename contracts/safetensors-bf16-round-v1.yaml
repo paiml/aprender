@@ -27,7 +27,6 @@ metadata:
     The fix performs round-to-nearest-even and preserves NaN, matching
     half::bf16::from_f32.
 
-kind: KernelContract
 name: safetensors-bf16-round
 version: "1.0.0"
 scope: "crates/aprender-core/src/serialization/safetensors.rs"

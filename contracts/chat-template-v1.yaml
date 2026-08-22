@@ -37,7 +37,6 @@ metadata:
     canonical (system, user) Qwen2.5-Coder-7B teacher prompt. Discharges
     FALSIFY-SHIP-008 / AC-SHIP1-008 at PARTIAL_ALGORITHM_LEVEL.
 
-kind: AlgorithmContract
 name: chat-template
 version: "1.3.0"
 scope: "crates/aprender-core/src/text/chat_template/ + crates/aprender-serve/src/chat/"

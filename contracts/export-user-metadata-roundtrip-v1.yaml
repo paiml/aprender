@@ -10,7 +10,6 @@ metadata:
     Correctness contract for user-metadata preservation on APR export
     (format::converter::tensor::extract_user_metadata). Export round-trip fidelity:
     SafeTensors __metadata__ imported into an APR file must survive re-export.
-kind: KernelContract
 name: export-user-metadata-roundtrip
 version: "1.0.0"
 scope: "crates/aprender-core/src/format/converter/tensor.rs"

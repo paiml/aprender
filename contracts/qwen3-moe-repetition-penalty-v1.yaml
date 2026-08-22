@@ -11,7 +11,6 @@ metadata:
     - "paiml/aprender qwen3-moe-sampling-v1.yaml v1.0.0 — documented out-of-scope: 'Repetition penalty (repeat_last_n / repeat_penalty fields exist in QuantizedGenerateConfig but are dense-path-only today; separate contract qwen3-moe-repetition-penalty-v1)'"
   description: "Repetition penalty (repeat_penalty / repeat_last_n) for the qwen3_moe inference path"
 
-kind: KernelContract
 name: qwen3-moe-repetition-penalty
 version: "1.1.0"
 scope: "crates/aprender-serve/src/infer/qwen3_moe_generate.rs::sample_from_logits"

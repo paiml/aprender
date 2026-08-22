@@ -143,5 +143,5 @@ qa_gate:
   - variance_bounded
   - variance_ordering
   - deterministic
-  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 5 falsification tests pass + Kani harnesses verify
   falsification: Sort eigenvalues ascending instead of descending
