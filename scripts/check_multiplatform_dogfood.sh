@@ -41,14 +41,57 @@ rc=0
 
 printf -- '--- multi-platform dogfood receipts for %s -------------------------\n' "$VERSION"
 
-# ANTI-VACUITY. An empty matrix would make every check below pass over nothing,
-# which is exactly how a gate ends up reporting success while discriminating
-# nothing. Assert the universe is non-trivial before trusting any verdict from it.
+# ANTI-VACUITY, TWO LAYERS. The first layer alone was UNSOUND and the hole was
+# found by adversarial review before this gate ever landed:
+#
+#   `HOSTS=...` and the floor `-lt 4` were BOTH literals in THIS file, so ONE
+#   commit editing both to two exited 0 -- measured, rc=0 with the matrix
+#   silently halved. The original mutation evidence proved the floor FIRES at 2;
+#   it never proved the floor could not be LOWERED. That is the same defect the
+#   competitive-parity ledger spent five rounds on:
+#
+#       ANY STATE THE AUTHOR WRITES AND THE GATE READS CAN BE MOVED IN THE SAME
+#       COMMIT.
+#
+# Layer 2 is the fix, and it is the parity resolution: the comparand lives on
+# PROTECTED main. `main` requires a PR, review and passing CI to change, so the
+# host list as it exists at origin/main is the one prior state this branch
+# cannot rewrite in its own PR. The matrix may GROW freely and may never SHRINK.
 n_hosts=$(printf '%s\n' $HOSTS | grep -c .)
+
+# Layer 1: an absolute floor. Weak on its own (editable here), kept because it
+# is the only thing that works during bootstrap, when main has no copy yet.
 if [ "$n_hosts" -lt 4 ]; then
     printf 'FAIL  the platform matrix has %s host(s); at least 4 are required.\n' "$n_hosts"
     printf '      A shrinking matrix silently narrows what "verified" means.\n'
     exit 1
+fi
+
+# Layer 2: the matrix at origin/main is the floor, and this file cannot move it.
+main_hosts=$(git show origin/main:scripts/check_multiplatform_dogfood.sh 2>/dev/null \
+             | sed -n 's/^HOSTS="\(.*\)"$/\1/p' | head -1)
+if [ -z "$main_hosts" ]; then
+    # BOOTSTRAP, and it is self-limiting rather than renewable: reachable only
+    # while this script does not exist at the protected ref. Once it lands, this
+    # branch is unreachable forever. A renewable bootstrap is the fifth hat of
+    # `registry: true` and is exactly what parity round 5 was caught on.
+    printf '!     BOOTSTRAP: this gate is not yet on origin/main, so the matrix\n'
+    printf '      has no protected floor this run. It gains one the moment this\n'
+    printf '      script lands.\n'
+else
+    missing=""
+    for h in $main_hosts; do
+        case " $HOSTS " in *" $h "*) ;; *) missing="$missing $h" ;; esac
+    done
+    if [ -n "$missing" ]; then
+        printf 'FAIL  the matrix DROPPED host(s) present at origin/main:%s\n' "$missing"
+        printf '      The host list at the protected ref is the floor. Editing it in\n'
+        printf '      the same commit that reads it is the defect this layer exists\n'
+        printf '      to close -- growing the matrix is free, shrinking it is not.\n'
+        exit 1
+    fi
+    printf 'ok    matrix covers every host present at origin/main (%s)\n' \
+        "$(printf '%s\n' $main_hosts | grep -c .)"
 fi
 
 for h in $HOSTS; do
