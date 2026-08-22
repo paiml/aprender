@@ -793,6 +793,88 @@ fn write_fake_serve_script(dir: &std::path::Path, pidfile: &std::path::Path) -> 
     script
 }
 
+/// A stand-in for `apr serve` that is **reachable** and **SIGTERM-deaf**.
+///
+/// Two properties, and both are load-bearing.
+///
+/// *Reachable*: `AprServeDriver::wait_for_ready` returns `Ok` only once
+/// something answers a TCP connect on the `--port` it was given, and until it
+/// does, `apr code` never reaches the `-p` branch where the child is
+/// released. So the script records **both** its pid and the port it was told
+/// to use; the test binds that port itself.
+///
+/// *SIGTERM-deaf*: `PR_SET_PDEATHSIG` (aprender#1712) asks the kernel to send
+/// the child **one** `SIGTERM` when the parent dies, and does not escalate. A
+/// child that ignores `SIGTERM` is therefore reaped only by
+/// `AprServeDriver::drop`, which sends `SIGTERM`, waits 2s, and then
+/// `SIGKILL`s — and `drop` runs only if every owner of the driver `Arc` was
+/// released before `std::process::exit`. Measured: with a SIGTERM-*obeying*
+/// fixture, reverting `release_driver` back to the pre-fix `drop(driver)`
+/// leaves this test GREEN, because `PR_SET_PDEATHSIG` reaps the child on
+/// Linux no matter what the process did on the way out. The whole assertion
+/// would have been theater. Ignoring `SIGTERM` removes that mask, so the test
+/// observes what the fix actually changed — and it is not an artificial
+/// shape: the 2s-then-`SIGKILL` escalation exists in `Drop` precisely because
+/// a real server can be slow or deaf to `SIGTERM`.
+#[cfg(unix)]
+fn write_reachable_serve_script(
+    dir: &std::path::Path,
+    handshake: &std::path::Path,
+) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let script = dir.join("reachable-apr-serve.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\n\
+             trap '' TERM\n\
+             port=''\n\
+             prev=''\n\
+             for a in \"$@\"; do\n\
+             \tif [ \"$prev\" = \"--port\" ]; then port=\"$a\"; fi\n\
+             \tprev=\"$a\"\n\
+             done\n\
+             printf '%s %s\\n' \"$$\" \"$port\" > '{}'\n\
+             while : ; do sleep 1; done\n",
+            handshake.display()
+        ),
+    )
+    .expect("write reachable serve script");
+    let mut perms = std::fs::metadata(&script)
+        .expect("stat script")
+        .permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&script, perms).expect("chmod script");
+    script
+}
+
+/// Answer every connection with a minimal OpenAI chat-completion, so a
+/// `-p` turn completes and `apr code` reaches its exit path.
+#[cfg(unix)]
+fn answer_completions_forever(listener: std::net::TcpListener) {
+    use std::io::{Read, Write};
+    const BODY: &str = concat!(
+        r#"{"choices":[{"message":{"role":"assistant","content":"ok"},"#,
+        r#""finish_reason":"stop"}],"#,
+        r#""usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#
+    );
+    for stream in listener.incoming() {
+        let Ok(mut sock) = stream else { break };
+        std::thread::spawn(move || {
+            let _ = sock.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+            let mut buf = [0u8; 8192];
+            let _ = sock.read(&mut buf);
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                 content-length: {}\r\nconnection: close\r\n\r\n{BODY}",
+                BODY.len()
+            );
+            let _ = sock.write_all(resp.as_bytes());
+            let _ = sock.flush();
+        });
+    }
+}
+
 #[cfg(unix)]
 fn pid_is_alive(pid: i32) -> bool {
     // `kill -0` probes for existence without signalling.
@@ -880,5 +962,166 @@ fn falsify_2607_bare_apr_code_with_closed_stdin_spawns_no_serve_child() {
         output.status.code(),
         Some(2),
         "#2607: a usage refusal exits 2 (clap's usage-error code), not 0. stderr:\n{stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Issue #2607, second call site.
+//
+// The falsifier above covers the BARE invocation: no child may be spawned at
+// all. It says nothing about the invocation that legitimately spawns one.
+// `apr code -p "..."` discovers a model, launches `apr serve`, answers the
+// prompt, and then ends in `std::process::exit` — which runs no destructors.
+// That is the call site where the orphan was actually observed, and it was
+// only covered at unit level (`release_driver`'s Arc ordering, with a fake
+// driver). This covers it live, against the real binary and a real child.
+// ---------------------------------------------------------------------------
+
+/// `apr code -p "..."` must leave no `apr serve` child behind.
+///
+/// The fixture is deliberately *reachable*, so the run goes all the way
+/// through `release_driver` + `process::exit` rather than bailing out in
+/// `AprServeDriver::launch`'s error path, and deliberately *SIGTERM-deaf*, so
+/// `PR_SET_PDEATHSIG` cannot reap the child on the parent's behalf and mask
+/// the very defect this asserts (see `write_reachable_serve_script`). Both
+/// halves are checked — that the child really was spawned (otherwise the
+/// absence check is vacuous) and that it did not outlive the parent.
+#[test]
+#[cfg(unix)]
+fn falsify_2607_non_interactive_p_run_leaves_no_serve_child() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let home = tmp.path();
+
+    // A model for auto-discovery. `-p` is an explicit instruction, so unlike
+    // the bare case this run is SUPPOSED to launch a server for it.
+    let models = home.join("models");
+    std::fs::create_dir_all(&models).expect("create ./models");
+    std::fs::write(models.join("fake-30b-moe.gguf"), b"GGUF").expect("write fake gguf");
+
+    let handshake = home.join("serve.handshake");
+    let fake_serve = write_reachable_serve_script(home, &handshake);
+
+    let mut child = apr_binary()
+        .args(["code", "-p", "hi"])
+        .current_dir(home)
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("APR_BIN", &fake_serve)
+        .env("APR_SERVE_READY_TIMEOUT_S", "20")
+        // Bound the HTTP turn: the default is 1800s.
+        .env("APR_AGENT_HTTP_TIMEOUT_S", "20")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn apr code -p");
+
+    // Wait for the fake server to announce its pid and the port it was told
+    // to listen on, then bind that port so the readiness check can pass.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let (serve_pid, port) = loop {
+        if let Ok(raw) = std::fs::read_to_string(&handshake) {
+            let mut parts = raw.split_whitespace();
+            if let (Some(pid), Some(port)) = (parts.next(), parts.next()) {
+                if let (Ok(pid), Ok(port)) = (pid.parse::<i32>(), port.parse::<u16>()) {
+                    break (pid, port);
+                }
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "#2607: `apr code -p` never spawned its inference backend — the fixture is not \
+             exercising the path this test exists for"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+
+    let listener = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap_or_else(|e| {
+        let _ = child.kill();
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &serve_pid.to_string()])
+            .status();
+        panic!(
+            "#2607: could not bind 127.0.0.1:{port} to stand in for `apr serve` ({e}); \
+             another process is holding the port `apr code` derived from its own pid"
+        )
+    });
+    std::thread::spawn(move || answer_completions_forever(listener));
+
+    let output = child.wait_with_output().expect("wait for apr code");
+
+    // Reap unconditionally before asserting, so a failure does not leak a
+    // process into the rest of the suite.
+    let alive = pid_is_alive(serve_pid);
+    if alive {
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &serve_pid.to_string()])
+            .status();
+    }
+
+    assert!(
+        !alive,
+        "#2607: `apr code -p` exited leaving its `apr serve` child (pid {serve_pid}) running. \
+         The `-p` branch ends in std::process::exit, which runs no destructors, so every owner \
+         of the driver Arc must be released explicitly first. stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// #2607 follow-up: `echo "hi" | apr code` must NOT be refused.
+///
+/// `run_repl` reads stdin line by line and treats EOF as `/exit`, so a pipe
+/// carrying a line has always been one REPL turn. The #2607 guard keys on
+/// "no argument AND no interactive session", and reading that as
+/// `!stdin.is_terminal()` alone would silently convert this working
+/// invocation into an exit-2 usage error. The refusal is for stdin that can
+/// never deliver a byte (`/dev/null`, a closed fd), not for a pipe with a
+/// prompt in it.
+///
+/// Asserted against an empty HOME and cwd, so the run has no model to find
+/// and stops at `NO_MODEL` — which is proof it got past the guard, all the
+/// way to model resolution, without spawning anything.
+#[test]
+#[cfg(unix)]
+fn falsify_2607_piped_prompt_is_not_refused_as_a_bare_invocation() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let home = tmp.path();
+
+    let mut child = apr_binary()
+        .arg("code")
+        .current_dir(home)
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn apr code with a pipe");
+    {
+        use std::io::Write;
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        stdin.write_all(b"hi\n").expect("write piped prompt");
+        // Leave it open long enough that the peek cannot be answered by EOF.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let output = child.wait_with_output().expect("wait for apr code");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        !stderr.contains("nothing to do"),
+        "#2607 follow-up: `echo \"hi\" | apr code` carries an instruction and must not be \
+         refused as a bare invocation. stderr:\n{stderr}"
+    );
+    assert_ne!(
+        output.status.code(),
+        Some(2),
+        "#2607 follow-up: a piped prompt must not exit with the usage-error code. \
+         stderr:\n{stderr}"
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(5),
+        "#2607 follow-up: with a prompt on stdin and no model anywhere, the run must reach \
+         model resolution and stop at NO_MODEL — proof the guard let it through. stderr:\n{stderr}"
     );
 }

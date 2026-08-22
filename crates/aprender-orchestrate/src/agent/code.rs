@@ -95,9 +95,10 @@ pub fn permit_single_prompt(
 /// first `read_line` on a closed stdin returns EOF, so the parent exited
 /// immediately and left the child behind.
 ///
-/// Only a *bare* invocation is refused. Every named argument is an explicit
-/// operator choice and keeps working, including on a pipe:
-/// `-p`/a prompt (non-interactive), `--model`, `--manifest`, `--resume`.
+/// Only a *bare* invocation with **nothing on stdin** is refused. Every named
+/// argument is an explicit operator choice and keeps working, including on a
+/// pipe: `-p`/a prompt (non-interactive), `--model`, `--manifest`, `--resume`.
+/// So does a pipe that actually carries bytes — see [`Self::stdin_has_input`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CodeInvocation {
     /// A positional prompt was supplied.
@@ -112,12 +113,34 @@ pub struct CodeInvocation {
     pub has_resume: bool,
     /// stdin is an interactive terminal (so a REPL is actually possible).
     pub stdin_is_terminal: bool,
+    /// stdin is not a terminal but **has bytes waiting** — a pipe or a
+    /// redirected file carrying REPL input.
+    ///
+    /// `echo "hi" | apr code` has always driven the REPL:
+    /// [`run_repl`](crate::agent::repl::run_repl) reads
+    /// stdin line by line and treats EOF as `/exit`, so one piped line is one
+    /// turn. Refusing on `!stdin_is_terminal` alone would have silently
+    /// narrowed that to an exit-2 usage error. Piped bytes ARE an
+    /// instruction; `/dev/null` and a closed fd are not, and those are the
+    /// shape #2607 was reported against.
+    ///
+    /// [`from_args`](Self::from_args) only populates this when every other
+    /// field already says "would refuse" — the peek blocks until the writer
+    /// sends a byte or closes, exactly as the REPL's first `read_line` would,
+    /// and there is no reason to pay that on a shape that runs regardless.
+    pub stdin_has_input: bool,
 }
 
 impl CodeInvocation {
     /// Read the invocation shape of the current process' stdin plus the
     /// parsed flags. Split from [`Self::wants_help`] so the policy is
     /// testable without a controlled terminal.
+    ///
+    /// The stdin peek is deliberately last and deliberately conditional: it
+    /// runs **only** when every flag already says "would refuse", because
+    /// [`reader_has_input`] blocks until the writer produces a byte or closes
+    /// the pipe. On every other shape the field is not consulted by
+    /// [`Self::wants_help`], so leaving it `false` cannot change the verdict.
     #[must_use]
     pub fn from_args(
         prompt: &[String],
@@ -126,22 +149,34 @@ impl CodeInvocation {
         manifest_path: Option<&PathBuf>,
         resume: Option<&Option<String>>,
     ) -> Self {
-        Self {
+        let mut inv = Self {
             has_prompt: !prompt.is_empty(),
             print,
             has_model: model.is_some(),
             has_manifest: manifest_path.is_some(),
             has_resume: resume.is_some(),
             stdin_is_terminal: std::io::stdin().is_terminal(),
+            stdin_has_input: false,
+        };
+        if inv.wants_help() {
+            inv.stdin_has_input = stdin_may_carry_input();
         }
+        inv
     }
 
     /// `true` when this invocation must print help and do nothing else.
     ///
-    /// The invariant: **no argument was given AND no interactive session is
-    /// possible**, so there is no work this run could legitimately do. Taking
-    /// any action here — least of all launching an inference server for a
-    /// model picked by scanning the disk — is a guess, not an instruction.
+    /// The invariant: **no argument was given AND no input can ever arrive**,
+    /// so there is no work this run could legitimately do. Taking any action
+    /// here — least of all launching an inference server for a model picked
+    /// by scanning the disk — is a guess, not an instruction.
+    ///
+    /// "No input can ever arrive" is three distinct things, and only the
+    /// first two were checked when this guard was first written:
+    /// stdin is not a terminal (no REPL), **and** stdin has no bytes waiting
+    /// (not a pipe carrying a prompt). Dropping the third clause turned
+    /// `echo "hi" | apr code` — a working invocation — into an exit-2 usage
+    /// error, which is a narrowing #2607 never asked for.
     #[must_use]
     pub fn wants_help(&self) -> bool {
         !self.has_prompt
@@ -150,14 +185,85 @@ impl CodeInvocation {
             && !self.has_manifest
             && !self.has_resume
             && !self.stdin_is_terminal
+            && !self.stdin_has_input
     }
+}
+
+/// `true` when `reader` has at least one byte available, without consuming it.
+///
+/// Blocks until the writer produces a byte or closes: `/dev/null`, a closed
+/// fd, and a writer that closed without writing all report `false`; a pipe or
+/// a redirected file carrying data reports `true`. `fill_buf` is a peek, so
+/// the bytes stay queued for whoever reads next — and `Stdin`'s buffer is
+/// process-global, so the later `read_line`/`read_to_string` drains the very
+/// bytes this made visible.
+///
+/// Free function, generic over [`std::io::BufRead`], so the predicate is
+/// falsifiable against real readers without a controlled terminal or a real
+/// pipe. An I/O error is reported as "no input": a stdin that cannot be read
+/// is exactly the shape that must refuse.
+#[must_use]
+pub fn reader_has_input(reader: &mut impl std::io::BufRead) -> bool {
+    matches!(reader.fill_buf(), Ok(bytes) if !bytes.is_empty())
+}
+
+/// `true` when a stdin of this file type could ever deliver a byte.
+///
+/// A FIFO, a redirected regular file and a socket can; a character device
+/// cannot, and that is the whole point — `apr code < /dev/null`, the shape
+/// #2607 was reported against, lands here as a character device. A terminal
+/// is also a character device, but [`CodeInvocation::from_args`] has already
+/// settled that case with `IsTerminal` before this is consulted.
+///
+/// Split out as a pure predicate over a [`std::fs::FileType`] so it can be
+/// falsified against real files (`/dev/null` vs a `tempfile`) rather than
+/// against a mock.
+#[cfg(unix)]
+#[must_use]
+pub fn kind_can_carry_input(file_type: &std::fs::FileType) -> bool {
+    use std::os::unix::fs::FileTypeExt;
+    file_type.is_fifo() || file_type.is_file() || file_type.is_socket()
+}
+
+/// Whether this process' stdin can still deliver input.
+///
+/// Two steps, in this order, and the order is the load-bearing part:
+///
+/// 1. Stat stdin. A character device (`/dev/null`) can never deliver a byte,
+///    so it is refused **without reading** — which is also what keeps step 2
+///    unreachable from any test harness, since `cargo nextest` hands each
+///    test `/dev/null` and a plain `cargo test` in a terminal is short-
+///    circuited by `IsTerminal` one level up.
+/// 2. Otherwise peek. [`reader_has_input`] blocks until the writer sends a
+///    byte or closes, which is exactly what the REPL's first `read_line`
+///    always did — so `sleep 5 | apr code` waits, and `true | apr code`
+///    (a pipe closed without a byte) is refused instead of launching a
+///    server for a session that has nothing to say.
+///
+/// A stat that fails (no `/dev/stdin` on this host) falls through to the peek
+/// rather than refusing: an unreadable `/dev/stdin` says nothing about fd 0,
+/// and a closed fd 0 makes the peek return `false` on its own.
+#[cfg(unix)]
+fn stdin_may_carry_input() -> bool {
+    match std::fs::metadata("/dev/stdin") {
+        Ok(meta) if !kind_can_carry_input(&meta.file_type()) => false,
+        _ => reader_has_input(&mut std::io::stdin().lock()),
+    }
+}
+
+/// Non-Unix hosts have no `/dev/stdin` to stat; peek directly.
+#[cfg(not(unix))]
+fn stdin_may_carry_input() -> bool {
+    reader_has_input(&mut std::io::stdin().lock())
 }
 
 /// Message shown when [`CodeInvocation::wants_help`] refuses a run.
 pub const NO_ARG_NON_INTERACTIVE: &str =
-    "apr code: no arguments and stdin is not a terminal — nothing to do.\n\
+    "apr code: no arguments, stdin is not a terminal, and nothing was piped in — \
+     nothing to do.\n\
      An interactive session needs a terminal; a non-interactive run needs a prompt.\n\
-     Try:  apr code -p \"explain src/lib.rs\"   |   apr code --model <path>";
+     Try:  apr code -p \"explain src/lib.rs\"   |   echo \"hi\" | apr code   |   \
+     apr code --model <path>";
 
 /// #2607: refuse a bare `apr code` on a non-interactive stdin, before the
 /// process does anything at all.
