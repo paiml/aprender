@@ -255,31 +255,98 @@ or drop `--backend`."
             emit_trace,
             output_format,
             input_format,
-        } => batuta::agent::code::cmd_code(
-            model.clone(),
-            project.clone(),
-            resume.clone(),
-            prompt.clone(),
-            *print,
-            *max_turns,
-            manifest.clone(),
-            emit_trace.clone(),
-            // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001:
-            // forward as `&str` so the orchestrate crate need not depend on
-            // the apr-cli ValueEnum types.
-            match output_format {
-                crate::CodeOutputFormat::Text => "text",
-                crate::CodeOutputFormat::Json => "json",
-            },
-            match input_format {
-                crate::CodeInputFormat::Text => "text",
-                crate::CodeInputFormat::Json => "json",
-            },
-        )
-        .map_err(|e| CliError::Aprender(e.to_string())),
+        } => dispatch_code_command(CodeArgs {
+            model,
+            project,
+            resume,
+            prompt,
+            print: *print,
+            max_turns: *max_turns,
+            manifest,
+            emit_trace,
+            output_format: *output_format,
+            input_format: *input_format,
+        }),
 
         _ => return None,
     })
+}
+
+/// Borrowed view of the parsed `apr code` flags, so [`dispatch_code_command`]
+/// takes one argument instead of ten.
+struct CodeArgs<'a> {
+    model: &'a Option<PathBuf>,
+    project: &'a Path,
+    resume: &'a Option<Option<String>>,
+    prompt: &'a [String],
+    print: bool,
+    max_turns: u32,
+    manifest: &'a Option<PathBuf>,
+    emit_trace: &'a Option<PathBuf>,
+    output_format: crate::CodeOutputFormat,
+    input_format: crate::CodeInputFormat,
+}
+
+/// Dispatch `apr code` (PMAT-182): the sovereign coding assistant.
+///
+/// Split out of `dispatch_runtime_commands` so the start-up guard below does
+/// not add to that already-oversized match arm's cognitive complexity.
+fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
+    // #2607: `apr code` with NO arguments and a stdin that is not a terminal
+    // used to auto-discover the largest local GGUF and spawn an `apr serve`
+    // child for it. Print help instead — and print it BEFORE `cmd_code` runs,
+    // so nothing is discovered and nothing is spawned. `cmd_code` refuses the
+    // same shape on its own (it is a public library API); this exists so the
+    // operator sees the real clap help for the subcommand, not a bare error.
+    if batuta::agent::code::CodeInvocation::from_args(
+        args.prompt,
+        args.print,
+        args.model.as_ref(),
+        args.manifest.as_ref(),
+        args.resume.as_ref(),
+    )
+    .wants_help()
+    {
+        print_code_help_and_exit();
+    }
+    batuta::agent::code::cmd_code(
+        args.model.clone(),
+        args.project.to_path_buf(),
+        args.resume.clone(),
+        args.prompt.to_vec(),
+        args.print,
+        args.max_turns,
+        args.manifest.clone(),
+        args.emit_trace.clone(),
+        // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001: forward as
+        // `&str` so the orchestrate crate need not depend on the apr-cli
+        // ValueEnum types.
+        match args.output_format {
+            crate::CodeOutputFormat::Text => "text",
+            crate::CodeOutputFormat::Json => "json",
+        },
+        match args.input_format {
+            crate::CodeInputFormat::Text => "text",
+            crate::CodeInputFormat::Json => "json",
+        },
+    )
+    .map_err(|e| CliError::Aprender(e.to_string()))
+}
+
+/// #2607: render the real `apr code --help` and leave, without running the
+/// agent.
+///
+/// The exit status is clap's usage-error code (2), the same one
+/// `apr code --nonsense` produces, so a script cannot mistake "I did nothing,
+/// here is how to use me" for a completed run. Help goes to stderr for the
+/// same reason: stdout of `apr code` is the assistant's answer.
+fn print_code_help_and_exit() -> ! {
+    let mut root = <Cli as clap::CommandFactory>::command();
+    if let Some(sub) = root.find_subcommand_mut("code") {
+        eprintln!("{}", sub.render_help());
+    }
+    eprintln!("{}", batuta::agent::code::NO_ARG_NON_INTERACTIVE);
+    std::process::exit(2);
 }
 
 /// Dispatch `apr debug`: either the file dump or a debug subcommand.

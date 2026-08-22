@@ -996,3 +996,222 @@ fn interactive_sessions_take_no_single_prompt_permit() {
         .expect("interactive startup must not be refused here");
     assert!(permit.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Issue #2607: `apr code` with no arguments and stdin closed
+// ---------------------------------------------------------------------------
+
+/// A bare `apr code` on a non-terminal stdin has nothing to run: no prompt to
+/// answer and no way to hold a REPL. It must print help — NOT scan the disk
+/// for the largest GGUF and launch an inference server for it.
+#[test]
+fn falsify_2607_bare_invocation_on_closed_stdin_wants_help() {
+    let bare = CodeInvocation { stdin_is_terminal: false, ..CodeInvocation::default() };
+    assert!(
+        bare.wants_help(),
+        "#2607: a no-argument `apr code` with a closed stdin must print help, \
+         not auto-discover a model and spawn `apr serve`"
+    );
+}
+
+/// #2607 follow-up: the refusal must NOT swallow `echo "hi" | apr code`.
+///
+/// `run_repl` reads stdin line by line and treats EOF as `/exit`, so a pipe
+/// carrying one line has always been one REPL turn. A guard keyed on
+/// `!stdin_is_terminal` alone would have turned that working invocation into
+/// an exit-2 usage error — a narrowing #2607 never asked for. Piped bytes are
+/// an instruction; `/dev/null` is not.
+#[test]
+fn falsify_2607_piped_stdin_still_drives_the_repl() {
+    let piped = CodeInvocation {
+        stdin_is_terminal: false,
+        stdin_has_input: true,
+        ..CodeInvocation::default()
+    };
+    assert!(
+        !piped.wants_help(),
+        "#2607 follow-up: `echo \"hi\" | apr code` carries an instruction on stdin and must \
+         still run the REPL — refusing it narrows a working invocation"
+    );
+    // And the two cases must be told apart by exactly one bit, so neither can
+    // be made to pass by loosening the other.
+    let empty = CodeInvocation { stdin_has_input: false, ..piped };
+    assert!(
+        empty.wants_help(),
+        "#2607: the same shape with nothing on stdin (`apr code < /dev/null`) must refuse"
+    );
+}
+
+/// The peek must report presence of input **without consuming it** — the
+/// REPL/`-p` read that follows has to see the very same bytes. A predicate
+/// that ate the first line would make a piped prompt run an empty turn, which
+/// is a worse failure than the refusal it replaced.
+#[test]
+fn falsify_2607_reader_has_input_reports_and_preserves_bytes() {
+    use std::io::{BufRead, Read};
+
+    // Empty reader — a closed pipe or /dev/null.
+    let mut empty = std::io::BufReader::new(std::io::empty());
+    assert!(!crate::agent::code::reader_has_input(&mut empty), "empty stdin must report no input");
+
+    // Reader with bytes — a pipe carrying a prompt.
+    let mut piped = std::io::BufReader::new(std::io::Cursor::new(b"hi\nthere\n".to_vec()));
+    assert!(crate::agent::code::reader_has_input(&mut piped), "piped bytes must report input");
+
+    // ...and the peek consumed nothing.
+    let mut line = String::new();
+    piped.read_line(&mut line).expect("read_line after peek");
+    assert_eq!(line, "hi\n", "#2607: the peek must not eat the first line");
+    let mut rest = String::new();
+    piped.read_to_string(&mut rest).expect("drain after peek");
+    assert_eq!(rest, "there\n");
+}
+
+/// `/dev/null` is a character device and can never deliver a byte; a
+/// redirected regular file can. That distinction is what keeps the blocking
+/// peek unreachable for the `apr code < /dev/null` shape — and for every test
+/// harness, which hands tests exactly that.
+#[test]
+#[cfg(unix)]
+fn falsify_2607_dev_null_is_not_a_carrier_but_a_file_is() {
+    let dev_null = std::fs::metadata("/dev/null").expect("stat /dev/null");
+    assert!(
+        !crate::agent::code::kind_can_carry_input(&dev_null.file_type()),
+        "#2607: /dev/null must never be treated as a source of input"
+    );
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let file = tmp.path().join("piped.txt");
+    std::fs::write(&file, b"hi\n").expect("write");
+    let regular = std::fs::metadata(&file).expect("stat file");
+    assert!(
+        crate::agent::code::kind_can_carry_input(&regular.file_type()),
+        "#2607 follow-up: `apr code < prompt.txt` is an explicit instruction and must run"
+    );
+}
+
+/// The refusal is scoped to *bare* invocations. Every named argument is an
+/// explicit operator instruction and must still run on a pipe — otherwise the
+/// fix for #2607 would break `apr code -p "..." < /dev/null`, the documented
+/// non-interactive form, and CI usage of `--model`/`--manifest`/`--resume`.
+#[test]
+fn falsify_2607_named_arguments_still_run_on_closed_stdin() {
+    let base = CodeInvocation { stdin_is_terminal: false, ..CodeInvocation::default() };
+    for (label, inv) in [
+        ("-p", CodeInvocation { print: true, ..base }),
+        ("positional prompt", CodeInvocation { has_prompt: true, ..base }),
+        ("--model", CodeInvocation { has_model: true, ..base }),
+        ("--manifest", CodeInvocation { has_manifest: true, ..base }),
+        ("--resume", CodeInvocation { has_resume: true, ..base }),
+    ] {
+        assert!(
+            !inv.wants_help(),
+            "{label} is an explicit instruction — it must still run with stdin closed"
+        );
+    }
+    // And an interactive terminal always runs, arguments or not: that is the
+    // REPL, the whole point of `apr code`.
+    assert!(!CodeInvocation { stdin_is_terminal: true, ..CodeInvocation::default() }.wants_help());
+}
+
+/// `cmd_code` itself must refuse the bare/non-interactive shape, so a library
+/// embedder cannot reach model discovery either. Asserting `is_err` is the
+/// point: the pre-#2607 build returned no error and went on to spawn a child.
+#[test]
+fn falsify_2607_cmd_code_refuses_bare_non_interactive_invocation() {
+    // Under `cargo test` stdin is not a terminal, which is exactly the shape
+    // the sweep host hit. If a harness ever attaches a tty, the guard cannot
+    // fire and there is nothing to assert — say so rather than pass silently.
+    assert!(
+        !std::io::IsTerminal::is_terminal(&std::io::stdin()),
+        "test harness attached a terminal to stdin; the #2607 guard cannot be exercised here"
+    );
+    // The guard peeks stdin when — and only when — every flag already says
+    // "would refuse", and that peek blocks on a pipe with a live writer. Every
+    // harness we run under (nextest, and a redirected `cargo test`) hands tests
+    // /dev/null. Assert it rather than discover it as a hung merge queue.
+    #[cfg(unix)]
+    if let Ok(meta) = std::fs::metadata("/dev/stdin") {
+        assert!(
+            !crate::agent::code::kind_can_carry_input(&meta.file_type()),
+            "test harness attached a pipe/file to stdin; this test would block on the #2607 peek"
+        );
+    }
+    let err =
+        cmd_code(None, PathBuf::from("."), None, vec![], false, 50, None, None, "text", "text")
+            .expect_err(
+                "#2607: bare `apr code` with a closed stdin must refuse, not launch a model",
+            );
+    let msg = err.to_string();
+    assert!(msg.contains("stdin is not a terminal"), "unexpected refusal message: {msg}");
+}
+
+/// Issue #2607, second defect. `register_task_tool` stores an `Arc` clone of
+/// the driver inside the registry, so `drop(driver)` on its own leaves the
+/// strong count at 1 and the driver's `Drop` — which is what SIGTERMs the
+/// `apr serve` child — never runs. Since the `-p` path ends in
+/// `std::process::exit` (which runs no destructors), that leaked an orphaned
+/// server holding the entire model in RSS.
+#[test]
+fn falsify_2607_dropping_driver_handle_alone_leaves_serve_child_unreaped() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct ReapFlagDriver(Arc<AtomicBool>);
+    impl Drop for ReapFlagDriver {
+        fn drop(&mut self) {
+            // Stands in for AprServeDriver::drop, which kills `apr serve`.
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+    #[async_trait::async_trait]
+    impl crate::agent::driver::LlmDriver for ReapFlagDriver {
+        async fn complete(
+            &self,
+            _request: crate::agent::driver::CompletionRequest,
+        ) -> Result<crate::agent::driver::CompletionResponse, crate::agent::result::AgentError>
+        {
+            unreachable!("this driver exists only to observe its own Drop")
+        }
+        fn context_window(&self) -> usize {
+            4096
+        }
+        fn privacy_tier(&self) -> PrivacyTier {
+            PrivacyTier::Sovereign
+        }
+    }
+
+    let manifest = build_default_manifest();
+
+    // RED half: the exact sequence the pre-fix `-p` branch performed.
+    let reaped = Arc::new(AtomicBool::new(false));
+    let driver: Arc<dyn crate::agent::driver::LlmDriver> =
+        Arc::new(ReapFlagDriver(Arc::clone(&reaped)));
+    let mut tools = build_code_tools(&manifest);
+    crate::agent::task_tool::register_task_tool(&mut tools, &manifest, Arc::clone(&driver), 3);
+    assert_eq!(
+        Arc::strong_count(&driver),
+        2,
+        "the registry must hold a clone for this defect to be possible"
+    );
+    drop(driver);
+    assert!(
+        !reaped.load(Ordering::SeqCst),
+        "#2607: dropping only the local Arc must NOT be mistaken for reaping the child — \
+         if this ever holds, the registry stopped cloning the driver and this test is stale"
+    );
+    drop(tools);
+
+    // GREEN half: `release_driver` consumes the registry first, so the last
+    // handle really is the last one and `Drop` runs before `exit`.
+    let reaped = Arc::new(AtomicBool::new(false));
+    let driver: Arc<dyn crate::agent::driver::LlmDriver> =
+        Arc::new(ReapFlagDriver(Arc::clone(&reaped)));
+    let mut tools = build_code_tools(&manifest);
+    crate::agent::task_tool::register_task_tool(&mut tools, &manifest, Arc::clone(&driver), 3);
+    release_driver(tools, driver);
+    assert!(
+        reaped.load(Ordering::SeqCst),
+        "#2607: release_driver must leave no owner alive, so the `apr serve` child is killed \
+         before std::process::exit skips every destructor"
+    );
+}
