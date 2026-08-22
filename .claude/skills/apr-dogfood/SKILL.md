@@ -105,7 +105,7 @@ already guards against per-enumeration, applied one level up.
 - Workspace version: !`cargo metadata --no-deps --format-version 1 | jq -r '.packages[]|select(.name=="apr-cli")|.version'`
 - HEAD: !`git rev-parse --short HEAD`
 - Worktree clean: !`git status --porcelain | wc -l` modified paths
-- Installed apr: !`apr --version 2>/dev/null || echo "not installed"`
+- apr pinned to HEAD: !`. scripts/apr_bin.sh >/dev/null 2>&1 && "$APR" --version || echo "NOT built from HEAD — every verdict below would describe a binary you are not running"`
 - Models available: !`find ~/models -maxdepth 2 \( -name "*.apr" -o -name "*.gguf" -o -name "*.safetensors" \) -type f 2>/dev/null | wc -l`
 - Surface ledger: !`test -f docs/audits/surface_audit.csv && wc -l < docs/audits/surface_audit.csv || echo "ABSENT — Phase 2 will FAIL"`
 

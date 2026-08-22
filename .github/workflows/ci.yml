@@ -645,6 +645,29 @@ jobs:
       - name: Assertion-exclusion guard case table
         run: bash scripts/check_assertions_exclude.sh --self-test
 
+      # PMAT-742: the apr-dogfood coverage gate. The 0.63.0 surface audit found
+      # 142 of 830 shipped features carry any gate at all (17.1%), and 27 of 28
+      # binaries carry none. Where gates look they find defects at 72.5%; where
+      # they do not, the surface scores 6 by default, which does not mean "fine",
+      # it means unlooked-at. So coverage itself is now the ratchet.
+      #
+      # The comparand is docs/audits/surface_audit.csv AS IT EXISTS ON
+      # origin/main, never the working tree. The multi-platform dogfood gate kept
+      # its floor and its universe as literals in one file, so a single commit
+      # editing both defeated it while it reported green. There is no baseline
+      # number in this repo to edit: every floor is derived at run time from a
+      # ref a pull request cannot rewrite.
+      #
+      # fetch-depth for this job is 1, so origin/main must be fetched. A failed
+      # fetch does NOT degrade to a self-comparison -- the guard hard-fails on an
+      # unresolvable comparand. Text-only, no build.
+      - name: Fetch origin/main for the dogfood coverage comparand
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      - name: Dogfood coverage gate mutation table
+        run: bash scripts/check_dogfood_coverage.sh --self-test
+      - name: Dogfood coverage may not regress
+        run: bash scripts/check_dogfood_coverage.sh
+
       # FALSIFY-README-00*: README metric claims must match measurement. The
       # guard existed and ran nowhere -- its only caller was scripts/dogfood-book.sh,
       # which is itself in no workflow and no Makefile target, so it was

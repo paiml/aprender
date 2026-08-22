@@ -377,6 +377,75 @@ falsification_tests:
     membership arm PASSES; the release arm would FAIL if armed right now, and that
     is the correct reading -- nothing has been triaged yet.
 
+- id: F-DOGCOV-010
+  rule: the comparand lives on protected main, not in this tree
+  prediction: >
+    Every floor the blocking gate applies is derived at run time from
+    `git show origin/main:docs/audits/surface_audit.csv`. There is no baseline
+    NUMBER in the repository, so a pull request cannot lower a floor in the same
+    commit that breaks it.
+  test: |
+    # M4 of the guard's own mutation table.
+    bash scripts/check_dogfood_coverage.sh --self-test
+  if_fails: >
+    The gate is measuring the tree against itself. This is the exact failure the
+    multi-platform dogfood gate shipped with: its floor and its universe were
+    both literals in one file, so ONE commit editing both defeated it while it
+    reported green. A floor a PR can rewrite is not a floor.
+  mutation: >
+    In the fixture repo, commit a ledger that both LOWERS the floor and breaks it,
+    on a branch, while `main` keeps the original. Run 2026-08-22: RED, because the
+    comparand was read from `main` and not from the branch. Also proven for the
+    degenerate case: an unresolvable comparand ref is a HARD FAIL, never a
+    fallback to self-comparison, so a broken `git fetch` in CI cannot silently
+    disarm the gate.
+
+- id: F-DOGCOV-011
+  rule: a ledger row may not vanish, and coverage may not fall
+  prediction: >
+    Deleting a row for a live command turns the gate RED (G2.2, and G2.3 on the
+    denominator); flipping one in_dogfood_skill from yes to no turns it RED (G2.3,
+    on both the total and the per-binary count).
+  test: |
+    bash scripts/check_dogfood_coverage.sh
+  if_fails: >
+    Either a shipped feature was dropped from the ledger -- which deletes its
+    defect along with it and inflates the ratio by shortening the denominator --
+    or a gate was removed from a feature that had one.
+  mutation: >
+    Both run against the REAL 830-row ledger on 2026-08-22, each proven to have
+    engaged by an md5 delta before its verdict was read, each followed by a
+    restore that returned the tree to GREEN:
+      delete `apr canary check`     -> RED on G2.2, G2.3 (829 < 830) and G2.4
+      flip `apr bench` yes -> no    -> RED on G2.3 (141 < 142, and `apr` 141 < 142)
+    A gate that fires on the mutation AND on the restored tree measures nothing,
+    so the restore verdict is asserted every time, not assumed.
+
+- id: F-DOGCOV-012
+  rule: audited code may not move without the ledger following
+  prediction: >
+    If a branch changes a file the ledger cites as evidence, the branch must also
+    change the ledger. Derived entirely from git; nothing self-declared is
+    load-bearing, and the check can never go red for a commit outside the branch.
+  test: |
+    bash scripts/check_dogfood_coverage.sh
+  if_fails: >
+    The ledger is describing code that has since moved, so every row citing that
+    file is now an unverified claim with a stale line number.
+  mutation: >
+    Run 2026-08-22 against the real 78-file evidence universe: appending a line to
+    crates/apr-cli/src/commands_enum.rs with the ledger untouched -> RED naming
+    that file; restoring it -> GREEN. The fixture additionally proves the
+    converse, that the SAME evidence change WITH a ledger update is GREEN --
+    otherwise the gate would be banning edits rather than requiring a re-audit.
+  honest_limit: >
+    This forces the ledger to be TOUCHED, not to be CORRECT; it cannot tell a real
+    re-audit from a one-character edit. It is a forcing function against silent
+    drift, not a proof of accuracy. An earlier draft compared against a
+    `measured_commit:` field instead, which the same PR could edit -- and the
+    obvious patch for that rejected a legitimate re-measure whose output happened
+    to be identical. A derived quantity has neither failure mode.
+
 proof_obligations:
 - type: bound
   property: "Gate coverage never falls below the committed 142/830 baseline (F-DOGCOV-001)"
@@ -424,16 +493,28 @@ qa_gate:
     - "per_binary_and_per_band_baselines"
     - "doubly_dark_rows"
     - "every_declared_binary_probed"
-  pass_criteria: "F-DOGCOV-{001..008} all PASS; any one FAIL is NO-GO"
+  pass_criteria: "F-DOGCOV-{001..012} all PASS; any one FAIL is NO-GO"
 
 verification_summary:
-  total_obligations: 8
+  total_obligations: 11
   proven: 0
-  tested: 8
+  tested: 11
   status: proposed
   notes: >
-    All eight obligations are TESTED against the committed ledger, re-measured
+    All eleven obligations are TESTED against the committed ledger, re-measured
     2026-08-22 at cbb1ccd78, and each carries a named mutation that must turn it RED.
+
+    F-DOGCOV-010/011/012 are the BLOCKING gate, wired into `ci / gate` as
+    scripts/check_dogfood_coverage.sh. Its floors are not written down anywhere in
+    this repository: they are derived at run time from
+    `git show origin/main:docs/audits/surface_audit.csv`. That is deliberate. The
+    multi-platform dogfood gate kept its floor and its universe as literals in one
+    file, so a single commit editing both defeated it while it reported green.
+    Reading the comparand from a ref a pull request cannot rewrite is the fix.
+
+    proven: 0 is deliberate and stays deliberate. The three KH-DOGCOV harnesses
+    declare intent; no Rust harness stands behind them. This contract is TESTED,
+    never PROVED, and the summary should keep saying so until one is written.
 
     F-DOGCOV-002 EXECUTES AS OF 2026-08-22. It was SKIP-only in the first draft because
     scripts/dogfood_surfaces.sh had no --emit-features mode; that mode now exists, is

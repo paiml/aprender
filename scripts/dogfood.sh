@@ -308,14 +308,30 @@ fi
 # the first time and SIX of them had never passed it — including the contract
 # `forjar prove` maps into its own "N/N proofs passed" line. Nothing had ever
 # run the validator, so nothing knew.
+#
+# pv is PINNED, never PATH-resolved. scripts/pv_bin.sh records why: a PATH `pv`
+# was 0.49.0 while the in-tree crate was 0.63.0, and the two disagreed on the
+# gate that decides the release -- strict-test-binding reported 253 refs / 51
+# missing under the stale binary and 371 / 27 under HEAD. This script IS a
+# surface where the release decision is made, so it must not be the one holding
+# the stale binary.
+#
+# This protocol runs against any repo in the fleet, and not all of them carry
+# pv_bin.sh. Where it is absent, pv is left UNRESOLVED and the contract gates
+# below REPORT that rather than falling back to whatever PATH offers. A skipped
+# gate that says so beats a green one measured with an unknown binary.
 MISSING_TOOLS=""
-for t in pv bashrs pmat probador; do
+PV=""
+if [ -f scripts/pv_bin.sh ]; then
+  if . scripts/pv_bin.sh; then :; else MISSING_TOOLS="$MISSING_TOOLS pv"; fi
+fi
+for t in bashrs pmat probador; do
   command -v "$t" >/dev/null 2>&1 || MISSING_TOOLS="$MISSING_TOOLS $t"
 done
 if [ -n "$MISSING_TOOLS" ]; then
   mark deterministic-tools FAIL "NOT INSTALLED:$MISSING_TOOLS — install them; a release cannot be verified by absent verifiers"
 else
-  mark deterministic-tools PASS "pv $(pv --version 2>/dev/null | head -1 | awk '{print $2}'), bashrs $(bashrs --version 2>/dev/null | head -1 | awk '{print $2}'), pmat $(pmat --version 2>/dev/null | head -1 | awk '{print $2}'), probador $(probador --version 2>/dev/null | head -1 | awk '{print $2}')"
+  mark deterministic-tools PASS "pv $("${PV:-:}" --version 2>/dev/null | head -1 | awk '{print $2}'), bashrs $(bashrs --version 2>/dev/null | head -1 | awk '{print $2}'), pmat $(pmat --version 2>/dev/null | head -1 | awk '{print $2}'), probador $(probador --version 2>/dev/null | head -1 | awk '{print $2}')"
 fi
 
 # pv — provable-contract validation (YAML contracts, verification ladder).
@@ -328,11 +344,11 @@ fi
 # binding.yaml, and on a path that DOES NOT EXIST. `pv lint` only reads
 # DIRECTORIES; handed a file it lints zero contracts and calls that a pass.
 # `pv lint <DIR>` is a real gate and is run separately below.
-if command -v pv >/dev/null 2>&1; then
+if [ -n "${PV:-}" ] && [ -x "$PV" ]; then
   # POSITIVE CONTROL: a deliberately malformed contract must be rejected. If it
   # is not, "N contracts valid" is a count of files, not a verdict.
   printf 'id: BOGUS\nnot_a_real_field: 1\n' > "$WORKLOG/bogus-contract.yaml"
-  run_to "$WORKLOG/pv-pc.log" pv validate "$WORKLOG/bogus-contract.yaml"
+  run_to "$WORKLOG/pv-pc.log" "$PV" validate "$WORKLOG/bogus-contract.yaml"
   PV_PC_RC=$RUN_RC
   if [ -d contracts ]; then
     if [ "$PV_PC_RC" -eq 0 ]; then
@@ -346,7 +362,7 @@ if command -v pv >/dev/null 2>&1; then
         binding.yaml) continue ;;   # a binding REGISTRY, not a contract
       esac
       PV_N=$((PV_N + 1))
-      pv validate "$c" >/dev/null 2>&1 || PV_FAILED="$PV_FAILED $(basename "$c")"
+      "$PV" validate "$c" >/dev/null 2>&1 || PV_FAILED="$PV_FAILED $(basename "$c")"
     done
     if [ "$PV_N" -eq 0 ]; then
       mark pv-contracts FAIL "contracts/ exists but contains no validatable contract — a glob matching nothing is not a pass"
@@ -361,7 +377,7 @@ if command -v pv >/dev/null 2>&1; then
     # dangling refs, reverse coverage, composition). Directory form only.
     PV_BINDARG=()
     [ -f contracts/binding.yaml ] && PV_BINDARG=(--binding contracts/binding.yaml --crate-dir .)
-    run_to "$WORKLOG/pv-lint.log" pv lint contracts "${PV_BINDARG[@]+"${PV_BINDARG[@]}"}"
+    run_to "$WORKLOG/pv-lint.log" "$PV" lint contracts "${PV_BINDARG[@]+"${PV_BINDARG[@]}"}"
     PV_LINT_RC=$RUN_RC
     PV_LINT_SUM=$(grep -m1 '^Summary:' "$WORKLOG/pv-lint.log" | strip_ansi)
     if [ "$PV_LINT_RC" -eq 0 ]; then
@@ -389,7 +405,7 @@ if command -v pv >/dev/null 2>&1; then
     # A crate-local R1-R4 linter (rmedia's scripts/lint-contract-bindings.sh)
     # is the enforcing gate meanwhile — run it from the crate's own Makefile.
     if [ -f contracts/binding.yaml ]; then
-      run_to "$WORKLOG/pv-vb.log" pv verify-bindings contracts/binding.yaml --crate-name "$CRATE"
+      run_to "$WORKLOG/pv-vb.log" "$PV" verify-bindings contracts/binding.yaml --crate-name "$CRATE"
       PV_VB_RC=$RUN_RC
       PV_VB_LINE=$(grep -m1 'binding functions verified in source' "$WORKLOG/pv-vb.log" | strip_ansi)
       if [ -z "$PV_VB_LINE" ]; then
@@ -409,6 +425,8 @@ if command -v pv >/dev/null 2>&1; then
   else
     mark pv-contracts SKIP "no contracts/ directory in this crate"
   fi
+else
+  mark pv-contracts REPORT "pv is not pinned in this repo (no scripts/pv_bin.sh) — contracts NOT validated. A PATH-resolved pv is refused on purpose: 0.49.0 and 0.63.0 disagree on the binding gate, so a verdict from an unknown pv is not a verdict."
 fi
 
 # bashrs — shell purification (bashrs 6.66.2).
