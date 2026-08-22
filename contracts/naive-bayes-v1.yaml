@@ -164,5 +164,5 @@ qa_gate:
   - prediction_in_classes
   - prediction_deterministic
   - separable_high_accuracy
-  pass_criteria: All 5 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
   falsification: Use raw counts instead of normalized priors

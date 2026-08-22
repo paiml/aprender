@@ -9,7 +9,9 @@
 //! ```bash
 //! apr tune model.gguf --method lora --rank 8           # Plan LoRA config
 //! apr tune model.gguf --method qlora --vram 16         # Plan QLoRA for 16GB VRAM
-//! apr tune --plan 7B --vram 24                         # Memory planning
+//! apr tune --model 7B --vram 24                        # Memory planning, no model file
+//!                                                      # (`--plan` is a boolean; the
+//!                                                      #  size flag is `--model`)
 //! ```
 
 use crate::error::CliError;
@@ -89,7 +91,7 @@ pub fn run(
     let model_params = if let Some(size) = model_size {
         parse_model_size(size)?
     } else if let Some(path) = model_path {
-        estimate_params_from_file(path)?
+        read_params_from_file(path)?
     } else {
         return Err(CliError::ValidationFailed(
             "Either --model or model path required".to_string(),
@@ -243,26 +245,59 @@ fn parse_model_size(size: &str) -> Result<u64, CliError> {
     Ok((num * multiplier as f64) as u64)
 }
 
-/// Estimate parameters from model file size.
+/// Read the model's real parameter count from the tensor metadata in its header.
 ///
-/// GH-484: Use file extension to pick bytes-per-param ratio instead of
-/// blindly assuming Q4 (which overestimates fp16/bf16 models by 4x).
-fn estimate_params_from_file(path: &Path) -> Result<u64, CliError> {
-    let metadata = std::fs::metadata(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Cannot read model file: {e}")))?;
+/// #2570: this replaces `estimate_params_from_file`, which never opened the
+/// model. It multiplied the file's BYTE LENGTH by a constant picked from the
+/// filename extension — `size * 2` for `.gguf`, `size / 2` for everything
+/// else — and the result was then labelled "Model parameters" and fed into the
+/// VRAM feasibility verdict. Measured on the shipped 0.63.0 binary against
+/// `qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` (491,400,064 bytes):
+///
+///     apr inspect ... | grep Parameters   ->  630,167,424   (read from the file)
+///     apr tune ... --json                 ->  982,800,128   (= 491,400,064 x 2)
+///
+/// and on a zero-byte file it printed "Model parameters: 0", "fits in 16.0 GB
+/// VRAM", exit 0 — an empty file certified as a model that fits.
+///
+/// The correct read already exists in this binary: `apr inspect` sums the
+/// tensor shapes the same GGUF/APR/SafeTensors readers parse. This uses
+/// `format::tensors::list_tensors`, the metadata-only path behind
+/// `apr tensors`, so it costs a header read rather than a dequantisation of
+/// every tensor.
+///
+/// # Errors
+/// Returns `ValidationFailed` if the tensor metadata cannot be read, or if it
+/// describes zero parameters. `apr tune` does not substitute a guess for a
+/// header it could not parse: an unknown parameter count is not a small one.
+fn read_params_from_file(path: &Path) -> Result<u64, CliError> {
+    use aprender::format::tensors::{list_tensors, TensorListOptions};
 
-    let size_bytes = metadata.len();
+    let listing = list_tensors(path, TensorListOptions::new()).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "Cannot read tensor metadata from {}: {e}\n\
+             apr tune needs the model's real parameter count and will not guess one \
+             from the file size. Use --model <SIZE> (e.g. --model 7B) to plan without a model file.",
+            path.display()
+        ))
+    })?;
 
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let params: u64 = listing
+        .tensors
+        .iter()
+        .map(|t| t.shape.iter().product::<usize>() as u64)
+        .sum();
 
-    let estimated_params = match ext {
-        // GGUF models are typically quantized (Q4-Q8), ~0.5-1.0 bytes/param
-        "gguf" => size_bytes * 2,
-        // SafeTensors/APR/bin are typically fp16/bf16 (2 bytes/param)
-        _ => size_bytes / 2,
-    };
+    if params == 0 {
+        return Err(CliError::ValidationFailed(format!(
+            "{} declares no tensor parameters ({} tensors listed), so there is nothing to \
+             plan a fine-tune for. Use --model <SIZE> (e.g. --model 7B) to plan without a model file.",
+            path.display(),
+            listing.tensor_count
+        )));
+    }
 
-    Ok(estimated_params)
+    Ok(params)
 }
 
 // ═══════════════════════════════════════════════════════════════════════

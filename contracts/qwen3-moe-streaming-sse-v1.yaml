@@ -9,7 +9,6 @@ metadata:
     - "paiml/aprender qwen3-moe-serve-dispatch-v1.yaml v1.2.0 — Risk #6 (streaming SSE for free post-M32d)"
   description: "Per-token SSE streaming for the qwen3_moe chat-completions path"
 
-kind: KernelContract
 name: qwen3-moe-streaming-sse
 version: "1.0.0"
 scope: "crates/aprender-serve/src/api/cuda_chat_backend.rs::try_qwen3_moe_backend + crates/aprender-serve/src/infer/qwen3_moe_generate.rs"

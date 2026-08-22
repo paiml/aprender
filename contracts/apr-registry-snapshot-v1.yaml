@@ -34,7 +34,6 @@ metadata:
     - 'https://www.sqlite.org/lang_vacuum.html#vacuuminto'
   depends_on: []
 
-kind: AprRegistrySnapshotContract
 name: apr-registry-snapshot
 version: "1.0.0"
 status: ACTIVE

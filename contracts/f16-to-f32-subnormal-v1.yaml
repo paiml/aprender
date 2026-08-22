@@ -14,7 +14,6 @@ metadata:
     + diagnostic correctness: apr tensors / apr inspect / apr validate --quality on F16
     SafeTensors and ONNX models must report exact tensor statistics.
 
-kind: KernelContract
 name: f16-to-f32-subnormal
 version: "1.0.0"
 scope: "crates/aprender-core/src/format/onnx/mod.rs, crates/aprender-core/src/format/safetensors.rs"

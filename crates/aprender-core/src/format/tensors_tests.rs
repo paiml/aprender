@@ -423,6 +423,8 @@ fn test_tensor_list_result_clone() {
     assert_eq!(cloned.format_version, result.format_version);
 }
 
+#[path = "tensors_tests_bounds_2569.rs"]
+mod tensors_tests_bounds_2569;
 #[path = "tensors_tests_workflow.rs"]
 mod tensors_tests_workflow;
 #[path = "tensors_tests_stats.rs"]

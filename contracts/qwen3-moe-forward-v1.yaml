@@ -423,7 +423,6 @@ metadata:
   - rope-kernel-v1
   registry: true
 
-kind: KernelContract
 name: qwen3-moe-forward
 version: "1.5.0"
 status: ACTIVE_RUNTIME   # M32d FULLY DISCHARGED 2026-05-09 — formal cosine

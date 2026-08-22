@@ -7,7 +7,6 @@ metadata:
   references:
     - "Provable contract for pipeline-cache-v1"
 
-kind: AlgorithmContract
 name: pipeline-cache
 version: "1.0.0"
 scope: "crates/aprender-serve/src/"

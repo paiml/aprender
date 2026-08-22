@@ -156,8 +156,8 @@ fi
 printf '=== crates.io compatibility facades (check_facade_compat.sh) ===\n\n'
 rc=0
 
-ROOT_MD="$(mktemp)"; FAC_MD="$(mktemp)"; BINLOG="$(mktemp)"
-trap 'rm -f "${ROOT_MD:?}" "${FAC_MD:?}" "${BINLOG:?}"' EXIT
+ROOT_MD="$(mktemp)"; FAC_MD="$(mktemp)"; BINLOG="$(mktemp)"; TESTLOG="$(mktemp)"
+trap 'rm -f "${ROOT_MD:?}" "${FAC_MD:?}" "${BINLOG:?}" "${TESTLOG:?}"' EXIT
 ( cd "$REPO_ROOT" && cargo metadata --no-deps --format-version 1 ) > "$ROOT_MD" 2>/dev/null
 ( cd "$FACADE_WS" && cargo metadata --no-deps --format-version 1 ) > "$FAC_MD" 2>/dev/null
 # VACUOUS guard: an empty or unparsable metadata document must be RED, never a
@@ -209,10 +209,21 @@ else
 fi
 
 printf -- '\n--- BEHAVIOUR: the five 0.3.1 attribute macros still expand ---------\n'
-if ( cd "$FACADE_WS" && cargo test --quiet --workspace --target-dir "$TD" ) >/dev/null 2>&1; then
+# The output goes to a FILE, not to /dev/null, and the failure branch prints it.
+# aprender#2574: this line discarded stdout AND stderr, so when it went red the
+# whole gate emitted one context-free line -- `FAIL compat targets do not pass`
+# -- and the reader could not tell a signature drift from an OOM-killed rustc
+# without re-running the build by hand on a box under a different load. A gate
+# that fails without emitting its diagnostic costs more time than it saves.
+# One invocation only: re-running cargo to "get the output" would re-run the
+# tests under a different machine state than the one that decided the verdict.
+if ( cd "$FACADE_WS" && cargo test --quiet --workspace --target-dir "$TD" ) > "$TESTLOG" 2>&1; then
     printf 'ok    compat_invoke + compat_probe pass\n'
 else
-    printf 'FAIL  compat targets do not pass -- run `cargo test` in crates/facades\n'; rc=1
+    printf 'FAIL  compat targets do not pass -- run `cargo test` in crates/facades\n'
+    printf '      cargo output follows (%s lines):\n' "$( wc -l < "$TESTLOG" | tr -d ' ' )"
+    sed 's/^/      | /' "$TESTLOG"
+    rc=1
 fi
 
 printf -- '\n--- MUTATION CONTROL: a broken re-export must be RED ----------------\n'

@@ -3,6 +3,75 @@ use std::io::Write;
 use tempfile::{tempdir, NamedTempFile};
 
 // =========================================================================
+// #2569 — the JSON surface must refuse a file the table does not fit
+//
+// `apr tensors --json` is what the MCP tool and CI consume, so it is the
+// surface where the wrong answer does damage. On 0.63.0 a 128-byte GGUF
+// declaring 8192 bytes of tensor data produced rc=0 and
+// `"total_size_bytes": 8192` here while `apr validate` on the same bytes
+// exited 5. These assert the whole `run()` path, in both output modes.
+// =========================================================================
+
+/// A valid single-tensor GGUF: 64x32 F32 = 8192 bytes of tensor data.
+fn gguf_2569() -> Vec<u8> {
+    use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+
+    let data: Vec<u8> = (0..2048u32)
+        .flat_map(|i| (i as f32 + 1.0).to_le_bytes())
+        .collect();
+    let tensor = GgufTensor {
+        name: "test.weight".to_string(),
+        shape: vec![64, 32],
+        dtype: GgmlType::F32,
+        data,
+    };
+    let metadata = vec![(
+        "general.architecture".to_string(),
+        GgufValue::String("test".to_string()),
+    )];
+    let mut bytes = Vec::new();
+    export_tensors_to_gguf(&mut bytes, &[tensor], &metadata).expect("export GGUF");
+    bytes
+}
+
+#[test]
+fn tensors_json_refuses_a_truncated_gguf_2569() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("truncated.gguf");
+    let bytes = gguf_2569();
+    std::fs::write(&path, &bytes[..bytes.len() - 8192]).expect("write fixture");
+
+    let err = run(&path, false, None, true, 0)
+        .expect_err("--json must not certify a table that does not fit the file");
+    assert!(format!("{err}").contains("Truncated GGUF"), "got: {err}");
+}
+
+#[test]
+fn tensors_text_refuses_a_truncated_gguf_2569() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("truncated.gguf");
+    let bytes = gguf_2569();
+    std::fs::write(&path, &bytes[..bytes.len() - 8192]).expect("write fixture");
+
+    let err = run(&path, false, None, false, 0)
+        .expect_err("the text surface must agree with the JSON one");
+    assert!(format!("{err}").contains("Truncated GGUF"), "got: {err}");
+}
+
+/// Positive control: both surfaces still succeed on the intact file. Without
+/// this, a `run()` that always errored would satisfy both tests above.
+#[test]
+fn tensors_still_lists_an_intact_gguf_2569() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("intact.gguf");
+    std::fs::write(&path, gguf_2569()).expect("write fixture");
+
+    run(&path, false, None, true, 0).expect("--json must still list an intact GGUF");
+    run(&path, false, None, false, 0).expect("text must still list an intact GGUF");
+    run(&path, true, None, false, 0).expect("--stats must still work on an intact GGUF");
+}
+
+// =========================================================================
 // validate_path tests
 // =========================================================================
 

@@ -361,7 +361,12 @@ fn registry_fallback(
 
     let (model, tokenizer) = match state.get_model(model_id) {
         Ok((m, t)) => (m, t),
-        Err(e) => return fail_response(state, StatusCode::NOT_FOUND, e),
+        // #2375(4): a hardcoded 404 told clients this mounted route did not
+        // exist whenever the server simply had no model resident. That is a
+        // server-side condition — 503, the status `/v1/predict` and
+        // `/v1/gpu/warmup` already answer for it. An unknown model NAME stays
+        // 404. `model_resolution_status` is the single rule (aprender#2376(5)).
+        Err(e) => return fail_response(state, super::model_resolution_status(&e), e),
     };
 
     let prompt_text = format_chat_messages(&request.messages, Some(&request.model));

@@ -22,7 +22,6 @@ metadata:
   - 'memory/feedback_a_priori_theoretical_falsification.md -- 30 min of math saves 8 h of GPU; this is the runtime analog'
   - 'memory/feedback_smoke_defaults_leak_into_production.md -- the dual problem (this fixes the verify-side; that fixes the dispatch-side)'
 
-kind: KernelContract
 name: apr-distill-smoke-validation
 version: 1.0.0
 scope: aprender-train-distill Pipeline training loop + apr-cli run_cuda_backend dispatch

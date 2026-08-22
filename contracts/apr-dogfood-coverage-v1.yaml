@@ -1,0 +1,901 @@
+metadata:
+  version: 1.2.0
+  created: '2026-08-22'
+  author: PAIML Engineering
+  references:
+  - 'docs/audits/surface_audit.csv — 142 of 830 features gated, across 28 binaries and 14 clusters, measured 2026-08-22 @ 4bbfeb07f'
+  - 'docs/audits/surface_audit_elbow.png — k-selection evidence: inertia knee and silhouette over k in [2,45]'
+  - 'scripts/dogfood_cluster.py — the k-sweep that produced the elbow plot (k-selection ONLY; it does not write the columns)'
+  - 'scripts/check_no_cluster_id_keys.sh — T1 enforcement: nothing may key on `cluster_id`'
+  - 'docs/audits/dogfood-0.63.0-ledger.md — 201 findings, 37 clusters, 171 open, 16 open P0'
+  - '.claude/skills/apr-dogfood/SKILL.md — Phase 2, the coverage gate this contract enforces'
+  - 'scripts/dogfood_surfaces.sh — the runtime enumeration that supplies the denominator'
+  description: >
+    The gate-coverage contract for the apr-dogfood protocol. A gate suite with no
+    denominator reports a clean sweep over whatever subset it happens to cover; this
+    contract supplies the denominator and ratchets it. Measured baseline: 142 of 830
+    shipped features carry a gate (17.1%), all 142 in the `apr` binary, 27 of 28
+    binaries at zero. Coverage is ALLOWED to be 17.1%. It is not allowed to become
+    17.0%.
+
+  # ---------------------------------------------------------------------------
+  # G2.3 BASELINES -- measured 2026-08-22 at cbb1ccd78, never rounded.
+  #
+  # Every value below cites the command that produced it, because a baseline
+  # nobody can re-derive is a number someone will eventually "correct" to a
+  # rounder one. These are RATCHET FLOORS, not targets: coverage is allowed to be
+  # 17.1%, it is not allowed to become 17.0%.
+  #
+  # Reproduce the whole block with:
+  #     python3 scripts/dogfood_baseline.py
+  # which reads docs/audits/surface_audit.csv and prints exactly this YAML.
+  # ---------------------------------------------------------------------------
+  baselines:
+    measured_at: '2026-08-22'
+    # The commit the audit was taken AT, and it must be one that outlives this
+    # pull request. This field first named `cbb1ccd78`, a commit on the feature
+    # branch: a squash merge orphans it, so on `main` the provenance line would
+    # have pointed at nothing a fresh clone could resolve. `4bbfeb07f` is the
+    # branch's merge base on `main` -- the commit the surface was actually
+    # measured against, and the one the `references:` block above already
+    # cites. Provenance must name a commit that survives the merge.
+    measured_commit: 4bbfeb07f
+    ledger: docs/audits/surface_audit.csv
+
+    overall:
+      command: "python3 scripts/dogfood_baseline.py  # section: totals"
+      rows: 830
+      covered: 142
+      ratio: 0.1711            # 142/830 -- 17.1%, NOT "about 17%"
+      binaries: 28
+      binaries_at_zero_coverage: 27
+      clusters: 14
+      clusters_at_zero_coverage: 9
+      note: >
+        All 142 covered features are in `apr`. 27 of 28 binaries have no gate at
+        all, including aprender-orchestrate (184 features), aprender-test-cli (39)
+        and pv (38).
+
+    per_binary:
+      command: "python3 scripts/dogfood_baseline.py  # section: per_binary"
+      note: >
+        covered may never DECREASE for any binary; total may never decrease
+        without a reconciliation finding recording which direction moved.
+      apr: {total: 367, covered: 142}
+      aprender-orchestrate: {total: 184, covered: 0}
+      aprender-test-cli: {total: 39, covered: 0}
+      pv: {total: 38, covered: 0}
+      alimentar: {total: 35, covered: 0}
+      aprender-cgp: {total: 25, covered: 0}
+      aprender-profile: {total: 16, covered: 0}
+      apr-qa: {total: 15, covered: 0}
+      aprender-train-shell: {total: 13, covered: 0}
+      trueno-rag: {total: 13, covered: 0}
+      simular: {total: 12, covered: 0}
+      verificar: {total: 11, covered: 0}
+      aprender-explain: {total: 7, covered: 0}
+      presentar: {total: 7, covered: 0}
+      aprender-train-bench: {total: 6, covered: 0}
+      aprender-train-inspect: {total: 6, covered: 0}
+      aprender-cbtop: {total: 4, covered: 0}
+      aprender-db: {total: 4, covered: 0}
+      aprender-train-distill: {total: 4, covered: 0}
+      aprender-train-lora: {total: 4, covered: 0}
+      ptop: {total: 4, covered: 0}
+      trueno-zram: {total: 4, covered: 0}
+      aprender-compute-xtask: {total: 3, covered: 0}
+      aprender-ptx-debug: {total: 3, covered: 0}
+      apr-corpus-ingest: {total: 2, covered: 0}
+      score: {total: 2, covered: 0}
+      apr-qa-readme-sync: {total: 1, covered: 0}
+      aprender-zram-generator: {total: 1, covered: 0}
+
+    per_cluster:
+      command: "python3 scripts/dogfood_baseline.py  # section: per_cluster"
+      clusters: 14
+      clusters_at_zero_coverage: 9
+      key: cluster_label
+      note: >
+        THE ALLOCATION NOBODY CHOSE. 93.0% of all gate effort sits over 26.4% of
+        the surface: three clusters (apr-lint-diag, http-apr-serve,
+        apr-core-commands) hold 132 of 142 gates over 219 of 830 features, and the
+        remaining eleven clusters share 10 gates over 611 features. It accreted;
+        it was never allocated. Adding a 56th gate to apr-lint-diag (83.3% covered)
+        buys less than the FIRST gate in contracts-pv (0 of 76).
+
+        The cluster, not the binary, is the unit. `aprender-orchestrate` is three
+        unrelated subsystems -- 95 Banco HTTP routes, a 56-feature agent stack, 17
+        Pacha secrets commands -- so a per-BINARY floor of ">= 1 gate" lets one
+        gate on Pacha make all 184 features look touched.
+
+        REPORTED WITH THE FEATURE FRACTION, ALWAYS (T2). "5 of 14 clusters gated" is 35.7% of a PROXY; the features underneath are 142 of 830 = 17.1%.
+        One gate in a 95-member cluster is 1%, not "covered". A receipt that
+        prints the cluster figure alone rebuilds the vacuity failure one level
+        up, looking stricter than what it replaced while measuring less. The
+        pairing is enforced in
+        scripts/lib/dogfood_coverage_gate.py::enforce_pairing -- keyed on the
+        NUMBER (a denominator equal to the cluster count) rather than on a
+        phrase, and applied to every surface that can emit one: the gate report,
+        the receipt, scripts/dogfood_baseline.py and the skill.
+
+        KEYED ON `cluster_label`, NEVER `cluster_id` (T1). k-means labels permute when
+        the input moves; an obligation keyed on an id silently re-points at a
+        different set of features. Enforced by scripts/check_no_cluster_id_keys.sh.
+
+        A PRIOR, NEVER EVIDENCE (T3). Cluster membership says where to look. It
+        cannot assert that a feature works, and quality_1_10 is never derived from
+        it -- severity comes from the 0.63.0 ledger.
+      apr-core-commands: {total: 109, covered: 38}          # 34.9% of cluster, 26.8% of gate effort
+      entrypoint-and-mcp: {total: 99, covered: 9}           #  9.1% of cluster,  6.3% of gate effort
+      http-orchestrate-banco: {total: 95, covered: 0}       #  ZERO -- one HTTP harness, the cheapest large win
+      contracts-pv: {total: 76, covered: 0}                 #  ZERO -- one contract-CLI harness, 76 pv subcommands
+      data-pipeline: {total: 76, covered: 0}                #  ZERO
+      apr-lint-diag: {total: 66, covered: 55}               # 83.3% of cluster, 38.7% of gate effort
+      orchestrate-agent-stack: {total: 56, covered: 0}      #  ZERO
+      test-harness: {total: 49, covered: 0}                 #  ZERO
+      http-apr-serve: {total: 44, covered: 39}              # 88.6% of cluster, 27.5% of gate effort
+      profiling: {total: 44, covered: 1}                    #  2.3% of cluster,  0.7% of gate effort
+      rag-eval: {total: 44, covered: 0}                     #  ZERO
+      qa-cgp: {total: 37, covered: 0}                       #  ZERO
+      simulation: {total: 18, covered: 0}                   #  ZERO
+      orchestrate-pacha-secrets: {total: 17, covered: 0}    #  ZERO
+
+    per_band:
+      command: "python3 scripts/dogfood_baseline.py  # section: per_band"
+      note: >
+        THE ARGUMENT FOR MAKING COVERAGE THE ORGANIZING GATE. Where gates look,
+        they find defects: the 1-2 band is 72.5% covered. Where they do not look,
+        the surface scores 6 by DEFAULT -- 672 rows scored exactly 6, and 644 of
+        those carry no gate. A 6 does not mean "fine", it means UNLOOKED-AT, and
+        the 4.3% coverage of that band is why.
+      q1_2: {total: 80, covered: 58}     # 72.5%
+      q3_4: {total: 49, covered: 27}     # 55.1%
+      q5_6: {total: 673, covered: 29}    # 4.3%
+      q7_8: {total: 8, covered: 8}       # 100.0%
+      q9_10: {total: 20, covered: 20}    # 100.0%
+
+    hardware_provenance:
+      command: "python3 scripts/dogfood_baseline.py  # section: totals"
+      unknown: 427
+      direction: "may only DECREASE -- 427 is a ceiling"
+      note: >
+        Hardware is never inferred from a feature's name. A CUDA kernel with no
+        job that runs it is UNKNOWN.
+
+    confidence:
+      command: "python3 scripts/dogfood_baseline.py  # section: totals"
+      low_and_uncovered: 204
+      direction: "may only DECREASE -- 204 is a ceiling"
+      note: >
+        A row that is BOTH low-confidence and ungated is doubly dark: nothing
+        checks it, and the ledger itself is unsure what it claims.
+
+    broken_and_ungated:
+      command: "python3 scripts/dogfood_baseline.py  # section: totals"
+      count: 44
+      direction: "may only DECREASE -- target 0"
+      note: >
+        All 44 are in `apr`. Each needs an open issue or a written waiver before
+        the next release; the enumerated list is in the Phase 2 report and in
+        .claude/skills/apr-dogfood/SKILL.md.
+
+equations:
+  gate_coverage_ratio:
+    formula: |
+      covered = |{ r in surface_audit.csv : r.in_dogfood_skill == "yes" }|
+      total   = |surface_audit.csv|
+      coverage = covered / total
+      REQUIRE: covered >= 142 AND total >= 830
+    domain: "rows of docs/audits/surface_audit.csv, reconciled against the runtime enumeration"
+    codomain: "f64 in [0.0, 1.0]"
+    invariants:
+    - "Baseline 142/830 = 0.171 measured 2026-08-22 at 4bbfeb07f"
+    - "The covered count may never decrease (ratchet)"
+    - "The total may never decrease without a corresponding ledger update (a shrinking denominator inflates coverage)"
+
+  denominator_reconciliation:
+    formula: |
+      runtime = enumerate(binaries, subcommands, routes, mcp_tools)   # from the BUILT binary
+      ledger  = rows(surface_audit.csv)
+      REQUIRE: runtime \ ledger == {} AND ledger \ runtime == {}
+    domain: "the shipped surface at HEAD vs the committed ledger"
+    codomain: bool
+    invariants:
+    - "A feature in the binary but not the ledger is RED — the ledger is stale"
+    - "A feature in the ledger but not the binary is RED — the surface shrank unnoticed"
+    - "Neither direction may be silently reconciled; that turns the ledger back into a list"
+
+  broken_and_ungated:
+    formula: |
+      REQUIRE: |{ r : r.quality_1_10 <= 4 AND r.in_dogfood_skill != "yes" }| == 0
+    domain: "features carrying a live ledger defect"
+    codomain: "non-negative integer"
+    invariants:
+    - "Baseline is 44, all 44 in the `apr` binary — every one a defect that shipped and would ship again unnoticed"
+    - "Target is 0; at --release each remaining entry needs an open issue AND a written waiver"
+
+  hardware_provenance:
+    formula: |
+      REQUIRE: |{ r : r.verified_hardware == "UNKNOWN" }| <= 427
+      forall r : r.verified_hardware != "UNKNOWN" =>
+        exists a CI job that RAN r on that target, or a cargo feature gate that compiles it
+    domain: "the verified_hardware column"
+    codomain: bool
+    invariants:
+    - "Baseline 427 UNKNOWN of 830; may never increase"
+    - "Hardware is NEVER inferred from a feature's name — a CUDA kernel with no job that runs it is UNKNOWN"
+
+  per_cluster_floor:
+    formula: |
+      clusters(L) = { r.cluster_label : r in L }          # the LABEL, never the id
+      gates(c, L) = |{ r in L : r.cluster_label == c AND r.in_dogfood_skill == "yes" }|
+
+      RATCHET  (always):
+        forall c in clusters(BASE) : gates(c, HEAD) >= gates(c, BASE)
+        |{ c : gates(c, HEAD) == 0 }| <= |{ c : gates(c, BASE) == 0 }|
+        clusters(BASE) subset-of clusters(HEAD)
+
+      RELEASE ARM (DOGFOOD_RELEASE=1):
+        forall c in clusters(HEAD) : gates(c, HEAD) >= 1
+
+      BASE is `git show origin/main:docs/audits/surface_audit.csv`. There is no
+      floor NUMBER in this repository. To lower one, land it on main first.
+    domain: "the cluster_label column of the reconciled ledger"
+    codomain: bool
+    invariants:
+    - "Baseline 2026-08-22: 14 clusters, 5 gated, 9 at zero, under 142 of 830 features gated -- the release arm is RED on arrival, which is the finding"
+    - "A cluster leaves zero only on an EARNED gate: one written for a feature already in the cluster on the comparand, or for genuinely new surface. A gate that arrived by moving an already-gated feature in is evidence about the cluster it came FROM"
+    - "A feature may not change cluster_label between the comparand and the working ledger without an entry in docs/audits/cluster_reassignments.yaml stating from, to and a reason"
+    - "A gate on one cluster member is evidence about the cluster; a cluster at zero has NO evidence at all"
+    - "n gates per cluster scales SUB-LINEARLY in cluster size -- the target was never 830 gates"
+    - "The unit is the cluster, not the binary: aprender-orchestrate's 184 features are three unrelated subsystems"
+    - "A cluster_label present on the comparand may not vanish -- renaming a label retires every obligation citing it"
+
+  cluster_reporting_pairing:
+    formula: |
+      forall lines emitted by the per-cluster report:
+        states_cluster_fraction(line) => states_feature_fraction(line)
+      AND at least one line states a cluster fraction (a rule applied to an empty
+      report proves nothing)
+    domain: "the text of the G2.5 report, read back by the gate before printing"
+    codomain: bool
+    invariants:
+    - "T2. Cluster coverage is a PROXY: one gate in a 95-member cluster is 1%, not covered"
+    - "5/14 clusters (35.7%) and 142/830 features (17.1%) are reported together, always"
+    - "Enforced mechanically by enforce_pairing(); deleting the feature fraction from the emitter turns the gate RED"
+    - "This is the single most important trap: reporting the proxy alone is how a coverage gate becomes theatre while looking stricter"
+
+  cluster_membership_is_declared:
+    formula: |
+      forall k in keys(BASE) INTERSECT keys(HEAD):
+        label(k, HEAD) == label(k, BASE)
+        OR declared(k, from=label(k,BASE), to=label(k,HEAD), reason != "")
+      AND forall c: earned_gates(c, HEAD) counts only gates on features that were
+        already in c on BASE, or are absent from BASE entirely
+    domain: "(binary, feature) rows common to the comparand and the working ledger"
+    codomain: bool
+    preconditions:
+    - "BASE and HEAD both parse as 10-column ledgers with >= 100 rows"
+    - "every row carries a non-empty cluster_label (enforced by ledger_schema)"
+    postconditions:
+    - "every observed move appears in the reassignment log with a matching from, to and a non-empty reason"
+    - "earned_gates(c) <= gates(c) for every cluster, with equality exactly when no gated feature moved into c"
+    invariants:
+    - "The release arm was satisfiable by RELABELLING ALONE: move an already-gated feature into a zero-gate cluster and that cluster stops being at zero with no evidence written. Nine zeros become nine tickets only if a zero cannot be made to stop EXISTING"
+    - "Clusters are DERIVED, so a re-cluster legitimately moves members. The answer is a DECLARATION, not a prohibition: a re-cluster must stay possible, a SILENT one must not"
+    - "A declaration is checked in BOTH directions -- an entry whose `to` disagrees with the working ledger is a pre-authorisation, which is how a declaration becomes a blanket permit"
+    - "A declaration buys legibility, never evidence: the zero-gate set and the release arm count EARNED gates only, so writing a gate is the only way off zero"
+    - "The log is docs/audits/cluster_reassignments.yaml and it is a LOG, not a queue: an entry stays valid once its move has landed, because its `to` still agrees with the ledger"
+
+  cluster_id_is_not_a_key:
+    formula: |
+      forall declarations d in contracts/ U scripts/ U .claude/ U docs/audits/ U .github/:
+        NOT keys_on(d, `cluster_id`)     unless d carries the pragma
+                                         `cluster-id-guard allow (<reason>)`
+    domain: "tracked declaration surfaces where a floor, gate or obligation is written"
+    codomain: bool
+    invariants:
+    - "T1. k-means labels PERMUTE on re-run: cluster 3 becomes cluster 9 when the input moves"
+    - "An obligation keyed on the id silently re-points at a different set of features -- the stale-hardcoded-list class in new clothes"
+    - "cluster_label is the durable key and is HUMAN-OWNED after the first assignment, never regenerated"
+    - "scripts/dogfood_cluster.py deliberately does NOT write the columns; it produces the k-selection evidence only"
+
+  ledger_schema:
+    formula: |
+      forall r in surface_audit.csv:
+        |columns(r)| == 10 AND r.evidence_path != ""
+        AND r.cluster_label != "" AND r.cluster_id != ""   # cluster-id-guard allow (presence check in the formal predicate, not a key)
+    domain: "RFC 4180 rows, 10 columns"
+    codomain: bool
+    invariants:
+    - "Columns are exactly: binary, feature, quality_1_10, verified_hardware, top_competitor, in_dogfood_skill, cluster_id, cluster_label, evidence_path, confidence"
+    - "A row with no evidence_path is invalid — an unevidenced claim is not a ledger entry"
+    - "A row with an empty cluster_label belongs to no cluster and is therefore outside every per-cluster floor; the gate refuses to read such a ledger"
+    - "`cluster_id` -> `cluster_label` must be a BIJECTION; a label served by two ids means a re-run permuted the ids and the ledger took the permutation halfway"
+    - "There is ONE ledger. The clustered file REPLACED the 8-column one rather than sitting beside it: two ledgers over one surface is the drift hazard this repo keeps re-finding"
+
+falsification_tests:
+- id: F-DOGCOV-001
+  rule: gate coverage ratchet
+  prediction: "covered rows >= 142 and total rows >= 830"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    cov = sum(1 for r in rows if r['in_dogfood_skill'].strip().lower() == 'yes')
+    assert len(rows) >= 830, f"denominator shrank to {len(rows)}"
+    assert cov >= 142, f"coverage regressed to {cov}/{len(rows)}"
+    EOF
+  if_fails: "gate coverage regressed below the committed baseline — NO-GO regardless of every other gate being green"
+  mutation: "flip one in_dogfood_skill from yes to no; the assert must turn RED"
+
+- id: F-DOGCOV-002
+  rule: denominator reconciliation
+  prediction: >
+    Within the emitter's DECLARED scope (the CLI subcommand tree to depth 4, from
+    --help on the built binary), the runtime enumeration and the ledger describe the
+    same surface in BOTH directions. Measured 2026-08-22 at cbb1ccd78: dirA=0, dirB=0.
+  test: |
+    # Runs for real as of 2026-08-22 -- scripts/dogfood_surfaces.sh grew the
+    # --emit-features mode this contract needed. It is deterministic (two runs are
+    # byte-identical) and it declares its scope on stderr and in a FEATURESET line.
+    bash scripts/dogfood_surfaces.sh --emit-features > /tmp/dogcov-runtime.txt 2>/tmp/dogcov-scope.txt
+    rc=$?; [ "$rc" -eq 0 ] || { echo "emit-features failed rc=$rc"; exit 1; }
+    python3 scripts/dogfood_reconcile.py /tmp/dogcov-runtime.txt
+  if_fails: >
+    The ledger no longer describes the shipped surface, so the coverage ratio is
+    measuring declared state rather than resolved state. NEITHER direction may be
+    silently reconciled -- "in the binary, not in the ledger" means the ledger went
+    stale; "in the ledger, not in the binary" means the surface shrank unnoticed.
+    Both are findings; fixing the CSV to match without recording which direction
+    moved turns the ledger back into a list.
+  mutation: >
+    Four-way discrimination, all four run 2026-08-22 and all four behaved:
+    clean tree GREEN; a no-op copy of the CSV GREEN (a gate that fires on a no-op
+    measures nothing); dropping the live row `apr canary check` turns dirA RED;
+    adding a row for `apr zzz-deleted-command` turns dirB RED.
+  scope_and_allowance: >
+    The emitter cannot enumerate flags (70 rows), HTTP routes (146, live-server
+    only), MCP tools (15), REPL verbs, or annotated/positional forms (5) -- 247 of
+    830 rows sit outside its scope and are counted, never silently dropped.
+    A further 28 in-scope rows are a DECLARED allowance: 26 are hidden by a default
+    cargo build behind `dev`, `hf-hub`, `doctest` and `eval`, PROVEN by rebuilding
+    with the feature and watching the subcommands appear (not inferred from the cfg
+    attribute); 2 are the literal `help` subcommand the emitter filters. The
+    allowance is ENUMERATED rather than tolerated as a count, so a 29th mismatch
+    still turns the gate RED.
+
+- id: F-DOGCOV-003
+  rule: no broken-and-ungated feature
+  prediction: "every feature with quality <= 4 carries a gate, or an issue plus a waiver"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    bad = [r for r in rows
+           if int(r['quality_1_10']) <= 4 and r['in_dogfood_skill'].strip().lower() != 'yes']
+    print(f"{len(bad)} broken-and-ungated (baseline 44)")
+    assert len(bad) <= 44, f"grew to {len(bad)}"
+    EOF
+  if_fails: "a known-broken feature has no gate — it shipped once and will ship again unnoticed"
+  mutation: "set one covered row's quality to 2 and its in_dogfood_skill to no; the count must exceed 44"
+
+- id: F-DOGCOV-004
+  rule: hardware provenance never inferred
+  prediction: "UNKNOWN count <= 427 and every non-UNKNOWN claim names a job or a feature gate"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    unk = sum(1 for r in rows if r['verified_hardware'].strip().upper() == 'UNKNOWN')
+    assert unk <= 427, f"UNKNOWN grew to {unk}"
+    EOF
+  if_fails: "hardware verification regressed, or a claim was inferred from a feature name rather than a job that ran"
+  mutation: "claim nvidia-cuda for a feature no CI job runs; the provenance check must turn RED"
+
+- id: F-DOGCOV-005
+  rule: ledger schema, evidence, and the id/label bijection
+  prediction: "830+ rows, exactly 10 columns, zero blank evidence_path, zero blank cluster_label, id<->label a bijection"
+  test: |
+    python3 - <<'EOF'
+    import collections, csv
+    exp = ['binary','feature','quality_1_10','verified_hardware',
+           'top_competitor','in_dogfood_skill','cluster_id','cluster_label',
+           'evidence_path','confidence']
+    rdr = csv.DictReader(open('docs/audits/surface_audit.csv'))
+    assert rdr.fieldnames == exp, rdr.fieldnames
+    rows = list(rdr)
+    assert all(len(r) == 10 for r in rows), "ragged row"
+    assert not [r for r in rows if not r['evidence_path'].strip()], "row with no evidence"
+    assert not [r for r in rows if not r['cluster_label'].strip()], "row with no cluster"
+    fwd, rev = collections.defaultdict(set), collections.defaultdict(set)
+    for r in rows:
+        fwd[r['cluster_label']].add(r['cluster_id'])  # cluster-id-guard allow (bijection check, not a key)
+        rev[r['cluster_id']].add(r['cluster_label'])  # cluster-id-guard allow (bijection check, not a key)
+    assert all(len(v) == 1 for v in fwd.values()), "a label carries two ids"
+    assert all(len(v) == 1 for v in rev.values()), "an id carries two labels"
+    EOF
+  if_fails: >
+    The ledger is malformed, carries an unevidenced claim, or has a row outside
+    every cluster. A broken bijection means a re-cluster permuted the ids and the
+    ledger took the permutation halfway -- exactly the drift T1 exists to stop.
+  mutation: "blank one evidence_path, blank one cluster_label, or give one label two ids; each must turn the assert RED"
+
+- id: F-DOGCOV-006
+  rule: per-binary and per-band baselines never regress
+  prediction: >
+    Every per-binary and per-band `covered` count in the baselines block still
+    matches the ledger. Measured 2026-08-22: apr 142/367, the other 27 binaries
+    0, bands 58/80, 27/49, 29/673, 8/8, 20/20.
+  test: |
+    python3 scripts/dogfood_baseline.py --check
+  if_fails: >
+    A per-binary or per-band count drifted from the committed baseline. The
+    aggregate ratio can hide this: dropping a gate on `apr` while adding one
+    elsewhere leaves 142/830 unchanged. Per-binary is what makes the 27-at-zero
+    finding un-hideable.
+  mutation: >
+    Run 2026-08-22 against the COMMITTED script in a scratch tree: clean ledger
+    GREEN, byte-identical no-op copy GREEN, and flipping one `apr bench` gate
+    from yes to no (142 -> 141) turns it RED, naming both the total and the
+    per-binary count.
+
+- id: F-DOGCOV-007
+  rule: doubly-dark rows never grow
+  prediction: "rows that are BOTH low-confidence and ungated stay <= 204"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    n = sum(1 for r in rows
+            if r['confidence'].strip().lower() == 'low'
+            and r['in_dogfood_skill'].strip().lower() != 'yes')
+    print(f"{n} low-confidence AND ungated (baseline 204)")
+    assert n <= 204, f"grew to {n}"
+    EOF
+  if_fails: >
+    A row that is both low-confidence and ungated is doubly dark -- nothing
+    checks it, and the ledger is unsure what it even claims. Growth here means
+    the audit is losing ground faster than the gates gain it.
+  mutation: "set one high-confidence covered row to low + no; the count must exceed 204"
+
+- id: F-DOGCOV-008
+  rule: every declared binary is actually probed
+  prediction: >
+    Every binary `cargo metadata` declares is either built and probed, or named
+    in the emitter's UNPROBED list. Measured 2026-08-22: 28 declared, 26 built,
+    `ptop` and `score` UNPROBED behind required-features.
+  test: |
+    bash scripts/dogfood_surfaces.sh --emit-features > /tmp/dogcov-runtime.txt 2>/dev/null
+    python3 - <<'EOF'
+    import json, subprocess
+    md = json.loads(subprocess.run(
+        ['cargo', 'metadata', '--no-deps', '--format-version', '1'],
+        capture_output=True, text=True).stdout)
+    declared = {t['name'] for p in md['packages'] for t in p['targets'] if 'bin' in t['kind']}
+    probed, unprobed = set(), set()
+    for line in open('/tmp/dogcov-runtime.txt'):
+        head, _, rest = line.rstrip('\n').partition('\t')
+        if head == 'UNPROBED':
+            unprobed.add(rest.split(' ', 1)[0])
+        elif head not in ('FEATURESET', ''):
+            probed.add(head)
+    missing = declared - probed - unprobed
+    assert not missing, f"declared but neither probed nor declared-unprobed: {sorted(missing)}"
+    EOF
+  if_fails: >
+    A binary ships that no probe has ever run and nothing recorded as unprobed.
+    This is the vacuity failure in its most expensive form: surface_cli
+    vacuity-guards on the DECLARED count (28) and then iterates the BUILT set
+    (26), so `ptop` and `score` were silently skipped while the guard passed.
+  mutation: "add a [[bin]] with required-features and no probe; the assert must turn RED"
+
+- id: F-DOGCOV-009
+  rule: every broken-and-ungated feature is triaged before a release
+  prediction: >
+    docs/audits/dogfood-the-44.yaml has one entry per quality<=4 ungated ledger
+    row, and at RELEASE time every entry carries an issue or a written waiver.
+  test: |
+    python3 - <<'EOF'
+    import csv, re
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    broken = {r['feature'] for r in rows
+              if int(r['quality_1_10']) <= 4
+              and r['in_dogfood_skill'].strip().lower() != 'yes'}
+    text = open('docs/audits/dogfood-the-44.yaml', encoding='utf-8').read()
+    listed = set(re.findall(r"^- feature: '(.*)'$", text, re.M))
+    assert not (broken - listed), f"untriaged: {sorted(broken - listed)}"
+    assert not (listed - broken), f"stale waiver entries: {sorted(listed - broken)}"
+    # Release-time arm. Off by default so the gate is usable mid-cycle; the
+    # release checklist sets DOGFOOD_RELEASE=1 and then a null/null entry FAILS.
+    import os
+    if os.environ.get('DOGFOOD_RELEASE'):
+        entries = text.split('- feature: ')[1:]
+        untriaged = [e.split('\n')[0].strip("'") for e in entries
+                     if 'issue: null' in e and 'waiver: null' in e]
+        assert not untriaged, f"{len(untriaged)} features ship broken and ungated with no issue and no waiver: {untriaged[:5]}"
+    EOF
+  if_fails: >
+    Either a known-broken ungated feature is missing from the triage file, or the
+    file carries an entry for a feature that no longer qualifies. At release time
+    it also fails when an entry has neither an issue nor a waiver -- that is a
+    defect shipping unrecorded, which is precisely how these 44 accumulated.
+  mutation: >
+    Delete one entry from dogfood-the-44.yaml -> RED (untriaged). Add an entry for
+    a healthy feature -> RED (stale). With DOGFOOD_RELEASE=1 set and all 44 at
+    issue:null/waiver:null -> RED, which is its state today.
+  status_today: >
+    All 44 entries are issue: null / waiver: null as of 2026-08-22. The set
+    membership arm PASSES; the release arm would FAIL if armed right now, and that
+    is the correct reading -- nothing has been triaged yet.
+
+- id: F-DOGCOV-010
+  rule: the comparand lives on protected main, not in this tree
+  prediction: >
+    Every floor the blocking gate applies is derived at run time from
+    `git show origin/main:docs/audits/surface_audit.csv`. There is no baseline
+    NUMBER in the repository, so a pull request cannot lower a floor in the same
+    commit that breaks it.
+  test: |
+    # M4 of the guard's own mutation table.
+    bash scripts/check_dogfood_coverage.sh --self-test
+  if_fails: >
+    The gate is measuring the tree against itself. This is the exact failure the
+    multi-platform dogfood gate shipped with: its floor and its universe were
+    both literals in one file, so ONE commit editing both defeated it while it
+    reported green. A floor a PR can rewrite is not a floor.
+  mutation: >
+    In the fixture repo, commit a ledger that both LOWERS the floor and breaks it,
+    on a branch, while `main` keeps the original. Run 2026-08-22: RED, because the
+    comparand was read from `main` and not from the branch. Also proven for the
+    degenerate case: an unresolvable comparand ref is a HARD FAIL, never a
+    fallback to self-comparison, so a broken `git fetch` in CI cannot silently
+    disarm the gate.
+
+- id: F-DOGCOV-011
+  rule: a ledger row may not vanish, and coverage may not fall
+  prediction: >
+    Deleting a row for a live command turns the gate RED (G2.2, and G2.3 on the
+    denominator); flipping one in_dogfood_skill from yes to no turns it RED (G2.3,
+    on both the total and the per-binary count).
+  test: |
+    bash scripts/check_dogfood_coverage.sh
+  if_fails: >
+    Either a shipped feature was dropped from the ledger -- which deletes its
+    defect along with it and inflates the ratio by shortening the denominator --
+    or a gate was removed from a feature that had one.
+  mutation: >
+    Both run against the REAL 830-row ledger on 2026-08-22, each proven to have
+    engaged by an md5 delta before its verdict was read, each followed by a
+    restore that returned the tree to GREEN:
+      delete `apr canary check`     -> RED on G2.2, G2.3 (829 < 830) and G2.4
+      flip `apr bench` yes -> no    -> RED on G2.3 (141 < 142, and `apr` 141 < 142)
+    A gate that fires on the mutation AND on the restored tree measures nothing,
+    so the restore verdict is asserted every time, not assumed.
+
+- id: F-DOGCOV-012
+  rule: audited code may not move without the ledger following
+  prediction: >
+    If a branch changes a file the ledger cites as evidence, the branch must also
+    change the ledger. Derived entirely from git; nothing self-declared is
+    load-bearing, and the check can never go red for a commit outside the branch.
+  test: |
+    bash scripts/check_dogfood_coverage.sh
+  if_fails: >
+    The ledger is describing code that has since moved, so every row citing that
+    file is now an unverified claim with a stale line number.
+  mutation: >
+    Run 2026-08-22 against the real 78-file evidence universe: appending a line to
+    crates/apr-cli/src/commands_enum.rs with the ledger untouched -> RED naming
+    that file; restoring it -> GREEN. The fixture additionally proves the
+    converse, that the SAME evidence change WITH a ledger update is GREEN --
+    otherwise the gate would be banning edits rather than requiring a re-audit.
+  honest_limit: >
+    This forces the ledger to be TOUCHED, not to be CORRECT; it cannot tell a real
+    re-audit from a one-character edit. It is a forcing function against silent
+    drift, not a proof of accuracy. An earlier draft compared against a
+    `measured_commit:` field instead, which the same PR could edit -- and the
+    obvious patch for that rejected a legitimate re-measure whose output happened
+    to be identical. A derived quantity has neither failure mode.
+
+- id: F-DOGCOV-013
+  rule: per-cluster floor (G2.5)
+  prediction: >
+    No cluster_label loses a gate, no cluster_label present on origin/main
+    vanishes, no feature changes cluster_label undeclared, and the count of
+    clusters with zero EARNED gates does not rise. Measured 2026-08-22: 14 clusters, 5 gated, 9 at zero, under 142 of 830 features gated;
+    93.0% of gate effort over 26.4% of the surface. At DOGFOOD_RELEASE=1 every
+    cluster must carry >= 1 EARNED gate, which is RED on arrival -- nine clusters
+    with no evidence at all is the finding, not the 688 uncovered rows.
+  test: |
+    bash scripts/check_dogfood_coverage.sh
+    # and the registered mutation table, which runs the same script against a
+    # scratch repo whose `main` carries the ledger:
+    bash scripts/check_dogfood_coverage.sh --self-test
+  if_fails: >
+    A gate was traded out of a cluster, or a cluster_label was renamed and took
+    every obligation citing it with it. The per-BINARY floor cannot see either:
+    aprender-orchestrate's 184 features are three unrelated subsystems, so one
+    gate on Pacha secrets makes all 184 look touched.
+  mutation: >
+    M5, run 2026-08-22 and attributed by finding text, not by exit code: ungate
+    solo-cluster's ONLY gate AND gate a member of pad-cluster in the same edit, so
+    the overall count and every per-binary count are UNCHANGED. RED naming
+    "gates in cluster `solo-cluster`"; restoring the ledger -> GREEN; a
+    byte-identical no-op rebuild -> GREEN. Engagement proved by an md5 delta on
+    the ledger before the verdict is read.
+
+    M8, added 2026-08-22, is the attack the count-only floor could not see. Move
+    a GATED feature into the zero-gate cluster and write ONE new gate in the
+    cluster it left. Every count then holds: solo-cluster still has one gate,
+    pad-cluster's gate count ROSE, the zero-gate cluster count FELL, no label
+    vanished, overall and per-binary both rose. Run against the pre-fix module it
+    prints `clusters gated 3/3 (100.0%)` and exits 0  [t2-pairing allow (quoting
+    the pre-fix verdict verbatim is the evidence)]  -- a zero that stopped
+    EXISTING rather than being closed, with nothing proved about pad-cluster's 200
+    features. Run against this one it exits 1 naming "G2.5 membership FAIL" and
+    reports pad-cluster as `[1 inherited, 0 earned]`. That A/B is the
+    falsification.
+
+    M8b: DECLARE the same move in docs/audits/cluster_reassignments.yaml and arm
+    DOGFOOD_RELEASE=1. Still RED, naming "carry no EARNED gate" -- a declaration
+    buys legibility, not evidence. The paired GREEN is the same fixture at the
+    same release arm with a gate WRITTEN on a pad-cluster row instead of moved
+    into it. Those two runs are the whole rule: a re-cluster stays possible, a
+    silent one does not, and neither retires an obligation.
+
+- id: F-DOGCOV-014
+  rule: cluster coverage is never reported without the feature fraction (T2)
+  prediction: >
+    Every emitted line stating a CLUSTER-level ratio also states the underlying
+    FEATURE-level ratio, on EVERY channel one can be emitted through: this gate's
+    report, the receipt, scripts/dogfood_baseline.py and
+    .claude/skills/apr-dogfood/SKILL.md. 5 of 14 clusters (35.7%) is a proxy and 142 of 830 features (17.1%) is the thing.
+    One gate in a 95-member cluster is
+    1%. The rule keys on the NUMBER -- a denominator equal to the cluster count
+    -- not on a phrase, because a phrase can be reworded and a denominator cannot;
+    both denominators are derived from the ledger at run time.
+  test: |
+    bash scripts/check_dogfood_coverage.sh > /tmp/dogcov-g25.txt 2>&1
+    rc=$?; [ "$rc" -eq 0 ] || exit 1
+    grep -q 'clusters gated .*features gated' /tmp/dogcov-g25.txt || {
+      echo "the report stated a cluster fraction with no feature fraction beside it"; exit 1; }
+    python3 scripts/lib/dogfood_coverage_gate.py \
+      --head docs/audits/surface_audit.csv \
+      --pair-scan .claude/skills/apr-dogfood/SKILL.md \
+      --pair-scan contracts/apr-dogfood-coverage-v1.yaml
+    python3 scripts/dogfood_baseline.py --check > /dev/null
+  if_fails: >
+    The receipt reports a PROXY as though it were coverage. This rebuilds the
+    vacuity failure one level up: a clean sweep over cluster membership, looking
+    stricter than the thing it replaced while measuring less. It is the single
+    most important trap in the whole cluster change.
+  mutation: >
+    M6, run 2026-08-22: delete the feature fraction from the emitter in
+    scripts/lib/dogfood_coverage_gate.py (sed on the format string; engagement
+    proved by md5 delta 3318bb3c -> 17bbc296). RED naming
+    "G2.6 T2 FAIL (the per-cluster report)"; restoring the file -> GREEN.
+    enforce_pairing() also fails on an EMPTY report, because a pairing rule
+    applied to nothing proves nothing.
+
+    M9, added 2026-08-22, is the channel M6 did not cover. The first version of
+    this rule was applied to ONE generated string -- this gate's own report --
+    so a RECEIPT could state cluster coverage without the feature fraction and
+    the gate would look STRICTER than before while measuring LESS. Strip
+    ", features gated 2/203" from the fixture receipt (md5 delta
+    b01de40c -> a091064d) -> RED naming "G2.6 T2 FAIL"; restore -> GREEN. The
+    same removal in the fixture SKILL (md5 delta e04f6087 -> e23cf253) -> RED;
+    restore -> GREEN. Enforcing the rule on one channel left three ways around
+    it, which is the defect, not the wording.
+
+- id: F-DOGCOV-015
+  rule: nothing may key on `cluster_id` (T1)
+  prediction: >
+    No contract, gate, script or skill in contracts/, scripts/, .claude/,
+    docs/audits/ or .github/ uses `cluster_id` in any PARSED position, unless the
+    line carries the pragma `cluster-id-guard allow (<reason>)`. The rule is an
+    ALLOWLIST, not a list of banned syntaxes: a standalone token is a key unless
+    the line says otherwise, and there are exactly three ways to say otherwise --
+    the token is backticked (not an identifier in yaml, python 3 or bash), it
+    follows a comment marker (read by nothing), or the line names three or more
+    ledger columns and is therefore the schema declaration.
+  test: |
+    bash scripts/check_no_cluster_id_keys.sh --self-test
+    bash scripts/check_no_cluster_id_keys.sh
+  if_fails: >
+    k-means labels PERMUTE when the input moves, so an obligation keyed on an id
+    silently re-points at a different set of features the next time the surface is
+    re-clustered. Nothing announces the re-point. Use cluster_label, which is
+    human-owned after the first assignment and never regenerated.
+  mutation: >
+    M7, run 2026-08-22: a fixture contract keyed on cluster_label is GREEN;
+    sed-swapping its key to the permuting id (md5 delta 5102c3e9 -> 26982245) is
+    RED; restoring is GREEN. The guard found its FIRST real violation in its own
+    mutation harness -- the literal sed `s|key: <label>|key: <id>|` is itself a
+    keying line.
+
+    M10, added 2026-08-22, is the mutation the four-syntax BLACKLIST could not
+    have: a fixture floor script grouped by the permuting id
+    (`groupby("<id>")`, md5 delta b80c7d8c -> 4cee3bcd) is RED under the
+    allowlist and was GREEN under the blacklist. An A/B of the extracted
+    classify_line over twelve ordinary keying constructs -- groupby, sort_values,
+    .get, attribute access, a dict comprehension key, a SQL WHERE, ==, setattr,
+    tuple unpacking, a kwarg, a yaml round-trip and a step name -- returns OK for
+    all twelve on the pre-fix guard and KEY for all twelve on this one. That A/B
+    is the falsification: a blacklist of four syntaxes cannot carry a universal
+    claim, and this one did not.
+
+- id: F-DOGCOV-016
+  rule: cluster membership is declared, and a zero is closed only by an EARNED gate
+  prediction: >
+    No (binary, feature) row present on both the comparand and the working ledger
+    changes its cluster_label without a matching entry in
+    docs/audits/cluster_reassignments.yaml stating from, to and a reason; and no
+    cluster leaves the zero-gate set on a gate that arrived by relabelling.
+  test: |
+    bash scripts/check_dogfood_coverage.sh
+    bash scripts/check_dogfood_coverage.sh --self-test
+  if_fails: >
+    A zero-coverage cluster was made non-zero by MOVING features rather than by
+    writing a gate — the same move as deleting a losing benchmark row, which this
+    repo has done exactly once (d7e08043b, 395 deletions, the only beat deletion
+    in its history, removing the only two losing rows). Nine clusters at zero is
+    nine tickets only while a zero cannot be made to stop existing.
+  mutation: >
+    M8 / M8b, run 2026-08-22 and attributed by finding text. See F-DOGCOV-013 for
+    the A/B against the pre-fix module, which reported `clusters gated 3/3 (100.0%)` and exited 0 on the same input.  [t2-pairing allow (quoting the pre-fix verdict verbatim is the evidence)]
+
+proof_obligations:
+- type: bound
+  property: "Gate coverage never falls below the committed 142/830 baseline (F-DOGCOV-001)"
+  formal: "covered(HEAD) >= 142 and total(HEAD) >= 830"
+- type: completeness
+  property: "The committed ledger and the runtime enumeration describe the same surface (F-DOGCOV-002)"
+  formal: "runtime_features == ledger_features"
+- type: invariant
+  property: "No feature with quality <= 4 lacks a gate beyond the 44 baseline (F-DOGCOV-003)"
+  formal: "|{r : quality(r) <= 4 and not gated(r)}| <= 44"
+- type: bound
+  property: "verified_hardware UNKNOWN never exceeds the 427 baseline, and is never inferred from a name (F-DOGCOV-004)"
+  formal: "|{r : hw(r) == UNKNOWN}| <= 427 and forall r : hw(r) != UNKNOWN -> ran_on(r, hw(r))"
+- type: invariant
+  property: "Every ledger row has 10 columns, a non-empty evidence_path and a non-empty cluster_label; id<->label is a bijection (F-DOGCOV-005)"
+  formal: "forall r : |cols(r)| == 10 and evidence(r) != \"\" and label(r) != \"\" and bijective(id, label)"
+- type: bound
+  property: "No cluster_label loses a gate and the zero-gate cluster count never rises (F-DOGCOV-013)"
+  formal: "forall c in clusters(BASE) : gates(c, HEAD) >= gates(c, BASE) and |{c : gates(c,HEAD)==0}| <= |{c : gates(c,BASE)==0}|"
+- type: invariant
+  property: "Cluster coverage is never emitted without the feature fraction beside it (F-DOGCOV-014)"
+  formal: "forall lines L : states_cluster_fraction(L) -> states_feature_fraction(L)"
+- type: invariant
+  property: "No declaration keys on `cluster_id` without a stated pragma (F-DOGCOV-015)"
+  formal: "forall d : keys_on(d, `cluster_id`) -> carries_pragma(d)"
+- type: invariant
+  property: "No feature changes cluster undeclared, and a zero closes only on an EARNED gate (F-DOGCOV-016)"
+  formal: "forall k in BASE n HEAD : label(k,HEAD) == label(k,BASE) or declared(k) ; and zero(c) closes only if earned(c) > 0"
+
+kani_harnesses:
+- id: KH-DOGCOV-001
+  obligation: gate_coverage_ratio
+  property: coverage_ratchet_is_monotone_nondecreasing
+  bound: 4
+- id: KH-DOGCOV-002
+  obligation: denominator_reconciliation
+  property: ledger_and_runtime_feature_sets_are_equal
+  bound: 4
+- id: KH-DOGCOV-003
+  obligation: broken_and_ungated
+  property: no_quality_le_4_feature_lacks_a_gate_beyond_baseline
+  bound: 4
+
+qa_gate:
+  id: F-DOGCOV-GATE-001
+  name: "apr-dogfood gate coverage never regresses"
+  description: >
+    The organizing gate of the apr-dogfood protocol. Coverage is allowed to be
+    incomplete; it is not allowed to silently become MORE incomplete. A coverage
+    regression alone is NO-GO, independent of every other gate being green.
+  checks:
+    - "coverage_ratchet"
+    - "denominator_reconciliation"
+    - "broken_and_ungated"
+    - "hardware_provenance"
+    - "ledger_schema"
+    - "per_binary_and_per_band_baselines"
+    - "per_cluster_floor"
+    - "cluster_reporting_pairing"
+    - "cluster_id_is_not_a_key"
+    - "cluster_membership_is_declared"
+    - "doubly_dark_rows"
+    - "every_declared_binary_probed"
+  pass_criteria: "F-DOGCOV-{001..016} all PASS; any one FAIL is NO-GO"
+
+verification_summary:
+  total_obligations: 16
+  proven: 0
+  tested: 16
+  status: proposed
+  notes: >
+    All sixteen obligations are TESTED against the committed ledger, re-measured
+    2026-08-22 at cbb1ccd78, and each carries a named mutation that must turn it RED.
+
+    v1.1.0 adds the PER-CLUSTER floor (F-DOGCOV-013), the T2 reporting-pairing rule
+    (F-DOGCOV-014) and the T1 `cluster_id` key ban (F-DOGCOV-015), and moves the
+    ledger from 8 columns to 10.
+
+    v1.2.0 closes three holes in that work, each found by adversarial review and
+    each proved by an A/B against the v1.1.0 code rather than by argument.
+    F-DOGCOV-016 adds the MEMBERSHIP ratchet: the release arm was satisfiable by
+    relabelling alone, and the v1.1.0 module reports `clusters gated 3/3 (100.0%)`  [t2-pairing allow (quoting the pre-fix verdict)]
+    and exits 0 on a ledger where a gated feature was simply moved into the
+    zero-gate cluster. F-DOGCOV-015 becomes an ALLOWLIST: the four-syntax
+    blacklist returns OK on all twelve ordinary keying constructs it was A/B'd
+    against. F-DOGCOV-014 is carried to every channel a cluster ratio can be
+    emitted through -- it had been applied to one generated string, so a RECEIPT
+    could state the proxy alone and the gate would look stricter while measuring
+    less -- and it is keyed on the NUMBER rather than on a phrase.
+
+    ONE LEDGER, NOT TWO. The clustered file REPLACED docs/audits/surface_audit.csv
+    rather than sitting beside it as surface_audit_clustered.csv. Two ledgers over
+    one surface is the drift hazard this repo keeps re-finding: the second copy
+    goes stale silently, and every consumer then has to be told which one is
+    authoritative. The clustered file is a strict superset in shape -- the same 830
+    rows in the same order, plus two columns -- so there was nothing to lose by
+    replacing, and a permanent divergence risk in keeping both. Three cells DID
+    disagree (`apr run --backend {cpu,cuda,wgpu}` cited commands_enum.rs:110 in the
+    clustered snapshot and :154 in the landed ledger); :154 is the `backend:` arg
+    and :110 is a chat-template arg, so the LANDED value is correct and won. That
+    disagreement is itself the argument against two ledgers.
+
+    THE COMPARAND IS UNCHANGED. The per-cluster floor derives every number from
+    `git show origin/main:docs/audits/surface_audit.csv`, the same ref the other
+    floors use. No cluster count, no gate count and no zero-cluster count is
+    written as a literal in any gate file. The `baselines:` block below is
+    DOCUMENTATION re-derivable by `python3 scripts/dogfood_baseline.py --check`;
+    editing it changes nothing the gate enforces.
+
+    SCHEMA-UPGRADE WINDOW, declared rather than hidden: while origin/main still
+    carries the 8-column ledger, the per-cluster RATCHET has no floor to derive and
+    prints a SCHEMA UPGRADE banner instead of silently passing. The release arm
+    still applies in that window. The branch is self-closing -- it is unreachable
+    once the 10-column ledger is on main -- and a HALF-migrated comparand (one
+    cluster column, or blank labels) is a hard failure, not an upgrade.
+
+    scripts/dogfood_cluster.py produces the K-SELECTION EVIDENCE ONLY (the sweep
+    and docs/audits/surface_audit_elbow.png). It does NOT write `cluster_id` or
+    cluster_label and re-running it will not regenerate them. That is deliberate:
+    the labels are human-owned after the first assignment, so the columns are not
+    reproducible from the script and the contract does not pretend otherwise.
+
+    F-DOGCOV-010/011/012 are the BLOCKING gate, wired into `ci / gate` as
+    scripts/check_dogfood_coverage.sh. Its floors are not written down anywhere in
+    this repository: they are derived at run time from
+    `git show origin/main:docs/audits/surface_audit.csv`. That is deliberate. The
+    multi-platform dogfood gate kept its floor and its universe as literals in one
+    file, so a single commit editing both defeated it while it reported green.
+    Reading the comparand from a ref a pull request cannot rewrite is the fix.
+
+    proven: 0 is deliberate and stays deliberate. The three KH-DOGCOV harnesses
+    declare intent; no Rust harness stands behind them. This contract is TESTED,
+    never PROVED, and the summary should keep saying so until one is written.
+
+    F-DOGCOV-002 EXECUTES AS OF 2026-08-22. It was SKIP-only in the first draft because
+    scripts/dogfood_surfaces.sh had no --emit-features mode; that mode now exists, is
+    deterministic (two runs byte-identical), declares its scope on stderr plus a
+    FEATURESET line, and is consumed by scripts/dogfood_reconcile.py. Both were
+    discrimination-tested against the COMMITTED files rather than a scratch copy:
+    GREEN on the clean tree, GREEN on a byte-identical no-op, RED in each direction
+    under its own mutation.
+
+    proven: 0 is deliberate and is NOT a formality. The three KH-DOGCOV harnesses
+    declare intent; no Rust harness exists behind them, so this contract is TESTED,
+    never PROVED. Reading `status: proposed` as shape rather than proof is correct.
+
+    Known gap, recorded rather than papered over: 247 of 830 ledger rows (flags, HTTP
+    routes, MCP tools, REPL verbs, annotated forms) sit outside what --help can
+    enumerate, so F-DOGCOV-002 reconciles 583 rows and COUNTS the remaining 247. The
+    HTTP third is reachable today by setting DOGFOOD_LIVE_SERVER; measured against a
+    live server on 2026-08-22 the ledger's route set was complete in the
+    binary-to-ledger direction (0 missing), while the SOURCE-TABLE fallback the script
+    uses without a live server missed 5 routes including /v1/chat/completions and
+    claimed 2 that are only conditionally mounted.

@@ -20,7 +20,6 @@ metadata:
     matching scikit-learn — when the query exactly equals a training point, only the
     zero-distance neighbors vote.
 
-kind: KernelContract
 name: knn-tie-smallest-label
 version: "1.1.0"
 scope: "crates/aprender-core/src/classification/gaussian_nb.rs"

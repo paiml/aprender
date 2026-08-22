@@ -287,5 +287,5 @@ qa_gate:
   - no_starvation
   - correctness_under_batching
   - no_empty_outputs
-  pass_criteria: All 9 falsification tests pass + 3 Kani harnesses verify
+  pass_criteria: All 13 falsification tests pass + 3 Kani harnesses verify
   falsification: Schedule more tokens than budget to break throughput invariant

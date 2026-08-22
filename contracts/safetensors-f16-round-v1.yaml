@@ -35,7 +35,6 @@ metadata:
     grids, carries rounding into the exponent (incl. overflow to Inf), and
     preserves NaN — matching half::f16::from_f32 bit-for-bit.
 
-kind: KernelContract
 name: safetensors-f16-round
 version: "1.0.0"
 scope: "crates/aprender-core/src/serialization/safetensors.rs"

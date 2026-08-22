@@ -188,5 +188,5 @@ qa_gate:
   - token_id_range
   - empty_handling
   - merge_termination
-  pass_criteria: All 5 falsification tests pass + 3 Kani harnesses verify
+  pass_criteria: All 6 falsification tests pass + 3 Kani harnesses verify
   falsification: Remove byte-level fallback from vocabulary to break roundtrip on rare characters

@@ -10,7 +10,6 @@ metadata:
     - "paiml/aprender qwen3-moe-serve-dispatch-v1.yaml v1.2.0 — run_qwen3_moe_generate's documented out-of-scope item: 'Top-p / top-k / temperature sampling (greedy-only for V1_001 + V1_004 discharge; sampling is M32 follow-up)'"
   description: "Temperature + top-k + top-p sampling for the qwen3_moe inference path"
 
-kind: KernelContract
 name: qwen3-moe-sampling
 version: "1.1.0"
 scope: "crates/aprender-serve/src/infer/qwen3_moe_generate.rs"

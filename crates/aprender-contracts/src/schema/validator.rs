@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::error::{Severity, Violation};
-use crate::schema::types::{Contract, ContractKind};
+use crate::schema::types::{Contract, ContractKind, CONTRACT_TOP_LEVEL_FIELDS};
 
 /// Validate a parsed contract for completeness and consistency.
 ///
@@ -16,6 +16,10 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
     let mut violations = Vec::new();
 
     validate_metadata(contract, &mut violations);
+    // Runs BEFORE the kind split below on purpose: a top-level `kind:` is
+    // exactly the key that would otherwise decide which branch runs, and the
+    // whole point of SCHEMA-018 is that it silently decides nothing.
+    validate_top_level_keys(contract, &mut violations);
 
     // Kernel-only checks: these enforce the provability invariant and
     // require equations + proof obligations + tests + Kani harnesses.
@@ -184,6 +188,108 @@ fn validate_provability_invariant(contract: &Contract, violations: &mut Vec<Viol
             message: v,
             location: None,
         });
+    }
+}
+
+/// The forms a YAML key could be a plural/case/separator variant of.
+///
+/// Case-folded with separators dropped, then the key itself plus its `-s` and
+/// `-es` singularizations. Comparing SETS rather than normalizing to one
+/// canonical string is what makes `qa_gates` ~ `qa_gate` and
+/// `kani_harness` ~ `kani_harnesses` both work: a single-pass normalizer has to
+/// choose between stripping `es` (right for `harnesses`, wrong for `gates`) and
+/// stripping `s` (vice versa), and gets one of the two wrong whichever it picks.
+fn key_forms(key: &str) -> Vec<String> {
+    let squashed: String = key
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    let mut forms = vec![squashed.clone()];
+    for suffix in ["es", "s"] {
+        if let Some(stem) = squashed.strip_suffix(suffix) {
+            if !stem.is_empty() {
+                forms.push(stem.to_string());
+            }
+        }
+    }
+    forms
+}
+
+/// The real block name an unknown top-level key is a near-miss of, if any.
+///
+/// Exact field names never reach here (the parser filters them out), so a hit
+/// is always a misspelling, a case/separator variant, or a singular/plural slip
+/// — never a legitimate downstream-owned block. The near-collisions this must
+/// NOT fire on are pinned by `legitimate_downstream_keys_are_not_flagged`:
+/// `invariants` is not `type_invariants`, `gates` is not `qa_gate`, `spec` is
+/// not `coq_spec`.
+fn near_miss_of(key: &str) -> Option<&'static str> {
+    let forms = key_forms(key);
+    CONTRACT_TOP_LEVEL_FIELDS
+        .iter()
+        .copied()
+        .find(|field| key_forms(field).iter().any(|f| forms.contains(f)))
+}
+
+/// SCHEMA-018 / SCHEMA-019: reject the two top-level shapes that are never
+/// legitimate.
+///
+/// `Contract` tolerates unknown top-level keys by design — see
+/// [`crate::schema::parse_contract_str`]. This check does not change that; it
+/// carves out the two cases where serde's silence is a defect:
+///
+/// * **SCHEMA-018** — a top-level `kind:`. 119 contracts carried one. It is
+///   dropped, so the contract silently falls back to `metadata.kind` (or to the
+///   `kernel` default), and in 72 of those files the top-level value said
+///   `KernelContract` while `metadata.registry: true` made the contract an
+///   exempt registry. The key does not just fail to help, it lies.
+/// * **SCHEMA-019** — a near-miss of a real block name. This is how
+///   `contracts/publish-workspace-v1.yaml` lost four FALSIFY-PUB-* entries:
+///   they sat under a key serde did not recognise, `pv status` printed
+///   "Falsification tests: 0", and nothing anywhere said why.
+fn validate_top_level_keys(contract: &Contract, violations: &mut Vec<Violation>) {
+    // SCHEMA-020: the document is not valid YAML to a strict reader even though
+    // the derived deserializer accepted it — today that means a duplicate
+    // mapping key, one of whose values is being thrown away silently.
+    if let Some(err) = contract.strict_yaml_error.as_ref() {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "SCHEMA-020".to_string(),
+            message: format!(
+                "the contract schema accepted this document but a strict YAML reader \
+                 rejects it ({err}) — `yq`, PyYAML and any `serde_yaml::Value` consumer \
+                 will drop content here. A duplicate mapping key is the usual cause: \
+                 merge the two blocks into one"
+            ),
+            location: None,
+        });
+    }
+
+    for key in &contract.unknown_top_level_keys {
+        if key == "kind" {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: "SCHEMA-018".to_string(),
+                message: "top-level `kind:` is not part of the contract schema and is \
+                          silently dropped — the contract's kind comes from \
+                          `metadata.kind:` (or defaults to `kernel`). Move it under \
+                          `metadata:` if it names a real kind, or delete it"
+                    .to_string(),
+                location: Some("kind".to_string()),
+            });
+        } else if let Some(field) = near_miss_of(key) {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: "SCHEMA-019".to_string(),
+                message: format!(
+                    "top-level `{key}:` is not a contract field and is silently dropped \
+                     — did you mean `{field}:`? Everything under `{key}:` is invisible \
+                     to every pv gate"
+                ),
+                location: Some(key.clone()),
+            });
+        }
     }
 }
 

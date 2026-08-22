@@ -10,7 +10,6 @@ metadata:
     Compression codec roundtrip contract. APR format supports LZ4 and Zstd
     compression for tensor data. Compress→decompress must be lossless.
 
-kind: AlgorithmContract
 name: compression-roundtrip
 version: "1.0.0"
 scope: "crates/aprender-core/src/format/ — APR tensor compression"

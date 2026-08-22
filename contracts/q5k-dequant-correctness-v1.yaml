@@ -16,7 +16,6 @@ metadata:
     (`apr serve` / `apr run`). It is the alternate/secondary inference path inside the
     compute crate; the bug corrupts Q5_K weights wherever this loader is used.
 
-kind: KernelContract
 name: q5k-dequant-correctness
 version: "1.0.0"
 scope: "crates/aprender-compute/src/inference/model.rs"

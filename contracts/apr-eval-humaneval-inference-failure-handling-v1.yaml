@@ -29,7 +29,6 @@ metadata:
   - 'OpenAI HumanEval paper (Chen et al. 2021) — pass@k definition'
   - 'PMAT-701 SPEC-DISTILL-001 §86 — the Phase 4 cascade this defect masked'
 
-kind: KernelContract
 name: apr-eval-humaneval-inference-failure-handling
 version: 1.0.0
 scope: apr-cli eval subcommand — HumanEval (and by parity MBPP) inference-failure surface

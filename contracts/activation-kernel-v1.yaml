@@ -284,7 +284,7 @@ qa_gate:
   - gelu_zero
   - relu_nonnegative
   - simd_equivalence
-  pass_criteria: All 6 falsification tests pass + Kani verifies ReLU
+  pass_criteria: All 11 falsification tests pass + Kani verifies ReLU
   falsification: Replace max(0,x) with x to break ReLU non-negativity
 verification_summary:
   total_obligations: 11

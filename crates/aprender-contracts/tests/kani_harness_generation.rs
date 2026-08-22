@@ -11,7 +11,7 @@
 use std::path::Path;
 
 use provable_contracts::kani_gen::generate_kani_harnesses;
-use provable_contracts::schema::parse_contract;
+use provable_contracts::schema::{is_contract_yaml, parse_contract};
 
 fn contracts_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -20,23 +20,30 @@ fn contracts_dir() -> std::path::PathBuf {
         .expect("contracts directory must exist")
 }
 
+/// Every contract document directly under `contracts/`.
+///
+/// Filtered by `provable_contracts::schema::is_contract_yaml`, the same
+/// predicate `pv lint`'s walker uses. This file used to carry its own copy that
+/// did not skip `contracts/binding.yaml` — a `BindingRegistry`, not a contract —
+/// so it panicked on ``missing field `metadata` ``. That was the fourth copy of
+/// one walker in the tree and the third to have the same bug.
 fn all_contract_paths() -> Vec<std::path::PathBuf> {
     let dir = contracts_dir();
     let mut paths: Vec<_> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("Cannot read {}: {e}", dir.display()))
         .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("yaml")
-                && !path.file_name().unwrap().to_str().unwrap().starts_with('.')
-            {
-                Some(path)
-            } else {
-                None
-            }
+            let path = entry.ok()?.path();
+            is_contract_yaml(&path).then_some(path)
         })
         .collect();
     paths.sort();
+    assert!(
+        paths.len() > 100,
+        "all_contract_paths() found only {} files under {} — a walker that finds \
+         nothing passes every test in this file vacuously",
+        paths.len(),
+        dir.display()
+    );
     paths
 }
 

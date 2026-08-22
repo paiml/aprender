@@ -12,7 +12,6 @@ metadata:
     provable correctness: a configured grad-clip MUST actually bound the gradients
     used by the optimizer step.
 
-kind: KernelContract
 name: trainer-grad-clip
 version: "1.0.0"
 scope: "crates/aprender-train/src/train/transformer_trainer/trainer.rs"

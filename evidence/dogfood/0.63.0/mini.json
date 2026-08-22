@@ -1,0 +1,24 @@
+{
+  "host": "mini",
+  "arch": "aarch64-apple-darwin",
+  "os": "macOS 26.5.2 (Darwin 25.5.0)",
+  "accelerator": "Apple M4 / Metal",
+  "version_tested": "0.63.0",
+  "date": "2026-08-22",
+  "install_rc": 0,
+  "install_wall_seconds": 201.7,
+  "peak_rss_bytes": 2543255552,
+  "swaps": 0,
+  "surface": {
+    "cli_subcommands": 104,
+    "cli_second_level": 41,
+    "mcp_tools": 9
+  },
+  "findings": {
+    "p0_arch_specific": 0,
+    "p1": 3,
+    "p2": 2
+  },
+  "notable": "OOM guard fails OPEN: /proc/meminfo + unwrap_or(u64::MAX) => ~12.8 exabyte threshold, and its only test self-skips on macOS (#2568). block v0.1.6 under wgpu->metal faces future-rustc rejection (#2572). NEON is used, not scalar. No Gatekeeper quarantine.",
+  "verdict": "GO"
+}
