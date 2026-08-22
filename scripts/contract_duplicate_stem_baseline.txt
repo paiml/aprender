@@ -1,0 +1,60 @@
+# Divergent duplicate contract stems — PV-DUP-001 ratchet baseline.
+#
+# Each line is a contract STEM claimed by more than one file in contracts/ whose
+# copies have DIFFERENT content. Such a stem cannot be resolved to one contract,
+# so it is refused by the stem index rather than tie-broken by directory order.
+#
+# This list may only SHRINK. Adding a line is not a fix — deduplicate the stem
+# (pick the correct contract, delete or rename the other) and remove the line.
+# A stem that diverges but is absent here fails `pv lint` (PV-DUP-001).
+# A line whose stem no longer diverges also fails `pv lint` (PV-DUP-002).
+#
+# Generated from contracts/ at the commit that introduced the gate.
+apr-architecture-schema-v1
+apr-chat-session-v1
+apr-cli-operations-v1
+apr-cli-v1
+apr-data-pipeline-v1
+apr-format-safety-v1
+apr-model-lifecycle-v1
+apr-model-qa-v1
+apr-serve-v1
+attention-backward-v1
+attention-kernel-v1
+avx512-blis-v1
+avx512-q4k-v1
+builder-pattern-v1
+chat-template-v1
+cli-dispatch-v1
+codegen-dispatch-v1
+comply-check-v1
+compression-roundtrip-v1
+configuration-v1
+context-generation-v1
+cuda-classify-training-v1
+distributed-training-v1
+encoder-roundtrip-v1
+error-handling-v1
+gemm-backward-tiled-v1
+golden-trace-v1
+gpu-decode-profiling-v1
+http-api-v1
+inference-pipeline-v1
+kernel-fusion-v1
+lora-gradient-flow-v1
+lora-target-selection-v1
+memory-safety-v1
+mqs-scoring-v1
+nf4-backward-tensor-core-gemm-v1
+pagerank-kernel-v1
+parser-soundness-v1
+pipeline-cache-v1
+qlora-hyperparameters-v1
+serialization-v1
+simd-scalar-parity-v1
+tdg-scoring-v1
+tensor-layout-v1
+tokenizer-loading-v1
+tokenizer-v1
+tracing-observability-v1
+work-dbc-v1

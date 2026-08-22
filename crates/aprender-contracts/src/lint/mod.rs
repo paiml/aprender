@@ -12,6 +12,7 @@ pub mod cache;
 mod composition_gate;
 pub mod config;
 pub mod diff;
+pub mod duplicate_stems;
 pub mod finding;
 mod gates;
 mod gates_extended;
@@ -44,9 +45,34 @@ pub struct GateResult {
     pub skipped: bool,
     pub duration_ms: u64,
     pub detail: GateDetail,
+    /// Structured payload for gates invented AFTER `GateDetail` was frozen.
+    ///
+    /// See [`GateExtra`] for why this second channel exists. Adding a field to a
+    /// struct is invisible to a `match` on `GateDetail`, which is the property
+    /// the 0.3.1 compatibility corpus depends on; adding a *variant* is not.
+    /// Serialised only when present, so existing JSON output is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra: Option<GateExtra>,
 }
 
 /// Gate-specific detail payload.
+///
+/// # This enum is FROZEN at the eight variants published in `provable-contracts`
+/// 0.3.1 — do not add a ninth
+///
+/// `GateDetail` is public, is not `#[non_exhaustive]`, and 0.3.1 shipped 28 example
+/// programs that `match` it exhaustively. Those programs are vendored verbatim under
+/// `crates/facades/provable-contracts/compat/0.3.1/`, sha256-verified against their
+/// published checksums by `scripts/check_facade_compat.sh` (row R6), and compiled in
+/// the `ci` job that the required `gate` check depends on. A ninth variant is
+/// `error[E0004]` in that corpus, and the corpus cannot be edited to accommodate it —
+/// being uneditable is the whole point of a compatibility contract. Marking the enum
+/// `#[non_exhaustive]` does not help either: it makes the *existing* exhaustive
+/// matches non-exhaustive, which is the same compile error for the same reason.
+///
+/// So the vocabulary is closed. A gate added after 0.3.1 picks the truest of these
+/// eight for `detail` and carries its own shape in [`GateResult::extra`], which is a
+/// type 0.3.1 never names and is therefore free to grow.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 pub enum GateDetail {
@@ -100,6 +126,33 @@ pub enum GateDetail {
     },
     #[serde(rename = "skipped")]
     Skipped { reason: String },
+}
+
+/// Out-of-band structured detail for gates that post-date the frozen [`GateDetail`]
+/// vocabulary.
+///
+/// This type did not exist in `provable-contracts` 0.3.1, so no 0.3.1 program names
+/// it and none can `match` it. That is what makes it extensible where `GateDetail` is
+/// not, and it is `#[non_exhaustive]` from birth so the *next* post-0.3.1 gate does
+/// not have to repeat this exercise.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type")]
+#[non_exhaustive]
+pub enum GateExtra {
+    /// PV-DUP-001: contract stems claimed by several files with divergent content.
+    #[serde(rename = "duplicate_stems")]
+    DuplicateStems {
+        /// Total ambiguous stems found in the tree.
+        divergent: usize,
+        /// How many of those are recorded in the ratchet baseline.
+        baselined: usize,
+        /// Ambiguous stems NOT in the baseline — these fail the gate.
+        unbaselined: Vec<String>,
+        /// Baseline entries that no longer diverge — these fail the gate too.
+        stale: Vec<String>,
+        /// Every ambiguous stem, with its variant count and paths, for the report.
+        divergent_stems: Vec<String>,
+    },
 }
 
 /// Overall lint report.
@@ -249,9 +302,26 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
         gates.push(skipped_gate("reverse-coverage", "validation failed"));
     }
 
-    // Gate 8: composition (assumes/guarantees chain verification)
+    // Gate 8: duplicate stems (PV-DUP-001). Must run BEFORE composition — it tells
+    // the composition gate which stems are unresolvable, which is the difference
+    // between a defined verdict and one decided by `read_dir` order.
+    let duplicates = duplicate_stems::scan_duplicate_stems(config.contract_dir);
+    let ambiguous = duplicate_stems::ambiguous_stems(&duplicates);
     if validation_passed {
-        let (comp_result, mut comp_findings) = composition_gate::run_composition_gate(&contracts);
+        let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
+        let baseline = duplicate_stems::read_baseline(project_root);
+        let (dup_result, mut dup_findings) =
+            duplicate_stems::run_duplicate_stem_gate(&duplicates, &baseline);
+        gates.push(dup_result);
+        all_findings.append(&mut dup_findings);
+    } else {
+        gates.push(skipped_gate("duplicate-stems", "validation failed"));
+    }
+
+    // Gate 9: composition (assumes/guarantees chain verification)
+    if validation_passed {
+        let (comp_result, mut comp_findings) =
+            composition_gate::run_composition_gate(&contracts, &ambiguous);
         gates.push(comp_result);
         all_findings.append(&mut comp_findings);
     } else {
@@ -355,6 +425,7 @@ fn skipped_gate(name: &str, reason: &str) -> GateResult {
         detail: GateDetail::Skipped {
             reason: reason.into(),
         },
+        extra: None,
     }
 }
 

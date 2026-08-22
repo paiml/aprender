@@ -34,11 +34,40 @@
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Scans EVERY workspace given, as ONE graph (aprender#2559).
+#
+# This used to be a single `cargo metadata` on the repo root. `crates/facades/`
+# is a second workspace, `exclude`d from the root, so its three publishable
+# crates were outside the universe and this guard could say nothing about them
+# -- the same "universe built from the wrong side" defect that let the release
+# cascade report success while never shipping them.
+#
+# Merging the documents rather than running the scan twice is the point. Run
+# separately, the facade workspace is VACUOUSLY green: `provable-contracts`
+# depends on `aprender-contracts`, which is not a MEMBER of the facade
+# workspace, so it never appears in that document's `unpub` set no matter what
+# its publish flag says. The cross-workspace edge is exactly the edge that
+# matters -- a `publish = false` on `aprender-contracts` would make the facade
+# unpublishable, and only a merged graph can see it.
 scan() {
-    ( cd "$1" && cargo metadata --no-deps --format-version 1 2>/dev/null ) | python3 -c '
+    local d
+    for d in "$@"; do
+        ( cd "$d" && cargo metadata --no-deps --format-version 1 2>/dev/null )
+    done | python3 -c '
 import json,sys
-md=json.load(sys.stdin)
-members={p["name"]:p for p in md["packages"]}
+# One JSON document per workspace, concatenated on stdin.
+dec=json.JSONDecoder()
+buf=sys.stdin.read()
+members={}
+i=0
+while True:
+    while i < len(buf) and buf[i].isspace():
+        i += 1
+    if i >= len(buf):
+        break
+    md,i = dec.raw_decode(buf,i)
+    for p in md["packages"]:
+        members[p["name"]]=p
 # publish == [] means `publish = false`. publish == None means publishable.
 unpub={n for n,p in members.items() if p.get("publish")==[]}
 bad=[]
@@ -107,13 +136,46 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 3 flagged a pair that never reaches crates.io\n'; fails=1
     fi
 
+    # Rows 4 and 5 are aprender#2559: the edge that CROSSES a workspace
+    # boundary. `w4` is the "root", `w4x` an EXCLUDED second workspace whose
+    # crate depends on an unpublishable crate in the first. This is the exact
+    # shape of crates/facades -> aprender-contracts.
+    W="$TD/w4"; mkdir -p "$W"
+    printf '[workspace]\nmembers = ["libx"]\nresolver = "2"\n' > "$W/Cargo.toml"
+    mk w4/libx libx yes ""
+    WX="$TD/w4x"; mkdir -p "$WX"
+    printf '[workspace]\nmembers = ["face"]\nresolver = "2"\n' > "$WX/Cargo.toml"
+    mkdir -p "$WX/face/src"; : > "$WX/face/src/lib.rs"
+    printf '[package]\nname = "face"\nversion = "0.0.0"\nedition = "2021"\n\n[dependencies]\nlibx = { path = "../../w4/libx", version = "0.0.0" }\n' \
+        > "$WX/face/Cargo.toml"
+
+    # Row 4 is the CONTROL FOR THE SCOPE, and it is the row that matters: scanning
+    # only the "root" workspace reports NOTHING, because `face` is not in it. A
+    # guard that passes here is not lenient, it is BLIND -- and that is precisely
+    # what shipped.
+    if [ -z "$(scan "$W" | tail -n +2)" ]; then
+        printf 'ok    row 4 the root workspace alone CANNOT see the cross-workspace edge\n'
+    else
+        printf 'FAIL  row 4 expected the single-workspace scan to be blind here\n'; fails=1
+    fi
+
+    # Row 5: with both workspaces merged, the same edge IS reported.
+    if scan "$W" "$WX" | tail -n +2 | grep -q "^face	libx$"; then
+        printf 'ok    row 5 scanning BOTH workspaces reports face -> libx\n'
+    else
+        printf 'FAIL  row 5 merged scan missed the cross-workspace edge; got [%s]\n' \
+            "$(scan "$W" "$WX" | tail -n +2)"; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (3/3)\n'
+    printf '\nSELF-TEST PASSED (5/5)\n'
     exit 0
 fi
 
 printf '=== a publishable crate may not depend on an unpublishable one ===\n'
-OUT="$(scan "$REPO_ROOT")"
+# BOTH workspaces. crates/facades is `exclude`d from the root, so naming it here
+# is the only way it enters the universe -- cargo will never volunteer it.
+OUT="$(scan "$REPO_ROOT" "$REPO_ROOT/crates/facades")"
 TOTAL="$(printf '%s' "$OUT" | head -1)"
 VIOL="$(printf '%s' "$OUT" | tail -n +2 | grep . || true)"
 

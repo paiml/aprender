@@ -63,7 +63,7 @@ bytemuck = { version = "1.21", features = ["derive"] }
 # aprender-gpu -> aprender-test-lib -> aprender-compute -> aprender-gpu is a
 # cargo-rejected cycle; through a dev edge it is legal, which is why this was
 # still pinned to a crates.io copy.
-jugar-probar = { workspace = true }
+jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }
 
 [features]
 default = []

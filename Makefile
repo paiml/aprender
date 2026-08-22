@@ -966,7 +966,11 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 	fi
 	@CRATE=$(CRATE); \
 	if [ -z "$$CRATE" ]; then \
-		echo "Usage: make publish CRATE=aprender   (or apr-cli, entrenar-lora)"; \
+		echo "Usage: make publish CRATE=aprender   (or apr-cli, provable-contracts, ...)"; \
+		echo "       any crate listed by: python3 scripts/lib/cascade_universe.py ."; \
+		echo "       -- INCLUDING the crates/facades/ workspace, which is excluded"; \
+		echo "          from the root and which this target could not reach at all"; \
+		echo "          before aprender#2559."; \
 		echo "Restoring config..."; \
 		if [ -f .cargo/config.toml.publish-backup ]; then \
 			cp .cargo/config.toml.publish-backup .cargo/config.toml; \
@@ -975,7 +979,29 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 		exit 1; \
 	fi; \
 	echo "Publishing $$CRATE..."; \
-	cargo publish -p $$CRATE --allow-dirty --locked; \
+	SEL="-p $$CRATE"; \
+	MANIFEST=$$(python3 scripts/lib/cascade_universe.py . | awk -F'\t' -v c="$$CRATE" '$$1==c{print $$3}'); \
+	WSROOT=$$(python3 scripts/lib/cascade_universe.py . | awk -F'\t' -v c="$$CRATE" '$$1==c{print $$4}'); \
+	if [ -z "$$MANIFEST" ]; then \
+		echo "FAIL: $$CRATE is not a publishable crate in ANY workspace here."; \
+		echo "      (scripts/lib/cascade_universe.py enumerates all of them)"; \
+		if [ -f .cargo/config.toml.publish-backup ]; then \
+			cp .cargo/config.toml.publish-backup .cargo/config.toml; \
+			rm -f .cargo/config.toml.publish-backup; \
+		fi; \
+		exit 1; \
+	fi; \
+	if [ "$$WSROOT" != "$$(pwd)" ]; then \
+		echo "  ($$CRATE lives in the excluded workspace $$WSROOT; selecting by --manifest-path,"; \
+		echo "   because \`cargo publish -p $$CRATE\` from here is rc=101 'did not match any packages')"; \
+		SEL="--manifest-path $$MANIFEST"; \
+	fi; \
+	DRY=""; \
+	if [ -n "$$PUBLISH_DRY_RUN" ]; then \
+		echo "  (PUBLISH_DRY_RUN set: packaging and resolving, but NOT uploading)"; \
+		DRY="--dry-run --no-verify"; \
+	fi; \
+	cargo publish $$SEL $$DRY --allow-dirty --locked; \
 	STATUS=$$?; \
 	echo "Restoring .cargo/config.toml..."; \
 	if [ -f .cargo/config.toml.publish-backup ]; then \
@@ -985,6 +1011,10 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 	if [ $$STATUS -ne 0 ]; then \
 		echo "FAIL: cargo publish failed"; \
 		exit $$STATUS; \
+	fi; \
+	if [ -n "$$PUBLISH_DRY_RUN" ]; then \
+		echo "DRY RUN OK: $$CRATE resolved and packaged; nothing was uploaded."; \
+		exit 0; \
 	fi; \
 	echo ""; \
 	echo "=== POST-PUBLISH VERIFICATION (PMAT-517) ==="; \

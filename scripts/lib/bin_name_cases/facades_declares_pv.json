@@ -1,0 +1,46 @@
+{
+ "packages": [
+  {
+   "name": "provable-contracts",
+   "targets": [
+    {
+     "kind": [
+      "lib"
+     ],
+     "name": "provable_contracts"
+    }
+   ],
+   "version": "0.63.0"
+  },
+  {
+   "name": "provable-contracts-macros",
+   "targets": [
+    {
+     "kind": [
+      "lib"
+     ],
+     "name": "provable_contracts_macros"
+    }
+   ],
+   "version": "0.63.0"
+  },
+  {
+   "name": "provable-contracts-cli",
+   "targets": [
+    {
+     "kind": [
+      "lib"
+     ],
+     "name": "provable_contracts_cli"
+    },
+    {
+     "kind": [
+      "bin"
+     ],
+     "name": "pv"
+    }
+   ],
+   "version": "0.63.0"
+  }
+ ]
+}

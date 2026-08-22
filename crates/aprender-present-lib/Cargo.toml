@@ -36,7 +36,7 @@ console_error_panic_hook = { workspace = true }
 getrandom = { workspace = true }
 
 [dev-dependencies]
-provable-contracts = { workspace = true }
+provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }
 presentar-test = { path = "../aprender-present-test", package = "aprender-present-test" }
 sha2 = "0.10"
 hex = "0.4"

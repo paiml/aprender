@@ -260,6 +260,7 @@ pub(crate) fn run_strict_test_binding_gate(
                 existing: total_refs - missing,
                 missing,
             },
+            extra: None,
         },
         findings,
     )

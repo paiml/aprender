@@ -120,6 +120,20 @@ exclude = [
     "crates/aprender-viz-ttop",
     "crates/aprender-present",
     "crates/aprender-test",
+    # crates.io compatibility facades for the names APR-MONO renamed
+    # (provable-contracts{,-macros,-cli} -> aprender-contracts{,-macros,-cli}).
+    # NOT members, and not an oversight: a facade must carry the SAME `[lib]
+    # name` as the crate it fronts or old `use provable_contracts::…` code does
+    # not resolve, and two primary packages sharing one lib name in one
+    # workspace collide on the uplifted rlib. MEASURED with the facade as a
+    # member:
+    #   warning: output filename collision at
+    #     /mnt/nvme-raid0/targets/aprender/debug/libprovable_contracts.rlib
+    #     = note: this may become a hard error in the future; see
+    #             https://github.com/rust-lang/cargo/issues/6313
+    # They live in their own workspace at crates/facades/ and are built in CI by
+    # scripts/check_facade_compat.sh (ci.yml, job `guard-runner-labels`).
+    "crates/facades",
     # aprender-train-canary is intentionally NOT a member — see the exclusion
     # note above. It is a publish=false, dev-only GPU/burn benchmark whose
     # Cargo.toml pins `[patch.crates-io] trueno = { path = "/home/noah/src/trueno" }`
