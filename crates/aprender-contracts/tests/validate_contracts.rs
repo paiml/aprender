@@ -287,6 +287,12 @@ fn contract_data_integrity() {
         // 2329 / 2686 / 3386 / 1219. Floors sit a few percent under so a
         // single retired contract does not red the gate, while any bulk loss
         // does.
+        //
+        // Re-measured 2026-08-22 after merging main (which added
+        // contracts/provable-contracts-facade-v1.yaml, #2553): 1228 contracts,
+        // 2336 / 2703 / 3402 / 1221. All four floors still hold with margin;
+        // they are deliberately NOT re-pinned to the new totals, because a
+        // floor that tracks the corpus exactly reds on the next retirement.
         ("equations", total_eq, 2280),
         ("proof obligations", total_ob, 2630),
         ("falsification tests", total_ft, 3310),
@@ -311,6 +317,13 @@ fn contract_data_integrity() {
     //
     // So: the count may only go DOWN. A PR that adds a 471st violation fails.
     // Lower CEILING whenever you clean up — never raise it.
+    //
+    // It has already fired once, exactly as designed: merging main brought in
+    // contracts/provable-contracts-facade-v1.yaml (#2553), whose
+    // falsification_tests were ordered 001-005, 007, 008, 009, 006 — a real
+    // ID gap, and the 471st violation. The answer was to reorder the contract,
+    // NOT to raise the ceiling to 471. A ratchet whose ceiling is bumped
+    // whenever it fires is not a ratchet.
     const CEILING: usize = 470;
     assert!(
         errors.len() <= CEILING,
