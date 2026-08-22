@@ -18,7 +18,6 @@ metadata:
 # FALSIFY-CLI-003: If any command exits with code other than 0/1/2
 # FALSIFY-CLI-004: If any command panics on --help
 
-kind: CLICommandContract
 name: apr-cli-commands
 version: "1.1.0"
 scope: |
@@ -446,11 +445,7 @@ commands:
       CRUX-K-11: parse Ollama-style Modelfile DSL into apr config JSON.
     requires_model: false
     side_effects: []
-    subcommands:
-      - name: parse
-        description: "Parse a Modelfile and emit config as JSON or human-readable text"
-        requires_model: false
-        side_effects: []
+    # parse — parse a Modelfile and emit config as JSON or human-readable text
     subcommands: [parse]
 
   - name: test
@@ -476,11 +471,7 @@ commands:
       as they are delegated to the probador library.
     requires_model: false
     side_effects: [filesystem]
-    subcommands:
-      - name: tensor
-        description: "Export tensor activations for visual regression testing (PMAT-481)"
-        requires_model: true
-        side_effects: [filesystem]
+    # tensor — export tensor activations for visual regression testing (PMAT-481)
     subcommands: [tensor]
 
   - name: diagnose

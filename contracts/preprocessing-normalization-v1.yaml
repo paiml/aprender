@@ -175,5 +175,5 @@ qa_gate:
   - minmax_extremes
   - standard_inverse
   - minmax_inverse
-  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 7 falsification tests pass + Kani harnesses verify
   falsification: Apply same mean/std to all features instead of per-feature

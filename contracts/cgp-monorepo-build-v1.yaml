@@ -28,7 +28,6 @@ metadata:
 #   [9] Nushell, nushell/nushell, 40+ crates at crates/nu-*
 #       (Flat layout at scale with explicit member list.)
 
-kind: BuildVerificationContract
 name: cgp-monorepo-build
 version: "1.0.0"
 scope: "paiml/aprender monorepo workspace (68 active crates)"

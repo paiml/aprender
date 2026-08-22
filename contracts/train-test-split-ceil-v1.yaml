@@ -10,7 +10,6 @@ metadata:
     - "PMAT-852 — train_test_split rounded test set to nearest (.round()) instead of ceil, undercounting by one when the fractional part of test_size·n is in (0, 0.5)"
   description: "train_test_split must size the test set as ceil(test_size * n_samples), matching scikit-learn _validate_shuffle_split (float test_size), not round-to-nearest"
 
-kind: KernelContract
 name: train-test-split-ceil
 version: "1.0.0"
 scope: "crates/aprender-core/src/model_selection/alpha.rs::validate_split_inputs (float test_size path)"

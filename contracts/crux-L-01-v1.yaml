@@ -52,7 +52,7 @@ equations:
       apr kernel load --pkg flash-attn3 --kernel fwd_dispatch --arch sm_90 --json
         emits:
           status: "LOADED" | "CACHED" | "ABI_MISMATCH" | "ARCH_MISMATCH" | "DOWNLOAD_FAIL"
-          cache_path: "/home/u/.apr/kernels/flash-attn3/<sha>.so"
+          cache_path: "$HOME/.apr/kernels/flash-attn3/<sha>.so"
           sha256: <hex>
           abi_v: 1
           symbol_count: N >= 3

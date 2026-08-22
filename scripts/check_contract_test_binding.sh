@@ -175,7 +175,11 @@ metadata:
   description: Hermetic fixture for the contract test-binding guard.
   references:
     - 'scripts/check_contract_test_binding.sh'
-kind: KernelContract
+# (top-level `kind:` deliberately ABSENT. It was `kind: KernelContract` here,
+# which serde has always dropped -- metadata.kind above is the real one --
+# and which this branch's new SCHEMA rule now REJECTS, so the fixture failed
+# to parse and every case silently went unreported. Fixing the fixture, not
+# the rule: the rule is correct and this file was one of the 119 offenders.)
 name: selftest
 version: "1.0.0"
 status: ACTIVE

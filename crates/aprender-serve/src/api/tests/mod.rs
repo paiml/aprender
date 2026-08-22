@@ -62,3 +62,4 @@ mod route_surface_2376; // aprender#2376(7,8): advertised surface == mounted sur
 mod stream_and_metrics_2375; // aprender#2375(1 regression, 4, 7) + temperature:0 — streaming chat through the real router, /v1/metrics measures
 mod completions_stop_2465; // aprender#2465(2): /v1/completions must END at a stop sequence
 mod batch_completions_tokenizer_2465; // aprender#2465(3): /v1/batch/completions tokenized from UTF-8 byte values, not tokens
+mod chat_stream_route_2375; // aprender#2375(4): POST /v1/chat/completions/stream is mounted — it must serve, and answer 503 (not 404) with no model

@@ -168,7 +168,7 @@ falsification_tests:
   prediction: "apr-derived output matches ollama-derived output on goldens"
   test: |
     # TODO: populate evidence/crux/ollama/modelfile-goldens/ with Modelfile + first-64-tok capture
-    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/ollama/modelfile-goldens
+    GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/ollama/modelfile-goldens
     [ -d "$GOLD" ] || { echo "golden set absent"; exit 2; }
     python3 - <<'PY'
     import json, subprocess, os, glob

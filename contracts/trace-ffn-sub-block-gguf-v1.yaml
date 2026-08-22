@@ -1826,7 +1826,7 @@ qa_gate:
   - layer_activation_schema_parity_apr_gguf
   - production_forward_byte_identical_pre_post_traced
   - ship_007_layer_3_h1_h2_falsification
-  pass_criteria: All 4 falsification tests pass — FALSIFY-FFN-GGUF-001 + 002 + 003 + 004
+  pass_criteria: All 6 falsification tests pass — FALSIFY-FFN-GGUF-001 + 002 + 003 + 004 + 016 + 017
   falsification: |
     Add LayerActivation struct without registering forward_traced method
     (will fail FALSIFY-FFN-GGUF-001) — or modify production forward

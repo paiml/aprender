@@ -47,7 +47,7 @@ fn make_contract(equations: BTreeMap<String, Equation>) -> Contract {
         type_invariants: vec![],
         coq_spec: None,
         beat: None,
-        stories: vec![],
+        ..Contract::default()
     }
 }
 

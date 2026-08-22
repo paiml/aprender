@@ -9,7 +9,6 @@ metadata:
     - "APR format specification (docs/specifications/aprender-monorepo-consolidation.md)"
   description: "GGUF, SafeTensors, and APR parser soundness — no panics, typed errors, magic-byte detection"
 
-kind: AlgorithmContract
 name: parser-soundness
 version: "1.0.0"
 scope: "crates/aprender-core/src/format/ — GGUF, SafeTensors, and APR parsers"

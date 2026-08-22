@@ -8,7 +8,6 @@ metadata:
     - "Provable contract for lora-gradient-flow-v1"
     - "PMAT-805: CPU train_step routed through model.forward() (no LoRA) and apply_rope severed the autograd graph for the Q projection — both adapters silently untrained on the default q_proj+v_proj target set"
 
-kind: AlgorithmContract
 name: lora-gradient-flow
 version: "1.1.0"
 scope: "crates/aprender-train/src/finetune/"

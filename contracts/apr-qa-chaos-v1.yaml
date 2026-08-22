@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-08'
   author: PAIML Engineering
   registry: true
@@ -9,6 +9,7 @@ metadata:
   - 'GH-352 — apr pull using 55 GB RAM'
   - 'GH-471 — GPU hangs on large MoE models'
   - 'GH-478 — per-layer dequantization OOM on 32B'
+  - '#2568 — the GH-478 OOM guard failed OPEN on macOS (no /proc/meminfo)'
   description: >
     Chaos engineering contract for apr CLI. Inject resource constraints,
     truncated files, and concurrent load to verify graceful degradation.
@@ -70,6 +71,20 @@ equations:
     - "Never silently overwrites existing files"
     - "--force flag required for intentional overwrite"
 
+  oom_guard_fails_closed:
+    formula: |
+      let mem = system_memory_bytes()   # /proc/meminfo | sysctl hw.memsize | unknown
+      dequant_admitted(peak) <=>
+        mem == Some(total) AND peak <= total * 0.8
+      # mem == None  =>  REFUSED, never admitted
+    domain: "host RAM measurement × estimated F32 dequant peak"
+    codomain: bool
+    invariants:
+    - "An unmeasurable host refuses every dequant: unknown is not unlimited"
+    - "system_memory_bytes() is Some on every supported platform (Linux, macOS)"
+    - "The admission decision never substitutes a sentinel (u64::MAX) for a missing measurement"
+    - "No test of this gate may be skipped by target_os — a skip hides the broken platform"
+
 falsification_tests:
 - id: F-CHAOS-001
   rule: memory budget
@@ -117,6 +132,23 @@ falsification_tests:
     test $? -ne 0
   if_fails: "partial file written on full disk"
 
+- id: F-CHAOS-006
+  rule: OOM guard fails closed
+  prediction: "an unmeasurable host RAM refuses the dequant instead of admitting it"
+  test: cargo test -p aprender-serve --lib contract_gate::tests::test_dequant_verdict_fails_closed_when_memory_unknown
+  if_fails: "unknown memory is being treated as unlimited again (the #2568 u64::MAX substitution)"
+  ship_blocking: true
+
+- id: F-CHAOS-007
+  rule: OOM guard is armed on every platform
+  prediction: "system_memory_bytes() returns Some on every target the workspace builds for"
+  test: cargo test -p aprender-serve --lib contract_gate::tests::test_system_memory_bytes_is_measurable_on_this_platform
+  if_fails: "this platform has no memory probe, so the dequant guard cannot be armed here"
+  ship_blocking: true
+  counter_example_classes:
+  - "macOS: no /proc/meminfo and no sysctl hw.memsize fallback (#2568)"
+  - "a cfg!(target_os = ...) guard added around the assertion, which hides exactly the broken platform"
+
 proof_obligations:
 - type: bound
   property: "Peak RSS of `apr run` on a small model stays under the 3x-model-size + 512 MB budget (F-CHAOS-001)"
@@ -133,9 +165,15 @@ proof_obligations:
 - type: safety
   property: "A full filesystem produces a non-zero exit, not a partial corrupt output file (F-CHAOS-005)"
   formal: "full_fs implies exit_code(apr_convert(M, -o out)) != 0"
+- type: safety
+  property: "When host RAM cannot be measured the F32 dequant gate refuses rather than admits; the probe is Some on every supported platform (F-CHAOS-006)"
+  formal: "system_memory_bytes() == None implies not admitted(dequant(M))"
+- type: liveness
+  property: "The host RAM probe resolves on every supported platform, so the gate is armed rather than merely present (F-CHAOS-007)"
+  formal: "forall os in supported_targets: system_memory_bytes() != None"
 
 verification_summary:
-  total_obligations: 5
+  total_obligations: 7
   proven: 0
-  tested: 0
+  tested: 2
   status: proposed

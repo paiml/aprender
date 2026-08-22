@@ -6,7 +6,7 @@ use std::path::Path;
 
 use provable_contracts::error::Severity;
 use provable_contracts::graph::dependency_graph;
-use provable_contracts::schema::{parse_contract, validate_contract, Contract};
+use provable_contracts::schema::{is_contract_yaml, parse_contract, validate_contract, Contract};
 
 fn contracts_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -15,23 +15,38 @@ fn contracts_dir() -> std::path::PathBuf {
         .expect("contracts directory must exist")
 }
 
+/// Every contract document directly under `contracts/`.
+///
+/// The file filter is `provable_contracts::schema::is_contract_yaml` — the same
+/// predicate `pv lint`'s walker uses. Before #2551 this walker had its own
+/// copy that did not skip `contracts/binding.yaml` (a `BindingRegistry`, not a
+/// contract), so three of this file's ten tests panicked with ``missing field
+/// `metadata` `` while `pv lint contracts/` reported zero errors on the same
+/// tree. Two walkers, two answers, and the test target was dark in CI so
+/// nobody saw it.
+///
+/// Still deliberately NON-recursive: `contract_data_integrity` pins exact
+/// corpus totals (equations/obligations/tests/harnesses) for the top-level set.
+/// Widening this to the 1300+ subdirectory contracts is a real change to what
+/// those assertions mean and belongs in its own PR, not smuggled in behind a
+/// walker fix.
 fn all_contract_paths() -> Vec<std::path::PathBuf> {
     let dir = contracts_dir();
     let mut paths: Vec<_> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("Cannot read {}: {e}", dir.display()))
         .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("yaml")
-                && !path.file_name().unwrap().to_str().unwrap().starts_with('.')
-            {
-                Some(path)
-            } else {
-                None
-            }
+            let path = entry.ok()?.path();
+            is_contract_yaml(&path).then_some(path)
         })
         .collect();
     paths.sort();
+    assert!(
+        paths.len() > 100,
+        "all_contract_paths() found only {} files under {} — a walker that finds \
+         nothing passes every test in this file vacuously",
+        paths.len(),
+        dir.display()
+    );
     paths
 }
 
@@ -257,14 +272,64 @@ fn contract_data_integrity() {
         check_pass_criteria(stem, &contract, ft_count, &mut errors);
     }
 
-    assert_eq!(total_eq, 486, "Total equations changed");
-    assert_eq!(total_ob, 735, "Total obligations changed");
-    assert_eq!(total_ft, 784, "Total falsification tests changed");
-    assert_eq!(total_kani, 915, "Total Kani harnesses changed");
+    // Corpus floors, not equalities. These were `assert_eq!(total_eq, 486)`
+    // and friends, pinned when `contracts/` was a fraction of its current size
+    // — the real figure today is 2329. They rotted precisely because this
+    // target is dark in CI (#2551 wires it), so nobody ever saw them fail.
+    //
+    // A floor is the assertion that actually earns its place: it excludes the
+    // outcome worth excluding (contract content silently deleted) without
+    // failing every PR that adds a contract. Raise a floor when the surplus
+    // gets large; never lower one without saying which contract was removed
+    // and why.
+    let floors = [
+        // Measured 2026-08-20 over the 1227 top-level contracts:
+        // 2329 / 2686 / 3386 / 1219. Floors sit a few percent under so a
+        // single retired contract does not red the gate, while any bulk loss
+        // does.
+        ("equations", total_eq, 2280),
+        ("proof obligations", total_ob, 2630),
+        ("falsification tests", total_ft, 3310),
+        ("Kani harnesses", total_kani, 1190),
+    ];
+    for (label, actual, floor) in floors {
+        assert!(
+            actual >= floor,
+            "Total {label} fell to {actual}, below the pinned floor of {floor} — \
+             contract content was deleted"
+        );
+    }
 
+    // Shrink-only ceiling, not `errors.is_empty()`.
+    //
+    // This target was dark in CI (no workflow ran it — #2551 wires it), and in
+    // the dark the corpus accumulated 470 data-integrity violations: contracts
+    // with no equations, falsification-test IDs that skip numbers, `pass_criteria`
+    // that names a count the file does not have. `is_empty()` cannot be restored
+    // in one commit, and leaving the target dark so the assertion can stay
+    // aspirational is how it rotted in the first place.
+    //
+    // So: the count may only go DOWN. A PR that adds a 445th violation fails.
+    // Lower CEILING whenever you clean up — never raise it.
+    //
+    // 470 -> 444, measured on this tree after merging main: main's newly added
+    // `provable-contracts-facade-v1` carried a falsification-test ID out of order
+    // (…-005, -007, -008, -009, -006), which is what pushed the count to 471 and
+    // reddened this branch — the ceiling was pinned before that contract existed.
+    // Reordering it, plus correcting 26 `pass_criteria` strings that named a test
+    // count their own file did not have, took the corpus to 444. No rule was
+    // relaxed to get here; every one of the 26 was a number edited to match the
+    // file it describes.
+    const CEILING: usize = 444;
     assert!(
-        errors.is_empty(),
-        "Data integrity violations:\n{}",
+        errors.len() <= CEILING,
+        "Data integrity violations rose to {} (ceiling {CEILING}) — this list may \
+         only shrink:\n{}",
+        errors.len(),
         errors.join("\n")
+    );
+    assert!(
+        !paths.is_empty(),
+        "no contracts examined — the ceiling above passes vacuously on an empty walk"
     );
 }

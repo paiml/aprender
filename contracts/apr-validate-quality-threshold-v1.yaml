@@ -16,7 +16,7 @@ metadata:
     - five-whys
 
 five_whys:
-  symptom: "`apr validate /home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr --quality --strict` reports 3/100 Grade F and exits 5 (ValidationFailed) on a model that `apr qa` says ✓ ALL GATES PASSED and that produces correct inference (`apr run` returns '2 + 2 equals 4.')"
+  symptom: "`apr validate ${APR_MODELS}/qwen2.5-coder-1.5b-instruct-q4k.apr --quality --strict` reports 3/100 Grade F and exits 5 (ValidationFailed) on a model that `apr qa` says ✓ ALL GATES PASSED and that produces correct inference (`apr run` returns '2 + 2 equals 4.')"
   why_1: "validate.rs:96 gates on `report.total_score < 50` against the full 100-point QA checklist"
   why_2: "22 of 25 checks return `CheckStatus::Skip(\"Not implemented\")` with `points = 0` — they contribute nothing to total_score but also reduce the achievable max to 3 points"
   why_3: "ValidationReport.total_score is a raw sum of awarded points; there's no `implemented_max` denominator that would let the gate compute a meaningful percentage"
@@ -25,7 +25,7 @@ five_whys:
   root_cause: "Threshold gate uses the aspirational 100-point denominator instead of the runnable denominator (count of non-Skip checks). The fix moves the gate to `implemented_score_pct() < 50` and treats a fully-stubbed suite as informational (None) rather than a hard fail."
 
 five_whys_v2:
-  symptom: "v1.0.0 fixed the EXIT CODE and nothing else. Re-measured 2026-08-13 on `/home/noah/models/qwen2.5-coder-0.5b-instruct.apr` at 6adeb6351: `apr validate --quality` exits 0 and prints `✓ VALID 3/4 checks that ran` — and, four lines later, `TOTAL: 3/100  Grade: F`. The `--json` document says `\"grade\": \"F\"`, `\"failed\": 0`, `\"passed\": true` simultaneously. `--min-score 50` on the same healthy model exits 5 with `Score 3/100 below minimum 50`."
+  symptom: "v1.0.0 fixed the EXIT CODE and nothing else. Re-measured 2026-08-13 on `${APR_MODELS}/qwen2.5-coder-0.5b-instruct.apr` at 6adeb6351: `apr validate --quality` exits 0 and prints `✓ VALID 3/4 checks that ran` — and, four lines later, `TOTAL: 3/100  Grade: F`. The `--json` document says `\"grade\": \"F\"`, `\"failed\": 0`, `\"passed\": true` simultaneously. `--min-score 50` on the same healthy model exits 5 with `Score 3/100 below minimum 50`."
   why_1: "`ValidationReport::grade()` still banded `total_score` — the raw count of awarded points — against a fixed 100-point match arm"
   why_2: "the `--quality` category table, `--min-score`, `ValidationReport::passed()`, `apr import`'s Score/Grade panel and the TUI QA panel all read `total_score` directly, so each one re-derived the same wrong denominator independently"
   why_3: "v1.0.0 added `implemented_max` / `implemented_score_pct` but wired them into exactly ONE caller (the exit-code gate); the helpers existed and the other six call sites were never migrated"

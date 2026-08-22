@@ -11,7 +11,6 @@ metadata:
     strictly-most-probable above-threshold tokens to increase diversity while ALWAYS preserving
     the boundary token (the least-probable token at/above the threshold) and the entire
     below-threshold tail. apr beats Ollama/llama.cpp on parity only if it keeps that boundary.
-kind: KernelContract
 name: xtc-sampling-correctness
 version: "1.0.0"
 scope: "crates/aprender-serve/src/generate/dry_penalty.rs"

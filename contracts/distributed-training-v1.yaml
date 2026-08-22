@@ -7,7 +7,6 @@ metadata:
   references:
     - "Provable contract for distributed-training-v1"
 
-kind: AlgorithmContract
 name: distributed-training
 version: "1.0.0"
 scope: "crates/aprender-distribute/src/"

@@ -11,7 +11,6 @@ metadata:
     - "PMAT-861 — apr's TfidfVectorizer::transform emitted raw tf*idf with NO normalization (no `norm` field, no sqrt/L2 code), diverging from sklearn's norm='l2' default"
   description: "TfidfVectorizer output rows must be L2-normalized by default to match scikit-learn's norm='l2' default (each document vector has unit Euclidean length)"
 
-kind: KernelContract
 name: tfidf-l2-norm
 version: "1.0.0"
 scope: "crates/aprender-core/src/text/vectorize/tfidf_vectorizer.rs::Norm + hashing_vectorizer.rs::TfidfVectorizer::{new,with_norm,transform}"

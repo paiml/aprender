@@ -170,23 +170,18 @@ contracts:
       // Verify GemmBackwardAKernel::tiled() is used, not ::new()
 
       '
-qa_gates:
-  ptx_static_analysis:
-    description: Verify emitted PTX has shared memory and FMA
-    command: cargo test -p trueno-gpu -- backward_gemm_tiled
-    expected: All tiled backward GEMM tests pass
-  numerical_parity:
-    description: Tiled vs naive output parity on GPU
-    command: cargo test -p trueno-gpu --features cuda-test -- backward_gemm_parity
-    expected: Max elementwise diff < 1e-4
-  barrier_safety:
-    description: No divergent barriers in tiled kernels
-    command: cargo test -p trueno-gpu -- backward_gemm_barrier
-    expected: analyze_barrier_safety().is_safe == true
-  entrenar_dispatch:
-    description: Production backward dispatch uses tiled kernels
-    command: cargo test -p entrenar -- backward_gemm_dispatch
-    expected: Kernel names do not contain 'naive'
+# The four checks below lived under a top-level `qa_gates:` (plural) block that
+# the schema has no field for, so serde dropped every one of them and no pv gate
+# ever saw them. SCHEMA-019 now rejects that spelling; the checks are folded into
+# the real `qa_gate:` below, with the command each one runs kept alongside.
+#   ptx_static_analysis  cargo test -p trueno-gpu -- backward_gemm_tiled
+#                        expect: all tiled backward GEMM tests pass
+#   numerical_parity     cargo test -p trueno-gpu --features cuda-test -- backward_gemm_parity
+#                        expect: max elementwise diff < 1e-4
+#   barrier_safety       cargo test -p trueno-gpu -- backward_gemm_barrier
+#                        expect: analyze_barrier_safety().is_safe == true
+#   entrenar_dispatch    cargo test -p entrenar -- backward_gemm_dispatch
+#                        expect: kernel names do not contain 'naive'
 qa_gate:
   id: F-GBTV-001
   name: gemm-backward-tiled-v1 Contract
@@ -194,6 +189,10 @@ qa_gate:
   checks:
   - validation
   - falsification
+  - ptx_static_analysis
+  - numerical_parity
+  - barrier_safety
+  - entrenar_dispatch
 proof_obligations:
 - type: invariant
   property: Tiled GEMM AI scales linearly with tile size

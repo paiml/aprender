@@ -59,7 +59,7 @@ falsification_tests:
   - id: FALSIFY-CUBLAS-FP8-PARITY-001
     rule: "CPU per-layer trace emits for every layer when CPU_DEBUG_LAYERS=1"
     prediction: "Running the reproducer with CPU_DEBUG_LAYERS=1 emits at least 28 `[CPU-L<idx>]` blocks (one per layer) on stderr for 7B"
-    test: "bash -c 'BIN=target/release/examples/cublas_fp8_7b_reproducer; M=/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf; CPU_DEBUG_LAYERS=1 MODEL_PATH=$M $BIN 2>/tmp/cpu-trace.log >/dev/null; n=$(grep -cE ''^\\[CPU-L[0-9]+\\]'' /tmp/cpu-trace.log); [ $n -ge 200 ]'"
+    test: "bash -c 'BIN=target/release/examples/cublas_fp8_7b_reproducer; M=${APR_MODELS:?}/qwen2.5-coder-7b-instruct-q4_k_m.gguf; CPU_DEBUG_LAYERS=1 MODEL_PATH=$M $BIN 2>/tmp/cpu-trace.log >/dev/null; n=$(grep -cE ''^\\[CPU-L[0-9]+\\]'' /tmp/cpu-trace.log); [ $n -ge 200 ]'"
     if_fails: "CPU per-layer dump still capped to layers 0+1 — Stages C-E cannot identify the drift compound rate."
 
   - id: FALSIFY-CUBLAS-FP8-PARITY-002

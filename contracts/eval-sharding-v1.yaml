@@ -298,7 +298,7 @@ falsification_tests:
       evidence: evidence/ship-two-001/shard-003-determinism/probe_20260418_143041.json
       hosts: [yoga, gx10]
       probe_tasks: "HumanEval/0..15"
-      model: /home/noah/.cache/pacha/models/7bcabb852fedb36b.gguf
+      model: $HOME/.cache/pacha/models/7bcabb852fedb36b.gguf
       model_sha256: e6cac5d642b042641b308a3ea5d3fa1eb48aa80c48dea5877a7b4efa886e7981
       temperature: 0.0
       top_k: 1

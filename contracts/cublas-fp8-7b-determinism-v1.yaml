@@ -17,7 +17,7 @@ metadata:
     - stage-a
 
 five_whys:
-  symptom: "`apr qa /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf` Golden Output gate reports `<|im_start|>` gibberish on some runs and PASS on others on the same host. The 2026-05-22 git-bisect of v0.31.2..origin/main produced an invalid result because the oracle is non-deterministic."
+  symptom: "`apr qa ${APR_MODELS:?}/qwen2.5-coder-7b-instruct-q4_k_m.gguf` Golden Output gate reports `<|im_start|>` gibberish on some runs and PASS on others on the same host. The 2026-05-22 git-bisect of v0.31.2..origin/main produced an invalid result because the oracle is non-deterministic."
   why_1: "`apr qa` runs ~12 sequential gates that share a single CUDA context. Earlier gates exercise FP8 weight upload + cuBLASLt JIT, sometimes triggering CUDA_ERROR_ILLEGAL_ADDRESS that poisons the context."
   why_2: "After context poison, the runtime's `[CUDA-FAILFAST]` recovery destroys and recreates the primary context, but tensor state in transit (warmup workspace, FP8 weight LRU) is non-deterministically partially-cleared."
   why_3: "The Golden Output gate runs AFTER several upstream gates, so the cuBLAS state it observes is order-dependent. Different orderings of poison/recover produce different gibberish patterns (or transient PASS)."
@@ -61,13 +61,13 @@ falsification_tests:
   - id: FALSIFY-CUBLAS-FP8-DET-001
     rule: "reproducer produces bit-identical stdout across 5 consecutive runs"
     prediction: "5 byte-identical JSON lines on stdout across 5 invocations. Verified 2026-05-22 on noah-Lambda-Vector RTX 4090: 5/5 identical."
-    test: "bash -c 'BIN=target/release/examples/cublas_fp8_7b_reproducer; M=/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf; out=$(MODEL_PATH=$M $BIN 2>/dev/null); for _ in 1 2 3 4; do next=$(MODEL_PATH=$M $BIN 2>/dev/null); [ \"$out\" = \"$next\" ] || exit 1; done; exit 0'"
+    test: "bash -c 'BIN=target/release/examples/cublas_fp8_7b_reproducer; M=${APR_MODELS:?}/qwen2.5-coder-7b-instruct-q4_k_m.gguf; out=$(MODEL_PATH=$M $BIN 2>/dev/null); for _ in 1 2 3 4; do next=$(MODEL_PATH=$M $BIN 2>/dev/null); [ \"$out\" = \"$next\" ] || exit 1; done; exit 0'"
     if_fails: "Reproducer is non-deterministic — Stage B per-layer parity and downstream stages cannot trust their oracle."
 
   - id: FALSIFY-CUBLAS-FP8-DET-002
     rule: "Bug signature locks current cuBLAS FP8 7B output"
     prediction: "On noah-Lambda-Vector RTX 4090 (sm_89) with canonical 7B Q4_K_M GGUF, gpu_argmax_idx=1057, agrees_with_cpu=false. This is the SIGNATURE that any candidate fix must change (to gpu_argmax_idx=75311, agrees_with_cpu=true)."
-    test: "bash -c 'out=$(MODEL_PATH=/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf target/release/examples/cublas_fp8_7b_reproducer 2>/dev/null); echo \"$out\" | grep -q gpu_argmax_idx'
+    test: "bash -c 'out=$(MODEL_PATH=${APR_MODELS:?}/qwen2.5-coder-7b-instruct-q4_k_m.gguf target/release/examples/cublas_fp8_7b_reproducer 2>/dev/null); echo \"$out\" | grep -q gpu_argmax_idx'
     "
     if_fails: "Either the bug has been fixed (good — Stage F discharged) OR the reproducer regressed (bad)."
 

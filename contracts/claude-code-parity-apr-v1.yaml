@@ -591,7 +591,7 @@ falsification_conditions:
         - { id: 'HumanEval_4_mean_absolute_deviation', score: 1.0, drift_count: 0, passes_individual: true }
       teacher_source: |
         REAL claude binary 2.1.139 invoked on operator's noah-Lambda-Vector
-        host via /home/noah/.local/bin/claude. Per-fixture invocation:
+        host via $HOME/.local/bin/claude. Per-fixture invocation:
         `claude -p "<prompt from fixtures/multipl-e-rust/<id>/prompt.txt>"`.
         Generated Rust written to evidence/phase-3/captures/<id>/teacher.src.rs
         as audit-trail evidence. cargo test against fixture's reference
@@ -2812,7 +2812,7 @@ status_history:
           {"v":1,"kind":"session_start",
            "session_id":"00000000-0006-7000-5080-...",
            "actor":"apr-code",
-           "model":"/home/noah/.apr/models/Qwen3-1.7B-Q4_K_M.gguf",...}
+           "model":"$HOME/.apr/models/Qwen3-1.7B-Q4_K_M.gguf",...}
           {"v":1,"kind":"user_prompt","turn":0,"text":"Show me which..."}
           {"v":1,"kind":"assistant_turn","turn":1,"blocks":[...],
            "stop_reason":"end_turn"}

@@ -342,12 +342,14 @@ async fn test_stream_handler_endpoint() {
         .await
         .expect("send");
 
-    // May be 404 (endpoint not registered) or OK
-    let status = response.status();
-    assert!(
-        status == StatusCode::OK || status == StatusCode::NOT_FOUND,
-        "Stream endpoint should be handled, got {}",
-        status
+    // aprender#2375(4): "OK or 404" admitted both "it worked" and "the route is
+    // not there", so it passed while the route was dead on arrival for every
+    // real deployment. This fixture has no model, so the one correct answer is
+    // 503 — the condition, not a missing route.
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
 }
 

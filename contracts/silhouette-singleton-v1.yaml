@@ -29,7 +29,6 @@ metadata:
   - 'Rousseeuw (1987) Silhouettes: a graphical aid to interpretation of cluster analysis'
   - 'crates/aprender-core/src/metrics/mod.rs — mean_intra_cluster_distance (Option<f32>), silhouette_score singleton branch'
 
-kind: KernelContract
 name: silhouette-singleton-zero
 version: 1.0.0
 scope: aprender-core silhouette_score singleton-cluster convention (metrics/mod.rs)

@@ -59,7 +59,6 @@ metadata:
     - apr-cli-commands-v1
     - mcp-tool-schema-v1
 
-kind: McpToolSchemaContract
 name: apr-mcp-tool-schemas
 version: "1.1.0"
 status: ENFORCED   # promoted in M3: build.rs + falsify_mcp_008.rs both landed 2026-04-18

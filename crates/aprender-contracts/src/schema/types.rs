@@ -61,6 +61,57 @@ pub struct Contract {
     /// what makes that justification true.
     #[serde(default)]
     pub stories: Vec<CruxStory>,
+    /// Legacy free-form top-level `falsification:` block.
+    ///
+    /// 400 contracts in `contracts/` carry this key, every one of them holding
+    /// a structured list (shapes seen in the wild: `{condition, action,
+    /// severity}`, `{name, description, check}`, `{id, assertion,
+    /// test_harness}`). `Contract` is not `deny_unknown_fields`, so before this
+    /// field existed serde dropped all of it silently — the same mechanism as
+    /// #2465 (`test_harness`) and #2504. `contracts/publish-workspace-v1.yaml`
+    /// is the canonical victim: four FALSIFY-PUB-* entries live here and `pv
+    /// status` reported "Falsification tests: 0" while the file read as
+    /// governance.
+    ///
+    /// It is deliberately `serde_yaml::Value`: the block is NOT
+    /// `falsification_tests` and must never be counted as one — it is captured
+    /// so that tooling can SEE it and report the contract as inert. Migrating
+    /// these entries into real `falsification_tests` is contract-by-contract
+    /// work, not a schema change.
+    #[serde(default)]
+    pub falsification: Option<serde_yaml::Value>,
+    /// Legacy free-form top-level `falsification_conditions:` block — the same
+    /// silent-drop class as [`Contract::falsification`], used by 12 contracts.
+    /// Kept as a distinct field (not a serde `alias`) so a contract carrying
+    /// both keys still parses instead of failing on a duplicate field.
+    #[serde(default)]
+    pub falsification_conditions: Option<serde_yaml::Value>,
+    /// Top-level YAML keys that are not fields of `Contract`, captured verbatim
+    /// by [`crate::schema::parse_contract_str`].
+    ///
+    /// The schema deliberately tolerates unknown top-level keys — model-family,
+    /// spec and registry YAMLs carry downstream-owned blocks (see
+    /// `parse_contract_with_kind_model_family`), and 1224 of the 1726 contracts
+    /// `pv lint` walks have at least one. `deny_unknown_fields` is therefore not
+    /// an option. Instead the validator uses this list to reject the two shapes
+    /// that are never legitimate: a top-level `kind:` (SCHEMA-018) and a
+    /// near-miss misspelling of a real block name (SCHEMA-019).
+    ///
+    /// Not serialized: it is a parse artifact, not contract content.
+    #[serde(skip)]
+    pub unknown_top_level_keys: Vec<String>,
+    /// The error a strict YAML reader produced on a document this schema
+    /// nonetheless accepted, captured by
+    /// [`crate::schema::parse_contract_str`]. `None` is the healthy case.
+    ///
+    /// The derived deserializer skips unknown subtrees without reading them, so
+    /// a contract can parse cleanly here and be rejected by `yq`, PyYAML, or a
+    /// `serde_yaml::Value` round-trip. SCHEMA-020 turns that divergence into an
+    /// error instead of leaving it to be discovered downstream.
+    ///
+    /// Not serialized: it is a parse artifact, not contract content.
+    #[serde(skip)]
+    pub strict_yaml_error: Option<String>,
 }
 
 /// One row of the CRUX master registry's `stories:` list.
@@ -89,6 +140,31 @@ pub struct CruxStory {
     #[serde(default)]
     pub status: Option<IntakeStatus>,
 }
+
+/// Every top-level key `Contract` deserializes, in declaration order.
+///
+/// This list is the allow-list SCHEMA-019 checks near-misses against, and it is
+/// pinned to the struct by `contract_fields_match_struct` in `types_tests.rs`:
+/// adding a field to `Contract` without adding it here turns the new block into
+/// a "near-miss of itself" and fails that test.
+pub const CONTRACT_TOP_LEVEL_FIELDS: [&str; 16] = [
+    "metadata",
+    "equations",
+    "proof_obligations",
+    "kernel_structure",
+    "simd_dispatch",
+    "enforcement",
+    "falsification_tests",
+    "kani_harnesses",
+    "qa_gate",
+    "verification_summary",
+    "type_invariants",
+    "coq_spec",
+    "beat",
+    "stories",
+    "falsification",
+    "falsification_conditions",
+];
 
 /// Parameters of a head-to-head BEAT benchmark (`metadata.kind: beat-benchmark`,
 /// PMAT-741): a falsifiable, CI-wired claim that aprender meets-or-beats an
@@ -206,6 +282,27 @@ impl Contract {
     /// True iff this contract must satisfy PROVABILITY-001 (kernel only).
     pub fn requires_proofs(&self) -> bool {
         self.kind() == ContractKind::Kernel
+    }
+
+    /// How many entries sit in the legacy top-level `falsification:` /
+    /// `falsification_conditions:` blocks — content the schema captures but
+    /// does NOT count as `falsification_tests`.
+    ///
+    /// A non-zero result together with an empty `falsification_tests` is the
+    /// inert-contract signature (#2504): the file reads as enforced and
+    /// enforces nothing. `pv status` reports it so the reader is never told
+    /// "Falsification tests: 0" without being told where the entries went.
+    #[must_use]
+    pub fn legacy_falsification_entries(&self) -> usize {
+        fn count(v: Option<&serde_yaml::Value>) -> usize {
+            match v {
+                Some(serde_yaml::Value::Sequence(s)) => s.len(),
+                Some(serde_yaml::Value::Mapping(m)) => m.len(),
+                Some(serde_yaml::Value::Null) | None => 0,
+                Some(_) => 1,
+            }
+        }
+        count(self.falsification.as_ref()) + count(self.falsification_conditions.as_ref())
     }
 
     /// Enforce the provability invariant: kernel contracts MUST have

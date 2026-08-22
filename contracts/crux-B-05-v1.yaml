@@ -179,7 +179,7 @@ falsification_tests:
   rule: parity with HF transformers sharded loader on golden
   prediction: "apr-sharded model loads in transformers with same state_dict as original"
   test: |
-    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/huggingface/shard-merge-goldens.json
+    GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/huggingface/shard-merge-goldens.json
     [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
     python3 - "$GOLD" <<'PY'
     import json, subprocess, tempfile, hashlib, os, sys, pathlib

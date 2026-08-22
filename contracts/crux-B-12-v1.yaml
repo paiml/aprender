@@ -118,7 +118,7 @@ falsification_tests:
   rule: accuracy drop ≤1% on golden classifier
   prediction: "top-1 accuracy of int8 model within 1% of fp32 on golden eval set"
   test: |
-    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/pytorch/int8-dynamic-goldens.json
+    GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/pytorch/int8-dynamic-goldens.json
     [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
     python3 - "$GOLD" <<'PY'
     import json, subprocess, tempfile, os, sys
@@ -159,7 +159,7 @@ falsification_tests:
   rule: parity with torch.quantization.quantize_dynamic dequantized weights
   prediction: "dequantized apr int8 weights have cosine ≥ 0.999 vs torch quantize_dynamic"
   test: |
-    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/pytorch/int8-dynamic-goldens.json
+    GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/pytorch/int8-dynamic-goldens.json
     [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
     python3 - "$GOLD" <<'PY'
     import json, subprocess, tempfile, os, sys, math

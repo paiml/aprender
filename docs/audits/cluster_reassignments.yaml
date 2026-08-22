@@ -1,0 +1,57 @@
+# Declared cluster reassignments — the membership half of the G2.5 per-cluster
+# floor.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The per-cluster floor ratchets gate COUNT per label, label PRESENCE and the
+# zero-gate cluster count. None of those constrains MEMBERSHIP, so the release
+# arm ("every cluster carries at least one gate") was satisfiable by relabelling
+# alone: move a feature that already has a gate into a zero-gate cluster and that
+# cluster stops being at zero without one line of new evidence. Nine zeros become
+# nine tickets only if a zero cannot be made to stop EXISTING. It is the same
+# move as deleting a losing benchmark row, which this repo has done exactly once
+# (d7e08043b — 395 deletions, the only beat deletion in its history, and it
+# removed the only two losing rows).
+#
+# WHY A DECLARATION AND NOT A BAN
+# -------------------------------
+# Clusters are DERIVED. Re-running the clustering legitimately moves members, so
+# forbidding moves would forbid the one operation that keeps the ledger true.
+# A re-cluster must stay possible; a SILENT re-cluster that retires an obligation
+# must not. So a move is legal exactly when it is written down here.
+#
+# WHAT A DECLARATION DOES *NOT* BUY
+# ---------------------------------
+# Declaring a move makes it legible. It does not turn an inherited gate into
+# evidence. The zero-gate set and the release arm are computed over EARNED gates
+# — a gate on a feature that was already in the cluster on the comparand, or on
+# genuinely new surface. A gate that walked in from another cluster counts for
+# the ledger's totals and NOT for the obligation it would otherwise retire.
+# Writing a gate is the only way off zero.
+#
+# HOW IT IS CHECKED (both directions, scripts/lib/dogfood_coverage_gate.py)
+# ------------------------------------------------------------------------
+#   * a feature whose cluster_label differs between the comparand and the
+#     working ledger, with no entry here → FAIL
+#   * an entry whose `to:` disagrees with the working ledger → FAIL. That is what
+#     stops this file becoming a blanket permit: you cannot pre-authorise a move
+#     you have not made, because the ledger has not made it yet.
+#   * an entry with no `reason:` → FAIL
+#
+# An entry may stay after its move has landed on main: once main carries the new
+# label no move is observed, and the entry is inert because its `to:` still
+# agrees with the ledger. This file is therefore a LOG of reassignments, not a
+# queue to be drained.
+#
+# SHAPE
+# -----
+#   reassignments:
+#     - binary: apr
+#       feature: 'apr foo --bar'
+#       from: apr-core-commands
+#       to: apr-lint-diag
+#       reason: 're-clustered at k=14 on <date>; foo dispatches through the lint
+#                path, see <evidence>'
+#
+# The ledger has taken no reassignment yet.
+reassignments: []

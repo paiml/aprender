@@ -41,7 +41,6 @@ metadata:
     - 'helix-db/src/helix_engine/traversal_core/ops/bm25/hybrid_search_bm25.rs'
   depends_on: []
 
-kind: AprHybridRetrievalContract
 name: apr-hybrid-retrieval
 version: "1.3.0"
 status: ACTIVE

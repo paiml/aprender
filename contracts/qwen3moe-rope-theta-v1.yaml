@@ -13,7 +13,6 @@ metadata:
     (crates/aprender-serve/src/gguf/config.rs::default_rope_theta_for_architecture).
     Pillar-4 (correctness): the wrong RoPE base silently degrades long-context
     inference for Qwen3-MoE models that llama.cpp/Ollama serve coherently.
-kind: KernelContract
 name: qwen3moe-rope-theta
 version: "1.0.0"
 scope: "crates/aprender-serve/src/gguf/config.rs"

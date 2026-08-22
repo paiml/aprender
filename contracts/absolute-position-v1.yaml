@@ -163,7 +163,7 @@ qa_gate:
   - additive_identity
   - position_bound
   - finite_output
-  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 7 falsification tests pass + Kani harnesses verify
   falsification: Replace addition with multiplication to break additive identity
 verification_summary:
   total_obligations: 7

@@ -84,10 +84,73 @@ impl SessionState {
     }
 
     /// Load state from a file.
+    ///
+    /// #2519: a session file is UNTRUSTED INPUT. `LoadedModel` derives
+    /// `Deserialize`, so before this check a hand-written JSON file could put
+    /// any model facts it liked into the session — architecture, parameter
+    /// count, layer count, hidden dim — and every downstream command
+    /// (`inspect`, `memory`, `distill`) then presented them as measured fact.
+    /// That is the *same* fabrication #2519 closed in `fetch`, reached through
+    /// a second door the `fetch` falsifier could not see. Measured before this
+    /// change, with a crafted session naming `/nonexistent`:
+    ///
+    /// ```text
+    /// $ aprender-train-shell --session sess.json -c "distill --dry-run"
+    /// Teacher: does-not-exist/totally-fake-7b (7.0B)
+    /// Student: does-not-exist/totally-fake-1b (1.0B)
+    /// Ready to train                                     # exit 0
+    /// ```
+    ///
+    /// Loading now fails rather than admitting unprovenanced models.
     pub fn load(path: &PathBuf) -> std::io::Result<Self> {
         let json = std::fs::read_to_string(path)?;
-        serde_json::from_str(&json)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        let state: Self = serde_json::from_str(&json)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        state
+            .validate_model_provenance()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        Ok(state)
+    }
+
+    /// Reject models whose facts this shell could not have derived.
+    ///
+    /// Two rules, deliberately ordered so the second can be deleted on its own
+    /// the day a real loader lands, leaving the first standing:
+    ///
+    /// 1. A cached model is ON DISK. A session naming a path that does not
+    ///    exist is describing a model nobody has.
+    /// 2. Nothing in this crate can produce a `LoadedModel` at all: `fetch`
+    ///    refuses (it has no HuggingFace client, #2519) and no other
+    ///    production path calls `add_model`. So *any* model in a session file
+    ///    was typed by hand, not measured, whatever its path says.
+    ///
+    /// When a real fetch/loader is implemented, delete rule 2 and the
+    /// `no_loader_exists` half of the falsifier with it — but rule 1 stays.
+    pub fn validate_model_provenance(&self) -> Result<(), String> {
+        for (name, model) in &self.models {
+            if !model.path.exists() {
+                return Err(format!(
+                    "session claims model `{name}` ({}) is cached at {}, but nothing \
+                     is there. A model that is not on disk has no measurable \
+                     architecture, parameter count or layer count. (#2519)",
+                    model.id,
+                    model.path.display()
+                ));
+            }
+        }
+
+        if let Some((name, model)) = self.models.iter().next() {
+            return Err(format!(
+                "session carries model `{name}` ({}), but this shell has no way to \
+                 load a model: `fetch` downloads nothing and nothing else records \
+                 one. Every field of that entry — architecture `{}`, {} parameters, \
+                 {} layers, hidden_dim {} — was written by hand, not measured, so \
+                 the shell will not restate it as fact. (#2519)",
+                model.id, model.architecture, model.parameters, model.layers, model.hidden_dim
+            ));
+        }
+
+        Ok(())
     }
 }
 

@@ -15,7 +15,6 @@ metadata:
     `apr merge --method lora-adapter`. PMAT-897 fixed two silent defects in that
     path that corrupt merged weights for standard PEFT/Unsloth adapters.
 
-kind: KernelContract
 name: lora-adapter-merge-cli
 version: "1.0.0"
 scope: "crates/aprender-train/src/cli/commands/merge.rs (run_lora_adapter_merge, build_lora_pairs)"

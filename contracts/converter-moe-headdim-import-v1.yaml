@@ -10,7 +10,6 @@ metadata:
     Correctness contract for the SafeTensors→APR import config loader
     (format::converter::source_load_result::load_model_config_from_json). Pillar-4-adjacent
     (model import): the converted .apr metadata must reflect the source config.json architecture.
-kind: KernelContract
 name: converter-moe-headdim-import
 version: "1.0.0"
 scope: "crates/aprender-core/src/format/converter/source_load_result.rs"

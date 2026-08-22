@@ -688,3 +688,9 @@ shared-version = true
 file = "CHANGELOG.md"
 search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
+
+# Windows-only: the OOM guard's memory probe (#2568). Gated on cfg(windows) so
+# Linux and macOS builds do not carry it -- the two native probes there are
+# cheaper than a crate.
+[target.'cfg(windows)'.dependencies]
+sysinfo = { workspace = true }

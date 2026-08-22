@@ -35,7 +35,6 @@ metadata:
   - 'scikit-learn logistic-regression MAP: gradient Xᵀ(y − p) − λβ, Hessian XᵀWX + λI at the same mode'
   - 'crates/aprender-core/src/bayesian/logistic.rs — BayesianLogisticRegression::fit (gradient ∇ℓ = Xᵀ(y − p) − λβ; Hessian H = XᵀWX + λI)'
 
-kind: KernelContract
 name: bayesian-logistic-map
 version: 1.0.0
 scope: aprender-core BayesianLogisticRegression::fit MAP estimation and Laplace covariance

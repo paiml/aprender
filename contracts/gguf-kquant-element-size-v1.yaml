@@ -28,7 +28,6 @@ metadata:
   - 'crates/aprender-core/src/format/safetensors.rs — ggml_dtype_element_size SIZES table (idx 10/11/14/15)'
   - 'crates/aprender-core/src/format/tensors.rs — ggml_dtype_name GGML type enum order'
 
-kind: KernelContract
 name: gguf-kquant-element-size
 version: 1.0.0
 scope: aprender-core GGUF K-quant byte-size reporting (safetensors.rs ggml_dtype_element_size)
