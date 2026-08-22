@@ -277,6 +277,10 @@ falsification_tests: []
     #[path = "validator_tests_extra.rs"]
     mod extra;
 
+    /// CRUX competitive-research metadata domains (aprender#2555).
+    #[path = "crux_intake_tests.rs"]
+    mod crux_intake;
+
     // ── PMAT-741 BeatBenchmark validator (BEAT-001..007) ──────────────────────
 
     /// Wrap a `beat:` block body in a valid beat-benchmark metadata envelope so

@@ -42,7 +42,100 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
         validate_beat_benchmark(contract, &mut violations);
     }
 
+    // CRUX competitive-research metadata (aprender#2555): kind-independent —
+    // the three fields are carried by 275 `crux-*` contracts of several kinds
+    // and by non-crux contracts that reuse the vocabulary.
+    validate_crux_intake(contract, &mut violations);
+
     violations
+}
+
+/// The closed set of competitors a CRUX story may be extracted from
+/// (`metadata.competitor`, rule CRUX-002).
+///
+/// # Why this is NOT `BEAT_INCUMBENTS`
+///
+/// Reusing [`BEAT_INCUMBENTS`] was considered and REJECTED — it names a
+/// different domain and would import a defect. `BEAT_INCUMBENTS` answers "whom
+/// does aprender claim to *beat* on a pinned benchmark" (the four-pillar
+/// mission); `metadata.competitor` answers "whose UX was this story *extracted
+/// from*". MEASURED against the 276 contracts carrying the field on
+/// 4bbfeb07f, `BEAT_INCUMBENTS.iter().any(|p| c.contains(p))` accepts only
+/// `pytorch` (37) and `ollama` (21) — 58 of 276. It cannot name:
+///
+/// - `huggingface` (88 contracts — the single largest source), nor `vllm` (32),
+/// - `llama_cpp` (37): the BEAT list spells it `llama.cpp`, and `"llama.cpp"`
+///   is not a substring of `"llama_cpp"`, so even the pillar it does name is
+///   missed under the underscore spelling the crux corpus uses,
+/// - `ecosystem` (30), `openclaw` (20), `hf-kernels-community` (15),
+///   `apr-qa-playbook` (9), `openclip` (2), `none` (1).
+///
+/// So this registry is the corpus vocabulary, exactly. Every member is
+/// exercised by at least one contract in `contracts/`; adding a competitor is a
+/// deliberate one-line edit here plus a test, which is the point — an open
+/// domain is what let `THIS-COMPETITOR-DOES-NOT-EXIST` validate.
+pub(crate) const CRUX_COMPETITORS: [&str; 11] = [
+    "apr-qa-playbook",
+    "ecosystem",
+    "hf-kernels-community",
+    "huggingface",
+    "llama_cpp",
+    "none",
+    "ollama",
+    "openclaw",
+    "openclip",
+    "pytorch",
+    "vllm",
+];
+
+/// Documented inclusive bounds of `metadata.demand_score`, from
+/// `contracts/crux-competitive-research-ux-v1.yaml`: "a demand_score (1..5) …
+/// demand_score maps directly to pmat priority".
+const DEMAND_SCORE_RANGE: std::ops::RangeInclusive<i64> = 1..=5;
+
+/// Validate the three CRUX competitive-research metadata fields (aprender#2555).
+///
+/// `intake_status` is absent from this function ON PURPOSE: it is a closed enum
+/// (`IntakeStatus`), so an invented value is rejected during deserialization and
+/// never reaches a validator. That is the stronger guarantee — a lint can be
+/// read and ignored, a parse failure cannot.
+fn validate_crux_intake(contract: &Contract, violations: &mut Vec<Violation>) {
+    // CRUX-001: demand_score is the ranking signal the whole competitive-research
+    // programme sorts by. An unvalidated out-of-range value silently dominates
+    // every ranking it appears in.
+    if let Some(score) = contract.metadata.demand_score {
+        if !DEMAND_SCORE_RANGE.contains(&score) {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-001".to_string(),
+                message: format!(
+                    "metadata.demand_score {score} is outside the documented range {}..={} \
+                     — it is the priority signal pmat work sorts by, so an out-of-range \
+                     value silently outranks every real story",
+                    DEMAND_SCORE_RANGE.start(),
+                    DEMAND_SCORE_RANGE.end(),
+                ),
+                location: Some("metadata.demand_score".to_string()),
+            });
+        }
+    }
+
+    // CRUX-002: competitor must name a source in the registry above.
+    if let Some(competitor) = contract.metadata.competitor.as_deref() {
+        let normalized = competitor.trim();
+        if !CRUX_COMPETITORS.contains(&normalized) {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-002".to_string(),
+                message: format!(
+                    "metadata.competitor {competitor:?} is not a known competitive-research \
+                     source — must be one of: {}",
+                    CRUX_COMPETITORS.join(", ")
+                ),
+                location: Some("metadata.competitor".to_string()),
+            });
+        }
+    }
 }
 
 /// The four incumbents a BEAT may target (case-insensitive substring match, so
