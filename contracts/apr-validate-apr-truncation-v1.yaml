@@ -1,0 +1,134 @@
+contract: apr-validate-apr-truncation
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    `apr validate` must refuse a truncated `.apr` the way it already refuses a
+    truncated GGUF. Measured on the PUBLISHED apr 0.63.0 from crates.io, on
+    `head -c 50000000` of a 1,115,528,900-byte `.apr` (95.5% of the file gone):
+    `apr validate` exited 0 with checks 5-17 all "SKIP Not implemented", while the
+    same truncation on a GGUF exited 5 with "Truncated GGUF: file is 50000000 bytes
+    but tensor data starts at 1117314624". `apr qa` was the only command that caught
+    it. `apr validate --quality` is the command CLAUDE.md documents for integrity,
+    and every machine consumer reads its exit code.
+    Root cause (issue #2612): this is a MISSING CAPABILITY on the APR path, not an
+    unwired one. The APR v2 container writes header, metadata and tensor index in
+    FRONT of the data section, so a file truncated deep into the data still parses
+    every structure the reader touches; nothing anywhere compared the extent the
+    tensor index declares against the bytes that exist. Section-A checks 5-25 — the
+    checks that would have compared them — were `Skip("Not implemented")` stubs.
+    Fix: `apr_format::v2::required_file_len` computes the container's self-declared
+    extent (O(tensor_count), reads no tensor data), and `AprValidator` check 5
+    ("Data section within file") fails closed when that extent exceeds the file
+    length. `print_summary` already turns any FAILED structural check into a non-zero
+    exit, on the human path and the --json path alike, and — unlike the data-quality
+    content gate — it is NOT waived by `--skip-contract`, matching the GGUF path
+    where truncation is refused before any contract flag is consulted.
+    SCOPE, stated honestly: this implements check 5 ONLY. Checks 6-25 remain declared
+    `Skip("Not implemented")` stubs and check 4 (footer CRC32) remains
+    `Skip("Footer not implemented")`. A Skip is not a Pass, and `implemented_score()`
+    excludes stubs from its denominator, so no coverage is claimed that does not exist.
+    The extent covers each tensor's 64-byte alignment padding but deliberately STOPS
+    SHORT of the 4-byte CRC32 footer, so a file truncated by exactly its last 4 bytes
+    still passes — see OBLIG-APR-RESIDUAL-005 for the measurement that forced that
+    boundary (two real footerless `.apr` files in the local corpus).
+  references:
+  - "crates/apr-format/src/v2/reader_impl.rs (required_file_len)"
+  - "crates/apr-format/src/v2/tests_truncation_2612.rs (extent falsifiers)"
+  - "crates/aprender-core/src/format/validation_impl.rs (AprValidator::check_data_within_file, check 5)"
+  - "crates/aprender-core/src/format/validation_tests_truncation_2612.rs (check-level falsifiers)"
+  - "crates/apr-cli/src/commands/validate.rs (print_summary / failed_check_details — exit code)"
+  - "crates/apr-cli/src/commands/validate_tests_truncation_2612.rs (CLI exit-code falsifiers)"
+  - "crates/aprender-core/src/format/rosetta/arch_inference.rs (validate_gguf — the GGUF S1-FIX this reaches parity with)"
+version: 1
+status: enforced
+date: 2026-08-22
+
+proof_obligations:
+  - type: invariant
+    property: >
+      OBLIG-APR-EXTENT-001: for every APR v2 container,
+      `data_offset + max(entry.offset + align_64(entry.size)) <= file_length`.
+      `required_file_len` computes the left-hand side from the header and tensor
+      index alone — it reads no tensor payload, so the cost is O(tensor_count) and
+      independent of file size. A buffer that is not an APR v2 container (wrong
+      magic, shorter than the 64-byte header) yields Err rather than a zero extent,
+      because a zero extent would read as "fits, therefore fine".
+      The extent includes each tensor's 64-byte ALIGNMENT PADDING, which both v2
+      writers emit unconditionally for every tensor including the last
+      (`AprV2Writer::write`, `AprV2StreamingWriter::add_tensor`). Without it the
+      bound left up to 63 further bytes of the tail undetected — measured 60 on
+      `whisper.apr/models/tiny-int8.apr` and 36 on the in-tree
+      `crates/apr-format/tests/fixtures/golden_v2.apr`.
+  - type: invariant
+    property: >
+      OBLIG-APR-RESIDUAL-005 (DISCLOSED RESIDUAL, not a closed gap): the extent
+      deliberately STOPS SHORT of the 4-byte CRC32 footer, so a `.apr` truncated by
+      exactly its last 4 bytes still passes check 5. The reason is a measurement,
+      not caution: of the ten parseable APR v2 files in the local corpus, TWO carry
+      no footer at all — `~/models/qwen2.5-coder-1.5b-instruct-q4k.apr` and its
+      `-q4k-v2` sibling are each exactly `required_file_len` bytes, four short of
+      `required_file_len + 4`. Folding the footer into the required length would
+      report both INTACT files as truncated, a strictly worse failure than missing a
+      4-byte truncation. Closing this residual is check 4's job (footer CRC32),
+      still a declared `Skip("Footer not implemented")` stub — and those two
+      footerless files are precisely why check 4 cannot simply be switched on.
+      `footer_only_truncation_is_the_disclosed_residual` PINS the residual at
+      exactly 4 bytes so it can neither widen nor silently close unnoticed.
+  - type: invariant
+    property: >
+      OBLIG-APR-CHECK5-002: `AprValidator` check 5 ("Data section within file") is
+      Fail when the declared extent exceeds the file length, naming the actual
+      length and the declared extent ("Truncated APR: file is N bytes but the tensor
+      index declares data through byte M"); Pass when it does not; and Skip for a
+      buffer that is not an APR v2 container, so the GGUF path — which enforces its
+      own truncation gate — is untouched. No false positive: an intact `.apr`
+      written by `AprV2Writer` passes.
+  - type: invariant
+    property: >
+      OBLIG-APR-EXIT-003: `apr validate` on a truncated `.apr` exits non-zero
+      (`CliError::ValidationFailed`) and the message names the truncation, on every
+      flag combination — default, `--quality`, `--json`, and `--skip-contract`.
+      `--skip-contract` waives the data-quality CONTRACT gate; it does not waive the
+      file's own arithmetic, and on the GGUF path it never did. This closes the
+      surviving exit-0 hole: before the fix `--skip-contract` returned Ok(()) from
+      `gate_apr_content` on its first line, so a 95%-truncated `.apr` validated
+      clean regardless of what its tensors decoded to.
+  - type: invariant
+    property: >
+      OBLIG-APR-SCOPE-004: the fix implements check 5 only. Checks 6-25 remain
+      `Skip("Not implemented")` and are asserted to still be 20 stubs, so a later
+      reader cannot mistake "check 5 implemented" for "Section A implemented", and
+      the ledger fails RED the moment that count changes without being updated.
+
+falsification_tests:
+  - id: FALSIFY-APR-EXTENT-001
+    name: truncated_file_is_shorter_than_its_own_declared_extent
+    prediction: "a `.apr` written by AprV2Writer and cut at data_offset+16 still parses header, metadata and index, reports the SAME required extent as the intact file, and that extent exceeds the truncated length"
+    test_harness: "cargo test -p apr-format --lib v2::tests_truncation_2612"
+    expected_output: "test result: ok"
+    if_fails: "the container's declared extent is not computable from the index alone → truncation cannot be detected without reading the whole file, and `apr validate` is back to trusting a file that is 95% missing."
+  - id: FALSIFY-APR-CHECK5-002
+    name: truncated_apr_fails_check_5
+    prediction: "AprValidator::validate_bytes on a half-truncated .apr yields check 5 = Fail whose reason contains 'Truncated APR' and the actual file length; on the intact fixture check 5 = Pass and report.is_valid() is true; on a GGUF buffer check 5 = Skip"
+    test_harness: "cargo test -p aprender-core --lib validation_tests_truncation_2612"
+    expected_output: "test result: ok"
+    if_fails: "check 5 is a stub again → the 100-point report grades a truncated .apr F and still reports VALID, which is exactly what shipped in 0.63.0."
+  - id: FALSIFY-APR-EXIT-003
+    name: truncated_apr_exits_non_zero_with_skip_contract
+    prediction: "commands::validate::run on a truncated .apr returns Err(ValidationFailed) naming 'Truncated APR' for default, --quality, --json, and --skip-contract; the intact fixture is never described as truncated"
+    test_harness: "cargo test -p apr-cli --lib validate_tests_truncation_2612"
+    expected_output: "test result: ok"
+    if_fails: "`apr validate` exits 0 on a truncated .apr for at least one flag combination → every machine consumer that reads the exit code is told a 95%-missing file is fine."
+  - id: FALSIFY-APR-PADDING-005
+    name: required_extent_covers_trailing_alignment_padding
+    prediction: "on a fixture whose final tensor is 12 bytes (padded to 64), required_file_len equals data_offset+256+64 — NOT data_offset+256+12 — and a cut inside that trailing padding is reported as short"
+    test_harness: "cargo test -p apr-format --lib v2::tests_truncation_2612"
+    expected_output: "test result: ok"
+    if_fails: "the extent stops at the last DECLARED byte, so up to 63 bytes of real tail damage per file compare as \"fits\" — the class this contract exists to catch, only smaller."
+  - id: FALSIFY-APR-RESIDUAL-006
+    name: footer_only_truncation_is_the_disclosed_residual
+    prediction: "AprV2Writer output is exactly required_file_len + 4 bytes, and a buffer with those last 4 bytes removed still satisfies required_file_len <= len — the residual is exactly 4 bytes, no more and no less"
+    test_harness: "cargo test -p apr-format --lib v2::tests_truncation_2612"
+    expected_output: "test result: ok"
+    if_fails: "the residual moved. Wider → more tail damage passes silently. Narrower (the footer folded in) → the two REAL footerless .apr files in the local corpus are reported as truncated, a false positive on intact data."
