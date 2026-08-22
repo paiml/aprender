@@ -69,7 +69,15 @@ pv_bin_assert_fresh() {
             "$(pv_bin_root)/Cargo.toml" 2>/dev/null)
     fi
     [ -n "$pv_bin_declared" ] || { pv_bin_die "could not read declared pv version"; return 1; }
-    pv_bin_actual=$("$pv_bin_b" --version 2>&1 | awk '{print $NF}')
+    # POSITIONAL, first line only. `pv --version` is deliberately multi-line as
+    # of #2559 — it has to say WHICH pv this is, because four things claim that
+    # name. The old `awk '{print $NF}'` took the last field of EVERY line and
+    # handed this comparison four lines of prose. The version line's shape is
+    # pinned from the other side by
+    # crates/aprender-contracts-cli/tests/version_identity.rs
+    # (`semver_stays_the_second_field_of_the_first_line`), and by the case table
+    # in scripts/check_pv_version_parse.sh.
+    pv_bin_actual=$("$pv_bin_b" --version 2>&1 | awk 'NR==1{print $2; exit}')
     [ "$pv_bin_actual" = "$pv_bin_declared" ] || {
         pv_bin_die "resolved pv reports $pv_bin_actual, tree declares $pv_bin_declared ($pv_bin_b)"
         return 1
