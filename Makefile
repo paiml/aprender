@@ -122,22 +122,38 @@ test-heavy: ## Heavy/slow tests (ignored tests)
 	@time PROPTEST_CASES=256 QUICKCHECK_TESTS=256 cargo test --workspace -- --ignored
 	@echo "✅ Heavy tests passed"
 
+# aprender#2522: both targets below piped cargo into `grep`, so make read
+# GREP's exit status and never cargo's. `test-spec` therefore printed
+# "✅ Spec tests complete" for months while the suite was 38-red — grep found
+# the "test result:" line, which is exactly what it does when tests FAIL. These
+# were the suite's only callers anywhere, so nothing could observe the failures.
+# CLAUDE.md "Verification Discipline" rule 1: never read `$?` through a pipe.
 test-model: ## Run model falsification tests ONE AT A TIME (requires models/, ollama, GPU)
 	@echo "🧪 Running model falsification tests (one at a time to avoid OOM)..."
-	@for test in f_ollama_001 f_ollama_002 f_ollama_003 f_ollama_004 f_ollama_005 \
+	@rc=0; for test in f_ollama_001 f_ollama_002 f_ollama_003 f_ollama_004 f_ollama_005 \
 	             f_perf_003 f_trueno_004 f_trueno_008 f_rosetta_002 f_qa_002; do \
 		echo "  ⏳ $$test"; \
 		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 \
-		cargo test --features model-tests --test falsification_spec_v10_tests "$$test" 2>&1 \
-			| grep "test result:" || echo "  ❌ $$test FAILED"; \
-	done
+		cargo test --features model-tests --test falsification_spec_v10_tests "$$test" \
+			> /tmp/apr-test-model-$$test.log 2>&1 \
+			|| { rc=1; echo "  ❌ $$test FAILED"; }; \
+		grep "test result:" /tmp/apr-test-model-$$test.log || true; \
+	done; \
+	[ "$$rc" -eq 0 ] || { echo "❌ Model tests FAILED"; exit 1; }
 	@echo "✅ Model tests complete"
 
 test-spec: ## Run ALL spec falsification tests (structural only, no models)
 	@echo "🔬 Running spec structural tests..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 \
-		cargo test --features model-tests --test falsification_spec_v10_tests 2>&1 \
-		| grep "test result:"
+		cargo test --features model-tests \
+			--test falsification_spec_v10_tests \
+			--test falsification_stress_tests \
+			--test falsification_gpu_state_tests \
+		> /tmp/apr-test-spec.log 2>&1; \
+	rc=$$?; \
+	grep "test result:" /tmp/apr-test-spec.log || true; \
+	[ "$$rc" -eq 0 ] || { sed -n '/^failures:/,$$p' /tmp/apr-test-spec.log; \
+		echo "❌ Spec tests FAILED"; exit 1; }
 	@echo "✅ Spec tests complete"
 
 # Linting

@@ -77,12 +77,10 @@ fn f_realize_003_rope_applied_before_caching() {
 #[test]
 fn f_realize_004_chatml_template_applied() {
     // F-REALIZE-004: Structural check — ChatMLTemplate exists with im_start markers
-    let chat_path = project_root()
-        .join("src")
-        .join("text")
-        .join("chat_template")
-        .join("mod.rs");
-    let content = std::fs::read_to_string(&chat_path).expect("chat_template/mod.rs must exist");
+    // #2522: chat_template is a DIRECTORY assembled from mod.rs + template.rs +
+    // raw_template.rs + ship_008.rs via include!, and `create_template` lives in
+    // a sibling. Anchored to the crate.
+    let content = crate_src_text("aprender-core");
     assert!(
         content.contains("ChatMLTemplate"),
         "F-REALIZE-004: ChatMLTemplate must exist"
@@ -178,11 +176,7 @@ fn f_realize_007_fused_q4k_matches_dequant_then_matmul() {
 #[test]
 fn f_realize_008_swiglu_activation_for_qwen2() {
     // F-REALIZE-008: Structural check — MlpType::SwiGlu exists and qwen2 uses it
-    let family_path = project_root()
-        .join("src")
-        .join("format")
-        .join("model_family.rs");
-    let content = std::fs::read_to_string(&family_path).expect("model_family.rs must exist");
+    let content = crate_src_text("aprender-core");
     assert!(
         content.contains("SwiGlu"),
         "F-REALIZE-008: MlpType::SwiGlu variant must exist"
@@ -202,12 +196,7 @@ fn f_realize_008_swiglu_activation_for_qwen2() {
 #[test]
 fn f_realize_009_greedy_sampling_is_deterministic() {
     // F-REALIZE-009: Structural check — GreedyDecoder exists (deterministic by definition)
-    let gen_path = project_root()
-        .join("src")
-        .join("nn")
-        .join("generation")
-        .join("mod.rs");
-    let content = std::fs::read_to_string(&gen_path).expect("generation/mod.rs must exist");
+    let content = crate_src_text("aprender-core");
     assert!(
         content.contains("GreedyDecoder"),
         "F-REALIZE-009: GreedyDecoder must exist"
