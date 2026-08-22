@@ -391,12 +391,17 @@ async fn test_chat_completions_invalid_message_role() {
 
     // Invalid role still parses, may or may not return OK depending on implementation
     // The key is that it doesn't crash
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
+    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
+    // is correct - 503, the status `model_resolution_status` assigns to a
+    // server-side condition. The disjunction this replaced admitted 200, 404
+    // and 500 simultaneously and therefore could not fail whatever the route
+    // did (the 0.63.0 audit's root cause).
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
+
 }
 
 #[tokio::test]
