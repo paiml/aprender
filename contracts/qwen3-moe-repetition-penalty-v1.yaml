@@ -44,7 +44,7 @@ description: |
   Reference operator dispatch (paiml/claude-code-parity-apr Phase 6):
 
   ```bash
-  APR_MODEL=/home/noah/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf \
+  APR_MODEL=${APR_MODELS:?}/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf \
   PHASE6_COMPLIANCE_ENFORCED=1 \
   APR_AGENT_REPEAT_PENALTY=1.2 \
   APR_AGENT_REPEAT_LAST_N=64 \

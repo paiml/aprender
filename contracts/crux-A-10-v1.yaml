@@ -169,7 +169,7 @@ falsification_tests:
   prediction: "apr --auto-quant matches ollama offload decision"
   test: |
     # TODO: populate evidence/crux/ollama/vram-autoquant-goldens.json from `ollama run --verbose` runs
-    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/ollama/vram-autoquant-goldens.json
+    GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/ollama/vram-autoquant-goldens.json
     [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
     python3 - <<'PY'
     import json, subprocess, os

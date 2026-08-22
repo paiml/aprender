@@ -1,0 +1,13 @@
+# Fixture for check_hardcoded_paths.sh --self-test. MUST be flagged: 4 shapes.
+metadata:
+  version: 1.0.0
+falsification_tests:
+  - id: F-BAD-001
+    test: |
+      GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/g.json
+      [ -f "$GOLD" ] || exit 2
+  - id: F-BAD-002
+    test: "apr qa /home/someone/models/qwen.gguf"
+model_registry:
+  binary: /Users/jane/src/aprender/target/release/apr
+# sha256 computed on /home/noah/.cache/huggingface/hub/model.safetensors

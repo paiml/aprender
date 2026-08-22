@@ -163,7 +163,7 @@ falsification_tests:
   rule: parity with huggingface-cli offline mode on golden
   prediction: "sha256 of apr file:// output matches huggingface-cli snapshot_download output"
   test: |
-    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/huggingface/offline-goldens.json
+    GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/huggingface/offline-goldens.json
     [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
     python3 - "$GOLD" <<'PY'
     import json, subprocess, tempfile, hashlib, os, sys, pathlib
