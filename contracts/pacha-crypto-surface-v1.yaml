@@ -1,0 +1,130 @@
+contract: pacha-crypto-surface
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    The pacha crypto surface (keygen / sign / verify / encrypt / decrypt) must
+    never substitute a homebrew primitive for the one it advertises, and every
+    entry point must fail closed when the real primitive is unavailable.
+
+    Issue #2590 recorded this cluster as 0% covered with 17/17 features at
+    verified_hardware=UNKNOWN. The audit found something stronger than "nobody
+    wrote tests": 26 encryption round-trip tests already existed and ran green in
+    CI on every PR — against the WRONG IMPLEMENTATION. `encryption` was not a
+    default feature of aprender-registry, so `cargo nextest run --workspace --lib`
+    compiled the `not(feature = "encryption")` arm, which substituted a
+    `wrapping_mul(i as u8 + 1)` XOR keystream for ChaCha20, an FNV-shaped
+    checksum for Poly1305, a 10 000-round add/multiply loop for Argon2id, and a
+    `SystemTime` nanosecond reading shifted by `i % 16` for the salt and nonce.
+    Every one returned Ok, and `apr pacha encrypt` printed
+    "Model encrypted successfully". Separately, `--features encryption` did not
+    compile at all (rand 0.9 dropped the `RngCore` impl on `OsRng`), so the real
+    ChaCha20-Poly1305 + Argon2id path had never been built on any machine —
+    which is exactly what UNKNOWN meant.
+
+    The fix deletes every fallback primitive, makes `encryption` a default
+    feature so the shipped build and CI both exercise the real AEAD, and makes
+    the no-feature build return UnsupportedOperation instead of encrypting with
+    something else. A build with no authenticated cipher must REFUSE, not
+    silently downgrade.
+  references:
+  - "crates/aprender-registry/src/crypto.rs (encrypt_model/decrypt_model, EncryptedHeader::new, mod falsify_2590)"
+  - "crates/aprender-registry/src/signing.rs (SigningKey/VerifyingKey/ModelSignature, mod adversarial_2590)"
+  - "crates/aprender-registry/Cargo.toml (default features include `encryption`)"
+  - "crates/aprender-orchestrate/src/pacha/crypto.rs (apr/batuta pacha keygen|sign|verify|encrypt|decrypt)"
+  - "https://github.com/paiml/aprender/issues/2590"
+version: 1
+status: enforced
+date: 2026-08-22
+
+proof_obligations:
+  - type: invariant
+    property: >
+      CRYPTO-NO-SUBSTITUTE: no build configuration of aprender-registry may
+      return Ok from encrypt_model / encrypt_model_with_config using anything
+      other than ChaCha20-Poly1305 with an Argon2id-derived key. When the
+      `encryption` feature is absent the crate has no authenticated cipher, and
+      both encrypt and decrypt must return PachaError::UnsupportedOperation
+      naming the missing feature. Silently downgrading to a non-authenticated
+      cipher is forbidden, because the CLI's success message is identical in
+      both cases and the operator cannot tell them apart.
+  - type: invariant
+    property: >
+      CRYPTO-KEYSTREAM-OPAQUE: ciphertext must carry no algebraic structure
+      derived from the byte index. The deleted fallback built
+      ks[i] = (key[i%32] + nonce[i%12] + block_idx).wrapping_mul(i as u8 + 1),
+      making ks[31] a multiple of 32 and ks[63] a multiple of 64 in every
+      64-byte block; encrypting all-zero plaintext publishes the keystream
+      verbatim, so those probes are a direct discriminator. Under ChaCha20 all
+      16 probes match with probability 32^-8 * 64^-8.
+  - type: invariant
+    property: >
+      CRYPTO-SALT-IS-ENTROPY: EncryptedHeader::new must draw salt and nonce from
+      a CSPRNG, never from a clock. The deleted fallback used
+      salt[i] = ((nanos >> (i % 16)) ^ (i * 7)) as u8, so salt[i] ^ 7i equalled
+      salt[i+16] ^ 7(i+16) for every i regardless of the time, and 256
+      back-to-back headers could collide. Real entropy satisfies that 16-fold
+      relation with probability 2^-128.
+  - type: invariant
+    property: >
+      CRYPTO-REJECTS-TAMPERING: decryption must reject EVERY single-bit flip at
+      EVERY byte offset of the ciphertext (header included), EVERY truncation
+      length, any appended bytes, and a body spliced under a foreign header —
+      including for empty plaintext, whose tag must be no more forgeable than
+      any other. One passing tamper offset is an anecdote; the obligation is
+      over the whole sweep.
+  - type: invariant
+    property: >
+      SIGN-REJECTS-FORGERY: verification must reject all 512 single-bit
+      forgeries of a 64-byte Ed25519 signature, all-zero and all-ones
+      signatures, any signature length other than 64, and the same signature
+      presented against a different message (including one bit off, truncated,
+      extended, and empty). A verifier that returns Ok(()) unconditionally
+      passes every positive test, so only the negatives measure anything.
+  - type: invariant
+    property: >
+      SIGN-PROVENANCE-NEEDS-A-KEY: verify_model establishes only that a
+      ModelSignature envelope is internally consistent, NOT who produced it — an
+      attacker who can rewrite the .sig file can re-sign the same model with
+      their own key and verify_model reports VALID. Only verify_model_with_key
+      establishes provenance, and it must reject an envelope signed by any key
+      other than the expected one. This boundary is pinned by test so a green
+      `apr pacha verify` is never read as proof of authorship.
+
+falsification_tests:
+  - id: FALSIFY-2590-A
+    name: falsify_2590_a_build_without_aead_refuses_rather_than_substituting_xor
+    prediction: "with the `encryption` feature absent, encrypt_model returns Err whose message names the feature; with it present, encrypt_model returns a buffer carrying the PACHAENC magic. On origin/main (default = compression,cli,signing) this test is RED: encrypt_model returns Ok from the XOR fallback."
+    test_harness: "cargo test -p aprender-registry --lib falsify_2590_a && cargo test -p aprender-registry --lib --no-default-features falsify_2590_a"
+    expected_output: "test result: ok"
+    if_fails: "a build with no authenticated cipher silently encrypts with something else, and `apr pacha encrypt` reports success for a file that is not encrypted."
+  - id: FALSIFY-2590-B
+    name: falsify_2590_b_ciphertext_has_no_toy_multiply_structure
+    prediction: "encrypting 512 zero bytes and probing offsets 31 and 63 of each 64-byte block finds fewer than 16 of 16 probes congruent to 0 mod 32 / mod 64; restoring the wrapping_mul keystream inside the encryption path makes all 16 match"
+    test_harness: "cargo test -p aprender-registry --lib falsify_2590_b"
+    expected_output: "test result: ok"
+    if_fails: "the ciphertext is a byte-index-derived keystream, not ChaCha20 output — recoverable without the key."
+  - id: FALSIFY-2590-C
+    name: falsify_2590_c_salt_is_not_a_timestamp_expansion
+    prediction: "EncryptedHeader::new produces a salt for which fewer than 16 of the 16 relations salt[i] ^ 7i == salt[i+16] ^ 7(i+16) hold; restoring the SystemTime-nanosecond derivation makes all 16 hold"
+    test_harness: "cargo test -p aprender-registry --lib falsify_2590_c"
+    expected_output: "test result: ok"
+    if_fails: "salt and nonce are a shifted clock reading, so an attacker who knows approximately when a file was encrypted can enumerate the key-derivation salt, and a tight loop can reuse a (key, nonce) pair."
+  - id: FALSIFY-2590-D
+    name: adversarial_2590_every_single_bit_flip_is_rejected
+    prediction: "for a 48-byte plaintext, flipping bits 0/3/7 of each of the 117 ciphertext bytes yields 351 decryptions and all 351 return Err"
+    test_harness: "cargo test -p aprender-registry --lib adversarial_2590_every_single_bit_flip_is_rejected"
+    expected_output: "test result: ok"
+    if_fails: "the ciphertext is not authenticated end to end and a tampered model file decrypts to attacker-chosen bytes."
+  - id: FALSIFY-2590-E
+    name: adversarial_2590_every_bit_flip_in_the_signature_is_rejected
+    prediction: "all 512 single-bit forgeries of a valid 64-byte Ed25519 signature are rejected, while the unmodified signature verifies"
+    test_harness: "cargo test -p aprender-registry --lib adversarial_2590_every_bit_flip_in_the_signature_is_rejected"
+    expected_output: "test result: ok"
+    if_fails: "the verifier accepts signatures it should not, so `apr pacha verify` reporting VALID means nothing."
+  - id: FALSIFY-2590-F
+    name: adversarial_2590_resigned_envelope_needs_an_expected_key_to_be_caught
+    prediction: "verify_model accepts an envelope re-signed by an attacker over the same model (internally consistent), and verify_model_with_key against the honest key rejects it"
+    test_harness: "cargo test -p aprender-registry --lib adversarial_2590_resigned_envelope_needs_an_expected_key_to_be_caught"
+    expected_output: "test result: ok"
+    if_fails: "either verify_model_with_key stopped checking the signer, or the documented boundary moved without anyone noticing that a green `apr pacha verify` is not provenance."

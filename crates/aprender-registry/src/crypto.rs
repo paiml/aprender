@@ -60,39 +60,24 @@ pub struct EncryptedHeader {
 }
 
 impl EncryptedHeader {
-    /// Create a new header with random salt and nonce
+    /// Create a new header with a cryptographically random salt and nonce
+    ///
+    /// Only available with the `encryption` feature. The removed
+    /// `not(encryption)` arm derived salt and nonce from a nanosecond
+    /// `SystemTime` reading shifted by `i % 16`, so both were a 16-byte
+    /// repetition of a low-entropy, attacker-predictable timestamp (#2590).
     #[must_use]
+    #[cfg(feature = "encryption")]
     pub fn new() -> Self {
-        #[cfg(feature = "encryption")]
-        {
-            use rand::rngs::OsRng;
-            use rand::RngCore;
-            let mut salt = [0u8; SALT_LEN];
-            let mut nonce = [0u8; NONCE_LEN];
-            OsRng.fill_bytes(&mut salt);
-            OsRng.fill_bytes(&mut nonce);
-            Self { version: VERSION, salt, nonce }
-        }
-        #[cfg(not(feature = "encryption"))]
-        {
-            // Fallback: simple PRNG for salt and nonce
-            let seed = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-
-            let mut salt = [0u8; SALT_LEN];
-            let mut nonce = [0u8; NONCE_LEN];
-
-            for (i, byte) in salt.iter_mut().enumerate() {
-                *byte = ((seed >> (i % 16)) ^ (i as u128 * 7)) as u8;
-            }
-            for (i, byte) in nonce.iter_mut().enumerate() {
-                *byte = ((seed >> ((i + 32) % 16)) ^ (i as u128 * 13)) as u8;
-            }
-
-            Self { version: VERSION, salt, nonce }
-        }
+        // rand 0.9 removed the `RngCore` impl on `OsRng` (it is `TryRngCore` only),
+        // which is why this arm had never compiled. `rand::rng()` is the same
+        // CSPRNG-seeded-from-OS-entropy handle `SigningKey::generate` already uses.
+        use rand::RngCore;
+        let mut salt = [0u8; SALT_LEN];
+        let mut nonce = [0u8; NONCE_LEN];
+        rand::rng().fill_bytes(&mut salt);
+        rand::rng().fill_bytes(&mut nonce);
+        Self { version: VERSION, salt, nonce }
     }
 
     /// Serialize header to bytes
@@ -135,6 +120,7 @@ impl EncryptedHeader {
     }
 }
 
+#[cfg(feature = "encryption")]
 impl Default for EncryptedHeader {
     fn default() -> Self {
         Self::new()
@@ -185,38 +171,6 @@ fn derive_key(
     Ok(key)
 }
 
-/// Fallback key derivation when encryption feature is disabled
-#[cfg(not(feature = "encryption"))]
-fn derive_key(
-    password: &str,
-    salt: &[u8; SALT_LEN],
-    _config: &EncryptionConfig,
-) -> Result<[u8; 32]> {
-    // Simple key derivation using iterated hashing (NOT SECURE - fallback only)
-    let mut key = [0u8; 32];
-    let mut state = [0u8; 64];
-
-    for (i, &b) in password.as_bytes().iter().enumerate() {
-        state[i % 64] ^= b;
-    }
-    for (i, &b) in salt.iter().enumerate() {
-        state[(i + 32) % 64] ^= b;
-    }
-
-    for iteration in 0..10000u32 {
-        let iter_bytes = iteration.to_le_bytes();
-        for (i, &b) in iter_bytes.iter().enumerate() {
-            state[i] ^= b;
-        }
-        for i in 0..64 {
-            state[i] = state[i].wrapping_add(state[(i + 1) % 64]).wrapping_mul(33);
-        }
-    }
-
-    key.copy_from_slice(&state[0..32]);
-    Ok(key)
-}
-
 /// Encrypt data using ChaCha20-Poly1305
 #[cfg(feature = "encryption")]
 fn chacha_encrypt(data: &[u8], key: &[u8; 32], nonce: &[u8; NONCE_LEN]) -> Result<Vec<u8>> {
@@ -255,87 +209,6 @@ fn chacha_decrypt(ciphertext: &[u8], key: &[u8; 32], nonce: &[u8; NONCE_LEN]) ->
     })
 }
 
-/// Fallback XOR-based encryption (NOT SECURE - only for when feature disabled)
-#[cfg(not(feature = "encryption"))]
-fn chacha_encrypt(data: &[u8], key: &[u8; 32], nonce: &[u8; NONCE_LEN]) -> Result<Vec<u8>> {
-    let mut output = data.to_vec();
-    let mut keystream = [0u8; 64];
-
-    for (block_idx, chunk) in output.chunks_mut(64).enumerate() {
-        for (i, ks) in keystream.iter_mut().enumerate() {
-            *ks = key[i % 32]
-                .wrapping_add(nonce[i % NONCE_LEN])
-                .wrapping_add(block_idx as u8)
-                .wrapping_mul(i as u8 + 1);
-        }
-        for (i, byte) in chunk.iter_mut().enumerate() {
-            *byte ^= keystream[i];
-        }
-    }
-
-    // Append simplified tag
-    let tag = compute_fallback_tag(&output, key);
-    output.extend_from_slice(&tag);
-
-    Ok(output)
-}
-
-#[cfg(not(feature = "encryption"))]
-fn chacha_decrypt(ciphertext: &[u8], key: &[u8; 32], nonce: &[u8; NONCE_LEN]) -> Result<Vec<u8>> {
-    if ciphertext.len() < TAG_LEN {
-        return Err(PachaError::InvalidFormat("ciphertext too short".to_string()));
-    }
-
-    let data = &ciphertext[..ciphertext.len() - TAG_LEN];
-    let stored_tag = &ciphertext[ciphertext.len() - TAG_LEN..];
-
-    // Verify tag
-    let computed_tag = compute_fallback_tag(data, key);
-    if computed_tag != stored_tag {
-        return Err(PachaError::InvalidFormat(
-            "decryption failed: invalid password or corrupted data".to_string(),
-        ));
-    }
-
-    // Decrypt
-    let mut output = data.to_vec();
-    let mut keystream = [0u8; 64];
-
-    for (block_idx, chunk) in output.chunks_mut(64).enumerate() {
-        for (i, ks) in keystream.iter_mut().enumerate() {
-            *ks = key[i % 32]
-                .wrapping_add(nonce[i % NONCE_LEN])
-                .wrapping_add(block_idx as u8)
-                .wrapping_mul(i as u8 + 1);
-        }
-        for (i, byte) in chunk.iter_mut().enumerate() {
-            *byte ^= keystream[i];
-        }
-    }
-
-    Ok(output)
-}
-
-#[cfg(not(feature = "encryption"))]
-fn compute_fallback_tag(ciphertext: &[u8], key: &[u8; 32]) -> [u8; TAG_LEN] {
-    let mut tag = [0u8; TAG_LEN];
-    let mut state = [0u64; 4];
-
-    for (i, &b) in key.iter().enumerate() {
-        state[i % 4] ^= (b as u64) << ((i * 8) % 64);
-    }
-
-    for (i, &b) in ciphertext.iter().enumerate() {
-        state[i % 4] = state[i % 4].wrapping_add(b as u64).wrapping_mul(0x100000001b3);
-    }
-
-    for (i, byte) in tag.iter_mut().enumerate() {
-        *byte = (state[i % 4] >> ((i % 8) * 8)) as u8;
-    }
-
-    tag
-}
-
 /// Encrypt model data with password
 ///
 /// Uses ChaCha20-Poly1305 for authenticated encryption and Argon2id for
@@ -345,6 +218,13 @@ pub fn encrypt_model(data: &[u8], password: &str) -> Result<Vec<u8>> {
 }
 
 /// Encrypt model data with password and custom config
+///
+/// # Errors
+///
+/// Returns [`PachaError::UnsupportedOperation`] when the crate was built without the
+/// `encryption` feature. It used to return `Ok` with an XOR keystream and a
+/// homebrew checksum instead — see [`unavailable`] (#2590).
+#[cfg(feature = "encryption")]
 pub fn encrypt_model_with_config(
     data: &[u8],
     password: &str,
@@ -373,6 +253,12 @@ pub fn decrypt_model(encrypted_data: &[u8], password: &str) -> Result<Vec<u8>> {
 }
 
 /// Decrypt model data with password and custom config
+///
+/// # Errors
+///
+/// Returns [`PachaError::UnsupportedOperation`] when the crate was built without the
+/// `encryption` feature (#2590).
+#[cfg(feature = "encryption")]
 pub fn decrypt_model_with_config(
     encrypted_data: &[u8],
     password: &str,
@@ -393,6 +279,58 @@ pub fn decrypt_model_with_config(
 
     // Decrypt and verify (ChaCha20-Poly1305 verifies tag internally)
     chacha_decrypt(ciphertext, &key, &header.nonce)
+}
+
+// ============================================================================
+// #2590: fail closed when the crate is built WITHOUT the `encryption` feature.
+//
+// Before this, `not(feature = "encryption")` selected a homebrew replacement for
+// every primitive — a `wrapping_mul(i + 1)` XOR keystream, an FNV-shaped
+// "auth tag", a 10 000-round add/multiply KDF, and a `SystemTime` nanosecond
+// salt. Those returned `Ok(..)` and the CLI printed "Model encrypted
+// successfully", so the insecure build was indistinguishable from the secure
+// one at every observable surface. `encryption` was not a default feature, so
+// that insecure build was the one that shipped.
+// ============================================================================
+
+/// Error returned by every crypto entry point when built without `encryption`
+#[cfg(not(feature = "encryption"))]
+fn unavailable() -> PachaError {
+    PachaError::UnsupportedOperation {
+        operation: "model encryption".to_string(),
+        reason: "pacha was built without the `encryption` feature \
+                 (ChaCha20-Poly1305 + Argon2id); refusing to fall back to a \
+                 non-authenticated cipher. Rebuild with `--features encryption`."
+            .to_string(),
+    }
+}
+
+/// Encrypt model data with password and custom config — unavailable build
+///
+/// # Errors
+///
+/// Always errors: this build has no authenticated cipher.
+#[cfg(not(feature = "encryption"))]
+pub fn encrypt_model_with_config(
+    _data: &[u8],
+    _password: &str,
+    _config: &EncryptionConfig,
+) -> Result<Vec<u8>> {
+    Err(unavailable())
+}
+
+/// Decrypt model data with password and custom config — unavailable build
+///
+/// # Errors
+///
+/// Always errors: this build has no authenticated cipher.
+#[cfg(not(feature = "encryption"))]
+pub fn decrypt_model_with_config(
+    _encrypted_data: &[u8],
+    _password: &str,
+    _config: &EncryptionConfig,
+) -> Result<Vec<u8>> {
+    Err(unavailable())
 }
 
 /// Check if data appears to be encrypted
@@ -416,7 +354,11 @@ pub fn get_version(data: &[u8]) -> Result<u8> {
 // Tests - Extreme TDD
 // ============================================================================
 
-#[cfg(test)]
+// These exercise the AEAD itself, so they need it to exist. Before #2590 this
+// module was `#[cfg(test)]` and `encryption` was NOT a default feature, so every
+// one of these 26 tests ran against the XOR fallback and none had ever run
+// against ChaCha20-Poly1305 on any machine.
+#[cfg(all(test, feature = "encryption"))]
 mod tests {
     use super::*;
 
@@ -748,5 +690,366 @@ mod tests {
         let decrypted = decrypt_model(&encrypted, password).unwrap();
 
         assert_eq!(original, decrypted);
+    }
+}
+
+// ============================================================================
+// #2590 — falsifiers and adversarial cases for the crypto surface
+//
+// Issue #2590: "an encrypt/decrypt round-trip that passes proves nothing about
+// whether the ciphertext is actually secure". What the audit found was worse
+// than an untested surface: `encryption` was not a default feature, the
+// `not(feature = "encryption")` arm silently substituted a homebrew cipher, and
+// `--features encryption` did not compile at all (rand 0.9 dropped `RngCore`
+// for `OsRng`). Every one of the 26 round-trip tests above was green against a
+// cipher no one intended to ship.
+//
+// Each test below must EXCLUDE an outcome. The three `falsify_*` cases are the
+// discrimination checks; the `adversarial_*` cases are the negatives the issue
+// asked for (wrong key, truncation, tampering, empty input).
+// ============================================================================
+
+#[cfg(test)]
+mod falsify_2590 {
+    #[allow(unused_imports)]
+    use super::*;
+
+    /// Argon2id parameters for the sweep tests ONLY.
+    ///
+    /// The sweeps below run hundreds of decryptions; at the production default
+    /// (64 MiB, t=3) that is minutes of KDF. These tests measure whether the
+    /// AEAD *rejects* bad input, which is independent of KDF hardness. Tests
+    /// that assert anything about the default configuration call
+    /// `encrypt_model`/`decrypt_model` directly.
+    #[cfg(feature = "encryption")]
+    fn cheap_kdf() -> EncryptionConfig {
+        EncryptionConfig { memory_cost_kib: 64, time_cost: 1, parallelism: 1 }
+    }
+
+    // ------------------------------------------------------------------------
+    // FALSIFIER A — RED on origin/main as it stands.
+    // ------------------------------------------------------------------------
+
+    /// A build with no authenticated cipher must REFUSE, never substitute one.
+    ///
+    /// On origin/main `default = ["compression", "cli", "signing"]`, so the
+    /// shipped build took the `not(feature = "encryption")` arm and returned
+    /// `Ok` from a `wrapping_mul` XOR keystream with an FNV-shaped checksum
+    /// standing in for Poly1305. `apr pacha encrypt` then printed
+    /// "Model encrypted successfully". This test is RED there.
+    #[test]
+    fn falsify_2590_a_build_without_aead_refuses_rather_than_substituting_xor() {
+        let result = encrypt_model(b"model weights", "correct horse battery staple");
+
+        #[cfg(not(feature = "encryption"))]
+        {
+            let err = result.expect_err(
+                "a build without ChaCha20-Poly1305 must refuse to encrypt, not XOR the \
+                 plaintext and report success",
+            );
+            let msg = err.to_string();
+            assert!(
+                msg.contains("encryption"),
+                "the refusal must name the missing feature so the operator can act; got: {msg}"
+            );
+        }
+
+        #[cfg(feature = "encryption")]
+        {
+            let ciphertext = result.expect("the default build must have a real AEAD available");
+            assert!(is_encrypted(&ciphertext), "output must carry the PACHAENC magic");
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // FALSIFIER B — the cipher is not the deleted toy.
+    // ------------------------------------------------------------------------
+
+    /// Ciphertext must carry none of the deleted fallback's multiply structure.
+    ///
+    /// The removed keystream was
+    ///   `ks[i] = (key[i % 32] + nonce[i % 12] + block_idx).wrapping_mul(i as u8 + 1)`
+    /// so `ks[31]` was always a multiple of 32 and `ks[63]` always a multiple of
+    /// 64, in every 64-byte block. Encrypting all-zero plaintext publishes the
+    /// keystream verbatim, so those 16 probes are all-zero under the toy cipher
+    /// and all match under ChaCha20 with probability 32^-8 * 64^-8 = 3e-27.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn falsify_2590_b_ciphertext_has_no_toy_multiply_structure() {
+        const BLOCKS: usize = 8;
+        let plaintext = vec![0u8; 64 * BLOCKS];
+        let ciphertext =
+            encrypt_model_with_config(&plaintext, "falsify-2590-b", &cheap_kdf()).expect("encrypt");
+        let body = &ciphertext[HEADER_SIZE..];
+
+        let mut toy_shaped = 0usize;
+        for block in 0..BLOCKS {
+            if body[64 * block + 31] % 32 == 0 {
+                toy_shaped += 1;
+            }
+            if body[64 * block + 63] % 64 == 0 {
+                toy_shaped += 1;
+            }
+        }
+
+        assert!(
+            toy_shaped < 2 * BLOCKS,
+            "all {} keystream probes matched the deleted toy cipher's multiply structure — \
+             this ciphertext is not ChaCha20 output",
+            2 * BLOCKS
+        );
+    }
+
+    // ------------------------------------------------------------------------
+    // FALSIFIER C — the salt is entropy, not a clock reading.
+    // ------------------------------------------------------------------------
+
+    /// Salt must not be a 16-byte periodic expansion of a timestamp.
+    ///
+    /// The removed fallback used
+    ///   `salt[i] = ((nanos >> (i % 16)) ^ (i as u128 * 7)) as u8`
+    /// so `salt[i] ^ 7i == salt[i+16] ^ 7(i+16)` held for every `i` no matter
+    /// what the clock read. This is the issue's "a keygen producing low-entropy
+    /// or deterministic keys looks identical to a correct one" made checkable:
+    /// real entropy matches all 16 positions with probability 2^-128.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn falsify_2590_c_salt_is_not_a_timestamp_expansion() {
+        let header = EncryptedHeader::new();
+
+        let mut periodic = 0usize;
+        for i in 0..16usize {
+            let lhs = header.salt[i] ^ (i.wrapping_mul(7) as u8);
+            let rhs = header.salt[i + 16] ^ ((i + 16).wrapping_mul(7) as u8);
+            if lhs == rhs {
+                periodic += 1;
+            }
+        }
+
+        assert!(
+            periodic < 16,
+            "salt repeats with period 16 — it is a shifted clock reading, not entropy"
+        );
+    }
+
+    // ------------------------------------------------------------------------
+    // Adversarial: key material
+    // ------------------------------------------------------------------------
+
+    /// Salt and nonce must be distinct across rapid successive invocations.
+    ///
+    /// The removed fallback seeded both from `SystemTime` nanoseconds, so a
+    /// tight loop could reuse a (key, nonce) pair — the single failure that
+    /// breaks a stream cipher outright.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn adversarial_2590_salt_and_nonce_never_repeat_in_a_tight_loop() {
+        use std::collections::HashSet;
+
+        const N: usize = 256;
+        let mut salts = HashSet::new();
+        let mut nonces = HashSet::new();
+        for _ in 0..N {
+            let header = EncryptedHeader::new();
+            salts.insert(header.salt);
+            nonces.insert(header.nonce);
+        }
+
+        assert_eq!(salts.len(), N, "salt collided within {N} back-to-back headers");
+        assert_eq!(nonces.len(), N, "nonce collided within {N} back-to-back headers");
+    }
+
+    /// Two encryptions of different plaintexts must not share a keystream.
+    ///
+    /// Under keystream reuse `ct_a ^ ct_b == pt_a ^ pt_b`, which for these
+    /// inputs is 0xFF in every position. That is the classic two-time-pad
+    /// break, and it is invisible to any round-trip test.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn adversarial_2590_no_two_time_pad_across_encryptions() {
+        let zeros = vec![0u8; 256];
+        let ones = vec![0xFFu8; 256];
+
+        let ct_a =
+            encrypt_model_with_config(&zeros, "same-password", &cheap_kdf()).expect("encrypt a");
+        let ct_b =
+            encrypt_model_with_config(&ones, "same-password", &cheap_kdf()).expect("encrypt b");
+
+        let body_a = &ct_a[HEADER_SIZE..HEADER_SIZE + 256];
+        let body_b = &ct_b[HEADER_SIZE..HEADER_SIZE + 256];
+
+        let leaked = body_a.iter().zip(body_b.iter()).filter(|(a, b)| (*a ^ *b) == 0xFF).count();
+
+        assert!(
+            leaked < 256,
+            "ct_a ^ ct_b equals pt_a ^ pt_b in every byte — the keystream was reused"
+        );
+    }
+
+    // ------------------------------------------------------------------------
+    // Adversarial: wrong key
+    // ------------------------------------------------------------------------
+
+    /// A password differing by one character must not decrypt.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn adversarial_2590_off_by_one_password_is_rejected() {
+        let plaintext = b"weights that matter";
+        let ciphertext =
+            encrypt_model_with_config(plaintext, "hunter2", &cheap_kdf()).expect("encrypt");
+
+        for wrong in ["hunter3", "hunter", "hunter22", "Hunter2", " hunter2", "hunter2 "] {
+            let result = decrypt_model_with_config(&ciphertext, wrong, &cheap_kdf());
+            assert!(
+                result.is_err(),
+                "password {wrong:?} must not decrypt a ciphertext made for \"hunter2\""
+            );
+        }
+    }
+
+    /// Decrypting with the right password but the wrong KDF cost must fail.
+    ///
+    /// The Argon2id parameters are not stored in the header, so they are part of
+    /// the key. A build that silently ignored them would decrypt anyway.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn adversarial_2590_wrong_kdf_parameters_are_rejected() {
+        let plaintext = b"weights that matter";
+        let ciphertext = encrypt_model_with_config(plaintext, "pw", &cheap_kdf()).expect("encrypt");
+
+        let other = EncryptionConfig { memory_cost_kib: 128, time_cost: 2, parallelism: 1 };
+        let result = decrypt_model_with_config(&ciphertext, "pw", &other);
+        assert!(result.is_err(), "different Argon2id parameters must derive a different key");
+    }
+
+    // ------------------------------------------------------------------------
+    // Adversarial: tampering
+    // ------------------------------------------------------------------------
+
+    /// EVERY single-bit flip anywhere in the ciphertext must be rejected.
+    ///
+    /// `test_corrupted_ciphertext_fails` flipped one byte at one offset. One
+    /// position passing is an anecdote; this sweeps all of them, header
+    /// included, so a cipher that authenticates only part of its output cannot
+    /// pass.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn adversarial_2590_every_single_bit_flip_is_rejected() {
+        let plaintext: Vec<u8> = (0..48u8).collect();
+        let ciphertext =
+            encrypt_model_with_config(&plaintext, "pw", &cheap_kdf()).expect("encrypt");
+
+        for byte_index in 0..ciphertext.len() {
+            for bit in [0u8, 3, 7] {
+                let mut tampered = ciphertext.clone();
+                tampered[byte_index] ^= 1 << bit;
+                let result = decrypt_model_with_config(&tampered, "pw", &cheap_kdf());
+                assert!(
+                    result.is_err(),
+                    "flipping bit {bit} of byte {byte_index} was accepted — the ciphertext is \
+                     not authenticated end to end"
+                );
+            }
+        }
+    }
+
+    /// EVERY truncation length must be rejected — none may return plaintext.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn adversarial_2590_every_truncation_is_rejected() {
+        let plaintext: Vec<u8> = (0..48u8).collect();
+        let ciphertext =
+            encrypt_model_with_config(&plaintext, "pw", &cheap_kdf()).expect("encrypt");
+
+        for len in 0..ciphertext.len() {
+            let result = decrypt_model_with_config(&ciphertext[..len], "pw", &cheap_kdf());
+            assert!(
+                result.is_err(),
+                "a {len}-byte prefix of a {}-byte ciphertext was accepted",
+                ciphertext.len()
+            );
+        }
+    }
+
+    /// Appending trailing bytes must be rejected, not silently ignored.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn adversarial_2590_appended_bytes_are_rejected() {
+        let plaintext = b"exactly what was encrypted";
+        let ciphertext = encrypt_model_with_config(plaintext, "pw", &cheap_kdf()).expect("encrypt");
+
+        for extra in [1usize, 16, 64] {
+            let mut padded = ciphertext.clone();
+            padded.extend(std::iter::repeat_n(0x41u8, extra));
+            let result = decrypt_model_with_config(&padded, "pw", &cheap_kdf());
+            assert!(result.is_err(), "{extra} appended bytes were silently ignored");
+        }
+    }
+
+    /// Splicing the body of one ciphertext onto the header of another must fail.
+    ///
+    /// This is the attack a per-message tag alone does not stop if the header is
+    /// unauthenticated and the key does not depend on it.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn adversarial_2590_spliced_header_and_body_is_rejected() {
+        let a = encrypt_model_with_config(b"alpha payload", "pw", &cheap_kdf()).expect("encrypt a");
+        let b = encrypt_model_with_config(b"bravo payload", "pw", &cheap_kdf()).expect("encrypt b");
+        assert_eq!(a.len(), b.len(), "same-length plaintexts give same-length ciphertexts");
+
+        let mut spliced = a[..HEADER_SIZE].to_vec();
+        spliced.extend_from_slice(&b[HEADER_SIZE..]);
+
+        let result = decrypt_model_with_config(&spliced, "pw", &cheap_kdf());
+        assert!(result.is_err(), "a body spliced under a foreign header was accepted");
+    }
+
+    // ------------------------------------------------------------------------
+    // Adversarial: empty and degenerate input
+    // ------------------------------------------------------------------------
+
+    /// Empty plaintext still produces an authenticated ciphertext.
+    ///
+    /// `test_empty_data_encrypt` only round-tripped it. An empty payload whose
+    /// tag can be flipped without detection is a forgery oracle.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn adversarial_2590_empty_plaintext_is_still_authenticated() {
+        let ciphertext = encrypt_model_with_config(b"", "pw", &cheap_kdf()).expect("encrypt");
+        assert_eq!(
+            ciphertext.len(),
+            HEADER_SIZE + TAG_LEN,
+            "empty plaintext must still carry a full-size tag"
+        );
+
+        let round_tripped =
+            decrypt_model_with_config(&ciphertext, "pw", &cheap_kdf()).expect("decrypt");
+        assert!(round_tripped.is_empty());
+
+        for index in HEADER_SIZE..ciphertext.len() {
+            let mut tampered = ciphertext.clone();
+            tampered[index] ^= 0x01;
+            assert!(
+                decrypt_model_with_config(&tampered, "pw", &cheap_kdf()).is_err(),
+                "the tag of an empty payload was forgeable at byte {index}"
+            );
+        }
+    }
+
+    /// An all-zero buffer of plausible length must never look like a ciphertext.
+    #[test]
+    fn adversarial_2590_zero_buffer_is_not_mistaken_for_ciphertext() {
+        let zeros = vec![0u8; HEADER_SIZE + TAG_LEN + 64];
+        assert!(!is_encrypted(&zeros), "an all-zero buffer must not carry the magic");
+        assert!(get_version(&zeros).is_err(), "an all-zero buffer has no version");
+    }
+
+    /// An empty password must be refused, in every build.
+    #[test]
+    fn adversarial_2590_empty_password_is_refused() {
+        assert!(
+            encrypt_model(b"data", "").is_err(),
+            "an empty password must never be accepted for encryption"
+        );
     }
 }
