@@ -49,6 +49,45 @@ pub struct Contract {
     /// CI fails when aprender regresses below it on the incumbent's canonical task.
     #[serde(default)]
     pub beat: Option<Beat>,
+    /// CRUX master-registry story rows (`contracts/crux-competitive-research-ux-v1.yaml`).
+    ///
+    /// THIS is the list the competitive-research programme actually sorts by.
+    /// aprender#2555 originally range-checked only `metadata.demand_score` and
+    /// justified it as "the ranking signal the whole programme sorts by" — but
+    /// MEASURED, nothing in the repo reads `metadata.demand_score`; the 250
+    /// rows below are what §12.1 of
+    /// `docs/specifications/crux-competitive-research-ux-workflows.md` maps to
+    /// `pmat work` priority. They were entirely ungated. Validating them is
+    /// what makes that justification true.
+    #[serde(default)]
+    pub stories: Vec<CruxStory>,
+}
+
+/// One row of the CRUX master registry's `stories:` list.
+///
+/// Fields beyond the three domain-checked ones are accepted and ignored — the
+/// registry carries `title`/`contract`/`category` that no rule constrains.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CruxStory {
+    /// Story id, e.g. `CRUX-A-01`. Used only to locate a violation.
+    #[serde(default)]
+    pub id: String,
+    /// Which competitor's UX the story was extracted from. Membership-checked
+    /// against `CRUX_COMPETITORS` (rule CRUX-002), the same registry that
+    /// governs `metadata.competitor`, and trimmed on parse for the same reason.
+    #[serde(default, deserialize_with = "deserialize_trimmed_opt_string")]
+    pub competitor: Option<String>,
+    /// Demand, documented `1..=5`. Range-checked by rule CRUX-001 — the same
+    /// `DEMAND_SCORE_RANGE` that governs `metadata.demand_score`.
+    ///
+    /// `i64` for the same reason as [`Metadata::demand_score`]: an out-of-range
+    /// value must REACH the validator and be named, not die in serde.
+    #[serde(default)]
+    pub demand_score: Option<i64>,
+    /// Story status. A closed enum, so an invented value FAILS TO PARSE — the
+    /// registry is held to exactly the vocabulary `IntakeStatus` defines.
+    #[serde(default)]
+    pub status: Option<IntakeStatus>,
 }
 
 /// Parameters of a head-to-head BEAT benchmark (`metadata.kind: beat-benchmark`,
@@ -230,7 +269,14 @@ pub struct Metadata {
     /// CRUX competitive-research story: which competitor's UX the story was
     /// extracted from. Membership-checked against the `CRUX_COMPETITORS`
     /// registry in `schema/validator.rs` (rule CRUX-002).
-    #[serde(default)]
+    ///
+    /// NORMALISED ON PARSE (trimmed). The validator used to `.trim()` before
+    /// comparing, so `competitor: "  ecosystem  "` passed CRUX-002 while the
+    /// stored value kept its padding: the gate laundered a value it never
+    /// fixed, and every consumer reading this field still saw the untrimmed
+    /// string. Trimming here means the checked value and the stored value are
+    /// the same value.
+    #[serde(default, deserialize_with = "deserialize_trimmed_opt_string")]
     pub competitor: Option<String>,
     /// CRUX competitive-research story: demand, documented `1..=5` by
     /// `contracts/crux-competitive-research-ux-v1.yaml` §"demand_score (1..5)".
@@ -245,6 +291,27 @@ pub struct Metadata {
     /// invented value FAILS TO PARSE (see [`IntakeStatus`]).
     #[serde(default)]
     pub intake_status: Option<IntakeStatus>,
+}
+
+/// Deserialize an optional string, trimming surrounding whitespace.
+///
+/// aprender#2555 follow-up: a domain check that trims before comparing accepts
+/// `"  ecosystem  "` and then stores it verbatim. Normalising at the parse
+/// boundary is the fix — it is done once, before any rule runs, so no rule has
+/// to remember to trim and none can disagree about whether it did.
+///
+/// PRESENT-BUT-EMPTY IS NOT ABSENT. A trimmed-to-empty value stays
+/// `Some(String::new())` rather than collapsing to `None`, so `competitor: ''`
+/// and `competitor: '   '` are still REPORTED by CRUX-002 as unregistered.
+/// Collapsing them would have quietly widened the presence gap this field
+/// already has: omission is invisible to the gate, and turning a written-down
+/// blank into another invisible case makes that worse, not better.
+fn deserialize_trimmed_opt_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: Option<String> = Option::deserialize(deserializer)?;
+    Ok(raw.map(|v| v.trim().to_string()))
 }
 
 /// Intake status of a CRUX competitive-research story (`metadata.intake_status`).

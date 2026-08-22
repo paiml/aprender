@@ -289,3 +289,198 @@ fn apr_lint_producers_carries_a_vocabulary_intake_status() {
     );
     assert!(crux_errors(yaml).is_empty());
 }
+
+
+// ── The MASTER REGISTRY story rows — the signal the programme really sorts by ──
+//
+// #2555's headline rationale was that demand_score "is the ranking signal the
+// whole competitive-research programme sorts by". MEASURED, that was not true
+// of the field it gated: nothing in the repo reads `metadata.demand_score`.
+// The signal §12.1 of the crux workflows spec maps to `pmat work` priority is
+// `stories[].demand_score` in contracts/crux-competitive-research-ux-v1.yaml —
+// 250 rows, which were entirely ungated. These tests close that.
+
+/// A master-registry-shaped contract with one templated story row.
+fn registry_contract(row: &str) -> String {
+    format!(
+        r#"
+metadata:
+  version: "1.0.0"
+  description: "CRUX registry domain test"
+  kind: registry
+  registry: true
+  references:
+    - "contracts/crux-competitive-research-ux-v1.yaml"
+equations: {{}}
+proof_obligations: []
+falsification_tests: []
+stories:
+{row}
+"#
+    )
+}
+
+/// The REAL registry parses, and its 250 rows are all in-domain.
+///
+/// This is the non-vacuity anchor for every registry test below: if the
+/// `stories:` field ever stopped deserializing, the checks would silently
+/// iterate an empty vec and pass.
+#[test]
+fn the_real_crux_registry_rows_are_all_in_domain() {
+    let yaml = include_str!("../../../../contracts/crux-competitive-research-ux-v1.yaml");
+    let contract = parse_contract_str(yaml).expect("crux registry parses");
+    assert!(
+        contract.stories.len() >= 250,
+        "parsed only {} registry story rows — the `stories:` field stopped \
+         deserializing, which would make every registry check below vacuous",
+        contract.stories.len()
+    );
+    for st in &contract.stories {
+        assert!(st.demand_score.is_some(), "{} has no demand_score", st.id);
+        assert!(st.competitor.is_some(), "{} has no competitor", st.id);
+        assert!(st.status.is_some(), "{} has no status", st.id);
+    }
+    assert!(crux_errors(yaml).is_empty());
+}
+
+/// An out-of-range score on a registry row raises CRUX-001 and names the row.
+#[test]
+fn registry_story_out_of_range_demand_score_is_an_error() {
+    for bad in ["99999", "0", "-1", "6", "1000000000000"] {
+        let yaml = registry_contract(&format!(
+            "  - {{ id: CRUX-Z-01, competitor: ollama, demand_score: {bad}, status: missing }}"
+        ));
+        let errors = crux_errors(&yaml);
+        assert!(
+            errors.iter().any(|e| e.rule == "CRUX-001"
+                && e.location.as_deref() == Some("stories[CRUX-Z-01].demand_score")),
+            "registry demand_score {bad} must raise a located CRUX-001, got {errors:?}"
+        );
+    }
+}
+
+/// In-range scores on a registry row raise nothing — the bounds are inclusive.
+#[test]
+fn registry_story_demand_score_bounds_are_inclusive() {
+    for ok in ["1", "2", "3", "4", "5"] {
+        let yaml = registry_contract(&format!(
+            "  - {{ id: CRUX-Z-01, competitor: ollama, demand_score: {ok}, status: missing }}"
+        ));
+        assert!(
+            crux_errors(&yaml).is_empty(),
+            "registry demand_score {ok} is in range and must raise nothing"
+        );
+    }
+}
+
+/// An unregistered competitor on a registry row raises CRUX-002.
+#[test]
+fn registry_story_unknown_competitor_is_an_error() {
+    let yaml = registry_contract(
+        "  - { id: CRUX-Z-01, competitor: NOT-A-COMPETITOR, demand_score: 3, status: missing }",
+    );
+    let errors = crux_errors(&yaml);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.rule == "CRUX-002"
+                && e.location.as_deref() == Some("stories[CRUX-Z-01].competitor")),
+        "unregistered registry competitor must raise a located CRUX-002, got {errors:?}"
+    );
+}
+
+/// The three fields are REQUIRED on a registry row.
+///
+/// This is where the presence gap CAN be closed. It cannot be closed on
+/// `metadata.*` — omission there is the normal state of ~1500 non-crux
+/// contracts — and that asymmetry is stated in the contract's proof
+/// obligations rather than left implicit.
+#[test]
+fn registry_story_omitting_a_ranking_field_is_an_error() {
+    let cases = [
+        ("demand_score", "  - { id: CRUX-Z-01, competitor: ollama, status: missing }", "CRUX-001"),
+        ("competitor", "  - { id: CRUX-Z-01, demand_score: 3, status: missing }", "CRUX-002"),
+    ];
+    for (field, row, rule) in cases {
+        let errors = crux_errors(&registry_contract(row));
+        assert!(
+            errors.iter().any(|e| e.rule == rule),
+            "a registry row with no {field} must raise {rule}, got {errors:?}"
+        );
+    }
+}
+
+/// An invented registry `status` fails to PARSE, exactly like `intake_status`.
+///
+/// `implemented` is the near-miss that was really in the corpus, so it is the
+/// value used here rather than an obvious nonsense word.
+#[test]
+fn registry_story_invented_status_fails_to_parse() {
+    for bad in ["implemented", "banana", "SUPPORTED", "done", "in-progress"] {
+        let yaml = registry_contract(&format!(
+            "  - {{ id: CRUX-Z-01, competitor: ollama, demand_score: 3, status: {bad} }}"
+        ));
+        let err = parse_contract_str(&yaml)
+            .err()
+            .unwrap_or_else(|| panic!("registry status {bad:?} must not parse"));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("status") && msg.contains(bad),
+            "parse error must name the field and the value, got: {msg}"
+        );
+    }
+}
+
+// ── Normalisation happens at PARSE, not inside the comparison ────────────────
+
+/// A padded competitor is stored TRIMMED, not merely compared trimmed.
+///
+/// The original CRUX-002 did `competitor.trim()` inside the check, so
+/// `"  ecosystem  "` validated clean while `metadata.competitor` still held the
+/// padded string — the gate laundered a value it never fixed, and every
+/// consumer of the field saw the padding. Asserting on the STORED value is what
+/// makes that impossible: a revert to compare-time trimming turns this RED.
+#[test]
+fn padded_competitor_is_normalised_on_parse() {
+    let yaml = crux_contract("\"  ecosystem  \"", "3", "partial");
+    let contract = parse_contract_str(&yaml).expect("contract parses");
+    assert_eq!(
+        contract.metadata.competitor.as_deref(),
+        Some("ecosystem"),
+        "metadata.competitor must be STORED trimmed, not merely compared trimmed"
+    );
+    assert!(crux_errors(&yaml).is_empty());
+
+    let reg = registry_contract(
+        "  - { id: CRUX-Z-01, competitor: \"  ollama  \", demand_score: 3, status: missing }",
+    );
+    let contract = parse_contract_str(&reg).expect("registry parses");
+    assert_eq!(
+        contract.stories[0].competitor.as_deref(),
+        Some("ollama"),
+        "stories[].competitor must be STORED trimmed too"
+    );
+    assert!(crux_errors(&reg).is_empty());
+}
+
+/// A whitespace-only competitor is still PRESENT, and still an error.
+///
+/// Trimming must not turn a written-down blank into an absent field. Omission
+/// already dodges CRUX-002 (`Option`, by necessity — see
+/// `absent_crux_fields_produce_no_violations`); letting `competitor: '   '`
+/// join it would widen that gap rather than narrow it. So the trimmed value
+/// stays `Some("")` and CRUX-002 reports it.
+#[test]
+fn whitespace_only_competitor_is_present_and_rejected() {
+    let yaml = crux_contract("\"   \"", "3", "partial");
+    let contract = parse_contract_str(&yaml).expect("contract parses");
+    assert_eq!(
+        contract.metadata.competitor.as_deref(),
+        Some(""),
+        "a blank competitor must stay PRESENT so the domain check can report it"
+    );
+    assert!(
+        crux_errors(&yaml).iter().any(|v| v.rule == "CRUX-002"),
+        "a blank competitor must raise CRUX-002, not slip through as absent"
+    );
+}

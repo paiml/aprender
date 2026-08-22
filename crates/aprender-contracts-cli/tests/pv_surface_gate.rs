@@ -25,14 +25,34 @@
 //!    can violate is not a control. Every test below is written so that some
 //!    concrete wrong behaviour makes it RED.
 //!
-//! SCOPE OF THIS TRANCHE — read `docs/` note in the PR body for what is deferred.
-//!   COVERED: `pv validate` field/rule decision table (all 18 diagnostic rules,
-//!            both directions), subcommand reachability, contract-input
-//!            rejection across every contract-taking subcommand, `--version`
-//!            parseability.
-//!   NOT COVERED: `pv lint` warning ratchet, `pv diff` semver suggestions,
-//!            `pv score`, `pv certify`, `pv coverage`, and the generator
-//!            subcommands' output *content* (kani/probar/coq/flux/tla/...).
+//! SCOPE OF THIS TRANCHE — stated as a FRACTION, because "tranche" on its own
+//! is honest about being partial and silent about how partial.
+//!
+//! MEASURED on this branch: `pv --help` advertises **38** subcommands, of which
+//! **17** take a contract path. Coverage here is three concentric rings:
+//!
+//! | Ring | Depth | Count |
+//! |------|-------|-------|
+//! | DEEP — full behavioural decision table, both directions | `pv validate` only | **1 / 38** |
+//! | REAL INVOCATION — run against a valid contract and 4 unusable ones; must return a DECISION (clean 0/1/2), not a panic | every contract-taking subcommand | **17 / 38** |
+//! | SURFACE — advertised and declared (`--help` exits 0) | all | **38 / 38** |
+//!
+//! So the behavioural depth of this tranche is **1 of 38**. That is the number
+//! to quote; 17/38 is shallow-but-real, and 38/38 is nearly free.
+//!
+//!   COVERED: `pv validate` field/rule decision table (all 27 diagnostic rules
+//!            declared in validator.rs — MEASURED on this branch, which folds in
+//!            #2555's CRUX-001/002; it was 25 before that and never 18 — both
+//!            directions), real invocation of all 17 contract-taking
+//!            subcommands, contract-input rejection across the same 17,
+//!            `--version` parseability.
+//!   NOT COVERED (the other 37 subcommands' behaviour): `pv lint` warning
+//!            ratchet, `pv diff` semver suggestions, `pv score`, `pv certify`,
+//!            `pv coverage`, `pv query`, `pv graph`, `pv kaizen`, `pv migrate`,
+//!            and the generator subcommands' output *content*
+//!            (kani/probar/coq/flux/tla/lean/...) — for those, this file
+//!            asserts only that the command runs and decides, never that what
+//!            it emits is right.
 //!
 //! DISCRIMINATION. `gate_self_test` at the bottom is the control on the control:
 //! it proves the rule table cannot be satisfied by a `pv` that prints every rule
@@ -53,13 +73,35 @@ fn pv_bin() -> PathBuf {
 }
 
 fn pv(args: &[&str]) -> (i32, String) {
+    pv_in(std::env::current_dir().expect("cwd").as_path(), args)
+}
+
+/// Run `pv` with an explicit working directory.
+///
+/// Several generator subcommands (`scaffold`, `kani`, `probar`, `generate`,
+/// `coq`, `lean`, ...) write their output into `./generated/` in the CURRENT
+/// directory. Invoking them for real — which is what
+/// [`every_advertised_subcommand_is_reachable`] now does — therefore has to be
+/// done from a scratch dir, or the test litters the repo it is testing.
+fn pv_in(dir: &std::path::Path, args: &[&str]) -> (i32, String) {
     let out = Command::new(pv_bin())
+        .current_dir(dir)
         .args(args)
         .output()
         .expect("failed to spawn pv");
     let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&out.stderr));
     (out.status.code().unwrap_or(-1), text)
+}
+
+/// A process that died on a Rust panic rather than returning a decision.
+///
+/// This predicate is the whole point of the M1 hardening. A panicking `pv`
+/// exits 101, which is non-zero, which a bare `rc != 0` assertion reads as a
+/// correct *rejection*. It is not: a panic means the command never decided
+/// anything. Both whole-surface tests below now exclude it explicitly.
+fn panicked(rc: i32, out: &str) -> bool {
+    rc == 101 || rc == -1 || out.contains("panicked at")
 }
 
 // ============================================================================
@@ -312,6 +354,24 @@ const CASES: &[Case] = &[
             );
         },
     },
+    // CRUX-001/002 (#2555). These are kind-INDEPENDENT: `validate_crux_intake`
+    // runs for every contract, so the plain `kind: kernel` fixture reaches them.
+    // Both rows append exactly one metadata key to METADATA_OK, so the reported
+    // rule is attributable to that key alone.
+    Case {
+        rule: "CRUX-001",
+        sev: Sev::Error,
+        build: |f| {
+            f.metadata = format!("{METADATA_OK}  demand_score: 99999\n");
+        },
+    },
+    Case {
+        rule: "CRUX-002",
+        sev: Sev::Error,
+        build: |f| {
+            f.metadata = format!("{METADATA_OK}  competitor: \"THIS-COMPETITOR-DOES-NOT-EXIST\"\n");
+        },
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -433,7 +493,7 @@ fn all_rule_ids() -> BTreeSet<&'static str> {
 /// NEGATIVE DIRECTION: a contract with nothing wrong must produce NO rule id
 /// and exit 0.
 ///
-/// Without this, a `pv` that printed all 18 rules unconditionally would satisfy
+/// Without this, a `pv` that printed all 27 rules unconditionally would satisfy
 /// every trip case below. This is the half that makes the table discriminating.
 #[test]
 fn validate_baseline_is_silent_and_exits_zero() {
@@ -658,34 +718,156 @@ fn subcommand_name(line: &str) -> Option<&str> {
     (word != "help" && plausible).then_some(word)
 }
 
-/// Every subcommand `pv --help` ADVERTISES must actually be reachable.
+/// The subcommands whose usage line takes a contract path.
+///
+/// Discovered at RUNTIME from each command's own `--help`, so a command added
+/// later is covered without editing this file.
+fn contract_taking_subcommands() -> Vec<String> {
+    let mut found = Vec::new();
+    for cmd in advertised_subcommands() {
+        let (_, help) = pv(&[&cmd, "--help"]);
+        let Some(usage) = help.lines().find(|l| l.starts_with("Usage:")) else {
+            continue;
+        };
+        if usage.contains("<CONTRACT>") || usage.contains("<PATH>") || usage.contains("<FILE>") {
+            found.push(cmd);
+        }
+    }
+    found
+}
+
+/// A VALID `kind: kernel` contract, on disk, plus the scratch dir to run in.
+fn valid_fixture() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("fixture-v1.yaml");
+    std::fs::write(&path, Fixture::default().render()).expect("write fixture");
+    (dir, path)
+}
+
+/// Contract-taking subcommands that legitimately do NOT exit 0 on a generic
+/// `kind: kernel` contract, with the MEASURED code and the reason.
+///
+/// This list is deliberately tiny and deliberately load-bearing: a command may
+/// only appear here for a reason that is about the INPUT, never about the
+/// command being broken. Both entries still prove the command RAN.
+const VALID_INPUT_NONZERO: &[(&str, i32, &str)] = &[
+    (
+        "check-parity",
+        1,
+        "needs a parity-matrix contract; a kernel contract has no cross_check_command \
+         rows to execute, and refusing is the correct answer",
+    ),
+    (
+        "unlock",
+        2,
+        "clap requires `--reason`, so a bare `<CONTRACT>` is a usage error (exit 2), \
+         reported by clap before the command body runs",
+    ),
+];
+
+/// Every subcommand `pv --help` ADVERTISES must actually be USABLE.
 ///
 /// This is the `apr test llm` defect class (#2527): a command listed in `--help`
 /// but permanently unreachable because its feature was never declared, so its
 /// own remedy was impossible to run. Advertising is a promise; this checks it.
+///
+/// ## Why this test asks for more than `--help`
+///
+/// An earlier version of this test asked clap for `pv <cmd> --help` and required
+/// exit 0. MEASURED: replacing the body of `Commands::Status` with `panic!()` --
+/// so that `pv status <any contract>` dies on every invocation -- left this test
+/// and all seven others GREEN. clap prints the help text without ever entering
+/// the command, so `--help` proves the command was *declared*, never that it
+/// *works*. A test that survives the exact defect class its doc comment claims
+/// to catch is theater (`project_assertions_exclude_guard`).
+///
+/// So every contract-taking subcommand is now INVOKED FOR REAL against a valid
+/// contract, and must return a decision rather than die. Re-running the same
+/// `panic!()` mutation now turns this test RED.
 #[test]
 fn every_advertised_subcommand_is_reachable() {
-    let mut unreachable = Vec::new();
+    let (scratch, fixture) = valid_fixture();
+    let fixture = fixture.to_str().expect("utf8 path").to_string();
+
+    let mut broken = Vec::new();
+    let mut invoked = Vec::new();
+
     for cmd in advertised_subcommands() {
+        // Declared at all? This half still catches a command clap knows nothing
+        // about, which is cheap and orthogonal to the invocation half below.
         let (rc, out) = pv(&[&cmd, "--help"]);
         if rc != 0 {
-            unreachable.push(format!("pv {cmd} --help -> rc={rc}\n{}", indent(&out)));
+            broken.push(format!("pv {cmd} --help -> rc={rc}\n{}", indent(&out)));
         }
     }
+
+    for cmd in contract_taking_subcommands() {
+        invoked.push(cmd.clone());
+        let (rc, out) = pv_in(scratch.path(), &[&cmd, &fixture]);
+
+        if panicked(rc, &out) {
+            broken.push(format!(
+                "pv {cmd} <valid contract> PANICKED (rc={rc}) -- it never returned a \
+                 decision:\n{}",
+                indent(&out)
+            ));
+            continue;
+        }
+
+        let expected = VALID_INPUT_NONZERO
+            .iter()
+            .find(|(name, _, _)| *name == cmd)
+            .map_or(0, |(_, code, _)| *code);
+        if rc != expected {
+            broken.push(format!(
+                "pv {cmd} <valid contract> -> rc={rc}, expected {expected}:\n{}",
+                indent(&out)
+            ));
+        }
+    }
+
+    // Non-vacuity 1: the usage-line parser must still be finding commands. If it
+    // breaks, this test degrades to the old --help-only check without saying so.
     assert!(
-        unreachable.is_empty(),
-        "{} advertised subcommand(s) are not reachable:\n{}",
-        unreachable.len(),
-        unreachable.join("\n")
+        invoked.len() >= 15,
+        "only {} contract-taking subcommand(s) were INVOKED for real; the \
+         usage-line parser probably broke, which would silently return this \
+         test to the vacuous form it was written to replace. Found: {invoked:?}",
+        invoked.len()
+    );
+
+    // Non-vacuity 2: an exception may not name a command that is not there. A
+    // typo in VALID_INPUT_NONZERO would otherwise excuse nothing, invisibly.
+    for (name, _, why) in VALID_INPUT_NONZERO {
+        assert!(
+            invoked.iter().any(|c| c == name),
+            "VALID_INPUT_NONZERO names `{name}` ({why}) but no such contract-taking \
+             subcommand was discovered -- the exception is dead and excuses nothing"
+        );
+    }
+
+    assert!(
+        broken.is_empty(),
+        "{} advertised subcommand(s) are not usable:\n{}",
+        broken.len(),
+        broken.join("\n")
     );
 }
 
-/// Every subcommand that takes a contract path must REJECT bad input.
+/// Every subcommand that takes a contract path must REJECT bad input CLEANLY.
 ///
 /// This is the assertion the pre-existing suite never made. `pv validate <good>
 /// == 0` is satisfied by a binary that does nothing; `pv <cmd> <garbage> != 0`
 /// is not. Applied across every contract-taking subcommand at once, discovered
 /// by parsing each command's own usage line.
+///
+/// ## Why `rc != 0` was not enough
+///
+/// MEASURED: a `pv` whose command body is `panic!()` exits 101 on EVERY input,
+/// including the garbage ones -- so the old `rc == 0` check read a crash as a
+/// correct rejection and stayed green. A rejection is a *decision*: the command
+/// must exit 1 (its own refusal) or 2 (clap's usage refusal), not die. Both
+/// codes were measured across all 17 commands and all 4 bad inputs.
 #[test]
 fn contract_taking_subcommands_reject_unusable_input() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -705,37 +887,42 @@ fn contract_taking_subcommands_reject_unusable_input() {
     ];
 
     let mut checked = 0usize;
-    let mut accepted = Vec::new();
-    for cmd in advertised_subcommands() {
-        let (_, help) = pv(&[&cmd, "--help"]);
-        let Some(usage) = help.lines().find(|l| l.starts_with("Usage:")) else {
-            continue;
-        };
-        if !(usage.contains("<CONTRACT>") || usage.contains("<PATH>") || usage.contains("<FILE>")) {
-            continue;
-        }
+    let mut bad = Vec::new();
+    for cmd in contract_taking_subcommands() {
         checked += 1;
         for (label, path) in &inputs {
-            let (rc, out) = pv(&[&cmd, path.to_str().expect("utf8 path")]);
+            let (rc, out) = pv_in(dir.path(), &[&cmd, path.to_str().expect("utf8 path")]);
             if rc == 0 {
-                accepted.push(format!(
-                    "pv {cmd} <{label}> exited 0 — it accepted unusable input:\n{}",
+                bad.push(format!(
+                    "pv {cmd} <{label}> exited 0 -- it accepted unusable input:\n{}",
+                    indent(&out)
+                ));
+            } else if panicked(rc, &out) {
+                bad.push(format!(
+                    "pv {cmd} <{label}> PANICKED (rc={rc}) -- a crash is not a \
+                     rejection, it is the absence of a decision:\n{}",
+                    indent(&out)
+                ));
+            } else if rc != 1 && rc != 2 {
+                bad.push(format!(
+                    "pv {cmd} <{label}> -> rc={rc}; a clean refusal is 1 (the \
+                     command's own) or 2 (clap usage):\n{}",
                     indent(&out)
                 ));
             }
         }
     }
     assert!(
-        checked >= 10,
+        checked >= 15,
         "only {checked} contract-taking subcommands were found; the usage-line \
          parser probably broke, which would make this guard vacuously green"
     );
     assert!(
-        accepted.is_empty(),
-        "{} subcommand/input pair(s) accepted input they cannot possibly \
-         process:\n{}",
-        accepted.len(),
-        accepted.join("\n")
+        bad.is_empty(),
+        "{} subcommand/input pair(s) did not cleanly reject input they cannot \
+         possibly process:\n{}",
+        bad.len(),
+        bad.join("\n")
     );
 }
 

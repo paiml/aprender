@@ -59,9 +59,10 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
 /// different domain and would import a defect. `BEAT_INCUMBENTS` answers "whom
 /// does aprender claim to *beat* on a pinned benchmark" (the four-pillar
 /// mission); `metadata.competitor` answers "whose UX was this story *extracted
-/// from*". MEASURED against the 276 contracts carrying the field on
-/// 4bbfeb07f, `BEAT_INCUMBENTS.iter().any(|p| c.contains(p))` accepts only
-/// `pytorch` (37) and `ollama` (21) — 58 of 276. It cannot name:
+/// from*". MEASURED on this branch: 275 contract FILES carry the field, in 292
+/// declarations (17 crux contracts carry a second `competitor` inside an
+/// equivalence obligation). `BEAT_INCUMBENTS.iter().any(|p| c.contains(p))`
+/// accepts only `pytorch` (37) and `ollama` (21) — 58 of 292. It cannot name:
 ///
 /// - `huggingface` (88 contracts — the single largest source), nor `vllm` (32),
 /// - `llama_cpp` (37): the BEAT list spells it `llama.cpp`, and `"llama.cpp"`
@@ -93,12 +94,34 @@ pub(crate) const CRUX_COMPETITORS: [&str; 11] = [
 /// demand_score maps directly to pmat priority".
 const DEMAND_SCORE_RANGE: std::ops::RangeInclusive<i64> = 1..=5;
 
-/// Validate the three CRUX competitive-research metadata fields (aprender#2555).
+/// Validate the CRUX competitive-research domains (aprender#2555).
 ///
-/// `intake_status` is absent from this function ON PURPOSE: it is a closed enum
-/// (`IntakeStatus`), so an invented value is rejected during deserialization and
-/// never reaches a validator. That is the stronger guarantee — a lint can be
-/// read and ignored, a parse failure cannot.
+/// Two SURFACES carry these fields, and both are checked here:
+///
+/// 1. `metadata.{competitor,demand_score,intake_status}` on an individual
+///    `crux-*` contract.
+/// 2. The `stories:` rows of the MASTER REGISTRY,
+///    `contracts/crux-competitive-research-ux-v1.yaml`.
+///
+/// Surface 2 was added because the original rationale for this rule did not
+/// survive measurement. #2555 justified CRUX-001 as guarding "the ranking
+/// signal the whole competitive-research programme sorts by" — but MEASURED,
+/// nothing in the repo reads `metadata.demand_score`. The signal §12.1 of
+/// `docs/specifications/crux-competitive-research-ux-workflows.md` maps to
+/// `pmat work` priority is `stories[].demand_score` in the registry: 250 rows,
+/// entirely ungated. Checking only surface 1 left the stated justification
+/// unsupported by the code.
+///
+/// On a registry row the three fields are also REQUIRED, not optional. On
+/// surface 1 they cannot be: `Option` is right there, because 1500-odd non-crux
+/// contracts carry none of them (see the presence obligation in
+/// `contracts/crux-intake-metadata-domains-v1.yaml`). A registry row has no
+/// such excuse — it exists to be ranked.
+///
+/// `intake_status` / `status` values are absent from the checks below ON
+/// PURPOSE: both are the closed enum `IntakeStatus`, so an invented value is
+/// rejected during deserialization and never reaches a validator. That is the
+/// stronger guarantee — a lint can be read and ignored, a parse failure cannot.
 fn validate_crux_intake(contract: &Contract, violations: &mut Vec<Violation>) {
     // CRUX-001: demand_score is the ranking signal the whole competitive-research
     // programme sorts by. An unvalidated out-of-range value silently dominates
@@ -121,9 +144,16 @@ fn validate_crux_intake(contract: &Contract, violations: &mut Vec<Violation>) {
     }
 
     // CRUX-002: competitor must name a source in the registry above.
+    //
+    // No `.trim()` here, deliberately. It used to trim before comparing, which
+    // made `competitor: "  ecosystem  "` validate clean while the STORED value
+    // kept its padding — the check laundered a value it did not fix, so every
+    // consumer reading `metadata.competitor` still saw the untrimmed string.
+    // Normalisation now happens once, at parse time
+    // (`deserialize_trimmed_opt_string` in `schema/types.rs`), so what is
+    // compared is exactly what is stored.
     if let Some(competitor) = contract.metadata.competitor.as_deref() {
-        let normalized = competitor.trim();
-        if !CRUX_COMPETITORS.contains(&normalized) {
+        if !CRUX_COMPETITORS.contains(&competitor) {
             violations.push(Violation {
                 severity: Severity::Error,
                 rule: "CRUX-002".to_string(),
@@ -134,6 +164,70 @@ fn validate_crux_intake(contract: &Contract, violations: &mut Vec<Violation>) {
                 ),
                 location: Some("metadata.competitor".to_string()),
             });
+        }
+    }
+
+    validate_crux_registry_stories(contract, violations);
+}
+
+/// Hold every MASTER-REGISTRY story row to the same two domains.
+///
+/// These are the rows that carry the ranking signal, so here the fields are
+/// required as well as bounded: a row with no `demand_score` cannot be sorted,
+/// and a row with no `competitor` cannot be attributed.
+fn validate_crux_registry_stories(contract: &Contract, violations: &mut Vec<Violation>) {
+    for story in &contract.stories {
+        let at = |field: &str| Some(format!("stories[{}].{field}", story.id));
+
+        match story.demand_score {
+            None => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-001".to_string(),
+                message: format!(
+                    "registry story {} has no demand_score — it is the priority signal \
+                     pmat work sorts by, and an absent one sorts arbitrarily",
+                    story.id
+                ),
+                location: at("demand_score"),
+            }),
+            Some(score) if !DEMAND_SCORE_RANGE.contains(&score) => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-001".to_string(),
+                message: format!(
+                    "registry story {} has demand_score {score}, outside the documented \
+                     range {}..={} — a single fabricated score reorders the whole queue",
+                    story.id,
+                    DEMAND_SCORE_RANGE.start(),
+                    DEMAND_SCORE_RANGE.end(),
+                ),
+                location: at("demand_score"),
+            }),
+            Some(_) => {}
+        }
+
+        match story.competitor.as_deref() {
+            None => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-002".to_string(),
+                message: format!(
+                    "registry story {} has no competitor — the row cannot be attributed \
+                     to the UX it was extracted from",
+                    story.id
+                ),
+                location: at("competitor"),
+            }),
+            Some(c) if !CRUX_COMPETITORS.contains(&c) => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-002".to_string(),
+                message: format!(
+                    "registry story {} names competitor {c:?}, which is not a known \
+                     competitive-research source — must be one of: {}",
+                    story.id,
+                    CRUX_COMPETITORS.join(", ")
+                ),
+                location: at("competitor"),
+            }),
+            Some(_) => {}
         }
     }
 }
