@@ -4,7 +4,10 @@
 #[test]
 fn f_trueno_001_runtime_backend_detection_works() {
     // F-TRUENO-001: Structural check — Backend enum has runtime detection methods
-    let loading_path = project_root().join("src").join("loading").join("mod.rs");
+    let loading_path = crate_dir("aprender-core")
+        .join("src")
+        .join("loading")
+        .join("mod.rs");
     let content = std::fs::read_to_string(&loading_path).expect("loading/mod.rs must exist");
     assert!(
         content.contains("Backend"),
@@ -19,15 +22,10 @@ fn f_trueno_001_runtime_backend_detection_works() {
 #[test]
 fn f_trueno_002_q4k_dequantize_matches_reference() {
     // F-TRUENO-002: Structural check — Q4K dequant function exists in trueno
-    let trueno_dir = project_root()
-        .parent()
-        .expect("parent dir")
-        .join("trueno")
-        .join("src");
-    if !trueno_dir.exists() {
-        eprintln!("SKIP: trueno not found at sibling path");
-        return;
-    }
+    // #2522: `../trueno` was archived by APR-MONO; trueno is the [lib] name of
+    // crates/aprender-compute. The sibling lookup could only ever miss, and the
+    // miss branch `return`s, which the harness reports as `ok`.
+    let trueno_dir = crate_dir("aprender-compute").join("src");
     let mut has_q4k_dequant = false;
     for path in collect_rs_files(&trueno_dir) {
         let content = std::fs::read_to_string(&path).unwrap_or_default();
@@ -77,21 +75,13 @@ fn f_trueno_004_cuda_ptx_compiles_and_runs() {
     // realizar uses it for fused matmul kernels, apr bench reports throughput.
 
     // 1. Structural: trueno-gpu has PTX compilation pipeline
-    let trueno_ptx = project_root()
-        .parent()
-        .expect("parent dir")
-        .join("trueno")
-        .join("trueno-gpu")
-        .join("src")
-        .join("ptx");
-    if !trueno_ptx.exists() {
-        eprintln!("SKIP: trueno-gpu/src/ptx not found");
-        return;
-    }
-    let ptx_mod = trueno_ptx.join("mod.rs");
+    // #2522: `../trueno/trueno-gpu` was archived by APR-MONO; the PTX pipeline
+    // is crates/aprender-gpu. The sibling miss branch returned `ok`.
+    let trueno_ptx = crate_dir("aprender-gpu").join("src").join("ptx");
     assert!(
-        ptx_mod.exists(),
-        "F-TRUENO-004: trueno PTX module must exist"
+        trueno_ptx.join("mod.rs").exists(),
+        "F-TRUENO-004: PTX module must exist at {}",
+        trueno_ptx.display()
     );
 
     // 2. Verify CUDA hardware is available
@@ -139,22 +129,10 @@ fn f_trueno_004_cuda_ptx_compiles_and_runs() {
 #[test]
 fn f_trueno_005_jidoka_guard_catches_nan() {
     // F-TRUENO-005: Jidoka guard types exist in trueno
-    let trueno_dir = project_root()
-        .parent()
-        .expect("parent dir")
-        .join("trueno")
-        .join("src");
-
-    if !trueno_dir.exists() {
-        eprintln!("F-TRUENO-005: trueno not found at sibling path, verifying dependency");
-        let cargo_toml = project_root().join("Cargo.toml");
-        let content = std::fs::read_to_string(&cargo_toml).expect("Cargo.toml");
-        assert!(
-            content.contains("trueno"),
-            "F-TRUENO-005: must depend on trueno"
-        );
-        return;
-    }
+    // #2522: `../trueno` was archived by APR-MONO; trueno is the [lib] name of
+    // crates/aprender-compute. The sibling lookup could only ever miss, and the
+    // miss branch `return`s, which the harness reports as `ok`.
+    let trueno_dir = crate_dir("aprender-compute").join("src");
 
     // Search for JidokaGuard in trueno source
     let mut found_jidoka = false;
@@ -175,15 +153,10 @@ fn f_trueno_005_jidoka_guard_catches_nan() {
 #[test]
 fn f_trueno_006_gpu_threshold_prevents_small_dispatch() {
     // F-TRUENO-006: Structural check — GPU threshold logic exists
-    let trueno_dir = project_root()
-        .parent()
-        .expect("parent dir")
-        .join("trueno")
-        .join("src");
-    if !trueno_dir.exists() {
-        eprintln!("SKIP: trueno not found at sibling path");
-        return;
-    }
+    // #2522: `../trueno` was archived by APR-MONO; trueno is the [lib] name of
+    // crates/aprender-compute. The sibling lookup could only ever miss, and the
+    // miss branch `return`s, which the harness reports as `ok`.
+    let trueno_dir = crate_dir("aprender-compute").join("src");
     let mut has_threshold = false;
     for path in collect_rs_files(&trueno_dir) {
         let content = std::fs::read_to_string(&path).unwrap_or_default();
@@ -202,49 +175,31 @@ fn f_trueno_006_gpu_threshold_prevents_small_dispatch() {
 fn f_trueno_007_row_col_major_kernels_exist_separately() {
     // F-TRUENO-007: trueno provides BOTH row-major and col-major Q4K kernels
     // Structural check: verify both functions exist in trueno source
-    let trueno_q4k_dir = project_root()
-        .parent()
-        .expect("parent dir")
-        .join("trueno")
+    // #2522: this looked for a SIBLING `../trueno` checkout, archived by
+    // APR-MONO. It always missed, and its fallback asserted only that the string
+    // "trueno" appears in the root Cargo.toml -- which is true of a workspace
+    // that ships no Q4K kernel at all. trueno is `crates/aprender-compute`.
+    let trueno_q4k_dir = crate_dir("aprender-compute")
         .join("src")
         .join("backends")
         .join("q4k");
+    assert!(
+        trueno_q4k_dir.is_dir(),
+        "F-TRUENO-007: no q4k backend at {}",
+        trueno_q4k_dir.display()
+    );
 
-    if !trueno_q4k_dir.exists() {
-        eprintln!("F-TRUENO-007: trueno not found at sibling path, checking Cargo.toml dep");
-        // Fallback: verify trueno dependency includes q4k support
-        let cargo_toml = project_root().join("Cargo.toml");
-        let content = std::fs::read_to_string(&cargo_toml).expect("Cargo.toml readable");
-        assert!(
-            content.contains("trueno"),
-            "F-TRUENO-007: aprender must depend on trueno"
-        );
-        return;
-    }
-
-    // Check for both row-major and col-major kernel files/functions
     let mut has_row = false;
     let mut has_col = false;
     for path in collect_rs_files(&trueno_q4k_dir) {
         let content = std::fs::read_to_string(&path).unwrap_or_default();
-        // Row-major kernel: "fn matmul_q4k_f32(" or "pub fn matmul_q4k_f32_dispatch("
         for line in content.lines() {
             let trimmed = line.trim();
-            if (trimmed.contains("fn matmul_q4k_f32(")
-                || trimmed.contains("fn matmul_q4k_f32_scalar(")
-                || trimmed.contains("fn matmul_q4k_f32_dispatch("))
-                && !trimmed.contains("colmajor")
-            {
-                has_row = true;
-            }
-            if trimmed.contains("colmajor") && trimmed.contains("fn ") {
-                has_col = true;
-            }
+            has_row |= is_row_major_q4k_kernel(trimmed);
+            has_col |= trimmed.contains("colmajor") && trimmed.contains("fn ");
         }
-        // Also check module-level re-exports
-        if content.contains("pub use colmajor::") {
-            has_col = true;
-        }
+        // Module-level re-exports also count as "the kernel exists here".
+        has_col |= content.contains("pub use colmajor::");
     }
 
     assert!(
@@ -257,24 +212,28 @@ fn f_trueno_007_row_col_major_kernels_exist_separately() {
     );
 }
 
+/// A row-major Q4K matmul declaration (i.e. not one of the colmajor variants).
+fn is_row_major_q4k_kernel(trimmed: &str) -> bool {
+    let declares = trimmed.contains("fn matmul_q4k_f32(")
+        || trimmed.contains("fn matmul_q4k_f32_scalar(")
+        || trimmed.contains("fn matmul_q4k_f32_dispatch(");
+    declares && !trimmed.contains("colmajor")
+}
+
 #[test]
 fn f_trueno_008_wgsl_matmul_shader_correct() {
     // F-TRUENO-008: WGSL matmul shader exists and has correct structure
     // The wgpu backend uses WGSL shaders for cross-platform GPU compute.
     // Runtime execution verified by GPU inference tests (F-PERF-003, F-TRUENO-004).
-    let trueno_dir = project_root().parent().expect("parent dir").join("trueno");
-
-    // Check shaders.rs in trueno backends
-    let shaders_path = trueno_dir
+    // #2522: `../trueno` was archived by APR-MONO, and `shaders.rs` became the
+    // `shaders/` directory. Both misses returned `ok`.
+    let trueno_dir = crate_dir("aprender-compute");
+    let shaders_dir = trueno_dir
         .join("src")
         .join("backends")
         .join("gpu")
-        .join("shaders.rs");
-    if !shaders_path.exists() {
-        eprintln!("SKIP: trueno shaders.rs not found at {:?}", shaders_path);
-        return;
-    }
-    let content = std::fs::read_to_string(&shaders_path).expect("shaders.rs readable");
+        .join("shaders");
+    let content = wgsl_shader_corpus(&shaders_dir);
 
     // Verify matmul shader exists with correct WGSL structure
     assert!(
@@ -300,3 +259,27 @@ fn f_trueno_008_wgsl_matmul_shader_correct() {
 }
 
 // =============================================================================
+
+/// Every WGSL shader source in the gpu shaders module, concatenated.
+///
+/// `backends/gpu/shaders.rs` became `backends/gpu/shaders/` at some point; the
+/// gate read the file and skipped when it was missing, so it never once looked
+/// at a shader (#2522).
+fn wgsl_shader_corpus(shaders_dir: &Path) -> String {
+    assert!(
+        shaders_dir.is_dir(),
+        "F-TRUENO-008: no gpu shaders module at {}",
+        shaders_dir.display()
+    );
+    let files = collect_rs_files(shaders_dir);
+    assert!(
+        !files.is_empty(),
+        "F-TRUENO-008: gpu shaders module at {} holds no sources",
+        shaders_dir.display()
+    );
+    files
+        .iter()
+        .filter_map(|p| std::fs::read_to_string(p).ok())
+        .collect::<Vec<_>>()
+        .join("\n")
+}

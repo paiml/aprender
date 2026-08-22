@@ -3,7 +3,10 @@
 
 #[test]
 fn f_dod_001_satd_count_is_zero() {
-    // Same as F-CHECKLIST-005
+    // F-DOD-001: SATD in production source is ratcheted. Same gate as
+    // F-CHECKLIST-005; #2522 added the ID here because the delegate named only
+    // the gate it forwards to, so F-DOD-001 was the one section entry that
+    // F-DOD-004's own census could not see.
     f_checklist_005_satd_is_zero();
 }
 
@@ -34,12 +37,20 @@ fn f_dod_003_cargo_build_succeeds() {
 
 #[test]
 fn f_dod_004_all_sections_have_ge_5_gates() {
-    // F-DOD-004: Every falsification section has >= 5 entries
-    let spec_path = project_root()
-        .join("docs")
-        .join("specifications")
-        .join("qwen2.5-coder-showcase-demo.md");
-    let content = std::fs::read_to_string(&spec_path).expect("spec readable");
+    // F-DOD-004: Every falsification section has >= 5 gates IMPLEMENTED.
+    //
+    // #2522: this counted gate IDs in the markdown spec. Two problems. The spec
+    // is now under docs/specifications/archive/ -- it is a frozen design
+    // document that nobody updates, so counting it measures whether a 2025 doc
+    // was maintained, not whether anything is enforced. And it enumerates only
+    // 5 of the 10 prefixes as IDs (F-PIPE-, F-MODEL-, F-FMT-, F-REALIZE- and
+    // F-SURFACE- appear as prose), so it reports "found 0" for sections this
+    // suite implements in full.
+    //
+    // The living artifact is this suite. Counting the gates that actually RUN
+    // is both checkable and the thing the gate means: a section may not be
+    // hollowed out below 5 implemented gates.
+    let content = suite_source_text();
 
     let prefixes = [
         "F-GT-",
@@ -64,39 +75,41 @@ fn f_dod_004_all_sections_have_ge_5_gates() {
     ];
 
     for prefix in &prefixes {
-        // Each gate ID appears multiple times (in table + in text), so count unique IDs
         let unique_count = count_unique_gate_ids(&content, prefix);
         assert!(
             unique_count >= 5,
-            "F-DOD-004: Section {prefix} must have >= 5 gates, found {unique_count}"
+            "F-DOD-004: Section {prefix} must have >= 5 IMPLEMENTED gates, found \
+             {unique_count} in the suite source"
         );
     }
 }
 
 #[test]
 fn f_dod_005_no_silent_fallbacks_in_dtype_handling() {
-    // F-DOD-005: No `_ => ...F32` catch-all match arms
-    let dirs = [project_root().join("src"), project_root().join("crates")];
+    // F-DOD-005: No `_ => ...F32` catch-all match arms.
+    //
+    // #2522: this reported 7 violations, and every one was produced by the
+    // matcher rather than by the code:
+    //
+    //   `_ => 4,                // Default F32`        <- a byte WIDTH, in a comment
+    //   `_ => num_elements * 4, // Default to F32`     <- ditto
+    //   `_ => byte_size / 4,    // F32: 4 bytes/elem`  <- ditto
+    //   `_ => 0,                // Skip non-F32`       <- ditto
+    //   `_ => panic!("Expected ImmF32 source")`        <- a PANIC, and `ImmF32`
+    //
+    // Three defects. It skipped whole-line comments but not trailing ones, so
+    // four of the seven were comments. `contains("F32")` matched `ImmF32`. And a
+    // panicking arm is the OPPOSITE of a silent fallback -- it is the behaviour
+    // this gate wants. Each is fixed below; the gate still fires on a real
+    // `_ => DType::F32` (mutation record in aprender#2522).
     let mut violations = Vec::new();
 
-    for dir in &dirs {
-        for path in collect_rs_files(dir) {
-            let path_str = path.to_string_lossy();
-            if path_str.contains("/tests/") || path_str.ends_with("/tests.rs") {
-                continue;
-            }
-            let content = std::fs::read_to_string(&path).unwrap_or_default();
-            for (line_no, line) in content.lines().enumerate() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("//") || trimmed.starts_with("///") {
-                    continue;
-                }
-                if let Some(pos) = trimmed.find("_ =>") {
-                    let after = &trimmed[pos + 4..];
-                    if after.contains("F32") {
-                        violations.push(format!("{}:{}: '{trimmed}'", path.display(), line_no + 1));
-                    }
-                }
+    for path in production_rs_files() {
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        for (line_no, line) in content.lines().enumerate() {
+            let trimmed = strip_trailing_comment(line).trim();
+            if is_silent_f32_fallback_arm(trimmed) {
+                violations.push(format!("{}:{}: '{trimmed}'", path.display(), line_no + 1));
             }
         }
     }
@@ -108,34 +121,69 @@ fn f_dod_005_no_silent_fallbacks_in_dtype_handling() {
     );
 }
 
+/// A catch-all match arm that quietly yields the F32 dtype.
+fn is_silent_f32_fallback_arm(trimmed: &str) -> bool {
+    let Some(pos) = trimmed.find("_ =>") else {
+        return false;
+    };
+    let after = &trimmed[pos + 4..];
+    // A diverging arm cannot be a SILENT fallback -- it is the behaviour this
+    // gate wants.
+    let diverges = ["panic!", "unreachable!", "todo!", "unimplemented!", "Err("]
+        .iter()
+        .any(|m| after.contains(m));
+    !diverges && contains_f32_token(after)
+}
+
 // =============================================================================
 // Section 9: Layout Safety (F-LAYOUT-*)
 // =============================================================================
 
 #[test]
 fn f_layout_001_clippy_bans_colmajor_imports() {
-    // F-LAYOUT-001: No colmajor imports in inference path
-    let dirs = [project_root().join("src"), project_root().join("crates")];
+    // F-LAYOUT-001: No colmajor imports in the INFERENCE PATH.
+    //
+    // #2522: the gate said "inference path" and scanned the entire workspace, so
+    // it reported 9 violations that were all correct code:
+    //   * 6 in crates/aprender-serve/examples/ -- verify_q4k_layout.rs and
+    //     friends exist precisely TO compare column-major against row-major.
+    //     They are evidence the contract is enforced, not a breach of it.
+    //   * 2 `pub use colmajor::...` re-exports in crates/aprender-compute, which
+    //     is where the column-major kernels are DEFINED. A definition is not an
+    //     import into the inference path.
+    // Scope is now what the gate's own name says: the crates CLAUDE.md names as
+    // the inference path, production sources only.
+    let dirs = [
+        crate_dir("aprender-serve").join("src"),
+        crate_dir("aprender-core").join("src"),
+        crate_dir("apr-cli").join("src"),
+    ];
     let mut violations = Vec::new();
+    let mut scanned = 0usize;
 
-    for dir in &dirs {
-        for path in collect_rs_files(dir) {
-            let path_str = path.to_string_lossy();
-            if path_str.contains("/tests/") || path_str.ends_with("/tests.rs") {
-                continue;
-            }
-            let content = std::fs::read_to_string(&path).unwrap_or_default();
-            for (line_no, line) in content.lines().enumerate() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("//") || trimmed.starts_with("///") {
-                    continue;
-                }
-                if trimmed.contains("colmajor") && trimmed.contains("use ") {
-                    violations.push(format!("{}:{}: '{trimmed}'", path.display(), line_no + 1));
-                }
+    let inference_sources: Vec<PathBuf> = dirs
+        .iter()
+        .flat_map(|d| collect_rs_files(d))
+        .filter(|p| is_scannable_production_source(p))
+        .collect();
+
+    for path in inference_sources {
+        scanned += 1;
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        for (line_no, line) in content.lines().enumerate() {
+            let trimmed = strip_trailing_comment(line).trim();
+            if trimmed.contains("colmajor") && trimmed.contains("use ") {
+                violations.push(format!("{}:{}: '{trimmed}'", path.display(), line_no + 1));
             }
         }
     }
+    // Narrowing a scan is how a gate is accidentally disarmed. Prove it still
+    // has a corpus.
+    assert!(
+        scanned > 500,
+        "F-LAYOUT-001: inference-path scan covered only {scanned} files -- the \
+         crates moved and this gate is now near-vacuous"
+    );
 
     assert!(
         violations.is_empty(),
@@ -330,17 +378,9 @@ fn f_rosetta_004_fingerprint_detects_corruption() {
 fn f_rosetta_005_nan_in_source_halts_conversion() {
     // F-ROSETTA-005: Structural check — RosettaStone has NaN validation
     // compute_tensor_validation flags NaN as F-DATA-QUALITY-002 failure
-    let rosetta_path = project_root()
-        .join("src")
-        .join("format")
-        .join("rosetta")
-        .join("mod.rs");
-    let content = std::fs::read_to_string(&rosetta_path)
-        .or_else(|_| {
-            // Try rosetta.rs (non-module layout)
-            std::fs::read_to_string(project_root().join("src").join("format").join("rosetta.rs"))
-        })
-        .expect("rosetta source must exist");
+    // #2522: `compute_tensor_validation` is defined in a sibling of
+    // format/rosetta/mod.rs, not in mod.rs itself.
+    let content = crate_src_text("aprender-core");
     assert!(
         content.contains("compute_tensor_validation")
             || content.contains("nan_count")
@@ -353,7 +393,7 @@ fn f_rosetta_005_nan_in_source_halts_conversion() {
 fn f_rosetta_006_vocab_mismatch_halts_conversion() {
     // F-ROSETTA-006: Structural check — vocab validation in import pipeline
     // The import path validates vocabulary via PMAT-232 (empty vocab detection)
-    let import_path = project_root()
+    let import_path = crate_dir("aprender-core")
         .join("src")
         .join("format")
         .join("converter")
