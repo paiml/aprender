@@ -508,6 +508,7 @@ const SYSCTL_PATHS: &[&str] = &["/usr/sbin/sysctl", "/sbin/sysctl"];
 /// |----------|-------|
 /// | Linux (incl. Android, WSL) | `MemTotal:` in `/proc/meminfo` |
 /// | macOS | `sysctl -n hw.memsize` |
+/// | Windows | `sysinfo::System::total_memory` (`GlobalMemoryStatusEx`) |
 /// | anything else | `None` — **callers must fail closed** |
 ///
 /// #2568: this used to read `/proc/meminfo` and nothing else. macOS has no
@@ -515,11 +516,49 @@ const SYSCTL_PATHS: &[&str] = &["/usr/sbin/sysctl", "/sbin/sysctl"];
 /// ([`validate_f32_dequant_limits`]) turned that `None` into `u64::MAX`,
 /// disarming the OOM guard on every Mac. `None` now means exactly "unknown",
 /// and [`dequant_verdict`] refuses rather than assumes.
+///
+/// #2568 SECOND ROUND: the macOS fix, shipped alone, BROKE WINDOWS. Fail-closed
+/// is only safe where a probe exists — with just the Linux and macOS arms,
+/// Windows fell through to `None` and the guard refused EVERY dequant, hard-
+/// breaking the APR v2 load path on a target .github/workflows/nightly.yml
+/// builds and packages (x86_64-pc-windows-msvc). Found by adversarial review,
+/// not by CI, because no Windows job runs this code.
+///
+/// That is the multi-platform dogfood gate (#2573) earning its keep against the
+/// very change that accompanied it: fixing one platform in isolation broke
+/// another, and only a matrix could see it.
 pub fn system_memory_bytes() -> Option<u64> {
     if let Some(bytes) = proc_meminfo_total_bytes() {
         return Some(bytes);
     }
-    sysctl_hw_memsize_bytes()
+    if let Some(bytes) = sysctl_hw_memsize_bytes() {
+        return Some(bytes);
+    }
+    windows_total_bytes()
+}
+
+/// Windows probe: `sysinfo` wraps `GlobalMemoryStatusEx`.
+///
+/// `sysinfo::System::total_memory` returns BYTES as of 0.30. That unit is the
+/// whole correctness question here — the Win32 primitive
+/// `GetPhysicallyInstalledSystemMemory` returns KILOBYTES, and a crate that
+/// changed to match it would silently make this threshold 1024x too large,
+/// which is the disarmed-guard failure #2568 is about. Asserted by
+/// `windows_probe_reports_bytes_not_kilobytes` rather than trusted.
+#[cfg(windows)]
+fn windows_total_bytes() -> Option<u64> {
+    use sysinfo::System;
+    let mut sys = System::new();
+    sys.refresh_memory();
+    // Zero is "unknown", never "no memory" -- same rule as the other two probes.
+    Some(sys.total_memory()).filter(|&b| b > 0)
+}
+
+/// Non-Windows builds have no third probe; the two above are exhaustive for the
+/// platforms this repo ships. Anything else yields `None` and the caller refuses.
+#[cfg(not(windows))]
+fn windows_total_bytes() -> Option<u64> {
+    None
 }
 
 /// Linux probe: `MemTotal:` from `/proc/meminfo`.
@@ -618,6 +657,49 @@ pub fn transpose_f32(data: &[f32], rows: usize, cols: usize) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
+    /// #2568: the guard must WORK on every platform this repo ships, not merely
+    /// refuse where the probe is absent. A test asserting only "None refuses"
+    /// passed on the build that hard-broke Windows -- it proved the fail-closed
+    /// branch and said nothing about whether the probe branch existed.
+    ///
+    /// This runs on whatever platform CI is on, so between the Linux runners,
+    /// the macOS box and the Windows nightly it is asserted on all three.
+    #[test]
+    fn memory_probe_exists_on_every_shipped_platform() {
+        let got = system_memory_bytes();
+        assert!(
+            got.is_some(),
+            "no memory probe on this platform ({}). Fail-closed is only safe \
+             where a probe EXISTS: without one the guard refuses every dequant \
+             and the load path is dead. Add a probe for this target (#2568).",
+            std::env::consts::OS
+        );
+        let bytes = got.unwrap_or(0);
+        // A plausibility band, not an equality: 256 MiB..=8 TiB. Its job is to
+        // catch a UNIT error, which is the live risk here -- sysinfo reports
+        // BYTES, while the Win32 primitive GetPhysicallyInstalledSystemMemory
+        // reports KILOBYTES. Reading kB as bytes would land ~1024x low and
+        // silently disarm the threshold in the opposite direction from #2568.
+        assert!(
+            bytes >= 256 * 1024 * 1024 && bytes <= 8 * 1024 * 1024 * 1024 * 1024,
+            "implausible total memory {bytes} bytes on {} -- suspect a unit \
+             error (kB read as bytes, or the reverse)",
+            std::env::consts::OS
+        );
+    }
+
+    /// The unit contract for the Windows probe, asserted rather than trusted.
+    #[cfg(windows)]
+    #[test]
+    fn windows_probe_reports_bytes_not_kilobytes() {
+        let b = windows_total_bytes().expect("windows probe must report a total");
+        assert!(
+            b >= 1024 * 1024 * 1024,
+            "windows total_memory returned {b}; a value this small means \
+             KILOBYTES were read as BYTES (#2568)"
+        );
+    }
+
     use super::*;
 
     fn valid_config() -> ModelLoadConfig {
