@@ -289,9 +289,9 @@ apr,apr quantize --scheme fp16,4,x86_64-linux,llama.cpp,no,crates/apr-cli/src/co
 apr,apr quantize --scheme int4,4,x86_64-linux,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:686,high
 apr,apr quantize --scheme int8,4,x86_64-linux,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:686,high
 apr,apr quantize --scheme q4k,4,x86_64-linux,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:686,high
-apr,apr run --backend cpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:110 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
-apr,apr run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:110 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),medium
-apr,apr run --backend wgpu,2,UNKNOWN,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:110 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
+apr,apr run --backend cpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
+apr,apr run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),medium
+apr,apr run --backend wgpu,2,UNKNOWN,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
 apr,apr run --gpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:36,high
 apr,apr run --no-gpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:33,high
 apr,apr run --stream,2,x86_64-linux;nvidia-cuda,ollama,no,crates/apr-cli/src/commands_enum.rs:66,high

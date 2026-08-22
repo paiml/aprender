@@ -89,3 +89,7 @@ per-layer-trace/
 # - aprender-train/checkpoints -> machine-local /mnt/... (package-excluded)
 /crates/aprender-present/contracts
 /crates/aprender-train/checkpoints
+
+# Python bytecode from scripts/*.py (dogfood gate helpers import each other)
+__pycache__/
+*.pyc
