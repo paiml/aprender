@@ -29,7 +29,14 @@ metadata:
   # ---------------------------------------------------------------------------
   baselines:
     measured_at: '2026-08-22'
-    measured_commit: cbb1ccd78
+    # The commit the audit was taken AT, and it must be one that outlives this
+    # pull request. This field first named `cbb1ccd78`, a commit on the feature
+    # branch: a squash merge orphans it, so on `main` the provenance line would
+    # have pointed at nothing a fresh clone could resolve. `4bbfeb07f` is the
+    # branch's merge base on `main` -- the commit the surface was actually
+    # measured against, and the one the `references:` block above already
+    # cites. Provenance must name a commit that survives the merge.
+    measured_commit: 4bbfeb07f
     ledger: docs/audits/surface_audit.csv
 
     overall:

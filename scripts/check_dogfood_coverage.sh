@@ -142,7 +142,7 @@ PY
 # function against silent drift, not a proof of accuracy.
 #
 check_freshness() {
-  local root="$1" base="$2" evfile changed n_ev n_changed unresolved total measured
+  local root="$1" base="$2" evfile changed n_ev n_changed unresolved total measured provenance
   evfile="$(mktemp)"; changed="$(mktemp)"
 
   evidence_files "$root" > "$evfile" 2>/dev/null
@@ -162,13 +162,60 @@ check_freshness() {
     rm -f "$evfile" "$changed"; return 1
   fi
 
-  # measured_commit is documentation, not a comparand. Still checked for shape,
-  # because a dangling one means the ledger's provenance line is wrong.
+  # -------------------------------------------------------------------------
+  # measured_commit is documentation, not a comparand. Two properties are worth
+  # asserting about it, and exactly ONE of them is decidable everywhere:
+  #
+  #   SHAPE      it must be present, and it must BE an object name. A deleted
+  #              line, an empty value, `PLACEHOLDER`, a branch name or a typo
+  #              are all provenance defects, and a repository of any depth can
+  #              say so.
+  #
+  #   EXISTENCE  whether that object is IN this repository. A shallow clone
+  #              cannot answer it: `git cat-file -e` returns the same 128 for
+  #              "you invented this SHA" and for "you were cloned with
+  #              --depth=1 and this commit is two commits back". This job is
+  #              checked out at fetch-depth 1 -- resolve_base_ref() above says
+  #              so in as many words, and the earlier version of THIS check
+  #              did not carry the reasoning across. Asking there produced a
+  #              verdict about the CLONE, not about the ledger, which is how
+  #              this gate went red on the very pull request that introduced
+  #              it: `measured_commit cbb1ccd78 is not a commit in this repo`
+  #              with all three coverage floors green, and every later step in
+  #              the job skipped.
+  #
+  # So shape is enforced always; existence is enforced only where it is
+  # decidable, and the PASS line names which of the two it managed to apply. A
+  # check that silently narrows its own scope is theater. One that prints the
+  # scope it actually had is a measurement.
+  #
+  # HONEST LIMIT: in a shallow clone a well-formed SHA that names nothing gets
+  # through. Closing that would need history CI deliberately does not fetch.
+  # The shape half still rejects the placeholder, the typo and the deleted
+  # line, which is every provenance defect seen so far.
+  # -------------------------------------------------------------------------
   measured="$(grep -m1 -E '^[[:space:]]*measured_commit:' "$root/$CONTRACT" 2>/dev/null \
-              | sed -E 's/.*measured_commit:[[:space:]]*//; s/[[:space:]]*(#.*)?$//')"
-  if [ -n "$measured" ] && ! git -C "$root" cat-file -e "${measured}^{commit}" 2>/dev/null; then
-    printf '  G2.1 freshness       FAIL  measured_commit %s is not a commit in this repo\n' "$measured"
+              | sed -E "s/.*measured_commit:[[:space:]]*//; s/[[:space:]]*(#.*)?$//; s/^['\"]//; s/['\"]$//")"
+  if [ -z "$measured" ]; then
+    printf '  G2.1 freshness       FAIL  %s carries no measured_commit: value. The\n' "$CONTRACT"
+    printf '                             ledger must say which commit it was measured at; deleting\n'
+    printf '                             the line is not a way to stop being asked.\n'
     rm -f "$evfile" "$changed"; return 1
+  fi
+  if ! [[ "$measured" =~ ^[0-9a-f]{7,40}$ ]]; then
+    printf '  G2.1 freshness       FAIL  measured_commit %s is not an object name\n' "$measured"
+    printf '                             (expected 7-40 lowercase hex digits)\n'
+    rm -f "$evfile" "$changed"; return 1
+  fi
+  if [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" = "false" ]; then
+    if ! git -C "$root" cat-file -e "${measured}^{commit}" 2>/dev/null; then
+      printf '  G2.1 freshness       FAIL  measured_commit %s is not a commit in this repo\n' "$measured"
+      printf '                             (full clone: this is the ledger, not the checkout depth)\n'
+      rm -f "$evfile" "$changed"; return 1
+    fi
+    provenance="shape ok, object present"
+  else
+    provenance="shape ok; existence UNCHECKED (shallow clone)"
   fi
 
   # Everything this branch changed, committed or not, against its merge base.
@@ -187,6 +234,7 @@ check_freshness() {
   fi
   printf '  G2.1 freshness       PASS  %s cited evidence files, %s changed by this branch\n' \
     "$n_ev" "$n_changed"
+  printf '                             measured_commit %s: %s\n' "$measured" "$provenance"
   rm -f "$evfile" "$changed"; return 0
 }
 
@@ -348,7 +396,7 @@ selftest_mutate() {
 if [ "${1:-}" = "--self-test" ]; then
   TD="$(mktemp -d)"
   [ -n "${TD:-}" ] && [ -d "$TD" ] || fail "could not create a scratch dir"
-  trap 'rm -rf "${TD:?}"' EXIT
+  trap 'rm -rf "${TD:?}" "${TD:?}-shallow"' EXIT
   FAILED=0
 
   printf 'check_dogfood_coverage.sh --self-test\n'
@@ -416,9 +464,51 @@ if [ "${1:-}" = "--self-test" ]; then
   git -C "$TD" checkout -q main
   printf '\n'
 
+  # --- M5 (G2.1 provenance): the measured_commit line. Three shapes must be RED
+  #     in any repository, and the fourth case is the regression test for the
+  #     defect that made this gate red on its own pull request -- a well-formed
+  #     SHA absent ONLY because the clone is shallow must NOT be red. Both
+  #     halves are asserted, because a check that reds on the shallow clone as
+  #     well as on the bad value is measuring the checkout, not the ledger.
+  printf 'M5  G2.1 provenance — measured_commit shape, and depth-independence\n'
+  BOGUS_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+  selftest_mutate "$TD/$CONTRACT" "measured_commit -> PLACEHOLDER" \
+    sed -i 's/^    measured_commit: .*/    measured_commit: PLACEHOLDER/' "$TD/$CONTRACT" \
+    && selftest_run "$TD" "measured_commit is not an object name" "RED" || FAILED=1
+  git -C "$TD" checkout -q -- "$CONTRACT"
+  selftest_mutate "$TD/$CONTRACT" "delete the measured_commit line" \
+    sed -i '/^    measured_commit:/d' "$TD/$CONTRACT" \
+    && selftest_run "$TD" "measured_commit line deleted" "RED" || FAILED=1
+  git -C "$TD" checkout -q -- "$CONTRACT"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+
+  # The discriminating pair. Same contract, same SHA, two checkout depths.
+  selftest_mutate "$TD/$CONTRACT" "measured_commit -> absent object" \
+    sed -i "s/^    measured_commit: .*/    measured_commit: $BOGUS_SHA/" "$TD/$CONTRACT" \
+    && selftest_run "$TD" "SHA names nothing, full clone" "RED" || FAILED=1
+  selftest_commit "$TD" 'record an absent measured_commit' || fail "fixture commit failed"
+  SHALLOW="${TD}-shallow"
+  rm -rf "${SHALLOW:?}"
+  # `--no-local` and a file:// URL: a local-path clone HARDLINKS the whole object
+  # store and silently ignores --depth, which would leave the fixture deep and
+  # this case asserting nothing. The depth is verified below, not assumed.
+  if git clone -q --no-local --depth=1 --template= "file://$TD" "$SHALLOW" 2>/dev/null \
+     && [ "$(git -C "$SHALLOW" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+    printf '  shallow fixture built: depth-1 clone, is-shallow-repository=true\n'
+    selftest_run "$SHALLOW" "same SHA, depth-1 clone (must NOT be red)" "GREEN" || FAILED=1
+  else
+    printf '  SHALLOW FIXTURE NOT BUILT — the depth-independence case did not run.\n' >&2
+    printf '  A case that did not run is not a case that passed.\n' >&2
+    FAILED=1
+  fi
+  rm -rf "${SHALLOW:?}"
+  git -C "$TD" reset -q --hard HEAD~1
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
+
   if [ "$FAILED" -eq 0 ]; then
-    printf 'SELF-TEST PASS: 3 registered mutations RED, the anti-vacuity mutation RED,\n'
-    printf 'and every clean/no-op/restored tree GREEN.\n'
+    printf 'SELF-TEST PASS: 4 registered mutation groups RED, the anti-vacuity mutation\n'
+    printf 'RED, the shallow-clone case GREEN, and every clean/no-op/restored tree GREEN.\n'
     exit 0
   fi
   printf 'SELF-TEST FAIL\n'
