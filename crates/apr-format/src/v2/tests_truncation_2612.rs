@@ -1,7 +1,7 @@
 //! Falsifiers for the APR data-extent invariant (issue #2612).
 //!
 //! ```text
-//! data_offset + max(tensor.offset + tensor.size) <= file_length
+//! data_offset + max(tensor.offset + align_64(tensor.size)) <= file_length
 //! ```
 //!
 //! Measured on published `apr 0.63.0`: `head -c 50000000` of a 1,115,528,900-byte
@@ -108,5 +108,98 @@ fn index_pointing_past_eof_is_reported_as_a_damaged_index() {
             Err(V2FormatError::InvalidTensorIndex(_))
         ),
         "an index outside the file is damage, not an unknown"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tail slack — the residual the first cut of #2612 left open, and the part of
+// it that is now closed.
+// ---------------------------------------------------------------------------
+
+/// A fixture whose LAST tensor in file order has an unaligned size, so trailing
+/// 64-byte alignment padding physically exists between the last declared byte
+/// and the footer. `known_good_apr()` cannot exercise this: its final tensor is
+/// 256 bytes, already a multiple of 64, so padded and unpadded extents coincide.
+///
+/// `AprV2Writer` sorts the index by name, so "z.bias" is written last.
+fn apr_with_unaligned_final_tensor() -> Vec<u8> {
+    let metadata = AprV2Metadata::new("tail-slack-fixture");
+    let mut writer = AprV2Writer::new(metadata);
+    writer.add_f32_tensor("a.weight", vec![8, 8], &[0.25_f32; 64]); // 256 B, aligned
+    writer.add_f32_tensor("z.bias", vec![3], &[0.5_f32; 3]); // 12 B -> 64 B padded
+    writer
+        .write()
+        .expect("fixture writer must produce a valid .apr")
+}
+
+/// The declared extent must cover the trailing alignment padding, not stop at
+/// the last declared tensor byte.
+///
+/// RED before the padding fix: `required` was `data_offset + 268`, so a file cut
+/// at `data_offset + 272` — 48 bytes of real damage — compared as "fits".
+#[test]
+fn required_extent_covers_trailing_alignment_padding() {
+    let bytes = apr_with_unaligned_final_tensor();
+    let header = super::AprV2Header::from_bytes(&bytes).expect("header parses");
+    let required = required_file_len(&bytes).expect("extent");
+
+    let unpadded_end = header.data_offset + 256 + 12;
+    let padded_end = header.data_offset + 256 + 64;
+
+    assert_eq!(
+        required, padded_end,
+        "the extent must reach the end of the final tensor's alignment padding"
+    );
+    assert!(
+        required > unpadded_end,
+        "the fixture must actually have trailing padding to test \
+         (required={required}, unpadded_end={unpadded_end})"
+    );
+
+    // Still a true lower bound on the real file.
+    assert!(required <= bytes.len() as u64);
+
+    // The bytes between the two bounds are real file content, and a cut there
+    // is real damage that the unpadded bound could not see.
+    let cut = usize::try_from(unpadded_end).expect("fits usize") + 4;
+    assert!(cut < bytes.len());
+    assert!(
+        required_file_len(&bytes[..cut]).expect("index survives") > cut as u64,
+        "a cut inside the trailing padding must be detectable"
+    );
+}
+
+/// DISCLOSED RESIDUAL: a file missing ONLY its 4-byte CRC32 footer still passes.
+///
+/// This is deliberate and measured, not an oversight. Both writers append the
+/// footer, so `file_len == required_file_len + 4` for anything they produce —
+/// but of the ten parseable APR v2 files in the local corpus, two carry no
+/// footer at all (`qwen2.5-coder-1.5b-instruct-q4k.apr` and its `-q4k-v2`
+/// sibling are each exactly `required_file_len` bytes). Folding the footer into
+/// the required length would report both intact files as truncated, which is a
+/// strictly worse failure than missing a 4-byte truncation.
+///
+/// Closing this residual is check 4's job (footer CRC32), still a declared
+/// `Skip("Footer not implemented")` stub — and those two files are exactly why
+/// it cannot just be switched on.
+///
+/// This test pins the residual so it cannot be silently widened: if the extent
+/// ever moves off the footer boundary in either direction, it goes RED.
+#[test]
+fn footer_only_truncation_is_the_disclosed_residual() {
+    let bytes = apr_with_unaligned_final_tensor();
+    let required = required_file_len(&bytes).expect("extent");
+
+    assert_eq!(
+        bytes.len() as u64,
+        required + 4,
+        "AprV2Writer output is exactly the declared extent plus the 4-byte footer"
+    );
+
+    let footerless = &bytes[..bytes.len() - 4];
+    assert!(
+        required_file_len(footerless).expect("index survives") <= footerless.len() as u64,
+        "known residual: a file missing only its footer is NOT caught by the \
+         extent check — check 4 (footer CRC32) is the check that would catch it"
     );
 }

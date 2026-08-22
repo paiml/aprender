@@ -28,6 +28,10 @@ metadata:
     `Skip("Not implemented")` stubs and check 4 (footer CRC32) remains
     `Skip("Footer not implemented")`. A Skip is not a Pass, and `implemented_score()`
     excludes stubs from its denominator, so no coverage is claimed that does not exist.
+    The extent covers each tensor's 64-byte alignment padding but deliberately STOPS
+    SHORT of the 4-byte CRC32 footer, so a file truncated by exactly its last 4 bytes
+    still passes — see OBLIG-APR-RESIDUAL-005 for the measurement that forced that
+    boundary (two real footerless `.apr` files in the local corpus).
   references:
   - "crates/apr-format/src/v2/reader_impl.rs (required_file_len)"
   - "crates/apr-format/src/v2/tests_truncation_2612.rs (extent falsifiers)"
@@ -44,12 +48,33 @@ proof_obligations:
   - type: invariant
     property: >
       OBLIG-APR-EXTENT-001: for every APR v2 container,
-      `data_offset + max(entry.offset + entry.size) <= file_length`.
+      `data_offset + max(entry.offset + align_64(entry.size)) <= file_length`.
       `required_file_len` computes the left-hand side from the header and tensor
       index alone — it reads no tensor payload, so the cost is O(tensor_count) and
       independent of file size. A buffer that is not an APR v2 container (wrong
       magic, shorter than the 64-byte header) yields Err rather than a zero extent,
       because a zero extent would read as "fits, therefore fine".
+      The extent includes each tensor's 64-byte ALIGNMENT PADDING, which both v2
+      writers emit unconditionally for every tensor including the last
+      (`AprV2Writer::write`, `AprV2StreamingWriter::add_tensor`). Without it the
+      bound left up to 63 further bytes of the tail undetected — measured 60 on
+      `whisper.apr/models/tiny-int8.apr` and 36 on the in-tree
+      `crates/apr-format/tests/fixtures/golden_v2.apr`.
+  - type: invariant
+    property: >
+      OBLIG-APR-RESIDUAL-005 (DISCLOSED RESIDUAL, not a closed gap): the extent
+      deliberately STOPS SHORT of the 4-byte CRC32 footer, so a `.apr` truncated by
+      exactly its last 4 bytes still passes check 5. The reason is a measurement,
+      not caution: of the ten parseable APR v2 files in the local corpus, TWO carry
+      no footer at all — `~/models/qwen2.5-coder-1.5b-instruct-q4k.apr` and its
+      `-q4k-v2` sibling are each exactly `required_file_len` bytes, four short of
+      `required_file_len + 4`. Folding the footer into the required length would
+      report both INTACT files as truncated, a strictly worse failure than missing a
+      4-byte truncation. Closing this residual is check 4's job (footer CRC32),
+      still a declared `Skip("Footer not implemented")` stub — and those two
+      footerless files are precisely why check 4 cannot simply be switched on.
+      `footer_only_truncation_is_the_disclosed_residual` PINS the residual at
+      exactly 4 bytes so it can neither widen nor silently close unnoticed.
   - type: invariant
     property: >
       OBLIG-APR-CHECK5-002: `AprValidator` check 5 ("Data section within file") is
@@ -95,3 +120,15 @@ falsification_tests:
     test_harness: "cargo test -p apr-cli --lib validate_tests_truncation_2612"
     expected_output: "test result: ok"
     if_fails: "`apr validate` exits 0 on a truncated .apr for at least one flag combination → every machine consumer that reads the exit code is told a 95%-missing file is fine."
+  - id: FALSIFY-APR-PADDING-005
+    name: required_extent_covers_trailing_alignment_padding
+    prediction: "on a fixture whose final tensor is 12 bytes (padded to 64), required_file_len equals data_offset+256+64 — NOT data_offset+256+12 — and a cut inside that trailing padding is reported as short"
+    test_harness: "cargo test -p apr-format --lib v2::tests_truncation_2612"
+    expected_output: "test result: ok"
+    if_fails: "the extent stops at the last DECLARED byte, so up to 63 bytes of real tail damage per file compare as \"fits\" — the class this contract exists to catch, only smaller."
+  - id: FALSIFY-APR-RESIDUAL-006
+    name: footer_only_truncation_is_the_disclosed_residual
+    prediction: "AprV2Writer output is exactly required_file_len + 4 bytes, and a buffer with those last 4 bytes removed still satisfies required_file_len <= len — the residual is exactly 4 bytes, no more and no less"
+    test_harness: "cargo test -p apr-format --lib v2::tests_truncation_2612"
+    expected_output: "test result: ok"
+    if_fails: "the residual moved. Wider → more tail damage passes silently. Narrower (the footer folded in) → the two REAL footerless .apr files in the local corpus are reported as truncated, a false positive on intact data."

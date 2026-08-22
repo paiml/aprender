@@ -108,8 +108,8 @@ fn truncated_apr_report_is_not_valid() {
 fn one_byte_short_still_fails() {
     let bytes = known_good_apr_bytes();
     let required = crate::format::v2::required_file_len(&bytes).expect("extent");
-    // Trailing padding + the 4-byte footer sit past `required`, so trim to
-    // exactly one byte below the declared extent.
+    // The 4-byte footer sits past `required` (trailing alignment padding is
+    // inside it), so trim to exactly one byte below the declared extent.
     let cut = usize::try_from(required).expect("fixture fits usize") - 1;
     let check = check_5(&bytes[..cut]);
     assert!(
