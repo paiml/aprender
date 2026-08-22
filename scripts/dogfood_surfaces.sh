@@ -78,6 +78,37 @@ MIN_APR_COMMANDS=60
 MIN_ROUTES=25
 MIN_MCP_TOOLS=7
 
+# The `probar llm test` endpoint probe. Two separate things had to be true for
+# it to ever run, and neither was:
+#
+#   * A CONFIG. The probe was written when no config existed, so it skipped
+#     unless the operator exported DOGFOOD_PROBAR_CONFIG by hand. The config
+#     has been committed at tests/fixtures/probar-llm-endpoint.yaml since
+#     #2527 and nothing pointed at it, so the skip outlived its own reason.
+#   * The `llm` FEATURE. `Commands::Llm` in aprender-test-cli/src/main.rs is
+#     declared with no `#[cfg]`, so clap advertises `llm` and renders its
+#     --help either way; only the HANDLER is gated. A binary built without the
+#     feature therefore PARSES `llm test` and then returns "LLM features not
+#     enabled" -- which this sweep reported as `bad "probar llm test FAILED"`,
+#     blaming the server for a gap in the harness. That is the exact thing the
+#     skip's own comment said it must never do.
+#
+# Both are self-tested below (rows 4-6): a probe that cannot run is not a probe.
+PROBAR_LLM_CONFIG_DEFAULT="${REPO_ROOT}/tests/fixtures/probar-llm-endpoint.yaml"
+PROBAR_LLM_FEATURES="llm"
+# The build invocation as DATA, so the self-test can inspect the same object the
+# build uses. A text-scanning check was tried first and was blind: grepping this
+# file for the invocation matched the check's own pattern string, so deleting
+# `--features` from the real build left the row GREEN. There is no way to grep a
+# file for a literal the grep itself contains; sharing the array removes the
+# question.
+PROBAR_BUILD_ARGS=(
+    -p aprender-test-cli
+    --bin aprender-test-cli
+    --features "$PROBAR_LLM_FEATURES"
+    --message-format=json
+)
+
 pass=0; fail=0; skip=0
 FAILURES=""
 SKIPS=""
@@ -438,8 +469,7 @@ surface_http() {
         # "probar is not built" when it was merely not looked for. Ask cargo.
         probar=$(printf '%s\n' "${ARTIFACTS:-}" | grep -E '/aprender-test-cli$' | head -1)
         if [ -z "$probar" ]; then
-            probar=$(cargo build -p aprender-test-cli --bin aprender-test-cli \
-                        --message-format=json 2>/dev/null | python3 -c '
+            probar=$(cargo build "${PROBAR_BUILD_ARGS[@]}" 2>/dev/null | python3 -c '
 import json,sys
 for line in sys.stdin:
     try: d=json.loads(line)
@@ -451,21 +481,21 @@ for line in sys.stdin:
         if [ -z "$probar" ] || [ ! -x "$probar" ]; then
             bad "probar (aprender-test-cli) could not be built; endpoint probe unavailable"
         else
-            # `probar llm test` requires --config <CONFIG>; there is no
-            # committed config for it yet. A missing INPUT is a skip with a
-            # reason, not a failure -- reporting FAIL here would blame the
-            # server for a gap in this harness. Authoring that config is the
-            # remaining work to make this probe real.
-            if [ -n "${DOGFOOD_PROBAR_CONFIG:-}" ]; then
-                out=$("$probar" llm test --config "$DOGFOOD_PROBAR_CONFIG" \
+            # `probar llm test` requires --config <CONFIG>. That config now
+            # EXISTS in-tree, so default to it rather than skipping. A missing
+            # INPUT is still a skip with a reason, never a failure -- reporting
+            # FAIL would blame the server for a gap in this harness.
+            local cfg
+            if cfg=$(probar_llm_config); then
+                out=$("$probar" llm test --config "$cfg" \
                                           --url "$DOGFOOD_LIVE_SERVER" 2>&1); rc=$?
                 if [ "$rc" -eq 0 ]; then
-                    ok "probar llm test against $DOGFOOD_LIVE_SERVER"
+                    ok "probar llm test against $DOGFOOD_LIVE_SERVER ($cfg)"
                 else
                     bad "probar llm test FAILED: $(printf '%s' "$out" | tail -1)"
                 fi
             else
-                skp "probar llm test needs a config (set DOGFOOD_PROBAR_CONFIG); routes were still probed individually"
+                skp "probar llm test found no config at ${DOGFOOD_PROBAR_CONFIG:-$PROBAR_LLM_CONFIG_DEFAULT}; routes were still probed individually"
             fi
         fi
     else
@@ -499,6 +529,28 @@ surface_mcp() {
             *)     bad "tool '$t' does not use the apr.* namespace" ;;
         esac
     done <<< "$tools"
+}
+
+
+# Resolve the config `probar llm test` requires. An explicit
+# DOGFOOD_PROBAR_CONFIG still wins -- that is how you point the probe at a
+# different suite -- but it is checked for existence rather than trusted, so a
+# typo'd override becomes a named skip instead of a probe that "ran" against a
+# file that is not there. Returns 1, printing nothing, when no config exists.
+probar_llm_config() {
+    local c="${DOGFOOD_PROBAR_CONFIG:-$PROBAR_LLM_CONFIG_DEFAULT}"
+    [ -f "$c" ] || return 1
+    printf '%s\n' "$c"
+}
+
+# Is the `llm` handler still gated behind the feature we pass to cargo? Read
+# from the source rather than assumed: if upstream ever removes the `#[cfg]`,
+# this goes false and self-test row 6 says so, instead of us carrying a flag
+# that no longer does anything.
+probar_llm_handler_is_feature_gated() {
+    local m="${REPO_ROOT}/crates/aprender-test-cli/src/main.rs"
+    [ -f "$m" ] || return 1
+    grep -qF 'LLM features not enabled' "$m"
 }
 
 # --- self-test -------------------------------------------------------------
@@ -538,8 +590,51 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'ok    row 3 vacuity_guard rejects an empty enumeration\n'
     fi
 
+    # Rows 4-6: the `probar llm test` endpoint probe must be ARMED. Every one
+    # of these was false on main, and the sweep still reported a clean receipt
+    # -- the probe simply never ran, or ran a binary that could not answer.
+
+    # Row 4: with no override, the default config must resolve to a file that
+    # EXISTS in this checkout. Mutation: move
+    # tests/fixtures/probar-llm-endpoint.yaml aside and this row turns RED.
+    # Split across two statements rather than `if ( ...; [ -f "$c" ] )`:
+    # bashrs reads a `(` on the same line as a `[` as SC1028 (unescaped paren
+    # inside a test) and errors, and this repo's shell-lint ratchet is
+    # shrink-only.
+    row4_cfg=$( unset DOGFOOD_PROBAR_CONFIG; probar_llm_config ) || row4_cfg=""
+    if [ -n "$row4_cfg" ] && [ -f "$row4_cfg" ]; then
+        printf 'ok    row 4 probar llm test has a committed default config\n'
+    else
+        printf 'FAIL  row 4 no default config -- the endpoint probe can never run\n'; fails=1
+    fi
+
+    # Row 5: control for row 4. A resolver that returned a path unconditionally
+    # would pass row 4 while pointing the probe at nothing, so an override
+    # naming a file that does not exist must be REFUSED, not passed through.
+    if ( DOGFOOD_PROBAR_CONFIG="$tmp/does-not-exist.yaml" probar_llm_config >/dev/null 2>&1 ); then
+        printf 'FAIL  row 5 a non-existent config override was accepted\n'; fails=1
+    else
+        printf 'ok    row 5 a non-existent config override is refused\n'
+    fi
+
+    # Row 6: the `llm` handler is gated on a cargo feature, so the build above
+    # must request it -- otherwise `probar llm test` parses and then answers
+    # "LLM features not enabled", which the probe reports as a SERVER failure.
+    # Reads the gate from the source: if upstream ungates the handler, this row
+    # goes RED and tells us to drop the flag rather than carry a dead one.
+    if probar_llm_handler_is_feature_gated; then
+        # Inspect the argv the build ACTUALLY uses, not a restatement of it.
+        if printf '%s\n' "${PROBAR_BUILD_ARGS[@]}" | grep -qxF -- "$PROBAR_LLM_FEATURES"; then
+            printf 'ok    row 6 the gated llm handler is built with its feature\n'
+        else
+            printf 'FAIL  row 6 llm handler is feature-gated but the build omits the feature\n'; fails=1
+        fi
+    else
+        printf 'FAIL  row 6 could not find the llm feature gate in aprender-test-cli/src/main.rs\n'; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (3/3)\n'
+    printf '\nSELF-TEST PASSED (6/6)\n'
     exit 0
 fi
 
