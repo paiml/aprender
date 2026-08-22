@@ -207,15 +207,19 @@ check_freshness() {
     printf '                             (expected 7-40 lowercase hex digits)\n'
     rm -f "$evfile" "$changed"; return 1
   fi
-  if [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" = "false" ]; then
-    if ! git -C "$root" cat-file -e "${measured}^{commit}" 2>/dev/null; then
-      printf '  G2.1 freshness       FAIL  measured_commit %s is not a commit in this repo\n' "$measured"
-      printf '                             (full clone: this is the ledger, not the checkout depth)\n'
-      rm -f "$evfile" "$changed"; return 1
-    fi
+  # PRESENCE is conclusive anywhere; only ABSENCE needs the depth caveat, so ask
+  # in that order. Asking `--is-shallow-repository` FIRST throws away a verdict
+  # the repository was able to give: this dev box carries a graft ~740 commits
+  # back, deep enough to resolve everything anyone cites, and a shallow-first
+  # test downgraded every local run to UNCHECKED for no reason.
+  if git -C "$root" cat-file -e "${measured}^{commit}" 2>/dev/null; then
     provenance="shape ok, object present"
+  elif [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" != "true" ]; then
+    printf '  G2.1 freshness       FAIL  measured_commit %s is not a commit in this repo\n' "$measured"
+    printf '                             (complete clone, so this is the ledger and not the depth)\n'
+    rm -f "$evfile" "$changed"; return 1
   else
-    provenance="shape ok; existence UNCHECKED (shallow clone)"
+    provenance="shape ok; absence NOT conclusive (shallow clone, object may be beyond it)"
   fi
 
   # Everything this branch changed, committed or not, against its merge base.
