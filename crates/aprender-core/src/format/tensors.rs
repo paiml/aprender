@@ -203,6 +203,73 @@ pub fn is_valid_apr_magic(magic: &[u8; 4]) -> bool {
 }
 
 // ============================================================================
+// Tensor Table Bounds Check (#2569)
+// ============================================================================
+
+/// Refuse a tensor table whose declared extents do not fit inside the file.
+///
+/// #2569: `apr tensors` computed each row's `size_bytes` from the DECLARED
+/// shape and never asked whether those bytes exist. On a 128-byte GGUF
+/// declaring 8192 bytes of tensor data it printed the whole table and exited 0
+/// while `apr validate` on the same file exited 5 with
+/// "(file is N bytes too short)" — two commands, one binary, one file, opposite
+/// answers, and the one that said OK is the JSON the MCP tool and CI consume.
+///
+/// The check and its wording are lifted from `RosettaStone::validate_gguf`
+/// (`format/rosetta/arch_inference.rs`, S1-FIX), which has had it all along.
+/// This one is stricter in the way that matters: `validate` only asks whether
+/// the LAST tensor's start byte exists, so it cannot see a file that is short
+/// by less than the final tensor's length. Here every tensor's full extent —
+/// `data_start + offset + size` — must be inside the file, because that extent
+/// is exactly what the printed row asserts.
+///
+/// `tensors` yields `(name, offset_within_data_section, size_bytes)` and must
+/// cover EVERY tensor in the file, not just the ones a `--filter` selected: a
+/// filtered listing must not be able to hide a truncation.
+///
+/// # Errors
+/// Returns `FormatError` naming the first tensor that overruns the file, or
+/// whose declared extent overflows `u64`.
+fn check_tensor_table_fits<'a, I>(
+    format: &str,
+    file_len: u64,
+    data_start: u64,
+    tensors: I,
+) -> Result<()>
+where
+    I: IntoIterator<Item = (&'a str, u64, u64)>,
+{
+    for (name, offset, size) in tensors {
+        let start = data_start
+            .checked_add(offset)
+            .ok_or_else(|| AprenderError::FormatError {
+                message: format!(
+                    "Corrupt {format}: tensor '{name}' offset {offset} overflows the data \
+                     section start {data_start} (file is {file_len} bytes)"
+                ),
+            })?;
+        let end = start
+            .checked_add(size)
+            .ok_or_else(|| AprenderError::FormatError {
+                message: format!(
+                    "Corrupt {format}: tensor '{name}' declares {size} bytes at {start}, which \
+                     overflows u64 (file is {file_len} bytes)"
+                ),
+            })?;
+        if end > file_len {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "Truncated {format}: file is {file_len} bytes but tensor '{name}' declares \
+                     bytes {start}..{end} (file is {short} bytes too short)",
+                    short = end - file_len,
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+// ============================================================================
 // Tensor Listing - From Bytes
 // ============================================================================
 
@@ -292,6 +359,21 @@ fn list_tensors_v2(data: &[u8], options: TensorListOptions) -> Result<TensorList
         message: format!("Failed to parse APR v2: {e}"),
     })?;
 
+    // #2569 / follow-up filed in #2564: the APR v2 index carries each tensor's real
+    // byte size, and this listing believed it without checking the file was that
+    // long. A 50 MB head of a 991 MB model printed "291 tensors 942.3 MB", 19x the
+    // file. Unlike GGUF there is no dtype estimate here — `entry.size` is exact.
+    check_tensor_table_fits(
+        "APR v2",
+        data.len() as u64,
+        reader.header().data_offset,
+        reader
+            .tensor_names()
+            .into_iter()
+            .filter_map(|name| reader.get_tensor(name).map(|e| (name, e.offset, e.size)))
+            .collect::<Vec<_>>(),
+    )?;
+
     // Get tensor info from actual index
     let mut tensors = Vec::new();
     let mut total_size = 0usize;
@@ -334,6 +416,20 @@ fn list_tensors_v2_mmap(data: &[u8], options: TensorListOptions) -> Result<Tenso
     let reader = AprV2ReaderRef::from_bytes(data).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to parse APR v2: {e}"),
     })?;
+
+    // #2569: same check as `list_tensors_v2`. This mmap path is the one `apr tensors`
+    // actually takes for an APR v2 file on disk, so leaving it out would have made
+    // the sibling fix theater.
+    check_tensor_table_fits(
+        "APR v2",
+        data.len() as u64,
+        reader.header().data_offset,
+        reader
+            .tensor_names()
+            .into_iter()
+            .filter_map(|name| reader.get_tensor(name).map(|e| (name, e.offset, e.size)))
+            .collect::<Vec<_>>(),
+    )?;
 
     let mut tensors = Vec::new();
     let mut total_size = 0usize;
