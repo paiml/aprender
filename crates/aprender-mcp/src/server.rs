@@ -58,7 +58,7 @@ type InFlight = Arc<Mutex<HashMap<serde_json::Value, CancelHandle>>>;
 ///
 /// M1: `initialize`, `tools/list`, `tools/call` with `apr.version`.
 /// M3: `notifications/cancelled` routed to in-flight `apr.run` workers.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AprMcpServer {
     in_flight: InFlight,
     /// Join handles for `tools/call` workers spawned by
@@ -68,6 +68,38 @@ pub struct AprMcpServer {
     /// [`Self::serve_stream`].
     #[cfg(feature = "native")]
     workers: Vec<std::thread::JoinHandle<()>>,
+    /// The dispatch function a `tools/call` worker runs, always
+    /// [`dispatch_tool_call_with_sink`] outside tests.
+    ///
+    /// It is a field rather than a hardcoded call so that
+    /// FALSIFY-MCP-DRAIN-005 can drive a PANICKING tool through the whole
+    /// real stdio path — `serve_stream` → `read_loop` →
+    /// `route_stdio_message` → `spawn_tools_call_worker` → the worker thread
+    /// — and observe what the client actually receives. Every registered tool
+    /// is a subprocess wrapper or a pure metadata read, so no real
+    /// `tools/call` argument can be made to panic on demand, and without this
+    /// seam the panic guard could only ever be tested one hop away from the
+    /// wiring that has to call it.
+    ///
+    /// The seam cannot hide a stubbed default: the other `serve_stream_*`
+    /// tests run an untouched server and assert the genuine `apr.version`
+    /// payload comes back out of stdout, and
+    /// `default_worker_dispatch_is_the_real_tool_dispatcher` asserts it
+    /// directly.
+    #[cfg(feature = "native")]
+    worker_dispatch: crate::tools::DispatchFn,
+}
+
+impl Default for AprMcpServer {
+    fn default() -> Self {
+        Self {
+            in_flight: InFlight::default(),
+            #[cfg(feature = "native")]
+            workers: Vec::new(),
+            #[cfg(feature = "native")]
+            worker_dispatch: dispatch_tool_call_with_sink,
+        }
+    }
 }
 
 impl AprMcpServer {
@@ -544,10 +576,16 @@ impl AprMcpServer {
         // Thread spawn is infallible here in practice, but propagate the
         // error rather than unwrapping so we stay in the "no panics" lane.
         let builder = std::thread::Builder::new().name(format!("apr-mcp-call-{id}"));
+        let dispatch = self.worker_dispatch;
         let spawn_result = builder.spawn(move || {
+            // FALSIFY-MCP-DRAIN-002/005: dispatch runs INSIDE worker_response,
+            // never beside it. Calling `dispatch(...)` directly here and
+            // building the success response from its return value is exactly
+            // the pre-#2608 code, and is what FALSIFY-MCP-DRAIN-005 exists to
+            // turn red.
             let resp = Self::worker_response(&id_for_worker, || {
                 let sink_ref = progress_token.as_ref().map(|_| &sink);
-                dispatch_tool_call_with_sink(&params, &cancel_rx, sink_ref, progress_token)
+                dispatch(&params, &cancel_rx, sink_ref, progress_token)
             });
             // Best-effort: a broken stdout means the client disconnected,
             // which we can't recover from anyway.
@@ -843,6 +881,12 @@ mod tests {
             .serve_stream(std::io::Cursor::new(input.to_vec()), Arc::clone(&out))
             .expect("serve_stream must not propagate an error out of the session");
 
+        parse_written_lines(&out)
+    }
+
+    /// Parse whatever a session wrote to `out` into one JSON value per line.
+    #[cfg(feature = "native")]
+    fn parse_written_lines(out: &Arc<Mutex<Vec<u8>>>) -> Vec<serde_json::Value> {
         let guard = out.lock().expect("output mutex not poisoned");
         String::from_utf8_lossy(&guard)
             .lines()
@@ -1458,6 +1502,130 @@ mod tests {
         assert_eq!(
             result["content"][0]["text"], "payload",
             "the tool's own payload must reach the client verbatim: {result:?}"
+        );
+    }
+
+    /// A tool dispatch that panics. Every registered tool is a subprocess
+    /// wrapper or a pure metadata read, so none can be made to panic from a
+    /// `tools/call` argument; this stands in for the tool that does.
+    ///
+    /// The marker string is unique so the assertion below cannot be satisfied
+    /// by some other error the server might produce for id=2.
+    #[cfg(feature = "native")]
+    fn panicking_dispatch(
+        _args: &serde_json::Value,
+        _cancel_rx: &mpsc::Receiver<()>,
+        _sink: Option<&NotificationSink>,
+        _progress_token: Option<serde_json::Value>,
+    ) -> ToolCallResult {
+        panic!("PANIC-PROBE-2608 exploded inside tool dispatch")
+    }
+
+    /// FALSIFY-MCP-DRAIN-005 (#2608): the panic guard must be REACHED.
+    ///
+    /// [`AprMcpServer::worker_response`] can be perfectly correct while the
+    /// server never calls it — that is the whole defect class this PR is
+    /// about, and the two `worker_response_*` tests above exercise the helper
+    /// directly, so both stay green when the call site is deleted. This test
+    /// never mentions `worker_response`: it feeds a `tools/call` into
+    /// [`AprMcpServer::serve_stream`] and reads what came out of the client's
+    /// end of stdout, the same surface #2608 measured. The route under test is
+    /// `serve_stream` → `read_loop` → `route_stdio_message` →
+    /// `spawn_tools_call_worker` → the worker thread.
+    ///
+    /// Mutation (the pre-#2608 shape — dispatch called BESIDE the guard rather
+    /// than inside it):
+    ///
+    /// ```ignore
+    /// let result = dispatch(&params, &cancel_rx, sink_ref, progress_token);
+    /// let resp = JsonRpcResponse::success(Some(id_for_worker.clone()), ...);
+    /// ```
+    ///
+    /// The worker then unwinds, `join_workers` swallows the panic exactly as
+    /// documented, and nothing is ever written for id=2 — this test fails on
+    /// "answered by NEITHER a result NOR an error", while
+    /// `worker_response_turns_a_tool_panic_into_32603_for_the_same_id` stays
+    /// green. That asymmetry is what makes this a wiring guard and not a
+    /// restatement of the helper.
+    ///
+    /// The worker's panic message reaches stderr; it is expected noise.
+    #[cfg(feature = "native")]
+    #[test]
+    fn a_panicking_tool_is_answered_through_the_real_stdio_path() {
+        let out = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let mut server = AprMcpServer::new();
+        server.worker_dispatch = panicking_dispatch;
+
+        let outcome = server.serve_stream(
+            std::io::Cursor::new(format!("{INIT_LINE}\n{CALL_LINE}\n").into_bytes()),
+            Arc::clone(&out),
+        );
+
+        assert!(
+            outcome.is_ok(),
+            "a panicking TOOL must not take the SESSION down: {outcome:?}"
+        );
+        let responses = parse_written_lines(&out);
+        let call = find_id(&responses, 2).unwrap_or_else(|| {
+            panic!(
+                "the tools/call whose tool panicked was answered by NEITHER a result NOR an \
+                 error — the worker never routed through the panic guard; got {} response(s): \
+                 {responses:?}",
+                responses.len()
+            )
+        });
+        assert!(
+            call.get("result").is_none(),
+            "a panic must not also produce a result: {call:?}"
+        );
+        assert_eq!(
+            call["error"]["code"],
+            serde_json::json!(-32603),
+            "a tool panic is an Internal error for the SAME id: {call:?}"
+        );
+        let message = call["error"]["message"]
+            .as_str()
+            .unwrap_or_else(|| panic!("error message must be a string: {call:?}"));
+        assert!(
+            message.contains("PANIC-PROBE-2608 exploded inside tool dispatch"),
+            "the panic's own message must reach the client, not a generic envelope: {message:?}"
+        );
+        assert!(
+            find_id(&responses, 1).is_some(),
+            "initialize must still be answered: {responses:?}"
+        );
+        assert!(
+            server.workers.is_empty(),
+            "{} worker(s) were abandoned instead of joined",
+            server.workers.len()
+        );
+    }
+
+    /// The seam FALSIFY-MCP-DRAIN-005 uses must not be able to hide a stubbed
+    /// production default: a server nobody touched dispatches through the real
+    /// inventory-backed tool dispatcher.
+    #[cfg(feature = "native")]
+    #[test]
+    fn default_worker_dispatch_is_the_real_tool_dispatcher() {
+        let server = AprMcpServer::new();
+        let (_cancel_tx, cancel_rx) = mpsc::channel();
+
+        let result = (server.worker_dispatch)(
+            &serde_json::json!({ "name": "apr.version", "arguments": {} }),
+            &cancel_rx,
+            None,
+            None,
+        );
+
+        assert!(
+            result.is_error.is_none(),
+            "the real dispatcher answers apr.version: {result:?}"
+        );
+        let payload: serde_json::Value = serde_json::from_str(&result.content[0].text)
+            .unwrap_or_else(|e| panic!("apr.version payload is JSON: {e}"));
+        assert_eq!(
+            payload["server"], "aprender-mcp",
+            "the default must be the real dispatcher, not a stub: {payload:?}"
         );
     }
 

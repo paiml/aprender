@@ -26,7 +26,11 @@ metadata:
         a stdout write) instead of through EOF;
       * a tool that PANICS inside dispatch — the worker wrote a response only
         on the success path and `join_workers` deliberately swallows the panic,
-        so the request went unanswered exactly as at EOF.
+        so the request went unanswered exactly as at EOF;
+      * a panic guard that is CORRECT but never REACHED. A helper-level test of
+        the guard passes whether or not the worker calls it, so the panic
+        obligation is stated over what a client reading stdout receives and is
+        gated end-to-end through serve_stream (FALSIFY-MCP-DRAIN-005).
 
     Numbering note: the gates below are namespaced `FALSIFY-MCP-DRAIN-*` rather
     than continuing the `FALSIFY-MCP-0NN` sequence owned by
@@ -81,6 +85,9 @@ proof_obligations:
     JsonRpcResponse with id == i and error.code == -32603 whose message carries
     the panic payload. catch_unwind wraps ONLY dispatch, so a caught panic
     always precedes any byte written for i and cannot produce a second response.
+    The obligation is on the SESSION, not on the helper: it is discharged only
+    if spawn_tools_call_worker actually routes dispatch through worker_response,
+    so it is stated over what a client reading stdout receives.
 - type: invariant
   property: no-false-error — the guards do not convert successful calls into failures
   formal: |
@@ -92,7 +99,7 @@ falsification_tests:
 - id: FALSIFY-MCP-DRAIN-001
   obligation: drain-on-every-exit — no exit from the read loop abandons an in-flight worker
   rule: an in-flight tools/call is answered even when the read loop exits through an I/O error rather than EOF
-  prediction: with a 2s-slow tool designated via $APR_BIN and a reader that fails after the last line, serve_stream returns Err AND stdout already carries the id=2 response
+  prediction: with a writer that stalls 2s on the id=2 line and a reader that fails after the last line, serve_stream returns Err AND the id=2 response has already been written
   test: cargo test -p aprender-mcp --lib serve_stream_drains_in_flight_workers_when_the_read_loop_aborts
   if_fails: the drain moved back onto one exit of the read loop; a stdin/stdout error silently abandons every in-flight tools/call
 - id: FALSIFY-MCP-DRAIN-002
@@ -113,6 +120,18 @@ falsification_tests:
   prediction: a session whose last line is a tools/call and whose stdin then closes answers BOTH ids before exiting 0
   test: cargo test -p aprender-mcp --lib serve_stream_answers_tools_call_before_returning_on_eof
   if_fails: the EOF drain regressed; `printf ... | apr mcp` loses tool results again while exiting 0
+- id: FALSIFY-MCP-DRAIN-005
+  obligation: panic-is-an-error-not-silence — a panicking tool still answers its id
+  rule: the panic guard is REACHED by the real stdio dispatch path, not merely correct in isolation
+  prediction: a tools/call whose tool panics, fed to serve_stream, produces on stdout an error response for the SAME id with code -32603 carrying the panic message, while initialize is still answered and serve_stream returns Ok
+  test: cargo test -p aprender-mcp --lib a_panicking_tool_is_answered_through_the_real_stdio_path
+  if_fails: the worker calls dispatch BESIDE the guard instead of inside it (the pre-#2608 shape) — worker_response stays correct and is simply never reached, so DRAIN-002/003 remain green while every panicking tool goes unanswered
+- id: FALSIFY-MCP-DRAIN-006
+  obligation: no-false-error — the guards do not convert successful calls into failures
+  rule: the injection seam DRAIN-005 uses cannot hide a stubbed production dispatcher
+  prediction: an untouched AprMcpServer's worker_dispatch answers apr.version with the real inventory-backed payload (server == "aprender-mcp")
+  test: cargo test -p aprender-mcp --lib default_worker_dispatch_is_the_real_tool_dispatcher
+  if_fails: the default dispatch is not the shipped one, so DRAIN-005 would be proving the wiring of something the server never runs
 
 kani_harnesses:
 - id: KANI-MCP-DRAIN-001
