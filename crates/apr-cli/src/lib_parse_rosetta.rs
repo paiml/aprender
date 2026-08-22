@@ -261,7 +261,7 @@
                 trace: false,
                 trace_level: "basic".to_string(),
                 profile: false,
-                backend: None,
+                backend: BackendArg::default(),
                 otlp_endpoint: None,
                 context_length: 4096,
                 no_fp8_cache: false,
@@ -320,7 +320,7 @@
             split_prompt: false,
             batch_jsonl: None,
             verbose: false,
-            backend: None,
+            backend: BackendArg::default(),
         };
         let paths = extract_model_paths(&cmd);
         assert!(
