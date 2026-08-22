@@ -675,6 +675,23 @@ jobs:
       # (`make tier3`, which CI does not run), one reachable from nothing at all.
       # Both pass today and are cheap, so there was never a reason for them to be
       # dark; nothing was watching.
+      # The gate below is only worth what the BINARY producing its verdict is
+      # worth. #2552 pinned `pv` to a HEAD build because a PATH `pv` 68 days
+      # stale reported 253 refs / 51 missing on strict-test-binding where the
+      # HEAD build reported 371 / 27 -- same tree, same second. The PINNING is
+      # guarded (check_apr_bin_pinned.sh carries BARE_PV/PATHRES_PV classes);
+      # the RESOLVER was not. A repo can be 100% pinned to a resolver that hands
+      # back the wrong binary and every text scan stays green -- which is
+      # precisely why `apr` has BOTH check_apr_bin_pinned.sh and
+      # check_apr_bin_resolution.sh, above. This is pv's missing half, and it
+      # runs first so a bad resolver is named as such rather than surfacing as a
+      # mysterious verdict from the gate underneath it.
+      #
+      # Cost: it sources pv_bin.sh, which cargo-builds pv -- already paid for by
+      # check_contract_test_binding.sh on the next line, which `cargo run`s the
+      # same binary. Nothing extra is compiled by placing it here.
+      - name: pv_bin.sh must resolve the HEAD-built pv and refuse a stale one
+        run: bash scripts/check_pv_bin_resolution.sh
       - name: Every contract cites a test that exists (strict-test-binding)
         run: bash scripts/check_contract_test_binding.sh
       - name: aprender-core builds for wasm32
