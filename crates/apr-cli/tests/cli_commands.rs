@@ -751,3 +751,134 @@ fn every_subcommand_in_the_binary_is_declared() {
          under their parent's `subcommands:`."
     );
 }
+
+// ---------------------------------------------------------------------------
+// Issue #2607 — `apr code` with no arguments and stdin closed
+//
+// Measured on the published 0.63.0 (dogfood sweep): `apr code </dev/null`
+// printed no help. It scanned the filesystem, picked the largest local GGUF
+// (a 30 B MoE), spawned an `apr serve` child for it, and exited — leaving the
+// server running. Two defects: a no-argument invocation took a consequential
+// action chosen by looking at the disk, and the child it spawned outlived the
+// parent.
+//
+// The load-bearing assertion below is the ABSENCE of the child. The help text
+// is the easy half; a run that prints help and still launches a server has
+// not fixed anything.
+// ---------------------------------------------------------------------------
+
+/// A stand-in for the `apr serve` backend. `apr code` launches its inference
+/// server through `$APR_BIN` (aprender#2384), so pointing that at this script
+/// makes the spawn observable without a real model or a real server: the
+/// script records its own pid and then blocks, exactly as a live server would.
+#[cfg(unix)]
+fn write_fake_serve_script(dir: &std::path::Path, pidfile: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let script = dir.join("fake-apr-serve.sh");
+    std::fs::write(
+        &script,
+        // fds are detached so the fake server cannot hold the test harness'
+        // pipes open and stretch a failing run out to the full sleep.
+        format!(
+            "#!/bin/sh\necho $$ > '{}'\nexec sleep 30 >/dev/null 2>&1 </dev/null\n",
+            pidfile.display()
+        ),
+    )
+    .expect("write fake serve script");
+    let mut perms = std::fs::metadata(&script)
+        .expect("stat script")
+        .permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&script, perms).expect("chmod script");
+    script
+}
+
+#[cfg(unix)]
+fn pid_is_alive(pid: i32) -> bool {
+    // `kill -0` probes for existence without signalling.
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[test]
+#[cfg(unix)]
+fn falsify_2607_bare_apr_code_with_closed_stdin_spawns_no_serve_child() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let home = tmp.path();
+
+    // A model for auto-discovery to find. `ModelConfig::discover_model()`
+    // scans `$HOME/.apr/models` and `./models`; before the fix, finding this
+    // was enough to make `apr code` launch a server for it.
+    let models = home.join("models");
+    std::fs::create_dir_all(&models).expect("create ./models");
+    std::fs::write(models.join("fake-30b-moe.gguf"), b"GGUF").expect("write fake gguf");
+    std::fs::create_dir_all(home.join(".apr").join("models")).expect("create ~/.apr/models");
+    std::fs::write(
+        home.join(".apr").join("models").join("fake-30b-moe.gguf"),
+        b"GGUF",
+    )
+    .expect("write fake gguf in HOME");
+
+    let pidfile = home.join("serve.pid");
+    let fake_serve = write_fake_serve_script(home, &pidfile);
+
+    let output = apr_binary()
+        .arg("code")
+        .current_dir(home)
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("APR_BIN", &fake_serve)
+        // Bound the pre-fix path: without this the health poll waits ~30s for
+        // a server that will never answer.
+        .env("APR_SERVE_READY_TIMEOUT_S", "1")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("run apr code");
+
+    // If the child was spawned at all, report whether it is still alive —
+    // an orphan outliving the parent is the worst form of this defect, and a
+    // reaped one still means a bare invocation launched an inference server.
+    let spawned = std::fs::read_to_string(&pidfile).ok();
+    if let Some(ref raw) = spawned {
+        if let Ok(pid) = raw.trim().parse::<i32>() {
+            let alive = pid_is_alive(pid);
+            if alive {
+                // Do not leave it running for the rest of the suite.
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .status();
+            }
+            panic!(
+                "#2607: bare `apr code` with stdin closed spawned an inference server \
+                 (pid {pid}, still alive after the parent exited: {alive}). \
+                 A no-argument invocation must print help, not pick a model off the disk."
+            );
+        }
+    }
+    assert!(
+        spawned.is_none(),
+        "#2607: bare `apr code` with stdin closed spawned a serve child ({spawned:?})"
+    );
+
+    // The easy half, asserted second: it must actually say how to use it, and
+    // it must not exit 0 — a script must not read "I did nothing" as success.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Usage:"),
+        "#2607: bare `apr code` must print help. stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("stdin is not a terminal"),
+        "#2607: help must say WHY nothing ran. stderr was:\n{stderr}"
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "#2607: a usage refusal exits 2 (clap's usage-error code), not 0. stderr:\n{stderr}"
+    );
+}

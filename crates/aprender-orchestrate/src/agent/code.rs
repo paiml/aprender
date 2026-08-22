@@ -7,6 +7,7 @@
 //! PMAT-162: Phase 6 — makes `cmd_code` accessible from the library crate
 //! so `apr-cli` can call `batuta::agent::code::cmd_code()` directly.
 
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -84,6 +85,125 @@ pub fn permit_single_prompt(
     }
 }
 
+/// The shape of an `apr code` invocation, as far as start-up policy cares.
+///
+/// Issue #2607: on the 0.63.0 dogfood sweep host, `apr code` with **no
+/// arguments at all** and stdin closed did not print help. It scanned the
+/// filesystem, auto-discovered the largest local GGUF (a 30 B MoE), and
+/// spawned an `apr serve` child for it — a consequential action chosen by
+/// looking at the disk, for a session that could never run: the REPL's very
+/// first `read_line` on a closed stdin returns EOF, so the parent exited
+/// immediately and left the child behind.
+///
+/// Only a *bare* invocation is refused. Every named argument is an explicit
+/// operator choice and keeps working, including on a pipe:
+/// `-p`/a prompt (non-interactive), `--model`, `--manifest`, `--resume`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodeInvocation {
+    /// A positional prompt was supplied.
+    pub has_prompt: bool,
+    /// `--print` / `-p` was supplied.
+    pub print: bool,
+    /// `--model` was supplied.
+    pub has_model: bool,
+    /// `--manifest` was supplied.
+    pub has_manifest: bool,
+    /// `--resume` was supplied (with or without an id).
+    pub has_resume: bool,
+    /// stdin is an interactive terminal (so a REPL is actually possible).
+    pub stdin_is_terminal: bool,
+}
+
+impl CodeInvocation {
+    /// Read the invocation shape of the current process' stdin plus the
+    /// parsed flags. Split from [`Self::wants_help`] so the policy is
+    /// testable without a controlled terminal.
+    #[must_use]
+    pub fn from_args(
+        prompt: &[String],
+        print: bool,
+        model: Option<&PathBuf>,
+        manifest_path: Option<&PathBuf>,
+        resume: Option<&Option<String>>,
+    ) -> Self {
+        Self {
+            has_prompt: !prompt.is_empty(),
+            print,
+            has_model: model.is_some(),
+            has_manifest: manifest_path.is_some(),
+            has_resume: resume.is_some(),
+            stdin_is_terminal: std::io::stdin().is_terminal(),
+        }
+    }
+
+    /// `true` when this invocation must print help and do nothing else.
+    ///
+    /// The invariant: **no argument was given AND no interactive session is
+    /// possible**, so there is no work this run could legitimately do. Taking
+    /// any action here — least of all launching an inference server for a
+    /// model picked by scanning the disk — is a guess, not an instruction.
+    #[must_use]
+    pub fn wants_help(&self) -> bool {
+        !self.has_prompt
+            && !self.print
+            && !self.has_model
+            && !self.has_manifest
+            && !self.has_resume
+            && !self.stdin_is_terminal
+    }
+}
+
+/// Message shown when [`CodeInvocation::wants_help`] refuses a run.
+pub const NO_ARG_NON_INTERACTIVE: &str =
+    "apr code: no arguments and stdin is not a terminal — nothing to do.\n\
+     An interactive session needs a terminal; a non-interactive run needs a prompt.\n\
+     Try:  apr code -p \"explain src/lib.rs\"   |   apr code --model <path>";
+
+/// #2607: refuse a bare `apr code` on a non-interactive stdin, before the
+/// process does anything at all.
+///
+/// The `apr` CLI checks the same predicate one level up so it can render
+/// clap's real help for the subcommand; this is [`cmd_code`] — a public
+/// library API — failing closed, so no embedder can reach the
+/// scan-the-disk-and-launch-a-server path by accident either.
+fn refuse_bare_non_interactive(
+    prompt: &[String],
+    print: bool,
+    model: Option<&PathBuf>,
+    manifest_path: Option<&PathBuf>,
+    resume: Option<&Option<String>>,
+) -> anyhow::Result<()> {
+    if CodeInvocation::from_args(prompt, print, model, manifest_path, resume).wants_help() {
+        anyhow::bail!(NO_ARG_NON_INTERACTIVE);
+    }
+    Ok(())
+}
+
+/// Release every owner of the inference driver so its `Drop` actually runs.
+///
+/// Issue #2607, second defect. The `-p` branch below ends in
+/// `std::process::exit`, which runs **no** destructors, so the `apr serve`
+/// child has to be reaped explicitly. It called `drop(driver)` and a comment
+/// claimed that killed the subprocess — but `driver` is an `Arc`, and
+/// [`register_task_tool`](crate::agent::task_tool::register_task_tool) stores
+/// a clone of it inside the tool registry. Dropping the local handle only
+/// decremented the strong count from 2 to 1, so `AprServeDriver::drop` — the
+/// one thing that SIGTERMs the child — never ran, and the server was orphaned
+/// holding the whole model in RSS.
+///
+/// Taking both by value makes the ordering a compile-time obligation: the
+/// registry cannot still be alive when the last driver handle is dropped.
+fn release_driver(tools: ToolRegistry, driver: Arc<dyn LlmDriver>) {
+    // The registry owns the TaskTool, which owns the other Arc clone.
+    drop(tools);
+    debug_assert_eq!(
+        Arc::strong_count(&driver),
+        1,
+        "#2607: something still holds the driver; its Drop will not kill `apr serve`"
+    );
+    drop(driver);
+}
+
 /// Entry point for `batuta code` / `apr code`.
 ///
 /// This is the public library API — callable from both the batuta binary
@@ -106,6 +226,17 @@ pub fn cmd_code(
     output_format: &str,
     input_format: &str,
 ) -> anyhow::Result<()> {
+    // #2607: settled BEFORE the working directory changes, before any
+    // settings file is read, and — the point of the issue — before any model
+    // is discovered or any `apr serve` child is spawned.
+    refuse_bare_non_interactive(
+        &prompt,
+        print,
+        model.as_ref(),
+        manifest_path.as_ref(),
+        resume.as_ref(),
+    )?;
+
     // --project: change working directory for project instructions.
     // A path that is not a directory used to be skipped silently, so
     // `--project /typo` ran the agent against the CURRENT directory while the
@@ -303,7 +434,11 @@ pub fn cmd_code(
             resumed_store,
             permit,
         );
-        drop(driver); // Kill apr serve subprocess before exit
+        // #2607: `drop(driver)` alone did NOT kill the `apr serve` child —
+        // the tool registry holds a second `Arc` clone, so the strong count
+        // never reached zero and `AprServeDriver::drop` never ran. `exit`
+        // below runs no destructors, so this is the last chance to reap it.
+        release_driver(tools, driver);
         std::process::exit(code);
     }
 
