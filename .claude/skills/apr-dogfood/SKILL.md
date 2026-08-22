@@ -1,133 +1,478 @@
 ---
 # EXPLICIT name (#2332). Without this, the skill takes its name from the
 # directory, and `dogfood` collides with a personal user-scope skill at
-# ~/.claude/skills/dogfood/. On any machine where both exist the USER one
-# wins and this file NEVER APPEARS in the session's skill listing at all —
-# it cannot be invoked and nothing warns. That is worse than a missing
-# skill: edits here look effective and change nothing that runs, which is
-# exactly what happened when #2357 hardened Gates 1 and 13 below.
+# ~/.claude/skills/dogfood/. On any machine where both exist the USER one wins
+# and this file NEVER APPEARS in the session's skill listing — it cannot be
+# invoked and nothing warns. Edits look effective and change nothing that runs.
+# That is what happened when #2357 hardened Gates 1 and 13.
 name: apr-dogfood
 allowed-tools: Bash(cargo:*), Bash(apr:*), Bash(pmat:*), Bash(gh:*), Bash(git:*), Bash(find:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(grep:*), Bash(diff:*), Bash(timeout:*), Bash(jq:*), Bash(python3:*), Bash(echo:*), Bash(cat:*), Bash(rm:*), Bash(ssh:*), Read, Glob, Grep, Agent
-description: Dogfood the SHIPPED SURFACE — every binary, every apr subcommand, every HTTP route, every MCP tool — then models, quality, and next work. Run before any release.
-effort: high          # MACS F4: pinned for reproducible cost/behavior - exercises the whole CLI against real models and judges the output
-
+description: Dogfood the aprender release surface — derive every interface from the built binaries, measure gate coverage against the surface ledger, exercise the covered set, and emit a go/no-go receipt
 ---
 
-# APR CLI Exhaustive QA — Contract-First Dogfood
+# aprender Dogfood — Coverage-First Pre-Release Protocol
+
+**Version**: 3.0 (supersedes the 19-gate v2.0 skill — Gates 0–18, 924 lines at
+`origin/main`; every gate body below is spliced from it **verbatim**)
+**Preserves**: every falsifier ID from v2.0 (`FALSIFY-QA-*`, `F-SILENT-*`, `F-META-*`,
+`F-COV-*`, `F-CHAOS-*`, `F-DIFF-*`, `F-WORKTREE-HEAD-001`, `F-EXPORT-ROUNDTRIP-001`,
+`F-VALIDATE-QUALITY-001`, `F-RUN-EXIT-SANITY-001`, `F-7B-INFERENCE-001`,
+`F-APR-INFERENCE-PARITY-001`)
+**Absorbs**: `dogfood.sh` release-gate protocol, `invariance.py` transport gate
+**New**: Phase 2 (coverage ledger), Phase 5 (fleet hardware matrix), the mutation registry
 
 **Contracts**:
 - `contracts/apr-cli-qa-v1.yaml` — baseline (10 equations, 10 falsification tests)
-- `contracts/apr-qa-silent-fallback-v1.yaml` — bad input injection (5 tests)
-- `contracts/apr-qa-metamorphic-v1.yaml` — quant equivalence, multi-arch, roundtrip (5 tests)
-- `contracts/apr-qa-coverage-v1.yaml` — category coverage, SATD, complexity (5 tests)
-- `contracts/apr-qa-chaos-v1.yaml` — memory, OOM, signals, overwrite (5 tests)
-- `contracts/apr-qa-differential-v1.yaml` — ollama parity, tokenizer, concurrency (5 tests)
-**Spec**: `docs/specifications/apr-cli-qa-spec.md` (v2.0)
-**Source**: Extended from `apr-cookbook/.claude/skills/qa/SKILL.md` (12 protocols)
+- `contracts/apr-qa-silent-fallback-v1.yaml` — bad-input injection (5)
+- `contracts/apr-qa-metamorphic-v1.yaml` — quant equivalence, multi-arch, roundtrip (5)
+- `contracts/apr-qa-coverage-v1.yaml` — category coverage, SATD, complexity (5)
+- `contracts/apr-qa-chaos-v1.yaml` — memory, OOM, signals, overwrite (5)
+- `contracts/apr-qa-differential-v1.yaml` — ollama parity, tokenizer, concurrency (5)
+- `contracts/apr-dogfood-coverage-v1.yaml` — **NEW, Phase 2; must be authored**
 
-## Gate 0 — every shipped interface (RUN THIS FIRST)
+**Spec**: `docs/specifications/apr-cli-qa-spec.md`
+**Ledgers**: `docs/audits/dogfood-<version>-ledger.md`, `docs/audits/surface_audit.csv`
 
-Before any of the model work below, sweep the whole surface:
+---
 
-```bash
-bash scripts/dogfood_surfaces.sh          # all three interfaces
-bash scripts/dogfood_surfaces.sh --twice  # prove the receipt is deterministic
-```
+## Why this rewrite exists
 
-This exists because the rest of this skill did not cover it. Measured on
-2026-08-16, before it was written, this file referenced **26** distinct `apr`
-subcommands and contained **zero** occurrences of `mcp`, `MCP`, `/v1/`, `curl`,
-`endpoint`, `route`, or `chat/completions`. The `pre-release` skill likewise.
-The 0.63.0 audit that probed 104 commands, 9 MCP tools and 45 routes was done by
-hand and was not reproducible.
+The v2.0 skill has 19 gates and they work — where they look. The surface audit
+(830 features across 28 binaries) measured where they look:
 
-What it sweeps, all enumerated at RUNTIME and never from a list in this file:
+| | Features | Covered by a gate | Coverage |
+|---|---:|---:|---:|
+| **Total** | 830 | 142 | **17.1%** |
+| `apr` | 367 | 142 | 38.7% |
+| **The other 27 binaries** | **463** | **0** | **0.0%** |
 
-| surface | source of truth | count on 2026-08-16 |
-|---|---|---|
-| binaries | `cargo build --message-format=json` (executables cargo REPORTS) | 26 built |
-| `apr` subcommands | `apr --help` | 105 |
-| HTTP routes | the `("GET", "/path", handler)` route table in `api/router.rs` | 34 |
-| MCP tools | `const NAME` in `aprender-mcp/src/tools/` + the contract | 9 |
+And coverage by quality band:
 
-Three rules it enforces that ordinary probing does not:
+| Band | n | Covered | | |
+|---|---:|---:|---|---|
+| 1–2 (broken) | 80 | 58 | **72.5%** | where gates look, they find defects |
+| 3–4 | 49 | 27 | 55.1% | |
+| 5–6 | 673 | 29 | **4.3%** | |
+| 7–8 | 8 | 8 | 100% | |
+| 9–10 | 20 | 20 | 100% | |
 
-1. **A pass must EXCLUDE an outcome.** `--help` exiting 0 is not a pass; a
-   binary that prints nothing also exits 0. Each binary must also REJECT an
-   unknown flag, which is what catches a parser that is not parsing.
-2. **Never construct a binary path.** Ask cargo. In a worktree, `cargo
-   metadata` reports `/mnt/nvme-raid0/targets/aprender` while cargo actually
-   writes to `<worktree>/target/debug` — `.cargo/config.toml` holds the
-   redirect and is gitignored, so it exists in the main checkout and not in a
-   worktree. Probing a constructed path exercises a binary from a different
-   tree and produces a confident receipt about code you are not shipping. The
-   first version of this script had that bug.
-3. **Skips are counted and bounded.** A skip is never a pass, and a run that
-   skips more than `MAX_SKIP_PCT` FAILS — a sweep that skipped most of itself
-   proves nothing.
+**Read the 5–6 band correctly.** 672 features scored 6, and **644 of those are
+uncovered** — scored 6 because no ledger finding exists *and* no gate covers them. That is not "fine" — it is *unlooked-at*. The
+1–2 band's 72.5% coverage is the control: gates find defects at a high rate when
+pointed at something. 644 unmeasured features is the prediction of where the next
+201-finding ledger comes from.
 
-Every enumeration is vacuity-guarded: too few items and the run FAILS, because a
-sweep over a shrunken universe otherwise reports a clean pass.
+The v2.0 skill cannot see this, because it has no denominator. Every gate answers
+"did this check pass?" and none answers "what fraction of the shipped surface did
+we check at all?" A gate suite with no denominator reports a clean sweep over
+whatever subset it happens to cover — the vacuity failure `dogfood_surfaces.sh`
+already guards against per-enumeration, applied one level up.
 
-**What it found on its first run** (all confirmed by hand):
+**So the organizing gate of v3.0 is coverage itself.**
 
-- `aprender-train-lora` and `trueno-zram` PANICKED on any argument. Both
-  declared a short option twice — `-m` for `model` and `method`, `-p` for
-  `pages` and `pattern`. clap's check is `#[cfg(debug_assertions)]`, so release
-  builds do not panic: `aprender-train-lora plan --help` in release lists BOTH
-  `-m, --model` and `-m, --method`. Debug panics, release ships the ambiguity.
-- `aprender-compute-xtask --help` exits 1 (hand-rolled `env::args()` parsing).
-- `aprender-zram-generator --help` produces **0 bytes** and it accepts an
-  unknown flag at exit 0 — it is a systemd generator taking
-  `normal_dir early_dir late_dir` positionally, so an unrecognised flag is
-  treated as a directory path.
+---
 
+## Doctrine (non-negotiable; do not relitigate)
+
+1. **Gates or theater.** A check that cannot fail CI is documentation. Every gate
+   in this file carries a named mutation that must turn it RED (§ Mutation
+   registry). A gate with no registered mutation is inadmissible.
+2. **Never enumerate from a written list.** Binaries from `cargo metadata`,
+   commands from `--help` on the **built** binary, routes from the router, tools
+   from a live `tools/list`. The command count has been claimed as 36, 77, 103,
+   and 111 — every one from a stale hardcoded list, every one failing silently
+   because a shrunken universe reports "all passed."
+3. **Vacuity-guard every enumeration.** An implausibly small surface FAILS. It
+   does not sweep clean.
+4. **Exit 0 is not a pass.** Every probe must EXCLUDE an outcome. The 0.63.0 audit
+   found tests asserting `is_ok()` on invalid input, which locks the defect in.
+5. **Silent-pass is the top severity class regardless of surface.** Fabricating a
+   green result, ignoring a flag, exiting 0 on failure. The ledger clusters that
+   name it: `lint-passes-on-bad-obs`, `json-flag-emits-text`, `offline-fails-open`,
+   `nan-threshold-disarms`.
+6. **Read-only.** This skill audits. It never modifies files. Defects become
+   GitHub issues and `pmat work add` tickets.
+7. **Deterministic receipts.** Sorted enumerations, fixed seeds, fixed prompts, no
+   wall-clock assertions, no timestamps in the receipt body. The same tree yields
+   a byte-identical receipt. Verify with `--twice`.
+8. **Stop the line.** Any red gate stops the release. Fix the root cause via
+   five-whys to the owning module. Never bypass, never `--skip`.
+
+---
 
 ## Context
 
-- apr-cli local version: !`grep '^version' crates/apr-cli/Cargo.toml | head -1`
-- Current git commit: !`git rev-parse --short HEAD`
-- apr built from HEAD: !`APR=$(bash scripts/apr_bin.sh 2>/dev/null) && "$APR" --version || echo "none built from HEAD yet (Gate 1 builds it)"`
-- Available models: !`find ~/models -maxdepth 2 \( -name "*.apr" -o -name "*.gguf" -o -name "*.safetensors" \) -type f 2>/dev/null | wc -l` files
-- Test count: !`cargo test -p apr-cli --lib 2>&1 | grep 'test result' | tail -1`
+- Workspace version: !`cargo metadata --no-deps --format-version 1 | jq -r '.packages[]|select(.name=="apr-cli")|.version'`
+- HEAD: !`git rev-parse --short HEAD`
+- Worktree clean: !`git status --porcelain | wc -l` modified paths
+- apr pinned to HEAD: !`. scripts/apr_bin.sh >/dev/null 2>&1 && "$APR" --version || echo "NOT built from HEAD — every verdict below would describe a binary you are not running"`
+- Models available: !`find ~/models -maxdepth 2 \( -name "*.apr" -o -name "*.gguf" -o -name "*.safetensors" \) -type f 2>/dev/null | wc -l`
+- Surface ledger: !`test -f docs/audits/surface_audit.csv && wc -l < docs/audits/surface_audit.csv || echo "ABSENT — Phase 2 will FAIL"`
 
 ## Arguments
 
 $ARGUMENTS
 
-If arguments include a model path, use that model. Otherwise auto-discover from `~/models`.
-
-## Your Task
-
-Run ALL gates below. For each gate, run the check, report PASS/FAIL/SKIP with evidence. At the end, give a GO/WARN/FAIL verdict. Run independent gates in parallel.
-
-**Do NOT modify files.** This is a read-only audit. If bugs are found, file GitHub issues.
+| Flag | Effect |
+|---|---|
+| *(none)* | Tiers 0–2. The daily loop. |
+| `--release` | All tiers, all phases. Required before any publish. |
+| `--fleet` | Adds Phase 5 (four-host matrix). Implied by `--release`. |
+| `--twice` | Runs the whole sweep twice and diffs receipts. Determinism check. |
+| `--binary <name>` | Restrict to one binary. Coverage denominator narrows with it. |
+| `<model path>` | Use that model. Otherwise auto-discover from `~/models`. |
 
 ---
 
-## Gate 1: Build & Install (FALSIFY-QA-005)
+# Phase 0 — Identity guards
+
+Everything downstream is void if the thing under test is not the thing you think
+it is. These run first, serially, and a failure here **aborts** rather than
+degrading to a warning.
+
+## G0.1 — Binary provenance (`FALSIFY-QA-005`)
 
 ```bash
 cargo install --path crates/apr-cli --force 2>&1 | tail -5
-# Resolve the binary through the guard, NEVER a bare `apr`. Sourcing exports
-# $APR and hard-fails when it was not built from HEAD.
+# Resolve through the guard, NEVER a bare `apr`. Sourcing exports $APR and
+# hard-fails when it was not built from HEAD.
 . scripts/apr_bin.sh || exit 1
 APR_BIN_STRICT=1 "$APR" --version
 git rev-parse --short HEAD
 ```
 
-PASS if version string contains the HEAD commit hash. FAIL if build errors or mismatch.
+PASS iff the version string contains the HEAD hash.
 
-> **Why `$APR` and not `apr`.** The previous version of this gate installed to
-> `$CARGO_HOME/bin` and then invoked a **bare `apr`**, which PATH resolves
-> independently. On the machine that runs this protocol `~/.local/bin/apr`
-> preceded `~/.cargo/bin/apr` and held a 26-day-old 0.60.0 build, so Gate 1
-> installed a fresh binary and then version-checked a stale one. That is the
-> exact defect #2344 fixed in `qwen-story-daily`, and it survived here — in the
-> protocol that certifies releases. A dogfood run is worthless if it exercised a
-> binary other than the one being shipped.
+**This gate exists because of ledger #2384**, a P0 **closed COMPLETED 2026-08-11**
+(fixed by #2424; the ledger row still shows no `Fixed by`, so ledger and GitHub
+disagree — treat the gate as a regression ratchet, not an open-defect probe): the MCP
+server and `apr code` both execute a bare `apr` resolved from `PATH`. Every tool
+ran a *different* 0.60.0 binary while `apr.version` reported 0.63.0. Never
+resolve a bare `apr` anywhere in this protocol.
 
-## Gate 2: Full Command Grid (FALSIFY-QA-001, FALSIFY-QA-009)
+## G0.2 — Crate identity from `cargo metadata`, never from `sed`
+
+Resolve name and version via `cargo metadata --no-deps`, filtered by
+`manifest_path`. Do not grep `Cargo.toml`.
+
+Measured 2026-08-20 on `pforge-cli`: `sed` yielded an empty version for a crate
+using `version.workspace = true`, and an empty version made *version-unpublished*
+PASS, because the crates.io lookup for `""` finds nothing. A false pass in the
+gate whose entire job is to stop an immutable double-publish.
+
+Never proceed with an empty version. Abort with the candidate member list.
+
+## G0.3 — Worktree HEAD sanity (`F-WORKTREE-HEAD-001`)
+
+Contract: `contracts/apr-version-traceability-v1.yaml` § FALSIFY-VERSION-004
+
+Body carried **verbatim** from v2.0 Gate 13 (hardened by #2357 — do not re-derive).
+
+
+Contract: `contracts/apr-version-traceability-v1.yaml` § FALSIFY-VERSION-004
+
+Catches [#1862](https://github.com/paiml/aprender/issues/1862) — `apr --version`
+reporting a stale commit hash in git worktrees because `build.rs` watches a
+hardcoded `../../.git/HEAD` path that doesn't exist in a worktree layout.
+
+```bash
+# After cargo install, the SHA MUST match git rev-parse --short HEAD.
+# Run this from inside the source checkout (or worktree) you just built from.
+. scripts/apr_bin.sh || exit 1
+APR_SHA=$("$APR" --version 2>&1 | grep -oE '\([a-f0-9]{7,}\)' | tr -d '()')
+HEAD_SHA=$(git rev-parse --short HEAD)
+if [ -n "$APR_SHA" ] && [ "$APR_SHA" = "$HEAD_SHA" ]; then
+  echo "G13 PASS: $APR SHA ($APR_SHA) matches HEAD"
+elif [ -z "$APR_SHA" ]; then
+  # NOT a SKIP. A binary with no embedded SHA cannot be shown to be the code
+  # under test, and "cannot prove" must never read as "fine". This branch used
+  # to SKIP for "likely crates.io install" — and the binary that wins PATH
+  # resolution on this machine is `~/.local/bin/apr`, which reports exactly
+  # `apr 0.60.0 (v0.60.0+no-git)`. So the one stale artifact most likely to be
+  # executed was also the one that made the protocol's ONLY freshness gate
+  # excuse itself. If you are deliberately dogfooding a published crates.io
+  # build, say so explicitly with DOGFOOD_ALLOW_UNPINNED=1.
+  if [ "${DOGFOOD_ALLOW_UNPINNED:-0}" = "1" ]; then
+    echo "G13 SKIP (explicitly allowed): $APR has no embedded SHA"
+  else
+    echo "G13 FAIL: $APR has NO embedded SHA — cannot prove it is HEAD. Set DOGFOOD_ALLOW_UNPINNED=1 only for a deliberate crates.io dogfood."
+  fi
+else
+  echo "G13 FAIL: $APR SHA=$APR_SHA but HEAD=$HEAD_SHA (#1862)"
+fi
+```
+
+Build.rs static check (no install required):
+```bash
+# build.rs MUST use git rev-parse --git-dir / --git-common-dir for worktree-safe
+# rerun-if-changed triggers — not a hardcoded ../../.git/HEAD path.
+if grep -qE 'rev-parse.*--git-(dir|common-dir)' crates/apr-cli/build.rs \
+   && ! grep -qE '\.\./\.\./\.git/HEAD' crates/apr-cli/build.rs; then
+  echo "G13 PASS (static): build.rs uses worktree-safe git resolution"
+else
+  echo "G13 FAIL (static): build.rs still uses hardcoded .git/HEAD path"
+fi
+```
+
+PASS if both checks pass (or SHA check SKIPs cleanly on crates.io builds).
+
+## G0.4 — Feature-scope resolution
+
+Determine the feature set from `[features]` only. Two traps, both real:
+
+- `cli = { e2e = "…" }` under `[package.metadata.transports]` is **not** a cargo
+  feature. Matching it makes every gate run `--features cli` against a crate that
+  has no such feature.
+- `--all-features` is **not** a safe fallback. `pmat` declares `broken-tests` (49
+  quarantined sites) and `red-phase-tests` ("expected failures … NEVER add to any
+  feature bundle"). Enabling them measures the quarantine, yielding a permanent
+  RED that says nothing about release readiness — and a gate that is always red is
+  one everybody learns to walk past.
+
+Fallback is every declared feature **minus** known-broken quarantines, and the
+exclusion is **reported**. A silent exclusion is how a gate quietly stops covering
+what it claims to.
+
+## G0.5 — Duplicate-binary divergence check *(new)*
+
+Two `apr` bin targets exist and are the same program **by hand-duplication, not by
+sharing**: `src/bin/apr.rs` delegates to `apr_cli::cli_main()`, while
+`crates/apr-cli/src/main.rs` re-implements the same prologue (SIGPIPE reset,
+aarch64 FPCR.FZ16 clear, `NO_COLOR`, the `--version --json` intercept). **They have
+already diverged** — the `dhat-heap` `#[global_allocator]` exists only in the
+latter.
+
+Assert both entry points produce byte-identical output for `--version`,
+`--version --json`, and `--help`. Any divergence is RED.
+
+---
+
+# Phase 1 — Surface derivation
+
+Delegate to `scripts/dogfood_surfaces.sh`. Do not reimplement it here; do not
+substitute a list.
+
+Enumerate, sorted `LC_ALL=C`:
+
+| Kind | Source of truth |
+|---|---|
+| Binaries | `cargo metadata` — every `[[bin]]` and every `src/bin/*.rs` |
+| CLI commands | `--help` on the **built** binary, recursively to leaf subcommands |
+| Flag-selected code paths | `value_parser` domains and dispatch arms (see below) |
+| HTTP routes | the mounted router |
+| MCP tools | a live `tools/list` |
+
+**Grepping the source is not an acceptable substitute.** A regex over clap
+`Subcommand` enums reports 0 subcommands for `simular`, a clap-derive CLI. The
+binary is the only thing that knows what the binary accepts.
+
+## G1.1 — Vacuity guard
+
+Every enumeration yielding implausibly few items **FAILS the run**. It does not
+report a clean sweep over an empty set. Record the threshold per surface and the
+observed count.
+
+## G1.2 — Feature-vs-flag classification
+
+A **feature** is a distinct user-visible capability with its own code path and its
+own success/failure semantics. A flag that selects a materially different code
+path is a feature (`--backend cuda`, `--task pretrain`, streaming vs not). A flag
+that only formats or labels output is not (`--json`, `--verbose`, `-o`).
+
+## G1.3 — `value_parser` domain consistency *(new)*
+
+For every flag whose value selects a code path, assert a `value_parser` pins the
+domain at **every** declaration site.
+
+Live defect this gate exists to catch: `apr serve run --backend` is declared with
+**no** `value_parser` — at HEAD, `crates/apr-cli/src/serve_commands.rs:73` is exactly
+`#[arg(long, value_name = "BACKEND")]`, zero `BACKEND_VALUES` — while `apr chat`
+(`extended_commands.rs:85`, arg line `:84`) and `apr run` (`commands_enum.rs:154`) both
+pin `BACKEND_VALUES` (the constant itself is `commands_enum.rs:10`). The value is consumed (`serve/types.rs:57`). That constant's own
+doc-comment says it exists to prevent "a run whose throughput number was taken
+through a backend the caller did not ask for" — reproduced on the serve path. The
+doc also claims it covers "apr run / apr chat"; there are **three** declaration
+sites, not two.
+
+Also RED: `apr bench` has no `--backend` at all, despite being the throughput
+command.
+
+## G1.4 — Help-vs-dispatch completeness *(new)*
+
+For every command with a `--task`-style selector, assert the set of documented
+values equals the set of reachable dispatch arms.
+
+Live defect: `apr eval --task` dispatches 10 named arms plus a default perplexity
+path (`dispatch_analysis.rs:1383-1419`), but `--help` documents exactly two
+(`extended_commands.rs:138`). Eight paths — `humaneval`, `mbpp`, `code`,
+`contamination`, `compare`, `verify`, `correlation`, `human`, `plan` — are
+reachable and undocumented.
+
+Undocumented-but-reachable is RED. Documented-but-unreachable is RED. This is the
+phantom-subcommand protocol (v2.0 P9) generalized to flag domains.
+
+---
+
+# Phase 2 — Coverage ledger ⭐ THE GATE THAT ORGANIZES THE REST
+
+Phase 1 produced the **denominator**. This phase computes the numerator and gates
+on the ratio.
+
+## G2.1 — Ledger freshness
+
+`docs/audits/surface_audit.csv` must exist and must have been regenerated against
+the current HEAD. A ledger older than the commit under test **FAILS**.
+
+This is the staleness arm. Without it the coverage number measures *declared*
+state rather than *resolved* state — the exact enforcement-theater shape this
+whole protocol exists to prevent.
+
+Schema (8 columns, RFC 4180):
+
+```
+binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,evidence_path,confidence
+```
+
+Every row requires `evidence_path`. A row with no evidence path is invalid and
+fails schema validation.
+
+## G2.2 — Denominator reconciliation
+
+The Phase 1 runtime enumeration and the CSV row set must agree.
+
+- A feature in the binary but **not** in the CSV → the ledger is stale. RED.
+- A feature in the CSV but **not** in the binary → the surface shrank without the
+  ledger noticing. RED.
+
+Neither may be silently reconciled. This is what makes the CSV a *ledger* rather
+than a *list* — the list is regenerated, the ledger is checked against it.
+
+## G2.3 — Coverage floors
+
+Compute `in_dogfood_skill == yes` over the reconciled denominator, overall and per
+binary and per quality band.
+
+Baselines below are **measured**, not chosen — computed from
+`docs/audits/surface_audit.csv` (830 rows, 28 binaries) on 2026-08-22 at
+`4bbfeb07f`. They are the committed starting point of the ratchet.
+
+| Floor | Measured baseline | Threshold | Verdict rule |
+|---|---:|---:|---|
+| Overall coverage | **142/830 = 17.1%** | `>= 142` covered rows | **may never decrease** |
+| `apr` coverage | 142/367 = 38.7% | `>= 142` | may never decrease |
+| Per-binary coverage | **27 of 28 binaries at 0%** | ≥ 1 covered feature each | RED at `--release` |
+| Quality ≤ 4, uncovered | **44** | `0` | RED — a known-broken feature with no gate |
+| `verified_hardware` UNKNOWN | **427** | `<= 427` | may never increase |
+| `confidence == low` and uncovered | **204** | `<= 204` | may never increase |
+
+Band baselines, same measurement: 1–2 → 58/80 (72.5%); 3–4 → 27/49 (55.1%);
+5–6 → 29/673 (4.3%); 7–8 → 8/8; 9–10 → 20/20.
+
+**Set the initial thresholds from measurement, not from a round number.** Commit
+today's values as the baseline and ratchet. A threshold chosen before measurement
+either never fires or fires constantly.
+
+The ratchet is the point: coverage is allowed to be 17.1%. It is not allowed to
+become 17.0%.
+
+## G2.4 — The 44
+
+44 features carry quality ≤ 4 (a live ledger defect) **and** have no gate. All 44
+are in `apr`. Every one is a defect that shipped and would ship again unnoticed.
+
+Enumerate them in the receipt by name. At `--release`, this list must be empty or
+every entry must carry an open issue number and an explicit written waiver.
+
+---
+
+# Phase 3 — Tiered gate execution
+
+Tier 0 and 1 are the daily loop. Tier 2 adds cost. Tier 3 is release-only.
+
+## Tier 0 — Cheap, always (parallel)
+
+| ID | Gate | Falsifier |
+|---|---|---|
+| T0.1 | Build & install | `FALSIFY-QA-005` |
+| T0.2 | `fmt` / `clippy` / `deny` | — |
+| T0.3 | Contract validation (`pv`) | Gate 4 v2.0 |
+| T0.4 | Code quality — SATD, complexity | Gate 5 v2.0 |
+| T0.5 | Open-issue sweep | Gate 7 v2.0 |
+| T0.6 | Changelog mentions the version | — |
+| T0.7 | `git` worktree clean | — |
+
+Bodies carried **verbatim** from v2.0 Gates 4–7.
+
+### Gate 4: Contract Validation
+
+```bash
+# Verify contract is valid
+python3 -c "import yaml; yaml.safe_load(open('contracts/apr-cli-qa-v1.yaml')); print('VALID')"
+
+# Run integration tests that enforce the contract
+cargo test -p apr-cli --test cli_commands 2>&1 | tail -3
+cargo test -p aprender-core --test readme_contract 2>&1 | tail -3
+cargo test -p aprender-core --test monorepo_invariants 2>&1 | tail -3
+```
+
+PASS if all 3 test suites pass. FAIL if any test fails.
+
+### Gate 5: Code Quality
+
+```bash
+cargo test -p apr-cli --lib 2>&1 | grep "test result:"
+cargo clippy -p apr-cli --lib -- -D warnings 2>&1 | grep "^error:" | wc -l
+```
+
+PASS if 0 test failures and 0 clippy errors. WARN if clippy warnings.
+
+### Gate 6: Coverage Check
+
+```bash
+cargo llvm-cov -p aprender-core --lib --no-report 2>&1 | tail -3
+cargo llvm-cov report 2>&1 | tail -1
+```
+
+PASS if coverage >= 95%.
+
+### Gate 7: Open Issues
+
+```bash
+gh issue list --repo paiml/aprender --state open --limit 20
+```
+
+Always PASS (informational).
+
+## Tier 1 — The protocol grid
+
+The gate bodies below are carried **verbatim** from v2.0 Gate 2 (full command
+grid) and Gate 3 (P1–P12). The table indexes them; P13 and P14 are new and
+still to be authored.
+
+| | Protocol | Falsifier |
+|---|---|---|
+| P1 | Silent-flag | `FALSIFY-QA-007` |
+| P2 | Exit-code contradiction | `FALSIFY-QA-006` |
+| P3 | Flag-echo | — |
+| P4 | Cross-subcommand consistency | `FALSIFY-QA-010` |
+| P5 | Cache integrity | — |
+| P6 | GPU/CPU parity | — |
+| P7 | NaN/Inf sentinel | `FALSIFY-QA-004` |
+| P8 | Version sanity | `FALSIFY-QA-005` |
+| P9 | Phantom subcommand | `FALSIFY-QA-008` |
+| P10 | JSON schema stability | `FALSIFY-QA-003` |
+| P11 | Default-defamation | — |
+| P12 | Hardware cascade | — |
+| **P13** | **`value_parser` domain** *(new, G1.3)* | **to author** |
+| **P14** | **Help-vs-dispatch completeness** *(new, G1.4)* | **to author** |
+
+**P6 carries the CF-4 constraint.** The canonical failure (#1864) is a CPU-vs-GPU
+parity gate that sampled only decode step 0 and stayed green while GPU output
+collapsed to gibberish across later steps. **Any gate touching an autoregressive,
+temporal, cached, streaming, or multi-turn path must validate over a horizon, never
+a single sample.** Minimum 64 cached positions for attention parity. A single-step
+probe on a compounding system is inadmissible.
+### Gate 2: Full Command Grid (FALSIFY-QA-001, FALSIFY-QA-009)
 
 Auto-discover models:
 ```bash
@@ -201,7 +546,7 @@ done
 
 SKIP (not FAIL) if no models found. FAIL if any command panics or crashes.
 
-## Gate 3: Protocol Checks (12 protocols from apr-cookbook)
+### Gate 3: Protocol Checks (12 protocols from apr-cookbook)
 
 ### P1. Silent-Flag Protocol (FALSIFY-QA-007)
 ```bash
@@ -290,47 +635,24 @@ done
 "$APR" gpu 2>&1 | head -3
 ```
 
-## Gate 4: Contract Validation
 
-```bash
-# Verify contract is valid
-python3 -c "import yaml; yaml.safe_load(open('contracts/apr-cli-qa-v1.yaml')); print('VALID')"
 
-# Run integration tests that enforce the contract
-cargo test -p apr-cli --test cli_commands 2>&1 | tail -3
-cargo test -p aprender-core --test readme_contract 2>&1 | tail -3
-cargo test -p aprender-core --test monorepo_invariants 2>&1 | tail -3
-```
+## Tier 2 — Injection and metamorphic
 
-PASS if all 3 test suites pass. FAIL if any test fails.
+| ID | Gate | Falsifiers |
+|---|---|---|
+| T2.1 | Silent-fallback injection | `F-SILENT-001..005` |
+| T2.2 | Metamorphic — quant equivalence, multi-arch, roundtrip | `F-META-001..005` |
+| T2.3 | Coverage completeness | `F-COV-001..005` |
+| T2.4 | Chaos — memory, OOM, signals, overwrite | `F-CHAOS-001..005` |
+| T2.5 | Differential vs ollama — tokenizer, concurrency | `F-DIFF-001..005` |
+| T2.6 | APR → GGUF export round-trip | `F-EXPORT-ROUNDTRIP-001` |
+| T2.7 | `validate --quality` sanity | `F-VALIDATE-QUALITY-001` |
+| T2.8 | `apr run` exit reflects output validity | `F-RUN-EXIT-SANITY-001` |
+| T2.9 | Fresh-convert `.apr` inference parity, CPU+GPU | `F-APR-INFERENCE-PARITY-001` |
+Bodies carried **verbatim** from v2.0 Gates 8–12, 14–16 and 18.
 
-## Gate 5: Code Quality
-
-```bash
-cargo test -p apr-cli --lib 2>&1 | grep "test result:"
-cargo clippy -p apr-cli --lib -- -D warnings 2>&1 | grep "^error:" | wc -l
-```
-
-PASS if 0 test failures and 0 clippy errors. WARN if clippy warnings.
-
-## Gate 6: Coverage Check
-
-```bash
-cargo llvm-cov -p aprender-core --lib --no-report 2>&1 | tail -3
-cargo llvm-cov report 2>&1 | tail -1
-```
-
-PASS if coverage >= 95%.
-
-## Gate 7: Open Issues
-
-```bash
-gh issue list --repo paiml/aprender --state open --limit 20
-```
-
-Always PASS (informational).
-
-## Gate 8: Silent-Fallback Injection (F-SILENT-001 through F-SILENT-005)
+### Gate 8: Silent-Fallback Injection (F-SILENT-001 through F-SILENT-005)
 
 Contract: `contracts/apr-qa-silent-fallback-v1.yaml`
 
@@ -394,7 +716,7 @@ echo "$OUTPUT" | tail -1
 
 PASS if all 5 checks reject bad input. FAIL if any bad input is silently accepted.
 
-## Gate 9: Metamorphic Testing (F-META-001 through F-META-005)
+### Gate 9: Metamorphic Testing (F-META-001 through F-META-005)
 
 Contract: `contracts/apr-qa-metamorphic-v1.yaml`
 
@@ -448,7 +770,7 @@ fi
 
 PASS if M1+M2+M3 all pass. WARN if any are skipped due to missing models.
 
-## Gate 10: Coverage Completeness (F-COV-001 through F-COV-005)
+### Gate 10: Coverage Completeness (F-COV-001 through F-COV-005)
 
 Contract: `contracts/apr-qa-coverage-v1.yaml`
 
@@ -537,7 +859,7 @@ fi
 
 PASS requires V1+V3. V2 (SATD) and V4 (complexity) demote PASS → WARN.
 
-## Gate 11: Chaos Engineering (F-CHAOS-001 through F-CHAOS-005)
+### Gate 11: Chaos Engineering (F-CHAOS-001 through F-CHAOS-005)
 
 Contract: `contracts/apr-qa-chaos-v1.yaml`
 
@@ -587,7 +909,7 @@ fi
 
 PASS if C1+C2+C3 all pass. WARN on skips.
 
-## Gate 12: Differential Testing (F-DIFF-001 through F-DIFF-005)
+### Gate 12: Differential Testing (F-DIFF-001 through F-DIFF-005)
 
 Contract: `contracts/apr-qa-differential-v1.yaml`
 
@@ -638,57 +960,7 @@ fi
 ```
 
 PASS if D1+D3 pass. SKIP for D2 (requires ollama setup).
-
-## Gate 13: Worktree HEAD Sanity (F-WORKTREE-HEAD-001)
-
-Contract: `contracts/apr-version-traceability-v1.yaml` § FALSIFY-VERSION-004
-
-Catches [#1862](https://github.com/paiml/aprender/issues/1862) — `apr --version`
-reporting a stale commit hash in git worktrees because `build.rs` watches a
-hardcoded `../../.git/HEAD` path that doesn't exist in a worktree layout.
-
-```bash
-# After cargo install, the SHA MUST match git rev-parse --short HEAD.
-# Run this from inside the source checkout (or worktree) you just built from.
-. scripts/apr_bin.sh || exit 1
-APR_SHA=$("$APR" --version 2>&1 | grep -oE '\([a-f0-9]{7,}\)' | tr -d '()')
-HEAD_SHA=$(git rev-parse --short HEAD)
-if [ -n "$APR_SHA" ] && [ "$APR_SHA" = "$HEAD_SHA" ]; then
-  echo "G13 PASS: $APR SHA ($APR_SHA) matches HEAD"
-elif [ -z "$APR_SHA" ]; then
-  # NOT a SKIP. A binary with no embedded SHA cannot be shown to be the code
-  # under test, and "cannot prove" must never read as "fine". This branch used
-  # to SKIP for "likely crates.io install" — and the binary that wins PATH
-  # resolution on this machine is `~/.local/bin/apr`, which reports exactly
-  # `apr 0.60.0 (v0.60.0+no-git)`. So the one stale artifact most likely to be
-  # executed was also the one that made the protocol's ONLY freshness gate
-  # excuse itself. If you are deliberately dogfooding a published crates.io
-  # build, say so explicitly with DOGFOOD_ALLOW_UNPINNED=1.
-  if [ "${DOGFOOD_ALLOW_UNPINNED:-0}" = "1" ]; then
-    echo "G13 SKIP (explicitly allowed): $APR has no embedded SHA"
-  else
-    echo "G13 FAIL: $APR has NO embedded SHA — cannot prove it is HEAD. Set DOGFOOD_ALLOW_UNPINNED=1 only for a deliberate crates.io dogfood."
-  fi
-else
-  echo "G13 FAIL: $APR SHA=$APR_SHA but HEAD=$HEAD_SHA (#1862)"
-fi
-```
-
-Build.rs static check (no install required):
-```bash
-# build.rs MUST use git rev-parse --git-dir / --git-common-dir for worktree-safe
-# rerun-if-changed triggers — not a hardcoded ../../.git/HEAD path.
-if grep -qE 'rev-parse.*--git-(dir|common-dir)' crates/apr-cli/build.rs \
-   && ! grep -qE '\.\./\.\./\.git/HEAD' crates/apr-cli/build.rs; then
-  echo "G13 PASS (static): build.rs uses worktree-safe git resolution"
-else
-  echo "G13 FAIL (static): build.rs still uses hardcoded .git/HEAD path"
-fi
-```
-
-PASS if both checks pass (or SHA check SKIPs cleanly on crates.io builds).
-
-## Gate 14: APR → GGUF Export Round-trip (F-EXPORT-ROUNDTRIP-001)
+### Gate 14: APR → GGUF Export Round-trip (F-EXPORT-ROUNDTRIP-001)
 
 Contract: `contracts/apr-export-num-layers-v1.yaml`
 
@@ -723,7 +995,7 @@ done
 PASS if every APR file either exports successfully or exits 5. FAIL on any
 panic (exit 101 or stderr panic message). SKIP if no APR models in registry.
 
-## Gate 15: validate --quality Sanity (F-VALIDATE-QUALITY-001)
+### Gate 15: validate --quality Sanity (F-VALIDATE-QUALITY-001)
 
 Contract: `contracts/apr-validate-quality-threshold-v1.yaml`
 
@@ -755,7 +1027,7 @@ fi
 PASS if `apr validate --quality` exits 0 on any model that `apr qa` passes.
 FAIL on the inconsistency that #1866 captured.
 
-## Gate 16: `apr run` Exit Code Reflects Output Validity (F-RUN-EXIT-SANITY-001)
+### Gate 16: `apr run` Exit Code Reflects Output Validity (F-RUN-EXIT-SANITY-001)
 
 Contract: `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml`
 
@@ -795,37 +1067,7 @@ fi
 
 PASS if `apr run` either emits clean output with exit 0, or non-clean output
 with non-zero exit. FAIL when chat-template gibberish leaks through with exit 0.
-
-## Gate 17: 7B Inference Smoke (F-7B-INFERENCE-001)
-
-Catches [#1864](https://github.com/paiml/aprender/issues/1864) directly. The
-README claims `Qwen2.5-Coder 7B Q4_K 225+ tok/s RTX 4090` as the headline
-configuration; if 7B GPU inference produces gibberish, the canonical demo
-is broken.
-
-```bash
-. scripts/apr_bin.sh || exit 1
-M_7B=$(find ~/models -maxdepth 2 -name "*7b*q4*" -type f 2>/dev/null | head -1)
-if [ -z "$M_7B" ]; then
-  echo "G17 SKIP: no 7B Q4_K model in registry"
-else
-  # apr qa Golden Output gate already encodes correctness; reuse it.
-  OUT=$(timeout 300 "$APR" qa "$M_7B" 2>&1 | grep -E "Golden Output")
-  if echo "$OUT" | grep -q "FAIL"; then
-    echo "G17 FAIL: 7B Golden Output gate FAILS — $OUT (#1864)"
-  elif echo "$OUT" | grep -q "PASS"; then
-    echo "G17 PASS: 7B Golden Output gate passes"
-  else
-    echo "G17 SKIP: Golden Output gate didn't run (no GPU? --assert-gpu missing?)"
-  fi
-fi
-```
-
-PASS when `apr qa` Golden Output gate passes on the 7B Q4_K model. FAIL on
-the regression that #1864 captured. SKIP when the 7B model isn't available
-or the gate didn't run.
-
-## Gate 18: Fresh-Convert `.apr` Inference Parity (F-APR-INFERENCE-PARITY-001)
+### Gate 18: Fresh-Convert `.apr` Inference Parity (F-APR-INFERENCE-PARITY-001)
 
 Contract: `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` (the `.apr`↔GGUF inference invariant)
 
@@ -876,6 +1118,46 @@ fi
 PASS if a freshly-converted `.apr`'s CPU (and GPU, when present) inference matches the source GGUF
 token-for-token. FAIL on garbage (the PMAT-888 regression). SKIP if no GGUF model is available.
 
+
+## Tier 3 — Release only
+
+| ID | Gate | Note |
+|---|---|---|
+| T3.1 | 7B inference smoke | `F-7B-INFERENCE-001` |
+| T3.2 | `cargo publish --dry-run` | authoritative: cargo's own registry resolution |
+| T3.3 | version-unpublished | depends on G0.2 |
+| T3.4 | security, second source | cargo-deny's GREEN is only as wide as RustSec |
+| T3.5 | **Clean-room publishability** | **the hard gate — every crate builds from crates.io alone, no sibling-path tricks. Runs on `intel`. Name it first in any release plan.** |
+T3.1's body is carried **verbatim** from v2.0 Gate 17.
+
+### Gate 17: 7B Inference Smoke (F-7B-INFERENCE-001)
+
+Catches [#1864](https://github.com/paiml/aprender/issues/1864) directly. The
+README claims `Qwen2.5-Coder 7B Q4_K 225+ tok/s RTX 4090` as the headline
+configuration; if 7B GPU inference produces gibberish, the canonical demo
+is broken.
+
+```bash
+. scripts/apr_bin.sh || exit 1
+M_7B=$(find ~/models -maxdepth 2 -name "*7b*q4*" -type f 2>/dev/null | head -1)
+if [ -z "$M_7B" ]; then
+  echo "G17 SKIP: no 7B Q4_K model in registry"
+else
+  # apr qa Golden Output gate already encodes correctness; reuse it.
+  OUT=$(timeout 300 "$APR" qa "$M_7B" 2>&1 | grep -E "Golden Output")
+  if echo "$OUT" | grep -q "FAIL"; then
+    echo "G17 FAIL: 7B Golden Output gate FAILS — $OUT (#1864)"
+  elif echo "$OUT" | grep -q "PASS"; then
+    echo "G17 PASS: 7B Golden Output gate passes"
+  else
+    echo "G17 SKIP: Golden Output gate didn't run (no GPU? --assert-gpu missing?)"
+  fi
+fi
+```
+
+PASS when `apr qa` Golden Output gate passes on the 7B Q4_K model. FAIL on
+the regression that #1864 captured. SKIP when the 7B model isn't available
+or the gate didn't run.
 ## Pre-Gate Note: Exit-Code Capture Methodology (lesson from 2026-05-22 dogfood)
 
 When a falsifier needs to assert "command X exits Y", **never** chain through
@@ -898,24 +1180,270 @@ gates that still pipe-then-`$?` should be migrated when next touched.
 
 See [memory/feedback_test_methodology_can_fake_bugs.md] for the broader lesson.
 
+
+
 ---
+
+# Phase 4 — Transport gates
+
+Three transports ship (CLI, HTTP, MCP). Reachability is necessary and not
+sufficient.
+
+## G4.1 — Transport declaration
+
+`[package.metadata.transports]` in `Cargo.toml`, versioned with the code it
+describes:
+
+```toml
+[package.metadata.transports]
+cli  = { e2e = "e2e_cli_t" }
+mcp  = { e2e = "e2e_mcp_stdio_t", features = ["mcp"] }
+http = { e2e = "e2e_http_serve_t", features = ["http", "lua"] }
+```
+
+No declaration → RED. An undeclared transport is an unverified one. A transport
+declared as a bare bool → RED; a declaration with no `e2e` target verifies nothing.
+
+**At HEAD (`4bbfeb07f`) this gate is RED**: neither `crates/apr-cli/Cargo.toml` nor
+the root `Cargo.toml` contains a `[package.metadata.transports]` block, while the
+binary ships all three transports. That is a real finding, not a hypothetical — and
+it means G4.2 and G4.3 must appear in the first receipt as SKIP naming this blocker.
+
+When this gate is RED, the two downstream gates must still **appear in the receipt
+as SKIP, each naming what blocked it**. A gate that vanishes from the receipt reads
+as one that passed.
+
+## G4.2 — Interface parity
+
+Each declared target must (1) exist, (2) reference `CARGO_BIN_EXE_` — spawn the
+**shipped binary**, not the library, which is the reachability property a
+library-level suite structurally cannot see — and (3) run at least one passing
+test. `0 tests, ok` is a vacuous pass and FAILS.
+
+## G4.3 — Transport absence
+
+Probe the real binary for **undeclared** transports. A transport that exists and
+is not declared is RED.
+
+## G4.4 — Transport invariance (`invariance.py`)
+
+Stand every transport up **simultaneously**, derive the verb list **from the
+binary**, invoke one verb through all live transports, compare byte-for-byte.
+
+Three properties, each load-bearing:
+
+- **Simultaneous, not sequential.** Sequential cannot distinguish "the transports
+  agree" from "the transports share a process-global only one may hold at a time."
+  All-live is the configuration a real client fleet produces, and the one that
+  surfaces a shared listener, a shared lock, or a single-owner runtime.
+- **Derived, not hand-written.** A hand-written probe tests the verbs someone
+  remembered. A derived one tests the surface that shipped and grows with it.
+- **Identical AND valid.** Two identically-wrong strings must not pass. The payload
+  is parsed as JSON after the equality check.
+
+Vacuity guards: an empty verb list dies (`a parity check over an empty surface is
+vacuous`); a probe verb absent from the binary's own list dies; fewer than two
+invocable transports reports `INVARIANCE_SKIP`, never PASS.
+
+Readiness probes by **connecting**, never by binding — a probe that binds competes
+with the server it waits for and can starve it.
+
+**Known live defect this gate should already be catching:** seven native routes,
+including the banner-advertised `/stream/generate` and `/batch/generate`, always
+fail with "No model available" on the standard `apr serve run model.gguf` path
+while `/generate` on the same server works (#2376, P0, **closed COMPLETED
+2026-08-13** — the ledger row still shows no `Fixed by`; re-probe rather than
+assume, and treat this as the regression the gate now ratchets).
+
+---
+
+# Phase 5 — Fleet hardware matrix
+
+`--fleet` / `--release`. Resolves the 427 UNKNOWN `verified_hardware` rows.
+
+| Host | Compute | Backend | Role |
+|---|---|---|---|
+| `lambda-labs` | RTX 4090, 24 GB | CUDA sm_89 | primary dev/control; **not a CI runner** (retired 2026-05-10, do not revive) |
+| `gx10` | GB10 Blackwell, 120 GB unified | CUDA 13.0 **sm_121** | aarch64-linux |
+| `mini` | Apple M4, 16 GB unified | Metal | aarch64-macos; cowork-first, selective CI |
+| `intel` | Xeon W-3245, 283 GB | CPU | clean-room CI runner, 8 concurrent, memory-bound |
+
+## G5.1 — `verified_hardware` provenance
+
+A row may claim a hardware target **only** if a CI job actually ran the feature on
+that target, or a Cargo feature gate compiles it. **Never infer hardware from a
+feature's name.** A CUDA kernel with no job that runs it is `UNKNOWN`.
+
+Live example of why: `dispatch.rs:180-182` tells the user only the root crate's
+feature chain can enable the CUDA path. That is false —
+`crates/apr-cli/Cargo.toml:89` defines `cuda` directly, and
+`.github/workflows/qwen-story-daily.yml:62` builds the nightly CUDA binary with
+`cargo install --path crates/apr-cli --force --features cuda` — bypassing the root
+facade entirely. A user-facing message asserting a
+false hardware constraint is itself a defect.
+
+## G5.2 — Canonical benchmark
+
+One model, one quant, one pinned `llama.cpp` commit, four hosts. See
+`APR-BENCH-RFC-001` — **which does not exist**: zero hits across the whole tree at
+HEAD. Author it before this gate can run; until then G5.2 reports SKIP naming the
+missing RFC, never PASS. Report `pp512` and `tg128` **separately** — GB10 legitimately
+loses ~4× on decode while winning prefill, and a blended figure reports a correct
+machine as broken.
+
+`gx10` requires `-DGGML_CUDA_ARCHITECTURES=121`. Omitting it JITs from stale PTX —
+a large, **silent** loss that reads as "GB10 is just slow."
+
+## G5.3 — Orchestration is an OPEN DESIGN QUESTION
+
+Two of four hosts are not general CI runners; `intel` is the clean-room runner this
+would contend with. A four-host release-blocking gate has no obvious CI home.
+**Escalate; do not default.** Record the decision and its rationale in the ticket.
+
+---
+
+# Phase 6 — Receipt and verdict
+
+## Receipt
+
+Deterministic, byte-identical for the same tree. No timestamps or durations in the
+body. Contains:
+
+1. Identity — crate, version, HEAD SHA, feature set used, exclusions **named**
+2. Surface — counts per kind, with the vacuity threshold beside each
+3. **Coverage — the Phase 2 table, overall / per binary / per band, vs. baseline**
+4. **The 44 — uncovered features with quality ≤ 4, enumerated**
+5. Gate results — every gate, PASS/FAIL/SKIP/WARN, with the blocker named on SKIP
+6. Transport matrix — declared, parity, absence, invariance
+7. Fleet matrix — hardware verification per host (`--fleet`)
+8. Gaps — every enumeration not completed, and the exact artifact to close it
 
 ## Verdict
 
-After all 18 gates, provide:
+| | Condition |
+|---|---|
+| **GO** | Every gate green; coverage ≥ baseline; the 44 empty or fully waived |
+| **WARN** | All gates green; a coverage floor unchanged but not improved |
+| **NO-GO** | Any gate red; **or** coverage below baseline; **or** an unwaived quality-≤4 uncovered feature |
 
-1. **Summary table**: Gate 1-18 | Status | Notes
-2. **Protocol results**: P1-P12 | PASS/FAIL
-3. **New gates**: S1-S5, M1-M3, V1-V4, C1-C3, D1-D3, G13-G18 | PASS/FAIL/SKIP
-4. **Command grid**: 57 commands | PASS/FAIL/SKIP count
-5. **GO** if gates 1-7 all pass AND gates 8-18 have no FAIL
-6. **WARN** if soft issues only (no panics, no data corruption, SKIPs OK)
-7. **FAIL** if panics, exit-code lies, silent-fallback accepts bad input, gibberish-with-exit-0 (#1864), export panics (#1865), stale --version SHA in worktree (#1862), validate --quality false-negatives (#1866), fresh-convert `.apr` inference garbage (PMAT-888), or contract violations
+Coverage regression alone is NO-GO. That is the whole design: the suite can be
+incomplete, and it may not silently become *more* incomplete.
 
-If bugs found, file with:
-```bash
-gh issue create --repo paiml/aprender --title "apr <cmd>: <title>" --body "..."
-```
+---
+
+# Mutation registry
+
+**A gate with no registered mutation is inadmissible.** Every gate names an
+injectable change that must turn it RED, and the pre-fix GREEN is captured as
+before-evidence. Discrimination check on every one: RED for the mutation, GREEN for
+a no-op rebuild of the same commit. A gate that fires on both measures nothing.
+
+| Gate | Mutation → RED |
+|---|---|
+| G0.1 provenance | Put a stale `apr` earlier on `PATH` |
+| G0.2 identity | Set `version.workspace = true` and drop the fallback |
+| G0.5 dup binary | Add an allocator attribute to one entry point only |
+| G1.1 vacuity | Truncate the `--help` parse to 2 commands |
+| G1.3 value_parser | Remove `BACKEND_VALUES` from one of the three sites |
+| G1.4 help/dispatch | Add a dispatch arm without documenting it |
+| G2.1 freshness | Backdate the CSV behind HEAD |
+| G2.2 reconciliation | Delete one CSV row for a live command |
+| G2.3 floors | Flip one `in_dogfood_skill` from `yes` to `no` |
+| P6 / T2.9 parity | Stride the GPU cache by `q_dim` (the #749 bug) → red by step 8 |
+| P7 NaN sentinel | Disarm the threshold comparison |
+| T2.2 metamorphic | Perturb `absmax` on quant roundtrip 2 |
+| G4.1 decl | Remove one transport from `[package.metadata.transports]` |
+| G4.2 parity | Point one `e2e` at a target with 0 tests |
+| G4.4 invariance | Return a differing field on one transport only |
+| G5.1 hardware | Claim `nvidia-cuda` for a feature no job runs |
+| T3.5 clean-room | Introduce a sibling-path dependency |
+
+---
+
+# Anti-patterns — do not do these
+
+| | Why |
+|---|---|
+| Write the surface list into this file | The defect this repo keeps re-finding — 36/77/103/111, every one a stale list failing silently |
+| Assert `is_ok()` on invalid input | Locks the defect in. Found in the 0.63.0 audit |
+| Treat exit 0 as PASS | 16 open P0s (of 24 total) include commands that exit 0 while printing FAIL |
+| Single-sample a temporal path | CF-4 / #1864 — green gate, gibberish output |
+| Blend `pp512` and `tg128` | Reports a correct GB10 as broken |
+| Reconcile a denominator mismatch silently | Turns the ledger back into a list |
+| `--all-features` as a fallback | Measures the `broken-tests` quarantine; permanent RED that everyone walks past |
+| Drop a blocked gate from the receipt | A vanished gate reads as a passed one |
+| Resolve a bare `apr` | #2384 — a 0.63.0 process ran a 0.60.0 backend; P0, closed 2026-08-11 by #2424, now a ratchet |
+| Set a coverage threshold before measuring | Either never fires or fires constantly |
+| Bypass a red gate to ship | Stop the line. Five-whys to the owning module |
+
+---
+
+# Escalation
+
+File, don't fix. This skill is read-only.
+
+- `pmat work add` first, then branch → PR → `ci / gate`
+- Contract (`pv`) in the same PR as the fix
+- Six-part DoD: merged green · gate exists · mutation observed RED · `pv` contract ·
+  discrimination confirmed · invalidated doc claims updated in the same PR
+- Escaped defect → case file, append-only, plus a **permanent** falsifier. The
+  regression ratchet is the point
+
+Ambiguous design decisions escalate. They do not get resolved silently.
+
+---
+
+# Provenance of this file — read before editing
+
+Written 2026-08-22 against `paiml/aprender` `main`.
+
+**Sections I authored from full sources:** Phase 0 (from `dogfood.sh` — its inline
+post-mortems are quoted, not paraphrased), Phase 2 (from `surface_audit.csv`, 830
+rows, all tallies computed not estimated), Phase 4 (from `dogfood.sh` transport
+sections and `invariance.py` in full), the mutation registry, the anti-pattern
+table.
+
+**The carry-over is COMPLETE.** Tier 0 (Gates 4–7), Tier 1 (Gates 2–3 / P1–P12),
+Tier 2 (Gates 8–12, 14–16, 18), Tier 3 (Gate 17) and G0.3 (Gate 13) all carry
+their v2.0 bodies **verbatim**, spliced under PMAT-742 rather than re-derived. A
+re-derived body loses the specific mutation each one was hardened against, which
+is why they exist in that exact wording.
+
+**Numbers requiring verification before this file is committed:**
+
+| Claim | Source | Status |
+|---|---|---|
+| 830 features / 28 binaries | `surface_audit.csv` | computed from the file |
+| 17.1% coverage, 27 binaries at 0% | same | computed |
+| 44 uncovered with quality ≤ 4 | same | computed |
+| 427 UNKNOWN hardware, 204 low-conf uncovered | same | computed |
+| 201 findings / 37 clusters, 171 open, 16 open P0 | `dogfood-0.63.0-ledger.md` | computed |
+| G1.3 substantive claim (serve lacks `value_parser`) | HEAD, 2026-08-22 | **VERIFIED** — `serve_commands.rs:73`, 0 `BACKEND_VALUES` |
+| G1.3 `extended_commands.rs:85`, `serve/types.rs:57` | HEAD | **VERIFIED** — note `:85` is the field, the `#[arg]` line is `:84` |
+| G1.3 `commands_enum.rs:110` | HEAD | **WAS STALE, FIXED** → `:154` (`#[arg(… value_parser = BACKEND_VALUES)]`), field `:155`, const `:10` |
+| G1.4 (10 arms, 2 documented) | HEAD, `dispatch_analysis.rs:1383-1419` | **VERIFIED** — exactly 10 `Some(..)` arms, `classify` at `:1383` is `#[cfg(feature = "training")]`-gated; default `_ =>` perplexity arm at `:1427`; `extended_commands.rs:138` documents 2 |
+| G0.5 (`dhat` divergence) | HEAD, `crates/apr-cli/src/main.rs:10-12` | **VERIFIED** — `src/bin/apr.rs:9-10` delegates to `cli_main()` |
+| G5.1 `dispatch.rs:180-182` | HEAD | **VERIFIED** — the "build the root, not `-p apr-cli`" claim is at `:180`; it is false |
+| G5.1 `apr-cli/Cargo.toml:89` | HEAD | **VERIFIED** — `cuda = ["inference", "realizar/cuda", …]` |
+| G5.1 `qwen-story-daily.yml:63` | HEAD | **WAS STALE, FIXED** → `:62`, and the invocation is `--path crates/apr-cli --features cuda`, not `-p apr-cli` |
+| `APR-BENCH-RFC-001` (G5.2) | tree-wide grep | **STALE — DOES NOT EXIST**; marked to-be-authored inline |
+| `[package.metadata.transports]` (G4.1) | HEAD `Cargo.toml`s | **ABSENT** — G4.1 is RED at HEAD; recorded inline |
+| #2384 "still open", #2376 "open" | `gh issue view` | **STALE — both CLOSED COMPLETED** (2026-08-11, 2026-08-13); corrected in three places |
+| "24 open P0s" | ledger table | **STALE** — 24 is the P0 *total*; **16** are open. Corrected |
+| "644 features scored 6" | CSV | **IMPRECISE** — 672 scored 6; 644 of those are *uncovered*. Corrected |
+| 830 rows / 28 binaries / 142 covered / 17.1% | CSV, recomputed | **VERIFIED** |
+| 44 quality ≤ 4 uncovered (all in `apr`) | CSV, recomputed | **VERIFIED** |
+| 427 UNKNOWN hardware, 204 low-conf uncovered | CSV, recomputed | **VERIFIED** |
+| band splits 58/80, 27/49, 29/673, 8/8, 20/20 | CSV, recomputed | **VERIFIED** |
+| 201 findings / 37 clusters / 171 open / 16 open P0 | ledger, recomputed | **VERIFIED** |
+| `MAX_SKIP_PCT` bound in `dogfood_surfaces.sh` | HEAD `:70` | **VERIFIED** — default 40 |
+| Baseline threshold values in G2.3 | CSV, 2026-08-22 @ `4bbfeb07f` | **MEASURED AND COMMITTED** |
+| v2.0 gate bodies (Gates 2–18) | `origin/main` SKILL.md | **SPLICED VERBATIM** — contiguous-block equality asserted for all 12 slices |
+
+The CSV is a snapshot. The moment the surface moves, the coverage number is stale —
+which is exactly what G2.1 exists to detect.
+
+---
 
 ## Cleanup
 

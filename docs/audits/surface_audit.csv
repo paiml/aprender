@@ -1,0 +1,831 @@
+binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,evidence_path,confidence
+apr,apr attn-parity-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:989,high
+apr,apr attn-viz-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1013,high
+apr,apr audio-inspect-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:976,high
+apr,apr awq-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:870,high
+apr,apr beat-run,2,x86_64-linux,NONE,yes,crates/apr-cli/src/commands_enum.rs:367,high
+apr,apr bench,6,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/extended_commands.rs:88,high
+apr,apr canary check,4,x86_64-linux,NONE,no,crates/apr-cli/src/commands/canary.rs:44,medium
+apr,apr canary create,4,x86_64-linux,NONE,no,crates/apr-cli/src/commands/canary.rs:30,medium
+apr,apr cbtop,3,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:478,high
+apr,apr cgp baseline,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:109,low
+apr,apr cgp bench,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:38,low
+apr,apr cgp compete,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:120,low
+apr,apr cgp contract generate,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:314,low
+apr,apr cgp contract verify,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:299,low
+apr,apr cgp diff,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:71,low
+apr,apr cgp doctor,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:118,low
+apr,apr cgp explain,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:99,low
+apr,apr cgp profile binary,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:262,low
+apr,apr cgp profile compare,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:238,low
+apr,apr cgp profile cublas,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:154,low
+apr,apr cgp profile kernel,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:139,low
+apr,apr cgp profile library,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:282,low
+apr,apr cgp profile metal,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:175,low
+apr,apr cgp profile parallel,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:226,low
+apr,apr cgp profile python,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:276,low
+apr,apr cgp profile quant,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:205,low
+apr,apr cgp profile scalar,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:217,low
+apr,apr cgp profile scaling,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:250,low
+apr,apr cgp profile simd,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:184,low
+apr,apr cgp profile wasm,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:196,low
+apr,apr cgp profile wgpu,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:163,low
+apr,apr cgp roofline,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:56,low
+apr,apr cgp trace,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:91,low
+apr,apr cgp tui,6,x86_64-linux,NONE,no,crates/aprender-cgp/src/cli.rs:107,low
+apr,apr chat,6,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/extended_commands.rs:40,high
+apr,apr check,2,x86_64-linux,NONE,yes,crates/apr-cli/src/commands_enum.rs:719,high
+apr,apr check-finite-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1033,low
+apr,apr code,2,x86_64-linux,claude-code,yes,crates/apr-cli/src/commands_enum.rs:739,high
+apr,apr compare-hf,9,x86_64-linux,safetensors,yes,crates/apr-cli/src/extended_commands.rs:563,medium
+apr,apr compile,9,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/commands_enum.rs:621,medium
+apr,apr convert,4,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/commands_enum.rs:543,high
+apr,apr data audit,3,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/data_commands.rs:54,high
+apr,apr data balance,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/data_commands.rs:126,high
+apr,apr data decontaminate,2,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/data_commands.rs:96,high
+apr,apr data dedup,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/data_commands.rs:114,low
+apr,apr data split,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/data_commands.rs:72,low
+apr,apr data x convert,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:46,low
+apr,apr data x dedup,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:108,low
+apr,apr data x doctest extract,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:188,high
+apr,apr data x doctest merge,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:205,high
+apr,apr data x drift compare,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/drift.rs:77,low
+apr,apr data x drift detect,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/drift.rs:18,low
+apr,apr data x drift merge,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/drift.rs:65,low
+apr,apr data x drift report,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/drift.rs:36,low
+apr,apr data x drift sketch,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/drift.rs:48,low
+apr,apr data x fed manifest,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/fed.rs:20,low
+apr,apr data x fed plan,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/fed.rs:40,low
+apr,apr data x fed split,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/fed.rs:64,low
+apr,apr data x fed verify,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/fed.rs:84,low
+apr,apr data x filter-text,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:120,low
+apr,apr data x fim,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:88,low
+apr,apr data x head,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:58,low
+apr,apr data x hub push,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/hub.rs:88,high
+apr,apr data x import hf,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/hub.rs:24,high
+apr,apr data x import local,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/hub.rs:11,low
+apr,apr data x info,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:53,low
+apr,apr data x mix,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:71,low
+apr,apr data x quality check,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/quality.rs:14,low
+apr,apr data x quality profiles,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/quality.rs:57,low
+apr,apr data x quality report,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/quality.rs:31,low
+apr,apr data x quality score,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/quality.rs:39,low
+apr,apr data x registry delete,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:104,low
+apr,apr data x registry init,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:18,low
+apr,apr data x registry list,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:24,low
+apr,apr data x registry pull,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:66,low
+apr,apr data x registry push,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:35,low
+apr,apr data x registry search,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:83,low
+apr,apr data x registry show-info,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:91,low
+apr,apr data x repl,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:175,low
+apr,apr data x schema,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:66,low
+apr,apr data x view,6,x86_64-linux,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:140,low
+apr,apr dataset audio-inspect,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/extended_commands.rs:1433,low
+apr,apr ddp-metrics-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:945,high
+apr,apr debug,3,x86_64-linux,safetensors,yes,crates/apr-cli/src/commands_enum.rs:198,high
+apr,apr debug embed-viz,6,x86_64-linux,safetensors,no,crates/apr-cli/src/commands_enum.rs:851,low
+apr,apr decrypt,9,x86_64-linux,NONE,yes,crates/apr-cli/src/tool_commands.rs:140,medium
+apr,apr diagnose,9,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:826,medium
+apr,apr diff,4,x86_64-linux;nvidia-cuda,safetensors,yes,crates/apr-cli/src/commands_enum.rs:251,high
+apr,apr distill,9,x86_64-linux,unsloth,yes,crates/apr-cli/src/model_ops_commands.rs:140,medium
+apr,apr dry-sampling-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:864,high
+apr,apr embed,6,x86_64-linux,huggingface-transformers,yes,crates/apr-cli/src/extended_commands.rs:1350,medium
+apr,apr embed-viz-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1046,low
+apr,apr embeddings-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1165,high
+apr,apr encrypt,4,x86_64-linux,NONE,yes,crates/apr-cli/src/tool_commands.rs:121,high
+apr,apr eval,6,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/extended_commands.rs:121,high
+apr,apr experiment view,6,x86_64-linux,pytorch,no,crates/apr-cli/src/extended_commands.rs:1560,low
+apr,apr explain,6,x86_64-linux,safetensors,yes,crates/apr-cli/src/commands_enum.rs:386,high
+apr,apr explain-token-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1058,low
+apr,apr export,6,x86_64-linux;nvidia-cuda,llama.cpp,yes,crates/apr-cli/src/commands_enum.rs:415,high
+apr,apr finetune,2,x86_64-linux,unsloth,yes,crates/apr-cli/src/model_ops_commands.rs:6,high
+apr,apr flow,6,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:660,high
+apr,apr fp8-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:876,high
+apr,apr gbnf-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1123,high
+apr,apr gptq-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:888,high
+apr,apr gpu,6,x86_64-linux,NONE,yes,crates/apr-cli/src/commands_enum.rs:732,high
+apr,apr gpu-memtrace-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1071,low
+apr,apr grad-norm,6,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1136,high
+apr,apr hang-trace-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:927,high
+apr,apr hex,3,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:587,high
+apr,apr imatrix-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1159,high
+apr,apr import,6,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/commands_enum.rs:445,high
+apr,apr inspect,3,x86_64-linux;nvidia-cuda,safetensors,yes,crates/apr-cli/src/commands_enum.rs:163,high
+apr,apr kernel parity,6,x86_64-linux,NONE,no,crates/apr-cli/src/extended_commands.rs:1464,low
+apr,apr kv-timeline-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1077,high
+apr,apr lint,2,x86_64-linux;nvidia-cuda,safetensors,yes,crates/apr-cli/src/commands_enum.rs:352,high
+apr,apr list,6,x86_64-linux;nvidia-cuda,llama.cpp,yes,crates/apr-cli/src/commands_enum.rs:534,medium
+apr,apr manifest,9,x86_64-linux,NONE,yes,crates/apr-cli/src/commands_enum.rs:377,medium
+apr,apr mcp,1,x86_64-linux,claude-code,yes,crates/apr-cli/src/commands_enum.rs:711,high
+apr,apr merge,6,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/commands_enum.rs:648,high
+apr,apr modelfile parse,6,x86_64-linux,NONE,no,crates/apr-cli/src/extended_commands.rs:1582,low
+apr,apr monitor,9,x86_64-linux,pytorch,yes,crates/apr-cli/src/extended_commands.rs:448,medium
+apr,apr mono archive,6,UNKNOWN,NONE,no,crates/apr-cli/src/commands/mono.rs:38,high
+apr,apr mono audit,6,UNKNOWN,NONE,no,crates/apr-cli/src/commands/mono.rs:35,high
+apr,apr mono publish,6,UNKNOWN,NONE,no,crates/apr-cli/src/commands/mono.rs:21,high
+apr,apr mono shims,6,UNKNOWN,NONE,no,crates/apr-cli/src/commands/mono.rs:28,high
+apr,apr nccl-diag-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:903,high
+apr,apr nf4-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:882,high
+apr,apr ollama-chat-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:841,high
+apr,apr ollama-tools-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:850,high
+apr,apr oom-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:894,low
+apr,apr oracle,9,x86_64-linux,NONE,yes,crates/apr-cli/src/tool_commands.rs:84,medium
+apr,apr otlp-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1090,high
+apr,apr parity,9,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:317,medium
+apr,apr pipeline apply,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/pipeline_commands.rs:28,low
+apr,apr pipeline plan,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/pipeline_commands.rs:9,low
+apr,apr pipeline status,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/pipeline_commands.rs:51,low
+apr,apr pipeline validate,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/pipeline_commands.rs:58,low
+apr,apr ppl,9,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/extended_commands.rs:1190,medium
+apr,apr pretrain,6,x86_64-linux,pytorch,yes,crates/apr-cli/src/extended_commands.rs:712,high
+apr,apr profile,3,x86_64-linux;nvidia-cuda,llama.cpp,yes,crates/apr-cli/src/extended_commands.rs:165,high
+apr,apr prometheus-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1105,high
+apr,apr prune,4,x86_64-linux,unsloth,yes,crates/apr-cli/src/model_ops_commands.rs:110,high
+apr,apr ptx,4,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:362,high
+apr,apr ptx-map,6,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:330,high
+apr,apr publish,6,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/tool_commands.rs:46,high
+apr,apr pull,4,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/commands_enum.rs:480,high
+apr,apr pv audit,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:59,low
+apr,apr pv book,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:300,low
+apr,apr pv certify,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:381,low
+apr,apr pv check-parity,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:20,low
+apr,apr pv codegen,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:37,low
+apr,apr pv coq,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:286,low
+apr,apr pv coverage,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:80,low
+apr,apr pv diff,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:73,low
+apr,apr pv equations,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:124,low
+apr,apr pv explain,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:9,low
+apr,apr pv extract-pytorch,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:31,low
+apr,apr pv flux,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:292,low
+apr,apr pv fuzz,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:288,low
+apr,apr pv generate,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:98,low
+apr,apr pv graph,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:115,low
+apr,apr pv infer,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:315,low
+apr,apr pv invariants,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:284,low
+apr,apr pv kaizen,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:362,low
+apr,apr pv kani,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:45,low
+apr,apr pv lean,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:130,low
+apr,apr pv lean-status,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:136,low
+apr,apr pv lint,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:166,low
+apr,apr pv migrate,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:419,low
+apr,apr pv mirai,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:290,low
+apr,apr pv pipeline,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:354,low
+apr,apr pv probar,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:47,low
+apr,apr pv proof-status,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:142,low
+apr,apr pv query,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:282,low
+apr,apr pv roofline,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:337,low
+apr,apr pv scaffold,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:22,low
+apr,apr pv score,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:252,low
+apr,apr pv status,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:54,low
+apr,apr pv tla,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:294,low
+apr,apr pv unlock,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:329,low
+apr,apr pv validate,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:17,low
+apr,apr pv verify-bindings,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:408,low
+apr,apr pv verify-pipeline,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:401,low
+apr,apr pv verify-structure,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:391,low
+apr,apr qa,6,x86_64-linux;nvidia-cuda,llama.cpp,yes,crates/apr-cli/src/extended_commands.rs:238,high
+apr,apr qualify,4,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:678,high
+apr,apr quant-preservation-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1197,high
+apr,apr quantize,4,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/commands_enum.rs:681,high
+apr,apr rag demo,6,x86_64-linux,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:107,low
+apr,apr rag eval compare,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:454,high
+apr,apr rag eval gate,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:465,high
+apr,apr rag eval generate,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:340,high
+apr,apr rag eval judge,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:412,high
+apr,apr rag eval metrics,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:439,high
+apr,apr rag eval retrieve,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:367,high
+apr,apr rag eval sample,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:321,high
+apr,apr rag extract-frames,6,x86_64-linux,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:271,low
+apr,apr rag index,6,x86_64-linux,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:121,low
+apr,apr rag info,6,x86_64-linux,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:306,low
+apr,apr rag query,6,x86_64-linux,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:184,low
+apr,apr rag transcribe,6,x86_64-linux,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:228,low
+apr,apr react-trace-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:915,low
+apr,apr registry aliases,6,x86_64-linux,llama.cpp,no,crates/apr-cli/src/commands/registry.rs:12,high
+apr,apr registry-quota-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1153,high
+apr,apr rerank,6,x86_64-linux,huggingface-transformers,yes,crates/apr-cli/src/extended_commands.rs:1245,high
+apr,apr rm,4,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/commands_enum.rs:537,medium
+apr,apr rm-gc-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1178,high
+apr,apr rosetta chain,6,x86_64-linux,safetensors,no,crates/apr-cli/src/commands/rosetta.rs:67,low
+apr,apr rosetta compare-inference,2,x86_64-linux,safetensors,no,crates/apr-cli/src/commands/rosetta.rs:106,high
+apr,apr rosetta convert,4,x86_64-linux,safetensors,no,crates/apr-cli/src/commands/rosetta.rs:40,high
+apr,apr rosetta diff-tensors,6,x86_64-linux,safetensors,no,crates/apr-cli/src/commands/rosetta.rs:142,low
+apr,apr rosetta fingerprint,2,x86_64-linux,safetensors,no,crates/apr-cli/src/commands/rosetta.rs:173,high
+apr,apr rosetta inspect,6,x86_64-linux,safetensors,no,crates/apr-cli/src/commands/rosetta.rs:25,low
+apr,apr rosetta validate-stats,6,x86_64-linux,safetensors,no,crates/apr-cli/src/commands/rosetta.rs:203,low
+apr,apr rosetta verify,2,x86_64-linux,safetensors,no,crates/apr-cli/src/commands/rosetta.rs:86,high
+apr,apr run,2,x86_64-linux;nvidia-cuda,llama.cpp,yes,crates/apr-cli/src/commands_enum.rs:48,high
+apr,apr runs diff,6,x86_64-linux,pytorch,no,crates/apr-cli/src/extended_commands.rs:1536,low
+apr,apr runs ls,4,x86_64-linux,pytorch,no,crates/apr-cli/src/extended_commands.rs:1503,high
+apr,apr runs show,6,x86_64-linux,pytorch,no,crates/apr-cli/src/extended_commands.rs:1521,low
+apr,apr serve plan,9,x86_64-linux;nvidia-cuda,llama.cpp,yes,crates/apr-cli/src/serve_commands.rs:17,medium
+apr,apr serve run,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,crates/apr-cli/src/serve_commands.rs:38,high
+apr,apr shard,6,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/extended_commands.rs:1206,high
+apr,apr shared-cache-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1184,high
+apr,apr showcase,6,x86_64-linux,NONE,yes,crates/apr-cli/src/tool_commands.rs:5,high
+apr,apr sim emc-check,6,x86_64-linux,NONE,no,crates/aprender-simulate/src/cli/args.rs:105,low
+apr,apr sim emc-validate,6,x86_64-linux,NONE,no,crates/aprender-simulate/src/cli/args.rs:110,low
+apr,apr sim help,6,x86_64-linux,NONE,no,crates/aprender-simulate/src/cli/args.rs:117,low
+apr,apr sim list-emc,6,x86_64-linux,NONE,no,crates/aprender-simulate/src/cli/args.rs:115,low
+apr,apr sim render,6,x86_64-linux,NONE,no,crates/aprender-simulate/src/cli/args.rs:71,low
+apr,apr sim run,6,x86_64-linux,NONE,no,crates/aprender-simulate/src/cli/args.rs:60,low
+apr,apr sim validate,6,x86_64-linux,NONE,no,crates/aprender-simulate/src/cli/args.rs:92,low
+apr,apr sim verify,6,x86_64-linux,NONE,no,crates/aprender-simulate/src/cli/args.rs:97,low
+apr,apr sim version,6,x86_64-linux,NONE,no,crates/aprender-simulate/src/cli/args.rs:119,low
+apr,apr stamp,2,x86_64-linux,NONE,yes,crates/apr-cli/src/commands_enum.rs:566,high
+apr,apr tensors,4,x86_64-linux;nvidia-cuda,safetensors,yes,crates/apr-cli/src/commands_enum.rs:290,high
+apr,apr test tensor,4,x86_64-linux,NONE,no,crates/apr-cli/src/extended_commands.rs:1603,high
+apr,apr tokenize apply,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/tokenize_commands.rs:38,low
+apr,apr tokenize encode-corpus,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/tokenize_commands.rs:131,low
+apr,apr tokenize import-hf,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/tokenize_commands.rs:104,low
+apr,apr tokenize plan,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/tokenize_commands.rs:14,low
+apr,apr tokenize repair-manifest,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/tokenize_commands.rs:221,low
+apr,apr tokenize train,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/tokenize_commands.rs:63,low
+apr,apr tool-use-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1117,high
+apr,apr trace,6,x86_64-linux,safetensors,yes,crates/apr-cli/src/commands_enum.rs:308,high
+apr,apr train apply,1,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:76,high
+apr,apr train archive,6,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:262,low
+apr,apr train cluster-status,6,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:318,low
+apr,apr train halving,4,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:232,high
+apr,apr train plan,3,x86_64-linux,pytorch,yes,crates/apr-cli/src/train_commands.rs:14,high
+apr,apr train submit,6,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:284,low
+apr,apr train sweep,6,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:201,high
+apr,apr train watch,6,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:172,low
+apr,apr tree,4,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:635,high
+apr,apr tui,9,x86_64-linux,NONE,yes,crates/apr-cli/src/commands_enum.rs:713,medium
+apr,apr tune,4,x86_64-linux,pytorch,yes,crates/apr-cli/src/extended_commands.rs:384,high
+apr,apr typical-p-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1129,high
+apr,apr unified-search-lint,1,x86_64-linux,NONE,yes,crates/apr-cli/src/extended_commands.rs:1172,high
+apr,apr unshard,9,x86_64-linux,llama.cpp,yes,crates/apr-cli/src/extended_commands.rs:1221,medium
+apr,apr validate,2,x86_64-linux;nvidia-cuda,safetensors,yes,crates/apr-cli/src/commands_enum.rs:219,high
+apr,apr validate-manifest,9,x86_64-linux,NONE,yes,crates/apr-cli/src/commands_enum.rs:237,medium
+apr,apr zram benchmark,6,x86_64-linux,NONE,no,crates/aprender-zram-cli/src/lib.rs:47,low
+apr,apr zram create,6,x86_64-linux,NONE,no,crates/aprender-zram-cli/src/lib.rs:38,low
+apr,apr zram remove,6,x86_64-linux,NONE,no,crates/aprender-zram-cli/src/lib.rs:41,low
+apr,apr zram status,6,x86_64-linux,NONE,no,crates/aprender-zram-cli/src/lib.rs:44,low
+apr,apr chat --backend cpu,6,x86_64-linux,ollama,no,crates/apr-cli/src/extended_commands.rs:85 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
+apr,apr chat --backend cuda,6,x86_64-linux;nvidia-cuda,ollama,no,crates/apr-cli/src/extended_commands.rs:85 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),medium
+apr,apr chat --backend wgpu,6,UNKNOWN,ollama,no,crates/apr-cli/src/extended_commands.rs:85 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
+apr,apr code --input-format json,2,x86_64-linux,claude-code,no,crates/apr-cli/src/commands_enum.rs:793 (CodeInputFormat crates/apr-cli/src/commands_enum.rs:37),high
+apr,apr code --output-format json,2,x86_64-linux,claude-code,no,crates/apr-cli/src/commands_enum.rs:787 (CodeOutputFormat crates/apr-cli/src/commands_enum.rs:25),high
+apr,apr eval --task classify,6,x86_64-linux,scikit-learn,no,crates/apr-cli/src/dispatch_analysis.rs:1383 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task code,6,x86_64-linux,NONE,no,crates/apr-cli/src/dispatch_analysis.rs:1391 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task compare,6,x86_64-linux,NONE,no,crates/apr-cli/src/dispatch_analysis.rs:1415 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task contamination,6,x86_64-linux,huggingface-transformers,no,crates/apr-cli/src/dispatch_analysis.rs:1412 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task correlation,6,x86_64-linux,NONE,no,crates/apr-cli/src/dispatch_analysis.rs:1417 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task human,6,x86_64-linux,NONE,no,crates/apr-cli/src/dispatch_analysis.rs:1418 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task humaneval,6,x86_64-linux,NONE,no,crates/apr-cli/src/dispatch_analysis.rs:1394 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task mbpp,6,x86_64-linux,NONE,no,crates/apr-cli/src/dispatch_analysis.rs:1403 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task plan,6,x86_64-linux,NONE,no,crates/apr-cli/src/dispatch_analysis.rs:1419 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task verify,6,x86_64-linux,NONE,no,crates/apr-cli/src/dispatch_analysis.rs:1416 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr export --format coreml,6,x86_64-linux;nvidia-cuda,pytorch,no,crates/apr-cli/src/commands_enum.rs:420,high
+apr,apr export --format gguf,6,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:420,high
+apr,apr export --format mlx,6,x86_64-linux;nvidia-cuda,huggingface-transformers,no,crates/apr-cli/src/commands_enum.rs:420,high
+apr,apr export --format onnx,6,x86_64-linux;nvidia-cuda,pytorch,no,crates/apr-cli/src/commands_enum.rs:420,high
+apr,apr export --format openvino,6,x86_64-linux;nvidia-cuda,pytorch,no,crates/apr-cli/src/commands_enum.rs:420,high
+apr,apr export --format safetensors,6,x86_64-linux;nvidia-cuda,safetensors,no,crates/apr-cli/src/commands_enum.rs:420,high
+apr,apr finetune --task classify,2,x86_64-linux,unsloth,no,crates/apr-cli/src/model_ops_commands.rs:48,high
+apr,apr quantize --scheme fp16,4,x86_64-linux,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:686,high
+apr,apr quantize --scheme int4,4,x86_64-linux,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:686,high
+apr,apr quantize --scheme int8,4,x86_64-linux,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:686,high
+apr,apr quantize --scheme q4k,4,x86_64-linux,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:686,high
+apr,apr run --backend cpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
+apr,apr run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),medium
+apr,apr run --backend wgpu,2,UNKNOWN,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
+apr,apr run --gpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:36,high
+apr,apr run --no-gpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:33,high
+apr,apr run --stream,2,x86_64-linux;nvidia-cuda,ollama,no,crates/apr-cli/src/commands_enum.rs:66,high
+apr,apr run --task transcribe,2,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:71,high
+apr,apr run --task translate,2,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/commands_enum.rs:71,high
+apr,apr run --trace-level basic,2,x86_64-linux;nvidia-cuda,NONE,no,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
+apr,apr run --trace-level chrome,2,x86_64-linux;nvidia-cuda,NONE,no,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
+apr,apr run --trace-level layer,2,x86_64-linux;nvidia-cuda,NONE,no,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
+apr,apr run --trace-level payload,2,x86_64-linux;nvidia-cuda,NONE,no,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
+apr,apr serve run --backend cpu,4,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
+apr,apr serve run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),medium
+apr,apr serve run --backend wgpu,4,UNKNOWN,llama.cpp,no,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
+apr,apr serve run --no-cors,4,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/serve_commands.rs:50 (router.rs:33-42),high
+apr,apr serve run --no-metrics,4,x86_64-linux;nvidia-cuda,llama.cpp,no,crates/apr-cli/src/serve_commands.rs:53 (router.rs:33-42),high
+apr,apr train apply --task classify,1,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:88,high
+apr,apr train apply --task pretrain,1,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:88,high
+apr,apr train plan --task classify,3,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:30,high
+apr,apr train plan --task pretrain,3,x86_64-linux,pytorch,no,crates/apr-cli/src/train_commands.rs:30,high
+apr,DELETE /api/delete,6,x86_64-linux,ollama,no,crates/apr-cli/src/commands/serve/ollama.rs:654,medium
+apr,GET /,6,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:252,high
+apr,GET /api/tags,6,x86_64-linux,ollama,yes,crates/aprender-serve/src/api/router.rs:165,high
+apr,GET /api/version,9,x86_64-linux,ollama,yes,crates/aprender-serve/src/api/router.rs:167,medium
+apr,GET /health,9,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:89,medium
+apr,GET /health/live,9,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:90,medium
+apr,GET /health/ready,9,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:91,medium
+apr,GET /metrics,6,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:116,medium
+apr,GET /metrics/dispatch,7,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:117,medium
+apr,GET /models,6,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:95,high
+apr,GET /ready,6,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:93,high
+apr,GET /realize/model,4,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:105,high
+apr,GET /tensors,6,x86_64-linux,llama.cpp,no,crates/apr-cli/src/commands/serve/safetensors.rs:164,low
+apr,GET /v1/audit/:request_id,7,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:146,medium
+apr,GET /v1/gpu/status,7,x86_64-linux,vllm,yes,crates/aprender-serve/src/api/router.rs:149,medium
+apr,GET /v1/metrics,6,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:156,high
+apr,GET /v1/models,9,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:130,medium
+apr,HTTP 404 fallback route index,6,x86_64-linux,llama.cpp,no,crates/aprender-serve/src/api/router.rs:274,high
+apr,POST /api/chat,3,x86_64-linux,ollama,yes,crates/aprender-serve/src/api/router.rs:160,high
+apr,"POST /api/chat (stream:true, NDJSON)",3,x86_64-linux,ollama,no,crates/aprender-serve/src/api/ollama_handlers.rs:610 (framing :383-421),high
+apr,POST /api/embeddings,6,x86_64-linux,ollama,yes,crates/aprender-serve/src/api/router.rs:170,high
+apr,POST /api/generate,3,x86_64-linux,ollama,yes,crates/aprender-serve/src/api/router.rs:161,high
+apr,"POST /api/generate (stream:true, NDJSON)",3,x86_64-linux,ollama,no,crates/aprender-serve/src/api/ollama_handlers.rs:665 (framing :383-421),high
+apr,POST /api/pull,6,x86_64-linux,ollama,no,crates/apr-cli/src/commands/serve/ollama.rs:650,medium
+apr,POST /api/show,6,x86_64-linux,ollama,yes,crates/aprender-serve/src/api/router.rs:166,high
+apr,POST /batch/generate,2,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:99,high
+apr,POST /batch/tokenize,2,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:98,high
+apr,POST /generate,2,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:97,high
+apr,POST /metrics/dispatch/reset,7,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:118,medium
+apr,POST /realize/batch,2,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:103,high
+apr,POST /realize/embed,2,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:104,high
+apr,POST /realize/generate,2,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:102,high
+apr,POST /realize/reload,4,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:106,high
+apr,POST /stream/generate,2,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:100,high
+apr,POST /tokenize,2,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:96,high
+apr,POST /v1/batch/completions,9,x86_64-linux,vllm,yes,crates/aprender-serve/src/api/router.rs:150,medium
+apr,POST /v1/chat/completions,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:132,high
+apr,"POST /v1/chat/completions (stream:true, SSE)",4,x86_64-linux;nvidia-cuda,llama.cpp,no,"crates/aprender-serve/src/api/openai_handlers.rs:539-570 (backend branches crates/aprender-serve/src/api/cuda_chat_backend.rs:121,267,390,808)",high
+apr,POST /v1/chat/completions/stream,4,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:137,high
+apr,POST /v1/completions,2,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:131,high
+apr,"POST /v1/completions (stream:true, SSE)",2,x86_64-linux,llama.cpp,no,crates/aprender-serve/src/api/gpu_completions_handler.rs:398 (SSE :340-378),high
+apr,POST /v1/embeddings,4,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:142,high
+apr,POST /v1/explain,4,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:145,high
+apr,POST /v1/gpu/warmup,7,x86_64-linux,vllm,yes,crates/aprender-serve/src/api/router.rs:148,medium
+apr,POST /v1/logprobs,7,nvidia-cuda,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:178,low
+apr,POST /v1/perplexity,7,nvidia-cuda,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:179,low
+apr,POST /v1/predict,5,x86_64-linux,llama.cpp,yes,crates/aprender-serve/src/api/router.rs:144,high
+apr,mcp:apr.bench,2,UNKNOWN,claude-code,yes,crates/aprender-mcp/src/tools/bench.rs:12,high
+apr,mcp:apr.finetune,2,UNKNOWN,claude-code,yes,crates/aprender-mcp/src/tools/finetune.rs:37,high
+apr,mcp:apr.qa,2,UNKNOWN,claude-code,yes,crates/aprender-mcp/src/tools/qa.rs:12,high
+apr,mcp:apr.run,2,UNKNOWN,claude-code,yes,crates/aprender-mcp/src/tools/run.rs:26,high
+apr,mcp:apr.serve,1,UNKNOWN,claude-code,yes,crates/aprender-mcp/src/tools/serve.rs:48,high
+apr,mcp:apr.tensors,2,UNKNOWN,claude-code,yes,crates/aprender-mcp/src/tools/tensors.rs:12,high
+apr,mcp:apr.trace,2,UNKNOWN,claude-code,yes,crates/aprender-mcp/src/tools/trace.rs:20,high
+apr,mcp:apr.validate,2,UNKNOWN,claude-code,yes,crates/aprender-mcp/src/tools/validate.rs:18,high
+apr,mcp:apr.version,7,UNKNOWN,claude-code,yes,crates/aprender-mcp/src/tools/version.rs:8,high
+alimentar,alimentar convert,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:46,high
+alimentar,alimentar dedup,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:108,high
+alimentar,alimentar doctest extract,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:188,high
+alimentar,alimentar doctest merge,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:205,high
+alimentar,alimentar drift compare,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/drift.rs:77,high
+alimentar,alimentar drift detect,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/drift.rs:18,high
+alimentar,alimentar drift merge,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/drift.rs:65,high
+alimentar,alimentar drift report,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/drift.rs:36,high
+alimentar,alimentar drift sketch,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/drift.rs:48,high
+alimentar,alimentar fed manifest,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/fed.rs:20,high
+alimentar,alimentar fed plan,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/fed.rs:40,high
+alimentar,alimentar fed split,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/fed.rs:64,high
+alimentar,alimentar fed verify,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/fed.rs:84,high
+alimentar,alimentar filter-text,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:120,high
+alimentar,alimentar fim,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:88,high
+alimentar,alimentar head,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:58,high
+alimentar,alimentar hub push,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/hub.rs:88,high
+alimentar,alimentar import hf,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/hub.rs:24,high
+alimentar,alimentar import local,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/hub.rs:11,high
+alimentar,alimentar info,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:53,high
+alimentar,alimentar mix,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:71,high
+alimentar,alimentar quality check,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/quality.rs:14,high
+alimentar,alimentar quality profiles,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/quality.rs:57,high
+alimentar,alimentar quality report,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/quality.rs:31,high
+alimentar,alimentar quality score,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/quality.rs:39,high
+alimentar,alimentar registry delete,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:104,high
+alimentar,alimentar registry init,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:18,high
+alimentar,alimentar registry list,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:24,high
+alimentar,alimentar registry pull,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:66,high
+alimentar,alimentar registry push,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:35,high
+alimentar,alimentar registry search,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:83,high
+alimentar,alimentar registry show-info,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/registry.rs:91,high
+alimentar,alimentar repl,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:175,high
+alimentar,alimentar schema,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:66,high
+alimentar,alimentar view,6,UNKNOWN,huggingface-transformers,no,crates/aprender-data/src/cli/mod.rs:140,high
+apr-corpus-ingest,apr-corpus-ingest plan,6,UNKNOWN,huggingface-transformers,no,crates/apr-cli/src/bin/apr-corpus-ingest.rs:67,high
+apr-corpus-ingest,apr-corpus-ingest validate-contract,6,UNKNOWN,huggingface-transformers,no,crates/apr-cli/src/bin/apr-corpus-ingest.rs:79,high
+apr-qa,apr-qa bootstrap,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:378,high
+apr-qa,apr-qa certify,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:47,high
+apr-qa,apr-qa export-csv,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:326,high
+apr-qa,apr-qa export-evidence,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:344,high
+apr-qa,apr-qa generate,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:201,high
+apr-qa,apr-qa kernel-coverage,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:437,high
+apr-qa,apr-qa list,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:246,high
+apr-qa,apr-qa lock-playbooks,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:253,high
+apr-qa,apr-qa parity,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:292,high
+apr-qa,apr-qa report,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:227,high
+apr-qa,apr-qa run,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:108,high
+apr-qa,apr-qa score,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:216,high
+apr-qa,apr-qa tickets,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:264,high
+apr-qa,apr-qa tools,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:182,high
+apr-qa,apr-qa validate-contract,6,UNKNOWN,NONE,no,crates/aprender-qa-cli/src/cli.rs:413,high
+apr-qa-readme-sync,apr-qa-readme-sync (README certification-table sync),6,UNKNOWN,NONE,no,crates/aprender-qa-certify/src/main.rs:36-51,high
+aprender-cbtop,aprender-cbtop bench,6,UNKNOWN,NONE,no,crates/aprender-cbtop/src/main.rs:88,high
+aprender-cbtop,aprender-cbtop optimize analyze,6,UNKNOWN,NONE,no,crates/aprender-cbtop/src/main.rs:151,high
+aprender-cbtop,aprender-cbtop optimize baseline,6,UNKNOWN,NONE,no,crates/aprender-cbtop/src/main.rs:136,high
+aprender-cbtop,aprender-cbtop optimize check,6,UNKNOWN,NONE,no,crates/aprender-cbtop/src/main.rs:166,high
+aprender-cgp,aprender-cgp baseline,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:109,high
+aprender-cgp,aprender-cgp bench,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:38,high
+aprender-cgp,aprender-cgp compete,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:120,high
+aprender-cgp,aprender-cgp contract generate,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:314,high
+aprender-cgp,aprender-cgp contract verify,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:299,high
+aprender-cgp,aprender-cgp diff,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:71,high
+aprender-cgp,aprender-cgp doctor,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:118,high
+aprender-cgp,aprender-cgp explain,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:99,high
+aprender-cgp,aprender-cgp profile binary,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:262,high
+aprender-cgp,aprender-cgp profile compare,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:238,high
+aprender-cgp,aprender-cgp profile cublas,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:154,high
+aprender-cgp,aprender-cgp profile kernel,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:139,high
+aprender-cgp,aprender-cgp profile library,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:282,high
+aprender-cgp,aprender-cgp profile metal,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:175,high
+aprender-cgp,aprender-cgp profile parallel,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:226,high
+aprender-cgp,aprender-cgp profile python,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:276,high
+aprender-cgp,aprender-cgp profile quant,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:205,high
+aprender-cgp,aprender-cgp profile scalar,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:217,high
+aprender-cgp,aprender-cgp profile scaling,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:250,high
+aprender-cgp,aprender-cgp profile simd,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:184,high
+aprender-cgp,aprender-cgp profile wasm,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:196,high
+aprender-cgp,aprender-cgp profile wgpu,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:163,high
+aprender-cgp,aprender-cgp roofline,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:56,high
+aprender-cgp,aprender-cgp trace,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:91,high
+aprender-cgp,aprender-cgp tui,6,UNKNOWN,NONE,no,crates/aprender-cgp/src/cli.rs:107,high
+aprender-compute-xtask,aprender-compute-xtask check-simd,6,UNKNOWN,NONE,no,crates/aprender-compute-xtask/src/main.rs:42,high
+aprender-compute-xtask,aprender-compute-xtask install-hooks,6,UNKNOWN,NONE,no,crates/aprender-compute-xtask/src/main.rs:44,high
+aprender-compute-xtask,aprender-compute-xtask validate-examples,6,UNKNOWN,NONE,no,crates/aprender-compute-xtask/src/main.rs:46,high
+aprender-db,GET /health (aprender-db),6,UNKNOWN,NONE,no,crates/aprender-db/src/main.rs:144,high
+aprender-db,GET /status (aprender-db),6,UNKNOWN,NONE,no,crates/aprender-db/src/main.rs:146,high
+aprender-db,POST /query (aprender-db),6,UNKNOWN,NONE,no,crates/aprender-db/src/main.rs:145,high
+aprender-db,aprender-db --config <PATH> (single-mode DB server),6,UNKNOWN,NONE,no,crates/aprender-db/src/main.rs:24-30,high
+aprender-explain,aprender-explain bugs,6,UNKNOWN,NONE,no,crates/aprender-explain/src/main.rs:148,high
+aprender-explain,aprender-explain compare,6,UNKNOWN,NONE,no,crates/aprender-explain/src/main.rs:114,high
+aprender-explain,aprender-explain diff,6,UNKNOWN,NONE,no,crates/aprender-explain/src/main.rs:129,high
+aprender-explain,aprender-explain ptx,6,UNKNOWN,NONE,no,crates/aprender-explain/src/main.rs:38,high
+aprender-explain,aprender-explain simd,6,UNKNOWN,NONE,no,crates/aprender-explain/src/main.rs:88,high
+aprender-explain,aprender-explain tui,6,UNKNOWN,NONE,no,crates/aprender-explain/src/main.rs:69,high
+aprender-explain,aprender-explain wgpu,6,UNKNOWN,NONE,no,crates/aprender-explain/src/main.rs:103,high
+aprender-orchestrate,DELETE /api/delete,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:206,high
+aprender-orchestrate,DELETE /api/v1/conversations/:id,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:123,high
+aprender-orchestrate,DELETE /api/v1/data/files/:id,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:143,high
+aprender-orchestrate,DELETE /api/v1/models/registry/:name,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:176,high
+aprender-orchestrate,DELETE /api/v1/prompts/:id,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:131,high
+aprender-orchestrate,DELETE /api/v1/rag/index,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:152,high
+aprender-orchestrate,DELETE /api/v1/train/runs/:id,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:162,high
+aprender-orchestrate,GET /,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:93,high
+aprender-orchestrate,GET /api/tags,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:203,high
+aprender-orchestrate,GET /api/v1/audio/formats,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:190,high
+aprender-orchestrate,GET /api/v1/audit,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:186,high
+aprender-orchestrate,GET /api/v1/batch,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:182,high
+aprender-orchestrate,GET /api/v1/batch/:id,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:183,high
+aprender-orchestrate,GET /api/v1/chat/parameters,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:111,high
+aprender-orchestrate,GET /api/v1/config,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:185,high
+aprender-orchestrate,GET /api/v1/conversations,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:116,high
+aprender-orchestrate,GET /api/v1/conversations/:id,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:123,high
+aprender-orchestrate,GET /api/v1/conversations/export,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:121,high
+aprender-orchestrate,GET /api/v1/conversations/search,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:120,high
+aprender-orchestrate,GET /api/v1/data/datasets,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:149,high
+aprender-orchestrate,GET /api/v1/data/datasets/:id/preview,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:150,high
+aprender-orchestrate,GET /api/v1/data/files,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:142,high
+aprender-orchestrate,GET /api/v1/data/files/:id/info,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:144,high
+aprender-orchestrate,GET /api/v1/data/recipes,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:146,high
+aprender-orchestrate,GET /api/v1/data/recipes/:id,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:147,high
+aprender-orchestrate,GET /api/v1/eval/runs,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:157,high
+aprender-orchestrate,GET /api/v1/eval/runs/:id,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:158,high
+aprender-orchestrate,GET /api/v1/experiments,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:178,high
+aprender-orchestrate,GET /api/v1/experiments/:id/compare,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:180,high
+aprender-orchestrate,GET /api/v1/mcp/info,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/serve/banco/router.rs:197,high
+aprender-orchestrate,GET /api/v1/metrics,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:187,high
+aprender-orchestrate,GET /api/v1/models,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:100,high
+aprender-orchestrate,GET /api/v1/models/merge/strategies,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:172,high
+aprender-orchestrate,GET /api/v1/models/registry,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:175,high
+aprender-orchestrate,GET /api/v1/models/status,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:109,high
+aprender-orchestrate,GET /api/v1/prompts,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:130,high
+aprender-orchestrate,GET /api/v1/prompts/:id,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:131,high
+aprender-orchestrate,GET /api/v1/rag/search,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:154,high
+aprender-orchestrate,GET /api/v1/rag/status,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:153,high
+aprender-orchestrate,GET /api/v1/system,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:102,high
+aprender-orchestrate,GET /api/v1/tools,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:192,high
+aprender-orchestrate,GET /api/v1/train/presets,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:169,high
+aprender-orchestrate,GET /api/v1/train/runs,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:161,high
+aprender-orchestrate,GET /api/v1/train/runs/:id,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:162,high
+aprender-orchestrate,GET /api/v1/train/runs/:id/metrics,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:167,high
+aprender-orchestrate,GET /api/v1/ws,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:199,high
+aprender-orchestrate,GET /assets/*path,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:95,high
+aprender-orchestrate,GET /health,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:96,high
+aprender-orchestrate,GET /health/live,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:98,high
+aprender-orchestrate,GET /health/ready,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:97,high
+aprender-orchestrate,GET /v1/models,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:133,high
+aprender-orchestrate,GET /v1/models/:id,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:134,high
+aprender-orchestrate,PATCH /api/v1/conversations/:id,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:123,high
+aprender-orchestrate,POST /api/chat,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:202,high
+aprender-orchestrate,POST /api/generate,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:201,high
+aprender-orchestrate,POST /api/pull,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:205,high
+aprender-orchestrate,POST /api/show,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:204,high
+aprender-orchestrate,POST /api/v1/audio/transcriptions,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:189,high
+aprender-orchestrate,POST /api/v1/batch,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:182,high
+aprender-orchestrate,POST /api/v1/chat/completions,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:101,high
+aprender-orchestrate,POST /api/v1/conversations,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:116,high
+aprender-orchestrate,POST /api/v1/conversations/import,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:122,high
+aprender-orchestrate,POST /api/v1/data/recipes,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:146,high
+aprender-orchestrate,POST /api/v1/data/recipes/:id/run,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:148,high
+aprender-orchestrate,POST /api/v1/data/upload,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:140,high
+aprender-orchestrate,POST /api/v1/data/upload/json,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:141,high
+aprender-orchestrate,POST /api/v1/detokenize,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:104,high
+aprender-orchestrate,POST /api/v1/embeddings,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:105,high
+aprender-orchestrate,POST /api/v1/eval/perplexity,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:156,high
+aprender-orchestrate,POST /api/v1/experiments,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:178,high
+aprender-orchestrate,POST /api/v1/experiments/:id/runs,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:179,high
+aprender-orchestrate,POST /api/v1/mcp,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/serve/banco/router.rs:196,high
+aprender-orchestrate,POST /api/v1/models/load,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:107,high
+aprender-orchestrate,POST /api/v1/models/merge,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:171,high
+aprender-orchestrate,POST /api/v1/models/pull,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:174,high
+aprender-orchestrate,POST /api/v1/models/unload,6,UNKNOWN,ollama,no,crates/aprender-orchestrate/src/serve/banco/router.rs:108,high
+aprender-orchestrate,POST /api/v1/prompts,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:130,high
+aprender-orchestrate,POST /api/v1/rag/index,6,UNKNOWN,huggingface-transformers,no,crates/aprender-orchestrate/src/serve/banco/router.rs:152,high
+aprender-orchestrate,POST /api/v1/tokenize,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:103,high
+aprender-orchestrate,POST /api/v1/tools,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:192,high
+aprender-orchestrate,POST /api/v1/tools/execute,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:193,high
+aprender-orchestrate,POST /api/v1/train/runs/:id/export,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:168,high
+aprender-orchestrate,POST /api/v1/train/runs/:id/stop,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:166,high
+aprender-orchestrate,POST /api/v1/train/start,6,UNKNOWN,mlflow,no,crates/aprender-orchestrate/src/serve/banco/router.rs:160,high
+aprender-orchestrate,POST /ui/chat,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:94,high
+aprender-orchestrate,POST /v1/audio/transcriptions,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:138,high
+aprender-orchestrate,POST /v1/chat/completions,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:136,high
+aprender-orchestrate,POST /v1/completions,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:135,high
+aprender-orchestrate,POST /v1/embeddings,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:137,high
+aprender-orchestrate,PUT /api/v1/chat/parameters,6,UNKNOWN,llama.cpp,no,crates/aprender-orchestrate/src/serve/banco/router.rs:111,high
+aprender-orchestrate,PUT /api/v1/config,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:185,high
+aprender-orchestrate,PUT /api/v1/tools/:name/config,6,UNKNOWN,NONE,no,crates/aprender-orchestrate/src/serve/banco/router.rs:194,high
+aprender-orchestrate,aprender-orchestrate agent chat,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/agent.rs:75,high
+aprender-orchestrate,aprender-orchestrate agent contracts,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/agent.rs:141,high
+aprender-orchestrate,aprender-orchestrate agent pool,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/agent.rs:151,high
+aprender-orchestrate,aprender-orchestrate agent run,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/agent.rs:48,high
+aprender-orchestrate,aprender-orchestrate agent sign,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/agent.rs:109,high
+aprender-orchestrate,aprender-orchestrate agent status,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/agent.rs:144,high
+aprender-orchestrate,aprender-orchestrate agent validate,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/agent.rs:93,high
+aprender-orchestrate,aprender-orchestrate agent verify-sig,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/agent.rs:125,high
+aprender-orchestrate,aprender-orchestrate analyze,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:68,high
+aprender-orchestrate,aprender-orchestrate bug-hunter analyze,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:28,high
+aprender-orchestrate,aprender-orchestrate bug-hunter deep-hunt,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:184,high
+aprender-orchestrate,aprender-orchestrate bug-hunter diff,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:368,high
+aprender-orchestrate,aprender-orchestrate bug-hunter ensemble,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:211,high
+aprender-orchestrate,aprender-orchestrate bug-hunter falsify,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:134,high
+aprender-orchestrate,aprender-orchestrate bug-hunter fuzz,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:159,high
+aprender-orchestrate,aprender-orchestrate bug-hunter hunt,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:97,high
+aprender-orchestrate,aprender-orchestrate bug-hunter spec,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:260,high
+aprender-orchestrate,aprender-orchestrate bug-hunter stack,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:327,high
+aprender-orchestrate,aprender-orchestrate bug-hunter ticket,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:305,high
+aprender-orchestrate,aprender-orchestrate bug-hunter trend,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:395,high
+aprender-orchestrate,aprender-orchestrate bug-hunter triage,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/bug_hunter.rs:410,high
+aprender-orchestrate,aprender-orchestrate build,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:148,high
+aprender-orchestrate,aprender-orchestrate code,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:400,high
+aprender-orchestrate,aprender-orchestrate content emit,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/content.rs:16,high
+aprender-orchestrate,aprender-orchestrate content types,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/content.rs:65,high
+aprender-orchestrate,aprender-orchestrate content validate,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/content.rs:51,high
+aprender-orchestrate,aprender-orchestrate data tree,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/data.rs:13,high
+aprender-orchestrate,aprender-orchestrate deploy cloudflare,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/deploy.rs:102,high
+aprender-orchestrate,aprender-orchestrate deploy docker,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/deploy.rs:14,high
+aprender-orchestrate,aprender-orchestrate deploy fly,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/deploy.rs:84,high
+aprender-orchestrate,aprender-orchestrate deploy k8s,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/deploy.rs:58,high
+aprender-orchestrate,aprender-orchestrate deploy lambda,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/deploy.rs:36,high
+aprender-orchestrate,aprender-orchestrate experiment tree,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/experiment.rs:13,high
+aprender-orchestrate,aprender-orchestrate falsify,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:321,high
+aprender-orchestrate,aprender-orchestrate hf catalog,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/hf.rs:15,high
+aprender-orchestrate,aprender-orchestrate hf course,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/hf.rs:46,high
+aprender-orchestrate,aprender-orchestrate hf info,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/hf.rs:98,high
+aprender-orchestrate,aprender-orchestrate hf pull,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/hf.rs:108,high
+aprender-orchestrate,aprender-orchestrate hf push,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/hf.rs:126,high
+aprender-orchestrate,aprender-orchestrate hf search,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/hf.rs:80,high
+aprender-orchestrate,aprender-orchestrate hf tree,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/hf.rs:69,high
+aprender-orchestrate,aprender-orchestrate init,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:57,high
+aprender-orchestrate,aprender-orchestrate mcp,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:233,high
+aprender-orchestrate,aprender-orchestrate optimize,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:110,high
+aprender-orchestrate,aprender-orchestrate oracle,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:215,high
+aprender-orchestrate,aprender-orchestrate pacha alias,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:86,high
+aprender-orchestrate,aprender-orchestrate pacha aliases,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:79,high
+aprender-orchestrate,aprender-orchestrate pacha decrypt,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:220,high
+aprender-orchestrate,aprender-orchestrate pacha encrypt,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:205,high
+aprender-orchestrate,aprender-orchestrate pacha keygen,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:156,high
+aprender-orchestrate,aprender-orchestrate pacha list,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:31,high
+aprender-orchestrate,aprender-orchestrate pacha pin,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:111,high
+aprender-orchestrate,aprender-orchestrate pacha prune,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:100,high
+aprender-orchestrate,aprender-orchestrate pacha pull,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:16,high
+aprender-orchestrate,aprender-orchestrate pacha rm,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:42,high
+aprender-orchestrate,aprender-orchestrate pacha run,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:125,high
+aprender-orchestrate,aprender-orchestrate pacha search,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:68,high
+aprender-orchestrate,aprender-orchestrate pacha show,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:57,high
+aprender-orchestrate,aprender-orchestrate pacha sign,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:171,high
+aprender-orchestrate,aprender-orchestrate pacha stats,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:97,high
+aprender-orchestrate,aprender-orchestrate pacha unpin,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:118,high
+aprender-orchestrate,aprender-orchestrate pacha verify,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/pacha/commands.rs:190,high
+aprender-orchestrate,aprender-orchestrate parf,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:184,high
+aprender-orchestrate,aprender-orchestrate playbook lock,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/playbook.rs:42,high
+aprender-orchestrate,aprender-orchestrate playbook run,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/playbook.rs:12,high
+aprender-orchestrate,aprender-orchestrate playbook status,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/playbook.rs:36,high
+aprender-orchestrate,aprender-orchestrate playbook validate,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/playbook.rs:30,high
+aprender-orchestrate,aprender-orchestrate report,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:163,high
+aprender-orchestrate,aprender-orchestrate reset,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:177,high
+aprender-orchestrate,aprender-orchestrate serve,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:275,high
+aprender-orchestrate,aprender-orchestrate stack check,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:46,high
+aprender-orchestrate,aprender-orchestrate stack comply,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:197,high
+aprender-orchestrate,aprender-orchestrate stack drift,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:185,high
+aprender-orchestrate,aprender-orchestrate stack gate,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:149,high
+aprender-orchestrate,aprender-orchestrate stack publish-status,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:173,high
+aprender-orchestrate,aprender-orchestrate stack quality,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:128,high
+aprender-orchestrate,aprender-orchestrate stack release,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:67,high
+aprender-orchestrate,aprender-orchestrate stack status,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:90,high
+aprender-orchestrate,aprender-orchestrate stack sync,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:102,high
+aprender-orchestrate,aprender-orchestrate stack tree,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:116,high
+aprender-orchestrate,aprender-orchestrate stack versions,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/stack.rs:158,high
+aprender-orchestrate,aprender-orchestrate status,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:174,high
+aprender-orchestrate,aprender-orchestrate transpile,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:87,high
+aprender-orchestrate,aprender-orchestrate validate,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/main_cli.rs:129,high
+aprender-orchestrate,aprender-orchestrate viz dashboard,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/viz.rs:29,high
+aprender-orchestrate,aprender-orchestrate viz tree,6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/cli/viz.rs:14,high
+aprender-orchestrate,mcp:calculator (banco POST /api/v1/mcp),6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/serve/banco/tools.rs:58,medium
+aprender-orchestrate,mcp:code_execution (banco POST /api/v1/mcp),6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/serve/banco/tools.rs:79,medium
+aprender-orchestrate,mcp:compute (agent tool registry),6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/agent/tool/mcp_server.rs:285,medium
+aprender-orchestrate,mcp:memory (agent tool registry),6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/agent/tool/mcp_server.rs:118,medium
+aprender-orchestrate,mcp:rag (agent tool registry),6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/agent/tool/mcp_server.rs:213,medium
+aprender-orchestrate,mcp:web_search (banco POST /api/v1/mcp),6,UNKNOWN,claude-code,no,crates/aprender-orchestrate/src/serve/banco/tools.rs:105,medium
+aprender-profile,aprender-profile -- <COMMAND> (trace a launched command),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:270,high
+aprender-profile,aprender-profile --anomaly-realtime (sigma anomaly detection),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:72-82,high
+aprender-profile,aprender-profile --chaos <PRESET> (chaos engineering),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:209,high
+aprender-profile,aprender-profile --dl-anomaly (autoencoder),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:120,high
+aprender-profile,aprender-profile --hpu-analysis,6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:84,high
+aprender-profile,aprender-profile --ml-anomaly (k-means clustering),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:92,high
+aprender-profile,aprender-profile --ml-outliers (isolation forest),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:104,high
+aprender-profile,aprender-profile --otlp-endpoint <URL> (OpenTelemetry export),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:156,high
+aprender-profile,aprender-profile --save-model / --load-model,6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:246,high
+aprender-profile,aprender-profile --trace-compute,6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:175,high
+aprender-profile,aprender-profile --transpiler-map <FILE> (transpiler correlation),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:136,high
+aprender-profile,aprender-profile -e/--expr <EXPR> (syscall filtering),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:36,high
+aprender-profile,aprender-profile -f/--follow-forks,6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:56,high
+aprender-profile,aprender-profile -p <PID> (attach to running process),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:52,high
+aprender-profile,aprender-profile -s/--source (DWARF source correlation),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:32,high
+aprender-profile,aprender-profile validate -- <COMMAND> (golden-baseline trace validation),6,UNKNOWN,NONE,no,crates/aprender-profile/src/cli.rs:280-334,high
+aprender-ptx-debug,aprender-ptx-debug analyze,6,UNKNOWN,NONE,no,crates/aprender-ptx-debug/src/cli.rs:49,high
+aprender-ptx-debug,aprender-ptx-debug gen-fkr,6,UNKNOWN,NONE,no,crates/aprender-ptx-debug/src/cli.rs:53,high
+aprender-ptx-debug,aprender-ptx-debug version,6,UNKNOWN,NONE,no,crates/aprender-ptx-debug/src/cli.rs:56,high
+aprender-test-cli,"GET / (dev server, static)",6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/dev_server.rs:338,medium
+aprender-test-cli,"GET /ws (dev server, WebSocket)",6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/dev_server.rs:330,medium
+aprender-test-cli,aprender-test-cli animation check,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:298,high
+aprender-test-cli,aprender-test-cli audio check,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:202,high
+aprender-test-cli,aprender-test-cli av-sync check,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:132,high
+aprender-test-cli,aprender-test-cli av-sync report,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:135,high
+aprender-test-cli,aprender-test-cli build,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:54,high
+aprender-test-cli,aprender-test-cli comply,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:75,high
+aprender-test-cli,aprender-test-cli comply check,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:1458,high
+aprender-test-cli,aprender-test-cli comply diff,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:1464,high
+aprender-test-cli,aprender-test-cli comply enforce,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:1467,high
+aprender-test-cli,aprender-test-cli comply migrate,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:1461,high
+aprender-test-cli,aprender-test-cli comply report,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:1470,high
+aprender-test-cli,aprender-test-cli config,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:48,high
+aprender-test-cli,aprender-test-cli coverage,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:42,high
+aprender-test-cli,aprender-test-cli init,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:45,high
+aprender-test-cli,aprender-test-cli llm bench,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:406,high
+aprender-test-cli,aprender-test-cli llm data-audit,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:412,high
+aprender-test-cli,aprender-test-cli llm experiment,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:410,high
+aprender-test-cli,aprender-test-cli llm experiment compare,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:715,high
+aprender-test-cli,aprender-test-cli llm experiment init,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:711,high
+aprender-test-cli,aprender-test-cli llm experiment status,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:713,high
+aprender-test-cli,aprender-test-cli llm gen-dataset,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:416,high
+aprender-test-cli,aprender-test-cli llm load,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:404,high
+aprender-test-cli,aprender-test-cli llm report,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:408,high
+aprender-test-cli,aprender-test-cli llm score,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:418,high
+aprender-test-cli,aprender-test-cli llm sweep,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:414,high
+aprender-test-cli,aprender-test-cli llm test,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:402,high
+aprender-test-cli,aprender-test-cli playbook,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:60,high
+aprender-test-cli,aprender-test-cli record,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:36,high
+aprender-test-cli,aprender-test-cli report,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:39,high
+aprender-test-cli,aprender-test-cli serve,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:51,high
+aprender-test-cli,aprender-test-cli serve score,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:1142,high
+aprender-test-cli,aprender-test-cli serve tree,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:1136,high
+aprender-test-cli,aprender-test-cli serve viz,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:1139,high
+aprender-test-cli,aprender-test-cli stress,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:109,high
+aprender-test-cli,aprender-test-cli test,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:33,high
+aprender-test-cli,aprender-test-cli video check,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:244,high
+aprender-test-cli,aprender-test-cli watch,6,UNKNOWN,NONE,no,crates/aprender-test-cli/src/commands.rs:57,high
+aprender-train-bench,aprender-train-bench ablation,6,x86_64-linux,pytorch,no,crates/aprender-train-bench/src/main.rs:80,low
+aprender-train-bench,aprender-train-bench alpha,6,x86_64-linux,pytorch,no,crates/aprender-train-bench/src/main.rs:50,low
+aprender-train-bench,aprender-train-bench compare,6,x86_64-linux,pytorch,no,crates/aprender-train-bench/src/main.rs:69,low
+aprender-train-bench,aprender-train-bench cost-performance,6,x86_64-linux,pytorch,no,crates/aprender-train-bench/src/main.rs:87,low
+aprender-train-bench,aprender-train-bench recommend,6,x86_64-linux,pytorch,no,crates/aprender-train-bench/src/main.rs:98,low
+aprender-train-bench,aprender-train-bench temperature,6,x86_64-linux,pytorch,no,crates/aprender-train-bench/src/main.rs:31,low
+aprender-train-distill,aprender-train-distill estimate,6,UNKNOWN,unsloth,no,crates/aprender-train-distill/src/main.rs:43,high
+aprender-train-distill,aprender-train-distill export,6,UNKNOWN,unsloth,no,crates/aprender-train-distill/src/main.rs:69,high
+aprender-train-distill,aprender-train-distill run,6,UNKNOWN,unsloth,no,crates/aprender-train-distill/src/main.rs:28,high
+aprender-train-distill,aprender-train-distill validate,6,UNKNOWN,unsloth,no,crates/aprender-train-distill/src/main.rs:62,high
+aprender-train-inspect,aprender-train-inspect compare,6,x86_64-linux,pytorch,no,crates/aprender-train-inspect/src/main.rs:87,low
+aprender-train-inspect,aprender-train-inspect convert,6,x86_64-linux,pytorch,no,crates/aprender-train-inspect/src/main.rs:69,low
+aprender-train-inspect,aprender-train-inspect info,6,x86_64-linux,pytorch,no,crates/aprender-train-inspect/src/main.rs:29,low
+aprender-train-inspect,aprender-train-inspect layers,6,x86_64-linux,pytorch,no,crates/aprender-train-inspect/src/main.rs:35,low
+aprender-train-inspect,aprender-train-inspect memory,6,x86_64-linux,pytorch,no,crates/aprender-train-inspect/src/main.rs:45,low
+aprender-train-inspect,aprender-train-inspect validate,6,x86_64-linux,pytorch,no,crates/aprender-train-inspect/src/main.rs:59,low
+aprender-train-lora,aprender-train-lora compare,6,UNKNOWN,unsloth,no,crates/aprender-train-lora/src/main.rs:50,high
+aprender-train-lora,aprender-train-lora inspect,6,UNKNOWN,unsloth,no,crates/aprender-train-lora/src/main.rs:80,high
+aprender-train-lora,aprender-train-lora merge,6,UNKNOWN,unsloth,no,crates/aprender-train-lora/src/main.rs:61,high
+aprender-train-lora,aprender-train-lora plan,6,UNKNOWN,unsloth,no,crates/aprender-train-lora/src/main.rs:29,high
+aprender-train-shell,aprender-train-shell (interactive REPL),6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/main.rs:63,low
+aprender-train-shell,aprender-train-shell -c <STR> (one-shot REPL command),6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/main.rs:16,low
+aprender-train-shell,aprender-train-shell -s <PATH> (resume saved session),6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/main.rs:12,low
+aprender-train-shell,repl: clear,6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/commands.rs:71,low
+aprender-train-shell,repl: distill,6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/commands.rs:67,low
+aprender-train-shell,repl: export <format> <path>,6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/commands.rs:68,low
+aprender-train-shell,repl: fetch <model_id>,6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/commands.rs:63,low
+aprender-train-shell,repl: help,6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/commands.rs:70,low
+aprender-train-shell,repl: history,6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/commands.rs:69,low
+aprender-train-shell,repl: inspect,6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/commands.rs:64,low
+aprender-train-shell,repl: memory,6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/commands.rs:65,low
+aprender-train-shell,repl: quit,6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/commands.rs:72,low
+aprender-train-shell,repl: set <key> <value>,6,x86_64-linux,pytorch,no,crates/aprender-train-shell/src/commands.rs:66,low
+aprender-zram-generator,aprender-zram-generator <NORMAL_DIR> (systemd.generator unit emission),6,UNKNOWN,NONE,no,crates/aprender-zram-generator/src/main.rs:30-60,high
+presentar,presentar bundle,6,UNKNOWN,NONE,no,crates/aprender-present-cli/src/main.rs:67,high
+presentar,presentar check,6,UNKNOWN,NONE,no,crates/aprender-present-cli/src/main.rs:84,high
+presentar,presentar deploy,6,UNKNOWN,NONE,no,crates/aprender-present-cli/src/main.rs:125,high
+presentar,presentar gate,6,UNKNOWN,NONE,no,crates/aprender-present-cli/src/main.rs:106,high
+presentar,presentar new,6,UNKNOWN,NONE,no,crates/aprender-present-cli/src/main.rs:78,high
+presentar,presentar score,6,UNKNOWN,NONE,no,crates/aprender-present-cli/src/main.rs:91,high
+presentar,presentar serve,6,UNKNOWN,NONE,no,crates/aprender-present-cli/src/main.rs:52,high
+ptop,ptop (interactive TUI system monitor),6,UNKNOWN,NONE,no,crates/aprender-present-terminal/src/bin/ptop.rs:120-134,high
+ptop,ptop --dump-config,6,UNKNOWN,NONE,no,crates/aprender-present-terminal/src/bin/ptop.rs:56,high
+ptop,ptop --render-once,6,UNKNOWN,NONE,no,crates/aprender-present-terminal/src/bin/ptop.rs:117,high
+ptop,ptop --render-once --explode <PANEL>,6,UNKNOWN,NONE,no,crates/aprender-present-terminal/src/bin/ptop.rs:63,high
+pv,pv audit,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:59,low
+pv,pv book,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:300,low
+pv,pv certify,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:381,low
+pv,pv check-parity,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:20,low
+pv,pv codegen,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:37,low
+pv,pv coq,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:286,low
+pv,pv coverage,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:80,low
+pv,pv diff,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:73,low
+pv,pv equations,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:124,low
+pv,pv explain,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:9,low
+pv,pv extract-pytorch,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:31,low
+pv,pv flux,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:292,low
+pv,pv fuzz,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:288,low
+pv,pv generate,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:98,low
+pv,pv graph,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:115,low
+pv,pv infer,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:315,low
+pv,pv invariants,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:284,low
+pv,pv kaizen,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:362,low
+pv,pv kani,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:45,low
+pv,pv lean,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:130,low
+pv,pv lean-status,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:136,low
+pv,pv lint,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:166,low
+pv,pv migrate,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:419,low
+pv,pv mirai,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:290,low
+pv,pv pipeline,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:354,low
+pv,pv probar,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:47,low
+pv,pv proof-status,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:142,low
+pv,pv query,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:282,low
+pv,pv roofline,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:337,low
+pv,pv scaffold,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:22,low
+pv,pv score,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:252,low
+pv,pv status,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:54,low
+pv,pv tla,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:294,low
+pv,pv unlock,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:329,low
+pv,pv validate,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:17,low
+pv,pv verify-bindings,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:408,low
+pv,pv verify-pipeline,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:401,low
+pv,pv verify-structure,6,x86_64-linux,NONE,no,crates/aprender-contracts-cli/src/cli.rs:391,low
+score,"score --ci --threshold <N> (gate mode, exit 1 below threshold)",6,UNKNOWN,NONE,no,crates/aprender-present-terminal/src/bin/score.rs:49,high
+score,score [PATH] (TUI-crate quality scoring),6,UNKNOWN,NONE,no,crates/aprender-present-terminal/src/bin/score.rs:30-64,high
+simular,GET / (visualization UI),6,UNKNOWN,NONE,no,crates/aprender-simulate/src/visualization/web.rs:88,medium
+simular,GET /health (visualization),6,UNKNOWN,NONE,no,crates/aprender-simulate/src/visualization/web.rs:89,medium
+simular,"GET /ws (visualization, WebSocket)",6,UNKNOWN,NONE,no,crates/aprender-simulate/src/visualization/web.rs:82,medium
+simular,simular emc-check,6,UNKNOWN,NONE,no,crates/aprender-simulate/src/cli/args.rs:105,high
+simular,simular emc-validate,6,UNKNOWN,NONE,no,crates/aprender-simulate/src/cli/args.rs:110,high
+simular,simular help,6,UNKNOWN,NONE,no,crates/aprender-simulate/src/cli/args.rs:117,high
+simular,simular list-emc,6,UNKNOWN,NONE,no,crates/aprender-simulate/src/cli/args.rs:115,high
+simular,simular render,6,UNKNOWN,NONE,no,crates/aprender-simulate/src/cli/args.rs:71,high
+simular,simular run,6,UNKNOWN,NONE,no,crates/aprender-simulate/src/cli/args.rs:60,high
+simular,simular validate,6,UNKNOWN,NONE,no,crates/aprender-simulate/src/cli/args.rs:92,high
+simular,simular verify,6,UNKNOWN,NONE,no,crates/aprender-simulate/src/cli/args.rs:97,high
+simular,simular version,6,UNKNOWN,NONE,no,crates/aprender-simulate/src/cli/args.rs:119,high
+trueno-rag,trueno-rag demo,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:107,high
+trueno-rag,trueno-rag eval compare,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:454,high
+trueno-rag,trueno-rag eval gate,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:465,high
+trueno-rag,trueno-rag eval generate,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:340,high
+trueno-rag,trueno-rag eval judge,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:412,high
+trueno-rag,trueno-rag eval metrics,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:439,high
+trueno-rag,trueno-rag eval retrieve,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:367,high
+trueno-rag,trueno-rag eval sample,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:321,high
+trueno-rag,trueno-rag extract-frames,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:271,high
+trueno-rag,trueno-rag index,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:121,high
+trueno-rag,trueno-rag info,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:306,high
+trueno-rag,trueno-rag query,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:184,high
+trueno-rag,trueno-rag transcribe,6,UNKNOWN,huggingface-transformers,no,crates/aprender-rag-cli/src/lib.rs:228,high
+trueno-zram,trueno-zram benchmark,6,UNKNOWN,NONE,no,crates/aprender-zram-cli/src/lib.rs:47,high
+trueno-zram,trueno-zram create,6,UNKNOWN,NONE,no,crates/aprender-zram-cli/src/lib.rs:38,high
+trueno-zram,trueno-zram remove,6,UNKNOWN,NONE,no,crates/aprender-zram-cli/src/lib.rs:41,high
+trueno-zram,trueno-zram status,6,UNKNOWN,NONE,no,crates/aprender-zram-cli/src/lib.rs:44,high
+verificar,verificar codex,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:177,high
+verificar,verificar corpus,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:67,high
+verificar,verificar depyler,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:86,high
+verificar,verificar distill,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:150,high
+verificar,verificar evaluate,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:135,high
+verificar,verificar export,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:208,high
+verificar,verificar generate,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:29,high
+verificar,verificar mutate,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:239,high
+verificar,verificar stats,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:56,high
+verificar,verificar train,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:120,high
+verificar,verificar verify,6,UNKNOWN,NONE,no,crates/aprender-verify-ml/src/bin/verificar.rs:105,high

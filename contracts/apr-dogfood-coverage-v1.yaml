@@ -1,0 +1,545 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-22'
+  author: PAIML Engineering
+  references:
+  - 'docs/audits/surface_audit.csv — 830 features across 28 binaries, measured 2026-08-22 @ 4bbfeb07f'
+  - 'docs/audits/dogfood-0.63.0-ledger.md — 201 findings, 37 clusters, 171 open, 16 open P0'
+  - '.claude/skills/apr-dogfood/SKILL.md — Phase 2, the coverage gate this contract enforces'
+  - 'scripts/dogfood_surfaces.sh — the runtime enumeration that supplies the denominator'
+  description: >
+    The gate-coverage contract for the apr-dogfood protocol. A gate suite with no
+    denominator reports a clean sweep over whatever subset it happens to cover; this
+    contract supplies the denominator and ratchets it. Measured baseline: 142 of 830
+    shipped features carry a gate (17.1%), all 142 in the `apr` binary, 27 of 28
+    binaries at zero. Coverage is ALLOWED to be 17.1%. It is not allowed to become
+    17.0%.
+
+  # ---------------------------------------------------------------------------
+  # G2.3 BASELINES -- measured 2026-08-22 at cbb1ccd78, never rounded.
+  #
+  # Every value below cites the command that produced it, because a baseline
+  # nobody can re-derive is a number someone will eventually "correct" to a
+  # rounder one. These are RATCHET FLOORS, not targets: coverage is allowed to be
+  # 17.1%, it is not allowed to become 17.0%.
+  #
+  # Reproduce the whole block with:
+  #     python3 scripts/dogfood_baseline.py
+  # which reads docs/audits/surface_audit.csv and prints exactly this YAML.
+  # ---------------------------------------------------------------------------
+  baselines:
+    measured_at: '2026-08-22'
+    # The commit the audit was taken AT, and it must be one that outlives this
+    # pull request. This field first named `cbb1ccd78`, a commit on the feature
+    # branch: a squash merge orphans it, so on `main` the provenance line would
+    # have pointed at nothing a fresh clone could resolve. `4bbfeb07f` is the
+    # branch's merge base on `main` -- the commit the surface was actually
+    # measured against, and the one the `references:` block above already
+    # cites. Provenance must name a commit that survives the merge.
+    measured_commit: 4bbfeb07f
+    ledger: docs/audits/surface_audit.csv
+
+    overall:
+      command: "python3 scripts/dogfood_baseline.py  # section: totals"
+      rows: 830
+      covered: 142
+      ratio: 0.1711            # 142/830 -- 17.1%, NOT "about 17%"
+      binaries: 28
+      binaries_at_zero_coverage: 27
+      note: >
+        All 142 covered features are in `apr`. 27 of 28 binaries have no gate at
+        all, including aprender-orchestrate (184 features), aprender-test-cli (39)
+        and pv (38).
+
+    per_binary:
+      command: "python3 scripts/dogfood_baseline.py  # section: per_binary"
+      note: >
+        covered may never DECREASE for any binary; total may never decrease
+        without a reconciliation finding recording which direction moved.
+      apr: {total: 367, covered: 142}
+      aprender-orchestrate: {total: 184, covered: 0}
+      aprender-test-cli: {total: 39, covered: 0}
+      pv: {total: 38, covered: 0}
+      alimentar: {total: 35, covered: 0}
+      aprender-cgp: {total: 25, covered: 0}
+      aprender-profile: {total: 16, covered: 0}
+      apr-qa: {total: 15, covered: 0}
+      aprender-train-shell: {total: 13, covered: 0}
+      trueno-rag: {total: 13, covered: 0}
+      simular: {total: 12, covered: 0}
+      verificar: {total: 11, covered: 0}
+      aprender-explain: {total: 7, covered: 0}
+      presentar: {total: 7, covered: 0}
+      aprender-train-bench: {total: 6, covered: 0}
+      aprender-train-inspect: {total: 6, covered: 0}
+      aprender-cbtop: {total: 4, covered: 0}
+      aprender-db: {total: 4, covered: 0}
+      aprender-train-distill: {total: 4, covered: 0}
+      aprender-train-lora: {total: 4, covered: 0}
+      ptop: {total: 4, covered: 0}
+      trueno-zram: {total: 4, covered: 0}
+      aprender-compute-xtask: {total: 3, covered: 0}
+      aprender-ptx-debug: {total: 3, covered: 0}
+      apr-corpus-ingest: {total: 2, covered: 0}
+      score: {total: 2, covered: 0}
+      apr-qa-readme-sync: {total: 1, covered: 0}
+      aprender-zram-generator: {total: 1, covered: 0}
+
+    per_band:
+      command: "python3 scripts/dogfood_baseline.py  # section: per_band"
+      note: >
+        THE ARGUMENT FOR MAKING COVERAGE THE ORGANIZING GATE. Where gates look,
+        they find defects: the 1-2 band is 72.5% covered. Where they do not look,
+        the surface scores 6 by DEFAULT -- 672 rows scored exactly 6, and 644 of
+        those carry no gate. A 6 does not mean "fine", it means UNLOOKED-AT, and
+        the 4.3% coverage of that band is why.
+      q1_2: {total: 80, covered: 58}     # 72.5%
+      q3_4: {total: 49, covered: 27}     # 55.1%
+      q5_6: {total: 673, covered: 29}    # 4.3%
+      q7_8: {total: 8, covered: 8}       # 100.0%
+      q9_10: {total: 20, covered: 20}    # 100.0%
+
+    hardware_provenance:
+      command: "python3 scripts/dogfood_baseline.py  # section: totals"
+      unknown: 427
+      direction: "may only DECREASE -- 427 is a ceiling"
+      note: >
+        Hardware is never inferred from a feature's name. A CUDA kernel with no
+        job that runs it is UNKNOWN.
+
+    confidence:
+      command: "python3 scripts/dogfood_baseline.py  # section: totals"
+      low_and_uncovered: 204
+      direction: "may only DECREASE -- 204 is a ceiling"
+      note: >
+        A row that is BOTH low-confidence and ungated is doubly dark: nothing
+        checks it, and the ledger itself is unsure what it claims.
+
+    broken_and_ungated:
+      command: "python3 scripts/dogfood_baseline.py  # section: totals"
+      count: 44
+      direction: "may only DECREASE -- target 0"
+      note: >
+        All 44 are in `apr`. Each needs an open issue or a written waiver before
+        the next release; the enumerated list is in the Phase 2 report and in
+        .claude/skills/apr-dogfood/SKILL.md.
+
+equations:
+  gate_coverage_ratio:
+    formula: |
+      covered = |{ r in surface_audit.csv : r.in_dogfood_skill == "yes" }|
+      total   = |surface_audit.csv|
+      coverage = covered / total
+      REQUIRE: covered >= 142 AND total >= 830
+    domain: "rows of docs/audits/surface_audit.csv, reconciled against the runtime enumeration"
+    codomain: "f64 in [0.0, 1.0]"
+    invariants:
+    - "Baseline 142/830 = 0.171 measured 2026-08-22 at 4bbfeb07f"
+    - "The covered count may never decrease (ratchet)"
+    - "The total may never decrease without a corresponding ledger update (a shrinking denominator inflates coverage)"
+
+  denominator_reconciliation:
+    formula: |
+      runtime = enumerate(binaries, subcommands, routes, mcp_tools)   # from the BUILT binary
+      ledger  = rows(surface_audit.csv)
+      REQUIRE: runtime \ ledger == {} AND ledger \ runtime == {}
+    domain: "the shipped surface at HEAD vs the committed ledger"
+    codomain: bool
+    invariants:
+    - "A feature in the binary but not the ledger is RED — the ledger is stale"
+    - "A feature in the ledger but not the binary is RED — the surface shrank unnoticed"
+    - "Neither direction may be silently reconciled; that turns the ledger back into a list"
+
+  broken_and_ungated:
+    formula: |
+      REQUIRE: |{ r : r.quality_1_10 <= 4 AND r.in_dogfood_skill != "yes" }| == 0
+    domain: "features carrying a live ledger defect"
+    codomain: "non-negative integer"
+    invariants:
+    - "Baseline is 44, all 44 in the `apr` binary — every one a defect that shipped and would ship again unnoticed"
+    - "Target is 0; at --release each remaining entry needs an open issue AND a written waiver"
+
+  hardware_provenance:
+    formula: |
+      REQUIRE: |{ r : r.verified_hardware == "UNKNOWN" }| <= 427
+      forall r : r.verified_hardware != "UNKNOWN" =>
+        exists a CI job that RAN r on that target, or a cargo feature gate that compiles it
+    domain: "the verified_hardware column"
+    codomain: bool
+    invariants:
+    - "Baseline 427 UNKNOWN of 830; may never increase"
+    - "Hardware is NEVER inferred from a feature's name — a CUDA kernel with no job that runs it is UNKNOWN"
+
+  ledger_schema:
+    formula: |
+      forall r in surface_audit.csv:
+        |columns(r)| == 8 AND r.evidence_path != ""
+    domain: "RFC 4180 rows, 8 columns"
+    codomain: bool
+    invariants:
+    - "Columns are exactly: binary, feature, quality_1_10, verified_hardware, top_competitor, in_dogfood_skill, evidence_path, confidence"
+    - "A row with no evidence_path is invalid — an unevidenced claim is not a ledger entry"
+
+falsification_tests:
+- id: F-DOGCOV-001
+  rule: gate coverage ratchet
+  prediction: "covered rows >= 142 and total rows >= 830"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    cov = sum(1 for r in rows if r['in_dogfood_skill'].strip().lower() == 'yes')
+    assert len(rows) >= 830, f"denominator shrank to {len(rows)}"
+    assert cov >= 142, f"coverage regressed to {cov}/{len(rows)}"
+    EOF
+  if_fails: "gate coverage regressed below the committed baseline — NO-GO regardless of every other gate being green"
+  mutation: "flip one in_dogfood_skill from yes to no; the assert must turn RED"
+
+- id: F-DOGCOV-002
+  rule: denominator reconciliation
+  prediction: >
+    Within the emitter's DECLARED scope (the CLI subcommand tree to depth 4, from
+    --help on the built binary), the runtime enumeration and the ledger describe the
+    same surface in BOTH directions. Measured 2026-08-22 at cbb1ccd78: dirA=0, dirB=0.
+  test: |
+    # Runs for real as of 2026-08-22 -- scripts/dogfood_surfaces.sh grew the
+    # --emit-features mode this contract needed. It is deterministic (two runs are
+    # byte-identical) and it declares its scope on stderr and in a FEATURESET line.
+    bash scripts/dogfood_surfaces.sh --emit-features > /tmp/dogcov-runtime.txt 2>/tmp/dogcov-scope.txt
+    rc=$?; [ "$rc" -eq 0 ] || { echo "emit-features failed rc=$rc"; exit 1; }
+    python3 scripts/dogfood_reconcile.py /tmp/dogcov-runtime.txt
+  if_fails: >
+    The ledger no longer describes the shipped surface, so the coverage ratio is
+    measuring declared state rather than resolved state. NEITHER direction may be
+    silently reconciled -- "in the binary, not in the ledger" means the ledger went
+    stale; "in the ledger, not in the binary" means the surface shrank unnoticed.
+    Both are findings; fixing the CSV to match without recording which direction
+    moved turns the ledger back into a list.
+  mutation: >
+    Four-way discrimination, all four run 2026-08-22 and all four behaved:
+    clean tree GREEN; a no-op copy of the CSV GREEN (a gate that fires on a no-op
+    measures nothing); dropping the live row `apr canary check` turns dirA RED;
+    adding a row for `apr zzz-deleted-command` turns dirB RED.
+  scope_and_allowance: >
+    The emitter cannot enumerate flags (70 rows), HTTP routes (146, live-server
+    only), MCP tools (15), REPL verbs, or annotated/positional forms (5) -- 247 of
+    830 rows sit outside its scope and are counted, never silently dropped.
+    A further 28 in-scope rows are a DECLARED allowance: 26 are hidden by a default
+    cargo build behind `dev`, `hf-hub`, `doctest` and `eval`, PROVEN by rebuilding
+    with the feature and watching the subcommands appear (not inferred from the cfg
+    attribute); 2 are the literal `help` subcommand the emitter filters. The
+    allowance is ENUMERATED rather than tolerated as a count, so a 29th mismatch
+    still turns the gate RED.
+
+- id: F-DOGCOV-003
+  rule: no broken-and-ungated feature
+  prediction: "every feature with quality <= 4 carries a gate, or an issue plus a waiver"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    bad = [r for r in rows
+           if int(r['quality_1_10']) <= 4 and r['in_dogfood_skill'].strip().lower() != 'yes']
+    print(f"{len(bad)} broken-and-ungated (baseline 44)")
+    assert len(bad) <= 44, f"grew to {len(bad)}"
+    EOF
+  if_fails: "a known-broken feature has no gate — it shipped once and will ship again unnoticed"
+  mutation: "set one covered row's quality to 2 and its in_dogfood_skill to no; the count must exceed 44"
+
+- id: F-DOGCOV-004
+  rule: hardware provenance never inferred
+  prediction: "UNKNOWN count <= 427 and every non-UNKNOWN claim names a job or a feature gate"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    unk = sum(1 for r in rows if r['verified_hardware'].strip().upper() == 'UNKNOWN')
+    assert unk <= 427, f"UNKNOWN grew to {unk}"
+    EOF
+  if_fails: "hardware verification regressed, or a claim was inferred from a feature name rather than a job that ran"
+  mutation: "claim nvidia-cuda for a feature no CI job runs; the provenance check must turn RED"
+
+- id: F-DOGCOV-005
+  rule: ledger schema and evidence
+  prediction: "830+ rows, exactly 8 columns, zero blank evidence_path"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    exp = ['binary','feature','quality_1_10','verified_hardware',
+           'top_competitor','in_dogfood_skill','evidence_path','confidence']
+    rdr = csv.DictReader(open('docs/audits/surface_audit.csv'))
+    assert rdr.fieldnames == exp, rdr.fieldnames
+    rows = list(rdr)
+    assert all(len(r) == 8 for r in rows), "ragged row"
+    assert not [r for r in rows if not r['evidence_path'].strip()], "row with no evidence"
+    EOF
+  if_fails: "the ledger is malformed or carries an unevidenced claim"
+  mutation: "blank one evidence_path; the assert must turn RED"
+
+- id: F-DOGCOV-006
+  rule: per-binary and per-band baselines never regress
+  prediction: >
+    Every per-binary and per-band `covered` count in the baselines block still
+    matches the ledger. Measured 2026-08-22: apr 142/367, the other 27 binaries
+    0, bands 58/80, 27/49, 29/673, 8/8, 20/20.
+  test: |
+    python3 scripts/dogfood_baseline.py --check
+  if_fails: >
+    A per-binary or per-band count drifted from the committed baseline. The
+    aggregate ratio can hide this: dropping a gate on `apr` while adding one
+    elsewhere leaves 142/830 unchanged. Per-binary is what makes the 27-at-zero
+    finding un-hideable.
+  mutation: >
+    Run 2026-08-22 against the COMMITTED script in a scratch tree: clean ledger
+    GREEN, byte-identical no-op copy GREEN, and flipping one `apr bench` gate
+    from yes to no (142 -> 141) turns it RED, naming both the total and the
+    per-binary count.
+
+- id: F-DOGCOV-007
+  rule: doubly-dark rows never grow
+  prediction: "rows that are BOTH low-confidence and ungated stay <= 204"
+  test: |
+    python3 - <<'EOF'
+    import csv
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    n = sum(1 for r in rows
+            if r['confidence'].strip().lower() == 'low'
+            and r['in_dogfood_skill'].strip().lower() != 'yes')
+    print(f"{n} low-confidence AND ungated (baseline 204)")
+    assert n <= 204, f"grew to {n}"
+    EOF
+  if_fails: >
+    A row that is both low-confidence and ungated is doubly dark -- nothing
+    checks it, and the ledger is unsure what it even claims. Growth here means
+    the audit is losing ground faster than the gates gain it.
+  mutation: "set one high-confidence covered row to low + no; the count must exceed 204"
+
+- id: F-DOGCOV-008
+  rule: every declared binary is actually probed
+  prediction: >
+    Every binary `cargo metadata` declares is either built and probed, or named
+    in the emitter's UNPROBED list. Measured 2026-08-22: 28 declared, 26 built,
+    `ptop` and `score` UNPROBED behind required-features.
+  test: |
+    bash scripts/dogfood_surfaces.sh --emit-features > /tmp/dogcov-runtime.txt 2>/dev/null
+    python3 - <<'EOF'
+    import json, subprocess
+    md = json.loads(subprocess.run(
+        ['cargo', 'metadata', '--no-deps', '--format-version', '1'],
+        capture_output=True, text=True).stdout)
+    declared = {t['name'] for p in md['packages'] for t in p['targets'] if 'bin' in t['kind']}
+    probed, unprobed = set(), set()
+    for line in open('/tmp/dogcov-runtime.txt'):
+        head, _, rest = line.rstrip('\n').partition('\t')
+        if head == 'UNPROBED':
+            unprobed.add(rest.split(' ', 1)[0])
+        elif head not in ('FEATURESET', ''):
+            probed.add(head)
+    missing = declared - probed - unprobed
+    assert not missing, f"declared but neither probed nor declared-unprobed: {sorted(missing)}"
+    EOF
+  if_fails: >
+    A binary ships that no probe has ever run and nothing recorded as unprobed.
+    This is the vacuity failure in its most expensive form: surface_cli
+    vacuity-guards on the DECLARED count (28) and then iterates the BUILT set
+    (26), so `ptop` and `score` were silently skipped while the guard passed.
+  mutation: "add a [[bin]] with required-features and no probe; the assert must turn RED"
+
+- id: F-DOGCOV-009
+  rule: every broken-and-ungated feature is triaged before a release
+  prediction: >
+    docs/audits/dogfood-the-44.yaml has one entry per quality<=4 ungated ledger
+    row, and at RELEASE time every entry carries an issue or a written waiver.
+  test: |
+    python3 - <<'EOF'
+    import csv, re
+    rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
+    broken = {r['feature'] for r in rows
+              if int(r['quality_1_10']) <= 4
+              and r['in_dogfood_skill'].strip().lower() != 'yes'}
+    text = open('docs/audits/dogfood-the-44.yaml', encoding='utf-8').read()
+    listed = set(re.findall(r"^- feature: '(.*)'$", text, re.M))
+    assert not (broken - listed), f"untriaged: {sorted(broken - listed)}"
+    assert not (listed - broken), f"stale waiver entries: {sorted(listed - broken)}"
+    # Release-time arm. Off by default so the gate is usable mid-cycle; the
+    # release checklist sets DOGFOOD_RELEASE=1 and then a null/null entry FAILS.
+    import os
+    if os.environ.get('DOGFOOD_RELEASE'):
+        entries = text.split('- feature: ')[1:]
+        untriaged = [e.split('\n')[0].strip("'") for e in entries
+                     if 'issue: null' in e and 'waiver: null' in e]
+        assert not untriaged, f"{len(untriaged)} features ship broken and ungated with no issue and no waiver: {untriaged[:5]}"
+    EOF
+  if_fails: >
+    Either a known-broken ungated feature is missing from the triage file, or the
+    file carries an entry for a feature that no longer qualifies. At release time
+    it also fails when an entry has neither an issue nor a waiver -- that is a
+    defect shipping unrecorded, which is precisely how these 44 accumulated.
+  mutation: >
+    Delete one entry from dogfood-the-44.yaml -> RED (untriaged). Add an entry for
+    a healthy feature -> RED (stale). With DOGFOOD_RELEASE=1 set and all 44 at
+    issue:null/waiver:null -> RED, which is its state today.
+  status_today: >
+    All 44 entries are issue: null / waiver: null as of 2026-08-22. The set
+    membership arm PASSES; the release arm would FAIL if armed right now, and that
+    is the correct reading -- nothing has been triaged yet.
+
+- id: F-DOGCOV-010
+  rule: the comparand lives on protected main, not in this tree
+  prediction: >
+    Every floor the blocking gate applies is derived at run time from
+    `git show origin/main:docs/audits/surface_audit.csv`. There is no baseline
+    NUMBER in the repository, so a pull request cannot lower a floor in the same
+    commit that breaks it.
+  test: |
+    # M4 of the guard's own mutation table.
+    bash scripts/check_dogfood_coverage.sh --self-test
+  if_fails: >
+    The gate is measuring the tree against itself. This is the exact failure the
+    multi-platform dogfood gate shipped with: its floor and its universe were
+    both literals in one file, so ONE commit editing both defeated it while it
+    reported green. A floor a PR can rewrite is not a floor.
+  mutation: >
+    In the fixture repo, commit a ledger that both LOWERS the floor and breaks it,
+    on a branch, while `main` keeps the original. Run 2026-08-22: RED, because the
+    comparand was read from `main` and not from the branch. Also proven for the
+    degenerate case: an unresolvable comparand ref is a HARD FAIL, never a
+    fallback to self-comparison, so a broken `git fetch` in CI cannot silently
+    disarm the gate.
+
+- id: F-DOGCOV-011
+  rule: a ledger row may not vanish, and coverage may not fall
+  prediction: >
+    Deleting a row for a live command turns the gate RED (G2.2, and G2.3 on the
+    denominator); flipping one in_dogfood_skill from yes to no turns it RED (G2.3,
+    on both the total and the per-binary count).
+  test: |
+    bash scripts/check_dogfood_coverage.sh
+  if_fails: >
+    Either a shipped feature was dropped from the ledger -- which deletes its
+    defect along with it and inflates the ratio by shortening the denominator --
+    or a gate was removed from a feature that had one.
+  mutation: >
+    Both run against the REAL 830-row ledger on 2026-08-22, each proven to have
+    engaged by an md5 delta before its verdict was read, each followed by a
+    restore that returned the tree to GREEN:
+      delete `apr canary check`     -> RED on G2.2, G2.3 (829 < 830) and G2.4
+      flip `apr bench` yes -> no    -> RED on G2.3 (141 < 142, and `apr` 141 < 142)
+    A gate that fires on the mutation AND on the restored tree measures nothing,
+    so the restore verdict is asserted every time, not assumed.
+
+- id: F-DOGCOV-012
+  rule: audited code may not move without the ledger following
+  prediction: >
+    If a branch changes a file the ledger cites as evidence, the branch must also
+    change the ledger. Derived entirely from git; nothing self-declared is
+    load-bearing, and the check can never go red for a commit outside the branch.
+  test: |
+    bash scripts/check_dogfood_coverage.sh
+  if_fails: >
+    The ledger is describing code that has since moved, so every row citing that
+    file is now an unverified claim with a stale line number.
+  mutation: >
+    Run 2026-08-22 against the real 78-file evidence universe: appending a line to
+    crates/apr-cli/src/commands_enum.rs with the ledger untouched -> RED naming
+    that file; restoring it -> GREEN. The fixture additionally proves the
+    converse, that the SAME evidence change WITH a ledger update is GREEN --
+    otherwise the gate would be banning edits rather than requiring a re-audit.
+  honest_limit: >
+    This forces the ledger to be TOUCHED, not to be CORRECT; it cannot tell a real
+    re-audit from a one-character edit. It is a forcing function against silent
+    drift, not a proof of accuracy. An earlier draft compared against a
+    `measured_commit:` field instead, which the same PR could edit -- and the
+    obvious patch for that rejected a legitimate re-measure whose output happened
+    to be identical. A derived quantity has neither failure mode.
+
+proof_obligations:
+- type: bound
+  property: "Gate coverage never falls below the committed 142/830 baseline (F-DOGCOV-001)"
+  formal: "covered(HEAD) >= 142 and total(HEAD) >= 830"
+- type: completeness
+  property: "The committed ledger and the runtime enumeration describe the same surface (F-DOGCOV-002)"
+  formal: "runtime_features == ledger_features"
+- type: invariant
+  property: "No feature with quality <= 4 lacks a gate beyond the 44 baseline (F-DOGCOV-003)"
+  formal: "|{r : quality(r) <= 4 and not gated(r)}| <= 44"
+- type: bound
+  property: "verified_hardware UNKNOWN never exceeds the 427 baseline, and is never inferred from a name (F-DOGCOV-004)"
+  formal: "|{r : hw(r) == UNKNOWN}| <= 427 and forall r : hw(r) != UNKNOWN -> ran_on(r, hw(r))"
+- type: invariant
+  property: "Every ledger row has 8 columns and a non-empty evidence_path (F-DOGCOV-005)"
+  formal: "forall r : |cols(r)| == 8 and evidence(r) != \"\""
+
+kani_harnesses:
+- id: KH-DOGCOV-001
+  obligation: gate_coverage_ratio
+  property: coverage_ratchet_is_monotone_nondecreasing
+  bound: 4
+- id: KH-DOGCOV-002
+  obligation: denominator_reconciliation
+  property: ledger_and_runtime_feature_sets_are_equal
+  bound: 4
+- id: KH-DOGCOV-003
+  obligation: broken_and_ungated
+  property: no_quality_le_4_feature_lacks_a_gate_beyond_baseline
+  bound: 4
+
+qa_gate:
+  id: F-DOGCOV-GATE-001
+  name: "apr-dogfood gate coverage never regresses"
+  description: >
+    The organizing gate of the apr-dogfood protocol. Coverage is allowed to be
+    incomplete; it is not allowed to silently become MORE incomplete. A coverage
+    regression alone is NO-GO, independent of every other gate being green.
+  checks:
+    - "coverage_ratchet"
+    - "denominator_reconciliation"
+    - "broken_and_ungated"
+    - "hardware_provenance"
+    - "ledger_schema"
+    - "per_binary_and_per_band_baselines"
+    - "doubly_dark_rows"
+    - "every_declared_binary_probed"
+  pass_criteria: "F-DOGCOV-{001..012} all PASS; any one FAIL is NO-GO"
+
+verification_summary:
+  total_obligations: 11
+  proven: 0
+  tested: 11
+  status: proposed
+  notes: >
+    All eleven obligations are TESTED against the committed ledger, re-measured
+    2026-08-22 at cbb1ccd78, and each carries a named mutation that must turn it RED.
+
+    F-DOGCOV-010/011/012 are the BLOCKING gate, wired into `ci / gate` as
+    scripts/check_dogfood_coverage.sh. Its floors are not written down anywhere in
+    this repository: they are derived at run time from
+    `git show origin/main:docs/audits/surface_audit.csv`. That is deliberate. The
+    multi-platform dogfood gate kept its floor and its universe as literals in one
+    file, so a single commit editing both defeated it while it reported green.
+    Reading the comparand from a ref a pull request cannot rewrite is the fix.
+
+    proven: 0 is deliberate and stays deliberate. The three KH-DOGCOV harnesses
+    declare intent; no Rust harness stands behind them. This contract is TESTED,
+    never PROVED, and the summary should keep saying so until one is written.
+
+    F-DOGCOV-002 EXECUTES AS OF 2026-08-22. It was SKIP-only in the first draft because
+    scripts/dogfood_surfaces.sh had no --emit-features mode; that mode now exists, is
+    deterministic (two runs byte-identical), declares its scope on stderr plus a
+    FEATURESET line, and is consumed by scripts/dogfood_reconcile.py. Both were
+    discrimination-tested against the COMMITTED files rather than a scratch copy:
+    GREEN on the clean tree, GREEN on a byte-identical no-op, RED in each direction
+    under its own mutation.
+
+    proven: 0 is deliberate and is NOT a formality. The three KH-DOGCOV harnesses
+    declare intent; no Rust harness exists behind them, so this contract is TESTED,
+    never PROVED. Reading `status: proposed` as shape rather than proof is correct.
+
+    Known gap, recorded rather than papered over: 247 of 830 ledger rows (flags, HTTP
+    routes, MCP tools, REPL verbs, annotated forms) sit outside what --help can
+    enumerate, so F-DOGCOV-002 reconciles 583 rows and COUNTS the remaining 247. The
+    HTTP third is reachable today by setting DOGFOOD_LIVE_SERVER; measured against a
+    live server on 2026-08-22 the ledger's route set was complete in the
+    binary-to-ledger direction (0 missing), while the SOURCE-TABLE fallback the script
+    uses without a live server missed 5 routes including /v1/chat/completions and
+    claimed 2 that are only conditionally mounted.

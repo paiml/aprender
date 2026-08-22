@@ -555,6 +555,152 @@ if [ "${1:-}" = "--self-test" ]; then
     exit 0
 fi
 
+# --- feature emission (the denominator) -------------------------------------
+#
+# Emits "<binary>\t<feature>" for the surface this script can enumerate AT
+# RUNTIME, so contracts/apr-dogfood-coverage-v1.yaml (F-DOGCOV-002) can diff the
+# shipped surface against docs/audits/surface_audit.csv in BOTH directions:
+#
+#   in the binary, not in the ledger : the ledger is stale
+#   in the ledger, not in the binary : the surface shrank unnoticed
+#
+# SCOPE IS DECLARED, NOT IMPLIED. `--help` can authoritatively enumerate the
+# subcommand TREE and nothing else. Four other surface kinds live in the ledger
+# and are NOT emitted here, so a naive set-equality would report hundreds of
+# false "shrank" hits and get itself disabled:
+#
+#   flags        `apr run --backend cuda`  -- a flag is not a subcommand; clap
+#                prints it in Options:, and enumerating flag VALUES needs the
+#                value_parser, which --help does not always name
+#   HTTP routes  emitted only when DOGFOOD_LIVE_SERVER is set, because the
+#                SOURCE-TABLE fallback is wrong in both directions -- measured
+#                against a live server it misses 5 routes including
+#                /v1/chat/completions, and claims 2 that are conditionally
+#                mounted and absent
+#   MCP tools    need a live tools/list
+#   REPL verbs   aprender-train-shell's 10 verbs are reachable only by driving
+#                the REPL (`-c <verb>`), never from --help
+#
+# The scope line goes to stderr on every run so a consumer cannot mistake a
+# partial denominator for the whole one.
+#
+# DEPTH 4, measured not guessed: the ledger's deepest CLI entry is
+# `apr data x doctest extract`. A deeper tree would be silently truncated, so
+# the depth is stated here and the ledger is what proves it sufficient.
+EMIT_MAX_DEPTH="${EMIT_MAX_DEPTH:-4}"
+
+emit_subtree() {
+    # $1 binary path, $2 binary name, $3 current depth, $4.. command path
+    local path="$1" name="$2" depth="$3"; shift 3
+    local prefix="$*" out subs s
+    [ "$depth" -gt "$EMIT_MAX_DEPTH" ] && return 0
+    # shellcheck disable=SC2086
+    out=$(timeout 20 "$path" $prefix --help 2>&1) || return 0
+    subs=$(printf '%s\n' "$out" | awk '
+        /^[Cc]ommands:/ { inb=1; next }
+        /^[A-Za-z]/     { inb=0 }
+        inb && /^  [a-z][a-z0-9._-]*([[:space:]]|$)/ { print $1 }
+    ' | grep -vE '^(help)$' | LC_ALL=C sort -u)
+    [ -n "$subs" ] || return 0
+    while IFS= read -r s; do
+        [ -n "$s" ] || continue
+        printf '%s\t%s %s%s\n' "$name" "$name" "${prefix:+$prefix }" "$s"
+        emit_subtree "$path" "$name" "$((depth + 1))" ${prefix:+$prefix} "$s"
+    done <<< "$subs"
+}
+
+emit_features() {
+    printf 'scope: CLI subcommand tree to depth %s from --help on the BUILT binary.\n' \
+        "$EMIT_MAX_DEPTH" >&2
+    printf 'NOT emitted: flags, MCP tools, REPL verbs' >&2
+    if [ -n "${DOGFOOD_LIVE_SERVER:-}" ]; then
+        printf ' (routes: LIVE from %s)\n' "$DOGFOOD_LIVE_SERVER" >&2
+    else
+        printf ', HTTP routes (set DOGFOOD_LIVE_SERVER to include them)\n' >&2
+    fi
+
+    # THE DENOMINATOR DEPENDS ON THE CARGO FEATURE SET, so it is declared rather
+    # than left implicit. A DEFAULT build hides every `#[cfg(feature = ...)]`
+    # subcommand, and those subcommands still SHIP -- a user who enables the
+    # feature gets them. Measured on 2026-08-22 a default build hides 26 ledger
+    # entries behind four features:
+    #   dev      -> apr mono {publish,shims,audit,archive}
+    #   hf-hub   -> alimentar {hub push, import hf}     (+ the apr data x mirror)
+    #   doctest  -> alimentar doctest {extract,merge}   (+ the apr data x mirror)
+    #   eval     -> trueno-rag eval {7 verbs}           (+ the apr rag mirror)
+    # Proven by rebuilding with the feature and watching them appear, not
+    # inferred from the cfg attribute. Consumers MUST compare against a run with
+    # the same feature set or treat those rows as a declared allowance.
+    printf 'FEATURESET\t%s\n' "${DOGFOOD_EMIT_FEATURES:-<cargo default>}"
+
+    local artifacts an path b declared dn featarg=""
+    [ -n "${DOGFOOD_EMIT_FEATURES:-}" ] && featarg="--features=${DOGFOOD_EMIT_FEATURES}"
+    declared=$(enumerate_binaries)
+    dn=$(printf '%s\n' "$declared" | grep -c .)
+    vacuity_guard "declared binaries" "$dn" "$MIN_BINARIES"
+    # shellcheck disable=SC2086
+    artifacts=$(cargo build --bins --workspace $featarg --message-format=json 2>/dev/null \
+        | python3 -c '
+import json,sys
+for line in sys.stdin:
+    try: d=json.loads(line)
+    except Exception: continue
+    if d.get("reason")=="compiler-artifact" and d.get("executable"):
+        print(d["executable"])
+' | LC_ALL=C sort -u)
+    an=$(printf '%s\n' "$artifacts" | grep -c .)
+    vacuity_guard "built executables" "$an" "$MIN_BINARIES"
+
+    # A binary cargo DECLARES but does not BUILD is unprobed, and silence here
+    # would let it read as a surface that shrank. `ptop` and `score` are exactly
+    # this: both carry required-features outside `default`, so `--bins
+    # --workspace` skips them and surface_cli never probes them either.
+    local built_names
+    built_names=$(printf '%s\n' "$artifacts" \
+        | sed -e 's#.*/##' \
+        | grep -v '^$' \
+        | LC_ALL=C sort -u)
+    while IFS= read -r b; do
+        [ -n "$b" ] || continue
+        if ! printf '%s\n' "$built_names" | grep -qx "$b"; then
+            printf 'UNPROBED\t%s (declared by cargo, not built -- required-features)\n' "$b"
+        fi
+    done <<< "$declared"
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        [ -x "$path" ] || continue
+        b=$(basename "$path")
+        emit_subtree "$path" "$b" 1
+    done <<< "$artifacts"
+
+    if [ -n "${DOGFOOD_LIVE_SERVER:-}" ]; then
+        local r live_routes
+        live_routes=$(enumerate_routes_live_verbed "${DOGFOOD_LIVE_SERVER}")
+        while IFS= read -r r; do
+            [ -n "$r" ] || continue
+            printf 'apr\t%s\n' "$r"
+        done <<< "$live_routes"
+    fi
+}
+
+# The route index as "VERB /path", which is how the ledger records a route.
+# enumerate_routes_live strips the verb because the HTTP sweep compares paths;
+# the ledger keeps it, and DELETE /api/delete is not GET /api/delete.
+enumerate_routes_live_verbed() {
+    curl -sf -m 5 "$1/" 2>/dev/null | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+for r in sorted(set(d.get("routes",[]))): print(r.strip())
+'
+}
+
+if [ "${1:-}" = "--emit-features" ]; then
+    emit_features
+    exit 0
+fi
+
 # --- driver ----------------------------------------------------------------
 
 if [ "${1:-}" = "--twice" ]; then
