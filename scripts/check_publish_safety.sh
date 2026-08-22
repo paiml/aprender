@@ -113,23 +113,37 @@ fi
 #      an extension list, so a 100 MB .txt passed and a 1 KB .bin failed. The
 #      threshold in the title did not exist in the code.
 #
-# Now: every publishable crate, and an actual byte threshold alongside the
-# extension list.
+# It then acquired a THIRD hole, of exactly the same species as the first
+# (aprender#2559): "every publishable crate" meant one `cargo metadata` on the
+# ROOT workspace, and `crates/facades/` is a second workspace `exclude`d from
+# the root. Its three crates are published to crates.io and were never size- or
+# hygiene-scanned -- and could not be, because `cargo package -p
+# provable-contracts` from the repo root is rc=101, "did not match any
+# packages". The `|| continue` below turned that into a silent skip.
+#
+# Now: scripts/lib/cascade_universe.py -- every publishable crate in every
+# workspace, each with the manifest path needed to reach it -- an actual byte
+# threshold, and a count that must be accounted for rather than skipped.
 echo -n "  Package size check... "
 checked=$((checked + 1))
 large_files=""
+skipped_pkgs=""
+scanned_pkgs=0
 MAX_PACKAGED_BYTES=1048576
 
-pub_pkgs=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
-    | python3 "${REPO_ROOT:-.}/scripts/lib/publishable_crates.py" | cut -f1)
+universe=$(python3 "${REPO_ROOT:-.}/scripts/lib/cascade_universe.py" "${REPO_ROOT:-.}")
 
-for pkg in $pub_pkgs; do
-    listing=$(cargo package -p "$pkg" --list --allow-dirty 2>/dev/null < /dev/null) || continue
-    [ -n "$listing" ] || continue
-    pkg_dir=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
-        | python3 "${REPO_ROOT:-.}/scripts/lib/publishable_crates.py" \
-        | awk -F'\t' -v p="$pkg" '$1==p{print $2}')
-    [ -n "$pkg_dir" ] || continue
+while IFS=$'\t' read -r pkg _ver manifest _ws; do
+    [ -n "$pkg" ] || continue
+    # --manifest-path, not -p: `-p` cannot name a crate outside this workspace.
+    listing=$(cargo package --manifest-path "$manifest" --list --allow-dirty 2>/dev/null < /dev/null) \
+        || { skipped_pkgs="${skipped_pkgs} ${pkg}"; continue; }
+    if [ -z "$listing" ]; then
+        skipped_pkgs="${skipped_pkgs} ${pkg}"
+        continue
+    fi
+    pkg_dir=$(dirname "$manifest")
+    scanned_pkgs=$((scanned_pkgs + 1))
 
     while IFS= read -r f; do
         [ -n "$f" ] || continue
@@ -146,7 +160,7 @@ for pkg in $pub_pkgs; do
             fi
         fi
     done <<< "$listing"
-done
+done <<< "$universe"
 
 if [ -n "$large_files" ]; then
     echo "FAIL"
@@ -154,8 +168,17 @@ if [ -n "$large_files" ]; then
     echo -e "$large_files"
     echo "Fix: add to Cargo.toml [package] exclude (root-anchored) or .gitignore"
     errors=$((errors + 1))
+elif [ "$scanned_pkgs" -lt 70 ]; then
+    # Vacuity, in the direction this check has now failed twice: a scan that
+    # covered almost nothing reports no large files and reads as a clean pass.
+    # An unscannable crate is a RESULT, not a skip.
+    echo "FAIL"
+    echo "FAIL: only $scanned_pkgs package(s) were actually scanned, expected 70+."
+    echo "Unscannable:${skipped_pkgs:- (none named)}"
+    echo "The ENUMERATION is broken, not the packages."
+    errors=$((errors + 1))
 else
-    echo "OK"
+    echo "OK ($scanned_pkgs packages)"
 fi
 
 # Check 7: No hardcoded /home/ paths in non-test production source

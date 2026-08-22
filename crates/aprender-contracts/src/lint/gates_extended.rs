@@ -131,6 +131,7 @@ pub(crate) fn run_verify_gate(
                 existing: total_refs - missing,
                 missing,
             },
+            extra: None,
         },
         findings,
     )
@@ -262,6 +263,7 @@ pub(crate) fn run_enforce_gate(contracts: &[(String, Contract)]) -> (GateResult,
                 equations_with_post: with_post,
                 equations_with_lean: with_lean,
             },
+            extra: None,
         },
         findings,
     )
@@ -383,6 +385,7 @@ pub(crate) fn run_enforcement_level_gate(
             detail: GateDetail::Skipped {
                 reason: format!("{} contracts, {} below level", contracts.len(), below),
             },
+            extra: None,
         },
         findings,
     )
@@ -477,6 +480,7 @@ pub(crate) fn run_reverse_coverage_gate(
                 coverage_pct: report.coverage_pct,
                 threshold_pct: DEFAULT_THRESHOLD,
             },
+            extra: None,
         },
         findings,
     )

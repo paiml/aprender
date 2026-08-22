@@ -1,0 +1,15 @@
+# Bin names deliberately declared by more than one package in this repository.
+#
+# FORMAT (checked by scripts/lib/bin_names.py):
+#     <bin-name> <package> <package> [...]   # why both must keep the name
+#
+# The declared set must match the OBSERVED set EXACTLY. A third package claiming
+# a listed name FAILS, and an entry whose duplicate no longer exists FAILS as
+# stale — an allowlist that only grows stops describing the tree.
+#
+# This file models INTENT. It is not a suppression list: adding a line here is a
+# claim that two packages must ship the same binary name and that nothing is
+# shadowed by it. If the honest answer is "one of them should be renamed",
+# rename it — that is what aprender#2558 did to `pv`.
+
+apr apr-cli aprender   # The facade pattern, and the ONLY intentional duplicate in the tree. `aprender` is the crate users install (`cargo install aprender`); its bin at src/bin/apr.rs is `required-features = ["cli"]` and is a four-line shell around `apr-cli`. `apr-cli` declares the same bin at src/main.rs so the CLI can be built, tested and run without going through the facade. UNLIKE the `pv` collision this guard was written for, both binaries ARE the same program built from the same dispatch code, so whichever writes ~/.cargo/bin/apr last, the user gets the tool they asked for. The `pv` case was four DIFFERENT programs (a pipe viewer, a C utility, and a contract CLI) sharing one path.

@@ -97,16 +97,40 @@ prune_target_dirs() {
     log "freed approximately ${total_freed_kb} KiB (mode=$mode)"
 }
 
+# A candidate directory is IDLE only if NOTHING anywhere underneath it was
+# modified within the window. Its OWN mtime does not answer that question, and
+# has not since 2026-05-15, when ci.yml moved the bind mount one level down —
+# from `<root>/<PR_OR_REF>` to `<root>/<PR_OR_REF>/run-<RUN_ID>` (the
+# cancel-corrupt-state fix, aprender#1693). A directory's mtime changes only
+# when an entry is created or removed DIRECTLY inside it, so the parent's mtime
+# freezes the instant its `run-<RUN_ID>` child is created and stays frozen while
+# cargo writes gigabytes underneath. An in-flight build's parent therefore reads
+# as arbitrarily idle, and `rm -rf` on it takes the live build with it — cargo
+# then dies ENOENT on its own `target/debug/...` paths mid-compile, which is
+# exactly how aprender `workspace-test` failed on main and on the merge-queue
+# ref within the same minute on 2026-08-21 (runs 32520690533 / 32520753928).
+# The header comment this replaces asserted the opposite ("a container touching
+# the dir keeps mtime current") and was true only of the pre-#1693 layout.
+#
+# `-newermt "-N minutes"` is a half-open comparison with no gap at exactly N,
+# and `-print -quit` stops the walk at the FIRST recent entry, so the check
+# costs a directory descent rather than a full stat of a 50GB tree. Command
+# substitution, not a pipe: `find ... | grep -q` under `set -o pipefail` returns
+# 141 when grep exits first and find takes SIGPIPE.
+tree_is_idle() {
+    local dir="$1" min_idle_min="$2" recent
+    recent="$(find "$dir" -newermt "-${min_idle_min} minutes" -print -quit 2>/dev/null)"
+    [ -z "$recent" ]
+}
+
 # Prune bind-mount target roots (/mnt/nvme-raid0/targets/aprender-ci/*).
 # Subdirs are per-PR target dirs isolated per task #134. Remove:
 #   - "debug" subdir unconditionally (orphan from pre-isolation era)
-#   - numeric PR-named subdirs with mtime older than MIN_IDLE_MIN minutes.
-# Minute-resolution idle check protects in-flight CI bind-mounts; a container
-# touching the dir keeps mtime current. Nightly uses $((STALE_DAYS*24*60));
-# pre-job uses a 60-min floor so a full-disk situation can still reclaim most
-# stale PR dirs while sparing fresh ones.
+#   - PR-named subdirs with NOTHING under them touched in MIN_IDLE_MIN minutes.
+# Nightly uses $((STALE_DAYS*24*60)); pre-job uses a 60-min floor so a full-disk
+# situation can still reclaim most stale PR dirs while sparing fresh ones.
 prune_bind_mount_target_roots() {
-    local min_idle_min="$1"  # minutes since last mtime that counts as "stale"
+    local min_idle_min="$1"  # minutes with no write anywhere below = "stale"
     local root subdir
     for root in $BIND_MOUNT_ROOTS; do
         [ -d "$root" ] || continue
@@ -117,18 +141,101 @@ prune_bind_mount_target_roots() {
             rm -rf --one-file-system "$root/debug" 2>/dev/null \
                 || sudo rm -rf --one-file-system "$root/debug" 2>/dev/null || true
         fi
-        # Stale numeric PR dirs (mtime > min_idle_min). "main" is explicitly
-        # preserved — it hosts push-to-main CI target cache and is legitimately
-        # re-used; stale-days protection still applies via find -mmin below.
+        # "main" is explicitly preserved — it hosts push-to-main CI target cache
+        # and is legitimately re-used.
         while IFS= read -r -d '' subdir; do
             local name
             name="$(basename "$subdir")"
             [ "$name" = "main" ] && continue
+            if ! tree_is_idle "$subdir" "$min_idle_min"; then
+                log "skip (write below it within ${min_idle_min}m): $subdir"
+                continue
+            fi
             log "prune stale bind-mount: $subdir"
             rm -rf --one-file-system "$subdir" 2>/dev/null \
                 || sudo rm -rf --one-file-system "$subdir" 2>/dev/null || true
-        done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -mmin "+$min_idle_min" -print0 2>/dev/null)
+        done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
     done
+}
+
+# Case table. The only thing separating this guard from `rm -rf` is which
+# directories it refuses to touch, and that judgement was wrong in production.
+# R3 and R6 are RED against the pre-fix selection
+# (`find -mindepth 1 -maxdepth 1 -type d -mmin "+$min_idle_min"`); R1/R5/R7
+# fail if a "fix" simply stops reclaiming, which would trade a deleted build
+# for a full disk.
+self_test() {
+    local tmp root fails=0
+    tmp="$(mktemp -d)"
+    if [ -z "$tmp" ] || [ ! -d "$tmp" ]; then
+        echo "self-test: mktemp -d failed" >&2
+        return 1
+    fi
+    # shellcheck disable=SC2064  # $tmp must be expanded now, not at trap time
+    trap "rm -rf '$tmp'" EXIT
+    root="$tmp/aprender-ci"
+    mkdir -p "$root"
+
+    # R1: stale PR dir, nothing below it recent                  -> PRUNE
+    mkdir -p "$root/1111/debug"
+    touch -d '5 hours ago' "$root/1111/debug" "$root/1111"
+    # R2: fresh PR dir, written just now                         -> KEEP
+    mkdir -p "$root/2222/debug"
+    # R3: THE REGRESSION. Parent mtime frozen 5h ago by the creation of its
+    #     run-<ID> child; cargo is writing inside that child RIGHT NOW.
+    mkdir -p "$root/3333/run-99/debug/deps"
+    : > "$root/3333/run-99/debug/deps/libfoo.rlib"
+    touch -d '5 hours ago' "$root/3333/run-99" "$root/3333"   # parents only
+    # R4: "main" is exempt even when stale                       -> KEEP
+    mkdir -p "$root/main/run-1/debug"
+    touch -d '5 hours ago' "$root/main/run-1/debug" "$root/main/run-1" "$root/main"
+    # R5: pre-isolation orphan                                   -> PRUNE always
+    mkdir -p "$root/debug/deps"
+    # R6: merge-queue ref. PR_OR_REF carries slashes, so the depth-1 dir is
+    #     `gh-readonly-queue` and the live build is THREE levels below it.
+    mkdir -p "$root/gh-readonly-queue/main/pr-2554-abc/run-77/debug"
+    : > "$root/gh-readonly-queue/main/pr-2554-abc/run-77/debug/live.rlib"
+    touch -d '5 hours ago' \
+        "$root/gh-readonly-queue/main/pr-2554-abc/run-77" \
+        "$root/gh-readonly-queue/main/pr-2554-abc" \
+        "$root/gh-readonly-queue/main" \
+        "$root/gh-readonly-queue"
+    # R7: stale run-<ID> tree, no live write                     -> PRUNE
+    mkdir -p "$root/7777/run-1/debug"
+    touch -d '5 hours ago' "$root/7777/run-1/debug" "$root/7777/run-1" "$root/7777"
+
+    BIND_MOUNT_ROOTS="$root" prune_bind_mount_target_roots 60 >/dev/null 2>&1 || true
+
+    check_row() {  # label, path, gone|kept
+        if [ "$3" = "gone" ]; then
+            if [ -e "$2" ]; then
+                echo "FAIL $1: expected PRUNED, survived"
+                fails=$((fails + 1))
+            else
+                echo "ok   $1 (pruned)"
+            fi
+        elif [ -e "$2" ]; then
+            echo "ok   $1 (kept)"
+        else
+            echo "FAIL $1: expected KEPT, was DELETED"
+            fails=$((fails + 1))
+        fi
+    }
+    check_row "R1 stale PR dir"                  "$root/1111"                               gone
+    check_row "R2 fresh PR dir"                  "$root/2222"                               kept
+    check_row "R3 live build, stale parent"      "$root/3333/run-99/debug/deps/libfoo.rlib" kept
+    check_row "R4 main is exempt"                "$root/main"                               kept
+    check_row "R5 orphan debug"                  "$root/debug"                              gone
+    check_row "R6 live merge-queue build"        \
+        "$root/gh-readonly-queue/main/pr-2554-abc/run-77/debug/live.rlib"                   kept
+    check_row "R7 stale run-<ID> tree"           "$root/7777"                               gone
+
+    if [ "$fails" -gt 0 ]; then
+        echo "SELF-TEST FAILED: $fails of 7 rows" >&2
+        return 1
+    fi
+    echo "SELF-TEST PASSED: 7 rows"
+    return 0
 }
 
 case "${1:-}" in
@@ -147,8 +254,11 @@ case "${1:-}" in
         prune_target_dirs stale
         prune_bind_mount_target_roots "$(( STALE_DAYS * 24 * 60 ))"
         ;;
+    --self-test)
+        self_test
+        ;;
     *)
-        echo "usage: $0 --pre-job | --nightly" >&2
+        echo "usage: $0 --pre-job | --nightly | --self-test" >&2
         exit 2
         ;;
 esac
