@@ -1,0 +1,258 @@
+contract: apr-serve-model-backend-coverage
+metadata:
+  kind: pattern
+  version: "1.1.0"
+  description: >
+    Every routed generation endpoint must answer on every resident inference
+    backend, and one server-side model-availability condition must produce one
+    HTTP status across the whole surface.
+
+    aprender#2609 measured the published apr 0.63.0 answering
+    "Model registry error: No model available" on POST /stream/generate,
+    POST /batch/generate, POST /v1/chat/completions/stream and POST /v1/embeddings
+    — two of them printed by the server's own startup banner — while POST /generate
+    on the SAME process returned 200 with real tokens and /health reported
+    model_loaded: true. Worse, the identical condition came back as 404 from three
+    of them and 500 from the fourth, so a client could not distinguish "this
+    endpoint does not exist" from "this endpoint exists but has no model".
+
+    The class is structural, not incidental. AppState carries several mutually
+    exclusive model fields (model, quantized_model, apr_transformer, gpu/cuda
+    variants); a handler is alive on exactly the backends whose field it reads.
+    aprender#2376 and #2375 closed the gap for quantized_model on these routes,
+    which is why the four are green on a GGUF / Q4_K-APR server today. The THIRD
+    resident backend, apr_transformer (the f32 APR / SafeTensors CPU serve path
+    built by AppState::with_apr_transformer_and_vocab), still had no accessor on
+    /stream/generate, on the chat routes, or in resolve_embed_backend — so on that
+    server the same four routes were dead with the same message, again beside a
+    working /generate and a model_loaded: true /health.
+
+    The status half is a separate defect with a separate cause: it lives in the
+    DENSE fallback that every backend chain ends in, so no per-backend fix reached
+    it. model_resolution_status is the single mapping — RegistryError (the server
+    has no usable model) => 503, ModelNotFound (the client named a model this
+    server does not have) => 404 — and every route resolves through it.
+
+    v1.1.0 widens the obligation from the six routes the ticket named to the WHOLE
+    mounted-and-advertised surface, because "one condition, one status" is a
+    property of a surface and cannot be discharged route by route. Probing the rest
+    found three more rows on the same tree: POST /v1/completions was dead on
+    apr_transformer AND answered 404 for the no-model condition (it walks straight
+    into registry_completions, whose status was hardcoded), and POST /api/chat and
+    POST /api/generate answered 200 OK with the outage folded into the assistant's
+    own reply — the only two rows on the surface that did not report the failure at
+    all, and strictly worse than anything #2609 reported, since no client and no
+    retry policy can see it.
+
+    The banner is part of the same obligation. serve_model and serve_demo restated
+    a hand-written list of three routes out of the thirty-one they mount, from a
+    point before the model format is known; the only generation route serve_model
+    named was /v1/completions, the one dead on the apr_transformer state that same
+    function builds, while /generate — which worked — was labelled "Q4_K fused" on a
+    server holding no Q4_K weights. Both now print advertised_routes(&router_config),
+    derived from the same route_table create_router_with_config mounts, so
+    advertising a route and mounting it are one act (the shape aprender#2376(8)
+    established for `apr serve run`).
+  references:
+  - "https://github.com/paiml/aprender/issues/2609"
+  - "crates/aprender-serve/src/api/mod.rs (model_resolution_status — the single mapping)"
+  - "crates/aprender-serve/src/api/stream_generate.rs (try_apr_stream_tokens)"
+  - "crates/aprender-serve/src/api/cuda_chat_backend.rs (try_apr_transformer_backend; registry_fallback status)"
+  - "crates/aprender-serve/src/api/realize_handlers_embed_completion.rs (EmbedBackend::Apr; embed_for_route)"
+  - "crates/aprender-serve/src/apr_transformer/hidden_states.rs (AprTransformer::forward_hidden_states)"
+  - "crates/aprender-serve/src/api/gpu_completions_handler.rs (try_apr_transformer_completions; registry_completions status)"
+  - "crates/aprender-serve/src/api/ollama_handlers.rs (with_upstream_status)"
+  - "crates/aprender-serve/src/api/router.rs (advertised_routes; sanitize_json_rejection NDJSON pass-through)"
+  - "crates/aprender-serve/src/cli/mod_server_commands.rs (serve_model / serve_demo banners)"
+  - "crates/aprender-serve/src/api/tests/apr_model_routes_2609.rs (falsifiers)"
+version: 1
+status: enforced
+date: 2026-08-22
+
+proof_obligations:
+  - type: invariant
+    property: >
+      BACKEND-COVERAGE (DISCHARGED — aprender#2609): on an AppState whose only
+      resident model is an AprTransformer, every routed generation endpoint —
+      /generate, /batch/generate, /stream/generate, /realize/generate,
+      /realize/batch, /v1/completions, /v1/chat/completions,
+      /v1/chat/completions/stream, /api/chat, /api/generate, /v1/embeddings,
+      /realize/embed, /api/embeddings — answers 200 with real output. None of them
+      may return a body containing "No model available" while
+      AppState::model_loaded() is true. The chain each handler walks is the same
+      order /generate walks: CUDA (cfg), quantized, APR, dense.
+  - type: invariant
+    property: >
+      ONE-CONDITION-ONE-STATUS (DISCHARGED — aprender#2609): a request to ANY
+      mounted route on a server with no usable model at all resolves through
+      model_resolution_status and therefore returns 503 SERVICE_UNAVAILABLE — never
+      404 (which means the route does not exist, and a genuinely unrouted path
+      returns a different body entirely), never 500 (which invites a retry of an
+      identical request against a server that cannot serve it), and never 2xx (which
+      hides the outage entirely: /api/chat and /api/generate answered 200 with
+      "Model registry error: No model available" as the assistant's own reply). 404
+      is reserved for RealizarError::ModelNotFound: the client named a model this
+      server does not have, which IS a client error. The obligation is over the
+      surface, not a route list: the probe enumerates GENERATION_ROUTES and the
+      observed statuses are compared to each other, so one route disagreeing with
+      the rest fails even if its own status is defensible in isolation.
+  - type: invariant
+    property: >
+      BANNER-IS-THE-ROUTE-TABLE (DISCHARGED — aprender#2609): no startup banner may
+      restate the route surface. serve_model and serve_demo print
+      advertised_routes(&router_config), which route_surface_2376's
+      banner_source_agrees_with_live_server already pins to the list the running
+      server hands out in its own 404 body. Two independent claims about one surface
+      drift; there is now one. Corollary, asserted over the whole advertised list:
+      every route the banner names answers on an AprTransformer server — none 404s
+      and none reports "No model available".
+  - type: invariant
+    property: >
+      OLLAMA-FRAME-SURVIVES-THE-STATUS (DISCHARGED — aprender#2609): /api/chat and
+      /api/generate propagate the upstream generation status while keeping the
+      Ollama-shaped body, so the route stays observably distinct from the axum
+      not_found fallback (which carries no `done` field) AND the failure is visible
+      to a client. This requires sanitize_json_rejection to pass
+      application/x-ndjson through untouched, as it already does application/json:
+      NDJSON is JSON, and collapsing a stream into a single {"error":...} object would
+      leave an Ollama client with no terminal `done:true` at all — the malformed
+      stream chat_response_to_parts exists to prevent.
+  - type: invariant
+    property: >
+      ERROR-NAMES-THE-CALLED-ROUTE (DISCHARGED — aprender#2609): an
+      unavailable-model body names the route the client actually called.
+      /v1/embeddings delegated its whole body to realize_embed_handler and so
+      answered "No model available: /realize/embed needs a loaded model", pointing
+      the caller at a route they never touched; every embedding route now passes its
+      own name into embed_inputs.
+  - type: invariant
+    property: >
+      HIDDEN-STATE-PARITY: all three embedding backends return the same quantity —
+      the final-layer hidden state after the output norm and before lm_head, the
+      tensor lm_head consumes. Model::forward_hidden (dense),
+      OwnedQuantizedModel::forward_hidden_states (quantized) and
+      AprTransformer::forward_hidden_states (APR f32) are therefore comparable after
+      mean-pooling, and the embedding width is always the model's hidden_dim, never
+      a constant. AprTransformer::forward_with_cache is defined as
+      forward_hidden_with_cache + project_lm_head, so the embedding path cannot
+      drift from the generation path by one being updated and the other not.
+  - type: invariant
+    property: >
+      CONTEXT-CEILING: AprTransformer::forward_hidden_states rejects a sequence
+      longer than the model's context_length with ContextLimitExceeded before
+      allocating a KV cache. Sizing a cache from a caller-supplied length with no
+      ceiling is what let one HTTP request abort the server process
+      (aprender#2376 finding 9), and an embedding route takes caller-supplied text.
+
+falsification_tests:
+  - id: FALSIFY-APR-BACKEND-COVERAGE-2609
+    name: apr_model_routes_2609
+    prediction: >
+      Over the REAL router and an AppState holding ONLY an AprTransformer:
+      /health reports model_loaded:true and /generate returns num_generated:1 (the
+      CONTROL — every dead-route assertion is compared against a server that
+      demonstrably generates, so none can pass by generation being broken); then
+      /generate, /batch/generate, /stream/generate, /v1/chat/completions,
+      /v1/chat/completions/stream, /realize/generate, /realize/batch,
+      /v1/completions, /api/chat, /api/generate, /realize/embed and /api/embeddings
+      ALL return 200 and none of their bodies contains "No model available".
+      /stream/generate emits at least
+      one "event: token" and does not terminate with num_generated:0;
+      /v1/chat/completions/stream emits a chat.completion.chunk and a [DONE];
+      /v1/embeddings returns a vector of exactly the model's hidden_dim whose L2
+      norm is 1.
+    test_harness: 'cargo test -p aprender-serve --lib apr_model_routes_2609'
+    expected_output: "test result: ok"
+    if_fails: >
+      A routed endpoint is dead on a resident backend — the aprender#2609 shape:
+      "Model registry error: No model available" from a route the startup banner
+      advertises, on a process whose /generate answers and whose /health says
+      model_loaded:true. Verbatim pre-fix, on main @ bb2bd5e73:
+      POST /stream/generate -> 503 {"error":"Model registry error: No model available"};
+      POST /v1/chat/completions/stream -> 404 {"error":"Model registry error: No model available"};
+      POST /v1/embeddings -> 503 {"error":"No model available: /realize/embed needs a loaded model"};
+      while POST /generate -> 200 {"token_ids":[1,230],"text":"t1t230","num_generated":1}.
+  - id: FALSIFY-ONE-CONDITION-ONE-STATUS-2609
+    name: no_model_available_is_503_on_every_routed_endpoint
+    prediction: >
+      Over the REAL router and AppState::demo_mock() (no model of any kind), all
+      thirteen routed generation endpoints report "No model available" AND return
+      the SAME status, 503 — no route returns 404, none returns 500, and none
+      returns 200. Separately, GET
+      /healthz (genuinely unrouted) still returns 404 with the route-not-found body,
+      so the fix does not blur the distinction it exists to preserve.
+    test_harness: 'cargo test -p aprender-serve --lib no_model_available_is_503_on_every_routed_endpoint'
+    expected_output: "test result: ok"
+    if_fails: >
+      A mounted route answers 404 or 500 for a server-side model-availability
+      condition, so a client retry policy keyed on status treats one outage as a
+      permanent routing error on some routes and a server bug on others. Verbatim
+      pre-fix, on main @ bb2bd5e73: /generate, /stream/generate and /batch/generate
+      returned 503 while /v1/chat/completions and /v1/chat/completions/stream
+      returned 404 for the byte-identical body
+      {"error":"Model registry error: No model available"}, /v1/completions returned
+      404, and /api/chat and /api/generate returned 200 OK with that same text as
+      the assistant's reply.
+  - id: FALSIFY-APR-HIDDEN-CONTEXT-CEILING-2609
+    name: apr_forward_hidden_states_refuses_an_over_context_sequence
+    prediction: >
+      AprTransformer::forward_hidden_states(&[1; context_length + 1]) returns
+      ContextLimitExceeded { provided: context_length + 1, maximum: context_length }
+      — before any KV cache is allocated — and forward_hidden_states(&[]) returns
+      InvalidShape rather than an empty success.
+    test_harness: 'cargo test -p aprender-serve --lib apr_forward_hidden_states_refuses_an_over_context_sequence'
+    expected_output: "test result: ok"
+    if_fails: >
+      The new hidden-state accessor sizes a KV cache from a caller-supplied length
+      with no ceiling, so one oversized POST /v1/embeddings body asks the allocator
+      for an arbitrary amount — the aprender#2376 finding 9 shape, where a single
+      HTTP request aborted the server process with no reply at all.
+  - id: FALSIFY-EMBED-ROUTE-NAME-2609
+    name: embed_unavailable_body_names_the_route_the_client_called
+    prediction: >
+      POST /v1/embeddings and POST /realize/embed on a model-less server each return
+      an error body naming the route the client called, not the route the handler
+      happens to delegate to.
+    test_harness: 'cargo test -p aprender-serve --lib embed_unavailable_body_names_the_route_the_client_called'
+    expected_output: "test result: ok"
+    if_fails: >
+      The error body sends the caller to a route they never used. Verbatim pre-fix:
+      POST /v1/embeddings -> {"error":"No model available: /realize/embed needs a loaded model"}.
+  - id: FALSIFY-BANNER-IS-THE-ROUTE-TABLE-2609
+    name: serve_model_banner_is_derived_from_the_route_table
+    prediction: >
+      crates/aprender-serve/src/cli/mod_server_commands.rs contains
+      crate::api::advertised_routes(&router_config) exactly twice (serve_model and
+      serve_demo) and contains no eprintln! whose literal begins with an HTTP method
+      — the construct that drifted. The guard's predicate is itself checked against
+      the exact line #2609 found ("  POST /v1/completions - OpenAI-compatible
+      completions"), so "no offenders" cannot be vacuous. Separately,
+      every_advertised_route_is_alive_on_an_apr_transformer_server probes every entry
+      of advertised_routes(&RouterConfig::default()) against a live AprTransformer
+      router and finds none that 404s and none whose body says "No model available".
+    test_harness: 'cargo test -p aprender-serve --lib apr_model_routes_2609'
+    expected_output: "test result: ok"
+    if_fails: >
+      A banner is a second, independent claim about the route surface, and it will
+      drift. Verbatim pre-fix, serve_model printed three of the thirty-one routes it
+      mounts — "  GET  /health", "  POST /v1/completions - OpenAI-compatible
+      completions", "  POST /generate       - Generate text (Q4_K fused)" — on a
+      serve path that builds an AprTransformer AppState, where /v1/completions
+      answered 404 "No model available" and the model carries no Q4_K weights.
+  - id: FALSIFY-OLLAMA-STATUS-AND-FRAME-2609
+    name: api_chat_with_stream_true_returns_ndjson_terminated_by_done
+    prediction: >
+      POST /api/chat and POST /api/generate with stream:true on a model-less server
+      return 503, content-type application/x-ndjson (never length-prefixed), a body
+      whose last object is done:true and whose every earlier object is done:false.
+      Status and framing together: the failure is reported AND the Ollama frame
+      survives.
+    test_harness: 'cargo test -p aprender-serve --lib ollama_compat_http'
+    expected_output: "test result: ok"
+    if_fails: >
+      Either the outage is invisible (200 OK with "Model registry error: No model
+      available" as the assistant's reply — the pre-fix behaviour) or the fix
+      destroyed the frame it was meant to keep honest (sanitize_json_rejection
+      rewriting the NDJSON stream into a single application/json {"error":...} object
+      with no done field, which is what happened the first time the status was
+      propagated).

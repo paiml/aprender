@@ -396,17 +396,12 @@ async fn test_chat_completions_streaming_flag() {
         .await
         .expect("test value should be present");
     // Accept streaming response or error
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // ============================================================================

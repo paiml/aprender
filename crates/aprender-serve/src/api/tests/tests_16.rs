@@ -43,17 +43,12 @@ async fn test_chat_completions_stream_true() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // With no model loaded, should return error
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 #[tokio::test]
@@ -74,17 +69,12 @@ async fn test_chat_completions_stream_false() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // =============================================================================
@@ -112,17 +102,12 @@ async fn test_chat_completions_temperature_zero_greedy() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Temperature 0.0 should trigger top_k=1 branch
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Test temperature=1.5 triggers creative decoding (top_k=40 branch)
@@ -145,17 +130,12 @@ async fn test_chat_completions_temperature_creative() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // =============================================================================
@@ -182,17 +162,12 @@ async fn test_chat_completions_max_tokens_zero() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // max_tokens=0 might produce empty response or error
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Test max_tokens large (but not huge to avoid timeout)
@@ -215,17 +190,12 @@ async fn test_chat_completions_max_tokens_large() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // =============================================================================
@@ -350,17 +320,12 @@ async fn test_chat_completions_empty_messages() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Empty messages should trigger prompt_ids.is_empty() branch
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // =============================================================================
@@ -386,17 +351,12 @@ async fn test_chat_completions_nonexistent_model() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Non-existent model should fall through model branches
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Test request with empty model string
@@ -418,17 +378,12 @@ async fn test_chat_completions_empty_model_string() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Empty model string triggers request.model.is_empty() branch
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // =============================================================================
@@ -458,17 +413,12 @@ async fn test_chat_completions_multi_turn() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    // aprender#2375(4): this fixture has NO model loaded, so exactly one answer
-    // is correct - 503, the status `model_resolution_status` assigns to a
-    // server-side condition. The disjunction this replaced admitted 200, 404
-    // and 500 simultaneously and therefore could not fail whatever the route
-    // did (the 0.63.0 audit's root cause).
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 include!("chat_completions_03.rs");
