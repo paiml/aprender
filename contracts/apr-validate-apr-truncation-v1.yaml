@@ -44,6 +44,18 @@ version: 1
 status: enforced
 date: 2026-08-22
 
+equations:
+  required_file_len:
+    formula: required_file_len(C) = data_offset(C) + max_{e in index(C)} (e.offset + align64(e.size))
+    domain: C an APR v2 container, read as header + metadata + tensor index only — no tensor payload is touched, so the cost is O(|index(C)|) and independent of file size
+    codomain: the byte length the container's own structures declare it must have, or Err for a buffer that is not an APR v2 container (never 0, which would read as "fits")
+    invariants:
+    - 'align64(size) rounds UP to the 64-byte boundary both v2 writers emit for every tensor including the last; without it up to 63 bytes of real tail damage compare as "fits"'
+    - 'required_file_len(C) <= len(C) is check 5. It is Fail with a reason naming "Truncated APR" and the actual length when it does not hold, Pass when it does, and Skip on a buffer that is not APR'
+    - 'the bound is computed from the index alone, so it holds for a file whose data section was never read'
+    - 'DISCLOSED RESIDUAL: the 4-byte CRC32 footer is deliberately outside the bound. len(writer output) == required_file_len + 4 exactly, and the residual is pinned at exactly 4 bytes — it may neither widen nor silently close'
+    - 'a truncated .apr exits non-zero for every flag combination of `apr validate` (default, --quality, --json, --skip-contract); an intact one is never described as truncated'
+
 proof_obligations:
   - type: invariant
     property: >
@@ -102,31 +114,31 @@ proof_obligations:
       the ledger fails RED the moment that count changes without being updated.
 
 falsification_tests:
-  - id: FALSIFY-APR-EXTENT-001
+  - id: FALSIFY-APR-EXTENT-2612-001
     name: truncated_file_is_shorter_than_its_own_declared_extent
     prediction: "a `.apr` written by AprV2Writer and cut at data_offset+16 still parses header, metadata and index, reports the SAME required extent as the intact file, and that extent exceeds the truncated length"
     test_harness: "cargo test -p apr-format --lib v2::tests_truncation_2612"
     expected_output: "test result: ok"
     if_fails: "the container's declared extent is not computable from the index alone → truncation cannot be detected without reading the whole file, and `apr validate` is back to trusting a file that is 95% missing."
-  - id: FALSIFY-APR-CHECK5-002
+  - id: FALSIFY-APR-EXTENT-2612-002
     name: truncated_apr_fails_check_5
     prediction: "AprValidator::validate_bytes on a half-truncated .apr yields check 5 = Fail whose reason contains 'Truncated APR' and the actual file length; on the intact fixture check 5 = Pass and report.is_valid() is true; on a GGUF buffer check 5 = Skip"
     test_harness: "cargo test -p aprender-core --lib validation_tests_truncation_2612"
     expected_output: "test result: ok"
     if_fails: "check 5 is a stub again → the 100-point report grades a truncated .apr F and still reports VALID, which is exactly what shipped in 0.63.0."
-  - id: FALSIFY-APR-EXIT-003
+  - id: FALSIFY-APR-EXTENT-2612-003
     name: truncated_apr_exits_non_zero_with_skip_contract
     prediction: "commands::validate::run on a truncated .apr returns Err(ValidationFailed) naming 'Truncated APR' for default, --quality, --json, and --skip-contract; the intact fixture is never described as truncated"
     test_harness: "cargo test -p apr-cli --lib validate_tests_truncation_2612"
     expected_output: "test result: ok"
     if_fails: "`apr validate` exits 0 on a truncated .apr for at least one flag combination → every machine consumer that reads the exit code is told a 95%-missing file is fine."
-  - id: FALSIFY-APR-PADDING-005
+  - id: FALSIFY-APR-EXTENT-2612-004
     name: required_extent_covers_trailing_alignment_padding
     prediction: "on a fixture whose final tensor is 12 bytes (padded to 64), required_file_len equals data_offset+256+64 — NOT data_offset+256+12 — and a cut inside that trailing padding is reported as short"
     test_harness: "cargo test -p apr-format --lib v2::tests_truncation_2612"
     expected_output: "test result: ok"
     if_fails: "the extent stops at the last DECLARED byte, so up to 63 bytes of real tail damage per file compare as \"fits\" — the class this contract exists to catch, only smaller."
-  - id: FALSIFY-APR-RESIDUAL-006
+  - id: FALSIFY-APR-EXTENT-2612-005
     name: footer_only_truncation_is_the_disclosed_residual
     prediction: "AprV2Writer output is exactly required_file_len + 4 bytes, and a buffer with those last 4 bytes removed still satisfies required_file_len <= len — the residual is exactly 4 bytes, no more and no less"
     test_harness: "cargo test -p apr-format --lib v2::tests_truncation_2612"

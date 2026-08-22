@@ -69,6 +69,31 @@ version: 1
 status: enforced
 date: 2026-08-22
 
+equations:
+  routed_endpoint_coverage:
+    formula: 'forall r in GENERATION_ROUTES, forall b in resident_backends(S): status(r, S) = 200 whenever model_loaded(S)'
+    domain: S an AppState whose only resident model is an AprTransformer (the third backend — the one the quantized and CUDA fixes of aprender#2375/#2376 did not reach); GENERATION_ROUTES enumerated from the router, not from a hand-written list
+    codomain: the HTTP status and body of each routed generation endpoint
+    invariants:
+    - 'no response body contains "No model available" while model_loaded(S) is true'
+    - 'every handler walks the same backend chain /generate walks, in the same order: CUDA (cfg), quantized, APR, dense'
+    - 'the obligation is over the SURFACE, not a route list: statuses are compared to each other, so one route disagreeing with the rest fails even where its own status is defensible alone'
+  model_resolution_status:
+    formula: model_resolution_status(e) = 404 if e = ModelNotFound else 503
+    domain: e the RegistryError a mounted route resolved to
+    codomain: the single status every mounted route answers for that condition
+    invariants:
+    - '503 for a server-side condition — no usable model at all. Never 404 (the route exists), never 500 (which invites a retry of a request the server cannot serve), never 2xx (which hid the outage: /api/chat answered 200 with "No model available" as the assistant reply)'
+    - '404 is reserved for ModelNotFound — the client named a model this server does not have, which IS a client error'
+    - 'a genuinely unrouted path returns a different body entirely, so 404-the-route and 404-the-model stay distinguishable'
+  advertised_routes:
+    formula: banner(S) = advertised_routes(router_config(S)) = routes(live_router(S))
+    domain: S a serving process, at startup and at 404-time
+    codomain: one route table, printed and served from a single source
+    invariants:
+    - 'no startup banner may restate the route surface: two independent claims about one surface drift, and there is now one'
+    - 'every route the banner names answers on an AprTransformer server — none 404s and none reports "No model available"'
+
 proof_obligations:
   - type: invariant
     property: >
@@ -145,7 +170,7 @@ proof_obligations:
       (aprender#2376 finding 9), and an embedding route takes caller-supplied text.
 
 falsification_tests:
-  - id: FALSIFY-APR-BACKEND-COVERAGE-2609
+  - id: FALSIFY-APR-BACKEND-COVERAGE-2609-001
     name: apr_model_routes_2609
     prediction: >
       Over the REAL router and an AppState holding ONLY an AprTransformer:
@@ -172,7 +197,7 @@ falsification_tests:
       POST /v1/chat/completions/stream -> 404 {"error":"Model registry error: No model available"};
       POST /v1/embeddings -> 503 {"error":"No model available: /realize/embed needs a loaded model"};
       while POST /generate -> 200 {"token_ids":[1,230],"text":"t1t230","num_generated":1}.
-  - id: FALSIFY-ONE-CONDITION-ONE-STATUS-2609
+  - id: FALSIFY-APR-BACKEND-COVERAGE-2609-002
     name: no_model_available_is_503_on_every_routed_endpoint
     prediction: >
       Over the REAL router and AppState::demo_mock() (no model of any kind), all
@@ -193,7 +218,7 @@ falsification_tests:
       {"error":"Model registry error: No model available"}, /v1/completions returned
       404, and /api/chat and /api/generate returned 200 OK with that same text as
       the assistant's reply.
-  - id: FALSIFY-APR-HIDDEN-CONTEXT-CEILING-2609
+  - id: FALSIFY-APR-BACKEND-COVERAGE-2609-003
     name: apr_forward_hidden_states_refuses_an_over_context_sequence
     prediction: >
       AprTransformer::forward_hidden_states(&[1; context_length + 1]) returns
@@ -207,7 +232,7 @@ falsification_tests:
       with no ceiling, so one oversized POST /v1/embeddings body asks the allocator
       for an arbitrary amount — the aprender#2376 finding 9 shape, where a single
       HTTP request aborted the server process with no reply at all.
-  - id: FALSIFY-EMBED-ROUTE-NAME-2609
+  - id: FALSIFY-APR-BACKEND-COVERAGE-2609-004
     name: embed_unavailable_body_names_the_route_the_client_called
     prediction: >
       POST /v1/embeddings and POST /realize/embed on a model-less server each return
@@ -218,7 +243,7 @@ falsification_tests:
     if_fails: >
       The error body sends the caller to a route they never used. Verbatim pre-fix:
       POST /v1/embeddings -> {"error":"No model available: /realize/embed needs a loaded model"}.
-  - id: FALSIFY-BANNER-IS-THE-ROUTE-TABLE-2609
+  - id: FALSIFY-APR-BACKEND-COVERAGE-2609-005
     name: serve_model_banner_is_derived_from_the_route_table
     prediction: >
       crates/aprender-serve/src/cli/mod_server_commands.rs contains
@@ -239,7 +264,7 @@ falsification_tests:
       completions", "  POST /generate       - Generate text (Q4_K fused)" — on a
       serve path that builds an AprTransformer AppState, where /v1/completions
       answered 404 "No model available" and the model carries no Q4_K weights.
-  - id: FALSIFY-OLLAMA-STATUS-AND-FRAME-2609
+  - id: FALSIFY-APR-BACKEND-COVERAGE-2609-006
     name: api_chat_with_stream_true_returns_ndjson_terminated_by_done
     prediction: >
       POST /api/chat and POST /api/generate with stream:true on a model-less server

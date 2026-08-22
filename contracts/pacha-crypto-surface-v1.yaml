@@ -46,6 +46,25 @@ version: 1
 status: enforced
 date: 2026-08-22
 
+equations:
+  encrypt_model:
+    formula: encrypt_model(m, p) = Ok(PACHAENC || header || ChaCha20Poly1305(Argon2id(p, salt), nonce, m)) if feature `encryption`, else Err(UnsupportedOperation)
+    domain: m the model bytes, p the passphrase; salt and nonce drawn from a CSPRNG per call
+    codomain: an authenticated envelope stamped version 2, or an error naming the missing feature — never a buffer produced by any other cipher
+    invariants:
+    - 'CRYPTO-NO-SUBSTITUTE: no build configuration returns Ok from a non-authenticated cipher. Absent the `encryption` feature both encrypt and decrypt return Err, because the CLI success message cannot distinguish the two'
+    - 'CRYPTO-KEYSTREAM-OPAQUE: the ciphertext of all-zero plaintext carries no byte-index algebra. The deleted fallback made ks[31] a multiple of 32 and ks[63] a multiple of 64 in every 64-byte block; under ChaCha20 all 16 such probes agree with probability 32^-8 * 64^-8'
+    - 'CRYPTO-SALT-IS-ENTROPY: salt and nonce come from a CSPRNG, never a clock. The deleted fallback satisfied salt[i] ^ 7i == salt[i+16] ^ 7(i+16) for every i; real entropy satisfies that 16-fold relation with probability 2^-128'
+    - 'CRYPTO-REJECTS-TAMPERING: decrypt returns Err for every single-bit flip at every byte offset of the envelope, header included'
+    - 'VERSION-IS-SELF-DESCRIBING: fresh output is stamped version 2 and a version-1 header is refused with a message that says v1 was not encryption — never "invalid password". The two formats are distinguishable from the file alone'
+  verify_model:
+    formula: verify_model(env) = internally_consistent(env);  verify_model_with_key(env, k) = internally_consistent(env) AND signer(env) == k
+    domain: env a signed envelope, k the honest Ed25519 public key the caller expects
+    codomain: a boolean provenance verdict, whose STRENGTH differs between the two entry points
+    invariants:
+    - 'all 512 single-bit forgeries of a valid 64-byte Ed25519 signature are rejected, while the unmodified signature verifies'
+    - 'an envelope re-signed by an attacker over the same model is ACCEPTED by verify_model and REJECTED by verify_model_with_key — a green `apr pacha verify` is consistency, not provenance, and this is the documented boundary rather than a defect'
+
 proof_obligations:
   - type: invariant
     property: >
@@ -112,43 +131,43 @@ proof_obligations:
       `apr pacha verify` is never read as proof of authorship.
 
 falsification_tests:
-  - id: FALSIFY-2590-A
+  - id: FALSIFY-2590-001
     name: falsify_2590_a_build_without_aead_refuses_rather_than_substituting_xor
     prediction: "with the `encryption` feature absent, encrypt_model returns Err whose message names the feature; with it present, encrypt_model returns a buffer carrying the PACHAENC magic. On origin/main (default = compression,cli,signing) this test is RED: encrypt_model returns Ok from the XOR fallback."
     test_harness: "cargo test -p aprender-registry --lib falsify_2590_a && cargo test -p aprender-registry --lib --no-default-features falsify_2590_a"
     expected_output: "test result: ok"
     if_fails: "a build with no authenticated cipher silently encrypts with something else, and `apr pacha encrypt` reports success for a file that is not encrypted."
-  - id: FALSIFY-2590-B
+  - id: FALSIFY-2590-002
     name: falsify_2590_b_ciphertext_has_no_toy_multiply_structure
     prediction: "encrypting 512 zero bytes and probing offsets 31 and 63 of each 64-byte block finds fewer than 16 of 16 probes congruent to 0 mod 32 / mod 64; restoring the wrapping_mul keystream inside the encryption path makes all 16 match"
     test_harness: "cargo test -p aprender-registry --lib falsify_2590_b"
     expected_output: "test result: ok"
     if_fails: "the ciphertext is a byte-index-derived keystream, not ChaCha20 output — recoverable without the key."
-  - id: FALSIFY-2590-C
+  - id: FALSIFY-2590-003
     name: falsify_2590_c_salt_is_not_a_timestamp_expansion
     prediction: "EncryptedHeader::new produces a salt for which fewer than 16 of the 16 relations salt[i] ^ 7i == salt[i+16] ^ 7(i+16) hold; restoring the SystemTime-nanosecond derivation makes all 16 hold"
     test_harness: "cargo test -p aprender-registry --lib falsify_2590_c"
     expected_output: "test result: ok"
     if_fails: "salt and nonce are a shifted clock reading, so an attacker who knows approximately when a file was encrypted can enumerate the key-derivation salt, and a tight loop can reuse a (key, nonce) pair."
-  - id: FALSIFY-2590-G
+  - id: FALSIFY-2590-004
     name: falsify_2590_g_legacy_v1_and_aead_v2_are_distinguishable_from_the_file
     prediction: "fresh ciphertext is stamped version 2, not 1; a header whose version byte is 1 is refused by both EncryptedHeader::from_bytes and decrypt_model_with_config with a message that says v1 was not encryption and never says 'invalid password'. Reverting VERSION to 1 fails the first assertion (observed: left 1, right 1); removing the VERSION_LEGACY_XOR arm from from_bytes degrades the refusal to 'unsupported encryption version: 1' and fails the last."
     test_harness: "cargo test -p aprender-registry --lib falsify_2590_g"
     expected_output: "test result: ok"
     if_fails: "the XOR format 0.63.0 shipped and the ChaCha20-Poly1305 format that replaces it both claim version 1 under the same magic, so an archive cannot be classified from its own bytes and a v1 file is misreported as a password problem."
-  - id: FALSIFY-2590-D
+  - id: FALSIFY-2590-005
     name: adversarial_2590_every_single_bit_flip_is_rejected
     prediction: "for a 48-byte plaintext, flipping bits 0/3/7 of each of the 117 ciphertext bytes yields 351 decryptions and all 351 return Err"
     test_harness: "cargo test -p aprender-registry --lib adversarial_2590_every_single_bit_flip_is_rejected"
     expected_output: "test result: ok"
     if_fails: "the ciphertext is not authenticated end to end and a tampered model file decrypts to attacker-chosen bytes."
-  - id: FALSIFY-2590-E
+  - id: FALSIFY-2590-006
     name: adversarial_2590_every_bit_flip_in_the_signature_is_rejected
     prediction: "all 512 single-bit forgeries of a valid 64-byte Ed25519 signature are rejected, while the unmodified signature verifies"
     test_harness: "cargo test -p aprender-registry --lib adversarial_2590_every_bit_flip_in_the_signature_is_rejected"
     expected_output: "test result: ok"
     if_fails: "the verifier accepts signatures it should not, so `apr pacha verify` reporting VALID means nothing."
-  - id: FALSIFY-2590-F
+  - id: FALSIFY-2590-007
     name: adversarial_2590_resigned_envelope_needs_an_expected_key_to_be_caught
     prediction: "verify_model accepts an envelope re-signed by an attacker over the same model (internally consistent), and verify_model_with_key against the honest key rejects it"
     test_harness: "cargo test -p aprender-registry --lib adversarial_2590_resigned_envelope_needs_an_expected_key_to_be_caught"

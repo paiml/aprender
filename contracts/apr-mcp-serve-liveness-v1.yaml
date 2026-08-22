@@ -169,6 +169,51 @@ falsification_tests:
     built test binary before any verdict was read): restoring the v1 gate turns this
     RED with the measured payload {"attribution":"child","ready":true,
     "url":"http://localhost:45831"} for a `sleep` child that bound nothing.'
+- id: FALSIFY-MCP-SERVE-2606-005
+  name: falsify_2606_mcp_serve_argv_is_accepted_by_the_cli_parser
+  prediction: 'Cli::try_parse_from(["apr"] ++ serve_argv("/models/…q4_k_m.apr", 38621))
+    succeeds and yields ServeCommands::Run with that file and that port.'
+  test_harness: cargo test -p apr-cli --lib falsify_2606_mcp_serve_argv_is_accepted_by_the_cli_parser
+  expected_output: 'test result: ok'
+  if_fails: 'The MCP tool spawns an argv the CLI REJECTS — the measured rc=2. Two
+    mutations verified: (B1) dropping "run" from serve_argv reproduces the exact 0.63.0
+    stderr, "error: unrecognized subcommand ''/models/…q4_k_m.apr''"; (B2) renaming
+    run->start in the implementation AND in the old hard-coded-vector assertion leaves
+    all 14 aprender-mcp guards GREEN and turns only this one RED, with "error:
+    unrecognized subcommand ''start''".'
+- id: FALSIFY-MCP-SERVE-2606-006
+  name: falsify_2606_the_0_63_0_argv_is_still_rejected_by_clap
+  prediction: '["apr","serve","<model>","--port","38621"] — the exact argv the sweep
+    captured via a PATH shim — is still rejected by clap with a message naming a
+    subcommand or a Usage line.'
+  test_harness: cargo test -p apr-cli --lib falsify_2606_the_0_63_0_argv_is_still_rejected_by_clap
+  expected_output: 'test result: ok'
+  if_fails: 'A default subcommand or a positional fallback now makes the 0.63.0 argv
+    parse. That is not automatically wrong, but it silently drains -005 of meaning: the
+    defect becomes unobservable rather than fixed, and the liveness guard becomes the
+    only thing between a user and a fabricated URL. Decide deliberately; do not delete.'
+- id: FALSIFY-MCP-SERVE-2606-007
+  name: falsify_2606_serve_argv_round_trips_port_across_the_range
+  prediction: 'For port in {1, 80, 8080, 38641, 65535} the argv parses and the parsed
+    port equals the requested one.'
+  test_harness: cargo test -p apr-cli --lib falsify_2606_serve_argv_round_trips_port_across_the_range
+  expected_output: 'test result: ok'
+  if_fails: 'One failing port is an anecdote; the sweep probed 38641 alone. A flag
+    rename, a type narrowing, or a short-flag collision would show up at an edge before
+    it shows up at 8080.'
+
+- id: FALSIFY-MCP-SERVE-2606-008
+  name: url_key_matches_attribution_exhaustively_over_every_port
+  prediction: 'running_result(4242, port, listening, log) satisfies url-present ==
+    listening.is_attributable() and "http://"-in-text == the same, and reports the
+    evidence class verbatim, for EVERY port in 0..=65535 and ALL FOUR evidence classes
+    (No, ByForeignProcess, UnattributedAfterPreflight, ByChild) — 262144 cases.'
+  test_harness: cargo test -p aprender-mcp --lib url_key_matches_attribution_exhaustively_over_every_port
+  expected_output: 'test result: ok'
+  if_fails: 'Some port is a special case. Spawn-based falsifiers can only sample a
+    port; this closes the domain so 0, 65535 and everything between are covered rather
+    than assumed. ByForeignProcess is IN the domain — that is the state the v1 fix
+    collapsed into ready:true. Discharges KANI-MCP-SERVE-2606-001 by exhaustion today.'
 - id: FALSIFY-MCP-SERVE-2606-009
   name: a_listener_that_appears_mid_window_is_not_attributed_to_the_child
   prediction: 'Pre-flight passes (the port is free at spawn), then an unrelated
@@ -217,51 +262,6 @@ falsification_tests:
     restore the fabrication (Foreign mis-read as Child). The row parser is separately
     pinned against LISTEN-vs-ESTABLISHED, wrong-port and malformed rows, and the ppid
     parse against a comm containing spaces and parentheses.'
-- id: FALSIFY-MCP-SERVE-2606-008
-  name: url_key_matches_attribution_exhaustively_over_every_port
-  prediction: 'running_result(4242, port, listening, log) satisfies url-present ==
-    listening.is_attributable() and "http://"-in-text == the same, and reports the
-    evidence class verbatim, for EVERY port in 0..=65535 and ALL FOUR evidence classes
-    (No, ByForeignProcess, UnattributedAfterPreflight, ByChild) — 262144 cases.'
-  test_harness: cargo test -p aprender-mcp --lib url_key_matches_attribution_exhaustively_over_every_port
-  expected_output: 'test result: ok'
-  if_fails: 'Some port is a special case. Spawn-based falsifiers can only sample a
-    port; this closes the domain so 0, 65535 and everything between are covered rather
-    than assumed. ByForeignProcess is IN the domain — that is the state the v1 fix
-    collapsed into ready:true. Discharges KANI-MCP-SERVE-2606-001 by exhaustion today.'
-- id: FALSIFY-MCP-SERVE-2606-005
-  name: falsify_2606_mcp_serve_argv_is_accepted_by_the_cli_parser
-  prediction: 'Cli::try_parse_from(["apr"] ++ serve_argv("/models/…q4_k_m.apr", 38621))
-    succeeds and yields ServeCommands::Run with that file and that port.'
-  test_harness: cargo test -p apr-cli --lib falsify_2606_mcp_serve_argv_is_accepted_by_the_cli_parser
-  expected_output: 'test result: ok'
-  if_fails: 'The MCP tool spawns an argv the CLI REJECTS — the measured rc=2. Two
-    mutations verified: (B1) dropping "run" from serve_argv reproduces the exact 0.63.0
-    stderr, "error: unrecognized subcommand ''/models/…q4_k_m.apr''"; (B2) renaming
-    run->start in the implementation AND in the old hard-coded-vector assertion leaves
-    all 14 aprender-mcp guards GREEN and turns only this one RED, with "error:
-    unrecognized subcommand ''start''".'
-- id: FALSIFY-MCP-SERVE-2606-006
-  name: falsify_2606_the_0_63_0_argv_is_still_rejected_by_clap
-  prediction: '["apr","serve","<model>","--port","38621"] — the exact argv the sweep
-    captured via a PATH shim — is still rejected by clap with a message naming a
-    subcommand or a Usage line.'
-  test_harness: cargo test -p apr-cli --lib falsify_2606_the_0_63_0_argv_is_still_rejected_by_clap
-  expected_output: 'test result: ok'
-  if_fails: 'A default subcommand or a positional fallback now makes the 0.63.0 argv
-    parse. That is not automatically wrong, but it silently drains -005 of meaning: the
-    defect becomes unobservable rather than fixed, and the liveness guard becomes the
-    only thing between a user and a fabricated URL. Decide deliberately; do not delete.'
-- id: FALSIFY-MCP-SERVE-2606-007
-  name: falsify_2606_serve_argv_round_trips_port_across_the_range
-  prediction: 'For port in {1, 80, 8080, 38641, 65535} the argv parses and the parsed
-    port equals the requested one.'
-  test_harness: cargo test -p apr-cli --lib falsify_2606_serve_argv_round_trips_port_across_the_range
-  expected_output: 'test result: ok'
-  if_fails: 'One failing port is an anecdote; the sweep probed 38641 alone. A flag
-    rename, a type narrowing, or a short-flag collision would show up at an edge before
-    it shows up at 8080.'
-
 proof_obligations:
 - type: invariant
   property: SERVE-URL-ONLY-WHEN-CHILD-OWNS-PORT — apr.serve reports a URL only for a
