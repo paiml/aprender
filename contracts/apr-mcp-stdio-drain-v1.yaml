@@ -47,7 +47,6 @@ metadata:
   depends_on:
   - apr-mcp-server-v1
 
-kind: KernelContract
 name: apr-mcp-stdio-drain
 version: 1.0.0
 status: ACTIVE
