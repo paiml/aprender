@@ -27,6 +27,15 @@ metadata:
     the no-feature build return UnsupportedOperation instead of encrypting with
     something else. A build with no authenticated cipher must REFUSE, not
     silently downgrade.
+
+    Changing the primitive changed the ON-DISK BODY, so the format's IDENTIFIER
+    had to change with it. The header (`PACHAENC` + version + salt[32] +
+    nonce[12]) is byte-identical across the two formats, and the first cut of the
+    fix left `VERSION = 1` untouched — which would have left the XOR format that
+    0.63.0 actually shipped and the ChaCha20-Poly1305 format that replaces it
+    both claiming version 1 under the same magic, mutually undecodable and
+    indistinguishable from the file. `VERSION` is now 2, and version 1 is
+    recognised only to be refused with a diagnosis that says what it was.
   references:
   - "crates/aprender-registry/src/crypto.rs (encrypt_model/decrypt_model, EncryptedHeader::new, mod falsify_2590)"
   - "crates/aprender-registry/src/signing.rs (SigningKey/VerifyingKey/ModelSignature, mod adversarial_2590)"
@@ -75,6 +84,17 @@ proof_obligations:
       over the whole sweep.
   - type: invariant
     property: >
+      CRYPTO-FORMAT-VERSION-DISCRIMINATES: two incompatible on-disk bodies may
+      never share one version byte under the PACHAENC magic. Version 1 is the
+      unauthenticated XOR format pacha <= 0.63.x wrote; version 2 is
+      ChaCha20-Poly1305 over an Argon2id key. Fresh output must never be stamped
+      1, and a version-1 header must be refused with a diagnosis naming the
+      format — never routed into the AEAD, whose failure mode for a v1 file is
+      "invalid password or corrupted data", a wrong answer for a file that has
+      neither problem and whose contents were never confidentiality-protected.
+      A reader must be able to classify an archive from its own first nine bytes.
+  - type: invariant
+    property: >
       SIGN-REJECTS-FORGERY: verification must reject all 512 single-bit
       forgeries of a 64-byte Ed25519 signature, all-zero and all-ones
       signatures, any signature length other than 64, and the same signature
@@ -110,6 +130,12 @@ falsification_tests:
     test_harness: "cargo test -p aprender-registry --lib falsify_2590_c"
     expected_output: "test result: ok"
     if_fails: "salt and nonce are a shifted clock reading, so an attacker who knows approximately when a file was encrypted can enumerate the key-derivation salt, and a tight loop can reuse a (key, nonce) pair."
+  - id: FALSIFY-2590-G
+    name: falsify_2590_g_legacy_v1_and_aead_v2_are_distinguishable_from_the_file
+    prediction: "fresh ciphertext is stamped version 2, not 1; a header whose version byte is 1 is refused by both EncryptedHeader::from_bytes and decrypt_model_with_config with a message that says v1 was not encryption and never says 'invalid password'. Reverting VERSION to 1 fails the first assertion (observed: left 1, right 1); removing the VERSION_LEGACY_XOR arm from from_bytes degrades the refusal to 'unsupported encryption version: 1' and fails the last."
+    test_harness: "cargo test -p aprender-registry --lib falsify_2590_g"
+    expected_output: "test result: ok"
+    if_fails: "the XOR format 0.63.0 shipped and the ChaCha20-Poly1305 format that replaces it both claim version 1 under the same magic, so an archive cannot be classified from its own bytes and a v1 file is misreported as a password problem."
   - id: FALSIFY-2590-D
     name: adversarial_2590_every_single_bit_flip_is_rejected
     prediction: "for a 48-byte plaintext, flipping bits 0/3/7 of each of the 117 ciphertext bytes yields 351 decryptions and all 351 return Err"

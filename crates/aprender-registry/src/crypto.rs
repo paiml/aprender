@@ -11,6 +11,21 @@
 //! - Memory-hard password hashing (Argon2id)
 //! - Authenticated encryption prevents tampering
 //!
+//! ## On-disk format
+//!
+//! `PACHAENC` ‖ version:u8 ‖ salt[32] ‖ nonce[12] ‖ body
+//!
+//! | version | body | status |
+//! |---------|------|--------|
+//! | 1 | XOR keystream + FNV-shaped checksum, clock-derived salt | **not encryption**; written by pacha ≤ 0.63.x, refused here (#2590) |
+//! | 2 | ChaCha20-Poly1305 over an Argon2id-derived key | current |
+//!
+//! Version 2 exists because the body changed and the header did not. #2590
+//! replaced the primitive but not the identifier, which would have left two
+//! mutually undecodable formats both claiming version 1 under the same magic.
+//! The version byte is the discriminator, so an archive can be classified from
+//! its own first nine bytes; see [`get_version`].
+//!
 //! # Example
 //!
 //! ```no_run
@@ -33,8 +48,30 @@ use serde::{Deserialize, Serialize};
 /// Magic bytes identifying encrypted pacha files
 const MAGIC: &[u8; 8] = b"PACHAENC";
 
-/// Current encryption format version
-const VERSION: u8 = 1;
+/// Current encryption format version: ChaCha20-Poly1305 body, Argon2id-derived key.
+///
+/// **Bumped 1 → 2 by #2590, and the bump is load-bearing.** The header layout
+/// (`PACHAENC` + version + 32-byte salt + 12-byte nonce) is byte-identical
+/// across the two, but the body is not: version 1 as *shipped* in 0.63.0 was
+/// the `not(feature = "encryption")` fallback — a
+/// `wrapping_mul(i as u8 + 1)` XOR keystream followed by an FNV-shaped 16-byte
+/// checksum, keyed by a 10 000-round add/multiply KDF over a `SystemTime`
+/// nanosecond salt. `encryption` was not a default feature and the real arm did
+/// not compile, so version 1 on disk means the XOR format and nothing else.
+///
+/// Leaving this at 1 would have made two mutually undecodable formats claim the
+/// same identifier. A v1 file fed to this code would fail the Poly1305 check and
+/// be reported as "invalid password or corrupted data" — the wrong diagnosis for
+/// a file that is neither. [`VERSION_LEGACY_XOR`] keeps the two distinguishable
+/// from the file itself.
+const VERSION: u8 = 2;
+
+/// Version byte written by the pre-#2590 XOR fallback. Never produced or read here.
+///
+/// [`EncryptedHeader::from_bytes`] recognises it only to say what it is; there is
+/// no decryption path, because reading it would mean re-implementing the homebrew
+/// cipher #2590 deleted. See [`VERSION`] for what the two versions mean.
+const VERSION_LEGACY_XOR: u8 = 1;
 
 /// Salt length for key derivation (32 bytes)
 const SALT_LEN: usize = 32;
@@ -103,6 +140,21 @@ impl EncryptedHeader {
         }
 
         let version = data[8];
+        if version == VERSION_LEGACY_XOR {
+            // Do NOT let this fall through to the AEAD, which would fail the
+            // Poly1305 check and report "invalid password or corrupted data" —
+            // a wrong diagnosis that sends the operator hunting for a password
+            // that never existed.
+            return Err(PachaError::InvalidFormat(
+                "this file is pacha encryption format v1, which was not encryption: \
+                 pacha 0.63.0 shipped without the `encryption` feature and wrote an \
+                 unauthenticated XOR keystream under this same PACHAENC magic (#2590). \
+                 It cannot be read by a build that has only ChaCha20-Poly1305, and its \
+                 contents were never confidentiality-protected. Recover the plaintext \
+                 with pacha 0.63.x and re-encrypt to v2."
+                    .to_string(),
+            ));
+        }
         if version != VERSION {
             return Err(PachaError::InvalidFormat(format!(
                 "unsupported encryption version: {}",
@@ -340,6 +392,10 @@ pub fn is_encrypted(data: &[u8]) -> bool {
 }
 
 /// Get encryption format version from encrypted data
+///
+/// `1` means the pre-#2590 XOR format (not encryption, and not readable here);
+/// `2` means ChaCha20-Poly1305 + Argon2id. This is the only way to tell the two
+/// apart — the magic and header layout are identical. See the module docs.
 pub fn get_version(data: &[u8]) -> Result<u8> {
     if data.len() < 9 {
         return Err(PachaError::InvalidFormat("data too short for version check".to_string()));
@@ -1050,6 +1106,73 @@ mod falsify_2590 {
         assert!(
             encrypt_model(b"data", "").is_err(),
             "an empty password must never be accepted for encryption"
+        );
+    }
+
+    // ------------------------------------------------------------------------
+    // FALSIFIER G — the format's IDENTIFIER changed with the format.
+    // ------------------------------------------------------------------------
+
+    /// Two incompatible bodies must not share one version byte.
+    ///
+    /// #2590 replaced the on-disk body — XOR keystream + FNV checksum becomes
+    /// ChaCha20-Poly1305 — while `MAGIC` and `VERSION` stayed put. That leaves a
+    /// reader holding a `PACHAENC`/`\x01` file with no way to know which of two
+    /// mutually undecodable formats it has, and the AEAD's failure mode for a v1
+    /// file is the *wrong* message: "invalid password or corrupted data" for a
+    /// file that has neither problem.
+    ///
+    /// This test fails in both directions, and both were run. Reverting `VERSION`
+    /// to 1 fails the first assertion (`left: 1, right: 1` — fresh output is
+    /// stamped with the legacy identifier again). Removing the
+    /// `VERSION_LEGACY_XOR` arm from `from_bytes` fails the last, because the
+    /// refusal degrades to `unsupported encryption version: 1`, which tells the
+    /// operator the file is unreadable but not that it was never encrypted.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn falsify_2590_g_legacy_v1_and_aead_v2_are_distinguishable_from_the_file() {
+        // 1. What we write now is NOT stamped with the legacy identifier.
+        let ciphertext =
+            encrypt_model_with_config(b"weights", "pw", &cheap_kdf()).expect("encrypt");
+        let stamped = get_version(&ciphertext).expect("fresh output must carry a version");
+        assert_ne!(
+            stamped, VERSION_LEGACY_XOR,
+            "the AEAD format is stamped with the same version byte the deleted XOR \
+             fallback used — the two formats are indistinguishable on disk"
+        );
+        assert_eq!(stamped, VERSION, "fresh output must be stamped v{VERSION}");
+
+        // 2. A legacy v1 file is still recognisably a pacha encrypted file...
+        let mut legacy = ciphertext.clone();
+        legacy[8] = VERSION_LEGACY_XOR;
+        assert!(is_encrypted(&legacy), "the magic is shared, so `is_encrypted` still holds");
+        assert_eq!(get_version(&legacy).expect("version readable"), VERSION_LEGACY_XOR);
+
+        // 3. ...and is refused with a diagnosis that names the format, never a
+        //    password. This is the assertion that excludes the silent-collision
+        //    outcome: a generic AEAD failure here would pass every other check.
+        let err = EncryptedHeader::from_bytes(&legacy)
+            .expect_err("a v1 header must not parse as the v2 AEAD format");
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("invalid password"),
+            "a v1 file is not a wrong-password case, and saying so sends the operator \
+             after a password that never existed; got: {msg}"
+        );
+        assert!(
+            msg.contains("not encryption"),
+            "a bare 'unsupported version' is not enough: the operator must be told that \
+             v1 never protected the contents, or they will assume the data was \
+             confidential and is merely unreadable; got: {msg}"
+        );
+
+        // The whole-file entry point must reach the same verdict, not just the
+        // header parser the test called directly.
+        let err = decrypt_model_with_config(&legacy, "pw", &cheap_kdf())
+            .expect_err("decrypt_model must refuse a v1 file");
+        assert!(
+            err.to_string().contains("not encryption"),
+            "decrypt must give the same diagnosis as the header parser; got: {err}"
         );
     }
 }
