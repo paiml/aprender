@@ -1,0 +1,237 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-22'
+  author: PAIML Engineering
+  description: the MCP apr.serve tool may report a URL only for a port it watched accept
+    a connection while the spawned child was still alive
+  references:
+  - aprender#2606 (measured against the PUBLISHED 0.63.0 crates.io binary, sha256 2c7bc1d0eb…)
+  - aprender#2388 / PR #2415 (the argv and liveness fixes that landed on main after the 0.63.0 cut)
+  - aprender#2570 (apr tune fabricating a parameter count — same fabricated-success class)
+  lessons_learned:
+  - 'A spawn returning a pid proves a process was CREATED, not that it survived argv
+    parsing. 0.63.0 spawned `apr serve <model> --port <n>`, clap exited 2 before the
+    server was constructed, and the tool returned {"pid":3070303,"url":"http://localhost:38641"}
+    with isError ABSENT. ss -ltn showed nothing listening.'
+  - 'Annotating a fabrication is not removing it. The post-#2388 code polled for
+    liveness and correctly set ready:false when the child never bound — and still
+    emitted "url":"http://localhost:<port>" on that branch. A client reads the field
+    it asked the tool for; a truthful sibling key does not repair a false one. Make the
+    fabrication UNREPRESENTABLE: withhold the url key on every branch that did not
+    observe a connect.'
+  - 'The argv guard shipped as assert_eq!(serve_argv(m,p), vec!["serve","run",m,...]),
+    which is tautological with the implementation. It re-states the argv rather than
+    asking anything whether that argv parses, so a rename of the `run` subcommand keeps
+    it green while the tool regresses to exactly the 0.63.0 behaviour. Mutation-verified:
+    renaming run->start in BOTH the implementation and that assertion left all 14
+    aprender-mcp guards GREEN.'
+  - 'The check has to run on the surface where the DECISION is made. Only the CLI''s own
+    clap parser can answer "does apr accept this argv" — it is the surface that emitted
+    the measured rc=2. aprender-mcp cannot reach it (apr-cli depends on aprender-mcp, not
+    the reverse), so the argv falsifier lives in apr-cli.'
+  - 'A new tests/*.rs file in this repo is DARK until its name is added to the single
+    integration-test line in .github/workflows/ci.yml. Both halves of this contract are
+    therefore --lib tests, which workspace-test runs.'
+
+equations:
+  url_only_when_listening:
+    formula: 'url in payload(spawn_and_confirm(p, argv, port, t)) <=> exists s <= t such
+      that tcp_connect(127.0.0.1:port) succeeded at s AND child.try_wait() == None at s'
+    domain: p a program path, argv its arguments, port in 0..=65535, t a readiness window
+    codomain: a ToolCallResult whose single text block is a JSON object
+    invariants:
+    - port == 0 => no url (an OS-assigned port cannot be probed, so listening is never
+      observed)
+    - child exited within t => is_error == Some(true) and no url
+    - spawn failed => is_error == Some(true) and no url
+    - child alive at t but never connected => is_error == None, ready == false, no url
+    - connect succeeded with child alive => is_error == None, ready == true, url ==
+      "http://localhost:{port}"
+    - ready == true <=> url is present
+    preconditions:
+    - the liveness poll runs BEFORE the connect probe, so an unrelated process holding
+      the port cannot masquerade as the spawned daemon
+    - the connect success is re-checked against child liveness, closing the race where
+      the connect and the child's death interleave
+    postconditions:
+    - 'payload.pid is always present: the caller owns the process and must be able to
+      kill it, whether or not it ever bound'
+    - payload.port is always present as a scalar, so the attempted port is reportable
+      without being dialable by mistake
+    - the substring "http://" appears in the result of exactly the listening branch
+  argv_is_accepted_by_the_cli:
+    formula: 'Cli::try_parse_from(["apr"] ++ serve_argv(m, p)).is_ok() AND the parse
+      yields Commands::Serve{command ServeCommands::Run} with file = m and port = p'
+    domain: m a model path string, p in 1..=65535
+    codomain: the CLI's parsed command tree
+    invariants:
+    - m lands in the FILE slot, never in the subcommand slot
+    - p reaches the server launcher unchanged, across the whole u16 range
+    - parsing into `serve plan` would also parse and start nothing, so the variant is
+      asserted, not merely the absence of an error
+    preconditions:
+    - apr-cli depends on aprender-mcp, so serve_argv is callable from the parser's crate
+    postconditions:
+    - the argv the MCP tool spawns is the argv the shipped CLI accepts
+
+falsification_tests:
+- id: FALSIFY-MCP-SERVE-2606-001
+  name: live_child_that_never_binds_reports_no_url
+  prediction: 'spawn_and_confirm("sleep", ["5"], <free port>, 300ms) returns is_error
+    == None with ready == false, port == the free port, and NO url key — and its text
+    block contains no "http://" at all.'
+  test_harness: cargo test -p aprender-mcp --lib live_child_that_never_binds_reports_no_url
+  expected_output: 'test result: ok'
+  if_fails: 'The ready:false branch is emitting a URL for a port nothing is bound to —
+    aprender#2606. Mutation-verified: restoring the unconditional
+    payload["url"] = format!("http://localhost:{port}") turns this RED while the
+    pre-existing live_child_that_never_binds_reports_ready_false stays GREEN, which is
+    precisely why that older guard did not catch the shipped defect.'
+- id: FALSIFY-MCP-SERVE-2606-002
+  name: ephemeral_port_reports_no_url_and_not_ready
+  prediction: 'spawn_and_confirm with port == 0 returns is_error == None, ready ==
+    false, and no url. Port 0 is never probed, so listening is never observed.'
+  test_harness: cargo test -p aprender-mcp --lib ephemeral_port_reports_no_url_and_not_ready
+  expected_output: 'test result: ok'
+  if_fails: 'The tool is handing back "http://localhost:0" — an endpoint that cannot
+    exist — for an OS-assigned port it never learned the value of.'
+- id: FALSIFY-MCP-SERVE-2606-003
+  name: dead_child_reports_no_url
+  prediction: 'spawn_and_confirm("false", [], <free port>, 5s) returns is_error ==
+    Some(true) and its message contains no "http://".'
+  test_harness: cargo test -p aprender-mcp --lib dead_child_reports_no_url
+  expected_output: 'test result: ok'
+  if_fails: 'A URL leaked into the error path. The 0.63.0 shape was exactly this — a
+    dead child described by a reachable-looking endpoint.'
+- id: FALSIFY-MCP-SERVE-2606-004
+  name: url_appears_only_on_the_observed_listening_branch
+  prediction: 'Two identical calls differing ONLY in whether something is listening on
+    the port: the unbound one carries no url, the bound one carries ready == true and
+    url == "http://localhost:{port}". Pins url to exactly one branch from both sides.'
+  test_harness: cargo test -p aprender-mcp --lib url_appears_only_on_the_observed_listening_branch
+  expected_output: 'test result: ok'
+  if_fails: 'Either a url appeared without an observed connect (the #2606 defect), or
+    the listening branch stopped emitting one (the fix over-corrected and the tool is
+    now useless — a working server with no URL to reach it).'
+- id: FALSIFY-MCP-SERVE-2606-008
+  name: url_key_matches_ready_exhaustively_over_every_port
+  prediction: 'running_result(4242, port, ready, log) satisfies url-present == ready
+    and "http://"-in-text == ready for EVERY port in 0..=65535 and both readiness
+    values — 131072 cases, all of them, in under 2s.'
+  test_harness: cargo test -p aprender-mcp --lib url_key_matches_ready_exhaustively_over_every_port
+  expected_output: 'test result: ok'
+  if_fails: 'Some port is a special case. Spawn-based falsifiers can only sample a
+    port; this closes the domain so 0, 65535 and everything between are covered rather
+    than assumed. Discharges KANI-MCP-SERVE-2606-001 by exhaustion today.'
+- id: FALSIFY-MCP-SERVE-2606-005
+  name: falsify_2606_mcp_serve_argv_is_accepted_by_the_cli_parser
+  prediction: 'Cli::try_parse_from(["apr"] ++ serve_argv("/models/…q4_k_m.apr", 38621))
+    succeeds and yields ServeCommands::Run with that file and that port.'
+  test_harness: cargo test -p apr-cli --lib falsify_2606_mcp_serve_argv_is_accepted_by_the_cli_parser
+  expected_output: 'test result: ok'
+  if_fails: 'The MCP tool spawns an argv the CLI REJECTS — the measured rc=2. Two
+    mutations verified: (B1) dropping "run" from serve_argv reproduces the exact 0.63.0
+    stderr, "error: unrecognized subcommand ''/models/…q4_k_m.apr''"; (B2) renaming
+    run->start in the implementation AND in the old hard-coded-vector assertion leaves
+    all 14 aprender-mcp guards GREEN and turns only this one RED, with "error:
+    unrecognized subcommand ''start''".'
+- id: FALSIFY-MCP-SERVE-2606-006
+  name: falsify_2606_the_0_63_0_argv_is_still_rejected_by_clap
+  prediction: '["apr","serve","<model>","--port","38621"] — the exact argv the sweep
+    captured via a PATH shim — is still rejected by clap with a message naming a
+    subcommand or a Usage line.'
+  test_harness: cargo test -p apr-cli --lib falsify_2606_the_0_63_0_argv_is_still_rejected_by_clap
+  expected_output: 'test result: ok'
+  if_fails: 'A default subcommand or a positional fallback now makes the 0.63.0 argv
+    parse. That is not automatically wrong, but it silently drains -005 of meaning: the
+    defect becomes unobservable rather than fixed, and the liveness guard becomes the
+    only thing between a user and a fabricated URL. Decide deliberately; do not delete.'
+- id: FALSIFY-MCP-SERVE-2606-007
+  name: falsify_2606_serve_argv_round_trips_port_across_the_range
+  prediction: 'For port in {1, 80, 8080, 38641, 65535} the argv parses and the parsed
+    port equals the requested one.'
+  test_harness: cargo test -p apr-cli --lib falsify_2606_serve_argv_round_trips_port_across_the_range
+  expected_output: 'test result: ok'
+  if_fails: 'One failing port is an anecdote; the sweep probed 38641 alone. A flag
+    rename, a type narrowing, or a short-flag collision would show up at an edge before
+    it shows up at 8080.'
+
+proof_obligations:
+- type: invariant
+  property: apr.serve reports a URL only for a port it observed accept a connection
+    while the child was alive
+  formal: 'url in payload(r) <=> r came from the branch reached after tcp_connect(port)
+    succeeded and child.try_wait() == None'
+  applies_to: aprender_mcp::tools::serve::spawn_and_confirm, running_result
+  discharged_by: FALSIFY-MCP-SERVE-2606-001, FALSIFY-MCP-SERVE-2606-002,
+    FALSIFY-MCP-SERVE-2606-003, FALSIFY-MCP-SERVE-2606-004, FALSIFY-MCP-SERVE-2606-008
+  notes: >-
+    This is the half that survives the next argv change. It names no subcommand and
+    no flag, so it keeps its teeth however the CLI's surface moves. Discharged from
+    both sides: three branches that must NOT carry a url, and one that must.
+- type: invariant
+  property: A still-loading child is reported truthfully, not as an error and not as
+    a server
+  formal: child alive at deadline AND no connect observed => is_error == None AND
+    ready == false AND no url AND pid present
+  applies_to: aprender_mcp::tools::serve::running_result
+  discharged_by: FALSIFY-MCP-SERVE-2606-001, FALSIFY-MCP-SERVE-2606-002
+  notes: >-
+    The converse half, and a deliberate design decision rather than an oversight. A
+    multi-GB CPU model load can outlast READY_TIMEOUT; reporting isError for a healthy
+    loader would be its own false claim, and would orphan a live process the caller
+    still owns. The honest report is pid yes, url no, ready false.
+- type: invariant
+  property: The argv the MCP tool spawns is accepted by the CLI that receives it
+  formal: 'for all m, p — Cli::try_parse_from(["apr"] ++ serve_argv(m,p)) yields
+    Commands::Serve{command ServeCommands::Run} with file = m and port = p'
+  applies_to: aprender_mcp::tools::serve::serve_argv, apr_cli::Cli
+  discharged_by: FALSIFY-MCP-SERVE-2606-005, FALSIFY-MCP-SERVE-2606-007
+  notes: >-
+    Discharged against the real clap parser, not against a hard-coded vector. The
+    vector assertion is tautological with the implementation and was mutation-proven
+    blind to a coordinated rename. Any future check on this argv must run on a surface
+    that can REJECT it.
+- type: invariant
+  property: The shipped defect stays observable
+  formal: Cli::try_parse_from(["apr","serve",m,"--port",p]).is_err()
+  applies_to: apr_cli::Cli
+  discharged_by: FALSIFY-MCP-SERVE-2606-006
+  notes: >-
+    Guards the guard. If the 0.63.0 argv ever starts parsing, the positive falsifier
+    above stops distinguishing anything, and the failure would be silent.
+
+kani_harnesses:
+- id: KANI-MCP-SERVE-2606-001
+  obligation: apr.serve reports a URL only for a port it observed accept a connection
+    while the child was alive
+  property: for any port p and any ready b, running_result(pid, p, b, log) contains a
+    url key iff b, and contains the substring "http://" iff b
+  bound: 65536
+  strategy: exhaustive
+  harness: verify_url_key_matches_ready
+  status: discharged_by_exhaustion
+  notes: >-
+    running_result is a pure function of (pid, port, ready) over a finite domain of
+    131072 points, so the property is decided by enumeration rather than by model
+    checking. FALSIFY-MCP-SERVE-2606-008 runs the whole domain in under 2s. A Kani
+    harness is retained here as the escalation path for the day running_result gains
+    a non-finite input; it is NOT claimed to have been run.
+
+qa_gate:
+  id: F-MCP-SERVE-2606
+  name: apr.serve liveness and argv contract
+  checks:
+  - apr.serve emits a url key on exactly one branch — the one that observed a TCP
+    connect succeed with the child still alive
+  - Every other terminal state (spawn failure, child exit, alive-but-unbound, port 0)
+    carries no url and no "http://" substring anywhere in its text block
+  - ready == true if and only if url is present
+  - pid and port are reported on every non-error branch, so the caller can always kill
+    and always knows what was attempted
+  - serve_argv's output is parsed by the CLI's own clap parser into ServeCommands::Run
+    with the requested file and port
+  - the 0.63.0 argv is still rejected by that parser
+  pass_criteria: All eight FALSIFY-MCP-SERVE-2606 falsifiers pass, and each mechanism
+    has been mutation-verified by removing it and observing RED — with the mutation's
+    engagement proven by grepping its marker before any verdict is read

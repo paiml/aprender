@@ -25,6 +25,29 @@
 //! explicitly `ready: false` — a big model may still be loading; we report
 //! what is true rather than claiming a listening server).
 //!
+//! DOGFOOD-0.64.0 (#2606) — the published 0.63.0 binary still exhibited both
+//! defects above (the fixes landed on `main` after the 0.63.0 cut), and the
+//! sweep surfaced a third, narrower one plus a hole in how (1) was guarded:
+//!
+//! 3. `ready: false` — the "alive but not listening" branch — still emitted
+//!    `"url": "http://localhost:<port>"`. A client that reads the field it
+//!    asked for and ignores the annotation is told a URL exists for a port
+//!    nothing is bound to. [`running_result`] now emits `url` **only** on the
+//!    branch that observed a successful TCP connect with the child alive.
+//! 4. The only guard on (1) was a unit test comparing [`serve_argv`]'s output
+//!    to a hard-coded vector. That is tautological with the implementation:
+//!    it re-states the argv rather than checking anything accepts it, so a
+//!    rename of the `run` subcommand would keep it green while the tool broke
+//!    exactly as 0.63.0 did. The argv is now fed to the CLI's own clap parser
+//!    — the surface that emitted `rc=2, unrecognized subcommand` — by
+//!    `apr-cli/src/lib_falsify_2606_mcp_serve_argv.rs`. `apr-cli` depends on
+//!    this crate, so the check lives on that side of the edge.
+//!
+//! The generalizing invariant, the one that survives the next argv change:
+//! **`apr.serve` reports a URL only for a port it watched accept a connection
+//! while the child was still alive.** A pid proves a process was created, not
+//! that it survived argv parsing.
+//!
 //! M3 shipped `notifications/cancelled` → SIGTERM → SIGKILL for `apr.run`
 //! only (see `server.rs::CancelHandle` docs: "Only `apr.run` currently
 //! honours cancellation"). A lifecycle-tracked registry for `apr.serve` —
@@ -241,21 +264,41 @@ pub fn spawn_and_confirm(
 /// `ready` distinguishes "the port accepted a connection" from "still alive
 /// but not listening yet" — the caller is told which, never told a listening
 /// server exists when none does.
+///
+/// #2606 — INVARIANT SERVE-URL-ONLY-WHEN-LISTENING. The `url` key is emitted
+/// **only** when a TCP connect to `port` succeeded while the child was still
+/// alive. `ready: false` is not a soft "probably fine": until #2606 this
+/// branch still shipped `"url": "http://localhost:<port>"`, so an MCP client
+/// that reads `url` (the field it asked for) and ignores `ready` was handed a
+/// reachable-looking endpoint that nothing was listening on — the same
+/// fabricated-success shape as the pre-#2388 `{pid, url}`, merely annotated.
+/// Withholding the key makes the fabrication unrepresentable rather than
+/// merely discouraged: there is no url to misread.
+///
+/// Still-alive-but-unbound stays a NON-error deliberately. A multi-GB model
+/// load can outlast [`READY_TIMEOUT`], the child is a real process the caller
+/// owns and must kill, and reporting `isError` for a healthy loader would be
+/// its own false claim. The honest report is: pid yes, url no, ready false.
 fn running_result(pid: u32, port: u16, ready: bool, log_path: &std::path::Path) -> ToolCallResult {
     let note = if ready {
         "server is accepting connections; kill pid via OS to stop"
     } else {
-        "process is alive but has not bound the port yet (still loading?); kill pid via OS to stop"
+        "process is alive but has not bound the port yet (still loading?); no URL is \
+         reported because nothing accepted a connection on the port; kill pid via OS to stop"
     };
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "pid": pid,
-        "url": format!("http://localhost:{port}"),
         "ready": ready,
+        "port": port,
         "stderr_log": log_path.display().to_string(),
         "note": note,
     });
+    if ready {
+        // Only reachable after a successful connect + a live-child recheck.
+        payload["url"] = serde_json::json!(format!("http://localhost:{port}"));
+    }
     let text = serde_json::to_string(&payload)
-        .unwrap_or_else(|_| format!("{{\"pid\":{pid},\"url\":\"http://localhost:{port}\"}}"));
+        .unwrap_or_else(|_| format!("{{\"pid\":{pid},\"ready\":{ready},\"port\":{port}}}"));
     ToolCallResult {
         content: vec![ContentBlock::text(text)],
         is_error: None,
@@ -496,6 +539,161 @@ mod tests {
         if let Some(log) = payload["stderr_log"].as_str() {
             let _ = std::fs::remove_file(log);
         }
+    }
+
+    // ---- DOGFOOD-0.64.0 (#2606) falsifiers -------------------------------
+    //
+    // INVARIANT SERVE-URL-ONLY-WHEN-LISTENING: `apr.serve` may put a `url` in
+    // its payload only on the branch that watched a TCP connect succeed while
+    // the child was still alive. Every other terminal state — dead child,
+    // unspawnable program, alive-but-unbound, ephemeral port — must carry NO
+    // url. This is the property that survives the next argv change: it never
+    // mentions `serve`, `run`, or any flag, so it keeps its teeth however the
+    // CLI's subcommand names move.
+
+    /// Assert the payload of a non-error result carries no reachable endpoint.
+    #[cfg(unix)]
+    fn assert_no_url(result: &ToolCallResult, ctx: &str) {
+        let text = &result.content[0].text;
+        assert!(
+            !text.contains("http://"),
+            "{ctx}: no URL may appear when nothing was observed listening, got: {text}"
+        );
+        if result.is_error.is_none() {
+            let payload = payload_of(result);
+            assert!(
+                payload.get("url").is_none(),
+                "{ctx}: `url` key must be absent, got: {payload}"
+            );
+        }
+    }
+
+    /// The #2606 defect proper: 0.63.0 (and the post-#2388 `ready:false`
+    /// branch) handed back `http://localhost:<port>` for a port nothing was
+    /// bound to. A client that reads `url` — the field it asked the tool for —
+    /// gets a working-looking endpoint that refuses every connection.
+    #[cfg(unix)]
+    #[test]
+    fn live_child_that_never_binds_reports_no_url() {
+        let port = free_port();
+        let args = vec!["5".to_string()];
+        let result = spawn_and_confirm("sleep", &args, port, Duration::from_millis(300));
+        assert_eq!(result.is_error, None, "a live child is not an error");
+        assert_no_url(&result, "alive but never bound");
+        let payload = payload_of(&result);
+        // The port is still reported — the caller needs to know which one was
+        // attempted — but as a scalar that cannot be dialled by mistake.
+        assert_eq!(payload["port"], serde_json::json!(port));
+        assert_eq!(payload["ready"], serde_json::json!(false));
+        if let Some(log) = payload["stderr_log"].as_str() {
+            let _ = std::fs::remove_file(log);
+        }
+    }
+
+    /// A dead child must not leak a URL into its error text either.
+    #[cfg(unix)]
+    #[test]
+    fn dead_child_reports_no_url() {
+        let port = free_port();
+        let result = spawn_and_confirm("false", &[], port, Duration::from_secs(5));
+        assert_eq!(result.is_error, Some(true));
+        assert_no_url(&result, "child exited immediately");
+    }
+
+    /// `port: 0` asks the OS to assign — there is no port to probe, so the
+    /// tool can prove the child survived startup and nothing more. It must
+    /// therefore never claim `ready`, and never emit `http://localhost:0`.
+    #[cfg(unix)]
+    #[test]
+    fn ephemeral_port_reports_no_url_and_not_ready() {
+        let args = vec!["5".to_string()];
+        let result = spawn_and_confirm("sleep", &args, 0, Duration::from_millis(300));
+        assert_eq!(result.is_error, None);
+        let payload = payload_of(&result);
+        assert_eq!(
+            payload["ready"],
+            serde_json::json!(false),
+            "port 0 was never probed, so readiness was never observed"
+        );
+        assert_no_url(&result, "OS-assigned port");
+        if let Some(log) = payload["stderr_log"].as_str() {
+            let _ = std::fs::remove_file(log);
+        }
+    }
+
+    /// `running_result` is a pure function of `(pid, port, ready)`, and the
+    /// `url`⇔`ready` equivalence is small enough to check EXHAUSTIVELY rather
+    /// than by sample: every one of the 65 536 ports, both readiness values.
+    /// Spawn-based falsifiers can only ever sample a port; this closes the
+    /// domain, so no port is a special case (0 and 65535 included).
+    #[test]
+    fn url_key_matches_ready_exhaustively_over_every_port() {
+        let log = std::path::Path::new("/tmp/apr-mcp-serve-exhaustive.log");
+        for port in 0..=u16::MAX {
+            for ready in [false, true] {
+                let result = running_result(4242, port, ready, log);
+                assert_eq!(result.is_error, None, "port {port}: never an error here");
+                let text = &result.content[0].text;
+                let v: serde_json::Value =
+                    serde_json::from_str(text).expect("running_result emits JSON");
+                assert_eq!(
+                    v.get("url").is_some(),
+                    ready,
+                    "port {port}, ready {ready}: `url` must be present iff ready"
+                );
+                assert_eq!(
+                    text.contains("http://"),
+                    ready,
+                    "port {port}, ready {ready}: no endpoint may appear unless ready"
+                );
+                assert_eq!(v["ready"], serde_json::json!(ready));
+                assert_eq!(v["port"], serde_json::json!(port));
+                assert_eq!(v["pid"], serde_json::json!(4242));
+            }
+        }
+    }
+
+    /// The positive half of the invariant: the ONLY combination that may
+    /// carry a url is live child + port that accepted a connection. Paired
+    /// with the three negatives above this pins `url` to exactly one branch.
+    #[cfg(unix)]
+    #[test]
+    fn url_appears_only_on_the_observed_listening_branch() {
+        // Negative: same program, same timeout, port nothing is bound to.
+        let dead_port = free_port();
+        let unbound = spawn_and_confirm(
+            "sleep",
+            &["5".to_string()],
+            dead_port,
+            Duration::from_millis(300),
+        );
+        assert_no_url(&unbound, "control: unbound port");
+        if let Some(log) = payload_of(&unbound)["stderr_log"].as_str() {
+            let _ = std::fs::remove_file(log);
+        }
+
+        // Positive: identical call, except something IS listening.
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("bind ephemeral port");
+        let bound_port = listener.local_addr().expect("local_addr").port();
+        let live = spawn_and_confirm(
+            "sleep",
+            &["5".to_string()],
+            bound_port,
+            Duration::from_millis(300),
+        );
+        assert_eq!(live.is_error, None, "got: {}", live.content[0].text);
+        let payload = payload_of(&live);
+        assert_eq!(payload["ready"], serde_json::json!(true));
+        assert_eq!(
+            payload["url"],
+            serde_json::json!(format!("http://localhost:{bound_port}")),
+            "the listening branch is the one branch that owes a url"
+        );
+        if let Some(log) = payload["stderr_log"].as_str() {
+            let _ = std::fs::remove_file(log);
+        }
+        drop(listener);
     }
 
     /// Spawning a program that does not exist is an error, not a `{pid,url}`.
