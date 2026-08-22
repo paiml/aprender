@@ -36,27 +36,21 @@ async fn test_registry_multiple_failures_no_state_leak() {
     let response2 = app.clone().oneshot(request2).await.expect("test value should be present");
     let status2 = response2.status();
 
-    // Both should fail gracefully with same behavior (no state corruption)
-    assert!(
-        (status1 == StatusCode::NOT_FOUND
-            || status1 == StatusCode::OK
-            || status1 == StatusCode::INTERNAL_SERVER_ERROR),
-        "First request should fail gracefully"
+    // aprender#2375(4): each of these admitted "it worked" alongside two
+    // failures, so the pair could pass with the two requests behaving
+    // differently — the very state leak the test names. This fixture has no
+    // model, so both requests hit the same server-side condition: 503.
+    assert_eq!(
+        status1,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
-    assert!(
-        (status2 == StatusCode::NOT_FOUND
-            || status2 == StatusCode::OK
-            || status2 == StatusCode::INTERNAL_SERVER_ERROR),
-        "Second request should fail gracefully"
+    // The point of the test: the second request is answered identically. State
+    // left behind by the first would show up here as a different status.
+    assert_eq!(
+        status2, status1,
+        "consecutive failures must be identical; a difference is leaked state"
     );
-
-    // If both fail, they should fail the same way (consistent behavior)
-    if status1 != StatusCode::OK && status2 != StatusCode::OK {
-        assert_eq!(
-            status1, status2,
-            "Consecutive failures should have consistent status"
-        );
-    }
 }
 
 // =============================================================================
@@ -97,14 +91,13 @@ async fn test_stream_resource_boundedness() {
     );
 
     let response = result.expect("test value should be present").expect("test value should be present");
-    // Must return a response, not hang
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST,
-        "Stream must return valid status, not hang indefinitely"
+    // aprender#2375(4): the boundedness claim is carried by the timeout above.
+    // The status disjunction added nothing — it admitted every outcome. This
+    // fixture has no model, so the answer is the server-side condition: 503.
+    assert_eq!(
+        response.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a model-less server reports the condition, it does not 404 a mounted route"
     );
 }
 
