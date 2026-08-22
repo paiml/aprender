@@ -102,6 +102,95 @@ fn try_gpu_completions(
     }))
 }
 
+/// `AprTransformer` (f32 APR / SafeTensors CPU) backend for `POST /v1/completions`.
+///
+/// aprender#2609, second pass: the first pass gave `/stream/generate`,
+/// `/v1/chat/completions{,/stream}` and `/v1/embeddings` an APR arm and left
+/// `/v1/completions` walking straight into [`registry_completions`], which
+/// resolves the dense f32 [`Model`](crate::layers::Model) — `None` on an
+/// `AprTransformer` server. So the ONE route the `apr serve` startup banner
+/// prints by name was still answering `"No model available"` on a server whose
+/// `/generate` returned 200. Same class, same backend, one route later.
+///
+/// Mirrors `try_apr_transformer_backend` in `cuda_chat_backend.rs`: the completion
+/// and chat surfaces must be alive on exactly the same set of resident models, so
+/// they walk the same chain over the same state.
+///
+/// Returns `None` when no `AprTransformer` is resident, leaving the dense
+/// fallback unchanged.
+fn try_apr_transformer_completions(
+    state: &AppState,
+    request: &CompletionRequest,
+    max_tokens: usize,
+    temperature: f32,
+    start: std::time::Instant,
+    cancel: &CancelToken,
+) -> Result<Option<CompletionResponse>, RErr> {
+    use crate::apr_transformer::GenerateConfig;
+
+    let apr_transformer = match state.apr_transformer() {
+        Some(m) => m,
+        None => return Ok(None),
+    };
+    let tokenizer = state.tokenizer.clone().ok_or_else(|| {
+        rerr(
+            state,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "No tokenizer available",
+        )
+    })?;
+    let prompt_ids = tokenizer.encode(&request.prompt);
+    if prompt_ids.is_empty() {
+        return Err(rerr(
+            state,
+            StatusCode::BAD_REQUEST,
+            "Prompt cannot be empty",
+        ));
+    }
+    let prompt_tokens = prompt_ids.len();
+
+    let gen_config = GenerateConfig {
+        max_tokens,
+        temperature,
+        cancel: cancel.clone(),
+        ..Default::default()
+    };
+
+    // aprender#2376 finding 9 / #2609: a caller-supplied prompt longer than the
+    // context window is fully determined by the request, so it is 400 — not the
+    // 500 that invites a retry of the identical body.
+    let generated = apr_transformer
+        .generate_with_cache(&prompt_ids, &gen_config)
+        .map_err(|e| {
+            rerr(
+                state,
+                super::generation_error_status(&e),
+                format!("APR generation failed: {e}"),
+            )
+        })?;
+
+    let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
+    let completion_tokens = token_ids.len();
+    let text = tokenizer
+        .decode(&token_ids)
+        .map_err(|e| rerr(state, StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    state
+        .metrics
+        .record_success(completion_tokens, start.elapsed());
+
+    // #2465(2): stops and finish_reason come from the shared `apply_stop_sequences`
+    // inside `completion_resp`, so this backend cannot drift from the others.
+    Ok(Some(completion_resp(
+        "cmpl",
+        request.model.clone(),
+        text,
+        prompt_tokens,
+        completion_tokens,
+        max_tokens,
+        request.stop.as_deref(),
+    )))
+}
+
 /// CPU model fallback.
 fn registry_completions(
     state: &AppState,
@@ -117,9 +206,15 @@ fn registry_completions(
         Some(request.model.as_str())
     };
 
+    // aprender#2609: hardcoded 404 — "route not found" — for a condition that has
+    // nothing to do with routing. `/v1/completions` is mounted and advertised, and
+    // the identical `RegistryError("No model available")` came back as 503 from
+    // `/generate`, `/stream/generate` and `/batch/generate`. `model_resolution_status`
+    // keeps 404 for the case that IS a client error: an unknown `model` in registry
+    // mode (`ModelNotFound`).
     let (model, tokenizer) = state
         .get_model(model_id)
-        .map_err(|e| rerr(state, StatusCode::NOT_FOUND, e))?;
+        .map_err(|e| rerr(state, super::model_resolution_status(&e), e))?;
     let prompt_ids = tokenizer.encode(&request.prompt);
     if prompt_ids.is_empty() {
         return Err(rerr(
@@ -504,6 +599,14 @@ async fn completions_inner(
                 total_tokens: prompt_ids.len() + completion_tokens,
             },
         });
+    }
+
+    // aprender#2609: the f32 APR / SafeTensors CPU backend, in the same position
+    // the chat chain puts it — after quantized, before the dense registry.
+    if let Some(r) =
+        try_apr_transformer_completions(&state, &request, max_tokens, temperature, start, &cancel)?
+    {
+        return Ok(r);
     }
 
     registry_completions(&state, &request, max_tokens, temperature, start, &cancel)

@@ -21,9 +21,26 @@
 //! | `POST /v1/chat/completions/stream` | **404** "No model available" | **404** |
 //! | `POST /v1/embeddings` | 503 "…: /realize/embed needs a loaded model" | 503, wrong route named |
 //!
+//! A second pass widened the probe from the six routes the ticket named to the
+//! WHOLE mounted-and-advertised surface, because "an inconsistent code for an
+//! identical condition" is a property of the surface, not of six routes. That
+//! found three more rows, all on the same `main`:
+//!
+//! | route | `apr_transformer` server | no model at all |
+//! |---|---|---|
+//! | `POST /v1/completions` | **404** "No model available" | **404** |
+//! | `POST /api/chat` | 200 | **200**, error text as the assistant's reply |
+//! | `POST /api/generate` | 200 | **200**, error text as the assistant's reply |
+//!
+//! `/v1/completions` is the one route `serve_model`'s startup banner named — the
+//! banner restated three routes out of thirty-one, and its only generation route
+//! was the broken one. The two Ollama routes are worse than anything #2609
+//! reported: `200 OK` with `"Model registry error: No model available"` as the
+//! model's own answer is undetectable by any client.
+//!
 //! Every test here asserts what a client observes — a status code, a body — and
 //! every assertion excludes an outcome: `assert!(resp.is_ok())` would have passed
-//! against all six of those rows.
+//! against all nine of those rows.
 
 use axum::http::StatusCode;
 
@@ -122,13 +139,23 @@ fn apr_transformer_state() -> AppState {
         .expect("build AprTransformer AppState")
 }
 
-/// The four routes #2609 measured, plus the two that already worked. The premise
-/// of the bug report is the CONTRAST, so the working two are probed too: a fix
-/// that broke `/generate` would satisfy "all the same status" trivially.
+/// Every mounted route that resolves a model, with a well-formed body for each.
+///
+/// The premise of the bug report is the CONTRAST, so the routes that already
+/// worked are probed too: a fix that broke `/generate` would satisfy "all the same
+/// status" trivially. The `/realize/*`, `/api/*` and `/v1/completions` rows are
+/// the second pass — the ticket named six routes, but the defect is a property of
+/// the surface, and three of the routes it did not name were also wrong.
 const GENERATION_ROUTES: &[(&str, &str)] = &[
     ("/generate", r#"{"prompt":"t1","max_tokens":1}"#),
     ("/batch/generate", r#"{"prompts":["t1"],"max_tokens":1}"#),
     ("/stream/generate", r#"{"prompt":"t1","max_tokens":1}"#),
+    ("/realize/generate", r#"{"prompt":"t1","max_tokens":1}"#),
+    ("/realize/batch", r#"{"prompts":["t1"],"max_tokens":1}"#),
+    (
+        "/v1/completions",
+        r#"{"model":"m","prompt":"t1","max_tokens":1}"#,
+    ),
     (
         "/v1/chat/completions",
         r#"{"model":"m","messages":[{"role":"user","content":"t1"}],"max_tokens":1}"#,
@@ -137,7 +164,17 @@ const GENERATION_ROUTES: &[(&str, &str)] = &[
         "/v1/chat/completions/stream",
         r#"{"model":"m","messages":[{"role":"user","content":"t1"}],"max_tokens":1}"#,
     ),
+    (
+        "/api/chat",
+        r#"{"model":"m","messages":[{"role":"user","content":"t1"}],"stream":false}"#,
+    ),
+    (
+        "/api/generate",
+        r#"{"model":"m","prompt":"t1","stream":false}"#,
+    ),
     ("/v1/embeddings", r#"{"model":"m","input":"t1"}"#),
+    ("/realize/embed", r#"{"model":"m","input":"t1"}"#),
+    ("/api/embeddings", r#"{"model":"m","prompt":"t1"}"#),
 ];
 
 // ---------------------------------------------------------------------------
@@ -370,4 +407,122 @@ async fn embed_unavailable_body_names_the_route_the_client_called() {
             "POST {route} error body names another route: {body}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Half 3: the startup banner IS the live route table
+// ---------------------------------------------------------------------------
+
+/// Every route the startup banner names must answer on the `AprTransformer`
+/// server the banner was printed for.
+///
+/// #2609's headline is "four routed endpoints — **two of them in the server's own
+/// startup banner** — are dead when a .apr model is loaded". The per-route
+/// falsifiers above pin the six routes the ticket measured; this one pins the
+/// claim itself, over the WHOLE advertised surface, so a route added to the table
+/// tomorrow and dead on this backend is caught without anyone remembering to
+/// extend `GENERATION_ROUTES`.
+///
+/// `advertised_routes` is what `serve_model` and `apr serve run` print, and
+/// `banner_source_agrees_with_live_server` (route_surface_2376) already pins it to
+/// the 404 body of the running server — so this walks exactly the list an operator
+/// reads off their terminal.
+///
+/// Bodies are `{}`, so this asserts only what is true of EVERY advertised route
+/// regardless of what it does: none of them 404s, and none of them claims there is
+/// no model on a server that has one. Both are outcomes a working route cannot
+/// produce.
+///
+/// It deliberately does NOT assert a status beyond that. Two advertised routes
+/// answer a legitimate error on this fixture — `POST /realize/reload` 501 (registry
+/// mode is a capability the CLI never builds) and `GET /metrics/dispatch` 503 (no
+/// GPU is configured) — and both bodies name the exact missing capability. Widening
+/// this to "no 5xx" flagged those two and would have to special-case them, which is
+/// how a guard acquires an exemption list. The strict per-route status assertion
+/// lives in [`no_routed_endpoint_is_dead_on_an_apr_transformer_server`], over
+/// `GENERATION_ROUTES` and real bodies, where `== OK` is meaningful; that is the
+/// test that kills a backend arm mutated to fail closed.
+#[tokio::test]
+async fn every_advertised_route_is_alive_on_an_apr_transformer_server() {
+    use crate::api::{advertised_routes, RouterConfig};
+
+    let config = RouterConfig::default();
+    let advertised = advertised_routes(&config);
+    assert!(
+        advertised.len() > 20,
+        "the banner list collapsed to {} entries; the probe below would prove nothing: {advertised:?}",
+        advertised.len()
+    );
+
+    for route in &advertised {
+        let (method, path) = route.split_once(' ').expect("METHOD /path");
+        let path = path.replace(":request_id", "not-a-uuid");
+        let (status, body) = match method {
+            "GET" => get(apr_transformer_state(), &path).await,
+            "POST" => post(apr_transformer_state(), &path, "{}").await,
+            other => panic!("unhandled advertised method {other} for {route}"),
+        };
+        assert_ne!(
+            status,
+            StatusCode::NOT_FOUND,
+            "banner names `{route}` but the server answers 404: {body}"
+        );
+        assert!(
+            !body.contains("No model available"),
+            "banner names `{route}`, which reports no model on a loaded server: {body}"
+        );
+    }
+}
+
+/// The `serve_model` banner must be DERIVED from the route table, never restated.
+///
+/// #2609: `serve_model` builds an `AprTransformer` `AppState` for an f32 `.apr` /
+/// SafeTensors model, mounts the 31-route table, and then printed a hand-written
+/// three-line list — whose only generation route, `POST /v1/completions`, was the
+/// one dead on that very backend, while `/generate`, which worked, was labelled
+/// "Q4_K fused" on a server holding no Q4_K weights. Two independent claims about
+/// one surface will always drift; this asserts there is only one.
+///
+/// A behavioural probe cannot reach these lines — they run between `bind` and
+/// `axum::serve` — so the guard reads the source. It excludes an outcome: any
+/// re-added literal route line fails it.
+#[test]
+fn serve_model_banner_is_derived_from_the_route_table() {
+    const SOURCE: &str = include_str!("../../cli/mod_server_commands.rs");
+
+    assert_eq!(
+        SOURCE.matches("crate::api::advertised_routes(&router_config)").count(),
+        2,
+        "both `serve_model` and `serve_demo` must print the router's own table"
+    );
+
+    // No banner line may name a route literal. `eprintln!("  GET  /health …")` and
+    // `eprintln!("  POST /v1/completions …")` are exactly the construct that drifted.
+    // The predicate keys on the METHOD token, so `eprintln!("  curl http://…")` —
+    // an example, not an advertisement — is not swept up.
+    const METHODS: [&str; 5] = ["GET", "POST", "PUT", "DELETE", "PATCH"];
+    let offenders: Vec<&str> = SOURCE
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            line.strip_prefix("eprintln!(\"")
+                .map(str::trim_start)
+                .is_some_and(|rest| METHODS.iter().any(|m| rest.starts_with(m)))
+        })
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "a hand-written route line is back in the banner: {offenders:?}"
+    );
+
+    // The predicate must be able to fire, or "no offenders" is vacuous. This is the
+    // exact line #2609 found in `serve_model`, run through the same filter.
+    let restated = r#"eprintln!("  POST /v1/completions - OpenAI-compatible completions");"#;
+    assert!(
+        restated
+            .strip_prefix("eprintln!(\"")
+            .map(str::trim_start)
+            .is_some_and(|rest| METHODS.iter().any(|m| rest.starts_with(m))),
+        "the guard cannot recognise the very line it exists to reject"
+    );
 }
