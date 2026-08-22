@@ -514,3 +514,188 @@
             sites.len()
         );
     }
+
+    // ========================================================================
+    // #2583 follow-up: the ratchet above is blind to a backend flag that never
+    // mentions `BACKEND_VALUES`. `apr finetune --gpu-backend` was exactly that
+    // — a live, undisclosed instance of the same silent-wrong-backend defect,
+    // one command over, that the source-text scan cannot see because it
+    // legitimately carries a different value set.
+    // ========================================================================
+
+    /// Every backend-selecting flag in the whole built command tree, as
+    /// `(path, arg-id, advertised values)`.
+    ///
+    /// The universe is the CLAP TREE, not a hand-written list of commands: a new
+    /// subcommand adds itself here whether or not anyone remembers to. That is
+    /// the property the source-text ratchet lacks.
+    fn discover_backend_args_2583() -> Vec<(String, String, Vec<String>)> {
+        use clap::CommandFactory;
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                let mut found = Vec::new();
+                let mut stack = vec![(String::new(), crate::Cli::command())];
+                while let Some((prefix, cmd)) = stack.pop() {
+                    for arg in cmd.get_arguments() {
+                        let id = arg.get_id().to_string();
+                        if !id.contains("backend") {
+                            continue;
+                        }
+                        let values: Vec<String> = arg
+                            .get_possible_values()
+                            .iter()
+                            .map(|p| p.get_name().to_string())
+                            .collect();
+                        found.push((prefix.trim().to_string(), id, values));
+                    }
+                    for sub in cmd.get_subcommands() {
+                        if sub.get_name() == "help" {
+                            continue;
+                        }
+                        stack.push((format!("{prefix} {}", sub.get_name()), sub.clone()));
+                    }
+                }
+                found.sort();
+                found
+            })
+            .expect("spawn thread")
+            .join()
+            .expect("join thread")
+    }
+
+    /// #2583 universal ratchet: EVERY backend-selecting flag anywhere in the
+    /// command tree must advertise a fixed value set to clap.
+    ///
+    /// This is the invariant the three inference sites share with
+    /// `apr finetune --gpu-backend` and `apr distill --backend` even though the
+    /// value sets differ, so it — unlike the `BACKEND_VALUES` source scan — can
+    /// see all five. `apr finetune --gpu-backend` advertised `[]` on the branch
+    /// that first fixed `apr serve run`.
+    #[test]
+    fn test_every_backend_arg_advertises_its_values_2583() {
+        let unvalidated: Vec<String> = discover_backend_args_2583()
+            .into_iter()
+            .filter(|(_, _, values)| values.is_empty())
+            .map(|(path, id, _)| format!("apr {path} --{}", id.replace('_', "-")))
+            .collect();
+        assert!(
+            unvalidated.is_empty(),
+            "these backend flags accept ANY string, so a typo silently selects the \
+             default backend (#2583). Give each a `value_parser` naming its own \
+             value set: {unvalidated:#?}"
+        );
+    }
+
+    /// The discovered universe itself is pinned: a NEW backend flag must be an
+    /// explicit decision (which value list?), not an inherited default.
+    #[test]
+    fn test_backend_arg_universe_is_pinned_2583() {
+        // Discovered by the ratchet, NOT by grepping apr-cli: `cgp profile
+        // compare` lives in `aprender-cgp` and `rag transcribe` names its own
+        // three values. A source scan of this crate finds neither.
+        let expected: Vec<(String, String, Vec<String>)> = [
+            ("cgp profile compare", "backends", &cgp::cli::CGP_BACKEND_VALUES[..]),
+            ("chat", "backend", &crate::BACKEND_VALUES[..]),
+            ("distill", "backend", &crate::DISTILL_BACKEND_VALUES[..]),
+            (
+                "finetune",
+                "gpu_backend",
+                &crate::FINETUNE_GPU_BACKEND_VALUES[..],
+            ),
+            ("rag transcribe", "backend", &["cpu", "gpu", "cuda"][..]),
+            ("run", "backend", &crate::BACKEND_VALUES[..]),
+            ("serve run", "backend", &crate::BACKEND_VALUES[..]),
+        ]
+        .into_iter()
+        .map(|(path, id, values)| {
+            (
+                path.to_string(),
+                id.to_string(),
+                values.iter().map(|s| (*s).to_string()).collect(),
+            )
+        })
+        .collect();
+        assert_eq!(
+            discover_backend_args_2583(),
+            expected,
+            "the set of backend-selecting flags changed; pick this one's value list \
+             deliberately and update the table (#2583)"
+        );
+    }
+
+    /// #2583 falsifier for the surviving live instance: a typo'd
+    /// `--gpu-backend` must be rejected, not routed to the `_ =>` ("auto") arm
+    /// of `gpu_backend_notice`, where it is indistinguishable from the flag
+    /// being omitted.
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_finetune_rejects_unknown_gpu_backend_2583() {
+        let err = parse_cli(vec![
+            "apr",
+            "finetune",
+            "model.apr",
+            "--gpu-backend",
+            "cudaa",
+        ])
+        .expect_err("`apr finetune --gpu-backend cudaa` must NOT parse (#2583)");
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::InvalidValue,
+            "unknown gpu-backend must be an InvalidValue parse error, got {:?}",
+            err.kind()
+        );
+        let rendered = err.to_string();
+        for value in crate::FINETUNE_GPU_BACKEND_VALUES {
+            assert!(
+                rendered.contains(value),
+                "error must name the valid backend `{value}`; got:\n{rendered}"
+            );
+        }
+    }
+
+    /// …and the valid values, including the `auto` default that is absent from
+    /// `BACKEND_VALUES`, must still parse. An over-rejecting "fix" — e.g.
+    /// reusing `BackendArg` here — satisfies the falsifier above while breaking
+    /// every real `apr finetune` invocation.
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_finetune_accepts_its_own_gpu_backends_2583() {
+        for value in crate::FINETUNE_GPU_BACKEND_VALUES {
+            let cli = parse_cli(vec!["apr", "finetune", "model.apr", "--gpu-backend", value])
+                .unwrap_or_else(|e| {
+                    panic!("`apr finetune --gpu-backend {value}` must parse: {e}")
+                });
+            match *cli.command {
+                Commands::ModelOps(ModelOpsCommands::Finetune {
+                    ref gpu_backend, ..
+                }) => assert_eq!(gpu_backend, value),
+                _ => panic!("Expected Finetune command"),
+            }
+        }
+        // The default must be a member of the set it is now validated against.
+        let cli = parse_cli(vec!["apr", "finetune", "model.apr"]).expect("bare finetune parses");
+        match *cli.command {
+            Commands::ModelOps(ModelOpsCommands::Finetune {
+                ref gpu_backend, ..
+            }) => assert_eq!(gpu_backend, "auto"),
+            _ => panic!("Expected Finetune command"),
+        }
+    }
+
+    /// `apr distill --backend` — the earlier report called this the same defect
+    /// class. Re-measured: it is NOT. `distill::run()` rejects an unknown value
+    /// by name before any I/O (commands/distill.rs:464-503, covered by
+    /// `distill_run_unknown_backend_errors`), so it never silently ran the
+    /// default. What it lacked was clap-level advertisement, closed here.
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_distill_backend_values_2583() {
+        for value in crate::DISTILL_BACKEND_VALUES {
+            parse_cli(vec!["apr", "distill", "t.apr", "--backend", value])
+                .unwrap_or_else(|e| panic!("`apr distill --backend {value}` must parse: {e}"));
+        }
+        let err = parse_cli(vec!["apr", "distill", "t.apr", "--backend", "cda"])
+            .expect_err("`apr distill --backend cda` must NOT parse");
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+    }
