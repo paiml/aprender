@@ -16,32 +16,51 @@
 # So `cluster_id` is PROVENANCE, never an identity. This guard refuses any use of
 # it as a key.
 #
-# THE RULE, EXACTLY
-# -----------------
-# Over the tracked surfaces where THIS ledger's cluster columns can be declared or
-# consumed -- contracts/, scripts/, .claude/, docs/audits/, .github/ --
-# a line mentioning `cluster_id` FAILS when it matches any keying form:
+# THE RULE IS AN ALLOWLIST. IT USED TO BE A BLACKLIST, AND THAT WAS WRONG.
+# -----------------------------------------------------------------------
+# The first version enumerated four keying SYNTAXES — a YAML mapping key, an
+# identity field's value, a dict subscript, a CLI/query key — and passed
+# everything else. "Nothing may key on this" is a universal claim, and a list of
+# four syntaxes cannot carry one: `df.groupby("cluster_id")`, `r.cluster_id`,
+# `row.get("cluster_id")`, `sort_values(by="cluster_id")`, `WHERE cluster_id = 3`
+# and `cluster_id == 7` all key on the column and all walked past it. A reviewer
+# extracted the function and demonstrated exactly that. The blacklist is
+# unbounded; the allowlist is five lines long.
 #
-#   K1  a YAML/mapping key:            `cluster_id:` at the head of a line
-#   K2  an identity field's value:     `key:`/`id:`/`gate:`/`keyed_by:`/`group_by:`/
-#                                      `identifier:`/`name:`/`cluster_key:` = cluster_id
-#   K3  a dict/index subscript:        `["cluster_id"]`, `['cluster_id']`, `[cluster_id]`
-#   K4  a CLI/query key:               `--by cluster_id`, `--key cluster_id`,
-#                                      `group by cluster_id`, `keyed on cluster_id`,
-#                                      `sort by cluster_id`, `join on cluster_id`
+# So the rule is inverted. **A standalone `cluster_id` token is a KEY unless the
+# line says otherwise**, and there are only three ways to say otherwise:
 #
-# and does NOT carry the escape pragma
+#   A1  the token is not standalone — `check_no_cluster_id_keys.sh`,
+#       `CLUSTER_ID_GUARD_ROOT`, `cluster_idea` are different identifiers
+#
+#   A2  the token sits in a position NO PARSER IN SCOPE READS AS AN IDENTITY:
+#         * after a comment marker (`#`, `//`, `<!--`) on that line, or
+#         * inside backticks
+#       This is not "we trust prose". It is mechanical: in YAML a backtick is a
+#       literal character, in Python 3 backticks are a syntax error, and in bash
+#       backticks are command substitution — so in every language this guard
+#       scans, a backticked token is not an identifier and cannot function as a
+#       key. Text after a comment marker is read by nothing at all.
+#
+#   A3  the line declares the SCHEMA — it names three or more of the ledger's
+#       column headers together. Declaring that the column exists is the one
+#       parsed position that must write the token down. A key names ONE column;
+#       it never names the whole header row.
+#
+# and the ONE escape for a genuine read:
 #
 #       cluster-id-guard allow (<reason>)
 #
-# The pragma exists for the ONE legitimate read: the coverage gate proves the
-# id->label map is a bijection, which requires reading the column. That is
-# validation, not keying. Every pragma must state a reason on the same line.
+# There are five of those in the tree today: the coverage gate proving the
+# id->label map is a bijection, and the contract's falsification test doing the
+# same. That is the whole allowlist. Every pragma must state a reason.
 #
-# ALLOWED WITHOUT A PRAGMA, because none of them is a key:
-#   * prose in a comment or in Markdown ("never key on cluster_id")
-#   * the CSV header and the COLUMNS schema list that declares the column exists
-#   * `cluster_label` — a different token entirely, and the one to use
+# HONEST LIMIT
+# ------------
+# Prose can still DESCRIBE a key — a Markdown table cell reading "floor key:
+# `cluster_id`" is exempt under A2. It cannot BE one: the declaration that a
+# machine reads lives in a parsed position, where the default is deny. The guard
+# is about what runs, not about what is written about what runs.
 #
 # SCOPE, and why it is not "everything"
 # -------------------------------------
@@ -72,22 +91,20 @@ PRAGMA='cluster-id-guard[: ]*allow'
 # SC1078 (unclosed double quote) on every one of them, and five spurious errors
 # in a guard is how a guard stops being read.
 SQ="$(printf '\047')"
-Q="[\"${SQ}]?"
+BT='`'
 
-# K1..K4. Deliberately anchored: `cluster_id` inside a word (`cluster_idea`) is
-# not this token, and `cluster_label` never matches.
-K1='^[[:space:]]*-?[[:space:]]*cluster_id[[:space:]]*:'
-# K2 requires the token to be the WHOLE value, not merely to follow the field.
-# Without that, a GitHub Actions step called `name: cluster_id key guard case
-# table` reads as an identity keyed on the id -- a false positive of exactly
-# the kind that gets a guard switched off. An identity field's value is
-# `cluster_id` and nothing else, so the terminator is EOL, a comment, or one of
-# , } ) for inline flow mappings.
-K2="\\<(key|id|gate|gate_id|keyed_by|group_by|identifier|name|cluster_key|primary_key)\\>[[:space:]]*[:=][[:space:]]*${Q}cluster_id${Q}[[:space:]]*([,})]|#|$)"
-K3="\\[[[:space:]]*${Q}cluster_id${Q}[[:space:]]*\\]"
-K4="(--by|--key|--group-by|group by|keyed on|keyed by|sort by|join on|index on|indexed by)[[:space:]]+${Q}cluster_id\\>"
+# A1 — the token, standalone. `cluster_idea` and `foo_cluster_id` are different
+# identifiers; `CLUSTER_ID_GUARD_ROOT` is a different case.
+STANDALONE='\<cluster_id\>'
 
-KEYING="(${K1})|(${K2})|(${K3})|(${K4})"
+# A2b — backticked. Checked on the token itself, so `key: `cluster_id`` is exempt
+# for the reason stated above: no parser in scope would read that as the column.
+BACKTICKED="${BT}[[:space:]]*cluster_id[[:space:]]*${BT}"
+
+# A3 — the schema declaration. Three or more ledger column headers on one line.
+# `cluster_id` and `cluster_label` alone do NOT qualify: `key: cluster_id,
+# cluster_label` is a composite key, not a header row.
+LEDGER_COLS='binary|feature|quality_1_10|verified_hardware|top_competitor|in_dogfood_skill|cluster_id|cluster_label|evidence_path|confidence'
 
 # --------------------------------------------------------------------------
 # classify_line — the single decision function. Both the scan and the case
@@ -95,10 +112,25 @@ KEYING="(${K1})|(${K2})|(${K3})|(${K4})"
 # echoes KEY | PRAGMA | OK
 # --------------------------------------------------------------------------
 classify_line() {
-  local line="$1"
-  if ! grep -Eq 'cluster_id\>' <<<"$line"; then printf 'OK\n'; return 0; fi
-  if ! grep -Eq "$KEYING" <<<"$line"; then printf 'OK\n'; return 0; fi
+  local line="$1" bare ncols
+  # A1: not this token at all.
+  grep -Eq "$STANDALONE" <<<"$line" || { printf 'OK\n'; return 0; }
+  # The pragma is checked BEFORE comments are stripped, because the pragma lives
+  # in a comment. Order matters here and nowhere else.
   if grep -Eq "$PRAGMA" <<<"$line"; then printf 'PRAGMA\n'; return 0; fi
+  # A3: a schema declaration names the header row, not one column.
+  ncols="$(grep -oE "\\<(${LEDGER_COLS})\\>" <<<"$line" | sort -u | wc -l)"
+  if [ "$ncols" -ge 3 ]; then printf 'OK\n'; return 0; fi
+  # A2a: drop everything from the first comment marker. What remains is what a
+  # parser sees.
+  bare="$(sed -E 's@(#|//|<!--).*$@@' <<<"$line")"
+  grep -Eq "$STANDALONE" <<<"$bare" || { printf 'OK\n'; return 0; }
+  # A2b: every surviving occurrence is backticked. Compare occurrence counts so
+  # one backticked mention cannot launder a bare one on the same line.
+  local n_tok n_bt
+  n_tok="$(grep -oE "$STANDALONE" <<<"$bare" | wc -l)"
+  n_bt="$(grep -oE "$BACKTICKED" <<<"$bare" | wc -l)"
+  if [ "$n_bt" -ge "$n_tok" ]; then printf 'OK\n'; return 0; fi
   printf 'KEY\n'
 }
 
@@ -129,6 +161,8 @@ scan() {
     printf '\n  %s line(s) KEY on cluster_id. k-means ids permute on re-run, so an\n' "$offenders"
     printf '  obligation keyed on one silently re-points at a different cluster the\n'
     printf '  next time the surface moves. Use cluster_label, which is human-owned.\n'
+    printf '  The rule is an ALLOWLIST: a standalone token is a key unless it is\n'
+    printf '  backticked, after a comment marker, or in a schema header line.\n'
     printf '  A genuine read (validation, provenance) may carry the pragma:\n'
     printf '      cluster-id-guard allow (<reason>)\n'
     return 1
@@ -148,67 +182,88 @@ scan() {
 
 # --------------------------------------------------------------------------
 # Case table. must-match (KEY) / must-not-match (OK) / pragma.
+#
+# The must-match half is now the interesting one: every row below the "forms the
+# old four-syntax blacklist walked past" divider was GREEN before the inversion.
 # --------------------------------------------------------------------------
 self_test() {
   local failed=0 want got line
   printf 'check_no_cluster_id_keys.sh --self-test\n\n'
-  printf '  %-4s %-8s %s\n' "want" "got" "line"
+  printf '  %-6s %-8s %s\n' "want" "got" "line"
 
   run_case() {
     want="$1"; line="$2"
     got="$(classify_line "$line")"
     if [ "$got" = "$want" ]; then
-      printf '  %-4s %-8s OK    %s\n' "$want" "$got" "$line"
+      printf '  %-6s %-8s OK    %s\n' "$want" "$got" "$line"
     else
-      printf '  %-4s %-8s WRONG %s\n' "$want" "$got" "$line"
+      printf '  %-6s %-8s WRONG %s\n' "$want" "$got" "$line"
       failed=1
     fi
   }
 
-  # --- must be caught (K1)
+  # --- forms the OLD blacklist already caught, which must stay caught
   run_case KEY '  cluster_id: 7'
   run_case KEY '- cluster_id: 3'
   run_case KEY 'cluster_id: 11'
-  # --- must be caught (K2)
   run_case KEY '    key: cluster_id'
   run_case KEY '    gate_id: "cluster_id"'
   run_case KEY '  group_by: cluster_id'
-  run_case KEY "  keyed_by: 'cluster_id'"
+  run_case KEY "  keyed_by: ${SQ}cluster_id${SQ}"
   run_case KEY '  identifier = cluster_id'
   run_case KEY '  floor: {key: cluster_id}'
-  run_case KEY '    key: cluster_id   # with a trailing comment'
-  # --- must be caught (K3)
   run_case KEY 'floors[row["cluster_id"]] += 1'
-  run_case KEY "counts[r['cluster_id']] = n"
+  run_case KEY "counts[r[${SQ}cluster_id${SQ}]] = n"
   run_case KEY 'x = by[cluster_id]'
-  # --- must be caught (K4)
   run_case KEY 'pv coverage --by cluster_id'
-  run_case KEY '# ...then group by cluster_id and sum'
-  run_case KEY 'the floor is keyed on cluster_id today'
   run_case KEY 'sort by cluster_id'
 
-  # --- must NOT be caught: prose, schema declaration, the sibling column
+  # --- forms the old four-syntax blacklist WALKED PAST. Each of these was GREEN
+  #     before the inversion; each keys an obligation on the permuting id.
+  run_case KEY 'for cid, grp in df.groupby("cluster_id"):'
+  run_case KEY '    floors = ledger.sort_values(by="cluster_id")'
+  run_case KEY '    if row.get("cluster_id") == 3:'
+  run_case KEY '    return r.cluster_id'
+  run_case KEY '    obligations = {r.cluster_id: r for r in rows}'
+  run_case KEY '    SELECT gates FROM ledger WHERE cluster_id = 3'
+  run_case KEY '    if cluster_id == 7: fail("cluster 7 is ungated")'
+  run_case KEY '    setattr(floor, "cluster_id", 3)'
+  run_case KEY '    cluster_id, label = row'
+  run_case KEY '    waiver_for(cluster_id=9)'
+  run_case KEY '    yaml.safe_load(f)["floors"]["by"] = "cluster_id"'
+  run_case KEY '      - name: cluster_id key guard case table'
+
+  # --- must NOT be caught. A2a comment position: nothing parses it.
   run_case OK  '# never key a contract on cluster_id -- the labels permute'
+  run_case OK  '  // the cluster_id column is provenance only'
+  run_case OK  '<!-- cluster_id permutes; use the label -->'
+  run_case OK  '  cluster_label: apr-lint-diag   # not cluster_id, deliberately'
+  # --- A2b backtick position: not an identifier in yaml, python or bash.
+  run_case OK  'A `cluster_id` is provenance, never an identity'
+  run_case OK  '| **T1** | `cluster_id` is a k-means label and permutes |'
+  # --- A3 schema declaration: three or more ledger columns on one line.
   run_case OK  '   "top_competitor", "in_dogfood_skill", "cluster_id", "cluster_label",'
   run_case OK  'binary,feature,quality_1_10,cluster_id,cluster_label,confidence'
+  # --- A1 a different identifier entirely.
   run_case OK  '  cluster_label: apr-lint-diag'
   run_case OK  '    key: cluster_label'
   run_case OK  'floors[row["cluster_label"]] += 1'
   run_case OK  'A cluster_idea is not this token'
-  run_case OK  'cluster_id is provenance, never an identity'
-  # A field whose value only BEGINS with the token is prose, not a key. This is
-  # the GitHub Actions step that runs this very guard, and the first draft of K2
-  # went red on it.
-  run_case OK  '      - name: cluster_id key guard case table'
-  run_case OK  '  description: cluster_id may not be used as a key'
+  run_case OK  'IDGUARD="scripts/check_no_cluster_id_keys.sh"'
+  run_case OK  'CLUSTER_ID_GUARD_ROOT="$td" bash "$td/scripts/x.sh"'
+  # --- a backticked mention may not launder a bare one on the same line.
+  run_case KEY '  the durable key is `cluster_label`; key: cluster_id'
+  # --- a token BEFORE the comment marker is still parsed.
+  run_case KEY '  key: cluster_id   # with a trailing comment'
 
   # --- pragma: a keying form is admissible only with a stated reason
-  run_case PRAGMA 'ids[lab].add(r["cluster_id"])  # noqa: cluster-id-guard allow (validation, not a key)'
+  run_case PRAGMA 'ids[lab].add(r["cluster_id"])  # cluster-id-guard allow (validation, not a key)'
   run_case PRAGMA '  cluster_id: 7   # cluster-id-guard allow (provenance column declaration)'
 
   printf '\n'
   if [ "$failed" -eq 0 ]; then
-    printf 'CASE TABLE PASS: every keying form caught, every non-key form left alone,\n'
+    printf 'CASE TABLE PASS: every keying form caught -- including the twelve the\n'
+    printf 'four-syntax blacklist walked past -- every non-key position left alone,\n'
     printf 'and the pragma recognised. A guard that caught nothing would pass the\n'
     printf 'must-not-match half too, which is why both halves are asserted.\n'
     return 0

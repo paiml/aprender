@@ -54,13 +54,22 @@
 # mutation, so both verdicts are asserted every time.
 #
 # The registered mutations, each RED with a paired GREEN restore:
-#   M1 G2.1  move cited evidence, leave the ledger behind HEAD
-#   M2 G2.2  delete a ledger row for a live command
-#   M3 G2.3  flip one in_dogfood_skill yes -> no
-#   M5 G2.5  move a cluster's ONLY gate to another cluster (totals unchanged)
-#   M6 T2    emit cluster coverage with no feature fraction beside it
-#   M7 T1    key a contract on the permuting id instead of the label
-#   M4       anti-vacuity: lower the floor AND break it in one commit
+#   M1  G2.1  move cited evidence, leave the ledger behind HEAD
+#   M2  G2.2  delete a ledger row for a live command
+#   M3  G2.3  flip one in_dogfood_skill yes -> no
+#   M5  G2.5  move a cluster's ONLY gate to another cluster (totals unchanged)
+#   M6  T2    emit cluster coverage with no feature fraction beside it
+#   M7  T1    key a contract on the permuting id instead of the label
+#   M8  G2.5  move a gated feature into a zero-gate cluster and write a NEW gate
+#             in the cluster it left, so every count-based floor still holds --
+#             the relabelling attack, GREEN before the membership ratchet existed
+#   M8b G2.5  DECLARE that same move and arm the release: still RED, because the
+#             gate that walked in is inherited, not earned. Paired GREEN: at the
+#             same release arm, WRITE a gate in the zero cluster instead
+#   M9  T2    state a cluster ratio in the RECEIPT with no feature fraction --
+#             the channel enforce_pairing() did not cover
+#   M10 T1    key on the id with a form the four-syntax blacklist walked past
+#   M4        anti-vacuity: lower the floor AND break it in one commit
 
 set -uo pipefail
 
@@ -71,7 +80,24 @@ CONTRACT="contracts/apr-dogfood-coverage-v1.yaml"
 THE44="docs/audits/dogfood-the-44.yaml"
 GATE_PY="scripts/lib/dogfood_coverage_gate.py"
 IDGUARD="scripts/check_no_cluster_id_keys.sh"
+REASSIGN="docs/audits/cluster_reassignments.yaml"
+SKILL=".claude/skills/apr-dogfood/SKILL.md"
 BASE_REF="${DOGFOOD_BASE_REF:-origin/main}"
+
+# T2 is enforced wherever a cluster-level ratio can be EMITTED, not at one call
+# site. The gate's own report is checked inside the python module; these are the
+# other channels. $DOGFOOD_RECEIPT is appended when set, so a produced receipt is
+# held to the same rule as the template it came from.
+#   the contract  — the numbers a reader quotes
+#   the skill     — the allocation table and the receipt template
+#   the receipt   — the artifact the release decision is made on
+# Written as an `if` rather than `[ ... ] && arr+=(...)`: bashrs parses the
+# array-append parentheses on a test line as SC1028 and reports two errors that
+# are not there. A guard that ships spurious errors stops being read.
+PAIR_SURFACES=("$CONTRACT" "$SKILL")
+if [ -n "${DOGFOOD_RECEIPT:-}" ]; then
+  PAIR_SURFACES+=("$DOGFOOD_RECEIPT")
+fi
 
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
@@ -227,9 +253,23 @@ run_gate() {
       That is the shape of a ledger DELETED to escape its own gate. If the audit
       is genuinely being retired, retire this check in the same commit." ;;
     BOOTSTRAP)
-      printf '  BOOTSTRAP: %s has no ledger yet, so the comparand is the HEAD\n' "$BASE_REF"
-      printf '             COMMIT of this branch, never the working tree. Once this\n'
-      printf '             lands, every later run compares against protected %s.\n\n' "$BASE_REF" ;;
+      # NAME THE PATH THAT RAN. An earlier draft of this banner described
+      # `read_ledger(..., allow_legacy=True)` as the active branch here. It is
+      # not: resolve_base_ref takes THIS fallback first, so the comparand is this
+      # branch's own HEAD commit, which already carries the 10-column ledger --
+      # the legacy-schema branch never executes and the per-cluster ratchet IS
+      # armed, from HEAD. A window that is honest about being open is fine; a
+      # window whose description does not match its code is not.
+      printf '  BOOTSTRAP: %s carries no ledger yet, so the comparand is the HEAD\n' "$BASE_REF"
+      printf '             COMMIT of this branch, never the working tree — a mutation in\n'
+      printf '             the tree still turns this gate red.\n'
+      printf '             PATH TAKEN: resolve_base_ref -> BOOTSTRAP. Because HEAD already\n'
+      printf '             carries the 10-column ledger, read_ledger() takes the CLUSTERED\n'
+      printf '             branch and allow_legacy does NOT engage; every ratchet below,\n'
+      printf '             per-cluster and membership included, is armed from HEAD.\n'
+      printf '             The SCHEMA UPGRADE banner belongs to a different case — a main\n'
+      printf '             that carries an 8-column ledger — and is not what ran here.\n'
+      printf '             Once this lands, every later run compares against protected %s.\n\n' "$BASE_REF" ;;
     ARMED)
       # Only origin/main earns the word "protected". Saying it of whatever
       # DOGFOOD_BASE_REF happens to hold would be the gate lying about its own
@@ -252,7 +292,19 @@ run_gate() {
   [ -n "$fbase" ] || fbase="$ref"
   check_freshness "$root" "$fbase"; frc=$?
 
-  python3 "$root/$GATE_PY" --base "$basecsv" --head "$root/$LEDGER" --the44 "$root/$THE44"
+  # --pair-scan carries T2 to the other channels. Paths are made absolute against
+  # $root so the self-test's scratch repo scans ITS files, not this checkout's.
+  local -a pairargs=()
+  local surface
+  for surface in "${PAIR_SURFACES[@]}"; do
+    case "$surface" in
+      /*) pairargs+=(--pair-scan "$surface") ;;
+      *)  pairargs+=(--pair-scan "$root/$surface") ;;
+    esac
+  done
+  python3 "$root/$GATE_PY" --base "$basecsv" --head "$root/$LEDGER" \
+    --the44 "$root/$THE44" --reassignments "$root/$REASSIGN" \
+    --comparand-source "$mode" "${pairargs[@]}"
   rc=$?
   rm -f "$basecsv"
 
@@ -299,9 +351,27 @@ selftest_build_repo() {
   # `printf` and a leading `-`: "- feature:" is parsed as an OPTION, not a
   # format. Always route caller-shaped text through a %s.
   local q="'"
+  # The waiver is present so DOGFOOD_RELEASE=1 is usable in this fixture: M8b
+  # needs the release arm to be decided by the PER-CLUSTER rule, and an untriaged
+  # entry would make it red for G2.4 instead and prove nothing about G2.5.
   { printf 'features:\n'
-    printf '%s\n' "- feature: ${q}demo alpha${q}" '  issue: null' '  waiver: null'
+    printf '%s\n' "- feature: ${q}demo alpha${q}" '  issue: null' \
+                   "  waiver: ${q}fixture: alpha is deliberately broken-and-ungated${q}"
   } > "$td/$THE44"
+
+  # No reassignment has happened, so the log is empty. M8 mutates the LEDGER and
+  # leaves this alone; M8b adds the matching entry.
+  printf 'reassignments: []\n' > "$td/$REASSIGN"
+
+  # The two other channels a cluster ratio can be emitted through. Both carry the
+  # pairing, so the T2 scan is not vacuous before M9 removes it.
+  mkdir -p "$td/$(dirname "$SKILL")"
+  { printf '# fixture skill\n\n'
+    printf 'Allocation: clusters gated 2/3, features gated 2/203.\n'
+  } > "$td/$SKILL"
+  { printf '# fixture receipt\n\n'
+    printf 'Coverage: clusters gated 2/3, features gated 2/203.\n'
+  } > "$td/docs/audits/receipt.md"
 
   # `git init` is NOT hermetic on a developer box: this machine sets
   # init.templatedir=~/.git-templates, so a scratch repo silently inherits the
@@ -344,7 +414,12 @@ selftest_commit() {
 # makes the mutation attributable to the gate it is registered against.
 selftest_run() {
   local td="$1" label="$2" expect="$3" marker="${4:-}" out rc
+  # DOGFOOD_RECEIPT points the T2 scan at the fixture's receipt, so the receipt
+  # channel is exercised by every run and M9 has something to break.
+  # SELFTEST_RELEASE arms DOGFOOD_RELEASE for the one mutation that needs it.
   out="$(DOGFOOD_GATE_ROOT="$td" DOGFOOD_BASE_REF=main \
+         DOGFOOD_RECEIPT="$td/docs/audits/receipt.md" \
+         DOGFOOD_RELEASE="${SELFTEST_RELEASE:-}" \
          bash "$td/scripts/check_dogfood_coverage.sh" 2>&1)"; rc=$?
   local verdict="GREEN"; [ "$rc" -ne 0 ] && verdict="RED"
   if [ "$verdict" != "$expect" ]; then
@@ -460,7 +535,7 @@ if [ "${1:-}" = "--self-test" ]; then
   printf 'M5  G2.5 per-cluster — move a cluster\x27s ONLY gate to another cluster\n'
   selftest_mutate "$TD/$LEDGER" "ungate solo-cluster, gate a pad row" \
     sed -i -e 's|^demo,demo beta,6,UNKNOWN,none,yes,0,|demo,demo beta,6,UNKNOWN,none,no,0,|' \
-           -e 's|^demo,demo pad1,6,UNKNOWN,none,no,2,|demo,demo pad1,6,UNKNOWN,none,yes,2,|' \
+           -e 's|^demo,demo pad2,6,UNKNOWN,none,no,2,|demo,demo pad2,6,UNKNOWN,none,yes,2,|' \
            "$TD/$LEDGER" \
     && selftest_run "$TD" "gate moved between clusters" "RED" \
          "G2.5 per-cluster FAIL: gates in cluster \`solo-cluster\`" || FAILED=1
@@ -468,6 +543,76 @@ if [ "${1:-}" = "--self-test" ]; then
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
 
+  # --- M8 (G2.5 membership): THE RELABELLING ATTACK.
+  #     Move a GATED feature into the zero-gate cluster, and write a NEW gate in
+  #     the cluster it left so that cluster's floor still holds. Every count the
+  #     first version of this gate ratcheted is satisfied afterwards: solo-cluster
+  #     still has one gate, pad-cluster's gate count went UP, the zero-gate
+  #     cluster count went DOWN, no label vanished, per-binary and overall both
+  #     rose. It was GREEN. And nothing had been proved about pad-cluster's 200
+  #     features -- the zero stopped EXISTING instead of being closed. That is the
+  #     same move as deleting a losing benchmark row.
+  #     Only the membership ratchet can explain this RED, so the finding is asserted.
+  m8_relabel() {
+    sed -i 's|^demo,demo beta,6,UNKNOWN,none,yes,0,solo-cluster,|demo,demo beta,6,UNKNOWN,none,yes,2,pad-cluster,|' "$TD/$LEDGER"
+    printf 'demo,demo epsilon,6,x86_64-linux,none,yes,0,solo-cluster,crates/demo/src/m3.rs:1,high\n' >> "$TD/$LEDGER"
+  }
+  printf 'M8  G2.5 membership — relabel a gated feature into the zero-gate cluster\n'
+  selftest_mutate "$TD/$LEDGER" "move the gate into pad-cluster, backfill solo" \
+    m8_relabel \
+    && selftest_run "$TD" "gated feature relabelled, no declaration" "RED" \
+         "G2.5 membership FAIL" || FAILED=1
+
+  # --- M8b: DECLARE that same move, and arm the release. The declaration makes
+  #     the move legible and legal -- clusters are derived, so a re-cluster must
+  #     stay possible -- and it still does not lift pad-cluster off zero, because
+  #     the gate that walked in is evidence about the cluster it came FROM.
+  #     A declaration buys legibility; only writing a gate buys evidence.
+  printf 'M8b G2.5 earned — declaring the move does not lift the cluster off zero\n'
+  m8b_declare() {
+    { printf 'reassignments:\n'
+      printf '  - binary: demo\n'
+      printf '    feature: demo beta\n'
+      printf '    from: solo-cluster\n'
+      printf '    to: pad-cluster\n'
+      printf '    reason: fixture -- re-clustered, beta dispatches through the pad path\n'
+    } > "$TD/$REASSIGN"
+  }
+  selftest_mutate "$TD/$REASSIGN" "declare the reassignment" m8b_declare || FAILED=1
+  SELFTEST_RELEASE=1 selftest_run "$TD" "declared move, release armed" "RED" \
+    "carry no EARNED gate" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER" "$REASSIGN"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  # ...and the paired GREEN that says what the arm actually wants: WRITE a gate
+  # in the zero cluster. Same release arm, same fixture, opposite verdict.
+  selftest_mutate "$TD/$LEDGER" "write a gate on a pad-cluster row" \
+    sed -i 's|^demo,demo pad1,6,UNKNOWN,none,no,2,|demo,demo pad1,6,UNKNOWN,none,yes,2,|' "$TD/$LEDGER" \
+    && SELFTEST_RELEASE=1 selftest_run "$TD" "gate WRITTEN in the zero cluster, release armed" "GREEN" \
+    || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
+
+  # --- M9 (T2, the RECEIPT channel). enforce_pairing() used to be applied to ONE
+  #     generated string -- this gate's own report. The failure it exists to
+  #     prevent is a RECEIPT that states cluster coverage without the feature
+  #     fraction: the gate then looks STRICTER than before while measuring LESS.
+  #     That is vacuity one level up, which is the whole point of T2.
+  printf 'M9  T2 — state a cluster ratio in the RECEIPT with no feature %% beside it\n'
+  selftest_mutate "$TD/docs/audits/receipt.md" "drop the feature fraction from the receipt" \
+    sed -i 's|, features gated 2/203||' "$TD/docs/audits/receipt.md" \
+    && selftest_run "$TD" "receipt states the proxy alone" "RED" \
+         "G2.6 T2 FAIL" || FAILED=1
+  git -C "$TD" checkout -q -- "docs/audits/receipt.md"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  # The same removal in the SKILL, because "one channel" was the defect.
+  selftest_mutate "$TD/$SKILL" "drop the feature fraction from the skill" \
+    sed -i 's|, features gated 2/203||' "$TD/$SKILL" \
+    && selftest_run "$TD" "skill states the proxy alone" "RED" \
+         "G2.6 T2 FAIL" || FAILED=1
+  git -C "$TD" checkout -q -- "$SKILL"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
   # --- M6 (T2): report CLUSTER coverage without the FEATURE fraction. This is
   #     the most important mutation in the table. Cluster coverage is a PROXY:
   #     one gate in a 95-member cluster is 1%, not "covered". A receipt that
@@ -478,7 +623,7 @@ if [ "${1:-}" = "--self-test" ]; then
   selftest_mutate "$TD/$GATE_PY" "delete the feature fraction from the emitter" \
     sed -i 's|"features gated {}/{} ({:.1f}%)"\.format(|"".format(|' "$TD/$GATE_PY" \
     && selftest_run "$TD" "feature fraction dropped from the report" "RED" \
-         "G2.5 T2 FAIL" || FAILED=1
+         "G2.6 T2 FAIL (the per-cluster report)" || FAILED=1
   cp "$REPO_ROOT/$GATE_PY" "$TD/$GATE_PY"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
@@ -512,6 +657,35 @@ if [ "${1:-}" = "--self-test" ]; then
   git -C "$TD" add -A >/dev/null 2>&1
   selftest_commit "$TD" 'restore the durable key' >/dev/null
   idguard_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+
+  # --- M10 (T1, the form the BLACKLIST walked past). The first version of the
+  #     guard recognised four keying syntaxes and passed everything else. This is
+  #     one of the twelve ordinary constructs it did not recognise: a pandas-style
+  #     group-by is not a YAML key, not an identity field, not a `["..."]`
+  #     subscript and not a `--by` flag, so it keyed an obligation on the
+  #     permuting id and stayed GREEN. The guard is now an ALLOWLIST, so this is
+  #     RED without anyone having had to predict the syntax.
+  #     The token is assembled from a variable for the same reason M7 does it:
+  #     written literally, this harness would itself be a keying line, and the
+  #     guard scans scripts/.
+  printf 'M10 T1 — key on the id with a form the four-syntax blacklist missed\n'
+  m10_groupby() {
+    printf 'floors = ledger.groupby("%s").size()\n' "$PERMUTING_KEY" \
+      > "$TD/scripts/floor_by_cluster.py"
+  }
+  printf '# derives the per-cluster floor\n' > "$TD/scripts/floor_by_cluster.py"
+  git -C "$TD" add -A >/dev/null 2>&1
+  selftest_commit "$TD" 'a floor script that keys on nothing' >/dev/null
+  idguard_run "$TD" "floor script keys on nothing" "GREEN" || FAILED=1
+  selftest_mutate "$TD/scripts/floor_by_cluster.py" "group the floor by the permuting id" \
+    m10_groupby \
+    && { git -C "$TD" add -A >/dev/null 2>&1
+         selftest_commit "$TD" 'group the floor by the permuting id' >/dev/null
+         idguard_run "$TD" "floor grouped by the permuting id" "RED"; } || FAILED=1
+  printf '# derives the per-cluster floor\n' > "$TD/scripts/floor_by_cluster.py"
+  git -C "$TD" add -A >/dev/null 2>&1
+  selftest_commit "$TD" 'restore the floor script' >/dev/null
+  idguard_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
 
   # --- M4: the anti-vacuity mutation. Lower the floor AND break it in one
@@ -531,9 +705,11 @@ if [ "${1:-}" = "--self-test" ]; then
   printf '\n'
 
   if [ "$FAILED" -eq 0 ]; then
-    printf 'SELF-TEST PASS: 6 registered mutations RED (M5/M6/M7 attributed by\n'
-    printf 'finding text, not by exit code alone), the anti-vacuity mutation RED,\n'
-    printf 'and every clean/no-op/restored tree GREEN.\n'
+    printf 'SELF-TEST PASS: 10 registered mutations RED (M5/M6/M8/M8b/M9 attributed\n'
+    printf 'by finding text, not by exit code alone), the anti-vacuity mutation RED,\n'
+    printf 'and every clean/no-op/restored tree GREEN -- including the two GREENs\n'
+    printf 'that say what the arms actually want: a re-audited ledger (M1) and a\n'
+    printf 'gate WRITTEN in the zero cluster rather than moved into it (M8b).\n'
     exit 0
   fi
   printf 'SELF-TEST FAIL\n'

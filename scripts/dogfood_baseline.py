@@ -14,7 +14,15 @@ rounder one. 17.1% is 142/830; it is not "about 17%".
 """
 import csv
 import collections
+import os
 import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+# The T2 pairing rule is imported, not re-implemented. This printer is one of the
+# channels a cluster-level ratio can leave the repository through -- the gate
+# report, the receipt, this, and the skill -- and a pairing rule enforced at one
+# call site is a pairing rule with three ways around it.
+from dogfood_coverage_gate import enforce_pairing  # noqa: E402
 
 CSV_PATH = "docs/audits/surface_audit.csv"
 CONTRACT_PATH = "contracts/apr-dogfood-coverage-v1.yaml"
@@ -56,7 +64,7 @@ def per_band(rows):
 
 
 def per_cluster(rows):
-    """Grouped by cluster_label -- NEVER by cluster_id. k-means ids permute on
+    """Grouped by `cluster_label` -- NEVER by `cluster_id`. k-means ids permute on
     re-run, so a baseline keyed on one would silently re-point at a different set
     of features. The label is human-owned; see scripts/check_no_cluster_id_keys.sh.
 
@@ -111,6 +119,27 @@ def compute(rows):
 
 
 def report(m):
+    """Build the report as TEXT, hold it to the T2 pairing rule, and only then
+    print it. Returns the lines so `main` can fail the run on an unpaired
+    cluster ratio -- reading your own output back is the only way a reporting
+    rule survives the next person who edits the emitter."""
+    lines = report_lines(m)
+    findings = []
+    ok = enforce_pairing(lines, findings, m["clusters"], m["rows"],
+                         where="scripts/dogfood_baseline.py output")
+    for ln in lines:
+        print(ln)
+    for f in findings:
+        print(f)
+    return ok
+
+
+def report_lines(m):
+    out = []
+
+    def print(*args, **kwargs):  # noqa: A001 -- collect instead of emit
+        out.append(" ".join(str(a) for a in args))
+
     ratio = m["covered"] / m["rows"] if m["rows"] else 0.0
     print("# totals")
     print(f"rows: {m['rows']}")
@@ -121,6 +150,12 @@ def report(m):
     print(f"binaries_at_zero_coverage: {m['binaries_at_zero']}")
     print(f"clusters: {m['clusters']}")
     print(f"clusters_at_zero_coverage: {m['clusters_at_zero']}")
+    # The paired line. It exists so this printer is not VACUOUSLY compliant: a
+    # pairing rule applied to output that states no cluster ratio proves nothing,
+    # which is the same failure one level up that T2 is about.
+    print("# clusters gated {}/{}, features gated {}/{}".format(
+        m["clusters"] - m["clusters_at_zero"], m["clusters"],
+        m["covered"], m["rows"]))
     print(f"unknown_hardware: {m['unknown_hardware']}")
     print(f"low_and_uncovered: {m['low_and_uncovered']}")
     print(f"broken_and_ungated: {m['broken_and_ungated']}")
@@ -141,6 +176,7 @@ def report(m):
         print(f"{lab}: {{total: {total}, covered: {cov}}}"
               f"     # {100 * cov / total if total else 0.0:.1f}% of the cluster, "
               f"{100 * cov / tot_gates:.1f}% of all gate effort")
+    return out
 
 
 def expected_lines(m):
@@ -179,10 +215,10 @@ def check(m, path=CONTRACT_PATH):
 
 def main():
     m = compute(load())
-    report(m)
+    rc = 0 if report(m) else 1
     if "--check" in sys.argv:
-        return check(m)
-    return 0
+        rc = check(m) or rc
+    return rc
 
 
 if __name__ == "__main__":
