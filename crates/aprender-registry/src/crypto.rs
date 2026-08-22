@@ -79,7 +79,16 @@ const SALT_LEN: usize = 32;
 /// Nonce length for ChaCha20-Poly1305 (12 bytes)
 const NONCE_LEN: usize = 12;
 
-/// Authentication tag length (16 bytes)
+/// Authentication tag length (16 bytes).
+///
+/// Gated to exactly where it is reachable. In the LIB its only use is the length
+/// floor in `decrypt_model_with_config`, which is `#[cfg(feature = "encryption")]`;
+/// under tests it is also used by `mod falsify_2590`, which is `#[cfg(test)]`
+/// alone because FALSIFY-2590-001 must run in the encryption-less build too.
+/// Ungated, a `--no-default-features --features compression,cli,signing` lib is
+/// dead_code-RED under `-D warnings`; gated on the feature alone, that build's
+/// lib TEST target stops compiling.
+#[cfg(any(feature = "encryption", test))]
 const TAG_LEN: usize = 16;
 
 /// Header size: magic (8) + version (1) + salt (32) + nonce (12) = 53 bytes
