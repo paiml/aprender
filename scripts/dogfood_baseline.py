@@ -55,6 +55,24 @@ def per_band(rows):
     return bands
 
 
+def per_cluster(rows):
+    """Grouped by cluster_label -- NEVER by cluster_id. k-means ids permute on
+    re-run, so a baseline keyed on one would silently re-point at a different set
+    of features. The label is human-owned; see scripts/check_no_cluster_id_keys.sh.
+
+    Both numbers are reported for every cluster, always: the FEATURE fraction and
+    the share of total gate effort. Cluster coverage alone is a proxy -- one gate
+    in a 95-member cluster is 1%, not "covered" -- and reporting the proxy without
+    the feature fraction beneath it is how a coverage gate becomes theatre while
+    looking stricter than before."""
+    groups = collections.OrderedDict()
+    for r in rows:
+        groups.setdefault(r["cluster_label"].strip(), []).append(r)
+    ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    return collections.OrderedDict(
+        (lab, (len(rs), count_covered(rs))) for lab, rs in ordered)
+
+
 def per_binary(by_binary):
     ordered = sorted(by_binary.items(), key=lambda kv: (-len(kv[1]), kv[0]))
     return collections.OrderedDict(
@@ -86,6 +104,9 @@ def compute(rows):
         "broken_and_ungated": sum(1 for r in rows if is_broken_and_ungated(r)),
         "per_binary": per_binary(by_binary),
         "per_band": per_band(rows),
+        "per_cluster": per_cluster(rows),
+        "clusters": len(per_cluster(rows)),
+        "clusters_at_zero": sum(1 for _, c in per_cluster(rows).values() if c == 0),
     }
 
 
@@ -98,6 +119,8 @@ def report(m):
           f"# {m['covered']}/{m['rows']} -- {100 * ratio:.1f}%")
     print(f"binaries: {m['binaries']}")
     print(f"binaries_at_zero_coverage: {m['binaries_at_zero']}")
+    print(f"clusters: {m['clusters']}")
+    print(f"clusters_at_zero_coverage: {m['clusters_at_zero']}")
     print(f"unknown_hardware: {m['unknown_hardware']}")
     print(f"low_and_uncovered: {m['low_and_uncovered']}")
     print(f"broken_and_ungated: {m['broken_and_ungated']}")
@@ -110,6 +133,14 @@ def report(m):
     for name, (total, cov) in m["per_band"].items():
         pct = 100 * cov / total if total else 0.0
         print(f"{name}: {{total: {total}, covered: {cov}}}     # {pct:.1f}%")
+    print()
+    print("# per_cluster  -- ALLOCATION OF GATE EFFORT, the reason clustering earns")
+    print("#                 its place. Nobody chose this allocation; it accreted.")
+    tot_gates = m["covered"] or 1
+    for lab, (total, cov) in m["per_cluster"].items():
+        print(f"{lab}: {{total: {total}, covered: {cov}}}"
+              f"     # {100 * cov / total if total else 0.0:.1f}% of the cluster, "
+              f"{100 * cov / tot_gates:.1f}% of all gate effort")
 
 
 def expected_lines(m):
@@ -119,10 +150,14 @@ def expected_lines(m):
         out.append((f"per_binary {b}", f"{b}: {{total: {total}, covered: {cov}}}"))
     for name, (total, cov) in m["per_band"].items():
         out.append((f"per_band {name}", f"{name}: {{total: {total}, covered: {cov}}}"))
+    for lab, (total, cov) in m["per_cluster"].items():
+        out.append((f"per_cluster {lab}", f"{lab}: {{total: {total}, covered: {cov}}}"))
     for label, key in (("rows", "rows"), ("covered", "covered"),
                        ("unknown", "unknown_hardware"),
                        ("low_and_uncovered", "low_and_uncovered"),
-                       ("count", "broken_and_ungated")):
+                       ("count", "broken_and_ungated"),
+                       ("clusters", "clusters"),
+                       ("clusters_at_zero_coverage", "clusters_at_zero")):
         out.append((f"totals {label}", f"{label}: {m[key]}"))
     return out
 

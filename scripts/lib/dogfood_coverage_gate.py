@@ -22,6 +22,11 @@ WHAT IS CHECKED
   G2.3 floors          covered / rows / per-binary covered may not fall;
                        broken-and-ungated, UNKNOWN-hardware and
                        low-confidence-and-ungated may not rise
+  G2.5 per-cluster     no cluster's gate count may fall and the zero-gate cluster
+                       count may not rise (ratchet); every cluster_label carries
+                       >= 1 gate (RED at DOGFOOD_RELEASE=1). Cluster coverage is
+                       reported ONLY beside the underlying feature fraction, and
+                       that pairing is enforced, not merely documented (T2)
   G2.4 waivers         every quality<=4 ungated feature has a triage entry, and
                        any feature NEWLY in that state carries an issue or a
                        written waiver. DOGFOOD_RELEASE=1 demands it of all.
@@ -38,7 +43,16 @@ import re
 import sys
 
 COLUMNS = ["binary", "feature", "quality_1_10", "verified_hardware",
-           "top_competitor", "in_dogfood_skill", "evidence_path", "confidence"]
+           "top_competitor", "in_dogfood_skill", "cluster_id", "cluster_label",
+           "evidence_path", "confidence"]
+
+# The schema BEFORE the cluster columns were added. A comparand still on this
+# shape is the one legitimate reason the per-cluster ratchet cannot be derived,
+# and it is self-closing: it stops applying the moment the 10-column ledger is on
+# main. HEAD is always held to COLUMNS -- a working tree may not drop back.
+LEGACY_COLUMNS = [c for c in COLUMNS if not c.startswith("cluster_")]
+
+CLUSTER_COLUMNS = ["cluster_id", "cluster_label"]
 
 # A ledger this small is not a ledger; it is a truncation. Refusing to compare
 # against an empty or near-empty comparand is what stops "the file went missing"
@@ -50,18 +64,44 @@ class Fail(Exception):
     """A gate condition that must stop the run."""
 
 
-def read_ledger(path, label):
+def read_ledger(path, label, allow_legacy=False):
+    """Read a ledger. `allow_legacy` is granted ONLY to the comparand, and only
+    so a 10-column working tree can be compared against a `main` that has not
+    taken the cluster columns yet. It is exhaustive over three shapes so that a
+    HALF-migrated schema (one cluster column, or empty labels) can never fall
+    through to "no per-cluster floor to check"."""
     if not os.path.exists(path):
         raise Fail(f"{label} ledger not found: {path}")
     with open(path, newline="", encoding="utf-8") as fh:
         rdr = csv.DictReader(fh)
-        if rdr.fieldnames != COLUMNS:
-            raise Fail(f"{label} ledger has unexpected columns: {rdr.fieldnames}")
+        cols = rdr.fieldnames
+        if cols == COLUMNS:
+            clustered = True
+        elif allow_legacy and cols == LEGACY_COLUMNS:
+            clustered = False
+        else:
+            raise Fail(f"{label} ledger has unexpected columns: {cols}\n"
+                       f"        expected: {COLUMNS}"
+                       + ("" if allow_legacy else
+                          "\n        (the working ledger must carry the cluster "
+                          "columns; dropping them would retire the per-cluster "
+                          "floor in the same commit that breaks it)"))
         rows = list(rdr)
     if len(rows) < MIN_ROWS:
         raise Fail(f"{label} ledger has only {len(rows)} rows (< {MIN_ROWS}); "
                    "refusing to treat a truncated ledger as a satisfied floor")
-    return rows
+    if clustered:
+        def _unlabelled(r):
+            has_id = bool((r["cluster_id"] or "").strip())  # cluster-id-guard allow (presence check, not a key)
+            return not (r["cluster_label"] or "").strip() or not has_id
+
+        blank = [f"{r['binary']}: {r['feature']}" for r in rows if _unlabelled(r)]
+        if blank:
+            raise Fail(f"{label} ledger has {len(blank)} row(s) with an empty "
+                       "cluster_id or cluster_label. An unlabelled row belongs to "
+                       "no cluster, so it is outside every per-cluster floor:\n"
+                       + "\n".join(f"        - {b}" for b in blank[:10]))
+    return rows, clustered
 
 
 def covered(row):
@@ -96,6 +136,23 @@ def covered_by_binary(rows):
     for r in rows:
         out[r["binary"]] += 1 if covered(r) else 0
     return out
+
+
+def cluster_label(row):
+    """The DURABLE cluster key. Never cluster_id -- see T1 below."""
+    return (row["cluster_label"] or "").strip()
+
+
+def by_cluster(rows):
+    """-> {label: (n_features, n_gated)}, sorted by size descending then name."""
+    n = collections.Counter()
+    g = collections.Counter()
+    for r in rows:
+        lab = cluster_label(r)
+        n[lab] += 1
+        g[lab] += 1 if covered(r) else 0
+    return collections.OrderedDict(
+        (lab, (n[lab], g[lab])) for lab in sorted(n, key=lambda k: (-n[k], k)))
 
 
 # --------------------------------------------------------------------------
@@ -152,6 +209,168 @@ def check_floors(base, head, findings):
         n, d = sum(1 for r in head if covered(r)), len(head)
         print(f"  G2.3 floors          PASS  {n}/{d} covered "
               f"({100.0 * n / d:.1f}%), {len(base_cov)} per-binary floors held")
+    return ok
+
+
+# --------------------------------------------------------------------------
+# G2.5 -- the PER-CLUSTER floor, and the T2 reporting rule that keeps it honest.
+#
+# WHY A BINARY IS THE WRONG UNIT
+# ------------------------------
+# `aprender-orchestrate` ships 184 features that are three unrelated subsystems:
+# 95 Banco HTTP routes, a 56-feature agent stack and 17 Pacha secrets commands.
+# A per-BINARY floor of ">= 1 gate" lets one gate on Pacha make all 184 look
+# touched. The cluster is the unit that shares a module, a dispatch path and a
+# failure mode, so a gate on one member is evidence about the cluster and a gate
+# on a different subsystem is not.
+#
+# WHAT IS ENFORCED
+#   ratchet (always)     no cluster's gate count may fall; the number of clusters
+#                        with zero gates may not rise
+#   release arm          every cluster_label carries >= 1 gate. RED at
+#                        DOGFOOD_RELEASE=1. Nine of fourteen clusters sit at zero
+#                        today, so this is red on arrival AT RELEASE and that is
+#                        the finding, not a bug in the gate.
+#
+# T1 -- NOTHING KEYS ON cluster_id
+# --------------------------------
+# k-means labels PERMUTE whenever the input moves. `cluster_id` is provenance;
+# `cluster_label` is the durable key and is human-owned after first assignment.
+# This module reads cluster_id ONLY to prove the id->label map is a bijection,
+# never to identify a cluster. The repo-wide ban is enforced separately by
+# scripts/check_no_cluster_id_keys.sh.
+#
+# T2 -- CLUSTER COVERAGE IS NOT FEATURE COVERAGE
+# ----------------------------------------------
+# One gate in a 95-member cluster is 1%, not "covered". A receipt that reports
+# "5 of 14 clusters gated" WITHOUT the underlying 142/830 rebuilds the vacuity
+# failure one level up: a clean sweep over a proxy, looking stricter than what it
+# replaced. So the pairing is MECHANICAL, not a documented convention --
+# enforce_pairing() reads back the lines this gate is about to print and fails
+# the gate if any cluster-level fraction appears without a feature-level one
+# beside it. Deleting the feature fraction from the emitter turns the gate RED.
+# --------------------------------------------------------------------------
+
+# A cluster-level fraction: "clusters ... N/M". A feature-level fraction:
+# "features ... N/M". Both must appear on any line that carries either.
+_CLUSTER_FRAC = re.compile(r"cluster[s\-]?[^,;|]*?\b(\d+)\s*/\s*(\d+)", re.I)
+_FEATURE_FRAC = re.compile(r"feature[s\-]?[^,;|]*?\b(\d+)\s*/\s*(\d+)", re.I)
+
+
+def enforce_pairing(lines, findings):
+    """T2, mechanically. Every emitted line that states a CLUSTER coverage
+    fraction must state the underlying FEATURE fraction too. Returns True when
+    the report is admissible."""
+    offenders = [ln for ln in lines
+                 if _CLUSTER_FRAC.search(ln) and not _FEATURE_FRAC.search(ln)]
+    if offenders:
+        findings.append(
+            "G2.5 T2 FAIL: {} report line(s) state a CLUSTER coverage fraction "
+            "with no FEATURE fraction beside it. One gate in a 95-member cluster "
+            "is 1%, not \"covered\"; reporting the proxy alone is how a coverage "
+            "gate becomes theatre while looking stricter than before:\n".format(
+                len(offenders))
+            + "\n".join(f"        | {ln}" for ln in offenders[:10]))
+        return False
+    # Vacuity guard: a pairing rule applied to an empty report proves nothing.
+    if not any(_CLUSTER_FRAC.search(ln) for ln in lines):
+        findings.append(
+            "G2.5 T2 FAIL: the per-cluster report emitted no cluster coverage "
+            "fraction at all, so the pairing rule checked nothing. An empty "
+            "report is not a satisfied one.")
+        return False
+    return True
+
+
+def _check_id_label_bijection(head, findings):
+    """cluster_id is read HERE and nowhere else, and only to prove it agrees
+    with the label. A label served by two ids -- or an id serving two labels --
+    means a re-run permuted the ids and the ledger took the permutation
+    halfway."""
+    ids = collections.defaultdict(set)
+    labs = collections.defaultdict(set)
+    for r in head:
+        ids[cluster_label(r)].add((r["cluster_id"] or "").strip())  # noqa: cluster-id-guard allow (validation, not a key)
+        labs[(r["cluster_id"] or "").strip()].add(cluster_label(r))  # noqa: cluster-id-guard allow (validation, not a key)
+    bad = ([f"label `{k}` carries {len(v)} ids: {sorted(v)}"
+            for k, v in sorted(ids.items()) if len(v) != 1]
+           + [f"id `{k}` carries {len(v)} labels: {sorted(v)}"
+              for k, v in sorted(labs.items()) if len(v) != 1])
+    if bad:
+        findings.append("G2.5 FAIL: cluster_id and cluster_label disagree:\n"
+                        + "\n".join(f"        - {b}" for b in bad[:10]))
+        return False
+    return True
+
+
+def check_cluster_floors(base, head, base_clustered, findings, release):
+    """The third floor, beside overall and per-binary."""
+    ok = _check_id_label_bijection(head, findings)
+    head_c = by_cluster(head)
+    feat_n = sum(1 for r in head if covered(r))
+    feat_d = len(head)
+
+    if base_clustered:
+        base_c = by_cluster(base)
+        # Ratchet, derived from the comparand -- never from a literal here.
+        for lab in sorted(base_c):
+            ok &= _ratchet(findings, f"gates in cluster `{lab}`",
+                           head_c.get(lab, (0, 0))[1], base_c[lab][1], "up")
+        # A cluster that vanishes takes its whole floor with it.
+        gone = sorted(set(base_c) - set(head_c))
+        if gone:
+            findings.append(
+                "G2.5 FAIL: {} cluster_label(s) on the comparand are absent from "
+                "the working ledger. Renaming a label retires every gate "
+                "obligation that cited it; relabel in a commit that says so:\n"
+                .format(len(gone))
+                + "\n".join(f"        - {g}" for g in gone[:10]))
+            ok = False
+        ok &= _ratchet(findings, "clusters with ZERO gates",
+                       sum(1 for _, g in head_c.values() if g == 0),
+                       sum(1 for _, g in base_c.values() if g == 0), "down")
+        armed = "ratchet armed from the comparand"
+    else:
+        # Self-closing: only reachable while `main` predates the cluster columns.
+        print("  SCHEMA UPGRADE: the comparand ledger has no cluster columns, so "
+              "the\n                  per-cluster RATCHET has no floor to derive "
+              "and is skipped for\n                  this run only. The release "
+              "arm below still applies. Once the\n                  10-column "
+              "ledger is on main this branch is unreachable.")
+        armed = "ratchet NOT armed -- comparand predates the cluster columns"
+
+    zero = [lab for lab, (_, g) in head_c.items() if g == 0]
+    gated_clusters = len(head_c) - len(zero)
+    if release and zero:
+        findings.append(
+            "G2.5 FAIL (DOGFOOD_RELEASE=1): {} of {} clusters carry no gate at "
+            "all. Nine clusters at zero is nine clusters with NO EVIDENCE -- that "
+            "is the gap, not the {} uncovered rows. A gate on one member is "
+            "evidence about the cluster; zero members is silence:\n".format(
+                len(zero), len(head_c), feat_d - feat_n)
+            + "\n".join("        - {:<26} {:>4} features, 0 gates".format(
+                lab, head_c[lab][0]) for lab in zero))
+        ok = False
+
+    # ---- the report. Built as text FIRST so T2 can read it back. ----
+    lines = ["  G2.5 per-cluster     {}  clusters gated {}/{} ({:.1f}%), "
+             "features gated {}/{} ({:.1f}%)".format(
+                 "PASS " if ok else "FAIL ",
+                 gated_clusters, len(head_c),
+                 100.0 * gated_clusters / len(head_c) if head_c else 0.0,
+                 feat_n, feat_d, 100.0 * feat_n / feat_d if feat_d else 0.0)]
+    tot_gates = sum(g for _, g in head_c.values())
+    for lab, (n, g) in head_c.items():
+        lines.append(
+            "        {:<26} features {:>3}/{:<3} ({:>5.1f}%)  "
+            "share of gate effort {:>5.1f}%".format(
+                lab, g, n, 100.0 * g / n if n else 0.0,
+                100.0 * g / tot_gates if tot_gates else 0.0))
+    lines.append(f"        [{armed}]")
+
+    ok = enforce_pairing(lines, findings) and ok
+    for ln in lines:
+        print(ln)
     return ok
 
 
@@ -245,12 +464,13 @@ def check_waivers(base, head, triage_path, findings, release):
 
 
 def run(args):
-    base = read_ledger(args.base, "comparand")
-    head = read_ledger(args.head, "working-tree")
+    base, base_clustered = read_ledger(args.base, "comparand", allow_legacy=True)
+    head, _ = read_ledger(args.head, "working-tree")
     release = bool(os.environ.get("DOGFOOD_RELEASE"))
     findings = []
     ok = check_reconciliation(base, head, findings)
     ok = check_floors(base, head, findings) and ok
+    ok = check_cluster_floors(base, head, base_clustered, findings, release) and ok
     ok = check_waivers(base, head, args.the44, findings, release) and ok
     for f in findings:
         print(f"  {f}")

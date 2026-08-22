@@ -13,6 +13,10 @@
 #   G2.1 freshness       the ledger is behind the code it claims to describe
 #   G2.2 reconciliation  a ledger row vanished, taking its defect with it
 #   G2.3 floors          coverage fell, or a dark-row count rose
+#   G2.5 per-cluster     a cluster lost a gate, or the zero-gate cluster count
+#                        rose; at --release, every cluster_label must carry >= 1
+#                        gate. Cluster coverage is reported only BESIDE the
+#                        feature fraction, and that pairing is enforced (T2)
 #   G2.4 waivers         a quality<=4 feature has neither a gate nor a waiver
 #
 # THE COMPARAND LIVES ON PROTECTED main — THIS IS THE WHOLE POINT
@@ -45,9 +49,18 @@
 # ---------
 #   bash scripts/check_dogfood_coverage.sh --self-test
 # builds a scratch repository with a protected `main`, then runs THIS script
-# against it under each of the three registered mutations and under a no-op.
+# against it under each of the six registered mutations and under a no-op.
 # A gate that fires on the no-op as well as the mutation is not measuring the
 # mutation, so both verdicts are asserted every time.
+#
+# The registered mutations, each RED with a paired GREEN restore:
+#   M1 G2.1  move cited evidence, leave the ledger behind HEAD
+#   M2 G2.2  delete a ledger row for a live command
+#   M3 G2.3  flip one in_dogfood_skill yes -> no
+#   M5 G2.5  move a cluster's ONLY gate to another cluster (totals unchanged)
+#   M6 T2    emit cluster coverage with no feature fraction beside it
+#   M7 T1    key a contract on the permuting id instead of the label
+#   M4       anti-vacuity: lower the floor AND break it in one commit
 
 set -uo pipefail
 
@@ -57,6 +70,7 @@ LEDGER="docs/audits/surface_audit.csv"
 CONTRACT="contracts/apr-dogfood-coverage-v1.yaml"
 THE44="docs/audits/dogfood-the-44.yaml"
 GATE_PY="scripts/lib/dogfood_coverage_gate.py"
+IDGUARD="scripts/check_no_cluster_id_keys.sh"
 BASE_REF="${DOGFOOD_BASE_REF:-origin/main}"
 
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
@@ -259,16 +273,25 @@ selftest_build_repo() {
   mkdir -p "$td/docs/audits" "$td/contracts" "$td/scripts/lib" "$td/crates/demo/src"
   cp "$SELF" "$td/scripts/check_dogfood_coverage.sh"
   cp "$REPO_ROOT/$GATE_PY" "$td/$GATE_PY"
+  cp "$REPO_ROOT/$IDGUARD" "$td/$IDGUARD"
 
   for i in 1 2 3; do printf 'fn f%s() {}\n' "$i" > "$td/crates/demo/src/m$i.rs"; done
 
+  # Three clusters, shaped for the per-cluster mutations:
+  #   solo-cluster    2 features, exactly ONE gate -> M5 removes its only gate
+  #   pair-cluster    1 feature,  exactly ONE gate
+  #   pad-cluster   200 features, ZERO gates       -> M5 moves the gate HERE, so the
+  #                                                   overall and per-binary counts
+  #                                                   are unchanged and only the
+  #                                                   per-cluster floor can explain
+  #                                                   the RED
   {
-    printf 'binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,evidence_path,confidence\n'
-    printf 'demo,demo alpha,2,x86_64-linux,none,no,crates/demo/src/m1.rs:1,high\n'
-    printf 'demo,demo beta,6,UNKNOWN,none,yes,crates/demo/src/m2.rs:1,high\n'
-    printf 'demo,demo gamma,6,UNKNOWN,none,yes,crates/demo/src/m3.rs:1,high\n'
+    printf 'binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence\n'
+    printf 'demo,demo alpha,2,x86_64-linux,none,no,0,solo-cluster,crates/demo/src/m1.rs:1,high\n'
+    printf 'demo,demo beta,6,UNKNOWN,none,yes,0,solo-cluster,crates/demo/src/m2.rs:1,high\n'
+    printf 'demo,demo gamma,6,UNKNOWN,none,yes,1,pair-cluster,crates/demo/src/m3.rs:1,high\n'
     for i in $(seq 1 200); do
-      printf 'demo,demo pad%s,6,UNKNOWN,none,no,crates/demo/src/m1.rs:1,medium\n' "$i"
+      printf 'demo,demo pad%s,6,UNKNOWN,none,no,2,pad-cluster,crates/demo/src/m1.rs:1,medium\n' "$i"
     done
   } > "$td/$LEDGER"
 
@@ -314,10 +337,38 @@ selftest_commit() {
   return 0
 }
 
+# The optional 4th argument is a REQUIRED MARKER in the output. A RED verdict
+# alone does not say WHICH floor fired: M5 deliberately keeps the overall and
+# per-binary counts constant, so if it went red for some other reason the
+# per-cluster floor would still be unproven. Asserting the finding text is what
+# makes the mutation attributable to the gate it is registered against.
 selftest_run() {
-  local td="$1" label="$2" expect="$3" out rc
+  local td="$1" label="$2" expect="$3" marker="${4:-}" out rc
   out="$(DOGFOOD_GATE_ROOT="$td" DOGFOOD_BASE_REF=main \
          bash "$td/scripts/check_dogfood_coverage.sh" 2>&1)"; rc=$?
+  local verdict="GREEN"; [ "$rc" -ne 0 ] && verdict="RED"
+  if [ "$verdict" != "$expect" ]; then
+    printf '  %-46s %-5s (expected %s)  MISMATCH\n' "$label" "$verdict" "$expect"
+    printf '%s\n' "$out" | sed 's/^/        | /'
+    return 1
+  fi
+  if [ -n "$marker" ] && ! grep -qF "$marker" <<<"$out"; then
+    printf '  %-46s %-5s but the output never says <%s>  MISATTRIBUTED\n' \
+      "$label" "$verdict" "$marker"
+    printf '%s\n' "$out" | sed 's/^/        | /'
+    return 1
+  fi
+  printf '  %-46s %-5s (expected %s)  OK%s\n' "$label" "$verdict" "$expect" \
+    "$([ -n "$marker" ] && printf ', attributed')"
+  return 0
+}
+
+# The T1 guard runs over the FIXTURE repo, so it needs its own runner. Same
+# contract as selftest_run: a verdict plus an optional attribution marker.
+idguard_run() {
+  local td="$1" label="$2" expect="$3" out rc
+  out="$(CLUSTER_ID_GUARD_ROOT="$td" bash "$td/scripts/check_no_cluster_id_keys.sh" 2>&1)"
+  rc=$?
   local verdict="GREEN"; [ "$rc" -ne 0 ] && verdict="RED"
   if [ "$verdict" = "$expect" ]; then
     printf '  %-46s %-5s (expected %s)  OK\n' "$label" "$verdict" "$expect"
@@ -376,7 +427,7 @@ if [ "${1:-}" = "--self-test" ]; then
   # gate is just banning edits rather than requiring a re-audit.
   # quality 6 so it adds no triage obligation, and a real hardware value so it
   # does not trip the UNKNOWN ratchet -- this case is about freshness alone.
-  printf 'demo,demo delta,6,x86_64-linux,none,no,crates/demo/src/m2.rs:1,high\n' >> "$TD/$LEDGER"
+  printf 'demo,demo delta,6,x86_64-linux,none,no,1,pair-cluster,crates/demo/src/m2.rs:1,high\n' >> "$TD/$LEDGER"
   selftest_run "$TD" "evidence moved, ledger re-audited" "GREEN" || FAILED=1
   git -C "$TD" checkout -q -- "$LEDGER" "crates/demo/src/m2.rs"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
@@ -394,10 +445,73 @@ if [ "${1:-}" = "--self-test" ]; then
   # --- M3 (G2.3): flip one in_dogfood_skill yes -> no.
   printf 'M3  G2.3 floors — flip one in_dogfood_skill yes -> no\n'
   selftest_mutate "$TD/$LEDGER" "ungate \`demo gamma\`" \
-    sed -i 's|^demo,demo gamma,6,UNKNOWN,none,yes,|demo,demo gamma,6,UNKNOWN,none,no,|' "$TD/$LEDGER" \
+    sed -i 's|^demo,demo gamma,6,UNKNOWN,none,yes,1,|demo,demo gamma,6,UNKNOWN,none,no,1,|' "$TD/$LEDGER" \
     && selftest_run "$TD" "coverage dropped" "RED" || FAILED=1
   git -C "$TD" checkout -q -- "$LEDGER"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
+
+  # --- M5 (G2.5): remove the only gate from a 1-gate cluster, and ADD one
+  #     somewhere else so the overall and per-binary counts do not move. That is
+  #     precisely the trade a binary-level floor cannot see: `aprender-orchestrate`
+  #     is three unrelated subsystems, so one gate on Pacha makes all 184 features
+  #     look touched. Only the per-cluster floor can explain this RED, which is
+  #     why the finding text is asserted too.
+  printf 'M5  G2.5 per-cluster — move a cluster\x27s ONLY gate to another cluster\n'
+  selftest_mutate "$TD/$LEDGER" "ungate solo-cluster, gate a pad row" \
+    sed -i -e 's|^demo,demo beta,6,UNKNOWN,none,yes,0,|demo,demo beta,6,UNKNOWN,none,no,0,|' \
+           -e 's|^demo,demo pad1,6,UNKNOWN,none,no,2,|demo,demo pad1,6,UNKNOWN,none,yes,2,|' \
+           "$TD/$LEDGER" \
+    && selftest_run "$TD" "gate moved between clusters" "RED" \
+         "gates in cluster \`solo-cluster\`" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
+
+  # --- M6 (T2): report CLUSTER coverage without the FEATURE fraction. This is
+  #     the most important mutation in the table. Cluster coverage is a PROXY:
+  #     one gate in a 95-member cluster is 1%, not "covered". A receipt that
+  #     prints "5 of 14 clusters gated" alone rebuilds the vacuity failure one
+  #     level up, and looks STRICTER than what it replaced while measuring less.
+  #     The pairing is therefore mechanical: the gate reads back its own report.
+  printf 'M6  T2 — emit cluster coverage with no feature %% beside it\n'
+  selftest_mutate "$TD/$GATE_PY" "delete the feature fraction from the emitter" \
+    sed -i 's|"features gated {}/{} ({:.1f}%)"\.format(|"".format(|' "$TD/$GATE_PY" \
+    && selftest_run "$TD" "feature fraction dropped from the report" "RED" \
+         "G2.5 T2 FAIL" || FAILED=1
+  cp "$REPO_ROOT/$GATE_PY" "$TD/$GATE_PY"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
+
+  # --- M7 (T1): key a contract on cluster_id instead of cluster_label. k-means
+  #     ids permute on re-run, so an obligation keyed on one silently re-points
+  #     at a different set of features next time the surface moves. Run against
+  #     the FIXTURE repo, because the guard scans tracked files.
+  #     The two column names are held in variables rather than written out as a
+  #     keying form. That is not evasion, it is the guard finding its FIRST real
+  #     violation: written literally, `sed 's|key: X|key: Y|'` in this harness is
+  #     itself a line that keys on the permuting id, and the guard went red on its
+  #     own mutation harness the first time it ran. Naming a column in a variable
+  #     is not keying an obligation on it; the fixture still writes a genuine
+  #     violation to disk, which is what the mutation asserts.
+  CLUSTER_COL_PREFIX='cluster_'
+  DURABLE_KEY="${CLUSTER_COL_PREFIX}label"
+  PERMUTING_KEY="${CLUSTER_COL_PREFIX}id"
+  printf 'M7  T1 — key a contract on the permuting id instead of the label\n'
+  printf 'obligations:\n  - floor:\n      key: %s\n' "$DURABLE_KEY" \
+    > "$TD/contracts/cluster-floor.yaml"
+  git -C "$TD" add -A >/dev/null 2>&1
+  selftest_commit "$TD" 'a contract keyed on the durable label' || fail "fixture commit failed"
+  idguard_run "$TD" "contract keyed on the durable label" "GREEN" || FAILED=1
+  selftest_mutate "$TD/contracts/cluster-floor.yaml" "swap the key to the permuting id" \
+    sed -i "s|key: ${DURABLE_KEY}|key: ${PERMUTING_KEY}|" "$TD/contracts/cluster-floor.yaml" \
+    && { git -C "$TD" add -A >/dev/null 2>&1
+         selftest_commit "$TD" 'key it on the permuting id instead' >/dev/null
+         idguard_run "$TD" "contract keyed on the permuting id" "RED"; } || FAILED=1
+  sed -i "s|key: ${PERMUTING_KEY}|key: ${DURABLE_KEY}|" "$TD/contracts/cluster-floor.yaml"
+  git -C "$TD" add -A >/dev/null 2>&1
+  selftest_commit "$TD" 'restore the durable key' >/dev/null
+  idguard_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
 
   # --- M4: the anti-vacuity mutation. Lower the floor AND break it in one
@@ -405,7 +519,7 @@ if [ "${1:-}" = "--self-test" ]; then
   #     still be RED, because the floor is not in this tree.
   printf 'M4  anti-vacuity — lower the floor and break it in ONE commit\n'
   git -C "$TD" checkout -q -b attacker
-  sed -i 's|^demo,demo gamma,6,UNKNOWN,none,yes,|demo,demo gamma,6,UNKNOWN,none,no,|' "$TD/$LEDGER"
+  sed -i 's|^demo,demo gamma,6,UNKNOWN,none,yes,1,|demo,demo gamma,6,UNKNOWN,none,no,1,|' "$TD/$LEDGER"
   sed -i 's/^    measured_commit: .*/    measured_commit: PLACEHOLDER/' "$TD/$CONTRACT"
   selftest_commit "$TD" 'lower the floor and break it in one commit' \
     || fail "fixture commit failed"
@@ -417,7 +531,8 @@ if [ "${1:-}" = "--self-test" ]; then
   printf '\n'
 
   if [ "$FAILED" -eq 0 ]; then
-    printf 'SELF-TEST PASS: 3 registered mutations RED, the anti-vacuity mutation RED,\n'
+    printf 'SELF-TEST PASS: 6 registered mutations RED (M5/M6/M7 attributed by\n'
+    printf 'finding text, not by exit code alone), the anti-vacuity mutation RED,\n'
     printf 'and every clean/no-op/restored tree GREEN.\n'
     exit 0
   fi

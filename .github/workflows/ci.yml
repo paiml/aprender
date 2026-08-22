@@ -668,6 +668,20 @@ jobs:
       - name: Dogfood coverage may not regress
         run: bash scripts/check_dogfood_coverage.sh
 
+      # T1: nothing may key on `cluster_id`. The surface ledger gained
+      # cluster_id + cluster_label; the LABEL is human-owned and durable, the ID
+      # is a k-means label that PERMUTES whenever the input moves. An obligation
+      # keyed on the id silently re-points at a different set of features the
+      # next time the surface is re-clustered -- the stale-hardcoded-list failure
+      # class in new clothes. The guard ships a must-match/must-not-match case
+      # table and CI runs the table beside the scan, because five `apr`-invocation
+      # patterns in this repo were wrong and every one was caught by its table
+      # rather than by review. Text-only, no build.
+      - name: cluster_id key guard case table
+        run: bash scripts/check_no_cluster_id_keys.sh --self-test
+      - name: Nothing may key on cluster_id
+        run: bash scripts/check_no_cluster_id_keys.sh
+
       # FALSIFY-README-00*: README metric claims must match measurement. The
       # guard existed and ran nowhere -- its only caller was scripts/dogfood-book.sh,
       # which is itself in no workflow and no Makefile target, so it was
