@@ -991,7 +991,10 @@ mod tests {
         // written nothing, and this test asserted that string -- so the test
         // locked the defect in, the same shape as the `wgpu_available = true`
         // hole found in finetune_tests.rs.
-        assert!(result.is_err(), "export must not report success without exporting");
+        assert!(
+            result.is_err(),
+            "export must not report success without exporting"
+        );
         let msg = format!("{}", result.unwrap_err());
         assert!(
             !msg.contains("Exported to"),
