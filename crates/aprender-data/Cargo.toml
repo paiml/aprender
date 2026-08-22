@@ -33,10 +33,10 @@ dhat-heap = ["dep:dhat"]
 [dependencies]
 # Core (always)
 # NOTE: arrow 57+ fixes comfy-table let_chains compatibility
-arrow = { version = "57", default-features = false, features = ["prettyprint", "ipc"] }
-arrow-csv = { version = "57" }
-arrow-json = { version = "57" }
-parquet = { version = "57", default-features = false, features = ["arrow", "snap", "zstd"] }
+arrow = { version = "59", default-features = false, features = ["prettyprint", "ipc"] }
+arrow-csv = { version = "59" }
+arrow-json = { version = "59" }
+parquet = { version = "59", default-features = false, features = ["arrow", "snap", "zstd"] }
 thiserror = "2"
 bytes = "1"
 serde = { version = "1", features = ["derive"] }

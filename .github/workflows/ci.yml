@@ -845,6 +845,17 @@ jobs:
       # deleting a line.
       - name: Every deny.toml exemption must still be live
         run: bash scripts/check_deny_exemptions_live.sh
+      # cargo-deny and cargo-audit read ONE database: RustSec. GHSA (what
+      # Dependabot reads) is a superset, and when an advisory lives only there
+      # every gate above is green while the crate sits in Cargo.lock. #2531:
+      # `thrift 0.17.0` (CVE-2026-43868 / GHSA-2f9f-gq7v-9h6m) arrived via
+      # `parquet ^57` and RustSec has NO thrift advisory at all, so
+      # `cargo deny check advisories` printed "advisories ok" throughout. It was
+      # found by a Dependabot alert on a DOWNSTREAM repo. Text-only, no build.
+      - name: No GHSA-only vulnerable crate in Cargo.lock
+        run: bash scripts/check_no_ghsa_banned_crates.sh
+      - name: "GHSA guard must still turn RED (case table)"
+        run: bash scripts/check_no_ghsa_banned_crates.sh --self-test
       # A test gated on a path outside the workspace is green on every machine
       # that lacks it, which is every machine but one. The monorepo merged 20
       # sibling repos in-tree, so gates like
