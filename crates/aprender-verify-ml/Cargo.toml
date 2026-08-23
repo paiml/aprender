@@ -30,8 +30,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Parquet data output
-parquet = { version = "57.0", optional = true }
-arrow = { version = "57.0", optional = true }
+parquet = { version = "59", optional = true }
+arrow = { version = "59", optional = true }
 
 # Random number generation for sampling
 rand = "0.9"

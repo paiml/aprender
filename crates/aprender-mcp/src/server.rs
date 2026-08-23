@@ -58,7 +58,7 @@ type InFlight = Arc<Mutex<HashMap<serde_json::Value, CancelHandle>>>;
 ///
 /// M1: `initialize`, `tools/list`, `tools/call` with `apr.version`.
 /// M3: `notifications/cancelled` routed to in-flight `apr.run` workers.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AprMcpServer {
     in_flight: InFlight,
     /// Join handles for `tools/call` workers spawned by
@@ -68,6 +68,38 @@ pub struct AprMcpServer {
     /// [`Self::serve_stream`].
     #[cfg(feature = "native")]
     workers: Vec<std::thread::JoinHandle<()>>,
+    /// The dispatch function a `tools/call` worker runs, always
+    /// [`dispatch_tool_call_with_sink`] outside tests.
+    ///
+    /// It is a field rather than a hardcoded call so that
+    /// FALSIFY-MCP-DRAIN-005 can drive a PANICKING tool through the whole
+    /// real stdio path — `serve_stream` → `read_loop` →
+    /// `route_stdio_message` → `spawn_tools_call_worker` → the worker thread
+    /// — and observe what the client actually receives. Every registered tool
+    /// is a subprocess wrapper or a pure metadata read, so no real
+    /// `tools/call` argument can be made to panic on demand, and without this
+    /// seam the panic guard could only ever be tested one hop away from the
+    /// wiring that has to call it.
+    ///
+    /// The seam cannot hide a stubbed default: the other `serve_stream_*`
+    /// tests run an untouched server and assert the genuine `apr.version`
+    /// payload comes back out of stdout, and
+    /// `default_worker_dispatch_is_the_real_tool_dispatcher` asserts it
+    /// directly.
+    #[cfg(feature = "native")]
+    worker_dispatch: crate::tools::DispatchFn,
+}
+
+impl Default for AprMcpServer {
+    fn default() -> Self {
+        Self {
+            in_flight: InFlight::default(),
+            #[cfg(feature = "native")]
+            workers: Vec::new(),
+            #[cfg(feature = "native")]
+            worker_dispatch: dispatch_tool_call_with_sink,
+        }
+    }
 }
 
 impl AprMcpServer {
@@ -300,8 +332,8 @@ impl AprMcpServer {
     /// Workers write their responses directly to `out` (guarded by a mutex)
     /// so the main loop never has to wait on them mid-stream.
     ///
-    /// Two transport invariants live here, both found by the 0.63.0 dogfood
-    /// and both invisible to a dispatcher-level test:
+    /// Three transport invariants live here, all found by dogfooding the
+    /// shipped binary and all invisible to a dispatcher-level test:
     ///
     /// * **FALSIFY-MCP-010** — on EOF the loop MUST join every worker it
     ///   spawned before returning. Without that join the process exits the
@@ -313,14 +345,40 @@ impl AprMcpServer {
     ///   A line that is not valid UTF-8 is a malformed *message*, answered
     ///   with `-32700`, not a transport failure that takes the session down
     ///   with it.
+    /// * **FALSIFY-MCP-DRAIN-001** (#2608) — EOF is not the only way out of
+    ///   the read loop. Every `?` inside it (a stdin read error, a stdout
+    ///   write error) is an exit too, and each one used to abandon the
+    ///   in-flight workers exactly the way the 0.63.0 EOF path did. The drain
+    ///   therefore lives here, on the *only* return path, rather than at the
+    ///   bottom of the loop where three of the four exits skip it.
     ///
     /// `W` must be `Send + 'static` because the same handle is shared with
     /// every worker thread.
     ///
     /// # Errors
-    /// Returns an error if reading or writing the streams fails.
+    /// Returns an error if reading or writing the streams fails. The error is
+    /// reported only AFTER the drain, so a failed session still delivers the
+    /// answers it already owes.
     #[cfg(feature = "native")]
-    pub fn serve_stream<R, W>(&mut self, mut reader: R, out: Arc<Mutex<W>>) -> anyhow::Result<()>
+    pub fn serve_stream<R, W>(&mut self, reader: R, out: Arc<Mutex<W>>) -> anyhow::Result<()>
+    where
+        R: std::io::BufRead,
+        W: std::io::Write + Send + 'static,
+    {
+        let outcome = self.read_loop(reader, &out);
+
+        // FALSIFY-MCP-010 / FALSIFY-MCP-DRAIN-001: drain before returning, on
+        // EVERY exit. EOF means the client sent everything it intends to, NOT
+        // that it stopped wanting answers — and an I/O error mid-session says
+        // even less about the requests already accepted.
+        self.join_workers();
+        outcome
+    }
+
+    /// The read loop proper. Separated from [`Self::serve_stream`] so that the
+    /// worker drain wraps it, rather than sitting on one of its exits.
+    #[cfg(feature = "native")]
+    fn read_loop<R, W>(&mut self, mut reader: R, out: &Arc<Mutex<W>>) -> anyhow::Result<()>
     where
         R: std::io::BufRead,
         W: std::io::Write + Send + 'static,
@@ -343,7 +401,7 @@ impl AprMcpServer {
             let Ok(line) = std::str::from_utf8(&buf) else {
                 let resp =
                     JsonRpcResponse::error(None, -32700, "Parse error: message is not valid UTF-8");
-                write_response(&out, &resp)?;
+                write_response(out, &resp)?;
                 continue;
             };
 
@@ -352,16 +410,13 @@ impl AprMcpServer {
             }
 
             match parse_incoming(line) {
-                Ok(req) => self.route_stdio_message(req, &out)?,
-                Err(resp) => write_response(&out, &resp)?,
+                Ok(req) => self.route_stdio_message(req, out)?,
+                Err(resp) => write_response(out, &resp)?,
             }
 
             self.reap_finished_workers();
         }
 
-        // FALSIFY-MCP-010: drain before returning. EOF means the client sent
-        // everything it intends to, NOT that it stopped wanting answers.
-        self.join_workers();
         Ok(())
     }
 
@@ -373,12 +428,52 @@ impl AprMcpServer {
         self.workers.retain(|h| !h.is_finished());
     }
 
+    /// Build the response a `tools/call` worker owes its client, converting a
+    /// panic inside tool dispatch into a `-32603` for the SAME id.
+    ///
+    /// FALSIFY-MCP-DRAIN-002 (#2608): the worker wrote a response only on the
+    /// success path, and [`Self::join_workers`] deliberately swallows a
+    /// worker panic (`let _ = handle.join()`). A tool that panicked therefore
+    /// left its request answered by NEITHER a result NOR an error — the same
+    /// protocol violation as the EOF drop, reached by a different route, and
+    /// equally silent: rc stays 0 and the client waits forever.
+    ///
+    /// Only dispatch runs under `catch_unwind`; the write and the registry
+    /// cleanup stay outside it, so a caught panic is always one that happened
+    /// BEFORE any bytes were written and can never produce a second response
+    /// for the same id.
+    #[cfg(feature = "native")]
+    fn worker_response<F>(id: &serde_json::Value, dispatch: F) -> JsonRpcResponse
+    where
+        F: FnOnce() -> ToolCallResult,
+    {
+        // AssertUnwindSafe: on the panic path every captured value is dropped
+        // untouched — nothing is read back, so there is no broken invariant to
+        // observe. The alternative (propagating) is the silent drop itself.
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(dispatch)) {
+            Ok(result) => JsonRpcResponse::success(
+                Some(id.clone()),
+                serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({})),
+            ),
+            Err(payload) => JsonRpcResponse::error(
+                Some(id.clone()),
+                -32603,
+                format!(
+                    "Internal error: tool panicked: {}",
+                    panic_message(payload.as_ref())
+                ),
+            ),
+        }
+    }
+
     /// Block until every in-flight `tools/call` worker has written its
-    /// response. Called once, on EOF, by [`Self::serve_stream`].
+    /// response. Called once, on the single exit path of
+    /// [`Self::serve_stream`].
     ///
     /// A panicking worker is ignored rather than propagated: the client is
-    /// owed whatever the surviving workers produced, and the panic message
-    /// has already reached stderr.
+    /// owed whatever the surviving workers produced, and the panicking
+    /// worker's own request was already answered with a `-32603` by
+    /// [`Self::worker_response`].
     #[cfg(feature = "native")]
     fn join_workers(&mut self) {
         for handle in std::mem::take(&mut self.workers) {
@@ -481,14 +576,17 @@ impl AprMcpServer {
         // Thread spawn is infallible here in practice, but propagate the
         // error rather than unwrapping so we stay in the "no panics" lane.
         let builder = std::thread::Builder::new().name(format!("apr-mcp-call-{id}"));
+        let dispatch = self.worker_dispatch;
         let spawn_result = builder.spawn(move || {
-            let sink_ref = progress_token.as_ref().map(|_| &sink);
-            let result =
-                dispatch_tool_call_with_sink(&params, &cancel_rx, sink_ref, progress_token);
-            let resp = JsonRpcResponse::success(
-                Some(id_for_worker.clone()),
-                serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({})),
-            );
+            // FALSIFY-MCP-DRAIN-002/005: dispatch runs INSIDE worker_response,
+            // never beside it. Calling `dispatch(...)` directly here and
+            // building the success response from its return value is exactly
+            // the pre-#2608 code, and is what FALSIFY-MCP-DRAIN-005 exists to
+            // turn red.
+            let resp = Self::worker_response(&id_for_worker, || {
+                let sink_ref = progress_token.as_ref().map(|_| &sink);
+                dispatch(&params, &cancel_rx, sink_ref, progress_token)
+            });
             // Best-effort: a broken stdout means the client disconnected,
             // which we can't recover from anyway.
             let _ = write_response(&stdout_clone, &resp);
@@ -706,6 +804,22 @@ fn parse_incoming(line: &str) -> Result<JsonRpcRequest, Box<JsonRpcResponse>> {
     })
 }
 
+/// Best-effort rendering of a `catch_unwind` payload.
+///
+/// `panic!("msg")` yields a `&'static str`, `panic!("{x}")` a `String`; a
+/// payload of any other type carries no message we can read, so the client is
+/// told that rather than being handed an empty error.
+#[cfg(feature = "native")]
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "panic payload is not a string".to_string()
+    }
+}
+
 fn write_response<W: std::io::Write>(
     stdout: &Arc<Mutex<W>>,
     resp: &JsonRpcResponse,
@@ -767,6 +881,12 @@ mod tests {
             .serve_stream(std::io::Cursor::new(input.to_vec()), Arc::clone(&out))
             .expect("serve_stream must not propagate an error out of the session");
 
+        parse_written_lines(&out)
+    }
+
+    /// Parse whatever a session wrote to `out` into one JSON value per line.
+    #[cfg(feature = "native")]
+    fn parse_written_lines(out: &Arc<Mutex<Vec<u8>>>) -> Vec<serde_json::Value> {
         let guard = out.lock().expect("output mutex not poisoned");
         String::from_utf8_lossy(&guard)
             .lines()
@@ -849,6 +969,120 @@ mod tests {
                 responses.len()
             );
         }
+    }
+
+    /// A reader that replays `bytes` and then fails, so the read loop leaves
+    /// through an `io::Error` instead of through EOF.
+    #[cfg(feature = "native")]
+    struct FailsAfterInput {
+        bytes: Vec<u8>,
+        pos: usize,
+    }
+
+    #[cfg(feature = "native")]
+    impl std::io::Read for FailsAfterInput {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.pos == self.bytes.len() {
+                return Err(std::io::Error::other("simulated stdin failure"));
+            }
+            let n = std::cmp::min(buf.len(), self.bytes.len() - self.pos);
+            buf[..n].copy_from_slice(&self.bytes[self.pos..self.pos + n]);
+            self.pos += n;
+            Ok(n)
+        }
+    }
+
+    /// A writer that stalls for [`SLOW_WRITE`] on the line carrying `"id":2`,
+    /// and records every completed write in a sink the test can read WITHOUT
+    /// waiting on the server's own stdout mutex.
+    ///
+    /// The separate sink is the whole point: the worker holds the stdout mutex
+    /// for the duration of its stalled write, so a test that inspected the
+    /// stdout buffer directly would block until the worker finished and would
+    /// then see the very response it was supposed to prove missing — green on
+    /// the defect.
+    #[cfg(feature = "native")]
+    struct StallsOnId2 {
+        sink: Arc<Mutex<Vec<u8>>>,
+    }
+
+    #[cfg(feature = "native")]
+    const SLOW_WRITE: std::time::Duration = std::time::Duration::from_secs(2);
+
+    #[cfg(feature = "native")]
+    impl std::io::Write for StallsOnId2 {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            if String::from_utf8_lossy(data).contains(r#""id":2"#) {
+                std::thread::sleep(SLOW_WRITE);
+            }
+            self.sink
+                .lock()
+                .expect("sink mutex not poisoned")
+                .extend_from_slice(data);
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// FALSIFY-MCP-DRAIN-001 (#2608): EOF is not the only exit from the read
+    /// loop, and the other exits owe the client the same answers.
+    ///
+    /// `serve_stream` drained on EOF only. Every `?` in the loop — a stdin
+    /// read error, a stdout write error — returned straight past the drain and
+    /// the process exited on top of workers that still owed responses. That is
+    /// the identical protocol violation #2608 measured at EOF: a JSON-RPC
+    /// request answered by neither a result nor an error.
+    ///
+    /// Determinism, not scheduling luck: the worker's own write stalls for two
+    /// seconds. Without the drain `serve_stream` returns in microseconds with
+    /// the id=2 bytes still unwritten, so the assertion below is RED by a
+    /// two-second margin. (An ordering variant of the EOF falsifier was
+    /// deleted from `tests/falsify_mcp_stdio_protocol.rs` for exactly the
+    /// opposite reason: it stayed green on the defect.)
+    ///
+    /// No wall-clock value is ASSERTED here — the stall is the fixture, and
+    /// the assertions are all about which bytes exist.
+    #[cfg(feature = "native")]
+    #[test]
+    fn serve_stream_drains_in_flight_workers_when_the_read_loop_aborts() {
+        let input = format!("{INIT_LINE}\n{CALL_LINE}\n");
+        let reader = std::io::BufReader::new(FailsAfterInput {
+            bytes: input.into_bytes(),
+            pos: 0,
+        });
+        let sink = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let out = Arc::new(Mutex::new(StallsOnId2 {
+            sink: Arc::clone(&sink),
+        }));
+        let mut server = AprMcpServer::new();
+
+        let outcome = server.serve_stream(reader, Arc::clone(&out));
+
+        assert!(
+            outcome.is_err(),
+            "the stdin failure must still be reported after the drain"
+        );
+        let written = {
+            let guard = sink.lock().expect("sink mutex not poisoned");
+            String::from_utf8_lossy(&guard).into_owned()
+        };
+        assert!(
+            written.contains(r#""id":2"#),
+            "the in-flight tools/call was answered by NEITHER a result NOR an error \
+             when the read loop aborted; stdout was: {written:?}"
+        );
+        assert!(
+            written.contains("aprender-mcp"),
+            "the answer must be the real apr.version payload, not an empty envelope: {written:?}"
+        );
+        assert!(
+            server.workers.is_empty(),
+            "{} worker(s) were abandoned instead of joined",
+            server.workers.len()
+        );
     }
 
     /// FALSIFY-MCP-011: an invalid UTF-8 byte is a malformed MESSAGE. It must
@@ -1210,6 +1444,189 @@ mod tests {
         );
         assert_eq!(resp.result, Some(serde_json::json!({})));
         assert_eq!(resp.id, Some(serde_json::json!(1)), "id echoed");
+    }
+
+    /// FALSIFY-MCP-DRAIN-002 (#2608): a tool that panics must still answer.
+    ///
+    /// The worker built a response only on the success path, and
+    /// `join_workers` swallows the panic, so a panicking tool left its request
+    /// answered by neither a result nor an error — the client waits forever
+    /// while the server exits 0. The panic message reaches stderr and is
+    /// expected noise in this test's output.
+    #[cfg(feature = "native")]
+    #[test]
+    fn worker_response_turns_a_tool_panic_into_32603_for_the_same_id() {
+        let resp = AprMcpServer::worker_response(&serde_json::json!(7), || {
+            panic!("tool exploded while dispatching")
+        });
+
+        assert_eq!(
+            resp.id,
+            Some(serde_json::json!(7)),
+            "the id the client must correlate on has to survive the panic: {resp:?}"
+        );
+        assert!(
+            resp.result.is_none(),
+            "a panic must not also produce a result: {resp:?}"
+        );
+        let err = resp
+            .error
+            .expect("a panicking tool must produce an ERROR, never silence");
+        assert_eq!(
+            err.code, -32603,
+            "a tool panic is an Internal error: {err:?}"
+        );
+        assert!(
+            err.message.contains("panicked"),
+            "the -32603 must name the cause: {err:?}"
+        );
+        assert!(
+            err.message.contains("tool exploded while dispatching"),
+            "the panic message itself must reach the client: {err:?}"
+        );
+    }
+
+    /// The other direction of FALSIFY-MCP-DRAIN-002: the panic guard must not
+    /// turn ordinary results into errors. Without this, "always answer
+    /// -32603" would satisfy the test above.
+    #[cfg(feature = "native")]
+    #[test]
+    fn worker_response_passes_a_normal_tool_result_through_unchanged() {
+        let resp = AprMcpServer::worker_response(&serde_json::json!("abc"), || {
+            ToolCallResult::success("payload".to_string())
+        });
+
+        assert_eq!(resp.id, Some(serde_json::json!("abc")), "id echoed");
+        assert!(resp.error.is_none(), "no error on the happy path: {resp:?}");
+        let result = resp.result.expect("result present");
+        assert_eq!(
+            result["content"][0]["text"], "payload",
+            "the tool's own payload must reach the client verbatim: {result:?}"
+        );
+    }
+
+    /// A tool dispatch that panics. Every registered tool is a subprocess
+    /// wrapper or a pure metadata read, so none can be made to panic from a
+    /// `tools/call` argument; this stands in for the tool that does.
+    ///
+    /// The marker string is unique so the assertion below cannot be satisfied
+    /// by some other error the server might produce for id=2.
+    #[cfg(feature = "native")]
+    fn panicking_dispatch(
+        _args: &serde_json::Value,
+        _cancel_rx: &mpsc::Receiver<()>,
+        _sink: Option<&NotificationSink>,
+        _progress_token: Option<serde_json::Value>,
+    ) -> ToolCallResult {
+        panic!("PANIC-PROBE-2608 exploded inside tool dispatch")
+    }
+
+    /// FALSIFY-MCP-DRAIN-005 (#2608): the panic guard must be REACHED.
+    ///
+    /// [`AprMcpServer::worker_response`] can be perfectly correct while the
+    /// server never calls it — that is the whole defect class this PR is
+    /// about, and the two `worker_response_*` tests above exercise the helper
+    /// directly, so both stay green when the call site is deleted. This test
+    /// never mentions `worker_response`: it feeds a `tools/call` into
+    /// [`AprMcpServer::serve_stream`] and reads what came out of the client's
+    /// end of stdout, the same surface #2608 measured. The route under test is
+    /// `serve_stream` → `read_loop` → `route_stdio_message` →
+    /// `spawn_tools_call_worker` → the worker thread.
+    ///
+    /// Mutation (the pre-#2608 shape — dispatch called BESIDE the guard rather
+    /// than inside it):
+    ///
+    /// ```ignore
+    /// let result = dispatch(&params, &cancel_rx, sink_ref, progress_token);
+    /// let resp = JsonRpcResponse::success(Some(id_for_worker.clone()), ...);
+    /// ```
+    ///
+    /// The worker then unwinds, `join_workers` swallows the panic exactly as
+    /// documented, and nothing is ever written for id=2 — this test fails on
+    /// "answered by NEITHER a result NOR an error", while
+    /// `worker_response_turns_a_tool_panic_into_32603_for_the_same_id` stays
+    /// green. That asymmetry is what makes this a wiring guard and not a
+    /// restatement of the helper.
+    ///
+    /// The worker's panic message reaches stderr; it is expected noise.
+    #[cfg(feature = "native")]
+    #[test]
+    fn a_panicking_tool_is_answered_through_the_real_stdio_path() {
+        let out = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let mut server = AprMcpServer::new();
+        server.worker_dispatch = panicking_dispatch;
+
+        let outcome = server.serve_stream(
+            std::io::Cursor::new(format!("{INIT_LINE}\n{CALL_LINE}\n").into_bytes()),
+            Arc::clone(&out),
+        );
+
+        assert!(
+            outcome.is_ok(),
+            "a panicking TOOL must not take the SESSION down: {outcome:?}"
+        );
+        let responses = parse_written_lines(&out);
+        let call = find_id(&responses, 2).unwrap_or_else(|| {
+            panic!(
+                "the tools/call whose tool panicked was answered by NEITHER a result NOR an \
+                 error — the worker never routed through the panic guard; got {} response(s): \
+                 {responses:?}",
+                responses.len()
+            )
+        });
+        assert!(
+            call.get("result").is_none(),
+            "a panic must not also produce a result: {call:?}"
+        );
+        assert_eq!(
+            call["error"]["code"],
+            serde_json::json!(-32603),
+            "a tool panic is an Internal error for the SAME id: {call:?}"
+        );
+        let message = call["error"]["message"]
+            .as_str()
+            .unwrap_or_else(|| panic!("error message must be a string: {call:?}"));
+        assert!(
+            message.contains("PANIC-PROBE-2608 exploded inside tool dispatch"),
+            "the panic's own message must reach the client, not a generic envelope: {message:?}"
+        );
+        assert!(
+            find_id(&responses, 1).is_some(),
+            "initialize must still be answered: {responses:?}"
+        );
+        assert!(
+            server.workers.is_empty(),
+            "{} worker(s) were abandoned instead of joined",
+            server.workers.len()
+        );
+    }
+
+    /// The seam FALSIFY-MCP-DRAIN-005 uses must not be able to hide a stubbed
+    /// production default: a server nobody touched dispatches through the real
+    /// inventory-backed tool dispatcher.
+    #[cfg(feature = "native")]
+    #[test]
+    fn default_worker_dispatch_is_the_real_tool_dispatcher() {
+        let server = AprMcpServer::new();
+        let (_cancel_tx, cancel_rx) = mpsc::channel();
+
+        let result = (server.worker_dispatch)(
+            &serde_json::json!({ "name": "apr.version", "arguments": {} }),
+            &cancel_rx,
+            None,
+            None,
+        );
+
+        assert!(
+            result.is_error.is_none(),
+            "the real dispatcher answers apr.version: {result:?}"
+        );
+        let payload: serde_json::Value = serde_json::from_str(&result.content[0].text)
+            .unwrap_or_else(|e| panic!("apr.version payload is JSON: {e}"));
+        assert_eq!(
+            payload["server"], "aprender-mcp",
+            "the default must be the real dispatcher, not a stub: {payload:?}"
+        );
     }
 
     /// FALSIFY-MCP-012: valid JSON that is not a valid Request object is

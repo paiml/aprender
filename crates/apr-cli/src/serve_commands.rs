@@ -69,9 +69,12 @@ pub enum ServeCommands {
         /// Enable inline Roofline profiling (adds X-Profile headers)
         #[arg(long)]
         profile: bool,
-        /// PMAT-332: Compute backend override (cuda, cpu, wgpu)
-        #[arg(long, value_name = "BACKEND")]
-        backend: Option<String>,
+        // PMAT-332 / #2583: shared `--backend` declaration (see `BackendArg`).
+        // This site used to declare `#[arg(long, value_name = "BACKEND")]` with no
+        // `value_parser`, so `--backend nonsense` parsed and the server silently
+        // started on the default backend.
+        #[command(flatten)]
+        backend: BackendArg,
         /// PMAT-485: OTLP endpoint for distributed tracing export (Jaeger/Tempo)
         ///
         /// When set, inference spans (W3C Trace Context) are exported via OTLP.

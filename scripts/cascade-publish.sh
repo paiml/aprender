@@ -159,13 +159,86 @@ version_live() {
 # A crate with no `upstream =` line (the lib-only signpost facade, which has no
 # dependencies at all) is ready by construction — that independence is stated in
 # its manifest and is what makes it publishable at any point in the cascade.
+# WHICH FACADES MUST HAVE AN UPSTREAM (aprender#2628).
+#
+# The previous implementation read the requirement with a line-shaped `sed` and
+# treated "I could not parse one" as "there is none to order against" -- it
+# returned READY. MEASURED: `cargo` accepts the inline and the multi-line
+# dependency table as IDENTICAL (`cargo metadata` returns the same
+# `('aprender-contracts','upstream','^0.63.0')` for both), while the sed parses
+# only the inline spelling. So rewriting
+#
+#   upstream = { path = "...", version = "0.63.0", package = "aprender-contracts" }
+# as
+#   [dependencies.upstream]
+#   path = "..."
+#   version = "0.63.0"
+#   package = "aprender-contracts"
+#
+# -- a semantically null edit that `cargo add` itself can produce and that no
+# reviewer would flag -- silently DISARMED this gate, and the cascade would
+# upload a facade before its upstream: a crate nobody can compile, on an
+# append-only registry.
+#
+# Two changes close it, and the second matters more than the first:
+#   1. Resolve the requirement with `cargo metadata`, the authority on what a
+#      manifest MEANS, instead of a regex over one of its spellings.
+#   2. Assert POSITIVELY. Absence of evidence must not read as evidence of
+#      absence: a facade named here that resolves to no upstream is a FAILURE,
+#      not a pass. `provable-contracts-cli` is deliberately absent from the list
+#      -- it is the lib-only signpost facade with no [dependencies] at all, which
+#      check_facade_compat.sh row R3 enforces from the other direction.
+FACADE_EXPECTS_UPSTREAM="provable-contracts provable-contracts-macros"
+
+# Resolve a facade's upstream (name and required version) from cargo itself.
+# Echoes "<name> <version>" or nothing. The dependency is identified by its
+# RENAME (`upstream`), which is how the manifest refers to it, so this does not
+# depend on the dependency's spelling or position in the file.
+facade_upstream_of() {
+  local manifest=$1 pkg=$2
+  cargo metadata --format-version 1 --no-deps --manifest-path "$manifest" 2>/dev/null \
+    | PKG="$pkg" python3 -c '
+import json, os, sys
+try:
+    meta = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+want = os.environ["PKG"]
+for p in meta.get("packages", []):
+    if p.get("name") != want:
+        continue
+    for d in p.get("dependencies", []):
+        if d.get("rename") == "upstream":
+            req = (d.get("req") or "").lstrip("^~=v ").strip()
+            if d.get("name") and req:
+                print(d["name"], req)
+            sys.exit(0)
+' 2>/dev/null
+}
+
 facade_upstream_ready() {
-  local crate=$1 manifest=${MANIFEST[$1]:-} up_name up_ver
+  local crate=$1 manifest=${MANIFEST[$1]:-} resolved up_name up_ver expected=0
   [ -n "$manifest" ] || return 0
-  up_name=$(sed -n 's/^upstream *=.*package *= *"\([^"]*\)".*/\1/p' "$manifest" 2>/dev/null | head -1)
-  up_ver=$(sed -n 's/^upstream *=.*version *= *"\([^"]*\)".*/\1/p' "$manifest" 2>/dev/null | head -1)
-  # No upstream requirement -> nothing to order against.
-  [ -n "$up_name" ] && [ -n "$up_ver" ] || return 0
+
+  case " $FACADE_EXPECTS_UPSTREAM " in *" $crate "*) expected=1 ;; esac
+
+  resolved=$(facade_upstream_of "$manifest" "$crate")
+  up_name=${resolved%% *}
+  up_ver=${resolved##* }
+
+  if [ -z "$resolved" ] || [ -z "$up_name" ] || [ -z "$up_ver" ]; then
+    if [ "$expected" -eq 1 ]; then
+      # The gate could not answer the question it exists to answer. Refuse.
+      echo "ORDER-FAIL ($crate is declared to require an upstream, but cargo"
+      echo "            resolved none from $manifest -- refusing to publish"
+      echo "            rather than assuming there is nothing to order against;"
+      echo "            see aprender#2628)"
+      return 1
+    fi
+    # Not expected to have one (the lib-only signpost facade): ready by design.
+    return 0
+  fi
+
   if version_live "$up_name" "$up_ver"; then
     return 0
   fi

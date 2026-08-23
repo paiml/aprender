@@ -178,8 +178,8 @@ which = "7"
 # Stack v1.2 / codeparrot Python corpora ship as parquet, not JSONL; this
 # enables `apr tokenize encode-corpus --corpus <path>.parquet` end-to-end
 # without a Python shim (per `feedback_stack_tool_extension_not_cli_shim.md`).
-parquet = { version = "57", default-features = false, features = ["arrow", "snap", "zstd"] }
-arrow-array = "57"
+parquet = { version = "59", default-features = false, features = ["arrow", "snap", "zstd"] }
+arrow-array = "59"
 
 # HTTP client for downloads
 ureq = "2.10"

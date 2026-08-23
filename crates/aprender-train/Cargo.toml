@@ -121,7 +121,7 @@ jsonschema = "0.28"  # JSON Schema validation for declarative config (AI-05)
 validator = { version = "0.20", features = ["derive"] }  # Declarative struct validation (AI-05)
 schemars = "0.8"  # JSON Schema generation from Rust structs (AI-05)
 fs4 = "0.13"  # Cross-platform file locking for VRAM ledger (GPU-SHARE-001)
-arrow = { version = "57", default-features = false, optional = true }  # Arrow array types for alimentar integration
+arrow = { version = "59", default-features = false, optional = true }  # Arrow array types for alimentar integration
 nvml-wrapper = { version = "0.10", optional = true }  # NVIDIA NVML bindings for GPU monitoring
 hostname = "0.4.2"
 ctrlc = "3.4"  # Signal handling for graceful shutdown (R-008)
@@ -143,8 +143,8 @@ proptest = "1.4"
 approx = "0.5"
 tempfile = "3.8"
 criterion = { workspace = true }
-arrow = { version = "57", default-features = false }  # For MNIST example array access
-parquet = { version = "57", default-features = false }  # For ALB-007 Parquet writing in tests
+arrow = { version = "59", default-features = false }  # For MNIST example array access
+parquet = { version = "59", default-features = false }  # For ALB-007 Parquet writing in tests
 insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing for PMAT QA
 dirs = "5.0"  # Cache directory detection for examples
 jugar-probar = { workspace = true }  # TUI snapshot testing (ENT-140)

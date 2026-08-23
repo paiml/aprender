@@ -1,0 +1,256 @@
+metadata:
+  kind: kernel
+  version: 1.1.0
+  created: '2026-08-22'
+  author: PAIML Engineering
+  description: >
+    apr-code no-argument start-up policy and inference-child lifetime (issue
+    #2607, measured on the PUBLISHED apr 0.63.0 during the pre-release
+    multi-platform dogfood sweep). Two correctness surfaces, both about a run
+    that was never asked to do anything:
+    (1) START-UP POLICY — `apr code` with no arguments at all and a stdin that
+    is not a terminal cannot hold a session: the REPL's first read_line returns
+    EOF. On the sweep host it nevertheless scanned the filesystem, picked the
+    largest local GGUF (a 30B MoE) and launched an `apr serve` child for it. A
+    consequential action chosen by looking at the disk is a guess, not an
+    instruction; a bare invocation must print help and spawn nothing.
+    (2) CHILD LIFETIME — the non-interactive (`-p`) path ends in
+    std::process::exit, which runs NO destructors, so every owner of the
+    inference driver must be released first. `drop(driver)` alone did not do
+    that: the driver is an Arc and register_task_tool stores a clone of it in
+    the tool registry, so the strong count never reached zero,
+    AprServeDriver::drop never ran, and the `apr serve` child was orphaned
+    holding the whole model in RSS.
+    v1.1.0 (adversarial review of the first fix, both findings MEASURED):
+    (a) "no interactive session is possible" is not the same as "stdin is not
+    a terminal". `echo "hi" | apr code` has always driven the REPL — run_repl
+    reads stdin line by line and treats EOF as /exit — so keying the refusal
+    on ¬stdin_is_terminal alone narrowed a working invocation into an exit-2
+    usage error. The predicate now also requires that stdin cannot deliver a
+    byte: a character device (/dev/null) or a closed fd refuses; a FIFO or a
+    redirected file carrying data runs.
+    (b) the child-lifetime falsifier covered only the BARE call site, where
+    the correct behaviour is that nothing is spawned at all. The call site
+    that actually spawns — `apr code -p "..."` — had unit coverage only. It
+    now has a live falsifier, and building it surfaced a third fact: on Linux
+    PR_SET_PDEATHSIG (aprender#1712) reaps the child on parent death, so with
+    a SIGTERM-obeying fixture the pre-fix `drop(driver)` measured GREEN. The
+    fixture ignores SIGTERM — which PR_SET_PDEATHSIG sends once and does not
+    escalate, while AprServeDriver::drop escalates to SIGKILL after 2s — so
+    the assertion observes what release_driver actually changed.
+  references:
+  - 'crates/aprender-orchestrate/src/agent/code.rs — CodeInvocation::wants_help(), release_driver(), cmd_code()'
+  - 'crates/apr-cli/src/dispatch.rs — Commands::Code arm, print_code_help_and_exit()'
+  - 'crates/aprender-orchestrate/src/agent/driver/apr_serve.rs — AprServeDriver::launch()/drop()'
+  - 'crates/aprender-orchestrate/src/agent/task_tool.rs — register_task_tool() clones the driver Arc into the registry'
+  - 'https://github.com/paiml/aprender/issues/2607'
+  related_contracts:
+  - contracts/apr-code-parity-v1.yaml
+  - contracts/apr-code-toolcall-retention-v1.yaml
+status: ACTIVE
+
+equations:
+  no_arg_startup_policy:
+    formula: wants_help(inv) = ¬has_prompt ∧ ¬print ∧ ¬has_model ∧ ¬has_manifest ∧ ¬has_resume ∧ ¬stdin_is_terminal ∧ ¬stdin_has_input
+    domain: the parsed `apr code` flag set × whether stdin is a terminal × whether stdin can still deliver a byte
+    codomain: '{ShowHelp, Run}'
+    invariants:
+    - A bare invocation whose stdin can never deliver a byte prints help and exits non-zero
+    - No model is discovered and no `apr serve` child is spawned on that path
+    - Any named argument (-p, a prompt, --model, --manifest, --resume) still runs
+    - An interactive terminal always runs, with or without arguments
+    - A pipe or redirected file carrying bytes still runs — it is an instruction
+    - The peek is non-consuming, so the REPL/-p read sees the same bytes
+    preconditions:
+    - the CLI parsed successfully (clap already rejects unknown flags)
+    postconditions:
+    - wants_help ⟹ zero child processes were created by this run
+    - ¬wants_help ⟹ start-up proceeds exactly as before the fix
+    - stdin_has_input ⟹ every byte remains queued for the first read
+    lean_theorem: Theorems.Apr_Code_No_Arg_Startup_Policy
+  serve_child_reaped_before_exit:
+    formula: strong_count(driver) = 0 before std::process::exit ⟹ AprServeDriver::drop runs ⟹ child killed
+    domain: the non-interactive (-p) path, which owns an Arc<dyn LlmDriver> and a ToolRegistry holding a clone
+    codomain: the set of live child processes after the parent exits
+    invariants:
+    - The tool registry is released BEFORE the last driver handle
+    - Dropping only the local Arc leaves the strong count at 1 and reaps nothing
+    - release_driver takes both by value, so the ordering is a compile-time obligation
+    preconditions:
+    - register_task_tool has cloned the driver Arc into the registry
+    postconditions:
+    - the driver's Drop has run when std::process::exit is reached
+    - no `apr serve` process outlives the `apr code` parent
+    lean_theorem: Theorems.Apr_Code_Serve_Child_Reaped_Before_Exit
+
+proof_obligations:
+- type: invariant
+  property: A bare `apr code` on a non-terminal stdin spawns no inference server
+  formal: wants_help(inv) ⟹ |children(run)| = 0
+  applies_to: no_arg_startup_policy
+- type: invariant
+  property: Every named argument still runs with stdin closed
+  formal: (has_prompt ∨ print ∨ has_model ∨ has_manifest ∨ has_resume) ⟹ ¬wants_help(inv)
+  applies_to: no_arg_startup_policy
+- type: invariant
+  property: An interactive terminal is never refused
+  formal: stdin_is_terminal ⟹ ¬wants_help(inv)
+  applies_to: no_arg_startup_policy
+- type: invariant
+  property: A pipe or redirected file carrying bytes is an instruction and still runs
+  formal: stdin_has_input ⟹ ¬wants_help(inv)
+  applies_to: no_arg_startup_policy
+- type: invariant
+  property: The stdin peek does not consume the bytes it reports
+  formal: reader_has_input(r) ⟹ read(r) yields the same byte sequence as before the peek
+  applies_to: no_arg_startup_policy
+- type: equivalence
+  property: Releasing the registry first makes the last driver handle actually the last
+  formal: release_driver(tools, driver) ⟹ strong_count → 0 ⟹ Drop runs
+  applies_to: serve_child_reaped_before_exit
+- type: invariant
+  property: The spawning call site leaves no live child, observed on the real binary
+  formal: run(`apr code -p P`) terminates ⟹ |live_children(run)| = 0
+  applies_to: serve_child_reaped_before_exit
+
+kernel_structure:
+  phases:
+  - name: classify
+    description: >
+      CodeInvocation::from_args reads the flag set, stdin's terminal-ness, and —
+      only when every other field already says "would refuse" — whether stdin can
+      still deliver a byte (stat /dev/stdin, then a non-consuming fill_buf peek)
+    invariant: >
+      the decision is made before any chdir, settings read, model scan or spawn, and
+      the peek is reached only for stdin that is not a character device, which is what
+      keeps it non-blocking under every test harness
+  - name: refuse
+    description: wants_help ⟹ apr-cli renders clap's real `code` help to stderr and exits 2; cmd_code bails for library embedders
+    invariant: no filesystem model scan and no subprocess on this path
+  - name: reap
+    description: release_driver(tools, driver) consumes the registry, then the last driver handle, before std::process::exit
+    invariant: AprServeDriver::drop has run before the process image goes away
+
+simd_dispatch:
+  no_arg_startup_policy:
+    scalar: batuta::agent::code::CodeInvocation::wants_help
+  serve_child_reaped_before_exit:
+    scalar: batuta::agent::code::release_driver
+
+enforcement:
+  no_arg_spawns_nothing:
+    description: A bare `apr code` with stdin closed must not spawn an inference server
+    check: contract_tests::FALSIFY-CODE-NOARG-001
+    severity: ERROR
+  named_args_still_run:
+    description: The refusal must not widen to invocations that carry an explicit instruction
+    check: contract_tests::FALSIFY-CODE-NOARG-003
+    severity: ERROR
+  serve_child_reaped:
+    description: The `apr serve` child must be reaped before std::process::exit skips destructors
+    check: contract_tests::FALSIFY-CODE-NOARG-004
+    severity: ERROR
+  spawning_call_site_leaves_no_child:
+    description: The call site that legitimately spawns a server must leave none behind, measured live
+    check: contract_tests::FALSIFY-CODE-NOARG-005
+    severity: ERROR
+  piped_prompt_still_runs:
+    description: A pipe carrying a prompt must not be refused as a bare invocation
+    check: contract_tests::FALSIFY-CODE-NOARG-006
+    severity: ERROR
+
+falsification_tests:
+- id: FALSIFY-CODE-NOARG-001
+  rule: A bare `apr code` with stdin closed spawns no `apr serve` child
+  prediction: running the real binary with no args and stdin=/dev/null leaves no recorded child pid
+  test: 'cargo test -p apr-cli --test cli_commands falsify_2607_bare_apr_code_with_closed_stdin_spawns_no_serve_child'
+  red_state: making wants_help() return false restores auto-discovery; $APR_BIN records a pid and the test FAILS
+  green_state: help is printed, exit code 2, and the pid file never appears (PASS)
+  if_fails: a no-argument run picks a model off the disk and launches an inference server for it
+- id: FALSIFY-CODE-NOARG-002
+  rule: cmd_code itself refuses the bare non-interactive shape
+  prediction: the library entry point returns Err before model discovery, for any embedder
+  test: 'cargo test -p aprender-orchestrate --lib falsify_2607_cmd_code_refuses_bare_non_interactive_invocation'
+  red_state: without the guard cmd_code returns no error and proceeds to discover_and_set_model, FAILS
+  green_state: Err naming "stdin is not a terminal" (PASS)
+  if_fails: the CLI guard is the only guard, and any other caller keeps the defect
+- id: FALSIFY-CODE-NOARG-003
+  rule: Named arguments still run on a closed stdin
+  prediction: -p, a positional prompt, --model, --manifest and --resume all keep running
+  test: 'cargo test -p aprender-orchestrate --lib falsify_2607_named_arguments_still_run_on_closed_stdin'
+  red_state: making wants_help() return true refuses `apr code -p "..." < /dev/null`, FAILS
+  green_state: every named-argument shape returns Run; an interactive terminal returns Run (PASS)
+  if_fails: the fix breaks the documented non-interactive form and every CI use of --model
+- id: FALSIFY-CODE-NOARG-004
+  rule: Releasing only the driver handle does not reap the serve child; release_driver does
+  prediction: with a Drop-observing driver, drop(driver) leaves Drop unrun; release_driver runs it
+  test: 'cargo test -p aprender-orchestrate --lib falsify_2607_dropping_driver_handle_alone_leaves_serve_child_unreaped'
+  red_state: forgetting the registry (std::mem::forget(tools)) leaves the strong count at 1, Drop never runs, FAILS
+  green_state: registry released first, strong count reaches 0, Drop runs before exit (PASS)
+  if_fails: '`apr code -p` exits leaving an orphaned `apr serve` holding the whole model in RSS'
+- id: FALSIFY-CODE-NOARG-005
+  rule: The call site that DOES spawn a server leaves no live child, measured on the real binary
+  prediction: >
+    `apr code -p hi` discovers a model, launches the backend through $APR_BIN, answers the
+    turn and exits; the recorded backend pid is gone afterwards. The fixture answers the
+    readiness connect (so the run reaches release_driver + process::exit rather than
+    bailing in launch) and ignores SIGTERM (so PR_SET_PDEATHSIG, which sends one SIGTERM
+    and does not escalate, cannot reap it on the parent's behalf and mask the defect).
+  test: 'cargo test -p apr-cli --test cli_commands falsify_2607_non_interactive_p_run_leaves_no_serve_child'
+  red_state: >
+    reverting release_driver(tools, driver) to the pre-fix drop(driver) leaves the registry
+    holding the second Arc, so Drop never runs and the SIGTERM-deaf child survives, FAILS
+  green_state: release_driver drops the registry first, Drop escalates to SIGKILL, child gone (PASS)
+  if_fails: the orphan is fixed only for the invocation that never spawns anything
+- id: FALSIFY-CODE-NOARG-006
+  rule: A pipe carrying a prompt is an instruction, not a bare invocation
+  prediction: >
+    `printf 'hi\n' | apr code` with an empty HOME and cwd is NOT refused — it reaches model
+    resolution and stops at NO_MODEL (5), never at the usage-error code 2
+  test: 'cargo test -p apr-cli --test cli_commands falsify_2607_piped_prompt_is_not_refused_as_a_bare_invocation'
+  red_state: dropping the ¬stdin_has_input clause refuses the pipe with exit 2, FAILS
+  green_state: exit 5 with no refusal message (PASS)
+  if_fails: the #2607 fix silently narrows a working non-interactive form
+- id: FALSIFY-CODE-NOARG-007
+  rule: The stdin peek reports input without consuming it, and /dev/null is not a source
+  prediction: reader_has_input is true for a reader with bytes and leaves every byte readable; /dev/null's file type is not a carrier
+  test: 'cargo test -p aprender-orchestrate --lib falsify_2607_reader_has_input_reports_and_preserves_bytes falsify_2607_dev_null_is_not_a_carrier_but_a_file_is falsify_2607_piped_stdin_still_drives_the_repl'
+  red_state: making the peek constant-true refuses nothing and re-opens #2607; consuming the peek makes a piped prompt run an empty turn, FAILS
+  green_state: peek is non-consuming, /dev/null refuses, a pipe with bytes runs (PASS)
+  if_fails: either #2607 returns, or a piped prompt loses its first line
+
+kani_harnesses:
+- id: KANI-CODE-NOARG-001
+  obligation: A bare invocation whose stdin can never deliver a byte wants help
+  property: ¬(p ∨ q ∨ m ∨ f ∨ r ∨ t ∨ i) ⟺ wants_help
+  bound: 7
+  strategy: exhaustive
+  harness: verify_apr_code_no_arg_startup_policy
+
+qa_gate:
+  id: F-CODE-NOARG-001
+  name: apr-code No-Argument Start-Up and Serve-Child Lifetime
+  description: A run nobody asked for must take no action and leave no process behind (#2607)
+  checks:
+  - no_arg_spawns_nothing
+  - named_args_still_run
+  - serve_child_reaped
+  - spawning_call_site_leaves_no_child
+  - piped_prompt_still_runs
+  pass_criteria: All 7 falsification tests PASS (GREEN) on the fixed start-up path
+  falsification: >
+    Every mutation below was built, proved present in the artifact under test with
+    `strings -a <bin> | grep -c <marker>`, and only then run.
+    (C) release_driver(tools, driver) -> the pre-fix drop(driver), PR_SET_PDEATHSIG left
+    intact: FALSIFY-CODE-NOARG-005 RED, orphan survived.
+    (C+D) same, plus PR_SET_PDEATHSIG disabled: RED.
+    (D alone) PR_SET_PDEATHSIG disabled with release_driver in place: GREEN — the fix
+    alone reaps, which is what makes it load-bearing on hosts with no PDEATHSIG.
+    (E) drop the ¬stdin_has_input clause: FALSIFY-CODE-NOARG-006 and
+    falsify_2607_piped_stdin_still_drives_the_repl RED.
+    (F) make the stdin peek constant-true: FALSIFY-CODE-NOARG-001 RED, the bare run
+    spawned a backend again.
+    Recorded non-result, kept because it is the reason the fixture ignores SIGTERM:
+    mutation (C) with a SIGTERM-OBEYING fixture measured GREEN — PR_SET_PDEATHSIG reaps
+    the child on Linux regardless of how the parent exited, so that assertion could not
+    fail for the class it exists to prevent.

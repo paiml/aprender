@@ -161,7 +161,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             trace,
             trace_level,
             profile,
-            backend,
+            backend: BackendArg { backend },
             otlp_endpoint,
             context_length,
             no_fp8_cache,

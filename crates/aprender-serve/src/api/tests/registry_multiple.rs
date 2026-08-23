@@ -36,17 +36,14 @@ async fn test_registry_multiple_failures_no_state_leak() {
     let response2 = app.clone().oneshot(request2).await.expect("test value should be present");
     let status2 = response2.status();
 
-    // aprender#2375(4): each of these admitted "it worked" alongside two
-    // failures, so the pair could pass with the two requests behaving
-    // differently — the very state leak the test names. This fixture has no
-    // model, so both requests hit the same server-side condition: 503.
-    assert_eq!(
-        status1,
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
-    // The point of the test: the second request is answered identically. State
-    // left behind by the first would show up here as a different status.
+    // Both should fail gracefully with the same behaviour (no state
+    // corruption). aprender#2609: each status is pinned at 503 rather than
+    // admitted from a disjunction that excluded nothing.
+    crate::api::test_helpers::assert_no_model_status(status1);
+    crate::api::test_helpers::assert_no_model_status(status2);
+    // aprender#2375(4): the equality is UNCONDITIONAL. Guarding it on
+    // "both non-OK" let the pair pass with the two requests behaving
+    // differently — the very state leak this test names.
     assert_eq!(
         status2, status1,
         "consecutive failures must be identical; a difference is leaked state"
@@ -91,14 +88,13 @@ async fn test_stream_resource_boundedness() {
     );
 
     let response = result.expect("test value should be present").expect("test value should be present");
-    // aprender#2375(4): the boundedness claim is carried by the timeout above.
-    // The status disjunction added nothing — it admitted every outcome. This
-    // fixture has no model, so the answer is the server-side condition: 503.
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
+    // Must return a response, not hang
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Test that stream handler doesn't consume unbounded memory

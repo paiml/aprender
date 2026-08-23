@@ -1187,3 +1187,233 @@ mod tests {
         assert!(verifying.verify(message, &recovered).is_ok());
     }
 }
+
+// ============================================================================
+// #2590 — adversarial cases for the signing surface
+//
+// Issue #2590: "a `sign` that verifies against its own verifier proves nothing
+// about interoperability or about rejecting a forged signature. A verifier that
+// accepts everything passes the positive test perfectly."
+//
+// The suite above verifies one wrong message and one wrong key. That is one
+// input, i.e. an anecdote. These sweep the whole signature and the whole
+// `ModelSignature` envelope, and pin the one property `verify_model` genuinely
+// does NOT provide.
+// ============================================================================
+
+#[cfg(test)]
+mod adversarial_2590 {
+    use super::*;
+
+    fn fixture() -> (SigningKey, VerifyingKey, Vec<u8>, Signature) {
+        let key = SigningKey::generate();
+        let verifying = key.verifying_key();
+        let message = b"tensor bytes that must not be swapped".to_vec();
+        let signature = key.sign(&message);
+        (key, verifying, message, signature)
+    }
+
+    /// EVERY single-bit flip in the 64-byte signature must be rejected.
+    ///
+    /// This is the check that separates a real verifier from one that returns
+    /// `Ok(())` unconditionally: 512 forgeries, all of which must fail.
+    #[test]
+    fn adversarial_2590_every_bit_flip_in_the_signature_is_rejected() {
+        let (_key, verifying, message, signature) = fixture();
+        assert!(
+            verifying.verify(&message, &signature).is_ok(),
+            "control: the real signature verifies"
+        );
+
+        let bytes = *signature.as_bytes();
+        for index in 0..64usize {
+            for bit in 0..8u8 {
+                let mut forged = bytes;
+                forged[index] ^= 1 << bit;
+                let forged_sig =
+                    Signature::from_bytes(&forged).expect("64 bytes is a well-formed signature");
+                assert!(
+                    verifying.verify(&message, &forged_sig).is_err(),
+                    "a signature with bit {bit} of byte {index} flipped was ACCEPTED"
+                );
+            }
+        }
+    }
+
+    /// Degenerate signatures must be rejected, not treated as "unset".
+    #[test]
+    fn adversarial_2590_degenerate_signatures_are_rejected() {
+        let (_key, verifying, message, _signature) = fixture();
+
+        for (label, raw) in [("all zero", [0u8; 64]), ("all ones", [0xFFu8; 64])] {
+            let sig = Signature::from_bytes(&raw).expect("64 bytes");
+            assert!(
+                verifying.verify(&message, &sig).is_err(),
+                "an {label} signature was accepted as valid"
+            );
+        }
+    }
+
+    /// A signature of the wrong length must be refused at construction.
+    #[test]
+    fn adversarial_2590_truncated_signature_bytes_are_refused() {
+        let (_key, _verifying, _message, signature) = fixture();
+        let bytes = signature.as_bytes().to_vec();
+
+        for len in [0usize, 1, 32, 63, 65, 128] {
+            let mut candidate = bytes.clone();
+            candidate.resize(len, 0);
+            assert!(
+                Signature::from_bytes(&candidate).is_err(),
+                "a {len}-byte buffer was accepted as a 64-byte Ed25519 signature"
+            );
+        }
+    }
+
+    /// A signature is bound to its message: no other message may verify.
+    ///
+    /// Includes the empty message and a single-bit edit, which is the case a
+    /// hash-prefix comparison would let through.
+    #[test]
+    fn adversarial_2590_signature_does_not_transfer_to_another_message() {
+        let (_key, verifying, message, signature) = fixture();
+
+        let mut one_bit_off = message.clone();
+        one_bit_off[0] ^= 0x01;
+
+        let mut truncated = message.clone();
+        truncated.pop();
+
+        let mut extended = message.clone();
+        extended.push(0x00);
+
+        for (label, other) in [
+            ("one bit off", one_bit_off),
+            ("truncated", truncated),
+            ("extended with a NUL", extended),
+            ("empty", Vec::new()),
+        ] {
+            assert!(
+                verifying.verify(&other, &signature).is_err(),
+                "the signature transferred to a {label} message"
+            );
+        }
+    }
+
+    /// Tampering with the model bytes must be caught by the content hash.
+    #[test]
+    fn adversarial_2590_model_signature_rejects_edited_model_bytes() {
+        let key = SigningKey::generate();
+        let model = vec![0xABu8; 512];
+        let signature = sign_model(&model, &key).expect("sign");
+        assert!(verify_model(&model, &signature).is_ok(), "control: the real model verifies");
+
+        for index in [0usize, 1, 255, 511] {
+            let mut edited = model.clone();
+            edited[index] ^= 0x01;
+            assert!(
+                verify_model(&edited, &signature).is_err(),
+                "a model with byte {index} edited was accepted"
+            );
+        }
+
+        assert!(verify_model(&[], &signature).is_err(), "an empty model was accepted");
+        assert!(
+            verify_model(&vec![0xABu8; 511], &signature).is_err(),
+            "a truncated model was accepted"
+        );
+    }
+
+    /// Editing the envelope's own fields must not make it verify.
+    #[test]
+    fn adversarial_2590_model_signature_envelope_fields_are_not_forgeable() {
+        let key = SigningKey::generate();
+        let model = vec![7u8; 128];
+        let signature = sign_model(&model, &key).expect("sign");
+
+        // Rewriting content_hash to the hash of a DIFFERENT model must fail:
+        // the signature covers the hash string.
+        let other_model = vec![8u8; 128];
+        let other = sign_model(&other_model, &key).expect("sign other");
+        let mut swapped = signature.clone();
+        swapped.content_hash = other.content_hash.clone();
+        assert!(
+            verify_model(&other_model, &swapped).is_err(),
+            "a content_hash swapped in from another signing was accepted"
+        );
+
+        // Replacing signer_key with an unrelated key must fail.
+        let mut wrong_signer = signature.clone();
+        wrong_signer.signer_key = SigningKey::generate().verifying_key().to_hex();
+        assert!(
+            verify_model(&model, &wrong_signer).is_err(),
+            "a signature attributed to an unrelated key was accepted"
+        );
+
+        // A malformed hex signature must be refused, not silently skipped.
+        let mut malformed = signature.clone();
+        malformed.signature = "not-hex".to_string();
+        assert!(
+            verify_model(&model, &malformed).is_err(),
+            "a non-hex signature field was accepted"
+        );
+    }
+
+    /// `verify_model` alone does NOT establish WHO signed; `_with_key` does.
+    ///
+    /// An attacker who can rewrite the `.sig` file can re-sign the same model
+    /// with their own key and `verify_model` will say VALID — correctly, since
+    /// it only asks "is this envelope internally consistent". This test pins
+    /// that boundary so nobody reads a green `apr pacha verify` as provenance.
+    #[test]
+    fn adversarial_2590_resigned_envelope_needs_an_expected_key_to_be_caught() {
+        let honest = SigningKey::generate();
+        let attacker = SigningKey::generate();
+        let model = vec![0x5Au8; 256];
+
+        let attacker_signature = sign_model(&model, &attacker).expect("sign");
+
+        assert!(
+            verify_model(&model, &attacker_signature).is_ok(),
+            "self-consistency check: an attacker-signed envelope IS internally valid"
+        );
+        assert!(
+            verify_model_with_key(&model, &attacker_signature, &honest.verifying_key()).is_err(),
+            "verify_model_with_key MUST reject an envelope signed by another key — \
+             this is the only call that establishes provenance"
+        );
+    }
+
+    /// Two keygen invocations must never produce the same key.
+    #[test]
+    fn adversarial_2590_keygen_never_repeats_in_a_tight_loop() {
+        use std::collections::HashSet;
+
+        const N: usize = 256;
+        let mut secrets = HashSet::new();
+        let mut publics = HashSet::new();
+        for _ in 0..N {
+            let key = SigningKey::generate();
+            secrets.insert(*key.as_bytes());
+            publics.insert(*key.verifying_key().as_bytes());
+        }
+
+        assert_eq!(secrets.len(), N, "keygen repeated a private key within {N} calls");
+        assert_eq!(publics.len(), N, "keygen repeated a public key within {N} calls");
+    }
+
+    /// A keyring must not hand back a key under a name it never stored.
+    #[test]
+    fn adversarial_2590_keyring_does_not_invent_keys() {
+        let mut keyring = Keyring::new();
+        let key = SigningKey::generate();
+        keyring.add("alice", &key.verifying_key());
+
+        assert!(keyring.get("bob").is_err(), "keyring returned a key for an unknown identity");
+        assert!(keyring.get("").is_err(), "keyring returned a key for the empty identity");
+        assert!(keyring.get("ALICE").is_err(), "keyring identity lookup must not fold case");
+
+        let empty = Keyring::new();
+        assert!(empty.default_key().is_err(), "an empty keyring must have no default key");
+    }
+}

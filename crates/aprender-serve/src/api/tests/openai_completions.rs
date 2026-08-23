@@ -22,13 +22,10 @@ async fn test_openai_completions_with_stop_tokens() {
         .await
         .expect("test value should be present");
 
-    let status = response.status();
-    assert!(
-        status == StatusCode::OK
-            || status == StatusCode::NOT_FOUND
-            || status == StatusCode::INTERNAL_SERVER_ERROR,
-        "Unexpected status: {status}"
-    );
+    // aprender#2609: was a disjunction over every plausible status — including
+    // NOT_FOUND, which is what this route WAS wrongly answering. This state has
+    // no model, so exactly one status is correct.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 #[tokio::test]
@@ -52,13 +49,10 @@ async fn test_openai_completions_default_model() {
         .await
         .expect("test value should be present");
 
-    let status = response.status();
-    assert!(
-        status == StatusCode::OK
-            || status == StatusCode::NOT_FOUND
-            || status == StatusCode::INTERNAL_SERVER_ERROR,
-        "Unexpected status: {status}"
-    );
+    // aprender#2609: was a disjunction over every plausible status — including
+    // NOT_FOUND, which is what this route WAS wrongly answering. This state has
+    // no model, so exactly one status is correct.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 #[tokio::test]
@@ -83,13 +77,10 @@ async fn test_openai_completions_empty_model() {
         .expect("test value should be present");
 
     // Empty model should use default
-    let status = response.status();
-    assert!(
-        status == StatusCode::OK
-            || status == StatusCode::NOT_FOUND
-            || status == StatusCode::INTERNAL_SERVER_ERROR,
-        "Unexpected status: {status}"
-    );
+    // aprender#2609: was a disjunction over every plausible status — including
+    // NOT_FOUND, which is what this route WAS wrongly answering. This state has
+    // no model, so exactly one status is correct.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 #[tokio::test]

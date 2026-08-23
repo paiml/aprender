@@ -20,24 +20,53 @@ use axum::http::StatusCode;
 use axum::Router;
 use std::sync::OnceLock;
 
-/// Guard macro for mock state tests - returns early if NOT_FOUND
+/// Guard macro for mock state tests - returns early on the no-model status
 ///
-/// When using mock state (no model), endpoints return NOT_FOUND.
+/// When using mock state (no model), endpoints return 503 SERVICE_UNAVAILABLE.
 /// This macro allows tests to pass if routing worked (got any response).
 /// Usage: `guard_mock_response!(response);`
+///
+/// aprender#2609: this read `NOT_FOUND`, which is what the surface used to answer
+/// for "the server has no model" — a status that means the route does not exist.
 #[macro_export]
 macro_rules! guard_mock_response {
     ($response:expr) => {
-        if $response.status() == axum::http::StatusCode::NOT_FOUND {
-            // Mock state returns NOT_FOUND - routing worked, test passes
+        if $response.status() == axum::http::StatusCode::SERVICE_UNAVAILABLE {
+            // Mock state returns 503 - routing worked, test passes
             return;
         }
     };
 }
 
-/// Check if response indicates mock state (no model loaded)
+/// Check if response indicates mock state (no model loaded).
+///
+/// aprender#2609: `NOT_FOUND` before — see [`guard_mock_response`].
 pub fn is_mock_response(status: StatusCode) -> bool {
-    status == StatusCode::NOT_FOUND
+    status == StatusCode::SERVICE_UNAVAILABLE
+}
+
+/// The status a MOUNTED route must answer on a server with no usable model.
+///
+/// aprender#2609: forty call sites across ten test files asserted this as a
+/// disjunction over four or five statuses — `OK || NOT_FOUND || BAD_REQUEST ||
+/// INTERNAL_SERVER_ERROR || NOT_FOUND`, with `NOT_FOUND` listed twice in most of
+/// them. An assertion that admits every plausible outcome excludes none, which is
+/// how the published 0.63.0 shipped `/stream/generate` and `/v1/chat/completions`
+/// answering 404 for a condition that has nothing to do with routing, with a full
+/// green suite. There is exactly one right answer here — the route IS mounted, the
+/// server simply cannot serve it — so this asserts it.
+///
+/// # Panics
+///
+/// Panics unless `status` is 503 SERVICE_UNAVAILABLE.
+pub fn assert_no_model_status(status: StatusCode) {
+    assert_eq!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a mounted route on a model-less server must answer 503 \
+         (404 means the route does not exist; 500 invites a retry of a request \
+         the server cannot serve) — see contracts/apr-serve-model-backend-coverage-v1.yaml"
+    );
 }
 
 /// Global shared AppState for read-only tests (Experimental Reusability)

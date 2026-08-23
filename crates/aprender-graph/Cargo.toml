@@ -17,8 +17,8 @@ name = "trueno_graph"
 [dependencies]
 # Data formats (columnar) - MVP uses Arrow/Parquet directly
 # Minimal features: drops arrow-csv, arrow-json (~fewer transitive deps)
-arrow = { version = "57", default-features = false, optional = true }  # RecordBatch zero-copy
-parquet = { version = "57", optional = true }                       # Persistent storage
+arrow = { version = "59", default-features = false, optional = true }  # RecordBatch zero-copy
+parquet = { version = "59", optional = true }                       # Persistent storage
 
 # Async runtime (required for I/O)
 tokio = { version = "1", features = ["rt", "fs", "sync", "macros"] }
