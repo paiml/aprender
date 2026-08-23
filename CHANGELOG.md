@@ -80,6 +80,50 @@ they never asked.
 - **`apr` 0.63.0 ran `apr` 0.60.0**: both subprocess backends resolved a bare
   `apr` through `$PATH`. (#2424)
 
+### Fixed — the release gate itself
+
+The dogfood protocol that certifies this release was audited adversarially and
+returned 45 findings, 34 fixed here. The pattern is the one above, turned on
+the tooling: gates that reported success over a measurement they never made.
+
+- **A version already published on crates.io could pass `version-unpublished`
+  as "not yet published."** `printf | grep -q` under `pipefail`: with the
+  marker ahead of more than a pipe buffer of dry-run output, grep exits at the
+  first match, printf takes SIGPIPE, and the `if` reads 141. Demonstrated live
+  at 307 KB. The gate that exists to stop an immutable double-publish failed
+  open on exactly that question. (QUAL-009)
+- **The verifier pins were delivered to nobody.** They were shell-local and
+  resolved *after* the discovered gates had already run, so every gate ran
+  against a PATH-resolved binary while `pin_audit` certified consumption the
+  environment never carried. Pins are now exported, resolved first, verified by
+  behaviour (`--version`, not `-x` — which accepts a broken stub and even a
+  directory), and fail closed. (QUAL-014)
+- **A dead `gh api` call read as a clean security scan** — `2>/dev/null ||
+  true` made an empty result from a failed call indistinguishable from zero
+  alerts, on the second advisory source that exists because the first one
+  silently missed a CVE. The rule this encodes: a probe whose empty output
+  means PASS must FAIL on rc≠0. (QUAL-009)
+- **The contracts gate silently skipped for every workspace member**, looking
+  only at `./Makefile` while changelog and coverage had been fixed to search
+  upward; and `pv-contracts` validated only `contracts/*.yaml`, leaving 549 of
+  1791 contracts in subdirectories unchecked. (QUAL-009)
+- **A crashed `--help` cascaded into a vacuous pass**: a binary that could not
+  answer `--help` read as "advertises no subcommands", and the transport gate
+  then certified the absence of undeclared transports over that empty parse.
+  (QUAL-009)
+- **A receipt now exists only if it is complete** — absolute path, commit SHA
+  stamped in, written as `.partial` and atomically renamed, so a crashed run
+  leaves *no* receipt rather than a previous verdict readable as current.
+  (QUAL-013)
+- **One parser for the gate declaration.** The runner and its guard each had
+  their own reader of `[package.metadata.dogfood]`; the guard's was strictly
+  narrower, so a gate the release *executed* could never be scanned for
+  unpinned verifiers. (QUAL-015)
+
+Regex-based shell scanning is retired as a strategy after 16 wrong verdicts in
+one programme (#2653): four remaining tokeniser gaps ship as an executable
+known-gap corpus that reds if a gap widens *or* is silently closed.
+
 ### Fixed — user-visible correctness
 
 - **SSE streaming deleted every space and newline** — responses arrived as
