@@ -1,0 +1,282 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-23'
+  author: PAIML Engineering
+  references:
+  - 'docs/audits/dogfood-divergence-2640.md — the required triage: 9 hunks, 62 changed lines, ALL classified hardening-port, zero drift-discard'
+  - 'scripts/dogfood.sh — the one canonical runner (aprender#2640)'
+  - 'scripts/verifier_pin.sh — THE verifier-pinning rule, stated once, plus the two pins'
+  - 'scripts/check_verifier_pinning.sh — the gate: static scan + behavioural probe of both pins'
+  - 'scripts/check_dogfood_shim.sh — the gate: one runner, one prose, and the user-scope copy stays a gated shim'
+  - 'scripts/.dogfood-shim-reference.sh — the reviewed text of the user-scope shim'
+  - '.claude/skills/dogfood/SKILL.md — the one canonical prose, with an explicit `name:` (#2332)'
+  - 'aprender#2361 — a user-scope skill shadowed the repo one; hardening it edited a file that never ran'
+  description: >
+    The dogfood pre-release protocol existed as TWO 1170-line copies, one in this
+    repo and one at ~/.claude/skills/dogfood/. They shared all gate names and had
+    diverged in nine places; every hunk was a real, measured hardening the other
+    copy lacked, so neither was safe to delete and neither was safe to trust.
+
+    This contract holds the post-merge invariants. Its subject is not "the runner
+    works" — it is "there is exactly one runner, it carries BOTH hardenings, the
+    hardenings BEHAVE rather than merely being present, and a repo's own release
+    gates are DISCOVERED rather than copied into the runner."
+
+    The organising rule is the one #2640 found had been rediscovered five separate
+    times (PMAT_BIN, scripts/pv_bin.sh, scripts/apr_bin.sh, aprender#2384,
+    APR-BENCH-RFC-001): a gate that decides a release must not resolve its verifier
+    through PATH. Five rediscoveries is the evidence that a rule merely stated is
+    documentation. It ships here as an obligation with a named mutation.
+
+equations:
+  single_runner:
+    formula: |
+      R = { p in git ls-files : basename(p) == "dogfood.sh" }
+      REQUIRE: |R| == 1 AND R == { "scripts/dogfood.sh" }
+    domain: tracked paths in the aprender working tree
+    codomain: bool
+    invariants:
+    - 'Exactly one tracked dogfood.sh. Two copies is the defect state; zero is a deleted protocol.'
+    - 'It lives in the repo, not at user scope: git-tracked, PR-reviewed, CI-reachable and diffable are the four properties whose absence produced #2361.'
+
+  verifier_pinning:
+    formula: |
+      V = { pv, pmat, apr }          -- exactly the tools this repo PINS
+      S = { scripts/dogfood.sh, scripts/verifier_pin.sh }
+      bare(f) = { t in V : t appears in COMMAND POSITION in f
+                           after comments and quoted spans are removed }
+      REQUIRE: union over f in S of bare(f) == {}
+    domain: shell source of the release runner and its pin library
+    codomain: set of unpinned verifier tokens (must be empty)
+    invariants:
+    - 'A mention inside a comment or a string is NOT an invocation — the runner must stay able to describe its own rule.'
+    - 'bashrs and probador are deliberately OUT of V: no pin exists for them, and the rule''s second clause is "where the repo does not pin, REPORT". Adding them would demand a pin that does not exist.'
+    - 'The tokeniser ships a must-match / must-not-match case table (--self-test) because the apr-invocation patterns in this repo were wrong five times and every one was caught by a table, none by review.'
+
+  pin_behaviour:
+    formula: |
+      let stale be an executable named `pmat` FIRST on PATH
+      let built be the artifact cargo produced for the crate under test
+      verifier_pin_pmat("pmat",  built) = built     -- self-referential case
+      verifier_pin_pmat("other", built) = "pmat"    -- PATH is correct elsewhere
+      verifier_pin_pmat("pmat",  "")    = "pmat"    -- never fabricate a pin
+      let decoy be an executable named `pv` FIRST on PATH
+      verifier_pin_pv() = P  with  P != decoy  and  P executable
+    domain: the two pin functions in scripts/verifier_pin.sh
+    codomain: resolved verifier paths
+    invariants:
+    - 'Presence of PMAT_BIN in the source proves nothing about which binary the gate runs. The pins are EXERCISED against a poisoned PATH.'
+    - 'Measured, 2026-08-22, releasing pmat 3.32.0: installed 3.32.0 commit 8134bb373 vs built 3.32.0 commit 7a7409e03. BOTH PRINT 3.32.0 — only the commit differs, and nothing in the receipt showed it.'
+    - 'Measured: PATH pv 0.49.0 vs in-tree 0.63.0 disagreed on the release-deciding gate — strict-test-binding 253 refs / 51 missing stale vs 371 / 27 at HEAD.'
+
+  gate_discovery:
+    formula: |
+      G = Cargo.toml [package.metadata.dogfood].gates
+      REQUIRE: G is a non-empty list of strings
+      forall g in G: exists(g) AND run(g) is reported as its OWN receipt row
+      absent(G) or G == []  =>  FAIL
+      declared g with not exists(g)  =>  FAIL   (never SKIP)
+    domain: the crate manifest of the crate under test
+    codomain: one receipt row per declared gate, plus one aggregate row
+    invariants:
+    - 'Reuses the mechanism the runner already implements for [package.metadata.transports]; nothing new is invented.'
+    - 'A declared script that does not exist is a DELETED gate, not an absent requirement. SKIP would make deletion the cheapest way to silence a guard.'
+    - 'A clean sweep over an empty gate set is this protocol''s signature failure, reappearing one layer up at discovery. Both vacuity cases are hard FAILs.'
+    - 'Each gate gets its own row: rolling them into one aggregate is how a red gate hides behind a green neighbour.'
+
+  shim_is_a_shim:
+    formula: |
+      let U = ~/.claude/skills/dogfood/dogfood.sh
+      exists(U) => lines(U) <= 70
+                   AND gate_names(U) == {}
+                   AND U is byte-identical to scripts/.dogfood-shim-reference.sh
+                   AND run(U with the aprender checkout ABSENT) exits != 0
+                       AND names the REVISIT TRIGGER
+    domain: the user-scope copy, if the host has one
+    codomain: bool
+    invariants:
+    - 'The CAP lives in the repo, on protected main; the FILE it caps lives at user scope. Any state the author writes and the gate reads can be moved in the same commit — so it is deliberately not co-located.'
+    - '70 is chosen, not guessed: the shim is 49 lines, of which 32 are rationale. The smallest gate in the protocol is ~12 lines with its rationale plus a call site, so re-inlining even ONE gate spends the whole headroom.'
+    - 'Fail-closed is BEHAVIOURAL, not textual: the shim is actually run with the checkout absent.'
+    - 'REVISIT TRIGGER: the first time dogfood is invoked on a crate whose own repo is checked out but aprender is NOT. That is the signal infra-canonical has become correct — move the protocol, do not restore a local copy.'
+
+  single_prose:
+    formula: |
+      exists(.claude/skills/dogfood/SKILL.md)
+      AND it declares `name: dogfood` EXPLICITLY
+      AND not exists(~/.claude/skills/dogfood/SKILL.md)
+    domain: skill definitions visible to a session
+    codomain: bool
+    invariants:
+    - 'A user-scope skill WINS over a repo one. Without the explicit name: the repo skill is named after its directory, collides, and never appears in the session listing (#2332).'
+    - 'Duplication moved from executable to prose is HARDER to detect, because nothing runs it and no diff surfaces it.'
+
+falsification_tests:
+- id: F-DOG1-001
+  rule: single canonical runner
+  prediction: 'git ls-files yields exactly one dogfood.sh, at scripts/dogfood.sh'
+  test: 'bash scripts/check_dogfood_shim.sh   # row 1'
+  if_fails: 'a second runner exists — the #2640 defect state has returned'
+  mutation: 'add a second tracked dogfood.sh anywhere in the tree; row 1 must turn RED'
+
+- id: F-DOG1-002
+  rule: no verifier resolved through PATH
+  prediction: 'no bare pv/pmat/apr in command position in the runner or its pin library'
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 1'
+  if_fails: 'a release gate would be measured with whatever binary PATH happens to offer'
+  mutation: 'reintroduce a bare `pmat` call (gate pmat-verify pmat verify --format json); PART 1 must turn RED'
+
+- id: F-DOG1-003
+  rule: the tokeniser is right before its verdict means anything
+  prediction: 'nine must-flag forms are all reported; ten must-not-flag forms are all accepted'
+  test: 'bash scripts/check_verifier_pinning.sh --self-test'
+  if_fails: 'the scan is either blind or noisy, and PART 1''s green says nothing'
+  mutation: 'remove "if" from the OPENERS set; the `if pv validate x` row must stop being flagged and the table must turn RED'
+
+- id: F-DOG1-004
+  rule: the PMAT_BIN hardening BEHAVES
+  prediction: 'with a stale pmat first on PATH and the crate under test named pmat, the pin resolves to the BUILT artifact'
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 2, rows 1-3'
+  if_fails: 'the gate that decides a pmat release measures a different build than the one shipping'
+  mutation: 'delete the `if [ "$verifier_pin_crate" = "pmat" ]` branch from verifier_pin_pmat; PART 2 row 1 must turn RED'
+
+- id: F-DOG1-005
+  rule: the pv pin BEHAVES
+  prediction: 'with a decoy pv first on PATH, the resolved PV is not the decoy'
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 2, row 4'
+  if_fails: 'contract validation — the release-deciding gate — runs on an unknown pv'
+  mutation: 'replace the pv_bin.sh source with PV=$(command -v pv); PART 2 row 4 must turn RED'
+
+- id: F-DOG1-006
+  rule: a declared gate that does not exist FAILS
+  prediction: 'a path in [package.metadata.dogfood].gates with no file behind it produces a FAIL row, never a SKIP'
+  test: 'DOGFOOD_GATES_ONLY=1 bash scripts/dogfood.sh'
+  if_fails: 'deleting a guard becomes the cheapest way to make it stop complaining'
+  mutation: 'add "scripts/check_this_does_not_exist.sh" to the gates list; a declared:* row must turn RED and the run must exit 1'
+
+- id: F-DOG1-007
+  rule: an empty or absent declaration FAILS
+  prediction: 'gates = [] and a missing [package.metadata.dogfood] both produce a FAIL'
+  test: 'DOGFOOD_GATES_ONLY=1 bash scripts/dogfood.sh'
+  if_fails: 'a clean sweep over an empty gate set reports GO'
+  mutation: 'set gates = [], then delete the block entirely; both must turn dogfood-gates RED'
+
+- id: F-DOG1-008
+  rule: the user-scope copy stays a shim
+  prediction: 'the user-scope dogfood.sh is <= 70 lines, invokes no gate, and is byte-identical to the reviewed reference'
+  test: 'bash scripts/check_dogfood_shim.sh   # rows 3a-3d'
+  if_fails: 'the shadow is re-forming, and hardening the repo will again edit a file that never runs'
+  mutation: 'append `mark pv-contracts PASS "ported back"` to the user-scope shim; rows 3b and 3d must turn RED'
+
+- id: F-DOG1-009
+  rule: the shim fails CLOSED
+  prediction: 'with the aprender checkout absent the shim exits non-zero and names the REVISIT TRIGGER'
+  test: 'bash scripts/check_dogfood_shim.sh   # row 3c'
+  if_fails: 'the shim degrades to something local, which is the shadow with extra steps'
+  mutation: 'replace the shim body with `exit 0`, then with a mute `exit 2`; row 3c must turn RED for both'
+
+- id: F-DOG1-010
+  rule: one prose, and it is the reviewed one
+  prediction: '.claude/skills/dogfood/SKILL.md exists with an explicit `name: dogfood`, and no user-scope SKILL.md shadows it'
+  test: 'bash scripts/check_dogfood_shim.sh   # rows 2 and 4'
+  if_fails: 'the repo skill never appears in the session listing and edits to it change nothing that runs (#2332/#2361)'
+  mutation: 'delete the `name:` line from the repo SKILL.md, and restore a user-scope SKILL.md; rows 2 and 4 must turn RED'
+
+proof_obligations:
+- type: invariant
+  property: 'Exactly one tracked dogfood.sh exists, at scripts/dogfood.sh (F-DOG1-001)'
+  formal: '|{ p in git ls-files : basename(p) = "dogfood.sh" }| = 1'
+- type: invariant
+  property: 'No verifier in V = {pv, pmat, apr} appears in command position unpinned in the runner or its pin library (F-DOG1-002)'
+  formal: 'forall f in S, bare(f) = {}'
+- type: soundness
+  property: 'The bare-invocation tokeniser flags every must-flag form and no must-not-flag form (F-DOG1-003)'
+  formal: 'flag(must_flag) = must_flag and flag(must_not_flag) = {}'
+- type: determinism
+  property: 'The PMAT_BIN pin selects the built artifact when the crate under test is pmat, and PATH otherwise (F-DOG1-004)'
+  formal: 'verifier_pin_pmat("pmat", b) = b for executable b; verifier_pin_pmat(c, b) = "pmat" for c != "pmat"'
+- type: determinism
+  property: 'The pv pin never resolves to a PATH pv (F-DOG1-005)'
+  formal: 'verifier_pin_pv() != command -v pv, given a decoy first on PATH'
+- type: completeness
+  property: 'Every declared gate produces exactly one receipt row, and a declared-but-missing script produces FAIL (F-DOG1-006)'
+  formal: 'forall g in G, exists exactly one row(g); not exists(g) => row(g) = FAIL'
+- type: bound
+  property: 'An absent or empty gate declaration is a FAIL, never a vacuous pass (F-DOG1-007)'
+  formal: 'G = {} or G undefined => dogfood-gates = FAIL'
+- type: bound
+  property: 'The user-scope shim is at most 70 lines, invokes no gate, and matches the reviewed reference byte for byte (F-DOG1-008)'
+  formal: 'lines(U) <= 70 and gate_names(U) = {} and U = reference'
+- type: safety
+  property: 'The shim fails closed and loudly when the canonical checkout is absent (F-DOG1-009)'
+  formal: 'exit(U | no checkout) != 0 and "REVISIT TRIGGER" in stderr(U)'
+- type: invariant
+  property: 'Exactly one prose description of the protocol is reachable, and it is the repo copy (F-DOG1-010)'
+  formal: 'exists(repo SKILL.md with explicit name) and not exists(user-scope SKILL.md)'
+
+kani_harnesses:
+# Declared, NOT written. These are shell guards over shell source; there is no
+# Rust surface for Kani to model-check, and inventing one would be theatre. The
+# harnesses name the three obligations that WOULD be model-checkable if the
+# pin resolution moved into Rust (which `apr dogfood` would do — explicitly out
+# of scope for #2640, because porting before unifying means porting twice).
+- id: KH-DOG1-001
+  obligation: verifier_pinning
+  property: no_verifier_token_reaches_execution_unpinned
+  bound: 4
+- id: KH-DOG1-002
+  obligation: pin_behaviour
+  property: pin_selection_is_independent_of_path_contents
+  bound: 4
+- id: KH-DOG1-003
+  obligation: gate_discovery
+  property: empty_or_missing_gate_set_is_never_a_pass
+  bound: 4
+
+qa_gate:
+  id: F-DOG1-GATE-001
+  name: one dogfood runner, both hardenings, and the rule enforced
+  description: >
+    The organising gate for aprender#2640. It is not enough that the merged runner
+    CONTAINS both hardenings — the triage that justified the merge established that
+    each copy independently gained one, so a merge that carried them forward as
+    inert text would satisfy a presence check and lose the property. Every
+    obligation here is therefore either a structural uniqueness claim or a
+    behavioural probe under a poisoned PATH.
+  checks:
+  - single_runner
+  - verifier_pinning_static
+  - verifier_pinning_case_table
+  - pmat_pin_behaviour
+  - pv_pin_behaviour
+  - gate_discovery_runs_each
+  - gate_discovery_vacuity
+  - shim_shape
+  - shim_fails_closed
+  - single_prose
+  pass_criteria: >
+    scripts/check_verifier_pinning.sh exits 0 AND scripts/check_dogfood_shim.sh exits 0
+    AND `DOGFOOD_GATES_ONLY=1 scripts/dogfood.sh` gives every declared gate its own
+    receipt row. A RED here is NO-GO independent of every other gate being green: a
+    release verified by an unknown binary is an unverified release that says GO.
+
+verification_summary:
+  total_obligations: 10
+  proven: 0
+  tested: 10
+  status: proposed
+  notes: >
+    All ten obligations are TESTED by two committed guards, both wired into CI and
+    both declared in [package.metadata.dogfood] so the release runner itself runs
+    them. Each carries a named mutation that was OBSERVED turning it RED on
+    2026-08-23, with the unmutated tree observed GREEN first (discrimination).
+
+    Nothing here is PROVEN in the L4/L5 sense and the count says so. These are shell
+    guards over shell source; the honest ladder position is L3.
+
+    Note what the guard found on its first run, before any mutation: `pmat analyze
+    reachability` was invoked BARE in BOTH copies of the runner. The copy that
+    INVENTED the PMAT_BIN hardening had never applied it there, because the
+    subcommand landed after the hardening did. That is the argument for the gate in
+    one line — the rule's own author missed a site, and only a mechanical sweep of
+    the whole file noticed.

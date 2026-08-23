@@ -159,6 +159,19 @@ SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKLOG=$(mktemp -d)
 trap 'rm -rf "$WORKLOG"' EXIT
 
+# THE VERIFIER-PINNING RULE, and the two pins that implement it, live in exactly
+# one file. Read scripts/verifier_pin.sh — the rule is stated there and nowhere
+# else, because a rule restated is a rule that drifts. This runner only CALLS it.
+if [ -f "$SKILL_DIR/verifier_pin.sh" ]; then
+  . "$SKILL_DIR/verifier_pin.sh"
+else
+  echo "dogfood: $SKILL_DIR/verifier_pin.sh is missing." >&2
+  echo "  It carries the rule that decides WHICH pv and WHICH pmat this protocol" >&2
+  echo "  is allowed to believe. Without it every verifier would fall back to" >&2
+  echo "  PATH, which is the exact defect #2640 closed. Refusing to run." >&2
+  exit 2
+fi
+
 echo "══ dogfood pre-release: $CRATE v$VERSION ══"
 
 # ── 1. hygiene ───────────────────────────────────────────────────────────────
@@ -170,6 +183,107 @@ echo "══ dogfood pre-release: $CRATE v$VERSION ══"
 DIRTY=$(git status --porcelain 2>/dev/null | grep -vE '^\?\? ([^ ]*/)?\.(dogfood|pmat|pv)/?$' | head -1)
 if [ -z "$DIRTY" ]; then mark git-clean PASS "working tree clean"
 else mark git-clean WARN "uncommitted changes present (commit before tagging)"; fi
+
+# ── 1b. the crate's OWN release gates, DISCOVERED not duplicated ────────────
+#
+# A repo that has written its own release guards must not have to get them
+# copied into this runner — that is how the runner acquired a second copy of
+# itself (#2640). The declaration lives in the crate's Cargo.toml, versioned
+# with the code it guards, and reuses the mechanism this runner already
+# implements for [package.metadata.transports]:
+#
+#   [package.metadata.dogfood]
+#   gates = ["scripts/check_multiplatform_dogfood.sh", "scripts/dogfood_surfaces.sh"]
+#
+# Each discovered gate gets its OWN row in the receipt. Rolling them into one
+# aggregate verdict is how a red gate hides behind a green neighbour.
+#
+# TWO VACUITY GUARDS, because a clean sweep over an empty set is this protocol's
+# signature failure and it reappears one layer up at DISCOVERY:
+#   · a declared script that does not exist is FAIL, never SKIP. "Declared but
+#     absent" is the state a deleted guard leaves behind, and a SKIP would make
+#     deleting a guard the cheapest way to make it stop complaining.
+#   · no [package.metadata.dogfood] block at all, or `gates = []`, is FAIL. A
+#     crate with zero release gates of its own is a claim, and an unmade claim
+#     reads exactly like a satisfied one.
+run_to "$WORKLOG/meta-dogfood.json" cargo metadata --no-deps --format-version 1
+DG_META_RC=$RUN_RC
+DG_PLAN=$(CRATE="$CRATE" python3 - "$WORKLOG/meta-dogfood.json" <<'PY' 2>/dev/null || echo "META_ERROR"
+import json, os, sys
+d = json.load(open(sys.argv[1]))
+name = os.environ.get('CRATE', '')
+pkgs = d.get('packages', [])
+pkg = next((p for p in pkgs if p['name'] == name), None)
+if pkg is None and len(pkgs) == 1:
+    pkg = pkgs[0]
+if pkg is None:
+    print("NOPKG"); raise SystemExit
+df = (pkg.get('metadata') or {}).get('dogfood')
+if not isinstance(df, dict):
+    print("NODECL"); raise SystemExit
+gates = df.get('gates')
+if not isinstance(gates, list):
+    print("BADSHAPE"); raise SystemExit
+if not gates:
+    print("EMPTY"); raise SystemExit
+for g in gates:
+    if not isinstance(g, str) or not g.strip():
+        print("BADSHAPE"); raise SystemExit
+    print("GATE " + g.strip())
+PY
+)
+if [ "$DG_PLAN" = "META_ERROR" ] || [ "$DG_META_RC" -ne 0 ]; then
+  mark dogfood-gates FAIL "\`cargo metadata\` failed (exit=$DG_META_RC) — the release gates this crate declares could not be discovered, so none of them ran"
+elif [ "$DG_PLAN" = "NOPKG" ]; then
+  mark dogfood-gates FAIL "no package named '$CRATE' in cargo metadata — run dogfood from the crate dir, not the virtual workspace root"
+elif [ "$DG_PLAN" = "NODECL" ]; then
+  mark dogfood-gates FAIL "no [package.metadata.dogfood] in Cargo.toml. Declare the release gates this crate owns, e.g.  [package.metadata.dogfood]  gates = [\"scripts/check_multiplatform_dogfood.sh\"]. A crate that declares none is asserting it has none — say so deliberately, in the manifest, where review can see it."
+elif [ "$DG_PLAN" = "EMPTY" ]; then
+  mark dogfood-gates FAIL "[package.metadata.dogfood] declares \`gates = []\` — a clean sweep over an empty gate set is the vacuous pass this protocol exists to refuse. Declare the gates, or remove the claim to have any."
+elif [ "$DG_PLAN" = "BADSHAPE" ]; then
+  mark dogfood-gates FAIL "[package.metadata.dogfood] gates must be a non-empty list of script paths — a malformed declaration verifies nothing"
+else
+  DG_N=0; DG_BAD=0
+  while read -r dg_kind dg_path; do
+    [ "$dg_kind" = "GATE" ] || continue
+    DG_N=$((DG_N + 1))
+    dg_name="declared:$(basename "$dg_path" .sh)"
+    if [ ! -f "$dg_path" ]; then
+      mark "$dg_name" FAIL "declared in [package.metadata.dogfood] but no such file: $dg_path — a declared gate that does not exist is a deleted gate, not an absent requirement"
+      DG_BAD=$((DG_BAD + 1)); continue
+    fi
+    run_to "$WORKLOG/$(basename "$dg_path").log" bash "$dg_path"
+    dg_rc=$RUN_RC
+    dg_tail=$(tail -3 "$WORKLOG/$(basename "$dg_path").log" 2>/dev/null | strip_ansi | tr '\n' ' ')
+    if [ "$dg_rc" -eq 0 ]; then
+      mark "$dg_name" PASS "$dg_path exit=0"
+    else
+      mark "$dg_name" FAIL "$dg_path exit=$dg_rc — $dg_tail"
+      DG_BAD=$((DG_BAD + 1))
+    fi
+  done <<EOF
+$DG_PLAN
+EOF
+  if [ "$DG_N" -eq 0 ]; then
+    mark dogfood-gates FAIL "[package.metadata.dogfood] parsed but yielded no gate — a declaration matching nothing is not a pass"
+  elif [ "$DG_BAD" -eq 0 ]; then
+    mark dogfood-gates PASS "$DG_N declared gate(s) discovered and all green"
+  else
+    mark dogfood-gates FAIL "$DG_N declared gate(s) discovered, $DG_BAD RED (each named in its own row above)"
+  fi
+fi
+
+# DOGFOOD_GATES_ONLY runs the discovery section and stops. It exists so the
+# discovery mechanism itself can be exercised — by scripts/check_dogfood_shim.sh
+# and by hand — without paying for a full release sweep, and it runs the SAME
+# code the release runs rather than a copy of it, which is the whole point of
+# this ticket. It can never print GO: a partial run is not a verdict.
+if [ -n "${DOGFOOD_GATES_ONLY:-}" ]; then
+  echo "────────────────────────────────────────────────"
+  echo "PARTIAL: DOGFOOD_GATES_ONLY — only the declared repo gates above ran."
+  echo "         This is NOT a release verdict. A GO comes only from a full run."
+  exit "$FAILED"
+fi
 
 # ── 2 + 10. version + publish dry-run (authoritative: cargo's own registry
 # index, not a flaky crates.io HTTP call). A dry-run SUCCEEDS even when the
@@ -278,6 +392,9 @@ if [ -z "$BINPATH" ]; then
     | sed -n 's/.*"executable":"\([^"]*\)".*/\1/p' | grep -v null | tail -1)
 fi
 BINPATH="${BINPATH:-}"
+# Which pmat runs the pmat gates. The rule and its measured evidence are in
+# scripts/verifier_pin.sh; this is the call site.
+verifier_pin_pmat "$CRATE" "$BINPATH"
 if [ -n "$BINPATH" ] && [ -x "$BINPATH" ]; then
   mark release-binary PASS "built: $BINPATH"
 else
@@ -309,22 +426,18 @@ fi
 # `forjar prove` maps into its own "N/N proofs passed" line. Nothing had ever
 # run the validator, so nothing knew.
 #
-# pv is PINNED, never PATH-resolved. scripts/pv_bin.sh records why: a PATH `pv`
-# was 0.49.0 while the in-tree crate was 0.63.0, and the two disagreed on the
-# gate that decides the release -- strict-test-binding reported 253 refs / 51
-# missing under the stale binary and 371 / 27 under HEAD. This script IS a
-# surface where the release decision is made, so it must not be the one holding
-# the stale binary.
-#
-# This protocol runs against any repo in the fleet, and not all of them carry
-# pv_bin.sh. Where it is absent, pv is left UNRESOLVED and the contract gates
-# below REPORT that rather than falling back to whatever PATH offers. A skipped
-# gate that says so beats a green one measured with an unknown binary.
+# pv is PINNED, never PATH-resolved. The rule, and the measurement behind it,
+# are in scripts/verifier_pin.sh; `verifier_pin_pv` is the pin. A repo that
+# ships no pin leaves PV empty and the contract gates below REPORT that rather
+# than falling back to whatever PATH offers.
 MISSING_TOOLS=""
 PV=""
-if [ -f scripts/pv_bin.sh ]; then
-  if . scripts/pv_bin.sh; then :; else MISSING_TOOLS="$MISSING_TOOLS pv"; fi
-fi
+verifier_pin_pv
+case $? in
+  0) : ;;                                              # pinned and executable
+  1) MISSING_TOOLS="$MISSING_TOOLS pv" ;;              # pin present, failed to resolve
+  *) : ;;                                              # this repo ships no pin
+esac
 for t in bashrs pmat probador; do
   command -v "$t" >/dev/null 2>&1 || MISSING_TOOLS="$MISSING_TOOLS $t"
 done
@@ -603,7 +716,7 @@ for p in d.get("packages",[]):
 print("?")' 2>/dev/null)
     mark pmat-verify SKIP "package has no lib target (kinds present: ${TGTS:-?}) — \`pmat verify\` requires one and hard-errors otherwise; pmat-comply/CB-200 below still gates this crate"
   else
-    gate pmat-verify pmat verify --format json
+    gate pmat-verify "$PMAT_BIN" verify --format json
   fi
 
   # ── pmat comply: gate on WHAT ACTUALLY RAN, not on the exit code ──────────
@@ -628,12 +741,12 @@ print("?")' 2>/dev/null)
   # ../provable-contracts/proof-status.json, a ledger — which is genuinely a
   # property of the workstation (paiml/paiml-mcp-agent-toolkit#1008). CB-200 is
   # NOT in that category: it is fixable with one command, so it is gated.
-  run_to "$WORKLOG/pmat-index.log" timeout 900 pmat query "x" --limit 1
+  run_to "$WORKLOG/pmat-index.log" timeout 900 "$PMAT_BIN" query "x" --limit 1
   PMAT_IDX_RC=$RUN_RC
   # run_SPLIT, not run_to: comply writes JSON to stdout and per-group progress
   # to stderr, so merging the two streams corrupts the JSON and the gate would
   # report "could not parse" for a run that worked perfectly.
-  run_split "$WORKLOG/comply.json" "$WORKLOG/comply.err" timeout 900 pmat comply check --format json
+  run_split "$WORKLOG/comply.json" "$WORKLOG/comply.err" timeout 900 "$PMAT_BIN" comply check --format json
   PMAT_COMPLY_RC=$RUN_RC
   PMAT_SUM=$(python3 - "$WORKLOG/comply.json" <<'PY' 2>/dev/null || echo "PARSE_ERROR"
 import json, sys
@@ -681,8 +794,16 @@ PY
     esac
   fi
   # reachability: code the build never compiles. New in pmat 3.32.0.
-  if pmat analyze reachability --help >/dev/null 2>&1; then
-    RO=$(timeout 900 pmat analyze reachability -p . -f json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['orphan_count'],d['orphan_tests'])" 2>/dev/null || echo "? ?")
+  #
+  # These two lines were BARE `pmat` in BOTH copies of the runner — the
+  # user-scope copy that invented PMAT_BIN never applied it here, because the
+  # subcommand landed after the hardening did. Found by
+  # scripts/check_verifier_pinning.sh on its first run, which is the argument
+  # for the gate: the rule's own author missed a site, and only a mechanical
+  # sweep of the whole file noticed. `--help` on a stale pmat also decides
+  # whether the gate runs AT ALL, so an unpinned probe silently skips it.
+  if "$PMAT_BIN" analyze reachability --help >/dev/null 2>&1; then
+    RO=$(timeout 900 "$PMAT_BIN" analyze reachability -p . -f json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['orphan_count'],d['orphan_tests'])" 2>/dev/null || echo "? ?")
     mark reachability WARN "unreachable files/tests: $RO (a file the build never compiles cannot be tested)"
   fi
 else
