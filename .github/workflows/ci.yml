@@ -855,6 +855,20 @@ jobs:
       # facade resolves its upstream from the REGISTRY, so publishing it first
       # yields a crate that cannot compile for anyone -- while inside this tree
       # it resolves through `path` and looks perfectly fine. Case table first.
+      # aprender#2635: the cascade-coverage gate below resolves each facade's
+      # upstream pin through scripts/lib/facade_pin.py, which used `tomllib` --
+      # stdlib only since 3.11. It was verified on a 3.13 dev box; THIS RUNNER
+      # HOST is 3.10.12 (these `run: bash` steps execute on the host, not in the
+      # sovereign-ci container), so the helper died at import, printed nothing,
+      # and R3 -- the rule stopping a facade from publishing before its upstream
+      # -- had nothing to check. The class is a release gate carrying an
+      # interpreter assumption never checked against the machine it runs on.
+      # Runs BEFORE the gates that depend on those helpers, so a floor violation
+      # reports as itself rather than as a mystery inert scan. Case table first.
+      - name: Min-Python case table
+        run: bash scripts/check_python_helpers_min_version.sh --self-test
+      - name: Every gate's python helper must run on the fleet's minimum Python
+        run: bash scripts/check_python_helpers_min_version.sh
       - name: Cascade-coverage case table
         run: bash scripts/check_cascade_covers_all_crates.sh --self-test
       - name: The release cascade must cover and order every publishable crate
