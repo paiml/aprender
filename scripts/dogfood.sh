@@ -9,6 +9,8 @@
 #
 # Usage:  dogfood.sh [REPO_DIR]        (defaults to $PWD)
 # Exit:   0 = GO (all gates green) · 1 = NO-GO (a gate failed) · 2 = setup error
+#         3 = the receipt this run wrote is unreadable (verdict withheld: the
+#             evidence cannot be read back, so no verdict is reported)
 set -uo pipefail
 
 # WHERE THIS SKILL LIVES — resolved BEFORE the `cd` below, and that order is
@@ -112,10 +114,24 @@ else
   fi
 fi
 
-RECEIPT_DIR="$REPO_DIR/.dogfood"
+# $PWD, not $REPO_DIR: the cd above already resolved the target, and a RELATIVE
+# argument ("bash dogfood.sh crates/foo" from a repo root) used to concatenate
+# into $REPO_DIR/$REPO_DIR/.dogfood — the receipt nested INSIDE the target tree
+# one level too deep, where the next run's git-clean counted it as dirt
+# (#2644, DF-3). Absolute by construction now.
+RECEIPT_DIR="$PWD/.dogfood"
 mkdir -p "$RECEIPT_DIR"
 TS=$(date -u +%Y%m%dT%H%M%SZ)
+# The commit the evidence describes, stamped INTO the receipt: a consumer that
+# globs for the newest receipt after a crashed run would otherwise read a
+# previous verdict as current with nothing to expose it (#2644, DF-12). With
+# the SHA inside, staleness is checkable against HEAD; "unknown" is itself
+# evidence (a non-repo cannot carry the tag a receipt gates).
+RECEIPT_SHA=$(git rev-parse HEAD 2>/dev/null) || RECEIPT_SHA=unknown
 RECEIPT="$RECEIPT_DIR/receipt-$TS.json"
+# Written as .partial and atomically renamed on completion: a mid-run crash
+# leaves NO receipt — never a complete-looking one (#2644, DF-12 / QUAL-013).
+RECEIPT_PARTIAL="$RECEIPT.partial"
 
 # ── gate bookkeeping ─────────────────────────────────────────────────────────
 declare -a NAMES=() RESULTS=() NOTES=()
@@ -1367,9 +1383,9 @@ mark clean-room MANUAL "run \`make -C ../infra/machines/clean-room clean-room-$C
 NAMES_TSV=$(for i in "${!NAMES[@]}"; do
   printf '%s\t%s\t%s\n' "${NAMES[$i]}" "${RESULTS[$i]}" "$(printf '%s' "${NOTES[$i]}" | tr '\n' '\r')"
 done)
-CRATE="$CRATE" VERSION="$VERSION" TS="$TS" \
+CRATE="$CRATE" VERSION="$VERSION" TS="$TS" SHA="$RECEIPT_SHA" \
 VERDICT="$([ $FAILED -eq 0 ] && echo GO || echo NO-GO)" \
-ROWS="$NAMES_TSV" python3 > "$RECEIPT" <<'PY'
+ROWS="$NAMES_TSV" python3 > "$RECEIPT_PARTIAL" <<'PY'
 import json, os
 gates = []
 for line in os.environ.get("ROWS", "").split("\n"):
@@ -1383,15 +1399,18 @@ for line in os.environ.get("ROWS", "").split("\n"):
     gates.append({"gate": name, "result": result, "note": note})
 print(json.dumps({
     "crate": os.environ["CRATE"], "version": os.environ["VERSION"],
-    "timestamp": os.environ["TS"], "gates": gates,
+    "timestamp": os.environ["TS"], "commit": os.environ["SHA"], "gates": gates,
     "verdict": os.environ["VERDICT"],
 }, indent=2))
 PY
-if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$RECEIPT" 2>/dev/null; then
-  echo "FATAL: the receipt this run just wrote is not valid JSON ($RECEIPT)." >&2
+if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$RECEIPT_PARTIAL" 2>/dev/null; then
+  echo "FATAL: the receipt this run just wrote is not valid JSON ($RECEIPT_PARTIAL)." >&2
   echo "       Refusing to report a verdict backed by evidence that cannot be read." >&2
+  echo "       The .partial is kept as-is; no completed receipt exists for this run." >&2
   exit 3
 fi
+# Atomic completion: the receipt EXISTS only once it is whole and parseable.
+mv "$RECEIPT_PARTIAL" "$RECEIPT"
 
 echo "────────────────────────────────────────────────"
 echo "receipt: $RECEIPT"

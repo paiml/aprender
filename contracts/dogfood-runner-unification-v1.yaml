@@ -334,6 +334,19 @@ falsification_tests:
   if_fails: 'the sovereign differentiator silently skips for every workspace member (DF-5), and a third of the corpus sits outside the gate carrying its name (DF-6)'
   mutation: 'restore the cwd-only `grep Makefile` or the top-level glob; the member fixture must again WARN and the nested broken contract must again pass unseen (observed pre-fix 2026-08-23)'
 
+- id: F-DOG1-024
+  rule: receipt lifecycle (QUAL-013)
+  prediction: >
+    The receipt is anchored absolute (a relative REPO_DIR argument cannot nest
+    it inside the target tree), carries the commit SHA it describes, and is
+    written as .partial with an atomic rename on completion — a crash between
+    write and completion leaves NO file matching receipt-*.json, never a
+    complete-looking unreadable one. Exit 3 (receipt unreadable, verdict
+    withheld) is part of the documented exit contract.
+  test: 'run the runner with a relative REPO_DIR from a parent dir; drive the receipt block with a corrupting python3 shim (argc=0 write shape)'
+  if_fails: 'evidence nests inside the tree as next-run dirt (DF-3), or a crashed run leaves a previous or garbage verdict readable as current (DF-12)'
+  mutation: 'restore RECEIPT_DIR="$REPO_DIR/.dogfood" (nested .dogfood reappears under a relative arg) or write directly to $RECEIPT (corrupt write leaves garbage at the evidence name); both observed pre-fix 2026-08-23'
+
 proof_obligations:
 - type: invariant
   property: 'Exactly one tracked dogfood.sh exists, at scripts/dogfood.sh (F-DOG1-001)'
@@ -402,6 +415,9 @@ proof_obligations:
 - type: invariant
   property: 'Each gate iterates the universe its name claims: find_up for root-kept files, recursive discovery for contracts/, component-accurate failure attribution (F-DOG1-023)'
   formal: 'universe(gate) = universe(gate.name); fail(discovery) names the failing component'
+- type: invariant
+  property: 'A receipt exists iff it is complete and parseable: absolute anchor, SHA-stamped, .partial + atomic rename; runner artefact dirs (.dogfood/.pmat/.pv) are gitignored so a run never dirties the tree its next run measures (F-DOG1-024)'
+  formal: 'exists(receipt-*.json) => parseable and complete; mutates(run, tracked_files) = {}'
 kani_harnesses:
 # Declared, NOT written. These are shell guards over shell source; there is no
 # Rust surface for Kani to model-check, and inventing one would be theatre. The
@@ -451,9 +467,9 @@ qa_gate:
     release verified by an unknown binary is an unverified release that says GO.
 
 verification_summary:
-  total_obligations: 22
+  total_obligations: 23
   proven: 0
-  tested: 22
+  tested: 23
   status: proposed
   notes: >
     Every obligation above is TESTED (none PROVEN in the L4/L5 sense — shell

@@ -64,8 +64,12 @@ layer up at discovery.
 `DOGFOOD_GATES_ONLY=1` runs only that section, for exercising discovery without a
 full sweep. It can never print GO; a partial run is not a verdict.
 
-It writes a receipt to `<repo>/.dogfood/receipt-<ts>.json` and exits `0` = GO,
-`1` = NO-GO. On NO-GO it prints every red gate with its note before the verdict —
+It writes a receipt to `<repo>/.dogfood/receipt-<ts>.json` — stamped with the
+commit SHA it describes, written as `.partial` and atomically renamed on
+completion, so a crashed run leaves NO completed receipt rather than a stale or
+garbage one — and exits `0` = GO, `1` = NO-GO, `2` = setup error, `3` = the
+receipt it just wrote is unreadable (verdict withheld). On NO-GO it prints every
+red gate with its note before the verdict —
 a verdict that says only "a gate failed" makes the reader hunt for it, and the
 hunt is where bypasses start. Report the verdict and the failing gate(s) to the
 user; do not proceed to release on a NO-GO.
