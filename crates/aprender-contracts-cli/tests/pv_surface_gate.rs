@@ -40,12 +40,12 @@
 //! So the behavioural depth of this tranche is **1 of 38**. That is the number
 //! to quote; 17/38 is shallow-but-real, and 38/38 is nearly free.
 //!
-//!   COVERED: `pv validate` field/rule decision table (all 27 diagnostic rules
+//!   COVERED: `pv validate` field/rule decision table (all 30 diagnostic rules
 //!            declared in validator.rs — MEASURED on this branch, which folds in
-//!            #2555's CRUX-001/002; it was 25 before that and never 18 — both
-//!            directions), real invocation of all 17 contract-taking
-//!            subcommands, contract-input rejection across the same 17,
-//!            `--version` parseability.
+//!            #2555's CRUX-001/002 and #2554's SCHEMA-018/019/020; it was 25
+//!            before those and never 18 — both directions), real invocation of
+//!            all 17 contract-taking subcommands, contract-input rejection
+//!            across the same 17, `--version` parseability.
 //!   NOT COVERED, and the two tiers differ — state them separately, because
 //!            conflating them is exactly the overstatement this gate exists to
 //!            prevent:
@@ -126,6 +126,16 @@ struct Fixture {
     ftests: String,
     harnesses: String,
     qa_gate: String,
+    /// A verbatim extra TOP-LEVEL block appended after `qa_gate:`.
+    ///
+    /// Empty by default. The `SCHEMA-018/019/020` family (#2554) is the only
+    /// one that cannot be tripped by swapping a field the schema knows about:
+    /// all three are about keys the schema does NOT know about, so tripping
+    /// them requires adding a sibling of `metadata:` rather than editing one.
+    /// Keeping it a separate slot preserves the one-swap-per-case rule — every
+    /// other field stays at its `_OK` value, so the reported rule is
+    /// attributable to this block alone.
+    extra: String,
 }
 
 const METADATA_OK: &str = "metadata:\n  version: \"1.0.0\"\n  kind: kernel\n  \
@@ -148,6 +158,7 @@ impl Default for Fixture {
             ftests: FTEST_OK.to_string(),
             harnesses: HARNESS_OK.to_string(),
             qa_gate: QA_GATE_OK.to_string(),
+            extra: String::new(),
         }
     }
 }
@@ -156,13 +167,14 @@ impl Fixture {
     fn render(&self) -> String {
         format!(
             "{}\n{}\nproof_obligations:\n{}\nfalsification_tests:\n{}\n\
-             kani_harnesses:\n{}\n{}",
+             kani_harnesses:\n{}\n{}{}",
             self.metadata,
             self.equations,
             self.obligations,
             self.ftests,
             self.harnesses,
             self.qa_gate,
+            self.extra,
         )
     }
 
@@ -350,6 +362,60 @@ const CASES: &[Case] = &[
                 .to_string();
         },
     },
+    // SCHEMA-018/019/020 (#2554) — the unknown-top-level-key family. All three
+    // are about keys `Contract`'s deserializer SKIPS, so each row adds a
+    // top-level sibling via `extra` and touches nothing else. Each is tripped
+    // on its OWN terms, read out of `validate_top_level_keys`, not assumed:
+    // they share a function but not a mechanism.
+    Case {
+        // The literal key `kind` at top level. It is dropped by serde, so the
+        // contract silently falls back to `metadata.kind` — 119 contracts
+        // carried one. The value is deliberately `KernelContract`, the exact
+        // string the 72 mislabelled registry contracts used: a `pv` that read
+        // the top-level key instead of reporting it would ALSO accept this.
+        rule: "SCHEMA-018",
+        sev: Sev::Error,
+        build: |f| f.extra = "kind: KernelContract\n".to_string(),
+    },
+    Case {
+        // A NEAR-MISS of a real block name, which is a different arm: the key
+        // is unknown AND `near_miss_of` resolves it. `falsification_test:` is
+        // the singular of `falsification_tests:` — the shape that cost
+        // `publish-workspace-v1.yaml` four FALSIFY-PUB-* entries while
+        // `pv status` printed "Falsification tests: 0".
+        //
+        // Note this row is what makes SCHEMA-018 and SCHEMA-019 DISCRIMINABLE
+        // through the CLI: a `pv` that reported every unknown top-level key
+        // under one id would fail whichever of the two rows it did not print.
+        rule: "SCHEMA-019",
+        sev: Sev::Error,
+        build: |f| {
+            f.extra = "falsification_test:\n  - id: FALSIFY-PVGATE-002\n    \
+                 prediction: \"invisible to every pv gate\"\n    if_fails: \"f\"\n"
+                .to_string();
+        },
+    },
+    Case {
+        // A DUPLICATE MAPPING KEY — not an unknown-key rule at all despite
+        // living in the same function: it fires off `strict_yaml_error`, i.e.
+        // the document parses for the derived deserializer and is rejected by
+        // any strict reader (`yq`, PyYAML, `serde_yaml::Value`), which keeps
+        // one value and drops the other silently.
+        //
+        // The duplicate is nested inside an UNKNOWN top-level block, which is
+        // load-bearing twice over. A duplicated *known* top-level key is a hard
+        // serde "duplicate field" parse error, not SCHEMA-020; and `commands:`
+        // is not a near-miss of any contract field, so this row cannot be
+        // satisfied by a `pv` that emitted SCHEMA-019 instead. It reproduces
+        // `contracts/apr-cli-commands-v1.yaml`, the file the rule was born from.
+        rule: "SCHEMA-020",
+        sev: Sev::Error,
+        build: |f| {
+            f.extra = "commands:\n  - name: probe\n    subcommands: [parse]\n    \
+                 subcommands: [parse, render]\n"
+                .to_string();
+        },
+    },
     Case {
         rule: "PROVABILITY-001",
         sev: Sev::Error,
@@ -500,7 +566,7 @@ fn all_rule_ids() -> BTreeSet<&'static str> {
 /// NEGATIVE DIRECTION: a contract with nothing wrong must produce NO rule id
 /// and exit 0.
 ///
-/// Without this, a `pv` that printed all 27 rules unconditionally would satisfy
+/// Without this, a `pv` that printed all 30 rules unconditionally would satisfy
 /// every trip case below. This is the half that makes the table discriminating.
 #[test]
 fn validate_baseline_is_silent_and_exits_zero() {
