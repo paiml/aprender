@@ -89,13 +89,13 @@ inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda", "entrenar/cuda", "aprender-train-distill?/cuda"]
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
-wgpu = ["inference"]
+wgpu = ["inference", "trueno/gpu", "entrenar?/gpu"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]
 training-gpu = ["training"]
 dhat-heap = ["dep:dhat"]
-full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code", "xet", "trueno-explain"]
+full = ["inference", "cuda", "cuda-batch", "wgpu", "visualization", "zram", "training", "training-gpu", "code", "xet", "trueno-explain"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

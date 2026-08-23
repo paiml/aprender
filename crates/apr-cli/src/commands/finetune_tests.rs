@@ -1261,6 +1261,46 @@ fn gpu_backend_notice_wgpu_selects_wgpu() {
     assert!(p.notice.contains("WGPU"));
 }
 
+/// Non-vacuity control for `gpu_backend_notice_wgpu_selects_wgpu` above.
+///
+/// That test only ever passes `wgpu_available = true`, so it excluded no
+/// outcome: the arm used to hardcode `use_wgpu: true` and passed it anyway.
+/// `wgpu_available = false` is the configuration the DEFAULT binary actually
+/// ships (`wgpu` is not in `default = [...]`), so this is the case that
+/// matters to users. Mirrors the `auto` arm's existing with/without pair.
+#[test]
+fn gpu_backend_notice_wgpu_falls_back_to_cpu_when_feature_absent() {
+    let p = gpu_backend_notice("wgpu", false, false);
+    assert!(
+        !p.use_wgpu,
+        "binary built without --features wgpu must NOT claim the WGSL path: {}",
+        p.notice
+    );
+    assert!(
+        p.notice.contains("WARNING"),
+        "the CPU fallback must be announced, not silent: {}",
+        p.notice
+    );
+    assert!(
+        p.notice.to_lowercase().contains("cpu"),
+        "the notice must name the backend actually used: {}",
+        p.notice
+    );
+}
+
+/// The same pairing for QLoRA/NF4, where the fallback is most expensive.
+#[test]
+fn gpu_backend_notice_wgpu_qlora_honours_availability_both_ways() {
+    let available = gpu_backend_notice("wgpu", true, true);
+    let absent = gpu_backend_notice("wgpu", true, false);
+    assert!(available.use_wgpu);
+    assert!(!absent.use_wgpu);
+    assert_ne!(
+        available.notice, absent.notice,
+        "the banner must differ between a wgpu-capable and a CPU-only build"
+    );
+}
+
 #[test]
 fn gpu_backend_notice_auto_plain_lora_is_cpu() {
     let p = gpu_backend_notice("auto", false, true);

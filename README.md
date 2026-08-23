@@ -20,9 +20,10 @@
 ## Quick Start
 
 ```bash
-cargo install aprender                    # CPU + wgpu (default)
+cargo install aprender                    # CPU + SIMD execution (default)
 cargo install aprender --features cuda    # NVIDIA GPU acceleration
-cargo install aprender --features full    # everything (training, visualization, zram)
+cargo install aprender --features wgpu    # AMD/Intel/Apple GPU via Vulkan/Metal/WebGPU
+cargo install aprender --features full    # adds cuda, wgpu, training-gpu, xet, ptx (needs a CUDA toolchain)
 
 apr pull qwen2.5-coder-1.5b
 apr run qwen2.5-coder-1.5b "What is 2+2?"
@@ -41,7 +42,7 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **78** workspace crates | `cargo metadata --no-deps` (NOT `ls crates/` — 4 are `exclude`d, 1 has no Cargo.toml) |
-| Provable contracts | **1790** provable contracts | `find contracts/ -name '*.yaml'` |
+| Provable contracts | **1791** provable contracts | `find contracts/ -name '*.yaml'` |
 | CLI commands | **110** CLI commands | `apr --help` |
 | Book CLI chapters | **112** chapters | `ls book/src/cli/*.md` |
 | Book lib chapters | **71** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
@@ -184,7 +185,7 @@ gotchas (NDJSON commits, LFS batch sizing, Q4_K stride constraints).
 
 ```toml
 [dependencies]
-aprender = "0.35"
+aprender = "0.63"
 ```
 
 ```rust
@@ -221,8 +222,8 @@ paiml/aprender/
 │   ├── aprender-contracts/         # Provable contracts engine
 │   ├── aprender-profile/           # Profiling
 │   ├── aprender-db/ aprender-graph/ aprender-rag/
-│   └── ... (82 crates total)
-├── contracts/                      # 1790 provable YAML contracts
+│   └── ... (82 directories under crates/; 78 are workspace members)
+├── contracts/                      # 1791 provable YAML contracts
 └── book/                           # mdBook documentation
 ```
 
@@ -253,7 +254,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1790 contracts across inference, training, quantization, attention, FFN,
+1791 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates

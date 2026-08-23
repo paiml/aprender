@@ -77,8 +77,21 @@ pub(crate) fn shared_instance() -> wgpu::Instance {
     static INSTANCE: OnceLock<wgpu::Instance> = OnceLock::new();
     INSTANCE
         .get_or_init(|| {
-            // Serialize the one-time enumeration against any other GPU init.
-            let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // NOTE: this closure must NOT take `DEVICE_INIT_LOCK`.
+            //
+            // `new()`, `new_with_adapter_index()` and `list_adapters()` all
+            // acquire `DEVICE_INIT_LOCK` and then call into here. `std::sync::
+            // Mutex` is not reentrant, so re-acquiring it inside the
+            // initializer self-deadlocked whenever one of those three was the
+            // FIRST GPU call in the process (the only time this closure runs).
+            // `is_available()` happened to mask it by initializing the OnceLock
+            // without holding the lock, which is why the hang was
+            // call-order-dependent and never reproduced under a full test run.
+            //
+            // `OnceLock::get_or_init` already guarantees exactly-once
+            // initialization and blocks every other thread until it completes,
+            // so it provides the serialization PMAT-778 asked for on its own.
+            //
             // PMAT-925: constrain the instance to a non-GLES backend mask so the
             // broken GLES/EGL adapter (SIGABRT-in-Drop on Linux/AMD-RADV) is never
             // registered. `Instance::default()` would use `Backends::all()`

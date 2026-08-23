@@ -263,10 +263,30 @@ fn gpu_backend_notice(
     wgpu_available: bool,
 ) -> GpuBackendPlan {
     match gpu_backend {
-        "wgpu" => GpuBackendPlan {
-            use_wgpu: true,
-            notice: "[gpu-backend] WGPU selected — using WGSL compute shader path".to_string(),
-        },
+        "wgpu" => {
+            if wgpu_available {
+                GpuBackendPlan {
+                    use_wgpu: true,
+                    notice: "[gpu-backend] WGPU selected — using WGSL compute shader path"
+                        .to_string(),
+                }
+            } else {
+                // Same defect class the `cuda` arm above was fixed for
+                // (#2247): this arm used to return `use_wgpu: true` and print
+                // "WGPU selected" while ignoring `wgpu_available`. On a binary
+                // built without `--features wgpu` the WGSL dispatch at the
+                // call site is `#[cfg]`-compiled out, so training silently
+                // fell through to the CPU F32 path under a GPU banner.
+                GpuBackendPlan {
+                    use_wgpu: false,
+                    notice: "[gpu-backend] WARNING: this binary was built without \
+                             `--features wgpu`, so the WGSL compute path is not compiled \
+                             in — training runs on the CPU F32 path. Reinstall with \
+                             `cargo install aprender --features wgpu` for WGSL training."
+                        .to_string(),
+                }
+            }
+        }
         "cuda" => {
             if quantize_nf4 {
                 GpuBackendPlan {

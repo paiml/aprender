@@ -339,6 +339,21 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
 
     // PMAT-332/333: If --backend wgpu, load model + dequant + WGPU upload
     if config.backend.as_deref() == Some("wgpu") {
+        // Fail FAST, before the GGUF load and the full F32 dequantization
+        // below. Previously the availability check lived at the bottom of this
+        // function, so `--backend wgpu` on a binary built without the feature
+        // spent minutes of CPU and gigabytes of RAM dequantizing every weight
+        // and *then* printed a rebuild hint. `cfg!` (not `#[cfg]`) keeps the
+        // rest of the block reachable so no `unreachable_code` lint fires.
+        if !cfg!(feature = "wgpu") {
+            return Err(CliError::InvalidInput(
+                "--backend wgpu: this binary was built without the `wgpu` feature, so the \
+                 WGSL serving path is not compiled in. Reinstall with \
+                 `cargo install aprender --features wgpu`, or omit --backend to serve on \
+                 the CPU/SIMD path."
+                    .to_string(),
+            ));
+        }
         println!();
         println!("{}", "Backend: WGPU (Vulkan/Metal/WebGPU)".cyan());
         println!(
@@ -717,13 +732,12 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             })?;
             return Ok(());
         }
-        #[cfg(not(feature = "wgpu"))]
-        {
-            println!(
-                "{}",
-                "WGPU feature not enabled. Build with --features wgpu".yellow()
-            );
-        }
+        // NOTE: the `#[cfg(not(feature = "wgpu"))]` branch that used to sit
+        // here printed "WGPU feature not enabled. Build with --features wgpu"
+        // — AFTER the model load and full dequantization above had already
+        // run, and naming a remedy that did not compile. Both halves are now
+        // handled by the fail-fast guard at the top of this block, so a
+        // non-wgpu build never reaches this point with --backend wgpu.
     }
 
     // GH-213 + PMAT-314: Detect sharded SafeTensors index.json BEFORE reading file bytes.
