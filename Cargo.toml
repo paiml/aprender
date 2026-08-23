@@ -539,6 +539,28 @@ include = [
     "crates/aprender-core/README.md",
 ]
 
+# This crate's OWN release gates, DISCOVERED by scripts/dogfood.sh rather than
+# copied into it (#2640). The runner reads this list, runs each script, and gives
+# each one its own row in the release receipt. Declaring the list here — beside
+# [package.metadata.transports], versioned with the code it guards — is what
+# stops the runner from growing a second copy of itself to hold repo-specific
+# gates. A missing script FAILs; so does an empty list.
+#
+# scripts/dogfood_surfaces.sh is deliberately NOT here, and the reason is
+# ordering, not cost. Discovery runs early, before the runner has built the
+# release artifact; dogfood_surfaces.sh enumerates 29 binary targets from BUILT
+# binaries, so declaring it here would make the cheap repo-local guards wait on
+# a 27-crate build and would build the workspace twice per run. It stays where
+# it is, driven by .claude/skills/dogfood/SKILL.md at release time against the
+# artifact this runner produces. Move it here the day discovery gains an
+# after-the-binary phase.
+[package.metadata.dogfood]
+gates = [
+    "scripts/check_multiplatform_dogfood.sh",
+    "scripts/check_verifier_pinning.sh",
+    "scripts/check_dogfood_shim.sh",
+]
+
 [[bin]]
 name = "apr"
 path = "src/bin/apr.rs"

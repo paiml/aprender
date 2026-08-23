@@ -57,6 +57,13 @@ crates/aprender-shell/qa_test_artifacts/
 # PMAT caches and generated data (recursive — covers root AND subcrates)
 # CB-510 lesson: non-recursive patterns miss crates/*/.pmat/ files
 **/.pmat/
+# Artefacts the dogfood protocol creates (skill rule: gitignore all three).
+# .pv was TRACKED until #2644's twice-run showed every dogfood run mutates
+# contracts.idx/lint-previous.json, flipping the NEXT run's git-clean gate:
+# the runner dirtied the tree it then measured (finding TWICE-1; also CI-5 —
+# a tracked index is stale by construction, pv regenerates it locally).
+**/.dogfood/
+**/.pv/
 **/.pmat-metrics/
 **/.pmat-qa/
 **/.pmat-work/
