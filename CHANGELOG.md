@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-08-23
+
+The **audit** release. v0.62.0 fixed gates that could not fail and v0.63.0 asked
+whether the thing we validated was the thing we ship. This one is what the same
+question found when it was pointed at everything else: 67 commits, four of them
+integration batches folding a further 44 reviewed PRs.
+
+The pattern that keeps recurring is a gate reporting success over a measurement
+it never made. `apr qa --assert-tps` divided its threshold by ten or discarded
+it outright (#2372). `deny.toml` was 7.2 KB of security policy that ran in no
+workflow at all, and had drifted until it failed on main (#2523). FALSIFY-MONO-011
+had never once scanned a crate (#2476). The README contract-count guard ran
+nowhere (#2485). A required check's verdict was decided by directory order
+(#2562). A meta-guard passed on a *comment*, so the MSRV floor ran nowhere
+(#2551). Every verdict `apr rosetta` printed was unfalsifiable — compare-inference,
+fingerprint and verify all exited 0 no matter what (#2420). Make recipes ran
+without `pipefail`, so the release gate could not fail (#2550).
+
+### User-visible correctness
+
+- **SSE streaming deleted every space and newline** — responses arrived as
+  `Thequickbrownfox` (#2367).
+- **Ollama clients silently dropped every `apr` response**: `created_at` was a
+  bare epoch instead of RFC 3339 (#2371).
+- **Six native routes were dead** on every `apr serve run model.gguf`, and one
+  request could kill the server (#2429). Three more Ollama routes were mounted
+  and advertised to nobody (#2475).
+- A **GGUF without a context-length key refused every prompt** (#2479).
+- An **unknown quantisation type was written to APR labelled F32** (#2488); a
+  tensor that could not be read was dropped and the count only saw the
+  survivors (#2428); a **1 KiB fragment of a 991 MB model was certified
+  `valid: true`** (#2564); a complete MoE model was rejected as
+  truncated/corrupt (#2541).
+- `--offline` downloaded anyway on pull, chat and showcase (#2416).
+- `apr rerank` aborted with a library panic on ordinary flag values (#2414);
+  `apr data` crashed on `--ngram 0` and reported 49 duplicates as zero (#2423);
+  `apr explain` printed "File not found" on stdout and exited 0 (#2368).
+
+### Provenance — the 0.63.0 theme, continued where it still leaked
+
+- `apr` 0.63.0 **ran apr 0.60.0**: both subprocess backends resolved a bare
+  `apr` through `$PATH` (#2424). Two MCP tools did the same, so the server
+  reported results for code it was not running (#2563).
+- The release receipt was **citing pv 0.49.0** while the in-tree crate was
+  0.63.0, and the two disagree on the gate that decides the release (#2552).
+
+### Publishing
+
+- A bare `tests/` exclude is not root-anchored — it **dropped 443 files** from
+  the published `aprender-serve` (#2365); 5.4 MB of build scratch was shipping
+  to crates.io, unseen by the guard meant to stop it (#2487).
+- `apr-cli` **could not be published at all**: it depended on a `publish = false`
+  crate (#2540). A dev-dep alias reinstated the publish cycle it was added to
+  remove (#2560), and the cascade could not see the three facades it must ship
+  (#2561).
+- An unused dependency was breaking docs.rs for every downstream crate (#2468).
+- `make publish` could destroy `.cargo/config.toml` with no recoverable backup
+  (#2637).
+
+### CI and the cost of running it
+
+- Three wall-clock assertions made the required `workspace-test` check
+  non-deterministic (#2425); a 100 ns comparison in a required check blocked
+  every open PR (#2490).
+- `workspace-test` used a different sccache cap and evicted the shared cache
+  (#2545); two lib tests asserted nothing and took 19 minutes (#2533); the
+  README CLI-count guard did a 14-minute build and then failed printing nothing
+  (#2536).
+- coverage-nightly reported a **blank percentage** whenever measurement failed
+  (#2538).
+
+### Dogfood
+
+The dogfood protocol was audited against itself across five batches (#2449,
+#2451, #2453, #2457, #2458) — "nine gates that could not fail, found in the
+tooling that judges us" — and the 0.63.0 crates.io dogfood produced a 190-finding
+defect ledger, each mapped to its issue (#2409). CLAUDE.md gained a Verification
+Discipline section enumerating the ways that sweep fooled itself (#2363).
+
+
 ## [0.63.0] - 2026-08-01
 
 The **provenance** release. v0.62.0 fixed gates that could not fail; this one
