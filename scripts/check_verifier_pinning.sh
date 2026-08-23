@@ -401,6 +401,100 @@ PY
 }
 
 # ---------------------------------------------------------------------------
+# THE KNOWN-GAP TIER (#2644 audit, VP-01/02/08/09 — tracked by QUAL-015).
+#
+# Four shapes this tokeniser gets wrong are recorded here as EXECUTABLE
+# fixtures asserting the CURRENT behaviour, not as prose. The reason they are
+# not patched: the regex-scanning approach has now been wrong sixteen times in
+# this programme, and nine more patches buys the seventeenth. The replacement
+# is a parser-grade scanner (QUAL-015); this corpus is its acceptance test.
+#
+# Two properties make this a ratchet rather than a TODO:
+#   · a gap that gets WORSE turns the row red (the assertion is exact), and
+#   · a gap that gets FIXED also turns the row red, telling the fixer to
+#     promote the case into the real table above. A known gap cannot be
+#     silently closed and left undocumented, and it cannot silently widen.
+#
+# What is NOT here is as important: none of these is a false GREEN on the
+# repo's current sources — PART 1 scans clean over the real scope, and the
+# gaps are shapes no in-scope file currently uses. They are latent, and the
+# corpus is what keeps them from becoming live without anyone noticing.
+known_gap_table() {
+    local td gaps=0 got
+    td=$(mktemp -d) || return 2
+
+    # VP-01 — command position after a leading redirection, through `eval`,
+    # and as a `find -exec` payload. All four RUN a bare verifier.
+    # Built with printf and indirection, exactly like the MUST-FLAG table
+    # above: writing the literal tokens into this file would put a bare
+    # verifier and an indirect-execution builtin in this guard's own source,
+    # which its own PART 1 (and bashrs SEC001) would then read as real code.
+    local M=pmat P=pv A=apr EV=eval
+    {
+        printf '>/dev/null %s verify\n' "$M"
+        printf '2>/dev/null %s lint contracts\n' "$P"
+        printf '%s %s comply check\n' "$EV" "$M"
+        printf 'find . -name "*.apr" -exec %s qa {} \\;\n' "$A"
+    } > "$td/g-cmdpos.sh"
+    got=$(scan "$td/g-cmdpos.sh"; printf 'rc=%s' $?)
+    if [ "$got" = "rc=0" ]; then
+        printf 'GAP   scanner    redirect-prefixed / indirect / find -exec bare invocations are MISSED (VP-01, QUAL-015)\n'
+    else
+        printf 'FAIL  scanner    VP-01 behaviour CHANGED — promote these cases into the\n'
+        printf '                 MUST-FLAG table above and delete this row:\n%s\n' "$got"; gaps=1
+    fi
+
+    # VP-02 — heredoc detection runs on text that still carries quoted spans,
+    # so a string literal merely NAMING `<< WORD` opens a fake heredoc and
+    # swallows every line after it.
+    cat > "$td/g-fakehd.sh" <<'EOF'
+echo "the cmd << EOF form is documented above"
+pmat verify --format json
+EOF
+    got=$(scan "$td/g-fakehd.sh"; printf 'rc=%s' $?)
+    if [ "$got" = "rc=0" ]; then
+        printf 'GAP   scanner    a quoted mention of `<< WORD` suppresses the REST OF THE FILE (VP-02, QUAL-015)\n'
+    else
+        printf 'FAIL  scanner    VP-02 behaviour CHANGED — promote into MUST-FLAG and\n'
+        printf '                 delete this row:\n%s\n' "$got"; gaps=1
+    fi
+
+    # VP-09 — no continuation joining, so the first word of a continued line
+    # is read as command position. A false POSITIVE: argument-position words.
+    printf 'echo the pinned tools are \\\n  pv pmat apr\n' > "$td/g-cont.sh"
+    got=$(scan "$td/g-cont.sh" | awk -F: '{print $3}' | tr -d ' ' | tr '\n' ' ')
+    if [ "$got" = "pv[bare] " ]; then
+        printf 'GAP   scanner    a backslash-continuation argument list FALSE-POSITIVES (VP-09, QUAL-015)\n'
+    else
+        printf 'FAIL  scanner    VP-09 behaviour CHANGED — if fixed, move this into\n'
+        printf '                 MUST-NOT-FLAG; got [%s]\n' "$got"; gaps=1
+    fi
+
+    # VP-08 — pin_audit has no heredoc awareness (unlike the PART 1 scanner),
+    # so a `$PMAT_BIN` mention inside a DATA heredoc counts as consumption
+    # while the gates consume something else entirely.
+    cat > "$td/g-hdconsume.sh" <<'EOF'
+verifier_pin_pmat "$CRATE" "$BINPATH"
+gate pmat-verify /some/other/binary verify
+PV=""
+verifier_pin_pv
+run_to "$L" "$PV" lint contracts
+cat <<'DOC'
+the pinned binary is $PMAT_BIN
+DOC
+EOF
+    if pin_audit "$td/g-hdconsume.sh" >/dev/null 2>&1; then
+        printf 'GAP   pin_audit  `$PMAT_BIN` inside a DATA heredoc counts as consumption (VP-08, QUAL-015)\n'
+    else
+        printf 'FAIL  pin_audit  VP-08 behaviour CHANGED — promote into the CALL-SITE\n'
+        printf '                 table above and delete this row\n'; gaps=1
+    fi
+
+    rm -rf "${td:?}"
+    return "$gaps"
+}
+
+# ---------------------------------------------------------------------------
 # PART 1b's audit. Prints "ROW <ok|FAIL> <text>"; exits 1 if any row failed.
 #
 # The question here is NOT "is there a bare token" — PART 1 answers that, and it
@@ -437,9 +531,16 @@ def strip_comments(line):
 
 code = [(n + 1, strip_comments(l)) for n, l in enumerate(lines)]
 
+# The left-context class carries the FAIL-CLOSED call shapes too. It had
+# then/else/do but not if/elif/while/until/!, so the most defensive spelling
+# there is — `if ! verifier_pin_pmat "$C" "$B"; then exit 2; fi` — was reported
+# as "the runner never CALLS verifier_pin_pmat" (#2644 audit, VP-07). A guard
+# that rejects the most careful form of the thing it demands trains people to
+# write the careless one.
+_LEFT = r"(?:^|[;&|(){}]|\bthen\b|\belse\b|\bdo\b|\bif\b|\belif\b|\bwhile\b|\buntil\b|!)\s*"
 CALL = {
-    "pmat": re.compile(r"(?:^|[;&|(){}]|\bthen\b|\belse\b|\bdo\b)\s*verifier_pin_pmat\b"),
-    "pv": re.compile(r"(?:^|[;&|(){}]|\bthen\b|\belse\b|\bdo\b)\s*verifier_pin_pv\b"),
+    "pmat": re.compile(_LEFT + r"verifier_pin_pmat\b"),
+    "pv": re.compile(_LEFT + r"verifier_pin_pv\b"),
 }
 USE = {
     "pmat": re.compile(r"\$\{?PMAT_BIN\b"),
@@ -449,7 +550,17 @@ USE = {
 # the mutation `PMAT_BIN=pmat`, and a token scan cannot distinguish it from any
 # other assignment. Empty initialisation stays legal — the runner sets PV="" so
 # an unpinned repo leaves it unmistakably unset.
-BYPASS = re.compile(r"""^\s*(PMAT_BIN|PV)=(?!(""|''|\s|$))""")
+# `^\s*` was line-anchored and prefix-blind, so the exact mutation this row
+# exists to catch survived in two trivial spellings — `export PMAT_BIN=/stale`
+# placed right after the genuine pin call, and a post-semicolon reassignment
+# (#2644 audit, VP-03). Declarators are matched as prefixes; a bare `readonly
+# PMAT_BIN` / `export PV` with no `=` is legitimate and still passes, as does
+# empty initialisation (`PV=""`), which is how an unpinned repo says so.
+BYPASS = re.compile(
+    _LEFT
+    + r"""(?:export\s+|readonly\s+|declare\s+(?:-[A-Za-z]+\s+)*|local\s+)?"""
+    + r"""(PMAT_BIN|PV)=(?!(""|''|\s|$))"""
+)
 
 rc = 0
 for tool in ("pmat", "pv"):
@@ -472,7 +583,11 @@ for tool in ("pmat", "pv"):
         print("ROW ok %s: pinned at line %d, consumed %d time(s), first use line %d"
               % (tool, min(calls), len(uses), min(uses)))
 
-bypass = [(n, l.strip()) for n, l in code if BYPASS.match(l)]
+# .search(), not .match(): `.match()` anchors at position 0, so widening
+# the pattern's left-context class alone left the post-semicolon bypass
+# accepted — the anchor lived in the CALL, not only the pattern (found by
+# this table's own new row while fixing VP-03).
+bypass = [(n, l.strip()) for n, l in code if BYPASS.search(l)]
 if bypass:
     for n, l in bypass:
         print("ROW FAIL bypass at line %d: %s" % (n, l[:80]))
@@ -491,12 +606,30 @@ PY
 # added there cannot escape it. An empty derivation is a FAILURE, not a pass:
 # a guard sweeping a set it failed to build is the vacuous green this whole
 # protocol exists to refuse.
+# The scan universe is the set the RUNNER EXECUTES, read through the runner's
+# own parser — not a second opinion about the same declaration.
+#
+# This was an awk+grep scrape for `"..."` strings ending in `.sh`, while
+# scripts/dogfood.sh executes EVERY declared string with `bash "$dg_path"`.
+# So a gate declared as `scripts/check_x` (no suffix), or with TOML literal
+# quotes, was RUN by the release and never SCANNED for unpinned verifiers —
+# a guard universe strictly smaller than the surface it guards, which is the
+# failure class this guard exists to catch (#2644 audit, CI-3 / VP-05 / F2).
 resolve_scope() {
-    local declared
-    declared=$(awk '/^\[package\.metadata\.dogfood\]/{f=1;next} /^\[/{f=0} f' \
-        "$REPO_ROOT/Cargo.toml" 2>/dev/null \
-        | grep -oE '"[^"]+\.sh"' | tr -d '"')
-    if [ -z "$declared" ]; then
+    local declared meta crate rc
+    meta=$(mktemp) || { printf 'SCOPE_ERROR'; return 1; }
+    if ! ( cd "$REPO_ROOT" && cargo metadata --no-deps --format-version 1 ) \
+           > "$meta" 2>/dev/null; then
+        rm -f "$meta"; printf 'SCOPE_ERROR'; return 1
+    fi
+    crate=$(sed -n 's/^name = "\(.*\)"/\1/p' "$REPO_ROOT/Cargo.toml" | head -1)
+    declared=$(CRATE="$crate" python3 "$REPO_ROOT/scripts/lib/dogfood_gates.py" "$meta" \
+        | awk '$1=="GATE"{print $2}')
+    rc=$?
+    rm -f "$meta"
+    # NOPKG/NODECL/EMPTY/BADSHAPE all yield no GATE lines: the declaration
+    # verifies nothing, and a scan over an empty universe would report clean.
+    if [ "$rc" -ne 0 ] || [ -z "$declared" ]; then
         printf 'SCOPE_ERROR'
         return 1
     fi
@@ -640,6 +773,76 @@ EOF
         printf 'ok    CALL-SITE     a pin called AFTER its first use is REJECTED\n'
     else
         printf 'FAIL  CALL-SITE     a pin called after its first use was accepted:\n%s\n' "$got"; fails=1
+    fi
+
+    # VP-03's two live spellings of the SAME bypass this table already covers
+    # in its line-start form. Both were accepted before #2644.
+    cat > "$td/bypass-export.sh" <<'EOF'
+verifier_pin_pmat "$CRATE" "$BINPATH"
+export PMAT_BIN=/opt/stale/pmat
+gate pmat-verify "$PMAT_BIN" verify
+PV=""
+verifier_pin_pv
+run_to "$L" "$PV" lint contracts
+EOF
+    got=$(pin_audit "$td/bypass-export.sh" 2>&1)
+    if grep -q 'ROW FAIL bypass' <<< "$got"; then
+        printf 'ok    CALL-SITE     `export PMAT_BIN=...` after the pin call is REJECTED\n'
+    else
+        printf 'FAIL  CALL-SITE     an `export` bypass was accepted:\n%s\n' "$got"; fails=1
+    fi
+
+    cat > "$td/bypass-semi.sh" <<'EOF'
+verifier_pin_pmat "$CRATE" "$BINPATH"
+true; PMAT_BIN=/opt/stale/pmat
+gate pmat-verify "$PMAT_BIN" verify
+PV=""
+verifier_pin_pv
+run_to "$L" "$PV" lint contracts
+EOF
+    got=$(pin_audit "$td/bypass-semi.sh" 2>&1)
+    if grep -q 'ROW FAIL bypass' <<< "$got"; then
+        printf 'ok    CALL-SITE     a post-semicolon PMAT_BIN= bypass is REJECTED\n'
+    else
+        printf 'FAIL  CALL-SITE     a post-semicolon bypass was accepted:\n%s\n' "$got"; fails=1
+    fi
+
+    # VP-07: the FAIL-CLOSED call shape must count as a call. Rejecting the
+    # most careful spelling of the rule is a false positive that teaches the
+    # careless one.
+    cat > "$td/failclosed-calls.sh" <<'EOF'
+if ! verifier_pin_pmat "$CRATE" "$BINPATH"; then
+  echo "pin failed" >&2
+  exit 2
+fi
+gate pmat-verify "$PMAT_BIN" verify
+PV=""
+if ! verifier_pin_pv; then MISSING="$MISSING pv"; fi
+run_to "$L" "$PV" lint contracts
+EOF
+    if pin_audit "$td/failclosed-calls.sh" >/dev/null 2>&1; then
+        printf 'ok    CALL-SITE     `if ! verifier_pin_*` counts as calling the pin\n'
+    else
+        printf 'FAIL  CALL-SITE     a fail-closed call shape was reported as "never CALLS":\n'
+        pin_audit "$td/failclosed-calls.sh" 2>&1 | sed 's/^/        /'; fails=1
+    fi
+
+    # Legitimate declarators with no assignment must stay legal — the runner
+    # itself ends both pins with `readonly`.
+    cat > "$td/readonly-ok.sh" <<'EOF'
+verifier_pin_pmat "$CRATE" "$BINPATH"
+readonly PMAT_BIN
+gate pmat-verify "$PMAT_BIN" verify
+PV=""
+verifier_pin_pv
+readonly PV
+run_to "$L" "$PV" lint contracts
+EOF
+    if pin_audit "$td/readonly-ok.sh" >/dev/null 2>&1; then
+        printf 'ok    CALL-SITE     `readonly PMAT_BIN` (no assignment) stays legal\n'
+    else
+        printf 'FAIL  CALL-SITE     the widened bypass regex now rejects a legal declarator:\n'
+        pin_audit "$td/readonly-ok.sh" 2>&1 | sed 's/^/        /'; fails=1
     fi
 
     cat > "$td/good-calls.sh" <<'EOF'
@@ -990,6 +1193,9 @@ printf -- '--- verifier pinning ------------------------------------------------
 
 printf 'case table (the tokeniser must be right before its verdict means anything)\n'
 if self_test; then :; else rc=1; fi
+
+printf '\nknown gaps (executable, asserted exactly — QUAL-015 replaces this scanner)\n'
+if known_gap_table; then :; else rc=1; fi
 
 printf '\nPART 1 — static: no bare verifier in command position\n'
 cd "$REPO_ROOT" || exit 2

@@ -357,6 +357,36 @@ falsification_tests:
   if_fails: 'the one note explaining why contracts went unvalidated names the wrong cause, sending the operator to the wrong component (DIV-4; the CI-4 shape in a second place)'
   mutation: 'collapse the branch back to the single unconditional note; rc=1 must again claim "no scripts/pv_bin.sh" for a file that exists (observed pre-fix 2026-08-23)'
 
+- id: F-DOG1-026
+  rule: one declaration, one parser
+  prediction: >
+    The guard's scan universe IS the set the runner executes, because both read
+    [package.metadata.dogfood] through scripts/lib/dogfood_gates.py. A gate
+    declared without a .sh suffix, or with TOML literal quotes, is both RUN and
+    SCANNED.
+  test: "declare gates = [\"scripts/a.sh\", \"scripts/check_noext\", 'scripts/lit.sh'] in a fixture crate; the guard scope and the runner plan must be the same set"
+  if_fails: 'a gate the release EXECUTES is never scanned for unpinned verifiers — a guard universe strictly smaller than the surface it guards (CI-3 / VP-05 / F2)'
+  mutation: 'restore the awk+grep scrape for double-quoted "*.sh"; the fixture must again show 2 of 3 declared gates run-but-unscanned (observed pre-fix 2026-08-23)'
+- id: F-DOG1-027
+  rule: the pin bypass has no cheap spelling
+  prediction: >
+    pin_audit rejects `export PMAT_BIN=...` and a post-semicolon `PMAT_BIN=...`
+    as bypasses, accepts `if ! verifier_pin_pmat ...` as a call, and leaves a
+    bare `readonly PMAT_BIN` (no assignment) legal.
+  test: 'bash scripts/check_verifier_pinning.sh --self-test   # the four new CALL-SITE rows'
+  if_fails: 'the mutation class PART 1b exists for survives in two trivial spellings, while the most fail-closed call shape is reported as "never CALLS" (VP-03, VP-07)'
+  mutation: 'revert BYPASS to `^\s*(PMAT_BIN|PV)=` or its .match() call site, or drop if/elif/while/! from the CALL left-context; the corresponding row must turn RED (both observed 2026-08-23 — the .match() call site was found by this row while fixing the pattern)'
+- id: F-DOG1-028
+  rule: a known gap is executable, exact, and cannot close silently
+  prediction: >
+    The four tokeniser gaps deferred to QUAL-015 (VP-01, VP-02, VP-08, VP-09)
+    are asserted as fixtures against their CURRENT behaviour: the row turns RED
+    if the gap widens AND if it is fixed, in which case the fixer must promote
+    the case into the real table.
+  test: 'bash scripts/check_verifier_pinning.sh   # the "known gaps" section'
+  if_fails: 'a documented gap silently widens, or is closed and left undocumented — the TODO-as-gate shape'
+  mutation: 'inject a partial VP-01 fix (strip leading redirections before tokenising); the VP-01 row must turn RED naming promotion (observed 2026-08-23, engagement proven: mutated scan rc=1 vs pristine rc=0 on the same probe)'
+
 proof_obligations:
 - type: invariant
   property: 'Exactly one tracked dogfood.sh exists, at scripts/dogfood.sh (F-DOG1-001)'
@@ -431,6 +461,15 @@ proof_obligations:
 - type: invariant
   property: 'Every diagnosis names the cause it observed, and every count this contract or its referenced audit states is reproducible from an extraction the text names (F-DOG1-025; DIV-1/DIV-2 corrections)'
   formal: 'note(cause) = observed_cause; forall n in stated_counts: reproducible(n, named_extraction)'
+- type: invariant
+  property: 'The guard scan universe equals the executed gate set, both derived from one parser (F-DOG1-026)'
+  formal: 'scope(guard) = plan(runner) = parse(package.metadata.dogfood)'
+- type: soundness
+  property: 'pin_audit admits the fail-closed call shapes and rejects every spelling of direct assignment; legal declarators stay legal (F-DOG1-027)'
+  formal: 'call_shapes subset accepted; assign(PMAT_BIN|PV, nonempty) => REJECT'
+- type: invariant
+  property: 'Every known tokeniser gap is an executable fixture asserting current behaviour exactly, so it can neither widen nor close silently (F-DOG1-028)'
+  formal: 'forall g in known_gaps: assert(behaviour(g) = recorded(g)); change(g) => RED'
 kani_harnesses:
 # Declared, NOT written. These are shell guards over shell source; there is no
 # Rust surface for Kani to model-check, and inventing one would be theatre. The
@@ -480,9 +519,9 @@ qa_gate:
     release verified by an unknown binary is an unverified release that says GO.
 
 verification_summary:
-  total_obligations: 24
+  total_obligations: 27
   proven: 0
-  tested: 24
+  tested: 27
   status: proposed
   notes: >
     Every obligation above is TESTED (none PROVEN in the L4/L5 sense — shell

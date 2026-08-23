@@ -259,37 +259,19 @@ fi
 #     reads exactly like a satisfied one.
 run_to "$WORKLOG/meta-dogfood.json" cargo metadata --no-deps --format-version 1
 DG_META_RC=$RUN_RC
-DG_PLAN=$(CRATE="$CRATE" python3 - "$WORKLOG/meta-dogfood.json" <<'PY' 2>/dev/null || echo "META_ERROR"
-import json, os, sys
-d = json.load(open(sys.argv[1]))
-name = os.environ.get('CRATE', '')
-pkgs = d.get('packages', [])
-pkg = next((p for p in pkgs if p['name'] == name), None)
-if pkg is None and len(pkgs) == 1:
-    pkg = pkgs[0]
-if pkg is None:
-    print("NOPKG"); raise SystemExit
-df = (pkg.get('metadata') or {}).get('dogfood')
-if not isinstance(df, dict):
-    print("NODECL"); raise SystemExit
-gates = df.get('gates')
-if not isinstance(gates, list):
-    print("BADSHAPE"); raise SystemExit
-if not gates:
-    print("EMPTY"); raise SystemExit
-for g in gates:
-    if not isinstance(g, str) or not g.strip():
-        print("BADSHAPE"); raise SystemExit
-    print("GATE " + g.strip())
-PY
-)
+# ONE parser, shared with scripts/check_verifier_pinning.sh — see
+# scripts/lib/dogfood_gates.py. This used to be an embedded heredoc while the
+# guard scraped the same TOML with awk+grep, so the guard's scan universe could
+# be strictly smaller than the set the runner EXECUTES (#2644 audit, CI-3/VP-05).
+DG_PLAN=$(CRATE="$CRATE" python3 "$SKILL_DIR/lib/dogfood_gates.py" \
+  "$WORKLOG/meta-dogfood.json" 2>/dev/null || echo "META_ERROR")
 if [ "$DG_META_RC" -ne 0 ]; then
   mark dogfood-gates FAIL "\`cargo metadata\` failed (exit=$DG_META_RC) — the release gates this crate declares could not be discovered, so none of them ran"
 elif [ "$DG_PLAN" = "META_ERROR" ]; then
   # cargo succeeded; the python step died. The old message blamed cargo with
   # "failed (exit=0)" attached — an operator sent to the wrong component
   # (#2644, CI-4).
-  mark dogfood-gates FAIL "gate discovery's python3 step failed (cargo metadata itself exited 0) — the declaration could not be parsed, so no declared gate ran"
+  mark dogfood-gates FAIL "gate discovery's python3 step failed (cargo metadata itself exited 0) — \`$SKILL_DIR/lib/dogfood_gates.py\` could not parse the declaration (or is missing), so no declared gate ran"
 elif [ "$DG_PLAN" = "NOPKG" ]; then
   mark dogfood-gates FAIL "no package named '$CRATE' in cargo metadata — run dogfood from the crate dir, not the virtual workspace root"
 elif [ "$DG_PLAN" = "NODECL" ]; then
