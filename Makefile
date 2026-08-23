@@ -264,6 +264,9 @@ tier3:
 	@echo "Checking no contract names an enforcement command that cannot run (aprender#2504)..."
 	@bash scripts/check_contract_enforcement.sh --self-test
 	@bash scripts/check_contract_enforcement.sh
+	@echo "Checking no test asserts about the fd 0 it inherited (aprender#2307)..."
+	@bash scripts/check_hermetic_stdin_tests.sh --self-test
+	@bash scripts/check_hermetic_stdin_tests.sh
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \

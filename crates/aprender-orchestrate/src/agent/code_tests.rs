@@ -1114,27 +1114,81 @@ fn falsify_2607_named_arguments_still_run_on_closed_stdin() {
     assert!(!CodeInvocation { stdin_is_terminal: true, ..CodeInvocation::default() }.wants_help());
 }
 
+/// Marker that puts this test binary in "child half" mode for the #2607
+/// stdin test below. Absent ⇒ parent half: re-exec ourselves. Present ⇒ we
+/// already own fd 0 and may make the assertion.
+const HERMETIC_STDIN_CHILD_ENV: &str = "APR_2607_HERMETIC_STDIN_CHILD";
+
+/// Full libtest path of the test below, used as the child's `--exact` filter.
+/// If it ever drifts from the real name, the child runs zero tests and the
+/// parent's `1 passed` assertion fails — the rename cannot pass silently.
+const HERMETIC_STDIN_TEST: &str =
+    "agent::code::tests::falsify_2607_cmd_code_refuses_bare_non_interactive_invocation";
+
 /// `cmd_code` itself must refuse the bare/non-interactive shape, so a library
 /// embedder cannot reach model discovery either. Asserting `is_err` is the
 /// point: the pre-#2607 build returned no error and went on to spawn a child.
+///
+/// **Hermetic by re-exec** (#2307). The guard reads *this process'* fd 0, so
+/// the assertion is only meaningful if the test owns fd 0 — and it does not.
+/// `cargo nextest` gives every test its own process with `/dev/null` on fd 0;
+/// a plain `cargo test` runs tests as *threads* of one process that inherited
+/// the caller's stdin, which under CI is a pipe or a redirected file. That
+/// divergence is exactly why this test was green on `workspace-test` and red
+/// on `make coverage`, blocking the 0.64.0 coverage measurement. So the parent
+/// half re-execs the test binary with `Stdio::null()` on fd 0 and the child
+/// half — which now provably owns fd 0 — makes the assertion. Same result
+/// under both harnesses, from a terminal, a pipe or a file.
 #[test]
 fn falsify_2607_cmd_code_refuses_bare_non_interactive_invocation() {
-    // Under `cargo test` stdin is not a terminal, which is exactly the shape
-    // the sweep host hit. If a harness ever attaches a tty, the guard cannot
-    // fire and there is nothing to assert — say so rather than pass silently.
+    if std::env::var_os(HERMETIC_STDIN_CHILD_ENV).is_some() {
+        assert_cmd_code_refuses_bare_non_interactive();
+        return;
+    }
+    let exe = std::env::current_exe().expect("test binary must have a path to re-exec");
+    let out = std::process::Command::new(&exe)
+        .args(["--exact", HERMETIC_STDIN_TEST, "--test-threads=1"])
+        .env(HERMETIC_STDIN_CHILD_ENV, "1")
+        // The whole point: fd 0 is /dev/null in the child no matter what the
+        // harness handed us.
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap_or_else(|e| panic!("failed to re-exec {} for the #2607 check: {e}", exe.display()));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "#2607 child assertion failed ({}):\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
+        out.status
+    );
+    // Prove the child actually ran the assertion. A stale `HERMETIC_STDIN_TEST`
+    // would make libtest filter everything out and still exit 0 — a green run
+    // proving nothing, which is the class of defect this test is fixing.
+    assert!(
+        stdout.contains("1 passed"),
+        "child ran no assertion — is HERMETIC_STDIN_TEST ({HERMETIC_STDIN_TEST}) stale?\n{stdout}"
+    );
+}
+
+/// The actual #2607 assertion. Runs only in the child half above, which owns
+/// fd 0 (`/dev/null`); the preconditions restate that and fail loudly rather
+/// than pass vacuously if the re-exec ever stops delivering it.
+fn assert_cmd_code_refuses_bare_non_interactive() {
+    // A terminal on fd 0 short-circuits `CodeInvocation::from_args` one level
+    // up, so the guard could not fire and there would be nothing to assert.
     assert!(
         !std::io::IsTerminal::is_terminal(&std::io::stdin()),
-        "test harness attached a terminal to stdin; the #2607 guard cannot be exercised here"
+        "child stdin is a terminal, not /dev/null; the #2607 guard cannot be exercised here"
     );
     // The guard peeks stdin when — and only when — every flag already says
-    // "would refuse", and that peek blocks on a pipe with a live writer. Every
-    // harness we run under (nextest, and a redirected `cargo test`) hands tests
-    // /dev/null. Assert it rather than discover it as a hung merge queue.
+    // "would refuse", and that peek blocks on a pipe with a live writer.
+    // `Stdio::null()` makes fd 0 a character device, which is refused without
+    // reading. Assert it rather than discover it as a hung merge queue.
     #[cfg(unix)]
     if let Ok(meta) = std::fs::metadata("/dev/stdin") {
         assert!(
             !crate::agent::code::kind_can_carry_input(&meta.file_type()),
-            "test harness attached a pipe/file to stdin; this test would block on the #2607 peek"
+            "child stdin is a pipe/file, not /dev/null; this test would block on the #2607 peek"
         );
     }
     let err =
