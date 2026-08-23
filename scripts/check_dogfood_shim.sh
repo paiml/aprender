@@ -51,17 +51,75 @@ CANON_SKILL="$REPO_ROOT/.claude/skills/dogfood/SKILL.md"
 CANON_RUNNER="$REPO_ROOT/scripts/dogfood.sh"
 
 # ---------------------------------------------------------------------------
-# Gate names, DERIVED from the canonical runner. A hardcoded list would be the
-# same defect one level down: the runner grows a gate, the list does not, and
-# the shim may then quietly acquire the new one.
-gate_names() {
-    grep -oE '^[[:space:]]*(mark|gate) [a-z0-9][a-z0-9-]*' "$1" \
-        | awk '{print $2}' | LC_ALL=C sort -u
+# Gate invocations, DERIVED from the canonical runner. A hardcoded list would be
+# the same defect one level down: the runner grows a gate, the list does not,
+# and the shim may then quietly acquire the new one.
+#
+# NOT LINE-ANCHORED, and that is a fix rather than a preference. The first
+# version matched `^[[:space:]]*(mark|gate) …`, which omitted every invocation
+# that follows a `;`, a `&&`, or a `then` on the same line — 11 of them in the
+# runner — so both 3b rows below could be evaded by writing the gate mid-line.
+#
+# It also has to see DYNAMIC call sites. The runner's declared-gate section
+# calls `mark "$dg_name" …` three times; a name-only extraction drops those, and
+# a shim that re-implemented that section would have invoked a gate while
+# reporting none. So there are two extractions:
+#
+#   gate_calls  every command-position `mark`/`gate` invocation, literal or
+#               dynamic — this is what "does the shim invoke a gate" means.
+#   gate_names  the subset whose argument is a literal gate name — this is the
+#               vocabulary the textual 3b row greps for.
+#
+# The leading alternation is what keeps a MENTION from reading as a call: in
+# `# mark pv-contracts PASS` and in `"a shim that runs a gate"` the character
+# before the keyword is neither the line start nor a shell separator.
+# Comments are removed FIRST, quote-aware. Without that the `\bthen\b`
+# alternative matches English: the runner's own comment "then gate on CB-200
+# specifically" produced a phantom gate named `on`, and a phantom name is a
+# grep the shim can never satisfy.
+gate_calls() {
+    python3 - "$1" <<'PY'
+import re, sys
+
+CALL = re.compile(r"(?:^|[;&|(){}]|\bthen\b|\belse\b|\bdo\b)\s*(?:mark|gate)\s+(\S+)")
+
+
+def strip_comment(line):
+    out, i, n, q = [], 0, len(line), ""
+    while i < n:
+        c = line[i]
+        if c == "\\" and i + 1 < n:
+            out.append(line[i:i + 2]); i += 2; continue
+        if q:
+            if c == q:
+                q = ""
+            out.append(c); i += 1; continue
+        if c in ("'", '"'):
+            q = c; out.append(c); i += 1; continue
+        if c == "#":
+            prev = out[-1] if out else ""
+            if not out or prev.isspace() or prev in "(;&|":
+                break
+            out.append(c); i += 1; continue
+        out.append(c); i += 1
+    return "".join(out)
+
+
+for raw in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    for m in CALL.finditer(strip_comment(raw.rstrip("\n"))):
+        print(m.group(1))
+PY
 }
 
-# Does this file INVOKE a gate? Structural, and the primary check.
+gate_names() {
+    gate_calls "$1" | grep -E '^[a-z0-9][a-z0-9-]*$' | LC_ALL=C sort -u
+}
+
+# Does this file INVOKE a gate? Structural, and the primary check. Dynamic call
+# sites are reported as the literal text of their argument, so `mark "$dg_name"`
+# is visible as `"$dg_name"` rather than vanishing.
 shim_invokes_gate() {
-    gate_names "$1" | tr '\n' ' '
+    gate_calls "$1" | LC_ALL=C sort -u | tr '\n' ' '
 }
 
 # Does this file MENTION a gate name as literal text? Secondary, and restricted
@@ -182,6 +240,65 @@ self_test() {
         printf 'ok    row 5 a shim that fails MUTELY is REJECTED\n'
     else
         printf 'FAIL  row 5 a mute failing shim was accepted\n'; fails=1
+    fi
+
+    # Mutation E: the gate is invoked MID-LINE. The line-anchored extractor this
+    # replaces saw nothing here, so both 3b rows were evadable by writing `;`.
+    cp "$td/good.sh" "$td/midline.sh"
+    printf 'true; mark pv-contracts PASS "ported"\n' >> "$td/midline.sh"
+    out=$(check_shim_file "$td/midline.sh" 2>&1)
+    if printf '%s' "$out" | grep -q 'FAIL  3b'; then
+        printf 'ok    row 6 a MID-LINE `; mark pv-contracts` is REJECTED\n'
+    else
+        printf 'FAIL  row 6 a mid-line gate invocation was accepted\n'; fails=1
+    fi
+
+    # Mutation F: the gate name is a VARIABLE. The runner itself does this three
+    # times (`mark "$dg_name" …`), so a name-only extraction is blind to the one
+    # section a re-implementing shim would most plausibly copy.
+    cp "$td/good.sh" "$td/dynamic.sh"
+    printf 'mark "$dg_name" FAIL "declared but absent"\n' >> "$td/dynamic.sh"
+    out=$(check_shim_file "$td/dynamic.sh" 2>&1)
+    if printf '%s' "$out" | grep -q 'FAIL  3b'; then
+        printf 'ok    row 7 a DYNAMIC `mark "$name"` invocation is REJECTED\n'
+    else
+        printf 'FAIL  row 7 a dynamic gate invocation was accepted\n'; fails=1
+    fi
+
+    # Row 8 — and the widened regex must still let the shim describe itself. A
+    # keyword in prose or in a comment is not a call site; demanding its absence
+    # would forbid the shim from explaining what it is, which is a false alarm,
+    # not a gate.
+    cp "$td/good.sh" "$td/prose.sh"
+    {
+        printf '# mark tests PASS -- this is prose about what the runner does\n'
+        printf '# it invokes no gate and does not gate anything itself\n'
+        # The live false positive: `\bthen\b` matching English inside a comment.
+        printf '# build the index first, then gate on CB-200 specifically\n'
+    } >> "$td/prose.sh"
+    if check_shim_file "$td/prose.sh" >/dev/null 2>&1; then
+        printf 'ok    row 8 prose naming `mark`/`gate` is NOT a call site\n'
+    else
+        printf 'FAIL  row 8 a shim describing itself was rejected:\n'
+        check_shim_file "$td/prose.sh" | sed 's/^/        /'
+        fails=1
+    fi
+
+    # Row 9 — VACUITY. An extraction that yields nothing makes both 3b rows
+    # pass on any shim at all. The number is MEASURED and printed rather than
+    # asserted: an earlier handoff quoted "61 gate names" from a regex run over
+    # both forked copies, and the real extraction is a different number.
+    local n_names n_calls
+    n_names=$(gate_names "$CANON_RUNNER" | grep -c .)
+    n_calls=$(gate_calls "$CANON_RUNNER" | grep -c .)
+    if [ "$n_names" -ge 20 ] && [ "$n_calls" -ge "$n_names" ]; then
+        printf 'ok    row 9 canon yields %s distinct gate names over %s call sites\n' \
+            "$n_names" "$n_calls"
+    else
+        printf 'FAIL  row 9 extraction yielded %s names / %s call sites — a 3b row that\n' \
+            "$n_names" "$n_calls"
+        printf '         greps an empty vocabulary accepts every shim.\n'
+        fails=1
     fi
 
     rm -rf "${td:?}"

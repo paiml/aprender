@@ -43,15 +43,55 @@ equations:
     formula: |
       V = { pv, pmat, apr }          -- exactly the tools this repo PINS
       S = { scripts/dogfood.sh, scripts/verifier_pin.sh }
-      bare(f) = { t in V : t appears in COMMAND POSITION in f
-                           after comments and quoted spans are removed }
-      REQUIRE: union over f in S of bare(f) == {}
-    domain: shell source of the release runner and its pin library
+          UNION Cargo.toml [package.metadata.dogfood].gates
+      unpinned(f) = { t in V :  t is in COMMAND POSITION in f
+                             OR t is the subject of a PATH PROBE in f
+                             OR t is a literal word of a `for … in` list in f }
+                    where INERT text is removed first: comments,
+                    single-quoted spans, double-quoted literal text, and DATA
+                    heredoc bodies -- but NOT `$( … )` / backticks, which are
+                    command position even inside double quotes, and NOT a
+                    heredoc body whose introducing command is a shell.
+      REQUIRE: union over f in S of unpinned(f) == {}
+    domain: shell source of the release runner, its pin library, and every gate the runner DISCOVERS and EXECUTES
     codomain: set of unpinned verifier tokens (must be empty)
     invariants:
     - 'A mention inside a comment or a string is NOT an invocation — the runner must stay able to describe its own rule.'
+    - 'A command substitution IS command position even inside double quotes. `mark deterministic-tools PASS "… pmat $(pmat --version …)"` was live in the runner — the one row whose job is to say WHICH pmat measured the release named a pmat off PATH — and the first version of the scanner collapsed the whole quoted span to a placeholder and reported the file clean.'
+    - 'A PATH PROBE (`command -v pmat`, `type -aP pv`) does not run the tool and still decides whether a gate runs, against PATH rather than against the pin. The runner gated its entire pmat section on `command -v pmat`, so releasing pmat with no pmat on PATH would have skipped every pmat gate while the pin sat resolved and unused.'
+    - 'A verifier NAME in a `for … in` word list is a call site whose command word is a variable (`for t in bashrs pmat probador; do command -v "$t"`), invisible to any command-position scan.'
+    - 'S is DERIVED from the manifest, not hardcoded: the runner executes every declared gate with `bash "$dg_path"` inside the release verdict, so a declared gate resolving a verifier through PATH decides the release with an unknown binary exactly as directly as the runner would. An empty derivation is a FAIL, not a pass.'
     - 'bashrs and probador are deliberately OUT of V: no pin exists for them, and the rule''s second clause is "where the repo does not pin, REPORT". Adding them would demand a pin that does not exist.'
     - 'The tokeniser ships a must-match / must-not-match case table (--self-test) because the apr-invocation patterns in this repo were wrong five times and every one was caught by a table, none by review.'
+
+  pin_is_used:
+    formula: |
+      let call_pmat = first line of the runner invoking verifier_pin_pmat
+      let call_pv   = first line of the runner invoking verifier_pin_pv
+      let use_pmat  = first line of the runner referencing $PMAT_BIN
+      let use_pv    = first line of the runner referencing $PV
+      REQUIRE: call_pmat exists AND use_pmat exists AND call_pmat < use_pmat
+      REQUIRE: call_pv   exists AND use_pv   exists AND call_pv   < use_pv
+      REQUIRE: the runner contains no assignment PMAT_BIN=<non-empty>
+               and no assignment PV=<non-empty>   (only verifier_pin.sh decides)
+    domain: scripts/dogfood.sh
+    codomain: bool
+    invariants:
+    - 'PRESENCE IS NOT USE. Replacing the `verifier_pin_pmat "$CRATE" "$BINPATH"` call site with `PMAT_BIN=pmat` sends every pmat gate back through PATH, and a bare-token scan stays GREEN on it — an assignment is not an invocation, and the scanner is right about that. So the call site is asserted separately.'
+    - 'The ORDER matters as much as the presence: a pin called after its first use reads an unset variable, which under `set -u` is a crash and without it is an empty command.'
+    - 'Empty initialisation (PV="") stays legal — the runner sets it so an unpinned repo leaves PV unmistakably unset.'
+
+  fleet_path:
+    formula: |
+      SKILL_DIR must be resolved from ${BASH_SOURCE[0]} BEFORE `cd "$REPO_DIR"`
+      REQUIRE: run(`bash scripts/dogfood.sh <other-crate>`) does not exit 2
+               AND reaches the declared-gate section
+    domain: invocation forms of the runner
+    codomain: bool
+    invariants:
+    - 'This runner exists to be pointed at OTHER repos, by the relative path its own Usage line documents. `${BASH_SOURCE[0]}` is whatever the caller typed, so resolving it after the `cd` looks for this skill''s helpers inside the TARGET repo.'
+    - 'That was harmless while the helpers were optional. #2640 made verifier_pin.sh load-bearing and fail-closed, and the runner then refused to start on every relative invocation: measured rc=2 relative, rc=0 absolute, against a fixture crate.'
+    - 'Absolute invocation kept working, which is exactly why nothing noticed. A guard that only exercises the convenient form is not exercising the fleet path.'
 
   pin_behaviour:
     formula: |
@@ -128,10 +168,10 @@ falsification_tests:
 
 - id: F-DOG1-003
   rule: the tokeniser is right before its verdict means anything
-  prediction: 'nine must-flag forms are all reported; ten must-not-flag forms are all accepted'
+  prediction: '18 must-flag forms are all reported; 14 must-not-flag forms are all accepted; a DATA heredoc is inert and a `bash <<EOF` heredoc is not'
   test: 'bash scripts/check_verifier_pinning.sh --self-test'
   if_fails: 'the scan is either blind or noisy, and PART 1''s green says nothing'
-  mutation: 'remove "if" from the OPENERS set; the `if pv validate x` row must stop being flagged and the table must turn RED'
+  mutation: 'remove "if" from the SEPARATORS set (the `if pv validate x` row stops being flagged); remove "command" from PREFIX (rows 14 and 18 stop being flagged); remove "nice" from PREFIX (row 13 stops being flagged) — each must turn the table RED'
 
 - id: F-DOG1-004
   rule: the PMAT_BIN hardening BEHAVES
@@ -182,6 +222,48 @@ falsification_tests:
   if_fails: 'the repo skill never appears in the session listing and edits to it change nothing that runs (#2332/#2361)'
   mutation: 'delete the `name:` line from the repo SKILL.md, and restore a user-scope SKILL.md; rows 2 and 4 must turn RED'
 
+- id: F-DOG1-011
+  rule: a command substitution inside double quotes is command position
+  prediction: '`mark tools PASS "pmat $(pmat --version)"` and `OUT="$(pv lint contracts)"` are both reported'
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 1 + case table rows 10-12'
+  if_fails: 'the receipt row that names WHICH pmat measured the release is itself measured with an unpinned pmat, and the guard prints PASS'
+  mutation: 'restore `pmat $(pmat --version …)` on the deterministic-tools receipt line in scripts/dogfood.sh; PART 1 must turn RED'
+
+- id: F-DOG1-012
+  rule: the pin is USED, not merely defined
+  prediction: 'the runner calls verifier_pin_pmat and verifier_pin_pv before the first use of their results, and assigns neither variable itself'
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 1b'
+  if_fails: 'a perfectly correct pin sits unused while every gate resolves through PATH, and the static scan reports the file clean'
+  mutation: 'replace `verifier_pin_pmat "$CRATE" "$BINPATH"` with `PMAT_BIN=pmat`; PART 1b must turn RED. Note PART 1 stays GREEN on this mutation, which is why 1b exists.'
+
+- id: F-DOG1-013
+  rule: a PATH probe of a pinned verifier is an unpinned resolution
+  prediction: '`command -v pmat`, `type -aP pv` and `for t in bashrs pmat probador` are all reported'
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 1 + case table rows 14-17'
+  if_fails: 'the pmat section of the release is skipped, or run, according to what PATH holds rather than what the pin resolved'
+  mutation: 'restore `if command -v pmat` as the pmat-section guard, and `pmat` in the deterministic-tools `for` list; PART 1 must turn RED for each'
+
+- id: F-DOG1-014
+  rule: the runner runs when invoked by a relative path
+  prediction: '`bash scripts/dogfood.sh <other-crate>` reaches the declared-gate section and does not exit 2'
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 3'
+  if_fails: 'the whole fleet path is dead: the protocol cannot be pointed at any repo but this one, which is the arrangement the canon/shim split exists to serve'
+  mutation: 'move the SKILL_DIR resolution back below `cd "$REPO_DIR"`; PART 3 must turn RED (measured: rc=2 relative, rc=0 absolute)'
+
+- id: F-DOG1-015
+  rule: the pinning guard does not repair the lockfile it walks past
+  prediction: 'exercising the pv pin leaves Cargo.lock''s resolution unchanged, and the file byte-identical'
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 2, row 5'
+  if_fails: 'this guard silently fixes the staleness scripts/check_lockfile_current.sh exists to find, and that neighbour can never fail — it ran LATER in guard-runner-labels'
+  mutation: 'delete a `[[package]]` block from Cargo.lock; row 5 must turn RED and restore the file exactly as handed to it'
+
+- id: F-DOG1-016
+  rule: the shim gate extractor sees mid-line and dynamic call sites
+  prediction: '`true; mark pv-contracts PASS …` and `mark "$dg_name" FAIL …` are both rejected by 3b'
+  test: 'bash scripts/check_dogfood_shim.sh --self-test   # rows 6-9'
+  if_fails: 'both 3b rows are evadable by writing the gate after a `;`, and the runner''s own three dynamic `mark "$dg_name"` call sites are invisible to the extraction'
+  mutation: 'restore the `^[[:space:]]*(mark|gate) [a-z0-9][a-z0-9-]*` line-anchored extractor; rows 6 and 7 must turn RED'
+
 proof_obligations:
 - type: invariant
   property: 'Exactly one tracked dogfood.sh exists, at scripts/dogfood.sh (F-DOG1-001)'
@@ -213,6 +295,24 @@ proof_obligations:
 - type: invariant
   property: 'Exactly one prose description of the protocol is reachable, and it is the repo copy (F-DOG1-010)'
   formal: 'exists(repo SKILL.md with explicit name) and not exists(user-scope SKILL.md)'
+- type: soundness
+  property: 'A command substitution is command position at any quoting depth (F-DOG1-011)'
+  formal: 'unpinned("X=\"$(pmat v)\"") = {pmat} and unpinned("X=''$(pmat v)''") = {}'
+- type: invariant
+  property: 'Each pin is invoked before the first use of its result, and the runner assigns neither pinned variable (F-DOG1-012)'
+  formal: 'call(pin) < use(pin) for pin in {pmat, pv}; no PMAT_BIN=<non-empty> or PV=<non-empty> in the runner'
+- type: soundness
+  property: 'A PATH probe of a pinned verifier, and a verifier name in a for-list, are both unpinned resolutions (F-DOG1-013)'
+  formal: 'unpinned("command -v pmat") = {pmat}; unpinned("command -v \"$PMAT_BIN\"") = {}'
+- type: safety
+  property: 'The runner starts when invoked by a relative path against another crate (F-DOG1-014)'
+  formal: 'exit(bash scripts/dogfood.sh <other-crate>) != 2'
+- type: safety
+  property: 'Exercising the pv pin leaves Cargo.lock byte-identical (F-DOG1-015)'
+  formal: 'lock_after = lock_before, modulo [[patch.unused]] injected by host-local [patch.crates-io] overrides'
+- type: completeness
+  property: 'The shim gate extraction covers mid-line and dynamically named call sites (F-DOG1-016)'
+  formal: 'gate_calls("true; mark x PASS") != {} and gate_calls("mark \"$n\" FAIL") != {}'
 
 kani_harnesses:
 # Declared, NOT written. These are shell guards over shell source; there is no

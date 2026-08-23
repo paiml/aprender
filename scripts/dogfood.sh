@@ -11,6 +11,18 @@
 # Exit:   0 = GO (all gates green) · 1 = NO-GO (a gate failed) · 2 = setup error
 set -uo pipefail
 
+# WHERE THIS SKILL LIVES — resolved BEFORE the `cd` below, and that order is
+# load-bearing. `${BASH_SOURCE[0]}` is whatever the caller typed: for the
+# documented fleet invocation `bash scripts/dogfood.sh ../other-crate` it is
+# RELATIVE, so resolving it after `cd "$REPO_DIR"` looks for this skill's helper
+# files inside the TARGET repo. That was harmless while the helpers were
+# optional; #2640 made verifier_pin.sh load-bearing and fail-closed, and the
+# runner then refused to start on every relative invocation — the exact fleet
+# path the whole canon/shim arrangement exists to serve. Absolute invocations
+# kept working, which is why it looked fine. Gated by PART 3 of
+# scripts/check_verifier_pinning.sh.
+SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 REPO_DIR="${1:-$PWD}"
 cd "$REPO_DIR" 2>/dev/null || { echo "dogfood: no such dir: $REPO_DIR" >&2; exit 2; }
 [ -f Cargo.toml ] || { echo "dogfood: not a Rust crate (no Cargo.toml) in $REPO_DIR" >&2; exit 2; }
@@ -153,9 +165,9 @@ run_to() { local log="$1"; shift; "$@" > "$log" 2>&1; RUN_RC=$?; }
 # stderr; merging them destroys the receipt check).
 run_split() { local o="$1" e="$2"; shift 2; "$@" > "$o" 2> "$e"; RUN_RC=$?; }
 
-# Where this skill lives, so helper scripts resolve however the script is
-# invoked — an absolute path, a relative one, or a symlink on PATH.
-SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# SKILL_DIR is resolved at the top of this file, before the `cd` — see the note
+# there. It must not be recomputed here: from inside the target repo a relative
+# ${BASH_SOURCE[0]} points at the wrong tree.
 WORKLOG=$(mktemp -d)
 trap 'rm -rf "$WORKLOG"' EXIT
 
@@ -438,13 +450,25 @@ case $? in
   1) MISSING_TOOLS="$MISSING_TOOLS pv" ;;              # pin present, failed to resolve
   *) : ;;                                              # this repo ships no pin
 esac
-for t in bashrs pmat probador; do
+# bashrs and probador are unpinned in this repo, so PATH is the only answer
+# there and asking it is correct. pmat is NOT in that list: it is PINNED, and
+# `command -v pmat` would ask PATH about a tool whose answer the pin has already
+# decided — for the one crate where the pin matters (releasing pmat itself, with
+# the built artifact and possibly nothing on PATH) it reports the wrong thing.
+for t in bashrs probador; do
   command -v "$t" >/dev/null 2>&1 || MISSING_TOOLS="$MISSING_TOOLS $t"
 done
+command -v "$PMAT_BIN" >/dev/null 2>&1 || MISSING_TOOLS="$MISSING_TOOLS pmat"
 if [ -n "$MISSING_TOOLS" ]; then
   mark deterministic-tools FAIL "NOT INSTALLED:$MISSING_TOOLS — install them; a release cannot be verified by absent verifiers"
 else
-  mark deterministic-tools PASS "pv $("${PV:-:}" --version 2>/dev/null | head -1 | awk '{print $2}'), bashrs $(bashrs --version 2>/dev/null | head -1 | awk '{print $2}'), pmat $(pmat --version 2>/dev/null | head -1 | awk '{print $2}'), probador $(probador --version 2>/dev/null | head -1 | awk '{print $2}')"
+  # Every version here comes from the binary the gates will actually run. This
+  # line used a bare `pmat --version` inside the quoted note — the ONE row whose
+  # job is to say which pmat measured this release named a pmat off PATH, which
+  # may be a different build at the same version string (verifier_pin.sh records
+  # the 3.32.0-vs-3.32.0 case). It read as inert text to the guard, too: a
+  # command substitution inside double quotes is still command position.
+  mark deterministic-tools PASS "pv $("${PV:-:}" --version 2>/dev/null | head -1 | awk '{print $2}'), bashrs $(bashrs --version 2>/dev/null | head -1 | awk '{print $2}'), pmat $("$PMAT_BIN" --version 2>/dev/null | head -1 | awk '{print $2}'), probador $(probador --version 2>/dev/null | head -1 | awk '{print $2}')"
 fi
 
 # pv — provable-contract validation (YAML contracts, verification ladder).
@@ -677,7 +701,12 @@ fi
 
 # pmat — the fleet's own quality gate, run against the crate under release.
 # `verify` is the CI-faithful one (format, complexity, satd, clippy, tests).
-if command -v pmat >/dev/null 2>&1; then
+# The probe asks about "$PMAT_BIN", NOT about a bare `pmat`. Those differ in
+# exactly the case the pin exists for: releasing pmat itself, where PMAT_BIN is
+# the freshly built artifact and PATH may hold an older pmat or none at all. A
+# bare `command -v pmat` there either skips every gate below or answers about a
+# binary none of them run.
+if command -v "$PMAT_BIN" >/dev/null 2>&1; then
   # `pmat verify` runs cargo underneath and hard-errors on a crate with no lib
   # target: "error: no library targets found in package `pforge-cli`". That is a
   # gate that CANNOT PASS for any bin-only crate, and an unpassable gate trains

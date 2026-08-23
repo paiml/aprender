@@ -31,8 +31,15 @@ From (or pointing at) the crate repo:
 
 ```bash
 bash <aprender>/scripts/dogfood.sh [REPO_DIR]   # defaults to $PWD
+cd <aprender> && bash scripts/dogfood.sh ../other-crate   # the relative form works too
 # ~/.claude/skills/dogfood/dogfood.sh still works: it is a shim onto the above.
 ```
+
+The relative form is the fleet path, and it is gated (PART 3 of
+`scripts/check_verifier_pinning.sh`). It briefly was not: `SKILL_DIR` was resolved
+after the runner had already `cd`-ed into the target repo, so a relative
+`${BASH_SOURCE[0]}` pointed at the wrong tree and the fail-closed pin library was
+"missing" — exit 2 before any gate ran, while the absolute form kept working.
 
 ### A crate's own release gates are DECLARED, never copied in
 

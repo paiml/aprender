@@ -15,16 +15,37 @@
 # stated is documentation. #2640 merged the two dogfood runners into one; this
 # is what stops the sixth tool re-discovering the rule in a sixth copy.
 #
-# TWO PARTS, because presence is not behaviour:
+# FOUR PARTS, because presence is not behaviour and definition is not use:
 #
-#   PART 1 (static)      no bare pv/pmat/apr in command position in the runner
-#                        or its pin library. Mutation: reintroduce a bare `pmat`
-#                        call -> RED.
-#   PART 2 (behavioural) the two pins are EXERCISED and must select something
-#                        other than what PATH offers. Mutations: delete the
-#                        PMAT_BIN self-referential branch -> RED; bypass
-#                        pv_bin.sh to a PATH pv -> RED. Part 1 alone would pass
-#                        on a pin that resolves to the wrong binary.
+#   PART 1  (static)      no bare pv/pmat/apr in command position — and no PATH
+#                         PROBE of one — anywhere the release verdict is
+#                         decided. Mutation: reintroduce a bare `pmat` call.
+#   PART 1b (call site)   the pins are CALLED by the runner, before the first
+#                         use of their result, and the runner never assigns
+#                         PMAT_BIN/PV itself. Mutation: replace the
+#                         `verifier_pin_pmat` call with `PMAT_BIN=pmat`.
+#                         PART 1 alone passes on that mutation — a bare-token
+#                         scan cannot tell a DEFINED pin from a USED one, and
+#                         `PMAT_BIN=pmat` is a legal assignment everywhere the
+#                         scanner looks. That gap shipped once; this is its row.
+#   PART 2  (behavioural) the two pins are EXERCISED and must select something
+#                         other than what PATH offers, and exercising them must
+#                         leave Cargo.lock alone. Mutations: delete the
+#                         PMAT_BIN self-referential branch; bypass pv_bin.sh to
+#                         a PATH pv; delete a `[[package]]` block from
+#                         Cargo.lock, whereupon the pv build repairs it in
+#                         passing and the lockfile row must go RED with the file
+#                         restored. That last one is why this guard now runs
+#                         AFTER scripts/check_lockfile_current.sh in ci.yml: it
+#                         cargo-builds pv without --locked, so placed first it
+#                         quietly repaired the very staleness its neighbour
+#                         exists to find.
+#   PART 3  (fleet path)  the runner still RUNS when invoked the way its own
+#                         Usage line documents — by a relative path, against
+#                         another repo. #2640 made the pin library load-bearing
+#                         and fail-closed while SKILL_DIR was still resolved
+#                         after `cd "$REPO_DIR"`, so `bash scripts/dogfood.sh
+#                         ../other-crate` exited 2 before any gate ran.
 #
 # THE UNIVERSE, and why it is these three tokens
 # ----------------------------------------------
@@ -35,117 +56,337 @@
 # runner does. Adding them here would demand a pin that does not exist and make
 # the gate unfixable. The day one ships, add the token here.
 #
+# THE SCANNED SURFACE, and why it is not two files
+# ------------------------------------------------
+# The runner DISCOVERS gates from `[package.metadata.dogfood] gates` and
+# executes each one with `bash "$dg_path"` INSIDE the release verdict. A
+# declared gate that resolves a verifier through PATH decides the release with
+# an unknown binary exactly as directly as the runner would. So the scope is the
+# runner, the pin library, AND every declared gate — derived from the manifest,
+# never hardcoded, because a hardcoded list is the same defect one level down.
+#
 # What counts as an invocation: the token in COMMAND POSITION after comments and
-# quoted strings are removed. A bare mention in a comment or a string is NOT an
-# invocation — the runner's own prose says "`pv lint <DIR>` is a real gate" and
-# marks a row "pv is not pinned in this repo", and both must stay legal. The
-# distinction is the whole difficulty, so it ships a case table (--self-test)
-# rather than a reviewed regex: the apr-invocation patterns in this repo were
-# wrong FIVE times and every one was caught by a table, none by review.
+# INERT text are removed. Three things are NOT inert and each has cost a real
+# false negative:
+#   · `$( … )` and `` ` … ` `` are COMMAND POSITION even inside double quotes.
+#     `"pmat $(pmat --version)"` was live in the runner, on the line that writes
+#     which pmat ran into the receipt, and the scanner reported the file clean.
+#   · a PATH PROBE (`command -v pmat`, `type -aP pv`) does not run the tool but
+#     DECIDES whether a gate runs at all, against PATH rather than the pin. The
+#     runner gated its whole pmat section on `command -v pmat`, so releasing
+#     pmat itself with no pmat on PATH would have skipped every pmat gate while
+#     the pin sat resolved and unused.
+#   · a verifier NAME in a `for … in` word list is a call site whose command
+#     word is a variable. `for t in bashrs pmat probador; do command -v "$t"`
+#     is a PATH probe of pmat that no command-position scan can see.
+# A bare mention in a comment, in a single-quoted string, or in a DATA heredoc
+# is NOT an invocation — the runner's own prose says "`pv lint <DIR>` is a real
+# gate", and both must stay legal. The distinction is the whole difficulty, so
+# it ships a case table (--self-test) rather than a reviewed regex: the
+# apr-invocation patterns in this repo were wrong FIVE times and every one was
+# caught by a table, none by review.
 #
 #   bash scripts/check_verifier_pinning.sh              # check
 #   bash scripts/check_verifier_pinning.sh --self-test  # the case table only
+#   bash scripts/check_verifier_pinning.sh --scan FILE… # the raw scanner
 #
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# The files that decide a release and are therefore in scope.
-SCOPE="scripts/dogfood.sh scripts/verifier_pin.sh"
+# The two files that ARE the protocol. Every other in-scope file is derived from
+# the manifest below, in resolve_scope().
+CORE_SCOPE="scripts/dogfood.sh scripts/verifier_pin.sh"
 
 # ---------------------------------------------------------------------------
-# The scanner. Reports "<file>:<line>: <token>" for each bare invocation.
+# The scanner. Reports "<file>:<line>: <token> [<kind>]" per finding.
 #
 # It tokenises rather than regexing the raw line, because a regex over raw text
 # gets `pmat-verify` wrong: \bpmat\b MATCHES inside `pmat-verify`, since `-` is a
-# non-word character. Token equality does not. Quoted spans collapse to a single
+# non-word character. Token equality does not. Inert spans collapse to a single
 # @Q placeholder rather than being deleted, so the ARITY of wrappers such as
 # `run_to <log> <cmd...>` is preserved and `run_to "$LOG" pmat query` is still
-# seen as pmat in command position.
+# seen as pmat in command position. Command substitutions are LIFTED out of the
+# line and scanned as lines of their own, which preserves that arity while still
+# reaching the code inside them.
 scan() {
     python3 - "$@" <<'PY'
 import re, sys
 
 VERIFIERS = {"pv", "pmat", "apr"}
-# Tokens after which the next word is a command.
-OPENERS = {"", ";", "&&", "||", "|", "|&", "(", "$(", "((", "{", "}", ")",
-           "if", "then", "else", "elif", "while", "until", "do", "!",
-           "env", "exec", "nohup", "time", "sudo", "xargs", "&"}
+
+# Control words and operators: after one of these, the next word is a command.
+SEPARATORS = {";", ";;", "&&", "||", "|", "|&", "(", ")", "{", "}", "&", "!",
+              "if", "then", "else", "elif", "fi", "while", "until", "do",
+              "done", "case", "esac", "$("}
+
+# Wrappers that RUN their remaining arguments. After one of these the command
+# position moves along, past the wrapper's own options. `command` is here
+# because it was missing and `command pmat verify` was therefore invisible;
+# `nice`/`ionice`/`stdbuf` are here because a prefix that takes its own option
+# (`nice -n 5 pmat`) is the shape that hid it.
+PREFIX = {"env", "exec", "nohup", "time", "sudo", "doas", "xargs", "command",
+          "builtin", "nice", "ionice", "stdbuf", "setsid", "timeout", "chrt"}
+
+# Probes: they ask PATH where a tool is. They do not run it, and they still
+# decide whether a gate runs.
+PROBES = {"type", "hash", "which", "whereis"}
+
 ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+DURATION = re.compile(r"^[0-9]+[smhd]?$")
+# A heredoc introducer. `<<<` is a here-STRING and must not match.
+HEREDOC = re.compile(r"<<-?\s*(?!<)(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+# Heredoc bodies are DATA unless the command on the introducing line is a shell.
+# `python3 <<'PY' … PY` holds python; `bash <<'EOF' … EOF` holds shell that RUNS.
+SHELL_CMDS = {"bash", "sh", "zsh", "dash", "ksh"}
+
+
+def _scan(s, i, n, mode, subs):
+    """Walk s from i. Returns (inert-collapsed text, next index).
+
+    mode: 'top' | 'dq' (inside "…") | 'sub' (inside $(…)) | 'bt' (inside `…`).
+    Command substitutions found at any depth are appended to `subs` verbatim,
+    to be scanned as lines of their own.
+    """
+    out = []
+    while i < n:
+        c = s[i]
+        if c == "\\" and i + 1 < n:
+            # An escaped char is literal — including \` inside a double-quoted
+            # string, which is how the runner quotes `pv verify-bindings` in a
+            # note without invoking anything.
+            out.append("@" if mode == "dq" else "X")
+            i += 2
+            continue
+        if mode == "sub" and c == ")":
+            return "".join(out), i + 1
+        if mode == "bt" and c == "`":
+            return "".join(out), i + 1
+        if c == "$" and s.startswith("$((", i):
+            j = s.find("))", i + 3)
+            i = n if j < 0 else j + 2
+            out.append(" @Q ")
+            continue
+        if c == "$" and s.startswith("$(", i):
+            body, i = _scan(s, i + 2, n, "sub", subs)
+            subs.append(body)
+            out.append(" @Q ")
+            continue
+        if c == "`":
+            body, i = _scan(s, i + 1, n, "bt", subs)
+            subs.append(body)
+            out.append(" @Q ")
+            continue
+        if c == "'" and mode != "dq":
+            i += 1
+            while i < n and s[i] != "'":
+                i += 1
+            i += 1
+            out.append(" @Q ")
+            continue
+        if c == '"':
+            if mode == "dq":
+                return "".join(out), i + 1
+            _body, i = _scan(s, i + 1, n, "dq", subs)
+            out.append(" @Q ")
+            continue
+        if c == "#" and mode != "dq":
+            prev = out[-1] if out else ""
+            # A `#` starts a comment only at the start of a word.
+            if not out or prev.isspace() or prev in "(;&|":
+                return "".join(out), n
+            out.append(c)
+            i += 1
+            continue
+        out.append("@" if mode == "dq" else c)
+        i += 1
+    return "".join(out), i
+
 
 def strip_line(line):
-    """Remove comments; replace quoted spans with @Q. Returns the stripped line."""
-    out, i, n = [], 0, len(line)
+    """Returns (inert-collapsed line, [command-substitution bodies])."""
+    subs = []
+    text, _ = _scan(line, 0, len(line), "top", subs)
+    return text, subs
+
+
+def strip_comments(line):
+    """Remove comments but KEEP quoted text. Used where the question is textual
+    (does this file reference $PMAT_BIN?) rather than syntactic."""
+    out, i, n, q = [], 0, len(line), ""
     while i < n:
         c = line[i]
         if c == "\\" and i + 1 < n:
-            out.append("X"); i += 2; continue
+            out.append(line[i:i + 2]); i += 2; continue
+        if q:
+            if c == q:
+                q = ""
+            out.append(c); i += 1; continue
         if c in ("'", '"'):
-            q = c; i += 1
-            while i < n:
-                if line[i] == "\\" and q == '"':
-                    i += 2; continue
-                if line[i] == q:
-                    i += 1; break
-                i += 1
-            out.append(" @Q "); continue
+            q = c; out.append(c); i += 1; continue
         if c == "#":
             prev = out[-1] if out else ""
-            # A `#` starts a comment only at the start of a word.
             if not out or prev.isspace() or prev in "(;&|":
                 break
             out.append(c); i += 1; continue
         out.append(c); i += 1
     return "".join(out)
 
+
 SPLIT = re.compile(r"(\$\(|[();|&{}]|&&|\|\|)")
+
 
 def tokens(s):
     return [t for t in SPLIT.sub(r" \1 ", s).split() if t]
 
+
+def _follow(toks, j, hits, probes):
+    """Index j is a command position. Record it, then follow wrapper prefixes."""
+    while j < len(toks):
+        t = toks[j]
+        if ASSIGN.match(t) and "=" in t:
+            j += 1
+            continue
+        if t in PROBES:
+            _probe_args(toks, j + 1, probes)
+            return
+        hits.add(j)
+        if t in PREFIX:
+            k = j + 1
+            saw_probe_flag = False
+            while k < len(toks) and (
+                toks[k].startswith("-") or DURATION.match(toks[k])
+                or (ASSIGN.match(toks[k]) and "=" in toks[k])
+            ):
+                if t == "command" and re.match(r"^-[a-zA-Z]*[vVp]", toks[k]):
+                    saw_probe_flag = True
+                k += 1
+            if saw_probe_flag:
+                _probe_args(toks, k, probes)
+                return
+            j = k
+            continue
+        return
+
+
+def _probe_args(toks, j, probes):
+    """Every non-option word a probe is handed is a PATH question about it."""
+    while j < len(toks):
+        t = toks[j]
+        if t in SEPARATORS:
+            return
+        if not t.startswith("-"):
+            probes.add(j)
+        j += 1
+
+
 def command_positions(toks):
-    """Yield indices of tokens that sit in command position."""
-    prev = ""
+    hits, probes = set(), set()
+    expect = True
     i = 0
     while i < len(toks):
         t = toks[i]
-        if prev in OPENERS:
-            # skip leading VAR=value assignment prefixes
-            j = i
-            while j < len(toks) and ASSIGN.match(toks[j]) and "=" in toks[j]:
-                j += 1
-            if j < len(toks):
-                yield j
-            prev = toks[i]
+        if expect:
+            if t in SEPARATORS or (ASSIGN.match(t) and "=" in t):
+                i += 1
+                continue
+            _follow(toks, i, hits, probes)
+            expect = False
             i += 1
             continue
-        prev = t
+        if t in SEPARATORS:
+            expect = True
         i += 1
+    return hits, probes
+
 
 def wrapper_positions(toks):
     """Command position created by this repo's own runner wrappers."""
+    hits, probes = set(), set()
     for i, t in enumerate(toks):
         if t == "run_to" and i + 2 < len(toks):
-            yield i + 2
+            _follow(toks, i + 2, hits, probes)
         elif t == "run_split" and i + 3 < len(toks):
-            yield i + 3
+            _follow(toks, i + 3, hits, probes)
         elif t == "gate" and i + 2 < len(toks):
-            yield i + 2
-        elif t == "timeout" and i + 2 < len(toks):
-            yield i + 2
+            _follow(toks, i + 2, hits, probes)
+    return hits, probes
+
+
+def for_list_positions(toks):
+    """`for t in bashrs pmat probador` — the loop body's command word is a
+    variable, so no command-position scan can see the tool. The literal list is
+    where it IS visible."""
+    out = set()
+    for i, t in enumerate(toks):
+        if t == "in" and i >= 2 and toks[i - 2] == "for":
+            j = i + 1
+            while j < len(toks) and toks[j] not in (";", "do"):
+                out.add(j)
+                j += 1
+    return out
+
+
+def scan_units(text):
+    """Yield (lineno, unit_text) for every span of the file that is CODE.
+
+    Heredoc bodies are data unless the introducing command is a shell — a
+    quoted python heredoc holding the word `apr` is not an invocation, and
+    `bash <<'EOF'` holding `pmat verify` is.
+    """
+    lines = text.splitlines()
+    i, n = 0, len(lines)
+    while i < n:
+        raw = lines[i]
+        lineno = i + 1
+        yield lineno, raw
+        stripped_for_hd = strip_comments(raw)
+        m = HEREDOC.search(stripped_for_hd)
+        if not m:
+            i += 1
+            continue
+        delim = m.group(2)
+        head_toks = tokens(strip_line(raw)[0])
+        is_shell = any(t in SHELL_CMDS for t in head_toks[:2])
+        i += 1
+        while i < n and lines[i].strip() != delim:
+            if is_shell:
+                yield i + 1, lines[i]
+            i += 1
+        i += 1
+
 
 def findings(path, text):
     out = []
-    for lineno, raw in enumerate(text.splitlines(), 1):
-        s = strip_line(raw)
-        if not s.strip():
-            continue
-        toks = tokens(s)
-        hits = set(command_positions(toks)) | set(wrapper_positions(toks))
-        for idx in sorted(hits):
-            if idx < len(toks) and toks[idx] in VERIFIERS:
-                out.append("%s:%d: %s" % (path, lineno, toks[idx]))
-    return out
+    for lineno, raw in scan_units(text):
+        main, subs = strip_line(raw)
+        for unit, is_sub in [(main, False)] + [(s, True) for s in subs]:
+            if not unit.strip():
+                continue
+            toks = tokens(unit)
+            hits, probes = command_positions(toks)
+            whits, wprobes = wrapper_positions(toks)
+            hits |= whits
+            probes |= wprobes
+            fors = set() if is_sub else for_list_positions(toks)
+            for idx in sorted(hits):
+                if idx < len(toks) and toks[idx] in VERIFIERS:
+                    out.append("%s:%d: %s [bare]" % (path, lineno, toks[idx]))
+            for idx in sorted(probes):
+                if idx < len(toks) and toks[idx] in VERIFIERS:
+                    out.append("%s:%d: %s [PATH probe]" % (path, lineno, toks[idx]))
+            for idx in sorted(fors):
+                if idx < len(toks) and toks[idx] in VERIFIERS:
+                    out.append("%s:%d: %s [for-list]" % (path, lineno, toks[idx]))
+    # One finding per line/token/kind; a line can otherwise report twice when a
+    # construct is both a wrapper argument and a command position.
+    seen, uniq = set(), []
+    for f in out:
+        if f not in seen:
+            seen.add(f)
+            uniq.append(f)
+    return uniq
+
 
 rc = 0
 for p in sys.argv[1:]:
@@ -160,18 +401,121 @@ PY
 }
 
 # ---------------------------------------------------------------------------
-# PART 1 case table. LEFT column must be FLAGGED, right column must NOT.
-# Re-run this rather than re-reading the tokeniser.
+# PART 1b's audit. Prints "ROW <ok|FAIL> <text>"; exits 1 if any row failed.
+#
+# The question here is NOT "is there a bare token" — PART 1 answers that, and it
+# answers it GREEN on a runner that defines a perfect pin and never calls it.
+# The question is whether the pin is the thing the gates consume.
+pin_audit() {
+    python3 - "$1" <<'PY'
+import re, sys
+
+path = sys.argv[1]
+lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+
+
+def strip_comments(line):
+    out, i, n, q = [], 0, len(line), ""
+    while i < n:
+        c = line[i]
+        if c == "\\" and i + 1 < n:
+            out.append(line[i:i + 2]); i += 2; continue
+        if q:
+            if c == q:
+                q = ""
+            out.append(c); i += 1; continue
+        if c in ("'", '"'):
+            q = c; out.append(c); i += 1; continue
+        if c == "#":
+            prev = out[-1] if out else ""
+            if not out or prev.isspace() or prev in "(;&|":
+                break
+            out.append(c); i += 1; continue
+        out.append(c); i += 1
+    return "".join(out)
+
+
+code = [(n + 1, strip_comments(l)) for n, l in enumerate(lines)]
+
+CALL = {
+    "pmat": re.compile(r"(?:^|[;&|(){}]|\bthen\b|\belse\b|\bdo\b)\s*verifier_pin_pmat\b"),
+    "pv": re.compile(r"(?:^|[;&|(){}]|\bthen\b|\belse\b|\bdo\b)\s*verifier_pin_pv\b"),
+}
+USE = {
+    "pmat": re.compile(r"\$\{?PMAT_BIN\b"),
+    "pv": re.compile(r"\$\{?PV\}?(?![A-Za-z0-9_])"),
+}
+# An assignment to the pinned variable in the RUNNER is a bypass: it is exactly
+# the mutation `PMAT_BIN=pmat`, and a token scan cannot distinguish it from any
+# other assignment. Empty initialisation stays legal — the runner sets PV="" so
+# an unpinned repo leaves it unmistakably unset.
+BYPASS = re.compile(r"""^\s*(PMAT_BIN|PV)=(?!(""|''|\s|$))""")
+
+rc = 0
+for tool in ("pmat", "pv"):
+    calls = [n for n, l in code if CALL[tool].search(l)]
+    uses = [n for n, l in code if USE[tool].search(l)]
+    if not calls:
+        print("ROW FAIL %s: the runner never CALLS verifier_pin_%s. A pin that is"
+              " defined and not invoked leaves every gate on PATH." % (tool, tool))
+        rc = 1
+    elif not uses:
+        print("ROW FAIL %s: the runner calls verifier_pin_%s but never uses the"
+              " result — the gates are consuming something else." % (tool, tool))
+        rc = 1
+    elif min(calls) > min(uses):
+        print("ROW FAIL %s: first use of the pin is line %d, but the pin is not"
+              " called until line %d — that use reads an unset variable."
+              % (tool, min(uses), min(calls)))
+        rc = 1
+    else:
+        print("ROW ok %s: pinned at line %d, consumed %d time(s), first use line %d"
+              % (tool, min(calls), len(uses), min(uses)))
+
+bypass = [(n, l.strip()) for n, l in code if BYPASS.match(l)]
+if bypass:
+    for n, l in bypass:
+        print("ROW FAIL bypass at line %d: %s" % (n, l[:80]))
+    print("ROW FAIL the runner assigns a pinned verifier variable directly. Only"
+          " scripts/verifier_pin.sh may decide what PMAT_BIN/PV hold.")
+    rc = 1
+else:
+    print("ROW ok no direct PMAT_BIN=/PV= assignment in the runner")
+sys.exit(rc)
+PY
+}
+
+# ---------------------------------------------------------------------------
+# The scan universe: the protocol itself, plus every gate the runner DISCOVERS
+# and EXECUTES inside the release verdict. Derived from the manifest so a gate
+# added there cannot escape it. An empty derivation is a FAILURE, not a pass:
+# a guard sweeping a set it failed to build is the vacuous green this whole
+# protocol exists to refuse.
+resolve_scope() {
+    local declared
+    declared=$(awk '/^\[package\.metadata\.dogfood\]/{f=1;next} /^\[/{f=0} f' \
+        "$REPO_ROOT/Cargo.toml" 2>/dev/null \
+        | grep -oE '"[^"]+\.sh"' | tr -d '"')
+    if [ -z "$declared" ]; then
+        printf 'SCOPE_ERROR'
+        return 1
+    fi
+    printf '%s\n%s\n' "$(printf '%s\n' $CORE_SCOPE)" "$declared" | awk 'NF && !seen[$0]++'
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# PART 1 case table. The nine-plus violating lines are ASSEMBLED from $M/$P/$A
+# rather than written out, so this file contains no literal bare invocation of
+# its own. Otherwise the sibling guard scripts/check_apr_bin_pinned.sh — which
+# scans every script for exactly this construct — reports the case table as real
+# violations, and THIS guard now scans itself too (it is a declared gate).
+# Fixtures that trip a neighbouring guard get that guard an exemption entry, and
+# an exemption is how a guard stops guarding.
 self_test() {
     local td fails=0 got want
     td=$(mktemp -d) || return 2
 
-    # MUST FLAG. The nine violating lines are ASSEMBLED from $M/$P/$A rather
-    # than written out, so this file contains no literal bare invocation of its
-    # own. Otherwise the sibling guard scripts/check_apr_bin_pinned.sh — which
-    # scans every script for exactly this construct — reports the case table as
-    # five real violations. Fixtures that trip a neighbouring guard get that
-    # guard an exemption entry, and an exemption is how a guard stops guarding.
     local M=pmat P=pv A=apr
     {
         printf 'gate %s-verify %s verify --format json\n' "$M" "$M"
@@ -183,7 +527,27 @@ self_test() {
         printf 'OUT=$(%s lint contracts)\n' "$P"
         printf 'PATH=/stale:$PATH %s verify\n' "$M"
         printf 'if %s validate x; then :; fi\n' "$P"
+        # 10 — MAJOR 1, the live construct: command substitution INSIDE a
+        # double-quoted string. This was the receipt line naming which pmat ran.
+        printf 'mark tools PASS "pmat $(%s --version | head -1)"\n' "$M"
+        # 11 — its generalised form.
+        printf 'OUT="$(%s lint contracts)"\n' "$P"
+        # 12 — an UNescaped backtick inside a double-quoted string is still a
+        # substitution. The escaped form is row 6 of MUST-NOT-FLAG.
+        printf 'mark tools PASS "ver `%s --version`"\n' "$P"
+        # 13 — a wrapper prefix carrying its own option-with-argument.
+        printf 'nice -n 5 %s verify\n' "$M"
+        # 14/15/16 — PATH probes. They do not run the tool; they decide whether
+        # a gate runs, and they ask PATH instead of the pin.
+        printf 'command -v %s >/dev/null 2>&1\n' "$M"
+        printf 'HAVE=$(command -v %s)\n' "$A"
+        printf 'type -aP %s\n' "$P"
+        # 17 — the name in a `for` word list, whose loop body probes "$t".
+        printf 'for t in bashrs %s probador; do command -v "$t"; done\n' "$M"
+        # 18 — `command` as a transparent prefix, which the OPENERS set missed.
+        printf 'command %s verify\n' "$M"
     } > "$td/bad.sh"
+
     # MUST NOT FLAG
     cat > "$td/good.sh" <<'EOF'
 # `pv lint <DIR>` is a real gate and is run separately below.
@@ -191,31 +555,115 @@ mark pv-contracts REPORT "pv is not pinned in this repo -- contracts NOT validat
 run_to "$WORKLOG/pv-pc.log" "$PV" validate "$WORKLOG/bogus-contract.yaml"
 gate pmat-verify "$PMAT_BIN" verify --format json
 run_to "$WORKLOG/pmat-index.log" timeout 900 "$PMAT_BIN" query "x" --limit 1
-for t in bashrs pmat probador; do
-PMAT_BIN=pmat
+for t in bashrs probador; do
 echo "pmat"
 . scripts/apr_bin.sh || exit 1
 #   run_to "$LOG" pmat query "x"
 mark pmat-verify SKIP "package has no lib target"
+command -v "$PMAT_BIN" >/dev/null 2>&1
+command -v bashrs >/dev/null 2>&1
+VER="$("$PMAT_BIN" --version | head -1)"
+nice -n 5 "$PMAT_BIN" verify
+LIT='$(pmat --version)'
+mark pv-bindings FAIL "\`pv verify-bindings\` produced no verification line"
+EOF
+
+    # A DATA heredoc holds no invocation; a SHELL heredoc does. Separate
+    # fixtures because these are multi-line and the table above is by line.
+    cat > "$td/hd-data.sh" <<'EOF'
+python3 - "$1" <<'PY'
+print("apr")
+pv = 1
+PY
+EOF
+    cat > "$td/hd-shell.sh" <<'EOF'
+bash <<'EOF2'
+pmat verify --format json
+EOF2
 EOF
 
     got=$(scan "$td/bad.sh" | awk -F: '{print $2}' | tr '\n' ' ')
-    want="1 2 3 4 5 6 7 8 9 "
+    want="1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 "
     if [ "$got" = "$want" ]; then
-        printf 'ok    MUST-FLAG    all 9 bare invocations reported\n'
+        printf 'ok    MUST-FLAG     all 18 bare/probe/for-list invocations reported\n'
     else
-        printf 'FAIL  MUST-FLAG    got lines [%s], want [%s]\n' "$got" "$want"; fails=1
+        printf 'FAIL  MUST-FLAG     got lines [%s], want [%s]\n' "$got" "$want"; fails=1
     fi
 
     got=$(scan "$td/good.sh" | tr '\n' ' ')
     if [ -z "$got" ]; then
-        printf 'ok    MUST-NOT-FLAG all 10 pinned/comment/string forms accepted\n'
+        printf 'ok    MUST-NOT-FLAG all 14 pinned/comment/string/probe forms accepted\n'
     else
         printf 'FAIL  MUST-NOT-FLAG false positives: %s\n' "$got"; fails=1
     fi
 
+    got=$(scan "$td/hd-data.sh" | tr '\n' ' ')
+    if [ -z "$got" ]; then
+        printf 'ok    HEREDOC-DATA  a python heredoc naming a verifier is not an invocation\n'
+    else
+        printf 'FAIL  HEREDOC-DATA  false positives: %s\n' "$got"; fails=1
+    fi
+
+    got=$(scan "$td/hd-shell.sh" | awk -F: '{print $2}' | tr '\n' ' ')
+    if [ "$got" = "2 " ]; then
+        printf 'ok    HEREDOC-SHELL a `bash <<EOF` heredoc IS scanned as code\n'
+    else
+        printf 'FAIL  HEREDOC-SHELL got [%s], want [2 ]\n' "$got"; fails=1
+    fi
+
+    # PART 1b's own table: a runner that defines the pin and bypasses it.
+    cat > "$td/bypass.sh" <<'EOF'
+PMAT_BIN=pmat
+gate pmat-verify "$PMAT_BIN" verify
+PV=""
+verifier_pin_pv
+run_to "$L" "$PV" lint contracts
+EOF
+    got=$(pin_audit "$td/bypass.sh" 2>&1)
+    if printf '%s' "$got" | grep -q 'ROW FAIL pmat' && printf '%s' "$got" | grep -q 'ROW FAIL bypass'; then
+        printf 'ok    CALL-SITE     `PMAT_BIN=pmat` instead of the pin call is REJECTED\n'
+    else
+        printf 'FAIL  CALL-SITE     a runner that assigns PMAT_BIN itself was accepted:\n%s\n' "$got"; fails=1
+    fi
+
+    cat > "$td/late.sh" <<'EOF'
+gate pmat-verify "$PMAT_BIN" verify
+verifier_pin_pmat "$CRATE" "$BINPATH"
+PV=""
+verifier_pin_pv
+run_to "$L" "$PV" lint contracts
+EOF
+    got=$(pin_audit "$td/late.sh" 2>&1)
+    if printf '%s' "$got" | grep -q 'ROW FAIL pmat'; then
+        printf 'ok    CALL-SITE     a pin called AFTER its first use is REJECTED\n'
+    else
+        printf 'FAIL  CALL-SITE     a pin called after its first use was accepted:\n%s\n' "$got"; fails=1
+    fi
+
+    cat > "$td/good-calls.sh" <<'EOF'
+verifier_pin_pmat "$CRATE" "$BINPATH"
+gate pmat-verify "$PMAT_BIN" verify
+PV=""
+verifier_pin_pv
+run_to "$L" "$PV" lint contracts
+EOF
+    if pin_audit "$td/good-calls.sh" >/dev/null 2>&1; then
+        printf 'ok    CALL-SITE     a runner that calls both pins before use is accepted\n'
+    else
+        printf 'FAIL  CALL-SITE     a correct runner was rejected:\n'
+        pin_audit "$td/good-calls.sh" 2>&1 | sed 's/^/        /'; fails=1
+    fi
+
     rm -rf "${td:?}"
     return "$fails"
+}
+
+# Cargo.lock with `[[patch.unused]]` blocks and blank lines removed. See the
+# note at row 5 of behaviour_test for why those blocks are not staleness.
+lock_norm() {
+    awk '/^\[\[patch\.unused\]\]/ { skip=1; next }
+         skip { if ($0 == "") skip=0; next }
+         $0 != ""' "$1"
 }
 
 # ---------------------------------------------------------------------------
@@ -224,6 +672,18 @@ EOF
 behaviour_test() {
     local td fails=0 built stale
     td=$(mktemp -d) || return 2
+
+    # This function builds pv, and a cargo build without --locked REWRITES a
+    # stale Cargo.lock in place. That is the exact failure scripts/
+    # check_lockfile_current.sh exists to catch, so a guard that silently
+    # repaired the lock on its way past would disarm its neighbour. Snapshot it,
+    # restore it, and REPORT if the build moved it.
+    #
+    # The snapshot is a FILE COPY, not `$(cat …)`: command substitution strips
+    # trailing newlines, so a variable round-trip restores a file that differs
+    # from the original in its last byte. The first version of this row did that
+    # and its own restore was not byte-identical.
+    [ -f "$REPO_ROOT/Cargo.lock" ] && cp "$REPO_ROOT/Cargo.lock" "$td/Cargo.lock.before"
 
     # shellcheck source=/dev/null
     if ! . "$REPO_ROOT/scripts/verifier_pin.sh"; then
@@ -301,6 +761,90 @@ behaviour_test() {
         printf 'ok    pv-pin     resolved pv is %s, NOT the PATH decoy %s\n' "$PV" "$decoy"
     ) || fails=1
 
+    # Row 5 — this guard must not have moved Cargo.lock.
+    #
+    # `[[patch.unused]]` blocks are NORMALISED AWAY before comparing, and that is
+    # not a loosening. They appear only when a host-local, gitignored
+    # `.cargo/config.toml` injects a `[patch.crates-io]` of sibling checkouts —
+    # the aprender dev-overrides do exactly that — and then ANY `cargo build -p
+    # <one-member>` records which of those patches the sub-graph did not use.
+    # They are absent in CI, they say nothing about whether the lock resolves,
+    # and failing on them would make this row permanently red on every
+    # developer box that ran `make dev-setup`. The resolution itself — the
+    # `[[package]]` entries — is compared in full.
+    if [ ! -f "$td/Cargo.lock.before" ]; then
+        printf 'ok    lockfile   no Cargo.lock in this repo — nothing for the build to move\n'
+    elif lock_norm "$td/Cargo.lock.before" > "$td/lock.a" \
+         && lock_norm "$REPO_ROOT/Cargo.lock" > "$td/lock.b" \
+         && cmp -s "$td/lock.a" "$td/lock.b"; then
+        # Leave the tree exactly as it was found, even when the delta was inert.
+        cmp -s "$td/Cargo.lock.before" "$REPO_ROOT/Cargo.lock" \
+            || cp "$td/Cargo.lock.before" "$REPO_ROOT/Cargo.lock"
+        printf 'ok    lockfile   building the pinned pv did not change the resolution\n'
+    else
+        cp "$td/Cargo.lock.before" "$REPO_ROOT/Cargo.lock"
+        printf 'FAIL  lockfile   building the pinned pv REWROTE Cargo.lock (restored). The lock\n'
+        printf '                 was stale before this ran; cargo repaired it in passing, which\n'
+        printf '                 is exactly what scripts/check_lockfile_current.sh exists to see.\n'
+        printf '                 Run `cargo update --workspace --offline` (or check_lockfile_current.sh)\n'
+        printf '                 and commit the result.\n'
+        fails=1
+    fi
+
+    rm -rf "${td:?}"
+    return "$fails"
+}
+
+# ---------------------------------------------------------------------------
+# PART 3. The fleet path: this runner exists to be pointed at OTHER repos, by
+# the relative path its own Usage line documents. #2640 made the pin library
+# load-bearing and fail-closed, while SKILL_DIR was still computed AFTER
+# `cd "$REPO_DIR"` — so a relative ${BASH_SOURCE[0]} resolved against the TARGET
+# repo, the library was "missing", and the runner exited 2 before any gate ran.
+# Absolute invocation kept working, which is why nothing noticed.
+fleet_path_test() {
+    local td fails=0 out rc
+    td=$(mktemp -d) || return 2
+
+    mkdir -p "$td/fixture-crate/src"
+    cat > "$td/fixture-crate/Cargo.toml" <<'EOF'
+[package]
+name = "dogfood-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata.dogfood]
+gates = ["gate-ok.sh"]
+EOF
+    printf 'pub fn f() {}\n' > "$td/fixture-crate/src/lib.rs"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$td/fixture-crate/gate-ok.sh"
+
+    # DOGFOOD_GATES_ONLY stops after the declared-gate discovery section, which
+    # sits well past the pin-library source. It is the runner's own hook, not a
+    # copy of it, and it can never print GO.
+    out=$( cd "$REPO_ROOT" && DOGFOOD_GATES_ONLY=1 \
+        bash scripts/dogfood.sh "$td/fixture-crate" 2>&1 )
+    rc=$?
+    if [ "$rc" -eq 2 ]; then
+        printf 'FAIL  fleet-path a RELATIVE `bash scripts/dogfood.sh <other-crate>` exited 2\n'
+        printf '                 (setup error) before running anything. That is the form its own\n'
+        printf '                 documented Usage line gives, and the whole reason the protocol is\n'
+        printf '                 portable. Resolve SKILL_DIR from ${BASH_SOURCE[0]} BEFORE the\n'
+        printf '                 `cd "$REPO_DIR"`, or the path resolves against the TARGET repo.\n'
+        printf '%s\n' "$out" | tail -5 | sed 's/^/                 /'
+        fails=1
+    elif printf '%s' "$out" | grep -q 'verifier_pin.sh is missing'; then
+        printf 'FAIL  fleet-path the pin library was not found under a relative invocation\n'
+        fails=1
+    elif ! printf '%s' "$out" | grep -q 'DOGFOOD_GATES_ONLY'; then
+        printf 'FAIL  fleet-path the runner did not reach the declared-gate section (rc=%s)\n' "$rc"
+        printf '%s\n' "$out" | tail -5 | sed 's/^/                 /'
+        fails=1
+    else
+        printf 'ok    fleet-path relative invocation against another crate runs (rc=%s)\n' "$rc"
+    fi
+
     rm -rf "${td:?}"
     return "$fails"
 }
@@ -309,6 +853,9 @@ behaviour_test() {
 case "${1:-}" in
     --self-test)
         self_test; exit $?
+        ;;
+    --scan)
+        shift; scan "$@"; exit $?
         ;;
 esac
 
@@ -320,34 +867,52 @@ if self_test; then :; else rc=1; fi
 
 printf '\nPART 1 — static: no bare verifier in command position\n'
 cd "$REPO_ROOT" || exit 2
-missing=""
-for f in $SCOPE; do
-    [ -f "$f" ] || missing="$missing $f"
-done
-if [ -n "$missing" ]; then
-    # A scope entry that does not exist is a gate scanning nothing. The runner
-    # could be renamed out from under this guard and it would sweep an empty
-    # universe and report clean — the exact failure this repo keeps finding.
-    printf 'FAIL  in-scope file(s) missing:%s — the guard scanned an empty universe\n' "$missing"
+SCOPE=$(resolve_scope)
+if [ "$SCOPE" = "SCOPE_ERROR" ]; then
+    printf 'FAIL  [package.metadata.dogfood] gates yielded nothing — the scan universe\n'
+    printf '      could not be built, so a clean sweep here would mean nothing.\n'
     rc=1
 else
-    # shellcheck disable=SC2086
-    hits=$(scan $SCOPE)
-    scan_rc=$?
-    if [ "$scan_rc" -eq 2 ]; then
-        printf 'FAIL  the scanner errored:\n%s\n' "$hits"; rc=1
-    elif [ -n "$hits" ]; then
-        printf 'FAIL  bare verifier invocation(s) — these resolve through PATH:\n'
-        printf '%s\n' "$hits" | sed 's/^/      /'
-        printf '      Use the pin: "$PV" / "$PMAT_BIN" / "$APR". See scripts/verifier_pin.sh.\n'
+    missing=""
+    for f in $SCOPE; do
+        [ -f "$f" ] || missing="$missing $f"
+    done
+    if [ -n "$missing" ]; then
+        # A scope entry that does not exist is a gate scanning nothing. The
+        # runner could be renamed out from under this guard and it would sweep
+        # an empty universe and report clean — the exact failure this repo
+        # keeps finding.
+        printf 'FAIL  in-scope file(s) missing:%s — the guard scanned an empty universe\n' "$missing"
         rc=1
     else
-        printf 'ok    %s: no bare pv/pmat/apr in command position\n' "$SCOPE"
+        # shellcheck disable=SC2086
+        hits=$(scan $SCOPE)
+        scan_rc=$?
+        if [ "$scan_rc" -eq 2 ]; then
+            printf 'FAIL  the scanner errored:\n%s\n' "$hits"; rc=1
+        elif [ -n "$hits" ]; then
+            printf 'FAIL  bare verifier invocation(s) — these resolve through PATH:\n'
+            printf '%s\n' "$hits" | sed 's/^/      /'
+            printf '      Use the pin: "$PV" / "$PMAT_BIN" / "$APR". See scripts/verifier_pin.sh.\n'
+            rc=1
+        else
+            printf 'ok    no bare pv/pmat/apr in command position, in:\n'
+            printf '%s\n' "$SCOPE" | sed 's/^/        /'
+        fi
     fi
 fi
 
+printf '\nPART 1b — call site: the pin is CALLED, and its result is what runs\n'
+audit=$(pin_audit "$REPO_ROOT/scripts/dogfood.sh")
+audit_rc=$?
+printf '%s\n' "$audit" | sed -e 's/^ROW ok /ok    /' -e 's/^ROW FAIL /FAIL  /' -e 's/^\(ok\|FAIL\)/\1/'
+[ "$audit_rc" -eq 0 ] || rc=1
+
 printf '\nPART 2 — behavioural: the pins select something other than PATH\n'
 if behaviour_test; then :; else rc=1; fi
+
+printf '\nPART 3 — fleet path: the runner runs when invoked relatively\n'
+if fleet_path_test; then :; else rc=1; fi
 
 printf '\n'
 if [ "$rc" -eq 0 ]; then
