@@ -42,6 +42,23 @@ bad()  { printf 'FAIL: %s\n' "$*" >&2; fails=$((fails + 1)); }
 
 printf '=== pv_bin.sh must resolve the HEAD-built pv (check_pv_bin_resolution.sh) ===\n'
 
+# The identity marker `pv --version` must carry (#2559). Not decoration: the
+# operator settled 2026-08-21 that this binary KEEPS the name `pv` even though
+# pv(1) the pipe viewer, the crates.io `pv` crate and (until #2553) the aprender
+# facade all claim it, which makes this string the whole mitigation.
+PV_IDENTITY='(aprender provable-contracts verifier)'
+
+# 0. The marker this file tests must be the one the binary prints and the one
+#    pv_bin.sh decides on -- retyping a literal into a guard is how a guard ends
+#    up proving a string nobody emits. Same defence as EXTRACTOR_MISMATCH in
+#    scripts/check_pv_version_parse.sh.
+if ! grep -qF -- "$PV_IDENTITY" crates/aprender-contracts-cli/src/lib.rs; then
+    bad "IDENTITY_MISMATCH: this file tests '$PV_IDENTITY' but aprender-contracts-cli does not print it"
+fi
+if ! grep -v '^[[:space:]]*#' scripts/pv_bin.sh | grep -qF -- "$PV_IDENTITY"; then
+    bad "IDENTITY_MISMATCH: pv_bin.sh does not decide on '$PV_IDENTITY' -- the resolver is back to semver-only"
+fi
+
 # ---------------------------------------------------------------------------
 # 1. It resolves at all -- under `set -euo pipefail`, deliberately.
 #
@@ -78,12 +95,44 @@ if [ -z "$CRATE_VERSION" ] || [ "$CRATE_VERSION" = null ]; then
 fi
 
 if [ -n "$RESOLVED" ]; then
-    got=$("$RESOLVED" --version 2>&1 | head -1)
-    if [ "$got" = "pv $CRATE_VERSION" ]; then
-        note "\$PV reports 'pv $CRATE_VERSION', matching the crate"
+    # ONE invocation, then every read off the SAME captured text: the semver and
+    # the identity have to describe the same binary and the same run.
+    got_all=$("$RESOLVED" --version 2>&1)
+    got_first=$(awk 'NR==1{print; exit}' <<< "$got_all")
+    got_semver=$(awk 'NR==1{print $2; exit}' <<< "$got_all")
+
+    # SEMVER, POSITIONALLY -- not whole-line equality against "pv $CRATE_VERSION".
+    # This block used to do exactly that, and it was correct only while the
+    # version line WAS the bare name and a semver. #2559 appended an identity
+    # suffix on purpose (four things claim the name `pv`, and the operator
+    # settled that this binary keeps it, so the version line IS the
+    # disambiguation mechanism), the suffix rode along into the compared string,
+    # and this guard went RED against a perfectly fresh HEAD build:
+    #     FAIL: $PV reports 'pv 0.63.0 (aprender provable-contracts verifier)'
+    #           but the crate is 0.63.0
+    # Same class as the last-field extractor #2559 already had to replace in
+    # pv_bin.sh (scripts/check_pv_version_parse.sh): a guard's parser pinned to a
+    # string that another change deliberately rewrote. Position 2 of line 1 is
+    # the shape pinned from the other side by
+    # crates/aprender-contracts-cli/tests/version_identity.rs
+    # (`semver_stays_the_second_field_of_the_first_line`).
+    if [ "$got_semver" = "$CRATE_VERSION" ]; then
+        note "\$PV reports semver '$got_semver', matching the crate"
     else
-        bad "\$PV reports '$got' but the crate is $CRATE_VERSION"
+        bad "\$PV reports semver '$got_semver' but the crate is $CRATE_VERSION (first line: $got_first)"
     fi
+
+    # IDENTITY, on the same line -- the property #2559 exists to provide, and
+    # therefore the property this guard has to assert. A semver match alone is
+    # satisfied by pv(1) the pipe viewer, whose versions are 1.x today but whose
+    # numbering shares the whole 0.x/1.x space; asserting only the number would
+    # bless any binary that happened to collide.
+    case "$got_first" in
+        *"$PV_IDENTITY"*)
+            note "\$PV identifies itself: '$got_first'" ;;
+        *)
+            bad "\$PV does not carry the identity marker '$PV_IDENTITY'. First --version line: '$got_first'" ;;
+    esac
 fi
 
 # 1b. It must be cargo's own output for THIS workspace, not something off PATH.
@@ -124,6 +173,47 @@ if [ -n "$RESOLVED" ]; then
         bad "pv_bin.sh refused a pv reporting the crate version"
         sed 's/^/      /' "$TMP/good.log" >&2
     fi
+fi
+
+# ---------------------------------------------------------------------------
+# 2c. MUTATION, IDENTITY: a pv at the RIGHT version that prints the bare
+#     `pv <semver>` must be REFUSED.
+#
+#     This is the case the semver assertion cannot see, and it is not
+#     hypothetical: `pv 0.63.0` is byte-for-byte what pv(1) the pipe viewer and
+#     the crates.io `pv` crate print, which is exactly why #2559 added an
+#     identity. A resolver that proved freshness from the number alone would
+#     hand the release gate a pipe viewer the moment the two numbers collided,
+#     and every version assertion in this file would stay green.
+#
+#     The version is taken from cargo, so the ONLY difference between this case
+#     and its 2d control is the identity suffix -- the property under test.
+mkdir -p "$TMP/bare"
+printf '#!/usr/bin/env bash\nprintf "pv %s\\n"\n' "$CRATE_VERSION" > "$TMP/bare/pv"
+chmod +x "$TMP/bare/pv"
+
+if ( set -euo pipefail; PV_BIN="$TMP/bare/pv" . scripts/pv_bin.sh ) >"$TMP/bare.log" 2>&1; then
+    bad "pv_bin.sh ACCEPTED a bare 'pv $CRATE_VERSION' with no identity (that is what pv(1) prints)"
+elif grep -qi 'identif' "$TMP/bare.log"; then
+    note "refuses a correctly-versioned pv that does not identify itself, and says so"
+else
+    bad "refused the unidentified pv, but not on identity grounds -- the message never says what was wrong"
+    sed 's/^/      /' "$TMP/bare.log" >&2
+fi
+
+# 2d. CONTROL for 2c: the SAME synthesized script, the SAME version, plus the
+#     identity suffix, must be ACCEPTED. Without it, 2c is also satisfied by a
+#     pv_bin.sh that refuses every synthesized binary for some unrelated reason.
+mkdir -p "$TMP/identified"
+printf '#!/usr/bin/env bash\nprintf "pv %s %s\\n"\n' "$CRATE_VERSION" "$PV_IDENTITY" \
+    > "$TMP/identified/pv"
+chmod +x "$TMP/identified/pv"
+
+if ( set -euo pipefail; PV_BIN="$TMP/identified/pv" . scripts/pv_bin.sh ) >"$TMP/identified.log" 2>&1; then
+    note "accepts the same version once it carries the identity marker"
+else
+    bad "pv_bin.sh refused a pv at the crate version carrying '$PV_IDENTITY'"
+    sed 's/^/      /' "$TMP/identified.log" >&2
 fi
 
 # ---------------------------------------------------------------------------
