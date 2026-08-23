@@ -403,6 +403,20 @@ jobs:
     runs-on: [self-hosted, X64, Linux, clean-room]
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
+      # Same definition as workspace-test (:106). aprender#2627: the
+      # model-tests step below was added with workspace-test's mount lines
+      # copied verbatim, but PR_OR_REF is JOB-level env there and this job
+      # never had it. An undefined shell variable is the empty string, so
+      # `.../registry/${PR_OR_REF}` collapsed to `.../registry/` -- the SHARED
+      # PARENT of every PR's registry, bind-mounted AS the cargo registry. Its
+      # children are PR numbers, not cache/index/src, so every dependency
+      # re-downloads and writes into the parent. The per-run target dir
+      # likewise collapsed to `.../aprender-ci//run-<id>`, outside the tree
+      # any other step reuses. Nothing errors; the step just silently stops
+      # being the thing its own comment describes. check_workflow_env_defined.sh
+      # now fails closed on any run: block interpolating a name its job does
+      # not define.
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
     steps:
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Same guard as workspace-test (:92) and mutants (:435). This job was
@@ -807,6 +821,14 @@ jobs:
         run: bash scripts/check_facade_compat.sh --self-test
       - name: provable-contracts 0.3.1 code still compiles against the facades
         run: bash scripts/check_facade_compat.sh
+      # aprender#2628: check_facade_compat.sh proves the facades COMPILE and are
+      # shaped right; it does not touch the cascade's publish-ORDER gate. That
+      # gate read its requirement with a line-shaped sed and returned READY when
+      # it could not parse one, so rewriting a dependency into the equivalent
+      # multi-line table -- which cargo treats as IDENTICAL -- disarmed it
+      # silently and the cascade would upload a facade before its upstream.
+      - name: The cascade's facade order gate arms on every spelling cargo accepts
+        run: bash scripts/check_facade_order_gate.sh
       # aprender#2558: nothing detected two crates declaring the same `[[bin]]
       # name`. FOUR things claimed `pv` -- the crates.io pipe viewer, /usr/bin/pv,
       # aprender-contracts-cli and the provable-contracts-cli facade -- all
@@ -871,6 +893,52 @@ jobs:
       # targets shell out to the built binary and take minutes.
       - name: aprender-profile lib tests (was gated by nothing)
         run: cargo test -p aprender-profile --lib
+      # aprender#2627: `PR_OR_REF` is job-level env on workspace-test. The
+      # model-tests step below was written by copying workspace-test's docker
+      # mount lines into THIS job, which did not define it -- so both bind
+      # sources collapsed to a trailing-slash path and the per-PR registry /
+      # per-run target dir the step's own comment describes never engaged.
+      # Nothing errors on an unset shell variable; it is simply the empty
+      # string. Case table first, per the convention above.
+      - name: Workflow env-var case table
+        run: bash scripts/check_workflow_env_defined.sh --self-test
+      - name: "A `run:` block may only interpolate names its job defines"
+        run: bash scripts/check_workflow_env_defined.sh
+      # aprender#2522: the `model-tests` feature gates three integration targets
+      # with 156 gates between them, and NO workflow named any of them. The
+      # workspace `--lib` line cannot reach an integration target, and the
+      # explicit integration line does not list them, so they were dark by
+      # construction -- `#![cfg(feature = "model-tests")]` means they do not even
+      # COMPILE in a default `cargo test`. falsification_spec_v10_tests was
+      # 38-red the whole time. These need no models: every fixture-gated gate
+      # skips, and F-META-002 holds the size of that skip class to a shrink-only
+      # baseline so the suite cannot go vacuous instead of red.
+      - name: Every model-tests target is named by a workflow
+        run: bash scripts/check_model_tests_wired.sh
+      - name: model-tests wiring case table
+        run: bash scripts/check_model_tests_wired.sh --self-test
+      - name: model-tests falsification suites (was gated by nothing, aprender#2522)
+        # Runs INSIDE the image, on the same per-RUN target dir as the other
+        # cargo steps, so the `model-tests` feature build reuses this run's
+        # artifacts instead of starting a second cold one.
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "/home/noah/data/sccache:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            "$IMAGE" \
+            cargo test -p aprender-core --features model-tests \
+              --test falsification_spec_v10_tests \
+              --test falsification_stress_tests \
+              --test falsification_gpu_state_tests
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
       # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
@@ -973,6 +1041,17 @@ jobs:
       # deleting a line.
       - name: Every deny.toml exemption must still be live
         run: bash scripts/check_deny_exemptions_live.sh
+      # cargo-deny and cargo-audit read ONE database: RustSec. GHSA (what
+      # Dependabot reads) is a superset, and when an advisory lives only there
+      # every gate above is green while the crate sits in Cargo.lock. #2531:
+      # `thrift 0.17.0` (CVE-2026-43868 / GHSA-2f9f-gq7v-9h6m) arrived via
+      # `parquet ^57` and RustSec has NO thrift advisory at all, so
+      # `cargo deny check advisories` printed "advisories ok" throughout. It was
+      # found by a Dependabot alert on a DOWNSTREAM repo. Text-only, no build.
+      - name: No GHSA-only vulnerable crate in Cargo.lock
+        run: bash scripts/check_no_ghsa_banned_crates.sh
+      - name: "GHSA guard must still turn RED (case table)"
+        run: bash scripts/check_no_ghsa_banned_crates.sh --self-test
       # A test gated on a path outside the workspace is green on every machine
       # that lacks it, which is every machine but one. The monorepo merged 20
       # sibling repos in-tree, so gates like

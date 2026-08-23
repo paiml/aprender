@@ -574,6 +574,31 @@ fn chat_response_to_parts(status: StatusCode, body: &[u8]) -> (String, usize, us
     (msg, 0, 0)
 }
 
+/// Stamp the upstream generation status onto an Ollama-shaped response.
+///
+/// aprender#2609, second pass: `/api/chat` and `/api/generate` re-shape the
+/// OpenAI chat response into Ollama's schema via [`chat_response_to_parts`],
+/// which folds a backend error into the assistant `content`. That keeps the body
+/// well-formed — the reason it exists — but the handlers then returned it with
+/// axum's default **200**. So on a server with no usable model these two routes
+/// answered `200 OK` with `"Model registry error: No model available"` as the
+/// model's own reply, while every other mounted route on the same process
+/// answered 503. An Ollama client has no way to detect that at all: it renders
+/// the outage as the assistant's answer, and no retry policy keyed on status can
+/// fire. That is a strictly worse instance of the split #2609 reported — the
+/// ticket's routes at least said *something* was wrong.
+///
+/// Ollama itself answers `POST /api/chat` for an absent model with a non-2xx and
+/// an `error` body, so propagating the status is also the compatible behaviour.
+/// The Ollama-shaped body is preserved verbatim, so the route stays observably
+/// distinct from the axum `not_found` fallback (which carries no `done` field).
+fn with_upstream_status(status: StatusCode, mut resp: Response) -> Response {
+    if !status.is_success() {
+        *resp.status_mut() = status;
+    }
+    resp
+}
+
 /// Read an axum [`Response`] into `(status, body bytes)`.
 async fn split_response(resp: Response) -> (StatusCode, axum::body::Bytes) {
     let status = resp.status();
@@ -608,26 +633,32 @@ pub async fn ollama_chat_handler(
     let (content, prompt_tokens, eval_count) = chat_response_to_parts(status, &body);
 
     if stream {
-        return ndjson_response(&chat_stream_objects(
-            &model,
-            &content,
-            prompt_tokens,
-            eval_count,
-        ));
+        return with_upstream_status(
+            status,
+            ndjson_response(&chat_stream_objects(
+                &model,
+                &content,
+                prompt_tokens,
+                eval_count,
+            )),
+        );
     }
 
-    Json(OllamaChatResponse {
-        model,
-        created_at: created_at_now(),
-        message: OllamaMessage {
-            role: "assistant".to_string(),
-            content,
-        },
-        done: true,
-        prompt_eval_count: prompt_tokens,
-        eval_count,
-    })
-    .into_response()
+    with_upstream_status(
+        status,
+        Json(OllamaChatResponse {
+            model,
+            created_at: created_at_now(),
+            message: OllamaMessage {
+                role: "assistant".to_string(),
+                content,
+            },
+            done: true,
+            prompt_eval_count: prompt_tokens,
+            eval_count,
+        })
+        .into_response(),
+    )
 }
 
 /// `POST /api/generate` — Ollama single-prompt generate endpoint.
@@ -663,23 +694,29 @@ pub async fn ollama_generate_handler(
     let (content, prompt_tokens, eval_count) = chat_response_to_parts(status, &body);
 
     if stream {
-        return ndjson_response(&generate_stream_objects(
-            &model,
-            &content,
-            prompt_tokens,
-            eval_count,
-        ));
+        return with_upstream_status(
+            status,
+            ndjson_response(&generate_stream_objects(
+                &model,
+                &content,
+                prompt_tokens,
+                eval_count,
+            )),
+        );
     }
 
-    Json(OllamaGenerateResponse {
-        model,
-        created_at: created_at_now(),
-        response: content,
-        done: true,
-        prompt_eval_count: prompt_tokens,
-        eval_count,
-    })
-    .into_response()
+    with_upstream_status(
+        status,
+        Json(OllamaGenerateResponse {
+            model,
+            created_at: created_at_now(),
+            response: content,
+            done: true,
+            prompt_eval_count: prompt_tokens,
+            eval_count,
+        })
+        .into_response(),
+    )
 }
 
 /// `GET /api/tags` — Ollama model enumeration.

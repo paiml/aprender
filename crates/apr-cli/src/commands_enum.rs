@@ -9,6 +9,57 @@
 /// echoed back.
 pub const BACKEND_VALUES: [&str; 3] = ["cuda", "cpu", "wgpu"];
 
+/// The ONE `--backend` declaration, flattened into every command that offers the
+/// inference backend override (`apr run`, `apr chat`, `apr serve run`).
+///
+/// #2583: the `value_parser` above was applied by hand at each site, so
+/// `apr serve run` — added later — declared a bare
+/// `#[arg(long, value_name = "BACKEND")]` and accepted ANY string:
+/// `apr serve run --backend nonsense` parsed, `ServerConfig.backend` carried
+/// `"nonsense"`, and the server came up on whatever backend it would have picked
+/// anyway. Copying the `value_parser` to that third site would have left the same
+/// hand-copy hazard for the fourth (cf. #2585, where two `apr` bin targets were
+/// duplicated by hand and had already diverged), so the declaration itself is
+/// shared: a new consumer writes `#[command(flatten)] backend: BackendArg` and
+/// cannot express the unvalidated form.
+#[derive(clap::Args, Debug, Clone, Default, PartialEq, Eq)]
+pub struct BackendArg {
+    /// Compute backend override (cuda, cpu, wgpu)
+    #[arg(long, value_name = "BACKEND", value_parser = BACKEND_VALUES)]
+    pub backend: Option<String>,
+}
+
+/// Backends `apr finetune --gpu-backend` accepts.
+///
+/// #2583 follow-up: this site is the SAME silent-wrong-backend defect as
+/// `apr serve run --backend`, one command over. It was declared
+/// `#[arg(long, default_value = "auto")] gpu_backend: String` with no
+/// `value_parser`, and `gpu_backend_notice()` (commands/finetune.rs:265)
+/// dispatches on it with a catch-all `_ =>` arm that means "auto". So
+/// `--gpu-backend cudaa` parsed, printed `auto → …`, and trained on whatever
+/// backend auto-selection picked — the typo was indistinguishable from not
+/// passing the flag at all.
+///
+/// It is deliberately NOT `BackendArg`: the domains genuinely differ. `auto` is
+/// a valid selection here and is absent from `BACKEND_VALUES`; `cpu` is not a
+/// selectable training backend and is present there. Sharing the *declaration*
+/// across two different value sets would have to widen both, re-admitting
+/// `--backend auto` on `apr run` (unvalidated again, by a different route) and
+/// `--gpu-backend cpu` on `apr finetune` (silently the `_ =>` auto arm again).
+/// What is shared instead is the *invariant*, enforced by
+/// `test_every_backend_arg_advertises_its_values_2583` over the built clap tree.
+pub const FINETUNE_GPU_BACKEND_VALUES: [&str; 3] = ["auto", "cuda", "wgpu"];
+
+/// Provider backends `apr distill --backend` accepts.
+///
+/// Unlike the two above this one was NOT silently accepted: `distill::run()`
+/// (commands/distill.rs:464-503) matches on it before any I/O and returns
+/// `ValidationFailed` naming both valid values, covered by
+/// `distill_run_unknown_backend_errors`. Wiring the same list into clap is
+/// defence in depth and makes `--help` advertise the set, but it closes a
+/// help-text gap, not a silent-wrong-backend defect. The runtime check stays.
+pub const DISTILL_BACKEND_VALUES: [&str; 2] = ["fixture", "cuda"];
+
 /// Trace detail levels `--trace-level` accepts.
 ///
 /// Each value is dispatched on by string equality in `run_entry.rs`; an
@@ -150,9 +201,9 @@ pub enum Commands {
         /// Show verbose output (model loading, backend info)
         #[arg(short, long)]
         verbose: bool,
-        /// PMAT-488: Compute backend override (cuda, cpu, wgpu)
-        #[arg(long, value_name = "BACKEND", value_parser = BACKEND_VALUES)]
-        backend: Option<String>,
+        // PMAT-488 / #2583: shared `--backend` declaration (see `BackendArg`).
+        #[command(flatten)]
+        backend: BackendArg,
     },
     /// Inference server (plan/run)
     Serve {

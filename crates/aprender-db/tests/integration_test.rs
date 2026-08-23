@@ -41,7 +41,7 @@ fn create_test_parquet<P: AsRef<Path>>(path: P) -> Result<(), Box<dyn std::error
     // Write to Parquet file
     let file = File::create(path.as_ref())?;
     let props = WriterProperties::builder()
-        .set_max_row_group_size(5000) // 2 row groups
+        .set_max_row_group_row_count(Some(5000)) // 2 row groups
         .build();
     let mut writer = ArrowWriter::try_new(file, Arc::new(schema), Some(props))?;
     writer.write(&batch)?;

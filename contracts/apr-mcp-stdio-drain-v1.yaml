@@ -1,0 +1,168 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-22'
+  author: apr-cli team
+  kind: kernel
+  description: |
+    #2608 — the `apr mcp` stdio loop answers `tools/call` on a worker thread,
+    so every exit from the read loop is a point at which the server can walk
+    away from an answer it already owes. The measured 0.63.0 defect was the
+    EOF exit: `printf '<initialize>\n<tools/call>\n' | apr mcp` answered
+    initialize, exited 0 with empty stderr, and NEVER answered the tools/call.
+    Holding stdin open for 5s with byte-identical input answered both — the
+    only variable was whether the client had closed its write end.
+
+    A JSON-RPC request that receives neither a result nor an error is a
+    protocol violation (JSON-RPC 2.0 §5: a Request object with an `id` MUST be
+    replied to). Out-of-order responses are NOT a violation and are explicitly
+    permitted here — the pipelined worker model is the intended design and the
+    ids may return in any order.
+
+    This contract states the invariant as ONE property over ALL exits rather
+    than as the single EOF case that was measured, because the same drop is
+    reachable through three further routes that no EOF test can see:
+
+      * the read loop leaving through an I/O error (`?` on the stdin read or on
+        a stdout write) instead of through EOF;
+      * a tool that PANICS inside dispatch — the worker wrote a response only
+        on the success path and `join_workers` deliberately swallows the panic,
+        so the request went unanswered exactly as at EOF;
+      * a panic guard that is CORRECT but never REACHED. A helper-level test of
+        the guard passes whether or not the worker calls it, so the panic
+        obligation is stated over what a client reading stdout receives and is
+        gated end-to-end through serve_stream (FALSIFY-MCP-DRAIN-005).
+
+    Numbering note: the gates below are namespaced `FALSIFY-MCP-DRAIN-*` rather
+    than continuing the `FALSIFY-MCP-0NN` sequence owned by
+    apr-mcp-server-v1.yaml, so that contract's "001..N with no gaps or
+    duplicates" gate (crates/aprender-contracts/tests/apr_mcp_server_contract.rs)
+    stays exactly as it is.
+  references:
+  - 'https://github.com/paiml/aprender/issues/2608 (measured on published apr 0.63.0, Xeon W-3245 receipt host)'
+  - 'contracts/apr-mcp-server-v1.yaml (FALSIFY-MCP-010: the EOF case, shipped)'
+  - 'crates/aprender-mcp/src/server.rs (serve_stream / read_loop / join_workers / worker_response)'
+  - 'crates/aprender-mcp/tests/falsify_mcp_stdio_protocol.rs (FALSIFY-MCP-010 over the real binary)'
+  - 'JSON-RPC 2.0 Specification §4.1, §5'
+  - 'Model Context Protocol Specification v2024-11-05 (stdio transport)'
+  depends_on:
+  - apr-mcp-server-v1
+
+name: apr-mcp-stdio-drain
+version: 1.0.0
+status: ACTIVE
+scope: the `apr mcp` stdio read loop's obligation to answer every request carrying an id
+
+equations:
+  answered_requests:
+    formula: answered(S) = accepted(S)
+    domain: S a stdio session; accepted(S) = the requests carrying an `id` that the loop parsed and routed
+    codomain: answered(S) = the set of ids for which exactly one response line was written
+    invariants:
+    - 'every id in accepted(S) appears exactly once in answered(S), whatever the session exit was (EOF, stdin error, stdout error)'
+    - 'response ORDER is unconstrained: ids may be written in any permutation (workers are concurrent by design)'
+    - 'a tool that panics contributes an error response for its id, never silence'
+    - 'the session outcome (Ok / Err) is reported only AFTER the drain'
+    preconditions:
+    - the request carried an `id` (a Notification per JSON-RPC §4.1 must NOT be answered)
+    - the request was routed as `tools/call` (the only asynchronously answered method)
+    postconditions:
+    - 'serve_stream returns only after every worker it spawned has run to completion'
+    - '|answered(S)| == |accepted(S)| for every terminating session'
+
+proof_obligations:
+- type: invariant
+  property: drain-on-every-exit — no exit from the read loop abandons an in-flight worker
+  formal: |
+    For every session S and every exit reason R in {EOF, stdin io::Error,
+    stdout io::Error}, serve_stream calls join_workers before returning R.
+    Structurally: the drain is on serve_stream's single return path and the
+    loop body lives in read_loop, so no `?` inside the loop can skip it.
+- type: invariant
+  property: panic-is-an-error-not-silence — a panicking tool still answers its id
+  formal: |
+    For every tools/call with id i whose dispatch panics, the worker writes a
+    JsonRpcResponse with id == i and error.code == -32603 whose message carries
+    the panic payload. catch_unwind wraps ONLY dispatch, so a caught panic
+    always precedes any byte written for i and cannot produce a second response.
+    The obligation is on the SESSION, not on the helper: it is discharged only
+    if spawn_tools_call_worker actually routes dispatch through worker_response,
+    so it is stated over what a client reading stdout receives.
+- type: invariant
+  property: no-false-error — the guards do not convert successful calls into failures
+  formal: |
+    For every tools/call whose dispatch returns normally, the response is a
+    success carrying that ToolCallResult verbatim, and a session that reaches
+    EOF cleanly still returns Ok.
+
+falsification_tests:
+- id: FALSIFY-MCP-DRAIN-001
+  obligation: drain-on-every-exit — no exit from the read loop abandons an in-flight worker
+  rule: an in-flight tools/call is answered even when the read loop exits through an I/O error rather than EOF
+  prediction: with a writer that stalls 2s on the id=2 line and a reader that fails after the last line, serve_stream returns Err AND the id=2 response has already been written
+  test: cargo test -p aprender-mcp --lib serve_stream_drains_in_flight_workers_when_the_read_loop_aborts
+  if_fails: the drain moved back onto one exit of the read loop; a stdin/stdout error silently abandons every in-flight tools/call
+- id: FALSIFY-MCP-DRAIN-002
+  obligation: panic-is-an-error-not-silence — a panicking tool still answers its id
+  rule: a tool that panics is answered with -32603 for the same id, never with silence
+  prediction: worker_response(id, || panic!(...)) yields an error response with code -32603, the id echoed, and the panic message included
+  test: cargo test -p aprender-mcp --lib worker_response_turns_a_tool_panic_into_32603_for_the_same_id
+  if_fails: catch_unwind was removed from the worker; a panicking tool leaves its request answered by neither a result nor an error
+- id: FALSIFY-MCP-DRAIN-003
+  obligation: no-false-error — the guards do not convert successful calls into failures
+  rule: the panic guard does not turn ordinary tool results into errors
+  prediction: worker_response(id, || ToolCallResult::success("payload")) yields a success response carrying that payload verbatim
+  test: cargo test -p aprender-mcp --lib worker_response_passes_a_normal_tool_result_through_unchanged
+  if_fails: the guard answers -32603 unconditionally, which would satisfy DRAIN-002 while breaking every call
+- id: FALSIFY-MCP-DRAIN-004
+  obligation: drain-on-every-exit — no exit from the read loop abandons an in-flight worker
+  rule: the originally measured EOF case stays fixed (regression lock for #2608 / FALSIFY-MCP-010)
+  prediction: a session whose last line is a tools/call and whose stdin then closes answers BOTH ids before exiting 0
+  test: cargo test -p aprender-mcp --lib serve_stream_answers_tools_call_before_returning_on_eof
+  if_fails: the EOF drain regressed; `printf ... | apr mcp` loses tool results again while exiting 0
+- id: FALSIFY-MCP-DRAIN-005
+  obligation: panic-is-an-error-not-silence — a panicking tool still answers its id
+  rule: the panic guard is REACHED by the real stdio dispatch path, not merely correct in isolation
+  prediction: a tools/call whose tool panics, fed to serve_stream, produces on stdout an error response for the SAME id with code -32603 carrying the panic message, while initialize is still answered and serve_stream returns Ok
+  test: cargo test -p aprender-mcp --lib a_panicking_tool_is_answered_through_the_real_stdio_path
+  if_fails: the worker calls dispatch BESIDE the guard instead of inside it (the pre-#2608 shape) — worker_response stays correct and is simply never reached, so DRAIN-002/003 remain green while every panicking tool goes unanswered
+- id: FALSIFY-MCP-DRAIN-006
+  obligation: no-false-error — the guards do not convert successful calls into failures
+  rule: the injection seam DRAIN-005 uses cannot hide a stubbed production dispatcher
+  prediction: an untouched AprMcpServer's worker_dispatch answers apr.version with the real inventory-backed payload (server == "aprender-mcp")
+  test: cargo test -p aprender-mcp --lib default_worker_dispatch_is_the_real_tool_dispatcher
+  if_fails: the default dispatch is not the shipped one, so DRAIN-005 would be proving the wiring of something the server never runs
+
+kani_harnesses:
+- id: KANI-MCP-DRAIN-001
+  obligation: panic-is-an-error-not-silence — a panicking tool still answers its id
+  property: |
+    For all ids i drawn from the bounded set {integer 0..=8, the strings "0".."8"}:
+    worker_response(i, f).id == Some(i) for both f = a returning dispatch and
+    f = a panicking dispatch, and the panicking case additionally carries
+    error.code == -32603.
+    STATUS: DECLARED, NOT IMPLEMENTED. The property is stated so the obligation
+    is auditable; the shipped evidence for it today is FALSIFY-MCP-DRAIN-002/003
+    (cargo test), not a model-checking run. Do not read this entry as a proof.
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_worker_response_preserves_the_id
+- id: KANI-MCP-DRAIN-002
+  obligation: panic-is-an-error-not-silence — a panicking tool still answers its id
+  property: |
+    For all payload shapes in {&'static str, String, other}: panic_message
+    returns a non-empty String and never itself panics, so the -32603 the client
+    receives is never an empty diagnostic.
+    STATUS: DECLARED, NOT IMPLEMENTED — same caveat as KANI-MCP-DRAIN-001.
+  bound: 3
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_panic_message_is_total
+
+qa_gate:
+  id: F-MCP-DRAIN-001
+  name: apr-mcp-stdio-drain-v1 Contract
+  description: Every `apr mcp` request carrying an id is answered exactly once — on EOF, on an I/O error, and when the tool panics. Response order is unconstrained.
+  checks:
+  - validation
+  - falsification

@@ -342,15 +342,13 @@ async fn test_stream_handler_endpoint() {
         .await
         .expect("send");
 
-    // aprender#2375(4): "OK or 404" admitted both "it worked" and "the route is
-    // not there", so it passed while the route was dead on arrival for every
-    // real deployment. This fixture has no model, so the one correct answer is
-    // 503 — the condition, not a missing route.
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a model-less server reports the condition, it does not 404 a mounted route"
-    );
+    let status = response.status();
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(status);
 }
 
 /// Test chat completions with empty prompt after tokenization

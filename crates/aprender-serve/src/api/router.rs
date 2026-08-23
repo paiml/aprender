@@ -394,6 +394,15 @@ fn sanitized_error_message(status: StatusCode) -> String {
 /// through untouched, so every handler-authored message survives verbatim. The
 /// original headers are preserved as well — notably `allow` on a 405, which a
 /// rebuilt response would have dropped.
+///
+/// aprender#2609: `application/x-ndjson` is passed through on the same grounds.
+/// It is JSON — one object per line — and the only thing that emits it here is
+/// the Ollama streaming path, whose terminal `done:true` object is the contract
+/// an Ollama client parses. Collapsing that into a single `{"error":…}` object
+/// would leave the client with no `done` field at all, which is exactly the
+/// malformed-stream outcome `chat_response_to_parts` exists to prevent. Without
+/// this, propagating the real status onto `/api/chat` and `/api/generate`
+/// (#2609) destroyed the frame it was meant to keep honest.
 async fn sanitize_json_rejection(
     request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
@@ -405,12 +414,14 @@ async fn sanitize_json_rejection(
         return response;
     }
 
-    let already_json = response
+    let already_structured = response
         .headers()
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|ct| ct.starts_with("application/json"));
-    if already_json {
+        .is_some_and(|ct| {
+            ct.starts_with("application/json") || ct.starts_with("application/x-ndjson")
+        });
+    if already_structured {
         return response;
     }
 

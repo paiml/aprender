@@ -167,12 +167,9 @@ fn f_arch_002_apr_cli_delegates_inference_to_realizar() {
 fn f_arch_003_contract_gate_blocks_corrupt_model() {
     // F-ARCH-003: validate_model_contract returns ValidationFailed (exit 5)
     // Structural check: verify the gate function exists and returns CliError::ValidationFailed
-    let lib_path = project_root()
-        .join("crates")
-        .join("apr-cli")
-        .join("src")
-        .join("lib.rs");
-    let content = std::fs::read_to_string(&lib_path).expect("lib.rs readable");
+    // #2522: was anchored to apr-cli/src/lib.rs. The gate moved to
+    // apr-cli/src/validate.rs and this failed while the gate still existed.
+    let content = crate_src_text("apr-cli");
 
     // Gate function exists
     assert!(
@@ -185,14 +182,8 @@ fn f_arch_003_contract_gate_blocks_corrupt_model() {
         "F-ARCH-003: Contract gate must return ValidationFailed error"
     );
     // Exit code 5 for validation failures
-    let error_path = project_root()
-        .join("crates")
-        .join("apr-cli")
-        .join("src")
-        .join("error.rs");
-    let error_content = std::fs::read_to_string(&error_path).expect("error.rs readable");
     assert!(
-        error_content.contains("ValidationFailed") || content.contains("exit_code"),
+        content.contains("ValidationFailed") && content.contains("exit_code"),
         "F-ARCH-003: ValidationFailed must map to exit code 5"
     );
 }
@@ -200,12 +191,7 @@ fn f_arch_003_contract_gate_blocks_corrupt_model() {
 #[test]
 fn f_arch_004_skip_contract_bypass_works() {
     // F-ARCH-004: --skip-contract is a CLI global flag that bypasses the gate
-    let lib_path = project_root()
-        .join("crates")
-        .join("apr-cli")
-        .join("src")
-        .join("lib.rs");
-    let content = std::fs::read_to_string(&lib_path).expect("lib.rs readable");
+    let content = crate_src_text("apr-cli");
 
     // skip_contract field exists in CLI struct
     assert!(
@@ -222,12 +208,7 @@ fn f_arch_004_skip_contract_bypass_works() {
 #[test]
 fn f_arch_005_diagnostic_commands_exempt_from_gate() {
     // F-ARCH-005: Diagnostic commands return empty paths (exempt from gate)
-    let lib_path = project_root()
-        .join("crates")
-        .join("apr-cli")
-        .join("src")
-        .join("lib.rs");
-    let content = std::fs::read_to_string(&lib_path).expect("lib.rs readable");
+    let content = crate_src_text("apr-cli");
 
     // extract_model_paths has a diagnostic exemption section
     assert!(
@@ -247,18 +228,27 @@ fn f_arch_005_diagnostic_commands_exempt_from_gate() {
 #[test]
 fn f_arch_006_realizar_has_independent_format_detection() {
     // F-ARCH-006: realizar/src/format.rs detects APR/GGUF/SafeTensors
-    let realizar_format = project_root()
-        .parent()
-        .expect("parent dir")
-        .join("realizar")
-        .join("src")
-        .join("format.rs");
+    // #2522: `../realizar` was archived by APR-MONO; realizar is now the [lib]
+    // name of crates/aprender-serve. The sibling lookup could only ever miss,
+    // and the miss branch returns `ok`.
+    //
+    // #2627: repointing the path was only half the fix. The `if !exists {
+    // return; }` escape hatch came across VERBATIM, so the gate was still
+    // one file-move away from being permanently vacuous -- and this time it
+    // would be vacuous while LOOKING correct, because the path it names is a
+    // real one. "the file is missing" and "the file lacks the symbol" must not
+    // share the verdict `ok`; that equivalence is the whole reason 38 gates in
+    // this suite reported a symbol as absent when it had merely moved. Assert
+    // the target exists, then assert its contents.
+    let realizar_format = crate_dir("aprender-serve").join("src").join("format.rs");
 
-    if !realizar_format.exists() {
-        // If realizar is not a sibling, skip gracefully
-        eprintln!("F-ARCH-006: realizar not found at sibling path, checking via code");
-        return;
-    }
+    assert!(
+        realizar_format.is_file(),
+        "F-ARCH-006: format detection must live in the serving crate, but {} \
+         does not exist. If it moved, repoint this gate -- do not let a missing \
+         target read as a pass.",
+        realizar_format.display()
+    );
 
     let content =
         std::fs::read_to_string(&realizar_format).expect("F-ARCH-006: format.rs readable");
