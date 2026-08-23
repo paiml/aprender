@@ -46,7 +46,194 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
         validate_beat_benchmark(contract, &mut violations);
     }
 
+    // CRUX competitive-research metadata (aprender#2555): kind-independent —
+    // the three fields are carried by 275 `crux-*` contracts of several kinds
+    // and by non-crux contracts that reuse the vocabulary.
+    validate_crux_intake(contract, &mut violations);
+
     violations
+}
+
+/// The closed set of competitors a CRUX story may be extracted from
+/// (`metadata.competitor`, rule CRUX-002).
+///
+/// # Why this is NOT `BEAT_INCUMBENTS`
+///
+/// Reusing [`BEAT_INCUMBENTS`] was considered and REJECTED — it names a
+/// different domain and would import a defect. `BEAT_INCUMBENTS` answers "whom
+/// does aprender claim to *beat* on a pinned benchmark" (the four-pillar
+/// mission); `metadata.competitor` answers "whose UX was this story *extracted
+/// from*". MEASURED on this branch: 275 contract FILES carry the field, in 292
+/// declarations (17 crux contracts carry a second `competitor` inside an
+/// equivalence obligation). `BEAT_INCUMBENTS.iter().any(|p| c.contains(p))`
+/// accepts only `pytorch` (37) and `ollama` (21) — 58 of 292. It cannot name:
+///
+/// - `huggingface` (88 contracts — the single largest source), nor `vllm` (32),
+/// - `llama_cpp` (37): the BEAT list spells it `llama.cpp`, and `"llama.cpp"`
+///   is not a substring of `"llama_cpp"`, so even the pillar it does name is
+///   missed under the underscore spelling the crux corpus uses,
+/// - `ecosystem` (30), `openclaw` (20), `hf-kernels-community` (15),
+///   `apr-qa-playbook` (9), `openclip` (2), `none` (1).
+///
+/// So this registry is the corpus vocabulary, exactly. Every member is
+/// exercised by at least one contract in `contracts/`; adding a competitor is a
+/// deliberate one-line edit here plus a test, which is the point — an open
+/// domain is what let `THIS-COMPETITOR-DOES-NOT-EXIST` validate.
+pub(crate) const CRUX_COMPETITORS: [&str; 11] = [
+    "apr-qa-playbook",
+    "ecosystem",
+    "hf-kernels-community",
+    "huggingface",
+    "llama_cpp",
+    "none",
+    "ollama",
+    "openclaw",
+    "openclip",
+    "pytorch",
+    "vllm",
+];
+
+/// Documented inclusive bounds of `metadata.demand_score`, from
+/// `contracts/crux-competitive-research-ux-v1.yaml`: "a demand_score (1..5) …
+/// demand_score maps directly to pmat priority".
+const DEMAND_SCORE_RANGE: std::ops::RangeInclusive<i64> = 1..=5;
+
+/// Validate the CRUX competitive-research domains (aprender#2555).
+///
+/// Two SURFACES carry these fields, and both are checked here:
+///
+/// 1. `metadata.{competitor,demand_score,intake_status}` on an individual
+///    `crux-*` contract.
+/// 2. The `stories:` rows of the MASTER REGISTRY,
+///    `contracts/crux-competitive-research-ux-v1.yaml`.
+///
+/// Surface 2 was added because the original rationale for this rule did not
+/// survive measurement. #2555 justified CRUX-001 as guarding "the ranking
+/// signal the whole competitive-research programme sorts by" — but MEASURED,
+/// nothing in the repo reads `metadata.demand_score`. The signal §12.1 of
+/// `docs/specifications/crux-competitive-research-ux-workflows.md` maps to
+/// `pmat work` priority is `stories[].demand_score` in the registry: 250 rows,
+/// entirely ungated. Checking only surface 1 left the stated justification
+/// unsupported by the code.
+///
+/// On a registry row the three fields are also REQUIRED, not optional. On
+/// surface 1 they cannot be: `Option` is right there, because 1500-odd non-crux
+/// contracts carry none of them (see the presence obligation in
+/// `contracts/crux-intake-metadata-domains-v1.yaml`). A registry row has no
+/// such excuse — it exists to be ranked.
+///
+/// `intake_status` / `status` values are absent from the checks below ON
+/// PURPOSE: both are the closed enum `IntakeStatus`, so an invented value is
+/// rejected during deserialization and never reaches a validator. That is the
+/// stronger guarantee — a lint can be read and ignored, a parse failure cannot.
+fn validate_crux_intake(contract: &Contract, violations: &mut Vec<Violation>) {
+    // CRUX-001: demand_score is the ranking signal the whole competitive-research
+    // programme sorts by. An unvalidated out-of-range value silently dominates
+    // every ranking it appears in.
+    if let Some(score) = contract.metadata.demand_score {
+        if !DEMAND_SCORE_RANGE.contains(&score) {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-001".to_string(),
+                message: format!(
+                    "metadata.demand_score {score} is outside the documented range {}..={} \
+                     — it is the priority signal pmat work sorts by, so an out-of-range \
+                     value silently outranks every real story",
+                    DEMAND_SCORE_RANGE.start(),
+                    DEMAND_SCORE_RANGE.end(),
+                ),
+                location: Some("metadata.demand_score".to_string()),
+            });
+        }
+    }
+
+    // CRUX-002: competitor must name a source in the registry above.
+    //
+    // No `.trim()` here, deliberately. It used to trim before comparing, which
+    // made `competitor: "  ecosystem  "` validate clean while the STORED value
+    // kept its padding — the check laundered a value it did not fix, so every
+    // consumer reading `metadata.competitor` still saw the untrimmed string.
+    // Normalisation now happens once, at parse time
+    // (`deserialize_trimmed_opt_string` in `schema/types.rs`), so what is
+    // compared is exactly what is stored.
+    if let Some(competitor) = contract.metadata.competitor.as_deref() {
+        if !CRUX_COMPETITORS.contains(&competitor) {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-002".to_string(),
+                message: format!(
+                    "metadata.competitor {competitor:?} is not a known competitive-research \
+                     source — must be one of: {}",
+                    CRUX_COMPETITORS.join(", ")
+                ),
+                location: Some("metadata.competitor".to_string()),
+            });
+        }
+    }
+
+    validate_crux_registry_stories(contract, violations);
+}
+
+/// Hold every MASTER-REGISTRY story row to the same two domains.
+///
+/// These are the rows that carry the ranking signal, so here the fields are
+/// required as well as bounded: a row with no `demand_score` cannot be sorted,
+/// and a row with no `competitor` cannot be attributed.
+fn validate_crux_registry_stories(contract: &Contract, violations: &mut Vec<Violation>) {
+    for story in &contract.stories {
+        let at = |field: &str| Some(format!("stories[{}].{field}", story.id));
+
+        match story.demand_score {
+            None => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-001".to_string(),
+                message: format!(
+                    "registry story {} has no demand_score — it is the priority signal \
+                     pmat work sorts by, and an absent one sorts arbitrarily",
+                    story.id
+                ),
+                location: at("demand_score"),
+            }),
+            Some(score) if !DEMAND_SCORE_RANGE.contains(&score) => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-001".to_string(),
+                message: format!(
+                    "registry story {} has demand_score {score}, outside the documented \
+                     range {}..={} — a single fabricated score reorders the whole queue",
+                    story.id,
+                    DEMAND_SCORE_RANGE.start(),
+                    DEMAND_SCORE_RANGE.end(),
+                ),
+                location: at("demand_score"),
+            }),
+            Some(_) => {}
+        }
+
+        match story.competitor.as_deref() {
+            None => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-002".to_string(),
+                message: format!(
+                    "registry story {} has no competitor — the row cannot be attributed \
+                     to the UX it was extracted from",
+                    story.id
+                ),
+                location: at("competitor"),
+            }),
+            Some(c) if !CRUX_COMPETITORS.contains(&c) => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-002".to_string(),
+                message: format!(
+                    "registry story {} names competitor {c:?}, which is not a known \
+                     competitive-research source — must be one of: {}",
+                    story.id,
+                    CRUX_COMPETITORS.join(", ")
+                ),
+                location: at("competitor"),
+            }),
+            Some(_) => {}
+        }
+    }
 }
 
 /// The four incumbents a BEAT may target (case-insensitive substring match, so

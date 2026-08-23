@@ -34,7 +34,7 @@ metadata:
   category: "CLI — producer/consumer integrity"
   competitor: none
   demand_score: 5
-  intake_status: implemented
+  intake_status: supported
   description: >
     Every `apr *-lint` consumer whose help text names an `apr …` producer must
     have that producer in the same binary, and the producer's output must be

@@ -1,0 +1,136 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-22'
+  author: PAIML Engineering
+  description: "Binary self-identification — the property that `pv --version` tells a user WHICH `pv` they are running. Four things claim the name `pv`, the operator settled that this tool keeps it (2026-08-21), and a HEAD-built binary printed exactly `pv 0.63.0`: a bare name and a semver, byte-identical to what the pipe viewer prints. When a name is deliberately shared, the version line IS the disambiguation mechanism, and an ambiguous one leaves the collision entirely unmitigated."
+  kind: pattern
+  references:
+    - "aprender#2559 — the report: a HEAD-built pv prints `pv 0.63.0`, indistinguishable at a glance from pv(1)"
+    - "aprender#2558 — four crates claimed the bin name `pv`; contracts/provable-contracts-facade-v1.yaml owns the INSTALL-time half of the collision"
+    - "operator ruling 2026-08-21 — the binary KEEPS the name `pv`; the rename quorum was overruled and may not be reopened"
+    - "crates/aprender-contracts-cli/src/lib.rs — SHORT_VERSION / LONG_VERSION, the strings under test"
+    - "crates/aprender-contracts-cli/tests/includes/version_identity_unit.rs — the --lib half of the falsifier"
+    - "crates/aprender-contracts-cli/tests/version_identity.rs — the spawn-the-real-binary half"
+    - "scripts/pv_bin.sh — the release-gate consumer that parses the version line"
+    - "scripts/check_pv_version_parse.sh — the case table for that parse"
+    - ".github/workflows/ci.yml — wires the integration target, which is dark until named there"
+
+five_whys:
+  symptom: "`pv --version` printed `pv 0.63.0`. A user with both the pipe viewer and this tool installed could not tell from the version line which one had answered, and neither could a bug report quoting it."
+  why_1: "clap's bare `version` attribute renders `{name} {CARGO_PKG_VERSION}` and nothing else. That default is correct for a program whose name is unique; this program's name is deliberately not unique."
+  why_2: "The name collision was addressed at INSTALL time — scripts/check_duplicate_bin_names.sh, the facade going lib-only — and install-time mitigation says nothing about the RUNTIME question 'which one am I talking to'."
+  why_3: "The decision to keep the name (2026-08-21) shifted the whole mitigation burden onto identification, but no artifact was updated to carry that new burden. A decision changed what had to be true and nothing changed what was checked."
+  why_4: "Nothing enforced the version line's CONTENT. The only thing that read it, scripts/pv_bin.sh, compared a semver — so any identity text was invisible to every gate, and its absence equally so."
+  root_cause: "`contracts-pv` is 76 features at 0.0% coverage: the tool that decides whether a release is contractually sound proves nothing about itself. This defect is one instance. The remedy is not only the string but the assertion that EXCLUDES the bare form, run in a scope CI actually executes."
+
+equations:
+  version_output_identifies_this_tool_and_not_another:
+    formula: "for the first line L of `pv --version`: L != concat(bin_name, ' ', semver) AND identity_tokens ⊆ tokens(`pv --version`)"
+    domain: "the rendered output of `pv --version` and `pv -V`, where identity_tokens = {provable-contracts, aprender, aprender-contracts-cli, 'pipe viewer'}"
+    codomain: "exit code of `cargo test -p aprender-contracts-cli --lib version_identity_unit` and of the version_identity integration target"
+    invariants:
+      - "The negative assertion is the load-bearing one. `L != <name> <semver>` EXCLUDES the pre-fix output; a positive assertion alone could be satisfied by prose appended to a line that is still ambiguous at a glance"
+      - "MEASURED before the fix: 5 of 8 integration assertions and 3 of 5 unit assertions FAIL against `pv 0.63.0`. The remaining ones are regression guards that hold in both directions by design"
+      - "Naming the SHIPPING CRATE is a distinct obligation from naming the tool: a user who wants to uninstall or file a bug needs `aprender-contracts-cli`, which no description of purpose supplies"
+      - "The pipe-viewer disclaimer is separately load-bearing. MEASURED: deleting only that clause turns exactly one assertion RED (long_version_disclaims_the_pipe_viewer), 7 others still passing"
+      - "`-V` stays ONE line. A version line nobody reads is no better than an ambiguous one, so the glance form pays for identity with brevity elsewhere"
+      - "Both flags must agree on the first line, so a script and a human get the same answer whichever they reach for"
+
+  identity_text_does_not_displace_the_semver_the_release_gate_reads:
+    formula: "field_2(line_1(`pv --version`)) == CARGO_PKG_VERSION"
+    domain: "the whitespace-separated fields of the first line of `pv --version`, and the extractor in scripts/pv_bin.sh"
+    codomain: "exit code of scripts/check_pv_version_parse.sh and of the semver_stays_the_second_field_of_the_first_line assertions"
+    invariants:
+      - "scripts/pv_bin.sh proves a resolved binary was built from HEAD by comparing this semver to the version the tree declares. Every consumer of that script — the Makefile contracts gate, scripts/dogfood_surfaces.sh — inherits the parse"
+      - "MEASURED: the pre-existing extractor `awk '{print $NF}'` took the last field of EVERY line. Against the multi-line output it returned four lines of prose and scripts/pv_bin.sh exited 1, i.e. making the version line informative BROKE the release gate until the extractor was fixed in the same change"
+      - "The replacement reads position 2 of line 1, and that position is pinned from BOTH sides: the extractor by scripts/check_pv_version_parse.sh, the binary by a test assertion. Neither can drift without the other going RED"
+      - "MEASURED: moving the semver off field 2 turns the test RED and scripts/pv_bin.sh red together — the guard and the gate it protects fail as one"
+      - "The case table includes the pre-fix single-line form `pv 0.63.0`, so the new extractor is proven backward-compatible rather than assumed so"
+      - "It also includes real pipe-viewer output (`pv 1.6.20` plus its copyright line), because the failure mode being guarded is mistaking another tool's version line for this one's"
+
+  the_assertions_run_where_ci_can_see_them:
+    formula: "scope(version identity assertions) ⊆ targets executed by workspace-test"
+    domain: "CI's workspace-test job: `--lib` across the workspace, plus one explicit line naming individual `--test` targets"
+    codomain: "presence of the assertions in an executed target"
+    invariants:
+      - "A new tests/*.rs file is DARK until it is named on that one line. An assertion CI never runs is theater, which is the failure this whole contract exists to stop repeating"
+      - "The assertions are therefore duplicated into the LIBRARY, where `--lib` reaches them unconditionally. The guarantee does not depend on winning the race for the single shared ci.yml line, which only one PR at a time can edit"
+      - "The unit half asserts on Command::render_version()/render_long_version() — the same strings clap prints — and the integration half spawns the real binary via CARGO_BIN_EXE_pv, so the claim is proven end to end, not merely at the struct"
+      - "MUTATION-VERIFIED IN THE LIBRARY SCOPE SEPARATELY. The integration proof does not transfer: reverting the fix was re-run against `--lib` and turned 3 of 5 unit assertions RED"
+
+proof_obligations:
+  - type: invariant
+    property: "`pv --version` is not the bare `<name> <semver>` form that every other `pv` also prints"
+    formal: "cargo test -p aprender-contracts-cli --lib version_identity_unit exits 0"
+    applies_to: version_output_identifies_this_tool_and_not_another
+  - type: invariant
+    property: "The version output names the tool, the project, the shipping crate, and disclaims the pipe viewer"
+    formal: "The version_identity integration target exits 0"
+    applies_to: version_output_identifies_this_tool_and_not_another
+  - type: invariant
+    property: "The identity assertions demonstrably turn RED"
+    formal: "Replacing `version = SHORT_VERSION, long_version = LONG_VERSION` with a bare `version` fails 5 of 8 integration and 3 of 5 unit assertions"
+    applies_to: version_output_identifies_this_tool_and_not_another
+  - type: invariant
+    property: "The semver stays the second whitespace field of the first line"
+    formal: "scripts/pv_bin.sh resolves and asserts freshness with exit 0"
+    applies_to: identity_text_does_not_displace_the_semver_the_release_gate_reads
+  - type: invariant
+    property: "The extractor tested by the case table is the one scripts/pv_bin.sh actually runs"
+    formal: "scripts/check_pv_version_parse.sh compares against pv_bin.sh with full-line comments stripped, and fails on a mismatch"
+    applies_to: identity_text_does_not_displace_the_semver_the_release_gate_reads
+  - type: invariant
+    property: "The parse case table demonstrably turns RED"
+    formal: "scripts/check_pv_version_parse.sh --self-test fails the table on the pre-#2559 last-field extractor"
+    applies_to: identity_text_does_not_displace_the_semver_the_release_gate_reads
+  - type: invariant
+    property: "The integration target is named on ci.yml's explicit --test line, not merely present in the tree"
+    formal: "grep -q 'aprender-contracts-cli --test version_identity' .github/workflows/ci.yml"
+    applies_to: the_assertions_run_where_ci_can_see_them
+  - type: invariant
+    property: "The assertions also live in the library, so `--lib` reaches them without depending on the ci.yml line"
+    formal: "crates/aprender-contracts-cli/src/lib.rs declares mod version_identity_unit under #[cfg(test)]"
+    applies_to: the_assertions_run_where_ci_can_see_them
+
+falsification_tests:
+  - id: FALSIFY-PVVER-001
+    rule: "The version line identifies this tool, in a scope CI runs unconditionally"
+    prediction: "The library-scope assertions pass"
+    test: "cargo test -p aprender-contracts-cli --lib version_identity_unit"
+    if_fails: "`pv --version` has reverted to a form that does not say which `pv` it is. Four things claim that name and the operator ruled that this one keeps it, so the version line is the only mitigation left."
+
+  - id: FALSIFY-PVVER-002
+    rule: "The real binary, not just the clap Command, prints the identifying output"
+    prediction: "The spawned binary's --version and -V satisfy every assertion"
+    test: "cargo test -p aprender-contracts-cli --test version_identity"
+    if_fails: "The struct and the shipped binary disagree — the end-to-end claim was an inference dressed as a measurement."
+
+  - id: FALSIFY-PVVER-003
+    rule: "Adding identity text did not break the release gate that parses the version line"
+    prediction: "scripts/pv_bin.sh resolves a HEAD-built pv and its freshness assertion passes"
+    test: "bash -c '. scripts/pv_bin.sh && test -x \"$PV\"'"
+    if_fails: "The semver left field 2 of line 1, or the extractor drifted. Every consumer of pv_bin.sh — the Makefile contracts gate, scripts/dogfood_surfaces.sh — is blocked."
+
+  - id: FALSIFY-PVVER-004
+    rule: "The extractor answers every row of its case table, including the old single-line form and a foreign pv"
+    prediction: "The case table passes and the extractor under test is the one pv_bin.sh runs"
+    test: "bash scripts/check_pv_version_parse.sh"
+    if_fails: "The version-line parser and its table have diverged. This parser was already wrong once — `awk '{print $NF}'` — and shipped that way because nothing exercised it against more than one input."
+
+  - id: FALSIFY-PVVER-005
+    rule: "The parse case table demonstrably turns RED (mutation-verified, not merely green)"
+    prediction: "Run against the pre-#2559 last-field extractor, the table fails"
+    test: "bash scripts/check_pv_version_parse.sh --self-test"
+    if_fails: "The table has become vacuous — it would accept the extractor that broke every consumer of scripts/pv_bin.sh."
+
+  - id: FALSIFY-PVVER-006
+    rule: "The integration target is wired into CI, not merely present"
+    prediction: "ci.yml's explicit --test line names the version_identity target"
+    test: "grep -q 'aprender-contracts-cli --test version_identity' .github/workflows/ci.yml"
+    if_fails: "The integration half is dark. A new tests/*.rs file is unreachable until named on that line, and an assertion CI never runs is theater."
+
+  - id: FALSIFY-PVVER-007
+    rule: "The library-scope assertions are actually declared, so `--lib` reaches them"
+    prediction: "src/lib.rs declares the version_identity_unit test module"
+    test: "grep -q 'mod version_identity_unit' crates/aprender-contracts-cli/src/lib.rs"
+    if_fails: "The unconditional half was deleted, leaving the guarantee dependent on the single contested ci.yml line."

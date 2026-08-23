@@ -328,6 +328,18 @@ jobs:
         # the experiment"), this step is left AS-IS so the nextest signal stays
         # attributable to the lib step alone. Revisit after the lib-step
         # measurement lands.
+        #
+        # #2589 (contracts-pv, 76 features / 0.0% covered): the same trap this
+        # comment describes had swallowed `pv` whole. All three of
+        # aprender-contracts-cli's integration targets — 651 lines that SPAWN the
+        # pv binary — were absent from this line, so CI ran none of them, and the
+        # audit correctly read 0% for the tool that decides whether a release is
+        # contractually sound. Tests that never execute are not coverage.
+        # `pv_surface_gate` (new), `cli_integration` (64) and `ground_truth` (34)
+        # are wired in below. `book_coverage` is deliberately NOT: it is RED at
+        # 4bbfeb07f — it walks contracts/*.yaml and chokes on contracts/binding.yaml
+        # ("missing field `metadata`"), a binding registry rather than a contract.
+        # It rotted precisely because nothing watched it; fixing it is separate work.
         run: |
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
@@ -343,7 +355,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo build --examples --workspace --keep-going'
+            bash -c 'cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo test -p aprender-contracts-cli --test pv_surface_gate && cargo test -p aprender-contracts-cli --test cli_integration && cargo test -p aprender-contracts-cli --test ground_truth && cargo test -p aprender-contracts-cli --test version_identity && cargo build --examples --workspace --keep-going'
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
@@ -489,6 +501,17 @@ jobs:
       # the fixture binaries are shell scripts that print a version string.
       - name: apr_bin.sh must resolve the HEAD-built binary, whatever its profile
         run: bash scripts/check_apr_bin_resolution.sh
+      # Poka-yoke (#2559): pv_bin.sh proves a resolved `pv` is the HEAD build by
+      # reading the semver out of `pv --version`. That version line is now
+      # deliberately multi-line -- four things claim the name `pv`, so it has to
+      # say which one it is -- and the old `awk '{print $NF}'` extractor handed
+      # the comparison four lines of prose, failing every consumer of pv_bin.sh.
+      # The extractor is a guard's parser, and guard patterns in this repo have
+      # been wrong five times running, every one caught by a case table.
+      - name: pv --version semver extractor must answer its case table
+        run: bash scripts/check_pv_version_parse.sh
+      - name: "pv --version parse guard must still turn RED (case table)"
+        run: bash scripts/check_pv_version_parse.sh --self-test
       # CLAUDE.md mandates bashrs over shellcheck; CI honoured that for SEVEN of
       # 72 scripts (`bashrs lint scripts/check_book_*.sh` in book.yml).
       # apr_bin.sh -- sourced by every gate in this repo -- was not one of them,

@@ -249,7 +249,13 @@ surface_tools() {
     # RECEIPT as evidence of correctness while the tree was at 0.63.0.
     . "$(dirname "${BASH_SOURCE[0]}")/pv_bin.sh" || {
         bad "pv could not be resolved from HEAD"; return 1; }
-    ok "pv pinned to HEAD build ($("$PV" --version))"
+    # `-V`, not `--version`: as of #2559 the long form is deliberately multi-line
+    # (four things claim the name `pv`, so it names itself and disclaims the pipe
+    # viewer), and four lines of prose inside a receipt line is unreadable. The
+    # short form is the one-line glance form and is itself unambiguous, so the
+    # receipt still records WHICH pv issued the verdict -- which is the whole
+    # point of this line, given it once recorded `pv 0.49.0` as evidence.
+    ok "pv pinned to HEAD build ($("$PV" -V))"
     require_tool bashrs "shell linting must use bashrs, not shellcheck"
     require_tool pmat   "code search must use pmat query, not grep"
 

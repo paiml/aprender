@@ -277,6 +277,10 @@ falsification_tests: []
     #[path = "validator_tests_extra.rs"]
     mod extra;
 
+    /// CRUX competitive-research metadata domains (aprender#2555).
+    #[path = "crux_intake_tests.rs"]
+    mod crux_intake;
+
     #[path = "validator_tests_top_level.rs"]
     mod top_level;
 

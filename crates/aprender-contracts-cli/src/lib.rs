@@ -19,12 +19,43 @@ use std::str::FromStr;
 use clap::Parser;
 use cli::Commands;
 
+/// Glance form, printed by `pv -V`. One line, and it names the tool.
+///
+/// clap renders `{name} {version}`, so this yields
+/// `pv 0.63.0 (aprender provable-contracts verifier)`. The bare semver stays the
+/// SECOND whitespace field because `scripts/pv_bin.sh` reads it positionally to
+/// prove a resolved binary was built from HEAD.
+const SHORT_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (aprender provable-contracts verifier)"
+);
+
+/// Full form, printed by `pv --version`.
+///
+/// Four things claim the name `pv` on a developer box: `pv(1)` the pipe viewer
+/// from every distro, the `pv` crate on crates.io (also a pipe viewer, first
+/// published 2019), this binary, and — until #2553 — the aprender facade. The
+/// operator settled that this tool KEEPS the name (2026-08-21), which makes this
+/// string the mitigation the project relies on, so it rules the others out by
+/// name rather than merely describing itself. See #2559 and
+/// `tests/version_identity.rs`.
+const LONG_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (aprender provable-contracts verifier)\n",
+    "crate aprender-contracts-cli — ",
+    env!("CARGO_PKG_REPOSITORY"),
+    "\n",
+    "Verifies YAML contracts under contracts/; run `pv --help` for the command surface.\n",
+    "This is NOT pv(1), the pipe viewer (distro package `pv`, or the `pv` crate on crates.io)."
+);
+
 /// Top-level CLI argument parser for the `pv` command
 #[derive(Parser)]
 #[command(
     name = "pv",
     about = "provable-contracts — papers to provable Rust kernels",
-    version
+    version = SHORT_VERSION,
+    long_version = LONG_VERSION
 )]
 pub struct Cli {
     /// The command to run
@@ -338,6 +369,10 @@ pub fn run() {
         std::process::exit(1);
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/includes/version_identity_unit.rs"]
+mod version_identity_unit;
 
 #[cfg(test)]
 #[path = "../tests/includes/dispatch_tests.rs"]

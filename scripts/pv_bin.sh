@@ -69,11 +69,38 @@ pv_bin_assert_fresh() {
             "$(pv_bin_root)/Cargo.toml" 2>/dev/null)
     fi
     [ -n "$pv_bin_declared" ] || { pv_bin_die "could not read declared pv version"; return 1; }
-    pv_bin_actual=$("$pv_bin_b" --version 2>&1 | awk '{print $NF}')
+    # POSITIONAL, first line only. `pv --version` is deliberately multi-line as
+    # of #2559 — it has to say WHICH pv this is, because four things claim that
+    # name. The old `awk '{print $NF}'` took the last field of EVERY line and
+    # handed this comparison four lines of prose. The version line's shape is
+    # pinned from the other side by
+    # crates/aprender-contracts-cli/tests/version_identity.rs
+    # (`semver_stays_the_second_field_of_the_first_line`), and by the case table
+    # in scripts/check_pv_version_parse.sh.
+    # ONE invocation, then both reads off the SAME captured text -- the semver
+    # and the identity must describe the same binary and the same run.
+    pv_bin_vers=$("$pv_bin_b" --version 2>&1)
+    pv_bin_actual=$(printf '%s\n' "$pv_bin_vers" | awk 'NR==1{print $2; exit}')
+    pv_bin_first=$(printf '%s\n' "$pv_bin_vers" | awk 'NR==1{print; exit}')
     [ "$pv_bin_actual" = "$pv_bin_declared" ] || {
         pv_bin_die "resolved pv reports $pv_bin_actual, tree declares $pv_bin_declared ($pv_bin_b)"
         return 1
     }
+    # IDENTITY, on the same line. #2559 added an identity string to `pv
+    # --version` precisely because four things claim the name `pv` -- but this
+    # function, the place the release actually DECIDES whether it has the right
+    # binary, went on proving freshness from the SEMVER alone. A semver is not
+    # an identity: pv(1) the pipe viewer ships 0.x versions too, and a stale
+    # sibling `pv` that happened to match the declared version would have
+    # satisfied the check above unchanged. So the marker is asserted here, where
+    # the decision is made, not only in the unit tests that watch the string.
+    case "$pv_bin_first" in
+        *"(aprender provable-contracts verifier)"*) ;;
+        *)
+            pv_bin_die "resolved pv does not identify as the aprender contracts verifier. First --version line: $pv_bin_first ($pv_bin_b). If that is pv(1) the pipe viewer, or another crate named pv, it is the wrong binary however its version reads."
+            return 1
+            ;;
+    esac
     return 0
 }
 

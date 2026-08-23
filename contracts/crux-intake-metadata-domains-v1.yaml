@@ -1,0 +1,266 @@
+metadata:
+  id: CRUX-INTAKE-DOMAINS
+  version: 1.0.0
+  created: '2026-08-22'
+  author: PAIML Engineering
+  kind: pattern
+  description: >
+    Field-domain integrity for the three CRUX competitive-research metadata
+    fields — metadata.competitor, metadata.demand_score, metadata.intake_status.
+    This contract owns the class of defect where a schema field is DECLARED in
+    contracts and CONSUMED by tooling but never PARSED by the type that models
+    the schema: serde drops the key silently, so every validator downstream is
+    checking a field that does not exist, and nonsense validates with 0 errors
+    and exit 0.
+  references:
+    - 'aprender#2555 — `pv validate` accepted competitor: THIS-COMPETITOR-DOES-NOT-EXIST, demand_score: 99999, intake_status: banana with 0 errors, exit 0'
+    - 'contracts/crux-competitive-research-ux-v1.yaml — the master registry; documents "a demand_score (1..5)" and the 250-story vocabulary'
+    - 'scripts/crux_scaffold_contracts.py — STATUS_BADGE, the generator that emits all 275 crux-*-v1.yaml files and fixes the intake_status vocabulary'
+    - 'crates/aprender-contracts/src/schema/types.rs — Metadata, IntakeStatus'
+    - 'crates/aprender-contracts/src/schema/validator.rs — CRUX_COMPETITORS, DEMAND_SCORE_RANGE, validate_crux_intake (rules CRUX-001/002)'
+    - 'crates/aprender-contracts/src/schema/crux_intake_tests.rs — the falsifier suite'
+    - 'aprender#2589 — contracts-pv cluster: 76 features, 0.0% covered, 0 UNKNOWN hardware'
+    - 'docs/specifications/crux-competitive-research-ux-workflows.md §12.1 — the demand_score → pmat work priority mapping, i.e. what the ranking signal is actually used FOR'
+    - 'crates/aprender-contracts/src/schema/validator.rs — validate_crux_registry_stories, the master-registry surface added after adversarial review found the original rationale unsupported by the code'
+
+five_whys:
+  symptom: "A crux-shaped contract carrying an invented competitor, a demand_score of 99999 and an intake_status of `banana` passed `pv validate` with `0 error(s), 0 warning(s)` and exit 0."
+  why_1: "No validator checked the three fields."
+  why_2: "No validator COULD check them: `Metadata` declared none of the three, so serde discarded the keys during deserialization and the parsed `Contract` had nothing to look at."
+  why_3: "serde's default for an unknown key is to ignore it. A schema field that is written in 275 YAML files (292 declarations) and read by two Python scripts is, to the Rust type that models the schema, indistinguishable from a typo — and equally invisible."
+  why_4: "The three fields entered the corpus through `scripts/crux_scaffold_contracts.py`, a generator that emitted them from a table it held in memory. The vocabulary lived in the generator, never in the schema, so it constrained nothing once the files were on disk."
+  why_5: "`pv` is the tool that decides whether a release is contractually sound, and 76 of its features are hardware-verified but UNGATED. Its own doctrine — a control you have not watched go RED does not count — had never been applied to pv itself."
+  root_cause: "A field domain expressed only in a generator is not a domain. The remedy is to move each of the three domains into the type system or the validator, at the strength the field warrants: intake_status becomes a closed enum so an invented value FAILS TO PARSE, and demand_score and competitor become validator rules with quoted values, so the offending input is named rather than merely rejected."
+
+equations:
+  intake_status_is_closed_at_parse_time:
+    formula: |
+      IntakeStatus = { missing, partial, supported, unclear }
+      ∀ yaml y: metadata.intake_status(y) ∉ IntakeStatus
+                ⇒ parse_contract_str(y) = Err(_)
+    domain: "the metadata.intake_status scalar of any contract YAML"
+    codomain: "Result<Contract, ContractError>"
+    invariants:
+      - "The vocabulary is exactly STATUS_BADGE in scripts/crux_scaffold_contracts.py, the generator that emitted all 275 crux-*-v1.yaml files: supported, partial, missing, unclear"
+      - "Enforcement is at PARSE time, not lint time, and that distinction is the point. A lint is advisory — a caller may read the warning and proceed. An invented value must not be a warning about a contract; it must not be a contract"
+      - "MEASURED on 4bbfeb07f: sweeping the whole corpus with the enum in place found exactly ONE drifted value — contracts/apr-lint-producers-v1.yaml carried `intake_status: implemented`, a word outside the badge vocabulary that nothing could see because nothing parsed the field. Corrected to `supported` in the same change"
+      - "`Option<IntakeStatus>` with #[serde(default)]: the ~1450 contracts that are not crux stories carry no intake_status and are unaffected"
+
+  demand_score_stays_inside_its_documented_range:
+    formula: |
+      ∀ contract c: demand_score(c) = Some(n) ⇒ 1 ≤ n ≤ 5
+      violation ⇒ Violation { severity: Error, rule: CRUX-001 }
+    domain: "metadata.demand_score, an optional integer"
+    codomain: "the Error-severity violations returned by validate_contract"
+    invariants:
+      - "The bound is the master contract's own text: 'a demand_score (1..5) … demand_score maps directly to pmat priority'"
+      - "RATIONALE CORRECTED (adversarial review of the first draft). The original headline was that demand_score `is the ranking signal the whole competitive-research programme sorts by`. MEASURED, that was NOT true of metadata.demand_score: nothing in the repo reads it. The signal §12.1 of docs/specifications/crux-competitive-research-ux-workflows.md maps to `pmat work` priority is stories[].demand_score in the MASTER REGISTRY, contracts/crux-competitive-research-ux-v1.yaml — 250 rows, which this contract originally left entirely ungated"
+      - "So the gate now covers BOTH surfaces, and the claim is true of the union: metadata.demand_score on an individual crux-* contract, AND every stories[] row of the master registry. An unvalidated 99999 in the registry silently outranks every real story in the ranking that actually drives ticket priority — a corrupted priority order, not an untidy file"
+      - "MEASURED on the real registry: 250 rows, scores ∈ {2,3,4,5}, competitors ∈ {huggingface 78, llama_cpp 34, pytorch 33, vllm 32, ecosystem 30, ollama 21, openclaw 20, openclip 2}, statuses ∈ {missing 140, partial 67, supported 43}. All in-domain today, so the gate lands GREEN and functions as a ratchet"
+      - "BOTH bounds are inclusive. An exclusive upper bound would reject the 86 contracts at demand_score 5; an exclusive lower bound would admit 0. The off-by-one mutation 2..=4 turns the boundary test RED"
+      - "The field is typed i64, deliberately not u8: an out-of-range value must reach the validator and be reported as `demand_score 99999 is outside 1..=5`, not die in serde as an opaque integer-overflow message"
+      - "The message quotes the offending value. A rule that says only `out of range` makes the reader re-derive what the tool already knew"
+
+  competitor_names_a_registered_research_source:
+    formula: |
+      CRUX_COMPETITORS = { apr-qa-playbook, ecosystem, hf-kernels-community,
+                           huggingface, llama_cpp, none, ollama, openclaw,
+                           openclip, pytorch, vllm }
+      ∀ contract c: competitor(c) = Some(s) ⇒ s ∈ CRUX_COMPETITORS
+      ∀ registry row r: competitor(r) = Some(s) ⇒ s ∈ CRUX_COMPETITORS
+      violation ⇒ Violation { severity: Error, rule: CRUX-002 }
+      NOTE: s is already trimmed — normalisation happens at PARSE, not in the
+      comparison (see the normalisation invariant below).
+    domain: "metadata.competitor, an optional scalar"
+    codomain: "the Error-severity violations returned by validate_contract"
+    invariants:
+      - "REUSING BEAT_INCUMBENTS WAS CONSIDERED AND REJECTED — it would import an existing defect. BEAT_INCUMBENTS answers 'whom does aprender claim to BEAT on a pinned benchmark' (the four-pillar mission); metadata.competitor answers 'whose UX was this story EXTRACTED FROM'. Two different questions with two different answer sets"
+      - "MEASURED on this branch: 275 contract FILES carry the field, in 292 declarations (17 crux contracts carry a second competitor inside an equivalence obligation). The BEAT matcher `BEAT_INCUMBENTS.iter().any(|p| c.contains(p))` accepts only pytorch (37) and ollama (21) — 58 of 292, i.e. it would reject 80% of the corpus it was proposed to validate"
+      - "It cannot name huggingface (88 contracts, the single largest source) or vllm (32) at all — neither is a four-pillar incumbent"
+      - "It also misses llama_cpp (37) despite naming that pillar: the BEAT list spells it `llama.cpp`, and `llama.cpp` is not a substring of `llama_cpp`. A shared list would have made the two spellings one another's problem"
+      - "So the registry is the corpus vocabulary, exactly. Every one of the 11 members is exercised by at least one contract in contracts/, and the four-pillar names the corpus does not use (scikit-learn, unsloth) are deliberately absent — adding a competitor is a one-line registry edit plus a test, which is the point. An open domain is what let THIS-COMPETITOR-DOES-NOT-EXIST validate"
+      - "The decision is pinned MECHANICALLY, not in prose: beat_incumbents_cannot_name_the_crux_corpus turns RED if someone merges the two lists as redundant"
+      - "NORMALISATION IS AT PARSE TIME, not inside the comparison. The first draft did `competitor.trim()` inside CRUX-002, so `competitor: '  ecosystem  '` validated clean while the STORED value kept its padding: the gate laundered a value it never fixed, and every consumer reading metadata.competitor still saw the padded string. deserialize_trimmed_opt_string now trims once, before any rule runs"
+      - "PRESENT-BUT-EMPTY IS NOT ABSENT. A trimmed-to-empty value stays Some(\"\") rather than collapsing to None, so `competitor: ''` and `competitor: '   '` are still REPORTED. Collapsing them would have widened the presence gap below rather than narrowed it"
+
+  master_registry_story_rows_carry_a_complete_ranking_key:
+    formula: |
+      registry = contracts/crux-competitive-research-ux-v1.yaml
+      ∀ row r ∈ registry.stories:
+            demand_score(r) = Some(n) ∧ 1 ≤ n ≤ 5      (else CRUX-001)
+          ∧ competitor(r)   = Some(s) ∧ s ∈ CRUX_COMPETITORS   (else CRUX-002)
+          ∧ status(r)       ∈ IntakeStatus             (else parse Err)
+    domain: "the stories[] list of the CRUX master registry contract"
+    codomain: "Result<Contract, ContractError> ∪ the Error-severity violations of validate_contract"
+    invariants:
+      - "THIS is the surface the #2555 headline actually described. metadata.demand_score is read by nothing; stories[].demand_score is what §12.1 of the crux workflows spec maps to pmat work priority, and what the §12.2 bulk-ticket loop sorts on"
+      - "On a registry row the three fields are REQUIRED, not merely bounded — a row with no demand_score cannot be sorted and a row with no competitor cannot be attributed. This is where the presence gap CAN be closed; on metadata.* it cannot, and that asymmetry is stated as its own obligation below rather than left implicit"
+      - "status reuses IntakeStatus, so an invented value fails at PARSE with a located message (`stories[0].status: unknown variant `implemented``). MEASURED: `implemented` is the near-miss that was really in the corpus, which is why it is the value the falsifier uses"
+      - "The domains are the SAME constants — DEMAND_SCORE_RANGE, CRUX_COMPETITORS, IntakeStatus. Two surfaces, one vocabulary: the registry and the per-story contracts cannot drift apart"
+      - "NON-VACUITY: the_real_crux_registry_rows_are_all_in_domain asserts >= 250 rows parsed. If the stories[] field ever stopped deserializing, every registry check would iterate an empty vec and pass — the same failure mode as the field this contract exists to fix"
+
+proof_obligations:
+  - type: invariant
+    property: "The #2555 reproducer is rejected"
+    formal: "`pv validate` on a contract carrying competitor: THIS-COMPETITOR-DOES-NOT-EXIST, demand_score: 99999, intake_status: banana exits non-zero"
+    applies_to: intake_status_is_closed_at_parse_time
+
+  - type: invariant
+    property: "An invented intake_status fails to PARSE, not merely to lint"
+    formal: "parse_contract_str(y) is Err for intake_status ∈ {banana, implemented, done, SUPPORTED, ''} and the error names the field"
+    applies_to: intake_status_is_closed_at_parse_time
+
+  - type: invariant
+    property: "All four vocabulary words parse and round-trip"
+    formal: "for w in {missing, partial, supported, unclear}: parse(w).intake_status = Some(v) and v.to_string() = w"
+    applies_to: intake_status_is_closed_at_parse_time
+
+  - type: invariant
+    property: "The whole corpus satisfies the enum"
+    formal: "`pv lint contracts/` reports 0 errors over the whole corpus (1730 contracts on this branch, 1727 on 4bbfeb07f; the count is a dated sample, the 0-errors is the claim)"
+    applies_to: intake_status_is_closed_at_parse_time
+
+  - type: invariant
+    property: "An out-of-range demand_score is an Error-severity CRUX-001 quoting the value"
+    formal: "for n in {99999, 0, -1, 6, 10^12}: CRUX-001 ∈ errors(validate) and message contains n"
+    applies_to: demand_score_stays_inside_its_documented_range
+
+  - type: invariant
+    property: "Both range bounds are inclusive"
+    formal: "for n in 1..=5: no CRUX-001 violation"
+    applies_to: demand_score_stays_inside_its_documented_range
+
+  - type: invariant
+    property: "An unregistered competitor is an Error-severity CRUX-002"
+    formal: "for s in {THIS-COMPETITOR-DOES-NOT-EXIST, HuggingFace, llama.cpp, openai, ''}: CRUX-002 ∈ errors(validate)"
+    applies_to: competitor_names_a_registered_research_source
+
+  - type: invariant
+    property: "Every registered competitor validates — the registry cannot silently shrink"
+    formal: "for s in CRUX_COMPETITORS: errors(validate) contains no CRUX-* rule"
+    applies_to: competitor_names_a_registered_research_source
+
+  - type: invariant
+    property: "BEAT_INCUMBENTS is demonstrably the WRONG set for this field"
+    formal: "beat_accepts(huggingface) = beat_accepts(vllm) = beat_accepts(llama_cpp) = false, while beat_accepts(llama.cpp) = true"
+    applies_to: competitor_names_a_registered_research_source
+
+  - type: invariant
+    property: "The rules are WIRED — removing the call from validate_contract turns the suite RED"
+    formal: "deleting `validate_crux_intake(contract, &mut violations)` fails 3 tests"
+    applies_to: competitor_names_a_registered_research_source
+
+  - type: invariant
+    property: "Contracts without the three fields are unaffected"
+    formal: "a contract carrying none of the three parses with all three fields None and yields no CRUX-* violation"
+    applies_to: intake_status_is_closed_at_parse_time
+
+  - type: bound
+    property: "KNOWN GAP, STATED: on metadata.*, OMISSION and explicit null dodge the gate entirely"
+    formal: >
+      deleting the three metadata: lines gives rc=0, and `competitor: null` likewise.
+      This is NOT closed and is not closeable at this surface: the fields are
+      Option<_> because ~1450 non-crux contracts legitimately carry none of them,
+      so presence cannot be required without failing the whole corpus. What the
+      gate constrains is the VALUE of a field that is written down. Anything that
+      requires the field to BE written down has to key off something that
+      identifies a contract as a crux story, which does not exist as a machine
+      predicate today (metadata.kind is `registry` on 275 crux contracts AND on
+      non-crux registries). Deliberately deferred, and named here so it is a
+      known limit rather than an unnoticed hole.
+    applies_to: competitor_names_a_registered_research_source
+
+  - type: invariant
+    property: "PRESENCE IS required where it CAN be — on master-registry story rows"
+    formal: "a stories[] row omitting demand_score raises CRUX-001; one omitting competitor raises CRUX-002; both quote the row id"
+    applies_to: master_registry_story_rows_carry_a_complete_ranking_key
+
+  - type: invariant
+    property: "Registry rows are held to the same two domains as metadata"
+    formal: "for n in {99999, 0, -1, 6, 10^12}: CRUX-001 at stories[ID].demand_score; for s ∉ CRUX_COMPETITORS: CRUX-002 at stories[ID].competitor; for n in 1..=5: no violation"
+    applies_to: master_registry_story_rows_carry_a_complete_ranking_key
+
+  - type: invariant
+    property: "An invented registry status fails to PARSE"
+    formal: "for w in {implemented, banana, SUPPORTED, done, in-progress}: parse_contract_str is Err and the message names status and w"
+    applies_to: master_registry_story_rows_carry_a_complete_ranking_key
+
+  - type: invariant
+    property: "The REAL registry is in-domain, and the check is non-vacuous"
+    formal: "parse(crux-competitive-research-ux-v1.yaml).stories.len() >= 250, every row has all three fields, and validate yields no CRUX-* error"
+    applies_to: master_registry_story_rows_carry_a_complete_ranking_key
+
+  - type: invariant
+    property: "competitor is normalised at PARSE, so the stored value equals the checked value"
+    formal: "parse(competitor: '  ecosystem  ').metadata.competitor = Some(\"ecosystem\"), and a blank stays Some(\"\") and raises CRUX-002"
+    applies_to: competitor_names_a_registered_research_source
+
+  - type: invariant
+    property: "The registry rules are WIRED — removing the call turns the suite RED"
+    formal: "deleting `validate_crux_registry_stories(contract, violations)` fails 3 tests; reverting the parse-time trim fails 2"
+    applies_to: master_registry_story_rows_carry_a_complete_ranking_key
+
+falsification_tests:
+  - id: FALSIFY-CRUX-INTAKE-001
+    rule: "The #2555 reproducer no longer validates"
+    prediction: "pv validate on the three-field nonsense contract exits non-zero and names intake_status"
+    test: "cargo test -p aprender-contracts --lib crux_intake::the_2555_reproducer_is_rejected"
+    if_fails: "pv again accepts nonsense with exit 0 — every release verdict it issues about crux metadata is unfounded"
+
+  - id: FALSIFY-CRUX-INTAKE-002
+    rule: "intake_status is closed AT PARSE TIME"
+    prediction: "Five invented values, including the near-miss `implemented` that was really in the corpus, all fail to parse"
+    test: "cargo test -p aprender-contracts --lib crux_intake::invented_intake_status_fails_to_parse"
+    if_fails: "The domain reopened — most likely by widening the enum or retyping the field to String, which downgrades a parse failure to an ignorable lint"
+
+  - id: FALSIFY-CRUX-INTAKE-003
+    rule: "demand_score is bounded, inclusively, at both ends"
+    prediction: "99999, 0, -1, 6 and 10^12 raise CRUX-001; 1,2,3,4,5 do not"
+    test: "cargo test -p aprender-contracts --lib -- crux_intake::out_of_range_demand_score_is_an_error crux_intake::demand_score_bounds_are_inclusive"
+    if_fails: "The priority signal is unbounded again, and a single fabricated score reorders the whole competitive-research queue"
+
+  - id: FALSIFY-CRUX-INTAKE-004
+    rule: "competitor membership is enforced and the registry covers the corpus"
+    prediction: "Unregistered names raise CRUX-002; all 11 registered names validate"
+    test: "cargo test -p aprender-contracts --lib -- crux_intake::unknown_competitor_is_an_error crux_intake::every_registered_competitor_is_accepted crux_intake::competitor_registry_covers_the_corpus_vocabulary"
+    if_fails: "Either the gate went vacuous, or the registry lost a name and is now rejecting real contracts"
+
+  - id: FALSIFY-CRUX-INTAKE-005
+    rule: "BEAT_INCUMBENTS is not silently substituted for CRUX_COMPETITORS"
+    prediction: "The BEAT matcher rejects huggingface, vllm and llama_cpp, so the two lists cannot be merged as redundant"
+    test: "cargo test -p aprender-contracts --lib crux_intake::beat_incumbents_cannot_name_the_crux_corpus"
+    if_fails: "A well-meant de-duplication has imported the BEAT list's inability to name 80% of the crux corpus"
+
+  - id: FALSIFY-CRUX-INTAKE-006
+    rule: "The corpus itself satisfies all three domains"
+    prediction: "The real contracts crux-I-10-v1.yaml and apr-lint-producers-v1.yaml parse and raise no CRUX-* error"
+    test: "cargo test -p aprender-contracts --lib -- crux_intake::real_crux_contract_still_validates crux_intake::apr_lint_producers_carries_a_vocabulary_intake_status"
+    if_fails: "Either a real contract drifted out of vocabulary, or `intake_status: implemented` came back — the one genuine drift this gate found on 4bbfeb07f"
+
+  - id: FALSIFY-CRUX-INTAKE-007
+    rule: "The gate turns RED, in every direction, and is not merely green"
+    prediction: >
+      Five independent mutations each fail a disjoint set of tests, all restored afterwards:
+      (E) adding a variant that lets `banana` parse fails 2;
+      (B) widening DEMAND_SCORE_RANGE to i64::MIN..=i64::MAX fails 2;
+      (B2) narrowing it to 2..=4 fails 2;
+      (C) demoting CRUX-002 to Severity::Warning fails 2;
+      (D) assigning CRUX_COMPETITORS = BEAT_INCUMBENTS fails 5;
+      (F) deleting the validate_crux_intake call fails 3.
+      PROTOCOL: re-run the `test:` command under each mutation, and verify the mutation
+      ENGAGED by grepping its marker in the source before reading any verdict; restore
+      every mutation afterwards and confirm `grep -c MUTANT` is 0.
+    test: "cargo test -p aprender-contracts --lib crux_intake"
+    if_fails: "The suite is theater: it passes with the fix removed, which is the state #2555 was already in"
+
+  - id: FALSIFY-CRUX-INTAKE-008
+    rule: "The MASTER REGISTRY story rows are gated, and the gate is not vacuous"
+    prediction: "The real registry parses >= 250 rows all in-domain; a row with a bad score, a bad competitor, or a missing one of either is an Error; an invented status fails to parse"
+    test: "cargo test -p aprender-contracts --lib -- crux_intake::the_real_crux_registry_rows_are_all_in_domain crux_intake::registry_story_out_of_range_demand_score_is_an_error crux_intake::registry_story_demand_score_bounds_are_inclusive crux_intake::registry_story_unknown_competitor_is_an_error crux_intake::registry_story_omitting_a_ranking_field_is_an_error crux_intake::registry_story_invented_status_fails_to_parse"
+    if_fails: "The signal the programme really sorts by is ungated again — which is the state that made the original #2555 rationale false"
+
+  - id: FALSIFY-CRUX-INTAKE-009
+    rule: "competitor is normalised at PARSE, not laundered inside the comparison"
+    prediction: "A padded competitor is STORED trimmed; a blank stays present and raises CRUX-002. Reverting to compare-time trimming fails 2 tests"
+    test: "cargo test -p aprender-contracts --lib -- crux_intake::padded_competitor_is_normalised_on_parse crux_intake::whitespace_only_competitor_is_present_and_rejected"
+    if_fails: "The gate is trimming for its own comparison and storing the padded value, so consumers of metadata.competitor see a string the gate never approved"
