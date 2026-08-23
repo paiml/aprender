@@ -83,11 +83,18 @@ facade_edges() {
     local dir
     for dir in "$1"/crates/facades/*/; do
         [ -f "${dir}Cargo.toml" ] || continue
-        local up
-        up=$(sed -n 's/^upstream *=.*package *= *"\([^"]*\)".*/\1/p' "${dir}Cargo.toml" | head -1)
+        # aprender#2628, FIFTH INSTANCE. These were two line-anchored seds
+        # matching only the INLINE `upstream = { ... }` spelling. Cargo treats the
+        # multi-line `[dependencies.upstream]` table as IDENTICAL, so a facade
+        # written that way produced NO EDGE here — it would appear to impose no
+        # publish-ordering constraint at all, which is the opposite of the truth
+        # and exactly what this function exists to establish. Resolved through
+        # scripts/lib/facade_pin.py, which parses the manifest as TOML.
+        local up pin
+        up=$(python3 "$REPO_ROOT/scripts/lib/facade_pin.py" package "${dir}Cargo.toml")
         [ -n "$up" ] || continue
-        sed -n 's/^upstream *=.*version *= *"\([^"]*\)".*/\1/p' "${dir}Cargo.toml" | head -1 \
-            | grep -q . || continue
+        pin=$(python3 "$REPO_ROOT/scripts/lib/facade_pin.py" read "${dir}Cargo.toml")
+        [ -n "$pin" ] || continue
         printf '%s\t%s\n' "$(basename "$dir")" "$up"
     done
 }
@@ -173,9 +180,14 @@ if [ "${1:-}" = "--self-test" ]; then
     # A miniature repo: two upstreams, one facade that pins one of them, one
     # signpost facade with no upstream at all.
     mkdir -p "$TD/repo/crates/facades/face" "$TD/repo/crates/facades/signpost"
-    printf 'upstream = { path = "../../up", version = "1.2.3", package = "up" }\n' \
+    # aprender#2628: this fixture used to write `upstream = { ... }` at TOP LEVEL,
+    # with no [dependencies] header. That is not a valid cargo manifest — only the
+    # old line-based sed could accept it, so the fixture silently encoded the
+    # parser's looseness rather than a real facade. Now it is a manifest cargo
+    # would actually resolve, and `row 6` below drives the multi-line spelling.
+    printf '[package]\nname = "face"\nversion = "0.4.0"\n\n[dependencies]\nupstream = { path = "../../up", version = "1.2.3", package = "up" }\n' \
         > "$TD/repo/crates/facades/face/Cargo.toml"
-    printf '[package]\nname = "signpost"\n' \
+    printf '[package]\nname = "signpost"\nversion = "0.4.0"\n# NO [dependencies].\n' \
         > "$TD/repo/crates/facades/signpost/Cargo.toml"
     printf 'up\nother\nface\nsignpost\n' | sort -u > "$TD/uni_good"
 

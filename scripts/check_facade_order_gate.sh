@@ -129,6 +129,31 @@ for c in provable-contracts provable-contracts-macros; do
   else fail "$c resolved NO upstream in-tree — the gate would return READY (#2628)"; fi
 done
 
+# --- ROW 6: the SAME class in check_facade_compat.sh's R3 (aprender#2628) -----
+# R3 keeps a facade's upstream pin tracking the version published from THIS tree.
+# It had the identical fail-open shape: an awk over the inline spelling, with
+# "no match" printing `ok` and skipping the comparison. Pin it here so the class
+# cannot come back in either script.
+COMPAT="$REPO_ROOT/scripts/check_facade_compat.sh"
+if [ ! -f "$COMPAT" ]; then
+  fail "check_facade_compat.sh not found — R3 coverage unverified"
+else
+  if grep -q "facade_pin_of" "$COMPAT"; then
+    pass "check_facade_compat.sh R3 resolves its pin via cargo metadata, not a line regex"
+  else
+    fail "check_facade_compat.sh R3 no longer uses facade_pin_of — if it went back to a line-shaped regex, a multi-line dependency table disarms it silently (#2628)"
+  fi
+  # Strip comments before scanning: this guard must measure CODE, not the prose
+  # that DOCUMENTS the defect. Without this it matches the very comment explaining
+  # the fix and can never go green -- the same "the pattern hit a comment quoting
+  # the literal" trap that wasted a mutation run earlier today, inverted.
+  if sed 's/#.*//' "$COMPAT" | grep -qE "awk[^|]*/\^upstream \*=/"; then
+    fail "check_facade_compat.sh still extracts the upstream pin with an awk over '^upstream =' — that matches only the inline spelling (#2628)"
+  else
+    pass "check_facade_compat.sh has no line-regex extraction of the upstream pin"
+  fi
+fi
+
 echo
 if [ "$rc" -eq 0 ]; then
   echo "PASS: the facade order gate arms on every spelling cargo accepts, and"

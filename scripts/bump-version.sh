@@ -47,17 +47,32 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # not listed: a fourth facade added later is picked up without editing this file,
 # and the signpost facade (no `upstream` line at all) is skipped by the same rule
 # that makes it publishable at any point in the cascade.
+# aprender#2628, FOURTH INSTANCE — and the only one on the WRITE side.
+#
+# This enumeration used `grep -q '^upstream *=.*version *= *"'`, which matches the
+# INLINE spelling only. Cargo treats the multi-line `[dependencies.upstream]`
+# table as IDENTICAL, and a manifest written that way vanished from this list.
+# The consequence is worse than a missed check, because BOTH the writer and its
+# own validator read this function: `set_facade_pins` never rewrote the file,
+# `--check` never inspected it, and `--check` then reported rc=0 "all consistent"
+# with a stale pin. Ask what the loop iterates, and whether the defect removes
+# items from it.
+#
+# Reading now goes through scripts/lib/facade_pin.py, which parses the manifest
+# as TOML. See that file for why tomllib rather than `cargo metadata`.
 facade_pinned_manifests() {  # root
     local f
     for f in "$1"/crates/facades/*/Cargo.toml; do
         [ -f "$f" ] || continue
-        grep -q '^upstream *=.*version *= *"' "$f" && printf '%s\n' "$f"
+        if [ -n "$(facade_pin "$f")" ]; then
+            printf '%s\n' "$f"
+        fi
     done
     return 0
 }
 
 facade_pin() {  # manifest
-    sed -n 's/^upstream *=.*version *= *"\([^"]*\)".*/\1/p' "$1" | head -1
+    python3 "$REPO_ROOT/scripts/lib/facade_pin.py" read "$1"
 }
 
 # The facades' own package version — the one that must NOT move.
@@ -76,7 +91,13 @@ set_facade_pins() {  # root new_version
     local f n=0
     while IFS= read -r f; do
         [ -n "$f" ] || continue
-        sed -i -E "s|^(upstream *=.*version *= *\")[^\"]*(\".*)$|\1$2\2|" "$f"
+        # Both spellings (#2628). The enumeration was taught to SEE the
+        # multi-line table before this was taught to REWRITE it; self-test row 8
+        # caught that half-fix, which is exactly what the row exists for.
+        python3 "$REPO_ROOT/scripts/lib/facade_pin.py" write "$f" "$2" || {
+            printf 'bump-version: no upstream pin rewritten in %s\n' "$f" >&2
+            return 1
+        }
         n=$((n + 1))
     done < <(facade_pinned_manifests "$1")
     printf '%s\n' "$n"
@@ -151,8 +172,46 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 6 re-running the bump changed the file again\n'; fails=1
     fi
 
+    # rows 7-8 — aprender#2628, the falsifier for the defect this file had.
+    # The multi-line dependency table cargo treats as IDENTICAL to the inline
+    # form. The old grep enumeration could not SEE it (row 7), and after that was
+    # fixed the old sed still could not REWRITE it (row 8) -- row 8 caught that
+    # half-fix on the first run.
+    mkdir -p "$TD/crates/facades/multiline"
+    printf '[package]\nname = "multiline"\nversion = "0.4.0"\n\n[dependencies.upstream]\npath = "../../aprender-contracts"\nversion = "0.63.0"\npackage = "aprender-contracts"\n' \
+        > "$TD/crates/facades/multiline/Cargo.toml"
+    # Row 7 must exercise the ENUMERATION, not the reader — those are different
+    # functions and it was the enumeration that was blind. An earlier version of
+    # this row called facade_pin directly and stayed GREEN under a mutation that
+    # reverted the enumeration to its grep, i.e. it did not test what its label
+    # claimed.
+    # NOTE the here-string. `facade_pinned_manifests "$TD" | grep -q ...` returns
+    # 141 under `set -o pipefail` even when grep MATCHES: grep -q exits on the
+    # first hit, the producer takes SIGPIPE, and pipefail hands the pipeline the
+    # producer's status. It is input-size dependent, so it goes green on a
+    # one-line fixture and red on a two-line one. Capture first, then match.
+    _enum="$(facade_pinned_manifests "$TD")"
+    if grep -q '/multiline/Cargo.toml$' <<< "$_enum"; then
+        printf 'ok    row 7 a multi-line [dependencies.upstream] table is ENUMERATED (#2628)\n'
+    else
+        printf 'FAIL  row 7 a multi-line table is invisible -- it would be neither bumped nor\n'
+        printf '      checked, and --check would report ok with a stale pin\n'; fails=1
+    fi
+    set_facade_pins "$TD" 0.64.0 >/dev/null
+    if grep -q 'version = "0.64.0"' "$TD/crates/facades/multiline/Cargo.toml"; then
+        printf 'ok    row 8 the multi-line pin is actually REWRITTEN by the bump\n'
+    else
+        printf 'FAIL  row 8 the multi-line pin was enumerated but not rewritten\n'; fails=1
+    fi
+    if grep -q 'package = "aprender-contracts"' "$TD/crates/facades/multiline/Cargo.toml" \
+       && grep -q 'path = "../../aprender-contracts"' "$TD/crates/facades/multiline/Cargo.toml"; then
+        printf 'ok    row 9 the multi-line rewrite left path and package intact\n'
+    else
+        printf 'FAIL  row 9 the multi-line rewrite damaged a sibling key\n'; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (6/6)\n'
+    printf '\nSELF-TEST PASSED (9/9)\n'
     exit 0
 fi
 

@@ -355,10 +355,62 @@ printf -- '\n--- PUBLISH ORDER: what building here does NOT prove --------------
 # compile for a real consumer no matter how green this script is -- which is
 # exactly the failure an adversarial review found, and exactly what building
 # through the path dep hides.
+# aprender#2628, SECOND INSTANCE. This loop used to read the pin with
+#     awk -F'"' '/^upstream *=/{...}'
+# and then treat "no match" as "no pinned upstream version" -- printing `ok` and
+# SKIPPING the comparison. That awk matches only the INLINE spelling, so writing
+# the identical dependency as a multi-line table
+#     [dependencies.upstream]
+#     path = "..."
+#     version = "0.63.0"
+#     package = "aprender-contracts"
+# -- which cargo treats as IDENTICAL -- silently disarmed R3. MEASURED:
+#     inline  -> ARMED (pin=0.63.0), compared against the workspace version
+#     multi   -> "ok  no pinned upstream version", comparison never runs
+# R3 is the rule that keeps a facade's pin tracking the version published from
+# THIS tree, so disarming it publishes a facade pinned to an OLDER upstream --
+# a crate that, in this script's own words, "cannot compile for a real consumer
+# no matter how green this script is".
+#
+# Fixed by asking `cargo metadata`, which is the authority on what a manifest
+# MEANS. That also makes the empty case SOUND rather than merely tolerated:
+# cargo cannot fail to parse a manifest it has already accepted, so "no upstream"
+# is now a real answer (the lib-only signpost facade) instead of a parse failure
+# wearing the same clothes.
+facade_pin_of() {
+    cargo metadata --format-version 1 --no-deps --manifest-path "$1" 2>/dev/null \
+      | PKG="$2" python3 -c '
+import json, os, sys
+try:
+    meta = json.load(sys.stdin)
+except Exception:
+    sys.exit(3)                      # unparseable: NOT the same as "no upstream"
+want = os.environ["PKG"]
+for p in meta.get("packages", []):
+    if p.get("name") != want:
+        continue
+    for d in p.get("dependencies", []):
+        if d.get("rename") == "upstream":
+            print((d.get("req") or "").lstrip("^~=v ").strip())
+            sys.exit(0)
+    sys.exit(0)                      # package found, genuinely no upstream
+sys.exit(3)                          # package not found: also not an answer
+'
+}
+
 for pkg in provable-contracts provable-contracts-macros provable-contracts-cli; do
-    up_ver=$(awk -F'"' '/^upstream *=/{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/){print $i; exit}}' \
-        "crates/facades/$pkg/Cargo.toml" 2>/dev/null)
-    [ -n "$up_ver" ] || { printf 'ok    %s: no pinned upstream version\n' "$pkg"; continue; }
+    up_ver=$(facade_pin_of "crates/facades/$pkg/Cargo.toml" "$pkg"); meta_rc=$?
+    if [ "$meta_rc" -ne 0 ]; then
+        printf 'FAIL  %s: could not resolve its manifest via cargo metadata, so the\n' "$pkg"
+        printf '      upstream pin could not be checked at all. Refusing to report ok\n'
+        printf '      for a question this guard did not answer (aprender#2628).\n'
+        rc=1
+        continue
+    fi
+    # NOTE: no parentheses in this printf -- bashrs SC1028 mis-attributes them to
+    # the preceding [ ] test even though they are single-quoted in a separate
+    # command after ||, and the shell-lint ratchet counts errors, not intent.
+    [ -n "$up_ver" ] || { printf 'ok    %s: no pinned upstream version -- cargo resolved none\n' "$pkg"; continue; }
     if [ "$up_ver" = "$WS_VER" ]; then
         printf 'ok    %s: upstream pinned to the workspace version (%s)\n' "$pkg" "$up_ver"
     else
@@ -388,9 +440,19 @@ done
 # The row is kept, inverted, as a REGRESSION DETECTOR. A dependency reappearing
 # on this crate would silently restore the blocker, and a deleted check would
 # not notice.
-cli_ver=$(awk -F'"' '/^upstream *=/{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/){print $i; exit}}' \
-    crates/facades/provable-contracts-cli/Cargo.toml 2>/dev/null)
-if [ -z "$cli_ver" ]; then
+# aprender#2628, THIRD INSTANCE -- and the most consequential, because this row
+# is INVERTED: empty means "ok, no dependency", so a parse failure reads as the
+# PASSING answer. This row exists to notice a dependency REAPPEARING; with the
+# old awk it could not notice one that reappeared in multi-line table form, i.e.
+# it was blind to exactly the regression it was written to detect. Resolved via
+# cargo metadata, and an unresolvable manifest now FAILS instead of passing.
+cli_ver=$(facade_pin_of crates/facades/provable-contracts-cli/Cargo.toml provable-contracts-cli); cli_rc=$?
+if [ "$cli_rc" -ne 0 ]; then
+    printf 'FAIL  provable-contracts-cli: cargo metadata could not resolve its manifest,\n'
+    printf '      so "has no upstream dependency" was never actually established. This row\n'
+    printf '      is a regression detector; an unanswered question is not a pass (#2628).\n'
+    rc=1
+elif [ -z "$cli_ver" ]; then
     printf 'ok    provable-contracts-cli has NO upstream pin -- it is a lib-only signpost\n'
     printf '      with zero dependencies, so it is publishable at ANY point in the\n'
     printf '      cascade. The bin-only-0.63.0 STAGE blocker (#2553) is dissolved, not\n'
