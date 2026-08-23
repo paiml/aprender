@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-08-23
+
+The **fail-closed** release. v0.62.0 fixed gates that could not fail and v0.63.0
+added provenance; this one is about guards that reported success for a question
+they never asked.
+
+### Fixed — guards that could not fail
+
+- **The release cascade could publish a facade before its upstream.**
+  `facade_upstream_ready` read the requirement with a line-anchored regex and
+  returned READY for any manifest it could not parse. Cargo treats the inline and
+  multi-line dependency table as identical; the guard understood one. Because it
+  also (correctly) returns READY for the dependency-free signpost facade,
+  "no upstream by design" and "an upstream exists and I failed to parse it" took
+  the same silent path — there was no observable difference between the gate
+  working and being off. (#2628, #2629)
+- **A required check's verdict was decided by directory order.** (#2562)
+- **The meta-guard passed on a COMMENT, so the MSRV floor ran nowhere.** (#2551)
+- **Makefile recipes ran without pipefail**, so the release gate could not
+  fail. (#2550)
+- **coverage-nightly reported a BLANK percentage** whenever measurement failed,
+  which read as a pass. (#2538)
+- **The publish cascade could not SEE the three facades it must ship**, and a
+  dev-dep alias reinstated the publish cycle it had been added to remove.
+  (#2561, #2560, #2553)
+
+### Fixed — tools that answered confidently about work they had not done
+
+- **`apr inspect` certified a 1 KiB fragment of a 991 MB model as `valid: true`.**
+  (#2564)
+- **`apr validate` exited 0 on a 95.5%-truncated `.apr`** — 13 of 17 APR
+  integrity checks were `Not implemented` stubs. The check exists and is correct
+  for GGUF; on APR it did not exist. (#2612)
+- **`apr tensors` reported a tensor table that does not fit the file**, and
+  **`apr tune` fabricated the parameter count from file size** — `file_bytes / 2`,
+  never opening the model. (#2569, #2570)
+- **Two MCP tools spawned a bare `apr`**, so the server reported results for code
+  it was not running. (#2563)
+- **MCP `apr.serve` reported a pid and URL for a child that died instantly** with
+  clap exit code 2. (#2606)
+- **`apr code` with no arguments** auto-discovered the largest local GGUF and
+  orphaned a detached server child. (#2607)
+- **Four routed HTTP endpoints were dead** on the third resident `.apr` backend
+  while `/health` reported `model_loaded: true`. (#2609)
+- **Three train-* binaries reported confident results without doing the work.**
+  (#2519)
+
+### Fixed — pv / provable-contracts hardening
+
+- **`pv validate` accepted `intake_status: banana`, `demand_score: 99999` and an
+  invented `competitor`** with 0 errors and exit 0 — serde dropped the fields, so
+  no validator could check what it never parsed. An invented enum value now fails
+  to PARSE, not merely lint. (#2555)
+- **`pv --version` could not tell you WHICH pv you have** — four things claim the
+  name. (#2559)
+- **`contracts-pv` had 76 features at 0% coverage** — not because nobody wrote
+  tests, but because CI ran none of pv's. (#2589)
+
+### Fixed — security
+
+- **`thrift 0.17.0` (CVE-2026-43868)** removed by moving arrow/parquet 57 → 59
+  across eight crates. `cargo deny` was GREEN on the vulnerable tree: RustSec
+  carries no thrift advisory, so the gap is exactly *GHSA minus RustSec*. A new
+  `check_no_ghsa_banned_crates.sh` closes it. (#2531)
+
+### Fixed — infrastructure
+
+- **The disk guard's idle test sat one directory ABOVE the thing being written.**
+  (#2565)
+- **The #2607 stdin test asserted about the fd 0 it inherited**, so it passed
+  under nextest (which supplies `/dev/null`) and failed under plain `cargo test`
+  — blocking every coverage measurement while the required check stayed
+  green. (#2632)
+- **`falsification_spec_v10`: 140 gates named in no workflow**, 38 failing.
+  (#2522)
+- **Crypto surface** (keygen/encrypt/decrypt/sign) gained its first real
+  coverage; the homebrew XOR fallback is replaced by ChaCha20-Poly1305 and now
+  fails closed rather than silently downgrading. (#2590)
+
+### Changed
+
+- `apr serve run --backend` validates its argument against one shared
+  declaration, rather than three hand-copied parsers of which the third had
+  dropped the validator. (#2583)
+
+
 ## [0.63.0] - 2026-08-01
 
 The **provenance** release. v0.62.0 fixed gates that could not fail; this one

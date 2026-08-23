@@ -102,12 +102,12 @@ libc = "0.2"
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../aprender-core", version = "0.63.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
+aprender = { path = "../aprender-core", version = "0.64.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 # Provable-contracts engine — `apr beat-run` parses + evaluates BeatBenchmark contracts (PMAT-741)
 aprender-contracts = { workspace = true }
 
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
-aprender-mcp = { path = "../aprender-mcp", version = "0.63.0" }
+aprender-mcp = { path = "../aprender-mcp", version = "0.64.0" }
 async-stream = "0.3"
 provable-contracts-macros = { workspace = true }
 
@@ -118,7 +118,7 @@ batuta-common = { workspace = true }
 # Non-optional since claude-code-parity-apr M150 (outcome-parity Phase 3
 # requires apr code in default builds). GH-344: path dep via
 # .cargo/config.toml.dev-overrides; CI uses checkout+symlink.
-batuta = { version = "0.63.0", path = "../aprender-orchestrate", package = "aprender-orchestrate", default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
+batuta = { version = "0.64.0", path = "../aprender-orchestrate", package = "aprender-orchestrate", default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
 
 # Inference engine (workspace path dep — enables cuda/gpu feature forwarding)
 # GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s
@@ -209,7 +209,7 @@ pacha = { workspace = true }
 # published-crate dependency cycle the APR-MONO consolidation removed, and
 # (b) was never actually linked, so every `trueno_explain::` path in
 # commands/ptx_explain.rs failed to resolve.
-trueno-explain = { path = "../aprender-explain", version = "0.63.0", package = "aprender-explain", optional = true }
+trueno-explain = { path = "../aprender-explain", version = "0.64.0", package = "aprender-explain", optional = true }
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
 entrenar-lora = { workspace = true, optional = true }

@@ -25,7 +25,7 @@ presentar-terminal = { workspace = true }
 crossterm = "0.28"
 
 # Internal dependency for PTX generation
-trueno-gpu = { version = "0.63.0", path = "../aprender-gpu", package = "aprender-gpu", features = ["cuda"] }
+trueno-gpu = { version = "0.64.0", path = "../aprender-gpu", package = "aprender-gpu", features = ["cuda"] }
 
 [dev-dependencies]
 proptest = "1.4"
