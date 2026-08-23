@@ -32,6 +32,22 @@ they never asked.
 - **The publish cascade could not SEE the three facades it must ship**, and a
   dev-dep alias reinstated the publish cycle it had been added to remove.
   (#2561, #2560, #2553)
+- **`apr qa --assert-tps` divided its threshold by ten, or discarded it** — the
+  release gate could not fail. (#2372)
+- **`deny.toml` was 7.2 KB of security policy that ran in no workflow**, and had
+  drifted until it failed on main. (#2523)
+- **FALSIFY-MONO-011 had never once scanned a crate.** (#2476)
+- **Every verdict `apr rosetta` printed was unfalsifiable** — compare-inference,
+  fingerprint and verify all exited 0 no matter what. (#2420)
+- **Three different contract counts in the README**, and the guard that watches
+  them ran nowhere. (#2485)
+- **`check_beats_gated` reported a FALSE 'UNGATED BEAT' at random.** (#2542)
+- **The README CLI-count guard did a 14-minute build, then failed printing
+  nothing.** (#2536)
+- The dogfood protocol was audited against itself across five batches — "nine
+  gates that could not fail, found in the tooling that judges us" — and the
+  0.63.0 crates.io dogfood produced a 190-finding defect ledger, each finding
+  mapped to its issue. (#2449, #2451, #2453, #2457, #2458, #2409)
 
 ### Fixed — tools that answered confidently about work they had not done
 
@@ -53,6 +69,46 @@ they never asked.
   while `/health` reported `model_loaded: true`. (#2609)
 - **Three train-* binaries reported confident results without doing the work.**
   (#2519)
+- **A tensor that could not be read was dropped, and the count only saw the
+  survivors.** (#2428)
+- **An unknown quantisation type was written to APR labelled F32.** (#2488)
+- **`apr explain` printed "File not found" on stdout and exited 0.** (#2368)
+- **MCP `apr.serve` never started a server and called it success.** (#2415)
+- **`apr rerank` aborted with a library panic on ordinary flag values**, and
+  **`apr data` crashed on `--ngram 0`** while reporting 49 duplicates as
+  zero. (#2414, #2423)
+- **`apr` 0.63.0 ran `apr` 0.60.0**: both subprocess backends resolved a bare
+  `apr` through `$PATH`. (#2424)
+
+### Fixed — user-visible correctness
+
+- **SSE streaming deleted every space and newline** — responses arrived as
+  `Thequickbrownfox`. (#2367)
+- **Ollama clients silently dropped every `apr` response**: `created_at` was a
+  bare epoch instead of RFC 3339. (#2371)
+- **Six native routes were dead** on every `apr serve run model.gguf`, and one
+  request could kill the server; three more Ollama routes were mounted and
+  advertised to nobody. (#2429, #2475)
+- **A GGUF without a context-length key refused every prompt.** (#2479)
+- **A complete MoE model was rejected as truncated/corrupt.** (#2541)
+- **`--offline` downloaded anyway** on pull, chat and showcase. (#2416)
+- `apr lint --json` handed consumers a Rust `Debug` string where they asked for
+  a field. (#2454)
+- Two book chapter examples had trained to NaN, on main, for three months; three
+  further examples had rotted, one since a module was deleted under it. (#2459,
+  #2480)
+
+### Fixed — publishing
+
+- **A bare `tests/` exclude is not root-anchored** — it dropped 443 files from
+  the published `aprender-serve`; separately, 5.4 MB of build scratch was
+  shipping to crates.io, unseen by the guard meant to stop it. (#2365, #2487)
+- **`apr-cli` could not be published at all**: it depended on a `publish = false`
+  crate. (#2540)
+- **An unused dependency was breaking docs.rs for every downstream crate.**
+  (#2468)
+- **`make publish` could destroy `.cargo/config.toml`** with no recoverable
+  backup. (#2637)
 
 ### Fixed — pv / provable-contracts hardening
 
@@ -64,6 +120,8 @@ they never asked.
   name. (#2559)
 - **`contracts-pv` had 76 features at 0% coverage** — not because nobody wrote
   tests, but because CI ran none of pv's. (#2589)
+- **The release receipt was citing pv 0.49.0** while the in-tree crate was
+  0.63.0 — and the two disagree on the gate that decides the release. (#2552)
 
 ### Fixed — security
 
@@ -85,6 +143,18 @@ they never asked.
 - **Crypto surface** (keygen/encrypt/decrypt/sign) gained its first real
   coverage; the homebrew XOR fallback is replaced by ChaCha20-Poly1305 and now
   fails closed rather than silently downgrading. (#2590)
+- **Three wall-clock assertions made the required `workspace-test` check
+  non-deterministic**, and a 100 ns comparison in a required check blocked every
+  open PR. (#2425, #2490)
+- **`workspace-test` used a different sccache cap and evicted the shared
+  cache.** (#2545)
+- **Two lib tests asserted nothing and took 19 minutes.** (#2533)
+- **The monorepo pulled its own siblings from crates.io**, and the gate that
+  should have caught it could not fail; a member could not compile and nine
+  manifests no cargo command could load. (#2471, #2472)
+- A mock binary raced its own spawn (ETXTBSY), in two copies. (#2469)
+- CLAUDE.md gained a **Verification Discipline** section enumerating the ways
+  the 0.63.0 sweep fooled itself. (#2363)
 
 ### Changed
 
