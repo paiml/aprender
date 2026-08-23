@@ -572,6 +572,19 @@ jobs:
         run: bash scripts/check_no_hand_rolled_parsers.sh
       - name: "hand-rolled-parser guard must still turn RED (case table)"
         run: bash scripts/check_no_hand_rolled_parsers.sh --self-test
+      # Poka-yoke: a test may not assert about the fd 0 it INHERITED. nextest
+      # gives every test its own process with /dev/null on fd 0; a plain
+      # `cargo test` runs tests as THREADS of one process holding the caller's
+      # stdin — a pipe or a file under CI. So such a test is green on the
+      # required workspace-test lane and red on `make coverage`, which is
+      # exactly what #2607's cmd_code test did: it blocked the 0.64.0 coverage
+      # measurement (#2307) while every required check stayed green. The fix is
+      # to own fd 0 — re-exec with `Stdio::null()` and assert in the child.
+      # Text-only, no build. Self-test first (Verification Discipline #7).
+      - name: "inherited-stdin guard must still turn RED (case table)"
+        run: bash scripts/check_hermetic_stdin_tests.sh --self-test
+      - name: No test may assert about the fd 0 it inherited
+        run: bash scripts/check_hermetic_stdin_tests.sh
       # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
       # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
       # `set -uo pipefail` deliberately (it must run every beat and tally the
