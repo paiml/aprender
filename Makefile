@@ -418,7 +418,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	if [ "$$LF" -gt 0 ]; then COV_PCT=$$((LH * 100 / LF)); else COV_PCT=0; fi; \
 	echo "TOTAL: $$LH/$$LF lines covered ($${COV_PCT}%)"; \
 	echo "TOTAL $$LH $$LF $${COV_PCT}%" > target/coverage/summary.txt; \
-	mkdir -p .pmat-metrics; \
+	mkdir -p .pmat-metrics || exit 1; \
 	printf '{"coverage_pct":%s}' "$$COV_PCT" > .pmat-metrics/coverage.result; \
 	echo "   wrote .pmat-metrics/coverage.result ($${COV_PCT}%) for pmat score"; \
 	test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true; \
@@ -618,7 +618,7 @@ run-bench: ## Run benchmark suite
 
 pmat-score: ## Calculate Rust project quality score
 	@echo "📊 Calculating Rust project quality score..."
-	@pmat rust-project-score || echo "⚠️  pmat not found. Install with: cargo install pmat"
+	@pmat rust-project-score || echo "⚠️  pmat not found — run: cargo install pmat"
 	@echo ""
 
 pmat-gates: ## Run pmat quality gates
@@ -825,13 +825,13 @@ install-alsa: ## Install ALSA development libraries (Linux only)
 			sudo apt-get update && sudo apt-get install -y libasound2-dev; \
 		elif command -v dnf >/dev/null 2>&1; then \
 			echo "  Detected: Fedora/RHEL"; \
-			sudo dnf install -y alsa-lib-devel; \
+			sudo dnf install -y alsa-lib-devel || exit 1; \
 		elif command -v pacman >/dev/null 2>&1; then \
 			echo "  Detected: Arch Linux"; \
 			sudo pacman -S --noconfirm alsa-lib; \
 		elif command -v zypper >/dev/null 2>&1; then \
 			echo "  Detected: openSUSE"; \
-			sudo zypper install -y alsa-devel; \
+			sudo zypper install -y alsa-devel || exit 1; \
 		else \
 			echo "❌ Unknown package manager. Please install ALSA dev libraries manually:"; \
 			echo "   - Debian/Ubuntu: sudo apt-get install libasound2-dev"; \
@@ -964,10 +964,10 @@ contract-check: contract-validate contract-test contract-audit ## Full contract 
 # Sibling repos required for full-stack development
 SIBLINGS := ../realizar ../entrenar ../trueno ../renacer ../provable-contracts ../pacha
 
-dev-setup: ## Set up local dev environment with sibling repo overrides
+dev-setup: ## Set up the dev environment with sibling repo overrides
 	@echo "Setting up full-stack development environment..."
 	@if [ ! -f .cargo/config.toml ]; then \
-		cp .cargo/config.toml.dev-overrides .cargo/config.toml; \
+		cp .cargo/config.toml.dev-overrides .cargo/config.toml || exit 1; \
 		echo "Created .cargo/config.toml with sibling overrides"; \
 	elif ! grep -q '\[patch.crates-io\]' .cargo/config.toml; then \
 		echo "" >> .cargo/config.toml; \
@@ -982,7 +982,7 @@ dev-setup: ## Set up local dev environment with sibling repo overrides
 publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then verifies cargo install
 	@echo "Publishing to crates.io (removing [patch.crates-io] temporarily)..."
 	@if [ -f .cargo/config.toml ]; then \
-		cp .cargo/config.toml .cargo/config.toml.publish-backup; \
+		cp .cargo/config.toml .cargo/config.toml.publish-backup || exit 1; \
 		echo "# Clean config for publishing" > .cargo/config.toml; \
 	fi
 	@CRATE=$(CRATE); \
@@ -994,7 +994,7 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 		echo "          before aprender#2559."; \
 		echo "Restoring config..."; \
 		if [ -f .cargo/config.toml.publish-backup ]; then \
-			cp .cargo/config.toml.publish-backup .cargo/config.toml; \
+			cp .cargo/config.toml.publish-backup .cargo/config.toml && \
 			rm -f .cargo/config.toml.publish-backup; \
 		fi; \
 		exit 1; \
@@ -1007,7 +1007,7 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 		echo "FAIL: $$CRATE is not a publishable crate in ANY workspace here."; \
 		echo "      (scripts/lib/cascade_universe.py enumerates all of them)"; \
 		if [ -f .cargo/config.toml.publish-backup ]; then \
-			cp .cargo/config.toml.publish-backup .cargo/config.toml; \
+			cp .cargo/config.toml.publish-backup .cargo/config.toml && \
 			rm -f .cargo/config.toml.publish-backup; \
 		fi; \
 		exit 1; \
@@ -1026,7 +1026,7 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 	STATUS=$$?; \
 	echo "Restoring .cargo/config.toml..."; \
 	if [ -f .cargo/config.toml.publish-backup ]; then \
-		cp .cargo/config.toml.publish-backup .cargo/config.toml; \
+		cp .cargo/config.toml.publish-backup .cargo/config.toml && \
 		rm -f .cargo/config.toml.publish-backup; \
 	fi; \
 	if [ $$STATUS -ne 0 ]; then \
