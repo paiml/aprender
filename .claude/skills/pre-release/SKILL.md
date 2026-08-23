@@ -19,6 +19,24 @@ effort: high          # MACS F4: pinned for reproducible cost/behavior - gates a
 - Uncommitted changes: !`git status --short | wc -l`
 - Test count: !`cargo test -p apr-cli --lib 2>&1 | grep 'test result' | tail -1`
 
+## Three documents, three scopes — and only one of them is the fleet protocol
+
+Written down because three skills describe overlapping release work and the
+duplication is harder to see in prose than in code: nothing runs it, and no diff
+surfaces it (aprender#2640, D6).
+
+| skill | scope | source of truth for |
+|---|---|---|
+| `dogfood` (`.claude/skills/dogfood/SKILL.md`) | ANY Rust crate in the fleet | the generic pre-release protocol and `scripts/dogfood.sh` |
+| `apr-dogfood` | this repo's shipped surface | gate coverage against the surface ledger |
+| `pre-release` (this file) | `apr-cli` only | the crates.io publish gates below |
+
+**Do not restate a gate that lives in another of the three.** If a gate here also
+belongs to the fleet protocol, it belongs in `scripts/dogfood.sh` and this file
+should reference it — that is exactly how the runner came to exist twice.
+
+Run all independent gates in parallel where possible.
+
 ## Your Task
 
 Run the apr-cli pre-release QA checklist below. This checklist was derived from 5 historical release failures (CB-510, PMAT-262, GH-342, GH-343, GH-344/345) using Five-Whys root cause analysis on git history.
