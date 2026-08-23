@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # check_verifier_pinning.sh — the verifier-pinning rule, ENFORCED.
 #
-# THE RULE (stated once, in scripts/verifier_pin.sh; this file is its gate):
-#
-#   A gate that decides a release must not resolve its verifier through PATH.
-#   Where the repo pins the tool, use the pin; where it does not, REPORT rather
-#   than fall back.
+# THE RULE IS NOT RESTATED HERE. It is stated once, in scripts/verifier_pin.sh,
+# under the heading "THE RULE" — read it there. A rule written down twice is two
+# rules that can disagree, which is the thesis of the ticket this gate closes
+# (#2640): one protocol, two copies, nine silent divergences. This file is the
+# rule's ENFORCEMENT, not a second copy of its text.
 #
 # WHY A GATE AND NOT A PARAGRAPH
 # ------------------------------
