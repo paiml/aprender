@@ -208,9 +208,16 @@ echo "══ dogfood pre-release: $CRATE v$VERSION ══"
 # creates. Excluding them is not hiding dirt — it is refusing to let the
 # measurement fail itself. Everything else, including untracked shell scripts,
 # still counts. Ask the crate to gitignore all three.
-DIRTY=$(git status --porcelain 2>/dev/null | grep -vE '^\?\? ([^ ]*/)?\.(dogfood|pmat|pv)/?$' | head -1)
-if [ -z "$DIRTY" ]; then mark git-clean PASS "working tree clean"
-else mark git-clean WARN "uncommitted changes present (commit before tagging)"; fi
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  # A failed `git status` used to leave DIRTY empty, and empty read as clean:
+  # the absence of the measurement wearing the measurement's PASS (#2644, DF-7).
+  # A release is a tag; a directory that cannot carry one fails the gate.
+  mark git-clean FAIL "not a git repository — cleanliness cannot be measured and a tag cannot exist; a missing measurement is RED, never clean"
+else
+  DIRTY=$(git status --porcelain 2>/dev/null | grep -vE '^\?\? ([^ ]*/)?\.(dogfood|pmat|pv)/?$' | head -1)
+  if [ -z "$DIRTY" ]; then mark git-clean PASS "working tree clean"
+  else mark git-clean WARN "uncommitted changes present (commit before tagging)"; fi
+fi
 
 # ── 1b. the crate's OWN release gates, DISCOVERED not duplicated ────────────
 #
@@ -260,8 +267,13 @@ for g in gates:
     print("GATE " + g.strip())
 PY
 )
-if [ "$DG_PLAN" = "META_ERROR" ] || [ "$DG_META_RC" -ne 0 ]; then
+if [ "$DG_META_RC" -ne 0 ]; then
   mark dogfood-gates FAIL "\`cargo metadata\` failed (exit=$DG_META_RC) — the release gates this crate declares could not be discovered, so none of them ran"
+elif [ "$DG_PLAN" = "META_ERROR" ]; then
+  # cargo succeeded; the python step died. The old message blamed cargo with
+  # "failed (exit=0)" attached — an operator sent to the wrong component
+  # (#2644, CI-4).
+  mark dogfood-gates FAIL "gate discovery's python3 step failed (cargo metadata itself exited 0) — the declaration could not be parsed, so no declared gate ran"
 elif [ "$DG_PLAN" = "NOPKG" ]; then
   mark dogfood-gates FAIL "no package named '$CRATE' in cargo metadata — run dogfood from the crate dir, not the virtual workspace root"
 elif [ "$DG_PLAN" = "NODECL" ]; then
@@ -302,8 +314,9 @@ EOF
 fi
 
 # DOGFOOD_GATES_ONLY runs the discovery section and stops. It exists so the
-# discovery mechanism itself can be exercised — by scripts/check_dogfood_shim.sh
-# and by hand — without paying for a full release sweep, and it runs the SAME
+# discovery mechanism itself can be exercised — by
+# scripts/check_verifier_pinning.sh's fleet-path test, and by hand — without
+# paying for a full release sweep, and it runs the SAME
 # code the release runs rather than a copy of it, which is the whole point of
 # this ticket. It can never print GO: a partial run is not a verdict.
 if [ -n "${DOGFOOD_GATES_ONLY:-}" ]; then
@@ -318,10 +331,20 @@ fi
 # version exists (it only warns), so the "already exists" string — not the exit
 # code — is what tells us the version is taken.
 DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?
-if printf '%s' "$DRY" | grep -qiE "already (exists|uploaded)"; then
+# Here-string, never `printf | grep -q`: with the marker early and more than a
+# pipe buffer behind it, grep exits at first match, printf takes SIGPIPE, and
+# under pipefail the `if` reads 141 — a PUBLISHED version marked "not yet
+# published" (#2644, DF-2; the same construct inverted a verdict the other way
+# in the pinning guard, VP-06).
+if grep -qiE "already (exists|uploaded)" <<< "$DRY"; then
   mark version-unpublished FAIL "$CRATE $VERSION is ALREADY on crates.io — bump the version"
+elif [ "$DRC" -ne 0 ]; then
+  # No already-exists marker AND the dry-run itself died: the registry was
+  # never consulted, so "not yet published" is an assertion with no source
+  # behind it (#2644, DF-8) — same empty-and-zero rule as the advisory gate.
+  mark version-unpublished FAIL "cargo publish --dry-run failed (exit=$DRC) with no already-exists marker — the registry was never consulted, so the version's status is UNKNOWN: $(tail -2 <<< "$DRY" | strip_ansi | tr '\n' ' ' | cut -c1-120)"
 else
-  mark version-unpublished PASS "$VERSION not yet published"
+  mark version-unpublished PASS "$VERSION not yet published (dry-run exit 0, no already-exists marker)"
 fi
 
 # ── 3. changelog mentions the version ───────────────────────────────────────
@@ -378,11 +401,19 @@ else mark security FAIL "cargo-deny not installed — the advisory scan did not 
 # believed. Absence of `gh` is reported too: a source that did not run is not
 # a source that found nothing.
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  # rc is captured, stderr is kept, and a FAILED call routes to the did-not-run
+  # branch: `2>/dev/null … || true` made an empty result from a dead call
+  # indistinguishable from a clean scan (#2644, DF-1). The rule this encodes:
+  # a probe whose empty output means PASS must FAIL on rc!=0 — "empty-and-zero"
+  # is the only PASS shape (v1.13 P7).
   DEPA=$(gh api "repos/{owner}/{repo}/dependabot/alerts" --paginate \
            --jq '.[] | select(.state=="open") |
                  "\(.security_advisory.severity)|\(.dependency.package.name)|\(.security_vulnerability.first_patched_version.identifier // "no-fix")"' \
-         2>/dev/null || true)
-  if [ -z "$DEPA" ]; then
+         2>"$WORKLOG/depa.err")
+  DEPA_RC=$?
+  if [ "$DEPA_RC" -ne 0 ]; then
+    mark security-2nd-source WARN "gh api FAILED (exit=$DEPA_RC: $(tail -1 "$WORKLOG/depa.err" 2>/dev/null | strip_ansi | cut -c1-100)) — the second advisory source did NOT run; an empty result from a failed call is not a clean scan"
+  elif [ -z "$DEPA" ]; then
     mark security-2nd-source PASS "GitHub Advisory DB (independent of RustSec): 0 open Dependabot alerts"
   else
     DN=$(printf '%s\n' "$DEPA" | grep -c . )
@@ -525,14 +556,17 @@ if [ -n "${PV:-}" ] && [ -x "$PV" ]; then
     else
     PV_FAILED=""
     PV_N=0
-    for c in contracts/*.yaml; do
-      [ -e "$c" ] || continue
+    # `find`, not a top-level glob: 549 of aprender's contracts live in
+    # subdirectories and were silently outside the gate that carries the word
+    # "contracts" in its name (#2644, DF-6). Sorted for a deterministic
+    # receipt; NUL-delimited so no path shape can split.
+    while IFS= read -r -d '' c; do
       case "$(basename "$c")" in
         binding.yaml) continue ;;   # a binding REGISTRY, not a contract
       esac
       PV_N=$((PV_N + 1))
-      "$PV" validate "$c" >/dev/null 2>&1 || PV_FAILED="$PV_FAILED $(basename "$c")"
-    done
+      "$PV" validate "$c" >/dev/null 2>&1 || PV_FAILED="$PV_FAILED ${c#contracts/}"
+    done < <(find contracts -name '*.yaml' -type f -print0 | sort -z)
     if [ "$PV_N" -eq 0 ]; then
       mark pv-contracts FAIL "contracts/ exists but contains no validatable contract — a glob matching nothing is not a pass"
     elif [ -n "$PV_FAILED" ]; then
@@ -866,6 +900,11 @@ PY
   if "$PMAT_BIN" analyze reachability --help >/dev/null 2>&1; then
     RO=$(timeout 900 "$PMAT_BIN" analyze reachability -p . -f json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['orphan_count'],d['orphan_tests'])" 2>/dev/null || echo "? ?")
     mark reachability WARN "unreachable files/tests: $RO (a file the build never compiles cannot be tested)"
+  else
+    # The if-with-no-else made this row VANISH on any pmat without the
+    # subcommand — violating this script's own receipt-completeness rule
+    # (#2644, DF-9): a gate that vanishes reads as a gate that passed.
+    mark reachability SKIP "this pmat has no \`analyze reachability\` (pre-3.32.0) — the orphan sweep did NOT run"
   fi
 else
   mark pmat-verify WARN "pmat not installed — the fleet quality gate did NOT run"
@@ -889,8 +928,21 @@ fi
 # 2>/dev/null || true`, is dead twice over: `pv lint` on a FILE passes over zero
 # contracts, and `|| true` would swallow it anyway.
 # Correct shape (copia's): `do pv validate "$$c" || exit 1; done`.
-if grep -qE '^contracts:' Makefile 2>/dev/null; then
-  MK_RECIPE=$(awk '/^contracts:/{f=1;next} /^[^\t]/{f=0} f' Makefile)
+# The Makefile is discovered like the CHANGELOG is: a workspace member keeps
+# its Makefile at the repo root, and looking only in the crate dir silently
+# degraded the sovereign differentiator to a non-gating WARN for every member
+# (#2644, DF-5 — changelog and coverage were fixed this way; this gate was not).
+# First Makefile that DECLARES the target, not the first that exists: a member
+# Makefile without `contracts:` must not shadow the root one that has it
+# (residual found verifying DF-5).
+MKPATH=""
+for mk_cand in Makefile "$REPO_ROOT/Makefile"; do
+  if [ -f "$mk_cand" ] && grep -qE '^contracts:' "$mk_cand" 2>/dev/null; then
+    MKPATH="$mk_cand"; break
+  fi
+done
+if [ -n "$MKPATH" ]; then
+  MK_RECIPE=$(awk '/^contracts:/{f=1;next} /^[^\t]/{f=0} f' "$MKPATH")
   MK_SMELL=""
   printf '%s' "$MK_RECIPE" | grep -qE 'for .*; *do' \
     && ! printf '%s' "$MK_RECIPE" | grep -qE '\|\| *exit' \
@@ -902,7 +954,7 @@ if grep -qE '^contracts:' Makefile 2>/dev/null; then
   else
     mark contracts-exit-integrity PASS "\`contracts:\` recipe propagates failure (no bare for-loop, no \`|| true\`)"
   fi
-  gate contracts make contracts
+  gate contracts make -C "$(dirname "$MKPATH")" contracts
 else
   mark contracts WARN "no contracts make target"
 fi
@@ -975,12 +1027,17 @@ else mark publish-dry-run FAIL "$(printf '%s' "$DRY" | grep -iE 'error' | head -
 #     transport is an unverified one, and this turns "we have no HTTP surface"
 #     from an assumption into an enforced fact.
 if [ -x "$BINPATH" ]; then
-  CLI_HELP=$("$BINPATH" --help 2>&1 || true)
+  CLI_HELP=$("$BINPATH" --help 2>&1); CLI_HELP_RC=$?
   SUBS=$(printf '%s\n' "$CLI_HELP" \
     | awk '/[Cc]ommands:/{f=1;next} /^[A-Za-z].*:[[:space:]]*$/{f=0} f' \
-    | grep -oE '^[[:space:]]+[a-z][a-z0-9-]+' | tr -d ' ' | sort -u)
-  if [ -z "$SUBS" ]; then
-    mark cli-surface SKIP "binary advertises no subcommands in --help"
+    | grep -oE '^[[:space:]]+[a-z][a-z0-9_-]+' | tr -d ' ' | sort -u)
+  if [ "$CLI_HELP_RC" -ne 0 ]; then
+    # `|| true` used to discard this exit; a binary that CRASHES on --help
+    # then read as "advertises no subcommands" — a SKIP cascading into
+    # transport-absence PASSing over an empty surface (#2644, DF-4).
+    mark cli-surface FAIL "the release binary cannot answer --help (exit=$CLI_HELP_RC) — the advertised surface is unknowable: $(tail -1 <<< "$CLI_HELP" | strip_ansi | cut -c1-100)"
+  elif [ -z "$SUBS" ]; then
+    mark cli-surface SKIP "binary advertises no subcommands in --help (--help exit 0; Commands section empty or absent)"
   else
     CLI_BAD=""
     CLI_N=0
@@ -1067,9 +1124,13 @@ else
   fi
 
   # (c) absence of UNDECLARED transports, probed on the real binary.
+  if [ "${CLI_HELP_RC:-0}" -ne 0 ]; then
+    mark transport-absence SKIP "not evaluated: the binary could not answer --help (cli-surface is RED above), so the advertised surface is unknown — asserting absence over an unreadable surface is a vacuous pass (#2644, DF-4)"
+    TP_INTRUDERS=""
+  else
   TP_INTRUDERS=""
   for probe in mcp serve http api rpc; do
-    printf '%s\n' "$SUBS" | grep -qx "$probe" || continue
+    grep -qx "$probe" <<< "$SUBS" || continue
     # `serve` names no protocol. A subcommand called `serve` may be an HTTP
     # listener OR an MCP stdio server — pforge's is the latter — so demanding an
     # `http` declaration for it forces a crate to declare a transport it does
@@ -1093,6 +1154,7 @@ else
     mark transport-absence FAIL "binary advertises undeclared transport surface:$TP_INTRUDERS — declare it in [package.metadata.transports] with an e2e target, or remove it. An undeclared transport is an unverified one."
   else
     mark transport-absence PASS "no undeclared mcp/http surface advertised by the binary"
+  fi
   fi
 
   # (b) run each declared transport's e2e target, naming it with --test.
@@ -1315,7 +1377,9 @@ for line in os.environ.get("ROWS", "").split("\n"):
         continue
     parts = line.split("\t")
     name, result = parts[0], parts[1] if len(parts) > 1 else ""
-    note = parts[2].replace("\r", "\n") if len(parts) > 2 else ""
+    # rejoin: a literal TAB inside a gate note (log tails carry them) used to
+    # silently drop everything after it (#2644, DF-10)
+    note = "\t".join(parts[2:]).replace("\r", "\n") if len(parts) > 2 else ""
     gates.append({"gate": name, "result": result, "note": note})
 print(json.dumps({
     "crate": os.environ["CRATE"], "version": os.environ["VERSION"],

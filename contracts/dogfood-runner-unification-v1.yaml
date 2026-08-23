@@ -294,6 +294,46 @@ falsification_tests:
   if_fails: 'the pin lies from subdirectories ("this repo ships no pin"), or an exported stale path rides through an otherwise-green pin (#2644, VPIN-5/VPIN-6/VP-04)'
   mutation: 'replace the git-rooted discovery with $PWD, or drop the unset PV_BIN; row 4c (respectively 4b) must turn RED (both observed 2026-08-23, engagement verified)'
 
+- id: F-DOG1-020
+  rule: empty-and-zero is the only PASS shape
+  prediction: >
+    A probe whose empty output means PASS fails on rc != 0. security-2nd-source
+    WARNs "did not run" when gh api dies; version-unpublished FAILs when the
+    dry-run dies without the already-exists marker; git-clean FAILs outside a
+    git repository. Empty output from a dead call is never a clean measurement.
+  test: 'drive the three gate blocks with a failing gh shim, DRC!=0, and a non-git fixture (see the #2644 batch-2 drivers)'
+  if_fails: 'the absence of a measurement wears the measurement PASS — the DF-1/DF-7/DF-8 laundering primitive (|| true + empty-means-pass) is back'
+  mutation: 'restore `2>/dev/null || true` on the gh api call: a dead call must again print PASS "0 open Dependabot alerts" (observed pre-fix 2026-08-23)'
+- id: F-DOG1-021
+  rule: no verdict-bearing pipe into an early-exit consumer
+  prediction: >
+    version-unpublished reads its marker through a here-string: an
+    already-published version whose marker precedes more than a pipe buffer of
+    dry-run output still turns the gate RED under pipefail.
+  test: 'drive the version-unpublished block with the marker + >64KiB tail under set -uo pipefail'
+  if_fails: 'SIGPIPE(141) inverts the verdict — a PUBLISHED version reads "not yet published" (DF-2; the same construct inverted the other way in the guard, VP-06)'
+  mutation: 'restore `printf | grep -q`; the 300KB-tail driver must again show the false PASS (observed pre-fix 2026-08-23)'
+- id: F-DOG1-022
+  rule: a gate may not vanish from the receipt
+  prediction: >
+    The reachability row appears in every receipt — WARN when the sweep ran,
+    SKIP naming the missing subcommand when this pmat cannot run it. An
+    unreadable --help on the release binary is cli-surface FAIL, and
+    transport-absence declines to assert over the unreadable surface.
+  test: 'drive the reachability block with a pre-3.32.0 pmat shim, and cli-surface with a binary that crashes on --help'
+  if_fails: 'a version-conditional vanish (DF-9) or a SKIP cascading into a PASS over an empty surface (DF-4) — a gate that vanishes reads as a gate that passed'
+  mutation: 'remove the reachability else-arm (row vanishes), or restore `|| true` on the --help capture (SKIP + vacuous absence PASS); each observed pre-fix 2026-08-23'
+- id: F-DOG1-023
+  rule: gates measure the universe they name
+  prediction: >
+    The contracts gate finds the Makefile the way changelog does (find_up), so
+    a workspace member runs the L4/falsification suite instead of degrading to
+    WARN; pv-contracts validates every contracts/**/*.yaml, not only the top
+    level; a discovery failure names the component that died.
+  test: 'drive the contracts gate from a workspace-member fixture with a root Makefile; place a broken contract in contracts/sub/'
+  if_fails: 'the sovereign differentiator silently skips for every workspace member (DF-5), and a third of the corpus sits outside the gate carrying its name (DF-6)'
+  mutation: 'restore the cwd-only `grep Makefile` or the top-level glob; the member fixture must again WARN and the nested broken contract must again pass unseen (observed pre-fix 2026-08-23)'
+
 proof_obligations:
 - type: invariant
   property: 'Exactly one tracked dogfood.sh exists, at scripts/dogfood.sh (F-DOG1-001)'
@@ -353,6 +393,15 @@ proof_obligations:
 - type: soundness
   property: 'verifier_pin_pv is repo-root-anchored, clears the PV_BIN environment channel, and surfaces pv_bin.sh diagnostics on failure (F-DOG1-019)'
   formal: 'resolve(pv) independent of cwd within repo; PV_BIN not in env(source(pv_bin.sh)); rc = 1 => diagnostics on stderr'
+- type: soundness
+  property: 'Every probe whose empty output means PASS fails on rc != 0 — empty-and-zero is the only PASS shape (F-DOG1-020); no verdict-bearing pipe feeds an early-exit consumer under pipefail (F-DOG1-021)'
+  formal: 'probe_rc != 0 => verdict in {WARN(did-not-run), FAIL}; verdict_channel(marker) = herestring'
+- type: invariant
+  property: 'Every gate name the runner can emit appears in every receipt with an explicit outcome; no version- or capability-conditional vanish (F-DOG1-022)'
+  formal: 'forall g in gate_names(runner): exists row in receipt with row.gate = g'
+- type: invariant
+  property: 'Each gate iterates the universe its name claims: find_up for root-kept files, recursive discovery for contracts/, component-accurate failure attribution (F-DOG1-023)'
+  formal: 'universe(gate) = universe(gate.name); fail(discovery) names the failing component'
 kani_harnesses:
 # Declared, NOT written. These are shell guards over shell source; there is no
 # Rust surface for Kani to model-check, and inventing one would be theatre. The
@@ -402,9 +451,9 @@ qa_gate:
     release verified by an unknown binary is an unverified release that says GO.
 
 verification_summary:
-  total_obligations: 19
+  total_obligations: 22
   proven: 0
-  tested: 19
+  tested: 22
   status: proposed
   notes: >
     Every obligation above is TESTED (none PROVEN in the L4/L5 sense — shell

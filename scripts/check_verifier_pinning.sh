@@ -592,7 +592,9 @@ EOF
 
     got=$(scan "$td/good.sh" | tr '\n' ' ')
     if [ -z "$got" ]; then
-        printf 'ok    MUST-NOT-FLAG all 14 pinned/comment/string/probe forms accepted\n'
+        # count derived from the fixture, never restated: the prose "all 14"
+        # had drifted from a 16-line corpus (#2644 audit, VP-10 rider)
+        printf 'ok    MUST-NOT-FLAG all %s pinned/comment/string/probe fixture lines accepted\n' "$(grep -c . "$td/good.sh")"
     else
         printf 'FAIL  MUST-NOT-FLAG false positives: %s\n' "$got"; fails=1
     fi
@@ -908,6 +910,15 @@ gates = ["gate-ok.sh", "gate-pin-delivery.sh"]
 EOF
     printf 'pub fn f() {}\n' > "$td/fixture-crate/src/lib.rs"
     printf '#!/usr/bin/env bash\nexit 0\n' > "$td/fixture-crate/gate-ok.sh"
+    # The fixture is a REAL git repo with a clean tree: since the DF-7 fix a
+    # non-git directory is a deliberate git-clean FAIL, and this test asserts
+    # rc=0 through the runner. Hooks and identity are pinned so no host config
+    # can dirty the run.
+    git -C "$td/fixture-crate" -c init.defaultBranch=fixture init -q
+    git -C "$td/fixture-crate" -c user.name=dogfood -c user.email=dogfood@fixture \
+        -c core.hooksPath=/dev/null add -A
+    git -C "$td/fixture-crate" -c user.name=dogfood -c user.email=dogfood@fixture \
+        -c core.hooksPath=/dev/null commit -q --no-verify -m fixture
     # The committed catcher for the unexported-pin mutation (#2644, VPIN-4):
     # this gate runs as a CHILD of the runner, exactly like every discovered
     # gate, and asserts the pins ARRIVED. PMAT_BIN must be nonempty (the policy
@@ -982,6 +993,8 @@ if self_test; then :; else rc=1; fi
 
 printf '\nPART 1 — static: no bare verifier in command position\n'
 cd "$REPO_ROOT" || exit 2
+SCAN_ERR=$(mktemp)
+trap 'rm -f "$SCAN_ERR"' EXIT
 SCOPE=$(resolve_scope)
 if [ "$SCOPE" = "SCOPE_ERROR" ]; then
     printf 'FAIL  [package.metadata.dogfood] gates yielded nothing — the scan universe\n'
@@ -1001,18 +1014,28 @@ else
         rc=1
     else
         # shellcheck disable=SC2086
-        hits=$(scan $SCOPE)
+        hits=$(scan $SCOPE 2>"$SCAN_ERR")
         scan_rc=$?
-        if [ "$scan_rc" -eq 2 ]; then
-            printf 'FAIL  the scanner errored:\n%s\n' "$hits"; rc=1
-        elif [ -n "$hits" ]; then
+        # Only ENUMERATED (rc, output) shapes carry meanings: (0, empty) is
+        # clean and (1, findings) is findings. Everything else — an input-
+        # selective tokeniser crash is exit 1 with an empty stdout and a
+        # traceback on stderr — is a scanner failure, and the old
+        # rc==2-only branch printed "ok no bare pv/pmat/apr" over a scan that
+        # scanned nothing (#2644 audit, F8 rider; v1.13 P1).
+        if [ "$scan_rc" -eq 0 ] && [ -z "$hits" ]; then
+            printf 'ok    no bare pv/pmat/apr in command position, in:\n'
+            printf '%s\n' "$SCOPE" | sed 's/^/        /'
+        elif [ "$scan_rc" -eq 1 ] && [ -n "$hits" ]; then
             printf 'FAIL  bare verifier invocation(s) — these resolve through PATH:\n'
             printf '%s\n' "$hits" | sed 's/^/      /'
             printf '      Use the pin: "$PV" / "$PMAT_BIN" / "$APR". See scripts/verifier_pin.sh.\n'
             rc=1
         else
-            printf 'ok    no bare pv/pmat/apr in command position, in:\n'
-            printf '%s\n' "$SCOPE" | sed 's/^/        /'
+            printf 'FAIL  the scanner did not produce a verdict (rc=%s, %s finding lines) — an\n' "$scan_rc" "$(grep -c . <<< "$hits")"
+            printf '      unenumerated exit shape is a scan that cannot be believed:\n'
+            sed 's/^/      /' "$SCAN_ERR" 2>/dev/null | tail -5
+            printf '%s\n' "$hits" | grep . | sed 's/^/      /' | head -5
+            rc=1
         fi
     fi
 fi
