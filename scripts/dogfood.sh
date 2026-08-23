@@ -645,7 +645,14 @@ if [ -n "${PV:-}" ] && [ -x "$PV" ]; then
     mark pv-contracts SKIP "no contracts/ directory in this crate"
   fi
 else
-  mark pv-contracts REPORT "pv is not pinned in this repo (no scripts/pv_bin.sh) — contracts NOT validated. A PATH-resolved pv is refused on purpose: 0.49.0 and 0.63.0 disagree on the binding gate, so a verdict from an unknown pv is not a verdict."
+  # Branch on WHY pv is absent: rc=1 (pin present, FAILED) and rc=2 (no pin
+  # shipped) used to share one note claiming "no scripts/pv_bin.sh" — a wrong
+  # diagnosis whenever the file exists and the build failed (#2644, DIV-4).
+  if [ "${VERIFIER_PIN_PV_RC:-2}" -eq 1 ]; then
+    mark pv-contracts REPORT "scripts/pv_bin.sh is PRESENT but the pin FAILED to build/resolve pv (its diagnostics are on stderr above) — contracts NOT validated. A PATH-resolved pv is refused on purpose: 0.49.0 and 0.63.0 disagree on the binding gate."
+  else
+    mark pv-contracts REPORT "pv is not pinned in this repo (no scripts/pv_bin.sh) — contracts NOT validated. A PATH-resolved pv is refused on purpose: 0.49.0 and 0.63.0 disagree on the binding gate, so a verdict from an unknown pv is not a verdict."
+  fi
 fi
 
 # bashrs — shell purification (bashrs 6.66.2).

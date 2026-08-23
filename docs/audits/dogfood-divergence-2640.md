@@ -1,6 +1,6 @@
 # Dogfood runner divergence triage — #2640
 
-**Required artifact per #2640 A.2.** Produced BEFORE any delete, because the 86 diverging
+**Required artifact per #2640 A.2.** Produced BEFORE any delete, because the diverging
 lines are evidence, not noise: given #2361 (user-scope shadowed the repo skill, so hardening
 it edited a file that never ran), some hardening had almost certainly landed only in the copy
 that does not run. Deleting either copy first would destroy the record of which.
@@ -15,8 +15,25 @@ divergence, before consolidating.**
 | `user-scope` | `~/.claude/skills/dogfood/dogfood.sh` | 1172 |
 | `repo` | `scripts/dogfood.sh` | 1165 |
 
-`diff` = 9 hunks, 62 changed lines (86 including context). Gate names: **61 shared, 0 unique
-to either.** The copies run the same protocol.
+`diff` = 9 hunks — the position-verified hunk table below is the load-bearing record.
+(This line originally asserted "62 changed lines (86 including context)": both constants
+were arithmetically impossible against the table's own @@ headers — the net delta 1172→1165
+makes added+deleted odd for ANY diff of these files, and the nine -U3 hunks render ≥ ~120
+lines with context. The #2644 audit caught it, DIV-1; a derived table needs no restated
+count, which is v1.13 P7's rule.) Gate names, re-measured (#2644 audit, DIV-2): the
+pre-merge repo copy emits **32** gate names by command-position extraction
+(`(?:^|;|&&|\|\||then|else|do|\{)\s*(mark|gate)\s+"?([a-z][a-z0-9:_-]*)`), and **every one
+of the 32 is present in the unified runner** — zero lost, one gained (`dogfood-gates`, the
+new discovery gate). That set comparison is the load-bearing claim and it is reproducible
+today against `origin/main:scripts/dogfood.sh` and `c4ebd2712:scripts/dogfood.sh`.
+
+This line originally read "61 shared, 0 unique to either". The 61 was a prose-token scrape
+that counted comment words — `already`, `would`, `unpassable` — as gate names; only 32 of
+the 61 tokens were gates. **And the both-sides half is no longer re-verifiable**: the
+user-scope runner source is not recoverable (`~/.claude/skills/dogfood/README-superseded.md`
+preserves the prose, not the 1172-line script), so "identical on both sides" stands as a
+triage-time record, not a reproducible measurement. Stated rather than quietly kept. The
+copies ran the same protocol.
 
 ## Headline result
 
@@ -80,6 +97,13 @@ none of which knew about the others:
 
 Five rediscoveries is the evidence that a rule merely **stated** is documentation. It ships as
 a **gate**, or the sixth tool rediscovers it in a sixth copy.
+
+**Enforcement status, row by row (#2644 audit, DIV-3):** rows 1–3 are enforced by executable
+mechanism on this branch (`verifier_pin.sh` + `check_verifier_pinning.sh`). Rows 4 and 5 are
+**citation-only** — nothing in this branch scans either decision surface. Reading this table
+as five-enforced is the same self-description drift the table documents. Row 4's surface is
+tracked in aprender#2647; row 5's mechanism belongs to the APR-BENCH epic (#2588), where the
+`llama.cpp` baseline is actually invoked.
 
 The two hardenings generalise to one rule the merged runner should state once, and ENFORCE:
 

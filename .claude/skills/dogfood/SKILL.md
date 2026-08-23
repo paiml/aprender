@@ -725,12 +725,18 @@ of 3.32.0.
 
 So: `cargo install --path . --root <scratch>` the release tree, and run that
 binary against **every repo in the sovereign stack**. The roster is the one
-`~/src/infra/machines/clean-room/Makefile` declares — aprender, whisper-apr,
-forjar, depyler, bashrs, duende, rmedia, copia, pepita, pzsh, cohete, pforge.
+`~/src/infra/machines/clean-room/Makefile` declares — read it from the
+Makefile, never from a list restated here: the previous sentence enumerated
+12 repos while the Makefile declared 13 (pmat itself was the one missing —
+#2644 audit, SHIM-05), which is what a restated list does.
 They span 10 to 60,980 files of code nobody wrote to make pmat look good.
 
-Harness: `scripts/../fleet-dogfood.sh` in this skill directory, one repo per
-invocation.
+Harness: `fleet-dogfood.sh` — an UNGUARDED user-scope helper
+(`~/.claude/skills/dogfood/`), not tracked in any repo and not part of the
+certified protocol (#2644 audit, SHIM-05: user-scope siblings already
+demonstrate drift). Treat its output as a convenience, not evidence; the
+certified path is `scripts/dogfood.sh` per repo. Tracking-or-deleting these
+helpers is part of the one-runner consolidation (infra#270).
 
 **Install to a SCRATCH root, never over `~/.cargo/bin`.** And use the built
 artifact for pmat's own gates: the installed `pmat` and the release tree both
@@ -760,7 +766,9 @@ serves over MCP, **zero** had a top-tier coverage row while the 18 it does not
 serve scored higher. The tested surface and the served surface were nearly
 disjoint.
 
-Harness: `transport-parity.sh` in this skill directory. For each repo it asks
+Harness: `transport-parity.sh` — likewise an unguarded user-scope helper, not
+tracked in any repo (#2644 audit, SHIM-05; see the fleet-dogfood.sh note
+above). For each repo it asks
 one question over **CLI, MCP stdio and HTTP** and compares the answers. The
 finding it produces is not "a transport is broken" — it is **"the transports
 DISAGREE"**, which is worse, because each looks correct alone.

@@ -3,7 +3,7 @@ metadata:
   created: '2026-08-23'
   author: PAIML Engineering
   references:
-  - 'docs/audits/dogfood-divergence-2640.md — the required triage: 9 hunks, 62 changed lines, ALL classified hardening-port, zero drift-discard'
+  - 'docs/audits/dogfood-divergence-2640.md — the required triage: 9 hunks, ALL classified hardening-port, zero drift-discard (the changed-lines constant this line once restated was impossible and is corrected in the doc — DIV-1)'
   - 'scripts/dogfood.sh — the one canonical runner (aprender#2640)'
   - 'scripts/verifier_pin.sh — THE verifier-pinning rule, stated once, plus the two pins'
   - 'scripts/check_verifier_pinning.sh — the gate: static scan + behavioural probe of both pins'
@@ -347,6 +347,16 @@ falsification_tests:
   if_fails: 'evidence nests inside the tree as next-run dirt (DF-3), or a crashed run leaves a previous or garbage verdict readable as current (DF-12)'
   mutation: 'restore RECEIPT_DIR="$REPO_DIR/.dogfood" (nested .dogfood reappears under a relative arg) or write directly to $RECEIPT (corrupt write leaves garbage at the evidence name); both observed pre-fix 2026-08-23'
 
+- id: F-DOG1-025
+  rule: a diagnosis names the cause it observed
+  prediction: >
+    When pv is unavailable the REPORT note distinguishes the two causes it can
+    tell apart: rc=1 (scripts/pv_bin.sh present, the pin FAILED to resolve)
+    reports the pin failure; rc=2 (this repo ships no pin) reports the absence.
+  test: 'drive the pv-contracts REPORT arm with VERIFIER_PIN_PV_RC=1 and =2'
+  if_fails: 'the one note explaining why contracts went unvalidated names the wrong cause, sending the operator to the wrong component (DIV-4; the CI-4 shape in a second place)'
+  mutation: 'collapse the branch back to the single unconditional note; rc=1 must again claim "no scripts/pv_bin.sh" for a file that exists (observed pre-fix 2026-08-23)'
+
 proof_obligations:
 - type: invariant
   property: 'Exactly one tracked dogfood.sh exists, at scripts/dogfood.sh (F-DOG1-001)'
@@ -418,6 +428,9 @@ proof_obligations:
 - type: invariant
   property: 'A receipt exists iff it is complete and parseable: absolute anchor, SHA-stamped, .partial + atomic rename; runner artefact dirs (.dogfood/.pmat/.pv) are gitignored so a run never dirties the tree its next run measures (F-DOG1-024)'
   formal: 'exists(receipt-*.json) => parseable and complete; mutates(run, tracked_files) = {}'
+- type: invariant
+  property: 'Every diagnosis names the cause it observed, and every count this contract or its referenced audit states is reproducible from an extraction the text names (F-DOG1-025; DIV-1/DIV-2 corrections)'
+  formal: 'note(cause) = observed_cause; forall n in stated_counts: reproducible(n, named_extraction)'
 kani_harnesses:
 # Declared, NOT written. These are shell guards over shell source; there is no
 # Rust surface for Kani to model-check, and inventing one would be theatre. The
@@ -467,9 +480,9 @@ qa_gate:
     release verified by an unknown binary is an unverified release that says GO.
 
 verification_summary:
-  total_obligations: 23
+  total_obligations: 24
   proven: 0
-  tested: 23
+  tested: 24
   status: proposed
   notes: >
     Every obligation above is TESTED (none PROVEN in the L4/L5 sense — shell
