@@ -184,6 +184,22 @@ else
   exit 2
 fi
 
+# THE PINS RESOLVE BEFORE ANY GATE RUNS. The declared gates below execute as
+# CHILD processes and consume the pins from the environment (the lib exports
+# them) — a pin resolved after they ran is a pin delivered to nobody, while
+# pin_audit certified consumption the environment never carried (#2644, VPIN-4).
+#
+# The pmat pin is called here with NO artifact: for every crate but pmat that
+# already yields the final answer (the fleet pmat). For the one crate where the
+# artifact matters — releasing pmat itself — it cannot exist before the build,
+# so this phase leaves PMAT_BIN EMPTY there and any declared gate consuming it
+# fails closed rather than measuring a PATH binary that is not the build being
+# released. The post-build call further down upgrades the pin to the artifact.
+verifier_pin_pmat "$CRATE" ""
+PV=""
+verifier_pin_pv
+VERIFIER_PIN_PV_RC=$?
+
 echo "══ dogfood pre-release: $CRATE v$VERSION ══"
 
 # ── 1. hygiene ───────────────────────────────────────────────────────────────
@@ -405,8 +421,21 @@ if [ -z "$BINPATH" ]; then
 fi
 BINPATH="${BINPATH:-}"
 # Which pmat runs the pmat gates. The rule and its measured evidence are in
-# scripts/verifier_pin.sh; this is the call site.
+# scripts/verifier_pin.sh; this is the post-build call site — the early phase
+# above already delivered the policy answer to the declared gates, and this one
+# upgrades the pin to the just-built artifact for the case where the crate IS
+# pmat. Its verdict gets a row in EVERY receipt: a pin that reports only on
+# failure is the version-conditional vanish this audit just closed (DF-9 class).
 verifier_pin_pmat "$CRATE" "$BINPATH"
+VERIFIER_PIN_PMAT_RC=$?
+if [ "$VERIFIER_PIN_PMAT_RC" -ne 0 ]; then
+  mark pmat-pin FAIL "releasing pmat but the built artifact is missing or failed behavior verification (--version) — refusing the PATH fallback: a stale fleet pmat measuring a pmat release is the recorded 3.32.0-vs-3.32.0 incident (see scripts/verifier_pin.sh). Every pmat gate below is unverifiable against the artifact being released"
+elif [ "$CRATE" = "pmat" ]; then
+  mark pmat-pin PASS "releasing pmat: gates measure the BUILT artifact ($PMAT_BIN), behavior-verified"
+else
+  mark pmat-pin PASS "fleet pmat is the correct verifier for a non-pmat crate (exported to declared gates)"
+fi
+readonly PMAT_BIN
 if [ -n "$BINPATH" ] && [ -x "$BINPATH" ]; then
   mark release-binary PASS "built: $BINPATH"
 else
@@ -443,13 +472,16 @@ fi
 # ships no pin leaves PV empty and the contract gates below REPORT that rather
 # than falling back to whatever PATH offers.
 MISSING_TOOLS=""
-PV=""
-verifier_pin_pv
-case $? in
-  0) : ;;                                              # pinned and executable
+# pv was pinned ONCE, in the early phase before any gate ran (the declared gates
+# consume it from the environment); this consumes that verdict rather than
+# resolving a second time — two resolutions can disagree, and the one the gates
+# already used is the only one that matters.
+case "$VERIFIER_PIN_PV_RC" in
+  0) : ;;                                              # pinned, exported, behavior-verified
   1) MISSING_TOOLS="$MISSING_TOOLS pv" ;;              # pin present, failed to resolve
   *) : ;;                                              # this repo ships no pin
 esac
+readonly PV
 # bashrs and probador are unpinned in this repo, so PATH is the only answer
 # there and asking it is correct. pmat is NOT in that list: it is PINNED, and
 # `command -v pmat` would ask PATH about a tool whose answer the pin has already

@@ -720,13 +720,56 @@ behaviour_test() {
         printf 'FAIL  pmat-pin   non-pmat crate resolved to [%s], expected the PATH pmat\n' "$PMAT_BIN"; fails=1
     fi
 
-    # Row 3 — a crate named pmat with NO built artifact must not invent one.
+    # Row 3 — a crate named pmat with NO built artifact FAILS CLOSED: rc=1 and
+    # an EMPTY pin. This row used to bless the silent PATH fallback — the exact
+    # stale-3.32.0-measuring-3.32.0 incident the lib's header records (#2644,
+    # VPIN-1). The old expectation is preserved here as the mutation direction:
+    # a lib reverted to the fallback turns this row RED.
     PMAT_BIN=""
     verifier_pin_pmat "pmat" ""
-    if [ "$PMAT_BIN" = "pmat" ]; then
-        printf 'ok    pmat-pin   no built artifact -> no fabricated pin\n'
+    r3_rc=$?
+    if [ "$r3_rc" -eq 1 ] && [ -z "$PMAT_BIN" ]; then
+        printf 'ok    pmat-pin   no built artifact -> rc=1, EMPTY pin (fail closed, no PATH fallback)\n'
     else
-        printf 'FAIL  pmat-pin   empty BINPATH resolved to [%s]\n' "$PMAT_BIN"; fails=1
+        printf 'FAIL  pmat-pin   no built artifact resolved to [%s] rc=%s — a silent\n' "$PMAT_BIN" "$r3_rc"
+        printf '                 fallback here measures a PATH pmat that is not the build\n'
+        printf '                 being released (the recorded incident, again)\n'
+        fails=1
+    fi
+
+    # Row 3b — behavior, not existence: a directory and a broken stub both pass
+    # `-x`; neither can answer `--version`; neither may become the pin (#2644,
+    # VPIN-2).
+    mkdir -p "$td/notabinary"
+    PMAT_BIN=""
+    verifier_pin_pmat "pmat" "$td/notabinary"
+    r3b_rc=$?
+    printf '#!/bin/sh\nexit 97\n' > "$td/brokenstub"
+    chmod +x "$td/brokenstub"
+    PMAT_BIN=""
+    verifier_pin_pmat "pmat" "$td/brokenstub"
+    r3c_rc=$?
+    if [ "$r3b_rc" -eq 1 ] && [ "$r3c_rc" -eq 1 ] && [ -z "$PMAT_BIN" ]; then
+        printf 'ok    pmat-pin   a directory and a --version-mute stub are both REFUSED\n'
+    else
+        printf 'FAIL  pmat-pin   non-working artifact accepted (dir rc=%s, stub rc=%s, pin=[%s])\n' "$r3b_rc" "$r3c_rc" "$PMAT_BIN"
+        fails=1
+    fi
+
+    # Row 3d — delivery: the pin must reach a CHILD process. Every discovered
+    # gate is one, and an unexported pin is consumption pin_audit certifies but
+    # the environment never carries (#2644, VPIN-4).
+    PMAT_BIN=""
+    printf '#!/bin/sh\necho built-pmat\n' > "$td/okstub"
+    chmod +x "$td/okstub"
+    verifier_pin_pmat "pmat" "$td/okstub"
+    r3d_child=$(bash -c 'printf %s "${PMAT_BIN:-UNSET}"')
+    if [ "$r3d_child" = "$td/okstub" ]; then
+        printf 'ok    pmat-pin   the pin arrives in a child process (exported)\n'
+    else
+        printf 'FAIL  pmat-pin   child saw [%s] — the pin is shell-local and every\n' "$r3d_child"
+        printf '                 discovered gate runs unpinned\n'
+        fails=1
     fi
 
     # Row 4 — pv. The pin must not be whatever PATH offers. A decoy `pv` goes
@@ -759,6 +802,52 @@ behaviour_test() {
             exit 1
         fi
         printf 'ok    pv-pin     resolved pv is %s, NOT the PATH decoy %s\n' "$PV" "$decoy"
+    ) || fails=1
+
+    # Row 4b — the PV_BIN environment channel is CLEARED before the pin sources
+    # pv_bin.sh: an inherited PV_BIN short-circuits the cargo build pv_bin.sh
+    # itself names "THE FRESHNESS AUTHORITY", so an exported stale path would
+    # ride straight through an otherwise-green pin (#2644, VPIN-6/VP-04).
+    (
+        cd "$REPO_ROOT" || exit 2
+        printf '#!/bin/sh\necho pv 0.0.0-poison\n' > "$td/pv-poison"
+        chmod +x "$td/pv-poison"
+        PV_BIN="$td/pv-poison"
+        export PV_BIN
+        PV=""
+        verifier_pin_pv
+        pv_rc=$?
+        if [ "$pv_rc" -eq 0 ] && [ "$PV" = "$td/pv-poison" ]; then
+            printf 'FAIL  pv-pin     an inherited PV_BIN (%s) rode through the pin —\n' "$PV_BIN"
+            printf '                 the freshness authority was bypassed by the environment\n'
+            exit 1
+        fi
+        if [ "$pv_rc" -ne 0 ]; then
+            printf 'FAIL  pv-pin     pin failed under an inherited PV_BIN (rc=%s) — clearing\n' "$pv_rc"
+            printf '                 the channel must not break resolution\n'
+            exit 1
+        fi
+        printf 'ok    pv-pin     an inherited PV_BIN is cleared; the pin resolved %s\n' "$PV"
+    ) || fails=1
+
+    # Row 4c — the pin works from a SUBDIRECTORY of the repo. The cwd-relative
+    # form returned 2 ("this repo ships no pin") from anywhere below the root —
+    # a false statement that downgraded every pv gate to REPORT (#2644, VPIN-5).
+    (
+        cd "$REPO_ROOT/scripts" || exit 2
+        PV=""
+        verifier_pin_pv
+        pv_rc=$?
+        if [ "$pv_rc" -eq 2 ]; then
+            printf 'FAIL  pv-pin     from scripts/ the pin says "this repo ships no pin" — the\n'
+            printf '                 discovery is cwd-relative and lies from any subdirectory\n'
+            exit 1
+        fi
+        if [ "$pv_rc" -ne 0 ] || [ -z "$PV" ]; then
+            printf 'FAIL  pv-pin     pin failed from a subdirectory (rc=%s)\n' "$pv_rc"
+            exit 1
+        fi
+        printf 'ok    pv-pin     the pin resolves from a subdirectory of the repo\n'
     ) || fails=1
 
     # Row 5 — this guard must not have moved Cargo.lock.
@@ -815,10 +904,23 @@ edition = "2021"
 publish = false
 
 [package.metadata.dogfood]
-gates = ["gate-ok.sh"]
+gates = ["gate-ok.sh", "gate-pin-delivery.sh"]
 EOF
     printf 'pub fn f() {}\n' > "$td/fixture-crate/src/lib.rs"
     printf '#!/usr/bin/env bash\nexit 0\n' > "$td/fixture-crate/gate-ok.sh"
+    # The committed catcher for the unexported-pin mutation (#2644, VPIN-4):
+    # this gate runs as a CHILD of the runner, exactly like every discovered
+    # gate, and asserts the pins ARRIVED. PMAT_BIN must be nonempty (the policy
+    # answer for a non-pmat crate); PV must EXIST in the environment — this
+    # fixture ships no pin, so its VALUE is legitimately empty, but an absent
+    # VARIABLE means the runner resolved pins it never delivered.
+    cat > "$td/fixture-crate/gate-pin-delivery.sh" <<'EOF'
+#!/usr/bin/env bash
+[ "${PMAT_BIN+set}" = set ] || { echo "PMAT_BIN not delivered to child env"; exit 1; }
+[ -n "$PMAT_BIN" ] || { echo "PMAT_BIN empty for a non-pmat crate"; exit 1; }
+[ "${PV+set}" = set ] || { echo "PV not delivered to child env"; exit 1; }
+exit 0
+EOF
 
     # DOGFOOD_GATES_ONLY stops after the declared-gate discovery section, which
     # sits well past the pin-library source. It is the runner's own hook, not a
@@ -834,15 +936,28 @@ EOF
         printf '                 `cd "$REPO_DIR"`, or the path resolves against the TARGET repo.\n'
         printf '%s\n' "$out" | tail -5 | sed 's/^/                 /'
         fails=1
-    elif printf '%s' "$out" | grep -q 'verifier_pin.sh is missing'; then
+    elif grep -q 'verifier_pin.sh is missing' <<< "$out"; then
         printf 'FAIL  fleet-path the pin library was not found under a relative invocation\n'
         fails=1
-    elif ! printf '%s' "$out" | grep -q 'DOGFOOD_GATES_ONLY'; then
+    elif ! grep -q 'DOGFOOD_GATES_ONLY' <<< "$out"; then
         printf 'FAIL  fleet-path the runner did not reach the declared-gate section (rc=%s)\n' "$rc"
         printf '%s\n' "$out" | tail -5 | sed 's/^/                 /'
         fails=1
+    elif [ "$rc" -ne 0 ]; then
+        # The fixture's gates include gate-pin-delivery.sh, the committed
+        # catcher for the unexported-pin mutation. A nonzero rc here with the
+        # section reached means a declared gate went RED — most likely the
+        # probe reporting pins that never arrived. Printing "ok (rc=1)" at
+        # this point would be a catcher that observes and does not gate.
+        printf 'FAIL  fleet-path the fixture run reached the declared-gate section but exited %s\n' "$rc"
+        printf '%s\n' "$out" | grep -E 'declared:|dogfood-gates|not delivered|empty for' | tail -6 | sed 's/^/                 /'
+        fails=1
+    elif ! grep -q 'declared:gate-pin-delivery' <<< "$out"; then
+        printf 'FAIL  fleet-path the pin-delivery probe left no row in the output — a\n'
+        printf '                 catcher that did not run is indistinguishable from one that passed\n'
+        fails=1
     else
-        printf 'ok    fleet-path relative invocation against another crate runs (rc=%s)\n' "$rc"
+        printf 'ok    fleet-path relative invocation runs; pin-delivery probe green (rc=%s)\n' "$rc"
     fi
 
     rm -rf "${td:?}"

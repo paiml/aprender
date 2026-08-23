@@ -264,6 +264,36 @@ falsification_tests:
   if_fails: 'both 3b rows are evadable by writing the gate after a `;`, and the runner''s own three dynamic `mark "$dg_name"` call sites are invisible to the extraction'
   mutation: 'restore the `^[[:space:]]*(mark|gate) [a-z0-9][a-z0-9-]*` line-anchored extractor; rows 6 and 7 must turn RED'
 
+- id: F-DOG1-017
+  rule: pin delivery
+  prediction: >
+    The pins arrive in CHILD processes: every gate discovered from
+    [package.metadata.dogfood] runs with PMAT_BIN and PV present in its
+    environment, PMAT_BIN nonempty for a non-pmat crate. The fleet fixture's
+    gate-pin-delivery.sh probe asserts this through the real runner.
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 2 row 3d + PART 3 delivery probe'
+  if_fails: 'the pins are shell-local — pin_audit certifies consumption the environment never carries, and every discovered gate resolves its verifier through PATH (#2644, VPIN-4)'
+  mutation: 'strip the export statements from scripts/verifier_pin.sh; row 3d and the fleet-path delivery probe must both turn RED (observed 2026-08-23, 7 sites stripped)'
+- id: F-DOG1-018
+  rule: fail closed on the artifact
+  prediction: >
+    Releasing pmat with a missing, non-executable, --version-mute, or
+    directory-shaped built artifact leaves PMAT_BIN EMPTY and returns 1 —
+    never the silent PATH fallback that measured a stale 3.32.0 against a
+    3.32.0 release.
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 2 rows 3 and 3b'
+  if_fails: 'a PATH pmat that is not the build being released decides the release of pmat itself (#2644, VPIN-1/VPIN-2)'
+  mutation: 'restore the pre-#2644 verifier_pin_pmat (bare -x check, unconditional return 0); rows 3 and 3b must turn RED (observed 2026-08-23)'
+- id: F-DOG1-019
+  rule: pin resolution is repo-anchored and channel-proof
+  prediction: >
+    verifier_pin_pv resolves from any subdirectory of the repo (git names the
+    root), clears an inherited PV_BIN before sourcing the freshness authority,
+    and on failure emits the pv_bin.sh diagnostics instead of swallowing them.
+  test: 'bash scripts/check_verifier_pinning.sh   # PART 2 rows 4b and 4c'
+  if_fails: 'the pin lies from subdirectories ("this repo ships no pin"), or an exported stale path rides through an otherwise-green pin (#2644, VPIN-5/VPIN-6/VP-04)'
+  mutation: 'replace the git-rooted discovery with $PWD, or drop the unset PV_BIN; row 4c (respectively 4b) must turn RED (both observed 2026-08-23, engagement verified)'
+
 proof_obligations:
 - type: invariant
   property: 'Exactly one tracked dogfood.sh exists, at scripts/dogfood.sh (F-DOG1-001)'
@@ -314,6 +344,15 @@ proof_obligations:
   property: 'The shim gate extraction covers mid-line and dynamically named call sites (F-DOG1-016)'
   formal: 'gate_calls("true; mark x PASS") != {} and gate_calls("mark \"$n\" FAIL") != {}'
 
+- type: invariant
+  property: 'Both pins EXPORT their result and resolve BEFORE the first discovered gate executes; a child process of the runner observes PMAT_BIN and PV (F-DOG1-017)'
+  formal: 'forall g in discovered_gates: env(g) contains PMAT_BIN, PV; resolve_time(pins) < exec_time(g)'
+- type: soundness
+  property: 'verifier_pin_pmat accepts only an artifact that answers --version; missing/mute/directory artifacts leave the pin EMPTY with rc=1 when the crate is pmat (F-DOG1-018)'
+  formal: 'crate = pmat and not behaves(built) => PMAT_BIN = "" and rc = 1'
+- type: soundness
+  property: 'verifier_pin_pv is repo-root-anchored, clears the PV_BIN environment channel, and surfaces pv_bin.sh diagnostics on failure (F-DOG1-019)'
+  formal: 'resolve(pv) independent of cwd within repo; PV_BIN not in env(source(pv_bin.sh)); rc = 1 => diagnostics on stderr'
 kani_harnesses:
 # Declared, NOT written. These are shell guards over shell source; there is no
 # Rust surface for Kani to model-check, and inventing one would be theatre. The
@@ -349,6 +388,8 @@ qa_gate:
   - verifier_pinning_case_table
   - pmat_pin_behaviour
   - pv_pin_behaviour
+  - pin_delivery_to_children
+  - pin_fails_closed_on_artifact
   - gate_discovery_runs_each
   - gate_discovery_vacuity
   - shim_shape
@@ -361,12 +402,21 @@ qa_gate:
     release verified by an unknown binary is an unverified release that says GO.
 
 verification_summary:
-  total_obligations: 10
+  total_obligations: 19
   proven: 0
-  tested: 10
+  tested: 19
   status: proposed
   notes: >
-    All ten obligations are TESTED by two committed guards, both wired into CI and
+    Every obligation above is TESTED (none PROVEN in the L4/L5 sense — shell
+    guards over shell source; the honest ladder position is L3). The counts are
+    above are schema-required fields (pv rejects a summary without them) and
+    were MEASURED from this file's own lists at edit time, not maintained by
+    hand — the previous values (10/10) had drifted from the body (16) exactly
+    as v1.13 P7 predicts for any count constant a contract restates. Until the
+    schema can derive them, any edit to the obligation lists must re-measure
+    these two numbers in the same commit.
+
+    All obligations are TESTED by two committed guards, both wired into CI and
     both declared in [package.metadata.dogfood] so the release runner itself runs
     them. Each carries a named mutation that was OBSERVED turning it RED on
     2026-08-23, with the unmutated tree observed GREEN first (discrimination).
