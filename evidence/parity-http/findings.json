@@ -125,6 +125,72 @@
     "ttft_p50_ms": 0.275,
     "throughput_rps": 0.6255
   },
-  "headline": "apr reaches 0.650x llama.cpp on DECODE and 0.275x on PREFILL. The gap is not uniform: decode is 1.54x behind, prefill 3.64x behind, and apr holds 3.08x the VRAM for the same quantized weights.",
-  "corrects": "The 11.8 tok/s figure reported on 2026-08-24 was an END-TO-END rate that included ~9.7s of model load. apr's actual decode rate here is 103.3 tok/s \u2014 2.6x the ~40 tok/s 7B reference in CLAUDE.md, not below it. The parity gap is real but it is against llama.cpp's 158.9, not against apr's history."
+  "headline": "Three runtimes, one client. llama.cpp 158.9 decode; apr built --features cuda 103.3 (0.650x); apr AS PUBLISHED 15.7 (0.099x) with 7.5s to first token. The cuda feature is worth 6.6x on decode and 211x on prefill, and cargo install does not enable it.",
+  "corrects": "The 11.8 tok/s figure reported on 2026-08-24 was an END-TO-END rate that included ~9.7s of model load. apr's actual decode rate here is 103.3 tok/s \u2014 2.6x the ~40 tok/s 7B reference in CLAUDE.md, not below it. The parity gap is real but it is against llama.cpp's 158.9, not against apr's history.",
+  "apr_published": {
+    "decode_tok_per_sec": {
+      "median": 15.70664754826154,
+      "samples": [
+        15.70664754826154,
+        15.586601531722616,
+        15.730302990112312
+      ]
+    },
+    "prefill_tok_per_sec": {
+      "median": 13.526171242218233,
+      "samples": [
+        13.716992344248203,
+        13.349127947183556,
+        13.526171242218233
+      ]
+    },
+    "tokens_per_sec": {
+      "median": 8.196396897970716,
+      "samples": [
+        8.245288763022968,
+        8.105381095852275,
+        8.196396897970716
+      ]
+    },
+    "itl_p50_ms": {
+      "median": 63.66731009448819,
+      "samples": [
+        63.66731009448819,
+        64.15766759448819,
+        63.571566334645674
+      ]
+    },
+    "ttft_p50_ms": {
+      "median": 7541.1432295,
+      "samples": [
+        7436.1115245,
+        7641.5093115,
+        7541.1432295
+      ]
+    },
+    "throughput_rps": {
+      "median": 0.06403435076539622,
+      "samples": [
+        0.06441631846111694,
+        0.0633232898113459,
+        0.06403435076539622
+      ]
+    }
+  },
+  "apr_published_over_llamacpp": {
+    "decode_tok_per_sec": 0.09885,
+    "prefill_tok_per_sec": 0.0013,
+    "tokens_per_sec": 0.05184,
+    "itl_p50_ms": 0.09885,
+    "ttft_p50_ms": 0.0013,
+    "throughput_rps": 0.05184
+  },
+  "published_artifact": {
+    "identity": "apr 0.64.0 (v0.64.0+no-git) at ~/.cargo/bin/apr \u2014 a cargo install of the published crate",
+    "cuda_linkage": "strings -a | grep -cE 'cudarc|libcuda.so|libcublas' == 0",
+    "cuda_banner": "strings -a | grep -c 'Enabling optimized CUDA acceleration' == 0",
+    "control_probe": "a string known absent also returns 0, so the probe discriminates",
+    "vram_while_serving_with_--gpu": "0 MiB \u2014 nvidia-smi --query-compute-apps lists no apr process",
+    "verdict": "--gpu is ACCEPTED AND IGNORED; the run completes and returns a plausible number"
+  }
 }
