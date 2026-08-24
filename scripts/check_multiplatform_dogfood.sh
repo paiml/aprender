@@ -37,6 +37,9 @@ HOSTS="lambda intel gx10 mini"
 
 VERSION="$(awk -F'"' '/^version *=/{print $2; exit}' Cargo.toml)"
 DIR="evidence/dogfood/$VERSION"
+# ONE validator, shared with scripts/check_bench_receipt.sh. Two readers of one
+# schema is the divergence class #2640 exists to close.
+REPO_BENCH_VALIDATOR="scripts/lib/bench_receipt.py"
 rc=0
 
 printf -- '--- multi-platform dogfood receipts for %s -------------------------\n' "$VERSION"
@@ -116,6 +119,35 @@ for h in $HOSTS; do
         rc=1
     else
         printf 'ok    %-7s %s verified %s (install rc=0)\n' "$h" "$VERSION" "${when:-undated}"
+    fi
+
+    # ── the bench block (PARITY-003, aprender#2670) ────────────────────────
+    #
+    # CPU-CLASS, apr-vs-apr, NO COMPARATOR — and that is a decision, not an
+    # omission. `cargo install aprender` builds CPU-only on every host in this
+    # matrix (crates/apr-cli/Cargo.toml `default` carries no cuda, no wgpu),
+    # while llama.cpp runs CUDA on lambda/gx10 and Metal on mini. A ratio here
+    # would read ~0.05-0.10, nobody would red a release over it (correctly),
+    # the row would go EXISTENCE-ONLY and the threshold would never arm — the
+    # exact shape this gate itself had before #2658. The tree already documents
+    # that collapse at crates/apr-cli/src/dispatch.rs:165.
+    #
+    # An apr-vs-apr self-ratchet catches OUR regressions, which is the goal,
+    # without inventing a number nobody will act on. The comparator ratio lives
+    # in the pre-publish phase where --features cuda exists (#2677).
+    #
+    # ABSENT is not FAIL yet: the block arrives with the first release cut
+    # after this lands, and a gate that fails for a version that predates it is
+    # a gate nobody can satisfy. It is REPORTed so the absence is visible.
+    if ! python3 "$REPO_BENCH_VALIDATOR" --has-bench "$f" >/dev/null 2>&1; then
+        printf 'REPORT %-6s no bench block yet — arrives with the first cut after #2670\n' "$h"
+    elif python3 "$REPO_BENCH_VALIDATOR" --bench "$f" >/dev/null 2>&1; then
+        bmed=$(python3 "$REPO_BENCH_VALIDATOR" --bench-median "$f" 2>/dev/null)
+        printf 'ok    %-7s bench: median %s ms, CPU-class self-ratchet\n' "$h" "${bmed:-?}"
+    else
+        printf 'FAIL  %-7s bench block present but INVALID:\n' "$h"
+        python3 "$REPO_BENCH_VALIDATOR" --bench "$f" 2>&1 | sed 's/^/          /'
+        rc=1
     fi
 done
 
