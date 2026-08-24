@@ -1,24 +1,28 @@
 {
   "host": "lambda",
-  "hostname": "noah-Lambda-Vector",
-  "arch": "x86_64",
+  "arch": "x86_64-unknown-linux-gnu",
   "os": "Linux 6.8.0-90-generic",
   "cpu": "AMD Ryzen Threadripper 7960X 24-Cores",
-  "isa_notable": [
-    "avx2",
-    "avx512f",
-    "avx512_vnni",
-    "fma",
-    "f16c"
-  ],
-  "gpu": "NVIDIA GeForce RTX 4090, 8.9",
+  "accelerator": "NVIDIA GeForce RTX 4090, sm_89",
   "version_tested": "0.64.0",
   "date": "2026-08-24",
   "install_source": "crates.io",
-  "install_command": "cargo install aprender --version 0.64.0 --locked",
+  "install_command": "cargo install aprender --version 0.64.0 --locked --force",
+  "install_root": "default (~/.cargo/bin) \u2014 overrides whatever the host had",
+  "version_before_install": "apr 0.60.0 (v0.60.0+no-git)",
   "install_rc": 0,
+  "install_wall_seconds": 156,
+  "crates_compiled": 532,
+  "path_resolved_apr": "/home/noah/.local/bin/apr",
+  "binary_sha256": "2b11c386214daf14fee43eb34392aecfbf90f0e52b30dd3294fb1ba0d985ffdc",
   "binary_version_output": "apr 0.64.0 (v0.64.0+no-git)",
-  "subcommands_advertised": 110,
-  "subcommands_answering_help": 110,
-  "notes": "Post-publish receipt: collected after the 0.64.0 cascade because install_rc comes from cargo install against crates.io (see #2658 \u2014 this gate is post-publish by construction). 12 apparent 'unusable' entries in a naive --help scrape are wrapped description lines, not subcommands (#2641)."
+  "bare_apr_is_0_64_0": true,
+  "surface": {
+    "cli_subcommands": 111,
+    "cli_subcommands_answering_help": 111,
+    "unusable": 0
+  },
+  "notable": "A bare `apr` on this host resolved to /home/noah/.local/bin/apr = 0.60.0, dated 2026-07-06, SHADOWING ~/.cargo/bin \u2014 the exact #2384/#2361 class the 0.63.0 release was about, still live 49 days later. `cargo install --force` updates ~/.cargo/bin and does NOT touch the shadow, because ~/.local/bin precedes it in PATH. Resolved by overwriting the shadow with the same binary; both paths are now byte-identical.",
+  "verdict": "GO",
+  "collection_note": "Post-publish by construction: install_rc comes from `cargo install aprender` against crates.io, so this receipt cannot exist before the cascade (#2658). On gx10, intel and mini the binary hashed IDENTICALLY across two independent installs (scratch root, then default root) \u2014 the build is reproducible per target."
 }
