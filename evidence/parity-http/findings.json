@@ -257,5 +257,42 @@
     },
     "gate_implication": "the single medium-profile number understates the gap for long prompts; the gate should also measure `long`"
   },
-  "prefill_graph_blocked": "PREFILL_GRAPH=1 capture fails with CUDA_ERROR_OUT_OF_MEMORY at S=126 because apr already holds 14030 MiB of a 24 GiB card. The second weight copy blocks the CUDA graph path from being evaluated at all -- a real reason to remove it, and a different one from the falsified bandwidth argument."
+  "prefill_graph_blocked": "PREFILL_GRAPH=1 capture fails with CUDA_ERROR_OUT_OF_MEMORY at S=126 because apr already holds 14030 MiB of a 24 GiB card. The second weight copy blocks the CUDA graph path from being evaluated at all -- a real reason to remove it, and a different one from the falsified bandwidth argument.",
+  "fixed_cost_root_cause": {
+    "method": "nsys --trace=cuda on apr serve, startup + 8 requests, cuda_api_sum",
+    "api_time": {
+      "cuStreamSynchronize": {
+        "pct": 57.4,
+        "calls": 1308,
+        "ms": 425.8
+      },
+      "cuMemcpyHtoD_v2": {
+        "pct": 32.8,
+        "calls": 1018,
+        "ms": 243.5
+      },
+      "cuMemAlloc_v2": {
+        "pct": 3.3,
+        "calls": 904,
+        "ms": 24.7
+      },
+      "cuMemcpyDtoH_v2": {
+        "pct": 2.5,
+        "calls": 286,
+        "ms": 18.8
+      },
+      "cuLaunchKernel": {
+        "pct": 0.7,
+        "calls": 2650,
+        "ms": 5.5
+      }
+    },
+    "conclusion": "kernel LAUNCH overhead is 0.7% of API time. Synchronous HtoD copies, device allocations and stream synchronisation are 93.5%. The prefill fixed cost is HOST-SIDE, not in the kernels.",
+    "corroboration": "8 requests x 23.1 ms measured fixed cost = 185 ms, same order as the 243 ms in cuMemcpyHtoD_v2 alone",
+    "async_path_exists": "cuMemcpyHtoDAsync_v2 appears with 203 calls at 2.3 us avg, vs the sync variant's 239 us -- two orders of magnitude cheaper per call, and most traffic is not using it",
+    "expected_if_fixed": "fixed term 23.1 -> ~7.8 ms would take TTFT at 102 tokens from 34.8 to ~19 ms and the prefill ratio from 0.275x to ~0.50x, with no kernel change",
+    "caveat": "the profile window includes startup, so some HtoD traffic is the one-time FP8 cache build (197 matrices, 6742.8 MB, 179 ms). A delayed-capture run to separate them recorded no kernel data and is not the basis for this.",
+    "ticket": "#2697"
+  },
+  "prompt_caching_ruled_out": "Checked because a repeated-prompt workload would invalidate every prefill number here: four DIFFERENT prompts cost 40.2-45.5 ms against 33.5-38.4 ms for the same prompt repeated. ~10% apart, not the near-zero a cache hit would give. Prefill runs either way and the gate numbers stand."
 }
