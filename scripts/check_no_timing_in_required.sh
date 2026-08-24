@@ -82,9 +82,19 @@ fi
 # Without this, the gate protects only what someone remembered to list, which is
 # the guard's-universe-from-the-wrong-side failure this repo keeps finding.
 printf '\nPART 2 — every bench/timing guard is classified\n'
+# Guards whose SUBJECT is timing placement rather than a duration. The name
+# heuristic below cannot tell "asserts a duration" from "asserts that no
+# duration is asserted" -- and this guard matched ITSELF on its first run.
+# Listed explicitly, with the reason, rather than loosening the pattern.
+META_GUARDS="
+check_no_timing_in_required.sh
+"
+
 unclassified=""
 while IFS= read -r f; do
     base=$(basename "$f")
+    meta_flat=" $(printf '%s' "$META_GUARDS" | tr '\n' ' ') "
+    case "$meta_flat" in *" $base "*) continue ;; esac
     # Normalise: the registry is newline-separated, so a space-delimited
     # `case` match silently never fires. Caught by this guard's own PART 2 on
     # its first run, reporting a guard that IS registered as unclassified.
