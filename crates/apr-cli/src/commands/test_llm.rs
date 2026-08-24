@@ -122,6 +122,37 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
         println!("\nreport written to {}", path.display());
     }
 
+    // A RUN THAT GENERATED NO TOKENS IS A FAILED RUN, NOT A FAST ONE.
+    //
+    // `successful` counts HTTP 200. A server can answer 200 with an empty
+    // completion, and then every derived rate is zero while the request count
+    // and the throughput look spectacular. Observed here on 2026-08-24 while
+    // testing PREFILL_GRAPH=1: 727 "successful" requests in 15s — 40x the
+    // normal rate — every one of them carrying zero tokens, reported as
+    // `decode 0.0 tok/s` beside a passing run. The same shape as every
+    // cannot-fail gate this protocol exists to catch, sitting in the
+    // measurement tool itself.
+    let empty: Vec<usize> = report
+        .runs
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.successful > 0 && r.avg_tok_per_req <= 0.0)
+        .map(|(i, _)| i + 1)
+        .collect();
+    if !empty.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "run(s) {} completed {} request(s) that generated ZERO tokens. A 200 \
+             with an empty completion is not a measurement — every rate derived \
+             from it is zero while the request count looks excellent.",
+            empty
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+            report.runs.iter().map(|r| r.successful).sum::<u64>()
+        )));
+    }
+
     // A benchmark that detects a regression past its declared threshold and
     // then exits 0 is a gate that cannot fail.
     let failed: Vec<&str> = report

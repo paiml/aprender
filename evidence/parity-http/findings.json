@@ -228,6 +228,34 @@
       "#2693 prefill 3.64x": "prefill reads 1 B/elem vs llama.cpp's Q4_K 0.5625 -- a 1.78x bandwidth floor no kernel tuning gets below while the copy exists"
     },
     "fix": "a Q4_K-direct prefill GEMM (dequantize per tile in shared memory) and drop the materialized copy: VRAM 3.25x -> ~1.05x, prefill bandwidth 1.78x -> 1.0x, decode untouched",
-    "note": "FP8 prefill is a deliberate tradeoff that made the second copy CHEAPER (TTFT 46.4 -> 35.5 ms, 1.31x). It did not question the second copy."
-  }
+    "note": "FP8 prefill is a deliberate tradeoff that made the second copy CHEAPER (TTFT 46.4 -> 35.5 ms, 1.31x). It did not question the second copy.",
+    "CORRECTION": "The '1.78x prefill bandwidth floor' stated in root_cause.explains is FALSIFIED. FP8_PREFILL=0 doubles the weight bytes read (1 -> 2 B/elem) and moves TTFT by 2% (35.4 -> 36.1 ms). Prefill is NOT weight-bandwidth-bound, so removing the second copy does not speed it up on its own. The VRAM finding is unaffected -- it was measured independently."
+  },
+  "prefill_decomposition": {
+    "method": "TTFT vs prompt length, 3 runs per point, all spreads < 1 ms",
+    "points": {
+      "23_tok": {
+        "apr": 23.52,
+        "llamacpp": 7.74
+      },
+      "102_tok": {
+        "apr": 34.84,
+        "llamacpp": 9.02
+      },
+      "280_tok": {
+        "apr": 47.99,
+        "llamacpp": 9.95
+      }
+    },
+    "fit": {
+      "apr": "TTFT = 23.08 ms fixed + 0.0916 ms/token",
+      "llamacpp": "TTFT = 7.82 ms fixed + 0.0080 ms/token"
+    },
+    "two_problems": {
+      "fixed_cost": "23.1 vs 7.8 ms = 3.0x; 71% of apr's TTFT at the 102-token gate workload is paid before the first prompt token is looked at",
+      "per_token_cost": "0.0916 vs 0.0080 ms = 11.4x; this is why the ratio WORSENS with prompt length (3.0x -> 4.8x)"
+    },
+    "gate_implication": "the single medium-profile number understates the gap for long prompts; the gate should also measure `long`"
+  },
+  "prefill_graph_blocked": "PREFILL_GRAPH=1 capture fails with CUDA_ERROR_OUT_OF_MEMORY at S=126 because apr already holds 14030 MiB of a 24 GiB card. The second weight copy blocks the CUDA graph path from being evaluated at all -- a real reason to remove it, and a different one from the falsified bandwidth argument."
 }
