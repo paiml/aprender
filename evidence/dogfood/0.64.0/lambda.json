@@ -1,0 +1,24 @@
+{
+  "host": "lambda",
+  "hostname": "noah-Lambda-Vector",
+  "arch": "x86_64",
+  "os": "Linux 6.8.0-90-generic",
+  "cpu": "AMD Ryzen Threadripper 7960X 24-Cores",
+  "isa_notable": [
+    "avx2",
+    "avx512f",
+    "avx512_vnni",
+    "fma",
+    "f16c"
+  ],
+  "gpu": "NVIDIA GeForce RTX 4090, 8.9",
+  "version_tested": "0.64.0",
+  "date": "2026-08-24",
+  "install_source": "crates.io",
+  "install_command": "cargo install aprender --version 0.64.0 --locked",
+  "install_rc": 0,
+  "binary_version_output": "apr 0.64.0 (v0.64.0+no-git)",
+  "subcommands_advertised": 110,
+  "subcommands_answering_help": 110,
+  "notes": "Post-publish receipt: collected after the 0.64.0 cascade because install_rc comes from cargo install against crates.io (see #2658 \u2014 this gate is post-publish by construction). 12 apparent 'unusable' entries in a naive --help scrape are wrapped description lines, not subcommands (#2641)."
+}
