@@ -192,5 +192,42 @@
     "control_probe": "a string known absent also returns 0, so the probe discriminates",
     "vram_while_serving_with_--gpu": "0 MiB \u2014 nvidia-smi --query-compute-apps lists no apr process",
     "verdict": "--gpu is ACCEPTED AND IGNORED; the run completes and returns a plausible number"
+  },
+  "root_cause": {
+    "finding": "apr materializes a SECOND, dequantized copy of every weight for prefill; llama.cpp does not.",
+    "decisive_experiment": "toggling FP8_PREFILL moved VRAM in the direction OPPOSITE to intuition",
+    "vram_by_prefill_format": {
+      "FP8_PREFILL=1 (1 B/elem, default cc>=89)": "14030 MiB",
+      "FP8_PREFILL=0 (FP16, 2 B/elem)": "20762 MiB",
+      "delta_measured_GiB": 6.57,
+      "delta_predicted_GiB": 7.08,
+      "prediction": "one extra byte per weight over ~7.6B params"
+    },
+    "vram_scaling": {
+      "0.5b": {
+        "file_GiB": 0.46,
+        "vram_GiB": 1.04,
+        "ratio": 2.27
+      },
+      "7b": {
+        "file_GiB": 4.36,
+        "vram_GiB": 13.7,
+        "ratio": 3.14
+      },
+      "fit": "VRAM = 3.25 * file - 0.45 GiB (no meaningful fixed term)",
+      "llamacpp_ratio": 1.02
+    },
+    "ruled_out": [
+      "KV cache and context length: 512 and 4096 both give 14030 MiB, byte-identical",
+      "dequantization on upload: load_quantized_weights_with_type uploads RAW quantized bytes",
+      "indexed weights: build_indexed_weights stores POINTERS, not copies",
+      "workspace: sized from hidden_dim/intermediate_dim, small"
+    ],
+    "explains": {
+      "#2695 VRAM 3.08x": "the second copy IS the 3.25x",
+      "#2693 prefill 3.64x": "prefill reads 1 B/elem vs llama.cpp's Q4_K 0.5625 -- a 1.78x bandwidth floor no kernel tuning gets below while the copy exists"
+    },
+    "fix": "a Q4_K-direct prefill GEMM (dequantize per tile in shared memory) and drop the materialized copy: VRAM 3.25x -> ~1.05x, prefill bandwidth 1.78x -> 1.0x, decode untouched",
+    "note": "FP8 prefill is a deliberate tradeoff that made the second copy CHEAPER (TTFT 46.4 -> 35.5 ms, 1.31x). It did not question the second copy."
   }
 }
