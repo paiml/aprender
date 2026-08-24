@@ -1,0 +1,30 @@
+{
+ "model": "/models/q.gguf",
+ "tokens_per_second": 101.3,
+ "n": 7,
+ "samples_ms": [
+  98.2,
+  101.4,
+  99.7,
+  103.1,
+  100.2,
+  97.8,
+  102.6
+ ],
+ "runs_discarded": 2,
+ "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "provenance": {
+  "binary_path": "/home/x/.cargo/bin/apr",
+  "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "reported_version": "0.64.0",
+  "build_commit": "7db0d4c8",
+  "resolution": "path",
+  "compute_class": "cpu",
+  "feature_set": [
+   "inference",
+   "training"
+  ]
+ },
+ "discard_reason": "early_eos",
+ "_expect": "GREEN"
+}

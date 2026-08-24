@@ -1,0 +1,196 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-24'
+  author: PAIML Engineering
+  references:
+  - 'aprender#2667 — EPIC APR-PARITY-001: never let a performance gap reach production'
+  - 'aprender#2668 — PARITY-001: apr bench --json emits raw samples, compute_class, model sha256'
+  - 'aprender#2669 — PARITY-002: this contract'
+  - 'crates/apr-cli/src/dispatch.rs:165 — the fabricated 14x regression, documented in-tree BEFORE this contract existed'
+  - 'crates/apr-cli/Cargo.toml — default features carry no cuda and no wgpu, so the published artifact is CPU-only on every host'
+  - 'scripts/lib/bench_receipt.py — the ONE validator'
+  - 'scripts/check_bench_receipt.sh — the gate, proven against its own 14-case table before its verdict is believed'
+  description: >
+    A benchmark receipt is only evidence if it says WHICH DISPATCH PATH produced
+    the number. This contract holds the two invariants that make it so.
+
+    The failure it exists to refuse is already documented in this repo, at
+    crates/apr-cli/src/dispatch.rs:165: a build that cannot honour a GPU flag
+    reporting success anyway makes the decode beat report `ratio_median=0.070x`
+    and panic — "a fabricated 14x regression with nothing wrong in apr's decode
+    path". `cargo install aprender` builds CPU-only on all four fleet hosts while
+    the llama.cpp comparator runs CUDA or Metal, so a post-publish ratio is not
+    merely unwise, it is UNCOMPUTABLE: it reads ~0.05-0.10, nobody reds a release
+    over it (correctly), the row goes EXISTENCE-ONLY and the threshold never arms.
+
+    That is the check_multiplatform_dogfood shape — a gate that exists, is
+    correct, and never fires for any release. This contract makes it unwriteable
+    rather than merely discouraged.
+
+equations:
+  compute_class_is_the_path_taken:
+    formula: |
+      compute_class = f(features_compiled_in, runtime_available)
+      REQUIRE: cuda   notin features  =>  compute_class != "cuda"
+      REQUIRE: wgpu   notin features  =>  compute_class != "wgpu"
+      REQUIRE: compute_class in { cpu, cuda, metal, wgpu, unknown }
+    domain: 'a bench receipt emitted by apr bench --json'
+    codomain: bool
+    invariants:
+    - 'The field describes the path TAKEN, not the hardware present. A CUDA-capable
+       host running a default-features build is compute_class "cpu".'
+    - 'Feature gates are decisive when ABSENT: a build without the feature cannot
+       take that path, whatever nvidia-smi reports.'
+    - 'An unrecognised value is worse than a missing one, because it reads as measured.'
+
+  cross_class_cannot_arm_a_threshold:
+    formula: |
+      comparability == "cross-class-existence-only"  =>  threshold notin receipt
+    domain: 'a bench receipt carrying a comparison'
+    codomain: bool
+    invariants:
+    - 'A run comparing two different compute classes may RECORD its ratio and may
+       never GATE on it. Writing a threshold beside a cross-class ratio is the
+       born-disarmed shape, and the schema refuses the document rather than
+       trusting a reviewer to notice.'
+
+  raw_samples_survive:
+    formula: |
+      REQUIRE: samples_ms present AND |samples_ms| >= 1
+      REQUIRE: |set(samples_ms)| > 1  when |samples_ms| > 1
+      REQUIRE: n == |samples_ms|
+    domain: 'a bench receipt'
+    codomain: bool
+    invariants:
+    - 'Summary statistics CANNOT be resampled. A receipt carrying only mean and
+       stddev permanently forecloses bootstrap, which is the only threshold method
+       that survived review — the RFC 3-sigma rule returns GREEN on the one
+       regression this repo has on record (derived 19.836% vs actual 19.306%) and
+       gets WEAKER as data accumulates.'
+    - 'A constant sample vector is not a timing distribution. It is the
+       fabricated-measurement shape (F12).'
+    - 'runs_discarded is NOT constrained to zero: the one working throughput
+       harness in this tree discards by construction on token-count inconstancy,
+       so a zero-invariant would contradict the only correct implementation.'
+
+falsification_tests:
+- id: F-BENCH-001
+  rule: compute_class is required and derived
+  prediction: 'A receipt whose provenance lacks compute_class, or asserts a class its
+    feature_set cannot reach, is REJECTED.'
+  test: 'bash scripts/check_bench_receipt.sh   # cases 04, 05, 06'
+  if_fails: 'a CPU-only apr side measured against a CUDA comparator validates cleanly
+    and reports a fabricated ~14x regression (dispatch.rs:165)'
+  mutation: 'drop compute_class from PROVENANCE_REQUIRED in scripts/lib/bench_receipt.py;
+    case 04 must turn RED (observed 2026-08-24, guard exit 1, "expected RED, got GREEN")'
+- id: F-BENCH-002
+  rule: a cross-class run cannot arm a threshold
+  prediction: 'A receipt with comparability=cross-class-existence-only AND a threshold
+    object is REJECTED; the same receipt without the threshold is ACCEPTED.'
+  test: 'bash scripts/check_bench_receipt.sh   # cases 07 (RED) and 13 (GREEN)'
+  if_fails: 'the field is born disarmed — the row goes EXISTENCE-ONLY and the threshold
+    never arms for any release, which is how check_multiplatform_dogfood never passed'
+  mutation: 'disable the comparability branch in the validator; case 07 must turn RED
+    (observed 2026-08-24, guard exit 1)'
+- id: F-BENCH-003
+  rule: raw samples survive and are not fabricated
+  prediction: 'Missing samples_ms, an empty vector, a constant vector, or n disagreeing
+    with the sample count are each REJECTED.'
+  test: 'bash scripts/check_bench_receipt.sh   # cases 01, 02, 03, 10'
+  if_fails: 'bootstrap threshold derivation is permanently foreclosed, and a constant
+    vector passes as a measurement (F12)'
+  mutation: 'emit summary statistics without samples_ms from print_bench_json; case 01
+    must turn RED'
+- id: F-BENCH-004
+  rule: the validator must discriminate before its verdict counts
+  prediction: 'The case table contains at least 14 cases, every one behaves as declared,
+    and the table may grow but never shrink silently.'
+  test: 'bash scripts/check_bench_receipt.sh   # the vacuity floor'
+  if_fails: 'a validator that is all-GREEN or all-RED looks exactly like a healthy one'
+  mutation: 'delete a case file so the count falls below 14; the guard must FAIL on the
+    floor rather than sweep a smaller table clean'
+
+proof_obligations:
+- type: invariant
+  property: 'compute_class is present, in vocabulary, and reachable by the recorded
+    feature_set (F-BENCH-001)'
+  formal: 'forall r: r.provenance.compute_class in CLASSES and (class in {cuda,wgpu} => class in r.provenance.feature_set)'
+- type: invariant
+  property: 'No receipt carries both a cross-class comparability and a threshold (F-BENCH-002)'
+  formal: 'forall r: r.comparability = cross-class-existence-only => threshold notin r'
+- type: soundness
+  property: 'Raw samples are present, non-empty, non-constant, and consistent with n (F-BENCH-003)'
+  formal: 'forall r: |r.samples_ms| >= 1 and (|r.samples_ms| > 1 => |set| > 1) and r.n = |r.samples_ms|'
+- type: invariant
+  property: 'The validator is proven to discriminate before any verdict it emits is
+    believed, and its case table cannot shrink silently (F-BENCH-004)'
+  formal: '|cases| >= 14 and forall c in cases: verdict(c) = declared(c)'
+
+kani_harnesses:
+# These name a REAL Rust surface: compute_class() and provenance_json() exist at
+# crates/apr-cli/src/commands/bench.rs. They are declared here as bounded-proof
+# targets and are NOT yet written — pv counts a declaration, so this is stated
+# plainly rather than left for a reader to discover (the #2644 audit flagged
+# declared-but-unwritten harnesses as score inflation; the remedy is to say so,
+# not to hide the declaration).
+- id: KH-BENCH-001
+  obligation: compute_class_is_the_path_taken
+  property: absent_feature_forecloses_its_class
+  bound: 4
+- id: KH-BENCH-002
+  obligation: cross_class_cannot_arm_a_threshold
+  property: no_document_carries_both_crossclass_and_threshold
+  bound: 4
+- id: KH-BENCH-003
+  obligation: raw_samples_survive
+  property: n_always_equals_sample_count
+  bound: 8
+
+qa_gate:
+  id: F-BENCH-GATE-001
+  name: 'a bench number is evidence only if it says which path produced it'
+  description: >
+    The organising gate for aprender#2667. It is not enough that a receipt exists
+    and parses — the whole failure class this epic addresses is a receipt that
+    exists, parses, looks complete, and describes a measurement that could not
+    have meant what it appears to mean.
+  checks:
+  - compute_class_required
+  - compute_class_reachable_by_features
+  - cross_class_cannot_arm_threshold
+  - raw_samples_present
+  - samples_not_constant
+  - n_agrees_with_samples
+  - discard_reason_when_discarding
+  - validator_case_table_discriminates
+  - case_table_vacuity_floor
+  pass_criteria: >
+    scripts/check_bench_receipt.sh exits 0, which requires BOTH that every case in
+    the committed table behaved as declared AND that every real receipt under
+    evidence/dogfood/ validates. A RED here blocks the receipt from being cited as
+    evidence; it does not block a release on a timing value, and must never be
+    wired into a required status check (see aprender#2671 — the record is eleven
+    wall-clock gate failures).
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 4
+  status: proposed
+  notes: >
+    All four obligations are TESTED by one committed guard whose own
+    discrimination is proven by a 14-case table, and each carries a named
+    mutation OBSERVED turning it RED on 2026-08-24 with the unmutated tree
+    observed GREEN first.
+
+    Nothing here is PROVEN in the L4/L5 sense and the count says so: these are a
+    python validator and a shell guard over JSON documents. The honest ladder
+    position is L3.
+
+    Note what the guard found on its FIRST run, before any mutation: a bare
+    `find evidence -name 'bench-*.json'` also matches
+    evidence/p2c-*/bench-epoch-NNN.json, which are training-epoch artifacts from
+    a different subsystem with a different schema. The validator reported them as
+    defective receipts. Scoping the glob to evidence/dogfood/ is the fix, and the
+    lesson is the one this repo keeps relearning: a guard's UNIVERSE is as
+    load-bearing as its rule.

@@ -267,6 +267,89 @@ pub(crate) fn run(
 
 /// Print benchmark results as JSON (machine-parseable output).
 /// GH-254→GH-601: Exit code matches `passed` field — non-zero when failed.
+/// PARITY-001 — the dispatch path this binary can actually take.
+///
+/// NOT the hardware present: the path TAKEN. A CUDA-capable host running a
+/// default-features build is `cpu`, because the code that would dispatch to
+/// CUDA was never compiled in. That distinction is the whole point of the
+/// field — a receipt proving WHICH BINARY ran but not WHICH PATH it took
+/// catches the wrong-binary class (five in-tree rediscoveries) and misses the
+/// wrong-compute-class one entirely, which is how a CPU-only apr side
+/// measured against a CUDA comparator validates cleanly and reports the
+/// fabricated 14x regression documented at `dispatch.rs:165`.
+///
+/// Feature gates are read FIRST and are decisive when absent: a build without
+/// the feature cannot take that path, whatever `nvidia-smi` says.
+fn compute_class() -> &'static str {
+    if cfg!(feature = "cuda") {
+        // Built for CUDA. It still only counts as `cuda` if the runtime is
+        // actually there; otherwise this build silently fell back and the
+        // receipt must say so rather than claim the fast path.
+        let runtime = std::process::Command::new("nvidia-smi")
+            .arg("-L")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if runtime {
+            return "cuda";
+        }
+        return "cpu";
+    }
+    if cfg!(feature = "wgpu") {
+        return "wgpu";
+    }
+    "cpu"
+}
+
+/// PARITY-001 — sha256 of a file's contents, for model identity.
+///
+/// A benchmark receipt that names a model by PATH is not reproducible: the
+/// path is a claim about the filesystem, the digest is a claim about the
+/// bytes that were actually fed to the model loader.
+fn file_sha256(path: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut f, &mut hasher).ok()?;
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+/// PARITY-001 — the provenance block: which binary produced this receipt.
+///
+/// `resolution` is `path` when the binary was found through `$PATH` and
+/// `pinned` when it came from a pin script. On a release-deciding gate,
+/// `path` is RED — five separate incidents in this repo were a gate
+/// believing the wrong binary (PMAT_BIN, pv_bin.sh, apr_bin.sh, #2384,
+/// unpinned llama.cpp). `reported_version` is recorded SEPARATELY from
+/// `build_commit` because #2384 is exactly the case where they disagree:
+/// two binaries both printed 3.32.0 and only the commit differed.
+fn provenance_json() -> serde_json::Value {
+    let exe = std::env::current_exe().ok();
+    let binary_sha256 = exe.as_deref().and_then(file_sha256);
+    let mut features: Vec<&'static str> = Vec::new();
+    if cfg!(feature = "inference") {
+        features.push("inference");
+    }
+    if cfg!(feature = "cuda") {
+        features.push("cuda");
+    }
+    if cfg!(feature = "wgpu") {
+        features.push("wgpu");
+    }
+    if cfg!(feature = "training") {
+        features.push("training");
+    }
+    serde_json::json!({
+        "binary_path": exe.as_ref().map(|p| p.display().to_string()),
+        "binary_sha256": binary_sha256,
+        "reported_version": env!("CARGO_PKG_VERSION"),
+        "build_commit": option_env!("APR_GIT_SHA").unwrap_or("unknown"),
+        "resolution": "path",
+        "compute_class": compute_class(),
+        "feature_set": features,
+    })
+}
+
 /// CRUX-E-07: emits `latency_p<N>_ms` key per requested percentile point.
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
@@ -289,6 +372,28 @@ fn print_bench_json(path: &Path, result: &BenchResult, percentiles: &[f64]) -> R
             .iter()
             .map(|d| d.as_secs_f64() * 1000.0)
             .collect();
+        // PARITY-001: emit the RAW samples, not only the summary.
+        //
+        // These were already computed here and thrown away after feeding the
+        // percentiles. That is not a convenience loss: summary statistics
+        // CANNOT BE RESAMPLED, so a receipt carrying only mean/stddev
+        // permanently forecloses bootstrap — which is the only threshold
+        // method that survived review (PARITY-008 falsified the RFC's
+        // `3 x pooled relative stddev` against this repo's own data: derived
+        // 19.836% vs actual 19.306%, i.e. GREEN on the one regression we
+        // have on record, and weakening as more data accumulates).
+        obj.insert("samples_ms".to_string(), serde_json::json!(samples_ms));
+        obj.insert("n".to_string(), serde_json::json!(samples_ms.len()));
+        // runs_discarded is deliberately NOT constrained to zero. The one
+        // working throughput harness in this tree discards by construction on
+        // token-count inconstancy, so a zero-invariant would contradict the
+        // only correct implementation we have.
+        obj.insert("runs_discarded".to_string(), serde_json::json!(0));
+        obj.insert("provenance".to_string(), provenance_json());
+        obj.insert(
+            "model_sha256".to_string(),
+            serde_json::json!(file_sha256(path)),
+        );
         for &p in percentiles {
             let key = format!("latency_p{}_ms", p.round() as u64);
             let v = match aprender::metrics::percentile::compute_percentile(&samples_ms, p) {
@@ -726,3 +831,93 @@ include!("benchmark.rs");
 include!("bench_safetensors.rs");
 include!("bench_moe.rs");
 include!("bench_04.rs");
+
+// ── PARITY-001: the bench receipt's provenance fields ───────────────────────
+//
+// These tests assert the two properties that make a receipt usable as
+// evidence rather than as decoration: the raw samples survive, and the
+// compute class describes the path this build can actually take.
+#[cfg(test)]
+mod parity_001_receipt_tests {
+    use super::*;
+
+    /// `compute_class` must be decided by what was COMPILED IN, not by what
+    /// hardware happens to be attached. A default-features build on a machine
+    /// with four GPUs is still `cpu`, because the dispatch code is not there.
+    ///
+    /// This is the assertion that would have refused the fabricated 14x
+    /// regression: a CPU-only apr side measured against a CUDA comparator.
+    #[test]
+    fn compute_class_is_cpu_without_a_gpu_feature() {
+        let class = compute_class();
+        if cfg!(feature = "cuda") || cfg!(feature = "wgpu") {
+            // Built with a GPU feature: the class may legitimately be a GPU
+            // path, or `cpu` if the runtime turned out to be absent.
+            assert!(
+                ["cuda", "wgpu", "cpu"].contains(&class),
+                "unexpected compute_class {class} for a GPU-feature build"
+            );
+        } else {
+            assert_eq!(
+                class, "cpu",
+                "a build without cuda/wgpu features cannot take a GPU path, \
+                 whatever hardware is present — this is the field whose absence \
+                 lets a cross-class ratio validate cleanly"
+            );
+        }
+    }
+
+    /// The class must be one of the values the receipt schema admits. An
+    /// unrecognised value is worse than a missing one: it reads as measured.
+    #[test]
+    fn compute_class_is_in_the_schema_vocabulary() {
+        const ALLOWED: [&str; 5] = ["cpu", "cuda", "metal", "wgpu", "unknown"];
+        assert!(
+            ALLOWED.contains(&compute_class()),
+            "compute_class must be one of {ALLOWED:?}"
+        );
+    }
+
+    /// The provenance block must carry every field the schema requires, and
+    /// must never assert a digest it did not compute.
+    #[test]
+    fn provenance_carries_the_required_fields() {
+        let p = provenance_json();
+        for key in [
+            "binary_path",
+            "binary_sha256",
+            "resolution",
+            "compute_class",
+        ] {
+            assert!(
+                p.get(key).is_some(),
+                "provenance is missing the required key {key}"
+            );
+        }
+        // `reported_version` is recorded separately from `build_commit`
+        // because #2384 is precisely the case where the two disagree.
+        assert!(p.get("reported_version").is_some());
+        assert!(p.get("build_commit").is_some());
+    }
+
+    /// A digest of real bytes, and `None` rather than a placeholder when the
+    /// file is absent. A fabricated digest is the F12 class.
+    #[test]
+    fn file_sha256_digests_bytes_and_refuses_to_invent() {
+        let dir = std::env::temp_dir().join("apr_parity001_sha");
+        let _ = std::fs::create_dir_all(&dir);
+        let f = dir.join("m.bin");
+        std::fs::write(&f, b"abc").expect("write fixture");
+        // sha256("abc") is a fixed, externally checkable constant.
+        assert_eq!(
+            file_sha256(&f).as_deref(),
+            Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        );
+        assert_eq!(
+            file_sha256(&dir.join("does-not-exist.bin")),
+            None,
+            "a missing model must yield no digest — never a placeholder"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
