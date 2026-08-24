@@ -157,34 +157,29 @@ log() {
 calc_stats() {
     local values=("$@")
     local n=${#values[@]}
-
     if [[ $n -eq 0 ]]; then
-        echo "0 0 0"
+        echo "0 0 0 0"
         return
     fi
-
-    # Calculate mean
+    # Sort for median
+    local sorted=($(printf '%s
+' "${values[@]}" | sort -n))
+    local p50_idx=$((n / 2))
+    local p50=${sorted[$p50_idx]}
     local sum=0
-    for v in "${values[@]}"; do
-        sum=$(echo "$sum + $v" | bc -l)
-    done
+    for v in "${values[@]}"; do sum=$(echo "$sum + $v" | bc -l); done
     local mean=$(echo "scale=2; $sum / $n" | bc -l)
-
-    # Calculate std
     local sq_sum=0
     for v in "${values[@]}"; do
         local diff=$(echo "$v - $mean" | bc -l)
         sq_sum=$(echo "$sq_sum + ($diff * $diff)" | bc -l)
     done
     local std=$(echo "scale=2; sqrt($sq_sum / $n)" | bc -l 2>/dev/null || echo "0")
-
-    # Calculate CV (coefficient of variation)
     local cv=0
     if [[ $(echo "$mean > 0" | bc -l) -eq 1 ]]; then
         cv=$(echo "scale=2; ($std / $mean) * 100" | bc -l)
     fi
-
-    echo "$mean $std $cv"
+    echo "$mean $std $cv $p50"
 }
 
 # Run single benchmark and extract tok/s
@@ -351,9 +346,14 @@ for format in "${FORMAT_ARR[@]}"; do
                     fi
                 done
 
+                # Discard outliers if we have enough samples
+                if [[ ${#measurements[@]} -ge 5 ]]; then
+                    measurements=($(printf '%s\n' "${measurements[@]}" | sort -n | sed '1d;$d'))
+                fi
+
                 # Calculate statistics
                 if [[ ${#measurements[@]} -gt 0 ]]; then
-                    read mean std cv <<< $(calc_stats "${measurements[@]}")
+                    read mean std cv p50 <<< $(calc_stats "${measurements[@]}")
                 else
                     mean="0"
                     std="0"
@@ -391,6 +391,14 @@ for format in "${FORMAT_ARR[@]}"; do
 done
 
 log "└──────────┴─────────┴──────────┴───────┴──────────────┴──────────┴────────┴───────────────┘"
+
+# CPU Governor verification
+if command -v cpupower >/dev/null 2>&1; then
+    gov=$(cpupower frequency-info -p | grep "The governor" | awk '{print $3}' | tr -d '"')
+    if [[ "$gov" != "performance" ]]; then
+        log "${YELLOW}⚠ WARNING: CPU governor is not 'performance' (current: $gov). Results may vary.${NC}"
+    fi
+fi
 
 # Close JSON
 JSON_RESULTS+='],"ollama_baselines":{"gpu_batched":291,"gpu_single":120,"cpu":15}}'
