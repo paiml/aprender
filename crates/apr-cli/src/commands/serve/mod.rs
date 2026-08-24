@@ -27,6 +27,57 @@ use colored::Colorize;
 
 use crate::error::{CliError, Result};
 
+/// `--gpu` on a build with no accelerated backend FAILS, naming a remedy that
+/// works.
+///
+/// Until #2696 this flag was accepted and silently ignored. `use_gpu` is only
+/// read inside `#[cfg(feature = "cuda")]` blocks (handlers.rs:776 and :1084),
+/// so on a build without the feature those blocks vanish, `config.gpu` is never
+/// consulted, and the server starts on CPU having warned nobody.
+///
+/// `cargo install aprender` produces exactly that build — root `Cargo.toml` has
+/// `default = ["cli"]` and `cuda` is opt-in. Measured on 2026-08-24 with an
+/// idle RTX 4090 in the machine: 15.7 tok/s decode against llama.cpp's 158.9,
+/// and 7.5 SECONDS to first token. A tenth of the speed, no diagnostic, and a
+/// plausible-looking number at the end of it.
+///
+/// The remedy in the message is checked to be real. #2527 is the counter-case:
+/// `aprender-test-cli` printed "rebuild with --features llm" for a feature its
+/// Cargo.toml never declared, so the instruction could not be followed. Both
+/// `cuda` and `wgpu` are declared at the facade, so both spellings below work.
+///
+/// `--backend wgpu` is covered by the same check: naming a backend the build
+/// cannot reach is the same defect wearing a different flag.
+#[allow(clippy::unnecessary_wraps)] // wraps only when no accelerator is compiled in
+fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
+    let wants_backend = config.backend.as_deref();
+    let wants_gpu =
+        (config.gpu && !config.no_gpu) || matches!(wants_backend, Some("wgpu" | "cuda" | "gpu"));
+    if !wants_gpu {
+        return Ok(());
+    }
+    if cfg!(any(feature = "cuda", feature = "wgpu")) {
+        return Ok(());
+    }
+    let asked = match wants_backend {
+        Some(b) if b != "cpu" => format!("--backend {b}"),
+        _ => "--gpu".to_string(),
+    };
+    Err(CliError::FeatureDisabled(format!(
+        "{asked} was requested, but this build has no GPU backend compiled in, \n\
+         so the server would have run on CPU without telling you. On a 7B Q4_K_M \n\
+         model that is roughly a tenth of the decode rate and several seconds of \n\
+         extra latency to the first token (aprender#2696).\n\
+         \n\
+         Install a build that has one:\n\
+         \n\
+        \x20    cargo install aprender --features cuda    # NVIDIA\n\
+        \x20    cargo install aprender --features wgpu    # portable GPU backend\n\
+         \n\
+         Or pass --no-gpu to run on CPU deliberately."
+    )))
+}
+
 /// Serve command entry point (blocking)
 #[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
 pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
@@ -44,6 +95,10 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     contract_pre_cors_negotiation!();
     contract_pre_concurrent_model_access!();
     contract_pre_server_lifecycle!();
+
+    // `--gpu` must not be accepted by a build that has no GPU to dispatch to.
+    ensure_accelerator_available(config)?;
+
     // PMAT-297: Configure rayon thread pool to physical core count.
     // Default (all threads incl. HT) causes 44% regression from contention.
     #[cfg(feature = "inference")]
@@ -121,4 +176,72 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     contract_post_concurrent_model_access!(&());
     contract_post_server_lifecycle!(&());
     result
+}
+
+#[cfg(test)]
+mod accelerator_guard_tests {
+    use super::*;
+
+    fn cfg_with(gpu: bool, no_gpu: bool, backend: Option<&str>) -> ServerConfig {
+        ServerConfig {
+            gpu,
+            no_gpu,
+            backend: backend.map(str::to_string),
+            ..ServerConfig::default()
+        }
+    }
+
+    /// The defect itself: on a build with no accelerator, `--gpu` must not be
+    /// waved through. Before #2696 this returned Ok and the server ran on CPU.
+    #[test]
+    #[cfg(not(any(feature = "cuda", feature = "wgpu")))]
+    fn gpu_without_a_backend_is_an_error_not_a_silent_cpu_run() {
+        let err = ensure_accelerator_available(&cfg_with(true, false, None))
+            .expect_err("--gpu on a CPU-only build must fail");
+        let msg = err.to_string();
+        // The remedy must be present AND runnable. #2527 shipped an error
+        // naming a rebuild that could not be performed.
+        assert!(
+            msg.contains("cargo install aprender --features cuda"),
+            "the error must name a remedy that works: {msg}"
+        );
+        assert!(
+            msg.contains("--no-gpu"),
+            "and the deliberate-CPU escape hatch: {msg}"
+        );
+    }
+
+    /// Naming a backend the build cannot reach is the same defect in a
+    /// different flag, so it takes the same path.
+    #[test]
+    #[cfg(not(any(feature = "cuda", feature = "wgpu")))]
+    fn an_unreachable_backend_is_also_an_error() {
+        for backend in ["wgpu", "cuda", "gpu"] {
+            let err =
+                ensure_accelerator_available(&cfg_with(false, false, Some(backend))).unwrap_err();
+            assert!(
+                err.to_string().contains(&format!("--backend {backend}")),
+                "the message must quote the flag the user typed, not a generic one"
+            );
+        }
+    }
+
+    /// A build WITH the feature must not be blocked by its own guard.
+    #[test]
+    #[cfg(any(feature = "cuda", feature = "wgpu"))]
+    fn a_gpu_build_is_not_blocked() {
+        ensure_accelerator_available(&cfg_with(true, false, None))
+            .expect("a build with an accelerator must pass its own guard");
+    }
+
+    /// Silence stays silent: nothing about the default or explicit-CPU paths
+    /// changes, on any build.
+    #[test]
+    fn cpu_paths_are_untouched() {
+        ensure_accelerator_available(&cfg_with(false, false, None)).expect("default");
+        ensure_accelerator_available(&cfg_with(false, true, None)).expect("--no-gpu");
+        ensure_accelerator_available(&cfg_with(true, true, None))
+            .expect("--no-gpu overrides --gpu, as it always did");
+        ensure_accelerator_available(&cfg_with(false, false, Some("cpu"))).expect("--backend cpu");
+    }
 }
