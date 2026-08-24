@@ -54,6 +54,16 @@ apr_trials
 comparator_trials
 apr_command
 comparator_command
+http_profile
+http_warmup_secs
+http_duration_secs
+http_runs
+http_cooldown_secs
+http_concurrency
+http_stream
+apr_serve_command
+comparator_serve_command
+harness_command
 "
 
 rc=0
@@ -69,8 +79,8 @@ for key in $REQUIRED; do
 done
 
 # VACUITY: a required set that shrank would sweep clean.
-if [ "$n_req" -lt 16 ]; then
-    printf 'FAIL  the required set has %s key(s); at least 16 are required. A\n' "$n_req"
+if [ "$n_req" -lt 26 ]; then
+    printf 'FAIL  the required set has %s key(s); at least 26 are required. A\n' "$n_req"
     printf '      shrinking set silently widens what "fair" means.\n'
     exit 1
 fi
