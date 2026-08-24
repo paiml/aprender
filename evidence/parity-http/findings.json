@@ -294,5 +294,31 @@
     "caveat": "the profile window includes startup, so some HtoD traffic is the one-time FP8 cache build (197 matrices, 6742.8 MB, 179 ms). A delayed-capture run to separate them recorded no kernel data and is not the basis for this.",
     "ticket": "#2697"
   },
-  "prompt_caching_ruled_out": "Checked because a repeated-prompt workload would invalidate every prefill number here: four DIFFERENT prompts cost 40.2-45.5 ms against 33.5-38.4 ms for the same prompt repeated. ~10% apart, not the near-zero a cache hit would give. Prefill runs either way and the gate numbers stand."
+  "prompt_caching_ruled_out": "Checked because a repeated-prompt workload would invalidate every prefill number here: four DIFFERENT prompts cost 40.2-45.5 ms against 33.5-38.4 ms for the same prompt repeated. ~10% apart, not the near-zero a cache hit would give. Prefill runs either way and the gate numbers stand.",
+  "residency_fix_2697": {
+    "commit": "126db7090",
+    "what": "a repeated prompt no longer round-trips 234 MB through host memory",
+    "ab_same_binary": {
+      "APR_KV_RESIDENCY=1": {
+        "ttft_ms": 41.27,
+        "prefill": 2471,
+        "decode": 93.2
+      },
+      "APR_KV_RESIDENCY=0": {
+        "ttft_ms": 97.59,
+        "prefill": 1045,
+        "decode": 79.9
+      },
+      "ttft_improvement": "2.36x",
+      "caveat": "box at load average 128; ABSOLUTES are depressed, the A/B is not"
+    },
+    "both_transports": "streaming (generate_1) and blocking (generate_2) each had their own copy",
+    "safety": "the residency flag is verified against the per-layer KV lengths, never trusted; 6 tests, all refusals"
+  },
+  "saturated_box_measurement_is_not_parity": {
+    "observed": "at load average 291 (289 runnable processes, 0% idle, GPU at 0%), measured back to back in the same window: apr decode 49.97 vs llama.cpp 49.71 = 1.005x, prefill 1.187x, TTFT 1.188x",
+    "why_it_is_NOT_a_parity_result": "under CPU saturation BOTH runtimes are CPU-limited and converge to the same ~50 tok/s. The GPU-bound regime the 0.80 floor is about never happens. On a quiet box the same comparison gave llama.cpp 158.9 vs apr 103.3 (0.650x).",
+    "rule": "a ratio measured where neither side is running its own bottleneck is not a ratio. Check what the box was doing before believing a number that improved.",
+    "status": "a clean measurement is armed to fire when load < 20 (quiet_parity.sh); NOT yet taken"
+  }
 }
