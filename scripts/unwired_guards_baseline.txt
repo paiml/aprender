@@ -17,13 +17,3 @@ check_mcp_never_path_resolves_apr.sh
 # Mutation-verified there in three directions (stale receipt version, non-zero
 # install_rc, shortened host matrix).
 check_multiplatform_dogfood.sh
-# check_bench_receipt.sh — a RELEASE gate, not a PR gate, and deliberately in
-# scripts/check_no_timing_in_required.sh's RELEASE_TIME_ONLY registry.
-# It validates benchmark receipts, which exist only for a version being CUT;
-# on a PR there is no receipt and the gate would either red every PR or pass
-# vacuously. It is a declared [package.metadata.dogfood] gate, so the release
-# runner discovers and runs it. Its own discrimination is proven by a committed
-# 14-case table with a vacuity floor, mutation-verified in two directions
-# (drop compute_class from the required set; disable the cross-class rule).
-# See aprender#2669, #2671.
-check_bench_receipt.sh
