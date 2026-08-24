@@ -1,0 +1,130 @@
+{
+  "what": "apr vs llama.cpp, qwen2.5-coder-7b-instruct Q4_K_M, one client both sides",
+  "instrument": "apr test llm bench (GH-876 Milestone 2) \u2014 the SAME OpenAI client, prompts and clock drives both servers",
+  "protocol": "scripts/llama_pin.toml [protocol.http]: profile medium (128 in/128 out), warmup 15s, 3 x 30s, cooldown 10s, concurrency 1, streaming",
+  "host": "lambda-vector, RTX 4090 (sm_89), 48 threads",
+  "date": "2026-08-24",
+  "mechanism_engaged": {
+    "note": "Neither side is labelled by intent. Each is a line the runtime printed.",
+    "llamacpp": "load_tensors: offloaded 29/29 layers to GPU; device CUDA0 (NVIDIA GeForce RTX 4090)",
+    "apr": "Enabling optimized CUDA acceleration (PAR-111) ... CUDA optimized model ready",
+    "isolation": "measured SEQUENTIALLY; GPU returned to ~650 MiB between lanes, so neither held VRAM while the other ran"
+  },
+  "comparator_pin": "39173bcac (version: 7746), resolved via scripts/llama_bin.sh, never PATH",
+  "apr_build": "0.64.0 (53062e7f3), --features cuda",
+  "vram_resident_mib": {
+    "llamacpp": 4554,
+    "apr": 14030,
+    "ratio_apr_over_llamacpp": 3.081
+  },
+  "llamacpp": {
+    "decode_tok_per_sec": {
+      "median": 158.89620228261262,
+      "samples": [
+        159.51512466393368,
+        158.08676004040817,
+        158.89620228261262
+      ]
+    },
+    "prefill_tok_per_sec": {
+      "median": 10399.358400919427,
+      "samples": [
+        10505.02433199082,
+        10215.403807401179,
+        10399.358400919427
+      ]
+    },
+    "tokens_per_sec": {
+      "median": 158.09924819493884,
+      "samples": [
+        158.623724577651,
+        157.2891352406087,
+        158.09924819493884
+      ]
+    },
+    "itl_p50_ms": {
+      "median": 6.2934166181102364,
+      "samples": [
+        6.268998015748031,
+        6.32564042519685,
+        6.2934166181102364
+      ]
+    },
+    "ttft_p50_ms": {
+      "median": 9.8083145,
+      "samples": [
+        9.709719499999999,
+        9.984921,
+        9.8083145
+      ]
+    },
+    "throughput_rps": {
+      "median": 1.2351503765229597,
+      "samples": [
+        1.2392478482628984,
+        1.2288213690672554,
+        1.2351503765229597
+      ]
+    }
+  },
+  "apr": {
+    "decode_tok_per_sec": {
+      "median": 103.25723693691373,
+      "samples": [
+        103.25723693691373,
+        98.88752761685319,
+        107.7534022985115
+      ]
+    },
+    "prefill_tok_per_sec": {
+      "median": 2860.187715247207,
+      "samples": [
+        2845.6832929240004,
+        2906.915769208671,
+        2860.187715247207
+      ]
+    },
+    "tokens_per_sec": {
+      "median": 98.88366501504427,
+      "samples": [
+        98.88366501504427,
+        98.04251266483223,
+        101.50971700566556
+      ]
+    },
+    "itl_p50_ms": {
+      "median": 9.684551220472443,
+      "samples": [
+        9.684551220472443,
+        10.112498755905513,
+        9.280449421259842
+      ]
+    },
+    "ttft_p50_ms": {
+      "median": 35.662023999999995,
+      "samples": [
+        35.843764500000006,
+        35.088736000000004,
+        35.662023999999995
+      ]
+    },
+    "throughput_rps": {
+      "median": 0.7725286329300334,
+      "samples": [
+        0.7725286329300334,
+        0.7659571301940018,
+        0.7930446641067622
+      ]
+    }
+  },
+  "apr_over_llamacpp": {
+    "decode_tok_per_sec": 0.6498,
+    "prefill_tok_per_sec": 0.275,
+    "tokens_per_sec": 0.6255,
+    "itl_p50_ms": 0.6498,
+    "ttft_p50_ms": 0.275,
+    "throughput_rps": 0.6255
+  },
+  "headline": "apr reaches 0.650x llama.cpp on DECODE and 0.275x on PREFILL. The gap is not uniform: decode is 1.54x behind, prefill 3.64x behind, and apr holds 3.08x the VRAM for the same quantized weights.",
+  "corrects": "The 11.8 tok/s figure reported on 2026-08-24 was an END-TO-END rate that included ~9.7s of model load. apr's actual decode rate here is 103.3 tok/s \u2014 2.6x the ~40 tok/s 7B reference in CLAUDE.md, not below it. The parity gap is real but it is against llama.cpp's 158.9, not against apr's history."
+}
