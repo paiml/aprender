@@ -911,6 +911,14 @@ jobs:
         run: bash scripts/check_guards_are_wired.sh
       - name: Wiring guard case table
         run: bash scripts/check_guards_are_wired.sh --self-test
+      # The complement of the meta-guard above. That one asserts every guard IS
+      # wired; this one asserts a release-time TIMING gate is NOT -- including
+      # transitively through a make target this workflow invokes. Eleven
+      # wall-clock assertions have failed in a required check here, and until
+      # now the placement was protected by a comment in
+      # scripts/unwired_guards_baseline.txt rather than by a mechanism (#2671).
+      - name: No timing gate in a required check
+        run: bash scripts/check_no_timing_in_required.sh
       # The deepest check in the surface sweep -- real generation through
       # /v1/chat/completions -- had never executed once: the probe binary was
       # built without --features llm (clap advertises `llm` regardless, only the
