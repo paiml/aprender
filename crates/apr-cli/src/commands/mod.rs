@@ -130,12 +130,14 @@ pub(crate) mod ppl;
 #[cfg(feature = "training")]
 pub(crate) mod pretrain;
 pub(crate) mod probar;
+// GH-876 Milestone 2: `apr test llm`, a surface over the in-tree llm module.
 pub(crate) mod profile;
 pub(crate) mod progress;
 pub(crate) mod prometheus_classifier;
 pub(crate) mod prometheus_lint;
 pub(crate) mod prune;
 pub(crate) mod ps_schema;
+pub(crate) mod test_llm;
 // #2399: gated on the crate it actually needs (aprender-explain, aliased
 // `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
 // user does not have to pull CUDA + training to analyze a .ptx file.

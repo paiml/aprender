@@ -19,7 +19,16 @@
 name = "llama.cpp"
 # The upstream build tag llama.cpp reports in its own --version output.
 # Recorded as the STRING the binary prints, not as a semver we invent.
-build_commit = "UNPINNED"
+# PINNED 2026-08-24 from the binary actually installed on lambda:
+#   $ llama-cli --version
+#   version: 7746 (39173bcac)
+#   built with GNU 11.4.0 for Linux x86_64
+# CUDA-enabled (5 cuda/cublas libs linked), RTX 4090 sm_89 detected at init.
+#
+# Recorded as the STRING the binary prints, not a semver we invent. Bumping
+# this invalidates every ratio measured against 39173bcac — record why in the
+# commit, and expect the first release after a bump to have no usable trend.
+build_commit = "39173bcac"
 # Verbatim configure line. gx10 requires -DGGML_CUDA_ARCHITECTURES=121;
 # omitting it JITs from stale PTX, which produces CORRECT OUTPUT SLOWLY and
 # fires no correctness gate — a performance defect invisible to every check we
