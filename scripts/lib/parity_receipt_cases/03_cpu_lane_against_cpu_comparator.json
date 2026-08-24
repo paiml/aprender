@@ -1,0 +1,56 @@
+{
+  "instrument": "apr test llm bench",
+  "protocol_ref": "scripts/llama_pin.toml#protocol.http",
+  "model": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+  "lanes": [
+    {
+      "lane": "cpu",
+      "subject": {
+        "provenance": {
+          "binary_path": "/x/apr",
+          "binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resolution": "scripts/apr_bin.sh",
+          "compute_class": "cpu"
+        },
+        "decode_tok_per_sec": [
+          15.0,
+          16.0,
+          15.5
+        ],
+        "prefill_tok_per_sec": [
+          300.0,
+          320.0,
+          310.0
+        ],
+        "install_source": "crates.io"
+      },
+      "comparator": {
+        "name": "llama.cpp",
+        "build_commit": "39173bcac",
+        "provenance": {
+          "binary_path": "/x/llama-server",
+          "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "resolution": "scripts/llama_bin.sh",
+          "compute_class": "cpu"
+        },
+        "decode_tok_per_sec": [
+          17.0,
+          17.5,
+          17.2
+        ],
+        "prefill_tok_per_sec": [
+          1020.0,
+          1050.0,
+          1032.0
+        ]
+      },
+      "ratio_decode": 0.9012,
+      "verdict": "PASS",
+      "floor": 0.8
+    }
+  ],
+  "_expect": {
+    "result": "valid",
+    "why": "the published CPU-only binary is comparable against llama.cpp -ngl 0"
+  }
+}

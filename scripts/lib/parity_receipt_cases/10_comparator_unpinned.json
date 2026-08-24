@@ -1,0 +1,59 @@
+{
+  "instrument": "apr test llm bench",
+  "protocol_ref": "scripts/llama_pin.toml#protocol.http",
+  "model": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+  "lanes": [
+    {
+      "lane": "gpu",
+      "subject": {
+        "provenance": {
+          "binary_path": "/x/apr",
+          "binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resolution": "scripts/apr_bin.sh",
+          "compute_class": "cuda",
+          "feature_set": [
+            "cuda"
+          ]
+        },
+        "decode_tok_per_sec": [
+          130.0,
+          132.0,
+          131.0
+        ],
+        "prefill_tok_per_sec": [
+          2600.0,
+          2640.0,
+          2620.0
+        ],
+        "install_source": "crates.io"
+      },
+      "comparator": {
+        "name": "llama.cpp",
+        "build_commit": "UNPINNED",
+        "provenance": {
+          "binary_path": "/x/llama-server",
+          "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "resolution": "scripts/llama_bin.sh",
+          "compute_class": "cuda"
+        },
+        "decode_tok_per_sec": [
+          158.0,
+          159.0,
+          160.0
+        ],
+        "prefill_tok_per_sec": [
+          9480.0,
+          9540.0,
+          9600.0
+        ]
+      },
+      "ratio_decode": 0.8239,
+      "verdict": "PASS",
+      "floor": 0.8
+    }
+  ],
+  "_expect": {
+    "result": "invalid",
+    "why": "an unpinned denominator moves silently between releases"
+  }
+}

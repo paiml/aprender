@@ -40,6 +40,12 @@ DIR="evidence/dogfood/$VERSION"
 # ONE validator, shared with scripts/check_bench_receipt.sh. Two readers of one
 # schema is the divergence class #2640 exists to close.
 REPO_BENCH_VALIDATOR="scripts/lib/bench_receipt.py"
+# Versions whose receipts were cut BEFORE parity lanes existed (#2696, added
+# 2026-08-24). Failing a release for a gate that postdates its receipts is a
+# gate nobody can satisfy. This list is closed: every version after 0.64.0
+# requires parity lanes, and adding an entry here is a visible diff that has to
+# be argued for.
+PARITY_GRANDFATHERED="0.63.0 0.64.0"
 rc=0
 
 printf -- '--- multi-platform dogfood receipts for %s -------------------------\n' "$VERSION"
@@ -149,6 +155,82 @@ for h in $HOSTS; do
         python3 "$REPO_BENCH_VALIDATOR" --bench "$f" 2>&1 | sed 's/^/          /'
         rc=1
     fi
+
+    # ── the parity lanes (#2696) ───────────────────────────────────────────
+    #
+    # The bench block above is an apr-vs-apr self-ratchet, and the comment
+    # explaining why it has no comparator was RIGHT about the failure mode and
+    # WRONG about the remedy. It said: `cargo install aprender` is CPU-only on
+    # every host here, llama.cpp is CUDA/Metal, so a ratio would read 0.05-0.10,
+    # nobody would red a release over it, and the row would go EXISTENCE-ONLY
+    # forever. All true. The conclusion drawn was "do not compare".
+    #
+    # What that cost: the published binary's CPU-only-ness sat in this comment
+    # as a known fact while NOTHING measured what it costs a user. On
+    # 2026-08-24 it was measured for the first time — 15.7 tok/s decode against
+    # llama.cpp's 158.9, and 7.5 SECONDS to first token, on a machine with an
+    # idle RTX 4090 — because `--gpu` is accepted and silently ignored (#2696).
+    #
+    # The remedy is not to skip the comparison. It is to COMPARE WITHIN THE
+    # CLASS. The published apr takes the cpu path, so its comparator is
+    # llama.cpp `-ngl 0`, which also takes the cpu path. That ratio is
+    # meaningful, it arms a floor, and no cross-class row is created. The
+    # accelerated lanes belong to the pre-publish phase where --features cuda
+    # exists; this phase owns the artifact users receive.
+    #
+    # bench_receipt.py --parity enforces the rest: same-class or no verdict,
+    # ratio DERIVED from the samples rather than asserted, comparator pinned,
+    # and the subject naming which artifact it was.
+    case " $PARITY_GRANDFATHERED " in
+        *" $VERSION "*)
+            # Receipts for these versions were cut before parity lanes existed.
+            # The list is short, dated, and cannot grow without a visible diff.
+            printf 'REPORT %-6s parity lanes not required for %s (pre-#2696 cut)\n' "$h" "$VERSION"
+            ;;
+        *)
+            if ! python3 "$REPO_BENCH_VALIDATOR" --has-parity "$f" >/dev/null 2>&1; then
+                printf 'FAIL  %-7s no parity block. A release with no measured ratio\n' "$h"
+                printf '        against a pinned comparator is a release whose speed\n'
+                printf '        claim nothing checked (#2696).\n'
+                rc=1
+            elif ! python3 "$REPO_BENCH_VALIDATOR" --parity "$f" >/dev/null 2>&1; then
+                printf 'FAIL  %-7s parity block present but INVALID:\n' "$h"
+                python3 "$REPO_BENCH_VALIDATOR" --parity "$f" 2>&1 | sed 's/^/          /'
+                rc=1
+            else
+                # Required lanes are derived from the host's OWN declared
+                # accelerator, not from a list maintained beside it. A host that
+                # gains a GPU gains a required lane without anyone remembering.
+                accel=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('accelerator',''))" "$f")
+                want="cpu"
+                case "$accel" in
+                    *sm_*|*NVIDIA*|*CUDA*) want="cpu cuda" ;;
+                    *Metal*|*M1*|*M2*|*M3*|*M4*) want="cpu metal" ;;
+                esac
+                have=$(python3 "$REPO_BENCH_VALIDATOR" --parity-ratio "$f" 2>/dev/null | awk '{print $1}' | tr '\n' ' ')
+                missing=""
+                for w in $want; do
+                    case " $have " in *" $w "*) : ;; *) missing="$missing $w" ;; esac
+                done
+                if [ -n "$missing" ]; then
+                    printf 'FAIL  %-7s accelerator '%s' needs lane(s)%s, receipt has: %s\n' \
+                        "$h" "$accel" "$missing" "${have:-<none>}"
+                    rc=1
+                else
+                    python3 "$REPO_BENCH_VALIDATOR" --parity-ratio "$f" 2>/dev/null | \
+                    while read -r lane ratio verdict; do
+                        printf '      %-7s parity %-6s %sx vs llama.cpp  %s\n' "$h" "$lane" "$ratio" "$verdict"
+                    done
+                    if python3 "$REPO_BENCH_VALIDATOR" --parity-ratio "$f" 2>/dev/null | grep -q ' FAIL$'; then
+                        printf 'FAIL  %-7s a parity lane is below its declared floor\n' "$h"
+                        rc=1
+                    else
+                        printf 'ok    %-7s all required parity lanes at or above floor\n' "$h"
+                    fi
+                fi
+            fi
+            ;;
+    esac
 done
 
 if [ "$rc" -eq 0 ]; then

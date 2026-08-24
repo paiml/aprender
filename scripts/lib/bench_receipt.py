@@ -198,10 +198,263 @@ def _mode_bench_median(path):
     return 0
 
 
+
+# ===========================================================================
+# PARITY LANES (#2696). A bench block says how fast one runtime is. A parity
+# lane says how fast it is RELATIVE TO A COMPARATOR, which is the claim a
+# release actually makes -- and the claim that has never once been checked
+# against the artifact users receive.
+#
+# On 2026-08-24 every performance figure in this repo came from a local
+# `--features cuda` build. The published `cargo install aprender` binary has no
+# CUDA linked at all, accepts `--gpu` in silence, and decodes at 15.7 tok/s
+# against llama.cpp's 158.9 -- 0.099x, with 7.5 SECONDS to first token. Nothing
+# was wrong with the kernels. Nothing had looked at the artifact.
+#
+# Four rules, each closing one way that number could have been reported as fine.
+# ===========================================================================
+
+PARITY_LANE_REQUIRED = ("lane", "subject", "comparator", "ratio_decode", "verdict")
+PARITY_SIDE_REQUIRED = ("provenance", "decode_tok_per_sec")
+INSTALL_SOURCES = ("crates.io", "local-build", "release-artifact")
+RATIO_TOLERANCE = 0.01
+
+
+def _median_of(side, key, label, errors):
+    """Raw samples or nothing. A side that ships only a summary has already
+    discarded what a bootstrap would need, and cannot be re-derived."""
+    values = side.get(key)
+    if values is None:
+        _err(errors, "%s.%s: missing -- a parity lane carries RAW SAMPLES on "
+                     "both sides, never a pre-computed summary" % (label, key))
+        return None
+    if not isinstance(values, list) or not values:
+        _err(errors, "%s.%s: must be a non-empty list of samples" % (label, key))
+        return None
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
+        _err(errors, "%s.%s: contains a non-numeric entry" % (label, key))
+        return None
+    if any(v <= 0 for v in values):
+        _err(errors, "%s.%s: contains a non-positive rate -- a throughput of "
+                     "zero or less is not a measurement" % (label, key))
+        return None
+    return statistics.median(values)
+
+
+def _check_install_source(side, label, errors):
+    """RULE 4 -- WHICH ARTIFACT. #2696 is exactly the case where a local build
+    and the published binary are different runtimes by a factor of 6.6x. A lane
+    that does not say which one it measured cannot be read."""
+    src = side.get("install_source")
+    if src is None:
+        _err(errors, "%s.install_source: missing -- a lane that does not say "
+                     "whether it measured the PUBLISHED artifact or a local "
+                     "build is unreadable (#2696)" % label)
+    elif src not in INSTALL_SOURCES:
+        _err(errors, "%s.install_source: %r not in %s"
+                     % (label, src, list(INSTALL_SOURCES)))
+
+
+def _side_provenance(side, label, errors):
+    """The provenance object, validated, or None."""
+    prov = side.get("provenance")
+    if isinstance(prov, dict):
+        _check_provenance(prov, errors)
+        return prov
+    if prov is not None:
+        _err(errors, "%s.provenance: must be an object" % label)
+    return None
+
+
+def _check_parity_side(side, label, errors, require_install_source):
+    """Each side names its binary AND the dispatch path that binary took."""
+    if not isinstance(side, dict):
+        _err(errors, "%s: missing" % label)
+        return None
+    for key in PARITY_SIDE_REQUIRED:
+        if key not in side:
+            _err(errors, "%s.%s: missing (required)" % (label, key))
+    if require_install_source:
+        _check_install_source(side, label, errors)
+    return _side_provenance(side, label, errors)
+
+
+def _check_comparator_pin(comp, label, errors):
+    """RULE 3 -- THE COMPARATOR IS PINNED. An unpinned denominator makes the
+    ratio meaningless across time: it moves silently between releases while the
+    receipt claims a fixed baseline."""
+    build = comp.get("build_commit")
+    if not build:
+        _err(errors, "%s.comparator.build_commit: missing -- an unpinned "
+                     "comparator makes the ratio meaningless across time" % label)
+    elif build == "UNPINNED":
+        _err(errors, "%s.comparator.build_commit=UNPINNED -- usable for an "
+                     "existence-only row, never for a ratio" % label)
+
+
+def _check_class_pair(lane, subj_class, comp_class, label, errors):
+    """RULE 1 -- SAME CLASS, OR NO VERDICT.
+
+    Comparing a cpu-class apr against a cuda-class comparator is the
+    fabricated-14x-regression shape, and it is ALSO how #2696's 0.099x would
+    look if reported as a kernel defect. The published binary takes the cpu
+    path even when handed --gpu, so its lane must either use a cpu-class
+    comparator or decline to render a verdict. Returns True if cross-class.
+    """
+    if subj_class is None or comp_class is None or subj_class == comp_class:
+        return False
+    if lane.get("comparability") != "cross-class-existence-only":
+        _err(errors, "%s: subject compute_class=%s vs comparator=%s is a "
+                     "CROSS-CLASS comparison and must be marked "
+                     "comparability=cross-class-existence-only"
+                     % (label, subj_class, comp_class))
+    if lane.get("verdict") == "PASS":
+        _err(errors, "%s: a cross-class lane cannot render verdict=PASS -- it "
+                     "is not a comparison" % label)
+    if "floor" in lane:
+        _err(errors, "%s: a cross-class lane carries a floor -- this is the "
+                     "born-disarmed shape, made unwriteable" % label)
+    return True
+
+
+def _check_stated_ratio(lane, derived, label, errors):
+    """RULE 2 -- THE RATIO IS DERIVED, NOT ASSERTED. A stated ratio that does
+    not follow from the samples beside it is a fabricated measurement (F12)
+    wearing the shape of a computed one."""
+    stated = lane.get("ratio_decode")
+    if stated is None:
+        return
+    if isinstance(stated, bool) or not isinstance(stated, (int, float)):
+        _err(errors, "%s.ratio_decode: must be a number" % label)
+        return
+    if abs(derived - stated) > RATIO_TOLERANCE * max(derived, 1e-9):
+        _err(errors, "%s.ratio_decode=%r does not follow from the samples "
+                     "(derived %.4f) -- a stated ratio that its own samples do "
+                     "not produce is a fabricated measurement"
+                     % (label, stated, derived))
+
+
+def _check_verdict(lane, derived, cross, label, errors):
+    """RULE 5 -- THE VERDICT FOLLOWS FROM THE FLOOR. A PASS below the declared
+    floor is the gate lying about its own rule."""
+    floor = lane.get("floor")
+    if isinstance(floor, bool) or not isinstance(floor, (int, float)):
+        if not cross and floor is None:
+            _err(errors, "%s.floor: missing -- a same-class lane with no floor "
+                         "records a number nothing can fail" % label)
+        return
+    expected = "PASS" if derived >= floor else "FAIL"
+    verdict = lane.get("verdict")
+    if verdict in ("PASS", "FAIL") and verdict != expected:
+        _err(errors, "%s.verdict=%s but ratio %.4f against floor %.4f requires "
+                     "%s" % (label, verdict, derived, floor, expected))
+
+
+def _check_parity_lane(lane, index, errors):
+    label = "parity.lanes[%d]" % index
+    if not isinstance(lane, dict):
+        _err(errors, "%s: must be an object" % label)
+        return
+    for key in PARITY_LANE_REQUIRED:
+        if key not in lane:
+            _err(errors, "%s.%s: missing (required)" % (label, key))
+
+    subj_prov = _check_parity_side(lane.get("subject"), label + ".subject",
+                                   errors, require_install_source=True)
+    comp_prov = _check_parity_side(lane.get("comparator"), label + ".comparator",
+                                   errors, require_install_source=False)
+    _check_comparator_pin(lane.get("comparator") or {}, label, errors)
+    cross = _check_class_pair(lane, (subj_prov or {}).get("compute_class"),
+                              (comp_prov or {}).get("compute_class"), label, errors)
+
+    subj_med = _median_of(lane.get("subject") or {}, "decode_tok_per_sec",
+                          label + ".subject", errors)
+    comp_med = _median_of(lane.get("comparator") or {}, "decode_tok_per_sec",
+                          label + ".comparator", errors)
+    if subj_med is None or comp_med is None or comp_med <= 0:
+        return
+    derived = subj_med / comp_med
+    _check_stated_ratio(lane, derived, label, errors)
+    _check_verdict(lane, derived, cross, label, errors)
+
+
+def validate_parity(block):
+    """Validate a parity block. Returns a list of errors; empty means valid."""
+    errors = []
+    if not isinstance(block, dict):
+        return ["parity: must be an object"]
+    for key in ("instrument", "protocol_ref", "model"):
+        if not block.get(key):
+            _err(errors, "parity.%s: missing (required)" % key)
+    lanes = block.get("lanes")
+    if not isinstance(lanes, list) or not lanes:
+        # VACUITY: a parity block with no lanes passes every rule above by
+        # having nothing to check, which is how a green gate covers nothing.
+        _err(errors, "parity.lanes: missing or empty -- a parity block with no "
+                     "lanes is vacuously clean")
+        return errors
+    for i, lane in enumerate(lanes):
+        _check_parity_lane(lane, i, errors)
+    return errors
+
+
+def _parity_of(receipt):
+    if isinstance(receipt.get("parity"), dict):
+        return receipt["parity"]
+    if "lanes" in receipt:
+        return receipt
+    return None
+
+
+def _mode_has_parity(path):
+    """Exit 0 iff a parity block is PRESENT. Says nothing about validity."""
+    try:
+        return 0 if _parity_of(_load(path)) is not None else 1
+    except (OSError, ValueError):
+        return 2
+
+
+def _mode_parity(path):
+    try:
+        block = _parity_of(_load(path))
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("%s: cannot read: %s\n" % (path, exc))
+        return 2
+    if block is None:
+        sys.stderr.write("%s: no parity block\n" % path)
+        return 1
+    errors = validate_parity({k: v for k, v in block.items() if k != "_expect"})
+    for e in errors:
+        print("FAIL %s: %s" % (path, e))
+    return 1 if errors else 0
+
+
+def _mode_parity_ratio(path):
+    """Print `lane ratio verdict` per lane, ratio DERIVED from the samples."""
+    try:
+        block = _parity_of(_load(path))
+    except (OSError, ValueError):
+        return 2
+    if not block or not isinstance(block.get("lanes"), list):
+        return 1
+    for lane in block["lanes"]:
+        try:
+            s = statistics.median(lane["subject"]["decode_tok_per_sec"])
+            c = statistics.median(lane["comparator"]["decode_tok_per_sec"])
+            print("%s %.4f %s" % (lane.get("lane", "?"), s / c,
+                                  lane.get("verdict", "?")))
+        except (KeyError, TypeError, ZeroDivisionError, statistics.StatisticsError):
+            print("%s ERROR ERROR" % lane.get("lane", "?"))
+            return 1
+    return 0
+
 MODES = {
     "--has-bench": _mode_has_bench,
     "--bench": _mode_bench,
     "--bench-median": _mode_bench_median,
+    "--has-parity": _mode_has_parity,
+    "--parity": _mode_parity,
+    "--parity-ratio": _mode_parity_ratio,
 }
 
 
@@ -210,7 +463,8 @@ def main(argv):
         return MODES[argv[1]](argv[2])
     if len(argv) < 2:
         sys.stderr.write("usage: bench_receipt.py [--bench|--has-bench|"
-                         "--bench-median] <receipt.json> [...]\n")
+                         "--bench-median|--parity|--has-parity|"
+                         "--parity-ratio] <receipt.json> [...]\n")
         return 2
     rc = 0
     for path in argv[1:]:
