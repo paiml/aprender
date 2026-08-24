@@ -457,6 +457,8 @@ impl CudaExecutor {
 
     /// Clear KV cache for a new generation (reset sequence position to 0)
     pub fn reset_kv_cache_gpu(&mut self) {
+        // #2697: a reset invalidates any residency claim.
+        self.workspace.resident_kv_prefix = None;
         for len in self.kv_cache_lengths.values_mut() {
             *len = 0;
         }
@@ -698,6 +700,49 @@ impl CudaExecutor {
         Ok(result)
     }
 
+    /// #2697: does the GPU already hold this prompt prefix?
+    ///
+    /// Decode appends at positions >= seq_len and never rewrites the prompt's
+    /// K/V, so if the last prefill was this exact prompt the device data is
+    /// still correct and only the per-layer lengths need resetting.
+    /// The flag alone is not trusted. Many paths write GPU KV, and a stale
+    /// claim here would serve one prompt's attention state to another — the
+    /// worst failure this change could introduce. So the flag must AGREE with
+    /// the per-layer lengths: every layer has to still record at least
+    /// `seq_len` entries, which is exactly what is false after any reset or
+    /// shorter sequence. Cheap, and it catches the stale-flag mode without
+    /// having to enumerate every writer.
+    #[must_use]
+    pub fn kv_prefix_is_resident(&self, prefix_hash: u64, seq_len: usize) -> bool {
+        if self.workspace.resident_kv_prefix != Some((prefix_hash, seq_len)) {
+            return false;
+        }
+        if self.kv_cache_lengths.is_empty() {
+            return false;
+        }
+        self.kv_cache_lengths.values().all(|&len| len >= seq_len)
+    }
+
+    /// Record which prompt prefix the GPU KV buffers now hold.
+    ///
+    /// Called after a prefill. Passing `None` invalidates, which every path
+    /// that writes KV outside a prefill must do — a stale claim here would
+    /// serve one prompt's attention state to another, so the default on any
+    /// unrecognised mutation is to forget.
+    pub fn mark_kv_prefix_resident(&mut self, prefix: Option<(u64, usize)>) {
+        self.workspace.resident_kv_prefix = prefix;
+    }
+
+    /// Reset every layer's KV length to `seq_len`, keeping the device data.
+    ///
+    /// The counterpart to `kv_prefix_is_resident`: the bytes are already right,
+    /// only the lengths carry the previous request's generated tokens.
+    pub fn truncate_kv_lengths(&mut self, seq_len: usize) {
+        for len in self.kv_cache_lengths.values_mut() {
+            *len = seq_len;
+        }
+    }
+
     /// realizr#199 (PMAT-450): Restore GPU KV cache from host snapshot.
     ///
     /// Copies per-layer (K, V) vectors into GPU buffers and sets cache lengths.
@@ -749,5 +794,62 @@ impl CudaExecutor {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod kv_prefix_residency_tests {
+    //! #2697. The win here is skipping a 234 MB host round trip on a repeated
+    //! prompt. The risk is serving one prompt's attention state to another, so
+    //! these test the REFUSALS, not the fast path.
+
+    /// A residency claim is only honoured when the recorded lengths agree with
+    /// it. These mirror `kv_prefix_is_resident` without needing a CUDA context,
+    /// which no unit test on this box can construct.
+    fn resident(claim: Option<(u64, usize)>, lengths: &[usize], hash: u64, seq_len: usize) -> bool {
+        if claim != Some((hash, seq_len)) {
+            return false;
+        }
+        if lengths.is_empty() {
+            return false;
+        }
+        lengths.iter().all(|&len| len >= seq_len)
+    }
+
+    #[test]
+    fn a_matching_claim_with_long_enough_lengths_is_resident() {
+        assert!(resident(Some((7, 100)), &[100, 100, 100], 7, 100));
+        // Decode appended past the prompt; the prompt's entries are still there.
+        assert!(resident(Some((7, 100)), &[128, 128, 128], 7, 100));
+    }
+
+    #[test]
+    fn a_different_prompt_is_never_resident() {
+        assert!(!resident(Some((7, 100)), &[100, 100], 8, 100));
+    }
+
+    #[test]
+    fn the_same_prompt_at_a_different_length_is_never_resident() {
+        assert!(!resident(Some((7, 100)), &[100, 100], 7, 99));
+    }
+
+    #[test]
+    fn a_reset_defeats_the_claim_even_if_the_flag_survives() {
+        // The stale-flag mode: something cleared the cache without clearing the
+        // flag. Lengths are the ground truth and they disagree.
+        assert!(!resident(Some((7, 100)), &[0, 0, 0], 7, 100));
+        assert!(!resident(Some((7, 100)), &[], 7, 100));
+    }
+
+    #[test]
+    fn one_short_layer_defeats_the_claim() {
+        // A single layer that does not have the entries is enough to make the
+        // attention wrong, so `all` is the right quantifier, not `any`.
+        assert!(!resident(Some((7, 100)), &[100, 100, 99, 100], 7, 100));
+    }
+
+    #[test]
+    fn no_claim_means_not_resident() {
+        assert!(!resident(None, &[100, 100], 7, 100));
     }
 }

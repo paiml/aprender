@@ -1,5 +1,301 @@
 
+/// #2697 refactor: the decode loop's inputs, gathered so the loop can live in its
+/// own function without a fourteen-argument signature.
+/// #2697 refactor: one decode step's inputs.
+struct NextToken<'a> {
+    config: &'a QuantizedGenerateConfig,
+    tokens: &'a [u32],
+    cache: &'a mut OwnedQuantizedKVCache,
+    last_token: u32,
+    position: usize,
+    penalty_active: bool,
+}
+
+struct DecodeLoop<'a, F: FnMut(u32) -> bool> {
+    config: &'a QuantizedGenerateConfig,
+    tokens: &'a mut Vec<u32>,
+    cache: &'a mut OwnedQuantizedKVCache,
+    on_token: &'a mut F,
+    position: usize,
+    last_token: u32,
+    max_decode: usize,
+    first_token_offset: usize,
+    prefill_first_token: Option<u32>,
+    penalty_active: bool,
+    t_start: Option<std::time::Instant>,
+}
+
 impl OwnedQuantizedModelCuda {
+
+    /// PAR-112: True token-by-token streaming generation
+    ///
+    /// Generates tokens one at a time and calls the callback after each token.
+    /// The callback receives the token ID and can return `false` to stop generation early.
+    ///
+    /// This enables true real-time streaming where each token is delivered
+    /// as soon as it's generated, rather than pseudo-streaming where all tokens
+    /// are generated first then iterated.
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - Initial token IDs
+    /// * `config` - Generation configuration
+    /// * `on_token` - Callback called for each generated token, returns `false` to stop
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// model.generate_gpu_resident_streaming(&prompt, &config, |token_id| {
+    ///     println!("Generated: {}", token_id);
+    ///     true // continue generation
+    /// })?;
+    /// ```
+    /// #2697: put this prompt's K/V on the GPU, by whichever of three routes is
+    /// cheapest, and return the first token if a prefill produced one.
+    ///
+    /// Returns `(prefill_first_token, prefix_was_hit)`.
+    fn establish_prompt_kv(
+        &mut self,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        cache: &mut OwnedQuantizedKVCache,
+        ttft_trace: bool,
+        t_start: Option<std::time::Instant>,
+    ) -> Result<(Option<u32>, bool)> {
+        let mark = |label: &str| {
+            if let Some(t0) = t_start {
+                eprintln!("[TTFT] {:>20}: {:>7.2}ms", label, t0.elapsed().as_secs_f64() * 1000.0);
+            }
+        };
+        let prefill_first_token: Option<u32>;
+            // #2697: ask about residency BEFORE resetting, because the reset is what
+            // destroys the answer.
+            //
+            // `reset_kv_cache_gpu` only sets the per-layer LENGTHS to zero — it never
+            // touches the buffers — so the previous request's K/V is still sitting on
+            // the device, byte for byte. Resetting first and then restoring 234 MB
+            // from host to put the same bytes back is the shape this removes.
+            // A kill-switch, because a change that skips work has to be measurable
+            // AGAINST itself in one binary. Comparing two builds across a session
+            // measures box drift as much as the change.
+            #[cfg(feature = "gpu")]
+            let residency_enabled = std::env::var("APR_KV_RESIDENCY").as_deref() != Ok("0");
+            #[cfg(feature = "gpu")]
+            let already_resident = residency_enabled
+                && self.executor.kv_prefix_is_resident(
+                    crate::gguf::batch_scheduler::PrefixCache::hash_tokens(prompt),
+                    prompt.len(),
+                );
+            #[cfg(not(feature = "gpu"))]
+            let already_resident = false;
+
+            if already_resident {
+                // The bytes are right; only the lengths carry the previous
+                // request's generated tokens.
+                #[cfg(feature = "gpu")]
+                self.executor.truncate_kv_lengths(prompt.len());
+            } else {
+                // Reset GPU KV cache positions (lengths → 0)
+                self.executor.reset_kv_cache_gpu();
+            }
+            mark("reset_gpu");
+
+
+            // realizr#199 (PMAT-450): Check prefix cache before prefill.
+            #[cfg(feature = "gpu")]
+            let prefix_hit = if already_resident {
+                None // skip the clone entirely
+            } else {
+                self.prefix_cache.lookup(prompt)
+            };
+            #[cfg(not(feature = "gpu"))]
+            let prefix_hit: Option<(Vec<Vec<f32>>, Vec<Vec<f32>>)> = None;
+            #[cfg(feature = "gpu")]
+            let prefix_was_hit = prefix_hit.is_some();
+            #[cfg(not(feature = "gpu"))]
+            let prefix_was_hit = false;
+
+            let prefill_first_token;
+            if already_resident {
+                if config.trace {
+                    eprintln!(
+                        "[#2697] KV PREFIX RESIDENT: {} prompt tokens, nothing to restore",
+                        prompt.len()
+                    );
+                }
+                #[cfg(feature = "gpu")]
+                self.executor.truncate_kv_lengths(prompt.len());
+                prefill_first_token = None;
+                mark("prefix_cache_hit");
+            } else if let Some((cached_k, cached_v)) = prefix_hit {
+                // PMAT-450: Prefix cache hit — skip prefill, restore GPU KV cache
+                if config.trace {
+                    eprintln!("[PMAT-450] PREFIX CACHE HIT: {} prompt tokens, skipping prefill", prompt.len());
+                }
+                let kv_pairs: Vec<(Vec<f32>, Vec<f32>)> = cached_k.into_iter().zip(cached_v).collect();
+                self.executor
+                    .restore_kv_cache_from_host(&kv_pairs, prompt.len())
+                    .map_err(|e| RealizarError::UnsupportedOperation {
+                        operation: "restore_kv_cache_from_host".to_string(),
+                        reason: format!("Prefix cache restore failed: {e}"),
+                    })?;
+                prefill_first_token = None; // No prefill extraction — go straight to decode
+                // #2697: the restore just put this prompt on the device; say so, so
+                // the NEXT repeat skips the round trip entirely.
+                #[cfg(feature = "gpu")]
+                self.executor.mark_kv_prefix_resident(Some((
+                    crate::gguf::batch_scheduler::PrefixCache::hash_tokens(prompt),
+                    prompt.len(),
+                )));
+                mark("prefix_cache_hit");
+            } else {
+                // PMAT-083: Prefill ALL tokens and extract first predicted token from LM head.
+                let greedy = config.temperature == 0.0 || config.top_k == 1;
+                let prefill_count = if greedy { prompt.len() } else { prompt.len() - 1 };
+                prefill_first_token = if prefill_count > 0 {
+                    self.run_prefill(prompt, cache, prefill_count, ttft_trace, greedy)?
+                } else {
+                    None
+                };
+                mark("prefill");
+                // #2697: the GPU now holds this prompt's K/V. Record it so a repeat
+                // of the same prompt costs a length reset instead of a 234 MB
+                // round trip through host memory.
+                #[cfg(feature = "gpu")]
+                self.executor.mark_kv_prefix_resident(Some((
+                    crate::gguf::batch_scheduler::PrefixCache::hash_tokens(prompt),
+                    prompt.len(),
+                )));
+            }
+        Ok((prefill_first_token, prefix_was_hit))
+    }
+
+    /// Snapshot this prompt's KV off the device into the prefix cache.
+    ///
+    /// Only worth doing on a miss — on a hit the entry is already there, and
+    /// since #2697 a repeat does not read the cache at all.
+    /// Generate tokens one at a time until a stop token, the callback, or the
+    /// budget ends it.
+    /// One decode step. The GPU-side fused argmax is the fast path; a repetition
+    /// penalty needs CPU-side logits, so it takes the slower route (PMAT-814).
+    /// Record one token for one sequence in a batch; returns whether that
+    /// sequence is now finished.
+    fn advance_batch_slot(
+        next_token: u32,
+        config: &QuantizedGenerateConfig,
+        max_seq_len: usize,
+        sequence: &mut Vec<u32>,
+        last_token: &mut u32,
+        position: &mut usize,
+    ) -> bool {
+        if config.stop_tokens.contains(&next_token) {
+            return true;
+        }
+        sequence.push(next_token);
+        *last_token = next_token;
+        *position += 1;
+        sequence.len() >= max_seq_len
+    }
+
+    fn next_token(&mut self, n: NextToken<'_>) -> Result<u32> {
+        let NextToken { config, tokens, cache, last_token, position, penalty_active } = n;
+        let greedy = config.temperature == 0.0 || config.top_k == 1;
+        if greedy && !penalty_active {
+            return self.forward_gpu_resident_to_token_id(last_token, cache, position);
+        }
+        let mut logits = self.forward_gpu_resident(last_token, cache, position)?;
+        OwnedQuantizedModel::apply_repeat_penalty(
+            &mut logits,
+            tokens,
+            config.repeat_penalty,
+            config.repeat_last_n,
+        );
+        Ok(if greedy {
+            OwnedQuantizedModel::argmax(&logits)
+        } else {
+            OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+        })
+    }
+
+    fn decode_loop<F: FnMut(u32) -> bool>(&mut self, d: DecodeLoop<'_, F>) -> Result<()> {
+        let DecodeLoop {
+            config,
+            tokens,
+            cache,
+            on_token,
+            mut position,
+            mut last_token,
+            max_decode,
+            first_token_offset,
+            prefill_first_token,
+            penalty_active,
+            t_start,
+        } = d;
+        let mark = |label: &str| {
+            if let Some(t0) = t_start {
+                eprintln!("[TTFT] {:>20}: {:>7.2}ms", label, t0.elapsed().as_secs_f64() * 1000.0);
+            }
+        };
+            for token_num in 0..max_decode {
+                let next_token = self.next_token(NextToken {
+                    config,
+                    tokens,
+                    cache,
+                    last_token,
+                    position,
+                    penalty_active,
+                })?;
+                if token_num == first_token_offset && prefill_first_token.is_none() {
+                    mark("first_decode");
+                }
+
+                // Check stop tokens
+                if config.stop_tokens.contains(&next_token) {
+                    break;
+                }
+
+                tokens.push(next_token);
+
+                // PAR-112: Call the streaming callback IMMEDIATELY after generating each token
+                // If callback returns false, stop generation early
+                if !on_token(next_token) {
+                    break;
+                }
+
+                last_token = next_token;
+                position += 1;
+            }
+        Ok(())
+    }
+
+    fn populate_prefix_cache(&mut self, prompt: &[u32], trace: bool) {
+                let num_layers = self.model.config.num_layers;
+                // Temporarily truncate KV to prompt length for snapshot
+                let current_lens: Vec<(usize, usize)> = (0..num_layers)
+                    .map(|l| (l, self.executor.kv_cache_len(l)))
+                    .collect();
+                for &(l, _) in &current_lens {
+                    self.executor.set_kv_cache_len(l, prompt.len());
+                }
+                match self.executor.snapshot_kv_cache_to_host(num_layers) {
+                    Ok(kv_snapshot) => {
+                        let (k_vecs, v_vecs): (Vec<_>, Vec<_>) = kv_snapshot.into_iter().unzip();
+                        self.prefix_cache.insert(prompt.to_vec(), k_vecs, v_vecs);
+                        if trace {
+                            eprintln!("[PMAT-450] PREFIX CACHE INSERT: {} prompt tokens ({} layers)", prompt.len(), num_layers);
+                        }
+                    }
+                    Err(e) => {
+                        if trace {
+                            eprintln!("[PMAT-450] PREFIX CACHE SNAPSHOT ERROR: {}", e);
+                        }
+                    }
+                }
+                // Restore original KV lengths
+                for &(l, len) in &current_lens {
+                    self.executor.set_kv_cache_len(l, len);
+                }
+    }
 
     /// PAR-112: True token-by-token streaming generation
     ///
@@ -83,48 +379,13 @@ impl OwnedQuantizedModelCuda {
         );
         ttft_mark!("kv_cache_alloc");
 
-        // Reset GPU KV cache positions (lengths → 0)
-        self.executor.reset_kv_cache_gpu();
-        ttft_mark!("reset_gpu");
+        // #2697: establishing the prompt's KV is its own decision with three
+        // outcomes — already on the device, restorable from the prefix cache,
+        // or it must be prefilled. Extracted so each is readable on its own.
+        let (prefill_first_token, prefix_was_hit) =
+            self.establish_prompt_kv(prompt, config, &mut cache, ttft_trace, t_start)?;
 
         let mut tokens = prompt.to_vec();
-
-        // realizr#199 (PMAT-450): Check prefix cache before prefill.
-        #[cfg(feature = "gpu")]
-        let prefix_hit = self.prefix_cache.lookup(prompt);
-        #[cfg(not(feature = "gpu"))]
-        let prefix_hit: Option<(Vec<Vec<f32>>, Vec<Vec<f32>>)> = None;
-        #[cfg(feature = "gpu")]
-        let prefix_was_hit = prefix_hit.is_some();
-        #[cfg(not(feature = "gpu"))]
-        let prefix_was_hit = false;
-
-        let prefill_first_token;
-        if let Some((cached_k, cached_v)) = prefix_hit {
-            // PMAT-450: Prefix cache hit — skip prefill, restore GPU KV cache
-            if config.trace {
-                eprintln!("[PMAT-450] PREFIX CACHE HIT: {} prompt tokens, skipping prefill", prompt.len());
-            }
-            let kv_pairs: Vec<(Vec<f32>, Vec<f32>)> = cached_k.into_iter().zip(cached_v).collect();
-            self.executor
-                .restore_kv_cache_from_host(&kv_pairs, prompt.len())
-                .map_err(|e| RealizarError::UnsupportedOperation {
-                    operation: "restore_kv_cache_from_host".to_string(),
-                    reason: format!("Prefix cache restore failed: {e}"),
-                })?;
-            prefill_first_token = None; // No prefill extraction — go straight to decode
-            ttft_mark!("prefix_cache_hit");
-        } else {
-            // PMAT-083: Prefill ALL tokens and extract first predicted token from LM head.
-            let greedy = config.temperature == 0.0 || config.top_k == 1;
-            let prefill_count = if greedy { prompt.len() } else { prompt.len() - 1 };
-            prefill_first_token = if prefill_count > 0 {
-                self.run_prefill(prompt, &mut cache, prefill_count, ttft_trace, greedy)?
-            } else {
-                None
-            };
-            ttft_mark!("prefill");
-        }
 
         // PMAT-109: Graph persistence — do NOT clear decode graph here.
         // init_prefill_workspace clears the graph only when it actually reallocates
@@ -170,78 +431,30 @@ impl OwnedQuantizedModelCuda {
         // argmax fast path is only used when no penalty applies. With repeat_penalty == 1.0
         // (the default) this is false → the greedy fast path is unchanged (no perf regression).
         let penalty_active = config.repeat_penalty != 1.0 && config.repeat_last_n > 0;
-        for token_num in 0..max_decode {
-            let greedy = config.temperature == 0.0 || config.top_k == 1;
-            let next_token = if greedy && !penalty_active {
-                let tok = self.forward_gpu_resident_to_token_id(last_token, &mut cache, position)?;
-                if token_num == first_token_offset && prefill_first_token.is_none() {
-                    ttft_mark!("first_decode");
-                }
-                tok
-            } else {
-                let mut logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
-                // PMAT-814: penalize recently-seen tokens before greedy/sampling.
-                OwnedQuantizedModel::apply_repeat_penalty(
-                    &mut logits,
-                    &tokens,
-                    config.repeat_penalty,
-                    config.repeat_last_n,
-                );
-                if greedy {
-                    OwnedQuantizedModel::argmax(&logits)
-                } else {
-                    OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
-                }
-            };
-
-            // Check stop tokens
-            if config.stop_tokens.contains(&next_token) {
-                break;
-            }
-
-            tokens.push(next_token);
-
-            // PAR-112: Call the streaming callback IMMEDIATELY after generating each token
-            // If callback returns false, stop generation early
-            if !on_token(next_token) {
-                break;
-            }
-
-            last_token = next_token;
-            position += 1;
-        }
+        // The decode loop is its own concern: one token at a time, stopping on a
+        // stop token or a callback that says the client went away.
+        self.decode_loop(DecodeLoop {
+            config,
+            tokens: &mut tokens,
+            cache: &mut cache,
+            on_token: &mut on_token,
+            position,
+            last_token,
+            max_decode,
+            first_token_offset,
+            prefill_first_token,
+            penalty_active,
+            t_start,
+        })?;
 
         // realizr#199 (PMAT-450): Insert PROMPT KV into prefix cache.
         // CRITICAL: snapshot prompt.len() positions, NOT the full KV (which includes
         // generated tokens). On cache hit we restore prompt KV and decode from scratch.
         #[cfg(feature = "gpu")]
+        // Populating the prefix cache reads KV back off the device; it is its
+        // own concern and not part of generating tokens.
         if !prefix_was_hit {
-            let num_layers = self.model.config.num_layers;
-            // Temporarily truncate KV to prompt length for snapshot
-            let current_lens: Vec<(usize, usize)> = (0..num_layers)
-                .map(|l| (l, self.executor.kv_cache_len(l)))
-                .collect();
-            for &(l, _) in &current_lens {
-                self.executor.set_kv_cache_len(l, prompt.len());
-            }
-            match self.executor.snapshot_kv_cache_to_host(num_layers) {
-                Ok(kv_snapshot) => {
-                    let (k_vecs, v_vecs): (Vec<_>, Vec<_>) = kv_snapshot.into_iter().unzip();
-                    self.prefix_cache.insert(prompt.to_vec(), k_vecs, v_vecs);
-                    if config.trace {
-                        eprintln!("[PMAT-450] PREFIX CACHE INSERT: {} prompt tokens ({} layers)", prompt.len(), num_layers);
-                    }
-                }
-                Err(e) => {
-                    if config.trace {
-                        eprintln!("[PMAT-450] PREFIX CACHE SNAPSHOT ERROR: {}", e);
-                    }
-                }
-            }
-            // Restore original KV lengths
-            for &(l, len) in &current_lens {
-                self.executor.set_kv_cache_len(l, len);
-            }
+            self.populate_prefix_cache(prompt, config.trace);
         }
 
         Ok(tokens)
@@ -335,18 +548,14 @@ impl OwnedQuantizedModelCuda {
                     &mut caches[prompt_idx],
                     positions[prompt_idx],
                 )?;
-
-                if config.stop_tokens.contains(&next_token) {
-                    done[prompt_idx] = true;
-                } else {
-                    sequences[prompt_idx].push(next_token);
-                    last_tokens[prompt_idx] = next_token;
-                    positions[prompt_idx] += 1;
-
-                    if sequences[prompt_idx].len() >= max_seq_len {
-                        done[prompt_idx] = true;
-                    }
-                }
+                done[prompt_idx] = Self::advance_batch_slot(
+                    next_token,
+                    config,
+                    max_seq_len,
+                    &mut sequences[prompt_idx],
+                    &mut last_tokens[prompt_idx],
+                    &mut positions[prompt_idx],
+                );
             }
         }
 
