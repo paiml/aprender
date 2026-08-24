@@ -87,10 +87,10 @@ printf '\nPART 2 — every bench/timing guard is classified\n'
 # duration is asserted" -- and this guard matched ITSELF on its first wired
 # run. Listed explicitly, with the reason, rather than loosening the pattern.
 META_GUARDS="
-check_no_timing_in_required.sh
-check_no_fabricated_baselines.sh
 check_bench_threshold.sh
 check_llama_pin.sh
+check_no_fabricated_baselines.sh
+check_no_timing_in_required.sh
 "
 
 unclassified=""
