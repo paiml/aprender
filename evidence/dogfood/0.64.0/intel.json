@@ -1,0 +1,24 @@
+{
+  "host": "intel",
+  "arch": "x86_64-unknown-linux-gnu",
+  "os": "Linux 6.8.0-136-generic",
+  "cpu": "Intel(R) Xeon(R) W-3245 CPU @ 3.20GHz",
+  "accelerator": "none (Xeon W-3245, AVX-512 + VNNI)",
+  "version_tested": "0.64.0",
+  "date": "2026-08-24",
+  "install_source": "crates.io",
+  "install_command": "cargo install aprender --version 0.64.0 --locked --root ~/apr-0640-receipt/root",
+  "install_rc": 0,
+  "install_wall_seconds": 243,
+  "crates_compiled": 532,
+  "binary_sha256": "771627f834009b54395edf3bc69fc1ef928238375486abbe1f74aabccfdb25dc",
+  "binary_version_output": "apr 0.64.0 (v0.64.0+no-git)",
+  "surface": {
+    "cli_subcommands": 111,
+    "cli_subcommands_answering_help": 111,
+    "unusable": 0
+  },
+  "notable": "apr gpu correctly reports no discrete GPU and hints --device cpu, which is right on this host. 111 subcommands, 0 unusable. This is the CI runner host; install ran with load ~9.8 and did not disturb it.",
+  "verdict": "GO",
+  "collection_note": "Post-publish by construction: install_rc comes from cargo install against crates.io, so this receipt cannot exist before the cascade (#2658). Installed to a scratch --root to avoid replacing the host's existing apr; gx10 in particular carried a source build stamped with the release commit SHA."
+}

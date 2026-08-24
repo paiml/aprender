@@ -1,0 +1,24 @@
+{
+  "host": "gx10",
+  "arch": "aarch64-unknown-linux-gnu",
+  "os": "Linux 6.17.0-1014-nvidia",
+  "cpu": "NVIDIA GB10 (aarch64)",
+  "accelerator": "NVIDIA GB10, sm_121, unified memory",
+  "version_tested": "0.64.0",
+  "date": "2026-08-24",
+  "install_source": "crates.io",
+  "install_command": "cargo install aprender --version 0.64.0 --locked --root ~/apr-0640-receipt/root",
+  "install_rc": 0,
+  "install_wall_seconds": 111,
+  "crates_compiled": 531,
+  "binary_sha256": "fe46e9234cd8ec7e347cac7407cf22cfb90722df0a5c8a87b94f0bd126652b3a",
+  "binary_version_output": "apr 0.64.0 (v0.64.0+no-git)",
+  "surface": {
+    "cli_subcommands": 111,
+    "cli_subcommands_answering_help": 111,
+    "unusable": 0
+  },
+  "notable": "apr gpu reports GB10 unified memory correctly (122502 MB, reserve 60%). 111 subcommands, 0 unusable. Q4_K GEMV aarch64 SIMD gap (#2567) is unchanged in 0.64.0 and remains a speed defect, not a correctness one.",
+  "verdict": "GO",
+  "collection_note": "Post-publish by construction: install_rc comes from cargo install against crates.io, so this receipt cannot exist before the cascade (#2658). Installed to a scratch --root to avoid replacing the host's existing apr; gx10 in particular carried a source build stamped with the release commit SHA."
+}
