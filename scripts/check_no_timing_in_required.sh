@@ -89,6 +89,8 @@ printf '\nPART 2 — every bench/timing guard is classified\n'
 META_GUARDS="
 check_no_timing_in_required.sh
 check_no_fabricated_baselines.sh
+check_bench_threshold.sh
+check_llama_pin.sh
 "
 
 unclassified=""
@@ -102,8 +104,19 @@ while IFS= read -r f; do
     registry_flat=" $(printf '%s' "$RELEASE_TIME_ONLY" | tr '\n' ' ') "
     case "$registry_flat" in *" $base "*) continue ;; esac
     unclassified="$unclassified $base"
-done < <(git ls-files 'scripts/check_*bench*.sh' 'scripts/check_*timing*.sh' \
-                     'scripts/check_*throughput*.sh' 'scripts/check_*perf*.sh' 2>/dev/null)
+done < <(
+    # TRACKED *and* UNTRACKED. A `git ls-files`-only universe lets a brand-new
+    # guard pass until the moment it is committed — which is exactly how
+    # check_bench_threshold.sh slipped through its own PR (it was green when
+    # run pre-`git add`, and failed the instant it became tracked). Same shape
+    # as SHIM-2644-03, where an UNTRACKED copy of the runner passed a
+    # `git ls-files` check whose whole purpose was catching a second copy.
+    { git ls-files 'scripts/check_*bench*.sh' 'scripts/check_*timing*.sh' \
+                   'scripts/check_*throughput*.sh' 'scripts/check_*perf*.sh' 2>/dev/null
+      find scripts -maxdepth 1 -type f \
+           \( -name 'check_*bench*.sh' -o -name 'check_*timing*.sh' \
+              -o -name 'check_*throughput*.sh' -o -name 'check_*perf*.sh' \) 2>/dev/null
+    } | sort -u)
 
 if [ -n "$unclassified" ]; then
     printf 'FAIL  bench/timing guard(s) not in the registry:%s\n' "$unclassified"
