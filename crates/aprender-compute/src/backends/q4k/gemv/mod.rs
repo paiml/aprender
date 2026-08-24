@@ -506,6 +506,15 @@ mod issue_2567_measure {
         println!("serial   median {ms_s:.2} ms   samples {serial:?}");
         println!("parallel median {ms_p:.2} ms   samples {parallel:?}");
         println!("speedup         {:.2}x", ms_s / ms_p);
+        // ON X86 THIS RATIO CONFLATES TWO EFFECTS. `matmul_q4k_f32_parallel`
+        // is the AVX path there, so the number is SIMD *and* threads against a
+        // pure-scalar serial baseline — 77x in release, which says nothing
+        // about the change this test exists for. On aarch64 both sides are the
+        // same scalar kernel and the ratio isolates parallelism alone, which
+        // is why the figure quoted for #2567 is the aarch64 one.
+        if cfg!(target_arch = "x86_64") {
+            println!("note            x86: ratio is SIMD+threads vs scalar, not parallelism alone");
+        }
 
         // NOT a threshold. Only: dispatching to the parallel path must not be
         // slower than the serial one it replaced. On x86 both are the same
