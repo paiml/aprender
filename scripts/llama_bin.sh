@@ -83,14 +83,45 @@ llama_bin_resolve() {
         LLAMA_PIN_RC=1
         return 1
     fi
-    llama_bin_out=$("$llama_bin_candidate" --version 2>&1) || llama_bin_out=""
+    # llama-bench CANNOT SELF-REPORT ITS BUILD. Verified on lambda against the
+    # real 39173bcac artifact: `--version` is rejected ("invalid parameter"),
+    # `--help` lists no version flag, and `strings -a llama-bench | grep -Fx
+    # 39173bcac` matches 0 times — the build-info object is not linked into it.
+    # The same probe on llama-cli and llama-server matches once each, and both
+    # answer `version: 7746 (39173bcac)`.
+    #
+    # So this asked llama-bench a question it cannot answer, took the empty
+    # reply as "does not run", and returned rc=1. It could never return 0. The
+    # case table did not catch it because all three of its stubs answer
+    # `--version` — a stub universe that excludes the one real shape.
+    #
+    # The build id therefore comes from an ORACLE binary in the candidate's own
+    # directory. Same directory means same cmake output tree, which is the
+    # property the pin is actually about.
+    llama_bin_dir=$(dirname "$llama_bin_candidate")
+    LLAMA_CLI=""
+    LLAMA_SERVER=""
+    [ -x "$llama_bin_dir/llama-cli" ] && LLAMA_CLI="$llama_bin_dir/llama-cli"
+    [ -x "$llama_bin_dir/llama-server" ] && LLAMA_SERVER="$llama_bin_dir/llama-server"
+
+    llama_bin_oracle="$LLAMA_CLI"
+    [ -n "$llama_bin_oracle" ] || llama_bin_oracle="$LLAMA_SERVER"
+    if [ -z "$llama_bin_oracle" ]; then
+        # A bench binary with no oracle beside it cannot be pinned to a build.
+        # Unverifiable is a FAIL, never a pass with a shrug.
+        LLAMA_PIN_RC=1
+        return 1
+    fi
+
+    llama_bin_out=$("$llama_bin_oracle" --version 2>&1) || llama_bin_out=""
+    llama_bin_out=$(printf '%s\n' "$llama_bin_out" | grep -i '^version:' | head -1)
     if [ -z "$llama_bin_out" ]; then
         LLAMA_PIN_RC=1
         return 1
     fi
     LLAMA_BENCH="$llama_bin_candidate"
-    LLAMA_BUILD=$(printf '%s\n' "$llama_bin_out" | head -1)
-    export LLAMA_BENCH LLAMA_BUILD
+    LLAMA_BUILD="$llama_bin_out"
+    export LLAMA_BENCH LLAMA_BUILD LLAMA_CLI LLAMA_SERVER
 
     if [ "$llama_bin_want" = "UNPINNED" ]; then
         # A binary exists and runs, but nothing declares which one is correct.
@@ -111,8 +142,37 @@ llama_bin_resolve() {
     esac
 }
 
-# Executed rather than sourced: report and set an exit code.
-if [ "${0##*/}" = "llama_bin.sh" ]; then
+# Am I being EXECUTED, or sourced? The `$0` basename test this used is correct
+# in bash and INVERTED IN ZSH: zsh sets $0 to the sourced file's own path, so
+# `. scripts/llama_bin.sh` matched "llama_bin.sh", took the executed branch, and
+# ran `exit` — which, in a sourced file, exits THE CALLER. In this repo's shell
+# that means the terminal. Probed rather than assumed:
+#
+#   zsh  -c '... . $f'  ->  sourced-dollar0=/tmp/z_probe.sh
+#   bash -c '... . $f'  ->  sourced-dollar0=bash
+#
+# Same family as the `set -euo pipefail` leak already in CLAUDE.md: a sourceable
+# library must not be able to reach into its caller. Each shell is asked the
+# question it can actually answer.
+llama_bin_is_main() {
+    if [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
+        case "$ZSH_EVAL_CONTEXT" in
+            *:file*) return 1 ;;
+            *) return 0 ;;
+        esac
+    fi
+    if [ -n "${BASH_SOURCE:-}" ]; then
+        [ "${BASH_SOURCE-}" = "$0" ]
+        return $?
+    fi
+    # POSIX sh: $0 is the shell's own name when sourced.
+    case "${0##*/}" in
+        llama_bin.sh) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+if llama_bin_is_main; then
     llama_bin_resolve
     llama_bin_rc=$?
     case "$llama_bin_rc" in
@@ -129,3 +189,15 @@ if [ "${0##*/}" = "llama_bin.sh" ]; then
     esac
     exit "$llama_bin_rc"
 fi
+
+# SOURCED. The header promises `. scripts/llama_bin.sh` sets $LLAMA_BENCH,
+# $LLAMA_BUILD and $LLAMA_PIN_RC — and nothing here ever called the resolver on
+# that path, in ANY shell. Under bash the main-branch test was false and the
+# file merely defined a function nobody invoked, so sourcing returned 0 with
+# every variable empty: a silent pass on the documented primary interface.
+# Under zsh the same test was true and `exit` killed the caller's shell.
+#
+# Resolve here, and signal by RETURN STATUS so the file stays option-neutral
+# and the `. scripts/llama_bin.sh || exit 1` idiom works.
+llama_bin_resolve
+return "$LLAMA_PIN_RC"
