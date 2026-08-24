@@ -925,6 +925,11 @@ jobs:
       # ollama never invoked (#2679).
       - name: No fabricated comparator baselines
         run: bash scripts/check_no_fabricated_baselines.sh
+      # The threshold rule is DERIVED, and the rule it replaced is falsified by
+      # execution on every run rather than by a comment. 3-sigma pooled does not
+      # catch the one regression on record (#2675).
+      - name: Bench threshold derivation holds
+        run: bash scripts/check_bench_threshold.sh
       # The deepest check in the surface sweep -- real generation through
       # /v1/chat/completions -- had never executed once: the probe binary was
       # built without --features llm (clap advertises `llm` regardless, only the
