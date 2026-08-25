@@ -328,12 +328,11 @@ fn generate_benchmark_matrix() -> BenchmarkMatrix {
     println!("║  Methodology: CV-based stopping (Hoefler & Belli SC'15)         ║");
     println!("╚════════════════════════════════════════════════════════════════╝\n");
 
-    let hardware = HardwareSpec {
-        cpu: "Benchmark CPU".to_string(),
-        gpu: Some("Benchmark GPU".to_string()),
-        memory_gb: 32,
-        storage: "SSD".to_string(),
-    };
+    // PARITY-007: READ the host, never assert it. This block used to write
+    // `cpu: "Benchmark CPU", gpu: Some("Benchmark GPU"), memory_gb: 32` into
+    // the receipt — placeholder provenance in a document that looked complete
+    // (F12, aprender#2679).
+    let hardware = HardwareSpec::detect();
 
     let mut matrix = BenchmarkMatrix::new("phi-2-q4_k_m", hardware);
 
