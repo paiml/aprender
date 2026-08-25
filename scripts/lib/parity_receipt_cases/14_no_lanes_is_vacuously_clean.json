@@ -1,0 +1,10 @@
+{
+  "instrument": "apr test llm bench",
+  "protocol_ref": "scripts/llama_pin.toml#protocol.http",
+  "model": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+  "lanes": [],
+  "_expect": {
+    "result": "invalid",
+    "why": "a block with nothing in it passes every rule by having nothing to check"
+  }
+}

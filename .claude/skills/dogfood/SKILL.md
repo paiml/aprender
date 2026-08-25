@@ -58,12 +58,43 @@ protocol whose own rule is *"Never dogfood by hand"*.
 tree", the gate belongs to a later phase, its receipt is produced there, and its
 RED before that phase means *not yet measured* rather than *broken*.
 
-**And the two phases do not measure the same thing.** The post-publish phase
-CANNOT compute a llama.cpp ratio: `cargo install aprender` is CPU-only on every
-host (`default` carries no `cuda`, no `wgpu`) while the comparator runs CUDA or
-Metal, so the ratio reads ~0.05–0.10 and the threshold never arms. Post-publish
-is an **apr-vs-apr CPU-class self-ratchet**; the comparator ratio lives
-pre-publish, from the tree, where the feature exists (aprender#2667).
+**And the two phases do not measure the same thing** — but the earlier version
+of this paragraph drew the wrong conclusion from that, and it cost a release.
+
+It said: the post-publish phase CANNOT compute a llama.cpp ratio, because
+`cargo install aprender` is CPU-only on every host (`default` carries no `cuda`,
+no `wgpu`) while the comparator runs CUDA or Metal, so the ratio reads
+~0.05–0.10 and the threshold never arms. Every clause of that is TRUE. The
+conclusion drawn — *therefore do not compare post-publish* — is what was wrong.
+
+What it cost: the published binary's CPU-only-ness sat in this file as a stated
+fact while nothing ever measured what it costs a user. Measured for the first
+time on 2026-08-24, on a host with an idle RTX 4090: **15.7 tok/s decode against
+llama.cpp's 158.9, and 7.5 SECONDS to first token**, because `apr serve run
+--gpu` accepts the flag, links no CUDA at all, warns nothing, and returns a
+plausible number (aprender#2696).
+
+The remedy is not to skip the comparison. It is to **compare within the compute
+class**. The published apr takes the cpu path, so its comparator is llama.cpp
+`-ngl 0`, which also takes the cpu path. That ratio is meaningful, it arms a
+floor (**0.80 minimum, 1.50 stretch**), and no cross-class row is created. The
+accelerated lanes stay pre-publish, from the tree, where the feature exists
+(aprender#2667).
+
+`scripts/lib/bench_receipt.py --parity` enforces the rest, and
+`scripts/check_parity_receipt.sh` proves it discriminates across 17 cases before
+any release reads its verdict:
+
+| rule | what it stops |
+|---|---|
+| same class, or no verdict | a cpu-vs-cuda number reading as a kernel defect |
+| the ratio is DERIVED from the samples | F12 — a stated ratio its own samples do not produce |
+| the comparator is pinned | a denominator that moves silently between releases |
+| the subject names its artifact | #2696 — local build and published binary differ by 6.6x |
+| the verdict follows from the floor | a gate lying about its own rule |
+
+Required lanes come from each host's **own declared accelerator**, so a host
+that gains a GPU gains a required lane without anyone remembering to add one.
 
 ## Run it
 
