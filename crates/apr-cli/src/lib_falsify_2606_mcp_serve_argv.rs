@@ -77,7 +77,7 @@ fn falsify_2606_mcp_serve_argv_is_accepted_by_the_cli_parser() {
     // parsed into `serve plan` would also "parse" and start nothing.
     match *parsed.command {
         Commands::Serve {
-            command: ServeCommands::Run { ref file, port, .. },
+            command: ServeCommands::Run { file: Some(ref file), port, .. },
         } => {
             assert_eq!(
                 file.to_string_lossy(),

@@ -119,7 +119,7 @@
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
             Commands::Serve {
-                command: ServeCommands::Run { ref file, port, .. },
+                command: ServeCommands::Run { file: Some(ref file), port, .. },
             } => {
                 assert_eq!(*file, PathBuf::from("model.apr"));
                 assert_eq!(port, 3000);
