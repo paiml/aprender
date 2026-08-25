@@ -37,8 +37,11 @@ pub enum ServeCommands {
     /// Start inference server (REST API, streaming, metrics)
     Run {
         /// Path to model file
-        #[arg(value_name = "FILE")]
-        file: PathBuf,
+        ///
+        /// Not required with `--list-devices`, which asks what this BUILD can
+        /// dispatch to and needs no model to answer.
+        #[arg(value_name = "FILE", required_unless_present = "list_devices")]
+        file: Option<PathBuf>,
         /// Port to listen on
         #[arg(short, long, default_value = "8080")]
         port: u16,
@@ -54,9 +57,32 @@ pub enum ServeCommands {
         /// Disable GPU acceleration
         #[arg(long)]
         no_gpu: bool,
-        /// Force GPU acceleration (requires CUDA)
+        /// Force GPU acceleration (DEPRECATED — use --gpu-layers)
+        ///
+        /// PERF-021: a boolean accelerator request has no observable
+        /// resolution. Honoured and ignored look identical from outside, which
+        /// is how #2696 shipped for three releases. Kept so existing scripts
+        /// keep working; it means `--gpu-layers all`.
         #[arg(long)]
         gpu: bool,
+        /// Layers to offload: a number, `auto`, `all`, or `0`.
+        ///
+        /// A QUANTITY, not a flag, so the request has a resolution the server
+        /// can report: `all` on a model that does not fit is an error, `auto`
+        /// offloads what fits and says how many. `auto` is the only value
+        /// auto-fit may modify — an explicit number or `all` is a user
+        /// instruction and is never lowered silently (I-17).
+        ///
+        /// Mirrors llama.cpp's `-ngl`, which takes an integer, `auto` or `all`
+        /// and reports what it resolved. Neither comparator has a boolean.
+        #[arg(long, value_name = "N|auto|all|0")]
+        gpu_layers: Option<String>,
+        /// List the accelerators this BUILD can dispatch to, then exit.
+        ///
+        /// Answers "what does this binary actually support" without starting a
+        /// server — the question a user with #2696 could not ask.
+        #[arg(long)]
+        list_devices: bool,
         /// Enable batched GPU inference for 2X+ throughput
         #[arg(long)]
         batch: bool,

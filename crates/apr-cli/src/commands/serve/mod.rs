@@ -26,6 +26,79 @@ use std::path::Path;
 use colored::Colorize;
 
 use crate::error::{CliError, Result};
+pub(crate) use types::GpuLayerRequest;
+
+/// PERF-021 countermeasure 2: report what this BUILD can dispatch to.
+///
+/// #2696's user had no way to ask this. `apr serve run --gpu` accepted the flag
+/// and ran on CPU; nothing anywhere said the binary had no CUDA in it. This
+/// answers the question without a model, a port, or a GPU.
+pub(crate) fn list_devices() -> Result<()> {
+    println!("accelerators this BUILD can dispatch to:");
+    let mut any = false;
+    if cfg!(feature = "cuda") {
+        println!("  cuda    compiled in");
+        any = true;
+    }
+    if cfg!(feature = "wgpu") {
+        println!("  wgpu    compiled in");
+        any = true;
+    }
+    println!("  cpu     always available");
+    if !any {
+        println!();
+        println!("This build has NO accelerator compiled in. `--gpu-layers` above 0");
+        println!("will be refused rather than silently served from the CPU.");
+        println!();
+        println!("    cargo install aprender --features cuda    # NVIDIA");
+        println!("    cargo install aprender --features wgpu    # portable GPU backend");
+    }
+    Ok(())
+}
+
+/// PERF-021 countermeasure 3: a request has a RESOLUTION, and it is reported.
+///
+/// `requested` is what the user asked for, `resolved` what the server will do,
+/// `total` how many layers exist. A boolean could express none of this, which
+/// is finding N4 and the reason the defect was invisible.
+///
+/// I-17, EXPLICIT WINS: `Exact(n)` and `All` are user instructions. When they
+/// cannot be honoured this returns an error rather than quietly resolving lower
+/// — automation overriding an explicit instruction is the v2.2 root cause of
+/// defect #1. Only `Auto` may be reduced, because `auto` is the value that
+/// asked to be.
+pub(crate) fn resolve_gpu_layers(
+    request: GpuLayerRequest,
+    total_layers: u32,
+    fits: u32,
+) -> Result<u32> {
+    match request {
+        GpuLayerRequest::None => Ok(0),
+        GpuLayerRequest::Auto => Ok(fits.min(total_layers)),
+        GpuLayerRequest::All => {
+            if fits >= total_layers {
+                Ok(total_layers)
+            } else {
+                Err(CliError::InvalidInput(format!(
+                    "--gpu-layers all asked for {total_layers} layers and only {fits} fit. \
+                     Auto-fit will not silently lower an explicit request; pass \
+                     --gpu-layers auto to offload what fits, or --gpu-layers {fits}."
+                )))
+            }
+        }
+        GpuLayerRequest::Exact(n) => {
+            if n <= fits {
+                Ok(n.min(total_layers))
+            } else {
+                Err(CliError::InvalidInput(format!(
+                    "--gpu-layers {n} asked for more than the {fits} that fit. Auto-fit \
+                     will not silently lower an explicit request; pass --gpu-layers auto \
+                     to offload what fits."
+                )))
+            }
+        }
+    }
+}
 
 /// `--gpu` on a build with no accelerated backend FAILS, naming a remedy that
 /// works.
@@ -51,16 +124,25 @@ use crate::error::{CliError, Result};
 #[allow(clippy::unnecessary_wraps)] // wraps only when no accelerator is compiled in
 fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
     let wants_backend = config.backend.as_deref();
-    let wants_gpu =
-        (config.gpu && !config.no_gpu) || matches!(wants_backend, Some("wgpu" | "cuda" | "gpu"));
+    // PERF-021: `--gpu-layers` is the request; `--gpu` is its deprecated
+    // boolean spelling and means `all`. `--gpu-layers 0` is an explicit CPU
+    // request and asks for no accelerator, which is why it is not simply
+    // "is Some".
+    let wants_layers = config
+        .gpu_layers
+        .is_some_and(GpuLayerRequest::wants_accelerator);
+    let wants_gpu = wants_layers
+        || (config.gpu && !config.no_gpu)
+        || matches!(wants_backend, Some("wgpu" | "cuda" | "gpu"));
     if !wants_gpu {
         return Ok(());
     }
     if cfg!(any(feature = "cuda", feature = "wgpu")) {
         return Ok(());
     }
-    let asked = match wants_backend {
-        Some(b) if b != "cpu" => format!("--backend {b}"),
+    let asked = match (config.gpu_layers, wants_backend) {
+        (Some(_), _) => "--gpu-layers".to_string(),
+        (_, Some(b)) if b != "cpu" => format!("--backend {b}"),
         _ => "--gpu".to_string(),
     };
     Err(CliError::FeatureDisabled(format!(
@@ -300,5 +382,102 @@ mod accelerator_guard_tests {
         ensure_accelerator_available(&cfg_with(true, true, None))
             .expect("--no-gpu overrides --gpu, as it always did");
         ensure_accelerator_available(&cfg_with(false, false, Some("cpu"))).expect("--backend cpu");
+    }
+}
+
+#[cfg(test)]
+mod gpu_layers_contract_tests {
+    //! PERF-021. The v2.2 root cause of defect #1 is not "we defaulted to CPU";
+    //! it is that AUTOMATION OVERRODE AN EXPLICIT USER INSTRUCTION AND THE
+    //! OVERRIDE WAS UNOBSERVABLE. These test both halves.
+
+    use super::*;
+
+    #[test]
+    fn a_request_parses_as_a_quantity_not_a_flag() {
+        assert_eq!(GpuLayerRequest::parse("0"), Ok(GpuLayerRequest::None));
+        assert_eq!(GpuLayerRequest::parse("auto"), Ok(GpuLayerRequest::Auto));
+        assert_eq!(GpuLayerRequest::parse("all"), Ok(GpuLayerRequest::All));
+        assert_eq!(GpuLayerRequest::parse("28"), Ok(GpuLayerRequest::Exact(28)));
+        assert_eq!(GpuLayerRequest::parse("AUTO"), Ok(GpuLayerRequest::Auto));
+    }
+
+    /// A mistyped accelerator request must not become CPU by default. That is
+    /// the silent-degradation shape in miniature.
+    #[test]
+    fn a_mistyped_request_is_rejected_not_defaulted() {
+        let err = GpuLayerRequest::parse("gpu").expect_err("must reject");
+        assert!(
+            err.contains("auto"),
+            "the error lists the legal values: {err}"
+        );
+        assert!(GpuLayerRequest::parse("").is_err());
+        assert!(GpuLayerRequest::parse("-1").is_err());
+    }
+
+    /// I-17. `auto` is the ONLY value auto-fit may modify, because it is the
+    /// one that asked to be fitted.
+    #[test]
+    fn only_auto_may_be_autofitted() {
+        assert!(GpuLayerRequest::Auto.may_autofit());
+        assert!(!GpuLayerRequest::All.may_autofit());
+        assert!(!GpuLayerRequest::Exact(12).may_autofit());
+        assert!(!GpuLayerRequest::None.may_autofit());
+    }
+
+    /// EXPLICIT WINS. An instruction that cannot be honoured is an ERROR, not a
+    /// quiet reduction — quiet reduction is exactly how #2696 stayed invisible.
+    #[test]
+    fn an_explicit_request_that_does_not_fit_is_an_error() {
+        let e = resolve_gpu_layers(GpuLayerRequest::All, 29, 12).expect_err("all must not shrink");
+        assert!(e.to_string().contains("12"), "names what did fit: {e}");
+        assert!(e.to_string().contains("auto"), "names the remedy: {e}");
+
+        let e =
+            resolve_gpu_layers(GpuLayerRequest::Exact(28), 29, 12).expect_err("N must not shrink");
+        assert!(e.to_string().contains("auto"), "names the remedy: {e}");
+    }
+
+    /// And auto DOES fit, silently, because that is what it means.
+    #[test]
+    fn auto_resolves_to_what_fits() {
+        assert_eq!(
+            resolve_gpu_layers(GpuLayerRequest::Auto, 29, 12).expect("auto"),
+            12
+        );
+        assert_eq!(
+            resolve_gpu_layers(GpuLayerRequest::Auto, 29, 99).expect("auto"),
+            29
+        );
+        assert_eq!(
+            resolve_gpu_layers(GpuLayerRequest::None, 29, 12).expect("none"),
+            0
+        );
+        assert_eq!(
+            resolve_gpu_layers(GpuLayerRequest::All, 29, 29).expect("all fits"),
+            29
+        );
+        assert_eq!(
+            resolve_gpu_layers(GpuLayerRequest::Exact(8), 29, 12).expect("8 fits"),
+            8
+        );
+    }
+
+    /// The quantity reaches the same refusal the boolean does — one gate, both
+    /// spellings, so retiring `--gpu` cannot reopen the hole it closed.
+    #[test]
+    #[cfg(not(any(feature = "cuda", feature = "wgpu")))]
+    fn gpu_layers_is_refused_on_a_build_with_no_accelerator() {
+        let mut cfg = ServerConfig::default();
+        cfg.gpu_layers = Some(GpuLayerRequest::All);
+        let err = ensure_accelerator_available(&cfg).expect_err("must refuse");
+        assert!(
+            err.to_string().contains("--gpu-layers"),
+            "quotes what was asked: {err}"
+        );
+
+        // ...and an explicit CPU request is not an accelerator request.
+        cfg.gpu_layers = Some(GpuLayerRequest::None);
+        ensure_accelerator_available(&cfg).expect("--gpu-layers 0 asks for no accelerator");
     }
 }

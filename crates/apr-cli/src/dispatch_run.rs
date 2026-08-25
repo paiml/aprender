@@ -157,6 +157,8 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             no_metrics,
             no_gpu,
             gpu,
+            gpu_layers,
+            list_devices,
             batch,
             trace,
             trace_level,
@@ -166,7 +168,21 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             context_length,
             no_fp8_cache,
             ollama_compat,
-        } => crate::error::resolve_model_path(file).and_then(|r| {
+        } => {
+            // PERF-021: answer "what can this BUILD dispatch to" without needing
+            // a model or a port — the question a user hitting #2696 had no way
+            // to ask.
+            if *list_devices {
+                return crate::commands::serve::list_devices();
+            }
+            // clap guarantees `file` is present unless --list-devices short-
+            // circuited above, so this cannot be None here.
+            let Some(file) = file.as_ref() else {
+                return Err(CliError::InvalidInput(
+                    "serve run needs a model file".to_string(),
+                ));
+            };
+            crate::error::resolve_model_path(file).and_then(|r| {
             dispatch_serve(
                 &r,
                 *port,
@@ -186,7 +202,8 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
                 *no_fp8_cache,
                 *ollama_compat,
             )
-        }),
+        })
+        },
     }
 }
 
