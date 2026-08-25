@@ -35,7 +35,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Core library (was: jugar-probar) — dep key preserves Rust identifier
-jugar-probar = { path = "../aprender-test-lib", version = "0.63.0", package = "aprender-test-lib" }
+jugar-probar = { path = "../aprender-test-lib", version = "0.64.0", package = "aprender-test-lib" }
 
 # CLI framework
 clap = { workspace = true }

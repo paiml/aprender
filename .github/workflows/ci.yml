@@ -471,6 +471,38 @@ jobs:
       # correct everywhere else). Run the table; do not re-read the regex.
       - name: "`apr`-pinning guard must still turn RED (case table + surfaces)"
         run: bash scripts/check_apr_bin_pinned.sh --self-test
+      # Poka-yoke: Cargo.lock was 15 days stale on main (last touched 2026-08-01,
+      # manifests changed 08-10 and 08-11). Every CI job runs cargo WITHOUT
+      # --locked, so cargo rewrote the lock in place and stayed green; the only
+      # jobs that pass --locked are in binary-release.yml, i.e. the RELEASE path,
+      # which was broken on main. Resolution only, no build, ~1s.
+      #
+      # THIS STEP RUNS BEFORE EVERY STEP IN THIS JOB THAT INVOKES CARGO. It was
+      # placed after them, and the verifier-pinning step below cargo-builds pv
+      # (through scripts/pv_bin.sh) without --locked -- so a stale lock was
+      # silently repaired in the workspace before the guard whose entire purpose
+      # is to notice it ever looked. The guard could not have failed. The
+      # pinning guard now also snapshots and restores Cargo.lock and FAILS if
+      # the build moved it, so the two are independent.
+      - name: Cargo.lock must match the manifests
+        run: bash scripts/check_lockfile_current.sh
+      - name: "lockfile guard must still turn RED (case table)"
+        run: bash scripts/check_lockfile_current.sh --self-test
+      # #2640: the SAME defect class as the two steps above, one level up. The
+      # dogfood release runner existed as two 1170-line copies whose divergence
+      # was, in every hunk, a pin for a release verifier that one copy had and
+      # the other did not. This guard scans the merged runner for a bare
+      # pv/pmat/apr AND exercises both pins against a poisoned PATH -- presence
+      # of `PMAT_BIN` proves nothing about which binary the gate ends up running.
+      # It found `pmat analyze reachability` bare in BOTH copies on its first run.
+      - name: The release runner must not resolve a verifier through PATH
+        run: bash scripts/check_verifier_pinning.sh
+      # One runner, one prose, and the user-scope copy stays a <=70-line shim
+      # that fails CLOSED. The cap lives here, in the repo on protected main;
+      # the file it caps lives at user scope, where it could otherwise raise its
+      # own ceiling.
+      - name: One dogfood runner, and the user-scope copy is a gated shim
+        run: bash scripts/check_dogfood_shim.sh
       # deny.toml is 7.2 KB of licence / banned-crate / source-allowlist policy
       # that ran in NO workflow -- only `make deny`, which is not a prerequisite
       # of any tier, so nothing but a human typing it ever invoked it. Meanwhile
@@ -523,15 +555,6 @@ jobs:
         run: |
           cargo install bashrs --locked --quiet || true
           bash scripts/check_shell_lint_ratchet.sh
-      # Poka-yoke: Cargo.lock was 15 days stale on main (last touched 2026-08-01,
-      # manifests changed 08-10 and 08-11). Every CI job runs cargo WITHOUT
-      # --locked, so cargo rewrote the lock in place and stayed green; the only
-      # jobs that pass --locked are in binary-release.yml, i.e. the RELEASE path,
-      # which was broken on main. Resolution only, no build, ~1s.
-      - name: Cargo.lock must match the manifests
-        run: bash scripts/check_lockfile_current.sh
-      - name: "lockfile guard must still turn RED (case table)"
-        run: bash scripts/check_lockfile_current.sh --self-test
       # Poka-yoke: nextest IGNORES an unknown config key with a warning instead
       # of failing. `slow-warning = "60s"` is not a nextest key, so profile.ci
       # had no per-test timeout and a hung run died at the job's 85-minute

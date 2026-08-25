@@ -7,6 +7,206 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-08-23
+
+The **fail-closed** release. v0.62.0 fixed gates that could not fail and v0.63.0
+added provenance; this one is about guards that reported success for a question
+they never asked.
+
+### Fixed — guards that could not fail
+
+- **The release cascade could publish a facade before its upstream.**
+  `facade_upstream_ready` read the requirement with a line-anchored regex and
+  returned READY for any manifest it could not parse. Cargo treats the inline and
+  multi-line dependency table as identical; the guard understood one. Because it
+  also (correctly) returns READY for the dependency-free signpost facade,
+  "no upstream by design" and "an upstream exists and I failed to parse it" took
+  the same silent path — there was no observable difference between the gate
+  working and being off. (#2628, #2629)
+- **A required check's verdict was decided by directory order.** (#2562)
+- **The meta-guard passed on a COMMENT, so the MSRV floor ran nowhere.** (#2551)
+- **Makefile recipes ran without pipefail**, so the release gate could not
+  fail. (#2550)
+- **coverage-nightly reported a BLANK percentage** whenever measurement failed,
+  which read as a pass. (#2538)
+- **The publish cascade could not SEE the three facades it must ship**, and a
+  dev-dep alias reinstated the publish cycle it had been added to remove.
+  (#2561, #2560, #2553)
+- **`apr qa --assert-tps` divided its threshold by ten, or discarded it** — the
+  release gate could not fail. (#2372)
+- **`deny.toml` was 7.2 KB of security policy that ran in no workflow**, and had
+  drifted until it failed on main. (#2523)
+- **FALSIFY-MONO-011 had never once scanned a crate.** (#2476)
+- **Every verdict `apr rosetta` printed was unfalsifiable** — compare-inference,
+  fingerprint and verify all exited 0 no matter what. (#2420)
+- **Three different contract counts in the README**, and the guard that watches
+  them ran nowhere. (#2485)
+- **`check_beats_gated` reported a FALSE 'UNGATED BEAT' at random.** (#2542)
+- **The README CLI-count guard did a 14-minute build, then failed printing
+  nothing.** (#2536)
+- The dogfood protocol was audited against itself across five batches — "nine
+  gates that could not fail, found in the tooling that judges us" — and the
+  0.63.0 crates.io dogfood produced a 190-finding defect ledger, each finding
+  mapped to its issue. (#2449, #2451, #2453, #2457, #2458, #2409)
+
+### Fixed — tools that answered confidently about work they had not done
+
+- **`apr inspect` certified a 1 KiB fragment of a 991 MB model as `valid: true`.**
+  (#2564)
+- **`apr validate` exited 0 on a 95.5%-truncated `.apr`** — 13 of 17 APR
+  integrity checks were `Not implemented` stubs. The check exists and is correct
+  for GGUF; on APR it did not exist. (#2612)
+- **`apr tensors` reported a tensor table that does not fit the file**, and
+  **`apr tune` fabricated the parameter count from file size** — `file_bytes / 2`,
+  never opening the model. (#2569, #2570)
+- **Two MCP tools spawned a bare `apr`**, so the server reported results for code
+  it was not running. (#2563)
+- **MCP `apr.serve` reported a pid and URL for a child that died instantly** with
+  clap exit code 2. (#2606)
+- **`apr code` with no arguments** auto-discovered the largest local GGUF and
+  orphaned a detached server child. (#2607)
+- **Four routed HTTP endpoints were dead** on the third resident `.apr` backend
+  while `/health` reported `model_loaded: true`. (#2609)
+- **Three train-* binaries reported confident results without doing the work.**
+  (#2519)
+- **A tensor that could not be read was dropped, and the count only saw the
+  survivors.** (#2428)
+- **An unknown quantisation type was written to APR labelled F32.** (#2488)
+- **`apr explain` printed "File not found" on stdout and exited 0.** (#2368)
+- **MCP `apr.serve` never started a server and called it success.** (#2415)
+- **`apr rerank` aborted with a library panic on ordinary flag values**, and
+  **`apr data` crashed on `--ngram 0`** while reporting 49 duplicates as
+  zero. (#2414, #2423)
+- **`apr` 0.63.0 ran `apr` 0.60.0**: both subprocess backends resolved a bare
+  `apr` through `$PATH`. (#2424)
+
+### Fixed — the release gate itself
+
+The dogfood protocol that certifies this release was audited adversarially and
+returned 45 findings, 34 fixed here. The pattern is the one above, turned on
+the tooling: gates that reported success over a measurement they never made.
+
+- **A version already published on crates.io could pass `version-unpublished`
+  as "not yet published."** `printf | grep -q` under `pipefail`: with the
+  marker ahead of more than a pipe buffer of dry-run output, grep exits at the
+  first match, printf takes SIGPIPE, and the `if` reads 141. Demonstrated live
+  at 307 KB. The gate that exists to stop an immutable double-publish failed
+  open on exactly that question. (QUAL-009)
+- **The verifier pins were delivered to nobody.** They were shell-local and
+  resolved *after* the discovered gates had already run, so every gate ran
+  against a PATH-resolved binary while `pin_audit` certified consumption the
+  environment never carried. Pins are now exported, resolved first, verified by
+  behaviour (`--version`, not `-x` — which accepts a broken stub and even a
+  directory), and fail closed. (QUAL-014)
+- **A dead `gh api` call read as a clean security scan** — `2>/dev/null ||
+  true` made an empty result from a failed call indistinguishable from zero
+  alerts, on the second advisory source that exists because the first one
+  silently missed a CVE. The rule this encodes: a probe whose empty output
+  means PASS must FAIL on rc≠0. (QUAL-009)
+- **The contracts gate silently skipped for every workspace member**, looking
+  only at `./Makefile` while changelog and coverage had been fixed to search
+  upward; and `pv-contracts` validated only `contracts/*.yaml`, leaving 549 of
+  1791 contracts in subdirectories unchecked. (QUAL-009)
+- **A crashed `--help` cascaded into a vacuous pass**: a binary that could not
+  answer `--help` read as "advertises no subcommands", and the transport gate
+  then certified the absence of undeclared transports over that empty parse.
+  (QUAL-009)
+- **A receipt now exists only if it is complete** — absolute path, commit SHA
+  stamped in, written as `.partial` and atomically renamed, so a crashed run
+  leaves *no* receipt rather than a previous verdict readable as current.
+  (QUAL-013)
+- **One parser for the gate declaration.** The runner and its guard each had
+  their own reader of `[package.metadata.dogfood]`; the guard's was strictly
+  narrower, so a gate the release *executed* could never be scanned for
+  unpinned verifiers. (QUAL-015)
+
+Regex-based shell scanning is retired as a strategy after 16 wrong verdicts in
+one programme (#2653): four remaining tokeniser gaps ship as an executable
+known-gap corpus that reds if a gap widens *or* is silently closed.
+
+### Fixed — user-visible correctness
+
+- **SSE streaming deleted every space and newline** — responses arrived as
+  `Thequickbrownfox`. (#2367)
+- **Ollama clients silently dropped every `apr` response**: `created_at` was a
+  bare epoch instead of RFC 3339. (#2371)
+- **Six native routes were dead** on every `apr serve run model.gguf`, and one
+  request could kill the server; three more Ollama routes were mounted and
+  advertised to nobody. (#2429, #2475)
+- **A GGUF without a context-length key refused every prompt.** (#2479)
+- **A complete MoE model was rejected as truncated/corrupt.** (#2541)
+- **`--offline` downloaded anyway** on pull, chat and showcase. (#2416)
+- `apr lint --json` handed consumers a Rust `Debug` string where they asked for
+  a field. (#2454)
+- Two book chapter examples had trained to NaN, on main, for three months; three
+  further examples had rotted, one since a module was deleted under it. (#2459,
+  #2480)
+
+### Fixed — publishing
+
+- **A bare `tests/` exclude is not root-anchored** — it dropped 443 files from
+  the published `aprender-serve`; separately, 5.4 MB of build scratch was
+  shipping to crates.io, unseen by the guard meant to stop it. (#2365, #2487)
+- **`apr-cli` could not be published at all**: it depended on a `publish = false`
+  crate. (#2540)
+- **An unused dependency was breaking docs.rs for every downstream crate.**
+  (#2468)
+- **`make publish` could destroy `.cargo/config.toml`** with no recoverable
+  backup. (#2637)
+
+### Fixed — pv / provable-contracts hardening
+
+- **`pv validate` accepted `intake_status: banana`, `demand_score: 99999` and an
+  invented `competitor`** with 0 errors and exit 0 — serde dropped the fields, so
+  no validator could check what it never parsed. An invented enum value now fails
+  to PARSE, not merely lint. (#2555)
+- **`pv --version` could not tell you WHICH pv you have** — four things claim the
+  name. (#2559)
+- **`contracts-pv` had 76 features at 0% coverage** — not because nobody wrote
+  tests, but because CI ran none of pv's. (#2589)
+- **The release receipt was citing pv 0.49.0** while the in-tree crate was
+  0.63.0 — and the two disagree on the gate that decides the release. (#2552)
+
+### Fixed — security
+
+- **`thrift 0.17.0` (CVE-2026-43868)** removed by moving arrow/parquet 57 → 59
+  across eight crates. `cargo deny` was GREEN on the vulnerable tree: RustSec
+  carries no thrift advisory, so the gap is exactly *GHSA minus RustSec*. A new
+  `check_no_ghsa_banned_crates.sh` closes it. (#2531)
+
+### Fixed — infrastructure
+
+- **The disk guard's idle test sat one directory ABOVE the thing being written.**
+  (#2565)
+- **The #2607 stdin test asserted about the fd 0 it inherited**, so it passed
+  under nextest (which supplies `/dev/null`) and failed under plain `cargo test`
+  — blocking every coverage measurement while the required check stayed
+  green. (#2632)
+- **`falsification_spec_v10`: 140 gates named in no workflow**, 38 failing.
+  (#2522)
+- **Crypto surface** (keygen/encrypt/decrypt/sign) gained its first real
+  coverage; the homebrew XOR fallback is replaced by ChaCha20-Poly1305 and now
+  fails closed rather than silently downgrading. (#2590)
+- **Three wall-clock assertions made the required `workspace-test` check
+  non-deterministic**, and a 100 ns comparison in a required check blocked every
+  open PR. (#2425, #2490)
+- **`workspace-test` used a different sccache cap and evicted the shared
+  cache.** (#2545)
+- **Two lib tests asserted nothing and took 19 minutes.** (#2533)
+- **The monorepo pulled its own siblings from crates.io**, and the gate that
+  should have caught it could not fail; a member could not compile and nine
+  manifests no cargo command could load. (#2471, #2472)
+- A mock binary raced its own spawn (ETXTBSY), in two copies. (#2469)
+- CLAUDE.md gained a **Verification Discipline** section enumerating the ways
+  the 0.63.0 sweep fooled itself. (#2363)
+
+### Changed
+
+- `apr serve run --backend` validates its argument against one shared
+  declaration, rather than three hand-copied parsers of which the third had
+  dropped the validator. (#2583)
+
+
 ## [0.63.0] - 2026-08-01
 
 The **provenance** release. v0.62.0 fixed gates that could not fail; this one

@@ -18,7 +18,22 @@ description: Dogfood the aprender release surface — derive every interface fro
 `F-COV-*`, `F-CHAOS-*`, `F-DIFF-*`, `F-WORKTREE-HEAD-001`, `F-EXPORT-ROUNDTRIP-001`,
 `F-VALIDATE-QUALITY-001`, `F-RUN-EXIT-SANITY-001`, `F-7B-INFERENCE-001`,
 `F-APR-INFERENCE-PARITY-001`)
-**Absorbs**: `dogfood.sh` release-gate protocol, `invariance.py` transport gate
+**Defers to** (v3.1, aprender#2640 — this line used to read "**Absorbs**: `dogfood.sh`
+release-gate protocol", and "absorbs" is the wrong verb: it invited a second copy
+and the runner promptly grew one):
+`scripts/dogfood.sh` is the ONE fleet release-gate protocol and
+`.claude/skills/dogfood/SKILL.md` is its ONE prose. This skill layers aprender's
+surface-coverage ledger ON TOP of it and must not restate a gate the runner owns.
+The `invariance.py` transport gate likewise belongs to the runner
+(`scripts/invariance.py`), not to this file.
+
+Three documents describe overlapping release work; each owns exactly one scope:
+
+| skill | scope | source of truth for |
+|---|---|---|
+| `dogfood` | ANY Rust crate in the fleet | the generic pre-release protocol, `scripts/dogfood.sh` |
+| `apr-dogfood` (this file) | this repo's shipped surface | gate coverage against the surface ledger |
+| `pre-release` | `apr-cli` only | the crates.io publish gates |
 **New**: Phase 2 (coverage ledger), Phase 5 (fleet hardware matrix), the mutation registry
 
 **Contracts**:
