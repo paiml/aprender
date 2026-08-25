@@ -4,7 +4,7 @@
 //!
 //! Source contract: contracts/setfit-encoder-conformance-v1.yaml
 //! Contract metadata.version: 2.0.0
-//! Contract sha256: be332adb98204e7a0d00ed25029373c9bcc31f870ceaf7ae73adb1a1c9900b5d
+//! Contract sha256: 16a6591788a6c693ad3d08845a20267e31d4a86ee663310a943c841d9e7b2b93
 //!
 //! Regenerate with:
 //!
@@ -46,7 +46,7 @@ pub const FULL_MODEL_REFERENCE: f32 = 3.73762473e-5;
 
 /// sha256 of the source contract at generation time.
 pub const CONTRACT_SHA256: &str =
-    "be332adb98204e7a0d00ed25029373c9bcc31f870ceaf7ae73adb1a1c9900b5d";
+    "16a6591788a6c693ad3d08845a20267e31d4a86ee663310a943c841d9e7b2b93";
 
 /// `metadata.version` of the source contract at generation time.
 pub const CONTRACT_VERSION: &str = "2.0.0";
