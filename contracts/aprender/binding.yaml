@@ -893,3 +893,185 @@ critical_path:
 - dtype_coercion_safety
 - session_state_machine
 - kv_cache_management
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: rng_key_derivation
+  module_path: aprender_contrastive_data::rng
+  function: derive_key
+  signature: 'fn derive_key(root_seed: u64, domain: &str) -> DomainKey'
+  status: implemented
+  notes: SHA-256(DOMAIN_TAG || root_seed.to_le_bytes() || domain), truncated little-endian in both Philox key lanes
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: rng_domain_strings
+  module_path: aprender_contrastive_data::rng::domains
+  function: select
+  signature: 'fn select(label: usize) -> String'
+  status: implemented
+  notes: The one FORMATTED domain string; the other five are `pub const &str` in the same module, frozen at six total
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: bounded_draw
+  module_path: aprender_contrastive_data::rng
+  function: bounded
+  signature: 'fn bounded(key: &DomainKey, stream_id: u32, ordinal: u64, n: NonZeroU64) -> u64'
+  status: implemented
+  notes: Lemire multiply-shift; NonZeroU64 makes a zero bound unrepresentable rather than misbehaving
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: normalized_content_hash
+  module_path: aprender_contrastive_data::hash
+  function: normalized_hash
+  signature: 'fn normalized_hash(input: &str) -> [u8; 32]'
+  status: implemented
+  notes: NFC then whitespace collapse then SHA-256; versioned by CONTENT_NORMALIZATION_VERSION
+# --- contrastive-pair-protocol-v1: ingest and typestate (D-16/D-19/D-27) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: split_ingest_boundary
+  module_path: aprender_contrastive_data::split
+  function: validate_ingest_ladder
+  signature: 'fn validate_ingest_ladder(rows: &[LabeledExample], role: &str, decl: &SplitDeclaration) -> Result<(),
+    ContrastiveDataError>'
+  status: implemented
+  notes: Module-private, deliberately — it is the SINGLE ladder both `Split` constructors call, and both constructors are themselves pub(crate)
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: prepared_dataset_typestate
+  module_path: aprender_contrastive_data::prepared
+  function: PreparedDataset::<Canonical>::from_labeled_rows
+  signature: 'fn from_labeled_rows(train: Vec<LabeledExample>, validation: Vec<LabeledExample>, test: Vec<LabeledExample>,
+    decls: &CanonicalDeclarations, ledger: &mut AccessLedger) -> Result<Self, ContrastiveDataError>'
+  status: implemented
+  notes: Profile is a TYPE PARAMETER; the Compatibility twin has its own constructor and no validation_witness. Compile-fail evidence in tests/ui/
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: dataset_attestation
+  module_path: aprender_contrastive_data::attestation
+  function: PreparedDataset::<Canonical>::from_attested_bytes
+  signature: 'fn from_attested_bytes(attestation_bytes: &[u8], splits: &BTreeMap<String, Vec<u8>>, ledger: &mut AccessLedger)
+    -> Result<Self, ContrastiveDataError>'
+  status: implemented
+  notes: One annotated impl per profile; the Compatibility twin has the identical signature. Per-split digests are compared BEFORE the buffers are parsed
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: cross_split_exclusion
+  module_path: aprender_contrastive_data::dedup
+  function: coalesced_exclusions
+  signature: 'fn coalesced_exclusions(splits: &[(&''static str, &[LabeledExample])]) -> ExclusionRecord'
+  status: implemented
+  notes: pub(crate); connected components over the UNION of exact- and normalized-hash edges, so a doubly-duplicated row decrements its pool once
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: split_span_fail_closed
+  module_path: aprender_contrastive_data::pairs
+  function: validate_pair_records
+  signature: 'fn validate_pair_records(recs: &[UntrustedPairRecord], sel: &Selection) -> Result<Vec<LabeledPair>,
+    ContrastiveDataError>'
+  status: implemented
+  notes: The TYPED half. The structural half is SelectedId's private constructor — a type, not a function, so it has no binding. Negative in tests/negative_leaky.rs
+# --- contrastive-pair-protocol-v1: selection and manifest (D-03/D-18) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: few_shot_selection
+  module_path: aprender_contrastive_data::select
+  function: FewShotSelector::select
+  signature: 'fn select(dataset: &PreparedDataset<Canonical>, cfg: &SelectionConfig, ledger: &mut AccessLedger) ->
+    Result<Selection, ContrastiveDataError>'
+  status: implemented
+  notes: Partial Fisher-Yates per class in ascending label order; fail-closed on shots outside {8,16,32,64} and on an exhausted pool
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: selection_canonical_payload
+  module_path: aprender_contrastive_data::manifest
+  function: SelectionPayload::to_canonical_bytes
+  signature: 'fn to_canonical_bytes(&self) -> Result<Vec<u8>, ContrastiveDataError>'
+  status: implemented
+  notes: Non-circular — the payload excludes its own semantic_hash, which lives in the outer envelope with the volatile metadata
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: selection_replay
+  module_path: aprender_contrastive_data::select
+  function: Selection::replay
+  signature: 'fn replay(manifest: &SelectionManifest, dataset: &PreparedDataset<Canonical>, ledger: &mut AccessLedger)
+    -> Result<Self, ContrastiveDataError>'
+  status: implemented
+  notes: Step 5 re-derives the ordered list from (dataset, seed, shots); an internally consistent hand-edited manifest is still refused
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: access_ledger_persistence
+  module_path: aprender_contrastive_data::ledger
+  function: AccessLedger::to_canonical_bytes
+  signature: 'fn to_canonical_bytes(&self) -> Result<Vec<u8>, ContrastiveDataError>'
+  status: implemented
+  notes: The ledger hash rides inside the HASHED payload region, so it cannot be desynchronized from the selection it describes
+# --- contrastive-pair-protocol-v1: pair identity and capacity (D-12/D-14) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: canonical_pair
+  module_path: aprender_contrastive_data::pairs
+  function: CanonicalPair::new
+  signature: 'fn new(a: SelectedId, b: SelectedId) -> Result<Self, ContrastiveDataError>'
+  status: implemented
+  notes: Sole constructor, private fields — both orientations are one value and (x, x) is a typed SelfPair rather than a representable pair
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: positive_capacity
+  module_path: aprender_contrastive_data::pairs
+  function: positive_capacity
+  signature: 'fn positive_capacity(class_sizes: &[u64]) -> Result<u64, ContrastiveDataError>'
+  status: implemented
+  notes: Checked throughout; sum of C(n_k, 2)
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: negative_capacity
+  module_path: aprender_contrastive_data::pairs
+  function: negative_capacity
+  signature: 'fn negative_capacity(class_sizes: &[u64]) -> Result<u64, ContrastiveDataError>'
+  status: implemented
+  notes: Running-prefix accumulation, NOT (S^2 - sum n^2)/2 — same O(K) quantity, but it overflows exactly when the RESULT does. Two derivations pinned against each other in the tests
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: default_epoch_budget
+  module_path: aprender_contrastive_data::pairs
+  function: effective_default_budget
+  signature: 'fn effective_default_budget(class_sizes: &[u64], hard_cap: u64) -> Result<u64, ContrastiveDataError>'
+  status: implemented
+  notes: Bound to the CLAMPING form because the contracted equation includes the clamp; the unclamped closed form is `default_epoch_budget` in the same module
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: budget_resolution
+  module_path: aprender_contrastive_data::pairs
+  function: resolve_budget
+  signature: 'fn resolve_budget(cfg: &PairConfig, class_sizes: &[u64]) -> Result<(u64, bool), ContrastiveDataError>'
+  status: implemented
+  notes: The hard cap BINDS explicit budgets — BudgetExceedsHardCap, never a silent clamp. Mutation-verified in plan 02-07
+# --- contrastive-pair-protocol-v1: the O(K) pair stream (D-11/D-14/D-15) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: pair_stream
+  module_path: aprender_contrastive_data::pairs
+  function: PairLayout::raw_pair_at
+  signature: 'fn raw_pair_at(&self, ordinal: u64) -> Result<RawPair, ContrastiveDataError>'
+  status: implemented
+  notes: Per-class weights n_c*(S-n_c) and a block-skipping map over the class-offset array. No array indexed by class PAIRS exists; evidenced at K = N in tests/negative_materializing.rs
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: pair_stream_degenerate_policy
+  module_path: aprender_contrastive_data::pairs
+  function: classify_degenerate
+  signature: 'fn classify_degenerate(pos: u64, neg: u64) -> Result<EmittedKinds, ContrastiveDataError>'
+  status: implemented
+  notes: Total over the four cases; (0, 0) is NoPairCapacity, following the equation's INVARIANT prose rather than its formula ordering
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: singleton_policy
+  module_path: aprender_contrastive_data::pairs
+  function: PairSampler::new
+  signature: 'fn new(sel: &''a Selection, cfg: &PairConfig) -> Result<Self, ContrastiveDataError>'
+  status: implemented
+  notes: Records the policy, its version and the affected class count; NegativesOnly falls out of C(1,2) = 0 rather than being special-cased
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: untrusted_pair_ingest
+  module_path: aprender_contrastive_data::pairs
+  function: validate_pair_records
+  signature: 'fn validate_pair_records(recs: &[UntrustedPairRecord], sel: &Selection) -> Result<Vec<LabeledPair>,
+    ContrastiveDataError>'
+  status: implemented
+  notes: Second of TWO equations on one function — the macro accepts stacked #[contract] attributes (verified by compiling both forms). Re-derives the target and refuses PairTargetMismatch
+# --- contrastive-pair-protocol-v1: replay attestation (D-09/D-18) ---
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: pair_manifest_replay
+  module_path: aprender_contrastive_data::manifest
+  function: PairReplayRecord::to_config
+  signature: 'fn to_config(&self) -> Result<PairConfig, ContrastiveDataError>'
+  status: implemented
+  notes: The only sanctioned way back from a persisted record to a runnable configuration; refuses unsupported schema, strategy and policy versions
+- contract: contrastive-pair-protocol-v1.yaml
+  equation: pair_manifest_hash
+  module_path: aprender_contrastive_data::manifest
+  function: pair_manifest_hash
+  signature: 'fn pair_manifest_hash(sampler: &PairSampler<''_>, record: &PairReplayRecord) -> Result<[u8; 32],
+    ContrastiveDataError>'
+  status: implemented
+  notes: SHA-256(record_bytes || 0x1E || streamed pairs) — the header is INSIDE the digest, and a record that does not describe the sampler is refused
+# --- tweet-eval-stance-benchmark-v1 ---
