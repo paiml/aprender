@@ -54,12 +54,22 @@ falsification_tests:
     For c in {2, 4, 8}, serialization_index(c) < c by a margin outside the
     measured run-to-run dispersion. The pre-fix tree scores ~c and fails.
   test: 'LIVE-PENDING — scripts/perf000_serialization_probe.sh'
+  measured: >-
+    2026-08-25, RTX 4090, qwen2.5-coder-1.5b-instruct-q4_k_m, 400-token
+    generations, median of 3, same commit both sides. BEFORE (--features cuda,
+    scheduler absent): 1.00/1.99/3.98/7.96 at N=1/2/4/8 -- linear to two
+    decimals, aggregate flat at ~335 tok/s. AFTER (same flag, gating fixed):
+    1.00/2.45/2.29/2.39 -- flat from N=2, ~1100 tok/s at N=8. 3.32x aggregate
+    at N=8, N=1 unchanged at 1.20s. N=2 regresses 1.99 -> 2.45 (~23%), the
+    batched path's per-token cost before batching pays off.
   if_fails: >-
     the server is a queue with extra steps: a sixteen-user deployment runs at a
     tenth of llama.cpp while every single-user benchmark looks healthy
   mutation: >-
-    restore the unconditional `m == 1` early return; serialization_index must
-    return to ~c
+    revert the cfg from `cuda` to `cuda-batch` -- OBSERVED RED 2026-08-25: the
+    same binary flag then yields 1.00/1.99/3.98/7.96 and the server announces
+    `scheduler=none(serialized-fallback)` instead of CONTINUOUS_BATCHING. Both
+    builds came from one commit, which is the discrimination evidence.
 - id: F-BATCH-002
   rule: the fast path is taken only when nothing else is pending
   prediction: >-
@@ -135,11 +145,28 @@ qa_gate:
       truth for a bound this contract does not own.
 known_limitations:
 - >-
-  NOT YET IMPLEMENTED, AND THE PATH IS NOT YET PROVEN. Two mechanisms produce
-  the same signature: the `m == 1` branch inside the scheduler, and the
-  `cuda_chat_backend.rs` fallback taken when `cuda_batch_tx()` is None. Which one
-  the 2026-08-25 run took has NOT been established, so all four bindings are
-  LIVE-PENDING. Fixing the wrong one would look correct and change nothing.
+  ROOT CAUSE ESTABLISHED 2026-08-25, AND IT IS FEATURE GATING, NOT ALGORITHM.
+  crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:485-518 wires the
+  scheduler under `#[cfg(feature = "cuda-batch")]` and, under
+  `#[cfg(not(feature = "cuda-batch"))]`, builds the state with NO batch_tx at
+  all. So on a `--features cuda` build `cuda_batch_tx()` is None and every
+  request takes the cuda_chat_backend "direct RwLock path (serialized)"
+  fallback -- which is exactly serialization_index(c) ~= c. The continuous
+  batching implementation is not missing; it is not compiled into any build a
+  user is instructed to make.
+- >-
+  THE `m == 1` BRANCH IS A SECOND-ORDER CONCERN. cuda_batch_scheduler.rs:234
+  holds `model.write()` across a whole generation and its own comment concedes
+  "the second request queues until the first completes". That is a real defect
+  and it is unreachable in a `cuda` build, because the scheduler never starts.
+  Fix the gating first, then re-measure before touching the branch: the earlier
+  attribution to this branch alone would have produced a change that looks
+  correct and moves nothing.
+- >-
+  BINDINGS REMAIN LIVE-PENDING. The gating defect is proven by reading the
+  source and by a discriminating `strings` probe of two builds; the THROUGHPUT
+  claim it implies is not yet measured, and this contract does not assert a
+  number it has not taken.
 - >-
   Arms D and E (kv_utilization, itl_p95_ratio) are REPORTING until this lands.
   The spec requires them promoted to blocking in the SAME PR as the fix, so a

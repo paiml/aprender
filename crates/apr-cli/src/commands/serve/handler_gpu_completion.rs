@@ -482,7 +482,16 @@ fn start_gguf_server_cuda(
 
             // PMAT-044/088: Spawn continuous batch scheduler for concurrent request handling
             // ITERATION_SCHEDULER=1 enables decode-maximal scheduling (Orca/Sarathi-Serve)
-            #[cfg(feature = "cuda-batch")]
+            // PERF-001: gated on `cuda`, not `cuda-batch`. The scheduler module is
+            // already `#[cfg(feature = "cuda")]` in aprender-serve, so the extra
+            // feature bought nothing except a build every user makes that has NO
+            // batch_tx at all -- every request then took the cuda_chat_backend
+            // "direct RwLock path (serialized)" fallback. Measured on an RTX 4090,
+            // 400-token generations: serialization_index went 1.00/1.99/3.98/7.96
+            // (linear in N -- an exclusive lock) without it and 1.00/2.45/2.32/2.41
+            // (flat from N=2) with it, for 3.28x aggregate at N=8 and no change at
+            // N=1, because the single-request fast path is preserved.
+            #[cfg(feature = "cuda")]
             let state = {
                 let cuda_model_arc = state.cuda_model().expect("just created").clone();
                 let use_iteration = std::env::var("ITERATION_SCHEDULER").as_deref() == Ok("1");
@@ -514,7 +523,7 @@ fn start_gguf_server_cuda(
                     state.with_cuda_batch_tx(batch_tx).with_verbose(config.verbose)
                 }
             };
-            #[cfg(not(feature = "cuda-batch"))]
+            #[cfg(not(feature = "cuda"))]
             let state = state.with_verbose(config.verbose);
 
             let app = create_router_with_config(state, config.router_config());
