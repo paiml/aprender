@@ -122,6 +122,31 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
         println!("\nreport written to {}", path.display());
     }
 
+    // MEASUREMENT VALIDITY BEFORE MEASUREMENT — adopted from SGLang, which
+    // asserts `res["completed"] == num_prompts` before it reads a throughput at
+    // all (test_bench_serving.py). A request that never completed contributes
+    // no sample, so a mean over the survivors silently EXCLUDES the failure and
+    // reports the remainder as the result.
+    //
+    // That is not hypothetical here. `apr serve run --gpu --batch` hangs on four
+    // concurrent chat requests; the benchmark reported `0.5 tok/s aggregate`
+    // rather than an error, and a reader would call that slow rather than
+    // broken (#2696).
+    let failures: Vec<String> = report
+        .runs
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.failed > 0)
+        .map(|(i, r)| format!("run {} had {} failed request(s)", i + 1, r.failed))
+        .collect();
+    if !failures.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "{} — a throughput averaged over the requests that survived is not a \
+             measurement of this runtime, it is a measurement of its survivors",
+            failures.join("; ")
+        )));
+    }
+
     // A RUN THAT GENERATED NO TOKENS IS A FAILED RUN, NOT A FAST ONE.
     //
     // `successful` counts HTTP 200. A server can answer 200 with an empty

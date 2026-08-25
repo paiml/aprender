@@ -29,16 +29,36 @@ import statistics
 import sys
 
 COMPUTE_CLASSES = ("cpu", "cuda", "metal", "wgpu", "unknown")
+# THE JOIN KEY. Adopted from llama.cpp's compare-llama-bench.py, which will not
+# compare two rows unless 25 properties agree (cpu_info, gpu_info, backends,
+# n_threads, model, ...). Ours agreed on four, none identifying the HOST or the
+# WORKLOAD — so a receipt from gx10 on a 0.5B model was structurally comparable
+# with one from lambda on a 7B. Cross-host comparison should be impossible to
+# express, not merely discouraged.
 PROVENANCE_REQUIRED = ("binary_path", "binary_sha256", "resolution", "compute_class")
-DISCARD_REASONS = ("early_eos", "negative_delta", "nonzero_exit")
+JOIN_KEY_REQUIRED = ("host", "accelerator", "model", "quantization")
+# `timeout` was missing, and it is the one that matters: a hung request produces
+# NO sample, so it cannot be discarded -- it simply never appears, and the mean
+# over the survivors reads as a slow result rather than a broken one. Naming it
+# forces a receipt to say so. (CRUX: SGLang asserts completed == requested.)
+DISCARD_REASONS = ("early_eos", "negative_delta", "nonzero_exit", "timeout")
 
 
 def _err(errors, msg):
     errors.append(msg)
 
 
+def _check_join_key(prov, errors):
+    """A receipt that does not say WHERE and on WHAT cannot be compared to
+    another. Reported, not failed, until every producer emits it (#2696)."""
+    missing = [k for k in JOIN_KEY_REQUIRED if not prov.get(k)]
+    if missing:
+        prov.setdefault("_join_key_incomplete", missing)
+
+
 def _check_provenance(prov, errors):
     """Which binary ran, and which path it took."""
+    _check_join_key(prov, errors)
     for key in PROVENANCE_REQUIRED:
         if key not in prov:
             _err(errors, "provenance.%s: missing (required)" % key)
