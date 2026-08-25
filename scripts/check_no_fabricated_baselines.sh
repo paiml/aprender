@@ -41,18 +41,42 @@ printf -- '--- no fabricated comparator baselines (F12) ------------------------
 # literal is suspect, MINUS an explicit denylist of configuration suffixes
 # (a timeout or a port is a setting, not a measurement).
 PATTERN_VAR='^[[:space:]]*(OLLAMA|LLAMA|LLAMACPP|VLLM|TGI|PYTORCH|TORCH)_[A-Z0-9_]*=("?\$\{[A-Z0-9_]+:-[0-9.]+\}"?|"?[0-9.]+"?)'
-CONFIG_SUFFIX='(TIMEOUT|PORT|RETRIES|RETRY|SECONDS|SECS|MS|LIMIT|MAX|MIN|SIZE|COUNT|WORKERS|THREADS)[A-Z0-9_]*='
+# RC/STATUS/CODE/PID/FD were added after scripts/llama_bin.sh's `LLAMA_PIN_RC=3`
+# — a RETURN CODE — was flagged as a fabricated baseline. It surfaced only when
+# PARITY-009 and PARITY-005 met in the cumulative stack head, which is what a
+# cumulative head is for: two branches each green alone, one false positive
+# together.
+CONFIG_SUFFIX='(TIMEOUT|PORT|RETRIES|RETRY|SECONDS|SECS|MS|LIMIT|MAX|MIN|SIZE|COUNT|WORKERS|THREADS|RC|STATUS|CODE|PID|FD|LEVEL|VERSION)[A-Z0-9_]*='
 PATTERN_JSON='"(ollama|llama|llamacpp|vllm|tgi|pytorch|torch)_[a-z0-9_]*(baseline|bench|tps|throughput|speed|latency)[a-z0-9_]*"[[:space:]]*:[[:space:]]*(\{[^}]*[0-9][^}]*\}|[0-9.]+)'
 PATTERN="($PATTERN_VAR)|($PATTERN_JSON)"
+
+# THIS FILE IS EXCLUDED FROM ITS OWN SCAN, and the reason is not convenience.
+# Its case table deliberately CONTAINS the forbidden construct — that is what a
+# must-match fixture IS. Scanning itself would make the guard permanently red
+# against its own proof of discrimination.
+#
+# It passed for a while and then began failing, which is the interesting part:
+# the universe is `git ls-files`, so while this file was UNTRACKED it was not
+# scanned at all. The moment it was committed it began matching its own
+# fixtures. That is the third instance of the tracked-only-universe shape in
+# this epic (SHIM-2644-03; check_bench_threshold.sh in PARITY-008/009), so the
+# universe below also unions the working tree — a new offender must not get a
+# free pass merely by being uncommitted.
+SELF="check_no_fabricated_baselines.sh"
 
 scanned=0
 hits=""
 while IFS= read -r f; do
+    [ "$(basename "$f")" = "$SELF" ] && continue
     scanned=$((scanned + 1))
     if grep -nE "$PATTERN" "$f" 2>/dev/null | grep -qvE "$CONFIG_SUFFIX"; then
         hits="$hits $f"
     fi
-done < <(git ls-files 'scripts/*.sh' 'crates/*/scripts/*.sh' 2>/dev/null)
+done < <(
+    { git ls-files 'scripts/*.sh' 'crates/*/scripts/*.sh' 2>/dev/null
+      find scripts -maxdepth 2 -type f -name '*.sh' 2>/dev/null
+    } | LC_ALL=C sort -u
+)
 
 # VACUITY: a scan over zero files sweeps clean and means nothing.
 if [ "$scanned" -lt 20 ]; then
@@ -92,6 +116,9 @@ OLLAMA_BASELINE="$(measure_ollama)"
 OLLAMA_URL="http://localhost:11434"
 echo "ollama baseline is measured, not asserted"
 LLAMA_BIN="$(command -v llama-bench)"
+LLAMA_PIN_RC=3
+OLLAMA_EXIT_CODE=1
+LLAMA_LOG_LEVEL=2
 JSON+='"ollama_baselines":null'
 readonly OLLAMA_TIMEOUT_SECONDS=30
 CASES

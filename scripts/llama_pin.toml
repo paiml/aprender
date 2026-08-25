@@ -35,3 +35,69 @@ build_flags_mini   = "cmake -B build -DGGML_METAL=ON"
 # silently accept whatever llama.cpp happens to be installed and call it
 # pinned. Set this to the real build tag in the commit that first measures a
 # ratio, and that commit is the start of the comparable series.
+
+
+# ── THE FAIRNESS PROTOCOL (PARITY-010, aprender#2677) ──────────────────────
+#
+# A ratio is only a measurement if a SKEPTICAL OUTSIDER can reproduce both
+# invocations from this file alone. Every knob below is one this project has
+# actually been burned by, in one direction or the other:
+#
+#   · The "ollama decode 1.371x" claim was WITHDRAWN after re-measurement gave
+#     1.015-1.109x. Over-claiming and under-claiming are both reporting
+#     failures.
+#   · A golden gate once flipped between backends on a bare "Hello" prompt
+#     under greedy decode, because the argmax margin was a near-tie (#2359).
+#     Prompt and sampling are pinned for that reason, not for tidiness.
+#   · apr pays a 3.4-3.9 s one-shot startup that a resident daemon does not.
+#     llama-bench has no equivalent, so a naive single-length comparison
+#     charges apr for startup and reports a fabricated deficit. The 128/384
+#     DIFFERENTIAL cancels it, and it is the only technique in this fleet that
+#     does.
+#
+# EVERY KEY HERE MUST BE SET before a ratio may arm a threshold.
+# scripts/check_bench_protocol.sh refuses an incomplete declaration rather
+# than letting an unstated knob become a silent degree of freedom.
+
+[protocol]
+# The differential. Two forced token counts; the ratio is computed from the
+# SLOPE between them, which is what cancels fixed startup cost.
+n_low  = 128
+n_high = 384
+
+# Sampling. Greedy with a fixed seed on both sides, so a decode difference is
+# a decode difference and not a sampling difference.
+temperature = 0.0
+top_p = 1.0
+seed = 42
+
+# One prompt, long enough that the argmax margin is not a coin flip.
+prompt_id = "essay-1000w-history-of-computing"
+
+# Quantization must MATCH. Comparing apr Q4_K_M against a comparator's Q5 or
+# F16 is the commonest way to produce an unfair number in either direction.
+quantization = "Q4_K_M"
+
+# Batch and context, stated because a comparator defaulting differently is a
+# free advantage nobody declared.
+batch_size = 1
+context_length = 4096
+
+# GPU layers offloaded. "all" on both sides or the comparison is CPU-vs-GPU
+# wearing a GPU label.
+gpu_layers = "all"
+
+# Flash attention: on or off, but the SAME on both sides.
+flash_attention = false
+
+# Threads for any CPU-side work.
+threads = 8
+
+# Trials. apr's distribution is wider, so it takes the larger median.
+apr_trials = 7
+comparator_trials = 5
+
+# THE TWO INVOCATIONS, VERBATIM. `{...}` are substituted from the keys above
+# and from the resolved binaries; nothing else varies between runs.
+apr_command = "apr run --gpu --benchmark --max-tokens {n} --temperature {temperature} --top-p {top_p} --seed {seed} {model}"
+comparator_command = "{llama_bench} -m {model} -p 0 -n {n} -ngl 999 -t {threads} -b {batch_size} -r {comparator_trials}"

@@ -358,9 +358,14 @@ sweep_hits=""
 while IFS= read -r f; do
     [ -f "$f" ] || continue
     case " $SWEEP_ALLOWED " in *" $f "*) continue ;; esac
-    grep -q 'cargo install aprender' "$f" 2>/dev/null || continue
+    # COMMENTS ARE NOT INVOCATIONS. scripts/bench_host_receipt.sh documents
+    # "RUN THIS ON THE HOST, AFTER `cargo install aprender`" in its header and
+    # installs nothing — it was flagged as a second sweep on the strength of
+    # that sentence. Found when PARITY-003 and PARITY-011 met in the cumulative
+    # stack head: each branch was green alone.
+    grep -vE '^[[:space:]]*#' "$f" 2>/dev/null | grep -q 'cargo install aprender' || continue
     # ...and writes a per-host receipt. Both halves, or it is not a sweep.
-    grep -qE 'evidence/dogfood|install_rc' "$f" 2>/dev/null || continue
+    grep -vE '^[[:space:]]*#' "$f" 2>/dev/null | grep -qE 'evidence/dogfood|install_rc' || continue
     sweep_hits="$sweep_hits $f"
 done < <(
     { git ls-files 'scripts/*.sh' 'crates/*/scripts/*.sh' 2>/dev/null
