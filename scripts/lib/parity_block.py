@@ -21,6 +21,7 @@ import bench_receipt  # noqa: E402
 
 FLOOR = 0.80          # the release gate: below this, a lane FAILs
 STRETCH = 1.50        # the stated goal, recorded so the distance is visible
+CEILING = 1.50        # a ratio above this is likelier a measurement error than a win
 
 
 def _samples(path, key):
@@ -43,6 +44,31 @@ def _side(binary, sha, klass, path, install_source=None, feature_set=None):
     if install_source:
         side["install_source"] = install_source
     return side
+
+
+BANDS_DEFAULT = (1, 4, 8, 16)
+
+
+def _band_from(name, c, work):
+    """One concurrency band, both metrics, ratios DERIVED from the samples."""
+    a = os.path.join(work, "apr-%s-c%d.json" % (name, c))
+    l = os.path.join(work, "llama-%s-c%d.json" % (name, c))
+    if not (os.path.exists(a) and os.path.exists(l)):
+        return None
+    band = {"concurrency": c,
+            "subject": {"aggregate_tok_per_sec": _samples(a, "tokens_per_sec"),
+                        "decode_tok_per_sec": _samples(a, "decode_tok_per_sec")},
+            "comparator": {"aggregate_tok_per_sec": _samples(l, "tokens_per_sec"),
+                           "decode_tok_per_sec": _samples(l, "decode_tok_per_sec")}}
+    ok = True
+    for metric in ("aggregate_tok_per_sec", "decode_tok_per_sec"):
+        ratio = (statistics.median(band["subject"][metric])
+                 / statistics.median(band["comparator"][metric]))
+        band["ratio_" + metric] = round(ratio, 4)
+        if ratio < FLOOR or ratio > CEILING:
+            ok = False
+    band["verdict"] = "PASS" if ok else "FAIL"
+    return band
 
 
 def _lane_from(name, apr_class, comp_class, args, work):
@@ -69,7 +95,15 @@ def _lane_from(name, apr_class, comp_class, args, work):
             "ratio_prefill": round(
                 statistics.median(subject["prefill_tok_per_sec"])
                 / statistics.median(comparator["prefill_tok_per_sec"]), 4)}
+    bands = [b for b in (_band_from(name, c, work) for c in BANDS_DEFAULT) if b]
+    if bands:
+        lane["declared_bands"] = list(BANDS_DEFAULT)
+        lane["bands"] = bands
+        lane["ceiling"] = CEILING
     _apply_verdict(lane, ratio, apr_class, comp_class)
+    if bands and any(b["verdict"] == "FAIL" for b in bands):
+        # A lane cannot be greener than its worst band.
+        lane["verdict"] = "FAIL"
     return lane
 
 

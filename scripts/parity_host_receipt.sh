@@ -81,6 +81,12 @@ apr_class_from_log() {
     fi
 }
 
+# The bands, read from the declaration rather than hardcoded here, so the
+# protocol file stays the single source of truth (#2696).
+BANDS=$(sed -n 's/^[[:space:]]*http_concurrency_bands[[:space:]]*=[[:space:]]*\[\(.*\)\].*/\1/p' \
+        "$(dirname "$0")/llama_pin.toml" | tr -d ' ' | tr ',' ' ')
+[ -n "$BANDS" ] || { printf 'FAIL  llama_pin.toml declares no http_concurrency_bands\n' >&2; exit 1; }
+
 run_lane() { # run_lane <class> <apr-flags> <llama-ngl> -> writes $WORK/<class>.json
     local klass="$1" apr_flags="$2" ngl="$3"
     local aport=8090 lport=8091
@@ -91,10 +97,12 @@ run_lane() { # run_lane <class> <apr-flags> <llama-ngl> -> writes $WORK/<class>.
     SERVER_PIDS="$SERVER_PIDS $!"
     wait_healthy "$aport" 300 || { printf 'FAIL  apr did not become healthy for lane %s\n' "$klass" >&2; return 1; }
     local taken; taken=$(apr_class_from_log "$WORK/apr-$klass.log")
-    "$APR" test llm bench --url "http://127.0.0.1:$aport" --model "$(basename "$MODEL" .gguf)" \
-        --profile "$PROFILE" --warmup "$WARMUP" --duration "$DURATION" --runs "$RUNS" \
-        --cooldown "$COOLDOWN" --concurrency 1 --stream --runtime-name "apr-$klass" \
-        --output "$WORK/apr-$klass.json" >/dev/null 2>&1 || true
+    for c in $BANDS; do
+        "$APR" test llm bench --url "http://127.0.0.1:$aport" --model "$(basename "$MODEL" .gguf)" \
+            --profile "$PROFILE" --warmup "$WARMUP" --duration "$DURATION" --runs "$RUNS" \
+            --cooldown "$COOLDOWN" --concurrency "$c" --stream --runtime-name "apr-$klass-c$c" \
+            --output "$WORK/apr-$klass-c$c.json" >/dev/null 2>&1 || true
+    done
     kill_servers; SERVER_PIDS=""; sleep 5
 
     "$LLAMA_SERVER" -m "$MODEL" --port "$lport" -ngl "$ngl" -c 4096 -t 8 -b 1 --no-warmup \
@@ -105,10 +113,12 @@ run_lane() { # run_lane <class> <apr-flags> <llama-ngl> -> writes $WORK/<class>.
     if [ "$ngl" != "0" ] && grep -q "layers to GPU" "$WORK/llama-$klass.log"; then
         if grep -qi "CUDA" "$WORK/llama-$klass.log"; then ctaken=cuda; else ctaken=metal; fi
     fi
-    "$APR" test llm bench --url "http://127.0.0.1:$lport" --model "$(basename "$MODEL" .gguf)" \
-        --profile "$PROFILE" --warmup "$WARMUP" --duration "$DURATION" --runs "$RUNS" \
-        --cooldown "$COOLDOWN" --concurrency 1 --stream --runtime-name "llamacpp-$LLAMA_BUILD" \
-        --output "$WORK/llama-$klass.json" >/dev/null 2>&1 || true
+    for c in $BANDS; do
+        "$APR" test llm bench --url "http://127.0.0.1:$lport" --model "$(basename "$MODEL" .gguf)" \
+            --profile "$PROFILE" --warmup "$WARMUP" --duration "$DURATION" --runs "$RUNS" \
+            --cooldown "$COOLDOWN" --concurrency "$c" --stream --runtime-name "llamacpp-$klass-c$c" \
+            --output "$WORK/llama-$klass-c$c.json" >/dev/null 2>&1 || true
+    done
     kill_servers; SERVER_PIDS=""; sleep 5
 
     printf '%s %s %s\n' "$klass" "$taken" "$ctaken" >> "$WORK/lanes.txt"
@@ -122,7 +132,13 @@ if "$APR" serve run --help 2>&1 | grep -q -- '--gpu' && \
    strings -a "$APR" 2>/dev/null | grep -qE 'cudarc|libcuda\.so|libcublas|Metal'; then
     run_lane accel "--gpu" 999
 else
-    printf 'REPORT this apr has no accelerated path linked; cpu lane only (#2696)\n' >&2
+    # Say WHY, in the receipt, in a form the gate can read. A gate that demands
+    # a lane its own producer cannot emit is unsatisfiable, and an unsatisfiable
+    # gate gets bypassed for substance (#2696).
+    printf 'no-accelerator-linked\n' > "$WORK/accel-absent.txt"
+    printf 'REPORT this apr has no accelerated path linked; cpu lane only.\n' >&2
+    printf '       The receipt records accel_absent so the gate reports rather\n' >&2
+    printf '       than demanding a lane that cannot exist (#2696).\n' >&2
 fi
 
 python3 "$(dirname "$0")/lib/parity_block.py" \
