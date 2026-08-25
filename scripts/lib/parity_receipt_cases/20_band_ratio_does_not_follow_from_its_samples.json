@@ -1,0 +1,168 @@
+{
+  "instrument": "apr test llm bench",
+  "protocol_ref": "scripts/llama_pin.toml#protocol.http",
+  "model": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+  "lanes": [
+    {
+      "lane": "cuda",
+      "subject": {
+        "provenance": {
+          "binary_path": "/x/apr",
+          "binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resolution": "scripts/apr_bin.sh",
+          "compute_class": "cuda",
+          "feature_set": [
+            "cuda"
+          ]
+        },
+        "aggregate_tok_per_sec": [
+          130.0,
+          132.0
+        ],
+        "decode_tok_per_sec": [
+          130.0,
+          132.0
+        ],
+        "install_source": "crates.io"
+      },
+      "comparator": {
+        "name": "llama.cpp",
+        "build_commit": "39173bcac",
+        "provenance": {
+          "binary_path": "/x/llama-server",
+          "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "resolution": "scripts/llama_bin.sh",
+          "compute_class": "cuda"
+        },
+        "aggregate_tok_per_sec": [
+          158.0,
+          159.0
+        ],
+        "decode_tok_per_sec": [
+          158.0,
+          159.0
+        ]
+      },
+      "ratio_decode": 0.8265,
+      "verdict": "PASS",
+      "floor": 0.8,
+      "ceiling": 1.5,
+      "declared_bands": [
+        1,
+        4,
+        8,
+        16
+      ],
+      "bands": [
+        {
+          "concurrency": 1,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              150,
+              152
+            ],
+            "decode_tok_per_sec": [
+              150,
+              151
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              168,
+              169
+            ],
+            "decode_tok_per_sec": [
+              171,
+              172
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 1.1,
+          "ratio_decode_tok_per_sec": 0.8776,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 4,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              430,
+              435
+            ],
+            "decode_tok_per_sec": [
+              115,
+              116
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              484,
+              486
+            ],
+            "decode_tok_per_sec": [
+              123,
+              124
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.8918,
+          "ratio_decode_tok_per_sec": 0.9352,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 8,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              600,
+              605
+            ],
+            "decode_tok_per_sec": [
+              100,
+              101
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              650,
+              652
+            ],
+            "decode_tok_per_sec": [
+              83,
+              84
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.9255,
+          "ratio_decode_tok_per_sec": 1.2036,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 16,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              980,
+              990
+            ],
+            "decode_tok_per_sec": [
+              85,
+              86
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              1120,
+              1122
+            ],
+            "decode_tok_per_sec": [
+              71,
+              72
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.8787,
+          "ratio_decode_tok_per_sec": 1.1958,
+          "verdict": "PASS"
+        }
+      ]
+    }
+  ],
+  "_expect": {
+    "result": "invalid",
+    "why": "F12 at band granularity: a stated ratio its own samples do not produce"
+  }
+}

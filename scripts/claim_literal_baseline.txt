@@ -1,0 +1,76 @@
+# Claim literals that PREDATE check_no_claim_literals.sh (#2696, 2026-08-25).
+#
+# Each line is a claim about measured reality sitting on a surface a user
+# reads — a doc comment on shipped code, or printed output. None of them was
+# produced by a measurement. They are recorded, not blessed.
+#
+# THE RATCHET: this file may only SHRINK. Adding a line requires editing this
+# header and arguing for it, which is the point — a baseline that may grow
+# quietly is a permission slip. Remove a line by deleting the claim or by
+# deriving it from a receipt under evidence/.
+#
+# Already removed: the two printed banners in serve/server.rs, one of which
+# advertised "800+ tok/s (2.8x Ollama)" on a code path that HANGS on four
+# concurrent chat requests.
+crates/apr-cli/src/commands/bench_safetensors.rs:123
+crates/apr-cli/src/commands/bench_safetensors.rs:124
+crates/apr-cli/src/commands/benchmark.rs:438
+crates/apr-cli/src/commands/qa.rs:147
+crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:362
+crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:363
+crates/apr-cli/src/commands/serve/handlers.rs:1160
+crates/apr-cli/src/commands/serve/handlers_include_01.rs:4
+crates/apr-cli/src/commands/test_llm.rs:15
+crates/apr-cli/src/commands/test_llm.rs:18
+crates/aprender-compute/src/backends/q4k/mod.rs:23
+crates/aprender-compute/src/brick/attention.rs:18
+crates/aprender-compute/src/brick/attention.rs:37
+crates/aprender-core/src/format/gguf/api.rs:281
+crates/aprender-core/src/showcase/profiling.rs:165
+crates/aprender-gpu/src/kernels/attention/flash/mod.rs:19
+crates/aprender-gpu/src/kernels/attention/flash/mod.rs:91
+crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:37
+crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:38
+crates/aprender-gpu/src/kernels/gemv/mod.rs:14
+crates/aprender-gpu/src/kernels/quantize/dot/packed_dp4a.rs:32
+crates/aprender-gpu/src/kernels/quantize/q4k/batched.rs:1
+crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:15
+crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:16
+crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/multi_warp_vectorized.rs:17
+crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:7
+crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:19
+crates/aprender-serve/src/api/mod.rs:172
+crates/aprender-serve/src/api/mod_app_state_gpu.rs:190
+crates/aprender-serve/src/api/mod_app_state_gpu.rs:312
+crates/aprender-serve/src/api/mod_app_state_gpu.rs:450
+crates/aprender-serve/src/cuda/executor/cached.rs:6
+crates/aprender-serve/src/cuda/executor/kv_cache_gpu_init.rs:436
+crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:11
+crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:12
+crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:10
+crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
+crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:31
+crates/aprender-serve/src/cuda/executor/layers/par-062.rs:257
+crates/aprender-serve/src/cuda/executor/layers/reduces.rs:277
+crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:32
+crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:33
+crates/aprender-serve/src/cuda/executor/q6k_gemv_indexed.rs:274
+crates/aprender-serve/src/cuda/gpu_profile.rs:295
+crates/aprender-serve/src/cuda/gpu_profile.rs:321
+crates/aprender-serve/src/cuda/gpu_profile.rs:375
+crates/aprender-serve/src/cuda/kernel_type.rs:236
+crates/aprender-serve/src/gguf/cuda/clone_layer_weights.rs:294
+crates/aprender-serve/src/gguf/cuda/cuda.rs:363
+crates/aprender-serve/src/gguf/cuda/cuda_layer_weights.rs:294
+crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs:65
+crates/aprender-serve/src/gguf/cuda/generate_2.rs:158
+crates/aprender-serve/src/gguf/cuda/speculative.rs:244
+crates/aprender-serve/src/gguf/cuda/speculative.rs:246
+crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized_02.rs:25
+crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized_02.rs:26
+crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe_gpu.rs:24
+crates/aprender-serve/src/infer/inference_result.rs:1192
+crates/aprender-serve/src/infer/qwen3_moe_generate.rs:21
+crates/aprender-test-lib/src/llm/training_scorecard.rs:217
+crates/aprender-train/src/models/llama_370m.rs:1458
+crates/aprender-train/src/models/llama_370m.rs:1463

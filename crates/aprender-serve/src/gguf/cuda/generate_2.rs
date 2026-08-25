@@ -418,6 +418,215 @@ impl OwnedQuantizedModelCuda {
     /// # Returns
     ///
     /// Generated token sequence including prompt
+    /// #2697: put this prompt's KV on the device and say where decode starts.
+    ///
+    /// Returns `(position, last_token, max_decode, prefix_was_hit)`, or `None`
+    /// when the prefill's own first token was a stop token and there is nothing
+    /// left to generate.
+    /// The non-streaming decode loop. Same shape as `decode_loop`, without a
+    /// per-token callback.
+    fn decode_blocking(
+        &mut self,
+        config: &QuantizedGenerateConfig,
+        tokens: &mut Vec<u32>,
+        cache: &mut OwnedQuantizedKVCache,
+        mut position: usize,
+        mut last_token: u32,
+        max_decode: usize,
+    ) -> Result<()> {
+        let penalty_active = config.repeat_penalty != 1.0 && config.repeat_last_n > 0;
+        for _token_num in 0..max_decode {
+            let next_token = self.next_token(NextToken {
+                config,
+                tokens,
+                cache,
+                last_token,
+                position,
+                penalty_active,
+            })?;
+            if config.stop_tokens.contains(&next_token) {
+                break;
+            }
+            tokens.push(next_token);
+            last_token = next_token;
+            position += 1;
+        }
+        Ok(())
+    }
+
+    /// realizr#194: the three things every GPU-resident entry point must check —
+    /// KV capacity, a current CUDA context, and a supported architecture.
+    fn check_gpu_resident_preconditions(&mut self, prompt: &[u32], op: &str) -> Result<()> {
+        let gpu_max_len = self.executor.max_kv_len();
+        let effective_max = if gpu_max_len > 0 {
+            gpu_max_len.min(self.model.config.context_length)
+        } else {
+            self.model.config.context_length
+        };
+        if prompt.len() > effective_max {
+            return Err(RealizarError::ContextLimitExceeded {
+                provided: prompt.len(),
+                maximum: effective_max,
+            });
+        }
+        self.executor
+            .make_current()
+            .map_err(|e| RealizarError::UnsupportedOperation {
+                operation: "cuda_make_current".to_string(),
+                reason: format!("Failed to set CUDA context current: {e}"),
+            })?;
+        if !self.supports_gpu_resident() {
+            return Err(RealizarError::UnsupportedOperation {
+                operation: op.to_string(),
+                reason: "Architecture not supported for GPU-resident path".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    fn establish_kv_blocking(
+        &mut self,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        cache: &mut OwnedQuantizedKVCache,
+        tokens: &mut Vec<u32>,
+    ) -> Result<Option<(usize, u32, usize, bool)>> {
+        let position: usize;
+        let last_token: u32;
+        let max_decode: usize;
+            // #2697: the same residency question the streaming path asks, on the
+            // path my nsys profiles were actually exercising — 62 synchronous 4 MiB
+            // host-to-device copies per request, to put back bytes already there.
+            #[cfg(feature = "gpu")]
+            // #2697 MEASURED REGRESSION — OFF BY DEFAULT.
+        //
+        // Skipping the restore saves 234 MB of host traffic and wins 2.36x on
+        // TTFT when the host is STARVED (41.3 ms vs 97.6 ms at load average
+        // 128). On a quiet box it LOSES, reproducibly, two interleaved rounds:
+        //
+        //     RESIDENCY=1   TTFT 41.18 / 40.96 ms   prefill 2477 / 2491
+        //     RESIDENCY=0   TTFT 34.31 / 33.82 ms   prefill 2973 / 3016
+        //
+        // ~7 ms, which is almost exactly one decode step. That is the
+        // mechanism: taking this path means `prefill_first_token = None`, so
+        // decode starts at prompt.len()-1 and re-processes the last prompt
+        // token, forgoing the fused first token prefill extracts from the LM
+        // head (PMAT-083). Prefill over ~100 tokens is cheaper than that
+        // whenever the host is not the bottleneck.
+        //
+        // So it ships OFF: opt in with APR_KV_RESIDENCY=1 on a host under
+        // heavy CPU contention. Making it a win everywhere needs the first
+        // token cached beside the prefix, which is follow-up work on #2697.
+        let already_resident = std::env::var("APR_KV_RESIDENCY").as_deref() == Ok("1")
+                && self.executor.kv_prefix_is_resident(
+                    crate::gguf::batch_scheduler::PrefixCache::hash_tokens(prompt),
+                    prompt.len(),
+                );
+            #[cfg(not(feature = "gpu"))]
+            let already_resident = false;
+            #[cfg(feature = "gpu")]
+            let prefix_hit = if already_resident {
+                None // skip the 234 MB clone entirely
+            } else {
+                self.prefix_cache.lookup(prompt)
+            };
+            #[cfg(not(feature = "gpu"))]
+            let prefix_hit: Option<(Vec<Vec<f32>>, Vec<Vec<f32>>)> = None;
+            #[cfg(feature = "gpu")]
+            let prefix_was_hit = prefix_hit.is_some();
+            #[cfg(not(feature = "gpu"))]
+            let prefix_was_hit = false;
+
+            let mut position;
+            let mut last_token;
+            let max_decode;
+
+            if already_resident {
+                // The bytes are already on the device; only the lengths carry the
+                // previous request's generated tokens.
+                #[cfg(feature = "gpu")]
+                self.executor.truncate_kv_lengths(prompt.len());
+                if config.trace {
+                    eprintln!("[#2697] KV PREFIX RESIDENT: {} tokens, nothing to restore", prompt.len());
+                }
+                position = prompt.len() - 1;
+                last_token = prompt[prompt.len() - 1];
+                max_decode = config.max_tokens;
+            } else if let Some((cached_k, cached_v)) = prefix_hit {
+                let kv_pairs: Vec<(Vec<f32>, Vec<f32>)> = cached_k.into_iter().zip(cached_v).collect();
+                let cached_len = prompt.len();
+                self.executor
+                    .restore_kv_cache_from_host(&kv_pairs, cached_len)
+                    .map_err(|e| RealizarError::UnsupportedOperation {
+                        operation: "restore_kv_cache_from_host".to_string(),
+                        reason: format!("Prefix cache restore failed: {e}"),
+                    })?;
+
+                if config.trace {
+                    eprintln!("[PMAT-450] Prefix cache HIT: skipped prefill for {} tokens", cached_len);
+                }
+
+                // After restore, generate first token via decode (no prefill extraction)
+                #[cfg(feature = "gpu")]
+                self.executor.mark_kv_prefix_resident(Some((
+                    crate::gguf::batch_scheduler::PrefixCache::hash_tokens(prompt),
+                    prompt.len(),
+                )));
+                position = prompt.len() - 1;
+                last_token = prompt[prompt.len() - 1];
+                max_decode = config.max_tokens;
+            } else {
+                // `is_moe` was a compile-time `false` guarding a serial-prefill
+                // branch that therefore never ran: OwnedQuantizedLayer is the
+                // GGUF-dense path and never holds MoE experts (MoE dispatch goes
+                // through apr_transformer::AprTransformerLayer). Removed rather
+                // than kept as dead weight.
+                let greedy = config.temperature == 0.0 || config.top_k == 1;
+                let prefill_count = if greedy { prompt.len() } else { prompt.len() - 1 };
+                let prefill_first_token =
+                    self.run_prefill(prompt, cache, prefill_count, config.trace, greedy)?;
+                // #2697: the GPU now holds this prompt; a repeat costs a length reset.
+                #[cfg(feature = "gpu")]
+                self.executor.mark_kv_prefix_resident(Some((
+                    crate::gguf::batch_scheduler::PrefixCache::hash_tokens(prompt),
+                    prompt.len(),
+                )));
+
+                if let Some(first_tok) = prefill_first_token {
+                    // PMAT-083: First token from prefill LM head
+                    position = prompt.len();
+                    last_token = first_tok;
+                    tokens.push(first_tok);
+                    if config.stop_tokens.contains(&first_tok) {
+                        return Ok(None);
+                    }
+                    max_decode = config.max_tokens.saturating_sub(1);
+                } else {
+                    position = prompt.len() - 1;
+                    last_token = prompt[prompt.len() - 1];
+                    max_decode = config.max_tokens;
+                }
+            }
+        Ok(Some((position, last_token, max_decode, prefix_was_hit)))
+    }
+
+    /// GPU-resident token generation with minimal CPU↔GPU transfers.
+    ///
+    /// # Reentrant
+    ///
+    /// This method creates fresh generation state on each call (new KV cache,
+    /// reset GPU positions). It is safe and efficient to call multiple times
+    /// on the same `OwnedQuantizedModelCuda` — weights are preloaded once
+    /// during construction and reused across calls.
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - Initial token IDs
+    /// * `config` - Generation configuration (max_tokens, temperature, etc.)
+    ///
+    /// # Returns
+    ///
+    /// Generated token sequence including prompt
     pub fn generate_gpu_resident(
         &mut self,
         prompt: &[u32],
@@ -495,117 +704,22 @@ impl OwnedQuantizedModelCuda {
 
         // realizr#199 (PMAT-450): Check prefix cache before prefill.
         // If prompt was seen before, skip prefill entirely (TTFT ~900ms → ~5ms).
-        #[cfg(feature = "gpu")]
-        let prefix_hit = self.prefix_cache.lookup(prompt);
-        #[cfg(not(feature = "gpu"))]
-        let prefix_hit: Option<(Vec<Vec<f32>>, Vec<Vec<f32>>)> = None;
-        #[cfg(feature = "gpu")]
-        let prefix_was_hit = prefix_hit.is_some();
-        #[cfg(not(feature = "gpu"))]
-        let prefix_was_hit = false;
-
-        let mut position;
-        let mut last_token;
-        let max_decode;
-
-        if let Some((cached_k, cached_v)) = prefix_hit {
-            let kv_pairs: Vec<(Vec<f32>, Vec<f32>)> = cached_k.into_iter().zip(cached_v).collect();
-            let cached_len = prompt.len();
-            self.executor
-                .restore_kv_cache_from_host(&kv_pairs, cached_len)
-                .map_err(|e| RealizarError::UnsupportedOperation {
-                    operation: "restore_kv_cache_from_host".to_string(),
-                    reason: format!("Prefix cache restore failed: {e}"),
-                })?;
-
-            if config.trace {
-                eprintln!("[PMAT-450] Prefix cache HIT: skipped prefill for {} tokens", cached_len);
-            }
-
-            // After restore, generate first token via decode (no prefill extraction)
-            position = prompt.len() - 1;
-            last_token = prompt[prompt.len() - 1];
-            max_decode = config.max_tokens;
-        } else {
-            // PMAT-083: Prefill ALL tokens and extract first token (greedy only)
-            // SPEC-MOE-APR-001: MoE models use serial prefill (batched prefill skips FFN).
-            // OwnedQuantizedLayer is the GGUF-dense path and never holds MoE experts —
-            // MoE dispatch goes through `apr_transformer::AprTransformerLayer` instead.
-            let is_moe = false;
-            let greedy = config.temperature == 0.0 || config.top_k == 1;
-            let prefill_first_token = if is_moe {
-                // Serial prefill: process each prompt token through full MoE decode path
-                for (pos, &tok) in prompt[..prompt.len() - 1].iter().enumerate() {
-                    // forward_single_with_cache internally calls cache.advance()
-                    let _ = self.forward_gpu_resident(tok, &mut cache, pos)?;
-                }
-                None // Last token will be processed in the decode loop
-            } else {
-                let prefill_count = if greedy { prompt.len() } else { prompt.len() - 1 };
-                self.run_prefill(prompt, &mut cache, prefill_count, config.trace, greedy)?
-            };
-
-            if let Some(first_tok) = prefill_first_token {
-                // PMAT-083: First token from prefill LM head
-                position = prompt.len();
-                last_token = first_tok;
-                tokens.push(first_tok);
-                if config.stop_tokens.contains(&first_tok) {
-                    return Ok(tokens);
-                }
-                max_decode = config.max_tokens.saturating_sub(1);
-            } else {
-                position = prompt.len() - 1;
-                last_token = prompt[prompt.len() - 1];
-                max_decode = config.max_tokens;
-            }
-        }
+        // #2697 refactor: how this prompt's KV reaches the device, and where
+        // decoding therefore starts. `None` means a stop token ended it already.
+        let Some((position, last_token, max_decode, prefix_was_hit)) =
+            self.establish_kv_blocking(prompt, config, &mut cache, &mut tokens)?
+        else {
+            return Ok(tokens);
+        };
+        let mut position = position;
+        let mut last_token = last_token;
 
         // PMAT-814: when a repetition penalty is active we MUST have CPU-side logits to
         // penalize, so the GPU-side fused argmax fast path (forward_gpu_resident_to_token_id)
         // can only be used when no penalty applies. With repeat_penalty == 1.0 (the default)
         // this is false and the greedy fast path is taken unchanged — no perf regression.
         let penalty_active = config.repeat_penalty != 1.0 && config.repeat_last_n > 0;
-        for _token_num in 0..max_decode {
-            let token_start = std::time::Instant::now();
-            let greedy = config.temperature == 0.0 || config.top_k == 1;
-            let next_token = if greedy && !penalty_active {
-                self.forward_gpu_resident_to_token_id(last_token, &mut cache, position)?
-            } else {
-                let mut logits = self.forward_gpu_resident(last_token, &mut cache, position)?;
-                // PMAT-814: penalize recently-seen tokens before greedy/sampling.
-                OwnedQuantizedModel::apply_repeat_penalty(
-                    &mut logits,
-                    &tokens,
-                    config.repeat_penalty,
-                    config.repeat_last_n,
-                );
-                if greedy {
-                    OwnedQuantizedModel::argmax(&logits)
-                } else {
-                    // entrenar#318: use simple top-k sampling (sample_advanced not yet compiled)
-                    OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
-                }
-            };
-
-            if config.trace {
-                eprintln!(
-                    "[TRACE-CACHE] pos={}: {} layers took {:?}",
-                    position,
-                    self.model.config.num_layers,
-                    token_start.elapsed()
-                );
-            }
-
-            // Check stop tokens
-            if config.stop_tokens.contains(&next_token) {
-                break;
-            }
-
-            tokens.push(next_token);
-            last_token = next_token;
-            position += 1;
-        }
+        self.decode_blocking(config, &mut tokens, &mut cache, position, last_token, max_decode)?;
 
         // realizr#199 (PMAT-450): Insert into prefix cache after generation.
         // Only cache PROMPT KV if prefill was actually computed (not a cache hit).
@@ -657,31 +771,7 @@ impl OwnedQuantizedModelCuda {
         if prompt.is_empty() {
             return Ok(GenerateResult { tokens: Vec::new(), logprobs: Vec::new() });
         }
-        // realizr#194: Check GPU KV cache capacity (same fix as generate_gpu_resident)
-        let gpu_max_len = self.executor.max_kv_len();
-        let effective_max = if gpu_max_len > 0 {
-            gpu_max_len.min(self.model.config.context_length)
-        } else {
-            self.model.config.context_length
-        };
-        if prompt.len() > effective_max {
-            return Err(RealizarError::ContextLimitExceeded {
-                provided: prompt.len(),
-                maximum: effective_max,
-            });
-        }
-        self.executor
-            .make_current()
-            .map_err(|e| RealizarError::UnsupportedOperation {
-                operation: "cuda_make_current".to_string(),
-                reason: format!("Failed to set CUDA context current: {e}"),
-            })?;
-        if !self.supports_gpu_resident() {
-            return Err(RealizarError::UnsupportedOperation {
-                operation: "generate_gpu_resident_logprobs".to_string(),
-                reason: "Architecture not supported for GPU-resident path".to_string(),
-            });
-        }
+        self.check_gpu_resident_preconditions(prompt, "generate_gpu_resident_logprobs")?;
 
         let num_kv_heads = self.model.config.num_kv_heads;
         let head_dim = self.model.config.head_dim();

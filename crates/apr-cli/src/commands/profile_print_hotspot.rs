@@ -152,15 +152,25 @@ fn print_kernel_launch_overhead(results: &RealProfileResults) {
         "  Overhead: {:.0}µs ({:.1}% of decode time)",
         results.kernel_launch_overhead_us, results.kernel_launch_overhead_pct
     );
-    println!("  (= graphed-per-token decode − ungraphed-per-token kernel sum)");
-    println!("  Captures argmax sync, H2D/D2H copies, graph-replay dispatch,");
-    println!("  and any kernels not instrumented by the brick profiler.");
+    // PERF-015: both terms now come from the same profiler pass — same token
+    // count, same dispatch mode. The label says which path, because it is the
+    // UNGRAPHED one and that is not what production runs.
+    println!("  (= this pass's wall time − its own kernel sum, UNGRAPHED path)");
+    println!("  Includes sync, H2D/D2H copies, dispatch, and any kernel the");
+    println!("  brick profiler does not instrument. Which of those dominates is");
+    println!("  NOT determined here.");
+
+    // PERF-014: this printed "investigate sampling sync (gpu_argmax D2H)" above
+    // 40%. That was a HARDCODED STRING on a threshold — nothing in the tool
+    // inspects sampling, D2H, or dispatch. It was quoted back in an
+    // investigation as evidence for a root cause. A profiler may report a
+    // magnitude it measured; it may not name a cause it did not.
     let msg = if results.kernel_launch_overhead_pct > 40.0 {
-        "Large non-kernel overhead — investigate sampling sync (gpu_argmax D2H), graph replay dispatch".red()
+        "Non-kernel time dominates this pass — profile the host path to find out why".red()
     } else if results.kernel_launch_overhead_pct > 20.0 {
-        "Moderate non-kernel overhead — per-token sync or missed instrumentation".yellow()
+        "Non-kernel time is significant in this pass".yellow()
     } else {
-        "Small non-kernel overhead — kernels dominate decode time".green()
+        "Kernels dominate this pass".green()
     };
     println!("  {msg}");
     println!();

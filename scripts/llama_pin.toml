@@ -19,7 +19,16 @@
 name = "llama.cpp"
 # The upstream build tag llama.cpp reports in its own --version output.
 # Recorded as the STRING the binary prints, not as a semver we invent.
-build_commit = "UNPINNED"
+# PINNED 2026-08-24 from the binary actually installed on lambda:
+#   $ llama-cli --version
+#   version: 7746 (39173bcac)
+#   built with GNU 11.4.0 for Linux x86_64
+# CUDA-enabled (5 cuda/cublas libs linked), RTX 4090 sm_89 detected at init.
+#
+# Recorded as the STRING the binary prints, not a semver we invent. Bumping
+# this invalidates every ratio measured against 39173bcac — record why in the
+# commit, and expect the first release after a bump to have no usable trend.
+build_commit = "39173bcac"
 # Verbatim configure line. gx10 requires -DGGML_CUDA_ARCHITECTURES=121;
 # omitting it JITs from stale PTX, which produces CORRECT OUTPUT SLOWLY and
 # fires no correctness gate — a performance defect invisible to every check we
@@ -101,3 +110,65 @@ comparator_trials = 5
 # and from the resolved binaries; nothing else varies between runs.
 apr_command = "apr run --gpu --benchmark --max-tokens {n} --temperature {temperature} --top-p {top_p} --seed {seed} {model}"
 comparator_command = "{llama_bench} -m {model} -p 0 -n {n} -ngl 999 -t {threads} -b {batch_size} -r {comparator_trials}"
+
+# ---------------------------------------------------------------------------
+# [protocol.http] — the SECOND lane, added when `apr test llm bench` shipped
+# (GH-876 Milestone 2). It is not a replacement for the CLI differential above;
+# the two answer different questions and both are declared.
+#
+# WHY A SECOND LANE. The CLI differential runs two DIFFERENT programs
+# (`apr run --benchmark` and `llama-bench`), each with its own timer, its own
+# idea of what counts as a token, and its own startup cost — which is exactly
+# why it needs the 128/384 slope to cancel that cost. It measures a runtime.
+#
+# The HTTP lane runs ONE client against two OpenAI-compatible servers. The same
+# prompts, the same request bodies, the same clock, the same tokenizer-agnostic
+# accounting on both sides. It cannot be unfair by construction in the way two
+# hand-written scripts can, and it measures what a user actually gets.
+#
+# It also reports the right quantity directly. `decode_tok_per_sec` is
+# 1000 / itl_p50_ms, an inter-token rate that excludes time-to-first-token, so
+# a model load cannot inflate or deflate it. Deriving that number by hand from
+# an end-to-end latency is how 2026-08-24 produced both an 11.8 tok/s figure
+# quoted against a decode reference and a 244 tok/s "differential".
+[protocol.http]
+http_profile = "medium"
+http_warmup_secs = 15
+http_duration_secs = 30
+http_runs = 3
+http_cooldown_secs = 10
+# BANDS, not a point. This was `http_concurrency = 1`, and that one line is why
+# every parity number this project has published measures the WORST band and
+# calls it the answer.
+#
+# Measured 2026-08-25, lambda RTX 4090, comparator pinned 39173bcac:
+#
+#   band   llama agg   apr agg    agg ratio    llama dec   apr dec   dec ratio
+#   c=1        168.9      90.2       0.534x        171.5     100.7      0.587x
+#   c=4        484.7     111.9       0.231x        123.3     113.8      0.923x
+#   c=8        650.5     109.6       0.169x         83.0     112.2      1.352x
+#   c=16      1120.8     108.4       0.097x         71.2     110.6      1.554x
+#
+# The two metrics tell OPPOSITE stories and only one of them is about adoption.
+# apr's aggregate is FLAT at ~110 tok/s at every concurrency: it does not batch,
+# it serialises. Per-user decode looks excellent at c=16 (1.554x) purely because
+# each request gets the whole GPU in turn while llama.cpp shares it sixteen
+# ways. A gate that reports only per-user decode would call 0.097x aggregate a
+# PASS — which is the shape of every cannot-fail gate this epic exists to kill.
+#
+# So both are gated, on every band.
+http_concurrency_bands = [1, 4, 8, 16]
+
+# The band in which a runtime is allowed to sit, both metrics, every band.
+# Lower bound: below this a user is better served by llama.cpp, which is the
+# adoption question. Upper bound: a ratio above this is more likely a
+# measurement error than a win, and must be explained before it is believed.
+band_floor = 0.80
+band_ceiling = 1.50
+http_stream = true
+
+# THE THREE INVOCATIONS, VERBATIM. {model} and {port} are substituted; the
+# resolved comparator binary comes from scripts/llama_bin.sh, never from PATH.
+apr_serve_command = "apr serve run {model} --gpu --port {port} --context-length 4096"
+comparator_serve_command = "{llama_server} -m {model} --port {port} -ngl 999 -c 4096 -t 8 -b 1 --no-warmup"
+harness_command = "apr test llm bench --url http://127.0.0.1:{port} --model {model_name} --profile {http_profile} --warmup {http_warmup_secs} --duration {http_duration_secs} --runs {http_runs} --cooldown {http_cooldown_secs} --concurrency {http_concurrency} --stream --runtime-name {runtime_name}"
