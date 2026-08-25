@@ -1,0 +1,124 @@
+# perf-matrix.yaml — THE EXPECTED CELL SET.
+#
+# APR-PERF-GATE-001 v2.2 §10.1 step 4, I-1: the expected cells are enumerated
+# HERE and the verdict job asserts every one is present. A gate that only reads
+# the receipts it was handed cannot tell a missing host from a passing one.
+#
+# GROUNDING RULE (§0.1, §4.6). Every number in this file is one of:
+#   policy    — a deliberate product decision, needs an author, NOT a measurement
+#   inherited — set by a prior governing spec, precedence recorded
+#   ratchet   — today's measurement, monotone thereafter
+# There are no invented continuous thresholds. A baseline that has not been
+# measured under a §4.4-conformant protocol is UNMEASURED with an owner and an
+# expiry -- never a plausible-looking number.
+schema_version: 1
+
+hosts:
+  lambda:
+    accelerator: rtx-4090
+    compute_class: cuda
+    comparator: llamacpp
+  gx10:
+    accelerator: gb10
+    compute_class: cuda
+    comparator: llamacpp
+  intel:
+    accelerator: cpu
+    compute_class: cpu
+    comparator: llamacpp
+  mini:
+    accelerator: m4
+    compute_class: metal
+    comparator: llamacpp
+
+workloads: [W1, W2]
+bands: [1, 4, 8, 16]
+
+arms:
+  A:
+    name: scaling
+    formula: scaling_efficiency(c) = (agg(c) / agg(1)) / c
+    phase: release
+    comparator_required: false
+    threshold_class: ratchet
+    direction: up-only
+  B1:
+    name: aggregate-adoption
+    formula: agg_ratio(c) = agg(c) / comparator_agg(c)
+    phase: release
+    comparator_required: true
+    threshold_class: policy
+    floor: 0.80
+    rationale: >-
+      A product decision (§4.6.1). Below this a user with a concurrent
+      deployment is better served by the comparator, which is the adoption
+      question this arm exists to answer.
+  B2:
+    name: decode-parity
+    formula: decode_ratio(c) = decode(c) / comparator_decode(c)
+    phase: release
+    comparator_required: true
+    threshold_class: inherited
+    floor: 1.00
+    inherited_from: docs/specifications/perf-parity-spec.md
+    rising_decode_trap: >-
+      decode_ratio RISING while agg_ratio FALLS is the serialization signature,
+      not a win: each request owns the whole device in turn. Measured 2026-08-25
+      on lambda: decode 1.554x beside aggregate 0.097x at c=16. B2 alone would
+      have scored that a comfortable PASS, which is why B1 and B2 are BOTH
+      required and neither may stand in for the other.
+  C:
+    name: integrity
+    phase: both
+    comparator_required: false
+  D:
+    name: memory-efficiency
+    phase: reporting
+    promote_with: PERF-001
+  E:
+    name: prefill-decode-interference
+    phase: reporting
+    workload: W2
+    promote_with: PERF-001
+
+# RATCHET BASELINES. Arm A is comparator-free, so it is the primary gate -- but
+# a ratchet needs a measurement to ratchet FROM. The v2.1 figures (lambda W1:
+# c=4 0.310, c=8 0.152, c=16 0.075) are carried [C] and the spec marks them
+# NON-CONFORMANT to §4.4, so they are NOT committed here. Committing them would
+# be exactly the fabricated-baseline class this spec exists to remove.
+baselines:
+  lambda:
+    W1:
+      status: UNMEASURED
+      owner: perf-gate
+      reason: >-
+        v2.1 figures are non-conformant to the §4.4 protocol (one-client rule,
+        tokenization block, drain_ms). Re-measure before committing.
+      expires: '2026-09-25'
+    W2: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+  gx10:
+    W1: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+    W2: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+  intel:
+    W1: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+    W2: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+  mini:
+    W1: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+    W2: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+
+# CELL EXCEPTIONS. Three-valued, and the two values are NOT interchangeable:
+#   NOT_APPLICABLE — permanent, excluded from the denominator, needs decided_by
+#   UNMEASURED     — temporary, COUNTED against the denominator, needs an owner
+#                    and an expiry, and goes RED once expired
+# Arms A, C, D and E need no comparator, so a cell may be NOT_APPLICABLE for
+# Arm B and still fully gated by Arm A (§4.4 note).
+cell_exceptions:
+- host: gx10
+  band: 16
+  comparator: vllm
+  arm: B
+  status: NOT_APPLICABLE
+  permanent: true
+  decided_by: perf-matrix.yaml
+  decided_on: '2026-08-25'
+  reason: vLLM has no aarch64 build; the comparator cannot exist on this host.
