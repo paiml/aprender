@@ -25,6 +25,46 @@ shim that `exec`s this runner; `scripts/check_dogfood_shim.sh` keeps it one, and
 `scripts/check_verifier_pinning.sh` keeps the merged hardenings honest. If you find
 yourself about to copy either file somewhere, read that triage first.
 
+## Every gate has a SUBJECT, and some of them are not this tree
+
+Read this before adding a gate, and before concluding that a permanently-red one
+is debt.
+
+This runner's subject is **the local tree**: `$BINPATH` comes from
+`cargo build --message-format=json`, and every gate inherits that. But three
+gates ask about something else, and their subject is what makes them behave the
+way they do:
+
+| gate | subject | when it can pass |
+|---|---|---|
+| `version-unpublished`, `publish-dry-run` | the **registry** | before / after the cascade respectively (#2643) |
+| `check_multiplatform_dogfood` | the **published artifact, on four hosts** | only AFTER publish (#2658) |
+| everything else | **this tree** | now |
+
+**A gate whose subject is a later phase is not broken and is not debt.** Its RED
+is structural, and treating it as debt is how it becomes a step everyone learns
+to walk past. `check_multiplatform_dogfood` had never passed for ANY release
+until 0.64.0 — 0.63.0 published 2026-08-01 with receipts dated 2026-08-22 —
+because the question it asks cannot be answered before the thing it asks about
+exists.
+
+That is the root cause recorded in aprender#2662: **phase was an undeclared
+dimension of this protocol.** Gates carried an implicit subject, the runner
+recognised only the first, and the producing half of the later ones went
+unwritten — which is why the 0.64.0 four-host sweep was hand-rolled, in a
+protocol whose own rule is *"Never dogfood by hand"*.
+
+**So: when you add a gate, say what its subject is.** If the answer is not "this
+tree", the gate belongs to a later phase, its receipt is produced there, and its
+RED before that phase means *not yet measured* rather than *broken*.
+
+**And the two phases do not measure the same thing.** The post-publish phase
+CANNOT compute a llama.cpp ratio: `cargo install aprender` is CPU-only on every
+host (`default` carries no `cuda`, no `wgpu`) while the comparator runs CUDA or
+Metal, so the ratio reads ~0.05–0.10 and the threshold never arms. Post-publish
+is an **apr-vs-apr CPU-class self-ratchet**; the comparator ratio lives
+pre-publish, from the tree, where the feature exists (aprender#2667).
+
 ## Run it
 
 From (or pointing at) the crate repo:

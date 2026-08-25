@@ -329,6 +329,53 @@ else
     rc=1
 fi
 
+# 1b — no SECOND fleet/install sweep. (PARITY-011, aprender#2678)
+#
+# Row 1 stops a second `dogfood.sh`. It does NOT stop the same methodology
+# reappearing under a different NAME, which is how the 0.64.0 four-host sweep
+# came to be hand-rolled: no tracked procedure existed, so one was invented
+# outside the protocol — in a protocol whose own rule is "Never dogfood by hand".
+#
+# The construct, not the filename: a script that installs the published crate
+# AND probes the result is a fleet sweep whatever it is called. The runner and
+# the release skill are the only places that may do both.
+#
+# UNIVERSE INCLUDES UNTRACKED. A `git ls-files`-only scan lets a brand-new copy
+# pass until the moment it is committed — SHIM-2644-03's exact shape, where an
+# untracked copy passed a check whose whole purpose was catching a second copy.
+# The signature is narrow ON PURPOSE. A first, broader version flagged
+# cascade-publish.sh (which installs to VERIFY A PUBLISH — a different job),
+# check_facade_compat.sh, and this file itself (its own pattern string matched).
+# Three false positives on the first run, which is what a construct ban costs
+# when the construct is described too loosely.
+#
+# What actually distinguishes a FLEET SWEEP from a legitimate install: it
+# writes a per-host RECEIPT. That is the duplicated methodology — not
+# installing, and not probing, but producing the evidence artifact that
+# scripts/dogfood.sh and Gate 12 already own.
+SWEEP_ALLOWED="scripts/dogfood.sh scripts/check_multiplatform_dogfood.sh scripts/check_dogfood_shim.sh"
+sweep_hits=""
+while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    case " $SWEEP_ALLOWED " in *" $f "*) continue ;; esac
+    grep -q 'cargo install aprender' "$f" 2>/dev/null || continue
+    # ...and writes a per-host receipt. Both halves, or it is not a sweep.
+    grep -qE 'evidence/dogfood|install_rc' "$f" 2>/dev/null || continue
+    sweep_hits="$sweep_hits $f"
+done < <(
+    { git ls-files 'scripts/*.sh' 'crates/*/scripts/*.sh' 2>/dev/null
+      find scripts -maxdepth 2 -type f -name '*.sh' 2>/dev/null
+    } | LC_ALL=C sort -u
+)
+if [ -n "$sweep_hits" ]; then
+    printf 'FAIL  1b a SECOND fleet/install sweep exists:%s\n' "$sweep_hits"
+    printf '         One methodology, one runner. Add the step to scripts/dogfood.sh\n'
+    printf '         or to the release skill; do not grow a parallel sweep (#2678).\n'
+    rc=1
+else
+    printf 'ok    1b no second fleet/install sweep\n'
+fi
+
 # 2 — canonical prose, in the repo, with an explicit name.
 if [ ! -f "$CANON_SKILL" ]; then
     printf 'FAIL  2  no canonical prose at .claude/skills/dogfood/SKILL.md — the protocol\n'
