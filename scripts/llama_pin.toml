@@ -1,0 +1,37 @@
+# THE PINNED llama.cpp COMPARATOR (PARITY-009, aprender#2676).
+#
+# An unpinned comparator makes every ratio meaningless ACROSS TIME: the
+# denominator changes silently between releases while the receipt claims a
+# fixed baseline. This file is the declaration; scripts/llama_bin.sh is the
+# resolver that refuses anything else.
+#
+# WHY A FILE AND NOT A CONSTANT IN THE SCRIPT. The comparator version is a
+# RELEASE-ENGINEERING decision with a date and a rationale, not an
+# implementation detail. Changing it must be a reviewable diff that a future
+# reader can bisect, and the receipt records what this file said at the time.
+#
+# BUMPING THIS IS A DELIBERATE ACT. Every ratio measured against the old pin
+# becomes incomparable with every ratio measured against the new one. Record
+# WHY in the commit, and expect the first release after a bump to have no
+# usable trend.
+
+[comparator]
+name = "llama.cpp"
+# The upstream build tag llama.cpp reports in its own --version output.
+# Recorded as the STRING the binary prints, not as a semver we invent.
+build_commit = "UNPINNED"
+# Verbatim configure line. gx10 requires -DGGML_CUDA_ARCHITECTURES=121;
+# omitting it JITs from stale PTX, which produces CORRECT OUTPUT SLOWLY and
+# fires no correctness gate — a performance defect invisible to every check we
+# have. Recorded per host because the flags legitimately differ.
+build_flags_lambda = "cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89"
+build_flags_gx10   = "cmake -B build -DGGML_CUDA=ON -DGGML_CUDA_ARCHITECTURES=121"
+build_flags_intel  = "cmake -B build -DGGML_NATIVE=ON"
+build_flags_mini   = "cmake -B build -DGGML_METAL=ON"
+
+# BOOTSTRAP. `build_commit = "UNPINNED"` is the honest state today: no ratio
+# has been measured yet, so there is nothing to invalidate by choosing a pin
+# later. The resolver treats UNPINNED as "report, never gate" — it will not
+# silently accept whatever llama.cpp happens to be installed and call it
+# pinned. Set this to the real build tag in the commit that first measures a
+# ratio, and that commit is the start of the comparable series.
