@@ -34,6 +34,8 @@
 #   4  aprender#2384                         MCP spawned a bare `apr`, ran
 #      0.60.0 while reporting 0.63.0
 #   5  APR-BENCH-RFC-001                     unpinned llama.cpp comparator
+#      ENFORCED 2026-08-24 by scripts/llama_bin.sh + scripts/check_llama_pin.sh
+#      (PARITY-009, aprender#2676). Declaration in scripts/llama_pin.toml.
 #
 # Five rediscoveries is the evidence that a rule merely STATED is documentation.
 # It is therefore also ENFORCED, by scripts/check_verifier_pinning.sh, which
