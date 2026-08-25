@@ -25,6 +25,7 @@ Usage:  bench_receipt.py <receipt.json> [...]
 Exit:   0 all valid - 1 a receipt is invalid - 2 usage/read error
 """
 import json
+import statistics
 import sys
 
 COMPUTE_CLASSES = ("cpu", "cuda", "metal", "wgpu", "unknown")
@@ -133,6 +134,16 @@ def validate(receipt):
     return errors
 
 
+def _bench_of(receipt):
+    """The bench block, or None. A HOST receipt nests it under `bench`; a bare
+    bench receipt IS the block."""
+    if isinstance(receipt.get("bench"), dict):
+        return receipt["bench"]
+    if "samples_ms" in receipt:
+        return receipt
+    return None
+
+
 def _validate_one(path):
     """Validate a single receipt file. Returns (rc, lines_to_print)."""
     try:
@@ -146,9 +157,60 @@ def _validate_one(path):
     return 0, ["ok   %s" % path]
 
 
+def _load(path):
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _mode_has_bench(path):
+    """Exit 0 iff a bench block is PRESENT. Says nothing about validity."""
+    try:
+        return 0 if _bench_of(_load(path)) is not None else 1
+    except (OSError, ValueError):
+        return 2
+
+
+def _mode_bench(path):
+    """Validate the bench block of a host receipt."""
+    try:
+        bench = _bench_of(_load(path))
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("%s: cannot read: %s\n" % (path, exc))
+        return 2
+    if bench is None:
+        sys.stderr.write("%s: no bench block\n" % path)
+        return 1
+    errors = validate(bench)
+    for e in errors:
+        print("FAIL %s: %s" % (path, e))
+    return 1 if errors else 0
+
+
+def _mode_bench_median(path):
+    """Print the median of the bench block's raw samples."""
+    try:
+        bench = _bench_of(_load(path))
+    except (OSError, ValueError):
+        return 2
+    if not bench or not bench.get("samples_ms"):
+        return 1
+    print(round(statistics.median(bench["samples_ms"]), 3))
+    return 0
+
+
+MODES = {
+    "--has-bench": _mode_has_bench,
+    "--bench": _mode_bench,
+    "--bench-median": _mode_bench_median,
+}
+
+
 def main(argv):
+    if len(argv) >= 3 and argv[1] in MODES:
+        return MODES[argv[1]](argv[2])
     if len(argv) < 2:
-        sys.stderr.write("usage: bench_receipt.py <receipt.json> [...]\n")
+        sys.stderr.write("usage: bench_receipt.py [--bench|--has-bench|"
+                         "--bench-median] <receipt.json> [...]\n")
         return 2
     rc = 0
     for path in argv[1:]:
