@@ -79,7 +79,7 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
 /// exercised by at least one contract in `contracts/`; adding a competitor is a
 /// deliberate one-line edit here plus a test, which is the point — an open
 /// domain is what let `THIS-COMPETITOR-DOES-NOT-EXIST` validate.
-pub(crate) const CRUX_COMPETITORS: [&str; 11] = [
+pub(crate) const CRUX_COMPETITORS: [&str; 12] = [
     "apr-qa-playbook",
     "ecosystem",
     "hf-kernels-community",
@@ -89,6 +89,11 @@ pub(crate) const CRUX_COMPETITORS: [&str; 11] = [
     "ollama",
     "openclaw",
     "openclip",
+    // Orange Sun Pulp Free Chat — a local-first desktop chat app (CRUX-C-37).
+    // Admitted because it competes on the SAME axis this project sells on
+    // (private, on-device, no subscription) while publishing no throughput
+    // number at all, which is itself a competitive datapoint.
+    "pulp-free-chat",
     "pytorch",
     "vllm",
 ];
