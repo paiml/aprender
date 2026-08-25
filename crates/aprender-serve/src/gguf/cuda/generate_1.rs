@@ -79,7 +79,26 @@ impl OwnedQuantizedModelCuda {
             // AGAINST itself in one binary. Comparing two builds across a session
             // measures box drift as much as the change.
             #[cfg(feature = "gpu")]
-            let residency_enabled = std::env::var("APR_KV_RESIDENCY").as_deref() != Ok("0");
+            // #2697 MEASURED REGRESSION — OFF BY DEFAULT.
+        //
+        // Skipping the restore saves 234 MB of host traffic and wins 2.36x on
+        // TTFT when the host is STARVED (41.3 ms vs 97.6 ms at load average
+        // 128). On a quiet box it LOSES, reproducibly, two interleaved rounds:
+        //
+        //     RESIDENCY=1   TTFT 41.18 / 40.96 ms   prefill 2477 / 2491
+        //     RESIDENCY=0   TTFT 34.31 / 33.82 ms   prefill 2973 / 3016
+        //
+        // ~7 ms, which is almost exactly one decode step. That is the
+        // mechanism: taking this path means `prefill_first_token = None`, so
+        // decode starts at prompt.len()-1 and re-processes the last prompt
+        // token, forgoing the fused first token prefill extracts from the LM
+        // head (PMAT-083). Prefill over ~100 tokens is cheaper than that
+        // whenever the host is not the bottleneck.
+        //
+        // So it ships OFF: opt in with APR_KV_RESIDENCY=1 on a host under
+        // heavy CPU contention. Making it a win everywhere needs the first
+        // token cached beside the prefix, which is follow-up work on #2697.
+        let residency_enabled = std::env::var("APR_KV_RESIDENCY").as_deref() == Ok("1");
             #[cfg(feature = "gpu")]
             let already_resident = residency_enabled
                 && self.executor.kv_prefix_is_resident(

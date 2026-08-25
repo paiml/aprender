@@ -320,5 +320,67 @@
     "why_it_is_NOT_a_parity_result": "under CPU saturation BOTH runtimes are CPU-limited and converge to the same ~50 tok/s. The GPU-bound regime the 0.80 floor is about never happens. On a quiet box the same comparison gave llama.cpp 158.9 vs apr 103.3 (0.650x).",
     "rule": "a ratio measured where neither side is running its own bottleneck is not a ratio. Check what the box was doing before believing a number that improved.",
     "status": "a clean measurement is armed to fire when load < 20 (quiet_parity.sh); NOT yet taken"
-  }
+  },
+  "FINAL_quiet_box_parity": {
+    "lambda_rtx4090_sm89": {
+      "llamacpp": {
+        "decode": 175.32,
+        "prefill": 11289.6,
+        "ttft_ms": 9.03
+      },
+      "apr": {
+        "decode": 113.19,
+        "prefill": 3067.4,
+        "ttft_ms": 33.25
+      },
+      "ratio_decode": 0.646,
+      "ratio_prefill": 0.272
+    },
+    "gx10_gb10_sm121": {
+      "llamacpp": {
+        "decode": 46.87,
+        "prefill": 3949.5,
+        "ttft_ms": 25.83
+      },
+      "apr": {
+        "decode": 31.09,
+        "prefill": 2976.4,
+        "ttft_ms": 34.27
+      },
+      "ratio_decode": 0.663,
+      "ratio_prefill": 0.754
+    },
+    "comparator": "llama.cpp 7746 (39173bcac), built per-host at the pin",
+    "verdict": "decode ~0.65x on BOTH hosts -- a consistent engine gap, not a host artifact. prefill 0.272x on the 4090 vs 0.754x on GB10: llama.cpp's prefill is 2.9x faster on the 4090 than on GB10 while apr's is flat (3067 vs 2976), which is what a host-bound prefill looks like. Neither host meets the 0.80 floor on decode.",
+    "floor": 0.8,
+    "stretch": 1.5
+  },
+  "residency_fix_WITHDRAWN_as_default": {
+    "quiet_box_ab": {
+      "RESIDENCY=1": {
+        "ttft_ms": [
+          41.18,
+          40.96
+        ],
+        "prefill": [
+          2476.7,
+          2490.5
+        ]
+      },
+      "RESIDENCY=0": {
+        "ttft_ms": [
+          34.31,
+          33.82
+        ],
+        "prefill": [
+          2973.1,
+          3016.0
+        ]
+      }
+    },
+    "finding": "the residency path is ~20% WORSE on a quiet box, reproducibly, two interleaved rounds. It won 2.36x only at load average 128.",
+    "mechanism": "~7 ms is one decode step. Taking the path sets prefill_first_token = None, so decode starts at prompt.len()-1 and re-processes the last prompt token, forgoing the fused first token prefill extracts from the LM head (PMAT-083). Prefill over ~100 tokens is cheaper than that whenever the host is not the bottleneck.",
+    "action": "defaults OFF; opt in with APR_KV_RESIDENCY=1 under heavy CPU contention"
+  },
+  "ttft_trace_is_dark_where_the_time_is": "TTFT_TRACE=1 reports tokenize 0.13 ms, kv_cache_alloc 0.07, reset_gpu 0.11, make_current 0.00 \u2014 about 0.3 ms of a 33 ms TTFT. The marks for `prefill` and `first_token(prefill)` never fire, so the region holding 99% of the time is uninstrumented. Worth fixing before more profiler work: the in-tree trace should have been the first tool, not nsys."
 }
