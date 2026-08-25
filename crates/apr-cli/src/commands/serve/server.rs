@@ -138,7 +138,7 @@ fn run_cpu_server(
 /// Start GGUF server with GPU batched inference (2X+ Ollama performance)
 ///
 /// Uses OwnedQuantizedModelCachedSync with continuous batching scheduler
-/// for maximum throughput on GPU. Achieves 800+ tok/s (2.8x Ollama).
+/// for maximum throughput on GPU. Measure it with `apr test llm bench`;
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_gguf_server_gpu_batched(
@@ -233,7 +233,12 @@ fn start_gguf_server_gpu_batched(
         println!();
         println!(
             "{}",
-            "Performance: 800+ tok/s (2.8x Ollama) with batched requests".yellow()
+            // #2696: this printed "Performance: 800+ tok/s (2.8x Ollama)" —
+            // a throughput comparison asserted by a server that had measured
+            // nothing, on a path that in fact HANGS on four concurrent chat
+            // requests. A claim a user reads as a result must come from a
+            // measurement; there is none here, so there is no claim.
+            "Batched inference enabled. Measure with `apr test llm bench`.".yellow()
         );
         println!("{}", "Press Ctrl+C to stop".dimmed());
 

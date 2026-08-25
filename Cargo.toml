@@ -569,6 +569,8 @@ gates = [
     "scripts/check_bench_receipt.sh",
     # #2696 — the parity validator must discriminate before a release reads it.
     "scripts/check_parity_receipt.sh",
+    # #2696 — a claim about measured reality may not be a literal a user reads.
+    "scripts/check_no_claim_literals.sh",
 ]
 
 [[bin]]
