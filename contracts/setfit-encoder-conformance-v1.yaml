@@ -618,8 +618,8 @@ falsification_tests:
     embedding_gather with an id at or above vocab_size returns
     Err(OpError::OutOfVocabulary) naming the id and its position — it does NOT emit a
     zero row and does NOT panic
-  test: cargo test -p aprender-core --lib embedding_gather
-  test_harness: cargo test -p aprender-core --lib embedding_gather
+  test: cargo test -p aprender-core --features setfit --lib embedding_gather
+  test_harness: cargo test -p aprender-core --features setfit --lib embedding_gather
   expected_output: 'test result: ok'
   if_fails: >
     The gather copied the aprender-train zero-fill or the qwen2 N-09 warn-and-zero
@@ -632,8 +632,8 @@ falsification_tests:
   prediction: >
     The analytic weight gradient matches a per-element central finite difference, and a
     token id repeated k times accumulates k gradient rows into that weight row
-  test: cargo test -p aprender-core --lib embedding_gather
-  test_harness: cargo test -p aprender-core --lib embedding_gather
+  test: cargo test -p aprender-core --features setfit --lib embedding_gather
+  test_harness: cargo test -p aprender-core --features setfit --lib embedding_gather
   expected_output: 'test result: ok'
   if_fails: >
     Either the forward severed the graph (no EmbeddingBackward recorded, so the weight
@@ -646,8 +646,8 @@ falsification_tests:
     additive_attention_mask returns a [B,1,1,S] tensor with 0.0 at kept and -1e9 at
     padded positions and requires_grad == false; an all-padding row, a length mismatch,
     and a mask value of 2 each return the matching typed OpError variant
-  test: cargo test -p aprender-core --lib additive_attention_mask
-  test_harness: cargo test -p aprender-core --lib additive_attention_mask
+  test: cargo test -p aprender-core --features setfit --lib additive_attention_mask
+  test_harness: cargo test -p aprender-core --features setfit --lib additive_attention_mask
   expected_output: 'test result: ok'
   if_fails: >
     A wrong rank breaks broadcasting over heads and query positions; a silently accepted
@@ -662,8 +662,8 @@ falsification_tests:
     Err(OpError::AllPaddingRow) before any pooling is computed, and the analytic
     gradient matches per-element central finite differences with exactly 0.0 at padded
     positions
-  test: cargo test -p aprender-core --lib masked_mean_pool
-  test_harness: cargo test -p aprender-core --lib masked_mean_pool
+  test: cargo test -p aprender-core --features setfit --lib masked_mean_pool
+  test_harness: cargo test -p aprender-core --features setfit --lib masked_mean_pool
   expected_output: 'test result: ok'
   if_fails: >
     A uniform denominator is the classic mixed-batch bug — it is invisible on a
@@ -675,8 +675,8 @@ falsification_tests:
   prediction: >
     MaskedMeanPoolBackward is present in test_all_backward_names, its name() ends with
     "Backward", and all registered names remain unique
-  test: cargo test -p aprender-core --lib test_all_backward_names
-  test_harness: cargo test -p aprender-core --lib test_all_backward_names
+  test: cargo test -p aprender-core --features setfit --lib test_all_backward_names
+  test_harness: cargo test -p aprender-core --features setfit --lib test_all_backward_names
   expected_output: 'test result: ok'
   if_fails: >
     A backward struct that is not registered is a backward struct nobody notices going
@@ -689,8 +689,8 @@ falsification_tests:
     Rust batched tokenization reproduces the pinned HuggingFace ids, type ids, attention
     mask, and truncation facts EXACTLY on the fixture corpus, including CJK, accented,
     cased, and over-length inputs
-  test: cargo test -p aprender-core --features conformance-fixtures --test setfit_conformance tokenizer_parity
-  test_harness: cargo test -p aprender-core --features conformance-fixtures --test setfit_conformance tokenizer_parity
+  test: cargo test -p aprender-core --features setfit --lib tokenizer_parity
+  test_harness: cargo test -p aprender-core --features setfit --lib tokenizer_parity
   expected_output: 'test result: ok'
   if_fails: >
     Normalization or pre-tokenization diverged from the pinned pipeline. Every downstream
@@ -703,8 +703,8 @@ falsification_tests:
     Every transformer layer's token output matches the frozen torch reference within the
     pinned tolerance on real slice weights, and a sentence encoded alone equals the same
     sentence encoded inside a mixed-length padded batch
-  test: cargo test -p aprender-core --features conformance-fixtures --test setfit_conformance forward_parity
-  test_harness: cargo test -p aprender-core --features conformance-fixtures --test setfit_conformance forward_parity
+  test: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance forward_parity
+  test_harness: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance forward_parity
   expected_output: 'test result: ok'
   if_fails: >
     Localize with the per-layer intermediates: the FIRST mismatching layer names the
@@ -718,8 +718,8 @@ falsification_tests:
     every contracted component has a strictly positive aggregate gradient norm, every
     non-exempt tensor has a strictly positive per-tensor norm, and every tensor listed in
     gradients.json.analytically_zero satisfies max|g| <= zero_grad_floor (two-sided)
-  test: cargo test -p aprender-core --features conformance-fixtures --test setfit_conformance gradient_gate
-  test_harness: cargo test -p aprender-core --features conformance-fixtures --test setfit_conformance gradient_gate
+  test: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance gradient_gate
+  test_harness: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance gradient_gate
   expected_output: 'test result: ok'
   if_fails: >
     A zero component aggregate means the graph is severed upstream of that component —
@@ -733,8 +733,8 @@ falsification_tests:
     The test-only detached encoder variant (identical arithmetic, intermediates rebuilt
     with Tensor::new) is REJECTED by the same gradient gate that accepts the real
     encoder, and this negative runs in every cargo test
-  test: cargo test -p aprender-core --lib detached_encoder
-  test_harness: cargo test -p aprender-core --lib detached_encoder
+  test: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance detach_negative
+  test_harness: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance detach_negative
   expected_output: 'test result: ok'
   if_fails: >
     If the detached variant PASSES the gate, the gate is theater and every green
@@ -747,8 +747,8 @@ falsification_tests:
     Applying a [B,1,1,S] additive mask to [B,heads,T,S] scores that require grad yields a
     tensor that requires grad, carries a grad_fn edge back to the scores, preserves
     numel, and shifts exactly the padded key positions — at B>1, heads>1 and T != S
-  test: cargo test -p aprender-core --lib apply_additive_mask
-  test_harness: cargo test -p aprender-core --lib apply_additive_mask
+  test: cargo test -p aprender-core --features setfit --lib additive_attention_mask_added_to_scores_keeps_the_score_graph_alive
+  test_harness: cargo test -p aprender-core --features setfit --lib additive_attention_mask_added_to_scores_keeps_the_score_graph_alive
   expected_output: 'test result: ok'
   if_fails: >
     The truncating .zip() is back, or the broadcast was fixed numerically without routing
@@ -761,8 +761,8 @@ falsification_tests:
     gelu_exact equals 0.5*x*(1+erf(x/sqrt(2))) within the pinned tolerance across the
     negative minimum near x = -0.75 and the saturating tails, and its backward matches
     central finite differences
-  test: cargo test -p aprender-core --lib gelu_exact
-  test_harness: cargo test -p aprender-core --lib gelu_exact
+  test: cargo test -p aprender-core --features setfit --lib gelu_exact
+  test_harness: cargo test -p aprender-core --features setfit --lib gelu_exact
   expected_output: 'test result: ok'
   if_fails: >
     The tanh approximation was substituted. It differs from the exact form by roughly
@@ -774,8 +774,8 @@ falsification_tests:
   prediction: >
     train() then eval() (and the reverse) leaves every registered parameter bit-identical
     under f32::to_bits; only mode flags change
-  test: cargo test -p aprender-core --lib mode_switch_parameter_invariance
-  test_harness: cargo test -p aprender-core --lib mode_switch_parameter_invariance
+  test: cargo test -p aprender-core --features setfit,conformance-fixtures --lib encoder_mode_parameters_are_byte_identical_across_train_eval_train
+  test_harness: cargo test -p aprender-core --features setfit,conformance-fixtures --lib encoder_mode_parameters_are_byte_identical_across_train_eval_train
   expected_output: 'test result: ok'
   if_fails: >
     A mode switch mutated weights — typically a rebuilt module or a dropout scale folded
@@ -787,8 +787,8 @@ falsification_tests:
     Every HF dotted parameter name present in the torch reference is present in the Rust
     named traversal and its gradient matches within the pinned tolerance; an
     absent name is a failure, not a skip
-  test: cargo test -p aprender-core --features conformance-fixtures --test setfit_conformance named_gradient_parity
-  test_harness: cargo test -p aprender-core --features conformance-fixtures --test setfit_conformance named_gradient_parity
+  test: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance gradient_gate_named_gradients_match_the_frozen_reference
+  test_harness: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance gradient_gate_named_gradients_match_the_frozen_reference
   expected_output: 'test result: ok'
   if_fails: >
     A missing name means the named traversal does not reach that submodule, so ENC-04
@@ -801,8 +801,8 @@ falsification_tests:
     pair_cosine_mse returns a Tensor of shape [1] whose backward delivers non-zero
     gradient to BOTH embedding matrices, so both siamese branches reach the shared
     encoder body
-  test: cargo test -p aprender-core --lib pair_cosine_mse
-  test_harness: cargo test -p aprender-core --lib pair_cosine_mse
+  test: cargo test -p aprender-core --features setfit --lib pair_loss
+  test_harness: cargo test -p aprender-core --features setfit --lib pair_loss
   expected_output: 'test result: ok'
   if_fails: >
     An f32-returning loss (the nn/loss.rs and nn/self_supervised.rs anti-analogs) severs

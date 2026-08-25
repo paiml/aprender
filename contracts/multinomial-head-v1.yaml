@@ -238,7 +238,7 @@ falsification_tests:
     Fitting with Regularization::SklearnEquivalentC{c: 1.0} over the frozen 24x4 K=3
     design reproduces scikit-learn 1.9.0 to within 1e-4 on probabilities and
     coefficients. Measured 7.74e-9 and 1.45e-8 respectively.
-  test: cargo test -p aprender-core --lib falsify_multinomial_001_sklearn_relation
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_001_sklearn_relation
   if_fails: The lambda relation, the sum-vs-mean scaling, or the intercept exclusion has drifted from the reference
 - id: FALSIFY-MH-002
   rule: The factor-2 control bites (in-band negative)
@@ -246,7 +246,7 @@ falsification_tests:
     The same fit at the WRONG lambda = 1/(C*n) = 1/24 misses the reference by more than
     1e-3. Measured 2.89e-2, i.e. 3.7 million times worse than the correct 1/48. Without
     this entry a test passing at both lambdas would pin nothing.
-  test: cargo test -p aprender-core --lib falsify_multinomial_001_wrong_lambda_detected
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_001_wrong_lambda_detected
   if_fails: The gate is vacuous — it cannot distinguish the contracted constant from twice it
 - id: FALSIFY-MH-003
   rule: The relation holds without running an optimizer at all
@@ -255,7 +255,7 @@ falsification_tests:
     max|grad| < 1e-6 at lambda = 1/(2*C*n) and > 1e-3 at 1/(C*n). Measured 2.79e-9 and
     1.48e-2. Stronger than FALSIFY-MH-001 because two solvers cannot coincidentally
     drift to the same place when no solver runs.
-  test: cargo test -p aprender-core --lib falsify_multinomial_001_sklearn_optimum_is_stationary_only_at_the_halved_lambda
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_001_sklearn_optimum_is_stationary_only_at_the_halved_lambda
   if_fails: The two objective conventions have genuinely diverged, not merely the two optimizers
 - id: FALSIFY-MH-004
   rule: Analytic gradient vs central differences (equation analytic_gradient)
@@ -263,7 +263,7 @@ falsification_tests:
     For all four {K = 2, 3} x {lambda = 0, 0.07} configurations, at a non-zero parameter
     point, every parameter index satisfies a 1e-6 relative band. Measured worst case
     2.4e-10.
-  test: cargo test -p aprender-core --lib falsify_multinomial_002_gradient_central_difference
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_002_gradient_central_difference
   if_fails: A factor, a sign, the 1/n scaling, or the penalty term in the hand-written derivative is wrong
 - id: FALSIFY-MH-005
   rule: The penalty contributes exactly 0 to the intercept block
@@ -271,7 +271,7 @@ falsification_tests:
     At lambda = 0.07 with every intercept entry non-zero, the intercept block matches
     central differences within 1e-6. A gradient that penalizes the intercept passes every
     W-block check and fails only here.
-  test: cargo test -p aprender-core --lib falsify_multinomial_002_intercept_block_excluded_from_penalty
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_002_intercept_block_excluded_from_penalty
   if_fails: The L2 penalty is leaking onto the unpenalized intercept
 - id: FALSIFY-MH-006
   rule: The gradient suite measures the PENALTY term, not just the NLL (in-band negative)
@@ -280,7 +280,7 @@ falsification_tests:
     1.6e-10, indistinguishable from the honest gradient) and RED at lambda = 0.07
     (measured 5.95e-2). The asymmetry is the evidence; a suite run only at lambda = 0
     would accept the broken gradient.
-  test: cargo test -p aprender-core --lib falsify_multinomial_002_broken_penalty_factor_is_red_only_when_lambda_is_positive
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_002_broken_penalty_factor_is_red_only_when_lambda_is_positive
   if_fails: The suite no longer discriminates the penalty term, so the lambda>0 configurations are decoration
 - id: FALSIFY-MH-007
   rule: Label order and the lowest-index tie-break (equation label_order_semantics)
@@ -288,19 +288,19 @@ falsification_tests:
     On the duplicate-row dataset the fit converges at iteration 0 with all parameters
     exactly 0, every probability is EXACTLY 1/K, and predict returns ordered_labels[0]
     for both K = 2 and K = 3.
-  test: cargo test -p aprender-core --lib predict_breaks_exact_probability_tie_to_lowest_label_index
+  test: cargo test -p aprender-core --features setfit --lib predict_breaks_exact_probability_tie_to_lowest_label_index
   if_fails: The argmax uses >= instead of >, or the index -> label map is permuted
 - id: FALSIFY-MH-008
   rule: Non-convergence is a typed error (equation convergence_error_mapping)
   prediction: >
     max_iter = 1 on non-trivial data returns Err(NotConverged{iterations: 1,
     gradient_norm, tol}) with gradient_norm > tol, and records no report.
-  test: cargo test -p aprender-core --lib max_iter_one_on_nontrivial_data_returns_not_converged
+  test: cargo test -p aprender-core --features setfit --lib max_iter_one_on_nontrivial_data_returns_not_converged
   if_fails: Non-convergence is being reported as success, i.e. the sklearn warn-and-return behaviour crept in
 - id: FALSIFY-MH-009
   rule: A non-finite logit is a typed error (equation logit_finiteness)
   prediction: A prediction row containing an infinity yields Err(NonFiniteLogit{row, class}) rather than a NaN probability
-  test: cargo test -p aprender-core --lib predict_row_with_infinite_feature_yields_nonfinite_logit_error
+  test: cargo test -p aprender-core --features setfit --lib predict_row_with_infinite_feature_yields_nonfinite_logit_error
   if_fails: An infinity is reaching the softmax and producing NaN probabilities
 - id: FALSIFY-MH-010
   rule: Input validation runs before any solve
@@ -310,17 +310,17 @@ falsification_tests:
     dimension, ragged rows, duplicate labels, empty label, label-count mismatch,
     unrepresented class, non-positive C, non-finite C, prediction dimension mismatch —
     yields its own DISTINCT typed variant naming the offender.
-  test: cargo test -p aprender-core --lib classification::multinomial::tests::invalid_
+  test: cargo test -p aprender-core --features setfit --lib classification::multinomial::tests::invalid_
   if_fails: A bad input is reaching the optimizer, or two failure modes share a variant and cannot be distinguished
 - id: FALSIFY-MH-011
   rule: The intercept gauge is preserved (equation analytic_gradient)
   prediction: After any successful fit from the zero initialization the fitted intercept mean is within 1e-9 of 0, for K = 2 and K = 3
-  test: cargo test -p aprender-core --lib fitted_intercept_mean_is_zero_within_1e_9
+  test: cargo test -p aprender-core --features setfit --lib fitted_intercept_mean_is_zero_within_1e_9
   if_fails: The intercept block of the gradient no longer sums to zero, i.e. the derivative is wrong
 - id: FALSIFY-MH-012
   rule: The fit is deterministic and the report is hashable
   prediction: Two identical fits produce bitwise-identical stored f32 coefficients and byte-identical canonical JSON
-  test: cargo test -p aprender-core --lib two_identical_fits_produce_bitwise_identical_f32_weights
+  test: cargo test -p aprender-core --features setfit --lib two_identical_fits_produce_bitwise_identical_f32_weights
   if_fails: Randomness or a wall-clock field entered the fit path, breaking the reproducibility record
 kani_harnesses_note: >
   NOT EXECUTED. No #[kani::proof] harness exists anywhere in crates/ and cargo-kani is
