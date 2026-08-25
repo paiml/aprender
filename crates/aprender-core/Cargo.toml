@@ -41,6 +41,15 @@ exclude = [
     # tests/fixtures/setfit/tokenizer.json (loaded by the ENC-02 parity gate)
     # from the package while leaving tokenizer_cases.json in.
     "/tokenizer.json",
+    # The two SetFit conformance fixtures over the 1 MiB publish ceiling
+    # (scripts/check_publish_safety.sh MAX_PACKAGED_BYTES = 1048576):
+    # gradients.json is 1854378 bytes and optimizer_step.json is 1713469.
+    # Both carry `/`, so gitignore semantics anchor them at the package root --
+    # the same CB-510 trap the `/tokenizer.json` entry above documents. The rest
+    # of tests/fixtures/setfit/ stays packaged deliberately, because the ENC-02
+    # parity gate loads tokenizer.json from it.
+    "tests/fixtures/setfit/gradients.json",
+    "tests/fixtures/setfit/optimizer_step.json",
     "defect-report-*.json",
     "trace_*.json",
     "fuzz/",
