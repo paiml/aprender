@@ -57,6 +57,12 @@ members = [
     "crates/aprender-verify",
     "crates/aprender-verify-ml",
     "crates/aprender-data",
+    # Phase 2 (DATA-01..DATA-06): deterministic contrastive data protocol.
+    # Contrastive/Siamese DATA CONSTRUCTION as a general capability, deliberately
+    # NOT folded into aprender-data: that crate carries arrow/parquet/zstd/s3/
+    # streaming/federated weight which must not flow into a training crate or a
+    # future Lambda consumer.
+    "crates/aprender-contrastive-data",
     "crates/aprender-simulate",
     "crates/aprender-distribute",
     "crates/aprender-registry",
@@ -202,6 +208,14 @@ zstd = "0.13"
 
 # Crypto
 sha2 = "0.10"
+# Compile-fail testing. Already a per-crate dev-dep of aprender-contracts-macros and
+# aprender-test-derive at the same "1"; hoisted so a typestate crate can prove
+# "cannot be constructed" with a reviewable .stderr snapshot instead of prose.
+trybuild = "1"
+# Unicode NFC. Already declared per-crate at the same "0.1" by aprender-train and
+# apr-cli; hoisted here for the normalized content hash (`nfc-trim-ws-v1`).
+# Hoisting does not change either consumer's resolution.
+unicode-normalization = "0.1"
 
 # Chat templates
 minijinja = { version = "2.14", features = ["loader", "serde"] }
@@ -273,6 +287,10 @@ aprender-rag = { path = "crates/aprender-rag", version = "0.64.0" }
 aprender-rag-cli = { path = "crates/aprender-rag-cli", version = "0.64.0" }
 aprender-qa-cli = { path = "crates/aprender-qa-cli", version = "0.64.0" }
 aprender-cgp = { path = "crates/aprender-cgp", version = "0.64.0" }
+aprender-contrastive-data = { path = "crates/aprender-contrastive-data", version = "0.64.0" }
+# aprender-rand (lib name `trueno_rand`) is a workspace MEMBER but had no
+# [workspace.dependencies] entry, so every consumer had to re-declare the path.
+aprender-rand = { path = "crates/aprender-rand", version = "0.64.0" }
 aprender-contracts-cli = { path = "crates/aprender-contracts-cli", version = "0.64.0" }
 aprender-data = { path = "crates/aprender-data", version = "0.64.0" }
 
