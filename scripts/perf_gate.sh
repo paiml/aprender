@@ -111,6 +111,69 @@ sys.exit(1 if fail else 0)
 PY
 }
 
+arm_d_memory() {
+  # REPORTING at v2.2, blocking with PERF-001. "Reporting" governs the
+  # THRESHOLD, not the FIELD: a reporting arm whose metric may silently vanish
+  # instruments nothing, so at release the fields must be PRESENT even though
+  # no bound is applied to them yet.
+  local receipt="$1" phase="$2"
+  python3 - "$receipt" "$phase" <<'PY_D'
+import json,sys
+r=json.load(open(sys.argv[1])); phase=sys.argv[2]
+kv=r.get("kv") or {}
+used,resv=kv.get("bytes_used"),kv.get("bytes_reserved")
+missing=[]
+if used is None or resv is None: missing.append("kv.bytes_used/bytes_reserved")
+if kv.get("admission_rejected") is None: missing.append("kv.admission_rejected")
+if kv.get("preempted_swap") is None: missing.append("kv.preempted_swap")
+if missing:
+    lvl="FAIL" if phase=="release" else "REPORT"
+    print(f"{lvl} ArmD instrumentation absent: {', '.join(missing)}")
+    sys.exit(1 if phase=="release" else 0)
+util=used/resv if resv else 0.0
+print(f"REPORT ArmD kv_utilization={util:.4f} admission_rejected={kv['admission_rejected']} "
+      f"preempted_swap={kv['preempted_swap']} (no bound applied until PERF-001)")
+if util<0.5 and kv["admission_rejected"]>0:
+    print("NOTE  ArmD refusing work while memory sits reserved-and-empty is the "
+          "contiguous-allocation signature this arm exists to catch")
+sys.exit(0)
+PY_D
+}
+
+arm_e_interference() {
+  # W2 ONLY (§4.3.2). Arm E is what chunked prefill exists to move; without it a
+  # batching implementation that blocks the GPU on an 8192-token prefill scores
+  # as a win on Arm A.
+  local receipt="$1" phase="$2" workload="$3"
+  if [ "$workload" != "W2" ]; then
+    echo "SKIP  ArmE measured on W2 only (workload=$workload)"
+    return 0
+  fi
+  python3 - "$receipt" "$phase" <<'PY_E'
+import json,sys
+r=json.load(open(sys.argv[1])); phase=sys.argv[2]
+itl=r.get("itl") or {}
+inj=r.get("injector") or {}
+missing=[]
+if itl.get("p95_w2_ms") is None or itl.get("p95_w1_ms") is None:
+    missing.append("itl.p95_w2_ms/p95_w1_ms")
+if inj.get("stall_p95_ms") is None: missing.append("injector.stall_p95_ms")
+if inj.get("arrival_index") is None: missing.append("injector.arrival_index")
+if missing:
+    lvl="FAIL" if phase=="release" else "REPORT"
+    print(f"{lvl} ArmE instrumentation absent: {', '.join(missing)}")
+    sys.exit(1 if phase=="release" else 0)
+w1=itl["p95_w1_ms"]
+if not w1:
+    print("FAIL ArmE p95_itl(W1) is zero or missing — the ratio is undefined")
+    sys.exit(1)
+ratio=itl["p95_w2_ms"]/w1
+print(f"REPORT ArmE itl_p95_ratio={ratio:.4f} injector_stall_p95_ms={inj['stall_p95_ms']} "
+      f"arrival_index={inj['arrival_index']} (no bound applied until PERF-001)")
+sys.exit(0)
+PY_E
+}
+
 cell_completeness() {
   # release only: every host x band in the matrix must be present.
   local receipt="$1" host="$2"
@@ -132,6 +195,8 @@ run_gate() {
   arm_c_integrity "$receipt" || rc=1
   arm_a_scaling  "$receipt" "$host" "$workload" || rc=1
   arm_b_adoption "$receipt" || rc=1
+  arm_d_memory "$receipt" "$phase" || rc=1
+  arm_e_interference "$receipt" "$phase" "$workload" || rc=1
   if [ "$phase" = release ]; then
     cell_completeness "$receipt" "$host" || rc=1
   fi
@@ -173,6 +238,36 @@ selftest() {
       fail=$((fail + 1))
     fi
   }
+  _casepw() { # name, json, phase, workload, expect
+    _mk "$1" "$2"
+    if run_gate lambda "$3" "$4" "$tmp/$1.json" >/dev/null 2>&1; then got=pass; else got=fail; fi
+    if [ "$got" = "$5" ]; then
+      printf '  ok    %-34s expect=%s\n' "$1" "$5"
+      pass=$((pass + 1))
+    else
+      printf '  BROKE %-34s expected %s got %s\n' "$1" "$5" "$got"
+      fail=$((fail + 1))
+    fi
+  }
+  # Arms D and E are REPORTING: no bound is applied, but the FIELDS must exist
+  # at release, or the arm instruments nothing while reading green.
+  local FULLBANDS ARMDE
+  FULLBANDS='"bands":[{"concurrency":1,"aggregate_tok_per_sec":100,"tokens_total":9,"agg_ratio":0.9,"decode_ratio":1.1},
+            {"concurrency":4,"aggregate_tok_per_sec":360,"tokens_total":9,"agg_ratio":0.9,"decode_ratio":1.1},
+            {"concurrency":8,"aggregate_tok_per_sec":720,"tokens_total":9,"agg_ratio":0.9,"decode_ratio":1.1},
+            {"concurrency":16,"aggregate_tok_per_sec":1440,"tokens_total":9,"agg_ratio":0.9,"decode_ratio":1.1}]}'
+  ARMDE='"kv":{"bytes_used":50,"bytes_reserved":100,"admission_rejected":0,"preempted_swap":0},
+   "itl":{"p95_w1_ms":10.0,"p95_w2_ms":14.0},"injector":{"stall_p95_ms":42.0,"arrival_index":7},'
+  local REL_NO_DE REL_DE
+  REL_NO_DE="${OK%\"bands\"*}$FULLBANDS"
+  REL_DE="${OK%\"bands\"*}$ARMDE$FULLBANDS"
+  _casepw armDE_absent_is_reporting_at_merge   "$REL_NO_DE" merge   W2 pass
+  _casepw armDE_absent_is_fatal_at_release     "$REL_NO_DE" release W2 fail
+  _casepw armDE_present_passes_release         "$REL_DE"    release W2 pass
+  local REL_D_ONLY
+  REL_D_ONLY="${OK%\"bands\"*}\"kv\":{\"bytes_used\":50,\"bytes_reserved\":100,\"admission_rejected\":0,\"preempted_swap\":0},$FULLBANDS"
+  _casepw armE_skipped_on_w1_with_d_present    "$REL_D_ONLY" release W1 pass
+  _casepw armE_absent_is_fatal_on_w2           "$REL_D_ONLY" release W2 fail
   _case baseline_healthy               "$OK" pass
   _case completed_lt_requested         "${OK/\"completed\":16/\"completed\":15}" fail
   _case a_timeout_is_fatal             "${OK/\"timeouts\":0/\"timeouts\":1}" fail
