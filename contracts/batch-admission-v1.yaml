@@ -1,0 +1,146 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-25'
+  author: PAIML Engineering
+  description: >-
+    A request that arrives while another is generating must not wait for that
+    generation to finish. Admission is the property; throughput is its
+    consequence.
+  references:
+  - APR-PERF-GATE-001 v2.2 §10.1 step 6 (PERF-001/PERF-002), §7.1 (PERF-000)
+  - 'crates/aprender-serve/src/api/cuda_batch_scheduler.rs:234 — the `m == 1` branch'
+  - 'Measured 2026-08-25 (lambda, RTX 4090, llama.cpp pinned 39173bcac):
+    aggregate 0.097x the comparator at c=16 while per-user decode read 1.554x'
+  - 'PERF-000: wall time linear in concurrency to two decimals —
+    N=1/2/4/8 -> 1.00x/1.97x/3.94x/7.86x'
+equations:
+  admission_is_not_serialized:
+    formula: >-
+      serialization_index(c) = wall(c) / wall(1)
+      ADMITTED(r, t) => not blocked_until(completion(r_inflight))
+    domain: >-
+      c in {1, 4, 8, 16} concurrent clients, one shared model, staggered
+      arrivals (the shape a real client fleet produces)
+    codomain: "serialization_index in [1, c]; 1 is perfect sharing, c is a queue"
+    invariants:
+    - >-
+      SERIALIZATION_INDEX(c) ~= c IS THE DEFECT SIGNATURE. Wall time linear in
+      concurrency to two decimals is not a scheduling-policy question, it is an
+      exclusive lock held across a whole generation. Measured 1.00/1.97/3.94/7.86
+      at N=1/2/4/8 before this contract existed.
+    - >-
+      THE FAST PATH IS PRESERVED WHEN THE SERVER IS IDLE. The single-request path
+      is genuinely faster at c=1 (138 vs 46 tok/s measured in the source comment),
+      so it must remain reachable. Deleting it to fix concurrency trades one
+      regression for another; the fix is to take it only when nothing is pending.
+    - >-
+      A PENDING REQUEST JOINS RATHER THAN QUEUES. `add_slot_to_batch` already
+      fills empty slots while `state.m < state.max_kv_slots`; the defect is that
+      the `m == 1` early return skips the loop containing it. The capability is
+      unreachable, not absent.
+    - >-
+      RISING PER-USER DECODE IS NOT A WIN. decode_ratio rising while agg_ratio
+      falls is the signature of each request owning the whole device in turn. Any
+      verdict must read BOTH, which is why APR-PERF-GATE-001 Arm B requires B1
+      and B2 jointly.
+    preconditions:
+    - "c >= 1 and the server holds exactly one model instance"
+    postconditions:
+    - "serialization_index(c) < c for every c > 1"
+falsification_tests:
+- id: F-BATCH-001
+  rule: wall time must be sublinear in concurrency
+  prediction: >-
+    For c in {2, 4, 8}, serialization_index(c) < c by a margin outside the
+    measured run-to-run dispersion. The pre-fix tree scores ~c and fails.
+  test: 'LIVE-PENDING — scripts/perf000_serialization_probe.sh'
+  if_fails: >-
+    the server is a queue with extra steps: a sixteen-user deployment runs at a
+    tenth of llama.cpp while every single-user benchmark looks healthy
+  mutation: >-
+    restore the unconditional `m == 1` early return; serialization_index must
+    return to ~c
+- id: F-BATCH-002
+  rule: the fast path is taken only when nothing else is pending
+  prediction: >-
+    With one request in flight and a second already in the channel, the
+    scheduler enters the batched loop. With a single request and an empty
+    channel, it takes the fast path.
+  test: 'LIVE-PENDING — cargo test -p aprender-serve --features cuda --lib batch_admission'
+  if_fails: >-
+    either concurrency stays serialized (fast path always) or c=1 regresses ~3x
+    (fast path never). Both are observable and neither is acceptable.
+  mutation: >-
+    make the pending check constant-true, then constant-false; the c=1 case and
+    the c>1 case must fail respectively
+- id: F-BATCH-003
+  rule: a request arriving mid-generation joins the running batch
+  prediction: >-
+    A request enqueued after decode has started is admitted into a free KV slot
+    and begins emitting tokens before the in-flight request completes.
+  test: 'LIVE-PENDING — cargo test -p aprender-serve --features cuda --lib mid_batch_join'
+  if_fails: >-
+    admission still waits on completion; `add_slot_to_batch` stays unreachable
+    from a batch that started at one
+  mutation: >-
+    skip the join loop for batches that started at m == 1; the joining request
+    must then emit nothing until the first finishes
+- id: F-BATCH-004
+  rule: c=1 latency does not regress
+  prediction: >-
+    Single-client decode tok/s and TTFT stay within measured dispersion of the
+    pre-fix tree. This is the guard against "fixing" concurrency by deleting the
+    fast path.
+  test: 'LIVE-PENDING — apr test llm bench --concurrency 1'
+  if_fails: >-
+    the fix trades the c=16 regression for a c=1 regression, which the earlier
+    source comment correctly feared
+  mutation: >-
+    force the batched path unconditionally; the c=1 case must turn RED
+proof_obligations:
+- type: invariant
+  property: >-
+    Admission never blocks on an unrelated request's completion (F-BATCH-001,
+    F-BATCH-003).
+  formal: "forall r: admitted(r, t) => t < completion(r_inflight) when slots free"
+- type: soundness
+  property: >-
+    The fast path remains reachable exactly when the server is idle
+    (F-BATCH-002, F-BATCH-004), so the fix is not a trade of one regression for
+    another.
+  formal: "fast_path(batch) <=> (len(batch) == 1 and channel_empty)"
+kani_harnesses:
+# The admission predicate is boolean over (batch_len == 1, channel_empty) --
+# four assignments, no floats, no loops. DECLARED AND NOT YET WRITTEN, said
+# plainly because the #2644 audit found declared-but-unwritten harnesses
+# inflating the score. The THROUGHPUT property it protects is a measurement and
+# is not solver-decidable at all; only the branch choice is.
+- id: KANI-BATCH-001
+  obligation: fast_path_taken_exactly_when_idle
+  property: >-
+    for all (batch_len_is_one, channel_empty) in 2^2, fast_path is chosen iff
+    both hold
+  status: declared-not-written
+  cheaper_alternative: >-
+    an exhaustive four-case table test over the branch predicate, which is the
+    same statement without a solver
+
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: >-
+      No numeric quality score is claimed. The thresholds that DO apply live in
+      scripts/perf-matrix.yaml (Arm A ratchet, Arm B1 policy 0.80, Arm B2
+      inherited 1.00); duplicating a number here would create a second source of
+      truth for a bound this contract does not own.
+known_limitations:
+- >-
+  NOT YET IMPLEMENTED, AND THE PATH IS NOT YET PROVEN. Two mechanisms produce
+  the same signature: the `m == 1` branch inside the scheduler, and the
+  `cuda_chat_backend.rs` fallback taken when `cuda_batch_tx()` is None. Which one
+  the 2026-08-25 run took has NOT been established, so all four bindings are
+  LIVE-PENDING. Fixing the wrong one would look correct and change nothing.
+- >-
+  Arms D and E (kv_utilization, itl_p95_ratio) are REPORTING until this lands.
+  The spec requires them promoted to blocking in the SAME PR as the fix, so a
+  batching implementation cannot be accepted on an unmeasured claim.
