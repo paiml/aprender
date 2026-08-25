@@ -213,7 +213,7 @@ tokenizers = { version = "0.23.1", default-features = false, features = ["fancy-
 # aprender-rand (lib name `trueno_rand`) is a workspace MEMBER but had no
 # [workspace.dependencies] entry, so every consumer had to re-declare the path.
 # It is the counter-based Philox RNG behind the SetFit encoder's dropout masks.
-aprender-rand = { path = "crates/aprender-rand", version = "0.63.0" }
+aprender-rand = { path = "crates/aprender-rand", version = "0.64.0" }
 
 # Chat templates
 minijinja = { version = "2.14", features = ["loader", "serde"] }
