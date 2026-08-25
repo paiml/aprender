@@ -242,5 +242,5 @@ qa_gate:
   - curvature_condition
   - history_bound
   - objective_decrease
-  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 9 falsification tests pass + Kani harnesses verify
   falsification: Reverse loop order in two-loop recursion
