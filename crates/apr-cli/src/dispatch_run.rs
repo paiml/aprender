@@ -95,6 +95,7 @@ fn dispatch_serve(
     no_metrics: bool,
     no_gpu: bool,
     gpu: bool,
+    gpu_layers: &Option<String>,
     batch: bool,
     trace: bool,
     trace_level: &str,
@@ -117,6 +118,13 @@ fn dispatch_serve(
         metrics: !no_metrics,
         no_gpu,
         gpu,
+        // PERF-021: parse HERE so a bad value is rejected before a server
+        // starts, and so `--gpu` keeps meaning `--gpu-layers all`.
+        gpu_layers: match gpu_layers.as_deref() {
+            Some(v) => Some(serve::GpuLayerRequest::parse(v).map_err(CliError::InvalidInput)?),
+            None if gpu && !no_gpu => Some(serve::GpuLayerRequest::All),
+            None => None,
+        },
         batch,
         trace,
         trace_level: trace_level.to_owned(),
@@ -191,6 +199,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
                 *no_metrics,
                 *no_gpu,
                 *gpu,
+                gpu_layers,
                 *batch,
                 *trace,
                 trace_level,

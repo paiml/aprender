@@ -140,10 +140,17 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
     if cfg!(any(feature = "cuda", feature = "wgpu")) {
         return Ok(());
     }
-    let asked = match (config.gpu_layers, wants_backend) {
-        (Some(_), _) => "--gpu-layers".to_string(),
-        (_, Some(b)) if b != "cpu" => format!("--backend {b}"),
-        _ => "--gpu".to_string(),
+    // Quote back the flag the USER typed. `--gpu` sets gpu_layers to All on the
+    // way in, so checking gpu_layers first would tell a user who typed `--gpu`
+    // about a flag they did not use.
+    let asked = if config.gpu {
+        "--gpu".to_string()
+    } else if config.gpu_layers.is_some() {
+        "--gpu-layers".to_string()
+    } else if let Some(b) = wants_backend.filter(|b| *b != "cpu") {
+        format!("--backend {b}")
+    } else {
+        "--gpu".to_string()
     };
     Err(CliError::FeatureDisabled(format!(
         "{asked} was requested, but this build has no GPU backend compiled in, \n\
@@ -460,6 +467,30 @@ mod gpu_layers_contract_tests {
         assert_eq!(
             resolve_gpu_layers(GpuLayerRequest::Exact(8), 29, 12).expect("8 fits"),
             8
+        );
+    }
+
+    /// THE FLAG MUST REACH THE CONFIG, which the tests below cannot see.
+    ///
+    /// I shipped this ticket once with `--gpu-layers all` parsed by clap,
+    /// destructured in the dispatch arm, and never written into `ServerConfig`.
+    /// Every test in this module passed and the real binary started a CPU
+    /// server anyway — the identical failure PERF-003 already taught, one layer
+    /// out. `gpu_layers` is the field; if the dispatch stops populating it this
+    /// asserts on the source, because a unit test over a struct literal cannot.
+    #[test]
+    fn the_cli_flag_is_actually_wired_into_the_config() {
+        let src = include_str!("../../dispatch_run.rs");
+        assert!(
+            src.contains("gpu_layers: match gpu_layers.as_deref()"),
+            "dispatch_serve no longer populates ServerConfig.gpu_layers — \
+             --gpu-layers parses and is then dropped, so the request is silently \
+             ignored exactly as #2696's --gpu was"
+        );
+        assert!(
+            src.contains("None if gpu && !no_gpu => Some(serve::GpuLayerRequest::All)"),
+            "the deprecated --gpu no longer maps to --gpu-layers all, so the old \
+             spelling stops reaching the new gate"
         );
     }
 
