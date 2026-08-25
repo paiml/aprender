@@ -375,7 +375,110 @@ def _check_parity_lane(lane, index, errors):
         return
     derived = subj_med / comp_med
     _check_stated_ratio(lane, derived, label, errors)
-    _check_verdict(lane, derived, cross, label, errors)
+    if not lane.get("bands"):
+        _check_verdict(lane, derived, cross, label, errors)
+    if not cross:
+        _check_bands(lane, lane.get("floor", 0.80), lane.get("ceiling", 1.50),
+                     lane.get("declared_bands") or [], errors)
+
+
+# ===========================================================================
+# BANDS. A parity claim at one concurrency is not a parity claim.
+#
+# Measured 2026-08-25 on lambda (RTX 4090, comparator 39173bcac), the two
+# metrics move in OPPOSITE directions as concurrency rises:
+#
+#   band    aggregate ratio    per-user decode ratio
+#   c=1          0.534x               0.587x
+#   c=4          0.231x               0.923x
+#   c=8          0.169x               1.352x
+#   c=16         0.097x               1.554x
+#
+# apr's aggregate is flat at ~110 tok/s at every band -- it serialises rather
+# than batching -- so per-user decode RISES simply because each request gets the
+# whole GPU in turn. A gate reading only per-user decode would score c=16 a
+# comfortable PASS while a sixteen-user deployment ran at a tenth of llama.cpp.
+# That is the cannot-fail shape, and it is why both metrics are required here.
+# ===========================================================================
+
+BAND_METRICS = ("aggregate_tok_per_sec", "decode_tok_per_sec")
+
+
+def _band_ratio(band, metric, errors, label):
+    """Ratio DERIVED from this band's own samples, or None."""
+    subj = _median_of(band.get("subject") or {}, metric, label + ".subject", errors)
+    comp = _median_of(band.get("comparator") or {}, metric, label + ".comparator", errors)
+    if subj is None or comp is None or comp <= 0:
+        return None
+    return subj / comp
+
+
+def _band_metric(band, metric, floor, ceiling, label, failed, errors):
+    """One metric of one band: derive the ratio, check any stated one, and
+    record whether it sits inside the band."""
+    ratio = _band_ratio(band, metric, errors, label + "." + metric)
+    if ratio is None:
+        return None
+    stated = band.get("ratio_" + metric)
+    if isinstance(stated, (int, float)) and not isinstance(stated, bool):
+        if abs(ratio - stated) > RATIO_TOLERANCE * max(ratio, 1e-9):
+            _err(errors, "%s.ratio_%s=%r does not follow from its samples "
+                         "(derived %.4f)" % (label, metric, stated, ratio))
+    if ratio < floor or ratio > ceiling:
+        failed.append("%s %.4fx" % (metric, ratio))
+    return ratio
+
+
+def _check_one_band(band, index, floor, ceiling, errors):
+    """One concurrency level, both metrics, verdict derived not asserted."""
+    label = "band[%s]" % band.get("concurrency", "?")
+    if not isinstance(band, dict):
+        _err(errors, "parity.bands[%d]: must be an object" % index)
+        return None
+    if not isinstance(band.get("concurrency"), int) or band["concurrency"] < 1:
+        _err(errors, "%s.concurrency: must be a positive integer" % label)
+        return None
+
+    failed = []
+    for metric in BAND_METRICS:
+        ratio = _band_metric(band, metric, floor, ceiling, label, failed, errors)
+        if ratio is None:
+            return None
+
+    expected = "PASS" if not failed else "FAIL"
+    verdict = band.get("verdict")
+    if verdict in ("PASS", "FAIL") and verdict != expected:
+        _err(errors, "%s.verdict=%s but %s requires %s"
+                     % (label, verdict, failed or "both metrics in band", expected))
+    return expected
+
+
+def _check_bands(lane, floor, ceiling, declared, errors):
+    """Every declared band measured, both metrics in band, or the lane FAILS."""
+    bands = lane.get("bands")
+    if not isinstance(bands, list) or not bands:
+        _err(errors, "parity lane carries no `bands` -- a parity claim at one "
+                     "concurrency is not a parity claim (see the table above)")
+        return
+    seen, outcomes = _walk_bands(bands, floor, ceiling, errors)
+    missing = [c for c in declared if c not in seen]
+    if missing:
+        _err(errors, "bands %s are declared in the protocol and absent from the "
+                     "receipt -- an unmeasured band is not a passing band" % missing)
+    if "FAIL" in outcomes and lane.get("verdict") == "PASS":
+        _err(errors, "a lane cannot render verdict=PASS while a band FAILS")
+
+
+def _walk_bands(bands, floor, ceiling, errors):
+    """Check each band; return (concurrencies seen, verdicts)."""
+    seen, outcomes = [], []
+    for i, band in enumerate(bands):
+        outcome = _check_one_band(band, i, floor, ceiling, errors)
+        if isinstance(band, dict) and isinstance(band.get("concurrency"), int):
+            seen.append(band["concurrency"])
+        if outcome:
+            outcomes.append(outcome)
+    return seen, outcomes
 
 
 def validate_parity(block):

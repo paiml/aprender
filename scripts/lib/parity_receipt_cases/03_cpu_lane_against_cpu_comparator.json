@@ -10,17 +10,18 @@
           "binary_path": "/x/apr",
           "binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resolution": "scripts/apr_bin.sh",
-          "compute_class": "cpu"
+          "compute_class": "cuda",
+          "feature_set": [
+            "cuda"
+          ]
         },
-        "decode_tok_per_sec": [
-          15.0,
-          16.0,
-          15.5
+        "aggregate_tok_per_sec": [
+          130.0,
+          132.0
         ],
-        "prefill_tok_per_sec": [
-          300.0,
-          320.0,
-          310.0
+        "decode_tok_per_sec": [
+          130.0,
+          132.0
         ],
         "install_source": "crates.io"
       },
@@ -31,22 +32,133 @@
           "binary_path": "/x/llama-server",
           "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           "resolution": "scripts/llama_bin.sh",
-          "compute_class": "cpu"
+          "compute_class": "cuda"
         },
-        "decode_tok_per_sec": [
-          17.0,
-          17.5,
-          17.2
+        "aggregate_tok_per_sec": [
+          158.0,
+          159.0
         ],
-        "prefill_tok_per_sec": [
-          1020.0,
-          1050.0,
-          1032.0
+        "decode_tok_per_sec": [
+          158.0,
+          159.0
         ]
       },
-      "ratio_decode": 0.9012,
+      "ratio_decode": 0.8265,
       "verdict": "PASS",
-      "floor": 0.8
+      "floor": 0.8,
+      "ceiling": 1.5,
+      "declared_bands": [
+        1,
+        4,
+        8,
+        16
+      ],
+      "bands": [
+        {
+          "concurrency": 1,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              150,
+              152
+            ],
+            "decode_tok_per_sec": [
+              150,
+              151
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              168,
+              169
+            ],
+            "decode_tok_per_sec": [
+              171,
+              172
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.8961,
+          "ratio_decode_tok_per_sec": 0.8776,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 4,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              430,
+              435
+            ],
+            "decode_tok_per_sec": [
+              115,
+              116
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              484,
+              486
+            ],
+            "decode_tok_per_sec": [
+              123,
+              124
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.8918,
+          "ratio_decode_tok_per_sec": 0.9352,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 8,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              600,
+              605
+            ],
+            "decode_tok_per_sec": [
+              100,
+              101
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              650,
+              652
+            ],
+            "decode_tok_per_sec": [
+              83,
+              84
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.9255,
+          "ratio_decode_tok_per_sec": 1.2036,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 16,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              980,
+              990
+            ],
+            "decode_tok_per_sec": [
+              85,
+              86
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              1120,
+              1122
+            ],
+            "decode_tok_per_sec": [
+              71,
+              72
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.8787,
+          "ratio_decode_tok_per_sec": 1.1958,
+          "verdict": "PASS"
+        }
+      ]
     }
   ],
   "_expect": {

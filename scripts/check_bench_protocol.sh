@@ -59,7 +59,9 @@ http_warmup_secs
 http_duration_secs
 http_runs
 http_cooldown_secs
-http_concurrency
+http_concurrency_bands
+band_floor
+band_ceiling
 http_stream
 apr_serve_command
 comparator_serve_command
@@ -79,8 +81,8 @@ for key in $REQUIRED; do
 done
 
 # VACUITY: a required set that shrank would sweep clean.
-if [ "$n_req" -lt 26 ]; then
-    printf 'FAIL  the required set has %s key(s); at least 26 are required. A\n' "$n_req"
+if [ "$n_req" -lt 28 ]; then
+    printf 'FAIL  the required set has %s key(s); at least 28 are required. A\n' "$n_req"
     printf '      shrinking set silently widens what "fair" means.\n'
     exit 1
 fi

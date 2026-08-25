@@ -4,7 +4,7 @@
   "model": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
   "lanes": [
     {
-      "lane": "gpu",
+      "lane": "cuda",
       "subject": {
         "provenance": {
           "binary_path": "/x/apr",
@@ -15,15 +15,13 @@
             "cuda"
           ]
         },
-        "decode_tok_per_sec": [
-          100.0,
-          101.0,
-          99.0
+        "aggregate_tok_per_sec": [
+          130.0,
+          132.0
         ],
-        "prefill_tok_per_sec": [
-          2000.0,
-          2020.0,
-          1980.0
+        "decode_tok_per_sec": [
+          130.0,
+          132.0
         ],
         "install_source": "crates.io"
       },
@@ -36,24 +34,24 @@
           "resolution": "scripts/llama_bin.sh",
           "compute_class": "cuda"
         },
+        "aggregate_tok_per_sec": [
+          158.0,
+          159.0
+        ],
         "decode_tok_per_sec": [
           158.0,
-          159.0,
-          160.0
-        ],
-        "prefill_tok_per_sec": [
-          9480.0,
-          9540.0,
-          9600.0
+          159.0
         ]
       },
-      "ratio_decode": 0.6289,
+      "ratio_decode": 0.8265,
       "verdict": "PASS",
-      "floor": 0.8
+      "floor": 0.8,
+      "ceiling": 1.5,
+      "bands": []
     }
   ],
   "_expect": {
     "result": "invalid",
-    "why": "the gate lying about its own rule"
+    "why": "neither declared nor measured \u2014 the shape where a producer forgets both, which the missing-declared-band rule cannot see because nothing was declared"
   }
 }

@@ -4,23 +4,24 @@
   "model": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
   "lanes": [
     {
-      "lane": "gpu",
+      "lane": "cuda",
       "subject": {
         "provenance": {
           "binary_path": "/x/apr",
           "binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resolution": "scripts/apr_bin.sh",
-          "compute_class": "cpu"
+          "compute_class": "cuda",
+          "feature_set": [
+            "cuda"
+          ]
         },
-        "decode_tok_per_sec": [
-          15.7,
-          15.6,
-          15.8
+        "aggregate_tok_per_sec": [
+          130.0,
+          132.0
         ],
-        "prefill_tok_per_sec": [
-          314.0,
-          312.0,
-          316.0
+        "decode_tok_per_sec": [
+          130.0,
+          132.0
         ],
         "install_source": "crates.io"
       },
@@ -33,20 +34,19 @@
           "resolution": "scripts/llama_bin.sh",
           "compute_class": "cuda"
         },
+        "aggregate_tok_per_sec": [
+          158.0,
+          159.0
+        ],
         "decode_tok_per_sec": [
           158.0,
-          159.0,
-          160.0
-        ],
-        "prefill_tok_per_sec": [
-          9480.0,
-          9540.0,
-          9600.0
+          159.0
         ]
       },
-      "ratio_decode": 0.0987,
-      "verdict": "FAIL",
+      "ratio_decode": 0.8265,
+      "verdict": "PASS",
       "floor": 0.8,
+      "ceiling": 1.5,
       "declared_bands": [
         1,
         4,
@@ -162,7 +162,7 @@
     }
   ],
   "_expect": {
-    "result": "invalid",
-    "why": "cpu-vs-cuda without the cross-class mark is the fabricated-14x shape"
+    "result": "valid",
+    "why": "every band inside 0.80-1.50 on BOTH metrics"
   }
 }

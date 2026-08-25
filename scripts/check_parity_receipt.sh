@@ -16,7 +16,7 @@ set -euo pipefail
 
 VALIDATOR="scripts/lib/bench_receipt.py"
 CASES="scripts/lib/parity_receipt_cases"
-MIN_CASES=17
+MIN_CASES=23
 
 rc=0
 printf -- '--- parity receipt validator --------------------------------------\n'
@@ -51,7 +51,7 @@ fi
 # rejects everything, which is as useless as one that accepts everything.
 valid_n=$(grep -l '"result": "valid"' "$CASES"/*.json 2>/dev/null | wc -l | tr -d ' ')
 invalid_n=$((n - valid_n))
-if [ "$valid_n" -lt 3 ] || [ "$invalid_n" -lt 8 ]; then
+if [ "$valid_n" -lt 5 ] || [ "$invalid_n" -lt 13 ]; then
     printf 'FAIL  the table is one-sided: %s valid / %s invalid. A validator that\n' "$valid_n" "$invalid_n"
     printf '      rejects everything passes an all-invalid table.\n'
     rc=1

@@ -137,7 +137,34 @@ http_warmup_secs = 15
 http_duration_secs = 30
 http_runs = 3
 http_cooldown_secs = 10
-http_concurrency = 1
+# BANDS, not a point. This was `http_concurrency = 1`, and that one line is why
+# every parity number this project has published measures the WORST band and
+# calls it the answer.
+#
+# Measured 2026-08-25, lambda RTX 4090, comparator pinned 39173bcac:
+#
+#   band   llama agg   apr agg    agg ratio    llama dec   apr dec   dec ratio
+#   c=1        168.9      90.2       0.534x        171.5     100.7      0.587x
+#   c=4        484.7     111.9       0.231x        123.3     113.8      0.923x
+#   c=8        650.5     109.6       0.169x         83.0     112.2      1.352x
+#   c=16      1120.8     108.4       0.097x         71.2     110.6      1.554x
+#
+# The two metrics tell OPPOSITE stories and only one of them is about adoption.
+# apr's aggregate is FLAT at ~110 tok/s at every concurrency: it does not batch,
+# it serialises. Per-user decode looks excellent at c=16 (1.554x) purely because
+# each request gets the whole GPU in turn while llama.cpp shares it sixteen
+# ways. A gate that reports only per-user decode would call 0.097x aggregate a
+# PASS — which is the shape of every cannot-fail gate this epic exists to kill.
+#
+# So both are gated, on every band.
+http_concurrency_bands = [1, 4, 8, 16]
+
+# The band in which a runtime is allowed to sit, both metrics, every band.
+# Lower bound: below this a user is better served by llama.cpp, which is the
+# adoption question. Upper bound: a ratio above this is more likely a
+# measurement error than a win, and must be explained before it is believed.
+band_floor = 0.80
+band_ceiling = 1.50
 http_stream = true
 
 # THE THREE INVOCATIONS, VERBATIM. {model} and {port} are substituted; the

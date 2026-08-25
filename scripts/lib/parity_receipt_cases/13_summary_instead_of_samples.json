@@ -40,7 +40,119 @@
       },
       "ratio_decode": 0.0,
       "verdict": "PASS",
-      "floor": 0.8
+      "floor": 0.8,
+      "declared_bands": [
+        1,
+        4,
+        8,
+        16
+      ],
+      "bands": [
+        {
+          "concurrency": 1,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              150,
+              152
+            ],
+            "decode_tok_per_sec": [
+              150,
+              151
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              168,
+              169
+            ],
+            "decode_tok_per_sec": [
+              171,
+              172
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.8961,
+          "ratio_decode_tok_per_sec": 0.8776,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 4,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              430,
+              435
+            ],
+            "decode_tok_per_sec": [
+              115,
+              116
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              484,
+              486
+            ],
+            "decode_tok_per_sec": [
+              123,
+              124
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.8918,
+          "ratio_decode_tok_per_sec": 0.9352,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 8,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              600,
+              605
+            ],
+            "decode_tok_per_sec": [
+              100,
+              101
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              650,
+              652
+            ],
+            "decode_tok_per_sec": [
+              83,
+              84
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.9255,
+          "ratio_decode_tok_per_sec": 1.2036,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 16,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              980,
+              990
+            ],
+            "decode_tok_per_sec": [
+              85,
+              86
+            ]
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              1120,
+              1122
+            ],
+            "decode_tok_per_sec": [
+              71,
+              72
+            ]
+          },
+          "ratio_aggregate_tok_per_sec": 0.8787,
+          "ratio_decode_tok_per_sec": 1.1958,
+          "verdict": "PASS"
+        }
+      ]
     }
   ],
   "_expect": {

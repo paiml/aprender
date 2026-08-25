@@ -4,7 +4,7 @@
   "model": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
   "lanes": [
     {
-      "lane": "gpu",
+      "lane": "cuda",
       "subject": {
         "provenance": {
           "binary_path": "/x/apr",
@@ -15,15 +15,13 @@
             "cuda"
           ]
         },
+        "aggregate_tok_per_sec": [
+          130.0,
+          132.0
+        ],
         "decode_tok_per_sec": [
           130.0,
-          132.0,
-          131.0
-        ],
-        "prefill_tok_per_sec": [
-          2600.0,
-          2640.0,
-          2620.0
+          132.0
         ],
         "install_source": "crates.io"
       },
@@ -36,24 +34,30 @@
           "resolution": "scripts/llama_bin.sh",
           "compute_class": "cuda"
         },
+        "aggregate_tok_per_sec": [
+          158.0,
+          159.0
+        ],
         "decode_tok_per_sec": [
           158.0,
-          159.0,
-          160.0
-        ],
-        "prefill_tok_per_sec": [
-          9480.0,
-          9540.0,
-          9600.0
+          159.0
         ]
       },
-      "ratio_decode": 0.8239,
+      "ratio_decode": 0.8265,
       "verdict": "PASS",
-      "floor": 0.8
+      "floor": 0.8,
+      "ceiling": 1.5,
+      "declared_bands": [
+        1,
+        4,
+        8,
+        16
+      ],
+      "bands": []
     }
   ],
   "_expect": {
-    "result": "valid",
-    "why": "cuda vs cuda, 0.824x >= 0.80, verdict PASS follows from the floor"
+    "result": "invalid",
+    "why": "a parity claim at one concurrency is not a parity claim"
   }
 }
