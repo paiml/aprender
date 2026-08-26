@@ -1,0 +1,382 @@
+contract: multinomial-head
+metadata:
+  version: 1.0.0
+  created: '2026-08-09'
+  author: PAIML Engineering
+  description: >
+    The general multinomial (softmax) logistic-regression head for any ordered K >= 2
+    label set: the objective and its two regularization conventions, the hand-written
+    analytic gradient, label-order semantics, the convergence-to-typed-error mapping,
+    and logit finiteness. Covers TRN-04.
+
+    Implemented by aprender::classification::multinomial in crates/aprender-core. SetFit
+    is the FIRST CONSUMER of this head, not its owner (decision D-01): nothing below
+    mentions an encoder, a sentence embedding, or a pair, so a later consumer inherits a
+    contract that is not SetFit-shaped. The pre-existing binary
+    aprender::classification::LogisticRegression and its apr-stochastic-lr-v1 contract
+    are untouched by this one and remain independently valid.
+
+    WHY THIS CONTRACT EXISTS. The softmax-NLL objective and its derivative are the ONE
+    numerical algorithm phase 3 writes by hand; everything downstream trusts them. Two
+    of the claims here are trivially fakeable by a passing test suite:
+
+      * "we match scikit-learn's regularization" is satisfied by any lambda that happens
+        to land close on one dataset, so the relation is pinned as an EQUATION with a
+        factor-2 control that must be RED at the wrong constant; and
+      * "the analytic gradient is correct" is satisfied by any gradient that reaches the
+        same optimum, so it is checked POINTWISE against central differences at a
+        non-degenerate parameter point, with a deliberately broken variant that must be
+        RED at lambda > 0 and GREEN at lambda = 0.
+
+    A gate that has only ever been observed passing is not evidence.
+
+    THE HALF IS THE WHOLE POINT. scikit-learn's penalty carries a factor 1/2 INSIDE
+    r(W) = (1/2)||W||_F^2 while this head's native form is lambda*||W||_F^2. The
+    resulting relation is lambda = 1/(2*C*n), NOT 1/(C*n). Both conventions are written
+    out below in full rather than cited, because this is exactly the kind of constant
+    that is "obviously" remembered wrong.
+
+    n IS A ROW COUNT. Not a pair count, not a batch size, not a post-deduplication
+    count. Stated here so a downstream consumer that thinks in pairs cannot quietly
+    substitute its own n.
+
+    DECLARED DEVIATION FROM scikit-learn. On non-convergence sklearn emits a
+    ConvergenceWarning and returns the coefficients it reached; this head returns
+    HeadFitError::NotConverged and returns no coefficients at all. TRN-04 requires
+    explicit convergence or a typed failure, and a warning is neither. This is an
+    Aprender policy and is NEVER attributed to scikit-learn.
+
+    OVERLAP CHECK (performed before authoring, as the plan requires). Neither
+    classifier-pipeline-v1.yaml nor classification-finetune-v1.yaml covers any equation
+    below, so nothing here is bound into them. classifier-pipeline-v1's `linear_probe`
+    is an explicitly BINARY sigmoid probe over frozen CodeBERT embeddings (769
+    parameters, threshold 0.5) with no objective, no regularization, no derivative and
+    no convergence semantics. classification-finetune-v1 is a set of Poka-Yoke
+    CONSTRUCTOR validators for the LoRA fine-tune path; its `softmax_sum` is the closest
+    neighbour, but it bounds |sum(softmax(logits)) - 1| for an already-computed logit
+    vector, whereas `logit_finiteness` below constrains how the logits are ACCUMULATED
+    and what happens when one is not finite. Adjacent, not overlapping.
+
+    PROVABILITY HONESTY. cargo-kani is not installed in this repository and there is not
+    one #[kani::proof] harness anywhere under crates/. Every kani_harnesses entry below
+    is a DECLARED obligation, not a discharged one; see kani_harnesses_note for the
+    runnable test backing each.
+  references:
+  - Bishop (2006) Pattern Recognition and Machine Learning, ch. 4.3.4 (multiclass logistic regression)
+  - Murphy (2012) Machine Learning - A Probabilistic Perspective, ch. 8.3.7
+  - 'scikit-learn 1.9.0 sklearn.linear_model.LogisticRegression (the reference; solver=lbfgs, C=1.0, tol=1e-10 for the frozen fixture)'
+  - Nocedal & Wright (2006) Numerical Optimization, ch. 8.1 (finite-difference derivative checking)
+  depends_on:
+  - lbfgs-kernel-v1
+  entry_points:
+  - name: aprender::classification::multinomial::MultinomialLogisticRegression
+    signature: 'fn fit(&mut self, features: &[Vec<f32>], class_indices: &[usize], ordered_labels: &[String], regularization: Regularization) -> Result<HeadFitReport, HeadFitError>'
+    notes: >
+      Fits in f64 on LbfgsF64 (lbfgs-kernel-v1 1.1.0) from x0 = zeros, and STORES the
+      fitted coefficients as f32 — the APR artifact width required by APR-01. There is
+      no randomness anywhere in the fit path, so two identical fits are bitwise
+      identical.
+  - name: aprender::classification::multinomial::MultinomialLogisticRegression
+    signature: 'fn predict_proba(&self, features: &[Vec<f32>]) -> Result<Vec<Vec<f64>>, HeadFitError>'
+    notes: >
+      Reads the f32 store but accumulates logits in f64, so a finite f32 feature row
+      cannot produce a spuriously infinite logit.
+  precision_note: >
+    Fit in f64, store f32 (decision D-03). Near the optimum the softmax-NLL gradient
+    norm can approach f32 epsilon (~1.2e-7), where an f32 Wolfe line search can stall
+    and report progress it did not make. Measured consequence of the downcast: against
+    the frozen scikit-learn fixture the worst stored-coefficient deviation is 1.45e-8,
+    which is the f32 storage floor for coefficients of magnitude ~0.35 — i.e. the f64
+    fit agrees with the reference to within the deliberate downcast and nothing else.
+equations:
+  softmax_nll_objective:
+    formula: J(W, b) = (1/n) * sum_i [ logsumexp(z_i) - z_{i, y_i} ] + lambda * ||W||_F^2
+    domain: >
+      W in R^{K x d}, b in R^K, x_i in R^d (f32 inputs widened to f64), y_i in 0..K,
+      K >= 2, n >= 1, lambda >= 0 and finite; z_{i,k} = <W_k, x_i> + b_k
+    codomain: J in R, finite
+    invariants:
+    - 'The mean, not the sum: the data term carries an explicit 1/n where n is the number of ROWS passed to fit — never a pair count, never a batch size, never a post-deduplication count'
+    - 'The intercept b is NOT penalized: the penalty ranges over the W block only'
+    - 'logsumexp uses the max-subtraction shift: exp overflows f64 above an argument of about 709, so a naive sum-of-exp is +inf for a logit of 1000 while the shifted form is exact to rounding'
+    - 'At W = 0, b = 0 the objective is exactly ln(K), since every class is equiprobable and the penalty vanishes'
+    - 'scikit-learn convention, fully expanded: (1/S) * sum_i NLL_i + (1/(S*C)) * (1/2) * ||W||_F^2 with S = n for unweighted samples, intercept excluded from r(W) on BOTH sides'
+    - 'Therefore lambda = 1/(2 * C * n). The half lives INSIDE sklearn''s r(W) = (1/2)||W||_F^2; the value 1/(C*n) is the factor-2 ERROR and is twice too much regularization'
+    - 'Measured at n = 24, C = 1: correct lambda = 0.020833333333333332, factor-2 error = 0.041666666666666664'
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Softmax_Nll_Objective
+  analytic_gradient:
+    formula: >
+      dJ/dW[k][j] = (1/n) * sum_i (p_{i,k} - [k == y_i]) * x_i[j] + 2*lambda*W[k][j];
+      dJ/db[k] = (1/n) * sum_i (p_{i,k} - [k == y_i])
+    domain: same as softmax_nll_objective; p_i = softmax(z_i) with the same max-subtraction shift
+    codomain: grad in R^{K*d + K}
+    invariants:
+    - 'The penalty contributes EXACTLY 2*lambda*W to the W block. Not lambda*W: d/dW of lambda*||W||^2_F is 2*lambda*W'
+    - 'The penalty contributes EXACTLY 0 to the intercept block, because the intercept is not penalized'
+    - 'The intercept block sums to zero at EVERY parameter point: sum_k dJ/db[k] = (1/n) sum_i sum_k (p_ik - [k == y_i]) = (1/n) sum_i (1 - 1) = 0'
+    - 'Consequently a zero-initialized intercept never leaves the centered gauge, since L-BFGS moves only along linear combinations of gradients and stored differences, every one of which has a zero-sum intercept block. The fitted intercept mean stays within 1e-9 of 0'
+    - 'VALIDATED BY CENTRAL DIFFERENCES, not by agreement at a reference optimum. A subtly wrong gradient can still reach the right optimum on a given configuration while being wrong everywhere else, so the derivative is checked pointwise at a NON-ZERO parameter point (zeros is degenerate: the penalty gradient vanishes there for any factor)'
+    - 'Measured band: |g_analytic - g_central| / max(1, |g_analytic|) is 1.6e-10..2.4e-10 across all four {K = 2, 3} x {lambda = 0, 0.07} configurations, against a 1e-6 tolerance. That is the predicted eps/h roundoff floor for h = 1e-6 in f64'
+    - 'Measured falsification asymmetry: substituting lambda*W for 2*lambda*W is indistinguishable at lambda = 0 (1.6e-10) and 5.95e-2 at lambda = 0.07. A suite run only at lambda = 0 would be GREEN against the broken gradient and would prove nothing about the penalty term'
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Analytic_Gradient
+  label_order_semantics:
+    formula: 'label(k) = ordered_labels[k]; predict(x) = ordered_labels[argmin over k of the maximal p_k]'
+    domain: ordered_labels in Vec<String> with len == K, all non-empty and pairwise distinct
+    codomain: a label from ordered_labels
+    invariants:
+    - 'The label index IS the weight-matrix row: ordered_labels[k] names the class whose parameters are W_k and b_k. There is no separate permutation anywhere'
+    - 'An EXACT probability tie resolves to the LOWEST label index, implemented by a strict > comparison in the argmax so a later equal element never displaces the running maximum'
+    - 'ordered_labels must have exactly K entries, none empty and none duplicated, so the index -> label map is total and injective'
+    - 'Exercised against a genuinely exact tie, not a near-tie: on a dataset where every feature row appears once under every class the analytic gradient at the zero initialization is zero, so L-BFGS converges at iteration 0 with all parameters exactly 0, every logit exactly 0.0 and every probability exactly 1/K'
+    preconditions:
+    - indices.len() > 0
+    lean_theorem: Theorems.Label_Order_Semantics
+  convergence_error_mapping:
+    formula: >
+      Converged -> Ok(HeadFitReport); MaxIterations -> NotConverged{iterations, gradient_norm, tol};
+      Stalled -> Stalled{iterations, gradient_norm}; NumericalError -> NumericalError{iterations};
+      Running | UserTerminated -> Internal{status}
+    domain: ConvergenceStatus (the single enum shared by both L-BFGS widths, lbfgs-kernel-v1)
+    codomain: Result<HeadFitReport, HeadFitError>
+    invariants:
+    - 'Total: every ConvergenceStatus variant maps to exactly one outcome; none is silently accepted as success'
+    - 'DECLARED DEVIATION FROM scikit-learn: MaxIterations is an ERROR here. sklearn emits a ConvergenceWarning and returns the coefficients it reached; TRN-04 requires explicit convergence or a typed failure, and a warning is neither. This is an Aprender policy, never attributed to scikit-learn'
+    - 'Running and UserTerminated are unreachable from a completed LbfgsF64::minimize; they map to an internal-error class rather than being treated as success'
+    - 'No error carries a String payload, so a caller branches on the cause instead of matching a message'
+    - 'A failed fit records NO report and leaves no partially fitted state reachable'
+    - 'HeadFitReport carries status, iterations, final_grad_norm and objective ONLY. There is no wall-clock field of any kind: the report is designed to be hashed, and a timing field makes any such record irreproducible'
+    preconditions:
+    - params.len() > 0
+    lean_theorem: Theorems.Convergence_Error_Mapping
+  logit_finiteness:
+    formula: z_{i,k} = sum_j (f64) W[k][j] * (f64) x_i[j] + (f64) b_k; !z.is_finite() => Err(NonFiniteLogit{row, class})
+    domain: fitted W, b stored as f32; feature rows supplied as f32
+    codomain: finite logits in R, or HeadFitError::NonFiniteLogit
+    invariants:
+    - 'Logits accumulate in f64 even though the operands are stored f32, so a finite f32 row whose f32 dot product would overflow still yields a finite logit'
+    - 'Finiteness is checked BEFORE the softmax, so an infinity is never allowed to become a NaN probability'
+    - 'A non-finite logit is a TYPED error naming the offending row and class, never a silently propagated Inf'
+    - 'MEASURED CONSEQUENCE: with f32 operands the largest representable product is about 1.16e77, so f64 accumulation cannot itself overflow from finite f32 inputs. NonFiniteLogit is therefore reachable at prediction time only via a non-finite feature value, and the near-f32::MAX row instead demonstrates the property it exists to guarantee — finite probabilities summing to 1 where the f32 accumulation is +inf'
+    - 'Every returned probability row is finite and sums to 1 within 1e-6'
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Logit_Finiteness
+proof_obligations:
+- type: invariant
+  property: Objective is the MEAN NLL plus an unpenalized-intercept L2 term
+  formal: J(0, 0) = ln(K) exactly, and dJ/d(b) of the penalty term is identically 0
+  applies_to: all
+- type: equivalence
+  property: scikit-learn regularization relation
+  formal: lambda = 1/(2*C*n) with n the row count; sklearn's optimum is a stationary point of J at that lambda and not at 1/(C*n)
+  tolerance: 0.0001
+  applies_to: all
+- type: invariant
+  property: Analytic gradient agrees with central differences
+  formal: for all j, |g[j] - (J(x + h e_j) - J(x - h e_j))/(2h)| / max(1, |g[j]|) < 1e-6 at h = 1e-6
+  applies_to: all
+- type: invariant
+  property: Penalty excluded from the intercept block
+  formal: g[K*d + k] is independent of lambda for every k
+  applies_to: all
+- type: invariant
+  property: Intercept gauge is preserved
+  formal: sum_k dJ/db[k] = 0 at every point, hence mean(b_fitted) is within 1e-9 of 0 from a zero initialization
+  applies_to: all
+- type: bound
+  property: Probabilities are a distribution
+  formal: every predicted row is finite and |sum_k p_k - 1| < 1e-6
+  applies_to: all
+- type: invariant
+  property: Convergence mapping is total
+  formal: every ConvergenceStatus variant maps to exactly one Result outcome, and non-convergence is never Ok
+  applies_to: all
+- type: invariant
+  property: Fit is deterministic
+  formal: two fits over identical inputs produce bitwise-identical stored f32 coefficients
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: validate
+    description: Single gate over every fit input, run BEFORE any solve
+    invariant: No partially validated state can reach the optimizer
+  - name: resolve_lambda
+    description: Regularization::SklearnEquivalentC{c} -> 1/(2*c*n) with n the row count
+    invariant: c is finite and strictly positive; lambda is finite and non-negative
+  - name: solve
+    description: LbfgsF64 from x0 = zeros over the flattened (W, b) layout
+    invariant: No randomness in the fit path
+  - name: store
+    description: Downcast the f64 solution to f32 and record the deterministic report
+    invariant: The report contains no wall-clock field
+  - name: predict
+    description: f64 logit accumulation from the f32 store, finiteness check, shifted softmax, lowest-index argmax
+    invariant: Probabilities finite and summing to 1 within 1e-6
+enforcement:
+  regularization_relation:
+    description: lambda = 1/(2*C*n) must reproduce scikit-learn and the factor-2 error must not
+    check: contract_tests::FALSIFY-MH-001
+    severity: ERROR
+  gradient_correctness:
+    description: The analytic gradient must agree with central differences at every index
+    check: contract_tests::FALSIFY-MH-004
+    severity: ERROR
+  typed_failure:
+    description: Non-convergence must be a typed error, never silent coefficients
+    check: contract_tests::FALSIFY-MH-008
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-MH-001
+  rule: scikit-learn regularization relation (equation softmax_nll_objective)
+  prediction: >
+    Fitting with Regularization::SklearnEquivalentC{c: 1.0} over the frozen 24x4 K=3
+    design reproduces scikit-learn 1.9.0 to within 1e-4 on probabilities and
+    coefficients. Measured 7.74e-9 and 1.45e-8 respectively.
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_001_sklearn_relation
+  if_fails: The lambda relation, the sum-vs-mean scaling, or the intercept exclusion has drifted from the reference
+- id: FALSIFY-MH-002
+  rule: The factor-2 control bites (in-band negative)
+  prediction: >
+    The same fit at the WRONG lambda = 1/(C*n) = 1/24 misses the reference by more than
+    1e-3. Measured 2.89e-2, i.e. 3.7 million times worse than the correct 1/48. Without
+    this entry a test passing at both lambdas would pin nothing.
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_001_wrong_lambda_detected
+  if_fails: The gate is vacuous — it cannot distinguish the contracted constant from twice it
+- id: FALSIFY-MH-003
+  rule: The relation holds without running an optimizer at all
+  prediction: >
+    aprender's analytic gradient evaluated AT scikit-learn's frozen optimum has
+    max|grad| < 1e-6 at lambda = 1/(2*C*n) and > 1e-3 at 1/(C*n). Measured 2.79e-9 and
+    1.48e-2. Stronger than FALSIFY-MH-001 because two solvers cannot coincidentally
+    drift to the same place when no solver runs.
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_001_sklearn_optimum_is_stationary_only_at_the_halved_lambda
+  if_fails: The two objective conventions have genuinely diverged, not merely the two optimizers
+- id: FALSIFY-MH-004
+  rule: Analytic gradient vs central differences (equation analytic_gradient)
+  prediction: >
+    For all four {K = 2, 3} x {lambda = 0, 0.07} configurations, at a non-zero parameter
+    point, every parameter index satisfies a 1e-6 relative band. Measured worst case
+    2.4e-10.
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_002_gradient_central_difference
+  if_fails: A factor, a sign, the 1/n scaling, or the penalty term in the hand-written derivative is wrong
+- id: FALSIFY-MH-005
+  rule: The penalty contributes exactly 0 to the intercept block
+  prediction: >
+    At lambda = 0.07 with every intercept entry non-zero, the intercept block matches
+    central differences within 1e-6. A gradient that penalizes the intercept passes every
+    W-block check and fails only here.
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_002_intercept_block_excluded_from_penalty
+  if_fails: The L2 penalty is leaking onto the unpenalized intercept
+- id: FALSIFY-MH-006
+  rule: The gradient suite measures the PENALTY term, not just the NLL (in-band negative)
+  prediction: >
+    A gradient using lambda*W instead of 2*lambda*W is GREEN at lambda = 0 (measured
+    1.6e-10, indistinguishable from the honest gradient) and RED at lambda = 0.07
+    (measured 5.95e-2). The asymmetry is the evidence; a suite run only at lambda = 0
+    would accept the broken gradient.
+  test: cargo test -p aprender-core --features setfit --lib falsify_multinomial_002_broken_penalty_factor_is_red_only_when_lambda_is_positive
+  if_fails: The suite no longer discriminates the penalty term, so the lambda>0 configurations are decoration
+- id: FALSIFY-MH-007
+  rule: Label order and the lowest-index tie-break (equation label_order_semantics)
+  prediction: >
+    On the duplicate-row dataset the fit converges at iteration 0 with all parameters
+    exactly 0, every probability is EXACTLY 1/K, and predict returns ordered_labels[0]
+    for both K = 2 and K = 3.
+  test: cargo test -p aprender-core --features setfit --lib predict_breaks_exact_probability_tie_to_lowest_label_index
+  if_fails: The argmax uses >= instead of >, or the index -> label map is permuted
+- id: FALSIFY-MH-008
+  rule: Non-convergence is a typed error (equation convergence_error_mapping)
+  prediction: >
+    max_iter = 1 on non-trivial data returns Err(NotConverged{iterations: 1,
+    gradient_norm, tol}) with gradient_norm > tol, and records no report.
+  test: cargo test -p aprender-core --features setfit --lib max_iter_one_on_nontrivial_data_returns_not_converged
+  if_fails: Non-convergence is being reported as success, i.e. the sklearn warn-and-return behaviour crept in
+- id: FALSIFY-MH-009
+  rule: A non-finite logit is a typed error (equation logit_finiteness)
+  prediction: A prediction row containing an infinity yields Err(NonFiniteLogit{row, class}) rather than a NaN probability
+  test: cargo test -p aprender-core --features setfit --lib predict_row_with_infinite_feature_yields_nonfinite_logit_error
+  if_fails: An infinity is reaching the softmax and producing NaN probabilities
+- id: FALSIFY-MH-010
+  rule: Input validation runs before any solve
+  prediction: >
+    Each of the 16 enumerated bad inputs — K < 2, out-of-range label index, NaN feature,
+    infinite feature, negative lambda, non-finite lambda, empty dataset, zero feature
+    dimension, ragged rows, duplicate labels, empty label, label-count mismatch,
+    unrepresented class, non-positive C, non-finite C, prediction dimension mismatch —
+    yields its own DISTINCT typed variant naming the offender.
+  test: cargo test -p aprender-core --features setfit --lib classification::multinomial::tests::invalid_
+  if_fails: A bad input is reaching the optimizer, or two failure modes share a variant and cannot be distinguished
+- id: FALSIFY-MH-011
+  rule: The intercept gauge is preserved (equation analytic_gradient)
+  prediction: After any successful fit from the zero initialization the fitted intercept mean is within 1e-9 of 0, for K = 2 and K = 3
+  test: cargo test -p aprender-core --features setfit --lib fitted_intercept_mean_is_zero_within_1e_9
+  if_fails: The intercept block of the gradient no longer sums to zero, i.e. the derivative is wrong
+- id: FALSIFY-MH-012
+  rule: The fit is deterministic and the report is hashable
+  prediction: Two identical fits produce bitwise-identical stored f32 coefficients and byte-identical canonical JSON
+  test: cargo test -p aprender-core --features setfit --lib two_identical_fits_produce_bitwise_identical_f32_weights
+  if_fails: Randomness or a wall-clock field entered the fit path, breaking the reproducibility record
+kani_harnesses_note: >
+  NOT EXECUTED. No #[kani::proof] harness exists anywhere in crates/ and cargo-kani is
+  not installed repo-wide, so every entry below is a DECLARED obligation, not a
+  discharged one. Phase 2 convention: name the identically-bounded runnable backing.
+  KANI-MH-001 (probabilities form a distribution) is backed by
+  falsify_multinomial_001_sklearn_relation and by
+  k3_separable_fit_returns_ok_with_finite_probabilities_summing_to_one, which assert the
+  1e-6 sum bound on every row of a real fit. KANI-MH-002 (gradient correctness) is backed
+  by falsify_multinomial_002_gradient_central_difference over all four configurations,
+  which is a strictly stronger check than a bounded symbolic one at these sizes because
+  it exercises the transcendental exp/ln path Kani would have to stub. KANI-MH-003
+  (lowest-index tie-break) is backed by
+  predict_breaks_exact_probability_tie_to_lowest_label_index and by the direct unit test
+  argmax_lowest_index_breaks_exact_ties_to_lowest_index. KANI-MH-004 (convergence mapping
+  totality) is backed by max_iter_one_on_nontrivial_data_returns_not_converged; the
+  remaining variants are covered by the exhaustive match in the implementation, which the
+  compiler checks.
+kani_harnesses:
+- id: KANI-MH-001
+  obligation: Probabilities are a distribution
+  property: every predicted row is finite and sums to 1 within 1e-6
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_multinomial_probability_simplex
+- id: KANI-MH-002
+  obligation: Analytic gradient agrees with central differences
+  property: the hand-written derivative matches the objective it claims to differentiate
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_multinomial_gradient
+- id: KANI-MH-003
+  obligation: Lowest-index tie-break
+  property: an exact probability tie resolves to the lowest label index
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_multinomial_argmax_tie_break
+- id: KANI-MH-004
+  obligation: Convergence mapping is total
+  property: every ConvergenceStatus variant maps to exactly one Result outcome
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_multinomial_convergence_mapping
+qa_gate:
+  id: F-MH-001
+  name: Multinomial Head Contract
+  description: Softmax logistic-regression head quality gate (TRN-04)
+  checks:
+  - sklearn_regularization_relation
+  - analytic_gradient_central_difference
+  - intercept_penalty_exclusion
+  - convergence_error_mapping
+  - logit_finiteness
+  pass_criteria: All 12 falsification tests pass, including the two in-band negative controls (FALSIFY-MH-002, FALSIFY-MH-006)
+  falsification: Substitute lambda*W for 2*lambda*W in the gradient, or 1/(C*n) for 1/(2*C*n) in the relation

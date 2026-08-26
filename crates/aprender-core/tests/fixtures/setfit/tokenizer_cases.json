@@ -1,0 +1,321 @@
+{
+  "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "tokenizer_sha256": "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037",
+  "cases": [
+    {
+      "id": "single_short",
+      "texts": [
+        "A quick brown fox jumps over the lazy dog."
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 1037, 4248, 2829, 4419, 14523, 2058, 1996, 13971, 3899, 1012, 102]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+      ],
+      "truncated": [false],
+      "original_token_counts": [12]
+    },
+    {
+      "id": "mixed_length_pair",
+      "texts": [
+        "Short text.",
+        "This sentence is deliberately longer so the batch holds two different lengths and padding is exercised."
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 2460, 3793, 1012, 102, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [
+          101, 2023, 6251, 2003, 9969, 2936, 2061, 1996, 14108, 4324, 2048, 2367, 10742, 1998,
+          11687, 4667, 2003, 17747, 1012, 102
+        ]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+      ],
+      "truncated": [false, false],
+      "original_token_counts": [5, 20]
+    },
+    {
+      "id": "truncation_long",
+      "texts": [
+        "the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again the quick brown fox jumps over the lazy dog again and again"
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [
+          101, 1996, 4248, 2829, 4419, 14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996,
+          4248, 2829, 4419, 14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829,
+          4419, 14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419,
+          14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419, 14523,
+          2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419, 14523, 2058, 1996,
+          13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419, 14523, 2058, 1996, 13971,
+          3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419, 14523, 2058, 1996, 13971, 3899, 2153,
+          1998, 2153, 1996, 4248, 2829, 4419, 14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153,
+          1996, 4248, 2829, 4419, 14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248,
+          2829, 4419, 14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419,
+          14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419, 14523,
+          2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419, 14523, 2058, 1996,
+          13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419, 14523, 2058, 1996, 13971,
+          3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419, 14523, 2058, 1996, 13971, 3899, 2153,
+          1998, 2153, 1996, 4248, 2829, 4419, 14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153,
+          1996, 4248, 2829, 4419, 14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248,
+          2829, 4419, 14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419,
+          14523, 2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248, 2829, 4419, 14523,
+          2058, 1996, 13971, 3899, 2153, 1998, 2153, 1996, 4248, 102
+        ]
+      ],
+      "token_type_ids": [
+        [
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0
+        ]
+      ],
+      "attention_mask": [
+        [
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+          1, 1, 1, 1
+        ]
+      ],
+      "truncated": [true],
+      "original_token_counts": [482]
+    },
+    {
+      "id": "cjk",
+      "texts": [
+        "東京は日本の首都です。",
+        "机器学习很有趣。"
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 1879, 1755, 1672, 1864, 1876, 1671, 100, 1961, 1665, 30184, 1636, 102],
+        [101, 100, 100, 1817, 100, 100, 1873, 100, 1636, 102, 0, 0, 0]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0]
+      ],
+      "truncated": [false, false],
+      "original_token_counts": [13, 10]
+    },
+    {
+      "id": "accented",
+      "texts": [
+        "Café naïve résumé façade.",
+        "El niño comió jalapeños."
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 7668, 15743, 13746, 8508, 1012, 102, 0, 0, 0, 0],
+        [101, 3449, 20801, 4012, 3695, 14855, 2721, 11837, 2891, 1012, 102]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+      ],
+      "truncated": [false, false],
+      "original_token_counts": [7, 11]
+    },
+    {
+      "id": "mixed_case",
+      "texts": [
+        "MiXeD CaSe TeXt HeRe.",
+        "ALL CAPS AND lower case."
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 3816, 2553, 3793, 2182, 1012, 102, 0],
+        [101, 2035, 9700, 1998, 2896, 2553, 1012, 102]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 1, 1, 1, 0],
+        [1, 1, 1, 1, 1, 1, 1, 1]
+      ],
+      "truncated": [false, false],
+      "original_token_counts": [7, 8]
+    },
+    {
+      "id": "pooling_batch",
+      "texts": [
+        "One line.",
+        "Another line that is a good deal longer than the first one.",
+        "Third."
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 2028, 2240, 1012, 102, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [
+          101, 2178, 2240, 2008, 2003, 1037, 2204, 3066, 2936, 2084, 1996, 2034, 2028, 1012,
+          102
+        ],
+        [101, 2353, 1012, 102, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "truncated": [false, false, false],
+      "original_token_counts": [5, 15, 4]
+    },
+    {
+      "id": "loss_pair_a",
+      "texts": [
+        "The cat sat on the mat.",
+        "Stock markets fell sharply today."
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 1996, 4937, 2938, 2006, 1996, 13523, 1012, 102],
+        [101, 4518, 6089, 3062, 9249, 2651, 1012, 102, 0]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 0]
+      ],
+      "truncated": [false, false],
+      "original_token_counts": [9, 8]
+    },
+    {
+      "id": "loss_pair_b",
+      "texts": [
+        "A feline rested on the rug.",
+        "The weather is sunny and warm."
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 1037, 10768, 4179, 8614, 2006, 1996, 20452, 1012, 102],
+        [101, 1996, 4633, 2003, 11559, 1998, 4010, 1012, 102, 0]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 0]
+      ],
+      "truncated": [false, false],
+      "original_token_counts": [10, 9]
+    },
+    {
+      "id": "invariance_single",
+      "texts": [
+        "Padding must not change this sentence."
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 11687, 4667, 2442, 2025, 2689, 2023, 6251, 1012, 102]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+      ],
+      "truncated": [false],
+      "original_token_counts": [10]
+    },
+    {
+      "id": "invariance_batch3",
+      "texts": [
+        "Tiny.",
+        "Padding must not change this sentence.",
+        "A noticeably longer sentence that forces the batch to pad the shorter rows."
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 4714, 1012, 102, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [101, 11687, 4667, 2442, 2025, 2689, 2023, 6251, 1012, 102, 0, 0, 0, 0, 0, 0],
+        [
+          101, 1037, 25327, 2936, 6251, 2008, 2749, 1996, 14108, 2000, 11687, 1996, 7820,
+          10281, 1012, 102
+        ]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+      ],
+      "truncated": [false, false, false],
+      "original_token_counts": [4, 10, 16]
+    },
+    {
+      "id": "full_model_trio",
+      "texts": [
+        "The cat sat on the mat.",
+        "A feline rested on the rug.",
+        "Stock markets fell sharply today."
+      ],
+      "max_length": 256,
+      "input_ids": [
+        [101, 1996, 4937, 2938, 2006, 1996, 13523, 1012, 102, 0],
+        [101, 1037, 10768, 4179, 8614, 2006, 1996, 20452, 1012, 102],
+        [101, 4518, 6089, 3062, 9249, 2651, 1012, 102, 0, 0]
+      ],
+      "token_type_ids": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ],
+      "attention_mask": [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 0, 0]
+      ],
+      "truncated": [false, false, false],
+      "original_token_counts": [9, 10, 8]
+    }
+  ]
+}
