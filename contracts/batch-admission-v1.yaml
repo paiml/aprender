@@ -89,6 +89,18 @@ falsification_tests:
     A request enqueued after decode has started is admitted into a free KV slot
     and begins emitting tokens before the in-flight request completes.
   test: 'LIVE-PENDING — cargo test -p aprender-serve --features cuda --lib mid_batch_join'
+  measured: >-
+    RED 2026-08-26 on the POST-PERF-001 tree, RTX 4090, 400-token generations.
+    Predict-then-verify with two competing predictions stated before the run:
+    JOINED implies B's latency ~= solo (ratio 1.00); QUEUED implies
+    (solo - delay) + solo (ratio 1.60). Request B was issued 40% of the way
+    through A's generation. Measured ratio over 3 reps: 1.59 / 1.58 / 1.59 --
+    within 0.02 of the QUEUED prediction and 0.58 from JOINED. A's own latency
+    was unaffected (1.27s vs 1.29s solo), which is the signature of B waiting
+    rather than the two sharing.
+    A simultaneous-fire harness CANNOT see this: firing N at once forms a batch
+    of N at the window and never exercises the m == 1 path. Staggered arrival is
+    the shape a real client fleet produces and the only one that exposes it.
   if_fails: >-
     admission still waits on completion; `add_slot_to_batch` stays unreachable
     from a batch that started at one
@@ -155,7 +167,20 @@ known_limitations:
   batching implementation is not missing; it is not compiled into any build a
   user is instructed to make.
 - >-
-  THE `m == 1` BRANCH IS A SECOND-ORDER CONCERN. cuda_batch_scheduler.rs:234
+  THE `m == 1` BRANCH IS CONFIRMED RED AND IS NOT FIXED BY PERF-001. Measured
+  2026-08-26 on the post-fix tree (see F-BATCH-003): a request arriving
+  mid-generation still QUEUES. PERF-001 fixed admission for requests that arrive
+  together; it did not fix admission for requests that arrive apart, and the
+  aggregate win it delivers (3.32x at N=8) is real but orthogonal.
+  The remedy is NOT a further cfg change and NOT deleting the fast path.
+  F-BATCH-004 forbids the latter: the batched path is ~3x slower per token at
+  m == 1 (46 vs 138 tok/s per the source comment), so always-batching trades a
+  concurrency win for a c=1 regression. The honest fix is to close that per-token
+  gap so the batched path can be used unconditionally, which is engine work with
+  its own measurement, not a gating flag.
+- >-
+  ORIGINAL NOTE, KEPT FOR THE RECORD: the `m == 1` branch was called a
+  second-order concern. cuda_batch_scheduler.rs:234
   holds `model.write()` across a whole generation and its own comment concedes
   "the second request queues until the first completes". That is a real defect
   and it is unreachable in a `cuda` build, because the scheduler never starts.
