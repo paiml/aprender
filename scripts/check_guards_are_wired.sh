@@ -40,9 +40,35 @@ BASELINE="${REPO_ROOT}/scripts/unwired_guards_baseline.txt"
 
 # Guards named by no workflow, one per line, sorted.
 unwired_in() {
-    local root="$1" g base
-    for g in "$root"/scripts/check_*.sh; do
+    local root="$1" g base seen=""
+    # THE UNIVERSE WAS BUILT FROM THE FILENAME, AND A GUARD HID BEHIND ITS OWN.
+    #
+    # This globbed scripts/check_*.sh only. scripts/perf_gate.sh — which
+    # implements Arms A/B1/B2/C/D/E and cell-completeness for
+    # APR-PERF-GATE-001, the epic the operator calls the most important gate in
+    # the project — is invoked by NO workflow, NO Makefile target and NO
+    # [package.metadata.dogfood] entry, and this meta-guard reported PASS the
+    # whole time because the file is not called check_*.
+    #
+    # Proven by mutation rather than argued: copying that file BYTE-FOR-BYTE to
+    # scripts/check_perf_gate.sh makes this guard fail immediately —
+    # "unwired guards grew 4 -> 5 / NEW: check_perf_gate.sh". Same content, same
+    # non-wiring; only the name differed.
+    #
+    # So the universe is DERIVED, not enumerated: a script that ships a
+    # `--selftest` / `--self-test` mode is CLAIMING to be a guard, and that
+    # claim is what makes it one. Hardcoding a second list of "guards that are
+    # not called check_*" would be the same defect one level up — the shape
+    # already fixed three times in this epic (cascade TIERS[], book.yml paths,
+    # book example features).
+    for g in "$root"/scripts/check_*.sh "$root"/scripts/*.sh; do
         [ -f "$g" ] || continue
+        case "$(basename "$g")" in
+            check_*) ;;   # always in scope
+            *) grep -qE '^[[:space:]]*(--selftest|--self-test|"--selftest"|"--self-test")\)' "$g" 2>/dev/null || continue ;;
+        esac
+        case " $seen " in *" $(basename "$g") "*) continue ;; esac
+        seen="$seen $(basename "$g")"
         base=$(basename "$g")
         # EXECUTION, not mention. `grep -rqF -- "$base"` matched the script's
         # NAME anywhere in the workflows tree -- including inside a `#` comment.
@@ -105,7 +131,20 @@ fi
 
 printf '=== every check_*.sh must be named by a workflow (check_guards_are_wired.sh) ===\n'
 
-total=$(find "$REPO_ROOT/scripts" -maxdepth 1 -name 'check_*.sh' | wc -l | tr -d ' ')
+# COUNT THE UNIVERSE THAT WAS ACTUALLY SCANNED, not a proxy for it. This
+# counted check_*.sh only, so after the universe was widened it printed
+# "72 guard(s) scanned, 5 named by no workflow" over a 73-file universe — a
+# self-inconsistent line, and the exact shape of a number that misleads whoever
+# reads it next. Derived the same way unwired_in() derives its universe.
+total=$(
+  {
+    find "$REPO_ROOT/scripts" -maxdepth 1 -name 'check_*.sh'
+    for f in "$REPO_ROOT"/scripts/*.sh; do
+      case "$(basename "$f")" in check_*) continue ;; esac
+      grep -qE '^[[:space:]]*(--selftest|--self-test|"--selftest"|"--self-test")\)' "$f" 2>/dev/null \
+        && printf '%s\n' "$f"
+    done
+  } | sort -u | wc -l | tr -d ' ')
 
 # Vacuity: a glob that matched nothing would report zero unwired guards and look
 # like a pass. That is the exact failure mode this guard is about.
