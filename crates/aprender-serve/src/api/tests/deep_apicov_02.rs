@@ -261,6 +261,7 @@ fn test_deep_apicov_health_response_structure() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 3.14,
+        ..Default::default()
     };
     let json = serde_json::to_string(&resp).expect("serialize");
     assert!(json.contains("\"ok\""));

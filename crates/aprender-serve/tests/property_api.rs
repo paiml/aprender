@@ -26,6 +26,7 @@ fn test_health_response_creation() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 1.5,
+        ..Default::default()
     };
 
     assert_eq!(resp.status, "ok");
@@ -43,6 +44,7 @@ fn test_health_response_serialization() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 2.0,
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&resp).unwrap();
@@ -69,6 +71,7 @@ proptest! {
             compute_mode: "cpu".to_string(),
             model_loaded,
             uptime_sec,
+            ..Default::default()
         };
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: HealthResponse = serde_json::from_str(&json).unwrap();

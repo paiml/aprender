@@ -128,7 +128,11 @@ proof_obligations:
 
 kani_harnesses:
 # These name a REAL Rust surface: compute_class() and provenance_json() exist at
-# crates/apr-cli/src/commands/bench.rs. They are declared here as bounded-proof
+# crates/apr-cli/src/commands/bench.rs; since PERF-006 (aprender#2706) the body of
+# compute_class() is realizar::andon::compute_class in
+# crates/aprender-serve/src/andon.rs, shared verbatim with the serve banner and
+# GET /health, and the receipt also carries provenance.max_in_flight from the same
+# module. They are declared here as bounded-proof
 # targets and are NOT yet written — pv counts a declaration, so this is stated
 # plainly rather than left for a reader to discover (the #2644 audit flagged
 # declared-but-unwritten harnesses as score inflation; the remedy is to say so,

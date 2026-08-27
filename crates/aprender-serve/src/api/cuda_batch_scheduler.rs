@@ -95,6 +95,12 @@ pub fn spawn_cuda_batch_scheduler(
     model: Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
     config: CudaBatchConfig,
 ) -> tokio::sync::mpsc::Sender<CudaBatchRequest> {
+    // PERF-006 (aprender#2706): the bound is recorded by the code that CREATES
+    // it. A caller cannot forget to report a scheduler it wired, and cannot
+    // report one it did not — which is why `andon::max_in_flight()` defaults to
+    // 1 rather than to this number.
+    crate::andon::record_admission(config.max_batch);
+
     let (tx, rx) = tokio::sync::mpsc::channel::<CudaBatchRequest>(256);
 
     // Run the scheduler in a blocking thread (CUDA ops are synchronous)

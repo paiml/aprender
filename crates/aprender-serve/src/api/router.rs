@@ -576,6 +576,72 @@ fn build_health_response(state: &AppState) -> HealthResponse {
         compute_mode: compute_mode.to_string(),
         model_loaded,
         uptime_sec: server_uptime_sec(),
+        // PERF-006 (aprender#2706), the andon lamp. Both fields come from
+        // `crate::andon` — the SAME function the serve banner prints and the
+        // `apr bench --json` receipt records — so the three surfaces cannot
+        // report different answers to "what is this running on" and "how many
+        // requests will it run at once". `max_in_flight` is emitted on the
+        // serialized path too: 1 is the number this endpoint exists to
+        // surface, not a value to omit until batching makes it flattering.
+        compute_class: crate::andon::compute_class().to_string(),
+        max_in_flight: crate::andon::max_in_flight(),
+    }
+}
+
+/// PERF-006 (aprender#2706) — `/health` and the andon must agree at RUNTIME.
+///
+/// The source-scan gate in `apr-cli` proves the call is present; this proves
+/// the value that reaches the wire is the shared one. Together they exclude
+/// both failure shapes: a surface that stops calling, and a surface that calls
+/// and then overrides.
+#[cfg(test)]
+mod andon_health_tests {
+    use super::{build_health_response, AppState};
+
+    #[test]
+    fn health_reports_the_shared_compute_class() {
+        let body = build_health_response(&AppState::with_cache(1));
+        assert_eq!(
+            body.compute_class,
+            crate::andon::compute_class(),
+            "/health must render `andon::compute_class()` verbatim — the same \
+             string `apr bench --json` writes into provenance.compute_class"
+        );
+    }
+
+    /// The bound is reported on the SERIALIZED path too.
+    ///
+    /// This state wired no scheduler, so the answer is 1. A body that omitted
+    /// the field here — or reported it only once batching was active — would
+    /// be silent on exactly the defect it exists to expose (#2696's shape).
+    #[test]
+    fn health_reports_max_in_flight_on_the_serialized_path() {
+        let body = build_health_response(&AppState::with_cache(1));
+        assert_eq!(
+            body.max_in_flight,
+            crate::andon::max_in_flight(),
+            "/health must render the shared accessor, not its own count"
+        );
+        assert!(
+            body.max_in_flight >= 1,
+            "max_in_flight counts concurrent generations and is never zero"
+        );
+    }
+
+    /// The JSON keys are part of the contract: an operator polling `/health`
+    /// and a receipt reader must be reading the same two field names.
+    #[test]
+    fn the_two_andon_fields_are_on_the_wire() {
+        let body = build_health_response(&AppState::with_cache(1));
+        let json = serde_json::to_value(&body).expect("HealthResponse serializes");
+        assert!(
+            json.get("compute_class").is_some(),
+            "compute_class missing from the /health body: {json}"
+        );
+        assert!(
+            json.get("max_in_flight").is_some(),
+            "max_in_flight missing from the /health body: {json}"
+        );
     }
 }
 

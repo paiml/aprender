@@ -965,6 +965,7 @@ fn test_health_response_roundtrip_custom() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 10.0,
+        ..Default::default()
     };
     let json = serde_json::to_string(&response).expect("serialize");
     let rt: HealthResponse = serde_json::from_str(&json).expect("deserialize");
@@ -1622,6 +1623,7 @@ fn test_empty_strings_everywhere() {
         compute_mode: "cpu".to_string(),
         model_loaded: false,
         uptime_sec: 0.0,
+        ..Default::default()
     };
     let json = serde_json::to_string(&response).expect("serialize");
     let rt: HealthResponse = serde_json::from_str(&json).expect("deserialize");

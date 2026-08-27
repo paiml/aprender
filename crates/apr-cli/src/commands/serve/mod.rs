@@ -205,6 +205,28 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     println!();
     println!("Model: {}", model_path.display());
     println!("Binding: {}", config.bind_addr());
+    // PERF-006 (aprender#2706) — the andon lamp, on the startup banner.
+    //
+    // ONE renderer, shared with `GET /health` and with the provenance block of
+    // `apr bench --json`, so a reader comparing this terminal against a JSON
+    // body is comparing one source against itself. Deleting the call below, or
+    // rendering either fact locally, is caught by `andon_surface_wiring_tests`.
+    //
+    // The bound reads 1 here because nothing has recorded a scheduler yet; a
+    // CUDA build prints the line again from `handler_gpu_completion.rs` once
+    // the batch scheduler is wired, and the difference between the two lines
+    // IS the andon signal. On every build that never wires one — which is
+    // every `cargo install aprender` — 1 is the final answer and the reason
+    // this line exists (defect #2: apr does not batch; wall time linear in
+    // concurrency, `contracts/batch-admission-v1.yaml`).
+    //
+    // NOTE: prose in this region is deliberately not written as a callable
+    // path. The first cut of the guard matched its own explanatory comment
+    // and stayed GREEN on its own named mutation.
+    #[cfg(feature = "inference")]
+    println!("{}", realizar::andon::andon_line());
+    #[cfg(not(feature = "inference"))]
+    println!("Compute: no inference engine linked (built without --features inference)");
     if config.context_length != 4096 {
         println!(
             "Context length: {} (--context-length)",
@@ -265,6 +287,406 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     contract_post_concurrent_model_access!(&());
     contract_post_server_lifecycle!(&());
     result
+}
+
+/// PERF-006 (aprender#2706) — THE CALL SITE IS THE GATE, NOT THE FUNCTION.
+///
+/// `realizar::andon` has its own unit tests, and every one of them would
+/// survive a surface going back to computing its own compute class. That is
+/// the failure this module refuses: three surfaces, three derivations, three
+/// answers — which is precisely the state APR-PERF-GATE-001 v2.2 §4 recorded
+/// as **pending** on the Andon row before this ticket.
+///
+/// So this reads the source of the three renderers and asserts each one
+/// delegates. Crude, and it is the only thing here that fails when a surface
+/// re-derives: `apr serve` needs a model and a bound port, `/health` needs a
+/// live `AppState`, and a build with a different feature set cannot be
+/// observed from this one, so none of the three can be driven from a unit test
+/// in this crate.
+#[cfg(test)]
+mod andon_surface_wiring_tests {
+    use std::path::PathBuf;
+
+    /// The entry points that route through the ONE `compute_class()`.
+    ///
+    /// `andon_line()` counts because `aprender-serve`'s
+    /// `the_banner_line_renders_the_same_class_and_bound_as_the_accessors`
+    /// proves it renders the accessors' own answers — so a surface printing
+    /// the line cannot be showing a different class from a surface reading the
+    /// accessor.
+    const CLASS_ENTRY_POINTS: [&str; 2] = ["andon::compute_class()", "andon::andon_line()"];
+    const BOUND_ENTRY_POINTS: [&str; 2] = ["andon::max_in_flight()", "andon::andon_line()"];
+
+    /// Does this function body get its compute class from the shared andon?
+    ///
+    /// A pure predicate over text, so it can be pointed at a body that is
+    /// known-good and a body that is known-bad. Only that pair tells a gate
+    /// that discriminates from one that flags everything or nothing.
+    fn renders_shared_compute_class(body: &str) -> bool {
+        CLASS_ENTRY_POINTS.iter().any(|e| body.contains(e))
+    }
+
+    /// Same question for `max_in_flight`.
+    fn renders_shared_max_in_flight(body: &str) -> bool {
+        BOUND_ENTRY_POINTS.iter().any(|e| body.contains(e))
+    }
+
+    /// Lexer state for [`strip_comments`].
+    ///
+    /// A flat state machine rather than nested `if`s: the transition table is
+    /// one `match` with no nesting, which keeps it readable and keeps the
+    /// cognitive-complexity gate satisfied.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Scan {
+        /// Ordinary code.
+        Code,
+        /// Saw `/` in code; the next char decides comment vs division.
+        Slash,
+        /// Inside a `"..."` literal.
+        Str,
+        /// Saw `\` inside a string literal.
+        StrEsc,
+        /// Inside a `//` comment.
+        Line,
+        /// Inside a `/* */` comment.
+        Block,
+        /// Saw `*` inside a block comment.
+        BlockStar,
+    }
+
+    /// Drop `//` and `/* */` comments, keeping string literals intact.
+    ///
+    /// NOT a nicety. The first cut of this module scanned raw source, and the
+    /// banner's own explanatory comment named the call it was explaining — so
+    /// deleting the real call left the comment behind and the guard passed its
+    /// own named mutation (rc=0, all six green). Prose must not be able to
+    /// satisfy a wiring check. Rewording the one comment would have fixed that
+    /// instance; removing comments from the scanned text fixes the class.
+    fn strip_comments(src: &str) -> String {
+        let mut out = String::with_capacity(src.len());
+        let mut state = Scan::Code;
+        let mut prev = '\0';
+        for ch in src.chars() {
+            state = match (state, ch) {
+                // A char literal holding a double quote (`'"'`) must not open a
+                // string — that would disable stripping for the rest of the
+                // region, and this guard has to fail CLOSED.
+                (Scan::Code, '"') if prev == '\'' => {
+                    out.push(ch);
+                    Scan::Code
+                }
+                (Scan::Code, '"') => {
+                    out.push(ch);
+                    Scan::Str
+                }
+                (Scan::Code, '/') => Scan::Slash,
+                (Scan::Code, _) => {
+                    out.push(ch);
+                    Scan::Code
+                }
+                (Scan::Slash, '/') => Scan::Line,
+                (Scan::Slash, '*') => Scan::Block,
+                (Scan::Slash, '"') => {
+                    out.push('/');
+                    out.push(ch);
+                    Scan::Str
+                }
+                (Scan::Slash, _) => {
+                    out.push('/');
+                    out.push(ch);
+                    Scan::Code
+                }
+                (Scan::Str, '\\') => {
+                    out.push(ch);
+                    Scan::StrEsc
+                }
+                (Scan::Str, '"') => {
+                    out.push(ch);
+                    Scan::Code
+                }
+                (Scan::Str, _) => {
+                    out.push(ch);
+                    Scan::Str
+                }
+                (Scan::StrEsc, _) => {
+                    out.push(ch);
+                    Scan::Str
+                }
+                (Scan::Line, '\n') => {
+                    out.push(ch);
+                    Scan::Code
+                }
+                (Scan::Line, _) => Scan::Line,
+                (Scan::Block, '*') => Scan::BlockStar,
+                (Scan::Block, '\n') => {
+                    out.push(ch);
+                    Scan::Block
+                }
+                (Scan::Block, _) => Scan::Block,
+                (Scan::BlockStar, '/') => Scan::Code,
+                (Scan::BlockStar, '*') => Scan::BlockStar,
+                (Scan::BlockStar, '\n') => {
+                    out.push(ch);
+                    Scan::Block
+                }
+                (Scan::BlockStar, _) => Scan::Block,
+            };
+            prev = ch;
+        }
+        out
+    }
+
+    /// The CODE between the braces of the function opened by `signature`,
+    /// comments removed.
+    ///
+    /// Brace-matched rather than cut at the first `\n}\n`, so a nested block
+    /// or a closure cannot truncate the region and hide a missing call
+    /// outside it.
+    fn body_after(src: &str, signature: &str) -> String {
+        let at = src
+            .find(signature)
+            .unwrap_or_else(|| panic!("the scanned surface no longer exists: {signature}"));
+        let open = at + signature.len() - 1;
+        assert!(
+            src[open..].starts_with('{'),
+            "the signature must end at its opening brace"
+        );
+        let mut depth = 0usize;
+        for (offset, ch) in src[open..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return strip_comments(&src[open + 1..open + offset]);
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unbalanced braces after {signature}");
+    }
+
+    fn read(rel: &str) -> String {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read the scanned surface {}: {e}", path.display()))
+    }
+
+    /// Assembled from pieces so the search key never appears verbatim in this
+    /// file. A guard whose own text matches its own pattern finds itself and
+    /// survives the deletion it exists to catch — that self-reference has
+    /// reddened a sibling guard three times in this epic.
+    fn banner_signature() -> String {
+        let name = "run";
+        format!("pub(crate) fn {name}(model_path: &Path, config: &ServerConfig) -> Result<()> {{")
+    }
+
+    fn health_signature() -> String {
+        let name = "build_health_response";
+        format!("fn {name}(state: &AppState) -> HealthResponse {{")
+    }
+
+    fn receipt_signature() -> String {
+        let name = "provenance_json";
+        format!("fn {name}() -> serde_json::Value {{")
+    }
+
+    /// The two accessors the receipt renders, pinned to their `inference`
+    /// arm. `apr bench` cannot call into realizar on a build that does not
+    /// link it, so the accessor is where the delegation lives and the
+    /// `not(inference)` arm is the stated absence of an engine, not a second
+    /// derivation of a class.
+    fn receipt_accessor_signature(name: &str, ret: &str) -> String {
+        format!("#[cfg(feature = \"inference\")]\nfn {name}() -> {ret} {{")
+    }
+
+    /// SURFACE 1 — the serve startup banner.
+    #[test]
+    fn the_banner_delegates_to_the_one_andon() {
+        let body = body_after(&read("src/commands/serve/mod.rs"), &banner_signature());
+        assert!(
+            renders_shared_compute_class(&body) && renders_shared_max_in_flight(&body),
+            "serve::run no longer prints the shared andon. The banner is one of the \
+             three surfaces APR-PERF-GATE-001 v2.2 §4 requires to read a single \
+             compute_class(); a locally derived class here is how the receipt, \
+             /health and the terminal drifted apart in the first place."
+        );
+    }
+
+    /// SURFACE 2 — `GET /health`, in the OTHER crate.
+    ///
+    /// Read from disk rather than `include_str!`: a cross-crate `include_str!`
+    /// would compile here and then break `cargo package -p apr-cli`, because
+    /// the sibling crate's file is not in this crate's package.
+    #[test]
+    fn the_health_route_delegates_to_the_one_andon() {
+        let body = body_after(
+            &read("../aprender-serve/src/api/router.rs"),
+            &health_signature(),
+        );
+        assert!(
+            renders_shared_compute_class(&body),
+            "build_health_response no longer reads the shared compute class. \
+             /health then answers from its own derivation and can disagree with \
+             the receipt that a release is judged on."
+        );
+        assert!(
+            renders_shared_max_in_flight(&body),
+            "build_health_response no longer reports max_in_flight. A server that \
+             runs one request at a time must say so on the endpoint operators poll."
+        );
+    }
+
+    /// SURFACE 3 — the `apr bench --json` receipt.
+    ///
+    /// Two hops, and BOTH are asserted. `provenance_json` renders the local
+    /// accessors and the local accessors delegate; checking only the second
+    /// hop would let the receipt inline a derivation of its own while a still
+    /// correct accessor sat unused three lines above it.
+    #[test]
+    fn the_receipt_delegates_to_the_one_andon() {
+        let src = read("src/commands/bench.rs");
+
+        // Hop 1 — the provenance block renders the accessors.
+        let prov = body_after(&src, &receipt_signature());
+        assert!(
+            prov.contains("compute_class()"),
+            "provenance_json no longer records a compute class. This is the field \
+             a cross-class ratio is caught by — a CPU-only apr side measured \
+             against a CUDA comparator validates cleanly without it."
+        );
+        assert!(
+            prov.contains("max_in_flight()"),
+            "provenance_json no longer records max_in_flight — the receipt then \
+             says nothing about how many requests the measured process ran at once."
+        );
+
+        // Hop 2 — the accessors are delegations, not derivations.
+        let class_fn = body_after(
+            &src,
+            &receipt_accessor_signature("compute_class", "&'static str"),
+        );
+        assert!(
+            renders_shared_compute_class(&class_fn),
+            "apr bench derives its own compute class again. That is the third of \
+             three answers APR-PERF-GATE-001 v2.2 §4 exists to collapse into one."
+        );
+        let bound_fn = body_after(&src, &receipt_accessor_signature("max_in_flight", "usize"));
+        assert!(
+            renders_shared_max_in_flight(&bound_fn),
+            "apr bench counts its own in-flight requests again."
+        );
+    }
+
+    /// DISCRIMINATION, half one: the predicate must not accept a body that
+    /// merely NAMES the fact.
+    ///
+    /// Without this, `body.contains("compute_class")` would pass on a doc
+    /// comment and the three assertions above would be decoration.
+    #[test]
+    fn naming_the_field_is_not_delegating_to_it() {
+        let mentions_only = r#"
+            // compute_class is the dispatch path taken, not the hardware present.
+            let compute_class = if cfg!(feature = "cuda") { "cuda" } else { "cpu" };
+            let max_in_flight = 1usize;
+            serde_json::json!({ "compute_class": compute_class, "max_in_flight": max_in_flight })
+        "#;
+        assert!(
+            !renders_shared_compute_class(mentions_only),
+            "a body that spells the field name and derives the value itself must be \
+             reported as NOT delegating — this is the mutation the three tests above \
+             are supposed to catch"
+        );
+        assert!(!renders_shared_max_in_flight(mentions_only));
+    }
+
+    /// DISCRIMINATION, half two: the predicate must accept a real call, in
+    /// every spelling the three crates use.
+    ///
+    /// A gate that flags everything is as broken as one that flags nothing,
+    /// and only this half tells them apart.
+    #[test]
+    fn every_spelling_of_the_real_call_is_accepted() {
+        for good in [
+            "crate::andon::compute_class().to_string()",
+            "realizar::andon::compute_class()",
+            "println!(\"{}\", realizar::andon::andon_line());",
+        ] {
+            assert!(
+                renders_shared_compute_class(good),
+                "the gate must not fire on a genuine delegation: {good}"
+            );
+        }
+        for good in [
+            "crate::andon::max_in_flight()",
+            "realizar::andon::max_in_flight()",
+            "println!(\"{}\", realizar::andon::andon_line());",
+        ] {
+            assert!(
+                renders_shared_max_in_flight(good),
+                "the gate must not fire on a genuine delegation: {good}"
+            );
+        }
+    }
+
+    /// DISCRIMINATION, half three: prose cannot satisfy the gate, and code is
+    /// not lost to the stripper.
+    ///
+    /// The mutation that exposed this was `the_banner_delegates_to_the_one_andon`
+    /// passing with the real call deleted, because a comment two lines above
+    /// spelled it out. Both polarities are asserted: a comment-only mention is
+    /// REJECTED, and a real call sitting next to a comment is ACCEPTED.
+    #[test]
+    fn a_comment_that_names_the_call_does_not_count_as_making_it() {
+        let prose_only =
+            "fn f() {\n    // realizar::andon::andon_line() renders the class.\n    let x = 1;\n}";
+        let body = body_after(prose_only, "fn f() {");
+        assert!(
+            !renders_shared_compute_class(&body),
+            "a comment naming the call must not satisfy the wiring check: {body}"
+        );
+
+        let real_call = "fn f() {\n    // see andon_line, below\n    println!(\"{}\", realizar::andon::andon_line());\n}";
+        let body = body_after(real_call, "fn f() {");
+        assert!(
+            renders_shared_compute_class(&body),
+            "stripping comments must not eat the code next to them: {body}"
+        );
+
+        let block_comment =
+            "fn f() {\n    /* realizar::andon::compute_class() */\n    let x = 1;\n}";
+        assert!(!renders_shared_compute_class(&body_after(
+            block_comment,
+            "fn f() {"
+        )));
+    }
+
+    /// The stripper must not treat a `//` inside a string literal as the start
+    /// of a comment — that would silently delete real code to end of line.
+    #[test]
+    fn a_double_slash_inside_a_string_is_not_a_comment() {
+        let src = "fn f() {\n    let u = \"http://x\"; realizar::andon::compute_class();\n}";
+        let body = body_after(src, "fn f() {");
+        assert!(
+            renders_shared_compute_class(&body),
+            "a URL in a string truncated the line: {body}"
+        );
+    }
+
+    /// The brace matcher must return the function it was asked for, not the
+    /// whole file. If it over-reads, every assertion above passes on any file
+    /// that mentions the andon anywhere.
+    #[test]
+    fn the_scanner_reads_one_function_not_the_file() {
+        let src = "fn a() {\n    let x = MARKER;\n}\nfn b() {\n    let y = 2;\n}\n";
+        let body = body_after(src, "fn a() {");
+        assert!(body.contains("MARKER"));
+        assert!(
+            !body.contains("let y = 2"),
+            "the scanner leaked into the next function: {body}"
+        );
+    }
 }
 
 #[cfg(test)]

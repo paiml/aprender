@@ -498,28 +498,34 @@ fn start_gguf_server_cuda(
                 if use_iteration {
                     let iter_config =
                         realizar::api::iteration_scheduler::IterationSchedulerConfig::default();
-                    println!(
-                        "  ITERATION SCHEDULER: max_slots={}, prefill_chunk={} (PMAT-088)",
-                        iter_config.max_slots, iter_config.prefill_chunk_size
-                    );
+                    let prefill_chunk = iter_config.prefill_chunk_size;
                     let batch_tx =
                         realizar::api::iteration_scheduler::spawn_iteration_scheduler(
                             cuda_model_arc,
                             iter_config,
                         );
+                    // PERF-006: the spawn RECORDED the bound; this prints the
+                    // one shared andon line rather than a second rendering of
+                    // max_slots. The startup banner printed the same line with
+                    // max_in_flight=1 before the scheduler existed.
+                    println!(
+                        "  ITERATION SCHEDULER (PMAT-088): prefill_chunk={prefill_chunk}"
+                    );
+                    println!("  {}", realizar::andon::andon_line());
                     state.with_cuda_batch_tx(batch_tx).with_verbose(config.verbose)
                 } else {
                     let batch_config =
                         realizar::api::cuda_batch_scheduler::CudaBatchConfig::default();
-                    println!(
-                        "  CONTINUOUS BATCHING: max_batch={}, window={}ms (PMAT-044)",
-                        batch_config.max_batch, batch_config.window_ms
-                    );
+                    let window_ms = batch_config.window_ms;
                     let batch_tx =
                         realizar::api::cuda_batch_scheduler::spawn_cuda_batch_scheduler(
                             cuda_model_arc,
                             batch_config,
                         );
+                    // PERF-006: see above — the number comes from the andon,
+                    // which the spawn set, not from a second read of the config.
+                    println!("  CONTINUOUS BATCHING (PMAT-044): window={window_ms}ms");
+                    println!("  {}", realizar::andon::andon_line());
                     state.with_cuda_batch_tx(batch_tx).with_verbose(config.verbose)
                 }
             };

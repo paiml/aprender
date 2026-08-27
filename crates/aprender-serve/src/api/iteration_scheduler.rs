@@ -84,6 +84,10 @@ pub fn spawn_iteration_scheduler(
     model: Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
     config: IterationSchedulerConfig,
 ) -> tokio::sync::mpsc::Sender<CudaBatchRequest> {
+    // PERF-006 (aprender#2706): recorded where the bound is created — see
+    // `crate::andon`.
+    crate::andon::record_admission(config.max_slots);
+
     let (tx, rx) = tokio::sync::mpsc::channel::<CudaBatchRequest>(256);
 
     std::thread::spawn(move || {

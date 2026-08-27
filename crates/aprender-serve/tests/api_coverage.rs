@@ -39,6 +39,7 @@ fn test_health_response_serialization() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 1.0,
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -3017,6 +3018,7 @@ fn test_health_response_custom_status() {
         compute_mode: "cpu".to_string(),
         model_loaded: false,
         uptime_sec: 0.5,
+        ..Default::default()
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -4936,6 +4938,7 @@ fn test_health_response_roundtrip() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 42.0,
+        ..Default::default()
     };
     let json = serde_json::to_string(&original).expect("serialize");
     let restored: HealthResponse = serde_json::from_str(&json).expect("deserialize");

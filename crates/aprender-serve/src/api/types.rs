@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// `version` and `compute_mode` are aprender extensions (not forbidden
 /// by the contract) and remain for operator diagnostics.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct HealthResponse {
     /// Service status: `"ok"`, `"loading"`, or `"degraded"`.
     pub status: String,
@@ -30,6 +30,36 @@ pub struct HealthResponse {
     pub model_loaded: bool,
     /// Seconds since the server process first bound a router.
     pub uptime_sec: f64,
+    /// PERF-006 andon — the dispatch path this process takes, in the receipt's
+    /// own vocabulary (`cpu` / `cuda` / `metal` / `wgpu` / `unknown`).
+    ///
+    /// Distinct from `compute_mode`, which is the older two-valued
+    /// `cpu`/`gpu` operator field and stays for compatibility. This one is
+    /// produced by [`crate::andon::compute_class`], the same function the
+    /// serve banner and `apr bench --json`'s `provenance.compute_class` read,
+    /// so the three cannot disagree.
+    ///
+    /// `#[serde(default)]` is for READING a body emitted by a server older
+    /// than PERF-006, where the field does not exist; empty then means "the
+    /// server that produced this body did not report a class", never "cpu".
+    /// It has no effect on what this server emits — `build_health_response`
+    /// always fills it from the shared function.
+    #[serde(default)]
+    pub compute_class: String,
+    /// PERF-006 andon — how many generations this server runs AT ONCE.
+    ///
+    /// `1` means serialized: a request that arrives while another is
+    /// generating waits for it (`contracts/batch-admission-v1.yaml`). Reported
+    /// on that path too, which is the whole point — a field that only appears
+    /// when batching is active reports success and is silent on the failure it
+    /// exists to expose.
+    ///
+    /// `#[serde(default)]` for the same backward-read reason as
+    /// `compute_class`: `0` on a PARSED body means the emitting server predates
+    /// the field. A body this server emits is never `0` — the floor is 1,
+    /// asserted by `andon_health_tests`.
+    #[serde(default)]
+    pub max_in_flight: usize,
 }
 
 /// Tokenize request

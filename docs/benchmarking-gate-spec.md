@@ -185,7 +185,11 @@ either vacuously green or permanently red:
 1. The expected cell set is enumerated from committed `perf-matrix.yaml`; the verdict
    job asserts every expected cell is present.
 2. `provenance.compute_class` is the dispatch path **taken**, read from the running
-   process — not the hardware present.
+   process — not the hardware present. It and `provenance.max_in_flight` come from
+   `realizar::andon`, the single definition the serve banner and `GET /health` also
+   render, so no two surfaces can answer differently. `max_in_flight` is emitted on
+   the serialized path as well — a bound reported only while batching is active is
+   silent on the failure it exists to expose.
 3. No `ratio` is representable without a `baseline` object that itself passes every
    receipt rule.
 4. Raw samples are retained on every cell. A receipt carrying only summary statistics
@@ -205,7 +209,7 @@ either vacuously green or permanently red:
 | Concept | Here | Mechanism / file |
 |---|---|---|
 | **Jidoka** — the product stops itself | `--gpu` on a build with no GPU backend must fail, not run on CPU | `crates/apr-cli/src/commands/serve/mod.rs::ensure_accelerator_available` — **landed**, exit 9 with a remedy that works |
-| **Andon** — one visible signal | one `compute_class()` feeds the serve banner, `/health`, and `provenance.compute_class` | pending |
+| **Andon** — one visible signal | one `compute_class()` and one `max_in_flight()` feed the serve banner, `/health`, and `provenance.*` | `crates/aprender-serve/src/andon.rs` — **landed** (PERF-006); wiring held by `andon_surface_wiring_tests` in `crates/apr-cli/src/commands/serve/mod.rs` |
 | **Poka-yoke** — unwriteable, not detected | a lane must carry `bands`; a band must carry **both** metrics; a ratio must be derived from that band's samples; a lane can never be greener than its worst band | `scripts/lib/bench_receipt.py` — **landed** |
 | **Genchi Genbutsu** — go and see | the gemba is the crates.io binary on four hosts; the receipt is emitted by the process that installed it | `scripts/check_multiplatform_dogfood.sh` — partly landed |
 | **Standardized work** | one entrypoint, one receipt schema, one verdict — and the other six harnesses are **deleted**, not deprecated | §6 |

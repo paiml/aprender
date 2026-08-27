@@ -267,38 +267,53 @@ pub(crate) fn run(
 
 /// Print benchmark results as JSON (machine-parseable output).
 /// GH-254→GH-601: Exit code matches `passed` field — non-zero when failed.
-/// PARITY-001 — the dispatch path this binary can actually take.
+/// PARITY-001 / PERF-006 — the dispatch path this binary can actually take.
 ///
-/// NOT the hardware present: the path TAKEN. A CUDA-capable host running a
-/// default-features build is `cpu`, because the code that would dispatch to
-/// CUDA was never compiled in. That distinction is the whole point of the
-/// field — a receipt proving WHICH BINARY ran but not WHICH PATH it took
-/// catches the wrong-binary class (five in-tree rediscoveries) and misses the
-/// wrong-compute-class one entirely, which is how a CPU-only apr side
-/// measured against a CUDA comparator validates cleanly and reports the
-/// fabricated 14x regression documented at `dispatch.rs:165`.
+/// DELEGATES. The body used to live here and read apr-cli's own `cfg!`s, which
+/// made it the third of three disagreeing answers: this receipt said
+/// `cpu/cuda/metal/wgpu`, `GET /health` said `cpu/gpu` from a different
+/// derivation, and the serve banner said nothing at all. APR-PERF-GATE-001
+/// v2.2 §4 lists that row as the Andon countermeasure — *one* `compute_class()`
+/// feeding all three — and it was marked **pending**. This is that one function
+/// (`realizar::andon::compute_class`); the banner and `/health` call the same
+/// symbol.
 ///
-/// Feature gates are read FIRST and are decisive when absent: a build without
-/// the feature cannot take that path, whatever `nvidia-smi` says.
+/// One behaviour changed with the move, deliberately: the old body returned
+/// `"wgpu"` for `cfg!(feature = "wgpu")`, but apr-cli declares
+/// `wgpu = ["inference"]` — it enables no wgpu dispatch anywhere, it only
+/// widens `serve::ensure_accelerator_available`. So that arm named a path the
+/// binary could not take, in the one field whose job is to prove which path it
+/// took. It now reports `cpu`, which is what such a build runs on.
+///
+/// A build with no `inference` feature has no inference engine linked at all,
+/// so there is no dispatch path to name. That is `"unknown"` — a vocabulary
+/// member, not a second implementation of the class.
+#[cfg(feature = "inference")]
 fn compute_class() -> &'static str {
-    if cfg!(feature = "cuda") {
-        // Built for CUDA. It still only counts as `cuda` if the runtime is
-        // actually there; otherwise this build silently fell back and the
-        // receipt must say so rather than claim the fast path.
-        let runtime = std::process::Command::new("nvidia-smi")
-            .arg("-L")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        if runtime {
-            return "cuda";
-        }
-        return "cpu";
-    }
-    if cfg!(feature = "wgpu") {
-        return "wgpu";
-    }
-    "cpu"
+    realizar::andon::compute_class()
+}
+
+#[cfg(not(feature = "inference"))]
+fn compute_class() -> &'static str {
+    "unknown"
+}
+
+/// PERF-006 — how many generations this process runs AT ONCE.
+///
+/// §14 calls this "the cheapest confirmation of defect #2 in this document",
+/// defect #2 being that apr does not batch. `apr bench` drives one stream, and
+/// nothing in it records a scheduler, so this reads 1 — which is the point.
+/// The field is emitted on the serialized path rather than only when batching
+/// is active; a number that appears only in the flattering case reports
+/// success and is silent on the failure it exists to expose (#2696's shape).
+#[cfg(feature = "inference")]
+fn max_in_flight() -> usize {
+    realizar::andon::max_in_flight()
+}
+
+#[cfg(not(feature = "inference"))]
+fn max_in_flight() -> usize {
+    1
 }
 
 /// PARITY-001 — sha256 of a file's contents, for model identity.
@@ -346,6 +361,7 @@ fn provenance_json() -> serde_json::Value {
         "build_commit": option_env!("APR_GIT_SHA").unwrap_or("unknown"),
         "resolution": "path",
         "compute_class": compute_class(),
+        "max_in_flight": max_in_flight(),
         "feature_set": features,
     })
 }
@@ -850,11 +866,16 @@ mod parity_001_receipt_tests {
     #[test]
     fn compute_class_is_cpu_without_a_gpu_feature() {
         let class = compute_class();
-        if cfg!(feature = "cuda") || cfg!(feature = "wgpu") {
+        if !cfg!(feature = "inference") {
+            // PERF-006: no inference engine is linked, so there is no dispatch
+            // path to name. `unknown` is the vocabulary member for that; `cpu`
+            // would be a claim about a code path this binary does not contain.
+            assert_eq!(class, "unknown");
+        } else if cfg!(feature = "cuda") {
             // Built with a GPU feature: the class may legitimately be a GPU
             // path, or `cpu` if the runtime turned out to be absent.
             assert!(
-                ["cuda", "wgpu", "cpu"].contains(&class),
+                ["cuda", "cpu"].contains(&class),
                 "unexpected compute_class {class} for a GPU-feature build"
             );
         } else {
@@ -865,6 +886,44 @@ mod parity_001_receipt_tests {
                  lets a cross-class ratio validate cleanly"
             );
         }
+    }
+
+    /// PERF-006 — the receipt and the server must not be able to disagree.
+    ///
+    /// This asserts the receipt's class IS the shared function's answer, not
+    /// merely that it is spelled the same way. Reimplementing the derivation
+    /// here — even identically — would make the test survive the very drift it
+    /// exists to catch.
+    #[test]
+    #[cfg(feature = "inference")]
+    fn the_receipt_reports_the_shared_compute_class_verbatim() {
+        let p = provenance_json();
+        assert_eq!(
+            p.get("compute_class").and_then(serde_json::Value::as_str),
+            Some(realizar::andon::compute_class()),
+            "the receipt must render `realizar::andon::compute_class()`, the same \
+             symbol the serve banner prints and `GET /health` returns"
+        );
+    }
+
+    /// PERF-006 — `max_in_flight` is present on the SERIALIZED path.
+    ///
+    /// `apr bench` wires no scheduler, so this is 1. A receipt that omitted
+    /// the field here would report a number only when batching made it
+    /// flattering, which is #2696's shape.
+    #[test]
+    fn the_receipt_reports_max_in_flight_even_when_it_is_one() {
+        let p = provenance_json();
+        let n = p
+            .get("max_in_flight")
+            .and_then(serde_json::Value::as_u64)
+            .expect("provenance must always carry max_in_flight");
+        assert!(n >= 1, "max_in_flight is a count of concurrent generations");
+        assert_eq!(
+            n as usize,
+            max_in_flight(),
+            "the receipt must render the shared accessor, not its own count"
+        );
     }
 
     /// The class must be one of the values the receipt schema admits. An

@@ -319,6 +319,7 @@ fn test_health_response_serialize() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 1.0,
+        ..Default::default()
     };
     let json = serde_json::to_string(&response).expect("test");
     assert!(json.contains("\"ok\""));

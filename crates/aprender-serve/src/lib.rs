@@ -160,6 +160,13 @@ mod generated_contracts;
 #[cfg(all(test, feature = "cuda"))]
 #[macro_use]
 mod test_cuda_macros;
+/// PERF-006 (aprender#2706) — the andon lamp.
+///
+/// ONE `compute_class()` and ONE `max_in_flight()`, read by the serve banner,
+/// by `GET /health` and by the `apr bench --json` receipt. Not feature-gated:
+/// every build that links realizar can answer "what am I running on, and how
+/// many requests will I run at once".
+pub mod andon;
 // PMAT-779: process-global, cross-backend GPU-test concurrency cap (test-only).
 #[cfg(feature = "server")]
 pub mod api;

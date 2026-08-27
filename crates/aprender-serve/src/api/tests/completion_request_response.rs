@@ -182,6 +182,7 @@ fn test_health_response_serde() {
         compute_mode: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 1.0,
+        ..Default::default()
     };
     let json = serde_json::to_string(&resp).expect("serialize");
     let parsed: crate::api::HealthResponse = serde_json::from_str(&json).expect("deserialize");
