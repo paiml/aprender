@@ -939,6 +939,20 @@ jobs:
         run: bash scripts/check_no_claim_literals.sh
       - name: No claim-literal guard regression (case table)
         run: bash scripts/check_no_claim_literals.sh --selftest
+      # PERF-010, the receipt rule's namesake check. The guard above is the
+      # NEGATIVE half -- a comparator ratio may not appear at all. This is the
+      # POSITIVE half over the class that is allowed to stay: a speed comparison
+      # naming no competitor is legal iff it cites the evidence/ receipt that
+      # produced it (v2.2 section 3.2). Text-only and deterministic, so it
+      # belongs in the merge phase (section 4.1) rather than at release.
+      #
+      # It found 146 uncited speed comparisons across 30 files and ZERO citing a
+      # receipt -- a 0% citation rate on the very number class this epic is
+      # named for. Baselined shrink-only; the count is the finding.
+      - name: Performance claims cite their receipts (PERF-010)
+        run: bash scripts/check_perf_claims_cite_receipts.sh
+      - name: Claims-cite-receipts guard can still go RED (case table)
+        run: bash scripts/check_perf_claims_cite_receipts.sh --selftest
       - name: One benchmarking entrypoint (PERF-009)
         run: bash scripts/check_no_competing_harnesses.sh
       - name: Competing-harness guard can still go RED (case table)

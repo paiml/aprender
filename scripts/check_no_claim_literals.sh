@@ -66,7 +66,76 @@ TARGET_RE='([Tt]arget|[Tt]hreshold|[Gg]oal|[Ee]xpect|[Rr]equire|spec |SPEC|PASS:
 # diagnosis — the first draft flagged 22 lines, nearly all of them prose. What
 # is banned is a tool telling the user what to go investigate about a number it
 # just printed: an IMPERATIVE aimed at the reader.
-DIAGNOSIS_RE='(investigate [a-z]|likely caused by|root cause is|probably due to|suspect(ed)? cause)'
+#
+# PERF-016 WIDENED THIS TWICE OVER, AND THE SECOND HALF IS THE LOAD-BEARING ONE.
+#
+#   (a) SPELLINGS. `likely using` and `likely due to` were not in the list. The
+#       audit found `Critical - likely using wrong backend or naive
+#       implementation` shipped in crates/apr-cli/src/commands/profile.rs, so
+#       the omission was not hypothetical.
+#
+#   (b) THE CAUSAL CLASS NO LONGER REQUIRES A PRINT MACRO ON THE SAME LINE.
+#       PERF-014's literal was caught only by the accident that a `.red()` sat
+#       on it. Move the identical string ONE INDIRECTION AWAY -- a `match` arm
+#       in a helper the printer calls -- and CLAIM_RE sees nothing at all. That
+#       is exactly where the PERF-016 audit found the next one: a `PerfGrade`
+#       description arm, printed verbatim by `print_perf_grade_section`, naming
+#       a wrong backend and a naive implementation as the cause of a low
+#       efficiency score that nothing on that path can attribute. This guard
+#       was GREEN on it, which is why PERF-016 had to be a MANUAL audit.
+#
+#       So for .rs the causal patterns now apply to every double-quoted literal
+#       on a non-comment line, print macro or not. A cause reaching the user
+#       through a `const`, a `match` arm or a returned `&'static str` reaches
+#       the user identically. Comments stay exempt (the case table's
+#       `// investigate sampling sync later` control) and .md prose stays out,
+#       because DIAGNOSIS_RE over English flags mathematics, not fabrication.
+#
+# THE CLASS SPLITS IN TWO, AND THE SPLIT IS WHAT MAKES THE WIDENING SURVIVE THE
+# TREE. An ATTRIBUTION says what caused it; an IMPERATIVE says where to go look.
+# Only the first asserts an answer, so only the first is a defect wherever it is
+# written. Widening the imperative to every literal was tried and MEASURED: over
+# 7329 shipped files it produced exactly two hits,
+#
+#   aprender-data   "Remove or investigate constant columns: {:?}"
+#   aprender-gpu    "Performance degraded by {:.1}% under load - investigate bottlenecks"
+#
+# and both name the thing the tool had just measured. A sub-pattern whose only
+# hits in the new scope are false is not evidence of a wider defect class, and
+# baselining two correct lines to keep a pattern would be the permission slip
+# this file's own ratchet exists to refuse.
+ATTRIBUTION_RE='(likely (caused by|due to|using)|probably (caused by|due to|using)|root cause is|suspect(ed)? cause|caused by (the|a|an|its) )'
+DIAGNOSIS_RE="(investigate [a-z]|$ATTRIBUTION_RE)"
+
+# Every double-quoted literal on a non-comment line of the given .rs files,
+# emitted as `file:line:"literal"`, filtered to the causal class.
+#
+# ONE implementation, shared by the sweep and by the case table below. Two
+# copies of an extraction rule drift, and the drift is invisible precisely
+# because the table keeps passing against its own copy.
+causal_literals_in() {
+    [ "$#" -gt 0 ] || return 0
+    #
+    # `LIT` is the string-literal regex `"[^"]*"`, built from `\042` rather than
+    # written out. Not decoration: that regex contains THREE double-quote
+    # characters, and bashrs -- which this repo mandates over shellcheck --
+    # counts quotes without parsing awk, so the literal form raises SC1078
+    # "did you forget to close this double-quoted string?" against a script that
+    # is correct. The `scripts/` lint ratchet is shrink-only, so leaving two
+    # false errors behind is leaving them for someone else. Behaviour is
+    # identical; the case table below re-proves it either way.
+    awk '
+        BEGIN { Q = "\042"; LIT = Q "[^" Q "]*" Q }
+        /^[[:space:]]*(\/\/|\*|\/\*)/ { next }
+        {
+            rest = $0
+            while (match(rest, LIT)) {
+                print FILENAME ":" FNR ":" substr(rest, RSTART, RLENGTH)
+                rest = substr(rest, RSTART + RLENGTH)
+            }
+        }
+    ' "$@" 2>/dev/null | grep -E "$ATTRIBUTION_RE" | grep -vE "$TARGET_RE"
+}
 
 if [ "${1:-}" = "--selftest" ]; then
     t=0; f=0
@@ -95,8 +164,55 @@ if [ "${1:-}" = "--selftest" ]; then
     check match   'eprintln!("Slow decode — likely caused by KV cache thrashing");'
     check nomatch 'println!("Non-kernel time dominates this pass");'     # a magnitude, no cause
     check nomatch '// investigate sampling sync later'                   # a comment, not printed
+
+    # PERF-016: the causal class, where NO print macro is on the line. Every row
+    # here is invisible to check() above -- that is the whole point of the
+    # widening, so the table runs the widened extractor instead.
+    ct=0; cf=0
+    CAUSAL_TD=$(mktemp -d) || exit 1
+    trap 'rm -rf "${CAUSAL_TD:?}"' EXIT
+    check_causal() { # check_causal <match|nomatch> <one line of rust>
+        local want="$1" line="$2" got=nomatch tmp out
+        tmp="$CAUSAL_TD/probe.rs"
+        printf '%s\n' "$line" > "$tmp"
+        # No `| grep -q` here: an early-exiting reader plus pipefail hands the
+        # pipeline the PRODUCER's SIGPIPE status and invents a failure. Capture,
+        # then test the string.
+        out=$(causal_literals_in "$tmp" || true)
+        [ -n "$out" ] && got=match
+        ct=$((ct+1))
+        if [ "$got" = "$want" ]; then printf '  ok    %-8s %s\n' "$want" "$(printf '%s' "$line" | cut -c1-64)"
+        else printf '  FAIL  want %-8s got %-8s %s\n' "$want" "$got" "$(printf '%s' "$line" | cut -c1-52)"; cf=$((cf+1)); fi
+    }
+    printf -- '--- causal class (no print macro required) ---\n'
+    # MUST FLAG. Row 1 is the live defect PERF-016 removed, verbatim.
+    check_causal match   '            Self::F => "Critical — likely using wrong backend or naive implementation",'
+    check_causal match   '    let r = "stall — the root cause is the sampling sync";'
+    # DELIBERATE nomatch, and the reason is written down: PERF-014's own literal
+    # is an IMPERATIVE, and it is caught by the CLAIM_RE sweep above (row 9),
+    # which is where imperatives belong because a print site is what makes one a
+    # claim. This row exists so that split is asserted rather than assumed.
+    check_causal nomatch '        "Large non-kernel overhead — investigate sampling sync (gpu_argmax D2H)".red()'
+    check_causal match   'const REASON: &str = "slow decode — likely caused by KV cache thrashing";'
+    check_causal match   '    let m = if pct > 40.0 { "overhead — probably due to the argmax D2H" } else { "ok" };'
+    check_causal match   'fn why() -> &str { "stall — caused by the graph replay path" }'
+    # MUST NOT FLAG. These are the half that says the rule discriminates.
+    check_causal nomatch '            Self::D => "Poor — significant optimization needed",'      # magnitude only
+    check_causal nomatch '        "Non-kernel time dominates this pass — profile the host path to find out why".red()'
+    check_causal nomatch '    // investigate sampling sync later'                                # comment
+    check_causal nomatch '    /// The residual is likely caused by numerical drift.'             # doc prose
+    check_causal nomatch '     * probably due to the accumulation order'                         # block comment body
+    check_causal nomatch 'reason: format!("{} takes {:.1}% of total time — check for scalar fallback", h.name, h.percent),'
+    check_causal nomatch 'let msg = "expect the root cause is recorded";'                        # TARGET_RE: a spec line
+    check_causal nomatch 'let x = "ok"; // likely caused by the drift in run 3'                  # match outside every literal
+    # VACUITY: a table that shrank to nothing would sweep clean.
+    if [ "$ct" -lt 14 ]; then
+        printf '  FAIL  causal table has %s row(s); at least 14 are required\n' "$ct"; cf=$((cf+1))
+    fi
+    printf '  %s causal case(s), %s failure(s)\n' "$ct" "$cf"
+
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
-    [ "$f" -eq 0 ] || exit 1
+    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] || exit 1
     exit 0
 fi
 
@@ -183,7 +299,19 @@ if [ "${#mdfiles[@]}" -gt 0 ]; then
              | grep -vE "$TARGET_RE" || true)
 fi
 
-all=$(printf '%s\n%s\n%s\n' "$hits" "$dochits" "$mdhits" | grep -v '^$' || true)
+# PERF-016: the causal class over .rs, print macro or not. See DIAGNOSIS_RE.
+rsfiles=()
+for f in "${SRC[@]}"; do case "$f" in *.rs) rsfiles+=("$f") ;; esac; done
+causalhits=""
+if [ "${#rsfiles[@]}" -gt 0 ]; then
+    causalhits=$(causal_literals_in "${rsfiles[@]}" || true)
+fi
+
+# Deduped by file:line -- a literal caught by both the CLAIM_RE sweep and the
+# causal sweep is ONE finding, and counting it twice would corrupt the ratchet's
+# known/new tally.
+all=$(printf '%s\n%s\n%s\n%s\n' "$hits" "$dochits" "$mdhits" "$causalhits" \
+      | grep -v '^$' | awk -F: '!seen[$1":"$2]++' || true)
 
 known=0
 new=0

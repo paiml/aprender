@@ -1,0 +1,73 @@
+# Fabricated comparator baselines in RUST, ledgered by PERF-008 (#2706 §5, §9).
+#
+# Each line is `path:line`: a competitor-named binding assigned a bare numeric
+# literal, or a printed announcement that a competitor baseline was DEFAULTED.
+# In none of them is the comparator invoked. They are F12 — a value carrying the
+# form, units and provenance-shape of a measurement, produced without the
+# measurement having been taken.
+#
+# THE RATCHET: this file may only SHRINK. A new site FAILS
+# scripts/check_no_fabricated_baselines.sh; it is not an allowlist to append to.
+# Remove a line by deleting the literal or deriving it from a receipt under
+# evidence/. Removing the last line retires the Rust block in that guard.
+#
+# WHY A LEDGER RATHER THAN A BAN. A construct ban over Rust would be born RED
+# against all 36, and a guard born red gets deleted or ignored. Deleting the
+# sites is PERF-008-RUST, a separate ticket. This file is what stops the number
+# growing while that ticket waits.
+#
+# THE COUNT, MEASURED — not carried over from the spec. §9 estimated "15+
+# `225.0 // Ollama parity` literals in crates/aprender-serve/src/gguf/tests/
+# parity*.rs" and marked it `[C]`. Measured on main at ce712eae0 that estimate
+# is wrong in both directions and wrong about the location:
+#
+#     225.0 in aprender-serve src/tests/examples             22 lines
+#     ...of those that are competitor-NAMED bindings           2
+#     ...anywhere in parity*.rs, on any value                  4
+#     true total, all of crates/**                            36  (35 + 1)
+#
+# 225.0 is not the shape and parity*.rs is not the place: 24 of the 36 are in
+# crates/aprender-serve/examples/ and benches/, which §9 never mentions, and
+# four are in aprender-core/examples/. Chasing the literal would have found 2.
+#
+# NOT ONLY OLLAMA. The measurement also surfaced fabricated PyTorch and
+# llama.cpp figures the spec does not mention at all — pytorch_compile_tps,
+# pytorch_vram (a VRAM claim, same defect in different units), llama_cpp_tps.
+#
+# Measured 2026-08-27 on ce712eae0. 36 sites, 31 files.
+crates/aprender-core/examples/ch22_vs_llamacpp.rs:18
+crates/aprender-core/examples/ch23_training_bench.rs:33
+crates/aprender-core/examples/ch23_training_bench.rs:44
+crates/aprender-core/examples/ch27_switch_unsloth.rs:49
+crates/aprender-serve/benches/cuda_batched_inference.rs:42
+crates/aprender-serve/examples/apr_gpu_benchmark.rs:194
+crates/aprender-serve/examples/bench_matmul_breakdown.rs:102
+crates/aprender-serve/examples/bench_q4k_parallel.rs:67
+crates/aprender-serve/examples/bench_q4k_simd.rs:63
+crates/aprender-serve/examples/bench_realistic.rs:173
+crates/aprender-serve/examples/convert_and_bench_apr.rs:218
+crates/aprender-serve/examples/cuda_chat_completions.rs:219
+crates/aprender-serve/examples/gpu_showcase_benchmark.rs:464
+crates/aprender-serve/examples/imp_700_realworld_verification.rs:299
+crates/aprender-serve/examples/imp_700_realworld_verification.rs:364
+crates/aprender-serve/examples/imp_701_performance_gap.rs:15
+crates/aprender-serve/examples/imp_701_performance_gap.rs:16
+crates/aprender-serve/examples/performance_parity.rs:1741
+crates/aprender-serve/examples/profile_all_layers.rs:274
+crates/aprender-serve/examples/profile_all_matmuls.rs:178
+crates/aprender-serve/examples/profile_cpu_kernel.rs:166
+crates/aprender-serve/examples/profile_detailed.rs:152
+crates/aprender-serve/examples/profile_forward_detailed.rs:142
+crates/aprender-serve/examples/profile_full_forward.rs:64
+crates/aprender-serve/examples/profile_inference.rs:122
+crates/aprender-serve/examples/profile_layer_breakdown.rs:208
+crates/aprender-serve/examples/profile_q8k_quant.rs:52
+crates/aprender-serve/src/brick/tests_f083_timing_f084.rs:57
+crates/aprender-serve/src/gguf/tests/parity016d_batch.rs:75
+crates/aprender-serve/src/gguf/tests/parity021c_gpu.rs:54
+crates/aprender-serve/src/gguf/tests/parity_080e.rs:294
+crates/aprender-serve/src/gguf/tests/parity_084f.rs:404
+crates/aprender-serve/src/gguf/tests/parity_084f.rs:405
+crates/aprender-serve/src/http_client/tests/benchmark_runner.rs:174
+crates/aprender-serve/src/http_client/tests/benchmark_runner.rs:175
+crates/aprender-serve/src/quantize/tests/imp_148a.rs:122
