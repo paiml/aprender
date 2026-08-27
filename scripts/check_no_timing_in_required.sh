@@ -92,7 +92,20 @@ check_bench_threshold.sh
 check_llama_pin.sh
 check_no_fabricated_baselines.sh
 check_no_timing_in_required.sh
+check_perf_claims_cite_receipts.sh
 "
+# check_perf_claims_cite_receipts.sh (PERF-010) matches `check_*perf*.sh` and
+# turned this guard RED the moment the file appeared — verified before wiring
+# anything, not after:
+#   PART 2 FAIL  bench/timing guard(s) not in the registry:
+#                check_perf_claims_cite_receipts.sh          rc=1
+# It reads no clock. It greps markdown for a speed comparison and asserts an
+# evidence/ receipt path is cited beside it, which is a statement about CITATION,
+# not about duration — the same reason check_bench_protocol.sh and
+# check_llama_pin.sh sit here. Registering it in RELEASE_TIME_ONLY instead would
+# be actively wrong: that list BANS a guard from the required workflows, and
+# APR-PERF-GATE-001 §4.1 puts the claim guards in the merge phase precisely
+# because they are text-only and deterministic.
 
 unclassified=""
 while IFS= read -r f; do
