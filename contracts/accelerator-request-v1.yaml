@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 2.0.0
   created: '2026-08-25'
   author: PAIML Engineering
   description: >-
@@ -179,14 +179,51 @@ mutation_registry:
     reverted, 5/5 green on default and 4/4 on cuda. A CPU run without --gpu
     succeeds under every mutated build too, so the guard is not simply
     rejecting everything.
+# v2.0 (PERF-021) closes the N4 limitation v1.0 recorded.
+- id: F-ACCEL-005
+  rule: an explicit instruction is never lowered by automation (I-17)
+  prediction: >-
+    `--gpu-layers all` on a model that does not fit, and `--gpu-layers N` with
+    N above what fits, both ERROR. Only `auto` is reduced, because `auto` is the
+    value that asked to be fitted.
+  test: 'cargo test -p apr-cli --lib commands::serve::'
+  if_fails: >-
+    automation overrides an explicit user instruction and the override is
+    unobservable — the v2.2 root cause of defect #1, restored
+  mutation: >-
+    replace the `fits >= total_layers` guard with `true` (RED 2026-08-25,
+    250 passed 1 failed); likewise `n <= fits` (RED, 250 passed 1 failed)
+- id: F-ACCEL-006
+  rule: the quantity reaches the same refusal as the boolean (I-18)
+  prediction: >-
+    `--gpu-layers all` on a build with no accelerator is refused with a message
+    quoting `--gpu-layers`; `--gpu-layers 0` is NOT an accelerator request and
+    passes.
+  test: 'cargo test -p apr-cli --lib commands::serve::'
+  if_fails: >-
+    retiring the boolean reopens the hole the boolean's guard closed
+  mutation: >-
+    set `wants_layers = false` (RED 2026-08-25, 250 passed 1 failed)
+- id: F-ACCEL-007
+  rule: a mistyped request is rejected, not defaulted
+  prediction: >-
+    `--gpu-layers gpu`, `--gpu-layers -1` and an empty value are errors naming
+    the legal values.
+  test: 'cargo test -p apr-cli --lib commands::serve::'
+  if_fails: >-
+    a typo silently becomes CPU, which is silent degradation in miniature
+  mutation: make the fallback arm return Ok(Self::None) instead of Err
+
 known_limitations:
 - >-
-  A BOOLEAN FLAG HAS NO OBSERVABLE RESOLUTION (v2.2 finding N4). This contract
-  makes an unhonourable request fail, which is necessary and NOT sufficient — it
-  cannot express partial offload, because --gpu admits only two values. Neither
-  comparator has a boolean: llama.cpp takes -ngl as an integer/auto/all and
-  reports what it resolved. Superseded by PERF-021, which retires the boolean in
-  favour of --gpu-layers {N|auto|all|0} plus a resolved-vs-requested field.
+  RESOLVED-VS-REQUESTED IS NOT YET WIRED TO THE RECEIPT. `resolve_gpu_layers`
+  computes it and `--list-devices` reports build capability, but
+  `gpu_layers_requested` / `_resolved` / `_total` do not yet appear in the perf
+  receipt. That is v2.2 §10.1 step 2 (receipt schema), not this ticket.
+- >-
+  `--gpu` is KEPT as a deprecated alias meaning `--gpu-layers all`, so existing
+  scripts keep working. Retiring it outright is a breaking CLI change and needs
+  its own deprecation window.
 - >-
   Scope is the REQUEST, not the DISTRIBUTION. That `cargo install aprender`
   produces a CPU-only binary at all is aprender#2696's open half and is not

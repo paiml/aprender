@@ -43,6 +43,14 @@ pub struct ServerConfig {
     pub no_gpu: bool,
     /// Force GPU acceleration (requires CUDA feature)
     pub gpu: bool,
+    /// PERF-021: how many layers the user ASKED to offload.
+    ///
+    /// `--gpu` is a boolean, and a boolean request has no observable
+    /// resolution: honoured and ignored look identical from outside. That is
+    /// finding N4 and the reason defect #2696 was invisible for three releases.
+    /// Neither comparator has a boolean — llama.cpp takes `-ngl` as an integer,
+    /// `auto` or `all` and then reports what it resolved.
+    pub gpu_layers: Option<GpuLayerRequest>,
     /// Enable batched GPU inference for 2X+ throughput
     pub batch: bool,
     /// Enable inference tracing (PMAT-SHOWCASE-METHODOLOGY-001)
@@ -82,6 +90,7 @@ impl Default for ServerConfig {
             metrics: true,
             no_gpu: false,
             gpu: false,
+            gpu_layers: None,
             batch: false,
             trace: false,
             trace_level: "basic".to_string(),
@@ -485,3 +494,52 @@ fn find_embedded_tool_json(text: &str) -> Option<String> {
 }
 
 include!("types_uuid_simple_server.rs");
+
+/// PERF-021: a layer-offload request, which is a QUANTITY, not a flag.
+///
+/// The contract is that every value here has an observable resolution — the
+/// server reports `requested`, `resolved` and `total`, so "I asked for all and
+/// got 12 of 29" is expressible. `--gpu` could not express it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuLayerRequest {
+    /// `--gpu-layers 0` — CPU, explicitly. Distinct from not asking.
+    None,
+    /// `--gpu-layers N` — exactly N. An EXPLICIT instruction: auto-fit may not
+    /// reduce it (I-17). llama.cpp's auto-fit likewise only touches parameters
+    /// the user did not set.
+    Exact(u32),
+    /// `--gpu-layers all` — every layer, and fail if they do not fit.
+    All,
+    /// `--gpu-layers auto` — offload what fits. The ONLY value auto-fit may
+    /// modify, because it is the value that asked it to.
+    Auto,
+}
+
+impl GpuLayerRequest {
+    /// Parse the clap value. Rejects anything else rather than defaulting —
+    /// a mis-typed accelerator request must not silently become CPU.
+    pub fn parse(s: &str) -> std::result::Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "0" | "none" | "cpu" => Ok(Self::None),
+            "all" | "max" => Ok(Self::All),
+            "auto" => Ok(Self::Auto),
+            other => other.parse::<u32>().map(Self::Exact).map_err(|_| {
+                format!("--gpu-layers expects a number, `auto`, `all`, or `0`; got {other:?}")
+            }),
+        }
+    }
+
+    /// Whether this request asks for any accelerator at all.
+    #[must_use]
+    pub fn wants_accelerator(self) -> bool {
+        !matches!(self, Self::None)
+    }
+
+    /// I-17, EXPLICIT WINS: auto-fit may reduce only what it was asked to fit.
+    /// `Exact(n)` and `All` are user instructions and are never lowered behind
+    /// the user's back — that overriding is the v2.2 root cause of defect #1.
+    #[must_use]
+    pub fn may_autofit(self) -> bool {
+        matches!(self, Self::Auto)
+    }
+}
