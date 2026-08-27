@@ -40,7 +40,15 @@ printf -- '--- no fabricated comparator baselines (F12) ------------------------
 # instances. Inverted: ANY competitor-prefixed variable assigned a numeric
 # literal is suspect, MINUS an explicit denylist of configuration suffixes
 # (a timeout or a port is a setting, not a measurement).
-PATTERN_VAR='^[[:space:]]*(OLLAMA|LLAMA|LLAMACPP|VLLM|TGI|PYTORCH|TORCH)_[A-Z0-9_]*=("?\$\{[A-Z0-9_]+:-[0-9.]+\}"?|"?[0-9.]+"?)'
+PATTERN_VAR='^[[:space:]]*((readonly|export|local|declare|typeset)[[:space:]]+(-[a-zA-Z]+[[:space:]]+)?)?(OLLAMA|LLAMA|LLAMACPP|VLLM|TGI|PYTORCH|TORCH)_[A-Z0-9_]*=("?\$\{[A-Z0-9_]+:-[0-9.]+\}"?|"?[0-9.]+"?)'
+# A DECLARATION KEYWORD IS NOT AN ESCAPE HATCH. The anchor was `^[[:space:]]*`
+# followed directly by the variable name, so `readonly OLLAMA_BASELINE=291` and
+# `export OLLAMA_BASELINE=291` matched NOTHING — and `export` is the likelier
+# form in a shell script than a bare assignment. The guard read as strict and
+# was blind to the two spellings a real fabrication would most plausibly use.
+# Caught by running the case table, not by reading the pattern: the plain
+# `OLLAMA_TPS=163` fixture passed while `readonly OLLAMA_BASELINE=291` sailed
+# through in the same sweep.
 # RC/STATUS/CODE/PID/FD were added after scripts/llama_bin.sh's `LLAMA_PIN_RC=3`
 # — a RETURN CODE — was flagged as a fabricated baseline. It surfaced only when
 # PARITY-009 and PARITY-005 met in the cumulative stack head, which is what a
@@ -64,12 +72,29 @@ PATTERN="($PATTERN_VAR)|($PATTERN_JSON)"
 # free pass merely by being uncommitted.
 SELF="check_no_fabricated_baselines.sh"
 
+# FULL-LINE COMMENTS ARE NOT CODE, and a guard that cannot tell the difference
+# reds its own neighbours. This one did: check_no_claim_literals.sh:7 documents
+# the very constructs banned here — "`OLLAMA_TPS=163`, `\"ollama_baseline\": 163`"
+# — inside a comment explaining why the two guards differ. Matching it made a
+# sibling guard's DOCUMENTATION a fabricated baseline, and the FAIL text offers
+# no lever except widening the allowlist, so the pressure was to weaken the
+# guard to describe it.
+#
+# Only lines whose first non-space character is `#` are dropped, and the true
+# line number survives (grep -n runs first, the filter runs on its output). A
+# trailing comment on a real assignment — `OLLAMA_TPS=163  # measured` — is
+# still scanned and still caught, because the code is on that line too. Widening
+# this to strip `#` to end-of-line would blind the guard to exactly that.
+scan_file() {
+    grep -nE "$PATTERN" "$1" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#'
+}
+
 scanned=0
 hits=""
 while IFS= read -r f; do
     [ "$(basename "$f")" = "$SELF" ] && continue
     scanned=$((scanned + 1))
-    if grep -nE "$PATTERN" "$f" 2>/dev/null | grep -qvE "$CONFIG_SUFFIX"; then
+    if scan_file "$f" | grep -qvE "$CONFIG_SUFFIX"; then
         hits="$hits $f"
     fi
 done < <(
@@ -89,7 +114,7 @@ if [ -n "$hits" ]; then
     printf 'FAIL  fabricated comparator baseline(s):\n'
     for f in $hits; do
         printf '      %s\n' "$f"
-        grep -nE "$PATTERN" "$f" | grep -vE "$CONFIG_SUFFIX" | sed 's/^/        /'
+        scan_file "$f" | grep -vE "$CONFIG_SUFFIX" | sed 's/^/        /'
     done
     printf '      A comparator baseline is MEASURED or ABSENT, never asserted.\n'
     printf '      Invoke the comparator and record its output, or record the\n'
