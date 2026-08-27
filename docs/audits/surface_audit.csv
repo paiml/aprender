@@ -234,7 +234,7 @@ apr,apr sim verify,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate
 apr,apr sim version,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:119,low
 apr,apr stamp,2,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:617,high
 apr,apr tensors,4,x86_64-linux;nvidia-cuda,safetensors,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:341,high
-apr,apr test tensor,4,x86_64-linux,NONE,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1603,high
+apr,apr test tensor,4,x86_64-linux,NONE,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1615,high
 apr,apr tokenize apply,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:38,low
 apr,apr tokenize encode-corpus,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:131,low
 apr,apr tokenize import-hf,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:104,low
