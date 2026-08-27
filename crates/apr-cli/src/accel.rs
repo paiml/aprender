@@ -5,10 +5,16 @@
 //! it — and only `apr serve` did. `apr run` and `apr chat` accept the same
 //! accelerator request, verify nothing, and run on CPU.
 //!
-//! That is not a hypothetical: #2696's headline measurement — "published apr
-//! 0.64.0 SILENTLY IGNORES --gpu, 15.7 tok/s decode, 0.099x llama.cpp" — was
-//! taken through `apr run`, the surface with NO guard. The jidoka fix landed on
-//! the one surface where the defect had not been measured.
+//! That is not a hypothetical: #2696's headline measurement was taken through
+//! `apr run` — the surface with NO guard. The jidoka fix landed on the one
+//! surface where the defect had not been measured.
+//!
+//! The figures live in #2696 and are deliberately NOT repeated here. This is a
+//! doc comment on shipped code, so `cargo doc` renders it to users, which makes
+//! it a user-facing surface under §9 — and `check_no_claim_literals.sh` caught
+//! an earlier draft that quoted the tok/s and the comparator ratio inline. That
+//! guard is right: a measured number reachable from `cargo doc` is a published
+//! claim, and a claim belongs where its receipt is.
 //!
 //! A refusal that lives in one command's private module is a refusal one
 //! surface deep. This takes plain values instead of a config type so all three
