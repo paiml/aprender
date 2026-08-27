@@ -49,6 +49,54 @@ Plus a protocol defect (boundary effects, §4.4.7), a comparator-harness defect 
 
 ---
 
+## §0.0 Nomenclature — how to refer to this document
+
+Three registers. Use the one that fits the sentence; do not mix them in a commit subject.
+
+| Register | Handle | Use it for |
+|---|---|---|
+| **Formal** | `APR-PERF-GATE-001` | commits, contracts, PR bodies, issue links, roadmap ids |
+| **Artifact** | **the perf gate** | the machinery — `perf_gate.sh`, the arms, `perf-matrix.yaml` |
+| **Principle** | **the receipt rule** | conversation, review, teaching it |
+
+### Why not "the gate"
+
+It is the shorthand that emerged on its own, and it is already ambiguous in this
+repository: 72 `scripts/check_*.sh` guards, three CI contexts literally named
+`gate`, three `gates` entries in `[package.metadata.dogfood]`, and the clean-room
+release hard gate. "The gate" picks out nothing here.
+
+### The receipt rule
+
+> **A performance number is evidence only if something can prove how it was
+> measured.**
+
+Named for the principle rather than the mechanism, for three reasons:
+
+1. **It survives revision.** `perf_gate.sh` will be rewritten and v2.2 will become
+   v3; the rule will not change. A handle tied to the script would rot with it.
+2. **It is already the vocabulary.** 33 files under `scripts/` and `docs/` use
+   "receipt" in exactly this sense — `bench_receipt.py`,
+   `check_parity_receipt.sh`, the `receipt.commit ⊇ commit-under-test` staleness
+   arm. This promotes a load-bearing term rather than coining a competing one.
+3. **It works as a verb.** *"Has that been receipted?"* — which is the question
+   this document wants asked in review, phrased so it can be asked in four words.
+
+### The test it lets you apply without reading the rest
+
+| Claim | Verdict |
+|---|---|
+| `2.93× Ollama` in `book/`, from a hardcoded 291 tok/s baseline | **no receipt** |
+| `expires:` declared on every cell, read by zero lines of code | **no receipt** |
+| `apr gpu` printing a GPU id on a binary with zero CUDA symbols | **no receipt** |
+| `serialization_index(2) = 2.85` on gx10, binary proven CUDA-linked | **receipted** |
+| any `rc` read through a pipe (`cmd \| head; echo $?`) | **no receipt** |
+
+The last row is not a joke: it is the most common way a receipt is forged by
+accident, and it has happened repeatedly during this epic's own implementation.
+
+---
+
 ## §0 Preflight
 
 ### 0.1 Grounding contract
