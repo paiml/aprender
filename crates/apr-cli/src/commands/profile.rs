@@ -377,13 +377,26 @@ impl PerfGrade {
         }
     }
 
+    /// PERF-016. The F arm read
+    /// `Critical - likely using wrong backend or naive implementation`.
+    /// A through D describe the MAGNITUDE this grade is a threshold on; F named
+    /// two MECHANISMS -- backend selection and implementation quality -- that
+    /// nothing on this path inspects. The grade is a threshold on an efficiency
+    /// percentage whose numerator is an analytic op count, so it cannot
+    /// distinguish a wrong backend from a correct one, and `--detect-naive` is
+    /// the only code here that even tries.
+    ///
+    /// This is the PERF-014 shape one indirection from the print site, and that
+    /// indirection is why `check_no_claim_literals.sh` was GREEN on it: its
+    /// causal pattern required a print macro on the same line, and a `match` arm
+    /// in a helper has none. The guard is widened in the same commit.
     fn description(self) -> &'static str {
         match self {
             Self::A => "Excellent — near hardware peak",
             Self::B => "Good — reasonable utilization",
             Self::C => "Fair — room for improvement",
             Self::D => "Poor — significant optimization needed",
-            Self::F => "Critical — likely using wrong backend or naive implementation",
+            Self::F => "Critical — far below hardware peak",
         }
     }
 }

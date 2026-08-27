@@ -215,11 +215,19 @@ fn classify_operation_category(name: &str) -> String {
     }
 }
 
-/// Classify operation bottleneck (Memory vs Compute bound)
+/// Classify operation bottleneck (Memory vs Compute bound) FROM THE NAME.
 ///
 /// Q4K decode-time matmul is overwhelmingly memory-bandwidth limited:
 /// AI = 2*N / (N/2 bytes_per_weight) = ~4, threshold ~82 for GPU, ~10 for CPU.
 /// Only softmax and activation are compute-bound (element-wise).
+///
+/// PERF-016: this is a NAME LOOKUP, not a per-operation measurement — the same
+/// five names come back COMPUTE for every model on every host. The reasoning
+/// above is sound and the heuristic is worth keeping; what was wrong is that it
+/// was printed under a column headed "Bottleneck" beside four measured columns,
+/// with nothing to tell a reader which kind of value it is. The column now says
+/// `Bound (by name)`. A labelled heuristic is not a defect; an unlabelled one
+/// presented as a measurement is.
 fn classify_operation_bottleneck(name: &str) -> String {
     match name {
         // Element-wise ops: compute-bound (low memory traffic, high FLOP/byte)
@@ -331,10 +339,28 @@ fn roofline_hardware_specs(is_gpu: bool) -> (f64, f64, f64, String) {
     }
 }
 
-/// FLOPs and bytes for one forward pass, estimated from transformer dims.
+/// FLOPs and bytes for one forward pass, computed from the DECLARED dims.
 ///
 /// Per-layer FLOPs: `QKV(2·h·3h) + OutProj(2·h·h) + 3×FFN(2·h·4h) = 32·h²`.
 /// Bytes assume Q4K weights (≈0.5 B/element).
+///
+/// PERF-016 — NEITHER TERM IS MEASURED, AND THEIR RATIO IS A CONSTANT. The
+/// per-layer pair is `32·h²` FLOPs against `16·h²·0.5 = 8·h²` bytes and the
+/// lm_head pair is `2·h·V` against `0.5·h·V`. Both differ by exactly four, so
+///
+/// ```text
+///   ai = (32h²L + 2hV) / (8h²L + 0.5hV) = 4.0     for every (h, V, L)
+/// ```
+///
+/// The byte model IS the FLOP model divided by four: it hardcodes 0.5 B/element
+/// and never reads the loaded model's quantization, its KV traffic or its
+/// activation traffic. `perf016_roofline_ai_is_a_constant_of_the_closed_form_models`
+/// asserts this across five very different shapes.
+///
+/// The two numbers still earn their keep as the NUMERATOR of achieved GFLOPS and
+/// GB/s, where the denominator is measured wall time, so those move with the run.
+/// The RATIO does not, which is why `bound_verdict_from` refuses to decide
+/// memory-vs-compute from it.
 #[cfg(feature = "inference")]
 fn roofline_flops_bytes(results: &RealProfileResults) -> (f64, f64) {
     let hidden = results.hidden_dim as f64;
@@ -376,6 +402,61 @@ fn safe_ratio(num: f64, denom: f64) -> f64 {
     if denom > 0.0 { num / denom } else { 0.0 }
 }
 
+/// Printed in place of a memory-vs-compute verdict while the arithmetic
+/// intensity is not measured. A magnitude may be reported; a verdict decided by
+/// a number nothing measured may not.
+#[cfg(feature = "inference")]
+pub(crate) const ROOFLINE_AI_UNMEASURED: &str = "UNMEASURED";
+
+/// Does the arithmetic intensity actually depend on the workload?
+///
+/// DERIVED, NOT DECLARED. A hand-written `false` here would be one more
+/// hardcoded fact that has to track the model it describes, and this repo has
+/// shipped that exact defect three times in a single PR. Instead this probes
+/// `roofline_flops_bytes` at two very different model shapes and reports whether
+/// the ratio moves at all. The day someone gives the byte model real per-kernel
+/// counts, this starts returning `true` and the verdict re-arms with no edit
+/// here and no second list to forget.
+#[cfg(feature = "inference")]
+fn roofline_ai_varies_with_workload() -> bool {
+    let probe = |hidden: usize, vocab: usize, layers: usize| {
+        let r = RealProfileResults {
+            hidden_dim: hidden,
+            vocab_size: vocab,
+            num_layers: layers,
+            ..Default::default()
+        };
+        let (flops, bytes) = roofline_flops_bytes(&r);
+        safe_ratio(flops, bytes)
+    };
+    (probe(896, 151_936, 24) - probe(8192, 128_256, 80)).abs() > 1e-9
+}
+
+/// The memory-vs-compute verdict, or `UNMEASURED`.
+///
+/// PERF-016. This was `if ai < ai_threshold { "MEMORY BOUND" } else { "COMPUTE
+/// BOUND" }` inline. `ai` is the constant 4.0 (see `roofline_flops_bytes`) and
+/// every ridge point in `gpu_specs_by_name` is at least 9.6, so the branch could
+/// only ever take one arm: `apr profile` announced MEMORY BOUND for every model
+/// on every host and called it analysis. It then printed a matching causal
+/// paragraph telling the user where to optimise. That is the PERF-014 shape --
+/// a cause selected by a threshold on a number the tool never measured.
+///
+/// Split out as a pure function so the rule can be tested in both directions:
+/// with a varying intensity a verdict is still issued, so the gate refuses the
+/// PAIR rather than the concept.
+#[cfg(feature = "inference")]
+fn bound_verdict_from(ai_varies: bool, ai: f64, ai_threshold: f64) -> String {
+    if !ai_varies {
+        return ROOFLINE_AI_UNMEASURED.to_string();
+    }
+    if ai < ai_threshold {
+        "MEMORY BOUND".to_string()
+    } else {
+        "COMPUTE BOUND".to_string()
+    }
+}
+
 /// Compute roofline analysis using trueno hardware detection.
 ///
 /// F-BRICKPARITY-01: subtracts kernel launch overhead from
@@ -395,11 +476,7 @@ pub(crate) fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis
     let compute_eff = safe_ratio(achieved_gflops, peak_compute) * 100.0;
     let memory_eff = safe_ratio(achieved_bw, peak_bw) * 100.0;
 
-    let bottleneck = if ai < ai_threshold {
-        "MEMORY BOUND"
-    } else {
-        "COMPUTE BOUND"
-    };
+    let bottleneck = bound_verdict_from(roofline_ai_varies_with_workload(), ai, ai_threshold);
 
     RooflineAnalysis {
         peak_compute,
@@ -410,7 +487,7 @@ pub(crate) fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis
         memory_efficiency_pct: memory_eff,
         arithmetic_intensity: ai,
         ai_threshold,
-        bottleneck: bottleneck.to_string(),
+        bottleneck,
         backend: results.backend.clone(),
         hardware_model,
     }

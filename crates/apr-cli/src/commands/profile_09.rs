@@ -13,4 +13,5 @@ include!("profile_print_flamegraph.rs");
 include!("profile_filter_mlp.rs");
 include!("profile_pct_change_classify_tests.rs");
 include!("profile_gh2395_tests.rs");
+include!("profile_perf016_tests.rs");
 }
