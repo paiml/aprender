@@ -120,6 +120,20 @@ fi
 #     documented tracked-only-universe shape, and the third instance in this
 #     epic. Unioned with a working-tree find.
 #
+# (d) docs/specifications/ IS EXCLUDED, and this guard's own FAIL text is the
+#     reason: "If it is a TARGET rather than a claim, it belongs in a test or a
+#     spec." A specification is where a measured number belongs WITH its
+#     provenance — §1 of APR-PERF-GATE-001 states the four adoption killers as
+#     measured figures, and §9 quotes the banned `291` literal in order to ban
+#     it. Sweeping docs/** in wholesale (added #2705 r3) caught those four lines
+#     and would have forced the spec to describe its own subject matter in
+#     euphemism.
+#
+#     The distinction is NOT "docs are exempt". §9's premise is that a claim a
+#     USER READS is the defect. Users read book/ and docs/BEATS.md — both stay in
+#     scope, and BEATS.md lines are in the baseline. Nobody installs apr and
+#     reads docs/specifications/. If a spec figure ever reaches a user surface it
+#     is caught THERE, which is the surface that matters.
 # (c) book/ AND docs/ WERE NOT IN THE UNIVERSE AT ALL, which is the one that
 #     mattered most: §9's whole point is that a claim a USER READS is the
 #     defect, and book/ is where users read. Five live `2.93x Ollama` claims sat
@@ -130,6 +144,7 @@ mapfile -t SRC < <(
       find crates/*/src src book docs -type f \( -name '*.rs' -o -name '*.md' \) 2>/dev/null
     } | LC_ALL=C sort -u \
     | grep -vE '(^|/)(tests?|benches|examples)/' \
+    | grep -vE '^docs/specifications/' \
     | grep -vE '_tests?\.rs$|_test\.rs$|proptests?[_.]|/fixtures?/')
 
 
