@@ -60,8 +60,33 @@ falsification_tests:
     scheduler absent): 1.00/1.99/3.98/7.96 at N=1/2/4/8 -- linear to two
     decimals, aggregate flat at ~335 tok/s. AFTER (same flag, gating fixed):
     1.00/2.45/2.29/2.39 -- flat from N=2, ~1100 tok/s at N=8. 3.32x aggregate
-    at N=8, N=1 unchanged at 1.20s. N=2 regresses 1.99 -> 2.45 (~23%), the
-    batched path's per-token cost before batching pays off.
+    at N=8, N=1 unchanged at 1.20s.
+  verdict: >-
+    RED AT c=2. This is stated as a verdict, not narrated as a caveat, because
+    the postcondition above is `serialization_index(c) < c for every c > 1` and
+    the measurement is 2.45 at c=2. 2.45 >= 2. The test FAILS.
+
+    An earlier revision of this block recorded the same number as "N=2 regresses
+    1.99 -> 2.45 (~23%), the batched path's per-token cost before batching pays
+    off". That sentence is true and it is not a verdict: it explains WHY the
+    postcondition is violated while leaving the contract reading as discharged.
+    A falsification test whose own recorded data violates its own postcondition,
+    written up as an explanation, is how a ratchet becomes decoration -- and it
+    is the precise defect APR-PERF-GATE-001 exists to remove, appearing inside
+    the contract written to enforce it.
+
+    c=4 (2.29 < 4) and c=8 (2.39 < 8) PASS. The aggregate win at N=8 is real:
+    3.32x, ~335 -> ~1100 tok/s. PERF-001 is therefore REAL BUT PARTIAL, which is
+    the same conclusion F-BATCH-003 reaches independently ("staggered arrivals
+    still queue"), and it is consistent with the two serialized fallbacks that
+    survive at cuda_chat_backend.rs:148/204 -- the `.apr` and SafeTensors paths
+    still take `cuda_model_lock.write()` across the whole generate call.
+
+    DO NOT discharge this by weakening the postcondition to exempt c=2. §10.1:
+    "The floor is not temporarily lowered. Lowering a floor to permit a release
+    is the defect this document exists to prevent." Either the two-request
+    admission path improves, or the contract states a regime of validity that
+    is itself measured -- not one chosen to fit the number we got.
   if_fails: >-
     the server is a queue with extra steps: a sixteen-user deployment runs at a
     tenth of llama.cpp while every single-user benchmark looks healthy
@@ -77,6 +102,18 @@ falsification_tests:
     scheduler enters the batched loop. With a single request and an empty
     channel, it takes the fast path.
   test: 'LIVE-PENDING — cargo test -p aprender-serve --features cuda --lib batch_admission'
+  test_harness_status: >-
+    THE NAMED FILTER MATCHES NOTHING TODAY. `grep -rn batch_admission
+    crates/aprender-serve/src/` returns 0 references (measured 2026-08-27), and
+    `cargo test -p aprender-serve --lib <no-such-filter>` exits 0 while printing
+    `test result: ok. 0 passed`. So the moment the LIVE-PENDING marker is
+    removed, this harness reports a pass having executed nothing.
+
+    LIVE-PENDING is doing real work here and must not be stripped until a test
+    named by this filter exists. Recorded rather than left implicit because the
+    failure mode is silent: a pass-shaped line from a filter that selected zero
+    tests is indistinguishable from a pass, which is this repo's documented
+    pass-grep class.
   if_fails: >-
     either concurrency stays serialized (fast path always) or c=1 regresses ~3x
     (fast path never). Both are observable and neither is acceptable.
@@ -89,6 +126,10 @@ falsification_tests:
     A request enqueued after decode has started is admitted into a free KV slot
     and begins emitting tokens before the in-flight request completes.
   test: 'LIVE-PENDING — cargo test -p aprender-serve --features cuda --lib mid_batch_join'
+  test_harness_status: >-
+    Same as F-BATCH-002: `mid_batch_join` has 0 references in
+    crates/aprender-serve/src/ (measured 2026-08-27). The filter selects no
+    tests and would exit 0. LIVE-PENDING must not be stripped until it does.
   measured: >-
     RED 2026-08-26 on the POST-PERF-001 tree, RTX 4090, 400-token generations.
     Predict-then-verify with two competing predictions stated before the run:
