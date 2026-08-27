@@ -547,10 +547,10 @@ pub enum ExtendedCommands {
     ///   replay  the runner itself — recording, state machines, reporting
     ///           (record, playbook, coverage, report)
     ///
-    /// Only `tensor` is routed today (PMAT-481 visual regression); the rest
-    /// land as they are delegated to the probador library. Renaming now costs
-    /// one path — after those land it is a breaking change across the whole
-    /// testing surface.
+    /// Routed today: `tensor` (PMAT-481 visual regression) and `llm bench`
+    /// (GH-876 Milestone 2). The rest land as they are delegated to the
+    /// probador library. Renaming now costs one path — after those land it is
+    /// a breaking change across the whole testing surface.
     ///
     /// `apr probar` stays as a hidden alias so existing scripts keep working.
     #[command(alias = "probar")]
@@ -1589,10 +1589,22 @@ pub enum ModelfileSubcommand {
     },
 }
 
-/// GH-876: Subcommands for `apr probar` — consolidates the probador testing
-/// framework under `apr`. Milestone 1 ships only `tensor` (the migrated
-/// existing behavior). Subsequent milestones add the remaining 14 probador
-/// subcommands as separate PRs that delegate to the probador library.
+/// GH-876: Subcommands for `apr test` — consolidates the probador testing
+/// framework under `apr`. Milestone 1 shipped `tensor`; Milestone 2 adds
+/// `llm bench`, the benchmark lifecycle harness. Remaining probador
+/// subcommands follow as separate PRs that delegate to the same library.
+///
+/// MILESTONE 2 IS NOT A PORT. `crates/aprender-test-lib/src/llm/` already
+/// carries the entire llm module — 11 files, `pub mod llm` unconditional in
+/// lib.rs — so the code has shipped inside every `apr` binary since APR-MONO
+/// and nothing could reach it. That is a dark capability (F11), and the fix is
+/// a CLI surface over the library already present, not 11,000 lines of new
+/// code.
+///
+/// It matters because the tool was built for exactly this job: measuring
+/// aprender's inference throughput against a comparator. Without the surface,
+/// a benchmark gets hand-rolled instead — which is what happened on
+/// 2026-08-24, in a protocol whose own rule is "never dogfood by hand".
 #[derive(Subcommand, Debug)]
 pub enum TestSubcommand {
     /// Export tensor activations for visual regression testing (PMAT-481).
@@ -1623,6 +1635,92 @@ pub enum TestSubcommand {
         #[arg(long, default_value = "0.98",
               value_parser = commands::threshold_arg::parse_cosine_f32)]
         tolerance: f32,
+    },
+
+    /// LLM inference testing: correctness, load testing, and reporting.
+    ///
+    /// Delegates to the in-tree `aprender-test-lib` llm module, which is where
+    /// this measurement logic has always lived. It was not previously reachable
+    /// from `apr`: apr-cli's only key on that crate was a DEV-dependency
+    /// WITHOUT its `llm` feature, and `commands/serve_loadtest.rs` — the one
+    /// file that used it — was absent from `commands/mod.rs`, so it never
+    /// compiled.
+    Llm {
+        #[command(subcommand)]
+        command: LlmSubcommand,
+    },
+}
+
+/// GH-876 Milestone 2 — `apr test llm <SUB>`.
+#[derive(Subcommand, Debug)]
+pub enum LlmSubcommand {
+    /// Run the full benchmark lifecycle: start, warm up, measure, compare,
+    /// tear down.
+    ///
+    /// Drives an OpenAI-compatible endpoint, so both a runtime under test and
+    /// a comparator are measured by the SAME client with the SAME prompts —
+    /// which is what makes the two numbers comparable at all.
+    Bench {
+        /// Endpoint to measure.
+        #[arg(short, long, default_value = "http://127.0.0.1:8080")]
+        url: String,
+        /// Model name sent in the request body. Most OpenAI-compatible
+        /// servers ignore it; `apr serve` and vLLM do not.
+        #[arg(short, long, default_value = "default")]
+        model: String,
+        /// Command that starts the runtime. Omit to measure something already
+        /// running.
+        #[arg(long)]
+        start: Option<String>,
+        /// Seconds to wait for the endpoint to become healthy.
+        #[arg(long, default_value = "120")]
+        health_timeout: u64,
+        /// Warm-up seconds, discarded from the measurement.
+        ///
+        /// NOT decoration. A first measurement of apr on GB10 with two warmups
+        /// produced a BIMODAL series whose median sat in the empty gap between
+        /// the two modes, inflating a 1.21x result to 2.91x.
+        #[arg(long, default_value = "10")]
+        warmup: u64,
+        /// Measurement seconds per run.
+        #[arg(short, long, default_value = "30")]
+        duration: u64,
+        /// Concurrent request streams.
+        #[arg(short, long, default_value = "1")]
+        concurrency: usize,
+        /// Number of measured runs; the report aggregates across them.
+        #[arg(long, default_value = "3")]
+        runs: usize,
+        /// Cooldown seconds between runs.
+        #[arg(long, default_value = "5")]
+        cooldown: u64,
+        /// Label recorded in the report, e.g. `apr-cuda` or `llamacpp-39173bcac`.
+        #[arg(long, default_value = "apr")]
+        runtime_name: String,
+        /// Prior report to compare against.
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+        /// Fractional regression that fails the run, e.g. 0.10 for 10%.
+        #[arg(long)]
+        fail_on_regression: Option<f64>,
+        /// Write the JSON report here.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Use streaming responses (measures TTFT and TPOT).
+        #[arg(long)]
+        stream: bool,
+        /// Prompt profile: micro (10 in / 1 out), short (32/32),
+        /// medium (128/128), long (512/256).
+        ///
+        /// The workload IS half the measurement. Two runtimes compared on
+        /// different profiles are not compared at all, so this is a declared
+        /// knob with a recorded value rather than a constant buried in a
+        /// helper.
+        #[arg(long, default_value = "medium")]
+        profile: String,
+        /// Prompt file (JSON array of chat requests). Overrides `--profile`.
+        #[arg(long)]
+        prompts: Option<PathBuf>,
     },
 }
 

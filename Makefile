@@ -37,7 +37,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32
+.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
 
 # Default target
 all: tier2
@@ -275,7 +275,173 @@ tier3:
 			echo "Skipping probar golden regression: no apr built from HEAD (scripts/apr_bin.sh)"; \
 		fi; \
 	fi
+# D-04, wired here because a target outside the tiers is a target that stops
+# being run. `make contrastive-data-boundary` was run STANDALONE first with its
+# status captured directly (`> /tmp/cdb.log 2>&1; rc=$$?`, never through a pipe):
+# rc=0 in 1 s wall. Its four failure modes were each induced, observed and
+# reverted rather than assumed — see the target's own comment block.
+	@$(MAKE) contrastive-data-boundary
 	@echo "Tier 3: PASSED"
+
+# D-04: the aprender-contrastive-data bytes boundary. Wired into tier3 above.
+#
+# BOTH HALVES ARE POSITIVE CHECKS, and that is the whole design. The first draft
+# of this gate was a dependency DENY-list plus a grep that skipped #[cfg(test)],
+# and both can report PASS while the property is false: a deny-list only ever
+# catches the hazards someone already enumerated, so the first dependency nobody
+# thought to name passes silently; and a cfg-blind grep cannot actually tell test
+# code from library code, so it either exempts too much or claims a precision it
+# does not have. Replaced by (a) a POSITIVE allowlist compared against the
+# resolved closure, so a new transitive dependency fails by DEFAULT, and (b) a
+# src/-wide symbol ban with NO cfg(test) exemption, which turns "the public API
+# contains no path types" into a mechanical consequence.
+#
+# EVERY FAILURE MODE WAS OBSERVED, not assumed (2026-08-08, each mutation applied,
+# run, and reverted):
+#   add `tempfile` to [dependencies] ........ FAIL, prints tempfile as an offender
+#   `use std::path::PathBuf;` in src/schema.rs FAIL, names schema.rs and the line
+#   the same line inside #[cfg(test)] mod tests FAIL (no exemption, by design)
+#   rename allowed-deps.txt away ............ FAIL with a missing-allowlist message,
+#                                             NOT a vacuous pass on an empty list
+# Standalone timing before wiring: 1 s wall, rc=0.
+contrastive-data-boundary: ## D-04: bytes boundary for aprender-contrastive-data (positive allowlist + src symbol ban)
+	@echo "Bytes boundary: aprender-contrastive-data (D-04)"
+	@mkdir -p target
+# (a) DEPENDENCY ALLOWLIST. cargo tree's OWN status is checked FIRST. Piping it
+# into the comparison would read the comparison's status (CLAUDE.md rule 1), and
+# a cargo tree that failed outright would feed an EMPTY closure into a subset
+# test — which passes vacuously and silently disarms the supply-chain half.
+# stderr goes to its OWN file, never into the one parsed as the closure. It used to be
+# `2>&1`, and cargo writes progress to stderr: `Blocking waiting for file lock on package
+# cache`, `Updating crates.io index`, `Downloading ...`. Each contributes a first field
+# that `awk` below turns into a phantom package name and `comm -23` reports as an
+# unlisted dependency. That fired twice unprompted during review (rc=2, offender
+# `Blocking`) on a tree that was clean seconds earlier -- so any concurrent cargo, a
+# rust-analyzer or a parallel CI job, reds this gate at random. The FAIL text says do not
+# widen the allowlist, which leaves a developer no lever except to add `Blocking` to
+# allowed-deps.txt permanently. A required gate that reds at random is worse than one
+# that never reds.
+	@cargo tree -p aprender-contrastive-data -e normal --prefix none --no-dedupe \
+		> target/contrastive-data-tree.txt 2> target/contrastive-data-tree.err || \
+		{ echo "FAIL: cargo tree failed; the D-04 dependency check would pass vacuously"; \
+		  cat target/contrastive-data-tree.txt target/contrastive-data-tree.err; exit 1; }
+	@if [ ! -s target/contrastive-data-tree.txt ]; then \
+		echo "FAIL: cargo tree produced no output; the D-04 dependency check would pass vacuously"; \
+		exit 1; \
+	fi
+	@awk 'NF { print $$1 }' target/contrastive-data-tree.txt | sort -u \
+		> target/contrastive-data-deps.txt
+	@if [ ! -f crates/aprender-contrastive-data/allowed-deps.txt ]; then \
+		echo "FAIL: crates/aprender-contrastive-data/allowed-deps.txt is MISSING."; \
+		echo "      Without it every dependency would be admitted and this gate would"; \
+		echo "      report PASS while checking nothing."; \
+		exit 1; \
+	fi
+	@grep -v '^[[:space:]]*#' crates/aprender-contrastive-data/allowed-deps.txt \
+		| grep -v '^[[:space:]]*$$' | sort -u > target/contrastive-data-allowed.txt
+	@if [ ! -s target/contrastive-data-allowed.txt ]; then \
+		echo "FAIL: allowed-deps.txt has no entries. An empty allowlist cannot admit even"; \
+		echo "      the crate itself, so this is a broken gate rather than a strict one."; \
+		exit 1; \
+	fi
+	@comm -23 target/contrastive-data-deps.txt target/contrastive-data-allowed.txt \
+		> target/contrastive-data-offenders.txt
+	@if [ -s target/contrastive-data-offenders.txt ]; then \
+		echo "FAIL: packages in the resolved normal-dependency closure but ABSENT from"; \
+		echo "      crates/aprender-contrastive-data/allowed-deps.txt (D-04):"; \
+		sed 's/^/        /' target/contrastive-data-offenders.txt; \
+		echo "      Do NOT widen the allowlist just to turn this green: the allowlist"; \
+		echo "      entry IS the review. Read what the package pulls in first."; \
+		exit 1; \
+	fi
+	@echo "  deps:   resolved closure is a subset of allowed-deps.txt"
+# (b) SOURCE SURFACE BAN. Matches are taken with true line numbers first, then
+# comment lines are dropped from the RESULTS, so a doc comment can neither trip
+# the gate nor satisfy it and the reported line number still points at the real
+# file. There is deliberately NO #[cfg(test)] exemption — tests that genuinely
+# need a filesystem belong in tests/ (outside the library boundary) or in apr-cli.
+	@find crates/aprender-contrastive-data/src -type f -name '*.rs' \
+		> target/contrastive-data-srcfiles.txt 2>&1 || \
+		{ echo "FAIL: could not enumerate src/; the D-04 source check would pass vacuously"; \
+		  exit 1; }
+	@if [ ! -s target/contrastive-data-srcfiles.txt ]; then \
+		echo "FAIL: no .rs files found under crates/aprender-contrastive-data/src;"; \
+		echo "      the D-04 source check would pass vacuously"; \
+		exit 1; \
+	fi
+	@: > target/contrastive-data-symbols.txt
+# The third detector is not decoration. The first two match five literal spellings, and
+# `use std::{fs, net::TcpStream};` contains NONE of them -- the text is `std::{fs` -- while
+# binding `fs` and `TcpStream` into scope identically. This is what rustfmt emits under
+# `imports_granularity = "Crate"`, which is exactly what rustfmt.toml asks for here, so it
+# is the DEFAULT spelling rather than an exotic one. Verified against a compiled mutation:
+# a module doing `fs::File::create(...).write_all(...)` and `TcpStream::connect(...)`
+# compiled with rc=0 AND passed the gate with rc=0 before this line existed.
+#
+# awk, not grep, because a grouped import spans lines: it accumulates a `use` statement
+# until the `;` and tests the whole statement. The pattern set is a case table, not a
+# guess -- 6 must-match and 6 must-not-match cases live in
+# tests/gate_cases/, and `make contrastive-data-boundary-cases` re-runs them. Re-run the
+# table rather than re-reading the pattern.
+	@while IFS= read -r srcfile; do \
+		{ grep -nE 'std::fs|std::net|std::path' "$$srcfile" || true; \
+		  grep -nwE 'Path|PathBuf' "$$srcfile" || true; \
+		  awk -f scripts/lib/d04_grouped_std_import.awk "$$srcfile" || true; } \
+		| grep -vE '^[0-9]+:[[:space:]]*//' \
+		| sed "s|^|$$srcfile:|" >> target/contrastive-data-symbols.txt || true; \
+	done < target/contrastive-data-srcfiles.txt
+	@if [ -s target/contrastive-data-symbols.txt ]; then \
+		echo "FAIL: forbidden filesystem/network/path symbols under src/ (D-04)."; \
+		echo "      The crate is bytes-in/bytes-out; apr-cli owns every fs adapter."; \
+		sort -u target/contrastive-data-symbols.txt | sed 's/^/        /'; \
+		exit 1; \
+	fi
+	@echo "  source: no fs/net/path symbols under src/ (no cfg(test) exemption)"
+	@$(MAKE) --no-print-directory contrastive-data-boundary-cases
+	@echo "contrastive-data-boundary: PASSED"
+
+# D-04 CASE TABLE. The source half is a set of text patterns, and the ONLY thing that ever
+# caught one of its misses was a case -- never a review. So the patterns carry a table and
+# the gate runs it on every invocation: a detector that has silently stopped matching
+# fails HERE, loudly, instead of passing a violation through in silence.
+#
+# The filename IS the expectation. must_match_* must be flagged, must_not_match_* must not.
+# Both directions matter: a pattern that flags everything is as broken as one that flags
+# nothing, and only the must_not_match half can tell them apart.
+contrastive-data-boundary-cases: ## D-04: prove the source detectors still match what they claim
+	@cases=crates/aprender-contrastive-data/tests/gate_cases; \
+	if [ ! -d "$$cases" ]; then \
+		echo "FAIL: $$cases is MISSING. Without it the detectors are unproven and this"; \
+		echo "      target would report PASS while checking nothing."; \
+		exit 1; \
+	fi; \
+	n=0; bad=0; \
+	for f in "$$cases"/must_*.rs; do \
+		[ -e "$$f" ] || continue; \
+		n=$$((n + 1)); \
+		hits=$$({ grep -nE 'std::fs|std::net|std::path' "$$f" || true; \
+		          grep -nwE 'Path|PathBuf' "$$f" || true; \
+		          awk -f scripts/lib/d04_grouped_std_import.awk "$$f" || true; } \
+		        | grep -vE '^[0-9]+:[[:space:]]*//' | wc -l); \
+		case "$$(basename "$$f")" in \
+		  must_match_*)     want=1 ;; \
+		  must_not_match_*) want=0 ;; \
+		  *) echo "FAIL: $$f is neither must_match_* nor must_not_match_*"; exit 1 ;; \
+		esac; \
+		if [ "$$want" = 1 ] && [ "$$hits" -eq 0 ]; then \
+			echo "FAIL: $$f MUST be flagged and was not -- a detector stopped matching"; \
+			bad=$$((bad + 1)); \
+		fi; \
+		if [ "$$want" = 0 ] && [ "$$hits" -ne 0 ]; then \
+			echo "FAIL: $$f MUST NOT be flagged and was -- a detector is over-broad"; \
+			bad=$$((bad + 1)); \
+		fi; \
+	done; \
+	if [ "$$n" -eq 0 ]; then \
+		echo "FAIL: no case files found; the case table would pass vacuously"; exit 1; \
+	fi; \
+	if [ "$$bad" -ne 0 ]; then echo "  $$bad of $$n case(s) WRONG"; exit 1; fi; \
+	echo "  cases:  $$n/$$n (6 must-match, 6 must-not-match)"
 
 # Tier 4: CI/CD (5-60 minutes, heavyweight)
 tier4: tier3

@@ -57,6 +57,12 @@ members = [
     "crates/aprender-verify",
     "crates/aprender-verify-ml",
     "crates/aprender-data",
+    # Phase 2 (DATA-01..DATA-06): deterministic contrastive data protocol.
+    # Contrastive/Siamese DATA CONSTRUCTION as a general capability, deliberately
+    # NOT folded into aprender-data: that crate carries arrow/parquet/zstd/s3/
+    # streaming/federated weight which must not flow into a training crate or a
+    # future Lambda consumer.
+    "crates/aprender-contrastive-data",
     "crates/aprender-simulate",
     "crates/aprender-distribute",
     "crates/aprender-registry",
@@ -202,6 +208,26 @@ zstd = "0.13"
 
 # Crypto
 sha2 = "0.10"
+# Compile-fail testing. Already a per-crate dev-dep of aprender-contracts-macros and
+# aprender-test-derive at the same "1"; hoisted so a typestate crate can prove
+# "cannot be constructed" with a reviewable .stderr snapshot instead of prose.
+trybuild = "1"
+# Unicode NFC. Already declared per-crate at the same "0.1" by aprender-train and
+# apr-cli; hoisted here for the normalized content hash (`nfc-trim-ws-v1`).
+# Hoisting does not change either consumer's resolution.
+unicode-normalization = "0.1"
+
+# HuggingFace tokenizers (SetFit / MiniLM conformance, Phase 1 ENC-02).
+# `default-features = false` is load-bearing, not tidiness: the default set is
+# [progressbar, onig, esaxx_fast], which pulls the `onig` C library and the
+# `esaxx-rs` C++ build script into every consumer. `fancy-regex` is the pure-Rust
+# regex backend the WordPiece/BERT path needs, and is the ONLY feature enabled.
+tokenizers = { version = "0.23.1", default-features = false, features = ["fancy-regex"] }
+
+# aprender-rand (lib name `trueno_rand`) is a workspace MEMBER but had no
+# [workspace.dependencies] entry, so every consumer had to re-declare the path.
+# It is the counter-based Philox RNG behind the SetFit encoder's dropout masks.
+aprender-rand = { path = "crates/aprender-rand", version = "0.64.0" }
 
 # Chat templates
 minijinja = { version = "2.14", features = ["loader", "serde"] }
@@ -242,6 +268,13 @@ renacer-core = { path = "crates/aprender-profile-core", version = "0.64.0", pack
 repartir = { path = "crates/aprender-distribute", version = "0.64.0", package = "aprender-distribute" }
 simular = { path = "crates/aprender-simulate", version = "0.64.0", package = "aprender-simulate" }
 probar = { path = "crates/aprender-test-lib", version = "0.64.0", package = "aprender-test-lib" }
+# English key for the same crate, named after the command it serves (`apr test`).
+# The dep KEY, not the package name, is what becomes the extern crate name when
+# the two differ — the lib target is still `jugar_probar`, so keying it by its
+# package name would have imported Spanish anyway. Renaming that lib target is
+# 196 call sites in 17 crates and gets its own PR; this key is how new code
+# reads English today.
+apr-test = { path = "crates/aprender-test-lib", version = "0.64.0", package = "aprender-test-lib", default-features = false, features = ["llm"] }
 # `jugar-probar` is the crates.io/lib name of the same in-tree crate as `probar`
 # above. Both aliases resolve to ONE package; consumers that spelled it
 # `jugar-probar = "0.4"|"0.5"|"1.0"` were building three extra copies.
@@ -273,6 +306,7 @@ aprender-rag = { path = "crates/aprender-rag", version = "0.64.0" }
 aprender-rag-cli = { path = "crates/aprender-rag-cli", version = "0.64.0" }
 aprender-qa-cli = { path = "crates/aprender-qa-cli", version = "0.64.0" }
 aprender-cgp = { path = "crates/aprender-cgp", version = "0.64.0" }
+aprender-contrastive-data = { path = "crates/aprender-contrastive-data", version = "0.64.0" }
 aprender-contracts-cli = { path = "crates/aprender-contracts-cli", version = "0.64.0" }
 aprender-data = { path = "crates/aprender-data", version = "0.64.0" }
 
@@ -560,6 +594,10 @@ gates = [
     "scripts/check_verifier_pinning.sh",
     "scripts/check_dogfood_shim.sh",
     "scripts/check_bench_receipt.sh",
+    # #2696 — the parity validator must discriminate before a release reads it.
+    "scripts/check_parity_receipt.sh",
+    # #2696 — a claim about measured reality may not be a literal a user reads.
+    "scripts/check_no_claim_literals.sh",
 ]
 
 [[bin]]

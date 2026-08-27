@@ -13,6 +13,18 @@ on:
       # happened to touch book/ woke it. A parity gate must run when EITHER side
       # moves; watching only one of them is how it comes to certify nothing.
       - "crates/apr-cli/src/commands_enum.rs"
+      # ...AND THE SAME HOLE EXISTED ONE GATE DOWN, for the LIB side.
+      # FALSIFY-BOOK-LIB-PARITY-001 asserts every aprender-core public module has
+      # a chapter, and nothing here watched aprender-core. #2618 added
+      # `aprender::setfit` with no chapter and this workflow never ran, exactly
+      # as `apr beat-run` did in #1995 — it surfaced only when an unrelated batch
+      # (#2705) happened to touch book/ and woke the gate.
+      #
+      # The comment above already stated the rule: "A parity gate must run when
+      # EITHER side moves; watching only one of them is how it comes to certify
+      # nothing." It was applied to the CLI gate and not to its neighbour. Both
+      # sides are now watched.
+      - "crates/aprender-core/src/lib.rs"
       - "crates/apr-cli/src/extended_commands.rs"
       - "crates/apr-cli/src/tool_commands.rs"
   pull_request:
@@ -21,6 +33,18 @@ on:
       - "book/**"
       - ".github/workflows/book.yml"
       - "crates/apr-cli/src/commands_enum.rs"
+      # ...AND THE SAME HOLE EXISTED ONE GATE DOWN, for the LIB side.
+      # FALSIFY-BOOK-LIB-PARITY-001 asserts every aprender-core public module has
+      # a chapter, and nothing here watched aprender-core. #2618 added
+      # `aprender::setfit` with no chapter and this workflow never ran, exactly
+      # as `apr beat-run` did in #1995 — it surfaced only when an unrelated batch
+      # (#2705) happened to touch book/ and woke the gate.
+      #
+      # The comment above already stated the rule: "A parity gate must run when
+      # EITHER side moves; watching only one of them is how it comes to certify
+      # nothing." It was applied to the CLI gate and not to its neighbour. Both
+      # sides are now watched.
+      - "crates/aprender-core/src/lib.rs"
       - "crates/apr-cli/src/extended_commands.rs"
       - "crates/apr-cli/src/tool_commands.rs"
 

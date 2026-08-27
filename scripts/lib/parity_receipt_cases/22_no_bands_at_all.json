@@ -1,0 +1,63 @@
+{
+  "instrument": "apr test llm bench",
+  "protocol_ref": "scripts/llama_pin.toml#protocol.http",
+  "model": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+  "lanes": [
+    {
+      "lane": "cuda",
+      "subject": {
+        "provenance": {
+          "binary_path": "/x/apr",
+          "binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resolution": "scripts/apr_bin.sh",
+          "compute_class": "cuda",
+          "feature_set": [
+            "cuda"
+          ]
+        },
+        "aggregate_tok_per_sec": [
+          130.0,
+          132.0
+        ],
+        "decode_tok_per_sec": [
+          130.0,
+          132.0
+        ],
+        "install_source": "crates.io"
+      },
+      "comparator": {
+        "name": "llama.cpp",
+        "build_commit": "39173bcac",
+        "provenance": {
+          "binary_path": "/x/llama-server",
+          "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "resolution": "scripts/llama_bin.sh",
+          "compute_class": "cuda"
+        },
+        "aggregate_tok_per_sec": [
+          158.0,
+          159.0
+        ],
+        "decode_tok_per_sec": [
+          158.0,
+          159.0
+        ]
+      },
+      "ratio_decode": 0.8265,
+      "verdict": "PASS",
+      "floor": 0.8,
+      "ceiling": 1.5,
+      "declared_bands": [
+        1,
+        4,
+        8,
+        16
+      ],
+      "bands": []
+    }
+  ],
+  "_expect": {
+    "result": "invalid",
+    "why": "a parity claim at one concurrency is not a parity claim"
+  }
+}

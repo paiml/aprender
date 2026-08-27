@@ -467,12 +467,16 @@ commands:
         media   rendered output vs ground truth (av-sync, audio, video, animation)
         replay  the runner itself             (record, playbook, coverage, report)
 
-      Only `tensor` is routed today (PMAT-481 visual regression); the rest land
-      as they are delegated to the probador library.
+      Routed today: `tensor` (PMAT-481 visual regression) and `llm bench`
+      (GH-876 Milestone 2). The rest land as they are delegated to the probador
+      library.
     requires_model: false
-    side_effects: [filesystem]
+    side_effects: [filesystem, network]
     # tensor — export tensor activations for visual regression testing (PMAT-481)
-    subcommands: [tensor]
+    # llm    — benchmark an OpenAI-compatible endpoint (GH-876 Milestone 2);
+    #          `network` because it drives an HTTP endpoint, and may spawn the
+    #          runtime under test via --start
+    subcommands: [tensor, llm]
 
   - name: diagnose
     category: misc

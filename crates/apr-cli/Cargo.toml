@@ -101,6 +101,13 @@ full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", 
 libc = "0.2"
 
 [dependencies]
+# GH-876 Milestone 2 — the llm benchmark harness behind `apr test llm`.
+# The `llm` feature is enabled UNCONDITIONALLY and by the same edit that adds
+# the subcommand. #2527: `aprender-test-cli` advertised `llm` in --help while
+# gating its handler on a feature its Cargo.toml never declared, so the cfg was
+# permanently false and the error it printed named a rebuild that cannot be
+# performed. A surface and its capability must not be able to drift.
+apr-test = { workspace = true }
 # Core aprender library
 aprender = { path = "../aprender-core", version = "0.64.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 # Provable-contracts engine — `apr beat-run` parses + evaluates BeatBenchmark contracts (PMAT-741)
@@ -266,7 +273,6 @@ assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.14"
 proptest = "1.6"
-jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib", features = ["tui"] }
 regex = "1.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 axum-test = "16"

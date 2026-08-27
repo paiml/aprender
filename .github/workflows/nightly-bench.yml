@@ -1,21 +1,95 @@
-# Nightly Benchmarks — criterion performance tracking
-# Calls sovereign-ci.yml with run_benchmarks: true
+# Nightly Bench — a lane that MEASURES, and that CAN FAIL.
+#
+# WHAT THIS REPLACED, and why it had to be replaced rather than tuned. The old
+# file delegated to paiml/.github sovereign-ci.yml with `run_benchmarks: true`,
+# which was a TRIPLE no-op for this repo (aprender#2673):
+#
+#   1. The probe found nothing. That job gates on `ls benches/*.rs`, and
+#      aprender has NO root benches/ — all 120 bench .rs files live under
+#      crates/*/benches/. The else branch printed "No benches/ directory —
+#      skipping".
+#   2. The job could not fail: `continue-on-error: true` on the whole thing.
+#   3. Nothing compared two runs. Output went to a 90-day bench-results.txt
+#      artifact and was never read back.
+#
+# Net: 120 bench targets, never executed by aprender CI, behind a green tick.
+#
+# WHY NOT JUST FIX THE PROBE. The probe lives in an upstream reusable workflow;
+# changing it is a cross-repo edit, and it would still leave (2) and (3). This
+# lane is repo-local, small, and fails.
+#
+# SCOPE IS DELIBERATELY SMALL. The fleet is 150 W power-capped and intel hosts
+# 16 CI runners; two concurrent workspace-tests starved the box on 2026-08-23.
+# Running 120 criterion targets nightly would be muda and would evict the merge
+# queue. This runs the measurements that a release actually reads, and SAYS
+# what it did not run rather than implying coverage it does not have.
 name: Nightly Bench
 
 on:
   schedule:
-    - cron: "30 5 * * *"  # 05:30 UTC (after nightly builds at 04:00)
+    - cron: "30 5 * * *"  # 05:30 UTC, after the nightly builds at 04:00
   workflow_dispatch:
 
 concurrency:
   group: bench-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  bench:
-    uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
-    with:
-      repo: ${{ github.event.repository.name }}
-      run_benchmarks: true
-    secrets: inherit
+permissions:
+  contents: read
 
+jobs:
+  measure:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      # The receipt validator's own case table must discriminate before any
+      # number it blesses means anything.
+      - name: Bench receipt validator discriminates
+        run: bash scripts/check_bench_receipt.sh
+
+      # The threshold derivation, re-falsified on every run so the correction
+      # to BENCH-003 cannot rot back (#2675).
+      - name: Bench threshold derivation holds
+        run: bash scripts/check_bench_threshold.sh
+
+      # The comparator pin's case table. The gate exits 0 when the pin
+      # DISCRIMINATES; the repo's own UNPINNED bootstrap state is REPORTed
+      # inside it, not signalled by an exit code.
+      #
+      # A first version of this step branched on `rc == 2` to treat UNPINNED as
+      # a notice — DEAD CODE, because that value comes from llama_bin.sh's
+      # resolver, never from this checker. Found by running the step instead of
+      # reasoning about it: it printed "pinned" on a tree whose declaration
+      # says UNPINNED.
+      - name: llama.cpp comparator pin discriminates
+        run: bash scripts/check_llama_pin.sh
+
+      # The measurement itself. `--ignored` because a wall-clock assertion in a
+      # normally-running test is the class that has failed eleven times here;
+      # this lane runs it explicitly and prints numbers for a human.
+      - name: Q4_K GEMV parallel-vs-serial (#2567)
+        run: |
+          set -o pipefail
+          cargo test -p aprender-compute --lib issue_2567_measure --release \
+            -- --ignored --nocapture 2>&1 | tee /tmp/bench.log
+          grep -q '^speedup' /tmp/bench.log || {
+            echo "::error::the measurement produced no speedup line — silence is red"
+            exit 1
+          }
+
+      # SAY WHAT WAS NOT RUN. A lane that implies coverage it does not have is
+      # the shape this whole epic exists to remove.
+      - name: Declare the coverage this lane does NOT have
+        run: |
+          cat <<'EOS'
+          NOT measured by this lane, stated rather than implied:
+            · the other criterion targets under crates/*/benches (120 files).
+              Running them nightly on a 150 W-capped, 16-runner box would evict
+              the merge queue; see aprender#2673.
+            · any apr-vs-llama.cpp ratio. That is pre-publish and needs
+              --features cuda from the tree (aprender#2677).
+            · aarch64 and macOS. This runner is x86_64 Linux; the four-host
+              numbers come from the post-publish receipts (aprender#2670).
+          EOS

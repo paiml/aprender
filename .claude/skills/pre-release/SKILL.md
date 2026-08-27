@@ -276,6 +276,45 @@ been verified on either arm64 platform:
 Each is invisible from a single host **by construction**. That is the argument for this
 gate: not diligence theatre, but the only way to see this class of defect.
 
+**PHASE. This gate's subject is the PUBLISHED ARTIFACT, so it cannot be satisfied before
+the cascade.** `install_rc` is the exit status of `cargo install aprender`, which resolves
+from crates.io — a pre-cut receipt would have to install a version that does not exist yet.
+The evidence for that is the repo's own history: 0.63.0 published 2026-08-01 and its
+receipts are dated 2026-08-22, and until 0.64.0 **this gate had never passed for any
+release**. It is a RELEASE-COMPLETION gate, not a cut gate (aprender#2658).
+
+So a release is not *complete* until every declared host carries a receipt for the exact
+version published. That is the andon: the cut may proceed on a GO from the other gates,
+and the release stays open until the sweep lands.
+
+**The bench field (aprender#2667).** Each receipt also carries a `bench` block, and it is
+deliberately **CPU-class, apr-vs-apr, with no comparator**:
+
+```json
+{"bench": {"samples_ms": [...], "n": 7, "runs_discarded": 0,
+           "provenance": {"compute_class": "cpu", "binary_sha256": "...",
+                          "resolution": "path", "feature_set": ["inference"]}}}
+```
+
+A llama.cpp ratio here would be **uncomputable, not merely unwise**. `cargo install
+aprender` builds CPU-only on all four hosts (`crates/apr-cli/Cargo.toml` `default` carries
+no `cuda` and no `wgpu`) while the comparator runs CUDA on lambda/gx10 and Metal on mini.
+The ratio would read ~0.05–0.10, nobody would red a release over it (correctly), the row
+would go EXISTENCE-ONLY and **the threshold would never arm** — the same shape as this
+gate before #2658. The tree already documents that collapse at
+`crates/apr-cli/src/dispatch.rs:165`: `ratio_median=0.070x … a fabricated 14x regression
+with nothing wrong in apr's decode path`.
+
+An **apr-vs-apr self-ratchet** catches our own regressions, which is the actual goal,
+without inventing a number nobody will act on. The comparator ratio lives in the
+**pre-publish** phase, from the tree, where `--features cuda` exists.
+
+**Threshold.** Derived per host by bootstrap over the recorded raw samples, armed only
+once ≥3 receipts carrying a bench block exist at `origin/main` for that host. No human
+types a number. Do **not** use `3 × pooled relative stddev`: it returns GREEN on the only
+regression this repo has on record, and its power *falls* as data accumulates
+(aprender#2675, falsified by execution in `scripts/check_bench_threshold.sh`).
+
 **Recording a receipt.** Run the sweep on the host, then write
 `evidence/dogfood/<version>/<host>.json` with at least:
 

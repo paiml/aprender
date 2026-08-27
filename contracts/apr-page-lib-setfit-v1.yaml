@@ -1,0 +1,38 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PCU contract for book/src/lib/setfit.md (aprender::setfit module reference).
+    Enforces: page exists, references the module, has a runnable example.
+  references:
+    - "docs/specifications/book-completeness-spec.md"
+
+equations:
+  pcu_header_present:
+    formula: "file_contains(book/src/lib/setfit.md, 'PCU: lib-setfit')"
+  module_mentioned:
+    formula: "file_contains(book/src/lib/setfit.md, 'aprender::setfit')"
+  example_block_present:
+    formula: "file_contains_fenced(book/src/lib/setfit.md, language='rust')"
+
+falsification_tests:
+  - id: FALSIFY-PAGE-LIB-SETFIT-001
+    name: stub_exists
+    prediction: "book/src/lib/setfit.md exists on disk"
+    test_harness: "test -f book/src/lib/setfit.md"
+    expected_output: "exit 0"
+    if_fails: "Run scripts/gen-lib-chapter-stubs.sh to regenerate."
+
+  - id: FALSIFY-PAGE-LIB-SETFIT-002
+    name: module_mentioned
+    prediction: "page references the module at least once"
+    test_harness: "grep -q 'aprender::setfit' book/src/lib/setfit.md"
+    expected_output: "exit 0"
+    if_fails: "Add a mention of aprender::setfit to the chapter."
+
+  - id: FALSIFY-PAGE-LIB-SETFIT-003
+    name: runnable_example
+    prediction: "page has at least one rust code block"
+    test_harness: "grep -c '^```rust' book/src/lib/setfit.md"
+    expected_output: "stdout >= 1"
+    if_fails: "Add a rust code block with a runnable example."

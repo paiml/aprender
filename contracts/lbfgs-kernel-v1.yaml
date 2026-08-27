@@ -1,11 +1,32 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-18'
   author: PAIML Engineering
-  description: L-BFGS kernel — limited-memory BFGS quasi-Newton optimizer
+  description: L-BFGS kernel — limited-memory BFGS quasi-Newton optimizer, f32 and f64
   references:
   - Nocedal (1980) Updating Quasi-Newton Matrices with Limited Storage
   - Liu & Nocedal (1989) On the Limited Memory BFGS Method for Large Scale Optimization
+  entry_points:
+  - name: aprender::optim::LBFGS
+    width: f32
+    signature: 'fn minimize(objective, gradient, x0: Vector<f32>) -> OptimizationResult'
+    notes: Non-generic. Byte-compatible with contract version 1.0.0; no generic or default
+      type parameter was added, because either would be a semver break for downstream
+      turbofish and trait-bound use sites. Its trajectory is pinned by a frozen
+      IEEE-754 bit-pattern golden test captured before the widening.
+  - name: aprender::optim::LbfgsF64
+    width: f64
+    signature: 'fn minimize(objective, gradient, x0: &Vector<f64>) -> OptimizationResultF64'
+    notes: Added at 1.1.0. Same algorithm, same Wolfe constants (c1=1e-4, c2=0.9, 50
+      line-search iterations) and same iteration budget, evaluated in double precision.
+      Required where the objective's gradient norm approaches f32 epsilon (~1.2e-7)
+      near the optimum, e.g. a regularized softmax-NLL head. Shares the SAME
+      ConvergenceStatus enum as the f32 entry point — the contract declares exactly one
+      status codomain, not one per width.
+  precision_note: Both entry points delegate to one private float-generic core, so the
+    two widths cannot drift apart. Tuning constants are per-width associated consts
+    (each the nearest representable value in its own precision), which is what makes the
+    f32 path bit-identical to 1.0.0 rather than merely close.
 equations:
   two_loop_recursion:
     formula: H_k * g_k via two-loop recursion using m stored (s, y) pairs
@@ -40,6 +61,23 @@ equations:
     - learning_rate > 0.0
     - params.len() > 0
     lean_theorem: Theorems.Line_Search
+  nonfinite_input_status:
+    formula: nonfinite(channel) => status = NumericalError, for every input channel and
+      both widths
+    domain: 'channel in {x0, objective_return, gradient_return, line_search_trial_point};
+      width in {f32, f64}'
+    codomain: ConvergenceStatus
+    invariants:
+    - A non-finite value arriving from ANY of the four channels yields
+      ConvergenceStatus::NumericalError in BOTH widths
+    - The solver never panics on non-finite input, and never returns a finite-looking
+      result derived from a poisoned step
+    - 'NumericalError is checked BEFORE the stall check: alpha < 1e-12 is FALSE for NaN,
+      so a poisoned line search would otherwise be reported as a benign tiny step'
+    - The line search carries its OWN guard, because a value that is finite at x_k and
+      non-finite only at a trial point is invisible to the entry checks
+    preconditions:
+    - params.len() > 0
 proof_obligations:
 - type: invariant
   property: Descent direction
@@ -120,6 +158,41 @@ falsification_tests:
   prediction: With empty history, direction = -g (steepest descent)
   test: proptest with empty history buffer
   if_fails: Initial scaling or empty-buffer case not handled
+- id: FALSIFY-LB-007
+  rule: f64 entry point reaches a tolerance f32 cannot
+  prediction: On a dense least-squares problem whose optimum is representable in neither
+    width, LbfgsF64 converges with gradient norm < 1e-10 while LBFGS (f32) cannot reach
+    1e-10 at all. Measured on this host - f32 MaxIterations at grad_norm 6.12e-9, f64
+    Converged at grad_norm 2.73e-11 in 14 iterations.
+  test: cargo test -p aprender-core --features setfit --lib falsify_lbfgs_001_f64_1e10_width_is_real
+  if_fails: LbfgsF64 is f32 arithmetic behind an f64 signature, i.e. the widening is a
+    cast rather than a real precision change
+- id: FALSIFY-LB-008
+  rule: The width claim is not vacuous
+  prediction: At an f32-REACHABLE tolerance (1e-6) BOTH widths converge on the same
+    problem, so a 1e-6 assertion demonstrates nothing about precision. This entry exists
+    so FALSIFY-LB-007 cannot silently be loosened back into vacuity.
+  test: cargo test -p aprender-core --features setfit --lib falsify_lbfgs_001_f64_tolerance_1e6_cannot_distinguish_widths
+  if_fails: The tolerance chosen for the width claim no longer separates the widths
+- id: FALSIFY-LB-009
+  rule: Non-finite input status (equation nonfinite_input_status)
+  prediction: For each of the four channels (x0, objective return, gradient return,
+    line-search trial point) in each of the two widths, minimize returns
+    ConvergenceStatus::NumericalError and does not panic. Ten runnable cases named
+    falsify_lbfgs_003_nonfinite_CHANNEL_WIDTH.
+  test: cargo test -p aprender-core --features setfit --lib nonfinite
+  if_fails: A poisoned input is reported as Converged or Stalled. Both were observed on
+    the pre-1.1.0 implementation - a NaN objective at x0 reported Converged, and a
+    non-finite gradient reported Stalled.
+kani_harnesses_note: 'NOT EXECUTED. No #[kani::proof] harness exists anywhere in crates/
+  and cargo-kani is not installed repo-wide, so every entry below is a DECLARED
+  obligation, not a discharged one. Phase 2 convention: name the identically-bounded
+  runnable backing. KANI-LB-001 (descent direction) is backed by
+  falsify_lbfgs_001_prop_quadratic_convergence and, in f64, by
+  falsify_lbfgs_001_f64_prop_psd_quadratic_convergence; KANI-LB-002 (history bound) is
+  backed by test_lbfgs_history_overflow. The nonfinite_input_status equation declares no
+  Kani harness at all - it is discharged solely by the ten runnable cases of
+  FALSIFY-LB-009.'
 kani_harnesses:
 - id: KANI-LB-001
   obligation: LB-INV-001
@@ -169,5 +242,5 @@ qa_gate:
   - curvature_condition
   - history_bound
   - objective_decrease
-  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 9 falsification tests pass + Kani harnesses verify
   falsification: Reverse loop order in two-loop recursion

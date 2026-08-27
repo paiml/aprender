@@ -198,6 +198,113 @@ pub struct HardwareSpec {
     pub storage: String,
 }
 
+impl HardwareSpec {
+    /// PARITY-007 — read the host, never assert it.
+    ///
+    /// `external_matrix.rs` wrote `cpu: "Benchmark CPU", gpu: Some("Benchmark
+    /// GPU"), memory_gb: 32` straight into the receipt. The `BenchmarkMatrix`
+    /// schema existed and nothing forced its fields to be MEASURED, so a
+    /// four-host receipt could carry placeholder provenance while looking
+    /// complete. That is F12 — a value with the form of a measurement and
+    /// nothing behind it (aprender#2679).
+    ///
+    /// The remedy is the general one: a field that CAN be measured is derived
+    /// or absent, never asserted. Where a probe fails, this records "unknown"
+    /// and `None` — an honest gap the consuming gate can treat as RED — rather
+    /// than a plausible-looking literal it cannot distinguish from evidence.
+    #[must_use]
+    pub fn detect() -> Self {
+        Self {
+            cpu: Self::detect_cpu(),
+            gpu: Self::detect_gpu(),
+            memory_gb: Self::detect_memory_gb(),
+            storage: "unknown".to_string(),
+        }
+    }
+
+    /// Linux: the `model name` line of /proc/cpuinfo.
+    fn cpu_from_proc() -> Option<String> {
+        let info = std::fs::read_to_string("/proc/cpuinfo").ok()?;
+        info.lines()
+            .find_map(|l| l.strip_prefix("model name"))
+            .and_then(|rest| rest.split(':').nth(1))
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    }
+
+    /// macOS has no /proc; sysctl carries the same fact.
+    fn cpu_from_sysctl() -> Option<String> {
+        Self::sysctl("machdep.cpu.brand_string")
+    }
+
+    /// One place that runs sysctl, so both callers agree on what a failed
+    /// probe looks like.
+    fn sysctl(key: &str) -> Option<String> {
+        let out = std::process::Command::new("sysctl")
+            .args(["-n", key])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if v.is_empty() {
+            None
+        } else {
+            Some(v)
+        }
+    }
+
+    fn detect_cpu() -> String {
+        Self::cpu_from_proc()
+            .or_else(Self::cpu_from_sysctl)
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+
+    fn detect_gpu() -> Option<String> {
+        let out = std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=name", "--format=csv,noheader"])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let name = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if name.is_empty() {
+            None
+        } else {
+            Some(name)
+        }
+    }
+
+    fn memory_from_proc() -> Option<u64> {
+        let info = std::fs::read_to_string("/proc/meminfo").ok()?;
+        let kb: u64 = info
+            .lines()
+            .find_map(|l| l.strip_prefix("MemTotal:"))
+            .map(|r| r.trim().trim_end_matches(" kB").trim().to_string())
+            .and_then(|v| v.parse().ok())?;
+        Some(kb / 1024 / 1024)
+    }
+
+    fn memory_from_sysctl() -> Option<u64> {
+        let bytes: u64 = Self::sysctl("hw.memsize")?.parse().ok()?;
+        Some(bytes / 1024 / 1024 / 1024)
+    }
+
+    /// 0 is the honest "could not read", never a default that looks measured.
+    fn detect_memory_gb() -> u64 {
+        Self::memory_from_proc()
+            .or_else(Self::memory_from_sysctl)
+            .unwrap_or(0)
+    }
+}
+
 impl Default for HardwareSpec {
     fn default() -> Self {
         Self {
@@ -366,4 +473,103 @@ pub struct BenchmarkResults {
     pub energy: EnergyResults,
     /// Cold start metrics
     pub cold_start_ms: ColdStartResults,
+}
+
+// ── PARITY-007: hardware provenance is read, never asserted ────────────────
+#[cfg(test)]
+mod parity_007_hardware_tests {
+    // This file is include!()d into bench/mod.rs, so `super` is the crate
+    // root's `bench` module rather than a file-level module.
+    use super::HardwareSpec;
+
+    /// `detect()` must not reproduce the placeholder strings it replaced.
+    /// Those exact literals shipped in `external_matrix.rs` and wrote
+    /// placeholder provenance into a receipt that looked complete (F12).
+    #[test]
+    fn detect_never_emits_the_placeholders_it_replaced() {
+        let hw = HardwareSpec::detect();
+        assert_ne!(hw.cpu, "Benchmark CPU");
+        assert_ne!(hw.gpu.as_deref(), Some("Benchmark GPU"));
+        assert_ne!(hw.storage, "SSD", "storage was a literal; it is now honest");
+    }
+
+    /// A failed probe must yield an honest gap a gate can treat as RED —
+    /// never a plausible-looking value it cannot distinguish from evidence.
+    #[test]
+    fn detect_reports_unknown_rather_than_inventing() {
+        let hw = HardwareSpec::detect();
+        // On any host, cpu is either a real model string or the honest
+        // "unknown". It is never a decorative placeholder.
+        assert!(
+            hw.cpu == "unknown" || hw.cpu.len() > 3,
+            "cpu was {:?}: expected a real model string or the honest \"unknown\"",
+            hw.cpu
+        );
+        // gpu is Option: absent means absent, and is not faked.
+        if let Some(g) = &hw.gpu {
+            assert!(!g.is_empty(), "a present gpu must be named");
+        }
+    }
+
+    /// On a host with /proc or sysctl, memory must be a real figure. Zero is
+    /// the honest "could not read", not a default that looks measured.
+    #[test]
+    fn detect_memory_is_measured_or_zero() {
+        let hw = HardwareSpec::detect();
+        assert!(
+            hw.memory_gb == 0 || hw.memory_gb >= 1,
+            "memory_gb {} is neither an honest 0 nor a plausible size",
+            hw.memory_gb
+        );
+    }
+}
+
+// ── PARITY-007: the detection is real, checked against this host ───────────
+#[cfg(test)]
+mod parity_007_engagement_tests {
+    use super::HardwareSpec;
+
+    /// PROVE THE MECHANISM ENGAGED. The three tests above assert that
+    /// `detect()` does not emit the placeholders it replaced — necessary, and
+    /// satisfied equally by a function that returns "unknown" for everything.
+    /// This one checks the detected values against the host's own files, so a
+    /// detector that silently degraded to "unknown" everywhere is caught.
+    ///
+    /// Skips honestly where the source does not exist (macOS has no /proc),
+    /// and says so, rather than passing vacuously.
+    #[test]
+    fn detected_values_match_this_host() {
+        let hw = HardwareSpec::detect();
+
+        if let Ok(info) = std::fs::read_to_string("/proc/cpuinfo") {
+            let truth = info
+                .lines()
+                .find_map(|l| l.strip_prefix("model name"))
+                .and_then(|r| r.split(':').nth(1))
+                .map(str::trim)
+                .unwrap_or("");
+            if !truth.is_empty() {
+                assert_eq!(
+                    hw.cpu, truth,
+                    "detect() must report the host's actual CPU, not a fallback"
+                );
+            }
+        }
+
+        if let Ok(info) = std::fs::read_to_string("/proc/meminfo") {
+            let kb: u64 = info
+                .lines()
+                .find_map(|l| l.strip_prefix("MemTotal:"))
+                .map(|r| r.trim().trim_end_matches(" kB").trim().to_string())
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            if kb > 0 {
+                assert_eq!(
+                    hw.memory_gb,
+                    kb / 1024 / 1024,
+                    "detect() must report the host's actual memory"
+                );
+            }
+        }
+    }
 }

@@ -8,18 +8,20 @@ This example demonstrates the Qwen2.5-Coder showcase benchmark harness for measu
 
 ## 🏆 SHOWCASE COMPLETE (2026-01-18)
 
-**CORRECTNESS-012 fixed! Both GGUF and APR formats exceed 2X Ollama on GPU.**
+**CORRECTNESS-012 fixed.** Comparator ratios are deliberately absent from this
+page: every one that used to appear here was derived from a hardcoded comparator
+baseline that no run ever measured (APR-PERF-GATE-001 §9). A ratio is published
+only from a signed receipt that recorded both sides.
 
 ### Qwen2.5-Coder-1.5B Results
 
 | Format | M=8 | M=16 | M=32 | Status |
 |--------|-----|------|------|--------|
-| **GGUF** | 770.0 tok/s (2.65x) | **851.8 tok/s (2.93x)** | 812.8 tok/s (2.79x) | ✅ PASS |
-| **Target** | 582 tok/s (2X) | 582 tok/s (2X) | 582 tok/s (2X) | - |
+| **GGUF** | 770.0 tok/s | **851.8 tok/s** | 812.8 tok/s | ✅ PASS |
 
 ### Key Achievements
 
-- **GGUF GPU**: 851.8 tok/s = **2.93x Ollama** (291 tok/s baseline)
+- **GGUF GPU**: 851.8 tok/s measured. No comparator was run, so no ratio is stated.
 - **CPU/GPU Parity**: Verified - outputs match exactly
 - **APR Format**: Quantization preserved (Q4_K, Q6_K) through GGUF → APR conversion
 - **File Size**: 1.9GB APR file with full model fidelity

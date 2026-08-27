@@ -25,6 +25,77 @@ shim that `exec`s this runner; `scripts/check_dogfood_shim.sh` keeps it one, and
 `scripts/check_verifier_pinning.sh` keeps the merged hardenings honest. If you find
 yourself about to copy either file somewhere, read that triage first.
 
+## Every gate has a SUBJECT, and some of them are not this tree
+
+Read this before adding a gate, and before concluding that a permanently-red one
+is debt.
+
+This runner's subject is **the local tree**: `$BINPATH` comes from
+`cargo build --message-format=json`, and every gate inherits that. But three
+gates ask about something else, and their subject is what makes them behave the
+way they do:
+
+| gate | subject | when it can pass |
+|---|---|---|
+| `version-unpublished`, `publish-dry-run` | the **registry** | before / after the cascade respectively (#2643) |
+| `check_multiplatform_dogfood` | the **published artifact, on four hosts** | only AFTER publish (#2658) |
+| everything else | **this tree** | now |
+
+**A gate whose subject is a later phase is not broken and is not debt.** Its RED
+is structural, and treating it as debt is how it becomes a step everyone learns
+to walk past. `check_multiplatform_dogfood` had never passed for ANY release
+until 0.64.0 — 0.63.0 published 2026-08-01 with receipts dated 2026-08-22 —
+because the question it asks cannot be answered before the thing it asks about
+exists.
+
+That is the root cause recorded in aprender#2662: **phase was an undeclared
+dimension of this protocol.** Gates carried an implicit subject, the runner
+recognised only the first, and the producing half of the later ones went
+unwritten — which is why the 0.64.0 four-host sweep was hand-rolled, in a
+protocol whose own rule is *"Never dogfood by hand"*.
+
+**So: when you add a gate, say what its subject is.** If the answer is not "this
+tree", the gate belongs to a later phase, its receipt is produced there, and its
+RED before that phase means *not yet measured* rather than *broken*.
+
+**And the two phases do not measure the same thing** — but the earlier version
+of this paragraph drew the wrong conclusion from that, and it cost a release.
+
+It said: the post-publish phase CANNOT compute a llama.cpp ratio, because
+`cargo install aprender` is CPU-only on every host (`default` carries no `cuda`,
+no `wgpu`) while the comparator runs CUDA or Metal, so the ratio reads
+~0.05–0.10 and the threshold never arms. Every clause of that is TRUE. The
+conclusion drawn — *therefore do not compare post-publish* — is what was wrong.
+
+What it cost: the published binary's CPU-only-ness sat in this file as a stated
+fact while nothing ever measured what it costs a user. Measured for the first
+time on 2026-08-24, on a host with an idle RTX 4090: **15.7 tok/s decode against
+llama.cpp's 158.9, and 7.5 SECONDS to first token**, because `apr serve run
+--gpu` accepts the flag, links no CUDA at all, warns nothing, and returns a
+plausible number (aprender#2696).
+
+The remedy is not to skip the comparison. It is to **compare within the compute
+class**. The published apr takes the cpu path, so its comparator is llama.cpp
+`-ngl 0`, which also takes the cpu path. That ratio is meaningful, it arms a
+floor (**0.80 minimum, 1.50 stretch**), and no cross-class row is created. The
+accelerated lanes stay pre-publish, from the tree, where the feature exists
+(aprender#2667).
+
+`scripts/lib/bench_receipt.py --parity` enforces the rest, and
+`scripts/check_parity_receipt.sh` proves it discriminates across 17 cases before
+any release reads its verdict:
+
+| rule | what it stops |
+|---|---|
+| same class, or no verdict | a cpu-vs-cuda number reading as a kernel defect |
+| the ratio is DERIVED from the samples | F12 — a stated ratio its own samples do not produce |
+| the comparator is pinned | a denominator that moves silently between releases |
+| the subject names its artifact | #2696 — local build and published binary differ by 6.6x |
+| the verdict follows from the floor | a gate lying about its own rule |
+
+Required lanes come from each host's **own declared accelerator**, so a host
+that gains a GPU gains a required lane without anyone remembering to add one.
+
 ## Run it
 
 From (or pointing at) the crate repo:

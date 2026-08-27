@@ -1,0 +1,22 @@
+{
+  "head_dim": 32,
+  "heads": 2,
+  "hidden": 64,
+  "hidden_act": "gelu",
+  "intermediate": 256,
+  "layer_norm_eps": 1e-12,
+  "num_layers": 2,
+  "pad_token_id": 0,
+  "positions": 64,
+  "source_head_indices": [
+    0,
+    1
+  ],
+  "source_heads": 12,
+  "source_hidden": 384,
+  "source_layers": 6,
+  "source_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "tokenizer_sha256": "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037",
+  "type_vocab_size": 2,
+  "vocab": 97
+}
