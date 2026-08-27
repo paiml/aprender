@@ -12,6 +12,7 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::inefficient_to_string)]
 
+use super::resolve_gpu_layers;
 use crate::error::{CliError, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
@@ -127,6 +128,53 @@ impl ServerConfig {
     /// decision, which is finding N4 with the flag type swapped.
     ///
     /// `--gpu-layers 0` is an explicit CPU request, so this is not "is_some".
+    /// PERF-021 / I-2: resolve the request against the model, and REPORT it.
+    ///
+    /// N4 is the whole reason the boolean was retired: "a boolean accelerator
+    /// flag has no observable resolution — `--gpu` can be ignored and nothing
+    /// in the output changes. `-ngl 999` cannot be ignored, because the loader
+    /// must state how many layers it placed." This is that statement.
+    ///
+    /// `fits` IS `total_layers`, and that is a limitation, not a measurement.
+    /// No free-VRAM query is reachable from any apr build: `query_cuda_memory`
+    /// sits behind aprender-compute's `cuda-monitor` feature, which apr-cli's
+    /// `cuda` feature does not enable, and `CudaContext::memory_info()` is only
+    /// reachable AFTER the model is constructed — i.e. after this decision. So
+    /// this cannot claim to have fitted anything, and does not.
+    ///
+    /// Consequently `auto` resolves to `all`, and a PARTIAL request is REFUSED
+    /// rather than rounded: `OwnedQuantizedModelCuda` takes no layer count and
+    /// uploads every layer, so accepting `--gpu-layers 12` would place 29 and
+    /// report 12. That is the fabrication this whole epic exists to remove,
+    /// and it is worse than a refusal because it would be a number in a log.
+    ///
+    /// # Errors
+    /// [`CliError::InvalidInput`] for a partial request this loader cannot honour.
+    pub(crate) fn resolve_layers(&self, total_layers: u32) -> Result<u32> {
+        let Some(request) = self.gpu_layers else {
+            return Ok(0);
+        };
+        if self.no_gpu {
+            return Ok(0);
+        }
+        if let GpuLayerRequest::Exact(n) = request {
+            if n > 0 && n < total_layers {
+                return Err(CliError::InvalidInput(format!(
+                    "--gpu-layers {n} asks for a PARTIAL offload of a {total_layers}-layer \
+                     model, and this build has no partial offload: the loader places every \
+                     layer or none. Accepting this would upload {total_layers} and report \
+                     {n}.\n\
+                     \n\
+                     Pass `--gpu-layers all` (or `0` for CPU). Partial offload needs a \
+                     free-VRAM query that no apr build currently reaches; tracked as \
+                     PERF-023."
+                )));
+            }
+        }
+        // `fits = total_layers`: see the note above. This is all-or-nothing.
+        resolve_gpu_layers(request, total_layers, total_layers)
+    }
+
     pub(crate) fn wants_accelerator(&self) -> bool {
         self.gpu_layers
             .is_some_and(GpuLayerRequest::wants_accelerator)
@@ -538,6 +586,19 @@ pub enum GpuLayerRequest {
     /// `--gpu-layers auto` — offload what fits. The ONLY value auto-fit may
     /// modify, because it is the value that asked it to.
     Auto,
+}
+
+impl std::fmt::Display for GpuLayerRequest {
+    /// The spelling a USER would type, so `requested=` quotes their own word
+    /// back rather than a Rust variant name.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "0"),
+            Self::Auto => write!(f, "auto"),
+            Self::All => write!(f, "all"),
+            Self::Exact(n) => write!(f, "{n}"),
+        }
+    }
 }
 
 impl GpuLayerRequest {

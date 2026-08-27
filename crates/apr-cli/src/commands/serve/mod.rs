@@ -419,6 +419,56 @@ mod accelerator_guard_tests {
         );
     }
 
+    /// PERF-021: the resolver must be CALLED, not merely defined.
+    ///
+    /// Every one of the 7 calls to `resolve_gpu_layers` lived inside
+    /// `#[cfg(test)]` while its own doc comment said "a request has a
+    /// RESOLUTION, and it is reported". It reported nothing. Its sibling
+    /// `ensure_accelerator_available` landed WIRED because it had a source-grep
+    /// gate; this one landed dead because it had none. That difference is the
+    /// entire explanation, so the gate comes with the call.
+    #[test]
+    fn the_resolver_is_actually_called_from_a_decision_path() {
+        let src = include_str!("handler_gpu_completion.rs");
+        assert!(
+            src.contains("config.resolve_layers(total_layers)?"),
+            "no decision path calls the resolver — `--gpu-layers` is parsed, \
+             validated, stored and never resolved, so nothing reports how many \
+             layers were placed (N4, and the reason #2696 was invisible)"
+        );
+        assert!(
+            src.contains("gpu-layers: requested="),
+            "the resolution is computed but not REPORTED. I-2 requires \
+             resolved-vs-requested to be observable; a resolution nobody can \
+             see is the boolean defect with more arithmetic"
+        );
+    }
+
+    /// A PARTIAL request must be refused, not rounded.
+    ///
+    /// `OwnedQuantizedModelCuda` takes no layer count and uploads every layer,
+    /// so accepting `--gpu-layers 12` on a 29-layer model would place 29 and
+    /// print 12 — a fabricated number in a log, which is worse than a refusal
+    /// and is precisely what this epic exists to remove.
+    #[test]
+    fn a_partial_offload_is_refused_because_the_loader_cannot_do_it() {
+        let mut cfg = ServerConfig::default();
+        cfg.gpu_layers = Some(GpuLayerRequest::Exact(12));
+        let e = cfg.resolve_layers(29).expect_err("partial must be refused");
+        let m = e.to_string();
+        assert!(m.contains("PARTIAL"), "must name the limitation: {m}");
+        assert!(m.contains("PERF-023"), "must cite the tracking item: {m}");
+
+        // The two honourable requests still work, or the refusal is a wall.
+        cfg.gpu_layers = Some(GpuLayerRequest::All);
+        assert_eq!(cfg.resolve_layers(29).expect("all"), 29);
+        cfg.gpu_layers = Some(GpuLayerRequest::None);
+        assert_eq!(cfg.resolve_layers(29).expect("none"), 0);
+        // `Exact(total)` is `all` by another spelling and must be accepted.
+        cfg.gpu_layers = Some(GpuLayerRequest::Exact(29));
+        assert_eq!(cfg.resolve_layers(29).expect("exact==total"), 29);
+    }
+
     #[test]
     fn the_guard_is_actually_wired_into_run() {
         let src = include_str!("mod.rs");
