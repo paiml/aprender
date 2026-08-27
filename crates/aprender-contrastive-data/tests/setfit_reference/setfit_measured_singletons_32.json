@@ -1,0 +1,32 @@
+{
+  "fixture_family": "setfit_measured",
+  "fixture_id": "singletons_32",
+  "layout": [
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1
+  ],
+  "n_examples": 32,
+  "n_classes": 32,
+  "sampling_strategy": "oversampling",
+  "multilabel": false,
+  "max_pairs": -1,
+  "stored_pos": 32,
+  "stored_neg": 496,
+  "self_pair_count": 32,
+  "orientation_duplicate_count": 0,
+  "len_pos": 496,
+  "len_neg": 496,
+  "total": 992,
+  "rng_dependent_fields": [],
+  "why_this_layout": "The K = N adversarial layout (32 classes, 32 examples). This is the row plan 02-08 measures an O(K^2) sampler against; a three-class fixture set could never expose one. Aprender's positive capacity is 0 here, so the stream is negatives-only -- and note the two families agree on the TOTAL (992) while disagreeing on every pair in it.",
+  "derivation": "MEASURED by executing setfit.sampler.ContrastiveDataset in the hash-locked venv, then cross-checked against a closed form read out of setfit/sampler.py: stored_pos = sum_k [C(n_k,2) + n_k] (the +n_k is the included diagonal), stored_neg = sum_{j<k} n_j*n_k, each capped at max_pairs//2 when max_pairs != -1, and total = 2*max(stored_pos, stored_neg) under the oversampling strategy. The two agree, or this file is not written.",
+  "reference_notes": [
+    "shuffle_combinations permutes with a HARDCODED np.random.RandomState(seed=42); the trainer seed does not reach pair identity at all (setfit/sampler.py:29).",
+    "Enumeration materializes the FULL O(N^2) index triangle via np.triu_indices(n, 0) BEFORE any max_pairs cap can apply (setfit/sampler.py:28), so the cap bounds what is STORED, never what is allocated.",
+    "replacement defaults to True, so k=0 and the diagonal is included: every example yields a positive pair with itself.",
+    "oversampling sets len_pos = len_neg = max(len(pos_pairs), len(neg_pairs)); the shorter list is cycled, so the epoch length is 2 * that maximum."
+  ],
+  "setfit_version": "1.1.3",
+  "uv_lock_sha256": "c2b36114aa6b91b38e536bb808a08d0878454160b544bba73e31350b9ab5c75e",
+  "uv_version": "uv 0.9.5 (d5f39331a 2025-10-21)"
+}

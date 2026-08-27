@@ -111,7 +111,8 @@ impl std::error::Error for BertLoadError {}
 /// Read a tensor by name from the reader, dequantising to f32 if needed.
 ///
 /// Returns `BertLoadError` if the tensor is missing or the dtype path fails.
-fn read_tensor(
+// pub(crate) for setfit/import.rs reuse (Phase 1 amendment A-01 to D-01: visibility only, no refactor).
+pub(crate) fn read_tensor(
     reader: &AprV2Reader,
     name: &str,
     expected_shape: &[usize],

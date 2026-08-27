@@ -110,7 +110,7 @@ pub use coordinate_descent::CoordinateDescent;
 pub use damped_newton::DampedNewton;
 pub use fista::FISTA;
 pub use interior_point::InteriorPoint;
-pub use lbfgs::LBFGS;
+pub use lbfgs::{LbfgsF64, LBFGS};
 pub use line_search::{BacktrackingLineSearch, LineSearch, WolfeLineSearch};
 pub use projected_gradient::ProjectedGradientDescent;
 pub use stochastic::{Adam, SGD};
@@ -164,6 +164,33 @@ impl OptimizationResult {
             elapsed_time: std::time::Duration::ZERO,
         }
     }
+}
+
+/// Result of a double-precision optimization procedure.
+///
+/// The f64 twin of [`OptimizationResult`], returned by [`LbfgsF64::minimize`].
+/// It shares [`ConvergenceStatus`] — there is exactly one status enum in this
+/// crate, so a caller never has to ask which width's `Converged` it holds.
+///
+/// # Why there is no `elapsed_time` field
+///
+/// [`OptimizationResult::elapsed_time`] is wall-clock time, which makes any
+/// record containing it irreproducible — a semantic-hash poison. The f64 path
+/// exists to serve a deterministic, hashable head fit, so the field is
+/// deliberately absent here rather than present and documented as unsafe to
+/// hash. Time a run at the call site if you need it.
+#[derive(Debug, Clone)]
+pub struct OptimizationResultF64 {
+    /// Final solution (optimized parameters)
+    pub solution: Vector<f64>,
+    /// Final objective function value
+    pub objective_value: f64,
+    /// Number of iterations performed
+    pub iterations: usize,
+    /// Convergence status
+    pub status: ConvergenceStatus,
+    /// Final gradient norm (‖∇f(x)‖)
+    pub gradient_norm: f64,
 }
 
 /// Convergence status of an optimization procedure.

@@ -33,7 +33,7 @@ REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # Tier definitions per SPEC-HF-PUBLISH-001 § crates.io release cascade.
 declare -A TIERS
 TIERS[1]="apr-format aprender-contracts-macros aprender-quant aprender-gemm-codegen aprender-sparse aprender-solve aprender-rand aprender-fft aprender-image aprender-tensor aprender-cupti"
-TIERS[2]="aprender-contracts aprender-core aprender-profile-core aprender-graph"
+TIERS[2]="aprender-contracts aprender-core aprender-profile-core aprender-graph aprender-contrastive-data"
 TIERS[3]="aprender-profile"
 TIERS[4]="aprender-gpu"
 TIERS[5]="aprender-cuda-edge aprender-cgp"

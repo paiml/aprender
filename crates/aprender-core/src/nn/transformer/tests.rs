@@ -442,6 +442,8 @@ mod tests_alibi_mha;
 mod tests_attention_backward_gradflow;
 #[path = "tests_attention_contract.rs"]
 mod tests_attention_contract;
+#[path = "tests_attention_mask_broadcast.rs"]
+mod tests_attention_mask_broadcast;
 #[path = "tests_attention_scaling_contract.rs"]
 mod tests_attention_scaling_contract;
 #[path = "tests_decoder_grad_flow.rs"]
@@ -458,3 +460,5 @@ mod tests_position_contract;
 mod tests_rope_contract;
 #[path = "tests_rope_ext_contract.rs"]
 mod tests_rope_ext_contract;
+#[path = "tests_seeded_attention_dropout.rs"]
+mod tests_seeded_attention_dropout;

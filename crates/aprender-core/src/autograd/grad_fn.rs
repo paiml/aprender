@@ -345,6 +345,320 @@ impl GradFn for MeanBackward {
     }
 }
 
+/// Gradient function for masked mean pooling over the sequence axis.
+///
+/// Obligation: OBLIG-ENC-03 masked pooling, contract
+/// `setfit-encoder-conformance-v1`, equation `masked_mean_pool`.
+///
+/// Forward reduces `[B, S, H]` to `[B, H]` by averaging only the VALID
+/// positions of each row: `out[b][h] = (Σ_s mask[b][s]·x[b][s][h]) / n_b`.
+///
+/// Backward therefore routes `grad_output[b][h] / n_b` to every valid position
+/// `(b, s, h)` and **exactly `0.0`** to every padded position. Two properties
+/// carry all the risk here:
+///
+/// * The divisor is **per row**. A single shared denominator is invisible on a
+///   uniform-length batch and wrong on every mixed-length one — which is every
+///   real one.
+/// * Padded positions must receive zero, not `grad/n`. Leaking gradient into
+///   padding trains the encoder on positions that carry no input.
+///
+/// `n_b > 0` is guaranteed by the forward, which rejects an all-padding row
+/// with a typed error before this struct is ever constructed.
+pub(crate) struct MaskedMeanPoolBackward {
+    pub(crate) mask: Vec<u8>,
+    pub(crate) batch: usize,
+    pub(crate) seq: usize,
+    pub(crate) hidden: usize,
+}
+
+impl GradFn for MaskedMeanPoolBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let g = grad_output.data();
+        let (b, s, h) = (self.batch, self.seq, self.hidden);
+        let mut grad_in = vec![0.0f32; b * s * h];
+
+        for row in 0..b {
+            let base = row * s;
+            // Folded rather than `filter(..).count()`: the explicit `m == 1`
+            // predicate means a stray non-binary value could never inflate the
+            // divisor (the forward rejects those, but the divisor is the one
+            // place where being wrong is silent).
+            let count = self.mask[base..base + s]
+                .iter()
+                .fold(0usize, |acc, &m| acc + usize::from(m == 1));
+            if count == 0 {
+                // Unreachable: the forward rejects an all-padding row with a
+                // typed error before this struct is constructed. Skipping keeps
+                // the row at zero rather than dividing by zero, so even a future
+                // caller that bypassed the guard cannot inject NaN here.
+                continue;
+            }
+            // PER-ROW divisor. Hoisted per row precisely so it cannot silently
+            // become a single batch-wide constant.
+            let inv = 1.0 / count as f32;
+            let g_off = row * h;
+
+            for pos in 0..s {
+                if self.mask[base + pos] != 1 {
+                    // Padded positions keep their initialized 0.0 — gradient must
+                    // never leak into positions that carried no input.
+                    continue;
+                }
+                let dst = base * h + pos * h;
+                for j in 0..h {
+                    grad_in[dst + j] = g[g_off + j] * inv;
+                }
+            }
+        }
+
+        vec![Tensor::new(&grad_in, &[b, s, h])]
+    }
+
+    fn name(&self) -> &'static str {
+        "MaskedMeanPoolBackward"
+    }
+}
+
+/// Gradient function for row-wise L2 normalization with an epsilon floor.
+///
+/// Obligation: OBLIG-ENC-03 L2 normalization, contract
+/// `setfit-encoder-conformance-v1`, equation `l2_normalize_rows`.
+///
+/// Forward: `y[b] = x[b] / max(||x[b]||_2, eps)`.
+///
+/// # The derivative is PIECEWISE, and the two branches are different functions
+///
+/// With `n = ||x_row||_2` and `d = max(n, eps)`:
+///
+/// ```text
+/// n >  eps :  dy/dx = (I - y yᵀ) / n     # d = n depends on x
+/// n <= eps :  dy/dx = I / eps            # d is a CONSTANT
+/// ```
+///
+/// Above the clamp the denominator is itself a function of `x`, and
+/// differentiating it through the quotient rule is what produces the `y yᵀ`
+/// projection term. Below the clamp the denominator is the literal constant
+/// `eps`: the map is the plain linear scaling `x ↦ x / eps`, and the projection
+/// term does not exist. Applying `(I - y yᵀ)/n` there is not a loose
+/// approximation — it is the derivative of a function that is not being
+/// evaluated, and at small `n` it inflates the gradient by a factor of
+/// `eps / n`, which is unbounded.
+///
+/// That error is **invisible to any finite-difference test that never visits
+/// the clamped branch**, which is every FD test written against well-scaled
+/// embeddings. `tests_normalize_backward.rs` therefore carries a dedicated
+/// below-clamp gradcheck, a boundary case at `n == eps`, and a mixed-branch
+/// batch.
+///
+/// # Why the RAW norm is stored
+///
+/// The branch must be the one the FORWARD took. The clamped output carries no
+/// record of which side it came from — a clamped row and an unclamped row are
+/// both just rows of numbers — so re-deriving the decision from `y` alone is
+/// impossible. `norms` holds the raw `n` per row and the identical `n > eps`
+/// comparison is re-taken here.
+pub(crate) struct L2NormalizeRowsBackward {
+    /// The normalized output `y` (shape `[batch, hidden]`).
+    pub(crate) output: Tensor,
+    /// RAW per-row L2 norm, BEFORE the epsilon floor was applied.
+    pub(crate) norms: Vec<f32>,
+    /// The epsilon floor the forward was called with.
+    pub(crate) eps: f32,
+    pub(crate) batch: usize,
+    pub(crate) hidden: usize,
+}
+
+impl GradFn for L2NormalizeRowsBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let g = grad_output.data();
+        let y = self.output.data();
+        let (b, h) = (self.batch, self.hidden);
+        let mut grad_in = vec![0.0f32; b * h];
+
+        for row in 0..b {
+            let base = row * h;
+            let n = self.norms[row];
+
+            if n > self.eps {
+                // ABOVE the clamp — projected form: (g - y·<g,y>) / n.
+                let mut dot = 0.0f64;
+                for j in 0..h {
+                    dot += f64::from(g[base + j]) * f64::from(y[base + j]);
+                }
+                let inv_n = 1.0f64 / f64::from(n);
+                for j in 0..h {
+                    grad_in[base + j] =
+                        ((f64::from(g[base + j]) - f64::from(y[base + j]) * dot) * inv_n) as f32;
+                }
+            } else {
+                // AT or BELOW the clamp — the denominator is the constant eps,
+                // so there is NO projection term. Deliberately not a "small n"
+                // special case of the branch above: it is a different function.
+                let inv_eps = 1.0f64 / f64::from(self.eps);
+                for j in 0..h {
+                    grad_in[base + j] = (f64::from(g[base + j]) * inv_eps) as f32;
+                }
+            }
+        }
+
+        vec![Tensor::new(&grad_in, &[b, h])]
+    }
+
+    fn name(&self) -> &'static str {
+        "L2NormalizeRowsBackward"
+    }
+}
+
+/// Gradient function for row-wise cosine similarity with per-factor epsilon
+/// floors.
+///
+/// Obligation: OBLIG-ENC-06 pair loss, contract
+/// `setfit-encoder-conformance-v1`, equation `cosine_similarity_rows`.
+///
+/// Forward: `s[r] = <a[r], b[r]> / (max(n_a, eps) * max(n_b, eps))`.
+///
+/// # Two independent branch decisions, not one
+///
+/// Each norm is clamped separately, so with `d_a = max(n_a, eps)` and
+/// `d_b = max(n_b, eps)`:
+///
+/// ```text
+/// n_a >  eps :  ds/da_i = ( b_i/d_b - s * a_i/n_a ) / n_a
+/// n_a <= eps :  ds/da_i =   b_i / (eps * d_b)
+/// ```
+///
+/// and symmetrically for `b`. Above the clamp `d_a` is a function of `a`, and
+/// differentiating it is what produces the `s * a_i/n_a` projection term; below
+/// the clamp `d_a` is the literal constant `eps` and that term does not exist.
+/// Crucially the decisions do NOT couple: `a`'s branch changes only `a`'s
+/// gradient. All four combinations are reachable and all four are covered in
+/// `tests_similarity_backward.rs`.
+///
+/// # Both inputs, always
+///
+/// This backward returns TWO gradients, in the order the inputs were recorded.
+/// Dropping the second would freeze one branch of a siamese encoder while the
+/// loss still fell — the failure mode is a slow, plausible-looking training run
+/// rather than a crash, which is why the gradchecks assert both sides by name.
+///
+/// When `a` and `b` are the same tensor the graph accumulates both
+/// contributions into one entry, which is the correct total derivative of
+/// `s(a, a)`.
+pub(crate) struct CosineSimilarityBackward {
+    pub(crate) a: Tensor,
+    pub(crate) b: Tensor,
+    /// The forward output `s`, shape `[batch]`.
+    pub(crate) similarity: Tensor,
+    /// RAW per-row norms of `a`, BEFORE the epsilon floor.
+    pub(crate) norms_a: Vec<f32>,
+    /// RAW per-row norms of `b`, BEFORE the epsilon floor.
+    pub(crate) norms_b: Vec<f32>,
+    pub(crate) eps: f32,
+    pub(crate) batch: usize,
+    pub(crate) hidden: usize,
+}
+
+impl GradFn for CosineSimilarityBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let g = grad_output.data();
+        let ad = self.a.data();
+        let bd = self.b.data();
+        let s = self.similarity.data();
+        let (n_rows, h) = (self.batch, self.hidden);
+        let eps = f64::from(self.eps);
+
+        let mut grad_a = vec![0.0f32; n_rows * h];
+        let mut grad_b = vec![0.0f32; n_rows * h];
+
+        for row in 0..n_rows {
+            let base = row * h;
+            let na = f64::from(self.norms_a[row]);
+            let nb = f64::from(self.norms_b[row]);
+            // Bind the clamp predicates ONCE per row. They are row-invariant, and the
+            // forward's branch choice must be re-taken exactly — expressing that as a
+            // single named value per operand makes the identity checkable by reading
+            // rather than by diffing two textually separate comparisons, and drops 2*h
+            // redundant compares per row.
+            let a_projected = self.norms_a[row] > self.eps;
+            let b_projected = self.norms_b[row] > self.eps;
+            let da = if a_projected { na } else { eps };
+            let db = if b_projected { nb } else { eps };
+            let sr = f64::from(s[row]);
+            let gr = f64::from(g[row]);
+
+            for j in 0..h {
+                let ai = f64::from(ad[base + j]);
+                let bi = f64::from(bd[base + j]);
+
+                // d s / d a_j
+                grad_a[base + j] = if a_projected {
+                    (gr * (bi / db - sr * ai / na) / na) as f32
+                } else {
+                    // Clamped: d_a is the constant eps, so no projection term.
+                    (gr * bi / (eps * db)) as f32
+                };
+
+                // d s / d b_j — its own branch, independent of a's.
+                grad_b[base + j] = if b_projected {
+                    (gr * (ai / da - sr * bi / nb) / nb) as f32
+                } else {
+                    (gr * ai / (eps * da)) as f32
+                };
+            }
+        }
+
+        vec![
+            Tensor::new(&grad_a, &[n_rows, h]),
+            Tensor::new(&grad_b, &[n_rows, h]),
+        ]
+    }
+
+    fn name(&self) -> &'static str {
+        "CosineSimilarityBackward"
+    }
+}
+
+/// Gradient function for the tensor-valued MSE reduction.
+///
+/// Obligation: OBLIG-ENC-06 pair loss, contract
+/// `setfit-encoder-conformance-v1`, equation `mse_loss`.
+///
+/// `L = (1/n) Σ (pred_i - target_i)²`, so `dL/dpred_i = 2(pred_i - target_i)/n`.
+///
+/// The target is stored as plain `f32` data rather than as a `Tensor`, so it
+/// cannot receive gradient by CONSTRUCTION rather than by convention — there is
+/// no id to record and nothing for the tape to route into.
+pub(crate) struct MseBackward {
+    pub(crate) pred: Tensor,
+    pub(crate) target: Vec<f32>,
+}
+
+impl GradFn for MseBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let p = self.pred.data();
+        let n = p.len();
+        // The forward guarantees n > 0 (an empty mean is rejected with a typed
+        // error before this struct is constructed), but a zero here would be a
+        // silent NaN rather than a loud one.
+        let scale = if n == 0 {
+            0.0f64
+        } else {
+            2.0 / n as f64 * f64::from(grad_output.data()[0])
+        };
+
+        let grad: Vec<f32> = (0..n)
+            .map(|i| ((f64::from(p[i]) - f64::from(self.target[i])) * scale) as f32)
+            .collect();
+
+        vec![Tensor::new(&grad, self.pred.shape())]
+    }
+
+    fn name(&self) -> &'static str {
+        "MseBackward"
+    }
+}
+
 // ============================================================================
 // Activation Functions
 // ============================================================================
@@ -426,6 +740,42 @@ impl GradFn for GeluBackward {
 
     fn name(&self) -> &'static str {
         "GeluBackward"
+    }
+}
+
+/// Gradient function for the EXACT (erf) GELU — `Tensor::gelu_exact`.
+///
+/// `d/dx [x * Phi(x)] = Phi(x) + x * phi(x)`, where
+/// `Phi(x) = 0.5 * (1 + erf(x/sqrt(2)))` and `phi(x) = exp(-x^2/2) / sqrt(2*pi)`.
+///
+/// Distinct from [`GeluBackward`], which differentiates the tanh APPROXIMATION.
+/// Computed in f64 and narrowed at store time, and `Phi` is evaluated as
+/// `0.5 * erfc(-x/sqrt(2))` to avoid the negative-tail cancellation that
+/// `1 + erf(x/sqrt(2))` suffers.
+///
+/// The local derivative does not depend on `grad_output`, and its `erfc` term is
+/// already evaluated by the forward pass, so [`Tensor::gelu_exact`] computes and
+/// stores it rather than re-running Cody's rational Chebyshev plus two `exp` calls
+/// per element here. Values are f64 and the arithmetic below is unchanged, so the
+/// emitted gradients are bit-identical to the recomputing form.
+pub(crate) struct GeluExactBackward {
+    /// `Phi(x) + x * phi(x)`, one entry per element of the forward input.
+    pub(crate) local_grad: Vec<f64>,
+}
+
+impl GradFn for GeluExactBackward {
+    fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let grad_data: Vec<f32> = grad_output
+            .data()
+            .iter()
+            .zip(self.local_grad.iter())
+            .map(|(&g, &d)| (f64::from(g) * d) as f32)
+            .collect();
+        vec![Tensor::new(&grad_data, grad_output.shape())]
+    }
+
+    fn name(&self) -> &'static str {
+        "GeluExactBackward"
     }
 }
 

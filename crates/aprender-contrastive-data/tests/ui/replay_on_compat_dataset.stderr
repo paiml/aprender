@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/ui/replay_on_compat_dataset.rs:22:41
+   |
+22 |     let _ = Selection::replay(manifest, dataset, ledger);
+   |             -----------------           ^^^^^^^ expected `&PreparedDataset<Canonical>`, found `&PreparedDataset<Compatibility>`
+   |             |
+   |             arguments to this function are incorrect
+   |
+   = note: expected reference `&PreparedDataset<Canonical>`
+              found reference `&PreparedDataset<Compatibility>`
+note: associated function defined here
+  --> src/select.rs
+   |
+   |     pub fn replay(
+   |            ^^^^^^

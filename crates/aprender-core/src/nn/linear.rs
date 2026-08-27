@@ -296,6 +296,28 @@ impl Module for Linear {
         }
     }
 
+    /// Leaf names `weight` / `bias`, mirroring the `Some`/`None` bias branch of
+    /// [`Module::parameters`] exactly — same arity, same order.
+    fn named_parameters(&self) -> Vec<(String, &Tensor)> {
+        match &self.bias {
+            Some(b) => vec![
+                ("weight".to_string(), &self.weight),
+                ("bias".to_string(), b),
+            ],
+            None => vec![("weight".to_string(), &self.weight)],
+        }
+    }
+
+    fn named_parameters_mut(&mut self) -> Vec<(String, &mut Tensor)> {
+        match &mut self.bias {
+            Some(b) => vec![
+                ("weight".to_string(), &mut self.weight),
+                ("bias".to_string(), b),
+            ],
+            None => vec![("weight".to_string(), &mut self.weight)],
+        }
+    }
+
     fn refresh_caches(&mut self) {
         // Recompute cached transposed weight after parameters were modified
         self.weight_t = Some(self.weight.transpose());

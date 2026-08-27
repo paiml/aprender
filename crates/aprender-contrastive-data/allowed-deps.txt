@@ -1,0 +1,86 @@
+# D-04 BYTES BOUNDARY — POSITIVE dependency allowlist for aprender-contrastive-data.
+#
+# This file is the source of truth for `make contrastive-data-boundary`. That target
+# resolves the crate's NORMAL dependency closure
+#
+#     cargo tree -p aprender-contrastive-data -e normal --prefix none --no-dedupe
+#
+# takes the first whitespace field of every non-empty line, sorts unique, and requires
+# the result to be a SUBSET of the names below. Anything in the resolved closure that is
+# absent here FAILS the gate.
+#
+# Why a positive allowlist and not a deny-list. A deny-list ("must not contain ureq,
+# tokio, arrow, memmap2, aws-*") only ever catches the hazards someone already thought
+# of. It passes silently the day a new dependency arrives under a name nobody enumerated
+# — which is precisely the supply-chain case the boundary exists to catch. With an
+# allowlist, a new transitive dependency fails by DEFAULT and a human has to look at it
+# and add a line. That review is the control; this file is its record.
+#
+# `-e normal` deliberately excludes dev-dependencies, so `proptest` and `trybuild` are
+# correctly absent: they are not in the closure a downstream consumer inherits.
+#
+# Reviewed 2026-08-08 against the resolved closure (28 packages). Provenance of each:
+#
+#   direct (declared in Cargo.toml)
+#     aprender-contrastive-data ... the crate itself (cargo tree names the root)
+#     aprender-rand ............... D-20 counter-based Philox; lib name `trueno_rand`
+#     provable-contracts-macros ... #[contract] annotations (proc-macro, compile-time)
+#     serde, serde_json ........... canonical JSONL + manifest serialization
+#     sha2 ........................ content hashes, fingerprints, manifest digests
+#     thiserror ................... the typed error surface
+#     unicode-normalization ....... NFC step of the `nfc-trim-ws-v1` normalized hash
+#
+#   transitive, proc-macro toolchain (compile-time only, no runtime surface)
+#     proc-macro2, quote, syn, unicode-ident
+#     serde_derive, thiserror-impl
+#
+#   transitive, serde/serde_json runtime
+#     serde_core, itoa, memchr, zmij   (zmij is serde_json 1.0.150's float formatter)
+#
+#   transitive, sha2 / RustCrypto
+#     digest, block-buffer, crypto-common, generic-array, typenum
+#     cfg-if, cpufeatures, libc        (libc arrives ONLY via cpufeatures' CPU-feature
+#                                       detection for the SHA-2 fast path; it is not used
+#                                       for filesystem or socket access by this crate,
+#                                       and the src/-wide symbol ban makes that checkable
+#                                       rather than merely stated)
+#
+#   transitive, unicode-normalization
+#     tinyvec, tinyvec_macros
+#
+# NOT present, and must never become present: ureq, reqwest, hyper, tokio, arrow,
+# parquet, memmap2, tempfile, aws-*, or anything else filesystem-, network-, or
+# async-shaped. Adding one is a contract change, not a dependency bump.
+aprender-contrastive-data
+aprender-rand
+block-buffer
+cfg-if
+cpufeatures
+crypto-common
+digest
+generic-array
+itoa
+libc
+memchr
+proc-macro2
+# The `#[contract]` derive. `provable-contracts-macros` is the workspace
+# dependency KEY; `package = "aprender-contracts-macros"` is the crate, and the
+# crate name is what `cargo tree` prints — so the key was never going to match.
+# This is a name correction, not a widening: the reviewed decision (this crate
+# may depend on the contracts macro crate) is unchanged.
+aprender-contracts-macros
+quote
+serde
+serde_core
+serde_derive
+serde_json
+sha2
+syn
+thiserror
+thiserror-impl
+tinyvec
+tinyvec_macros
+typenum
+unicode-ident
+unicode-normalization
+zmij
