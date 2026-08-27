@@ -990,6 +990,22 @@ jobs:
       # (#2676, closing the open half of #2647).
       - name: llama.cpp comparator pin discriminates
         run: bash scripts/check_llama_pin.sh
+      # PERF-019 / I-15. The pin above says WHICH llama.cpp; this says WHICH
+      # BINARY of it may be driven. 4.4.8/X7: llama-bench does not separate PP
+      # from TG under concurrent load, so a ratio built from it compares two
+      # CLIENTS with two servers attached rather than two servers. The rule is
+      # one client -- `apr test llm bench` -- against llama-server on both
+      # sides, which is what scripts/parity_host_receipt.sh already does.
+      #
+      # The tree was already clean when this landed; the guard is what keeps it
+      # clean. Neither existing guard covered it: check_no_competing_harnesses
+      # requires a file to ALSO compute a rate, and parity_host_receipt.sh
+      # computes none, so a llama-bench call added there stayed green (rc=0)
+      # with the defect in place.
+      - name: Comparator is not driven by llama-bench (I-15)
+        run: bash scripts/check_comparator_one_client.sh
+      - name: One-client guard can still go RED (case table)
+        run: bash scripts/check_comparator_one_client.sh --selftest
       # An unstated knob is a silent degree of freedom: it becomes whatever
       # each side defaults to, and the difference lands in the ratio wearing
       # the label of a performance result (#2677).
