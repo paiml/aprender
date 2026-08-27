@@ -104,6 +104,65 @@ pub struct CanonicalDeclarations {
     pub label_names: Vec<String>,
 }
 
+impl CanonicalDeclarations {
+    /// Refuse a declaration whose per-split label maps disagree with the shared one.
+    ///
+    /// Rows are validated against `train`/`validation`/`test`'s own `label_names`, but it
+    /// is `self.label_names` that reaches the dataset fingerprint, the stored map and
+    /// `SelectionPayload::label_names`. Without this check the two can disagree, every
+    /// row still validates, and `Selection::replay` still passes — because replay compares
+    /// the payload against the same divergent map. The manifest then commits a label map
+    /// that contradicts the rows it describes, silently.
+    ///
+    /// # Errors
+    ///
+    /// [`ContrastiveDataError::DeclaredLabelMapMismatch`] naming the first split that
+    /// diverges, in declaration order.
+    pub fn check_label_maps_agree(&self) -> Result<(), ContrastiveDataError> {
+        for (split, decl) in [
+            ("train", &self.train),
+            ("validation", &self.validation),
+            ("test", &self.test),
+        ] {
+            if decl.label_names != self.label_names {
+                return Err(ContrastiveDataError::DeclaredLabelMapMismatch {
+                    split: split.to_string(),
+                    shared: self.label_names.clone(),
+                    got: decl.label_names.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+impl CompatibilityDeclarations {
+    /// Refuse a declaration whose per-split label maps disagree with the shared one.
+    ///
+    /// The compatibility profile's counterpart to
+    /// [`CanonicalDeclarations::check_label_maps_agree`], for the same reason.
+    ///
+    /// # Errors
+    ///
+    /// [`ContrastiveDataError::DeclaredLabelMapMismatch`] naming the first split that
+    /// diverges, in declaration order.
+    pub fn check_label_maps_agree(&self) -> Result<(), ContrastiveDataError> {
+        for (split, decl) in [
+            ("train", &self.train),
+            ("compatibility_test", &self.compatibility_test),
+        ] {
+            if decl.label_names != self.label_names {
+                return Err(ContrastiveDataError::DeclaredLabelMapMismatch {
+                    split: split.to_string(),
+                    shared: self.label_names.clone(),
+                    got: decl.label_names.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Per-split declarations for the compatibility profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompatibilityDeclarations {
@@ -212,6 +271,7 @@ impl PreparedDataset<Canonical> {
         decls: &CanonicalDeclarations,
         ledger: &mut AccessLedger,
     ) -> Result<Self, ContrastiveDataError> {
+        decls.check_label_maps_agree()?;
         let train = Split::<Train>::from_rows(train, &decls.train)?;
         let validation = Split::<Validation>::from_rows(validation, &decls.validation)?;
         let test = Split::<Test>::from_rows(test, &decls.test)?;
@@ -401,6 +461,7 @@ impl PreparedDataset<Compatibility> {
         decls: &CompatibilityDeclarations,
         ledger: &mut AccessLedger,
     ) -> Result<Self, ContrastiveDataError> {
+        decls.check_label_maps_agree()?;
         let train = Split::<Train>::from_rows(train, &decls.train)?;
         let compatibility_test =
             Split::<CompatibilityTest>::from_rows(compatibility_test, &decls.compatibility_test)?;
@@ -854,5 +915,133 @@ mod prepared_tests {
             err,
             ContrastiveDataError::InvalidClassCounts { .. }
         ));
+    }
+
+    /// A REVERSED shared map is the dangerous case, because nothing else is wrong:
+    /// every row validates against its own split map, the counts agree, and — before
+    /// this gate — `Selection::replay` PASSED, since replay compares the payload
+    /// against the same reversed map the fingerprint committed. The corruption is a
+    /// silent relabelling of every class downstream, with no red anywhere.
+    #[test]
+    fn prepared_refuses_a_shared_label_map_that_contradicts_the_split_maps() {
+        let mut decls = canonical_decls();
+        decls.label_names = vec![
+            "favor".to_string(),
+            "against".to_string(),
+            "none".to_string(),
+        ];
+        let mut ledger = AccessLedger::new();
+        let err = PreparedDataset::<Canonical>::from_labeled_rows(
+            train_rows(),
+            validation_rows(),
+            test_rows(),
+            &decls,
+            &mut ledger,
+        )
+        .expect_err("a shared map contradicting the split maps must be refused");
+        // Names the FIRST divergent split in declaration order, and carries both maps
+        // so the caller can see which one it got wrong.
+        match err {
+            ContrastiveDataError::DeclaredLabelMapMismatch { split, shared, got } => {
+                assert_eq!(split, "train");
+                assert_eq!(shared[0], "favor");
+                assert_eq!(got[0], "none");
+            }
+            other => panic!("expected DeclaredLabelMapMismatch, got {other:?}"),
+        }
+    }
+
+    /// The divergence is caught wherever it sits, not only on the first split, and the
+    /// error names the split that actually diverges.
+    #[test]
+    fn prepared_names_the_split_whose_label_map_diverges() {
+        let mut decls = canonical_decls();
+        decls.test = SplitDeclaration {
+            expected_class_counts: vec![1, 1, 1],
+            label_names: vec![
+                "none".to_string(),
+                "against".to_string(),
+                "FAVOUR".to_string(),
+            ],
+        };
+        let mut ledger = AccessLedger::new();
+        let err = PreparedDataset::<Canonical>::from_labeled_rows(
+            train_rows(),
+            validation_rows(),
+            test_rows(),
+            &decls,
+            &mut ledger,
+        )
+        .expect_err("a divergent test map must be refused");
+        match err {
+            ContrastiveDataError::DeclaredLabelMapMismatch { split, .. } => {
+                assert_eq!(split, "test");
+            }
+            other => panic!("expected DeclaredLabelMapMismatch, got {other:?}"),
+        }
+    }
+
+    /// A shorter shared map is the broken-round-trip variant: `ClassBuckets` sizes from
+    /// the train map while `check_class_balance` sizes from the payload map, so the
+    /// crate would emit a manifest it cannot replay.
+    #[test]
+    fn prepared_refuses_a_shared_label_map_of_a_different_length() {
+        let mut decls = canonical_decls();
+        decls.label_names = vec!["none".to_string(), "against".to_string()];
+        let mut ledger = AccessLedger::new();
+        let err = PreparedDataset::<Canonical>::from_labeled_rows(
+            train_rows(),
+            validation_rows(),
+            test_rows(),
+            &decls,
+            &mut ledger,
+        )
+        .expect_err("a shared map of the wrong arity must be refused");
+        assert!(matches!(
+            err,
+            ContrastiveDataError::DeclaredLabelMapMismatch { .. }
+        ));
+    }
+
+    /// The compatibility door carries the same four-map hazard and the same gate.
+    #[test]
+    fn compatibility_refuses_a_shared_label_map_that_contradicts_the_split_maps() {
+        let mut decls = compatibility_decls();
+        decls.compatibility_test = SplitDeclaration {
+            expected_class_counts: decls.compatibility_test.expected_class_counts.clone(),
+            label_names: vec![
+                "favor".to_string(),
+                "against".to_string(),
+                "none".to_string(),
+            ],
+        };
+        let mut ledger = AccessLedger::new();
+        let err = PreparedDataset::<Compatibility>::from_labeled_rows(
+            train_rows(),
+            compatibility_rows(),
+            &decls,
+            &mut ledger,
+        )
+        .expect_err("a divergent compatibility map must be refused");
+        match err {
+            ContrastiveDataError::DeclaredLabelMapMismatch { split, .. } => {
+                assert_eq!(split, "compatibility_test");
+            }
+            other => panic!("expected DeclaredLabelMapMismatch, got {other:?}"),
+        }
+    }
+
+    /// THE CONTROL. The gate must not be satisfiable by refusing everything: the honest
+    /// corpus, whose four maps agree, still builds.
+    #[test]
+    fn prepared_accepts_declarations_whose_label_maps_agree() {
+        canonical_decls()
+            .check_label_maps_agree()
+            .expect("the honest corpus must pass");
+        compatibility_decls()
+            .check_label_maps_agree()
+            .expect("the honest compatibility corpus must pass");
+        let mut ledger = AccessLedger::new();
+        build_canonical(&mut ledger).expect("the honest corpus must still build");
     }
 }

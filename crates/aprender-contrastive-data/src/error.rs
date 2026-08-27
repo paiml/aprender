@@ -111,6 +111,25 @@ pub enum ContrastiveDataError {
         got: Vec<usize>,
     },
 
+    /// A per-split label map disagrees with the declaration's shared label map.
+    ///
+    /// The declaration carries one label map per split AND a shared one. Rows are
+    /// validated against the per-split map, while the shared map is what reaches the
+    /// fingerprint, the stored map and `SelectionPayload::label_names`. If the two
+    /// disagree, every row validates and the manifest still commits a map that
+    /// contradicts them, so the disagreement must be refused before any row is read.
+    #[error(
+        "{split} label map disagrees with the shared label map: shared {shared:?}, {split} {got:?}"
+    )]
+    DeclaredLabelMapMismatch {
+        /// Split role name whose declared map diverges.
+        split: String,
+        /// The shared label map the manifest would commit.
+        shared: Vec<String>,
+        /// The map that split's rows were validated against.
+        got: Vec<String>,
+    },
+
     /// The same row identifier appears twice inside one split.
     #[error("{split} contains duplicate id {id:?}")]
     DuplicateId {
