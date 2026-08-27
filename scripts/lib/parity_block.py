@@ -31,22 +31,67 @@ def _samples(path, key):
     return [r[key] for r in runs]
 
 
+def _runs(path):
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)["runs"]
+
+
+def _request_latencies(path):
+    """Raw per-REQUEST latencies, in run order (§4.4.5).
+
+    This block used to read the BenchmarkReport's request_details and keep only
+    per-run summaries, so the raw samples died at this boundary and no
+    downstream consumer could re-derive a threshold from a parity block. The
+    quantities beside them are per-RUN and none of them is a substitute.
+    """
+    out = []
+    for run in _runs(path):
+        out.extend(d["latency_ms"] for d in run.get("request_details", []))
+    return out
+
+
 def _side(binary, sha, klass, path, install_source=None, feature_set=None):
     prov = {"binary_path": binary, "binary_sha256": sha,
             "resolution": "scripts/apr_bin.sh" if install_source else "scripts/llama_bin.sh",
             "compute_class": klass}
     if feature_set is not None:
         prov["feature_set"] = feature_set
+    runs = _runs(path)
     side = {"provenance": prov,
             "decode_tok_per_sec": _samples(path, "decode_tok_per_sec"),
             "prefill_tok_per_sec": _samples(path, "prefill_tok_per_sec"),
-            "ttft_p50_ms": _samples(path, "ttft_p50_ms")}
+            "ttft_p50_ms": _samples(path, "ttft_p50_ms"),
+            "samples_ms": _request_latencies(path),
+            # SGLang asserts completed == requested before it reads a
+            # throughput at all, and this block dropped both counts while
+            # reading the runs that hold them -- so a lane could report a ratio
+            # whose denominator had lost requests, and nothing downstream could
+            # tell. Carried on BOTH sides: a comparator that lost requests
+            # flatters the subject.
+            "requested": sum(r["total_requests"] for r in runs),
+            "completed": sum(r["successful"] for r in runs)}
     if install_source:
         side["install_source"] = install_source
     return side
 
 
 BANDS_DEFAULT = (1, 4, 8, 16)
+
+
+def _band_side(path):
+    """One side of one band: the two metrics, plus the counts SGLang asserts on.
+
+    The counts were dropped here while the runs holding them were being read, so
+    a band could report a ratio whose denominator had lost requests and nothing
+    downstream could tell. Carried on BOTH sides: a comparator that loses
+    requests flatters the subject.
+    """
+    runs = _runs(path)
+    return {"aggregate_tok_per_sec": _samples(path, "tokens_per_sec"),
+            "decode_tok_per_sec": _samples(path, "decode_tok_per_sec"),
+            "tokens_total": sum(r["completion_tokens_total"] for r in runs),
+            "requested": sum(r["total_requests"] for r in runs),
+            "completed": sum(r["successful"] for r in runs)}
 
 
 def _band_from(name, c, work):
@@ -56,10 +101,8 @@ def _band_from(name, c, work):
     if not (os.path.exists(a) and os.path.exists(l)):
         return None
     band = {"concurrency": c,
-            "subject": {"aggregate_tok_per_sec": _samples(a, "tokens_per_sec"),
-                        "decode_tok_per_sec": _samples(a, "decode_tok_per_sec")},
-            "comparator": {"aggregate_tok_per_sec": _samples(l, "tokens_per_sec"),
-                           "decode_tok_per_sec": _samples(l, "decode_tok_per_sec")}}
+            "subject": _band_side(a),
+            "comparator": _band_side(l)}
     ok = True
     for metric in ("aggregate_tok_per_sec", "decode_tok_per_sec"):
         ratio = (statistics.median(band["subject"][metric])

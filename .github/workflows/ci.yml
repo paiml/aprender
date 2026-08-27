@@ -995,6 +995,29 @@ jobs:
       # the label of a performance result (#2677).
       - name: Benchmark fairness protocol is complete
         run: bash scripts/check_bench_protocol.sh
+      # PERF-004. scripts/perf_gate.sh read a receipt schema NOTHING in the tree
+      # wrote: four real artifacts all returned rc=1 and the only input that
+      # passed was the gate's own synthetic fixture. The tempting repair is to
+      # default the missing fields, which would hand-assign five numbers no
+      # instrument produces. scripts/perf-receipt-fields.yaml classifies every
+      # field the gate reads as PRODUCED, DERIVED, POLICY or UNMEASURED, and
+      # this holds the classification to the tree in both directions -- a new
+      # unclassified requirement, and an entry whose producer has since been
+      # deleted, are each a FAIL.
+      - name: Every field the perf gate reads has a producer or a named owner
+        run: bash scripts/check_perf_receipt_fields_have_producers.sh
+      - name: Schema-map guard can still go RED (case table + 5 mutations)
+        run: bash scripts/check_perf_receipt_fields_have_producers.sh --self-test
+      # The converter that closes the loop, end to end: a BenchmarkReport this
+      # repo can actually produce reaches a verdict, and what remains failing is
+      # the UNMEASURED bucket BY NAME rather than a schema error.
+      - name: Receipt converter round-trips into a gate verdict
+        run: python3 scripts/lib/perf_receipt.py --selftest
+      # NOT a second `perf_gate.sh --selftest` step. This commit was authored
+      # before #2709 landed, and carried its own copy; two identically-scoped
+      # invocations under two names is how a check comes to look twice as
+      # covered as it is. The case table runs once, above, as "Perf gate can
+      # still discriminate".
       # The deepest check in the surface sweep -- real generation through
       # /v1/chat/completions -- had never executed once: the probe binary was
       # built without --features llm (clap advertises `llm` regardless, only the

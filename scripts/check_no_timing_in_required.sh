@@ -93,6 +93,7 @@ check_llama_pin.sh
 check_no_fabricated_baselines.sh
 check_no_timing_in_required.sh
 check_perf_claims_cite_receipts.sh
+check_perf_receipt_fields_have_producers.sh
 "
 # check_perf_claims_cite_receipts.sh (PERF-010) matches `check_*perf*.sh` and
 # turned this guard RED the moment the file appeared — verified before wiring
@@ -106,6 +107,11 @@ check_perf_claims_cite_receipts.sh
 # be actively wrong: that list BANS a guard from the required workflows, and
 # APR-PERF-GATE-001 §4.1 puts the claim guards in the merge phase precisely
 # because they are text-only and deterministic.
+# check_perf_receipt_fields_have_producers.sh matched on `perf`, and asserts no
+# duration of any kind: it reads a YAML classification and the text of two
+# reader scripts. Its one timing-shaped token is the word `timeouts` inside a
+# comment, naming a RECEIPT FIELD rather than a bound. Verified by reading it
+# rather than by trusting the name, which is what the heuristic above cannot do.
 
 unclassified=""
 while IFS= read -r f; do
