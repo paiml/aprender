@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/ui/select_on_compat_dataset.rs:20:37
+   |
+20 |     let _ = FewShotSelector::select(dataset, cfg, ledger);
+   |             ----------------------- ^^^^^^^ expected `&PreparedDataset<Canonical>`, found `&PreparedDataset<Compatibility>`
+   |             |
+   |             arguments to this function are incorrect
+   |
+   = note: expected reference `&PreparedDataset<Canonical>`
+              found reference `&PreparedDataset<Compatibility>`
+note: associated function defined here
+  --> src/select.rs
+   |
+   |     pub fn select(
+   |            ^^^^^^

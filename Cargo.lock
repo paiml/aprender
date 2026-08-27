@@ -516,6 +516,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-contrastive-data"
+version = "0.64.0"
+dependencies = [
+ "aprender-contracts-macros",
+ "aprender-rand",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "trybuild",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "aprender-core"
 version = "0.64.0"
 dependencies = [
