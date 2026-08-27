@@ -32,8 +32,21 @@
 set -euo pipefail
 
 BASELINE="scripts/claim_literal_baseline.txt"
+MODE="${1:-}"
 rc=0
-printf -- '--- claim literals on user-facing surfaces ------------------------\n'
+# Progress lines go to stderr under --list so stdout is the list and nothing else.
+note() {
+    case "$MODE" in --list|--explain) printf '%s\n' "$1" >&2 ;; *) printf '%s\n' "$1" ;; esac
+}
+# AN UNRECOGNISED ARGUMENT IS AN ERROR, NOT A CHECK RUN. `--selftest` mistyped
+# in ci.yml would otherwise fall through to the full scan and go green, and the
+# job would report that the case tables ran when they never did.
+case "$MODE" in
+    ''|--selftest|--list|--explain) : ;;
+    *) printf 'usage: %s [--selftest | --list | --explain <hash16|path>]\n' "$0" >&2
+       exit 2 ;;
+esac
+note '--- claim literals on user-facing surfaces ------------------------'
 
 # A comparison against a named competitor, or a throughput figure, inside a
 # string that is PRINTED. `\bx\b` after a number is the ratio idiom.
@@ -137,6 +150,83 @@ causal_literals_in() {
     ' "$@" 2>/dev/null | grep -E "$ATTRIBUTION_RE" | grep -vE "$TARGET_RE"
 }
 
+# ---------------------------------------------------------------------------
+# THE BASELINE KEY: file + hash of the claim TEXT. It used to be FILE:LINE.
+#
+# WHY IT CHANGED. PERF-006 added `pub mod andon;` and a doc comment near the top
+# of crates/aprender-serve/src/lib.rs. It added no claim. This guard went
+# rc=1 "known: 316 new: 2" against rc=0 "known: 318 new: 0" on base, because two
+# baselined claims further down the file MOVED, their FILE:LINE keys stopped
+# matching, and the guard reported them as newly written. It was the third
+# line-keyed-ledger false red in one day (check_dogfood_coverage.sh G2.1 twice).
+#
+# A guard that reds for a reason unrelated to its property is a guard people
+# learn to route around, which is the failure mode this epic exists to prevent.
+# A line NUMBER is not part of the property. The claim text is the property.
+#
+# WHAT THE KEY DOES AND DOES NOT SURVIVE — the tradeoff, stated:
+#
+#   survives   inserting/deleting lines anywhere in the file; reindenting the
+#              claim; re-aligning a markdown table row (whitespace runs are
+#              collapsed before hashing).
+#   RE-KEYS    editing the claim TEXT, including changing one digit. This is
+#              deliberate and is the ratchet: "1.9x Ollama" edited in place to
+#              "2.9x Ollama" is a DIFFERENT claim, hashes differently, and reds
+#              as new. It cannot hide behind the entry it replaced.
+#              The cost is that a cosmetic edit to a baselined line — fixing a
+#              typo, rewrapping prose — also reds and needs the entry re-keyed.
+#              That is the price of not letting a number change ride for free,
+#              and it is paid on the rarer event.
+#   GAMEABLE?  Editing the text to dodge the key makes the guard LOUDER, never
+#              quieter: any edited claim leaves the baselined key unmatched
+#              (reported as shrinkable) and arrives as a new key (rc=1). There
+#              is no text edit that turns a red into a green.
+#
+# THE SAME CLAIM TWICE IN ONE FILE. Two identical claim lines in one file
+# collapse to ONE key, so the entry carries a COUNT and the guard compares
+# multiplicity. Without it the second copy would ride in free on the first — a
+# genuinely new claim hidden behind an existing key, which is precisely what a
+# ratchet may not permit. Occurrences beyond the baselined count are NEW; fewer
+# than the baselined count is a shrink, and is REPORTED so the entry gets pruned.
+# The tradeoff: within one file, the guard cannot say WHICH copy is new, only
+# that there is one more than was recorded. Between two identical copies that
+# distinction has no meaning.
+# ---------------------------------------------------------------------------
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    printf 'FAIL  bash >= 4 required (associative arrays, mapfile); found %s\n' \
+           "${BASH_VERSION:-unknown}"
+    exit 2
+fi
+
+HASHER=()
+if command -v sha256sum >/dev/null 2>&1; then HASHER=(sha256sum)
+elif command -v shasum >/dev/null 2>&1; then HASHER=(shasum -a 256)
+fi
+if [ "${#HASHER[@]}" -eq 0 ]; then
+    # NOT a soft fallback. A weaker key would silently change which claims the
+    # ratchet recognises, and every entry would read as new or as stale.
+    printf 'FAIL  no sha256 tool (sha256sum / shasum) — the baseline key cannot\n'
+    printf '      be computed, so the ratchet cannot be evaluated.\n'
+    exit 2
+fi
+
+# Tabs to spaces, collapse runs, trim. Whitespace is layout, not claim.
+claim_norm() {
+    local s="${1//$'\t'/ }"
+    while [ "$s" != "${s//  / }" ]; do s="${s//  / }"; done
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+# claim_key <file> <matched line text>  ->  "<file>\t<16 hex>"
+# The file stays in the key: moving a claim into a different file is a real
+# change of surface, and should be re-baselined deliberately.
+claim_key() {
+    local h
+    h=$(claim_norm "$2" | "${HASHER[@]}")
+    printf '%s\t%s' "$1" "${h:0:16}"
+}
+
 if [ "${1:-}" = "--selftest" ]; then
     t=0; f=0
     check() { # check <expect match|nomatch> <line>
@@ -211,6 +301,39 @@ if [ "${1:-}" = "--selftest" ]; then
     fi
     printf '  %s causal case(s), %s failure(s)\n' "$ct" "$cf"
 
+    # KEY MECHANICS. The regex table above says what is a claim; this one says
+    # what makes two sightings of a claim the SAME baseline entry. The bug this
+    # replaced was entirely in the key, not in the patterns, and no case in the
+    # table above could have caught it.
+    printf -- '--- key table (baseline key is CONTENT, never FILE:LINE) ---\n'
+    kcheck() { # kcheck <same|diff> <label> <fileA> <textA> <fileB> <textB>
+        local want="$1" label="$2" a b got
+        a=$(claim_key "$3" "$4"); b=$(claim_key "$5" "$6")
+        if [ "$a" = "$b" ]; then got=same; else got=diff; fi
+        t=$((t+1))
+        if [ "$got" = "$want" ]; then printf '  ok    %-4s %s\n' "$want" "$label"
+        else printf '  FAIL  want %-4s got %-4s %s\n' "$want" "$got" "$label"; f=$((f+1)); fi
+    }
+    # MUST BE THE SAME KEY: the claim did not change, only where/how it sits.
+    kcheck same 'reindented (the line-drift bug)' \
+        'a/x.rs' '    println!("851.8 tok/s = 2.93x Ollama");' \
+        'a/x.rs' '        println!("851.8 tok/s = 2.93x Ollama");'
+    kcheck same 'trailing whitespace' \
+        'a/x.rs' 'println!("851.8 tok/s = 2.93x Ollama");' \
+        'a/x.rs' 'println!("851.8 tok/s = 2.93x Ollama");   '
+    kcheck same 'markdown table re-aligned' \
+        'b/t.md' '| large | 114.5 tok/s | 2.9x FASTER |' \
+        'b/t.md' '| large    |   114.5 tok/s | 2.9x FASTER    |'
+    # MUST BE A DIFFERENT KEY: a different claim may not inherit an entry.
+    kcheck diff 'one digit changed in place' \
+        'a/x.rs' 'println!("851.8 tok/s = 2.93x Ollama");' \
+        'a/x.rs' 'println!("851.8 tok/s = 3.93x Ollama");'
+    kcheck diff 'comparator swapped' \
+        'a/x.rs' 'println!("851.8 tok/s = 2.93x Ollama");' \
+        'a/x.rs' 'println!("851.8 tok/s = 2.93x vLLM");'
+    kcheck diff 'same claim, different file' \
+        'a/x.rs' 'println!("851.8 tok/s = 2.93x Ollama");' \
+        'a/y.rs' 'println!("851.8 tok/s = 2.93x Ollama");'
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
     [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] || exit 1
     exit 0
@@ -268,7 +391,7 @@ if [ "${#SRC[@]}" -eq 0 ]; then
     printf 'FAIL  the file universe is EMPTY — a guard over no files is vacuous\n'
     exit 1
 fi
-printf 'universe: %s shipped source file(s)\n' "${#SRC[@]}"
+note "universe: ${#SRC[@]} shipped source file(s)"
 
 hits=$(grep -InE "$CLAIM_RE" "${SRC[@]}" 2>/dev/null \
        | grep -E "$RATIO_RE|$TPUT_RE|$DIAGNOSIS_RE" | grep -vE "$TARGET_RE" || true)
@@ -313,33 +436,123 @@ fi
 all=$(printf '%s\n%s\n%s\n%s\n' "$hits" "$dochits" "$mdhits" "$causalhits" \
       | grep -v '^$' | awk -F: '!seen[$1":"$2]++' || true)
 
-known=0
-new=0
+# PASS 1 — key every sighting. ONE SOURCE LINE IS ONE CLAIM: `all` concatenates
+# three detectors and a line can match two of them (a fenced `println!` inside a
+# .md is seen by both the Rust pass and the markdown pass). Three lines in this
+# tree do exactly that. Counting them twice would make the baseline multiplicity
+# describe the detector rather than the tree, and would then break whenever a
+# detector changed.
+declare -A seen_line=()
+declare -A obs=()
+KEYS=(); TEXTS=()
 while IFS= read -r line; do
     [ -n "$line" ] || continue
-    loc="${line%%:*}:$(printf '%s' "$line" | cut -d: -f2)"
-    if [ -f "$BASELINE" ] && grep -qxF "$loc" "$BASELINE"; then
+    file="${line%%:*}"; rest="${line#*:}"
+    lineno="${rest%%:*}"; text="${rest#*:}"
+    if [ -n "${seen_line["$file:$lineno"]:-}" ]; then continue; fi
+    seen_line["$file:$lineno"]=1
+    key=$(claim_key "$file" "$text")
+    obs["$key"]=$(( ${obs["$key"]:-0} + 1 ))
+    KEYS+=("$key"); TEXTS+=("$line")
+done <<< "$all"
+
+# --list prints the CURRENT set in baseline format. It exists so the baseline is
+# regenerated by the guard that reads it, not by a bash one-off that re-derives
+# the key and drifts from it. It writes nothing: piping it over the baseline is
+# a blanket amnesty, and has to look like one in a diff.
+if [ "$MODE" = "--list" ]; then
+    if [ "${#obs[@]}" -gt 0 ]; then
+        for k in "${!obs[@]}"; do printf '%s\t%s\n' "$k" "${obs["$k"]}"; done | LC_ALL=C sort
+    fi
+    exit 0
+fi
+
+# --explain <hash|file> resolves a baseline key back to the line(s) it covers.
+# A hash is unreadable, and that is the one real cost of content-keying: without
+# this, a reviewer cannot tell what an entry protects. Nothing is written.
+if [ "$MODE" = "--explain" ]; then
+    want="${2:-}"
+    if [ -z "$want" ]; then
+        printf 'usage: %s --explain <hash16 or path fragment>\n' "$0" >&2; exit 2
+    fi
+    found=0; i=0
+    while [ "$i" -lt "${#KEYS[@]}" ]; do
+        case "${KEYS[$i]}" in
+            *"$want"*)
+                printf '%s\n' "${TEXTS[$i]}"
+                printf '  key %s\n' "$(printf '%s' "${KEYS[$i]}" | tr '\t' ' ')"
+                found=$((found + 1)) ;;
+        esac
+        i=$((i + 1))
+    done
+    if [ "$found" -eq 0 ]; then printf 'no current sighting matches: %s\n' "$want"; fi
+    exit 0
+fi
+
+# LOAD THE BASELINE. One entry per line: <file> TAB <hash16> TAB <count>.
+declare -A base_count=()
+if [ -f "$BASELINE" ]; then
+    while IFS= read -r bline; do
+        [ -n "$bline" ] || continue
+        case "$bline" in '#'*) continue ;; esac
+        bfile="${bline%%$'\t'*}"; brest="${bline#*$'\t'}"
+        bhash="${brest%%$'\t'*}"; bcount="${brest#*$'\t'}"
+        # A MALFORMED ENTRY IS LOUD. Skipping it quietly would drop a claim out
+        # of the recognised set, and the claim it covers would then read as new
+        # — a confusing red pointing at innocent code instead of at this file.
+        if [ "$bfile" = "$bline" ] \
+           || ! printf '%s' "$bhash" | grep -qE '^[0-9a-f]{16}$' \
+           || ! printf '%s' "$bcount" | grep -qE '^[1-9][0-9]*$'; then
+            printf 'FAIL  malformed baseline entry (want <file>TAB<hash16>TAB<count>): %s\n' \
+                   "$(printf '%s' "$bline" | cut -c1-120)"
+            rc=1; continue
+        fi
+        base_count["$bfile"$'\t'"$bhash"]=$bcount
+    done < "$BASELINE"
+fi
+
+# PASS 2 — compare multiplicity. The first N sightings of a key are the N that
+# were baselined; the N+1th is new.
+known=0
+new=0
+declare -A nth=()
+i=0
+while [ "$i" -lt "${#KEYS[@]}" ]; do
+    key="${KEYS[$i]}"
+    nth["$key"]=$(( ${nth["$key"]:-0} + 1 ))
+    if [ "${nth["$key"]}" -le "${base_count["$key"]:-0}" ]; then
         known=$((known + 1))
     else
-        printf 'FAIL  %s\n' "$(printf '%s' "$line" | cut -c1-150)"
+        printf 'FAIL  %s\n' "$(printf '%s' "${TEXTS[$i]}" | cut -c1-150)"
+        printf '      key %s\n' "$(printf '%s' "$key" | tr '\t' ' ')"
         new=$((new + 1)); rc=1
     fi
-done <<< "$all"
+    i=$((i + 1))
+done
 
 printf 'known (baselined, must shrink): %s   new: %s\n' "$known" "$new"
 
 # THE RATCHET. A baseline that may grow is a permission slip. Entries must be
 # removed as claims are deleted or derived; a new one requires editing this file.
-if [ -f "$BASELINE" ]; then
+# Shrinkage is REPORTED, not failed — deleting a claim must never red the build
+# that deleted it — but it is reported loudly enough that the entry gets pruned,
+# because a stale entry is a pre-authorised slot for that exact claim to return.
+if [ -f "$BASELINE" ] && [ "${#base_count[@]}" -gt 0 ]; then
     stale=0
-    while IFS= read -r loc; do
-        [ -n "$loc" ] || continue
-        case "$loc" in '#'*) continue ;; esac
-        case " $all " in *"$loc"*) : ;; *) stale=$((stale + 1)) ;; esac
-    done < "$BASELINE"
-    if [ "$stale" -gt 0 ]; then
-        printf 'REPORT %s baseline entry(ies) no longer match — prune them so the\n' "$stale"
-        printf '       ratchet cannot silently re-admit a claim at that location.\n'
+    shrunk=$(
+        for key in "${!base_count[@]}"; do
+            have=${obs["$key"]:-0}
+            want=${base_count["$key"]}
+            [ "$have" -lt "$want" ] || continue
+            printf '       %s  baselined %s, present %s\n' \
+                   "$(printf '%s' "$key" | tr '\t' ' ')" "$want" "$have"
+        done | LC_ALL=C sort
+    )
+    if [ -n "$shrunk" ]; then
+        stale=$(printf '%s\n' "$shrunk" | grep -c .)
+        printf 'REPORT %s baseline entry(ies) now cover fewer occurrences than recorded.\n' "$stale"
+        printf '       Prune them: a stale entry is a slot that claim may return into.\n'
+        printf '%s\n' "$shrunk"
     fi
 fi
 

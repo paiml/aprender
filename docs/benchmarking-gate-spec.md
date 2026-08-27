@@ -339,7 +339,7 @@ is a second methodology or a genuinely different subject (correctness vs perform
 | Producer sweeps bands; records `accel-absent` so the gate stays satisfiable | `scripts/parity_host_receipt.sh`, `scripts/lib/parity_block.py` |
 | `--gpu` fails loudly on a CPU-only build (Jidoka) | `crates/apr-cli/src/commands/serve/mod.rs` |
 | Zero-token and `completed == requested` preconditions | `crates/apr-cli/src/commands/test_llm.rs` |
-| Claim-literal guard + 8-case selftest + shrink-only baseline | `scripts/check_no_claim_literals.sh` |
+| Claim-literal guard; selftest ships a regex table AND a key table; shrink-only baseline keyed on file + claim hash, not on FILE:LINE, so inserting lines above a recorded claim cannot red it | `scripts/check_no_claim_literals.sh` |
 | llama.cpp pin resolver (3 defects fixed; sourcing it used to exit the shell) | `scripts/llama_bin.sh` |
 
 **Proof the gate now works:** fed the real 2026-08-25 data, every band FAILs
