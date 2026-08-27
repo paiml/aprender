@@ -16,7 +16,17 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Shrink-only. Lower it when you delete a harness; NEVER raise it.
-BASELINE=1
+#
+# RE-DERIVED TO 0. It was 1, measured with the old predicate that detected none
+# of the four harnesses it exists to keep deleted. A stale baseline is not a
+# harmless off-by-one here: with BASELINE=1, restoring any single harness gives
+# count=1, and `n > BASELINE` is false, so the guard reports OK. Fixing the
+# predicate alone left all three mutations GREEN — the baseline had to move too.
+#
+# 0 is the honest count on a clean tree after PERF-009: every competing harness
+# is deleted, and the three files that trip the predicate are allowlisted above
+# with their reasons. Any harness reappearing now gives count=1 > 0 and reds.
+BASELINE=0
 
 # Allowlisted, each with the reason it is not a competing definition.
 is_allowed() {
@@ -28,6 +38,24 @@ is_allowed() {
                                                      # this it matches itself and
                                                      # inflates the baseline by one,
                                                      # hiding a real harness
+    */check_no_fabricated_baselines.sh) return 0 ;;  # a GUARD, not a harness: its
+                                                     # must-match fixtures contain
+                                                     # `command -v llama-bench` and
+                                                     # OLLAMA_TIMEOUT_SECONDS on
+                                                     # purpose — that is what a
+                                                     # must-match fixture IS. Same
+                                                     # reason this detector exempts
+                                                     # itself, one line above.
+    */qwen-story.sh) return 0 ;;  # RETAINED BY SPEC, not overlooked.
+                                  # APR-PERF-GATE-001 v2.2 §9: "qwen-story —
+                                  # resolved. Two subjects, not two
+                                  # methodologies. Retained, runs at merge
+                                  # phase, shares the receipt schema and the
+                                  # comparator-required rule." It is a
+                                  # correctness/determinism story that happens
+                                  # to time itself; it derives no comparator
+                                  # ratio. If it ever computes one, delete this
+                                  # line rather than widening the predicate.
     */perf000_serialization_probe.sh) return 0 ;;  # PERF-000 falsifier: measures
                                                    # wall-clock scaling, derives no
                                                    # tok/s and no comparator ratio
@@ -35,8 +63,35 @@ is_allowed() {
   esac
 }
 
+# A fixed, world-writable path is both a symlink-attack surface and a collision
+# between two concurrent runs on the same box.
+COUNT_FILE="$(mktemp)"
+trap 'rm -f "$COUNT_FILE"' EXIT
+
 # A script qualifies only if it does BOTH.
-starts_server() { grep -qE "serve run|llama-server|ollama serve|vllm serve" "$1" 2>/dev/null; }
+#
+# THIS PREDICATE IS DERIVED FROM THE FOUR DELETED BLOBS, NOT FROM INTUITION, and
+# the first version was derived from intuition and therefore detected NONE of
+# them. Restoring scripts/gpu_2x_benchmark.sh verbatim
+# (`git show 64cb68177^:scripts/gpu_2x_benchmark.sh`, 171 lines) left this guard
+# at rc=0, `count=1 baseline=1 OK` — a guard whose whole purpose is keeping four
+# specific files deleted, blind to all four.
+#
+# What they actually invoke, read out of the blobs:
+#
+#   gpu_2x_benchmark.sh     ollama run                       + tok/s
+#   benchmark-2x-ollama.sh  apr run, curl POST /v1/          + tok/s, bc -l
+#   benchmark-matrix.sh     curl POST /v1/                   + tok/s, date +%s, bc -l
+#
+# The old pattern asked for `ollama serve`. Every one of them uses `ollama run`
+# or drives an already-running server over HTTP — which is the whole point of a
+# benchmark harness and the obvious thing to look for once you look at the
+# files instead of guessing. `llama-cli` and `llama-bench` are included because
+# §4.4.8 forbids driving the comparator with llama-bench at all, so a script
+# reaching for it is a competing harness by definition.
+starts_server() {
+  grep -qE "serve run|llama-server|llama-cli|llama-bench|ollama (serve|run)|vllm serve|apr run|curl[^|]*(/v1/|/api/generate)" "$1" 2>/dev/null
+}
 computes_rate() { grep -qE "date \+%s|tok/s|tokens?_per_sec|SECONDS" "$1" 2>/dev/null; }
 
 # UNIVERSE: tracked UNION working tree. A `git ls-files`-only universe gives an
@@ -59,13 +114,13 @@ scan() {
       found=$((found + 1))
     fi
   done < <(universe)
-  echo "$found" > /tmp/.cnch_count
+  echo "$found" > "$COUNT_FILE"
 }
 
 gate() {
   echo "=== competing benchmark harnesses (PERF-009 / H4) ==="
   scan "$ROOT"
-  local n; n=$(cat /tmp/.cnch_count)
+  local n; n=$(cat "$COUNT_FILE")
   echo "  count=$n baseline=$BASELINE"
   if [ "$n" -gt "$BASELINE" ]; then
     echo "FAIL: a new harness appeared. Measure through scripts/perf_gate.sh, or"
