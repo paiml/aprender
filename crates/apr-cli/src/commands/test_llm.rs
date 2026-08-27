@@ -115,13 +115,39 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
 
     print_report(&report);
 
-    if let Some(path) = args.output {
-        let json = serde_json::to_string_pretty(&report)
-            .map_err(|e| CliError::InvalidFormat(format!("serialising report: {e}")))?;
-        std::fs::write(path, json)?;
-        println!("\nreport written to {}", path.display());
-    }
+    // VALIDITY, THEN THE RECEIPT — in that order, inside `emit_report`, which
+    // exists so the order is a property of one function a test can execute.
+    emit_report(&report, args.output)?;
 
+    // A benchmark that detects a regression past its declared threshold and
+    // then exits 0 is a gate that cannot fail.
+    //
+    // This one runs AFTER the write on purpose: a regression is a policy
+    // verdict on numbers `emit_report` has already certified as a real
+    // measurement, and the receipt describing the regressed run is the
+    // evidence. Suppressing it would delete the finding.
+    let failed: Vec<&str> = report
+        .regressions
+        .iter()
+        .filter(|r| r.exceeds_threshold)
+        .map(|r| r.metric.as_str())
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(CliError::ValidationFailed(format!(
+            "regression past threshold in: {}",
+            failed.join(", ")
+        )))
+    }
+}
+
+/// Everything that decides whether this run produced a MEASUREMENT AT ALL.
+///
+/// `Ok(())` does not mean the run passed its gates. It means the numbers in the
+/// report describe the thing that was asked for, so that a gate applied to them
+/// is a gate applied to a measurement.
+fn check_measurement_validity(report: &BenchmarkReport) -> Result<()> {
     // MEASUREMENT VALIDITY BEFORE MEASUREMENT — adopted from SGLang, which
     // asserts `res["completed"] == num_prompts` before it reads a throughput at
     // all (test_bench_serving.py). A request that never completed contributes
@@ -178,21 +204,76 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
         )));
     }
 
-    // A benchmark that detects a regression past its declared threshold and
-    // then exits 0 is a gate that cannot fail.
-    let failed: Vec<&str> = report
-        .regressions
-        .iter()
-        .filter(|r| r.exceeds_threshold)
-        .map(|r| r.metric.as_str())
-        .collect();
-    if failed.is_empty() {
-        Ok(())
-    } else {
-        Err(CliError::ValidationFailed(format!(
-            "regression past threshold in: {}",
-            failed.join(", ")
-        )))
+    Ok(())
+}
+
+/// Write the receipt — and only for a run that earned one.
+///
+/// WRITE-AFTER-VALIDATE, and the ordering is the whole point. Until #2706 the
+/// write came FIRST and the validity assertions ran after it, so a run that
+/// exited non-zero still left a receipt-shaped JSON file on disk. Every
+/// consumer of that file then read it as a measurement:
+///
+///   · `scripts/parity_host_receipt.sh:104` and `:120` invoke this command with
+///     `--output` and end the line `|| true`, discarding the exit status by
+///     construction;
+///   · `scripts/lib/parity_block.py:56` and `:78` decide whether a band and a
+///     lane exist by `os.path.exists` on those paths, and `_samples` (`:27-31`)
+///     then reads `runs[]` without ever consulting a verdict.
+///
+/// So the artifact WAS the interface, and a failed benchmark could be fed into
+/// a published parity ratio — the fabricated-measurement class this epic exists
+/// to remove, sitting inside the epic's own instrument.
+///
+/// ABSENCE rather than a `"valid": false` marker, deliberately. A marker is
+/// only better if consumers read it, and neither consumer above opens the file
+/// to look for one; the flag would change nothing until every consumer changed
+/// too, which is a gate that cannot fail wearing a new field name. Absence is
+/// already load-bearing in the code that exists: a missing band makes
+/// `_band_from` return `None` while `_lane_from` still declares all four, and
+/// `bench_receipt.py:484-487` rejects that block with "an unmeasured band is
+/// not a passing band"; a missing lane side makes `_lane_from` refuse "half a
+/// comparison" (`parity_block.py:79`). The failure surfaces AT THE GATE instead
+/// of being laundered into a ratio.
+///
+/// A STALE receipt is removed for the same reason. Leaving the previous run's
+/// file at the path this run was told to write means the next consumer reads a
+/// measurement of a DIFFERENT run and cannot tell — a shadowed artifact is
+/// worse than a missing one.
+fn emit_report(report: &BenchmarkReport, output: Option<&Path>) -> Result<()> {
+    let verdict = check_measurement_validity(report);
+    let Some(path) = output else { return verdict };
+
+    if let Err(invalid) = verdict {
+        return Err(match discard_stale_receipt(path) {
+            Ok(true) => CliError::ValidationFailed(format!(
+                "{invalid}\n  discarded {} — it would have described a run that \
+                 produced no measurement",
+                path.display()
+            )),
+            Ok(false) => invalid,
+            Err(e) => CliError::ValidationFailed(format!(
+                "{invalid}\n  AND the stale receipt at {} could not be removed \
+                 ({e}), so it may still be read as a measurement of this run",
+                path.display()
+            )),
+        });
+    }
+
+    let json = serde_json::to_string_pretty(report)
+        .map_err(|e| CliError::InvalidFormat(format!("serialising report: {e}")))?;
+    std::fs::write(path, json)?;
+    println!("\nreport written to {}", path.display());
+    Ok(())
+}
+
+/// Remove a receipt this run is not entitled to write. `Ok(true)` means one was
+/// there; a path that was already clear is not an error.
+fn discard_stale_receipt(path: &Path) -> std::io::Result<bool> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
     }
 }
 
@@ -356,6 +437,124 @@ mod tests {
         let bad = dir.path().join("bad.json");
         std::fs::write(&bad, "{\"not\": \"a result\"}").expect("write");
         load_baseline(Some(&bad)).expect_err("an unparseable baseline must fail loudly");
+    }
+
+    // === #2706 — THE RECEIPT RULE ==========================================
+    //
+    // `--output` used to be written BEFORE the validity assertions ran, so a
+    // benchmark that exited non-zero still left a receipt-shaped JSON file on
+    // disk. The consumers of that path do not read the exit status
+    // (`scripts/parity_host_receipt.sh:104`, `:120` end in `|| true`) and do
+    // not read a verdict out of the file (`scripts/lib/parity_block.py:56`,
+    // `:78` gate on `os.path.exists`), so the artifact was the interface.
+    //
+    // MUTATION for the four tests below that pass an output path: in
+    // `emit_report`, hoist the write above `check_measurement_validity` — the
+    // pre-#2706 ordering. Verified 2026-08-27: the three no-artifact tests go
+    // RED (rc=101) and `a_valid_run_still_writes_the_receipt_its_consumer_reads`
+    // stays GREEN. That last one is the discrimination case — a change that
+    // simply stopped writing receipts would satisfy the other three.
+
+    /// A `BenchmarkReport` in the exact shape `--output` writes and
+    /// `parity_block.py::_samples` reads back.
+    fn report_json(failed: u64, avg_tok_per_req: f64) -> String {
+        let stat =
+            r#"{"mean":1.0,"stddev":0.1,"ci_95_lower":0.9,"ci_95_upper":1.1,"values":[1.0]}"#;
+        format!(
+            r#"{{"runs":[{{"total_requests":10,"successful":{successful},"failed":{failed},
+            "throughput_rps":2.0,"latency_p50_ms":100.0,"latency_p95_ms":120.0,
+            "latency_p99_ms":130.0,"ttft_p50_ms":30.0,"tokens_per_sec":50.0,
+            "avg_tok_per_req":{avg_tok_per_req},"itl_p50_ms":10.0,
+            "decode_tok_per_sec":100.0,"prefill_tok_per_sec":400.0,
+            "timestamp":"2026-08-27T00:00:00Z","runtime_name":"apr-cpu-c1",
+            "elapsed_secs":30.0,"concurrency":1}}],
+            "aggregate":{{"throughput_rps":{stat},"latency_p50":{stat},
+            "tokens_per_sec":{stat},"ttft_p50":{stat},"tpot_p50":{stat}}},
+            "regressions":[]}}"#,
+            successful = 10 - failed,
+        )
+    }
+
+    fn report(failed: u64, avg_tok_per_req: f64) -> BenchmarkReport {
+        serde_json::from_str(&report_json(failed, avg_tok_per_req))
+            .expect("fixture must deserialise as a BenchmarkReport")
+    }
+
+    #[test]
+    fn a_run_with_failed_requests_leaves_no_consumable_artifact() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("apr-cpu-c1.json");
+        let err = emit_report(&report(3, 42.0), Some(&path)).expect_err("must reject");
+        assert!(
+            err.to_string().contains("survivors"),
+            "the error must say why: {err}"
+        );
+        assert!(
+            !path.exists(),
+            "a failed benchmark wrote {} — every consumer of that path gates on \
+             existence, not on the exit status",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn a_zero_token_run_leaves_no_consumable_artifact() {
+        // The second invalid class, so the guard is not proved by one input.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("apr-cpu-c4.json");
+        let err = emit_report(&report(0, 0.0), Some(&path)).expect_err("must reject");
+        assert!(
+            err.to_string().contains("ZERO tokens"),
+            "the error must say why: {err}"
+        );
+        assert!(
+            !path.exists(),
+            "a zero-token run wrote {}, which reads as 0.0 tok/s rather than as broken",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn an_invalid_run_discards_the_previous_run_s_receipt() {
+        // A shadowed artifact is worse than a missing one: the stale file would
+        // be read as a measurement of THIS run.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("apr-cpu-c8.json");
+        std::fs::write(&path, r#"{"runs":[{"decode_tok_per_sec":999.0}]}"#).expect("seed");
+        let err = emit_report(&report(1, 42.0), Some(&path)).expect_err("must reject");
+        assert!(
+            err.to_string().contains("discarded"),
+            "removing a stale receipt must be reported, not silent: {err}"
+        );
+        assert!(
+            !path.exists(),
+            "the previous run's receipt survived at {} and now describes a run \
+             that never happened",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn a_valid_run_still_writes_the_receipt_its_consumer_reads() {
+        // DISCRIMINATION. Not writing anything ever would satisfy the three
+        // tests above; this one fails unless a good run still produces the
+        // `runs[]` array `parity_block.py::_samples` indexes by `decode_tok_per_sec`.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("apr-cpu-c16.json");
+        emit_report(&report(0, 42.0), Some(&path)).expect("a valid run earns its receipt");
+        let text = std::fs::read_to_string(&path).expect("receipt must exist");
+        let back: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+        assert!(
+            back["runs"][0]["decode_tok_per_sec"].is_number(),
+            "the receipt must carry the field its consumer samples: {text}"
+        );
+    }
+
+    #[test]
+    fn without_an_output_path_the_verdict_is_still_the_return_value() {
+        // The validity check is not a side effect of writing a file.
+        emit_report(&report(0, 42.0), None).expect("a valid run is Ok");
+        emit_report(&report(2, 42.0), None).expect_err("an invalid run is Err");
     }
 
     #[test]
