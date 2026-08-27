@@ -49,6 +49,11 @@ Plus a protocol defect (boundary effects, §4.4.7), a comparator-harness defect 
 
 ---
 
+**Restarting work on this?** Use
+[`APR-PERF-GATE-001-RESTART.md`](./APR-PERF-GATE-001-RESTART.md) — a terse,
+copy-pasteable prompt plus the two preconditions (`pmat serve` is not
+persistent; gx10 must be verified before its numbers are trusted).
+
 ## §0.0 Nomenclature — how to refer to this document
 
 Three registers. Use the one that fits the sentence; do not mix them in a commit subject.
