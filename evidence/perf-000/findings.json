@@ -1,0 +1,51 @@
+{
+  "ticket": "PERF-000",
+  "question": "Is defect #2 (no batching) admission serialization by a single lock? And are #2 and #3 one defect?",
+  "prediction_recorded_before_measurement": "If generation holds an exclusive writer lock on the model for its whole duration, wall time for N concurrent identical requests is ~N x the single-request time (serialization_index ~= c).",
+  "result": "CONFIRMED",
+  "wall_time_vs_concurrency_no_batch": {
+    "1": {
+      "wall_s": 0.581,
+      "ratio": 1.0
+    },
+    "2": {
+      "wall_s": 1.147,
+      "ratio": 1.97
+    },
+    "4": {
+      "wall_s": 2.29,
+      "ratio": 3.94
+    },
+    "8": {
+      "wall_s": 4.566,
+      "ratio": 7.86
+    },
+    "note": "identical for stream=true and stream=false; linear to two decimals"
+  },
+  "mechanism": {
+    "evidence": "crates/aprender-serve/src/api/cuda_chat_backend.rs:148 and :204 take cuda_model_lock.write() -- an EXCLUSIVE writer lock -- held across the whole generate_gpu_resident_streaming call. The source comment already says 'Fallback: direct RwLock path (serialized)'. cuda_batch_scheduler.rs also takes model.write() at :248, :314, :344, :461.",
+    "conclusion": "admission serialization, not a scheduling-policy problem. Workstream 1 of v2.2 section 7.1.1 -- a lock bug, no prior art needed."
+  },
+  "CORRECTION_defect_3": {
+    "previously_claimed": "`apr serve run --gpu --batch` HANGS on 4 concurrent chat requests (probe timed out at 9m50s; benchmark reported 0.5 tok/s aggregate)",
+    "actual": "--batch does NOT hang. Every request completes and the output is CORRECT ('4' for 2+2). The earlier observation was an artifact of MY harness: a bare `wait` in the probe waited on ALL background jobs including the server process itself, so the script never returned.",
+    "what_is_true": {
+      "single_request_latency": {
+        "no_batch_s": 0.033,
+        "batch_s": 1.414,
+        "factor": 42.8
+      },
+      "wall_at_N8": {
+        "no_batch_s": 4.566,
+        "batch_s": 24.128,
+        "factor": 5.28
+      },
+      "scaling": "--batch DOES scale better (5.20x at N=8 vs 7.86x) but from a base so much worse that it loses in absolute terms at every N measured"
+    },
+    "restated": "defect #3 is not a hang. It is that --batch adds ~1.4s of per-request latency and is net 5.3x WORSE at N=8 than not using it."
+  },
+  "are_2_and_3_one_defect": "NO. #2 is the exclusive writer lock on the default path. #3 is a latency regression in the batch path, which is separately implemented and separately wrong. They need separate tickets, as v2.2 section 7.1.1 orders them.",
+  "host": "lambda RTX 4090, quiet box",
+  "date": "2026-08-25",
+  "harness_defect_found": "a bare `wait` also invalidated three earlier timing runs in this session. Timing harnesses must wait on explicit PIDs; zsh will not wait on PIDs from a for-loop at all, so the probe has to be a bash script."
+}

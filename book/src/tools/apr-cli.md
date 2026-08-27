@@ -1392,8 +1392,8 @@ apr qa model.gguf --json
 [4/10] Perplexity Test
   ✓ PPL: 8.45 (threshold: 20.0)
 
-[5/10] Ollama Parity
-  ✓ 2.93x Ollama throughput
+[5/10] Comparator Parity
+  - SKIPPED: no comparator receipt supplied
 
 ...
 
@@ -1490,12 +1490,12 @@ Benchmark Results:
   ┌────────────────┬────────────┬───────────┐
   │ Metric         │ Value      │ vs Ollama │
   ├────────────────┼────────────┼───────────┤
-  │ Throughput     │ 851.8 t/s  │ 2.93x     │
-  │ Time to First  │ 45 ms      │ 0.8x      │
-  │ Memory         │ 1.9 GB     │ 1.2x      │
+  │ Throughput     │ 851.8 t/s  │ (no recpt)│
+  │ Time to First  │ 45 ms      │ (no recpt)│
+  │ Memory         │ 1.9 GB     │ (no recpt)│
   └────────────────┴────────────┴───────────┘
 
-✓ Showcase PASSED: 2.93x Ollama performance achieved
+✓ Showcase PASSED (absolute metrics only; comparator not run)
 ```
 
 ## Check Command

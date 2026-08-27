@@ -1,0 +1,386 @@
+{
+  "what": "apr vs llama.cpp, qwen2.5-coder-7b-instruct Q4_K_M, one client both sides",
+  "instrument": "apr test llm bench (GH-876 Milestone 2) \u2014 the SAME OpenAI client, prompts and clock drives both servers",
+  "protocol": "scripts/llama_pin.toml [protocol.http]: profile medium (128 in/128 out), warmup 15s, 3 x 30s, cooldown 10s, concurrency 1, streaming",
+  "host": "lambda-vector, RTX 4090 (sm_89), 48 threads",
+  "date": "2026-08-24",
+  "mechanism_engaged": {
+    "note": "Neither side is labelled by intent. Each is a line the runtime printed.",
+    "llamacpp": "load_tensors: offloaded 29/29 layers to GPU; device CUDA0 (NVIDIA GeForce RTX 4090)",
+    "apr": "Enabling optimized CUDA acceleration (PAR-111) ... CUDA optimized model ready",
+    "isolation": "measured SEQUENTIALLY; GPU returned to ~650 MiB between lanes, so neither held VRAM while the other ran"
+  },
+  "comparator_pin": "39173bcac (version: 7746), resolved via scripts/llama_bin.sh, never PATH",
+  "apr_build": "0.64.0 (53062e7f3), --features cuda",
+  "vram_resident_mib": {
+    "llamacpp": 4554,
+    "apr": 14030,
+    "ratio_apr_over_llamacpp": 3.081
+  },
+  "llamacpp": {
+    "decode_tok_per_sec": {
+      "median": 158.89620228261262,
+      "samples": [
+        159.51512466393368,
+        158.08676004040817,
+        158.89620228261262
+      ]
+    },
+    "prefill_tok_per_sec": {
+      "median": 10399.358400919427,
+      "samples": [
+        10505.02433199082,
+        10215.403807401179,
+        10399.358400919427
+      ]
+    },
+    "tokens_per_sec": {
+      "median": 158.09924819493884,
+      "samples": [
+        158.623724577651,
+        157.2891352406087,
+        158.09924819493884
+      ]
+    },
+    "itl_p50_ms": {
+      "median": 6.2934166181102364,
+      "samples": [
+        6.268998015748031,
+        6.32564042519685,
+        6.2934166181102364
+      ]
+    },
+    "ttft_p50_ms": {
+      "median": 9.8083145,
+      "samples": [
+        9.709719499999999,
+        9.984921,
+        9.8083145
+      ]
+    },
+    "throughput_rps": {
+      "median": 1.2351503765229597,
+      "samples": [
+        1.2392478482628984,
+        1.2288213690672554,
+        1.2351503765229597
+      ]
+    }
+  },
+  "apr": {
+    "decode_tok_per_sec": {
+      "median": 103.25723693691373,
+      "samples": [
+        103.25723693691373,
+        98.88752761685319,
+        107.7534022985115
+      ]
+    },
+    "prefill_tok_per_sec": {
+      "median": 2860.187715247207,
+      "samples": [
+        2845.6832929240004,
+        2906.915769208671,
+        2860.187715247207
+      ]
+    },
+    "tokens_per_sec": {
+      "median": 98.88366501504427,
+      "samples": [
+        98.88366501504427,
+        98.04251266483223,
+        101.50971700566556
+      ]
+    },
+    "itl_p50_ms": {
+      "median": 9.684551220472443,
+      "samples": [
+        9.684551220472443,
+        10.112498755905513,
+        9.280449421259842
+      ]
+    },
+    "ttft_p50_ms": {
+      "median": 35.662023999999995,
+      "samples": [
+        35.843764500000006,
+        35.088736000000004,
+        35.662023999999995
+      ]
+    },
+    "throughput_rps": {
+      "median": 0.7725286329300334,
+      "samples": [
+        0.7725286329300334,
+        0.7659571301940018,
+        0.7930446641067622
+      ]
+    }
+  },
+  "apr_over_llamacpp": {
+    "decode_tok_per_sec": 0.6498,
+    "prefill_tok_per_sec": 0.275,
+    "tokens_per_sec": 0.6255,
+    "itl_p50_ms": 0.6498,
+    "ttft_p50_ms": 0.275,
+    "throughput_rps": 0.6255
+  },
+  "headline": "Three runtimes, one client. llama.cpp 158.9 decode; apr built --features cuda 103.3 (0.650x); apr AS PUBLISHED 15.7 (0.099x) with 7.5s to first token. The cuda feature is worth 6.6x on decode and 211x on prefill, and cargo install does not enable it.",
+  "corrects": "The 11.8 tok/s figure reported on 2026-08-24 was an END-TO-END rate that included ~9.7s of model load. apr's actual decode rate here is 103.3 tok/s \u2014 2.6x the ~40 tok/s 7B reference in CLAUDE.md, not below it. The parity gap is real but it is against llama.cpp's 158.9, not against apr's history.",
+  "apr_published": {
+    "decode_tok_per_sec": {
+      "median": 15.70664754826154,
+      "samples": [
+        15.70664754826154,
+        15.586601531722616,
+        15.730302990112312
+      ]
+    },
+    "prefill_tok_per_sec": {
+      "median": 13.526171242218233,
+      "samples": [
+        13.716992344248203,
+        13.349127947183556,
+        13.526171242218233
+      ]
+    },
+    "tokens_per_sec": {
+      "median": 8.196396897970716,
+      "samples": [
+        8.245288763022968,
+        8.105381095852275,
+        8.196396897970716
+      ]
+    },
+    "itl_p50_ms": {
+      "median": 63.66731009448819,
+      "samples": [
+        63.66731009448819,
+        64.15766759448819,
+        63.571566334645674
+      ]
+    },
+    "ttft_p50_ms": {
+      "median": 7541.1432295,
+      "samples": [
+        7436.1115245,
+        7641.5093115,
+        7541.1432295
+      ]
+    },
+    "throughput_rps": {
+      "median": 0.06403435076539622,
+      "samples": [
+        0.06441631846111694,
+        0.0633232898113459,
+        0.06403435076539622
+      ]
+    }
+  },
+  "apr_published_over_llamacpp": {
+    "decode_tok_per_sec": 0.09885,
+    "prefill_tok_per_sec": 0.0013,
+    "tokens_per_sec": 0.05184,
+    "itl_p50_ms": 0.09885,
+    "ttft_p50_ms": 0.0013,
+    "throughput_rps": 0.05184
+  },
+  "published_artifact": {
+    "identity": "apr 0.64.0 (v0.64.0+no-git) at ~/.cargo/bin/apr \u2014 a cargo install of the published crate",
+    "cuda_linkage": "strings -a | grep -cE 'cudarc|libcuda.so|libcublas' == 0",
+    "cuda_banner": "strings -a | grep -c 'Enabling optimized CUDA acceleration' == 0",
+    "control_probe": "a string known absent also returns 0, so the probe discriminates",
+    "vram_while_serving_with_--gpu": "0 MiB \u2014 nvidia-smi --query-compute-apps lists no apr process",
+    "verdict": "--gpu is ACCEPTED AND IGNORED; the run completes and returns a plausible number"
+  },
+  "root_cause": {
+    "finding": "apr materializes a SECOND, dequantized copy of every weight for prefill; llama.cpp does not.",
+    "decisive_experiment": "toggling FP8_PREFILL moved VRAM in the direction OPPOSITE to intuition",
+    "vram_by_prefill_format": {
+      "FP8_PREFILL=1 (1 B/elem, default cc>=89)": "14030 MiB",
+      "FP8_PREFILL=0 (FP16, 2 B/elem)": "20762 MiB",
+      "delta_measured_GiB": 6.57,
+      "delta_predicted_GiB": 7.08,
+      "prediction": "one extra byte per weight over ~7.6B params"
+    },
+    "vram_scaling": {
+      "0.5b": {
+        "file_GiB": 0.46,
+        "vram_GiB": 1.04,
+        "ratio": 2.27
+      },
+      "7b": {
+        "file_GiB": 4.36,
+        "vram_GiB": 13.7,
+        "ratio": 3.14
+      },
+      "fit": "VRAM = 3.25 * file - 0.45 GiB (no meaningful fixed term)",
+      "llamacpp_ratio": 1.02
+    },
+    "ruled_out": [
+      "KV cache and context length: 512 and 4096 both give 14030 MiB, byte-identical",
+      "dequantization on upload: load_quantized_weights_with_type uploads RAW quantized bytes",
+      "indexed weights: build_indexed_weights stores POINTERS, not copies",
+      "workspace: sized from hidden_dim/intermediate_dim, small"
+    ],
+    "explains": {
+      "#2695 VRAM 3.08x": "the second copy IS the 3.25x",
+      "#2693 prefill 3.64x": "prefill reads 1 B/elem vs llama.cpp's Q4_K 0.5625 -- a 1.78x bandwidth floor no kernel tuning gets below while the copy exists"
+    },
+    "fix": "a Q4_K-direct prefill GEMM (dequantize per tile in shared memory) and drop the materialized copy: VRAM 3.25x -> ~1.05x, prefill bandwidth 1.78x -> 1.0x, decode untouched",
+    "note": "FP8 prefill is a deliberate tradeoff that made the second copy CHEAPER (TTFT 46.4 -> 35.5 ms, 1.31x). It did not question the second copy.",
+    "CORRECTION": "The '1.78x prefill bandwidth floor' stated in root_cause.explains is FALSIFIED. FP8_PREFILL=0 doubles the weight bytes read (1 -> 2 B/elem) and moves TTFT by 2% (35.4 -> 36.1 ms). Prefill is NOT weight-bandwidth-bound, so removing the second copy does not speed it up on its own. The VRAM finding is unaffected -- it was measured independently."
+  },
+  "prefill_decomposition": {
+    "method": "TTFT vs prompt length, 3 runs per point, all spreads < 1 ms",
+    "points": {
+      "23_tok": {
+        "apr": 23.52,
+        "llamacpp": 7.74
+      },
+      "102_tok": {
+        "apr": 34.84,
+        "llamacpp": 9.02
+      },
+      "280_tok": {
+        "apr": 47.99,
+        "llamacpp": 9.95
+      }
+    },
+    "fit": {
+      "apr": "TTFT = 23.08 ms fixed + 0.0916 ms/token",
+      "llamacpp": "TTFT = 7.82 ms fixed + 0.0080 ms/token"
+    },
+    "two_problems": {
+      "fixed_cost": "23.1 vs 7.8 ms = 3.0x; 71% of apr's TTFT at the 102-token gate workload is paid before the first prompt token is looked at",
+      "per_token_cost": "0.0916 vs 0.0080 ms = 11.4x; this is why the ratio WORSENS with prompt length (3.0x -> 4.8x)"
+    },
+    "gate_implication": "the single medium-profile number understates the gap for long prompts; the gate should also measure `long`"
+  },
+  "prefill_graph_blocked": "PREFILL_GRAPH=1 capture fails with CUDA_ERROR_OUT_OF_MEMORY at S=126 because apr already holds 14030 MiB of a 24 GiB card. The second weight copy blocks the CUDA graph path from being evaluated at all -- a real reason to remove it, and a different one from the falsified bandwidth argument.",
+  "fixed_cost_root_cause": {
+    "method": "nsys --trace=cuda on apr serve, startup + 8 requests, cuda_api_sum",
+    "api_time": {
+      "cuStreamSynchronize": {
+        "pct": 57.4,
+        "calls": 1308,
+        "ms": 425.8
+      },
+      "cuMemcpyHtoD_v2": {
+        "pct": 32.8,
+        "calls": 1018,
+        "ms": 243.5
+      },
+      "cuMemAlloc_v2": {
+        "pct": 3.3,
+        "calls": 904,
+        "ms": 24.7
+      },
+      "cuMemcpyDtoH_v2": {
+        "pct": 2.5,
+        "calls": 286,
+        "ms": 18.8
+      },
+      "cuLaunchKernel": {
+        "pct": 0.7,
+        "calls": 2650,
+        "ms": 5.5
+      }
+    },
+    "conclusion": "kernel LAUNCH overhead is 0.7% of API time. Synchronous HtoD copies, device allocations and stream synchronisation are 93.5%. The prefill fixed cost is HOST-SIDE, not in the kernels.",
+    "corroboration": "8 requests x 23.1 ms measured fixed cost = 185 ms, same order as the 243 ms in cuMemcpyHtoD_v2 alone",
+    "async_path_exists": "cuMemcpyHtoDAsync_v2 appears with 203 calls at 2.3 us avg, vs the sync variant's 239 us -- two orders of magnitude cheaper per call, and most traffic is not using it",
+    "expected_if_fixed": "fixed term 23.1 -> ~7.8 ms would take TTFT at 102 tokens from 34.8 to ~19 ms and the prefill ratio from 0.275x to ~0.50x, with no kernel change",
+    "caveat": "the profile window includes startup, so some HtoD traffic is the one-time FP8 cache build (197 matrices, 6742.8 MB, 179 ms). A delayed-capture run to separate them recorded no kernel data and is not the basis for this.",
+    "ticket": "#2697"
+  },
+  "prompt_caching_ruled_out": "Checked because a repeated-prompt workload would invalidate every prefill number here: four DIFFERENT prompts cost 40.2-45.5 ms against 33.5-38.4 ms for the same prompt repeated. ~10% apart, not the near-zero a cache hit would give. Prefill runs either way and the gate numbers stand.",
+  "residency_fix_2697": {
+    "commit": "126db7090",
+    "what": "a repeated prompt no longer round-trips 234 MB through host memory",
+    "ab_same_binary": {
+      "APR_KV_RESIDENCY=1": {
+        "ttft_ms": 41.27,
+        "prefill": 2471,
+        "decode": 93.2
+      },
+      "APR_KV_RESIDENCY=0": {
+        "ttft_ms": 97.59,
+        "prefill": 1045,
+        "decode": 79.9
+      },
+      "ttft_improvement": "2.36x",
+      "caveat": "box at load average 128; ABSOLUTES are depressed, the A/B is not"
+    },
+    "both_transports": "streaming (generate_1) and blocking (generate_2) each had their own copy",
+    "safety": "the residency flag is verified against the per-layer KV lengths, never trusted; 6 tests, all refusals"
+  },
+  "saturated_box_measurement_is_not_parity": {
+    "observed": "at load average 291 (289 runnable processes, 0% idle, GPU at 0%), measured back to back in the same window: apr decode 49.97 vs llama.cpp 49.71 = 1.005x, prefill 1.187x, TTFT 1.188x",
+    "why_it_is_NOT_a_parity_result": "under CPU saturation BOTH runtimes are CPU-limited and converge to the same ~50 tok/s. The GPU-bound regime the 0.80 floor is about never happens. On a quiet box the same comparison gave llama.cpp 158.9 vs apr 103.3 (0.650x).",
+    "rule": "a ratio measured where neither side is running its own bottleneck is not a ratio. Check what the box was doing before believing a number that improved.",
+    "status": "a clean measurement is armed to fire when load < 20 (quiet_parity.sh); NOT yet taken"
+  },
+  "FINAL_quiet_box_parity": {
+    "lambda_rtx4090_sm89": {
+      "llamacpp": {
+        "decode": 175.32,
+        "prefill": 11289.6,
+        "ttft_ms": 9.03
+      },
+      "apr": {
+        "decode": 113.19,
+        "prefill": 3067.4,
+        "ttft_ms": 33.25
+      },
+      "ratio_decode": 0.646,
+      "ratio_prefill": 0.272
+    },
+    "gx10_gb10_sm121": {
+      "llamacpp": {
+        "decode": 46.87,
+        "prefill": 3949.5,
+        "ttft_ms": 25.83
+      },
+      "apr": {
+        "decode": 31.09,
+        "prefill": 2976.4,
+        "ttft_ms": 34.27
+      },
+      "ratio_decode": 0.663,
+      "ratio_prefill": 0.754
+    },
+    "comparator": "llama.cpp 7746 (39173bcac), built per-host at the pin",
+    "verdict": "decode ~0.65x on BOTH hosts -- a consistent engine gap, not a host artifact. prefill 0.272x on the 4090 vs 0.754x on GB10: llama.cpp's prefill is 2.9x faster on the 4090 than on GB10 while apr's is flat (3067 vs 2976), which is what a host-bound prefill looks like. Neither host meets the 0.80 floor on decode.",
+    "floor": 0.8,
+    "stretch": 1.5
+  },
+  "residency_fix_WITHDRAWN_as_default": {
+    "quiet_box_ab": {
+      "RESIDENCY=1": {
+        "ttft_ms": [
+          41.18,
+          40.96
+        ],
+        "prefill": [
+          2476.7,
+          2490.5
+        ]
+      },
+      "RESIDENCY=0": {
+        "ttft_ms": [
+          34.31,
+          33.82
+        ],
+        "prefill": [
+          2973.1,
+          3016.0
+        ]
+      }
+    },
+    "finding": "the residency path is ~20% WORSE on a quiet box, reproducibly, two interleaved rounds. It won 2.36x only at load average 128.",
+    "mechanism": "~7 ms is one decode step. Taking the path sets prefill_first_token = None, so decode starts at prompt.len()-1 and re-processes the last prompt token, forgoing the fused first token prefill extracts from the LM head (PMAT-083). Prefill over ~100 tokens is cheaper than that whenever the host is not the bottleneck.",
+    "action": "defaults OFF; opt in with APR_KV_RESIDENCY=1 under heavy CPU contention"
+  },
+  "ttft_trace_is_dark_where_the_time_is": "TTFT_TRACE=1 reports tokenize 0.13 ms, kv_cache_alloc 0.07, reset_gpu 0.11, make_current 0.00 \u2014 about 0.3 ms of a 33 ms TTFT. The marks for `prefill` and `first_token(prefill)` never fire, so the region holding 99% of the time is uninstrumented. Worth fixing before more profiler work: the in-tree trace should have been the first tool, not nsys."
+}

@@ -224,6 +224,50 @@ for arg in "$@"; do
   esac
 done
 
+
+# FALSIFY-README-005: the install line may not advertise a backend the DEFAULT
+# feature set does not compile in.
+#
+# README.md said `cargo install aprender  # CPU + wgpu (default)` for three
+# releases while root Cargo.toml said `default = ["cli"]` and
+# `cli = ["dep:apr-cli"]` -- no GPU backend of any kind. That sentence is why
+# #2696 stayed invisible: a user who reads "wgpu (default)" and then passes
+# --gpu has every reason to expect it to work, and the published binary silently
+# ran on CPU at 15.7 tok/s. The defect was not only that --gpu was ignored, it
+# was that the docs promised the backend that would have honoured it.
+#
+# Read from Cargo.toml, not from a remembered string, so it tracks the manifest
+# instead of drifting beside it.
+check_install_line() {
+  local default_feats install_line backend bad=0
+  default_feats=$(sed -n 's/^default = \[\(.*\)\]/\1/p' Cargo.toml | head -1 | tr -d '" ')
+  install_line=$(grep -m1 '^cargo install aprender  *#' README.md || true)
+  if [ -z "$install_line" ]; then
+    echo "FAIL FALSIFY-README-005 install_line: no 'cargo install aprender  #' line found"
+    return 1
+  fi
+  for backend in wgpu cuda gpu metal rocm; do
+    case ",$default_feats," in *",$backend,"*) continue ;; esac
+    # A NEGATION IS NOT A CLAIM. The honest replacement line reads
+    # "no GPU backend is compiled in", which mentions GPU precisely in order to
+    # deny it -- and the first version of this check flagged it, which would
+    # have forced the docs to avoid the clearest available wording. Only an
+    # affirmative mention counts, so a `no <backend>` / `without <backend>` /
+    # `not <backend>` is skipped. Both directions are in the case table below.
+    if printf '%s' "$install_line" | grep -qiE "(no|not|without|never)[[:space:]]+$backend"; then
+      continue
+    fi
+    if printf '%s' "$install_line" | grep -qiE "(^|[^a-z])$backend([^a-z]|$)"; then
+      printf 'FAIL FALSIFY-README-005 install_line: advertises %s, but default = [%s]\n' \
+             "$backend" "$default_feats"
+      printf '       %s\n' "$install_line"
+      bad=1
+    fi
+  done
+  [ "$bad" -eq 0 ] || return 1
+  printf 'PASS FALSIFY-README-005 install_line: claims no backend absent from default = [%s]\n' "$default_feats"
+}
+
 case "$mode" in
   regen)
     echo "workspace members:     $(measured_crate_count)"
@@ -241,7 +285,8 @@ case "$mode" in
       contract_count)    check_contract_count ;;
       cli_command_count) check_cli_command_count ;;
       cookbook_link)     check_cookbook_link ;;
-      *) echo "--claim requires one of: crate_count, contract_count, cli_command_count, cookbook_link" >&2; exit 2 ;;
+      install_line)      check_install_line ;;
+      *) echo "--claim requires one of: crate_count, contract_count, cli_command_count, cookbook_link, install_line" >&2; exit 2 ;;
     esac
     ;;
   all)
@@ -250,6 +295,7 @@ case "$mode" in
     check_contract_count    || fail=1
     check_cli_command_count || fail=1
     check_cookbook_link     || fail=1
+    check_install_line      || fail=1
     exit "$fail"
     ;;
 esac

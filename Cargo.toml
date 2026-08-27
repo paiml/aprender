@@ -268,6 +268,13 @@ renacer-core = { path = "crates/aprender-profile-core", version = "0.64.0", pack
 repartir = { path = "crates/aprender-distribute", version = "0.64.0", package = "aprender-distribute" }
 simular = { path = "crates/aprender-simulate", version = "0.64.0", package = "aprender-simulate" }
 probar = { path = "crates/aprender-test-lib", version = "0.64.0", package = "aprender-test-lib" }
+# English key for the same crate, named after the command it serves (`apr test`).
+# The dep KEY, not the package name, is what becomes the extern crate name when
+# the two differ — the lib target is still `jugar_probar`, so keying it by its
+# package name would have imported Spanish anyway. Renaming that lib target is
+# 196 call sites in 17 crates and gets its own PR; this key is how new code
+# reads English today.
+apr-test = { path = "crates/aprender-test-lib", version = "0.64.0", package = "aprender-test-lib", default-features = false, features = ["llm"] }
 # `jugar-probar` is the crates.io/lib name of the same in-tree crate as `probar`
 # above. Both aliases resolve to ONE package; consumers that spelled it
 # `jugar-probar = "0.4"|"0.5"|"1.0"` were building three extra copies.
@@ -587,6 +594,10 @@ gates = [
     "scripts/check_verifier_pinning.sh",
     "scripts/check_dogfood_shim.sh",
     "scripts/check_bench_receipt.sh",
+    # #2696 — the parity validator must discriminate before a release reads it.
+    "scripts/check_parity_receipt.sh",
+    # #2696 — a claim about measured reality may not be a literal a user reads.
+    "scripts/check_no_claim_literals.sh",
 ]
 
 [[bin]]

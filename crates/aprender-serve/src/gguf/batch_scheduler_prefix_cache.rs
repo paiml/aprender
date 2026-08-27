@@ -45,7 +45,11 @@ impl PrefixCache {
     }
 
     /// Hash tokens to create cache key (FNV-1a)
-    fn hash_tokens(tokens: &[u32]) -> u64 {
+    /// FNV-1a over the token ids. Public so callers can ask whether a prefix is
+    /// already resident on the GPU (#2697) WITHOUT calling `lookup`, which
+    /// clones the whole cached K/V — ~234 MB for a 7B model at 4096 context.
+    #[must_use]
+    pub fn hash_tokens(tokens: &[u32]) -> u64 {
         const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
         const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
