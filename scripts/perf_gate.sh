@@ -220,7 +220,7 @@ selftest() {
   esac
   _mk() { printf '%s' "$2" > "$tmp/$1.json"; }
   local OK='{"requested":16,"completed":16,"timeouts":0,"drain_ms":12,
-   "provenance":{"binary_path":"/opt/apr","binary_sha256":"0000000000000000000000000000000000000000000000000000000000000000",
+   "provenance":{"binary_path":"/opt/pinned-binary","binary_sha256":"0000000000000000000000000000000000000000000000000000000000000000",
                  "resolution":"apr_bin.sh","compute_class":"cuda","host":"lambda","accelerator":"rtx-4090",
                  "model":"qwen2.5-coder-1.5b-instruct","quantization":"Q4_K_M"},
    "tokenization":{"method":"hf-tokenizers"},

@@ -4,7 +4,14 @@
 # lock on the model for its whole duration, wall time for N concurrent identical
 # requests is ~N x the single-request time, and aggregate throughput is flat.
 set -uo pipefail
-BIN=/mnt/nvme-raid0/targets/aprender/release/apr
+# NEVER a hardcoded absolute path and never a bare `apr`. Four apr binaries once
+# coexisted on this box and a bare `apr` resolved to a 24-day-old one; the path
+# this line used to hardcode is also wrong in any fresh worktree, because
+# .cargo/config.toml redirects the target-dir and is gitignored. apr_bin.sh
+# resolves it AND proves it was built from HEAD, which is what makes a
+# measurement attributable to a commit.
+. scripts/apr_bin.sh || exit 1
+BIN="$APR"
 MODEL=/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
 PORT=8407
 "$BIN" serve run "$MODEL" --gpu --port $PORT --context-length 4096 > /tmp/p000h.log 2>&1 &

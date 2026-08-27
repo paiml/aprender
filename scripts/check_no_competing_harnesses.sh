@@ -90,7 +90,7 @@ trap 'rm -f "$COUNT_FILE"' EXIT
 # §4.4.8 forbids driving the comparator with llama-bench at all, so a script
 # reaching for it is a competing harness by definition.
 starts_server() {
-  grep -qE "serve run|llama-server|llama-cli|llama-bench|ollama (serve|run)|vllm serve|apr run|curl[^|]*(/v1/|/api/generate)" "$1" 2>/dev/null
+  grep -qE "serve run|llama-server|llama-cli|llama-bench|ollama (serve|run)|vllm serve|apr[[:space:]]+run|curl[^|]*(/v1/|/api/generate)" "$1" 2>/dev/null
 }
 computes_rate() { grep -qE "date \+%s|tok/s|tokens?_per_sec|SECONDS" "$1" 2>/dev/null; }
 
