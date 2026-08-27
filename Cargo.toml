@@ -217,6 +217,18 @@ trybuild = "1"
 # Hoisting does not change either consumer's resolution.
 unicode-normalization = "0.1"
 
+# HuggingFace tokenizers (SetFit / MiniLM conformance, Phase 1 ENC-02).
+# `default-features = false` is load-bearing, not tidiness: the default set is
+# [progressbar, onig, esaxx_fast], which pulls the `onig` C library and the
+# `esaxx-rs` C++ build script into every consumer. `fancy-regex` is the pure-Rust
+# regex backend the WordPiece/BERT path needs, and is the ONLY feature enabled.
+tokenizers = { version = "0.23.1", default-features = false, features = ["fancy-regex"] }
+
+# aprender-rand (lib name `trueno_rand`) is a workspace MEMBER but had no
+# [workspace.dependencies] entry, so every consumer had to re-declare the path.
+# It is the counter-based Philox RNG behind the SetFit encoder's dropout masks.
+aprender-rand = { path = "crates/aprender-rand", version = "0.64.0" }
+
 # Chat templates
 minijinja = { version = "2.14", features = ["loader", "serde"] }
 
@@ -288,9 +300,6 @@ aprender-rag-cli = { path = "crates/aprender-rag-cli", version = "0.64.0" }
 aprender-qa-cli = { path = "crates/aprender-qa-cli", version = "0.64.0" }
 aprender-cgp = { path = "crates/aprender-cgp", version = "0.64.0" }
 aprender-contrastive-data = { path = "crates/aprender-contrastive-data", version = "0.64.0" }
-# aprender-rand (lib name `trueno_rand`) is a workspace MEMBER but had no
-# [workspace.dependencies] entry, so every consumer had to re-declare the path.
-aprender-rand = { path = "crates/aprender-rand", version = "0.64.0" }
 aprender-contracts-cli = { path = "crates/aprender-contracts-cli", version = "0.64.0" }
 aprender-data = { path = "crates/aprender-data", version = "0.64.0" }
 

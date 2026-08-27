@@ -376,8 +376,6 @@ contrastive-data-boundary: ## D-04: bytes boundary for aprender-contrastive-data
 	@echo "contrastive-data-boundary: PASSED"
 
 # Tier 4: CI/CD (5-60 minutes, heavyweight)
-
-# Tier 4: CI/CD (5-60 minutes, heavyweight)
 tier4: tier3
 	@echo "Running Tier 4: CI/CD validation..."
 	@PROPTEST_CASES=100 QUICKCHECK_TESTS=100 cargo test --release

@@ -188,6 +188,31 @@ impl Module for LayerNorm {
             vec![]
         }
     }
+
+    /// Leaf names `weight` (gamma) / `bias` (beta), in the same order as
+    /// [`Module::parameters`]. A non-affine `LayerNorm` registers nothing, so both
+    /// lists are empty and the arity invariant still holds.
+    fn named_parameters(&self) -> Vec<(String, &Tensor)> {
+        if self.elementwise_affine {
+            vec![
+                ("weight".to_string(), &self.weight),
+                ("bias".to_string(), &self.bias),
+            ]
+        } else {
+            vec![]
+        }
+    }
+
+    fn named_parameters_mut(&mut self) -> Vec<(String, &mut Tensor)> {
+        if self.elementwise_affine {
+            vec![
+                ("weight".to_string(), &mut self.weight),
+                ("bias".to_string(), &mut self.bias),
+            ]
+        } else {
+            vec![]
+        }
+    }
 }
 
 /// Batch Normalization for 1D inputs (Ioffe & Szegedy, 2015).

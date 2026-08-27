@@ -1,0 +1,28 @@
+{
+  "source": {
+    "fixture": "loss_pair.json",
+    "a_case_id": "loss_pair_a",
+    "b_case_id": "loss_pair_b"
+  },
+  "note": "20 consecutive AdamW steps on the SAME recorded pair batch, from a fresh all-trainable slice model. `losses[i]` is the loss measured BEFORE step i, and the final entry is the loss after the last step, so the trajectory brackets every update. This is the only obligation in the phase that constrains beta1/beta2: at step 1 bias correction makes the update beta-independent (m_hat = g, v_hat = g^2), so a single-step fixture cannot constrain them at ANY tolerance. `separation` records what the mutations actually move, measured during generation.",
+  "adamw": {
+    "lr": 2e-05,
+    "betas": [0.9, 0.999],
+    "eps": 1e-08,
+    "weight_decay": 0.01
+  },
+  "all_trainable": true,
+  "steps": 20,
+  "losses": [
+    0.141698048, 0.138318941, 0.134950489, 0.131594136, 0.128251418, 0.124924034, 0.121613614,
+    0.118321784, 0.115050398, 0.111801095, 0.10857562, 0.105375916, 0.102203749, 0.0990610421,
+    0.0959496349, 0.0928714052, 0.0898283646, 0.0868223533, 0.0838553756, 0.0809292495,
+    0.0780459344
+  ],
+  "separation": {
+    "f32_f64_noise": 8.0179233e-08,
+    "betas_0.5_0.5": 0.000405117869,
+    "weight_decay_0": 8.94069672e-08,
+    "decay_not_gated_here": "the decay term is ~3 f32 ulp of the parameters it acts on at this lr/weight_decay, so no tolerance over this fixture separates it; adamw-kernel-v1's falsify_aw_001 owns that defect"
+  }
+}
