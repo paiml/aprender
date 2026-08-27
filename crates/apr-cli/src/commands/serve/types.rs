@@ -107,6 +107,31 @@ impl Default for ServerConfig {
 }
 
 impl ServerConfig {
+    /// PERF-021 / I-2: the accelerator decision reads the QUANTITY, never the
+    /// boolean.
+    ///
+    /// THE DEFECT THIS EXISTS TO KILL. Before this method, every site that
+    /// chose GPU over CPU read `config.gpu` — handlers.rs:776, handlers.rs:1084,
+    /// handler_gpu_completion.rs:407 and :412 — while `--gpu-layers` set only
+    /// `config.gpu_layers`. So on a `--features cuda` build:
+    ///
+    ///   apr serve run --gpu-layers all m.gguf
+    ///     -> gpu = false, gpu_layers = Some(All)
+    ///     -> ensure_accelerator_available sees wants_layers and PASSES
+    ///     -> `if config.gpu && !config.no_gpu` is FALSE
+    ///     -> run_cpu_server
+    ///
+    /// That is #2696 — "published apr silently ignores --gpu" — reproduced in
+    /// the new spelling, by the change that retired the old one. The quantity
+    /// flag was parsed, validated, stored, and then not consulted by any
+    /// decision, which is finding N4 with the flag type swapped.
+    ///
+    /// `--gpu-layers 0` is an explicit CPU request, so this is not "is_some".
+    pub(crate) fn wants_accelerator(&self) -> bool {
+        self.gpu_layers
+            .is_some_and(GpuLayerRequest::wants_accelerator)
+            && !self.no_gpu
+    }
     /// Translate the operator-facing hardening flags into realizar's
     /// [`RouterConfig`](realizar::api::RouterConfig).
     ///

@@ -404,12 +404,12 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config().vocab_size);
 
     #[cfg(feature = "cuda")]
-    if config.gpu && config.batch {
+    if config.wants_accelerator() && config.batch {
         return start_gguf_server_gpu_batched(quantized_model, vocab, mapped_model, config);
     }
 
     #[cfg(feature = "cuda")]
-    if config.gpu && !config.no_gpu {
+    if config.wants_accelerator() {
         return start_gguf_server_cuda(quantized_model, vocab, mapped_model, config);
     }
 
