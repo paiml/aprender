@@ -38,7 +38,14 @@ printf -- '--- claim literals on user-facing surfaces ------------------------\n
 # A comparison against a named competitor, or a throughput figure, inside a
 # string that is PRINTED. `\bx\b` after a number is the ratio idiom.
 CLAIM_RE='(println!|eprintln!|write!|writeln!|format!|\.red\(\)|\.green\(\)|\.yellow\(\)|\.cyan\(\))'
-RATIO_RE='[0-9]+(\.[0-9]+)?x[[:space:]]+(Ollama|ollama|llama\.cpp|llama|vLLM|vllm|PyTorch|torch)'
+# The comparator list also carries the I-12 `[X]` names. §0.1: a `[X]` figure is
+# a third-party published claim about a third-party system — 36.9x over
+# FasterTransformer, 23x over static batching, 1.8x over vLLM. It may inform a
+# design choice and may NEVER appear in README.md, book/ or docs/. Importing
+# someone else's number is the same defect as fabricating our own, with a
+# better provenance story, so it is banned by the same guard rather than a
+# second one that could rot separately.
+RATIO_RE='[0-9]+(\.[0-9]+)?x[[:space:]]+(Ollama|ollama|llama\.cpp|llama|vLLM|vllm|PyTorch|torch|FasterTransformer|fastertransformer|SGLang|sglang|TensorRT|tensorrt|TGI|tgi|LMDeploy|lmdeploy|TurboMind|turbomind|static[[:space:]]+batching)'
 TPUT_RE='[0-9]{2,}\+?[[:space:]]*tok/s'
 
 # A TARGET says what we WANT; a CLAIM says what we GOT. Only the second lies.
@@ -96,7 +103,32 @@ fi
 
 # The shipped surface: library and binary sources only. Tests, benches, examples
 # and fixtures state targets and are out of scope BY DESIGN, not by oversight.
-mapfile -t SRC < <(git ls-files 'crates/**/src/**/*.rs' 'src/**/*.rs' 2>/dev/null \
+# TWO HOLES, BOTH MEASURED, BOTH OF THIS REPO'S DOCUMENTED SHAPES.
+#
+# (a) DEPTH. The glob was `crates/**/src/**/*.rs`, which git expands with a
+#     MINIMUM path depth — `**` between two literals must match at least one
+#     segment. So `crates/apr-cli/src/dispatch.rs` was NOT in the universe:
+#
+#       crates/**/src/**/*.rs      -> 6908 files
+#       depth-tolerant equivalent  -> 7953 files
+#       invisible to the guard     -> 1045 tracked files
+#
+#     A claim literal in any of those 1045 passed. Verified: `// 2.93x Ollama`
+#     in crates/apr-cli/src/ gave rc=0.
+#
+# (b) TRACKED-ONLY. `git ls-files` gives an untracked file a free pass — the
+#     documented tracked-only-universe shape, and the third instance in this
+#     epic. Unioned with a working-tree find.
+#
+# (c) book/ AND docs/ WERE NOT IN THE UNIVERSE AT ALL, which is the one that
+#     mattered most: §9's whole point is that a claim a USER READS is the
+#     defect, and book/ is where users read. Five live `2.93x Ollama` claims sat
+#     in book/ while this guard reported PASS.
+mapfile -t SRC < <(
+    { git ls-files 'crates/*/src/**/*.rs' 'crates/*/src/*.rs' 'src/**/*.rs' 'src/*.rs' \
+                   'book/**/*.md' 'book/*.md' 'docs/**/*.md' 'docs/*.md' 2>/dev/null
+      find crates/*/src src book docs -type f \( -name '*.rs' -o -name '*.md' \) 2>/dev/null
+    } | LC_ALL=C sort -u \
     | grep -vE '(^|/)(tests?|benches|examples)/' \
     | grep -vE '_tests?\.rs$|_test\.rs$|proptests?[_.]|/fixtures?/')
 
@@ -114,7 +146,29 @@ hits=$(grep -InE "$CLAIM_RE" "${SRC[@]}" 2>/dev/null \
 dochits=$(grep -InE "^[[:space:]]*(///|//!)" "${SRC[@]}" 2>/dev/null \
           | grep -E "$RATIO_RE|$TPUT_RE" | grep -vE "$TARGET_RE" || true)
 
-all=$(printf '%s\n%s\n' "$hits" "$dochits" | grep -v '^$' || true)
+# MARKDOWN NEEDS ITS OWN DETECTOR, and this is why adding book/ to the universe
+# above was not by itself a fix.
+#
+# CLAIM_RE requires a Rust print macro — println!, format!, .green(). Markdown
+# contains none, so every .md file added to SRC contributed exactly zero hits
+# and the guard still reported PASS over them. The universe grew and the
+# coverage did not, which is the most convincing kind of false progress: the
+# `universe: N file(s)` line goes up and nothing is actually checked.
+#
+# In prose there is no macro to look for, because ALL of it is the printed
+# surface. So for .md the ratio/throughput patterns apply directly. Fenced code
+# blocks are deliberately NOT exempt: `book/src/tools/apr-cli.md:1396` is a
+# claim inside a sample terminal transcript, and a user reads a transcript as a
+# result, not as source.
+mdfiles=()
+for f in "${SRC[@]}"; do case "$f" in *.md) mdfiles+=("$f") ;; esac; done
+mdhits=""
+if [ "${#mdfiles[@]}" -gt 0 ]; then
+    mdhits=$(grep -InE "$RATIO_RE|$TPUT_RE" "${mdfiles[@]}" 2>/dev/null \
+             | grep -vE "$TARGET_RE" || true)
+fi
+
+all=$(printf '%s\n%s\n%s\n' "$hits" "$dochits" "$mdhits" | grep -v '^$' || true)
 
 known=0
 new=0
