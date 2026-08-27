@@ -58,6 +58,10 @@ arm_a_scaling() {
 import json,sys,yaml
 r=json.load(open(sys.argv[1])); m=yaml.safe_load(open(sys.argv[2]))
 host,wl=sys.argv[3],sys.argv[4]
+import os,datetime
+# Injectable so the selftest can prove BOTH sides of the expiry boundary without
+# waiting for a date to arrive. Defaults to the real clock.
+TODAY=os.environ.get("PERF_GATE_TODAY") or datetime.date.today().isoformat()
 bands={b["concurrency"]:b for b in (r.get("bands") or [])}
 if 1 not in bands:
     print("FAIL ArmA band c=1 absent — scaling_efficiency is undefined without it"); sys.exit(1)
@@ -72,7 +76,28 @@ for c in sorted(bands):
     if agg is None: print(f"FAIL ArmA band {c}: aggregate_tok_per_sec absent"); fail=True; continue
     eff=(agg/base)/c
     if bl.get("status")=="UNMEASURED":
-        print(f"REPORT ArmA c={c} scaling_efficiency={eff:.4f} (baseline UNMEASURED, owner={bl.get('owner')})")
+        # §4.7.3: an UNMEASURED cell degrades to REPORT only UNTIL its expiry.
+        # `expires` was declared on every cell in perf-matrix.yaml and read by
+        # ZERO lines of code, so the whole matrix would have sat in REPORT
+        # forever and 2026-09-25 would have passed in silence. An expiry nothing
+        # evaluates is a promise, not a deadline.
+        #
+        # A cell with no `expires` at all is a FAIL, not a pass: the absent
+        # field is exactly how an UNMEASURED cell would otherwise become
+        # permanent, and defaulting it to "never" rewards omitting it.
+        exp = bl.get("expires")
+        if not exp:
+            print(f"FAIL ArmA c={c}: baseline UNMEASURED with no `expires` — an "
+                  f"UNMEASURED cell without a deadline never expires")
+            fail=True
+        elif str(exp) < TODAY:
+            print(f"FAIL ArmA c={c}: baseline UNMEASURED and EXPIRED {exp} "
+                  f"(today {TODAY}, owner={bl.get('owner')}) — measure it or "
+                  f"re-decide the cell; do not extend the date to stay green")
+            fail=True
+        else:
+            print(f"REPORT ArmA c={c} scaling_efficiency={eff:.4f} "
+                  f"(baseline UNMEASURED until {exp}, owner={bl.get('owner')})")
     else:
         floor=bl.get(f"c{c}")
         if floor is None: print(f"FAIL ArmA c={c}: no committed baseline and status is not UNMEASURED"); fail=True
