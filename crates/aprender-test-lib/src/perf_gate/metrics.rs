@@ -327,7 +327,8 @@ mod tests {
     }
 
     /// The dangerous direction: a serialising server with idle gaps. The mean of
-    /// per-request rates reports 100 tok/s; the machine actually delivered 57.1.
+    /// per-request rates reports a throughput the machine never delivered; the
+    /// assertions below pin both figures, so this comment does not restate them.
     /// This is the shape of the number the epic exists to refuse.
     #[test]
     fn mean_of_rates_overstates_a_serialising_server() {
