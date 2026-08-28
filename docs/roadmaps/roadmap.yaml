@@ -13139,7 +13139,7 @@ roadmap:
   github_issue: 2706
   item_type: task
   title: Iteration-level scheduling (Orca design) — REAL BUT PARTIAL, F-BATCH-001 red at c=2
-  status: completed
+  status: in_progress
   priority: high
   assigned_to: null
   created: *id001
@@ -13155,7 +13155,7 @@ roadmap:
   notes: 'VERIFIED on origin/main 2026-08-29: crates/aprender-serve/src/api/iteration_scheduler.rs
     implements the Orca (OSDI 2022) design. PARTIAL BY ITS OWN CONTRACT:
     contracts/batch-admission-v1.yaml F-BATCH-001 records verdict RED AT c=2 (serialization_index 2.45 >=
-    2), so the epic F-BATCH-001 acceptance criterion is NOT met.'
+    2), so the epic F-BATCH-001 acceptance criterion is NOT met. DOWNGRADED from completed 2026-08-29 by PERF-041: the credited 3.32x aggregate at N=8 is throughput of GARBAGE tokens. Batched CUDA decode emits a constant token to the max_tokens cap for every m>1 and never emits a stop token (#2753); the m=1 fast path in the same run returns coherent English with finish=stop. Aggregate at c=2 is honestly 0.82x of a SINGLE client. F-BATCH-001 stays RED and the mechanism, not just the margin, is unfinished.'
 - id: PERF-002
   github_issue: 2706
   item_type: task
