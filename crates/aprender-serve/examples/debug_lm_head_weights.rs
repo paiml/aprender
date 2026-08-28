@@ -5,7 +5,7 @@
 //! 2. Dequantized values for first few rows
 //! 3. Manual dot product calculation
 //!
-//! Run: cd /home/noah/src/realizar && cargo run --release --example debug_lm_head_weights
+//! Run: cargo run --release -p aprender-serve --example debug_lm_head_weights
 
 use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 use realizar::quantize::dequantize_q8_0;
@@ -13,7 +13,10 @@ use realizar::quantize::dequantize_q8_0;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== LM Head Weight Debug ===\n");
 
-    let path = "/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct-GGUF/snapshots/198f08841147e5196a6a69bd0053690fb1fd3857/qwen2-0_5b-instruct-q4_0.gguf";
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2-0_5b-instruct-q4_0.gguf"
+    );
     let mapped = MappedGGUFModel::from_path(path)?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)?;
     let vocab = mapped.model.vocabulary().expect("vocab");

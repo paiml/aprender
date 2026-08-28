@@ -2,7 +2,10 @@
 use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = "/home/noah/.cache/huggingface/models/qwen2.5-coder-1.5b-gguf/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    );
     let mapped = MappedGGUFModel::from_path(path)?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)?;
 

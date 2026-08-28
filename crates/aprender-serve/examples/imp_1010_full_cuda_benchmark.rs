@@ -55,14 +55,32 @@ fn main() {
     let model_paths = [
         // Qwen models (support GPU-resident path - separate QKV, SwiGLU, RMSNorm)
         // 1.5B has intermediate_dim <= 8192, uses optimized tiled kernels
-        "/home/noah/src/aprender/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        ),
         // 7B has intermediate_dim > 8192, uses fallback kernels for FFN
-        "/home/noah/src/aprender/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
-        "/home/noah/src/aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+        ),
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+        ),
         // phi-2 (fused QKV, GELU - does NOT support GPU-resident)
-        "/home/noah/src/single-shot-eval/models/raw/phi-2-q4_k_m.gguf",
-        "/home/noah/src/realizar/models/phi-2-q4_k_m.gguf",
-        "/home/noah/.cache/lm-studio/models/TheBloke/phi-2-GGUF/phi-2.Q4_K_M.gguf",
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/phi-2-q4_k_m.gguf"
+        ),
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/phi-2-q4_k_m.gguf"
+        ),
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/phi-2.Q4_K_M.gguf"
+        ),
     ];
 
     let mut model_path = None;

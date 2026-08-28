@@ -5,8 +5,11 @@ use std::time::Instant;
 
 fn main() -> Result<(), RealizarError> {
     let model_path = std::env::args().nth(1).unwrap_or_else(|| {
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
-            .to_string()
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        )
+        .to_string()
     });
 
     eprintln!("Loading model: {}", model_path);

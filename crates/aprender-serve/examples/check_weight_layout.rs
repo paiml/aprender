@@ -4,7 +4,10 @@ use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 use realizar::RealizarError;
 
 fn main() -> Result<(), RealizarError> {
-    let model_path = "/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+    let model_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    );
 
     let mapped = MappedGGUFModel::from_path(model_path)?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)?;

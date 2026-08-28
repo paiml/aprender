@@ -7,7 +7,10 @@ use realizar::RealizarError;
 use std::time::Instant;
 
 fn main() -> Result<(), RealizarError> {
-    let model_path = "/home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf";
+    let model_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf"
+    );
 
     println!("Loading model: {}", model_path);
     let mapped = MappedGGUFModel::from_path(model_path)?;

@@ -44,8 +44,10 @@ const TIERS: &[ModelTier] = &[
     ModelTier {
         name: "tiny",
         size: "0.5B",
-        gguf_path:
-            "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-0.5b-instruct-q4_0.gguf",
+        gguf_path: concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-0.5b-instruct-q4_0.gguf"
+        ),
         llama_cpp_gpu_baseline: 594.10,
         llama_cpp_cpu_baseline: 194.28,
         prompt_tokens: QWEN_PROMPT,
@@ -53,8 +55,10 @@ const TIERS: &[ModelTier] = &[
     ModelTier {
         name: "small",
         size: "1.5B",
-        gguf_path:
-            "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+        gguf_path: concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        ),
         llama_cpp_gpu_baseline: 377.75,
         llama_cpp_cpu_baseline: 86.43,
         prompt_tokens: QWEN_PROMPT,
@@ -62,7 +66,10 @@ const TIERS: &[ModelTier] = &[
     ModelTier {
         name: "medium",
         size: "3B",
-        gguf_path: "/home/noah/src/single-shot-eval/models/raw/starcoder2-3b-q4_k_m.gguf",
+        gguf_path: concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/starcoder2-3b-q4_k_m.gguf"
+        ),
         llama_cpp_gpu_baseline: 247.43,
         llama_cpp_cpu_baseline: 48.07,
         prompt_tokens: STARCODER_PROMPT,

@@ -1,9 +1,13 @@
 use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
 fn main() {
-    let model_path = std::env::args()
-        .nth(1)
-        .unwrap_or("/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf".to_string());
+    let model_path = std::env::args().nth(1).unwrap_or(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        )
+        .to_string(),
+    );
     let prompt = "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n";
 
     eprintln!("Loading model...");

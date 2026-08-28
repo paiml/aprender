@@ -276,8 +276,14 @@ fn main() {
 
     // Common paths for phi-2 model
     let model_paths = [
-        "/home/noah/src/single-shot-eval/models/raw/phi-2-q4_k_m.gguf",
-        "/home/noah/.cache/huggingface/hub/models--TheBloke--phi-2-GGUF/snapshots/*/phi-2.Q4_K_M.gguf",
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/phi-2-q4_k_m.gguf"
+        ),
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/phi-2.Q4_K_M.gguf"
+        ),
         "../models/phi-2.Q4_K_M.gguf",
         "models/phi-2.Q4_K_M.gguf",
     ];

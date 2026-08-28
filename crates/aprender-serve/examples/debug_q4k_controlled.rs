@@ -207,8 +207,10 @@ fn test_multi_superblock() -> Result<(), Box<dyn std::error::Error>> {
 fn test_real_q_weight() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("\n=== Test 3: Real Q weight from model ===");
 
-    let model_path =
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+    let model_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    );
     if !std::path::Path::new(model_path).exists() {
         eprintln!("Model not found, skipping");
         return Ok(());

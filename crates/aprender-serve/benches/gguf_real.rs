@@ -54,32 +54,47 @@ struct GGUFModelConfig {
     quantization: &'static str,
 }
 
-/// Get available test model configurations
-/// Only returns models that exist on the filesystem
-fn get_available_models() -> Vec<GGUFModelConfig> {
-    let all_models = vec![
+/// Every model this bench knows how to drive, whether or not it is on disk.
+///
+/// PERF-036: the paths resolve from `CARGO_MANIFEST_DIR`, never from one
+/// developer's home. A bench that names `/home/<someone>/...` runs on exactly
+/// one machine and silently benches nothing everywhere else.
+fn all_models() -> Vec<GGUFModelConfig> {
+    vec![
         GGUFModelConfig {
             name: "phi2_q4km",
-            path: "/home/noah/src/single-shot-eval/models/raw/phi-2-q4_k_m.gguf",
+            path: concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../models/phi-2-q4_k_m.gguf"
+            ),
             parameters_approx: 2_700_000_000,
             quantization: "Q4_K_M",
         },
         GGUFModelConfig {
             name: "deepseek_1.3b_q4km",
-            path: "/home/noah/src/single-shot-eval/models/raw/deepseek-coder-1.3b-instruct-q4_k_m.gguf",
+            path: concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../models/deepseek-coder-1.3b-instruct-q4_k_m.gguf"
+            ),
             parameters_approx: 1_300_000_000,
             quantization: "Q4_K_M",
         },
         GGUFModelConfig {
             name: "qwen2.5_1.5b_q4km",
-            path: "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+            path: concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+            ),
             parameters_approx: 1_500_000_000,
             quantization: "Q4_K_M",
         },
-    ];
+    ]
+}
 
-    // Filter to only available models
-    all_models
+/// Get available test model configurations
+/// Only returns models that exist on the filesystem
+fn get_available_models() -> Vec<GGUFModelConfig> {
+    all_models()
         .into_iter()
         .filter(|m| Path::new(m.path).exists())
         .collect()
@@ -221,10 +236,11 @@ fn test_gguf_benchmark_models_exist() {
     if models.is_empty() {
         eprintln!("Warning: No GGUF models found for benchmarking");
         eprintln!("Expected models at:");
-        eprintln!("  /home/noah/src/single-shot-eval/models/raw/phi-2-q4_k_m.gguf");
-        eprintln!(
-            "  /home/noah/src/single-shot-eval/models/raw/deepseek-coder-1.3b-instruct-q4_k_m.gguf"
-        );
+        // Printed from all_models(), not a hand-copied list: a duplicated list
+        // drifts from the one the bench actually opens.
+        for m in all_models() {
+            eprintln!("  {}", m.path);
+        }
     }
 }
 

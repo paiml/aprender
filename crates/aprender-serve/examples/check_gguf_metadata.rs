@@ -5,7 +5,10 @@ use std::{env, fs};
 fn main() {
     let args: Vec<String> = env::args().collect();
     let path = args.get(1).map_or(
-        "/home/noah/src/aprender/tinyllama-1.1b-chat-v1.0.Q4_0.gguf",
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/tinyllama-1.1b-chat-v1.0.Q4_0.gguf"
+        ),
         |s| s.as_str(),
     );
     let data = fs::read(path).expect("Failed to read file");

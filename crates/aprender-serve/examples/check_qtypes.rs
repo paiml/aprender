@@ -5,9 +5,13 @@ use std::env;
 use std::fs;
 
 fn main() {
-    let path = env::args()
-        .nth(1)
-        .unwrap_or_else(|| "/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf".to_string());
+    let path = env::args().nth(1).unwrap_or_else(|| {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        )
+        .to_string()
+    });
 
     println!("Loading model: {}", path);
     let data = fs::read(&path).expect("Failed to read file");

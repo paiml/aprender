@@ -3,8 +3,14 @@ use realizar::gguf::{MappedGGUFModel, OwnedQKVWeights, OwnedQuantizedModel};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Model Config Comparison ===\n");
 
-    let path_05b = "/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct-GGUF/snapshots/198f08841147e5196a6a69bd0053690fb1fd3857/qwen2-0_5b-instruct-q4_0.gguf";
-    let path_15b = "/home/noah/.cache/huggingface/models/qwen2.5-coder-1.5b-gguf/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+    let path_05b = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2-0_5b-instruct-q4_0.gguf"
+    );
+    let path_15b = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    );
 
     for (name, path) in [("Qwen2-0.5B", path_05b), ("Qwen2.5-Coder-1.5B", path_15b)] {
         println!("=== {} ===", name);

@@ -3,9 +3,11 @@ use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
 fn main() {
     println!("Loading model...");
-    let mapped =
-        MappedGGUFModel::from_path("/home/noah/src/aprender/tinyllama-1.1b-chat-v1.0.Q4_0.gguf")
-            .expect("test");
+    let mapped = MappedGGUFModel::from_path(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/tinyllama-1.1b-chat-v1.0.Q4_0.gguf"
+    ))
+    .expect("test");
     let model = OwnedQuantizedModel::from_mapped(&mapped).expect("test");
 
     let config = model.config();

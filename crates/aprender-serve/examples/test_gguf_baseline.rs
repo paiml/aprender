@@ -2,8 +2,10 @@
 use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let gguf_path =
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+    let gguf_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    );
 
     println!("Loading GGUF...");
     let mapped = MappedGGUFModel::from_path(gguf_path)?;

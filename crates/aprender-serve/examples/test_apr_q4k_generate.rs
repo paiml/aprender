@@ -6,8 +6,10 @@ use std::time::Instant;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use the CORRECT Q4K APR file with actual Q4K tensors
     let apr_path = "/tmp/qwen2.5-coder-1.5b-q4k.apr";
-    let gguf_path =
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+    let gguf_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    );
 
     // Load vocab from GGUF
     let mapped = MappedGGUFModel::from_path(gguf_path)?;

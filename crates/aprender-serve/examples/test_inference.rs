@@ -4,8 +4,10 @@ use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConf
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let apr_path = "/tmp/qwen2-test6.apr";
-    let gguf_path =
-        "/home/noah/src/HF-Advanced-Fine-Tuning/corpus/models/qwen2-0.5b-instruct-q4_0.gguf";
+    let gguf_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2-0.5b-instruct-q4_0.gguf"
+    );
 
     println!("Loading APR model...");
     let apr_model = AprTransformer::from_apr_file(apr_path)?;
