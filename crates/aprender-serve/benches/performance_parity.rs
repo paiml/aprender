@@ -160,6 +160,7 @@ fn make_bench_config(
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     }
 }
 
@@ -1144,6 +1145,8 @@ fn benchmark_e2e_generation(c: &mut Criterion) {
             ffn_up_bias: None,
             ffn_down_weight: create_q4k_tensor(intermediate_dim, hidden_dim),
             ffn_down_bias: None,
+            post_attn_norm_weight: None,
+            post_ffw_norm_weight: None,
             ffn_gate_weight: None,
             ffn_gate_bias: None,
             ffn_norm_weight: None,
