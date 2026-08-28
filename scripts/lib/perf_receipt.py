@@ -44,6 +44,49 @@ USAGE
                   --derive-only
 
 Exit: 0 wrote (or printed) a receipt - 1 refused - 2 usage/read error
+
+REPRODUCING THE END-TO-END RUN, AND WHAT IT DOES NOT LICENSE
+------------------------------------------------------------
+The commit that added this file quotes a live run: band artifacts produced by
+`apr test llm bench`, converted here, and given a verdict by
+scripts/perf_gate.sh. State the instrument exactly, because a benchmark
+artifact is only as identified as the binary that made it.
+
+  subject     /home/noah/.cargo/bin/apr, `apr 0.64.0 (ce712eae0)`
+              sha256 964503625a69462e24964c5b8118b1b78a1c0cae8e4dbdf845b2da25281d01c9
+  comparator  /home/noah/src/llama.cpp/build/bin/llama-server
+              `version: 7746 (39173bcac)` == scripts/llama_pin.toml's pin
+  compute     cpu on BOTH sides, read from the runtimes' own logs rather than
+              from the flags: llama printed "offloaded 0/25 layers to GPU", and
+              apr printed no CUDA banner, which is what
+              parity_host_receipt.sh's apr_class_from_log() calls cpu.
+
+`. scripts/apr_bin.sh` REFUSES on that box -- rc=1, "STALE apr BINARY ...
+reports apr 0.64.0 (ce712eae0), HEAD a468eac4e". There is no apr built from
+HEAD anywhere on it, so no step could have used one, and saying so is the
+honest form. The binary that ran is three commits behind, and the other apr on
+PATH is worse: ~/.local/bin/apr is stamped `v0.64.0+no-git`, carrying no commit
+at all, so nothing could establish what source built it. It won a bare `apr`.
+
+WHY THAT RUN STILL PROVES WHAT IT CLAIMS, and only that. The subject under test
+is this converter and perf_gate.sh AT HEAD -- Python and Bash, run from this
+checkout. apr is the INSTRUMENT that produced the input artifact, and the
+receipt records which one by digest rather than by name. The Rust delta between
+ce712eae0 and HEAD is five files, all of them `apr profile` (PERF-016):
+commands/profile.rs plus the four it `include!`s, reached only through
+`ExtendedCommands::Profile`. Neither executed step -- `apr serve run` and
+`apr test llm bench` -- is in that path; the one cross-module consumer,
+serve_plan.rs, imports `detect_gpu_hardware` and `query_gpu_vram_mb`, and the
+delta touches neither.
+
+WHAT IT DOES NOT LICENSE: any statement about apr's speed. Those ratios are a
+CPU-only published binary against llama.cpp on a box at load 16-74, ten-second
+runs, two runs per band. They are not a parity result, they are not cited as
+one anywhere, and the receipt is deliberately left in scratch rather than
+committed under evidence/. Rebuilding to satisfy apr_bin.sh was declined
+rather than skipped: `cargo install --path crates/apr-cli --force` overwrites
+~/.cargo/bin/apr while other agents on this box may be running it, and it would
+not change a single thing the run establishes.
 """
 import argparse
 import json
