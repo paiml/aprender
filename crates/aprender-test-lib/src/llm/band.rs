@@ -518,6 +518,14 @@ mod tests {
             temperature: Some(0.0),
             max_tokens: Some(128),
             stream: Some(false),
+            // #2746 added these to ChatRequest after this test module was
+            // written on a stacked branch that never saw it. None matches
+            // loadtest.rs's convention for a fixture; the PRODUCTION band
+            // path never builds a ChatRequest itself -- prompts.rs carries
+            // both fields through from the corpus (prompts.rs:206), which is
+            // what satisfies the 4.4.4 seed requirement.
+            seed: None,
+            ignore_eos: None,
         }]
     }
 
