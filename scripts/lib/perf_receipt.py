@@ -52,10 +52,17 @@ The commit that added this file quotes a live run: band artifacts produced by
 scripts/perf_gate.sh. State the instrument exactly, because a benchmark
 artifact is only as identified as the binary that made it.
 
-  subject     /home/noah/.cargo/bin/apr, `apr 0.64.0 (ce712eae0)`
+  subject     the cargo-installed `apr` on that box, `apr 0.64.0 (ce712eae0)`
               sha256 964503625a69462e24964c5b8118b1b78a1c0cae8e4dbdf845b2da25281d01c9
-  comparator  /home/noah/src/llama.cpp/build/bin/llama-server
+  comparator  a locally built llama-server,
               `version: 7746 (39173bcac)` == scripts/llama_pin.toml's pin
+
+  Neither is named by its absolute path, and losing the path loses nothing: a
+  binary is identified by its digest and its version stamp, which is the whole
+  argument three lines below. The path is machine-specific provenance that
+  check_hardcoded_paths.sh --full counts as a shipped finding, and #2733's
+  PERF-032 armed that ratchet -- it had never gated anything before, which is
+  how twenty of them landed.
   compute     cpu on BOTH sides, read from the runtimes' own logs rather than
               from the flags: llama printed "offloaded 0/25 layers to GPU", and
               apr printed no CUDA banner, which is what
