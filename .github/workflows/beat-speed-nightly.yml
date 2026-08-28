@@ -41,7 +41,16 @@ concurrency:
 
 jobs:
   beat-speed:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    # PERF-013/PERF-031. `perf-solo` is carried by exactly ONE runner
+    # (intel-clean-room-16; paiml/infra#338), so two speed runs can never
+    # overlap and time each other. Verified server-side: this five-label
+    # selector resolves to 1 agent, the four-label one resolves to 16.
+    # Cardinality is enforced by `make -C machines/intel verify-perf-solo-lane`
+    # in paiml/infra, not here.
+    #
+    # TRADE-OFF: this lane is one agent wide, so the job can QUEUE behind
+    # general clean-room work on that runner. See timeout-minutes below.
+    runs-on: [self-hosted, X64, Linux, clean-room, perf-solo]
     timeout-minutes: 45
     env:
       # Every beat step tees here; the final step audits it for completeness.
@@ -55,6 +64,41 @@ jobs:
       BEAT_LOG: ${{ github.workspace }}/beat-speed-measurements.log
     steps:
       - uses: actions/checkout@v7
+
+      # PERF-031 measurement-environment receipt.
+      #
+      # What `perf-solo` buys: this job is alone in its LANE. What it cannot
+      # buy: a quiet BOX. `intel` runs 16 runners by design (over-subscription
+      # is provisioned deliberately), so the label removes perf-vs-perf
+      # contention only. Any absolute number taken here must therefore carry
+      # its neighbour count as part of the receipt. A ratio cancels steady
+      # load, but not a neighbour arriving or leaving mid-run - which is why
+      # the count is recorded at BOTH ends and compared.
+      #
+      # RUNNER_NAME, not hostname: all 16 agents report the same hostname
+      # (mac-server), so hostname cannot say which agent served this job.
+      # The runner name is the only field that identifies the lane, and it is
+      # the whole point of the receipt.
+      #
+      # Match the `comm` field, NOT an args regex: runner 2.336 installs the
+      # worker under a versioned directory (bin.2.336.0/Runner.Worker), so a
+      # "bin/Runner.Worker" pattern counts ZERO while 16 jobs are running.
+      # Subtract one for this job's own worker. Zombies are excluded.
+      #
+      # This step is a RECEIPT, never a gate: it records the environment and
+      # cannot fail the build. Asserting on neighbour count would put an
+      # environment-dependent red in a lane that exists to measure code.
+      - name: Receipt — measurement environment (before)
+        id: env_before
+        run: |
+          set -uo pipefail
+          n=$(ps -eo stat=,comm= | awk '$1 !~ /^Z/ && $2 == "Runner.Worker" { c++ } END { print c+0 }')
+          neighbours=$(( n > 0 ? n - 1 : 0 ))
+          echo "neighbours=$neighbours" >> "$GITHUB_OUTPUT"
+          printf 'BEAT-ENV before runner=%s neighbours=%s load=%s host=%s\n' \
+            "${RUNNER_NAME:-unknown}" "$neighbours" \
+            "$(cut -d' ' -f1-3 /proc/loadavg)" "$(hostname)" \
+            | tee -a "$BEAT_LOG"
 
       - name: Ensure uv is available (for scikit-learn baselines)
         run: |
@@ -154,3 +198,24 @@ jobs:
       - name: Every beat must have reported a measurement
         if: ${{ !cancelled() }}
         run: bash scripts/check_beat_measurements.sh "$BEAT_LOG"
+
+      # Closing half of the receipt. The neighbour count is passed in through
+      # `env:` rather than spliced into the script body: Actions substitutes
+      # expressions TEXTUALLY, so a value that happened to contain a newline
+      # would become script. Same reason no expression appears in any comment
+      # above - `#` does not protect a comment from substitution.
+      - name: Receipt — measurement environment (after)
+        if: ${{ !cancelled() }}
+        env:
+          BEFORE_NEIGHBOURS: ${{ steps.env_before.outputs.neighbours }}
+        run: |
+          set -uo pipefail
+          n=$(ps -eo stat=,comm= | awk '$1 !~ /^Z/ && $2 == "Runner.Worker" { c++ } END { print c+0 }')
+          after=$(( n > 0 ? n - 1 : 0 ))
+          printf 'BEAT-ENV after runner=%s neighbours=%s (before %s)\n' \
+            "${RUNNER_NAME:-unknown}" "$after" "${BEFORE_NEIGHBOURS:-unknown}" \
+            | tee -a "$BEAT_LOG"
+          if [ "$after" != "${BEFORE_NEIGHBOURS:-unknown}" ]; then
+            printf 'BEAT-ENV UNSTABLE: neighbour count moved %s -> %s during the run\n' \
+              "${BEFORE_NEIGHBOURS:-unknown}" "$after" | tee -a "$BEAT_LOG"
+          fi
