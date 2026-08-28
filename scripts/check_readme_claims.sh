@@ -18,6 +18,14 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 README="$REPO_ROOT/README.md"
 
+# A cargo exit is classified before any verdict names the README. See
+# scripts/cargo_classify.sh. The case table is armed on the normal path because
+# no workflow invokes a --self-test here, and a case table nothing runs is the
+# vacuous-scan class; re-mutated in this scope rather than inheriting another
+# guard's green.
+. "$REPO_ROOT/scripts/cargo_classify.sh" || exit 1
+cargo_classify_selftest --quiet || exit 1
+
 if [[ ! -f "$README" ]]; then
   echo "error: $README not found" >&2
   exit 2
@@ -38,8 +46,29 @@ measured_crate_count() {
   # Wiring it in that state would have forced README to claim 82 workspace
   # crates, which is false. A gate that enforces the wrong answer is worse
   # than no gate.
-  (cd "$REPO_ROOT" && cargo metadata --no-deps --format-version 1 2>/dev/null) \
-    | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["packages"]))'
+  #
+  # cargo's stderr used to go to /dev/null and its exit status was never read,
+  # so a `cargo metadata` that DIED left `measured` empty and the caller
+  # printed "README claims 78, cargo metadata --no-deps has  workspace
+  # members" -- a verdict about the README, from a measurement that never
+  # happened. Same class as the facade gate that blocked every PR on
+  # 2026-08-27. Now: one invocation, rc read directly, ENV named as ENV.
+  local md err rc
+  md="$(mktemp)"; err="$(mktemp)"
+  (cd "$REPO_ROOT" && cargo metadata --no-deps --format-version 1 > "$md" 2> "$err")
+  rc=$?
+  if [ "$rc" -ne 0 ] || [ ! -s "$md" ]; then
+    if [ "$( classify_cargo_failure "$err" )" = 'ENV' ]; then
+      report_cargo_env_failure "$err" 'the workspace crate count' >&2
+    else
+      echo "FAIL: cargo metadata exited $rc and the crate count could not be measured." >&2
+      sed 's/^/  | /' "$err" >&2
+    fi
+    rm -f "$md" "$err"
+    return 1
+  fi
+  python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["packages"]))' "$md"
+  rm -f "$md" "$err"
 }
 
 measured_contract_count() {
@@ -137,7 +166,9 @@ claimed_cli_command_count() {
 
 check_crate_count() {
   local measured claimed
-  measured=$(measured_crate_count)
+  # `|| return 1` is required: without it the assignment swallows the ENV/vacuity
+  # verdict above and the comparison proceeds against an empty measurement.
+  measured=$(measured_crate_count) || return 1
   claimed=$(claimed_crate_count)
   if [[ -z "$claimed" ]]; then
     echo "FAIL FALSIFY-README-001 crate_count: README lacks '**N** workspace crates' claim (pattern mismatch)" >&2
