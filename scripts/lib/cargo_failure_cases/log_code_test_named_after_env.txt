@@ -1,0 +1,17 @@
+running 2 tests
+test net::tests::retries_on_connection_refused ... FAILED
+test net::tests::resolves_host ... ok
+
+failures:
+
+---- net::tests::retries_on_connection_refused stdout ----
+
+thread 'net::tests::retries_on_connection_refused' panicked at crates/aprender-serve/src/net.rs:88:9:
+assertion `left == right` failed
+  left: Err("Connection refused (os error 111)")
+ right: Ok(())
+
+failures:
+    net::tests::retries_on_connection_refused
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out

@@ -1,0 +1,4 @@
+error: could not compile `aprender-core` (lib)
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name aprender_core --edition=2021` (signal: 15, SIGTERM: termination signal)

@@ -442,6 +442,36 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
+      # THE COMPARAND, FETCHED ONCE, BEFORE ANY GUARD THAT NEEDS IT.
+      #
+      # Every shrink-only baseline in scripts/ is now compared against a ref a
+      # pull request cannot rewrite, because twelve of them were compared
+      # against nothing: appending one entry -- cloned from that file's own last
+      # real entry -- returned rc=0 from all twelve, and on two of them the
+      # appended entry laundered a violation created in the same commit.
+      #
+      # This step used to sit ~180 lines down, next to the one guard that
+      # needed it. Three ratcheted guards (shell lint, hand-rolled parsers,
+      # assertion exclusion) run BEFORE that point and would have had an
+      # unresolvable comparand -- which those guards treat as a hard failure,
+      # never as "no growth", so the mistake would have been loud rather than
+      # silent. It is still a mistake. One fetch, before all of them.
+      #
+      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
+      # ratchets fall back to the origin/main TIP. That is the STRICTER
+      # comparand, and it means the CI path is the tip path: a local run that
+      # passes on the merge-base can still red here, and CI is authoritative.
+      - name: Fetch origin/main as the comparand for every ratchet in this job
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      # A baseline that no guard compares to anything is an allowlist wearing
+      # the word "ratchet". This is the coverage backstop: every scripts/*.txt
+      # is classified shrink-only (and compared) or NOT-a-ratchet (with the
+      # reason printed), and an unclassified one is a hard failure -- so the
+      # next baseline file to arrive cannot arrive unratcheted.
+      - name: Baseline ratchet mutation table
+        run: bash scripts/check_baseline_ratchets.sh --self-test
+      - name: Every shrink-only baseline is classified and may not grow
+        run: bash scripts/check_baseline_ratchets.sh
       - name: Every self-hosted job must pin a discriminating label
         run: bash scripts/check_runner_labels.sh
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
@@ -731,11 +761,11 @@ jobs:
       # number in this repo to edit: every floor is derived at run time from a
       # ref a pull request cannot rewrite.
       #
-      # fetch-depth for this job is 1, so origin/main must be fetched. A failed
-      # fetch does NOT degrade to a self-comparison -- the guard hard-fails on an
-      # unresolvable comparand. Text-only, no build.
-      - name: Fetch origin/main for the dogfood coverage comparand
-        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      # fetch-depth for this job is 1, so origin/main must be fetched -- and it
+      # is now fetched ONCE, immediately after checkout, because the baseline
+      # ratchets that run earlier in this job need the same comparand. A failed
+      # fetch does NOT degrade to a self-comparison; every guard that uses it
+      # hard-fails on an unresolvable comparand.
       #
       # DOGFOOD_RECEIPT extends the T2 pairing rule to the receipt when a run
       # produces one. The rule is enforced on every channel a cluster-level ratio
@@ -1194,16 +1224,27 @@ jobs:
       # reported PASS. The two guards' universes are complementary, not nested.
       # contracts/ is now at ZERO and has no baseline to raise. Text-only, no build.
       #
-      # The whole-tree ratchet lives in `--full` and is NOT wired here: it shells
-      # out to `pmat analyze hardcoded-paths` (pmat#1017, the detector of record),
-      # and the clean-room pool measured pmat 3.31.0 on 2026-08-20, which has no
-      # such subcommand. Wiring it today would red every PR; `|| true` would make
-      # it a gate that cannot fail. Add the `--full` step here once the fleet
-      # carries pmat >= 3.32.0.
+      # The whole-tree ratchet lives in `--full`. It shells out to
+      # `pmat analyze hardcoded-paths` (pmat#1017, the detector of record), and
+      # the clean-room pool still measures pmat 3.31.0 (re-checked 2026-08-28),
+      # which has no such subcommand -- so a bare `--full` here would red every
+      # PR, and `|| true` would make it a gate that cannot fail.
+      #
+      # It used to be left unwired with a comment saying to promote it "once the
+      # fleet carries pmat >= 3.32.0". That is what this step is fixing: a
+      # comment is not a trigger, nothing re-evaluated the condition, and 20
+      # shipped machine-specific paths landed through the gap (299 vs baseline
+      # 278 on 62d23d8d1). --full-if-capable re-evaluates it on every run: it
+      # runs the ratchet and propagates its status where pmat can produce a
+      # verdict, and where it cannot it prints the version and the actual
+      # refusal text rather than assuming. The gate arms itself on the day the
+      # fleet upgrades, with no edit to this file.
       - name: No contract may name a machine-specific path
         run: bash scripts/check_hardcoded_paths.sh
       - name: Machine-specific-path guard case table
         run: bash scripts/check_hardcoded_paths.sh --self-test
+      - name: Whole-tree machine-specific-path ratchet (arms itself at pmat >= 3.32.0)
+        run: bash scripts/check_hardcoded_paths.sh --full-if-capable
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".

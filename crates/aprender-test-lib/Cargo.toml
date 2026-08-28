@@ -113,6 +113,20 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 
 [dev-dependencies]
+# Self dev-dependency: turns on `llm` for THIS crate's own test build.
+#
+# The 169 unit tests in `src/llm/` only compile under the `llm` feature, which is
+# deliberately not in `default` (it pulls reqwest/tokio/futures, and most
+# consumers take this crate with `default-features = false`). Before this line,
+# `cargo test -p aprender-test-lib` compiled 6304 tests and ZERO of them were
+# `llm::` -- yet CI's `cargo nextest run --workspace --lib` ran all 169, purely
+# because apr-cli happens to depend on this crate with `features = ["llm"]` and
+# workspace feature unification turned it on. That made the coverage EMERGENT:
+# deleting one unrelated dependency edge in apr-cli would have taken all 169
+# tests dark while every test command still exited 0 and reported success.
+#
+# A path-only dev-dependency is stripped at publish time, so this is packaging-safe.
+aprender-test-lib = { path = ".", features = ["llm"] }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 proptest = { workspace = true }

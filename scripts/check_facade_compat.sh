@@ -108,11 +108,12 @@ FACADE_WS="${REPO_ROOT}/crates/facades"
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # cargo exits non-zero for two categories of reason, and only one of them is
-# about the code under test. aprender#2574 taught this for the `cargo test`
-# block below -- "the reader could not tell a signature drift from an OOM-killed
-# rustc" -- but the fix stopped at that one block and left this residual, which
-# is the shape a published-artifact audit keeps finding: the earlier fix was
-# real and incomplete.
+# about the code under test. #2712 added a classify_cargo_failure() HERE, to
+# this one file, for the COMPATIBILITY block below. That was the third instance
+# of the class in a single day and the second time the fix stopped at the block
+# that hurt -- so the function now lives in scripts/cargo_classify.sh, is
+# sourced by every guard that renders a verdict from a cargo exit, and carries
+# one case table that all of them re-run.
 #
 # On 2026-08-27 the residual came due. rustc was un-spawnable on a clean-room
 # runner (`could not execute process ... (os error 2)`) while compiling
@@ -121,19 +122,9 @@ FACADE_WS="${REPO_ROOT}/crates/facades"
 # hard-requires guard-runner-labels, so a runner fault presented as a facade
 # regression and blocked every open PR behind a phantom.
 #
-# ENV still exits 1. A gate that goes green on "we could not tell" is the
-# defect class this repo names most often. The claim just has to be true.
-classify_cargo_failure() {  # $1=logfile -> ENV | CODE
-    # Anchored on cargo's OWN framing of a spawn/IO/resource fault, never on a
-    # bare phrase: `No such file or directory` also appears in the legitimate
-    # rustc diagnostic for a source file the repo really is missing, and that
-    # is CODE. See row C7.
-    if grep -qE 'could not execute process|could not parse/generate dep info|No space left on device|signal: (9|15)|failed to acquire package cache lock|error: failed to download|Connection refused|Temporary failure in name resolution' "$1"; then
-        printf 'ENV\n'
-    else
-        printf 'CODE\n'
-    fi
-}
+# ENV still exits 1 everywhere. A gate that goes green on "we could not tell" is
+# the defect class this repo names most often. The claim just has to be true.
+. "${REPO_ROOT}/scripts/cargo_classify.sh" || exit 1
 
 if [ "${1:-}" = "--self-test" ]; then
     # Must-match / must-not-match table for the structural checker. Fixtures are
@@ -176,36 +167,21 @@ if [ "${1:-}" = "--self-test" ]; then
     run_case 'row 7 a facade declaring a [[bin]] is REJECTED' 1 root_good.json facade_cli_declares_bin.json 'FAIL  R7'
     run_case 'row 8 the signpost facade depending on upstream is REJECTED' 1 root_good.json facade_cli_depends_upstream.json 'FAIL  R3'
 
-    # ---- Rows C1..C7: the failure CLASSIFIER -------------------------------
-    # Rows 1-8 above probe the python structural checker only. The classifier
-    # is a NEW surface, so it gets its own must-match/must-not-match table
-    # rather than inheriting rows 1-8's green: extending a guard's scope
-    # requires re-mutating in the new scope, the old proof does not transfer.
-    # Guard regexes in this repo have been wrong five times; every one was
-    # caught by a table like this and none by review.
-    run_classify() {  # name want fixture
-        local name="$1" want="$2" got
-        got="$( classify_cargo_failure "$CASES/$3" )"
-        if [ "$got" = "$want" ]; then
-            printf 'ok    %s -> %s\n' "$name" "$got"
-        else
-            printf 'FAIL  %s: classified %s, expected %s\n' "$name" "$got" "$want"; fails=1
-        fi
-    }
-    run_classify 'C1 rustc un-spawnable (the 2026-08-27 outage)' ENV  log_env_rustc_missing.txt
-    run_classify 'C2 ENOSPC via dep-info'                        ENV  log_env_enospc.txt
-    run_classify 'C3 OOM-killed rustc (signal 9)'                ENV  log_env_oom_kill.txt
-    run_classify 'C4 package cache lock unavailable'             ENV  log_env_cache_lock.txt
-    run_classify 'C5 a genuine unresolved import'                CODE log_code_unresolved_import.txt
-    run_classify 'C6 a genuine missing method'                   CODE log_code_no_method.txt
-    # C7 is the discrimination case and the reason the pattern is anchored on
-    # cargo's spawn framing rather than on the bare phrase: rustc says
-    # "No such file or directory (os error 2)" for a source file the repo is
-    # actually missing, and that is a real defect the gate must still report.
-    run_classify 'C7 missing SOURCE file is CODE, not ENV'       CODE log_code_missing_source.txt
+    # ---- The failure CLASSIFIER --------------------------------------------
+    # Rows 1-8 above probe the python structural checker only. The classifier is
+    # a DIFFERENT surface, so it gets its own must-match/must-not-match table
+    # rather than inheriting rows 1-8's green: extending a guard's scope requires
+    # re-mutating in the new scope, the old proof does not transfer. Guard
+    # regexes in this repo have been wrong five times; every one was caught by a
+    # table like this and none by review.
+    #
+    # The table is shared (scripts/cargo_classify.sh) because the CLASSIFIER is
+    # shared. That is what makes the mutation proof transfer to every caller at
+    # once: break the regex and THIS self-test turns red too.
+    cargo_classify_selftest || fails=1
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (8/8 structural + 7/7 classifier)\n'
+    printf '\nSELF-TEST PASSED (8/8 structural + classifier table above)\n'
     exit 0
 fi
 
@@ -214,8 +190,8 @@ printf '=== crates.io compatibility facades (check_facade_compat.sh) ===\n\n'
 rc=0
 
 ROOT_MD="$(mktemp)"; FAC_MD="$(mktemp)"; BINLOG="$(mktemp)"; TESTLOG="$(mktemp)"
-CHECKLOG="$(mktemp)"
-trap 'rm -f "${ROOT_MD:?}" "${FAC_MD:?}" "${BINLOG:?}" "${TESTLOG:?}" "${CHECKLOG:?}"' EXIT
+CHECKLOG="$(mktemp)"; LOCKLOG="$(mktemp)"; MUTLOG="$(mktemp)"
+trap 'rm -f "${ROOT_MD:?}" "${FAC_MD:?}" "${BINLOG:?}" "${TESTLOG:?}" "${CHECKLOG:?}" "${LOCKLOG:?}" "${MUTLOG:?}"' EXIT
 ( cd "$REPO_ROOT" && cargo metadata --no-deps --format-version 1 ) > "$ROOT_MD" 2>/dev/null
 ( cd "$FACADE_WS" && cargo metadata --no-deps --format-version 1 ) > "$FAC_MD" 2>/dev/null
 # VACUOUS guard: an empty or unparsable metadata document must be RED, never a
@@ -236,10 +212,14 @@ python3 "$FACTS" "$ROOT_MD" "$FAC_MD" || rc=1
 # check_lockfile_current.sh -- which resolves the root workspace only -- does
 # not see it. Same defect, same instrument: `--locked` fails exactly when the
 # lock and the manifests disagree, in about a second, with no build.
-if ( cd "$FACADE_WS" && cargo metadata --format-version 1 --locked ) >/dev/null 2>&1; then
+if ( cd "$FACADE_WS" && cargo metadata --format-version 1 --locked ) > "$LOCKLOG" 2>&1; then
     printf 'ok    R5 crates/facades/Cargo.lock matches the facade manifests (--locked)\n'
+elif [ "$( classify_cargo_failure "$LOCKLOG" )" = 'ENV' ]; then
+    report_cargo_env_failure "$LOCKLOG" 'R5 (facade lockfile currency)'
+    rc=1
 else
     printf 'FAIL  R5 crates/facades/Cargo.lock is stale -- run `cargo metadata` in crates/facades\n'
+    sed 's/^/      | /' "$LOCKLOG"
     rc=1
 fi
 
@@ -266,11 +246,7 @@ printf -- '\n--- COMPATIBILITY: 0.3.1 consumer code against the facade ---------
 if ( cd "$FACADE_WS" && cargo check --quiet --workspace --all-targets --target-dir "$TD" ) > "$CHECKLOG" 2>&1; then
     printf 'ok    27 vendored 0.3.1 examples + probes compile against the facades\n'
 elif [ "$( classify_cargo_failure "$CHECKLOG" )" = 'ENV' ]; then
-    printf 'ENV   cargo check could not run to a verdict on this host -- this is a\n'
-    printf '      runner fault, NOT evidence that the facades regressed. Triage the\n'
-    printf '      runner (toolchain, disk, OOM), then re-run. cargo output (%s lines):\n' \
-        "$( wc -l < "$CHECKLOG" | tr -d ' ' )"
-    sed 's/^/      | /' "$CHECKLOG"
+    report_cargo_env_failure "$CHECKLOG" 'whether 0.3.1 consumer code still compiles'
     rc=1
 else
     printf 'FAIL  0.3.1 consumer code no longer compiles against the facades\n'
@@ -290,6 +266,14 @@ printf -- '\n--- BEHAVIOUR: the five 0.3.1 attribute macros still expand -------
 # tests under a different machine state than the one that decided the verdict.
 if ( cd "$FACADE_WS" && cargo test --quiet --workspace --target-dir "$TD" ) > "$TESTLOG" 2>&1; then
     printf 'ok    compat_invoke + compat_probe pass\n'
+elif [ "$( classify_cargo_failure "$TESTLOG" )" = 'ENV' ]; then
+    # #2574 gave this block its diagnostic ("the reader could not tell a
+    # signature drift from an OOM-killed rustc") and stopped there: the reader
+    # still had to make the call by eye, on every run, and the gate still SAID
+    # the targets do not pass. Printing the log is not the same as classifying
+    # it.
+    report_cargo_env_failure "$TESTLOG" 'whether the compat targets pass'
+    rc=1
 else
     printf 'FAIL  compat targets do not pass -- run `cargo test` in crates/facades\n'
     printf '      cargo output follows (%s lines):\n' "$( wc -l < "$TESTLOG" | tr -d ' ' )"
@@ -300,8 +284,16 @@ fi
 printf -- '\n--- MUTATION CONTROL: a broken re-export must be RED ----------------\n'
 for pkg in provable-contracts provable-contracts-macros; do
     if ( cd "$FACADE_WS" && cargo check --quiet -p "$pkg" --test compat_probe \
-            --features __facade_probe_mutant --target-dir "$TD" ) >/dev/null 2>&1; then
+            --features __facade_probe_mutant --target-dir "$TD" ) > "$MUTLOG" 2>&1; then
         printf 'FAIL  %s: the mutant arm COMPILED. The compile gate above proves nothing.\n' "$pkg"
+        rc=1
+    elif [ "$( classify_cargo_failure "$MUTLOG" )" = 'ENV' ]; then
+        # THE POLARITY IS INVERTED HERE, which makes ENV worse rather than
+        # merely mislabelled: this row PASSES on a non-zero exit. A host fault
+        # would be read as "the mutant was correctly rejected", so the mutation
+        # control -- the row whose whole job is to prove the gate above can
+        # fail -- would certify itself from a build that never ran.
+        report_cargo_env_failure "$MUTLOG" "the $pkg mutation control"
         rc=1
     else
         printf 'ok    %s: naming an unexported item fails the build\n' "$pkg"
@@ -348,6 +340,9 @@ if ( cd "$FACADE_WS" && cargo build --quiet -p provable-contracts-cli --bin pv \
     rc=1
 elif grep -q 'no bin target named `pv`' "$BINLOG"; then
     printf 'ok    C1 `cargo build --bin pv` fails with "no bin target named `pv`"\n'
+elif [ "$( classify_cargo_failure "$BINLOG" )" = 'ENV' ]; then
+    report_cargo_env_failure "$BINLOG" 'C1 (whether the facade ships a bin named `pv`)'
+    rc=1
 else
     # A build that failed for some OTHER reason would let C1 pass on a
     # compile error and prove nothing about the bin surface.

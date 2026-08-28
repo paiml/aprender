@@ -1,0 +1,11 @@
+running 3 tests
+test compat::probe_reexports ... FAILED
+
+failures:
+
+---- compat::probe_reexports stdout ----
+
+thread 'compat::probe_reexports' panicked at crates/facades/tests/compat_probe.rs:17:5:
+assertion failed: Contract::parse(SRC).is_ok()
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out

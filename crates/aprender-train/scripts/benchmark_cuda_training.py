@@ -28,12 +28,19 @@ Prerequisites:
     - uv installed: curl -LsSf https://astral.sh/uv/install.sh | sh
 """
 
+import os
 import subprocess
 import time
 import json
 from dataclasses import dataclass
 from typing import Optional
 import sys
+
+# APR-MONO: this benchmark used to shell out to a standalone ~/src/entrenar
+# checkout, which no longer exists -- entrenar IS crates/aprender-train in this
+# monorepo. Resolving from __file__ makes the benchmark run from any
+# clone instead of one developer's filesystem.
+CRATE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 @dataclass
@@ -216,7 +223,7 @@ def benchmark_entrenar_cuda(
             capture_output=True,
             text=True,
             timeout=300,
-            cwd="/home/noah/src/entrenar",
+            cwd=CRATE_ROOT,
         )
 
         if result.returncode != 0:
