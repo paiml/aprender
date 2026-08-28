@@ -177,11 +177,15 @@ fn run_headless_apr(
 
     // Output JSON if requested
     if config.json {
+        // #2731: this path emits its own receipt shape and recorded
+        // `iterations` but not `warmup` — the half that says whether the
+        // number is a steady-state or a cold-start measurement.
         let json = format!(
-            r#"{{"model":"{}","format":"apr","throughput":{:.1},"total_time_ms":{:.1},"iterations":{}}}"#,
+            r#"{{"model":"{}","format":"apr","throughput":{:.1},"total_time_ms":{:.1},"warmup":{},"iterations":{}}}"#,
             model_name,
             throughput,
             total_time.as_secs_f64() * 1000.0,
+            config.warmup,
             config.iterations
         );
 

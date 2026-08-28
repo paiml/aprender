@@ -120,6 +120,36 @@ impl Default for CbtopConfig {
     }
 }
 
+/// The two parameters that decide what a cbtop report is a report OF.
+///
+/// #2731: the emitted JSON recorded NEITHER. `grep -ic "warmup|iterations"`
+/// over a persisted report returned 0, so a cold-start number written with
+/// `--warmup 0` and a steady-state number written with `--warmup 10` were
+/// byte-indistinguishable once on disk. Under APR-PERF-GATE-001 a performance
+/// number is evidence only if something can prove how it was measured, and a
+/// receipt that cannot express its own warmup is not a receipt.
+///
+/// These live on the REPORT rather than being spliced in from `CbtopConfig` at
+/// emit time so that the compiler asks the question where the measurement
+/// loops are. A future producer cannot construct a report and leave its
+/// provenance to be filled in by whoever happens to print it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeasurementParams {
+    /// Iterations run and discarded before sampling began.
+    pub warmup: usize,
+    /// Iterations the reported statistics were computed from.
+    pub iterations: usize,
+}
+
+impl Default for MeasurementParams {
+    fn default() -> Self {
+        Self {
+            warmup: 10,
+            iterations: 100,
+        }
+    }
+}
+
 /// Headless report output per spec section 7.0.1
 #[derive(Debug, Clone)]
 pub struct HeadlessReport {
@@ -132,6 +162,8 @@ pub struct HeadlessReport {
     pub falsification: FalsificationSummary,
     pub status: String,
     pub ci_result: String,
+    /// How this report was measured — see [`MeasurementParams`].
+    pub measurement: MeasurementParams,
 }
 
 /// PMAT quality scores per spec section 7.0.1
@@ -401,6 +433,20 @@ pub fn run(config: CbtopConfig) -> Result<()> {
         return Err(CliError::ValidationFailed(
             "cbtop requires at least 1 measurement iteration (--iterations 0 measures nothing: \
              every brick would report 0.0µs and score a perfect 100/A)"
+                .to_string(),
+        ));
+    }
+
+    // #2731: the same refusal for the other half of the pair. Zero warmup does
+    // not empty the report, it fills it from the cold-start regime and labels
+    // the result a measurement. `CbtopConfig` is public and constructible
+    // without going through clap, so the guard is repeated here rather than
+    // left to the `--warmup` value_parser alone.
+    if config.warmup == 0 {
+        return Err(CliError::ValidationFailed(
+            "cbtop requires at least 1 warmup iteration (--warmup 0 measures the cold-start \
+             regime — allocation, CUDA context, kernel JIT, cache-cold weights — and reports \
+             it as steady state)"
                 .to_string(),
         ));
     }

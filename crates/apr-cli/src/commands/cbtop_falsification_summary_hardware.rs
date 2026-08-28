@@ -242,6 +242,7 @@
             },
             status: "X".to_string(),
             ci_result: "X".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let json = format_report_as_json(&report);
@@ -288,6 +289,7 @@
             },
             status: "X".to_string(),
             ci_result: "X".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let json = format_report_as_json(&report);
@@ -467,6 +469,7 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         }
     }
 
@@ -522,6 +525,40 @@
             msg.contains("iteration"),
             "unexpected rejection message: {msg}"
         );
+    }
+
+    /// #2731: the same refusal for the other half of the pair.
+    ///
+    /// `CbtopConfig` is public and constructible without going through clap, so
+    /// the `--warmup` value_parser alone does not cover every caller of
+    /// `run()`. Zero warmup does not empty the report the way zero iterations
+    /// does — it fills it from the cold-start regime and labels the result a
+    /// measurement.
+    #[test]
+    fn test_run_rejects_zero_warmup() {
+        let config = CbtopConfig {
+            headless: true,
+            simulated: true,
+            warmup: 0,
+            ..Default::default()
+        };
+        let err = run(config).expect_err("cbtop accepted warmup 0");
+        let msg = err.to_string();
+        assert!(msg.contains("warmup"), "unexpected rejection message: {msg}");
+    }
+
+    /// Discrimination for the warmup guard: one warmup iteration is legal and
+    /// must still be served, so the guard rejects the value and not the run.
+    #[test]
+    fn test_run_accepts_one_warmup() {
+        let config = CbtopConfig {
+            headless: true,
+            simulated: true,
+            warmup: 1,
+            iterations: 1,
+            ..Default::default()
+        };
+        assert!(run(config).is_ok(), "cbtop refused a legitimate warmup of 1");
     }
 
     /// The guard must discriminate on the value, not reject every run: one

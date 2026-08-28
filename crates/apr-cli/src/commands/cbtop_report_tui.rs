@@ -114,7 +114,11 @@ fn format_report_as_json(report: &HeadlessReport) -> String {
     "blocked": {}
   }},
   "status": "{}",
-  "ci_result": "{}"
+  "ci_result": "{}",
+  "measurement": {{
+    "warmup": {},
+    "iterations": {}
+  }}
 }}"#,
         report.model,
         report.timestamp,
@@ -138,6 +142,10 @@ fn format_report_as_json(report: &HeadlessReport) -> String {
         report.falsification.blocked,
         report.status,
         report.ci_result,
+        // #2731: without these two keys a cold-start number and a steady-state
+        // number are byte-indistinguishable in a file persisted with --output.
+        report.measurement.warmup,
+        report.measurement.iterations,
     )
 }
 
@@ -148,6 +156,10 @@ fn print_report_text(report: &HeadlessReport) {
     println!("═══════════════════════════════════════════════════════════════");
     println!("  Model:     {}", report.model);
     println!("  Timestamp: {}", report.timestamp);
+    println!(
+        "  Measured:  {} warmup + {} measurement iterations",
+        report.measurement.warmup, report.measurement.iterations
+    );
     println!();
     println!(
         "  Throughput: {:.1} tok/s",

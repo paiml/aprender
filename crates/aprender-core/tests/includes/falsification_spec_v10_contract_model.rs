@@ -239,22 +239,102 @@ fn f_prove_006_oracle_validate_catches_hf_mismatch() {
     );
 }
 
+/// The nine algebraic proofs `build_codegen.rs::generate_algebraic_proofs`
+/// emits for EVERY size variant, with no guard around them.
+///
+/// This list is the specification, not a census: it is what FALSIFY-ALG-003
+/// (head_dim bounds), -004 (FFN expansion), -005 (non-degeneracy) and -008
+/// (GQA ordering) require of every variant. The four remaining proof kinds --
+/// Vaswani divisibility, Ainslie GQA divisibility, and the two RoPE proofs --
+/// are emitted conditionally, so they are deliberately absent here: asserting
+/// them unconditionally would fail on the variants the generator legitimately
+/// skips (Qwen3.5-27B has head_dim=256 with hidden=5120/heads=24, Whisper is
+/// not RoPE, MQA variants have num_kv_heads=1).
+///
+/// `{P}` is a variant prefix such as `QWEN2_0_5B`.
+const UNCONDITIONAL_PROOFS: &[&str] = &[
+    "const _: () = assert!({P}_HIDDEN_DIM > 0,",
+    "const _: () = assert!({P}_NUM_LAYERS > 0,",
+    "const _: () = assert!({P}_NUM_HEADS > 0,",
+    "const _: () = assert!({P}_VOCAB_SIZE > 0,",
+    "const _: () = assert!({P}_NUM_KV_HEADS > 0,",
+    "const _: () = assert!({P}_NUM_KV_HEADS <= {P}_NUM_HEADS,",
+    "const _: () = assert!({P}_HEAD_DIM >= {P}_HIDDEN_DIM / {P}_NUM_HEADS,",
+    "const _: () = assert!({P}_HEAD_DIM <= 2 * ({P}_HIDDEN_DIM / {P}_NUM_HEADS),",
+    "const _: () = assert!({P}_INTERMEDIATE_DIM > {P}_HIDDEN_DIM,",
+];
+
+/// Variant prefixes present in the generated file, in file order.
+///
+/// Every size variant declares exactly one `pub const {P}_HIDDEN_DIM: usize`,
+/// so this enumerates the population the proofs must cover WITHOUT hardcoding
+/// how large that population is.
+fn generated_variant_prefixes(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("pub const ")?;
+            let name = rest.split(':').next()?.trim();
+            let prefix = name.strip_suffix("_HIDDEN_DIM")?;
+            Some(prefix.to_string())
+        })
+        .collect()
+}
+
+/// The `KNOWN_FAMILIES` list as written in the generated FILE (not the one
+/// compiled into this binary). Used to prove the two agree -- see the note on
+/// the shared target directory in `f_prove_007`.
+fn generated_known_families(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .skip_while(|l| !l.starts_with("pub const KNOWN_FAMILIES"))
+        .skip(1)
+        .take_while(|l| !l.starts_with("];"))
+        .filter_map(|l| l.trim().trim_end_matches(',').strip_prefix('"')?.strip_suffix('"').map(str::to_string))
+        .collect()
+}
+
 #[test]
-fn f_prove_007_proof_count_is_exactly_297() {
-    // F-PROVE-007: every known model family carries its build-time proofs.
+fn f_prove_007_every_variant_carries_its_unconditional_proofs() {
+    // F-PROVE-007: every model size variant in the generated artifact carries
+    // all nine of the proofs the generator emits unconditionally.
     //
-    // #2522, two independent rots in one gate:
+    // HISTORY OF THE CONSTANT (#2522, #2631, #2732). This gate has been wrong
+    // in three different ways, and the third is the reason it is now derived.
+    //
     //  1. `find_generated_file` searched `<project_root>/target` only. Every
     //     build here redirects CARGO_TARGET_DIR, so it returned None ALWAYS and
-    //     this gate could only ever panic with "Run `cargo build` first" -- it
-    //     has never once read the file. Its four siblings F-PROVE-003/004/005
-    //     wrote the same lookup as `if let Some(..)`, so they passed VACUOUSLY
-    //     for the same reason. The finder now derives the target dir from
-    //     `current_exe()`, which cannot be redirected out from under it.
-    //  2. `== 297` was frozen. The generator emits 578 today. A literal count of
-    //     a generated artifact is a number that rots by construction, so the
-    //     gate is now stated against the thing it actually means: every family
-    //     in KNOWN_FAMILIES must be proved, and a family carries several proofs.
+    //     the gate could only ever panic with "Run `cargo build` first" -- it
+    //     had never once read the file. Its siblings F-PROVE-003/004/005 wrote
+    //     the same lookup as `if let Some(..)` and so passed VACUOUSLY. Fixed
+    //     in #2522: the finder derives the target dir from `current_exe()`.
+    //
+    //  2. `assert_eq!(count, 297)` was frozen. 297 was NEVER wrong -- it was a
+    //     correct census of a moving population. The archived spec that
+    //     published it (docs/specifications/archive/
+    //     compiler-enforced-model-types-model-oracle.md §4.1) states its own
+    //     basis: "297 total across 8 families, 24 size variants", and its
+    //     per-class table sums to exactly 297 at that size
+    //     (24+19+19+24+24+24+24+19+120). The registry has since grown to 16
+    //     families / 47 variants and the same generator emits 578. The
+    //     per-variant density is unchanged: 297/24 = 12.4, 578/47 = 12.3.
+    //     Nothing stopped being proved; more models arrived. So neither 297
+    //     nor 578 is authoritative -- BOTH are snapshots, and any literal is
+    //     wrong again the next time a family YAML lands.
+    //
+    //  3. #2631 replaced the literal with `count >= KNOWN_FAMILIES.len() * 3`.
+    //     That is 578 >= 48 -- a 12x margin. The generator could drop EIGHT of
+    //     its nine unconditional proofs and this gate would still report ok.
+    //     Measured: deleting the VOCAB_SIZE non-degeneracy proof from
+    //     build_codegen.rs removes 47 proofs (578 -> 531) and `>= 48` stays
+    //     GREEN. A ratchet with 12x of slack is a literal's failure mode in a
+    //     different costume.
+    //
+    // The assertion below is derived from the artifact rather than from any
+    // number: it enumerates the variants the file itself declares, and requires
+    // each one to carry each of the nine proofs the generator emits with no
+    // guard. It cannot rot when a family is added or removed, and it fails on
+    // the loss of a single proof for a single variant.
     let gen_path = find_generated_file("model_families_generated.rs").unwrap_or_else(|| {
         panic!(
             "F-PROVE-007: model_families_generated.rs not found under any of {:?}. \
@@ -264,18 +344,70 @@ fn f_prove_007_proof_count_is_exactly_297() {
     });
 
     let content = std::fs::read_to_string(&gen_path).expect("generated file readable");
+
+    // The target directory is SHARED across worktrees on this machine, so
+    // `find_generated_file` can hand back an OUT_DIR written by a different
+    // branch's build. Everything below is read from `content`, so a stale file
+    // would still be self-consistent and the gate would pass while proving
+    // nothing about this tree. Cross-check the one thing that spans both
+    // sources: the family list compiled into this binary must be the family
+    // list in the file being read.
+    let file_families = generated_known_families(&content);
+    assert_eq!(
+        file_families,
+        KNOWN_FAMILIES.iter().map(|f| (*f).to_string()).collect::<Vec<_>>(),
+        "F-PROVE-007: {} declares families {:?} but this binary was compiled \
+         against {:?} -- the generated file found is from a different build. \
+         Re-run `cargo build -p aprender-core`.",
+        gen_path.display(),
+        file_families,
+        KNOWN_FAMILIES,
+    );
+
+    let prefixes = generated_variant_prefixes(&content);
+    assert!(
+        !prefixes.is_empty(),
+        "F-PROVE-007: {} declares no `{{P}}_HIDDEN_DIM` size variants at all",
+        gen_path.display()
+    );
+
+    let mut missing: Vec<String> = Vec::new();
+    for prefix in &prefixes {
+        for template in UNCONDITIONAL_PROOFS {
+            let expected = template.replace("{P}", prefix);
+            if !content.contains(&expected) {
+                missing.push(expected);
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "F-PROVE-007: {} of {} unconditional proofs are missing from {} \
+         ({} variants x {} proofs expected). First 5 missing:\n  {}",
+        missing.len(),
+        prefixes.len() * UNCONDITIONAL_PROOFS.len(),
+        gen_path.display(),
+        prefixes.len(),
+        UNCONDITIONAL_PROOFS.len(),
+        missing.iter().take(5).cloned().collect::<Vec<_>>().join("\n  "),
+    );
+
+    // Aggregate floor, stated as the same derivation rather than a literal:
+    // the file must hold at least the unconditional proofs counted above, plus
+    // whatever the conditional rules add. Measured on this tree:
+    // 9*47 = 423 unconditional + 47 Vaswani + 46 Ainslie + 31 RoPE-even
+    // + 31 RoPE-maxpos = 578, which is the whole file.
     let count = content
         .lines()
         .filter(|line| line.contains("const _: () = assert!"))
         .count();
-
-    let families = KNOWN_FAMILIES.len();
-    assert!(families > 0, "F-PROVE-007: KNOWN_FAMILIES is empty");
     assert!(
-        count >= families * 3,
-        "F-PROVE-007: {count} build-time proofs for {families} model families -- \
-         fewer than 3 per family means the generator stopped proving something \
+        count >= prefixes.len() * UNCONDITIONAL_PROOFS.len(),
+        "F-PROVE-007: {count} build-time proofs for {} size variants -- fewer \
+         than the {} unconditional proofs the generator must emit \
          (generated file: {})",
+        prefixes.len(),
+        prefixes.len() * UNCONDITIONAL_PROOFS.len(),
         gen_path.display()
     );
 }

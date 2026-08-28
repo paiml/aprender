@@ -357,6 +357,25 @@ fn target_dir_candidates() -> Vec<PathBuf> {
 }
 
 fn find_generated_file(filename: &str) -> Option<PathBuf> {
+    // FIRST: this compilation unit's own OUT_DIR, resolved at COMPILE time by
+    // exactly the mechanism `src/format/family_registry.rs:464` uses to
+    // `include!` the generated file into the crate under test.
+    //
+    // #2732: the directory scan below is not merely slow, it reads the WRONG
+    // FILE. `<target>/debug/build/` is SHARED across every worktree and branch
+    // on this machine -- 398 `aprender-core-<hash>/out/model_families_generated.rs`
+    // copies were present when this was written -- and `search_dir_for_file`
+    // returns whichever the directory walk reaches first. Proven by mutation:
+    // deleting the VOCAB_SIZE proof from `build_codegen.rs` and rebuilding left
+    // F-PROVE-007 GREEN, because it read a months-old OUT_DIR that still had
+    // the proof. A gate pointed at an arbitrary stale artifact cannot fail for
+    // the reason it exists. `env!("OUT_DIR")` is baked into this binary at the
+    // same moment the crate is compiled, so it cannot drift.
+    let out_dir = PathBuf::from(env!("OUT_DIR")).join(filename);
+    if out_dir.exists() {
+        return Some(out_dir);
+    }
+
     for target_dir in target_dir_candidates() {
         for profile in &["debug", "release"] {
             let search_root = target_dir.join(profile).join("build");

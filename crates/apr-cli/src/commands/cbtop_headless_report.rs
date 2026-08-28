@@ -115,6 +115,7 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let config = CbtopConfig {
@@ -166,6 +167,7 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let config = CbtopConfig {
@@ -210,6 +212,7 @@
             },
             status: "FAIL".to_string(),
             ci_result: "red".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let config = CbtopConfig {
@@ -265,6 +268,7 @@
             // threshold set, the failing brick score must not be consulted.
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let config = CbtopConfig {
@@ -324,6 +328,7 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let config = CbtopConfig {
@@ -373,6 +378,7 @@
             },
             status: "FAIL".to_string(),
             ci_result: "red".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let json = format_report_as_json(&report);
@@ -413,6 +419,7 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let json = format_report_as_json(&report);
