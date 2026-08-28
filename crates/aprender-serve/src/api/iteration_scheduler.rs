@@ -234,7 +234,14 @@ fn process_iteration_batch(
 
     // Single request — fast M=1 path (CUDA graph replay)
     // realizr#212: non_streaming accumulates via Vec::push then bulk-sends
-    if m == 1 && waiting.is_empty() {
+    // PERF-041: same predicate, via the one ungated statement of it, so the
+    // F-BATCH-004 knob applies here too. Off, this is `m == 1 && waiting.is_empty()`
+    // unchanged.
+    if crate::api::batch_admission::fast_path_eligible(
+        m,
+        waiting.is_empty(),
+        crate::api::batch_admission::force_batched_path(),
+    ) {
         let req = batch.into_iter().next().unwrap();
         let mut cuda_model = model.write().expect("PMAT-088: model lock poisoned");
         crate::api::cuda_batch_scheduler::generate_single_request(&mut cuda_model, req);
