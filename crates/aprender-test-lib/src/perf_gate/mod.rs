@@ -174,8 +174,8 @@ pub use protocol::{
     BOOTSTRAP_SEED, MIN_WALL_CLOCK, QUIESCE, REPLICATES, REQUEST_TIMEOUT,
 };
 pub use receipt::{
-    ComputeClass, KvBlock, Provenance, ReceiptInput, TokenCountingMethod, TokenizationBlock,
-    Workload, SERVER_ONLY_FIELDS,
+    sha256_file, ComputeClass, KvBlock, Provenance, ReceiptInput, TokenCountingMethod,
+    TokenizationBlock, Workload, SERVER_ONLY_FIELDS,
 };
 pub use samples::{read_samples_gz, write_samples_gz, SamplesFile};
 pub use window::{WindowController, WindowReport};

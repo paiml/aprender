@@ -138,6 +138,10 @@ pub(crate) mod prometheus_lint;
 pub(crate) mod prune;
 pub(crate) mod ps_schema;
 pub(crate) mod test_llm;
+// PERF-025: the `--band` mode of `apr test llm bench`. Its own file so that
+// `test_llm.rs`'s complexity is untouched by it -- the PMAT pre-commit gate
+// blocks a FILE with any pre-existing violation, not a function.
+pub(crate) mod test_llm_band;
 // #2399: gated on the crate it actually needs (aprender-explain, aliased
 // `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
 // user does not have to pull CUDA + training to analyze a .ptx file.
