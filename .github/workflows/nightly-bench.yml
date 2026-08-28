@@ -66,6 +66,19 @@ jobs:
       - name: llama.cpp comparator pin discriminates
         run: bash scripts/check_llama_pin.sh
 
+      # The pin declared batch_size = 1 while two other places RETYPED `-b 1`
+      # and a third declared context_length/threads that no execution read.
+      # `-b 1` switches llama.cpp's batching off, which moved the c=16 aggregate
+      # ratio 2.03x -> 4.85x in apr's favour (#2737). This asserts the
+      # declaration is the only source of the comparator's knobs.
+      #
+      # ITS HOME IS ci.yml, beside check_bench_protocol.sh -- this is a static
+      # consistency check on a committed file and needs no bench hardware. It is
+      # here because the change that added it was not permitted to edit ci.yml;
+      # move it there when batching this.
+      - name: Comparator flags match the declaration
+        run: bash scripts/check_comparator_flags.sh
+
       # The measurement itself. `--ignored` because a wall-clock assertion in a
       # normally-running test is the class that has failed eleven times here;
       # this lane runs it explicitly and prints numbers for a human.
