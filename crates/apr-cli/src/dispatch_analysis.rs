@@ -123,50 +123,11 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         // The existing flat-args behavior moved under `apr probar tensor <FILE>`.
         ExtendedCommands::Test { command } => match command {
             // GH-876 Milestone 2 — `apr test llm bench`.
-            TestSubcommand::Llm { command } => match command {
-                LlmSubcommand::Bench {
-                    url,
-                    model,
-                    start,
-                    health_timeout,
-                    warmup,
-                    duration,
-                    concurrency,
-                    runs,
-                    cooldown,
-                    runtime_name,
-                    baseline,
-                    fail_on_regression,
-                    output,
-                    stream,
-                    profile,
-                    prompts,
-                } => tokio::runtime::Runtime::new()
-                    .map_err(|e| {
-                        crate::error::CliError::InferenceFailed(format!("tokio runtime: {e}"))
-                    })
-                    .and_then(|rt| {
-                        rt.block_on(commands::test_llm::run_bench(
-                        commands::test_llm::BenchArgs {
-                            url,
-                            model,
-                            start: start.as_deref(),
-                            health_timeout: *health_timeout,
-                            warmup: *warmup,
-                            duration: *duration,
-                            concurrency: *concurrency,
-                            runs: *runs,
-                            cooldown: *cooldown,
-                            runtime_name,
-                            baseline: baseline.as_deref(),
-                            fail_on_regression: *fail_on_regression,
-                            output: output.as_deref(),
-                            stream: *stream,
-                            profile,
-                            prompts: prompts.as_deref(),
-                        }))
-                    }),
-            },
+            // PERF-025: the arm moved into commands::test_llm::dispatch. This
+            // router was at cognitive 24 against a threshold of 25; the band
+            // branch tipped it, and the destructure belongs next to the
+            // functions it feeds anyway.
+            TestSubcommand::Llm { command } => commands::test_llm::dispatch(command),
             TestSubcommand::Tensor {
                 file,
                 output,

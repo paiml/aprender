@@ -1721,6 +1721,86 @@ pub enum LlmSubcommand {
         /// Prompt file (JSON array of chat requests). Overrides `--profile`.
         #[arg(long)]
         prompts: Option<PathBuf>,
+
+        // ------------------------------------------------------------------
+        // PERF-025 — the APR-PERF-GATE-001 v2.2 §4.4 conformant mode.
+        //
+        // PERF-024 shipped the conformant protocol and nothing called it: this
+        // subcommand still ran `LoadTest::run`, whose termination rule is
+        // "stop after --duration seconds" with no minimum sample count, no
+        // warmup-then-quiesce, no drain accounting and no tokenization block.
+        // A conformant protocol nothing can reach measures nothing.
+        //
+        // A MODE, NOT A SIBLING SUBCOMMAND: PERF-009 says one benchmarking
+        // entrypoint, and this drives the same LlmClient the legacy mode does.
+        //
+        // NOTE THE ABSENCE OF `--band-duration`. The 60 s wall-clock floor and
+        // the max(30, 8c) sample floor are the entire difference between a
+        // load test and a measurement, and a flag that shrinks them is the
+        // shortest path back to a gate that cannot fail. The only knob is
+        // --replicates, and going below the spec's N=3 is recorded in the
+        // receipt as a protocol violation rather than silently accepted.
+        // ------------------------------------------------------------------
+        /// Run the §4.4-conformant band protocol and write a receipt
+        /// `scripts/perf_gate.sh` can read.
+        ///
+        /// Closed-loop at fixed concurrency, `2 x c` warmup requests, a 5 s
+        /// quiesce, then a window that closes only when BOTH `max(30, 8 x c)`
+        /// samples and 60 s of wall-clock have elapsed — whichever bound is
+        /// satisfied last. Ignores --warmup, --duration, --runs and --cooldown,
+        /// which are the legacy mode's knobs.
+        #[arg(long, requires = "receipt")]
+        band: bool,
+        /// Directory to write `receipt.json` and the gzipped JSONL samples into.
+        #[arg(long)]
+        receipt: Option<PathBuf>,
+        /// Concurrency levels for --band. Arm A needs `c=1` to be present.
+        #[arg(long, default_value = "1,4,8,16")]
+        bands: String,
+        /// Full band replicates per cell (spec: N=3). Fewer is recorded in the
+        /// receipt as a protocol violation.
+        #[arg(long, default_value_t = commands::test_llm::default_replicates())]
+        replicates: usize,
+        /// Workload identifier recorded in the receipt.
+        #[arg(long, default_value = "W1", value_parser = ["W1", "W2"])]
+        workload: String,
+        /// Join key: which machine measured. Required by the receipt schema.
+        #[arg(long, default_value = "")]
+        host: String,
+        /// Join key: which accelerator served the request.
+        #[arg(long, default_value = "")]
+        accelerator: String,
+        /// Join key: which quantization the served model uses.
+        #[arg(long, default_value = "")]
+        quantization: String,
+        /// The dispatch path the SERVER took — not the hardware present.
+        #[arg(long, default_value = "unknown",
+              value_parser = ["cpu", "cuda", "metal", "wgpu", "unknown"])]
+        compute_class: String,
+        /// A build feature of the SERVER, repeatable.
+        ///
+        /// Never defaulted from this client's own features: `bench_receipt.py`
+        /// uses it to refuse a compute_class the build cannot reach, and
+        /// pointing that check at the measuring binary instead of the measured
+        /// one would make it read green while checking nothing.
+        #[arg(long = "server-feature")]
+        server_features: Vec<String>,
+        /// How tokens were counted (§4.4.6). No default: absence is fatal.
+        #[arg(long, default_value = "server_usage",
+              value_parser = ["server_usage", "client_tokenizer"])]
+        tokenization: String,
+        /// Tokenizer digest, required when --tokenization client_tokenizer.
+        #[arg(long)]
+        tokenizer_sha256: Option<String>,
+        /// Whether the token counts include special tokens (§4.4.6).
+        #[arg(long)]
+        counts_special_tokens: bool,
+        /// Whether the token counts include the echoed prompt (§4.4.6).
+        #[arg(long)]
+        counts_prompt_echo: bool,
+        /// Commit under measurement, for the release staleness arm.
+        #[arg(long)]
+        commit: Option<String>,
     },
 }
 

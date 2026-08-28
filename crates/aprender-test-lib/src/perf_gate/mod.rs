@@ -59,9 +59,9 @@
 //!   [`window::WindowReport::client_peak_in_flight`] is the client's own
 //!   observation and is named so it can never be mistaken for the server's
 //!   `max_in_flight`.
-//! - **Receipt emission.** Nothing here writes `receipt.json`.
-//!   `scripts/lib/bench_receipt.py` is the single schema authority and the
-//!   serialiser that feeds it is a separate ticket.
+//! - ~~**Receipt emission.**~~ Shipped by PERF-025 in [`receipt`].
+//!   `scripts/lib/bench_receipt.py` remains the single schema authority; this
+//!   module writes the file that authority validates, and does not redefine it.
 //! - **W1/W2 workload construction** (§4.3), prompt corpora, and the
 //!   `prompt_tokens = 512 ± 8` assertion. Note in passing that
 //!   `crates/aprender-serve/benchmarks/qwen-coder/` contains `prompts-w2.jsonl`
@@ -72,6 +72,7 @@
 pub mod bootstrap;
 pub mod metrics;
 pub mod protocol;
+pub mod receipt;
 pub mod samples;
 pub mod window;
 
@@ -81,6 +82,11 @@ pub use protocol::{
     min_sampled_requests, warmup_requests, BandConfig, ClientModel, Outcome, Tokenization,
     TokenizationMethod, BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED, MIN_WALL_CLOCK, QUIESCE, REPLICATES,
     REQUEST_TIMEOUT,
+};
+pub use receipt::{
+    assemble, build_band, sha256_file, write_receipt, BandReceipt, BootstrapBlock, CiBlock,
+    ProtocolBlock, Provenance, Receipt, ReceiptMeta, Replicate, ReplicateReceipt, WrittenReceipt,
+    COMPARATOR_UNMEASURED, COMPUTE_CLASSES, SPEC,
 };
 pub use samples::{read_samples_gz, write_samples_gz, SamplesFile};
 pub use window::{WindowController, WindowReport};

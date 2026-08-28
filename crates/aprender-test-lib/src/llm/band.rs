@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 use crate::perf_gate::bootstrap::{bootstrap_agg_tok_s_ci, BootstrapCi};
 use crate::perf_gate::metrics::{BandMetrics, RequestSample};
 use crate::perf_gate::protocol::{BandConfig, ClientModel, Outcome, Tokenization, REPLICATES};
+use crate::perf_gate::receipt::Replicate;
 use crate::perf_gate::window::{WindowController, WindowReport};
 
 use super::client::{ChatRequest, LlmClient, LlmClientError};
@@ -63,6 +64,22 @@ impl BandRun {
     #[must_use]
     pub fn is_conformant(&self) -> bool {
         self.protocol_violations.is_empty() && self.window.suspect.is_empty()
+    }
+
+    /// This run as one replicate of a receipt cell (PERF-025).
+    ///
+    /// The `protocol_violations` travel WITH the numbers rather than beside
+    /// them: a replicate that shrank its window is then unable to appear in a
+    /// receipt without saying so.
+    #[must_use]
+    pub fn into_replicate(self) -> Replicate {
+        Replicate {
+            metrics: self.metrics,
+            window: self.window,
+            samples: self.samples,
+            agg_ci: self.agg_ci,
+            protocol_violations: self.protocol_violations,
+        }
     }
 }
 

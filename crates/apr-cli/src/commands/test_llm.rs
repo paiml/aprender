@@ -365,3 +365,502 @@ mod tests {
         assert!(describe_workload("medium", Some(p), 7).contains("x.json"));
     }
 }
+
+// ===========================================================================
+// PERF-025 — `apr test llm bench --band`: the §4.4 protocol, reachable.
+//
+// PERF-024 landed the conformant measurement protocol (`run_band`, the §4.4.2
+// termination rule, `drain_ms`, the §4.4.4 interval, §4.4.5 retention) and
+// NOTHING CALLED IT outside its own tests. `apr test llm bench` still ran
+// `LoadTest::run`, whose termination rule is "stop after `duration` seconds" —
+// no minimum sample count, no warmup-then-quiesce, no drain accounting, no
+// tokenization block. So the repo simultaneously contained a conformant
+// protocol and could not produce a single conformant measurement.
+//
+// The other half of the same defect: `scripts/perf_gate.sh`'s real mode
+// (`--host/--phase/--workload/--receipt`) had no caller, because nothing could
+// write the receipt it reads. Both halves close here.
+//
+// THIS IS NOT A SECOND HARNESS. It is a mode of the existing `apr test llm
+// bench` subcommand, driving the same `LlmClient` that `LoadTest` drives and
+// that `scripts/parity_host_receipt.sh` points at both `apr serve` and
+// `llama-server` (§4.4.8: one client, both servers, or the ratio is refused).
+// PERF-009's one-entrypoint rule is preserved by construction.
+//
+// THERE IS DELIBERATELY NO FLAG THAT SHRINKS THE WINDOW. `BandConfig::relaxed`
+// exists for unit tests and is not reachable from the CLI. A `--band-duration`
+// would be the single easiest way to turn this gate back into one that cannot
+// fail, and the 60 s floor is the whole difference between a load test and a
+// measurement. `--replicates` is the one knob, it defaults to the spec's N=3,
+// and anything below N=3 is written into the receipt as a protocol violation
+// rather than being silently accepted.
+use crate::LlmSubcommand;
+use apr_test::llm::band::run_band;
+use apr_test::llm::client::LlmClient;
+use apr_test::perf_gate::protocol::{BandConfig, Tokenization};
+use apr_test::perf_gate::receipt::{
+    sha256_file, write_receipt, Provenance, ReceiptMeta, Replicate,
+};
+use apr_test::perf_gate::REPLICATES;
+
+/// Arguments for one §4.4-conformant band run.
+pub struct BandArgs<'a> {
+    /// Endpoint under measurement.
+    pub url: &'a str,
+    /// Model name sent in the request body.
+    pub model: &'a str,
+    /// Concurrency levels, comma-separated, e.g. `1,4,8,16`.
+    pub bands: &'a str,
+    /// §4.4.2 replicates per cell.
+    pub replicates: usize,
+    /// Directory receiving `receipt.json` and the gzipped JSONL samples.
+    pub receipt: &'a Path,
+    /// §4.3 workload identifier.
+    pub workload: &'a str,
+    /// Join key: which machine.
+    pub host: &'a str,
+    /// Join key: which accelerator.
+    pub accelerator: &'a str,
+    /// Join key: which quantization.
+    pub quantization: &'a str,
+    /// The dispatch path the SERVER took.
+    pub compute_class: &'a str,
+    /// The SERVER's build features, if known.
+    pub server_features: &'a [String],
+    /// §4.4.6 counting method.
+    pub tokenization: &'a str,
+    /// §4.4.6 digest, required for `client_tokenizer`.
+    pub tokenizer_sha256: Option<&'a str>,
+    /// §4.4.6.
+    pub counts_special_tokens: bool,
+    /// §4.4.6.
+    pub counts_prompt_echo: bool,
+    /// Commit under measurement.
+    pub commit: Option<&'a str>,
+    /// Streaming responses. Required for TTFT, ITL and `decode_tok_s`.
+    pub stream: bool,
+    /// Named prompt profile.
+    pub profile: &'a str,
+    /// Prompt file, overriding the profile.
+    pub prompts: Option<&'a Path>,
+}
+
+/// `1,4,8,16` into concurrency levels.
+///
+/// A zero or unparseable level is rejected where it was typed. `BandConfig`
+/// clamps `0` up to `1`, which would silently measure a different band than the
+/// operator asked for and label it with the number they typed.
+fn parse_bands(spec: &str) -> Result<Vec<usize>> {
+    let mut out = Vec::new();
+    for raw in spec.split(',') {
+        let token = raw.trim();
+        if token.is_empty() {
+            continue;
+        }
+        let c: usize = token.parse().map_err(|_| {
+            CliError::InvalidInput(format!("--bands: {token:?} is not a concurrency level"))
+        })?;
+        if c == 0 {
+            return Err(CliError::InvalidInput(
+                "--bands: 0 is not a concurrency level; a band with no workers measures nothing"
+                    .to_string(),
+            ));
+        }
+        out.push(c);
+    }
+    if out.is_empty() {
+        return Err(CliError::InvalidInput(
+            "--bands named no concurrency levels".to_string(),
+        ));
+    }
+    Ok(out)
+}
+
+/// §4.4.6 — `method` has no default, so an unknown value is refused rather
+/// than falling back to one of the two.
+fn build_tokenization(args: &BandArgs<'_>) -> Result<Tokenization> {
+    match args.tokenization {
+        "server_usage" => Ok(Tokenization::server_usage(
+            args.counts_special_tokens,
+            args.counts_prompt_echo,
+        )),
+        "client_tokenizer" => {
+            let sha = args.tokenizer_sha256.ok_or_else(|| {
+                CliError::InvalidInput(
+                    "--tokenization client_tokenizer requires --tokenizer-sha256".to_string(),
+                )
+            })?;
+            Tokenization::client_tokenizer(sha, args.counts_special_tokens, args.counts_prompt_echo)
+                .map_err(CliError::InvalidInput)
+        }
+        other => Err(CliError::InvalidInput(format!(
+            "--tokenization {other:?}: expected server_usage or client_tokenizer (§4.4.6 gives \
+             `method` no default)"
+        ))),
+    }
+}
+
+/// Which binary is measuring, and what it hashes to.
+///
+/// `current_exe` rather than a `$PATH` lookup or a hardcoded path: four `apr`
+/// binaries have coexisted on the dev box, and a bare `apr` once resolved to a
+/// 26-day-old copy. The binary that writes the receipt is the binary the
+/// receipt names, by construction.
+fn build_provenance(args: &BandArgs<'_>) -> Result<Provenance> {
+    let exe = std::env::current_exe()
+        .map_err(|e| CliError::InvalidInput(format!("cannot resolve current_exe: {e}")))?;
+    let binary_sha256 = sha256_file(&exe)
+        .map_err(|e| CliError::InvalidInput(format!("cannot hash {}: {e}", exe.display())))?;
+    let prov = Provenance {
+        binary_path: exe.display().to_string(),
+        binary_sha256,
+        resolution: "current_exe".to_string(),
+        compute_class: args.compute_class.to_string(),
+        host: args.host.to_string(),
+        accelerator: args.accelerator.to_string(),
+        model: args.model.to_string(),
+        quantization: args.quantization.to_string(),
+        feature_set: if args.server_features.is_empty() {
+            None
+        } else {
+            Some(args.server_features.to_vec())
+        },
+    };
+    prov.validate().map_err(CliError::InvalidInput)?;
+    Ok(prov)
+}
+
+/// Run every replicate of one band.
+async fn run_cell_replicates(
+    client: &LlmClient,
+    prompts: &[ChatRequest],
+    concurrency: usize,
+    args: &BandArgs<'_>,
+    tokenization: &Tokenization,
+) -> Result<Vec<Replicate>> {
+    let band = BandConfig::conformant(concurrency);
+    let mut out = Vec::with_capacity(args.replicates);
+    for k in 0..args.replicates {
+        println!("  c={concurrency} replicate {}/{}", k + 1, args.replicates);
+        let run = run_band(client, prompts, &band, tokenization.clone(), args.stream)
+            .await
+            .map_err(|e| CliError::InferenceFailed(format!("band c={concurrency}: {e}")))?;
+        println!(
+            "    agg {:.2} tok/s  decode {:.2} tok/s  requested {}  completed {}  \
+             timeouts {}  drain {:.1} ms  peak_in_flight {}",
+            run.metrics.agg_tok_s,
+            run.metrics.decode_tok_s,
+            run.metrics.requested,
+            run.metrics.completed,
+            run.metrics.timeouts,
+            run.window.drain_ms,
+            run.window.client_peak_in_flight
+        );
+        out.push(run.into_replicate());
+    }
+    Ok(out)
+}
+
+/// Run the §4.4 protocol over every requested band and write the receipt.
+///
+/// # Errors
+/// When the endpoint is unreachable, any band fails, provenance or the §4.4.6
+/// block does not validate, the receipt cannot be written, or the finished
+/// receipt could not pass `perf_gate.sh`'s Arm C.
+pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
+    let levels = parse_bands(args.bands)?;
+    let tokenization = build_tokenization(&args)?;
+    let provenance = build_provenance(&args)?;
+    let prompts = resolve_prompts(args.profile, args.prompts)?;
+    let prompts: Vec<ChatRequest> = prompts
+        .into_iter()
+        .map(|mut p| {
+            p.model = args.model.to_string();
+            p
+        })
+        .collect();
+
+    let client = LlmClient::new(args.url, args.model);
+    client.health_check().await.map_err(|e| {
+        CliError::InferenceFailed(format!("endpoint {} is not ready: {e}", args.url))
+    })?;
+
+    println!("protocol APR-PERF-GATE-001 v2.2 §4.4 (closed-loop, conformant)");
+    println!("endpoint {}", args.url);
+    println!(
+        "workload {}",
+        describe_workload(args.profile, args.prompts, prompts.len())
+    );
+    println!(
+        "bands    {levels:?} x {} replicate(s); warmup 2c, quiesce 5s, \
+         min max(30, 8c) samples AND min 60s wall-clock, last bound wins",
+        args.replicates
+    );
+    if !args.stream {
+        println!(
+            "NOTE     --stream is off: §4.4.3 ttft_ms, itl_ms and decode_tok_s are UNDEFINED \
+             without per-token arrival times and will read 0"
+        );
+    }
+
+    let mut cells = Vec::with_capacity(levels.len());
+    for c in levels {
+        cells.push((
+            c,
+            run_cell_replicates(&client, &prompts, c, &args, &tokenization).await?,
+        ));
+    }
+
+    let meta = ReceiptMeta {
+        workload: args.workload.to_string(),
+        provenance,
+        tokenization,
+        replicates: args.replicates,
+        commit: args.commit.map(str::to_string),
+    };
+    let (receipt, written) = write_receipt(args.receipt, &meta, &cells)
+        .map_err(|e| CliError::InvalidFormat(format!("writing receipt: {e}")))?;
+
+    println!(
+        "\nreceipt  {} ({} bytes)",
+        written.receipt.display(),
+        written.bytes
+    );
+    for path in &written.sample_files {
+        println!("samples  {}", path.display());
+    }
+    println!(
+        "conformant {} ({} protocol violation(s))",
+        receipt.conformant,
+        receipt.protocol_violations.len()
+    );
+    for v in &receipt.protocol_violations {
+        println!("  ! {v}");
+    }
+    println!(
+        "\nnext     scripts/perf_gate.sh --host {} --phase merge --workload {} --receipt {}",
+        args.host,
+        args.workload,
+        written.receipt.display()
+    );
+
+    // A run whose own counts cannot pass Arm C must not exit 0. Arm C is
+    // re-run by the gate; checking it here means the operator learns it now
+    // rather than after a CI round-trip, and it makes `rc = 0` mean something.
+    if receipt.arm_c_would_pass() {
+        Ok(())
+    } else {
+        Err(CliError::ValidationFailed(format!(
+            "receipt cannot pass perf_gate.sh Arm C: requested={} completed={} timeouts={} — a \
+             throughput averaged over the requests that survived is not a measurement of this \
+             runtime, it is a measurement of its survivors",
+            receipt.requested, receipt.completed, receipt.timeouts
+        )))
+    }
+}
+
+/// Route `apr test llm <SUB>` (GH-876 Milestone 2; PERF-025 band mode).
+///
+/// The arm lives HERE rather than inline in `dispatch_analysis.rs`'s match.
+/// That file's router was already at cognitive 24 against a threshold of 25, so
+/// adding the band branch inline tipped it over and the pre-commit gate refused
+/// the commit. Moving the whole arm out puts the routing next to the two
+/// functions it routes to and leaves the router simpler than it was.
+///
+/// # Errors
+/// Propagates whichever mode ran.
+pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
+    match command {
+        LlmSubcommand::Bench {
+            url,
+            model,
+            start,
+            health_timeout,
+            warmup,
+            duration,
+            concurrency,
+            runs,
+            cooldown,
+            runtime_name,
+            baseline,
+            fail_on_regression,
+            output,
+            stream,
+            profile,
+            prompts,
+            band,
+            receipt,
+            bands,
+            replicates,
+            workload,
+            host,
+            accelerator,
+            quantization,
+            compute_class,
+            server_features,
+            tokenization,
+            tokenizer_sha256,
+            counts_special_tokens,
+            counts_prompt_echo,
+            commit,
+        } => {
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
+            // TWO MODES, ONE ENTRYPOINT. `--band` selects the §4.4-conformant
+            // protocol (PERF-024's `run_band`, previously called by nothing
+            // outside its own tests). Without it the pre-existing
+            // `LoadTest::run` lifecycle is unchanged, because a great deal of
+            // tooling reads its `LoadTestResult` and changing its termination
+            // rule underneath those readers would silently change every number
+            // they have ever recorded.
+            if *band {
+                let receipt = receipt.as_deref().ok_or_else(|| {
+                    // Unreachable: clap's `requires = "receipt"` enforces it.
+                    // Stated rather than unwrapped — a receipt-less band run
+                    // would measure for minutes and discard the measurement.
+                    CliError::InvalidInput("--band requires --receipt <DIR>".to_string())
+                })?;
+                return rt.block_on(run_bands(BandArgs {
+                    url,
+                    model,
+                    bands,
+                    replicates: *replicates,
+                    receipt,
+                    workload,
+                    host,
+                    accelerator,
+                    quantization,
+                    compute_class,
+                    server_features,
+                    tokenization,
+                    tokenizer_sha256: tokenizer_sha256.as_deref(),
+                    counts_special_tokens: *counts_special_tokens,
+                    counts_prompt_echo: *counts_prompt_echo,
+                    commit: commit.as_deref(),
+                    stream: *stream,
+                    profile,
+                    prompts: prompts.as_deref(),
+                }));
+            }
+            rt.block_on(run_bench(BenchArgs {
+                url,
+                model,
+                start: start.as_deref(),
+                health_timeout: *health_timeout,
+                warmup: *warmup,
+                duration: *duration,
+                concurrency: *concurrency,
+                runs: *runs,
+                cooldown: *cooldown,
+                runtime_name,
+                baseline: baseline.as_deref(),
+                fail_on_regression: *fail_on_regression,
+                output: output.as_deref(),
+                stream: *stream,
+                profile,
+                prompts: prompts.as_deref(),
+            }))
+        }
+    }
+}
+
+/// §4.4.2's `N`, re-exported so the CLI default and the spec constant cannot
+/// drift apart.
+#[must_use]
+pub const fn default_replicates() -> usize {
+    REPLICATES
+}
+
+#[cfg(test)]
+mod band_tests {
+    use super::*;
+
+    fn args<'a>(bands: &'a str, tokenization: &'a str) -> BandArgs<'a> {
+        BandArgs {
+            url: "http://127.0.0.1:8080",
+            model: "m",
+            bands,
+            replicates: 3,
+            receipt: Path::new("/tmp/receipt"),
+            workload: "W1",
+            host: "lambda",
+            accelerator: "rtx-4090",
+            quantization: "Q4_K_M",
+            compute_class: "cpu",
+            server_features: &[],
+            tokenization,
+            tokenizer_sha256: None,
+            counts_special_tokens: true,
+            counts_prompt_echo: false,
+            commit: None,
+            stream: true,
+            profile: "medium",
+            prompts: None,
+        }
+    }
+
+    #[test]
+    fn bands_parse_in_the_order_given() {
+        assert_eq!(parse_bands("1,4,8,16").expect("valid"), vec![1, 4, 8, 16]);
+        assert_eq!(parse_bands(" 2 , 3 ").expect("spaces"), vec![2, 3]);
+    }
+
+    /// `BandConfig::conformant` clamps 0 up to 1, so a zero that reaches it
+    /// measures c=1 while the receipt says the operator asked for 0.
+    #[test]
+    fn a_zero_band_is_rejected_rather_than_clamped() {
+        let err = parse_bands("1,0,4").expect_err("must reject");
+        assert!(err.to_string().contains("measures nothing"), "{err}");
+    }
+
+    #[test]
+    fn an_unparseable_band_is_rejected() {
+        assert!(parse_bands("1,four").is_err());
+        assert!(parse_bands("").is_err());
+        assert!(parse_bands(",,").is_err());
+    }
+
+    /// §4.4.6 gives `method` no default; an unknown value must not fall back.
+    #[test]
+    fn an_unknown_tokenization_method_is_refused() {
+        let err = build_tokenization(&args("1", "guess")).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(msg.contains("server_usage"), "{msg}");
+        assert!(msg.contains("client_tokenizer"), "{msg}");
+    }
+
+    #[test]
+    fn client_tokenizer_without_a_digest_is_refused() {
+        let err =
+            build_tokenization(&args("1", "client_tokenizer")).expect_err("digest is required");
+        assert!(err.to_string().contains("tokenizer-sha256"), "{err}");
+    }
+
+    #[test]
+    fn server_usage_needs_no_digest() {
+        assert!(build_tokenization(&args("1", "server_usage")).is_ok());
+    }
+
+    /// The provenance the CLI builds must be one `bench_receipt.py` accepts:
+    /// a real 64-hex digest of the binary that is actually running.
+    #[test]
+    fn provenance_hashes_the_running_binary() {
+        let prov = build_provenance(&args("1", "server_usage")).expect("current_exe must hash");
+        assert_eq!(prov.binary_sha256.len(), 64);
+        assert_eq!(prov.resolution, "current_exe");
+        assert!(prov.validate().is_ok());
+    }
+
+    #[test]
+    fn an_unknown_compute_class_is_refused_where_it_was_typed() {
+        let mut a = args("1", "server_usage");
+        a.compute_class = "tpu";
+        assert!(build_provenance(&a).is_err());
+    }
+
+    /// The CLI default must not drift from §4.4.2's N.
+    #[test]
+    fn the_replicate_default_is_the_spec_constant() {
+        assert_eq!(default_replicates(), 3);
+    }
+}
