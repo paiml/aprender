@@ -314,7 +314,7 @@ apr,DELETE /api/delete,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-
 apr,GET /,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:252,high
 apr,GET /api/tags,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:165,high
 apr,GET /api/version,9,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:167,medium
-apr,GET /health,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:89,medium
+apr,GET /health,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:89 (ANDON crates/aprender-serve/src/andon.rs:160),medium
 apr,GET /health/live,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:90,medium
 apr,GET /health/ready,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:91,medium
 apr,GET /metrics,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:116,medium
