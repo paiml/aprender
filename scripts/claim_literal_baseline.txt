@@ -33,8 +33,9 @@
 # because the guard now looks where the claims are, not because new claims were
 # written. Shrink-only from here.
 #
-# WIDENED AGAIN 2026-08-28 (PERF-010). Fourteen entries were ADDED. The
-# permission is now MECHANICAL, not this header: check_no_claim_literals.sh
+# WIDENED AGAIN 2026-08-28 (PERF-010). Fourteen entries were ADDED; TWO have
+# since been paid down and one more was PRUNED as stale, so eleven remain. The
+# permission is MECHANICAL, not this header: check_no_claim_literals.sh
 # ratchets this file with kind `coord`, which admits an added entry only when
 # its TEXT is already present in the same file at the comparand, at no greater
 # count. That is a DETECTOR WIDENING and it is provable; LAUNDERING -- a
@@ -52,14 +53,21 @@
 # or a bare `2.93x Ollama` written with U+00D7. That is why section 5's status
 # table listed the `[X]`-figure guard as **not written** against this file.
 #
-# The twelve below are what the widened pattern found. NOT ONE IS NEW PROSE:
+# The eleven below are what the widened pattern found and nobody has yet paid
+# down. NOT ONE IS NEW PROSE:
 # every one predates this commit and was invisible, which is the point. They
 # fall in three groups, and the classification is recorded so the next person
 # paying them down knows which lever applies:
 #
 #   2 rustdoc (`//!`, `///`) five-whys notes on CUDA paths, reaching users via
-#     `cargo doc`. Root-cause engineering notes; the fix is to cite the receipt,
-#     not to delete the analysis.
+#     `cargo doc`. FIXED, NOT BASELINED -- both entries are gone from the list
+#     below. Neither ratio had a receipt, both shipped in `cargo doc` output,
+#     and neither carried the analysis: dp4a_gemm.rs asks why prefill is
+#     bandwidth-bound and answers "HGEMM reads FP16 weights", which is the whole
+#     content of that step; prefill.rs keeps its own 256ms measurement, which
+#     the next line derives from. The comparator ratio was the only part
+#     removed, and it is not restated here -- a withdrawal that reprints the
+#     figure leaves the figure on the page.
 #   2 docs/benchmarking-gate-spec.md -- the document that NAMES this defect,
 #     quoting the fabricated figure in order to ban it. The self-reference trap
 #     that has reddened a sibling guard three times in this epic. Baselined
@@ -77,6 +85,13 @@
 # because it is a 32B claim and the withdrawal measured 1.5B; nobody has
 # measured 32B, so deleting it would be guessing in the other direction. It
 # needs a receipt or a deletion, and it is somebody's next ticket.
+#
+# PRUNED 2026-08-28: docs/benchmarking-gate-spec.md:364 matched NOTHING. The
+# claim PERF-010 meant to record moved when the same commit inserted 28 lines
+# above it, and the coordinate it landed on carries a Jidoka status row with no
+# ratio in it at all. The `coord` widening rule cannot catch this -- that line's
+# text IS present at the comparand, so it passes -- and the guard's own STALE
+# report can. Both mechanisms are needed; neither subsumes the other.
 #
 # FIVE ENTRIES WERE REMOVED in the same commit: the book/src/tools/apr-cli.md
 # Performance table (lines 89-93) is DELETED, along with the `2.9x faster than
@@ -103,7 +118,6 @@ crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:37
 crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:38
 crates/aprender-gpu/src/kernels/gemv/mod.rs:14
 crates/aprender-gpu/src/kernels/quantize/dot/packed_dp4a.rs:32
-crates/aprender-gpu/src/kernels/quantize/dp4a_gemm.rs:10
 crates/aprender-gpu/src/kernels/quantize/q4k/batched.rs:1
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:15
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:16
@@ -122,7 +136,6 @@ crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:10
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:31
 crates/aprender-serve/src/cuda/executor/layers/par-062.rs:257
-crates/aprender-serve/src/cuda/executor/layers/prefill.rs:537
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs:277
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:32
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:33
@@ -157,7 +170,6 @@ docs/audits/dogfood-0.63.0-ledger.md:65
 docs/benchmarking-gate-spec.md:263
 docs/benchmarking-gate-spec.md:24
 docs/benchmarking-gate-spec.md:26
-docs/benchmarking-gate-spec.md:364
 docs/model-cards/albor-370m-v1.md:74
 docs/qa-cargo-run-example-conversion-minimize.md:128
 docs/qa/benchmark-matrix-2026-01-09.md:115
