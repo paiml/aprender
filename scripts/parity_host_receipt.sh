@@ -147,8 +147,19 @@ run_lane() { # run_lane <class> <apr-flags> <llama-ngl> -> writes $WORK/<class>.
     # instead of silently moving every band above c=4.
     local nparallel
     nparallel=$(sed -n 's/.*n_parallel = \([0-9][0-9]*\).*/\1/p' "$WORK/llama-$klass.log" | head -1)
-    printf 'REPORT lane %s: comparator flags [%s]; server-reported n_parallel=%s\n' \
-        "$klass" "$lflags" "${nparallel:-unreported}" >&2
+    # Same rule for flash attention (#2743). `flash_attention = "default"` means
+    # we pass no `-fa`, so the resolved value is whatever the pinned build chose
+    # -- and in the pinned era (7746) that default is `auto`, which MAY turn
+    # flash attention on. The declaration used to say `false` while no
+    # invocation carried the flag at all, so the receipt recorded a
+    # configuration that had never run. Report what the server says about
+    # itself, so a pin bump that flips the default is visible in the lane output
+    # instead of silently moving prefill.
+    local fattn
+    fattn=$(sed -n 's/.*[Ff]lash[ _-]*[Aa]tt[a-z]* *[:=] *\([A-Za-z0-9]*\).*/\1/p' \
+        "$WORK/llama-$klass.log" | head -1)
+    printf 'REPORT lane %s: comparator flags [%s]; server-reported n_parallel=%s flash_attn=%s\n' \
+        "$klass" "$lflags" "${nparallel:-unreported}" "${fattn:-unreported}" >&2
     for c in $BANDS; do
         "$APR" test llm bench --url "http://127.0.0.1:$lport" --model "$(basename "$MODEL" .gguf)" \
             --profile "$PROFILE" --warmup "$WARMUP" --duration "$DURATION" --runs "$RUNS" \

@@ -134,6 +134,62 @@ case "$temp" in
     *) printf 'FAIL  temperature=%s: sampling noise would be reported as a decode difference\n' "${temp:-unset}"; rc=1 ;;
 esac
 
+# ---------------------------------------------------------------------------
+# DECLARED KEYS THAT NOTHING READ (#2743). `flash_attention = false` sat in this
+# file's REQUIRED list for months: the list proved the key was DECLARED and
+# never compared it to any invocation, so the pin described a configuration that
+# had never run. The two below were dead the same way, and are now joined to the
+# invocations they are supposed to govern. scripts/check_pin_keys_consumed.sh
+# holds the general rule; these are the specific comparisons.
+
+# `name` identifies WHICH comparator this protocol is against. If it says
+# llama.cpp, the invocations must actually invoke a llama binary -- a pin naming
+# one runtime while the commands launch another is the same declaration/reality
+# split, at the top level.
+decl_name=$(sed -n 's/^[[:space:]]*name[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' "$DECL" | head -1)
+case "$decl_name" in
+    llama.cpp)
+        bad_name=""
+        for cmd in comparator_command comparator_serve_command; do
+            line=$(sed -n "s/^[[:space:]]*${cmd}[[:space:]]*=[[:space:]]*\"\\(.*\\)\"[[:space:]]*$/\\1/p" "$DECL" | head -1)
+            case "$line" in
+                *'{llama_'*) : ;;
+                *) bad_name="$bad_name $cmd" ;;
+            esac
+        done
+        if [ -n "$bad_name" ]; then
+            printf 'FAIL  name = %s but these do not invoke a {llama_*} binary:%s\n' \
+                "$decl_name" "$bad_name"
+            rc=1
+        else
+            printf 'ok    name = %s, and both comparator invocations use a {llama_*} binary\n' "$decl_name"
+        fi
+        ;;
+    '') printf 'FAIL  the protocol declares no comparator name\n'; rc=1 ;;
+    *)  printf 'REPORT comparator name = %s; the {llama_*} join above is llama.cpp-specific\n' "$decl_name" ;;
+esac
+
+# `http_stream` is declared, and `harness_command` carries a literal `--stream`.
+# Two unjoined copies: flipping the declaration to false would have changed
+# nothing and nothing would have said so.
+decl_stream=$(sed -n 's/^[[:space:]]*http_stream[[:space:]]*=[[:space:]]*\([A-Za-z]*\).*/\1/p' "$DECL" | head -1)
+harness=$(sed -n 's/^[[:space:]]*harness_command[[:space:]]*=[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$DECL" | head -1)
+has_stream=no
+case "$harness" in *--stream*) has_stream=yes ;; esac
+case "$decl_stream" in
+    true)  want_stream=yes ;;
+    false) want_stream=no ;;
+    *) printf 'FAIL  http_stream = %s is neither true nor false\n' "${decl_stream:-unset}"; rc=1; want_stream="$has_stream" ;;
+esac
+if [ "$has_stream" = "$want_stream" ]; then
+    printf 'ok    http_stream = %s matches harness_command (--stream %s)\n' \
+        "$decl_stream" "$([ "$has_stream" = yes ] && echo present || echo absent)"
+else
+    printf 'FAIL  http_stream = %s but harness_command %s --stream\n' \
+        "$decl_stream" "$([ "$has_stream" = yes ] && echo carries || echo omits)"
+    rc=1
+fi
+
 # And whether the comparator is pinned at all.
 printf '\ncomparator\n'
 pin=$(sed -n 's/^[[:space:]]*build_commit[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' "$DECL" | head -1)

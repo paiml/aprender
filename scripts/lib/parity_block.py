@@ -13,15 +13,87 @@ wrong while every field around it is right (F12).
 import argparse
 import json
 import os
+import re
 import statistics
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_receipt  # noqa: E402
 
-FLOOR = 0.80          # the release gate: below this, a lane FAILs
-STRETCH = 1.50        # the stated goal, recorded so the distance is visible
-CEILING = 1.50        # a ratio above this is likelier a measurement error than a win
+# THE THRESHOLDS COME FROM THE DECLARATION, NOT FROM THIS FILE (#2743).
+#
+# These were literals -- FLOOR = 0.80, CEILING = 1.50 -- while
+# scripts/llama_pin.toml declared `band_floor = 0.80` and `band_ceiling = 1.50`
+# and NOTHING read either one. Two unjoined copies of the numbers that decide
+# PASS and FAIL for this entire epic, and the block emitted by this very file
+# carries `protocol_ref: scripts/llama_pin.toml#protocol.http` -- it cited the
+# pin as its authority for thresholds it had never read. Editing the pin's floor
+# would have changed no verdict, and nothing would have said so.
+#
+# Same defect as `-b 1` (#2737) and `flash_attention = false` (#2743), one level
+# up: not a knob that mis-describes how a number was MEASURED, but a knob that
+# mis-describes how it is JUDGED.
+#
+# FAIL CLOSED. An unreadable declaration raises here rather than falling back to
+# a built-in default: a receipt built from thresholds of unknown provenance is
+# worse than no receipt, because it looks authoritative. `band_floor` and
+# `band_ceiling` are required keys of the fairness protocol
+# (scripts/check_bench_protocol.sh), so a missing one is a broken tree.
+def _pin_path():
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "llama_pin.toml")
+
+
+def pin_get(key, path=None):
+    """The raw value of a top-level scalar key in the pin declaration.
+
+    Deliberately the same shape as llama_pin_get_raw in scripts/llama_bin.sh:
+    first match wins, trailing comment stripped, surrounding quotes stripped.
+    Two readers of one file that disagree about how to read it are two files.
+    """
+    path = path or _pin_path()
+    pattern = re.compile(r"^\s*" + re.escape(key) + r"\s*=\s*(.*?)\s*$")
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            found = pattern.match(line)
+            if not found:
+                continue
+            value = found.group(1)
+            # A `#` inside a quoted string is not a comment; strip only a
+            # trailing one that follows the value.
+            if not value.startswith(('"', "'", "[")):
+                value = value.split("#", 1)[0].strip()
+            return value.strip().strip('"')
+    raise SystemExit("FAIL  scripts/llama_pin.toml declares no %s; the parity "
+                     "block cannot be judged against thresholds it cannot read "
+                     "(#2743)" % key)
+
+
+def _pin_float(key):
+    raw = pin_get(key)
+    try:
+        return float(raw)
+    except ValueError:
+        raise SystemExit("FAIL  llama_pin.toml %s = %r is not a number (#2743)"
+                         % (key, raw))
+
+
+def _pin_bands():
+    raw = pin_get("http_concurrency_bands")
+    try:
+        bands = tuple(int(x) for x in raw.strip("[]").split(",") if x.strip())
+    except ValueError:
+        raise SystemExit("FAIL  llama_pin.toml http_concurrency_bands = %r is "
+                         "not a list of integers (#2743)" % raw)
+    if not bands:
+        raise SystemExit("FAIL  llama_pin.toml declares no concurrency band; a "
+                         "lane with no band arms nothing (#2743)")
+    return bands
+
+
+FLOOR = _pin_float("band_floor")        # the release gate: below this, a lane FAILs
+CEILING = _pin_float("band_ceiling")    # above this is likelier an error than a win
+STRETCH = CEILING     # the stated goal, recorded so the distance is visible
 
 
 def _samples(path, key):
@@ -46,7 +118,11 @@ def _side(binary, sha, klass, path, install_source=None, feature_set=None):
     return side
 
 
-BANDS_DEFAULT = (1, 4, 8, 16)
+# Declared in the pin as http_concurrency_bands, and read from it. This was
+# a fourth hardcoded copy of a declared value (#2743): a band added to the
+# pin would never have been measured, and the receipt's `declared_bands`
+# would have named the bands this tuple happened to hold.
+BANDS_DEFAULT = _pin_bands()
 
 
 def _band_from(name, c, work):

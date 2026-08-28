@@ -94,10 +94,12 @@ llama_comparator_server_flags() {
     llama_cs_thr=$(llama_pin_get_raw threads "$llama_cs_file")
     llama_cs_bat=$(llama_pin_get_raw batch_size "$llama_cs_file")
     llama_cs_par=$(llama_pin_get_raw comparator_parallel "$llama_cs_file")
+    llama_cs_fa=$(llama_pin_get_raw flash_attention "$llama_cs_file")
 
     # Every one of these must be DECLARED. An empty read is a missing key, and
     # a missing key here is the silent-degree-of-freedom failure (#2677).
-    for llama_cs_v in "$llama_cs_ctx" "$llama_cs_thr" "$llama_cs_bat" "$llama_cs_par"; do
+    for llama_cs_v in "$llama_cs_ctx" "$llama_cs_thr" "$llama_cs_bat" \
+                      "$llama_cs_par" "$llama_cs_fa"; do
         [ -n "$llama_cs_v" ] || return 3
     done
     # Numeric knobs must be numeric; the two optional ones are numeric OR the
@@ -106,10 +108,35 @@ llama_comparator_server_flags() {
     case "$llama_cs_thr" in ''|*[!0-9]*) return 3 ;; esac
     case "$llama_cs_bat" in default) ;; ''|*[!0-9]*) return 3 ;; esac
     case "$llama_cs_par" in default) ;; ''|*[!0-9]*) return 3 ;; esac
+    # flash_attention is a TRI-STATE, not a boolean, for the same reason
+    # batch_size is (#2737): "default" means pass no flag and take whatever the
+    # pinned build does, which is the configuration a user actually gets.
+    # Anything else is refused rather than guessed -- `-fa maybe` would be a
+    # comparator nobody declared.
+    case "$llama_cs_fa" in true|false|default) ;; *) return 3 ;; esac
 
     llama_cs_out="-ngl $llama_cs_ngl -c $llama_cs_ctx -t $llama_cs_thr"
     [ "$llama_cs_bat" = "default" ] || llama_cs_out="$llama_cs_out -b $llama_cs_bat"
     [ "$llama_cs_par" = "default" ] || llama_cs_out="$llama_cs_out -np $llama_cs_par"
+    # THE SPELLING IS ERA-BOUND TO build_commit, WHICH IS WHY IT IS HERE AND NOT
+    # RETYPED AT A CALL SITE (#2743). `-fa` changed shape between llama.cpp
+    # releases, and both shapes were observed on this dev box:
+    #
+    #   4230 (0c39f44d) / 4235 (5c7a5aa0)  -fa, --flash-attn
+    #                                      a bare boolean, "(default: disabled)"
+    #   7746 (39173bcac), the pinned build  -fa, --flash-attn [on|off|auto]
+    #                                      takes an argument, defaults to auto
+    #
+    # So the same unenforced `flash_attention = false` line was accidentally
+    # TRUE in the older era (off was the default) and silently FALSE in the
+    # pinned one (auto may turn it on) -- it went wrong on a comparator bump
+    # with no diff in this repo. That is exactly the cross-time drift
+    # build_commit exists to prevent, so the argument form below is pinned to
+    # the pinned build and a pin bump must re-check it against `--help`.
+    case "$llama_cs_fa" in
+        true)  llama_cs_out="$llama_cs_out -fa on" ;;
+        false) llama_cs_out="$llama_cs_out -fa off" ;;
+    esac
     printf '%s --no-warmup\n' "$llama_cs_out"
 }
 
