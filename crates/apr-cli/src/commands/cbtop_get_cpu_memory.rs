@@ -79,6 +79,38 @@ fn weighted_brick_score(brick_scores: &[BrickScore]) -> u32 {
     { (sum / brick_scores.len() as f64) as u32 }
 }
 
+/// The report's own verdict, as `(status, ci_result)`.
+///
+/// #2730: **an empty brick slice is a FAIL, never a pass.**
+/// `bricks.iter().all(..)` is vacuously true over the empty set, and both
+/// report builders used it bare. So a run in which the profiler collected no
+/// per-brick data was scored `"status": "PASS"` / `"ci_result": "green"` inside
+/// the same document that said `"brick_scores": []`, `"grade": "F"` and
+/// `"falsification": {"passed": 0, "failed": 1}` — the `.max(1)` that produced
+/// that `failed: 1` asserts one brick exists so it can be counted failed, while
+/// the `.all()` four lines below asserted every brick passed. Identical input,
+/// opposite conclusions.
+///
+/// It is not a display bug: `check_ci_thresholds` delegates to `ci_result`, so
+/// `apr cbtop --ci` exited 0 on a grade-F report that measured nothing.
+///
+/// Zero bricks measured is a failure to MEASURE, not a measurement that passed,
+/// so it earns the same verdict as a brick over budget. A non-empty slice is
+/// judged exactly as before, so a healthy run is still green.
+fn report_verdict(bricks: &[BrickScore]) -> (&'static str, &'static str) {
+    if bricks.is_empty() {
+        return ("FAIL", "red");
+    }
+    // 1e-9 epsilon: the budget is derived from the same profiler data, so a
+    // healthy gap is ~1.0; without the epsilon, floating-point rounding turns
+    // it into 1.0000000000001 and fails a passing brick.
+    if bricks.iter().all(|b| b.gap_factor <= 1.0 + 1e-9) {
+        ("PASS", "green")
+    } else {
+        ("FAIL", "red")
+    }
+}
+
 /// Generate headless report from pipeline state (simulated data)
 fn generate_headless_report_simulated(
     model_name: &str,
@@ -100,7 +132,9 @@ fn generate_headless_report_simulated(
     let cv_percent = cv_percent_from_samples(&all_samples);
     let (p50, p99) = pipeline.bricks.first().map_or((0.0, 0.0), percentiles_from_brick);
 
-    let all_pass = brick_scores.iter().all(|b| b.gap_factor <= 1.0 + 1e-9);
+    // #2730: shared with the real-profiling builder so neither can drift back
+    // into scoring an empty measurement green.
+    let (status, ci_result) = report_verdict(&brick_scores);
     let pmat_brick_score = weighted_brick_score(&brick_scores);
 
     // GH-425 B14-B18: Derive falsification from brick pass/fail, not hardcoded.
@@ -140,8 +174,9 @@ fn generate_headless_report_simulated(
             blocked: 0,
         },
         // GH-425 B18: Status from brick pass/fail only — no hardcoded target.
-        status: if all_pass { "PASS" } else { "FAIL" }.to_string(),
-        ci_result: if all_pass { "green" } else { "red" }.to_string(),
+        // #2730: and FAIL when no brick was measured at all.
+        status: status.to_string(),
+        ci_result: ci_result.to_string(),
     }
 }
 

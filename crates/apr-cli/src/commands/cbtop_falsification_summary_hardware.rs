@@ -309,7 +309,13 @@
         assert!((report.throughput.p50_us - 0.0).abs() < 0.001);
         assert!((report.throughput.p99_us - 0.0).abs() < 0.001);
         assert!((report.throughput.cv_percent - 0.0).abs() < 0.001);
-        assert_eq!(report.status, "PASS"); // Empty bricks -> all pass vacuously
+        // #2730: this line used to read
+        //     assert_eq!(report.status, "PASS"); // Empty bricks -> all pass vacuously
+        // It named the defect in its own comment and then locked it in. A
+        // report that measured zero bricks is a failure to measure; the
+        // percentile behaviour this test is actually about is asserted above.
+        assert_eq!(report.status, "FAIL");
+        assert_eq!(report.ci_result, "red");
     }
 
     // ========================================================================

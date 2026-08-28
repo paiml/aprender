@@ -7,6 +7,11 @@
 /// `--brick-score` number. Previously only the explicit numeric thresholds
 /// could set `passed = false`, so `apr cbtop --ci` printed a red report and
 /// exited 0 — a gate that could not fail.
+///
+/// That delegation is only as sound as the verdict it reads, and #2730 found
+/// the verdict itself computed vacuously: zero bricks measured came out
+/// `green`, so this gate still could not fail on it. The floor lives in
+/// `report_verdict`, which both report builders now call.
 fn check_ci_thresholds(report: &HeadlessReport, config: &CbtopConfig) -> bool {
     let mut passed = true;
 
