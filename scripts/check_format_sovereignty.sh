@@ -27,6 +27,18 @@ cd "${REPO_ROOT}" || exit 1
 # is no longer sovereign and a consumer is forced to pull the framework again.
 FORBIDDEN="trueno aprender-compute aprender-gpu aprender-core wgpu naga cudarc cust candle-core candle-nn tch torch-sys"
 
+. "${SCRIPT_DIR}/cargo_classify.sh" || exit 1
+
+# The classifier is a new surface in this script, so it is re-mutated HERE
+# rather than inheriting check_facade_compat.sh's green -- extending a guard's
+# scope requires re-mutating in the new scope. Text and committed fixtures
+# only, so it runs without cargo and without the container.
+if [ "${1:-}" = "--self-test" ]; then
+    cargo_classify_selftest || { printf '\nSELF-TEST FAILED\n'; exit 1; }
+    printf '\nSELF-TEST PASSED (classifier)\n'
+    exit 0
+fi
+
 PUBLISH_LOG="$(mktemp)"
 trap 'rm -f "${PUBLISH_LOG}"' EXIT
 
@@ -59,6 +71,9 @@ forbidden_in() {
 }
 
 echo "== check_format_sovereignty: apr-format leaf dependency sovereignty (#2231) =="
+# Armed on the NORMAL path too: no workflow invokes this script's --self-test,
+# and a case table nothing runs is the vacuous-scan class.
+cargo_classify_selftest --quiet || exit 1
 
 # ---- Primary assertion: apr-format must be sovereign --------------------------
 APR_HIT="$(forbidden_in apr-format)"
@@ -95,9 +110,24 @@ echo "PASS[fixture-]: aprender-core correctly flagged as NON-sovereign (pulls:${
 #  --allow-dirty: this gate runs in dirty worktrees too -- it checks the manifest
 #  graph, not working-tree cleanliness.)
 echo "== cargo publish -p apr-format --dry-run --no-verify (dev-dep cycle check) =="
-if cargo publish -p apr-format --dry-run --no-verify --allow-dirty 2>&1 \
-  | tee "${PUBLISH_LOG}" | tail -3; then
+# ONE invocation, output captured, `rc` read DIRECTLY. This was
+# `cargo publish ... | tee "${PUBLISH_LOG}" | tail -3`, so the `if` tested the
+# PIPELINE's status -- `tail`'s, made survivable only by `set -o pipefail`. The
+# repo has shipped that construct as a live defect twice (#2336, #2360).
+set +e
+cargo publish -p apr-format --dry-run --no-verify --allow-dirty > "${PUBLISH_LOG}" 2>&1
+PUB_RC=$?
+set -e
+tail -3 "${PUBLISH_LOG}"
+if [ "${PUB_RC}" -eq 0 ]; then
   echo "PASS: apr-format publish dry-run clean (no dependency cycle)"
+elif [ "$( classify_cargo_failure "${PUBLISH_LOG}" )" = 'ENV' ]; then
+  # A dry-run publish talks to the registry, so this block is the one in the
+  # repo MOST likely to die of the environment -- and it named a dependency
+  # cycle for any non-zero exit. ENV still exits 1.
+  report_cargo_env_failure "${PUBLISH_LOG}" \
+    'whether apr-format has a dev-dep publish cycle' >&2
+  exit 1
 else
   echo "FAIL: apr-format publish dry-run failed -- see ${PUBLISH_LOG}" >&2
   exit 1

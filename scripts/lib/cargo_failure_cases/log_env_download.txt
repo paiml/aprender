@@ -1,0 +1,5 @@
+    Updating crates.io index
+error: failed to download from `https://static.crates.io/crates/serde/serde-1.0.219.crate`
+
+Caused by:
+  [28] Timeout was reached (download of `serde v1.0.219` timed out after 30s)
