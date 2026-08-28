@@ -426,3 +426,122 @@
                 || json.contains("\"p99_us\": 9.876")
         );
     }
+
+    // ========================================================================
+    // #2730: the report's own verdict must not be vacuous over zero bricks
+    //
+    // RED-turning mutation for this block: delete the `bricks.is_empty()`
+    // clause in `report_verdict`, restoring the bare
+    // `bricks.iter().all(|b| b.gap_factor <= 1.0 + 1e-9)`. The two
+    // `zero_brick` / `empty` tests must go RED; the three discrimination
+    // tests below must stay GREEN, which is what makes the floor a floor
+    // rather than a blanket refusal.
+    // ========================================================================
+
+    fn brick_with_gap(name: &str, gap_factor: f64) -> BrickScore {
+        BrickScore {
+            name: name.to_string(),
+            score: 100,
+            grade: "A".to_string(),
+            budget_us: 10.0,
+            actual_us: 10.0 * gap_factor,
+            gap_factor,
+        }
+    }
+
+    #[test]
+    fn test_empty_bricks_is_fail_not_vacuous_pass() {
+        // `.all()` over an empty slice is TRUE. That vacuity scored a report
+        // carrying `brick_scores: []`, `grade: "F"` and `failed: 1` as
+        // PASS/green, and `apr cbtop --ci` exited 0 on it.
+        assert_eq!(report_verdict(&[]), ("FAIL", "red"));
+    }
+
+    #[test]
+    fn test_report_verdict_one_passing_brick_is_still_green() {
+        // Discrimination: the empty-set floor must not red every input.
+        assert_eq!(
+            report_verdict(&[brick_with_gap("Attention", 0.9)]),
+            ("PASS", "green")
+        );
+    }
+
+    #[test]
+    fn test_report_verdict_over_budget_brick_is_red() {
+        assert_eq!(
+            report_verdict(&[brick_with_gap("ok", 0.5), brick_with_gap("slow", 1.5)]),
+            ("FAIL", "red")
+        );
+    }
+
+    #[test]
+    fn test_report_verdict_gap_exactly_one_is_green() {
+        // The 1e-9 epsilon must survive the refactor: a brick landing exactly
+        // on budget is a pass, not a rounding-error failure.
+        assert_eq!(
+            report_verdict(&[brick_with_gap("on-budget", 1.0)]),
+            ("PASS", "green")
+        );
+    }
+
+    #[test]
+    fn test_zero_brick_report_fails_ci_without_explicit_thresholds() {
+        // The end-to-end assertion from #2730: a zero-brick report must fail
+        // `--ci` with NO `--brick-score` / `--throughput` argument supplied.
+        // `build_and_output_report` returns Err exactly when
+        // `config.ci && !check_ci_thresholds(..)`, so a false here is the
+        // non-zero exit.
+        let mut pipeline = PipelineState::new();
+        pipeline.bricks.clear();
+        let config = CbtopConfig {
+            ci: true,
+            headless: true,
+            json: true,
+            ..Default::default()
+        };
+        let report = generate_headless_report_simulated("zero-brick", &pipeline, &config);
+
+        assert!(report.brick_scores.is_empty());
+        assert_eq!(report.status, "FAIL");
+        assert_eq!(report.ci_result, "red");
+        assert!(
+            !check_ci_thresholds(&report, &config),
+            "a report that measured zero bricks must not pass --ci"
+        );
+    }
+
+    #[test]
+    fn test_healthy_report_still_passes_ci_without_explicit_thresholds() {
+        // Discrimination for the same end-to-end path: bricks inside budget
+        // stay green and still exit 0, so the fix did not turn `--ci` into a
+        // gate that always fails.
+        let pipeline = PipelineState::new(); // actual_us 0.0 => gap 0.0
+        let config = CbtopConfig {
+            ci: true,
+            headless: true,
+            json: true,
+            ..Default::default()
+        };
+        let report = generate_headless_report_simulated("healthy", &pipeline, &config);
+
+        assert!(!report.brick_scores.is_empty());
+        assert_eq!(report.status, "PASS");
+        assert_eq!(report.ci_result, "green");
+        assert!(check_ci_thresholds(&report, &config));
+    }
+
+    #[test]
+    fn test_zero_brick_report_json_verdict_matches_the_ci_gate() {
+        // --json and --ci must agree. The JSON document is what downstream
+        // receipt consumers read; it used to say PASS/green next to an empty
+        // brick_scores array and a grade of F.
+        let mut pipeline = PipelineState::new();
+        pipeline.bricks.clear();
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("zero-brick", &pipeline, &config);
+        let json = format_report_as_json(&report);
+
+        assert!(json.contains("\"status\": \"FAIL\""), "{json}");
+        assert!(json.contains("\"ci_result\": \"red\""), "{json}");
+        assert!(json.contains("\"grade\": \"F\""), "{json}");
+    }
