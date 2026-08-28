@@ -298,13 +298,26 @@ selftest() {
   _case a_timeout_is_fatal             "${OK/\"timeouts\":0/\"timeouts\":1}" fail
   _case tokenization_absent            "${OK/\"method\":\"hf-tokenizers\"/\"method\":\"\"}" fail
   _case drain_ms_absent                "${OK/\"drain_ms\":12/\"drain_ms\":null}" fail
-  _case zero_token_response            "${OK/\"tokens_total\":900,\"agg_ratio\":0.9,\"decode_ratio\":1.1}]}/\"tokens_total\":0,\"agg_ratio\":0.9,\"decode_ratio\":1.1}]}}" fail
+  # THIS ROW WAS GREEN FOR THE WRONG REASON (PERF-047). The old substitution
+  # appended a stray `}`, so the fixture was not valid JSON and the case went
+  # RED on a parse error: neutering the zero-token rule itself left the table at
+  # 17/17. Measured, then fixed. The replacement changes ONE field and parses.
+  _case zero_token_response            "${OK//\"tokens_total\":900/\"tokens_total\":0}" fail
   _case b1_aggregate_below_floor       "${OK//\"agg_ratio\":0.9/\"agg_ratio\":0.79}" fail
   _case b1_aggregate_at_floor          "${OK//\"agg_ratio\":0.9/\"agg_ratio\":0.80}" pass
   _case b2_decode_below_floor          "${OK//\"decode_ratio\":1.1/\"decode_ratio\":0.99}" fail
   _case b2_decode_at_floor             "${OK//\"decode_ratio\":1.1/\"decode_ratio\":1.00}" pass
   # THE 2026-08-25 SHAPE: decode soaring while aggregate collapses.
   _case serialization_shape_rejected   "$(printf '%s' "$OK" | sed 's/"agg_ratio":0.9/"agg_ratio":0.097/g; s/"decode_ratio":1.1/"decode_ratio":1.554/g')" fail
+  # CELL COMPLETENESS had no row at all: every fixture above carries the full
+  # band set, so mutating `sys.exit(1)` -> `sys.exit(0)` in cell_completeness
+  # left the table at 17/17. A release-only arm that nothing exercises is the
+  # §5 shape this table exists to refuse.
+  local REL_SHORT
+  REL_SHORT="${OK%\"bands\"*}$ARMDE"'"bands":[{"concurrency":1,"aggregate_tok_per_sec":100,"tokens_total":9,"agg_ratio":0.9,"decode_ratio":1.1},
+            {"concurrency":4,"aggregate_tok_per_sec":360,"tokens_total":9,"agg_ratio":0.9,"decode_ratio":1.1}]}'
+  _casepw cells_missing_bands_at_release       "$REL_SHORT" release W2 fail
+  _casepw cells_complete_at_release            "$REL_DE"    release W2 pass
   _case band_c1_absent                 "$(printf '%s' "$OK" | python3 -c 'import sys,json;r=json.load(sys.stdin);r["bands"]=[b for b in r["bands"] if b["concurrency"]!=1];print(json.dumps(r))')" fail
   printf '  %d passed, %d broken\n' "$pass" "$fail"
   rm -rf "${tmp:?refusing to rm an empty path}"
