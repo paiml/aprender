@@ -85,7 +85,7 @@ CARGO_CLASSIFY_CASES="${CARGO_CLASSIFY_DIR}/lib/cargo_failure_cases"
 # `cargo test` logs, where TEST NAMES AND ASSERTION MESSAGES routinely contain
 # the words "connection refused", "signal: 9" and "No space left on device".
 # Rows C11-C13 are those.
-_CARGO_ENV_SIG='could not execute process|could not parse/generate dep info|No space left on device \(os error 28\)|process did(n.t| not) exit successfully:.*\(signal: (9|15)[,)]|failed to acquire package cache lock|error: failed to download'
+_CARGO_ENV_SIG='could not execute process|could not parse/generate dep info|No space left on device \(os error 28\)|process did(n.t| not) exit successfully:.*\(signal: (9|15)[,)]|failed to acquire package cache lock|error: failed to download|couldn.t create a temp dir|\[double-spawn\] failed to exec'
 
 # The network rows need TWO conditions, because "Connection refused" and
 # "Temporary failure in name resolution" are ordinary strings that a test can
