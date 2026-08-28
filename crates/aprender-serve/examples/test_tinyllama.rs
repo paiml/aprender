@@ -2,7 +2,10 @@
 use realizar::gguf::{MappedGGUFModel, OwnedQuantizedKVCache, OwnedQuantizedModel};
 
 fn main() {
-    let path = "/home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf";
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf"
+    );
     let mapped = MappedGGUFModel::from_path(path).expect("load");
     let model = OwnedQuantizedModel::from_mapped(&mapped).expect("model");
     let vocab = mapped.model.vocabulary().expect("vocab");

@@ -143,10 +143,22 @@ fn setup_cuda_device() -> Option<GpuInfo> {
 }
 
 const DEFAULT_MODEL_PATHS: &[&str] = &[
-    "/home/noah/src/single-shot-eval/models/raw/deepseek-coder-1.3b-instruct-q4_k_m.gguf",
-    "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
-    "/home/noah/src/single-shot-eval/models/raw/phi-2-q4_k_m.gguf",
-    "/home/noah/.cache/lm-studio/models/TheBloke/phi-2-GGUF/phi-2.Q4_K_M.gguf",
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/deepseek-coder-1.3b-instruct-q4_k_m.gguf"
+    ),
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    ),
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/phi-2-q4_k_m.gguf"
+    ),
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/phi-2.Q4_K_M.gguf"
+    ),
 ];
 
 /// Resolve the model path: use explicit CLI arg, or search default locations.

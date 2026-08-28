@@ -4,7 +4,10 @@ use realizar::gguf::MappedGGUFModel;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Qwen2-0.5B QKV Tensor Structure ===\n");
 
-    let qwen_path = "/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct-GGUF/snapshots/198f08841147e5196a6a69bd0053690fb1fd3857/qwen2-0_5b-instruct-q4_0.gguf";
+    let qwen_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2-0_5b-instruct-q4_0.gguf"
+    );
     let qwen_mapped = MappedGGUFModel::from_path(qwen_path)?;
 
     println!("Qwen2-0.5B Layer 0 attention tensors:");

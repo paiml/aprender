@@ -13,7 +13,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use trueno::backends::gpu::GpuDevice;
 
     let path = std::env::var("MODEL_PATH").unwrap_or_else(|_| {
-        "/home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr".to_string()
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-7b-instruct-q4k.apr"
+        )
+        .to_string()
     });
 
     println!("FALSIFY-MBP-001: wgpu Parity Test");

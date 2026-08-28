@@ -1,13 +1,16 @@
 //! Check layer structure for Qwen2
 //!
-//! Run: cd /home/noah/src/realizar && cargo run --release --example check_layer_structure
+//! Run: cargo run --release -p aprender-serve --example check_layer_structure
 
 use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Layer Structure Check ===\n");
 
-    let path = "/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct-GGUF/snapshots/198f08841147e5196a6a69bd0053690fb1fd3857/qwen2-0_5b-instruct-q4_0.gguf";
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2-0_5b-instruct-q4_0.gguf"
+    );
     let mapped = MappedGGUFModel::from_path(path)?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)?;
 

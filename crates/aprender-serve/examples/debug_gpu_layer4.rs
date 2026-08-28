@@ -2,9 +2,13 @@
 use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
 fn main() {
-    let path = std::env::args()
-        .nth(1)
-        .unwrap_or("/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf".to_string());
+    let path = std::env::args().nth(1).unwrap_or(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        )
+        .to_string(),
+    );
     let mapped = MappedGGUFModel::from_path(&path).expect("Failed to load");
     let model = OwnedQuantizedModel::from_mapped(&mapped).expect("Failed to parse");
 

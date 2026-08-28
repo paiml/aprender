@@ -7,7 +7,11 @@ use std::env;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model_path = env::args().nth(1).unwrap_or_else(|| {
-        "/home/noah/src/aprender/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf".to_string()
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        )
+        .to_string()
     });
 
     println!("=== QKV Bias Check: {} ===\n", model_path);

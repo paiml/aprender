@@ -6,8 +6,11 @@ use std::time::Instant;
 
 fn main() {
     let model_path = std::env::var("MODEL_PATH").unwrap_or_else(|_| {
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
-            .to_string()
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+        )
+        .to_string()
     });
 
     if !CudaExecutor::is_available() || !Path::new(&model_path).exists() {

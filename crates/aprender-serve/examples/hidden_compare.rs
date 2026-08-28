@@ -114,7 +114,10 @@ fn cpu_layer_forward(hidden: &mut [f32], model: &OwnedQuantizedModel, layer_idx:
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("CUDA_GRAPH_DISABLE", "1");
 
-    let path = "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    );
     let mapped = MappedGGUFModel::from_path(path)?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)?;
     let test_token: u32 = 791;

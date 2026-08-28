@@ -14,8 +14,11 @@ fn main() {
     println!();
 
     let gguf_path = std::env::var("GGUF_PATH").unwrap_or_else(|_| {
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
-            .to_string()
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        )
+        .to_string()
     });
 
     let output_path = std::env::var("OUTPUT_PATH")

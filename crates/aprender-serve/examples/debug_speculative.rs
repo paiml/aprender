@@ -22,10 +22,14 @@ fn main() {
         return;
     }
 
-    let target_path =
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
-    let draft_path =
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-0.5b-instruct-q4_0.gguf";
+    let target_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    );
+    let draft_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-0.5b-instruct-q4_0.gguf"
+    );
 
     if !Path::new(target_path).exists() || !Path::new(draft_path).exists() {
         println!("❌ Models not found");

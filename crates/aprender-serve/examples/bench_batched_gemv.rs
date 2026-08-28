@@ -24,8 +24,10 @@ fn main() {
         return;
     }
 
-    let model_path =
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+    let model_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    );
 
     if !Path::new(model_path).exists() {
         println!("❌ Model not found: {}", model_path);

@@ -3,8 +3,11 @@ use std::fs;
 
 fn main() {
     // Load raw model
-    let data =
-        fs::read("/home/noah/src/aprender/tinyllama-1.1b-chat-v1.0.Q4_0.gguf").expect("test");
+    let data = fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/tinyllama-1.1b-chat-v1.0.Q4_0.gguf"
+    ))
+    .expect("test");
     let model = GGUFModel::from_bytes(&data).expect("test");
 
     // Get token_embd tensor info

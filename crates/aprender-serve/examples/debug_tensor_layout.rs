@@ -1,5 +1,5 @@
 //! Debug script to compare tensor layouts between TinyLlama and Qwen2
-//! Run with: cd /home/noah/src/realizar && cargo run --release --example debug_tensor_layout
+//! Run with: cargo run --release -p aprender-serve --example debug_tensor_layout
 //!
 //! Five-Whys Analysis:
 //! Why-1: Qwen2 produces "!" instead of correct output
@@ -16,17 +16,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Tensor Layout Debug ===\n");
 
     // Qwen2-0.5B model (Q4_0 format)
-    let qwen2_path = PathBuf::from("/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct-GGUF/snapshots/198f08841147e5196a6a69bd0053690fb1fd3857/qwen2-0_5b-instruct-q4_0.gguf");
+    let qwen2_path = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2-0_5b-instruct-q4_0.gguf"
+    ));
 
     // Qwen2.5 Coder model
-    let qwen25_path = PathBuf::from(
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-0.5b-instruct-q4_0.gguf",
-    );
+    let qwen25_path = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-0.5b-instruct-q4_0.gguf"
+    ));
 
     // DeepSeek model (for comparison - different architecture)
-    let deepseek_path = PathBuf::from(
-        "/home/noah/src/single-shot-eval/models/raw/deepseek-coder-1.3b-instruct-q4_k_m.gguf",
-    );
+    let deepseek_path = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/deepseek-coder-1.3b-instruct-q4_k_m.gguf"
+    ));
 
     // Check if models exist and analyze
     for (name, path) in [

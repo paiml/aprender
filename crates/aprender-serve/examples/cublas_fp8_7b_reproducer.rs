@@ -7,7 +7,7 @@
 //! Run with:
 //!
 //! ```sh
-//! MODEL_PATH=/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+//! MODEL_PATH=${APR_MODELS:?}/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
 //!     cargo run --example cublas_fp8_7b_reproducer \
 //!     --release -p aprender-serve --features cuda
 //! ```
@@ -52,8 +52,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         h
     }
 
-    let path = std::env::var("MODEL_PATH")
-        .unwrap_or_else(|_| "/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf".to_string());
+    let path = std::env::var("MODEL_PATH").unwrap_or_else(|_| {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+        )
+        .to_string()
+    });
 
     // Deterministic probe: same token, same position. Token 791 = canonical
     // probe from CORRECTNESS-011 / layer_by_layer_trace.

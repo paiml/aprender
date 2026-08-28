@@ -62,7 +62,10 @@ fn main() {
 
     // Also compare TinyLlama if available
     eprintln!("\n=== TinyLlama comparison ===");
-    let tinyllama_path = "/home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf";
+    let tinyllama_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf"
+    );
     if let Ok(mapped2) = MappedGGUFModel::from_path(tinyllama_path) {
         let model2 = OwnedQuantizedModel::from_mapped(&mapped2).expect("model");
         let input2 = model2.embed(&[1u32]); // BOS token

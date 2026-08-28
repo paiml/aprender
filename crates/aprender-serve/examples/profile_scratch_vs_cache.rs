@@ -5,9 +5,13 @@ use realizar::RealizarError;
 use std::time::Instant;
 
 fn main() -> Result<(), RealizarError> {
-    let model_path = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "/home/noah/models/Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf".to_string());
+    let model_path = std::env::args().nth(1).unwrap_or_else(|| {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf"
+        )
+        .to_string()
+    });
 
     eprintln!("Loading model: {}", model_path);
     let mapped = MappedGGUFModel::from_path(&model_path)?;

@@ -5,7 +5,10 @@ use realizar::safetensors_infer::SafetensorsToAprConverter;
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let model_path = Path::new("/home/noah/models/qwen2.5-coder-0.5b-instruct/model.safetensors");
+    let model_path = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/model.safetensors"
+    ));
 
     println!("Loading SafeTensors model...");
     let transformer = SafetensorsToAprConverter::convert(model_path)?;

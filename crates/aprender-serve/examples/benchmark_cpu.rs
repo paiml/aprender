@@ -3,7 +3,10 @@ use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConf
 use std::time::Instant;
 
 fn main() {
-    let path = "/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf";
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    );
     let mapped = MappedGGUFModel::from_path(path).expect("load");
     let model = OwnedQuantizedModel::from_mapped(&mapped).expect("parse");
 

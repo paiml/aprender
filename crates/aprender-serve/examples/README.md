@@ -603,6 +603,34 @@ Run with features:
 cargo run --example <name> --features "<feature-list>"
 ```
 
+### Where the model files come from (PERF-036)
+
+Examples and benches that need a real model resolve it as
+
+```rust
+concat!(env!("CARGO_MANIFEST_DIR"), "/../../models/<file>.gguf")
+```
+
+which is the workspace-root `models/` directory — gitignored root-anchored as
+`/models/` (CB-510), so it never shadows `src/models/`. Put (or symlink) the
+GGUF/APR files there:
+
+```bash
+mkdir -p models
+ln -s "$APR_MODELS/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf" models/
+```
+
+Examples that already read an env var (`MODEL_PATH`, `GGUF_PATH`, `APR_PATH`,
+`GGUF_MODEL`) still honour it; the constant above is only the fallback.
+
+**Do not hardcode `/home/<you>/...` here.** 216 such paths were baked into this
+crate's shipped artifacts and were counted by
+`scripts/check_hardcoded_paths.sh --full`, the shipped-tier ratchet. An absolute
+path rooted in one person's home makes the build depend on one developer's
+filesystem: the example compiles everywhere and can only ever *run* on one
+machine — the same provenance defect class as a stale `apr` binary winning a
+bare `apr` on `$PATH`.
+
 ## Performance Parity Examples (PARITY-xxx)
 
 These examples verify performance parity with Ollama and llama.cpp:

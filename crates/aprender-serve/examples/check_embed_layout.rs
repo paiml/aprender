@@ -3,7 +3,10 @@ use realizar::safetensors::MappedSafeTensorsModel;
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = Path::new("/home/noah/models/qwen2.5-coder-0.5b-instruct/model.safetensors");
+    let path = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/model.safetensors"
+    ));
     let st = MappedSafeTensorsModel::load(path)?;
 
     // Get raw embedding data

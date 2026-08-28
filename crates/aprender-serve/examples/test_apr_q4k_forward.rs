@@ -3,7 +3,10 @@ use realizar::apr_transformer::AprTransformer;
 use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let apr_path = "/home/noah/models/qwen2.5-coder-1.5b-q4k.apr";
+    let apr_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../models/qwen2.5-coder-1.5b-q4k.apr"
+    );
 
     println!("Loading APR Q4K model from: {}", apr_path);
     let start = Instant::now();

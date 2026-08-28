@@ -17,8 +17,11 @@ fn main() {
         eprintln!("Note: Thread pool already configured: {e}");
     }
     let model_path = std::env::args().nth(1).unwrap_or_else(|| {
-        "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
-            .to_string()
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        )
+        .to_string()
     });
 
     println!("Loading model: {model_path}");
