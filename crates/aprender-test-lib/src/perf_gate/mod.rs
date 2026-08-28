@@ -120,6 +120,15 @@ mod gate_conformance_tests {
     /// with the reason it is declared rather than invented.
     const RECEIPT_SCOPE_UNPRODUCIBLE: &[(&str, &str)] = &[
         (
+            "signature",
+            "§4.9.1's signature is applied by `scripts/perf_receipt_sign.sh` on the PRODUCING \
+             HOST, with a key that lives only there (forjar-deployed). A renderer able to sign \
+             its own output would be a renderer able to forge one, which is precisely the \
+             property the arm exists to deny — so `render()` emits the payload and never the \
+             attestation over it. The receipt is legal unsigned at merge phase and fails \
+             ArmC-sig at release phase, which is the §4.5 Arm C table exactly (PERF-007).",
+        ),
+        (
             "kv",
             "Arm D's memory block is server-reported (§4.4.9). Supplied only via \
              KvBlock::from_server_report; absent otherwise.",
