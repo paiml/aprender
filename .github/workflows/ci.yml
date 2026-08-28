@@ -1073,6 +1073,26 @@ jobs:
       # invocations under two names is how a check comes to look twice as
       # covered as it is. The case table runs once, above, as "Perf gate can
       # still discriminate".
+      # aprender#2737: the pin declared batch_size = 1 while TWO other places
+      # retyped `-b 1` independently of it and a third declared
+      # context_length/threads that no execution ever read. `-b 1` does not tune
+      # llama.cpp, it switches its batching OFF -- measured on gx10 against the
+      # pinned build, the c=16 aggregate went 434.2 -> 181.9 tok/s while c=1
+      # moved 0.3%, which took the ratio this epic exists to compute from 2.03x
+      # to 4.85x in apr's favour. A handicapped denominator is not a benchmark.
+      # This asserts the declaration is the ONLY source of the comparator's
+      # knobs, in both directions.
+      #
+      # It lives HERE, and not in nightly-bench.yml where it was first wired,
+      # because it is a static consistency check over committed files: it needs
+      # no bench hardware, no model, and no receipt, so a PR can and must fail
+      # it. It was wired into the nightly lane only because the change that
+      # added it was barred from editing ci.yml.
+      #
+      # No separate --self-test step: this guard has no such flag, it runs its
+      # own 13-row mutation table in front of the verdict on EVERY invocation.
+      - name: Comparator flags match the declaration
+        run: bash scripts/check_comparator_flags.sh
       # The deepest check in the surface sweep -- real generation through
       # /v1/chat/completions -- had never executed once: the probe binary was
       # built without --features llm (clap advertises `llm` regardless, only the
