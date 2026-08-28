@@ -135,6 +135,15 @@ fn parse_bands(spec: &str) -> Result<Vec<usize>> {
                     .to_string(),
             ));
         }
+        // `BandInput.concurrency` is a `u32`. Refusing the excess here keeps
+        // that conversion infallible, so the receipt cannot end up labelled
+        // with a concurrency the operator did not ask for -- the same
+        // silent-substitution defect as the clamped zero above.
+        if u32::try_from(c).is_err() {
+            return Err(CliError::InvalidInput(format!(
+                "--bands: {c} exceeds the receipt's u32 concurrency field"
+            )));
+        }
         out.push(c);
     }
     if out.is_empty() {
@@ -253,6 +262,8 @@ fn band_input(run: &BandRun, comparator: ComparatorStatus) -> BandInput {
         })
         .collect();
     BandInput {
+        // Infallible: `parse_bands` refused anything a `u32` cannot hold, so
+        // there is no clamp here to silently relabel the band.
         concurrency: u32::try_from(run.config.concurrency).unwrap_or(u32::MAX),
         window_ms: run.window.window_ms,
         requests,
@@ -473,6 +484,16 @@ mod tests {
     fn a_zero_band_is_rejected_rather_than_clamped() {
         let err = parse_bands("1,0,4").expect_err("must reject");
         assert!(err.to_string().contains("measures nothing"), "{err}");
+    }
+
+    /// A level a `u32` cannot hold must be refused where it was typed rather
+    /// than clamped into a receipt that names a band nobody ran.
+    #[test]
+    fn a_band_wider_than_the_receipt_field_is_rejected() {
+        let too_wide = u64::from(u32::MAX) + 1;
+        let err = parse_bands(&format!("1,{too_wide}")).expect_err("must reject");
+        assert!(err.to_string().contains("u32"), "{err}");
+        assert!(parse_bands(&format!("{}", u32::MAX)).is_ok());
     }
 
     #[test]
