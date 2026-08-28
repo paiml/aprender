@@ -1015,6 +1015,68 @@ fn aggregate_results(
 // Feature 5: Inline Quality Validation
 // =============================================================================
 
+/// Basic checks, applied at every validation level.
+///
+/// Returns the failure reason, or `None` when the record passes.
+fn basic_fail_reason(record: &RequestRecord) -> Option<String> {
+    if record.tokens == 0 {
+        Some("zero_tokens".to_string())
+    } else if record.finish_reason.is_none() {
+        Some("no_finish_reason".to_string())
+    } else {
+        None
+    }
+}
+
+/// Apply `non_empty_check` to captured response content.
+///
+/// Shared by both content-inspecting modes: empty content always fails as
+/// `empty_content`, and an absent body is a failure only for a zero-token
+/// response.
+fn check_content(
+    record: &RequestRecord,
+    non_empty_check: impl FnOnce(&str) -> Option<String>,
+) -> Option<String> {
+    match &record.response_content {
+        Some(content) if content.is_empty() => Some("empty_content".to_string()),
+        Some(content) => non_empty_check(content.as_str()),
+        None => (record.tokens == 0).then(|| "empty_content".to_string()),
+    }
+}
+
+/// Content checks, applied only under `Contains` / `Pattern` validation modes.
+///
+/// `compiled_regex` is the pre-compiled `Pattern` regex. When the pattern failed
+/// to compile it is `None` and the pattern check is *skipped*, not failed --
+/// preserving the behaviour this was extracted from.
+fn content_fail_reason(
+    record: &RequestRecord,
+    mode: &ValidationMode,
+    compiled_regex: Option<&regex::Regex>,
+) -> Option<String> {
+    match mode {
+        ValidationMode::Contains(substring) => check_content(record, |content| {
+            (!content.contains(substring.as_str()))
+                .then(|| format!("missing_substring:{substring}"))
+        }),
+        ValidationMode::Pattern(pattern) => check_content(record, |content| {
+            compiled_regex
+                .is_some_and(|re| !re.is_match(content))
+                .then(|| format!("missing_pattern:{pattern}"))
+        }),
+        ValidationMode::None | ValidationMode::Basic => None,
+    }
+}
+
+/// Full per-record verdict: basic checks first, content checks only if they pass.
+fn record_fail_reason(
+    record: &RequestRecord,
+    mode: &ValidationMode,
+    compiled_regex: Option<&regex::Regex>,
+) -> Option<String> {
+    basic_fail_reason(record).or_else(|| content_fail_reason(record, mode, compiled_regex))
+}
+
 /// Validate all successful responses against the configured validation mode.
 fn compute_quality(records: &[RequestRecord], mode: &ValidationMode) -> QualityResult {
     let validation_level = match mode {
@@ -1038,53 +1100,12 @@ fn compute_quality(records: &[RequestRecord], mode: &ValidationMode) -> QualityR
             continue; // Failed requests already counted in error_rate
         }
 
-        let mut fail_reason = None;
-
-        // Basic checks (all validation levels)
-        if record.tokens == 0 {
-            fail_reason = Some("zero_tokens".to_string());
-        } else if record.finish_reason.is_none() {
-            fail_reason = Some("no_finish_reason".to_string());
-        }
-
-        // Content checks (contains/pattern only)
-        if fail_reason.is_none() {
-            match mode {
-                ValidationMode::Contains(substring) => {
-                    if let Some(ref content) = record.response_content {
-                        if content.is_empty() {
-                            fail_reason = Some("empty_content".to_string());
-                        } else if !content.contains(substring.as_str()) {
-                            fail_reason = Some(format!("missing_substring:{substring}"));
-                        }
-                    } else if record.tokens == 0 {
-                        fail_reason = Some("empty_content".to_string());
-                    }
-                }
-                ValidationMode::Pattern(pattern) => {
-                    if let Some(ref content) = record.response_content {
-                        if content.is_empty() {
-                            fail_reason = Some("empty_content".to_string());
-                        } else if let Some(ref re) = compiled_regex {
-                            if !re.is_match(content) {
-                                fail_reason = Some(format!("missing_pattern:{pattern}"));
-                            }
-                        }
-                    } else if record.tokens == 0 {
-                        fail_reason = Some("empty_content".to_string());
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        if let Some(reason) = fail_reason {
-            failures.push(QualityFailure {
+        match record_fail_reason(record, mode, compiled_regex.as_ref()) {
+            Some(reason) => failures.push(QualityFailure {
                 request_idx: idx,
                 reason,
-            });
-        } else {
-            passed_count += 1;
+            }),
+            None => passed_count += 1,
         }
     }
 
@@ -2160,6 +2181,56 @@ mod tests {
         let quality = compute_quality(&records, &ValidationMode::Contains("hello".to_string()));
         assert_eq!(quality.failed, 1);
         assert!(quality.failures[0].reason.starts_with("missing_substring:"));
+    }
+
+    /// A successful record carrying `content`, otherwise passing every basic check.
+    fn ok_record(content: Option<&str>) -> RequestRecord {
+        RequestRecord {
+            latency: Duration::from_millis(100),
+            ttfb: Duration::from_millis(50),
+            tokens: 10,
+            prompt_tokens: 5,
+            success: true,
+            token_timestamps: Vec::new(),
+            brick_trace: None,
+            finish_reason: Some("stop".to_string()),
+            response_content: content.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn test_quality_pattern_match() {
+        let records = vec![ok_record(Some("answer: 42"))];
+        let quality = compute_quality(&records, &ValidationMode::Pattern(r"\d+".to_string()));
+        assert_eq!(quality.passed, 1);
+        assert_eq!(quality.failed, 0);
+    }
+
+    #[test]
+    fn test_quality_pattern_mismatch() {
+        let records = vec![ok_record(Some("no digits here"))];
+        let quality = compute_quality(&records, &ValidationMode::Pattern(r"\d+".to_string()));
+        assert_eq!(quality.failed, 1);
+        assert!(quality.failures[0].reason.starts_with("missing_pattern:"));
+    }
+
+    /// An uncompilable pattern SKIPS the content check rather than failing every
+    /// record. Pinned because it is the one branch where `compiled_regex` is
+    /// `None` while the mode is still `Pattern`.
+    #[test]
+    fn test_quality_pattern_invalid_regex_skips_check() {
+        let records = vec![ok_record(Some("anything at all"))];
+        let quality = compute_quality(&records, &ValidationMode::Pattern("[unclosed".to_string()));
+        assert_eq!(quality.passed, 1);
+        assert_eq!(quality.failed, 0);
+    }
+
+    #[test]
+    fn test_quality_empty_content_fails() {
+        let records = vec![ok_record(Some(""))];
+        let quality = compute_quality(&records, &ValidationMode::Contains("hello".to_string()));
+        assert_eq!(quality.failed, 1);
+        assert_eq!(quality.failures[0].reason, "empty_content");
     }
 
     #[test]

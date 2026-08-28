@@ -94,6 +94,11 @@ fn create_benchmark_transformer() -> GGUFTransformer {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        // PMAT-810 added this field to GGUFConfig; this bench's initializer was
+        // never updated, so `cargo check -p aprender-serve --all-targets` has
+        // been red. `None` is the non-Gemma2 fallback (scale = 1/sqrt(head_dim)),
+        // which is correct for this synthetic llama-constraints config.
+        query_pre_attn_scalar: None,
     };
 
     let layers: Vec<GGUFTransformerLayer> = (0..num_layers)
