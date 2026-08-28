@@ -90,7 +90,7 @@ fi
 # Dispatch HumanEval eval
 # --------------------------------------------------------------------------
 echo "=== dispatching HumanEval eval on gx10 ==="
-RUN_DIR_REMOTE="/home/noah/runs/${RUN_NAME}"
+RUN_DIR_REMOTE="${GX10_RUNS_DIR:-/home/${GX10_USER}/runs}/${RUN_NAME}"
 LOG_REMOTE="${RUN_DIR_REMOTE}/eval.log"
 
 ssh "${GX10_USER}@${GX10_HOST}" "

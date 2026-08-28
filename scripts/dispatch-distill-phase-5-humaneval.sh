@@ -28,7 +28,7 @@ TOP_P="${TOP_P:-0.95}"
 if [ -z "${CHECKPOINT:-}" ]; then
     echo "ERROR: set CHECKPOINT=/path/to/student-trained.apr" >&2
     echo "Typical value after Stage D:" >&2
-    echo "  CHECKPOINT=/home/noah/runs/distill-stage-d-<run>/student-trained.apr/model.apr" >&2
+    echo "  CHECKPOINT=\$HOME/runs/distill-stage-d-<run>/student-trained.apr/model.apr" >&2
     exit 2
 fi
 
@@ -75,7 +75,7 @@ REMOTE_PREFLIGHT
 
 echo
 echo "=== dispatching Phase 5 eval on gx10 ==="
-RUN_DIR_REMOTE="/home/noah/runs/${RUN_NAME}"
+RUN_DIR_REMOTE="${GX10_RUNS_DIR:-/home/${GX10_USER}/runs}/${RUN_NAME}"
 LOG_REMOTE="${RUN_DIR_REMOTE}/launch.log"
 JSON_REMOTE="${RUN_DIR_REMOTE}/results.json"
 

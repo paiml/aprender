@@ -39,31 +39,76 @@
 # `--full` mode: the whole-tree ratchet over pmat's SHIPPED tier. Detection is
 # pmat's — this script only holds the number. See "WHY TWO MODES".
 #
-# WHY TWO MODES / WHY --full IS NOT WIRED INTO CI
-# -----------------------------------------------
+# WHY THREE MODES / HOW --full ARMS ITSELF
+# ----------------------------------------
 # pmat owns this detector (pmat#1017) and re-implementing its tiering would be
-# muda, so --full shells out to it and compares `.shipped_count`. But MEASURED
-# on 2026-08-20: the clean-room pool that runs the blocking guards
-# (16 × intel-clean-room, the only runners carrying the `clean-room` label)
-# has pmat 3.31.0, in which `pmat analyze hardcoded-paths` does not exist:
+# muda, so --full shells out to it and compares `.shipped_count`.
+#
+# The clean-room pool that runs the blocking guards (the only runners carrying
+# the `clean-room` label) still cannot do it. RE-MEASURED 2026-08-28, unchanged
+# from the 2026-08-20 reading:
 #
 #   $ ssh mac-server 'pmat --version; pmat analyze hardcoded-paths --help'
 #   pmat 3.31.0
 #   error: unrecognized subcommand 'hardcoded-paths'
 #
-# Wiring --full into the required gate today would red main on every PR. The
-# alternatives are worse: `cargo install pmat || true` (book.yml:90 does this —
-# a gate that cannot fail), or a cold `cargo install` inside a timeout-boxed
-# job (the cargo-audit failure mode that evicted the merge queue).
+# Wiring a bare --full into the required gate today would red main on every PR.
+# The alternatives are worse: `cargo install pmat || true` (book.yml:90 does
+# this — a gate that cannot fail), or a cold `cargo install` inside a
+# timeout-boxed job (the cargo-audit failure mode that evicted the merge queue).
 #
-# So the default mode is deliberately narrow, pmat-free, and BLOCKING; --full is
-# the authoritative view and runs from `make tier3` and by hand. PROMOTE --full
-# INTO ci.yml AS SOON AS THE CLEAN-ROOM FLEET CARRIES pmat >= 3.32.0 — that is
-# one line next to the default-mode step, and this comment is the trigger.
+# WHAT WENT WRONG WITH LEAVING IT UNWIRED (#2706 / PERF-032)
+# ---------------------------------------------------------
+# The previous version of this header said "PROMOTE --full INTO ci.yml AS SOON
+# AS THE CLEAN-ROOM FLEET CARRIES pmat >= 3.32.0 — this comment is the trigger."
+# A comment is not a trigger. Nobody re-reads it, and nothing re-evaluates the
+# condition, so the mode that actually catches shipped machine-specific paths
+# gated nothing for as long as it took 20 of them to land (299 vs a baseline of
+# 278, measured on origin/main 62d23d8d1). The same header also claimed --full
+# "runs from `make tier3`"; the Makefile has never invoked this script at all.
 #
-#   bash scripts/check_hardcoded_paths.sh              # blocking check (contracts/)
-#   bash scripts/check_hardcoded_paths.sh --self-test  # case table
-#   bash scripts/check_hardcoded_paths.sh --full       # pmat shipped-tier ratchet
+# So the promotion is now MECHANICAL rather than editorial. --full-if-capable
+# probes for the subcommand at run time and:
+#   * runs the full ratchet and PROPAGATES ITS EXIT STATUS when pmat can do it;
+#   * otherwise PROVES the capability is absent and skips, printing the version
+#     and the actual refusal text.
+# The day the fleet carries pmat >= 3.32.0 the gate arms itself, with no edit
+# and nobody having to remember. This is not `|| true`: `|| true` discards a
+# verdict that was actually produced, whereas the skip here is taken only when
+# no verdict CAN be produced, and it says so in the log. The residual blind
+# spot — a runner silently losing pmat — is the price of not cold-installing a
+# toolchain inside a required job, and it is stated here rather than hidden.
+#
+# THE 6 THAT STAYED, AND WHY (classified, NOT exempted)
+# -----------------------------------------------------
+# Of the 20 that landed, 14 were fixed outright. Six remain in the tree and are
+# still COUNTED -- there is no allowlist here and no path is excused. The
+# ratchet came back under its baseline because eight OTHER, pre-existing
+# findings were fixed to pay for them (299 -> 277 against a baseline of 278,
+# now lowered to 277). Naming them so the next reader does not re-litigate:
+#
+#   evidence/dogfood/0.64.0/{gx10,intel,mini}.json  (1 each)
+#   evidence/dogfood/0.64.0/lambda.json             (2)
+#     `path_resolved_apr` records WHICH binary a bare `apr` resolved to on that
+#     host. The host-specific path IS the measurement -- on lambda it is
+#     /home/noah/.local/bin/apr shadowing ~/.cargo/bin, the #2384/#2361 defect
+#     the receipt exists to document. Redacting it would not make the repo more
+#     portable; it would delete the evidence and fabricate a cleaner history.
+#     A receipt naming the machine it was measured on is the epic's whole point.
+#
+#   .github/workflows/ci.yml  /home/noah/data/sccache:/sccache  (a 4th copy)
+#     A real portability defect: the fleet's sccache mount is one user's home,
+#     repeated inline four times. NOT fixed here on purpose -- collapsing it to
+#     a single definition changes a docker mount on 16 clean-room runners, and
+#     the `env` context is not reliably available in a job-level `container:`/
+#     volume position, so a wrong guess silently unshares the cache fleet-wide
+#     (see the 'shared-cache cap is CORRECTNESS' lesson). It needs its own PR
+#     that can actually observe a CI run. Deliberately left visible in the count.
+#
+#   bash scripts/check_hardcoded_paths.sh                    # blocking (contracts/)
+#   bash scripts/check_hardcoded_paths.sh --self-test        # case table
+#   bash scripts/check_hardcoded_paths.sh --full             # shipped-tier ratchet
+#   bash scripts/check_hardcoded_paths.sh --full-if-capable  # ratchet, self-arming
 #
 set -uo pipefail
 
@@ -161,6 +206,40 @@ if [ "${1:-}" = "--self-test" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# --full-if-capable: the same ratchet, but it arms itself. Runs --full and
+# propagates its status wherever pmat can produce a verdict; where pmat cannot,
+# it PROVES that and skips. See "WHAT WENT WRONG WITH LEAVING IT UNWIRED".
+#
+# The skip is deliberately narrow. It is taken only for a demonstrated
+# capability gap, it prints the evidence, and it is not reachable once the
+# subcommand exists -- so no edit is needed on the day the fleet upgrades.
+# ---------------------------------------------------------------------------
+if [ "${1:-}" = "--full-if-capable" ]; then
+    printf '=== shipped-tier ratchet, self-arming (--full-if-capable) ===\n'
+    if ! command -v pmat >/dev/null 2>&1; then
+        printf 'SKIPPED (proven): no pmat on this runner.\n'
+        printf 'This mode is a thin wrapper over `pmat analyze hardcoded-paths`\n'
+        printf '(pmat#1017); it does not re-detect. It arms itself once pmat is\n'
+        printf 'present AND carries the subcommand -- no edit required.\n'
+        exit 0
+    fi
+    # Never read $? through a pipe (Verification Discipline #1).
+    PROBE_OUT="$(pmat analyze hardcoded-paths --help 2>&1)"
+    probe_rc=$?
+    PMAT_VER="$(pmat --version 2>&1 | head -1)"
+    if [ "$probe_rc" -ne 0 ]; then
+        printf 'SKIPPED (proven): %s cannot run this analysis.\n' "$PMAT_VER"
+        printf '  $ pmat analyze hardcoded-paths --help   -> rc=%s\n' "$probe_rc"
+        printf '%s\n' "$PROBE_OUT" | head -3 | sed 's|^|  |'
+        printf 'Needs pmat >= 3.32.0. The ratchet arms itself when that lands.\n'
+        exit 0
+    fi
+    printf 'pmat is capable (%s) -- the ratchet is ARMED and blocking.\n' "$PMAT_VER"
+    bash "${BASH_SOURCE[0]}" --full
+    exit $?
+fi
+
+# ---------------------------------------------------------------------------
 # --full: pmat's shipped tier, ratcheted. Detection is pmat's; this holds the
 # number. Fails hard when pmat cannot do it, never silently.
 # ---------------------------------------------------------------------------
@@ -222,7 +301,29 @@ if [ "${1:-}" = "--full" ]; then
     printf 'pmat scanned %s file(s); %s shipped finding(s), baseline %s\n' "$files" "$shipped" "$baseline"
     if [ "$shipped" -gt "$baseline" ]; then
         printf '\nFAIL: shipped machine-specific paths grew %s -> %s.\n' "$baseline" "$shipped"
-        ( cd "$REPO_ROOT" && pmat analyze hardcoded-paths -p . --fail-on-shipped 2>&1 | head -40 )
+        printf 'Fix the paths. Raising the baseline is how the previous 20 landed.\n'
+        # This used to re-run pmat and `head -40` the human-readable output. Two
+        # defects: it paid for a second scan whose result could differ from the
+        # one that produced the verdict, and 40 lines of an ALPHABETICAL list is
+        # a window onto `.github/` and `crates/a*` only -- a path added under
+        # scripts/ or tools/ was invisible in the very message announcing it.
+        # Reuse the JSON that produced the verdict, and summarise all of it.
+        printf '\nAll %s shipped finding(s), by file:\n' "$shipped"
+        jq -r '.findings[] | select(.site=="shipped") | .file' "$TD/out.json" \
+            | LC_ALL=C sort | uniq -c | sort -rn > "$TD/byfile.txt"
+        nfiles="$(grep -c . < "$TD/byfile.txt")"
+        head -40 "$TD/byfile.txt" | sed 's|^|  |'
+        if [ "$nfiles" -gt 40 ]; then
+            printf '  ... and %s more file(s).\n' "$((nfiles - 40))"
+        fi
+        # A COUNT cannot say which path is new -- that is the standing weakness
+        # of a scalar ratchet (see PERF-032). Hand over the exact recipe rather
+        # than leaving the reader to invent one.
+        printf '\nA count cannot name the NEW path. To get it:\n'
+        printf '  %s\n' \
+            'pmat analyze hardcoded-paths -p . -f json > /tmp/now.json' \
+            "jq -r '.findings[]|select(.site==\"shipped\")|\"\\(.file)|\\(.path)\"' /tmp/now.json | sort > /tmp/now.txt" \
+            '# repeat in a worktree at origin/main, then: comm -13 /tmp/base.txt /tmp/now.txt'
         exit 1
     fi
     if [ "$shipped" -lt "$baseline" ]; then

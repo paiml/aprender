@@ -1224,16 +1224,27 @@ jobs:
       # reported PASS. The two guards' universes are complementary, not nested.
       # contracts/ is now at ZERO and has no baseline to raise. Text-only, no build.
       #
-      # The whole-tree ratchet lives in `--full` and is NOT wired here: it shells
-      # out to `pmat analyze hardcoded-paths` (pmat#1017, the detector of record),
-      # and the clean-room pool measured pmat 3.31.0 on 2026-08-20, which has no
-      # such subcommand. Wiring it today would red every PR; `|| true` would make
-      # it a gate that cannot fail. Add the `--full` step here once the fleet
-      # carries pmat >= 3.32.0.
+      # The whole-tree ratchet lives in `--full`. It shells out to
+      # `pmat analyze hardcoded-paths` (pmat#1017, the detector of record), and
+      # the clean-room pool still measures pmat 3.31.0 (re-checked 2026-08-28),
+      # which has no such subcommand -- so a bare `--full` here would red every
+      # PR, and `|| true` would make it a gate that cannot fail.
+      #
+      # It used to be left unwired with a comment saying to promote it "once the
+      # fleet carries pmat >= 3.32.0". That is what this step is fixing: a
+      # comment is not a trigger, nothing re-evaluated the condition, and 20
+      # shipped machine-specific paths landed through the gap (299 vs baseline
+      # 278 on 62d23d8d1). --full-if-capable re-evaluates it on every run: it
+      # runs the ratchet and propagates its status where pmat can produce a
+      # verdict, and where it cannot it prints the version and the actual
+      # refusal text rather than assuming. The gate arms itself on the day the
+      # fleet upgrades, with no edit to this file.
       - name: No contract may name a machine-specific path
         run: bash scripts/check_hardcoded_paths.sh
       - name: Machine-specific-path guard case table
         run: bash scripts/check_hardcoded_paths.sh --self-test
+      - name: Whole-tree machine-specific-path ratchet (arms itself at pmat >= 3.32.0)
+        run: bash scripts/check_hardcoded_paths.sh --full-if-capable
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".

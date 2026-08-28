@@ -69,7 +69,7 @@ DRY_RUN="${DRY_RUN:-0}"
 if [[ -z "${HUMANEVAL_JSONL:-}" ]]; then
     for cand in \
         data/benchmarks/humaneval.jsonl \
-        /home/noah/src/apr-leaderboard/data/benchmarks/humaneval.jsonl \
+        "${APR_LEADERBOARD_ROOT:-$HOME/src/apr-leaderboard}/data/benchmarks/humaneval.jsonl" \
         evidence/ship-two-001/humaneval/problems.jsonl ; do
         if [[ -f "$cand" ]]; then HUMANEVAL_JSONL="$cand"; break; fi
     done
