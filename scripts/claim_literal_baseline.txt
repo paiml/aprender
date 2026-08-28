@@ -141,10 +141,10 @@ docs/BEATS.md:134
 docs/BEATS.md:65
 docs/BEATS.md:66
 docs/audits/dogfood-0.63.0-ledger.md:65
-docs/benchmarking-gate-spec.md:235
+docs/benchmarking-gate-spec.md:263
 docs/benchmarking-gate-spec.md:24
 docs/benchmarking-gate-spec.md:26
-docs/benchmarking-gate-spec.md:336
+docs/benchmarking-gate-spec.md:364
 docs/model-cards/albor-370m-v1.md:74
 docs/qa-cargo-run-example-conversion-minimize.md:128
 docs/qa/benchmark-matrix-2026-01-09.md:115
@@ -212,3 +212,4 @@ docs/qa/test-matrix-results-2026-01-08.md:138
 docs/qa/test-matrix-results-2026-01-08.md:39
 docs/qa/test-matrix-results-2026-01-08.md:42
 docs/qa/test-matrix-results-2026-01-08.md:60
+docs/benchmarking-gate-spec.md:336
