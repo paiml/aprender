@@ -253,6 +253,11 @@ falsification_tests:
   prediction: apr cbtop --iterations 0 is rejected at parse time rather than producing a report scoring every brick a perfect 100/A from zero samples
   test: tests::test_parse_cbtop_rejects_zero_iterations
   if_fails: Appending --iterations 0 turns any cbtop --ci gate unconditionally green
+- id: FALSIFY-OPS-010
+  rule: Report timestamps carry the real UTC date
+  prediction: The timestamp in a cbtop report matches the UTC date at the moment it was generated, on both headless paths
+  test: commands::cbtop::tests::test_chrono_timestamp_is_current_utc_date
+  if_fails: Persisted CI provenance is stamped with a stale hardcoded date
 - id: FALSIFY-OPS-011
   rule: Both flags that shape a measurement are validated, not just one
   prediction: apr cbtop --warmup 0 is rejected at parse time (exit 2), exactly as --iterations 0 already is, while --warmup 1, --warmup 3 and the declared default 10 all still parse
@@ -263,11 +268,6 @@ falsification_tests:
   prediction: The JSON emitted by apr cbtop --headless --json records both the warmup and the iteration count it ran, so two reports differing only in warmup do not serialise identically
   test: commands::cbtop::tests::test_json_output_records_measurement_parameters
   if_fails: A cold-start number and a steady-state number are byte-indistinguishable in a file persisted with --output, and no consumer of the receipt can recover which regime produced it
-- id: FALSIFY-OPS-010
-  rule: Report timestamps carry the real UTC date
-  prediction: The timestamp in a cbtop report matches the UTC date at the moment it was generated, on both headless paths
-  test: commands::cbtop::tests::test_chrono_timestamp_is_current_utc_date
-  if_fails: Persisted CI provenance is stamped with a stale hardcoded date
 kani_harnesses:
 - id: KANI-OPS-001
   obligation: ReadOnly commands have no side effects
@@ -322,7 +322,7 @@ qa_gate:
   - progress_reporting
   - concurrent_model_access
   - tokenizer_consistency
-  pass_criteria: All 10 falsification tests pass
+  pass_criteria: All 12 falsification tests pass
   falsification: >
     Run read-only command with filesystem watcher to detect mutations.
     Force inference error and measure GPU memory leak.
