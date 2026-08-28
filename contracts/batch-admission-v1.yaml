@@ -90,6 +90,89 @@ falsification_tests:
   if_fails: >-
     the server is a queue with extra steps: a sixteen-user deployment runs at a
     tenth of llama.cpp while every single-user benchmark looks healthy
+  root_cause: >-
+    PERF-041, 2026-08-29, RTX 4090, apr 0.64.0 (3eb2dae6a),
+    qwen2.5-coder-1.5b-instruct-q4_k_m, 400-token cap, greedy.
+
+    THE INDEX WAS NEVER MEASURING SERIALIZATION, AND THE NUMBERS ABOVE SAY SO
+    BEFORE ANY NEW RUN DOES. wall(1) = 1.20s makes the recorded band walls
+    1.20 / 2.94 / 2.75 / 2.87. wall(2) > wall(4). Adding two clients cannot
+    make a serialized server faster, so the quantity charged at c=2 is a
+    CONSTANT, not a function of c. Both independent recordings of that run
+    agree on the direction (this block: 2.45/2.29/2.39; the source comment in
+    handler_gpu_completion.rs: 2.45/2.32/2.41).
+
+    The constant has two components, and the larger one is a CORRECTNESS
+    DEFECT, not a performance property:
+
+    (1) BATCHED DECODE PRODUCES GARBAGE FOR EVERY m > 1, so no c > 1 request
+    ever reaches its stop token and every one runs to the max_tokens cap.
+    Measured with scripts/perf041_batched_parity_probe.sh: the m=1 reference
+    is coherent English, finish_reason=stop, 286 and 319 completion_tokens on
+    two consecutive calls. In the SAME concurrent round, with `[PMAT-044]
+    Batch m=3 done` in the server log proving the batched path engaged, the
+    one request that happened to be served on the m=1 fast path returned the
+    identical coherent prefix and finish_reason=stop, while all three served
+    from the batch returned `!!!!...` -- token id 0, four hundred times,
+    finish_reason=length. At m=4 on the same model the garbage is
+    `strarstrarstrar...` and `001.CompilerServicesétique...`. Reproduced on
+    qwen2.5-coder-0.5b (m=3 slots garbage, m=1 slots fine in the same run), so
+    it is not model-specific. This is exactly what continuous-batching-v1
+    forbids -- correctness_under_batching, "No garbage or empty outputs", and
+    FALSIFY-CB-008's "All M slots produce distinct tokens per decode step (not
+    constant)". All three were narrative `test:` strings that nothing ran.
+
+    So the ratio compares a ~300-token EOS-terminated generation against a
+    400-token non-terminating loop. That alone contributes 400/319 = 1.25x,
+    and it is why the index is FLAT: every batched band generates exactly
+    max_tokens regardless of c, so wall(c) is constant by construction.
+
+    (2) A REAL PER-TOKEN PATH PENALTY, because c=1 and c>1 do not run the same
+    decode. c=1 takes generate_single_request -> generate_gpu_resident_streaming
+    -> forward_gpu_resident_to_token_id, which replays a captured CUDA decode
+    graph ("CUDA graph replay executes all kernels in one opaque launch",
+    gguf/cuda/uses.rs; PMAT-109 keeps the graph alive across calls). c>1 takes
+    batched_decode_step -> forward_batched_to_token_ids, eager: the graphed
+    variant is behind BATCHED_GRAPH and is documented as "still 25% slower than
+    eager due to capture overhead" (PMAT-056). The batched loop also retakes
+    model.write() every step, rescans for recycle/join, embeds per slot on the
+    CPU and try_sends per slot -- per TOKEN, where the m=1 path takes the lock
+    once per generation. Measured with APR_FORCE_BATCHED_PATH=1 (F-BATCH-004's
+    own stated mutation, now a real knob): latency_fast(1) = 0.934s for 319
+    tokens = 2.93 ms/token; latency_batched(1) = 2.003s for 400 tokens = 5.01
+    ms/token. Token-normalised path_penalty = 1.71x. Host load was 21-33 on a
+    48-core box during this run, which inflates an eager-launch path more than
+    a graph-replay one, so 1.71x is an UPPER bound; the two figures the source
+    already carried, 138 vs 46 tok/s and PAR-106/108's 360 vs 225, bracket it
+    at 1.6-3.0x.
+
+    Neither component scales with m. That is the whole explanation of the flat
+    2.45/2.29/2.39, and neither component is serialization.
+
+    WHY THE POSTCONDITION IS NOT WEAKENED. It still fails, and it should. But
+    the honest statement of the failure is not "2.45 >= 2": it is that
+    aggregate throughput at c=2 is 2/2.45 = 0.82x of a SINGLE client, so
+    batching two clients is a net loss, and the tokens it produces are garbage
+    besides. The postcondition fails wherever c < path_penalty, which on these
+    numbers is c=2 and nowhere else -- so c=4 and c=8 "PASS" only because the
+    threshold rises faster than a constant does, not because anything improved.
+    A c=8 pass here is not evidence of correct batching.
+
+  measurement_provenance: >-
+    THE HARNESS THIS TEST NAMES CANNOT HAVE PRODUCED THE NUMBERS IT RECORDS.
+    `test:` above points at scripts/perf000_serialization_probe.sh. At the
+    commit that introduced this contract (ce712eae0) and at 50d2bc2bb that
+    script runs the 7B model at max_tokens=64, one replicate per band, with no
+    per-band warmup and no quiesce; the `measured` block records the 1.5B model
+    at 400 tokens, median of 3. It also violates §4.4 on every sampling row
+    (closed-loop client, 2xc warmup, 5s quiesce, max(30, 8xc) samples, >=60s
+    per band, N=3) and, decisively, it never counts a token -- so it cannot
+    detect the 319-vs-400 divergence that dominates the ratio it reports.
+    scripts/perf041_client.py is the §4.4-conformant replacement; it counts
+    tokens and prints the token-normalised index beside the wall-clock one, so
+    a length divergence surfaces as a gap between the two rather than as
+    "serialization".
+
   mutation: >-
     revert the cfg from `cuda` to `cuda-batch` -- OBSERVED RED 2026-08-25: the
     same binary flag then yields 1.00/1.99/3.98/7.96 and the server announces

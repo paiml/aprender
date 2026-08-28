@@ -144,7 +144,46 @@ falsification_tests:
 - id: FALSIFY-CB-006
   rule: Correctness under batching
   prediction: Same prompt at c=1 and c=4 produces equivalent output
-  test: probador correctness at c=1 and c=4, compare token-level output
+  test: 'scripts/perf041_batched_parity_probe.sh (GPU; exits 0 PASS, 1 code
+    defect, 2 UNMEASURABLE)'
+  measured: >-
+    RED 2026-08-29 (PERF-041), RTX 4090, apr 0.64.0 (3eb2dae6a),
+    qwen2.5-coder-1.5b-instruct-q4_k_m, greedy, 400-token cap.
+
+    The m=1 reference is coherent English with finish_reason=stop (286 and 319
+    completion_tokens on two consecutive calls -- prefix-stable, which is why
+    the probe compares prefixes rather than whole outputs). In ONE concurrent
+    round with `[PMAT-044] Batch m=3 done` in the server log proving the
+    batched path engaged, the single request that happened to be served on the
+    m=1 fast path returned that same prefix and finish_reason=stop, while all
+    three served from the batch returned `!!!!...` -- token id 0 repeated to
+    the 400-token cap, finish_reason=length. That within-run contrast is the
+    control: same binary, same model, same prompt, same second; the only
+    difference is which path served the request. At m=4 the garbage is
+    `strarstrarstrar...` and `001.CompilerServicesétique...` instead.
+    Reproduced on qwen2.5-coder-0.5b, so it is not model-specific.
+
+    This also invalidates the throughput PERF-001 is credited with:
+    batch-admission-v1 records "3.32x aggregate at N=8, ~1100 tok/s", and
+    those are garbage tokens that never terminate. Every batched request runs
+    to max_tokens because it never reaches a stop token, which is separately
+    why that contract's serialization_index is flat from c=2.
+
+    UNMEASURED before today because this test was a sentence. "probador
+    correctness at c=1 and c=4, compare token-level output" is not a command,
+    nothing executed it, and the same is true of CB-007 and CB-008 below --
+    CB-008 states precisely the observed signature ("All M slots produce
+    distinct tokens per decode step (not constant)") and has never run.
+  mutation: >-
+    OBSERVED 2026-08-29. Neutralise the comparison in
+    perf041_batched_parity_probe.py (`ok = got == ref_prefix` -> `ok = True`):
+    the probe reports GREEN on the identical `!!!!` output, exit 0. Reverted:
+    RED, exit 1. So the verdict is driven by the comparison and nothing else.
+    Setting PREFIX_CHARS = 0 does NOT yield a false pass -- the positive
+    control rejects an empty reference and the probe exits 2 UNMEASURABLE.
+    Firing 2 requests that arrive apart likewise exits 2 rather than passing:
+    two m=1 batches form, the batched path is never exercised, and a probe
+    that cannot see the mechanism must not return a verdict about it.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
