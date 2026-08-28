@@ -66,7 +66,10 @@ fn sample_from_logits(
     // apply_repeat_penalty semantics (PMAT-383/384, dense-path
     // sample_advanced in gguf/inference/fails.rs:100).
     // No-op when repeat_penalty == 1.0 OR repeat_last_n == 0.
-    let penalized: Vec<f32> =
+    // PERF-034: `Cow` so the no-penalty case (the default, and every request that
+    // does not set `repeat_penalty`) borrows the caller's logits instead of copying
+    // the whole vocabulary — 608 KB per token on Qwen3's 151,936-entry vocab.
+    let penalized: std::borrow::Cow<'_, [f32]> =
         if config.repeat_penalty != 1.0 && config.repeat_last_n > 0 && !recent_tokens.is_empty() {
             let mut p: Vec<f32> = logits.to_vec();
             let start = recent_tokens.len().saturating_sub(config.repeat_last_n);
@@ -80,9 +83,9 @@ fn sample_from_logits(
                     }
                 }
             }
-            p
+            std::borrow::Cow::Owned(p)
         } else {
-            logits.to_vec()
+            std::borrow::Cow::Borrowed(logits)
         };
 
     // Greedy fallback: temperature == 0 OR top_k == 1 (after repetition penalty)
@@ -95,52 +98,68 @@ fn sample_from_logits(
             .expect("non-empty logits guaranteed above"));
     }
 
-    // Temperature scaling
-    let scaled: Vec<f32> = penalized.iter().map(|&x| x / config.temperature).collect();
+    // PERF-034: one reusable per-thread buffer for the candidate set, and an O(V)
+    // selection in place of the O(V log V) full sort. See `crate::sampling_select`
+    // for why the replacement is bit-exact — in short, the stable `sort_by` broke
+    // value ties by original position, which on an `.enumerate()`-built vector is
+    // index-ascending, and that total order is now explicit.
+    crate::sampling_select::with_candidate_scratch(|indexed| {
+        // Temperature scaling, fused into the candidate build (drops a `scaled: Vec<f32>`).
+        crate::sampling_select::fill_scaled(indexed, &penalized, config.temperature);
 
-    // Top-k filter (sort + truncate)
-    let mut indexed: Vec<(usize, f32)> = scaled.iter().copied().enumerate().collect();
-    indexed.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    if config.top_k > 0 && config.top_k < indexed.len() {
-        indexed.truncate(config.top_k);
-    }
+        // Top-k filter (partial selection + truncate)
+        let keep = if config.top_k > 0 {
+            config.top_k.min(indexed.len())
+        } else {
+            indexed.len()
+        };
+        crate::sampling_select::retain_top_k_sorted(indexed, keep);
 
-    // Top-p (nucleus): keep smallest set with cumulative softmax >= top_p
-    if config.top_p > 0.0 && config.top_p < 1.0 {
-        let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
-        let exp_vals: Vec<f32> = indexed.iter().map(|(_, v)| (v - max_val).exp()).collect();
-        let total: f32 = exp_vals.iter().sum();
-        if total > 0.0 {
-            let mut cumulative = 0.0;
-            let mut cutoff = indexed.len();
-            for (i, &ev) in exp_vals.iter().enumerate() {
-                cumulative += ev / total;
-                if cumulative >= config.top_p {
-                    cutoff = i + 1;
-                    break;
+        // Top-p (nucleus): keep smallest set with cumulative softmax >= top_p
+        if config.top_p > 0.0 && config.top_p < 1.0 {
+            let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
+            // PERF-034: the exponential is recomputed in the walk below instead of
+            // being collected into an `exp_vals: Vec<f32>` -- the last per-token
+            // allocation left on this path. `f32::exp` lowers to a call to `expf`
+            // (Rust links no vector math library, so there is no scalar-vs-vector
+            // variant to disagree), it is a deterministic pure function of its
+            // argument, and the sum is folded in the same left-to-right order. Every
+            // f32 is therefore bit-identical to the one the Vec used to hold; the
+            // cost is at most `top_k` extra exponentials, against one heap
+            // allocation per token.
+            let total: f32 = indexed.iter().map(|(_, v)| (v - max_val).exp()).sum();
+            if total > 0.0 {
+                let mut cumulative = 0.0;
+                let mut cutoff = indexed.len();
+                for (i, (_, v)) in indexed.iter().enumerate() {
+                    cumulative += (v - max_val).exp() / total;
+                    if cumulative >= config.top_p {
+                        cutoff = i + 1;
+                        break;
+                    }
                 }
+                indexed.truncate(cutoff);
             }
-            indexed.truncate(cutoff);
         }
-    }
 
-    // Softmax over filtered set + multinomial draw
-    let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
-    let exp_sum: f32 = indexed.iter().map(|(_, v)| (v - max_val).exp()).sum();
-    if exp_sum <= 0.0 {
-        // Degenerate softmax: fall back to argmax of filtered set
-        return Ok(indexed.first().map_or(0, |(i, _)| *i as u32));
-    }
-
-    let r: f32 = rng.random();
-    let mut cumulative = 0.0;
-    for (idx, v) in &indexed {
-        cumulative += (v - max_val).exp() / exp_sum;
-        if cumulative >= r {
-            return Ok(*idx as u32);
+        // Softmax over filtered set + multinomial draw
+        let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
+        let exp_sum: f32 = indexed.iter().map(|(_, v)| (v - max_val).exp()).sum();
+        if exp_sum <= 0.0 {
+            // Degenerate softmax: fall back to argmax of filtered set
+            return Ok(indexed.first().map_or(0, |(i, _)| *i as u32));
         }
-    }
-    Ok(indexed.last().map_or(0, |(i, _)| *i as u32))
+
+        let r: f32 = rng.random();
+        let mut cumulative = 0.0;
+        for (idx, v) in indexed.iter() {
+            cumulative += (v - max_val).exp() / exp_sum;
+            if cumulative >= r {
+                return Ok(*idx as u32);
+            }
+        }
+        Ok(indexed.last().map_or(0, |(i, _)| *i as u32))
+    })
 }
 
 /// Run autoregressive token generation for a Qwen3-MoE GGUF model.

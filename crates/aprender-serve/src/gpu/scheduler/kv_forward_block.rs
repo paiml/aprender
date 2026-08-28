@@ -379,14 +379,37 @@ fn argmax(logits: &[f32]) -> usize {
 
 /// Top-k sampling helper
 fn sample_topk(logits: &[f32], temperature: f32, top_k: usize) -> usize {
-    let scaled: Vec<f32> = logits.iter().map(|&x| x / temperature).collect();
-    let max_logit = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let exp_logits: Vec<f32> = scaled.iter().map(|&x| (x - max_logit).exp()).collect();
-    let sum: f32 = exp_logits.iter().sum();
-    let probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum).collect();
-
-    let mut indexed: Vec<(usize, f32)> = probs.iter().enumerate().map(|(i, &p)| (i, p)).collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    indexed.truncate(top_k);
-    indexed.first().map_or(0, |&(idx, _)| idx)
+    // PERF-034: this used to build a `Vec<(usize, f32)>` over the WHOLE vocabulary,
+    // full-sort it (O(V log V) — ~2.6M comparisons on Qwen2.5's 152,064 logits) and
+    // then read `.first()`. `truncate(top_k).first()` is argmax by construction, so
+    // the sort's only observable output was element 0. This is an O(V) argmax with
+    // no allocation at all, and it is bit-exact:
+    //
+    //  * `max_logit`, `sum` and each `p` are computed by the same expressions in the
+    //    same left-to-right order, so every f32 is bit-identical to the value the old
+    //    code stored in `probs`;
+    //  * the strict `>` keeps the FIRST maximum, which is exactly what the *stable*
+    //    `sort_by` left at position 0 when probabilities tied;
+    //  * `top_k == 0` still returns 0, matching `truncate(0)` leaving `.first()` None.
+    if top_k == 0 || logits.is_empty() {
+        return 0;
+    }
+    let max_logit = logits
+        .iter()
+        .map(|&x| x / temperature)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let sum: f32 = logits
+        .iter()
+        .map(|&x| (x / temperature - max_logit).exp())
+        .sum();
+    let mut best_idx = 0usize;
+    let mut best_p = f32::NEG_INFINITY;
+    for (i, &x) in logits.iter().enumerate() {
+        let p = (x / temperature - max_logit).exp() / sum;
+        if p > best_p {
+            best_p = p;
+            best_idx = i;
+        }
+    }
+    best_idx
 }

@@ -325,17 +325,20 @@ pub fn sample_top_k(logits: &Tensor<f32>, k: usize, rng_value: f32) -> Result<us
         });
     }
 
-    // Create (index, logit) pairs and sort by logit descending
-    let mut indexed: Vec<(usize, f32)> = data.iter().copied().enumerate().collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // PERF-034: was a full O(V log V) `sort_by` over the entire vocabulary to keep
+    // `k` entries, plus a fresh V-element `Vec<(usize, f32)>` (2.4 MB on Qwen2.5) and
+    // the stable sort's n/2 scratch, once per token. `retain_top_k_sorted` selects in
+    // O(V) into a reusable per-thread buffer; it reproduces the stable sort's tie
+    // order exactly (value descending, then index ascending). See `sampling_select`.
+    crate::sampling_select::with_candidate_scratch(|indexed| {
+        indexed.extend(data.iter().copied().enumerate());
+        crate::sampling_select::retain_top_k_sorted(indexed, k.min(data.len()));
 
-    // Take top k
-    let top_k: Vec<(usize, f32)> = indexed.into_iter().take(k.min(data.len())).collect();
-
-    // Convert to probabilities and sample
-    let probs = logits_to_probs(&top_k);
-    let indices: Vec<usize> = top_k.iter().map(|(idx, _)| *idx).collect();
-    Ok(sample_from_distribution(&probs, &indices, rng_value))
+        // Convert to probabilities and sample
+        let probs = logits_to_probs(indexed);
+        let indices: Vec<usize> = indexed.iter().map(|(idx, _)| *idx).collect();
+        Ok(sample_from_distribution(&probs, &indices, rng_value))
+    })
 }
 
 /// Top-p (nucleus) sampling: sample from tokens with cumulative probability ≤ p
@@ -370,12 +373,20 @@ pub fn sample_top_p(logits: &Tensor<f32>, p: f32, rng_value: f32) -> Result<usiz
     let probs_tensor = softmax(logits)?;
     let probs = probs_tensor.data();
 
-    // Create (index, prob) pairs and sort by prob descending
-    let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Create (index, prob) pairs and sort by prob descending.
+    //
+    // PERF-034: top-p needs the whole ranking (the nucleus is unbounded), so this
+    // stays a full sort — but into the reusable per-thread buffer and with
+    // `sort_unstable_by`, which allocates nothing where the stable `sort_by`
+    // allocates an n/2 scratch (~1.2 MB on a 152k vocabulary, per token). Identical
+    // result: the explicit index tiebreak is the order the stable sort already gave.
+    let nucleus = crate::sampling_select::with_candidate_scratch(|indexed| {
+        indexed.extend(probs.iter().copied().enumerate());
+        crate::sampling_select::sort_desc_by_index(indexed);
 
-    // Build nucleus (cumulative probability <= p)
-    let nucleus = build_nucleus(&indexed, p);
+        // Build nucleus (cumulative probability <= p)
+        build_nucleus(indexed, p)
+    });
 
     // Renormalize and sample
     let nucleus_sum: f32 = nucleus.iter().map(|(_, prob)| prob).sum();
