@@ -198,6 +198,27 @@ if [ "${1:-}" = "--full" ]; then
     [ -f "$SHIPPED_BASELINE" ] || { printf 'FAIL: %s missing.\n' "$SHIPPED_BASELINE"; exit 1; }
     baseline="$(tr -d '[:space:]' < "$SHIPPED_BASELINE")"
 
+    # THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
+    #
+    # Everything above compares the scan against the baseline AS IT STANDS IN THE
+    # WORKING TREE, and that is not a ratchet. NEW (a finding with no entry) and
+    # STALE (an entry with no finding) are the only two properties a working tree
+    # can answer, and a commit that appends one line AND lands the matching
+    # violation satisfies both at once: not new, because it is baselined; not
+    # stale, because the finding is real.
+    #
+    # Measured, not argued: appending one entry cloned from this file's own last
+    # real entry returned rc=0 from this guard, under its own words:
+    #     "shipped-tier ratchet via pmat"
+    # Twelve guards in scripts/ failed the same probe.
+    #
+    # So growth is now compared against merge-base(HEAD, origin/main), falling
+    # back to the origin/main TIP because CI checks out shallow — a ref this
+    # branch cannot rewrite, and never the branch against itself.
+    # shellcheck source=scripts/lib_baseline_ratchet.sh
+    . "${REPO_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+    baseline_ratchet_check "${REPO_ROOT}" scripts/hardcoded_path_shipped_baseline.txt count || exit 1
+
     printf 'pmat scanned %s file(s); %s shipped finding(s), baseline %s\n' "$files" "$shipped" "$baseline"
     if [ "$shipped" -gt "$baseline" ]; then
         printf '\nFAIL: shipped machine-specific paths grew %s -> %s.\n' "$baseline" "$shipped"

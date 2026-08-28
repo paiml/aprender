@@ -4,10 +4,16 @@
 # reads — a doc comment on shipped code, or printed output. None of them was
 # produced by a measurement. They are recorded, not blessed.
 #
-# THE RATCHET: this file may only SHRINK. Adding a line requires editing this
-# header and arguing for it, which is the point — a baseline that may grow
-# quietly is a permission slip. Remove a line by deleting the claim or by
-# deriving it from a receipt under evidence/.
+# THE RATCHET: this file may only SHRINK, and that is now the MECHANISM rather
+# than this sentence. For one commit the sentence read "adding a line requires
+# editing this header and arguing for it" while nothing compared the file to
+# anything: appending `book/src/tools/apr-cli.md:1786` and writing the matching
+# claim on that line printed "known (baselined, must shrink): 138 / new: 0 /
+# PASS" — grown from 137, laundering the claim it had just admitted.
+#
+# It is now compared against origin/main by check_no_claim_literals.sh and by
+# check_baseline_ratchets.sh. A line may only LEAVE this file: delete the claim,
+# or derive it from a receipt under evidence/.
 #
 # Already removed: the two printed banners in serve/server.rs, one of which
 # advertised "800+ tok/s (2.8x Ollama)" on a code path that HANGS on four

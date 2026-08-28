@@ -25,9 +25,12 @@
 # This is the meta-guard: without it, the next one to go dark is found the same
 # way these were.
 #
-# A shrink-only baseline holds any deliberate exemption, so a guard that
-# genuinely should not run in CI can be recorded rather than argued about — but
-# the list may only get shorter.
+# A shrink-only baseline holds the exemptions that were already argued for.
+# SHRINK-ONLY IS NOW LITERAL: the list is compared against origin/main, so an
+# entry may only LEAVE it. Recording a NEW exemption is refused, not merely
+# discouraged — for one commit this header said "can be recorded rather than
+# argued about" while nothing compared the file to anything, and appending a
+# line here returned rc=0. The remedy for an unwired guard is to wire it.
 #
 #   bash scripts/check_guards_are_wired.sh              # check
 #   bash scripts/check_guards_are_wired.sh --self-test  # case table
@@ -165,6 +168,27 @@ if [ "${1:-}" = "--update" ]; then
     exit 0
 fi
 
+# THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
+#
+# Everything above compares the scan against the baseline AS IT STANDS IN THE
+# WORKING TREE, and that is not a ratchet. NEW (a finding with no entry) and
+# STALE (an entry with no finding) are the only two properties a working tree
+# can answer, and a commit that appends one line AND lands the matching
+# violation satisfies both at once: not new, because it is baselined; not
+# stale, because the finding is real.
+#
+# Measured, not argued: appending one entry cloned from this file's own last
+# real entry returned rc=0 from this guard, under its own words:
+#     "the list may only get shorter"
+# Twelve guards in scripts/ failed the same probe.
+#
+# So growth is now compared against merge-base(HEAD, origin/main), falling
+# back to the origin/main TIP because CI checks out shallow — a ref this
+# branch cannot rewrite, and never the branch against itself.
+# shellcheck source=scripts/lib_baseline_ratchet.sh
+. "${REPO_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+baseline_ratchet_check "${REPO_ROOT}" scripts/unwired_guards_baseline.txt set || exit 1
+
 if [ ! -f "$BASELINE" ]; then
     printf 'FAIL: %s missing. Run --update once to establish it.\n' "$BASELINE"
     exit 1
@@ -173,8 +197,9 @@ baseline_count=$(grep -cvE '^\s*(#|$)' "$BASELINE" || true)
 
 if [ "$count" -gt "$baseline_count" ]; then
     printf '\nFAIL: unwired guards grew %s -> %s.\n' "$baseline_count" "$count"
-    printf 'A guard was added or unwired. Name it in a workflow, or record the\n'
-    printf 'exemption in %s with a reason.\n\n' "$(basename "$BASELINE")"
+    printf 'A guard was added or unwired. Name it in a workflow. The baseline is\n'
+    printf 'SHRINK-ONLY against origin/main, so %s is not an\n' "$(basename "$BASELINE")"
+    printf 'exemption list you can append to — an entry may only leave it.\n\n'
     comm -13 <(grep -vE '^\s*(#|$)' "$BASELINE" | LC_ALL=C sort) \
             <(printf '%s\n' "$FOUND" | grep .) | sed 's|^|  NEW: |'
     exit 1
