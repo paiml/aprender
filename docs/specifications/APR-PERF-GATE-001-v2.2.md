@@ -401,7 +401,58 @@ Features are read from the binary, never from `Cargo.toml`. Declared features ar
 | generation | `max_tokens = 128`, greedy, `seed = 0`, ignore-EOS | this doc |
 | context | 4096 | this doc |
 
-Mirrors `APR-BENCH-RFC-001`'s `pp512`/`tg128` so the canonical benchmark and this gate cross-validate. **`pp512` and `tg128` are never blended** — GB10 legitimately loses ~4× on decode while winning prefill, and a blended figure reports a correct machine as broken.
+Mirrors `APR-BENCH-RFC-001`'s `pp512`/`tg128` so the canonical benchmark and this gate cross-validate.
+
+**Corpus format — JSONL, and only JSONL (PERF-039).** One JSON object per line;
+no enclosing array, no YAML. An optional first line carrying a `_meta` key is
+the corpus's own provenance header and is not a request.
+
+```jsonl
+{"_meta":{"corpus":"W1","provenance":"SYNTHETIC — seeded PRNG over a fixed word pool","token_count_verified":false}}
+{"id":0,"prompt":"…","max_tokens":128,"temperature":0.0,"seed":0,"target_prompt_tokens":512}
+```
+
+`prompt` is required; `role`, `max_tokens`, `temperature`, `seed`, `ignore_eos`,
+`id` and `target_prompt_tokens` are optional. **Unknown fields are rejected**, so
+a record whose budget key is misspelled cannot load with a silently defaulted
+budget. W1 and W2 share this schema and one loader
+(`jugar_probar::llm::load_prompts_from_file`).
+
+This paragraph exists because the format was, until PERF-039, specified in three
+mutually incompatible places: this section named `.jsonl`, the only loader in the
+tree parsed YAML with a top-level `prompts:` key, and `apr test llm bench --prompts`
+advertised "a JSON array". The consequence was that `prompts-w2.jsonl` — the only
+corpus committed to the repo — could not be read by the only loader in the repo,
+and nothing noticed because nothing had tried. This document is the authority; the
+two implementations were the drift.
+
+**`target_prompt_tokens` is a target, not a measurement.** No tokenizer runs in
+the generator, so `512 ± 8` is asserted by the harness against the model's own
+tokenizer at measurement time and declared in the receipt's §4.4.6 `tokenization`
+block. **§4.3.1 does not say whether the 512 is counted before or after the chat
+template wrapper**; the corpus stores raw prompt text and the harness applies the
+template, so the receipt must declare which side of that boundary its count was
+taken on.
+
+**Prompts are distinct `[U]`.** "Fixed corpus" pins the corpus; it does not
+require one prompt repeated, and `[U]` marks distinctness as chosen here rather
+than derived. N identical prompts would let a server with prefix caching serve
+bands 2..c from cache, so Arm A's `agg(c)` would rise with `c` for a reason that
+is not batching — a gate measuring its own cache. Corpus size is 256 `[U]`:
+§4.4.2 consumes at most `8×16` sampled + `2×16` warmup = 160 requests at the
+widest band of §4.5.
+
+**ignore-EOS is a wire field with partial backend coverage (PERF-039).** `ignore_eos` had no representation on either side before PERF-039 — not in the
+harness's `ChatRequest`, not in the server's `ChatCompletionRequest` — so the
+§4.3.1 row above described a workload no client could request. It now exists on
+both. The quantized GGUF chat backend that W1's Q4_K_M model runs on honours it;
+the SafeTensors-CUDA, f32 APR-transformer and dense-registry backends stop on EOS
+in a way no request field reaches and therefore **refuse the request with 501**
+rather than serving it with EOS live. A silently dropped `ignore_eos` would let a
+receipt record a pinned token budget it never received, so a cell measured on one
+of those three backends is unrepresentable rather than wrong.
+
+**`pp512` and `tg128` are never blended** — GB10 legitimately loses ~4× on decode while winning prefill, and a blended figure reports a correct machine as broken.
 
 #### 4.3.2 W2 — ragged (N1, new in v2.1)
 

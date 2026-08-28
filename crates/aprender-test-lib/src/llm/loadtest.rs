@@ -1498,6 +1498,8 @@ fn default_prompt() -> ChatRequest {
         temperature: Some(0.0),
         max_tokens: Some(16),
         stream: Some(false),
+        seed: None,
+        ignore_eos: None,
     }
 }
 
