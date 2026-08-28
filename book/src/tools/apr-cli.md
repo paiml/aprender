@@ -78,19 +78,37 @@ apr serve run model.gguf --port 8080
 # GPU-accelerated server
 apr serve run model.gguf --port 8080 --gpu
 
-# Batched GPU mode (2.9x faster than Ollama)
+# Batched GPU mode
 apr serve run model.gguf --port 8080 --gpu --batch
 ```
 
 ### Performance
 
-| Mode | Model | Throughput | vs Ollama | Memory |
-|------|-------|------------|-----------|--------|
-| GPU (APR Q4K, GH-88) | Qwen 1.5B | **240 tok/s** | — | 1.5 GB |
-| GPU (batched M=16) | Qwen 1.5B | ~850 tok/s | 2.9x | 1.9 GB |
-| GPU (single GGUF) | Qwen 7B | ~68 tok/s | 0.2x | 5.5 GB |
-| CPU (baseline) | Qwen 1.5B | ~18 tok/s | 0.05x | 1.1 GB |
-| Ollama | Qwen 1.5B | ~333 tok/s | 1.0x | - |
+This page publishes no throughput figure, because none of the figures it used
+to publish could name the run that produced them.
+
+Measure your own, on your own hardware:
+
+```bash
+apr bench model.gguf --fast --json > bench.json
+```
+
+Throughput depends on the model, the quantization, the backend and the
+concurrency, so a single number copied from someone else's box tells you very
+little about yours. `apr bench --json` emits the measurement together with the
+machine, the backend and the build it came from — which is the part that makes
+it worth quoting.
+
+> **Withdrawn.** A table here previously published a batched-GPU throughput
+> figure and a ratio against Ollama. Both are withdrawn: the harness that
+> produced them never executed the comparator, so the ratio was never measured
+> at all, and the throughput figure came from the same run. See
+> APR-PERF-GATE-001 §5.2. No replacement ratio is published — under the receipt
+> rule a number reaches this page only with the evidence path that produced it.
+>
+> The figures are deliberately not restated here, even to disown them: a
+> withdrawal that reprints the number leaves the number on the page, where it
+> is what a skimming reader takes away.
 
 ### Endpoints
 

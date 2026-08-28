@@ -935,6 +935,15 @@ jobs:
       # named by no workflow enforces nothing, and recording that in a baseline
       # file would make the claim true only in the sense that the gap is
       # written down.
+      #
+      # This step is ALSO the I-12 `[X]`-figure gate, which v2.2 §5 listed as
+      # "not written" against this file. It was right: the comparator pattern
+      # required the competitor's name to sit immediately after the ratio, in
+      # ASCII, so of the six shapes §0.1 names it caught one. PERF-010 admits
+      # the connector ("36.9x over FasterTransformer") and U+00D7, and adds
+      # placeholders bound to a unit ("XX tok/s"). Twelve pre-existing sites
+      # surfaced and are baselined shrink-only; one was a LIVE comparator claim
+      # in book/ and is deleted.
       - name: No claim literals on user-facing surfaces
         run: bash scripts/check_no_claim_literals.sh
       - name: No claim-literal guard regression (case table)

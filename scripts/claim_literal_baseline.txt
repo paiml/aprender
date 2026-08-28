@@ -26,12 +26,49 @@
 # §9's whole premise is that a claim a USER READS is the defect. The count rises
 # because the guard now looks where the claims are, not because new claims were
 # written. Shrink-only from here.
+#
+# WIDENED AGAIN 2026-08-28 (PERF-010). Twelve entries were ADDED, which a
+# shrink-only file forbids without an argument, so here it is.
+#
+# The comparator pattern required the competitor's name to sit IMMEDIATELY
+# after the ratio and to be spelled with an ASCII `x`. Both assumptions fail on
+# the way the claim is actually written. Put to the six shapes APR-PERF-GATE-001
+# section 0.1 itself names, the old pattern caught ONE -- it could not see
+# `36.9x over FasterTransformer`, its unicode twin (which is section 5's own
+# stated mutation for this guard), `23x over static batching`, `1.8x over vLLM`,
+# or a bare `2.93x Ollama` written with U+00D7. That is why section 5's status
+# table listed the `[X]`-figure guard as **not written** against this file.
+#
+# The twelve below are what the widened pattern found. NOT ONE IS NEW PROSE:
+# every one predates this commit and was invisible, which is the point. They
+# fall in three groups, and the classification is recorded so the next person
+# paying them down knows which lever applies:
+#
+#   2 rustdoc (`//!`, `///`) five-whys notes on CUDA paths, reaching users via
+#     `cargo doc`. Root-cause engineering notes; the fix is to cite the receipt,
+#     not to delete the analysis.
+#   2 docs/benchmarking-gate-spec.md -- the document that NAMES this defect,
+#     quoting the fabricated figure in order to ban it. The self-reference trap
+#     that has reddened a sibling guard three times in this epic. Baselined
+#     rather than exempted: an exclusion for a whole file is how a guard is made
+#     unable to fail, and two recorded lines cost nothing.
+#   8 dated docs/qa/ five-whys analyses from 2026-01. Historical internal
+#     record, and all but one are ADMISSIONS OF BEING SLOWER. Deleting them
+#     would be conceding nothing and destroying the analysis; they are recorded.
+#
+# The one that is not an admission -- docs/qa/five-whys-gpu-performance-gap-
+# 2026-01-08.md:317, "32B: Now 3.1x faster than Ollama" -- is an UNVERIFIED
+# OVERCLAIM in a dated internal doc, flagged here explicitly rather than quietly
+# ratcheted, because the decode ratio against Ollama was formally WITHDRAWN
+# (measured 1.015-1.109x on sm_89, i.e. parity). It was left in place only
+# because it is a 32B claim and the withdrawal measured 1.5B; nobody has
+# measured 32B, so deleting it would be guessing in the other direction. It
+# needs a receipt or a deletion, and it is somebody's next ticket.
+#
+# FIVE ENTRIES WERE REMOVED in the same commit: the book/src/tools/apr-cli.md
+# Performance table (lines 89-93) is DELETED, along with the `2.9x faster than
+# Ollama` line above it that the widening exposed. Net +7.
 book/src/advanced-testing/popperian-falsification.md:44
-book/src/tools/apr-cli.md:89
-book/src/tools/apr-cli.md:90
-book/src/tools/apr-cli.md:91
-book/src/tools/apr-cli.md:92
-book/src/tools/apr-cli.md:93
 crates/apr-cli/src/commands/bench_safetensors.rs:123
 crates/apr-cli/src/commands/bench_safetensors.rs:124
 crates/apr-cli/src/commands/benchmark.rs:438
@@ -53,6 +90,7 @@ crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:37
 crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:38
 crates/aprender-gpu/src/kernels/gemv/mod.rs:14
 crates/aprender-gpu/src/kernels/quantize/dot/packed_dp4a.rs:32
+crates/aprender-gpu/src/kernels/quantize/dp4a_gemm.rs:10
 crates/aprender-gpu/src/kernels/quantize/q4k/batched.rs:1
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:15
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:16
@@ -71,6 +109,7 @@ crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:10
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:31
 crates/aprender-serve/src/cuda/executor/layers/par-062.rs:257
+crates/aprender-serve/src/cuda/executor/layers/prefill.rs:537
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs:277
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:32
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:33
@@ -102,12 +141,15 @@ docs/BEATS.md:134
 docs/BEATS.md:65
 docs/BEATS.md:66
 docs/audits/dogfood-0.63.0-ledger.md:65
+docs/benchmarking-gate-spec.md:235
 docs/benchmarking-gate-spec.md:24
+docs/benchmarking-gate-spec.md:26
 docs/benchmarking-gate-spec.md:308
 docs/model-cards/albor-370m-v1.md:74
 docs/qa-cargo-run-example-conversion-minimize.md:128
 docs/qa/benchmark-matrix-2026-01-09.md:115
 docs/qa/benchmark-matrix-2026-01-09.md:12
+docs/qa/benchmark-matrix-2026-01-09.md:13
 docs/qa/benchmark-matrix-2026-01-09.md:133
 docs/qa/benchmark-matrix-2026-01-09.md:186
 docs/qa/benchmark-matrix-2026-01-09.md:22
@@ -126,7 +168,12 @@ docs/qa/benchmark-matrix-2026-01-09.md:40
 docs/qa/benchmark-matrix-2026-01-09.md:41
 docs/qa/benchmark-matrix-2026-01-09.md:42
 docs/qa/benchmark-matrix-2026-01-09.md:43
+docs/qa/benchmark-matrix-2026-01-09.md:71
+docs/qa/benchmark-matrix-2026-01-09.md:85
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:14
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:173
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:28
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:32
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:123
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:14
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:155
@@ -147,6 +194,7 @@ docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:309
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:310
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:311
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:312
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:317
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:323
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:391
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:398
@@ -160,6 +208,7 @@ docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:87
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md:280
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md:281
 docs/qa/popperian_falsification_checklist.md:17
+docs/qa/test-matrix-results-2026-01-08.md:138
 docs/qa/test-matrix-results-2026-01-08.md:39
 docs/qa/test-matrix-results-2026-01-08.md:42
 docs/qa/test-matrix-results-2026-01-08.md:60
