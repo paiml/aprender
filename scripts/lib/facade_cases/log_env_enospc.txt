@@ -1,0 +1,7 @@
+error: could not compile `serde` (lib)
+
+Caused by:
+  could not parse/generate dep info at: /work/target/debug/deps/serde.d
+
+Caused by:
+  No space left on device (os error 28)
