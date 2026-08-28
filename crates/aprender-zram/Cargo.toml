@@ -33,7 +33,6 @@ harness = false
 [features]
 default = ["std", "adaptive"]
 std = []
-cuda = ["trueno-zram-core/cuda"]
 adaptive = ["dep:trueno-zram-adaptive"]
 
 [lints]

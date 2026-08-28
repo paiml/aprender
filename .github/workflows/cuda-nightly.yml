@@ -202,3 +202,193 @@ jobs:
           nice -n 19 cargo build --release --features cuda --bin apr
           nice -n 19 cargo test -p aprender-serve --release \
             --test beat_ollama_decode_throughput_speed -- --ignored --nocapture
+
+  # ---------------------------------------------------------------------------
+  # Absence of a verdict is the DOMINANT outcome of this lane, and it was
+  # entirely silent. Over the 40 runs to 2026-08-27: 15 success, 3 failure,
+  # 22 CANCELLED. Every cancelled job had run for exactly `1 day, 0:00:00` --
+  # GitHub's 24h queue timeout for a job that no runner ever claimed. The
+  # blackwell-gb10 leg (sm_121, the higher-risk silicon this matrix exists to
+  # cover) produced no verdict on 11 of the last 22 nights and nothing fired,
+  # because `cancelled` is not `failure` and this workflow -- alone among the
+  # repo's nightlies -- opened no issue and pinged nothing. coverage-nightly.yml
+  # and qwen-story-daily.yml both file a tracking issue; this follows that
+  # convention.
+  #
+  # Three ways this lane can be green while proving nothing, all classified below:
+  #   1. a leg is CANCELLED (no runner ever claimed it)  -> NO VERDICT
+  #   2. a leg yields to training: `proceed=false` skips EVERY step, so the job
+  #      reports success having run no falsifier at all   -> NO VERDICT
+  #   3. the whole matrix is skipped because the repo variable CUDA_RUNNER_READY
+  #      is not 'true' -- a single silent off switch      -> NO VERDICT
+  #
+  # This job MUST NOT run on the cuda pool. A verdict job that queues behind the
+  # same unavailable runner is exactly as silent as no verdict job at all.
+  verdict:
+    needs: [falsifiers]
+    if: always()
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.run_id }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      EVENT_NAME: ${{ github.event_name }}
+      FALSIFIERS_RESULT: ${{ needs.falsifiers.result }}
+    steps:
+      - name: Classify each leg's verdict
+        id: legs
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "aggregate result of the falsifiers matrix: ${FALSIFIERS_RESULT}"
+
+          # The opt-in PR path is inert for any label other than `cuda-check`.
+          # That is a designed no-op, not a missing verdict.
+          if [ "${FALSIFIERS_RESULT}" = "skipped" ] && [ "${EVENT_NAME}" != "schedule" ]; then
+            echo "not applicable for this event -- the opt-in label path did not select this run"
+            printf 'ok=true\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # A SCHEDULED night that skipped means the lane was disarmed by the
+          # repo variable. That off switch should be as loud as a failure.
+          if [ "${FALSIFIERS_RESULT}" = "skipped" ]; then
+            {
+              echo "## CUDA nightly produced NO verdict"
+              echo
+              echo "The falsifiers matrix was skipped on a **scheduled** run, which means the"
+              echo "repository variable \`CUDA_RUNNER_READY\` is not \`true\`. The lane is disarmed:"
+              echo "no CUDA falsifier ran on either silicon tonight."
+              echo
+              echo "- Run: ${RUN_URL}"
+            } > /tmp/cuda-verdict.md
+            printf 'ok=false\n' >> "${GITHUB_OUTPUT}"
+            printf 'headline=lane DISARMED (CUDA_RUNNER_READY is not true)\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # gh's embedded jq -- do not depend on a system jq on the runner.
+          summary=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" --jq '
+            .jobs[] | select(.name | startswith("falsifiers")) |
+            [ .name,
+              (.conclusion // "null"),
+              ((.steps // [])
+                 | map(select(.name | startswith("GPU QLoRA training-correctness falsifiers")))
+                 | (.[0].conclusion // "absent"))
+            ] | @tsv' 2>/tmp/gh.err)
+          rc=$?
+          if [ "${rc}" -ne 0 ]; then
+            echo "::error::jobs API query failed (rc=${rc}); cannot establish whether a verdict exists"
+            cat /tmp/gh.err || true
+            {
+              echo "## CUDA nightly verdict UNKNOWN"
+              echo
+              echo "The jobs API query failed, so this run cannot prove a verdict was produced."
+              echo
+              echo "- Run: ${RUN_URL}"
+            } > /tmp/cuda-verdict.md
+            printf 'ok=false\n' >> "${GITHUB_OUTPUT}"
+            printf 'headline=jobs API query failed - verdict unknown\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          legs=0
+          verdicts=0
+          : > /tmp/leg-table.md
+          # `<<<` not a pipe: a pipeline whose reader exits early hands the
+          # writer SIGPIPE and, under pipefail, invents a failure (#2335 class).
+          while IFS=$'\t' read -r name concl fals; do
+            [ -z "${name}" ] && continue
+            legs=$((legs + 1))
+            case "${concl}" in
+              success)
+                if [ "${fals}" = "success" ]; then
+                  state="VERDICT pass"
+                  verdicts=$((verdicts + 1))
+                else
+                  state="NO VERDICT - job green but the falsifier step was '${fals}' (yielded to training)"
+                fi
+                ;;
+              failure)   state="VERDICT FAIL - a falsifier actually failed" ;;
+              cancelled) state="NO VERDICT - never claimed a runner (24h queue timeout) or was cancelled" ;;
+              skipped)   state="NO VERDICT - leg skipped" ;;
+              *)         state="NO VERDICT - conclusion '${concl}'" ;;
+            esac
+            echo "| \`${name}\` | ${concl} | ${fals} | ${state} |" >> /tmp/leg-table.md
+            echo "leg: ${name} conclusion=${concl} falsifier_step=${fals} -> ${state}"
+          done <<< "${summary}"
+
+          echo "legs observed: ${legs}, legs that produced a verdict: ${verdicts}"
+
+          # The matrix declares two legs. Fewer means one never materialised.
+          if [ "${legs}" -eq 2 ] && [ "${verdicts}" -eq 2 ]; then
+            printf 'ok=true\n' >> "${GITHUB_OUTPUT}"
+            echo "both silicon legs produced a passing verdict"
+            exit 0
+          fi
+
+          {
+            echo "## CUDA nightly did not produce a full verdict"
+            echo
+            echo "Legs that produced a usable verdict: **${verdicts} of ${legs}** (2 expected)."
+            echo
+            echo "| leg | job conclusion | falsifier step | classification |"
+            echo "| --- | --- | --- | --- |"
+            cat /tmp/leg-table.md
+            echo
+            echo "A \`cancelled\` leg is not a test failure: it is GitHub's 24h queue timeout"
+            echo "for a job that no runner ever claimed, i.e. the silicon was offline all night."
+            echo "A leg that is green with a skipped falsifier step yielded to training and"
+            echo "verified nothing."
+            echo
+            echo "- Run: ${RUN_URL}"
+            echo "- Aggregate matrix result: \`${FALSIFIERS_RESULT}\`"
+          } > /tmp/cuda-verdict.md
+          printf 'ok=false\n' >> "${GITHUB_OUTPUT}"
+          printf 'headline=%s of %s silicon legs produced a verdict\n' "${verdicts}" "${legs}" >> "${GITHUB_OUTPUT}"
+
+      # continue-on-error, like qwen-story-daily: a notifier that can fail must
+      # never be able to mask or fake the lane's own verdict.
+      - name: File / update tracking issue
+        continue-on-error: true
+        if: steps.legs.outputs.ok != 'true'
+        shell: bash
+        env:
+          HEADLINE: ${{ steps.legs.outputs.headline }}
+        run: |
+          set -uo pipefail
+          # Create the labels idempotently rather than assuming a human did:
+          # qwen-story-daily's alerting path was dead from the day it was written
+          # because `gh issue create --label` referenced labels that did not exist.
+          for L in cuda-nightly regression; do
+            gh label create "${L}" --description "Filed by cuda-nightly" --force >/dev/null 2>&1 || true
+          done
+          EXISTING=$(gh issue list --label cuda-nightly --state open --limit 1 \
+            --json number --jq '.[0].number // empty')
+          if [ -n "${EXISTING}" ]; then
+            echo "commenting on existing issue #${EXISTING}"
+            gh issue comment "${EXISTING}" --body-file /tmp/cuda-verdict.md
+          else
+            echo "filing new tracking issue"
+            gh issue create --title "cuda-nightly: ${HEADLINE}" \
+              --label cuda-nightly,regression \
+              --body-file /tmp/cuda-verdict.md
+          fi
+
+      # `always() &&` is load-bearing. Without a status function GitHub prepends
+      # an implicit success(), so the notifier step above failing would SKIP this
+      # one and the lane would go green on a missing verdict -- the exact failure
+      # qwen-story-daily hit on 2026-07-31.
+      - name: Fail when the lane produced no full verdict
+        if: always() && steps.legs.outputs.ok != 'true'
+        shell: bash
+        env:
+          HEADLINE: ${{ steps.legs.outputs.headline }}
+        run: |
+          echo "::error::CUDA nightly produced no full verdict: ${HEADLINE}"
+          exit 1

@@ -28,7 +28,9 @@ impl LambdaLabTier {
         let features = crate::simd::SimdFeatures::detect();
 
         // Check for GPU availability (simplified check)
-        let has_gpu = cfg!(feature = "cuda");
+        // The `cuda` feature and its `gpu` module were removed: they never
+        // compiled once in this repo's history (see #2706). No GPU path exists.
+        let has_gpu = false;
 
         match (has_gpu, features.has_avx512(), features.avx2) {
             (true, true, _) => Self::Full,
@@ -110,7 +112,7 @@ impl FeatureFlags {
     pub fn detect() -> Self {
         Self {
             std: cfg!(feature = "std"),
-            cuda: cfg!(feature = "cuda"),
+            cuda: false,
             nightly: cfg!(feature = "nightly"),
         }
     }
@@ -210,13 +212,6 @@ mod tests {
     fn test_f095_wasm_excluded_correctly() {
         // F095: WASM excluded correctly
         // GPU code should only be accessible when CUDA feature is enabled
-        #[cfg(feature = "cuda")]
-        {
-            // With CUDA feature, GPU module is available
-            use crate::gpu;
-            let _available = gpu::gpu_available();
-        }
-
         // Without CUDA feature, GPU code is correctly excluded at compile time
         // (verified by the absence of compilation errors when cuda is disabled)
     }

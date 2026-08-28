@@ -60,8 +60,6 @@
 pub mod benchmark;
 pub mod compat;
 mod error;
-#[cfg(feature = "cuda")]
-pub mod gpu;
 pub mod integration;
 pub mod lz4;
 mod page;
