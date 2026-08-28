@@ -69,6 +69,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;
         lockfile_registry_siblings_baseline.txt) printf 'set\n' ;;
         perf_claim_citation_baseline.txt)        printf 'set\n' ;;
+        roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
@@ -204,6 +205,23 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
             res_row 'resolve ref does not exist'  UNRESOLVABLE 'refs/heads/no-such-branch-xyzzy'
             res_row 'resolve ref predates baseline' ABSENT     "$SR_NOBASE"
             res_row 'resolve ref carries baseline' MERGEBASE   "$SR_BASE"
+
+            # BOOTSTRAP: the commit that INTRODUCES a baseline. Without this
+            # verdict the first new baseline since this library landed is
+            # blocked by the gate it arms -- neither protected ref can carry a
+            # file that does not exist yet. It must be reachable ONLY for the
+            # real protected ref AND only while the file is in the working
+            # tree, or it becomes a way to disarm any ratchet by deleting its
+            # baseline. Both edges are rows here.
+            git -C "$SR" update-ref refs/remotes/origin/main "$SR_NOBASE" 2>/dev/null
+            res_row 'resolve new baseline vs origin/main' BOOTSTRAP 'origin/main'
+            mv "$SR/$P" "$SR/$P.hidden"
+            res_row 'resolve absent from tree too stays ABSENT' ABSENT 'origin/main'
+            mv "$SR/$P.hidden" "$SR/$P"
+            # An OVERRIDDEN comparand keeps the loud branch: a stale or hand-picked
+            # ref must never silently become a bootstrap.
+            res_row 'resolve overridden ref never bootstraps' ABSENT "$SR_NOBASE"
+            git -C "$SR" update-ref -d refs/remotes/origin/main 2>/dev/null
 
             # TIP is not decoration: CI checks out shallow, so the CI path IS
             # the tip path. Force it with a ref that shares NO history.

@@ -176,6 +176,30 @@ baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
         printf 'TIP\t%s\n' "$ref"
         return 0
     fi
+    # BOOTSTRAP -- the commit that INTRODUCES a baseline.
+    #
+    # This library landed AFTER every baseline it ratchets, so no existing one
+    # ever met its own first commit. The first new baseline does, and it would
+    # be blocked by the very gate it arms: neither protected ref can carry a
+    # file that does not exist yet, and ABSENT is a hard failure.
+    #
+    # Reachable ONLY when all three hold, which is exactly "the file is new":
+    #   * the comparand is the real protected ref, not an override. An
+    #     overridden ref keeps ABSENT, so the scratch-repo case table still
+    #     pins the loud branch;
+    #   * neither the merge-base nor the tip of origin/main carries it -- a
+    #     branch merely BEHIND a main that already has the baseline resolves
+    #     TIP and ratchets normally;
+    #   * it is present in the working tree. If it is absent there too, this
+    #     is a deletion, and baseline_ratchet_check fails before resolving.
+    #
+    # It is NOT reachable for any baseline currently in this repository: all of
+    # them are on origin/main. This verdict is additive, never a relaxation of
+    # a check that passes today.
+    if [ "$ref" = "origin/main" ] && [ -f "$root/$path" ]; then
+        printf 'BOOTSTRAP\t%s\n' "$ref"
+        return 0
+    fi
     printf 'ABSENT\t%s\n' "$ref"
     return 0
 }
@@ -212,6 +236,15 @@ baseline_ratchet_check() {
             printf '               ratchet silently. In CI, before this guard runs:\n'
             printf '               git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'
             return 1 ;;
+        BOOTSTRAP)
+            printf 'REPORT ratchet %s is NOT ARMED on this commit: %s carries\n' "$path" "$ref"
+            printf '               no such file, because this commit is the one INTRODUCING\n'
+            printf '               it. Its %s entr(ies) are unratcheted for this pull\n' \
+                "$(grep -cvE '^[[:space:]]*(#|$)' "$root/$path" 2>/dev/null || printf 0)"
+            printf '               request ONLY, and are a REVIEWED claim rather than an\n'
+            printf '               enforced one. From the next commit the comparand carries\n'
+            printf '               the file and an append is REFUSED.\n'
+            return 0 ;;
         ABSENT)
             printf 'FAIL  ratchet  %s carries no %s, so there is nothing\n' "$ref" "$path"
             printf '               to shrink from. A missing comparand is not "no growth".\n'
