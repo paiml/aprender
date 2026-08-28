@@ -1,0 +1,224 @@
+{
+  "instrument": "apr test llm bench",
+  "protocol_ref": "scripts/llama_pin.toml#protocol.http",
+  "model": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+  "floor": 0.8,
+  "stretch": 1.5,
+  "lanes": [
+    {
+      "lane": "cuda",
+      "subject": {
+        "provenance": {
+          "binary_path": "/x/apr",
+          "binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resolution": "scripts/apr_bin.sh",
+          "compute_class": "cuda",
+          "feature_set": [
+            "cli",
+            "inference",
+            "cuda"
+          ],
+          "_join_key_incomplete": [
+            "host",
+            "accelerator",
+            "model",
+            "quantization"
+          ]
+        },
+        "decode_tok_per_sec": [
+          150.0
+        ],
+        "prefill_tok_per_sec": [
+          900.0
+        ],
+        "ttft_p50_ms": [
+          80.0
+        ],
+        "samples_ms": [
+          1000.0,
+          1007.0,
+          1014.0,
+          1021.0,
+          1028.0,
+          1035.0,
+          1042.0,
+          1049.0,
+          1056.0,
+          1063.0
+        ],
+        "requested": 10,
+        "completed": 10,
+        "install_source": "crates.io"
+      },
+      "comparator": {
+        "provenance": {
+          "binary_path": "/x/llama-server",
+          "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "resolution": "scripts/llama_bin.sh",
+          "compute_class": "cuda",
+          "_join_key_incomplete": [
+            "host",
+            "accelerator",
+            "model",
+            "quantization"
+          ]
+        },
+        "decode_tok_per_sec": [
+          171.0
+        ],
+        "prefill_tok_per_sec": [
+          1000.0
+        ],
+        "ttft_p50_ms": [
+          81.0
+        ],
+        "samples_ms": [
+          1001.0,
+          1008.0,
+          1015.0,
+          1022.0,
+          1029.0,
+          1036.0,
+          1043.0,
+          1050.0,
+          1057.0,
+          1064.0
+        ],
+        "requested": 10,
+        "completed": 10,
+        "name": "llama.cpp",
+        "build_commit": "39173bcac"
+      },
+      "ratio_decode": 0.8772,
+      "ratio_prefill": 0.9,
+      "declared_bands": [
+        1,
+        4,
+        8,
+        16
+      ],
+      "bands": [
+        {
+          "concurrency": 1,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              150.0
+            ],
+            "decode_tok_per_sec": [
+              150.0
+            ],
+            "tokens_total": 640,
+            "requested": 10,
+            "completed": 10
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              168.0
+            ],
+            "decode_tok_per_sec": [
+              171.0
+            ],
+            "tokens_total": 640,
+            "requested": 10,
+            "completed": 10
+          },
+          "ratio_aggregate_tok_per_sec": 0.8929,
+          "ratio_decode_tok_per_sec": 0.8772,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 4,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              430.0
+            ],
+            "decode_tok_per_sec": [
+              115.0
+            ],
+            "tokens_total": 640,
+            "requested": 10,
+            "completed": 10
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              484.0
+            ],
+            "decode_tok_per_sec": [
+              123.0
+            ],
+            "tokens_total": 640,
+            "requested": 10,
+            "completed": 10
+          },
+          "ratio_aggregate_tok_per_sec": 0.8884,
+          "ratio_decode_tok_per_sec": 0.935,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 8,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              600.0
+            ],
+            "decode_tok_per_sec": [
+              100.0
+            ],
+            "tokens_total": 640,
+            "requested": 10,
+            "completed": 10
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              650.0
+            ],
+            "decode_tok_per_sec": [
+              83.0
+            ],
+            "tokens_total": 640,
+            "requested": 10,
+            "completed": 10
+          },
+          "ratio_aggregate_tok_per_sec": 0.9231,
+          "ratio_decode_tok_per_sec": 1.2048,
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 16,
+          "subject": {
+            "aggregate_tok_per_sec": [
+              980.0
+            ],
+            "decode_tok_per_sec": [
+              85.0
+            ],
+            "tokens_total": 640,
+            "requested": 10,
+            "completed": 10
+          },
+          "comparator": {
+            "aggregate_tok_per_sec": [
+              1120.0
+            ],
+            "decode_tok_per_sec": [
+              71.0
+            ],
+            "tokens_total": 640,
+            "requested": 10,
+            "completed": 11
+          },
+          "ratio_aggregate_tok_per_sec": 0.875,
+          "ratio_decode_tok_per_sec": 1.1972,
+          "verdict": "PASS"
+        }
+      ],
+      "ceiling": 1.5,
+      "floor": 0.8,
+      "stretch": 1.5,
+      "verdict": "PASS"
+    }
+  ],
+  "_expect": {
+    "result": "invalid",
+    "why": "comparator band 16 completed 11 of 10 requested -- malformed on either side; the report-not-fail asymmetry covers loss, never nonsense"
+  }
+}

@@ -40,12 +40,48 @@ JOIN_KEY_REQUIRED = ("host", "accelerator", "model", "quantization")
 # `timeout` was missing, and it is the one that matters: a hung request produces
 # NO sample, so it cannot be discarded -- it simply never appears, and the mean
 # over the survivors reads as a slow result rather than a broken one. Naming it
-# forces a receipt to say so. (CRUX: SGLang asserts completed == requested.)
+# forces a receipt to say so. CRUX: SGLang asserts completed == requested
+# before it reads a throughput at all -- for two months that sentence sat
+# here as a COMMENT beside a constant while a receipt recording 10 requested
+# against 7 completed rendered PASS. It is now a rule: see _check_completion.
 DISCARD_REASONS = ("early_eos", "negative_delta", "nonzero_exit", "timeout")
 
 
 def _err(errors, msg):
     errors.append(msg)
+
+
+# THE REPORT CHANNEL (#2736). This file already had one deferral -- the join
+# key at _check_join_key, "reported, not failed, until every producer emits it"
+# -- and it reported by writing `_join_key_incomplete` into the dict, a field
+# that `grep -rn _join_key_incomplete scripts/ crates/ .github/` shows is
+# written once and read NOWHERE. A deferral nobody can see is indistinguishable
+# from no deferral, which is the shape this repo keeps rediscovering. REPORTs
+# now go to stderr, where a human and a CI log both see them, and where no
+# consumer that greps this tool's STDOUT for a verdict can be affected by them.
+REPORTS = []
+_ABSENT = []
+
+
+def _report(msg):
+    REPORTS.append(msg)
+
+
+def _reset_reports():
+    del REPORTS[:]
+    del _ABSENT[:]
+
+
+def _flush_reports(path):
+    """Write every REPORT to stderr and clear. Never touches the return code:
+    a REPORT that could fail a run would be a rule, not a report."""
+    seen = set()
+    for msg in REPORTS:
+        if msg in seen:      # _check_join_key fires once per side and cannot
+            continue         # name which; N identical lines are noise, not news
+        seen.add(msg)
+        sys.stderr.write("REPORT %s: %s\n" % (path, msg))
+    _reset_reports()
 
 
 def _check_join_key(prov, errors):
@@ -54,6 +90,7 @@ def _check_join_key(prov, errors):
     missing = [k for k in JOIN_KEY_REQUIRED if not prov.get(k)]
     if missing:
         prov.setdefault("_join_key_incomplete", missing)
+        _report("join key incomplete: %s absent" % ", ".join(missing))
 
 
 def _check_provenance(prov, errors):
@@ -139,6 +176,7 @@ def validate(receipt):
     """Return a list of human-readable errors; empty means valid."""
     # `_expect` is the case-table annotation, not receipt content.
     receipt = {k: v for k, v in receipt.items() if k != "_expect"}
+    _reset_reports()
     errors = []
 
     prov = receipt.get("provenance")
@@ -172,6 +210,7 @@ def _validate_one(path):
     except (OSError, ValueError) as exc:
         return 2, ["%s: cannot read: %s" % (path, exc)]
     errors = validate(receipt)
+    _flush_reports(path)
     if errors:
         return 1, ["FAIL %s: %s" % (path, e) for e in errors]
     return 0, ["ok   %s" % path]
@@ -203,6 +242,7 @@ def _mode_bench(path):
     errors = validate(bench)
     for e in errors:
         print("FAIL %s: %s" % (path, e))
+    _flush_reports(path)
     return 1 if errors else 0
 
 
@@ -284,6 +324,122 @@ def _side_provenance(side, label, errors):
     if prov is not None:
         _err(errors, "%s.provenance: must be an object" % label)
     return None
+
+
+# ===========================================================================
+# COMPLETION COUNTS (#2736). "recorded 18,292 times, never COMPARED", again.
+#
+# A parity run in which 3 of 10 requests died wrote `requested: 10,
+# completed: 7` into bands 8 and 16 of the artifact, and every one of those
+# bands rendered PASS. The number reached the receipt; nothing on the
+# lane-verdict path read it. The CRUX note beside DISCARD_REASONS has said
+# `SGLang asserts completed == requested` since #2696 -- as a COMMENT, next to
+# a constant, asserting nothing.
+#
+# WHY A SHORTFALL INVALIDATES RATHER THAN LOWERS. tok/s counts tokens from
+# SUCCESSFUL requests over the same wall clock, so a run that loses requests
+# does not report a slower number for the workload it declares -- it reports a
+# well-formed number for a SMALLER one. APR-PERF-GATE-001 v2.2 SS4.4.3 defines
+# the numerator over "completed, non-truncated" requests, so a survivors-only
+# throughput is a different quantity wearing the same name, and a ratio between
+# it and a full one is not a comparison. That is a validity failure, not a low
+# score: it is wrong even in a receipt that honestly renders FAIL.
+#
+# THE ASYMMETRY IS DELIBERATE, and it is what stops this rule from
+# CONTRADICTING perf_gate.sh's Arm C, which reads the same property:
+#
+#   subject shortfall     -> FAIL. `apr test llm bench` refuses a run with
+#                            failed requests (PERF-037), so a legitimate
+#                            subject receipt has none, and perf_gate.sh's Arm C
+#                            already fails on it (`completed(c) != requested(r)`).
+#   comparator shortfall  -> named REPORT. llama.cpp lost 3/80, 3/223, 6/302
+#                            and 10/522 requests on the 2026-08-25 corpus.
+#                            There is no committed threshold for a comparator's
+#                            loss rate, and inventing one here would red every
+#                            real receipt in the corpus -- which is how a gate
+#                            gets weakened rather than obeyed. perf_gate.sh
+#                            reaches the same verdict in the same words
+#                            ("Reported, not failed"), so the two agree.
+#   counts ABSENT         -> named REPORT. On main ZERO producers emit these
+#                            fields: parity_block.py is the only writer of a
+#                            parity block in this tree, and it gains them in
+#                            #2719. Failing on absence would red every receipt
+#                            that exists today, including all 23 fixtures. This
+#                            is the same deferral _check_join_key makes, taken
+#                            deliberately and made VISIBLE rather than silent.
+#   counts MALFORMED      -> FAIL on either side. A non-integer, a negative, or
+#                            a `completed` without a `requested` cannot be
+#                            reported-not-failed, because nothing downstream
+#                            can read it either.
+# ===========================================================================
+
+
+def _completion_pair(side, label, errors):
+    """(requested, completed) as validated ints, None if absent, False if bad."""
+    req, comp = side.get("requested"), side.get("completed")
+    if req is None and comp is None:
+        return None
+    for key, value, other in (("requested", req, "completed"),
+                              ("completed", comp, "requested")):
+        if value is None:
+            _err(errors, "%s.%s: missing while %s is present -- a completion "
+                         "count is meaningless without the count it is against"
+                         % (label, key, other))
+            return False
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            _err(errors, "%s.%s: must be an integer >= 0, got %r"
+                         % (label, key, value))
+            return False
+    return req, comp
+
+
+def _completion_mismatch(label, req, comp, errors, subject):
+    """What a count that does not match its request means, by side."""
+    if comp > req:
+        _err(errors, "%s: completed %d exceeds requested %d -- a counter "
+                     "reporting more completions than requests is malformed on "
+                     "either side of the ratio" % (label, comp, req))
+        return
+    if not subject:
+        _report("%s: comparator completed %d of %d requested -- its tok/s "
+                "counts only the survivors over the same wall clock, so every "
+                "lost request lowers the denominator of the ratio and FLATTERS "
+                "the subject (no committed threshold; reported, not failed)"
+                % (label, comp, req))
+        return
+    _err(errors, "%s: completed %d of %d requested -- %d request(s) never "
+                 "finished, so the throughput beside this count is over the "
+                 "SURVIVORS and is a different quantity from the one the "
+                 "receipt names. A survivors-only rate cannot be compared to a "
+                 "full one (SS4.4.3; #2736)" % (label, comp, req, req - comp))
+
+
+def _check_completion(side, label, errors, subject):
+    """completed == requested, or the throughput beside it is not the quantity
+    this receipt names. See the block comment above for the asymmetry."""
+    if not isinstance(side, dict):
+        return
+    pair = _completion_pair(side, label, errors)
+    if pair is None:
+        _ABSENT.append(label)
+        return
+    if pair is False or pair[0] == pair[1]:
+        return
+    _completion_mismatch(label, pair[0], pair[1], errors, subject)
+
+
+def _flush_absent():
+    """One REPORT per block, not one per side: a legacy receipt has ten sides
+    and ten identical lines is noise nobody reads."""
+    if not _ABSENT:
+        return
+    _report("requested/completed absent at %d position(s) (%s%s) -- these "
+            "receipts cannot say whether their throughput covers the workload "
+            "they declare. parity_block.py gains the fields in #2719; until "
+            "every producer emits them this is reported, not failed (#2736)"
+            % (len(_ABSENT), ", ".join(_ABSENT[:4]),
+               ", ..." if len(_ABSENT) > 4 else ""))
+    del _ABSENT[:]
 
 
 def _check_parity_side(side, label, errors, require_install_source):
@@ -383,6 +539,8 @@ def _check_parity_lane(lane, index, errors):
                                    errors, require_install_source=True)
     comp_prov = _check_parity_side(lane.get("comparator"), label + ".comparator",
                                    errors, require_install_source=False)
+    _check_completion(lane.get("subject"), label + ".subject", errors, True)
+    _check_completion(lane.get("comparator"), label + ".comparator", errors, False)
     _check_comparator_pin(lane.get("comparator") or {}, label, errors)
     cross = _check_class_pair(lane, (subj_prov or {}).get("compute_class"),
                               (comp_prov or {}).get("compute_class"), label, errors)
@@ -459,6 +617,11 @@ def _check_one_band(band, index, floor, ceiling, errors):
         _err(errors, "%s.concurrency: must be a positive integer" % label)
         return None
 
+    # Before the metric loop, which returns early on a missing metric: a band
+    # that lost requests must be named even when a metric is absent too.
+    _check_completion(band.get("subject"), label + ".subject", errors, True)
+    _check_completion(band.get("comparator"), label + ".comparator", errors, False)
+
     failed = []
     for metric in BAND_METRICS:
         ratio = _band_metric(band, metric, floor, ceiling, label, failed, errors)
@@ -503,6 +666,7 @@ def _walk_bands(bands, floor, ceiling, errors):
 
 def validate_parity(block):
     """Validate a parity block. Returns a list of errors; empty means valid."""
+    _reset_reports()
     errors = []
     if not isinstance(block, dict):
         return ["parity: must be an object"]
@@ -518,6 +682,7 @@ def validate_parity(block):
         return errors
     for i, lane in enumerate(lanes):
         _check_parity_lane(lane, i, errors)
+    _flush_absent()
     return errors
 
 
@@ -549,6 +714,7 @@ def _mode_parity(path):
     errors = validate_parity({k: v for k, v in block.items() if k != "_expect"})
     for e in errors:
         print("FAIL %s: %s" % (path, e))
+    _flush_reports(path)
     return 1 if errors else 0
 
 
