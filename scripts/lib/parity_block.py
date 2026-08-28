@@ -77,6 +77,41 @@ def _side(binary, sha, klass, path, install_source=None, feature_set=None):
 
 BANDS_DEFAULT = (1, 4, 8, 16)
 
+# THE LANE-LEVEL SIDE IS THE c=1 BAND. It is not a separate measurement.
+#
+# THE DEFECT THIS REPLACES (PERF-004). This block used to read
+# `$WORK/apr-<lane>.json` and `$WORK/llama-<lane>.json` for the lane-level
+# samples. scripts/parity_host_receipt.sh -- its ONLY producer, which invokes
+# it directly at line 144 -- writes neither. Its run_lane() writes exactly
+# `apr-<lane>-c<N>.json`, `llama-<lane>-c<N>.json`, the two `.log` files and
+# `lanes.txt` (lines 96-124), and its own header comment claims a third
+# spelling, `$WORK/<class>.json`. So every complete run of the host receipt
+# script reached this file and died on
+#
+#     FAIL  lane cpu is missing a side; refusing to report half a comparison
+#
+# which reads as "the benchmark did not run" and is in fact "the consumer
+# requires an artifact no producer has ever written". The P2 chain has never
+# emitted a parity block.
+#
+# WHY THE CONSUMER MOVED AND NOT THE PRODUCER. Adding an unbanded run to
+# run_lane() would have made the producer emit it -- and that run would BE a
+# c=1 run: `apr test llm bench --concurrency` defaults to 1, and the
+# lane-level artifacts in the 2026-08-25 corpus (evidence/parity-http/
+# lambda-apr.json, lambda-llamacpp.json) are concurrency=[1] on every run. So
+# option (a) pays for a second, independently-measured copy of a number the
+# band sweep already has, and two independent copies of "the same" number is
+# how a receipt comes to disagree with itself. It also stops
+# llama_pin.toml's `http_concurrency_bands` from being the single statement of
+# what was measured, and nothing in the artifact would record that the
+# unbanded run was taken at c=1 rather than at some other concurrency.
+#
+# NO FALLBACK. If band c=1 is absent this refuses by name. Accepting either
+# layout would report a lane from whichever happened to be present and prove
+# neither contract.
+LANE_BAND = 1
+assert LANE_BAND in BANDS_DEFAULT
+
 
 def _band_side(path):
     """One side of one band: the two metrics, plus the counts SGLang asserts on.
@@ -115,12 +150,26 @@ def _band_from(name, c, work):
 
 
 def _lane_from(name, apr_class, comp_class, args, work):
-    """One lane, or None if a side is missing."""
-    apr_json = os.path.join(work, "apr-%s.json" % name)
-    cmp_json = os.path.join(work, "llama-%s.json" % name)
-    if not (os.path.exists(apr_json) and os.path.exists(cmp_json)):
-        sys.stderr.write("FAIL  lane %s is missing a side; refusing to report "
-                         "half a comparison\n" % name)
+    """One lane, or None if a side is missing.
+
+    The lane-level samples come from the c=1 band -- see LANE_BAND. The paths
+    named in the failure below are the ones run_lane() writes, so a missing
+    side names a file the producer was supposed to have produced rather than a
+    file nothing has ever produced.
+    """
+    apr_json = os.path.join(work, "apr-%s-c%d.json" % (name, LANE_BAND))
+    cmp_json = os.path.join(work, "llama-%s-c%d.json" % (name, LANE_BAND))
+    missing = [p for p in (apr_json, cmp_json) if not os.path.exists(p)]
+    if missing:
+        sys.stderr.write(
+            "FAIL  lane %s: the c=%d band is the lane-level measurement and "
+            "these are absent:\n" % (name, LANE_BAND))
+        for path in missing:
+            sys.stderr.write("        %s\n" % path)
+        sys.stderr.write("      Refusing to report half a comparison. There is "
+                         "no fallback to another band: a lane reported from "
+                         "c=4 while claiming the lane ratio would be a "
+                         "different measurement under the same name.\n")
         return None
     # feature_set is DERIVED from the class actually taken, so a cuda lane
     # cannot be claimed by a build that never took the cuda path.

@@ -342,6 +342,10 @@ def _fake_run(concurrency, agg, decode, n_req, ok, tokens, latency0):
         "decode_tok_per_sec": decode, "total_requests": n_req,
         "successful": ok, "failed": n_req - ok,
         "completion_tokens_total": tokens,
+        # Read by parity_block._side for the lane-level samples. Present on
+        # every real BenchmarkReport; absent here until the P2 chain rows
+        # below started exercising that reader.
+        "prefill_tok_per_sec": agg * 0.9, "ttft_p50_ms": 30.0 + latency0 * 0.1,
         # A real timing distribution is not a constant; bench_receipt.py rejects
         # a flat one as the fabricated-measurement shape, and it is right to.
         "request_details": [{"latency_ms": latency0 + i * 1.7, "ttft_ms": 12.0,
@@ -465,6 +469,108 @@ def _selftest_refusal_rows(work):
     ]
 
 
+# ------------------------------------------- P2: the parity chain, end to end
+# scripts/parity_host_receipt.sh -> lib/parity_block.py -> --from-parity ->
+# scripts/perf_gate.sh.
+#
+# THIS BRANCH HAD NEVER RUN. `--from-parity` was reachable from no test, and
+# the join underneath it was broken in a way no unit test could see:
+# parity_block.py read `$WORK/apr-<lane>.json` and `$WORK/llama-<lane>.json`,
+# and parity_host_receipt.sh -- its only producer, which invokes it directly --
+# writes neither. run_lane() writes `apr-<lane>-c<N>.json`,
+# `llama-<lane>-c<N>.json`, two `.log` files and `lanes.txt`, and nothing else.
+# So every complete host run ended at
+#
+#     FAIL  lane cpu is missing a side; refusing to report half a comparison
+#
+# which reads as "the benchmark did not run". The chain had never produced a
+# parity block, and a receipt-schema epic had no test that ran it.
+#
+# The layout below is written from run_lane()'s own output targets, so a future
+# divergence between producer and consumer fails HERE rather than on a host at
+# 3am.
+PARITY_LANE = "cpu"
+PARITY_BANDS = (1, 4, 8, 16)   # llama_pin.toml [protocol.http] concurrency bands
+PARITY_RATIO = 1.05            # inside [0.80, 1.50], so the lane verdict is PASS
+
+
+def _parity_work(root, bands=PARITY_BANDS):
+    """A $WORK laid out exactly as parity_host_receipt.sh run_lane() writes it."""
+    work = os.path.join(root, "p2")
+    if os.path.isdir(work):
+        import shutil
+        shutil.rmtree(work)
+    os.makedirs(work)
+    for c in bands:
+        agg, dec = 100.0 + c, 110.0 + c
+        _write_report(os.path.join(work, "apr-%s-c%d.json" % (PARITY_LANE, c)),
+                      [_fake_run(c, agg, dec, 20, 20, 2560, 100.0),
+                       _fake_run(c, agg * 1.01, dec * 1.01, 20, 20, 2560, 103.0)])
+        _write_report(os.path.join(work, "llama-%s-c%d.json" % (PARITY_LANE, c)),
+                      [_fake_run(c, agg / PARITY_RATIO, dec / PARITY_RATIO,
+                                 20, 20, 2560, 90.0),
+                       _fake_run(c, agg * 1.01 / PARITY_RATIO,
+                                 dec * 1.01 / PARITY_RATIO, 20, 20, 2560, 93.0)])
+    with open(os.path.join(work, "lanes.txt"), "w", encoding="utf-8") as fh:
+        # run_lane: printf '%s %s %s\n' <klass> <apr class taken> <cmp taken>
+        fh.write("%s cpu cpu\n" % PARITY_LANE)
+    return work
+
+
+def _run_parity_block(work, out):
+    """parity_block.py with the argument set parity_host_receipt.sh passes."""
+    import subprocess
+    return subprocess.run(
+        [sys.executable, os.path.join(SCRIPTS, "lib", "parity_block.py"),
+         "--work", work, "--apr", "/opt/apr", "--apr-sha", "1" * 64,
+         "--llama", "/opt/llama-server", "--llama-sha", "2" * 64,
+         "--llama-build", "39173bcac", "--model", "/models/q.gguf",
+         "--install-source", "crates.io", "--out", out],
+        capture_output=True, text=True, check=False)
+
+
+def _selftest_parity_chain_rows(root, gate):
+    import subprocess
+    work = _parity_work(root)
+    block = os.path.join(work, "parity.json")
+    emitted = _run_parity_block(work, block)
+
+    rows = [("P2 producer layout emits a parity block", emitted.returncode == 0)]
+    if emitted.returncode != 0:
+        # Say WHY here rather than leaving six rows failing with no reason.
+        rows.append(("P2 parity_block stderr: " + emitted.stderr.strip()
+                     .replace("\n", " ")[:160], False))
+        return rows
+
+    receipt = os.path.join(work, "receipt.json")
+    rc = main(["--from-parity", block, "--lane", PARITY_LANE,
+               "--host", "lambda", "--workload", "W1", "--out", receipt])
+    rows.append(("--from-parity converts that block", rc == 0))
+    if rc != 0:
+        return rows
+
+    proc = subprocess.run(["bash", gate, "--host", "lambda", "--phase", "merge",
+                           "--workload", "W1", "--receipt", receipt],
+                          capture_output=True, text=True, check=False)
+    text = proc.stdout + proc.stderr
+    rows += [
+        ("P2 chain reaches ArmA", "ArmA c=4" in text),
+        ("P2 chain reaches ArmB", "ArmB1 c=4" in text),
+        ("P2 chain hits no schema rejection", "ArmC schema" not in text),
+        ("P2 chain still FAILs on the unmeasured bucket",
+         proc.returncode == 1 and "drain_ms absent" in text),
+    ]
+
+    # RED, and NO FALLBACK. The lane-level side is the c=1 band; with c=1 gone
+    # the block must refuse by name rather than report the lane from c=4 under
+    # the same label.
+    starved = _parity_work(os.path.join(root, "starved"), bands=(4, 8, 16))
+    missing = _run_parity_block(starved, os.path.join(starved, "parity.json"))
+    rows.append(("refuses a lane whose c=1 band is absent",
+                 missing.returncode == 1 and "c=1 band" in missing.stderr))
+    return rows
+
+
 def selftest():
     import shutil
     import tempfile
@@ -472,7 +578,9 @@ def selftest():
     work = tempfile.mkdtemp(prefix="perf-receipt-selftest-")
     try:
         _fixture(work)
-        rows = _selftest_verdict_rows(work, gate) + _selftest_refusal_rows(work)
+        rows = (_selftest_verdict_rows(work, gate)
+                + _selftest_refusal_rows(work)
+                + _selftest_parity_chain_rows(work, gate))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     bad = sum(1 for _name, ok in rows if not ok)
