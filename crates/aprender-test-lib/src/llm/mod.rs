@@ -8,6 +8,10 @@
 //! - **Reporting**: JSON and Markdown report generation with historical tracking (feature: `llm`)
 
 pub mod assertion;
+/// APR-PERF-GATE-001 v2.2 §4.4 band protocol, driven through this module's
+/// existing request path (PERF-024).
+#[cfg(feature = "llm")]
+pub mod band;
 #[cfg(feature = "llm")]
 pub mod benchmark;
 pub mod client;
@@ -25,6 +29,8 @@ pub mod score;
 pub mod training_scorecard;
 
 pub use assertion::{LlmAssertion, LlmAssertionError, LlmAssertionResult};
+#[cfg(feature = "llm")]
+pub use band::{run_band, run_cell, BandRun};
 pub use client::{
     BrickTrace, BrickTraceOp, ChatMessage, ChatRequest, ChatResponse, ChatResponseChoice, Role,
     StreamChunk, StreamedChatResponse, TimedChatResponse, Usage,

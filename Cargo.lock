@@ -1522,6 +1522,7 @@ dependencies = [
  "chrono",
  "criterion 0.5.1",
  "crossterm 0.28.1",
+ "flate2",
  "futures",
  "gif 0.13.3",
  "image",
