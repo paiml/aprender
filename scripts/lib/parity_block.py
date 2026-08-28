@@ -46,6 +46,46 @@ def _side(binary, sha, klass, path, install_source=None, feature_set=None):
     return side
 
 
+class Refusal(Exception):
+    """A ratio that cannot honestly be derived. Carries the sentence the gate
+    would have used, naming WHICH SIDE was not a measurement."""
+
+
+def _ratio(subject, comparator, label, metric, guard_subject=False):
+    """median(subject) / median(comparator), or a NAMED refusal (#2735).
+
+    A non-positive COMPARATOR median used to raise ZeroDivisionError straight
+    out of here. That exits non-zero, so it was never a false green -- but a
+    traceback names no band and no side, and reads as a tooling defect rather
+    than as a measurement that must not be published. It is reachable, not
+    theoretical: `-b 1` aborts llama.cpp at load (GGML_ASSERT, rc=134), so the
+    comparator is exactly the side that produces nothing on gx10 today.
+
+    NOT try/except -> return None. A dropped band vanishes from lane["bands"]
+    and surfaces downstream as _check_bands' declared-vs-seen mismatch, which
+    reports the wrong cause. A missing measurement must be RED, by name.
+
+    guard_subject stays False where bench_receipt._median_of already inspects
+    BOTH sides: there the producer only has to stop crashing before its own
+    gate gets to speak, and the refusal is left verbatim to the gate. It is
+    True for prefill, which no validator reads at all -- without it a zero
+    subject prefill is published as `ratio_prefill: 0.0`, a ratio derived from
+    a non-measurement, with rc=0.
+    """
+    sides = [("comparator", comparator)]
+    if guard_subject:
+        sides.append(("subject", subject))
+    for side, samples in sides:
+        median = statistics.median(samples)
+        if median <= 0:
+            raise Refusal(
+                "%s.%s.%s: median of %d sample(s) is %s -- a throughput of "
+                "zero or less is not a measurement, and a ratio derived from "
+                "it would be fabricated"
+                % (label, side, metric, len(samples), median))
+    return statistics.median(subject) / statistics.median(comparator)
+
+
 BANDS_DEFAULT = (1, 4, 8, 16)
 
 
@@ -62,8 +102,8 @@ def _band_from(name, c, work):
                            "decode_tok_per_sec": _samples(l, "decode_tok_per_sec")}}
     ok = True
     for metric in ("aggregate_tok_per_sec", "decode_tok_per_sec"):
-        ratio = (statistics.median(band["subject"][metric])
-                 / statistics.median(band["comparator"][metric]))
+        ratio = _ratio(band["subject"][metric], band["comparator"][metric],
+                       "band[%d]" % c, metric)
         band["ratio_" + metric] = round(ratio, 4)
         if ratio < FLOOR or ratio > CEILING:
             ok = False
@@ -88,13 +128,16 @@ def _lane_from(name, apr_class, comp_class, args, work):
     comparator["name"] = "llama.cpp"
     comparator["build_commit"] = args.llama_build
 
-    ratio = (statistics.median(subject["decode_tok_per_sec"])
-             / statistics.median(comparator["decode_tok_per_sec"]))
+    label = "lane[%s]" % apr_class
+    ratio = _ratio(subject["decode_tok_per_sec"],
+                   comparator["decode_tok_per_sec"], label,
+                   "decode_tok_per_sec")
+    prefill = _ratio(subject["prefill_tok_per_sec"],
+                     comparator["prefill_tok_per_sec"], label,
+                     "prefill_tok_per_sec", guard_subject=True)
     lane = {"lane": apr_class, "subject": subject, "comparator": comparator,
             "ratio_decode": round(ratio, 4),
-            "ratio_prefill": round(
-                statistics.median(subject["prefill_tok_per_sec"])
-                / statistics.median(comparator["prefill_tok_per_sec"]), 4)}
+            "ratio_prefill": round(prefill, 4)}
     bands = [b for b in (_band_from(name, c, work) for c in BANDS_DEFAULT) if b]
     if bands:
         lane["declared_bands"] = list(BANDS_DEFAULT)
@@ -151,7 +194,13 @@ def main():
         ap.add_argument(flag, required=True)
     args = ap.parse_args()
 
-    block = build(args)
+    try:
+        block = build(args)
+    except Refusal as refusal:
+        sys.stderr.write("FAIL  refusing to emit a block whose ratio would be "
+                         "derived from a non-measurement:\n")
+        sys.stderr.write("        %s\n" % refusal)
+        return 1
     if block is None:
         return 1
 
