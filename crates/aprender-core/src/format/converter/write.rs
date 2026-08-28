@@ -270,7 +270,9 @@ fn add_f32_tensor_to_writer(
         // The loader stored an empty placeholder in `data` for passthrough tensors,
         // so we reconstruct F32 values from the raw bytes here.
         let f32_data: Vec<f32> = raw_bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| {
                 let bits = u16::from_le_bytes([c[0], c[1]]);
                 if *is_bf16 {

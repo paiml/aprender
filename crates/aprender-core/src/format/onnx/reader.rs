@@ -437,7 +437,7 @@ impl<'a> ProtobufReader<'a> {
     /// Read a packed repeated field of little-endian f32 values.
     fn read_packed_f32_into(&mut self, out: &mut Vec<f32>) -> Result<()> {
         let packed = self.read_bytes()?;
-        for chunk in packed.chunks_exact(4) {
+        for chunk in packed.as_chunks::<4>().0 {
             out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
         }
         Ok(())
@@ -446,7 +446,7 @@ impl<'a> ProtobufReader<'a> {
     /// Read a packed repeated field of little-endian f64 values.
     fn read_packed_f64_into(&mut self, out: &mut Vec<f64>) -> Result<()> {
         let packed = self.read_bytes()?;
-        for chunk in packed.chunks_exact(8) {
+        for chunk in packed.as_chunks::<8>().0 {
             out.push(f64::from_le_bytes([
                 chunk[0], chunk[1], chunk[2], chunk[3],
                 chunk[4], chunk[5], chunk[6], chunk[7],
@@ -464,9 +464,7 @@ pub fn is_onnx_file(path: &Path) -> bool {
     }
     // Check protobuf magic (ONNX starts with varint tag for field 1, wire type 0)
     // Field 1 (ir_version) with varint wire type = tag byte 0x08
-    std::fs::read(path)
-        .ok()
-        .is_some_and(|data| data.len() > 4 && data[0] == 0x08)
+    std::fs::read(path).is_ok_and(|data| data.len() > 4 && data[0] == 0x08)
 }
 
 /// Check if a file is a NeMo archive (.nemo = tar.gz)

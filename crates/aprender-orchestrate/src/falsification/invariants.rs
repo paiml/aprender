@@ -179,8 +179,7 @@ fn has_rust_tests(project_path: &Path) -> bool {
             .map(|entries| {
                 entries.flatten().any(|p| {
                     std::fs::read_to_string(&p)
-                        .ok()
-                        .is_some_and(|c| c.contains("#[test]") || c.contains("#[cfg(test)]"))
+                        .is_ok_and(|c| c.contains("#[test]") || c.contains("#[cfg(test)]"))
                 })
             })
             .unwrap_or(false)

@@ -595,9 +595,11 @@ pub fn batch_sum_f64(values: &[f64]) -> f64 {
         return values.iter().sum();
     }
 
-    // 4-way accumulator for ILP and auto-vectorization
-    let chunks = values.chunks_exact(4);
-    let remainder = chunks.remainder();
+    // 4-way accumulator for ILP and auto-vectorization.
+    // `as_chunks::<4>()` is `chunks_exact(4)` plus its remainder, as one
+    // destructuring, and yields `&[f64; 4]` so the fixed indexing below is
+    // bounds-checked at compile time. clippy::chunks_exact_to_as_chunks (1.98).
+    let (chunks, remainder) = values.as_chunks::<4>();
 
     let mut acc = [0.0f64; 4];
     for chunk in chunks {
@@ -663,9 +665,8 @@ pub fn batch_min_max_f64(values: &[f64]) -> Option<(f64, f64)> {
         return Some((min, max));
     }
 
-    // 4-way min/max for auto-vectorization
-    let chunks = values.chunks_exact(4);
-    let remainder = chunks.remainder();
+    // 4-way min/max for auto-vectorization. See batch_sum_f64 on as_chunks.
+    let (chunks, remainder) = values.as_chunks::<4>();
 
     let mut min_acc = [f64::INFINITY; 4];
     let mut max_acc = [f64::NEG_INFINITY; 4];
@@ -852,14 +853,12 @@ pub fn weighted_sum_f64(values: &[f64], weights: &[f64]) -> f64 {
             .sum();
     }
 
-    // 4-way accumulator
-    let v_chunks = values.chunks_exact(4);
-    let w_chunks = weights.chunks_exact(4);
-    let v_rem = v_chunks.remainder();
-    let w_rem = w_chunks.remainder();
+    // 4-way accumulator. See batch_sum_f64 on as_chunks.
+    let (v_chunks, v_rem) = values.as_chunks::<4>();
+    let (w_chunks, w_rem) = weights.as_chunks::<4>();
 
     let mut acc = [0.0f64; 4];
-    for (vc, wc) in v_chunks.zip(w_chunks) {
+    for (vc, wc) in v_chunks.iter().zip(w_chunks.iter()) {
         acc[0] = vc[0].mul_add(wc[0], acc[0]);
         acc[1] = vc[1].mul_add(wc[1], acc[1]);
         acc[2] = vc[2].mul_add(wc[2], acc[2]);

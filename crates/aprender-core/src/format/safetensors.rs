@@ -316,18 +316,24 @@ fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<T
 fn safetensors_bytes_to_f32(bytes: &[u8], dtype: &str) -> Vec<f32> {
     match dtype {
         "F32" => bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect(),
         "F16" => bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| {
                 let bits = u16::from_le_bytes([c[0], c[1]]);
                 f16_to_f32(bits)
             })
             .collect(),
         "BF16" => bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| {
                 let bits = u16::from_le_bytes([c[0], c[1]]);
                 bf16_to_f32(bits)
