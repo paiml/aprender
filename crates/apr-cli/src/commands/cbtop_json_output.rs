@@ -1,5 +1,123 @@
 
     // ========================================================================
+    // #2731: the receipt must record how it was measured
+    // ========================================================================
+
+    /// A persisted cbtop report must state its own warmup and iteration count.
+    ///
+    /// Before #2731 `grep -ic "warmup|iterations"` over an emitted report
+    /// returned 0: a cold-start number written with `--warmup 0` and a
+    /// steady-state number written with `--warmup 10` were byte-identical
+    /// apart from the throughput figure itself, so nothing downstream could
+    /// tell which regime a `--output` file came from.
+    ///
+    /// The values asserted here are deliberately NOT the defaults — a test
+    /// against `10 / 100` would pass against a hardcoded emitter.
+    #[test]
+    fn test_json_output_records_measurement_parameters() {
+        let report = HeadlessReport {
+            model: "receipt".to_string(),
+            timestamp: "2026-01-12T00:00:00Z".to_string(),
+            hardware: HardwareInfo {
+                gpu: "GPU".to_string(),
+                cpu: "CPU".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 500.0,
+                ttft_ms: 1.0,
+                cv_percent: 2.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 100,
+                grade: "A".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 1,
+                passed: 1,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+            measurement: MeasurementParams {
+                warmup: 7,
+                iterations: 23,
+            },
+        };
+
+        let json = format_report_as_json(&report);
+        assert!(
+            json.contains("\"warmup\": 7"),
+            "emitted receipt does not record the warmup it ran: {json}"
+        );
+        assert!(
+            json.contains("\"iterations\": 23"),
+            "emitted receipt does not record the iteration count it ran: {json}"
+        );
+    }
+
+    /// Two reports that differ ONLY in warmup must not serialise identically.
+    ///
+    /// This is the property the receipt rule actually needs, stated without
+    /// naming a key: whatever the schema, the emitted bytes have to carry
+    /// enough to distinguish a cold-start run from a steady-state one.
+    #[test]
+    fn test_json_output_distinguishes_cold_start_from_steady_state() {
+        let base = HeadlessReport {
+            model: "regime".to_string(),
+            timestamp: "2026-01-12T00:00:00Z".to_string(),
+            hardware: HardwareInfo {
+                gpu: "GPU".to_string(),
+                cpu: "CPU".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 500.0,
+                ttft_ms: 1.0,
+                cv_percent: 2.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 100,
+                grade: "A".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 1,
+                passed: 1,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+            measurement: MeasurementParams {
+                warmup: 0,
+                iterations: 100,
+            },
+        };
+        let mut warm = base.clone();
+        warm.measurement.warmup = 10;
+
+        assert_ne!(
+            format_report_as_json(&base),
+            format_report_as_json(&warm),
+            "a zero-warmup report and a ten-warmup report serialise identically — \
+             the persisted receipt cannot express its own regime"
+        );
+    }
+
+    // ========================================================================
     // format_report_as_json: multiple brick scores
     // ========================================================================
 
@@ -61,6 +179,7 @@
             },
             status: "FAIL".to_string(),
             ci_result: "red".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let json = format_report_as_json(&report);
@@ -129,6 +248,7 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         // Should not panic
@@ -168,6 +288,7 @@
             },
             status: "FAIL".to_string(),
             ci_result: "red".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         // Should not panic even with empty bricks
@@ -350,6 +471,7 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let cloned = report.clone();
@@ -423,6 +545,7 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let json = format_report_as_json(&report);

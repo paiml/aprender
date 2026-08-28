@@ -342,6 +342,104 @@
         }
     }
 
+    /// #2731: `--warmup 0` must be rejected where it is typed, exactly as
+    /// `--iterations 0` already is.
+    ///
+    /// The two flags shape the same measurement and only one had a validator.
+    /// Zero warmup does not empty the report the way zero iterations does — it
+    /// fills it from the cold-start regime (allocation, CUDA context, kernel
+    /// JIT, cache-cold weights) and labels the result a measurement, which is
+    /// harder to spot than a missing number.
+    #[test]
+    fn test_parse_cbtop_rejects_zero_warmup() {
+        let args = vec![
+            "apr",
+            "cbtop",
+            "--headless",
+            "--simulated",
+            "--ci",
+            "--warmup",
+            "0",
+        ];
+        assert!(
+            parse_cli(args).is_err(),
+            "cbtop accepted --warmup 0 at parse time"
+        );
+
+        // Discrimination: the guard must reject ONLY 0. One warmup iteration is
+        // the smallest honest steady-state attempt and must still parse.
+        let ok = vec!["apr", "cbtop", "--headless", "--warmup", "1"];
+        let cli = parse_cli(ok).expect("--warmup 1 should parse");
+        match *cli.command {
+            Commands::Extended(ExtendedCommands::Cbtop { warmup, .. }) => {
+                assert_eq!(warmup, 1);
+            }
+            _ => panic!("Expected Cbtop command"),
+        }
+
+        // A legitimate multi-iteration warmup, and the declared default, must
+        // both survive the validator.
+        let three = vec!["apr", "cbtop", "--headless", "--warmup", "3"];
+        let cli = parse_cli(three).expect("--warmup 3 should parse");
+        match *cli.command {
+            Commands::Extended(ExtendedCommands::Cbtop { warmup, .. }) => {
+                assert_eq!(warmup, 3);
+            }
+            _ => panic!("Expected Cbtop command"),
+        }
+
+        let defaulted = vec!["apr", "cbtop", "--headless"];
+        let cli = parse_cli(defaulted).expect("default warmup should parse");
+        match *cli.command {
+            Commands::Extended(ExtendedCommands::Cbtop { warmup, .. }) => {
+                assert_eq!(warmup, 10, "default --warmup must survive its own parser");
+            }
+            _ => panic!("Expected Cbtop command"),
+        }
+    }
+
+    /// #2731 survey: the two remaining cbtop knobs that shape what the report
+    /// is a report OF were declared without validators beside one that had it.
+    ///
+    /// `--concurrent 0` builds the batch as `(0..0)` and reports aggregate
+    /// throughput over an empty batch; `--speculation-k 0` drafts nothing and
+    /// labels the ordinary decode path a speculative-decoding benchmark.
+    #[test]
+    fn test_parse_cbtop_rejects_zero_concurrency_and_draft_length() {
+        assert!(
+            parse_cli(vec!["apr", "cbtop", "--headless", "--concurrent", "0"]).is_err(),
+            "cbtop accepted --concurrent 0 at parse time"
+        );
+        assert!(
+            parse_cli(vec!["apr", "cbtop", "--headless", "--speculation-k", "0"]).is_err(),
+            "cbtop accepted --speculation-k 0 at parse time"
+        );
+
+        // Discrimination: 1 is legal for both (single request, single draft
+        // token), as is the declared default.
+        let cli = parse_cli(vec![
+            "apr",
+            "cbtop",
+            "--headless",
+            "--concurrent",
+            "1",
+            "--speculation-k",
+            "1",
+        ])
+        .expect("--concurrent 1 --speculation-k 1 should parse");
+        match *cli.command {
+            Commands::Extended(ExtendedCommands::Cbtop {
+                concurrent,
+                speculation_k,
+                ..
+            }) => {
+                assert_eq!(concurrent, 1);
+                assert_eq!(speculation_k, 1);
+            }
+            _ => panic!("Expected Cbtop command"),
+        }
+    }
+
     /// #2397 finding 4: `--json` and `--output` document "requires --headless",
     /// so the parser must enforce it. Without the constraint the flag was
     /// silently dropped and cbtop entered the interactive TUI instead.

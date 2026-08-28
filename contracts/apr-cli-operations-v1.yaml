@@ -253,6 +253,16 @@ falsification_tests:
   prediction: apr cbtop --iterations 0 is rejected at parse time rather than producing a report scoring every brick a perfect 100/A from zero samples
   test: tests::test_parse_cbtop_rejects_zero_iterations
   if_fails: Appending --iterations 0 turns any cbtop --ci gate unconditionally green
+- id: FALSIFY-OPS-011
+  rule: Both flags that shape a measurement are validated, not just one
+  prediction: apr cbtop --warmup 0 is rejected at parse time (exit 2), exactly as --iterations 0 already is, while --warmup 1, --warmup 3 and the declared default 10 all still parse
+  test: tests::test_parse_cbtop_rejects_zero_warmup
+  if_fails: A zero-warmup run reports the cold-start regime — allocation, CUDA context, kernel JIT, cache-cold weights — as though it were steady state, and the arithmetic is real so nothing downstream looks wrong
+- id: FALSIFY-OPS-012
+  rule: A persisted performance report records how it was measured
+  prediction: The JSON emitted by apr cbtop --headless --json records both the warmup and the iteration count it ran, so two reports differing only in warmup do not serialise identically
+  test: commands::cbtop::tests::test_json_output_records_measurement_parameters
+  if_fails: A cold-start number and a steady-state number are byte-indistinguishable in a file persisted with --output, and no consumer of the receipt can recover which regime produced it
 - id: FALSIFY-OPS-010
   rule: Report timestamps carry the real UTC date
   prediction: The timestamp in a cbtop report matches the UTC date at the moment it was generated, on both headless paths

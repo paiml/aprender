@@ -115,7 +115,7 @@ fn report_verdict(bricks: &[BrickScore]) -> (&'static str, &'static str) {
 fn generate_headless_report_simulated(
     model_name: &str,
     pipeline: &PipelineState,
-    _config: &CbtopConfig,
+    config: &CbtopConfig,
 ) -> HeadlessReport {
     // The date must be the real UTC date. A string-literal date with a
     // computed time-of-day stamped every report ever written — including
@@ -177,6 +177,13 @@ fn generate_headless_report_simulated(
         // #2730: and FAIL when no brick was measured at all.
         status: status.to_string(),
         ci_result: ci_result.to_string(),
+        // #2731: recorded from the config that drove the warmup and
+        // measurement loops in `run_headless_simulated`, so the persisted
+        // receipt states the regime it came from.
+        measurement: MeasurementParams {
+            warmup: config.warmup,
+            iterations: config.iterations,
+        },
     }
 }
 

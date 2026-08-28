@@ -196,6 +196,7 @@
             },
             status: "FAIL".to_string(),
             ci_result: "red".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let config = CbtopConfig {
@@ -240,6 +241,7 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         // No thresholds set, should pass
@@ -280,6 +282,7 @@
             },
             status: "FAIL".to_string(),
             ci_result: "red".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let config = CbtopConfig {
@@ -395,6 +398,7 @@
             },
             status: "PASS".to_string(),
             ci_result: "green".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let json = format_report_as_json(&report);
@@ -444,6 +448,7 @@
             },
             status: "".to_string(),
             ci_result: "".to_string(),
+            measurement: MeasurementParams::default(),
         };
 
         let json = format_report_as_json(&report);

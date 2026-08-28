@@ -504,8 +504,8 @@ pub enum ExtendedCommands {
         /// Minimum brick score threshold 0-100 (for --ci)
         #[arg(long, value_name = "SCORE")]
         brick_score: Option<u32>,
-        /// Number of warmup iterations before measurement
-        #[arg(long, default_value = "10")]
+        /// Number of warmup iterations before measurement (must be >= 1)
+        #[arg(long, default_value = "10", value_parser = parse_cbtop_warmup)]
         warmup: usize,
         /// Number of measurement iterations (must be >= 1)
         #[arg(long, default_value = "100", value_parser = parse_cbtop_iterations)]
@@ -513,14 +513,14 @@ pub enum ExtendedCommands {
         /// PAR-100: Enable speculative decoding benchmark
         #[arg(long)]
         speculative: bool,
-        /// PAR-100: Number of tokens to draft speculatively (default: 4)
-        #[arg(long, default_value = "4")]
+        /// PAR-100: Number of tokens to draft speculatively (default: 4, must be >= 1)
+        #[arg(long, default_value = "4", value_parser = parse_cbtop_speculation_k)]
         speculation_k: usize,
         /// PAR-099: Path to draft model for speculative decoding
         #[arg(long, value_name = "DRAFT_MODEL")]
         draft_model: Option<PathBuf>,
-        /// PAR-102: Number of concurrent requests
-        #[arg(long, default_value = "1")]
+        /// PAR-102: Number of concurrent requests (must be >= 1)
+        #[arg(long, default_value = "1", value_parser = parse_cbtop_concurrent)]
         concurrent: usize,
         /// Use simulated data (for CI testing only)
         #[arg(long)]
@@ -1724,6 +1724,22 @@ pub enum LlmSubcommand {
     },
 }
 
+/// Reject `0` for an `apr cbtop` knob that shapes the measurement.
+///
+/// Shared by `--iterations`, `--warmup`, `--concurrent` and `--speculation-k`.
+/// All four decide what the emitted report is a report OF, and a zero in any
+/// of them yields a populated report describing something other than the run
+/// the caller asked for.
+fn parse_cbtop_positive(s: &str, unit: &str, why: &str) -> std::result::Result<usize, String> {
+    let n: usize = s
+        .parse()
+        .map_err(|_| format!("`{s}` is not a valid {unit}"))?;
+    if n == 0 {
+        return Err(format!("must be at least 1 — {why}"));
+    }
+    Ok(n)
+}
+
 /// Parse `apr cbtop --iterations`, rejecting 0.
 ///
 /// With zero measurement iterations every brick keeps zero samples, so its
@@ -1731,15 +1747,64 @@ pub enum LlmSubcommand {
 /// 100/A — a green report attesting to measurements that never ran. Reject the
 /// value where the user typed it rather than emitting the fabricated report.
 fn parse_cbtop_iterations(s: &str) -> std::result::Result<usize, String> {
-    let n: usize = s
-        .parse()
-        .map_err(|_| format!("`{s}` is not a valid iteration count"))?;
-    if n == 0 {
-        return Err(
-            "must be at least 1 — a zero-iteration run measures nothing and would report every \
-             brick as a perfect 100/A from zero samples"
-                .to_string(),
-        );
-    }
-    Ok(n)
+    parse_cbtop_positive(
+        s,
+        "iteration count",
+        "a zero-iteration run measures nothing and would report every brick as a perfect \
+         100/A from zero samples",
+    )
+}
+
+/// Parse `apr cbtop --warmup`, rejecting 0.
+///
+/// #2731. `--warmup` and `--iterations` are the two flags that decide how the
+/// number was measured, and only one of them had a validator: `--iterations 0`
+/// exited 2 while `--warmup 0` exited 0 and reported its result as a
+/// measurement.
+///
+/// Zero warmup does not empty the report the way zero iterations does — it
+/// FILLS it, from the cold-start regime: first-touch allocation, CUDA context
+/// creation, kernel JIT / graph capture, cache-cold weights. The arithmetic is
+/// real and the regime is wrong, which is materially harder to notice than a
+/// missing number. This project has cold-vs-warm deltas on record measured in
+/// orders of magnitude, so a zero-warmup run and a ten-warmup run are not two
+/// samples of one quantity.
+///
+/// Rejecting it here is the same remedy the sibling flag already had:
+/// refuse the value where the user typed it rather than emit a report whose
+/// regime nobody can recover afterwards.
+fn parse_cbtop_warmup(s: &str) -> std::result::Result<usize, String> {
+    parse_cbtop_positive(
+        s,
+        "warmup iteration count",
+        "a zero-warmup run measures the cold-start regime (allocation, CUDA context, kernel \
+         JIT, cache-cold weights), not steady state, and reports it as though it were",
+    )
+}
+
+/// Parse `apr cbtop --concurrent`, rejecting 0.
+///
+/// PAR-102 builds the batch as `(0..config.concurrent)`, so zero issues no
+/// requests at all and the aggregate-throughput report is computed over an
+/// empty batch.
+fn parse_cbtop_concurrent(s: &str) -> std::result::Result<usize, String> {
+    parse_cbtop_positive(
+        s,
+        "concurrency",
+        "a zero-concurrency run issues no requests, so the aggregate throughput it reports is \
+         computed over an empty batch",
+    )
+}
+
+/// Parse `apr cbtop --speculation-k`, rejecting 0.
+///
+/// PAR-100 drafts `k` tokens per step; with `k = 0` nothing is drafted and the
+/// run is no longer the speculative-decoding benchmark it is labelled as.
+fn parse_cbtop_speculation_k(s: &str) -> std::result::Result<usize, String> {
+    parse_cbtop_positive(
+        s,
+        "draft length",
+        "drafting zero tokens is not speculative decoding, so the run would be labelled \
+         speculative while measuring the ordinary path",
+    )
 }
