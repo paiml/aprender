@@ -206,6 +206,10 @@ def main():
 
     # SELF-VALIDATION. The same function the release gate calls.
     errors = bench_receipt.validate_parity(block)
+    # ...and the REPORTs it accumulated. Pure validator, caller flushes -- see
+    # bench_receipt.flush_reports. Before the error check on purpose: a refused
+    # block is when its diagnostics are worth most (#2736).
+    bench_receipt.flush_reports(args.out)
     if errors:
         sys.stderr.write("FAIL  refusing to emit a block this repo's own gate "
                          "would reject:\n")

@@ -7,7 +7,7 @@ apr,apr beat-run,2,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src
 apr,apr bench,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:88,high
 apr,apr canary check,4,x86_64-linux,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands/canary.rs:44,medium
 apr,apr canary create,4,x86_64-linux,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands/canary.rs:30,medium
-apr,apr cbtop,3,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:478,high
+apr,apr cbtop,4,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:478,high
 apr,apr cgp baseline,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli.rs:117,low
 apr,apr cgp bench,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli.rs:46,low
 apr,apr cgp compete,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli.rs:128,low

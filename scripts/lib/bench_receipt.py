@@ -72,6 +72,26 @@ def _reset_reports():
     del _ABSENT[:]
 
 
+def flush_reports(label):
+    """PUBLIC. Emit the REPORTs accumulated by the last validate/validate_parity.
+
+    `validate` and `validate_parity` are PURE: they reset the buffer, accumulate,
+    and return errors. Every caller flushes with the label it owns -- the CLI
+    modes pass the receipt path (_validate_one, _mode_bench, _mode_parity), and
+    an in-process caller passes whatever names the artifact it is about to write.
+
+    This exists because parity_block.py -- the only producer of a parity block
+    in this tree, and the THIRD caller of the pure validator -- imported the
+    module and never flushed. Its four REPORTs, the comparator-shortfall one
+    among them, were computed and dropped on the floor. That is the exact shape
+    #2736 exists to remove ("a deferral nobody can see is indistinguishable
+    from no deferral"), reproduced one level up in the same commit that wrote
+    the sentence. A private `_flush_reports` is why the third caller did not
+    make the call; this makes the contract greppable.
+    """
+    _flush_reports(label)
+
+
 def _flush_reports(path):
     """Write every REPORT to stderr and clear. Never touches the return code:
     a REPORT that could fail a run would be a rule, not a report."""

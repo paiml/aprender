@@ -59,6 +59,22 @@ is_allowed() {
     */perf000_serialization_probe.sh) return 0 ;;  # PERF-000 falsifier: measures
                                                    # wall-clock scaling, derives no
                                                    # tok/s and no comparator ratio
+    */parity_host_receipt.sh) return 0 ;;  # DRIVES the canonical instrument, it is
+                                           # not a second definition of it: every
+                                           # number in its receipt comes out of
+                                           # `apr test llm bench`, and the ratios
+                                           # are derived by lib/parity_block.py
+                                           # from those reports. Same basis as
+                                           # perf000_serialization_probe.sh above.
+                                           # It starts servers because a parity
+                                           # run needs two of them; it computes no
+                                           # rate of its own. Allowlisted by
+                                           # operator decision, not by silence --
+                                           # the alternative on the table was
+                                           # rewording the comment that tripped
+                                           # the old predicate, which would have
+                                           # left the blind spot armed for the
+                                           # next prose change.
     *) return 1 ;;
   esac
 }
@@ -89,10 +105,36 @@ trap 'rm -f "$COUNT_FILE"' EXIT
 # files instead of guessing. `llama-cli` and `llama-bench` are included because
 # §4.4.8 forbids driving the comparator with llama-bench at all, so a script
 # reaching for it is a competing harness by definition.
+# COMMENTS ARE PROSE, NOT BEHAVIOUR — and this guard could not tell them apart.
+#
+# Both predicates grepped the whole file. scripts/parity_host_receipt.sh gained
+# a paragraph of explanation containing the words `tokens_per_sec` (it was
+# describing which fields ANOTHER file reads), and that one line of prose flipped
+# `computes_rate` from false to true and reported the script as a competing
+# harness. It computes no rate; it delegates every number to `apr test llm bench`.
+# A guard that reds on a comment is a guard people learn to route around, and
+# this repo has already lost a CI job to a shell comment once (#2733-class).
+#
+# FULL-LINE COMMENTS ONLY, deliberately. Stripping trailing `# ...` as well
+# would mangle `${var#pattern}` and any `#` inside a quoted string, and an
+# over-strip removes text — which can only turn a real harness INVISIBLE. A
+# false negative here defeats the guard's whole purpose (keeping four specific
+# files deleted), while a false positive merely annoys. So the conservative
+# direction is the correct one, and the residual gap — a trailing comment on a
+# code line — is recorded as a case-table row below rather than papered over.
+#
+# NO PIPE into `grep -q`. `code_only "$f" | grep -q X` returns 141 even when
+# grep MATCHES: grep exits at the first hit, sed takes SIGPIPE, and the
+# `set -o pipefail` at the top of this file hands the pipeline sed's death
+# signal. It is input-size dependent, so it would pass here and red in CI.
+code_only() { sed 's/^[[:space:]]*#.*$//' "$1" 2>/dev/null; }
+
 starts_server() {
-  grep -qE "serve run|llama-server|llama-cli|llama-bench|ollama (serve|run)|vllm serve|apr[[:space:]]+run|curl[^|]*(/v1/|/api/generate)" "$1" 2>/dev/null
+  grep -qE "serve run|llama-server|llama-cli|llama-bench|ollama (serve|run)|vllm serve|apr[[:space:]]+run|curl[^|]*(/v1/|/api/generate)" <<< "$(code_only "$1")"
 }
-computes_rate() { grep -qE "date \+%s|tok/s|tokens?_per_sec|SECONDS" "$1" 2>/dev/null; }
+computes_rate() {
+  grep -qE "date \+%s|tok/s|tokens?_per_sec|SECONDS" <<< "$(code_only "$1")"
+}
 
 # UNIVERSE: tracked UNION working tree. A `git ls-files`-only universe gives an
 # untracked harness a free pass, which is how three earlier guards were blind.
@@ -159,11 +201,39 @@ selftest() {
   _row "vllm counts as a server"           detect 'vllm serve m & \n echo tokens_per_sec'
   _row "plain script is ignored"           ignore 'echo hello; ls -1'
 
+  # ── PROSE MUST NOT TRIP THE WIRE (the p4/#2737 regression) ──────────────
+  # These are the rows that would have caught the live false positive. The
+  # guard's SCOPE widened when code_only() was added, and the old proof does
+  # not transfer to the new scope, so the mutation is re-run HERE: revert
+  # code_only to a plain `grep ... "$1"` and the three `comment` rows below
+  # turn BROKE while every row above stays green.
+  _row "a comment naming tokens_per_sec"   ignore 'apr serve run m.gguf
+# parity_block.py reads `tokens_per_sec` out of the report'
+  _row "a comment naming tok/s"            ignore 'llama-server -m m.gguf
+   # the harness reports tok/s; we only start the server'
+  _row "an indented comment block"         ignore 'apr serve run m.gguf
+    #   date +%s is what the OLD harness did
+    #   SECONDS was how it timed itself'
+  # BOTH HALVES, or the fix is indistinguishable from deleting the predicate:
+  # prose must not trip it, and real code must still trip it in the same file.
+  _row "code still counts beside a comment" detect 'apr serve run m.gguf
+# this comment mentions nothing
+t=$(date +%s)'
+  # THE RECORDED LIMIT. A trailing comment on a code line is NOT stripped --
+  # see code_only(). Declared as a known false positive rather than left for
+  # someone to rediscover; tighten code_only and flip this row if it ever bites.
+  _row "trailing comment: KNOWN false pos" detect 'apr serve run m.gguf  # tok/s'
+
   # the allowlist must actually exempt, and must not exempt everything
   if is_allowed "$ROOT/scripts/perf_gate.sh"; then
     printf '  ok    %-40s expect=exempt\n' "perf_gate.sh is allowlisted"; pass=$((pass + 1))
   else
     printf '  BROKE %-40s\n' "perf_gate.sh should be allowlisted"; fail=$((fail + 1))
+  fi
+  if is_allowed "$ROOT/scripts/parity_host_receipt.sh"; then
+    printf '  ok    %-40s expect=exempt\n' "parity_host_receipt.sh allowlisted"; pass=$((pass + 1))
+  else
+    printf '  BROKE %-40s\n' "parity_host_receipt.sh should be allowlisted"; fail=$((fail + 1))
   fi
   if is_allowed "$tmp/scripts/probe.sh"; then
     printf '  BROKE %-40s\n' "allowlist must not exempt everything"; fail=$((fail + 1))
