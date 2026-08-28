@@ -87,6 +87,33 @@ pub struct ChatRequest {
     /// Whether to stream the response.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
+    /// Sampling seed, sent as OpenAI-compatible `seed`.
+    ///
+    /// APR-PERF-GATE-001 v2.2 §4.4.4 requires the confidence interval to be
+    /// "reproducible from retained samples". A run whose sampler was seeded
+    /// from entropy is not reproducible, so a benchmark that cannot put the
+    /// seed on the wire cannot satisfy §4.4.4 no matter what it retains. This
+    /// field carried nothing before PERF-039: the struct had model, messages,
+    /// temperature, max_tokens and stream, and `seed` reached the server on no
+    /// request the harness could construct.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
+    /// Suppress end-of-sequence stopping (`ignore_eos`).
+    ///
+    /// §4.3.1 pins W1 at `max_tokens = 128` with ignore-EOS. Without it the
+    /// tokens generated per request are whatever the model decides to stop
+    /// after, so the work per band is not pinned and an Arm A ratchet floor
+    /// committed over it would drift with the model's stopping behaviour
+    /// rather than with the server's throughput — a floor that moves for a
+    /// reason the gate is not measuring.
+    ///
+    /// **Not an OpenAI standard field.** vLLM, SGLang and llama.cpp's server
+    /// all accept it as an extension; a server that does not will, by serde's
+    /// default, IGNORE it rather than reject it. See
+    /// `realizar::api::ChatCompletionRequest::ignore_eos` for the receiving
+    /// side and for which backends honour it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ignore_eos: Option<bool>,
 }
 
 /// Token usage statistics.
@@ -256,6 +283,8 @@ impl LlmClient {
             temperature,
             max_tokens,
             stream: Some(false),
+            seed: None,
+            ignore_eos: None,
         };
 
         let url = format!("{}/v1/chat/completions", self.base_url);
@@ -414,6 +443,8 @@ impl LlmClient {
             temperature: request.temperature,
             max_tokens: request.max_tokens,
             stream: Some(true),
+            seed: None,
+            ignore_eos: None,
         };
 
         let start = Instant::now();
@@ -560,6 +591,8 @@ mod tests {
             temperature: Some(0.0),
             max_tokens: Some(32),
             stream: None,
+            seed: None,
+            ignore_eos: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"temperature\":0.0"));
@@ -576,6 +609,8 @@ mod tests {
             temperature: None,
             max_tokens: None,
             stream: None,
+            seed: None,
+            ignore_eos: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(!json.contains("temperature"));
@@ -713,6 +748,8 @@ mod tests {
             temperature: None,
             max_tokens: None,
             stream: Some(true),
+            seed: None,
+            ignore_eos: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"stream\":true"));

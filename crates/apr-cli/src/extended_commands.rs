@@ -1718,7 +1718,19 @@ pub enum LlmSubcommand {
         /// helper.
         #[arg(long, default_value = "medium")]
         profile: String,
-        /// Prompt file (JSON array of chat requests). Overrides `--profile`.
+        /// Prompt corpus, JSONL: one JSON object per line, `{"prompt": "..."}`,
+        /// with optional `max_tokens`, `temperature`, `seed`, `ignore_eos`.
+        /// Overrides `--profile`.
+        ///
+        /// No enclosing brackets and no commas between records; a YAML
+        /// `prompts:` file is refused.
+        ///
+        /// JSONL because that is what APR-PERF-GATE-001 v2.2 §4.3 names for
+        /// both W1 and W2, and what the committed corpora under
+        /// `crates/aprender-serve/benchmarks/qwen-coder/` are. Before PERF-039
+        /// this text, the loader and the spec each named a different format,
+        /// so an operator who followed the help produced a file the loader
+        /// refused.
         #[arg(long)]
         prompts: Option<PathBuf>,
     },
@@ -1742,4 +1754,43 @@ fn parse_cbtop_iterations(s: &str) -> std::result::Result<usize, String> {
         );
     }
     Ok(n)
+}
+
+#[cfg(test)]
+mod perf039_prompts_help_tests {
+    use clap::Subcommand;
+
+    /// `--prompts` help must name the format the loader actually reads.
+    ///
+    /// PERF-039: this help promised "a JSON array" while
+    /// `jugar_probar::llm::load_prompts_from_file` parsed YAML and
+    /// `APR-PERF-GATE-001` v2.2 §4.3 named `.jsonl`. Three surfaces, no two
+    /// matching, and an operator who followed the help produced a file the
+    /// loader refused. A help string is a contract with the person typing the
+    /// command, so it is asserted here rather than reviewed.
+    #[test]
+    fn prompts_help_names_jsonl_and_not_json_array() {
+        let cmd = super::LlmSubcommand::augment_subcommands(clap::Command::new("llm"));
+        let bench = cmd
+            .get_subcommands()
+            .find(|c: &&clap::Command| c.get_name() == "bench")
+            .expect("`bench` subcommand exists");
+        let prompts = bench
+            .get_arguments()
+            .find(|a: &&clap::Arg| a.get_id() == "prompts")
+            .expect("`--prompts` argument exists");
+        let help: String = prompts
+            .get_long_help()
+            .or_else(|| prompts.get_help())
+            .map(ToString::to_string)
+            .expect("`--prompts` has help text");
+        assert!(
+            help.contains("JSONL"),
+            "help must name JSONL, the format the loader reads; got: {help}"
+        );
+        assert!(
+            !help.contains("JSON array"),
+            "help must not still promise a JSON array; got: {help}"
+        );
+    }
 }

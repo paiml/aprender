@@ -89,8 +89,80 @@ quantization = "Q4_K_M"
 
 # Batch and context, stated because a comparator defaulting differently is a
 # free advantage nobody declared.
-batch_size = 1
+#
+# `batch_size = "default"` means EXACTLY ONE THING: pass no `-b` at all and let
+# the comparator use its own. In the pinned build 39173bcac that is
+# `n_batch = 2048` (llama.cpp common/common.h:316). The literal string is
+# load-bearing — scripts/check_comparator_flags.sh refuses any invocation that
+# carries `-b` while this says "default", and refuses one that omits `-b` while
+# this names a number. Declaration and invocation cannot drift apart.
+#
+# IT WAS `1`, WHICH IS WHY THIS COMMENT IS LONG (#2737). `-b 1` is not a tidy
+# control; it switches llama.cpp's batching off. Measured on gx10 against the
+# pinned comparator, medians of 2 runs at `-ngl 999`:
+#
+#     band          agg tok/s   decode tok/s
+#     c=1   -b 1        185.4          186.5
+#     c=1   default     184.9          186.0
+#     c=16  -b 1        181.9          181.8
+#     c=16  default     434.2          109.0
+#
+# THE c=1 ROW IS THE FALSIFIER. There `-b 1` changes nothing (0.3%), so this was
+# never a general slowdown — it was specifically the batching path being turned
+# off. Under `-b 1`, `agg == decode`. Under the default, `agg ~= 4 x decode`,
+# and that 4 is the server's own `n_parallel` showing up in the arithmetic
+# (see comparator_parallel below).
+#
+# Effect on the number this epic exists to compute: the c=16 aggregate ratio
+# moved 2.03x -> 4.85x, a 2.39x overstatement in apr's favour, manufactured by
+# handicapping the baseline rather than by apr getting faster.
+#
+# WHY "AS A USER RUNS IT" IS THE RIGHT DENOMINATOR. Arm B1's floor is policy and
+# §4.6.1 states that policy in words: *below 0.80x a user is better served by
+# llama.cpp.* That question only means something against the llama.cpp a user
+# actually gets. Imposing apr's own documented non-batching defect (PERF-000) on
+# the comparator answers a different question — "is apr better than a llama.cpp
+# we broke the same way as apr" — and answers it flatteringly.
+batch_size = "default"
 context_length = 4096
+
+# The comparator's server slot count (`-np` / `--parallel`), declared for the
+# same reason as batch_size and resolved the same way: "default" means pass no
+# flag (#2737).
+#
+# THE PREMISE THAT THIS IS HOST-DERIVED IS WRONG, and the correction matters.
+# Read from the pinned source rather than inferred from two hosts agreeing:
+#
+#   common/arg.cpp:991          `params.n_parallel = -1;  // auto by default`
+#                               reached only under `ex == LLAMA_EXAMPLE_SERVER`
+#   tools/server/server.cpp:86  `if (params.n_parallel < 0) { ... n_parallel = 4;
+#                                params.kv_unified = true; }`
+#
+# So the auto value is the CONSTANT 4, baked into the pinned build. It does not
+# consult core count, VRAM, or anything else about the host. Both servers picked
+# 4 on gx10 because 4 is what 39173bcac picks everywhere, not because gx10 has
+# some property. That also explains the `agg ~= 4 x decode` in the table above.
+#
+# It is therefore pin-determined and reproducible — but only by someone who
+# reads llama.cpp's source, and §4.4's test is that a skeptical outsider can
+# reproduce both invocations FROM THIS FILE. Two further reasons to write it
+# down rather than leave it implied:
+#
+#   · it is entangled. The same branch flips `kv_unified = true`. A reader who
+#     knows only "slots = 4" does not know the KV cache layout changed with it.
+#   · it moves on a pin bump, silently. A future llama.cpp that auto-picks 8
+#     would change every band above c=4 with no diff in this repo, which is the
+#     exact cross-time drift build_commit exists to prevent.
+#
+# KEPT AT "default" ON PURPOSE. Pinning a number here would be the -b 1 mistake
+# again in a second costume: at c=8 and c=16 the comparator runs 4 slots against
+# 8 and 16 closed-loop clients, and that is a real constraint a real user hits.
+# §4.6.1 asks whether the user is better served by llama.cpp, so the comparator
+# must be the one the user gets. The resolved value is not left to inference —
+# the server prints `n_parallel is set to auto, using n_parallel = 4` about
+# itself, which is the §4.4.9 requested-vs-resolved pattern, and
+# parity_host_receipt.sh REPORTs that line per lane.
+comparator_parallel = "default"
 
 # GPU layers offloaded. "all" on both sides or the comparison is CPU-vs-GPU
 # wearing a GPU label.
@@ -109,7 +181,13 @@ comparator_trials = 5
 # THE TWO INVOCATIONS, VERBATIM. `{...}` are substituted from the keys above
 # and from the resolved binaries; nothing else varies between runs.
 apr_command = "apr run --gpu --benchmark --max-tokens {n} --temperature {temperature} --top-p {top_p} --seed {seed} {model}"
-comparator_command = "{llama_bench} -m {model} -p 0 -n {n} -ngl 999 -t {threads} -b {batch_size} -r {comparator_trials}"
+#
+# NOTE ON THIS LANE'S STANDING. Per §4.4.8 and I-15, `llama-bench` is NEVER the
+# comparator harness for Arm B — the comparator is `llama-server` driven by the
+# same client as apr, declared in [protocol.http] below. This line is the CLI
+# differential, a separate question. `-b` is dropped here too, for the same
+# reason and so the two lanes cannot disagree about what "the comparator" means.
+comparator_command = "{llama_bench} -m {model} -p 0 -n {n} -ngl 999 -t {threads} -r {comparator_trials}"
 
 # ---------------------------------------------------------------------------
 # [protocol.http] — the SECOND lane, added when `apr test llm bench` shipped
@@ -169,6 +247,11 @@ http_stream = true
 
 # THE THREE INVOCATIONS, VERBATIM. {model} and {port} are substituted; the
 # resolved comparator binary comes from scripts/llama_bin.sh, never from PATH.
-apr_serve_command = "apr serve run {model} --gpu --port {port} --context-length 4096"
-comparator_serve_command = "{llama_server} -m {model} --port {port} -ngl 999 -c 4096 -t 8 -b 1 --no-warmup"
+#
+# THESE ARE SUBSTITUTED, NOT RETYPED. Every knob below reads `{key}` from the
+# declaration above. They used to carry the literals `4096`, `8` and `-b 1`
+# alongside keys named context_length, threads and batch_size that nothing
+# read — three more chances for the file to contradict itself (#2737).
+apr_serve_command = "apr serve run {model} --gpu --port {port} --context-length {context_length}"
+comparator_serve_command = "{llama_server} -m {model} --port {port} -ngl 999 -c {context_length} -t {threads} --no-warmup"
 harness_command = "apr test llm bench --url http://127.0.0.1:{port} --model {model_name} --profile {http_profile} --warmup {http_warmup_secs} --duration {http_duration_secs} --runs {http_runs} --cooldown {http_cooldown_secs} --concurrency {http_concurrency} --stream --runtime-name {runtime_name}"
