@@ -4,8 +4,11 @@
 # copies have DIFFERENT content. Such a stem cannot be resolved to one contract,
 # so it is refused by the stem index rather than tie-broken by directory order.
 #
-# This list may only SHRINK. Adding a line is not a fix — deduplicate the stem
-# (pick the correct contract, delete or rename the other) and remove the line.
+# This list may only SHRINK, and it is compared against origin/main by
+# check_baseline_ratchets.sh — `pv` reads this file but cannot ratchet it, so a
+# shell guard carries the comparison. Adding a line is not a fix — deduplicate
+# the stem (pick the correct contract, delete or rename the other) and remove
+# the line.
 # A stem that diverges but is absent here fails `pv lint` (PV-DUP-001).
 # A line whose stem no longer diverges also fails `pv lint` (PV-DUP-002).
 #

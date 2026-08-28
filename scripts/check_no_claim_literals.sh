@@ -343,6 +343,28 @@ if [ -f "$BASELINE" ]; then
     fi
 fi
 
+# THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
+#
+# Everything above compares the scan against the baseline AS IT STANDS IN THE
+# WORKING TREE, and that is not a ratchet. NEW (a finding with no entry) and
+# STALE (an entry with no finding) are the only two properties a working tree
+# can answer, and a commit that appends one line AND lands the matching
+# violation satisfies both at once: not new, because it is baselined; not
+# stale, because the finding is real.
+#
+# Measured, not argued: appending one entry cloned from this file's own last
+# real entry returned rc=0 from this guard, under its own words:
+#     "known (baselined, must shrink)"
+# Twelve guards in scripts/ failed the same probe.
+#
+# So growth is now compared against merge-base(HEAD, origin/main), falling
+# back to the origin/main TIP because CI checks out shallow — a ref this
+# branch cannot rewrite, and never the branch against itself.
+RATCHET_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib_baseline_ratchet.sh
+. "${RATCHET_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+baseline_ratchet_check "$RATCHET_ROOT" scripts/claim_literal_baseline.txt set || rc=1
+
 printf '\n'
 if [ "$rc" -eq 0 ]; then
     printf 'PASS  no NEW claim literal on a user-facing surface.\n'
