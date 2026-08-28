@@ -13,7 +13,6 @@
 //! ## Feature Flags
 //!
 //! - `std` (default) - Standard library support
-//! - `cuda` - GPU-accelerated compression via CUDA
 //! - `adaptive` - ML-driven compression selection
 
 #[allow(clippy::doc_markdown)]

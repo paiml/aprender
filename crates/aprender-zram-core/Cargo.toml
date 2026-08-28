@@ -15,10 +15,6 @@ name = "trueno_zram_core"
 
 [dependencies]
 thiserror.workspace = true
-cudarc = { version = "0.18", optional = true, features = ["cuda-12080", "nvrtc"] }
-rayon = { version = "1.10", optional = true }
-# Pure Rust PTX generation for GPU LZ4 compression
-aprender-gpu = { workspace = true, optional = true, features = ["cuda"] }
 
 [dev-dependencies]
 proptest.workspace = true
@@ -30,10 +26,6 @@ name = "compression"
 harness = false
 
 [[example]]
-name = "gpu_info"
-required-features = ["cuda"]
-
-[[example]]
 name = "parallel_scaling"
 # No required features - uses dev-dependency rayon
 
@@ -42,8 +34,6 @@ default = ["std"]
 std = []
 # Enable nightly-only SIMD features
 nightly = []
-# Enable CUDA GPU acceleration
-cuda = ["dep:cudarc", "dep:rayon", "dep:aprender-gpu"]
 
 [lints.rust]
 unsafe_code = "allow"

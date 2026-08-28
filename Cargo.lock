@@ -1862,9 +1862,7 @@ dependencies = [
 name = "aprender-zram-core"
 version = "0.64.0"
 dependencies = [
- "aprender-gpu",
  "criterion 0.7.0",
- "cudarc",
  "proptest",
  "rayon",
  "thiserror 2.0.18",
