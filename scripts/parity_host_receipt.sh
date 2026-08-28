@@ -87,7 +87,15 @@ BANDS=$(sed -n 's/^[[:space:]]*http_concurrency_bands[[:space:]]*=[[:space:]]*\[
         "$(dirname "$0")/llama_pin.toml" | tr -d ' ' | tr ',' ' ')
 [ -n "$BANDS" ] || { printf 'FAIL  llama_pin.toml declares no http_concurrency_bands\n' >&2; exit 1; }
 
-run_lane() { # run_lane <class> <apr-flags> <llama-ngl> -> writes $WORK/<class>.json
+# run_lane <class> <apr-flags> <llama-ngl>
+#   writes $WORK/{apr,llama}-<class>-c<N>.json for every declared band,
+#          $WORK/{apr,llama}-<class>.log, and one line into $WORK/lanes.txt.
+# The header used to claim `$WORK/<class>.json`, a THIRD spelling that
+# matched neither what it writes nor what lib/parity_block.py read. The
+# consumer wanted `$WORK/apr-<class>.json` and nothing has ever written
+# it, so this script has never emitted a parity block (PERF-004). The
+# lane-level side is now the c=1 band, which is what it always was.
+run_lane() {
     local klass="$1" apr_flags="$2" ngl="$3"
     local aport=8090 lport=8091
 

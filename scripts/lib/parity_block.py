@@ -31,22 +31,102 @@ def _samples(path, key):
     return [r[key] for r in runs]
 
 
+def _runs(path):
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)["runs"]
+
+
+def _request_latencies(path):
+    """Raw per-REQUEST latencies, in run order (§4.4.5).
+
+    This block used to read the BenchmarkReport's request_details and keep only
+    per-run summaries, so the raw samples died at this boundary and no
+    downstream consumer could re-derive a threshold from a parity block. The
+    quantities beside them are per-RUN and none of them is a substitute.
+    """
+    out = []
+    for run in _runs(path):
+        out.extend(d["latency_ms"] for d in run.get("request_details", []))
+    return out
+
+
 def _side(binary, sha, klass, path, install_source=None, feature_set=None):
     prov = {"binary_path": binary, "binary_sha256": sha,
             "resolution": "scripts/apr_bin.sh" if install_source else "scripts/llama_bin.sh",
             "compute_class": klass}
     if feature_set is not None:
         prov["feature_set"] = feature_set
+    runs = _runs(path)
     side = {"provenance": prov,
             "decode_tok_per_sec": _samples(path, "decode_tok_per_sec"),
             "prefill_tok_per_sec": _samples(path, "prefill_tok_per_sec"),
-            "ttft_p50_ms": _samples(path, "ttft_p50_ms")}
+            "ttft_p50_ms": _samples(path, "ttft_p50_ms"),
+            "samples_ms": _request_latencies(path),
+            # SGLang asserts completed == requested before it reads a
+            # throughput at all, and this block dropped both counts while
+            # reading the runs that hold them -- so a lane could report a ratio
+            # whose denominator had lost requests, and nothing downstream could
+            # tell. Carried on BOTH sides: a comparator that lost requests
+            # flatters the subject.
+            "requested": sum(r["total_requests"] for r in runs),
+            "completed": sum(r["successful"] for r in runs)}
     if install_source:
         side["install_source"] = install_source
     return side
 
 
 BANDS_DEFAULT = (1, 4, 8, 16)
+
+# THE LANE-LEVEL SIDE IS THE c=1 BAND. It is not a separate measurement.
+#
+# THE DEFECT THIS REPLACES (PERF-004). This block used to read
+# `$WORK/apr-<lane>.json` and `$WORK/llama-<lane>.json` for the lane-level
+# samples. scripts/parity_host_receipt.sh -- its ONLY producer, which invokes
+# it directly at line 144 -- writes neither. Its run_lane() writes exactly
+# `apr-<lane>-c<N>.json`, `llama-<lane>-c<N>.json`, the two `.log` files and
+# `lanes.txt` (lines 96-124), and its own header comment claims a third
+# spelling, `$WORK/<class>.json`. So every complete run of the host receipt
+# script reached this file and died on
+#
+#     FAIL  lane cpu is missing a side; refusing to report half a comparison
+#
+# which reads as "the benchmark did not run" and is in fact "the consumer
+# requires an artifact no producer has ever written". The P2 chain has never
+# emitted a parity block.
+#
+# WHY THE CONSUMER MOVED AND NOT THE PRODUCER. Adding an unbanded run to
+# run_lane() would have made the producer emit it -- and that run would BE a
+# c=1 run: `apr test llm bench --concurrency` defaults to 1, and the
+# lane-level artifacts in the 2026-08-25 corpus (evidence/parity-http/
+# lambda-apr.json, lambda-llamacpp.json) are concurrency=[1] on every run. So
+# option (a) pays for a second, independently-measured copy of a number the
+# band sweep already has, and two independent copies of "the same" number is
+# how a receipt comes to disagree with itself. It also stops
+# llama_pin.toml's `http_concurrency_bands` from being the single statement of
+# what was measured, and nothing in the artifact would record that the
+# unbanded run was taken at c=1 rather than at some other concurrency.
+#
+# NO FALLBACK. If band c=1 is absent this refuses by name. Accepting either
+# layout would report a lane from whichever happened to be present and prove
+# neither contract.
+LANE_BAND = 1
+assert LANE_BAND in BANDS_DEFAULT
+
+
+def _band_side(path):
+    """One side of one band: the two metrics, plus the counts SGLang asserts on.
+
+    The counts were dropped here while the runs holding them were being read, so
+    a band could report a ratio whose denominator had lost requests and nothing
+    downstream could tell. Carried on BOTH sides: a comparator that loses
+    requests flatters the subject.
+    """
+    runs = _runs(path)
+    return {"aggregate_tok_per_sec": _samples(path, "tokens_per_sec"),
+            "decode_tok_per_sec": _samples(path, "decode_tok_per_sec"),
+            "tokens_total": sum(r["completion_tokens_total"] for r in runs),
+            "requested": sum(r["total_requests"] for r in runs),
+            "completed": sum(r["successful"] for r in runs)}
 
 
 def _band_from(name, c, work):
@@ -56,10 +136,8 @@ def _band_from(name, c, work):
     if not (os.path.exists(a) and os.path.exists(l)):
         return None
     band = {"concurrency": c,
-            "subject": {"aggregate_tok_per_sec": _samples(a, "tokens_per_sec"),
-                        "decode_tok_per_sec": _samples(a, "decode_tok_per_sec")},
-            "comparator": {"aggregate_tok_per_sec": _samples(l, "tokens_per_sec"),
-                           "decode_tok_per_sec": _samples(l, "decode_tok_per_sec")}}
+            "subject": _band_side(a),
+            "comparator": _band_side(l)}
     ok = True
     for metric in ("aggregate_tok_per_sec", "decode_tok_per_sec"):
         ratio = (statistics.median(band["subject"][metric])
@@ -72,12 +150,26 @@ def _band_from(name, c, work):
 
 
 def _lane_from(name, apr_class, comp_class, args, work):
-    """One lane, or None if a side is missing."""
-    apr_json = os.path.join(work, "apr-%s.json" % name)
-    cmp_json = os.path.join(work, "llama-%s.json" % name)
-    if not (os.path.exists(apr_json) and os.path.exists(cmp_json)):
-        sys.stderr.write("FAIL  lane %s is missing a side; refusing to report "
-                         "half a comparison\n" % name)
+    """One lane, or None if a side is missing.
+
+    The lane-level samples come from the c=1 band -- see LANE_BAND. The paths
+    named in the failure below are the ones run_lane() writes, so a missing
+    side names a file the producer was supposed to have produced rather than a
+    file nothing has ever produced.
+    """
+    apr_json = os.path.join(work, "apr-%s-c%d.json" % (name, LANE_BAND))
+    cmp_json = os.path.join(work, "llama-%s-c%d.json" % (name, LANE_BAND))
+    missing = [p for p in (apr_json, cmp_json) if not os.path.exists(p)]
+    if missing:
+        sys.stderr.write(
+            "FAIL  lane %s: the c=%d band is the lane-level measurement and "
+            "these are absent:\n" % (name, LANE_BAND))
+        for path in missing:
+            sys.stderr.write("        %s\n" % path)
+        sys.stderr.write("      Refusing to report half a comparison. There is "
+                         "no fallback to another band: a lane reported from "
+                         "c=4 while claiming the lane ratio would be a "
+                         "different measurement under the same name.\n")
         return None
     # feature_set is DERIVED from the class actually taken, so a cuda lane
     # cannot be claimed by a build that never took the cuda path.

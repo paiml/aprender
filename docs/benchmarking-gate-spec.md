@@ -162,6 +162,34 @@ Host list is `HOSTS="lambda intel gx10 mini"`
 **intel needs a dedicated single-agent label.** `intel-clean-room-{1..16}` is 16
 org-scoped agents on one box; a perf run must not share it.
 
+#### 3.3.1 One client, both servers (I-15)
+
+The comparator is **`llama-server` driven by our client**, never `llama-bench`.
+`llama-bench` does not separate PP from TG under concurrent load — the metrics
+intertwine — so a ratio built from it compares two *client implementations* with
+two servers attached, not two servers. The client is the half that decides
+concurrency, streaming, warmup, and where the clock starts.
+
+`scripts/parity_host_receipt.sh` already obeys this: `apr test llm bench` drives
+the apr side at `:101` and the llama.cpp side at `:117`, and the comparator is
+reached only through `$LLAMA_SERVER` (`:108`). The rule now has a mechanism —
+`scripts/check_comparator_one_client.sh`, wired in `ci.yml` alongside the pin
+guard, with a `--selftest` case table.
+
+The tree was already clean when the guard landed; the guard is what keeps it
+clean. Neither pre-existing guard covered this: `check_no_competing_harnesses.sh`
+fires only on a file that ALSO computes a rate, and `parity_host_receipt.sh`
+computes none, so a `llama-bench` call inserted there left both guards at rc=0.
+
+Two llama-bench-derived comparators remain in the tree, both **outside** this
+guard's universe because the violation there is semantic rather than an
+invocation. Recorded rather than silently half-fixed:
+
+| Item | Status | Owner |
+|---|---|---|
+| `contracts/crux-E-15-v1.yaml` — equations and FALSIFY-003 name `llama-bench` as the comparator, against `evidence/crux/llama_cpp/e-15-llama-bench.json` | **UNMEASURED**. Self-declared `status: draft` placeholder; its golden artifact, its fixture, and the `apr bench --compare-llamacpp` flag it requires all do not exist, so no test there has ever run. Needs rewriting onto the one-client protocol. | @noah |
+| `crates/aprender-serve/examples/pmat_benchmark_matrix.rs:37-67` — three frozen `llama_cpp_*_baseline` literals attributed to `llama-bench`, divided into a printed `speedup` at `:345` and `:375` | **UNMEASURED**. An F12 fabricated baseline; `check_no_fabricated_baselines.sh` scans only `*.sh`, so no guard sees it. | @noah |
+
 ### 3.4 When a band is impossible on a host
 
 Cell status is **three-valued, never two** — this is what keeps the gate from being

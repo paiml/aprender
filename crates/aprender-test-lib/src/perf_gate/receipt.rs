@@ -210,10 +210,12 @@ impl TokenCountingMethod {
 /// > "Token counting must be **declared**". It is required rather than
 /// > defaulted precisely so it cannot be silently wrong.
 ///
-/// MERGE NOTE (PERF-024 / `feat/n1-band-cli`): that branch adds
-/// `perf_gate::protocol::Tokenization`, the measurement-side type, which
-/// serialises to exactly this shape. The integration commit should keep one of
-/// the two and re-point the other; they are the same block, not two blocks.
+/// PERF-024's measurement side used to carry a second spelling of this block,
+/// `perf_gate::protocol::Tokenization` — a struct with an `Option<String>`
+/// digest and a `validate()`. The merge kept this enum, because it makes
+/// "`client_tokenizer` with no digest" unrepresentable rather than merely
+/// rejected, and moved that struct's one extra behaviour
+/// ([`Self::require_counter`]) here. `protocol` now re-exports this type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenizationBlock {
     /// Server-reported counts.
@@ -258,6 +260,30 @@ impl TokenizationBlock {
                 "tokenization.tokenizer_sha256: {tokenizer_sha256:?} is not 64 lowercase hex \
                  characters — §4.4.6 requires it when method = client_tokenizer"
             )),
+        }
+    }
+
+    /// Poka-yoke for transports: a declared method the transport cannot honour
+    /// is refused at construction, not silently downgraded at measure time.
+    ///
+    /// Moved here from `protocol::Tokenization` when the two spellings of the
+    /// §4.4.6 block were merged — the enum kept the shape, this kept its one
+    /// behaviour the enum lacked.
+    ///
+    /// # Errors
+    /// When the declared method and the available counting machinery disagree.
+    pub fn require_counter(&self, has_client_counter: bool) -> Result<(), String> {
+        match (self.method(), has_client_counter) {
+            (TokenCountingMethod::ClientTokenizer, false) => Err(
+                "tokenization.method = client_tokenizer but no client TokenCounter was supplied"
+                    .to_string(),
+            ),
+            (TokenCountingMethod::ServerUsage, true) => Err(
+                "tokenization.method = server_usage but a client TokenCounter was supplied; \
+                 declare client_tokenizer or drop the counter"
+                    .to_string(),
+            ),
+            _ => Ok(()),
         }
     }
 

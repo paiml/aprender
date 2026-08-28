@@ -45,8 +45,78 @@ CLAIM_RE='(println!|eprintln!|write!|writeln!|format!|\.red\(\)|\.green\(\)|\.ye
 # someone else's number is the same defect as fabricating our own, with a
 # better provenance story, so it is banned by the same guard rather than a
 # second one that could rot separately.
-RATIO_RE='[0-9]+(\.[0-9]+)?x[[:space:]]+(Ollama|ollama|llama\.cpp|llama|vLLM|vllm|PyTorch|torch|FasterTransformer|fastertransformer|SGLang|sglang|TensorRT|tensorrt|TGI|tgi|LMDeploy|lmdeploy|TurboMind|turbomind|static[[:space:]]+batching)'
+#
+# PERF-010 SPLIT THE PATTERN IN TWO, AND THE JOINER IS THE WHOLE FIX. §5's
+# status table listed the `[X]`-figure guard against this file as **not
+# written**, and it was right for a reason a reading of the regex does not
+# surface: the old form required the competitor's name to sit IMMEDIATELY after
+# the ratio, separated by nothing but spaces, and spelled with an ASCII `x`.
+# Both assumptions fail on the way people actually write the claim. Measured
+# against the six shapes the spec itself names, the old pattern caught ONE:
+#
+#   36.9x FasterTransformer          caught       (the only adjacent form)
+#   36.9x over FasterTransformer     MISSED       connector
+#   36.9× over FasterTransformer     MISSED       connector + U+00D7  <- §5's own mutation
+#   23x over static batching         MISSED       connector
+#   1.8x over vLLM                   MISSED       connector
+#   2.93× Ollama                     MISSED       U+00D7 alone
+#
+# The `×` half is not academic: this repo's prose prefers the typographic sign,
+# so the single most quotable fabrication in the epic — "851.8 tok/s = 2.93×
+# Ollama" — was invisible in its own preferred spelling while the ASCII twin on
+# the line below it was caught. And the connector half is what hid a LIVE claim:
+# `book/src/tools/apr-cli.md:81` shipped "Batched GPU mode (2.9x faster than
+# Ollama)" past a green guard, because "faster than" stood between the ratio and
+# the name. That is the most natural English form of the exact sentence this
+# guard exists to ban.
+#
+# `(x|×)` rather than `[x×]`: `×` is two bytes in UTF-8 and a bracket expression
+# under a C locale becomes a BYTE class, which then matches the trailing byte of
+# unrelated multibyte characters. Alternation is locale-safe. (Same reasoning,
+# same words, as check_perf_claims_cite_receipts.sh — one dialect, two guards.)
+#
+# The connector list is deliberately CLOSED and short. It admits comparison
+# words only, so `3x larger than PyTorch uses` stays unmatched: that is a size
+# remark, not a speed ratio, and the case table asserts it. Widening to "any
+# text between a ratio and a competitor name" was tried and collapses into
+# "any ratio on a line that mentions a competitor", which flags a sentence like
+# "Ollama users will find 3x3 convolutions familiar".
+COMPARATOR_RE='Ollama|ollama|llama\.cpp|llama|vLLM|vllm|PyTorch|torch|FasterTransformer|fastertransformer|SGLang|sglang|TensorRT|tensorrt|TGI|tgi|LMDeploy|lmdeploy|TurboMind|turbomind|Orca|static[[:space:]]+batching'
+RATIO_JOIN='([[:space:]]+|[[:space:]]*(faster|slower|speedup)?[[:space:]]*(over|than|vs\.?|versus|compared[[:space:]]+to)[[:space:]]+)'
+RATIO_RE="[0-9]+(\.[0-9]+)?[[:space:]]*(x|×)$RATIO_JOIN($COMPARATOR_RE)"
 TPUT_RE='[0-9]{2,}\+?[[:space:]]*tok/s'
+
+# A PLACEHOLDER THAT HAS BEEN GIVEN A UNIT IS READ AS A MEASUREMENT. PERF-010's
+# second half. `Throughput: XX tok/s` in a shipped chapter does not read to a
+# user as "we have not measured this yet"; it reads as a table someone forgot to
+# finish, and the number that eventually fills it inherits whatever trust the
+# surrounding prose had already earned.
+#
+# THE BINDING TO A UNIT IS THE ENTIRE DESIGN, and skipping it would have shipped
+# a guard that is pure noise. In THIS repo `[X]` is overwhelmingly a MARKDOWN
+# CHECKBOX — `- [X] APPROVED for Production`, `| Section 9 | [X] PASS / [ ] FAIL
+# |` — and a bare ban on the literal would have been born RED against ten
+# checked boxes in docs/qa/ and zero defects. (Worth stating plainly because the
+# collision is with the spec's own vocabulary: APR-PERF-GATE-001 uses `[X]` as a
+# PROVENANCE TAG meaning "external claim about a third-party system", which is
+# the class the RATIO_RE above handles. Neither of those is a placeholder. Three
+# meanings, one spelling.)
+#
+# So a placeholder counts only where a figure would go: immediately before a
+# throughput unit, a memory unit, a latency unit, or a ratio bound to a speed
+# word. Every checkbox form fails that test, and the case table pins six of them
+# as must-not-match controls.
+#
+# Zero live instances today, and that is stated rather than hidden: this is a
+# RATCHET AGAINST A SHAPE, not a cleanup. The mutation table is therefore the
+# only evidence it works, since the tree cannot supply a true positive.
+#
+# Leading boundary is `(^|[^A-Za-z0-9_])` rather than `\b` — `\b` is a GNU
+# extension this file does not otherwise rely on, and the explicit form is what
+# keeps `MAXX tok/s` (a field name) from matching.
+PLACEHOLDER_TOK='(\[X+\]|\[TBD\]|\[TODO\]|\[N\]|TBD|TODO|XX+)'
+PERF_UNIT_RE='(tok/s|tokens/s|tok/sec|(ms|GB|MB)([^A-Za-z0-9]|$)|(x|×)([[:space:]]+(faster|slower|speedup)|[[:space:]]*$)|%[[:space:]]*(faster|slower|speedup))'
+PLACEHOLDER_RE="(^|[^A-Za-z0-9_])${PLACEHOLDER_TOK}[[:space:]]*${PERF_UNIT_RE}"
 
 # A TARGET says what we WANT; a CLAIM says what we GOT. Only the second lies.
 # Lines that name themselves a target, a threshold or a comparison operator are
@@ -165,6 +235,76 @@ if [ "${1:-}" = "--selftest" ]; then
     check nomatch 'println!("Non-kernel time dominates this pass");'     # a magnitude, no cause
     check nomatch '// investigate sampling sync later'                   # a comment, not printed
 
+    # PERF-010: THE MARKDOWN CLASS. Every row above runs through check(), which
+    # requires a Rust print macro on the line -- so not one of them can reach the
+    # detector that actually guards book/ and docs/. Prose has no macro; ALL of
+    # it is the printed surface, so the .md sweep applies the ratio, throughput
+    # and placeholder patterns directly. A table that only ever exercised the
+    # Rust path is how the `[X]`-figure gap survived being "covered by
+    # check_no_claim_literals.sh" in the spec's own status table.
+    mt=0; mf=0
+    check_md() { # check_md <match|nomatch> <one line of markdown>
+        local want="$1" line="$2" got=nomatch
+        # `<<<` and capture-then-test, never `printf | grep -q`: an early-exiting
+        # reader plus pipefail hands the pipeline the PRODUCER's SIGPIPE status
+        # (141) even on a successful match. That exact shape was a live fail-open
+        # on main.
+        if grep -qE "$RATIO_RE|$TPUT_RE|$PLACEHOLDER_RE" <<< "$line" \
+           && ! grep -qE "$TARGET_RE" <<< "$line"; then got=match; fi
+        mt=$((mt+1))
+        if [ "$got" = "$want" ]; then printf '  ok    %-8s %s\n' "$want" "$(printf '%s' "$line" | cut -c1-64)"
+        else printf '  FAIL  want %-8s got %-8s %s\n' "$want" "$got" "$(printf '%s' "$line" | cut -c1-52)"; mf=$((mf+1)); fi
+    }
+    printf -- '--- markdown class: [X] figures, comparators, placeholders ---\n'
+    # THE SIX SHAPES §0.1 NAMES. Row 2 is §5's mutation for this guard verbatim.
+    check_md match   'aprender achieves 36.9x FasterTransformer throughput.'
+    check_md match   'aprender achieves 36.9× over FasterTransformer.'
+    check_md match   'Continuous batching gives 23× over static batching.'
+    check_md match   'Throughput is 1.8× over vLLM on this workload.'
+    check_md match   '| GPU (batched M=16) | Qwen 1.5B | ~850 tok/s | 2.93× Ollama |'
+    # THE LIVE ONE. Verbatim from book/src/tools/apr-cli.md:81, which shipped
+    # past this guard while it was green because "faster than" sat in the join.
+    check_md match   '# Batched GPU mode (2.9x faster than Ollama)'
+    check_md match   'realizar is 8.2x slower than llama.cpp on CPU.'
+    check_md match   'c=4 TTFT = 256ms (10.7x vs llama.cpp 24ms).'
+    # DISCRIMINATION. A ratio is not a claim just because a competitor is named
+    # on the same line, and a size remark is not a speed ratio.
+    check_md nomatch 'Ollama users will recognise the 3x3 convolution kernel.'
+    check_md nomatch 'The .apr file is 3x larger than PyTorch pickle output.'
+    check_md nomatch 'Compression ratio: 24 bits -> 8 bits = 3x smaller.'
+    check_md nomatch 'Target: 2x Ollama throughput on the 1.5B model.'
+    check_md nomatch 'Install Ollama first, then run the comparison harness.'
+    # PLACEHOLDERS BOUND TO A UNIT.
+    check_md match   'Throughput: XX tok/s'
+    check_md match   '| Decode | [TBD] tok/s | 1.9 GB |'
+    check_md match   'apr is [X]x faster than the previous release.'
+    check_md match   'Speedup over the baseline: [TBD]×'
+    check_md match   'Cold start latency: TODO ms'
+    # ...AND THE CHECKBOXES THEY MUST NOT BE CONFUSED WITH. Without these five
+    # rows a bare `\[X\]` ban looks correct and is born red against docs/qa/.
+    # The checkbox rows are built from variables rather than written inline.
+    # bashrs -- which this repo mandates over shellcheck -- parses the `[ ]` and
+    # `[X]` of a MARKDOWN checkbox as a shell test bracket and raises SC1028 /
+    # SC2104 / SC1087 against rows that are correct English. Same class as the
+    # \042 dance for LIT above, and the same remedy: keep the token out of the
+    # source line. scripts/*.sh is gated on a SHRINK-ONLY bashrs error count, so
+    # five false errors here are five someone else has to triage.
+    # Even the ASSIGNMENTS are built from parts: bashrs flags a bare `'[ ]'`
+    # string as SC2104 "missing space before ]". Brackets by name, then.
+    OB='['; CB=']'
+    CHECKED="${OB}X${CB}"; UNCHECKED="${OB} ${CB}"
+    check_md nomatch "- $CHECKED APPROVED for Production"
+    check_md nomatch "| Section 9 Tests/CI/Coverage | $CHECKED PASS / $UNCHECKED FAIL |"
+    check_md nomatch "| 9.1.1 | All tests pass | 0 failures | $CHECKED | $UNCHECKED |"
+    check_md nomatch '- Other modules: TBD from CI results'
+    check_md nomatch 'TODO: add a benchmark harness for the graph module.'
+    check_md nomatch 'The MAXX tok/s field is reserved.'
+    # VACUITY: a table that shrank to nothing would sweep clean.
+    if [ "$mt" -lt 24 ]; then
+        printf '  FAIL  markdown table has %s row(s); at least 24 are required\n' "$mt"; mf=$((mf+1))
+    fi
+    printf '  %s markdown case(s), %s failure(s)\n' "$mt" "$mf"
+
     # PERF-016: the causal class, where NO print macro is on the line. Every row
     # here is invisible to check() above -- that is the whole point of the
     # widening, so the table runs the widened extractor instead.
@@ -212,7 +352,7 @@ if [ "${1:-}" = "--selftest" ]; then
     printf '  %s causal case(s), %s failure(s)\n' "$ct" "$cf"
 
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
-    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] || exit 1
+    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$mf" -eq 0 ] || exit 1
     exit 0
 fi
 
@@ -295,7 +435,12 @@ mdfiles=()
 for f in "${SRC[@]}"; do case "$f" in *.md) mdfiles+=("$f") ;; esac; done
 mdhits=""
 if [ "${#mdfiles[@]}" -gt 0 ]; then
-    mdhits=$(grep -InE "$RATIO_RE|$TPUT_RE" "${mdfiles[@]}" 2>/dev/null \
+    # PLACEHOLDER_RE is applied to MARKDOWN ONLY, deliberately. In .rs a bare
+    # `TODO` is an ordinary code comment and SATD there is pmat's gate, not
+    # this one; adding it to the Rust sweep would import a large, already-owned
+    # debt class under a guard that has nothing to say about it. Prose is where
+    # an unfilled figure is read as a filled one.
+    mdhits=$(grep -InE "$RATIO_RE|$TPUT_RE|$PLACEHOLDER_RE" "${mdfiles[@]}" 2>/dev/null \
              | grep -vE "$TARGET_RE" || true)
 fi
 
