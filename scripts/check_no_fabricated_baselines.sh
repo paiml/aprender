@@ -502,6 +502,102 @@ ledger_verdict() { # ledger_verdict <ledger-file> <hits-file>  -> rc 0 iff clean
     [ "$LEDGER_NEW" -eq 0 ] && [ "$LEDGER_STALE" -eq 0 ]
 }
 
+# ---------------------------------------------------------------------------
+# SHRINK-ONLY, ENFORCED — because for one commit it was only PRINTED.
+#
+# This file called the ledger SHRINK-ONLY in four places and nothing compared it
+# to anything. `ledger_verdict` above enforces the two properties that are
+# checkable from the WORKING TREE — no unledgered fabrication (new), no ledger
+# entry without a fabrication (stale) — and both are real. Neither is the ratchet.
+# A ledger line and its matching fabrication, added in the same commit, satisfies
+# both: it is not new (it is ledgered) and it is not stale (the site exists).
+#
+# Measured against the commit that added the stale->FAIL rule:
+#
+#     echo "crates/aprender-core/src/zz_grow.rs:2" >> $RUST_LEDGER
+#     printf '// p\nlet ollama_baseline_tps = 407.0;\n' > crates/…/zz_grow.rs
+#     bash scripts/check_no_fabricated_baselines.sh          -> rc=0
+#       ok    rust     37 ledgered site(s) = 37 ledger entr(ies), 0 new, 0 stale
+#                    (shrink-only, PERF-008-RUST; the count is enforced, not asserted)
+#
+# A fabricated baseline entered the tree, the ledger grew 36 -> 37, and the guard
+# printed PASS while emitting the words "the count is enforced, not asserted".
+# It was asserted. That is this epic's own defect class — a property stated in
+# prose and absent from the mechanism — committed by one of the epic's guards,
+# and the printed claim is what made it invisible: the row read as a receipt.
+#
+# THE MISSING PROPERTY IS A SUBSET, NOT A COUNT. Counting alone passes a swap
+# (drop one coordinate, add another, total unchanged), which is an append wearing
+# the old total. The current entry set must be a SUBSET of the comparand's:
+# removal is the point of a ratchet and stays green; any entry not already on the
+# comparand fails, whether it arrived by append or by substitution.
+#
+# THE COMPARAND IS A REF A PULL REQUEST CANNOT REWRITE. Deriving it from the
+# working tree would compare the branch against itself. This mirrors
+# check_dogfood_coverage.sh, which exists because a floor and its universe both
+# lived in one editable file: "There is no baseline NUMBER in this repository for
+# a PR to edit. To lower a floor you must land the change on main first."
+#
+# MERGE-BASE PREFERRED, TIP AS FALLBACK, SELF NEVER.
+#   * merge-base(HEAD, origin/main) isolates THIS branch's edits, so a branch
+#     that is merely behind main is green. It needs shared history.
+#   * If the merge-base is not computable — CI checks this repo out at
+#     fetch-depth 1, and a grafted shallow head has no common ancestor — the
+#     comparand falls back to the origin/main TIP, which needs no history and is
+#     STRICTLY STRONGER (it also forbids re-adding an entry main has deleted).
+#     The cost is a false red on a branch that is behind a main which has already
+#     shrunk the ledger; the remedy is `git rebase origin/main`, and the FAIL
+#     text says so. A green local run can therefore red in CI. CI is the
+#     authoritative one.
+#   * If NEITHER resolves, this is a hard failure. It never degrades to comparing
+#     the branch against itself: that would disarm the ratchet permanently and
+#     silently, which is the failure mode this whole guard is about.
+#
+# Set FABBASE_BASE_REF to override the comparand. The banner then says the ref is
+# NOT protected, because a gate that keeps printing its guarantee while the
+# guarantee has been overridden is lying in exactly the way this block was.
+BASE_REF="${FABBASE_BASE_REF:-origin/main}"
+
+resolve_base_ref() { # resolve_base_ref <root> <ref> -> "<MODE>\t<commit-ish>"
+    local root="$1" ref="$2" mb
+    if ! git -C "$root" rev-parse --verify --quiet "${ref}^{commit}" >/dev/null 2>&1; then
+        printf 'UNRESOLVABLE\t%s\n' "$ref"; return 0
+    fi
+    mb=$(git -C "$root" merge-base HEAD "$ref" 2>/dev/null) || mb=""
+    if [ -n "$mb" ] && git -C "$root" cat-file -e "${mb}:${RUST_LEDGER}" 2>/dev/null; then
+        printf 'MERGEBASE\t%s\n' "$mb"; return 0
+    fi
+    if git -C "$root" cat-file -e "${ref}:${RUST_LEDGER}" 2>/dev/null; then
+        printf 'TIP\t%s\n' "$ref"; return 0
+    fi
+    # The ref exists and carries no ledger. NOT a bootstrap: this ledger has been
+    # on main since #2710, so the shape is either a branch cut from before it, or
+    # a ledger deleted to escape its own gate. Both must be loud — an absent
+    # comparand read as "no growth" is a missing measurement read as clean.
+    printf 'ABSENT\t%s\n' "$ref"; return 0
+}
+
+ledger_entries_of() { # ledger_entries_of <file> -> the entry lines, sorted
+    grep -vE '^[[:space:]]*(#|$)' "$1" 2>/dev/null | LC_ALL=C sort -u
+}
+
+ledger_shrink_only() { # ledger_shrink_only <base-entries> <current-entries> -> rc 0 iff subset
+    local basef="$1" curf="$2" added
+    added=$(LC_ALL=C comm -13 "$basef" "$curf")
+    LEDGER_ADDED=0
+    [ -n "$added" ] && LEDGER_ADDED=$(grep -c . <<< "$added")
+    LEDGER_REMOVED=$(LC_ALL=C comm -23 "$basef" "$curf" | grep -c . || true)
+    if [ "$LEDGER_ADDED" -gt 0 ]; then
+        printf 'FAIL  the Rust ledger GREW by %s entr(ies). It is SHRINK-ONLY:\n' "$LEDGER_ADDED"
+        while IFS= read -r a; do
+            [ -n "$a" ] || continue
+            printf '        + %s\n' "$a"
+        done <<< "$added"
+        return 1
+    fi
+    return 0
+}
+
 rust_ledger_sweep() {
     if [ ! -f "$RUST_LEDGER" ]; then
         printf 'FAIL  %s is missing. The Rust site count is\n' "$RUST_LEDGER"
@@ -513,11 +609,65 @@ rust_ledger_sweep() {
     if ledger_verdict "$RUST_LEDGER" "$TMPD/rust_hits"; then
         printf 'ok    rust     %s ledgered site(s) = %s ledger entr(ies), 0 new, 0 stale\n' \
             "$LEDGER_KNOWN" "$LEDGER_ENTRIES"
-        printf '               (shrink-only, PERF-008-RUST; the count is enforced, not asserted)\n'
     else
         printf '      A comparator baseline is MEASURED or ABSENT, never asserted.\n'
         printf '      The Rust ledger is SHRINK-ONLY: %s is not an\n' "$RUST_LEDGER"
         printf '      allowlist to append to. Delete the literal, or derive it.\n'
+        rc=1
+    fi
+
+    # THE RATCHET ITSELF. Separate row, separate verdict: the block above can be
+    # green on a ledger that grew by one, which is exactly how the growth defect
+    # hid behind a row that said "enforced".
+    local resolution mode ref
+    resolution="$(resolve_base_ref . "$BASE_REF")"
+    mode="${resolution%%$'\t'*}"; ref="${resolution##*$'\t'}"
+    case "$mode" in
+        UNRESOLVABLE)
+            printf 'FAIL  ledger   cannot resolve the comparand ref <%s>, so shrink-only is\n' "$ref"
+            printf '               UNMEASURED. It is NOT degraded to comparing this branch\n'
+            printf '               against itself — that disarms the ratchet silently. In CI:\n'
+            printf '               git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'
+            rc=1
+            return ;;
+        ABSENT)
+            printf 'FAIL  ledger   %s carries no %s, so there is\n' "$ref" "$RUST_LEDGER"
+            printf '               nothing to shrink from. A missing comparand is not "no\n'
+            printf '               growth". Either this branch predates the ledger (rebase\n'
+            printf '               onto main), or the ledger was deleted to escape its own\n'
+            printf '               gate. Retire the check in the same commit if it is genuinely\n'
+            printf '               being retired.\n'
+            rc=1
+            return ;;
+    esac
+    git show "${ref}:${RUST_LEDGER}" 2>/dev/null > "$TMPD/base_ledger" || {
+        printf 'FAIL  ledger   could not read %s:%s\n' "$ref" "$RUST_LEDGER"
+        rc=1
+        return
+    }
+    ledger_entries_of "$TMPD/base_ledger" > "$TMPD/base_entries"
+    ledger_entries_of "$RUST_LEDGER"     > "$TMPD/cur_entries"
+
+    local how note
+    case "$mode" in
+        MERGEBASE) how="merge-base with $BASE_REF" ;;
+        TIP)       how="tip of $BASE_REF (no merge-base available; stricter)" ;;
+        *)         how="$mode" ;;
+    esac
+    note="protected; a pull request cannot rewrite it"
+    [ "$BASE_REF" = "origin/main" ] || note="OVERRIDDEN via FABBASE_BASE_REF — NOT a protected ref"
+
+    if ledger_shrink_only "$TMPD/base_entries" "$TMPD/cur_entries"; then
+        printf 'ok    ledger   %s entr(ies), %s added, %s removed vs %s\n' \
+            "$(grep -c . "$TMPD/cur_entries" || true)" "$LEDGER_ADDED" "$LEDGER_REMOVED" \
+            "$(git rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"
+        printf '               comparand: %s (%s)\n' "$how" "$note"
+    else
+        printf '               comparand: %s (%s)\n' "$how" "$note"
+        printf '               An entry may only LEAVE this file. Delete the literal in\n'
+        printf '               crates/ or derive it from a receipt under evidence/; do not\n'
+        printf '               ledger it. If the branch is merely behind a main that has\n'
+        printf '               already shrunk the ledger: git rebase origin/main.\n'
         rc=1
     fi
 }
@@ -680,6 +830,82 @@ lr_case 'no hits at all'   ok   '# nothing ledgered yet\n'                 ''
 lr_case 'line 2 != line 20' fail 'crates/a/src/x.rs:2\n' 'crates/a/src/x.rs:20:    let ollama_baseline = 137.0;\n'
 lr_rows=7
 
+# ---------------------------------------------------------------------------
+# THE SHRINK-ONLY RATCHET, AS A TABLE. The rows above prove new/stale; NONE of
+# them covers GROWTH, which is why the previous commit's green did not transfer
+# and the append defect survived it. Rule 6: re-mutate in the new scope.
+#
+# `ledger_shrink_only` is a set operation, so the fixtures are entry lists. The
+# end-to-end forms (append with and without the matching fabrication, at the real
+# ledger) are in the PR body's mutation table; these rows are what fails at merge
+# if someone deletes the comparison.
+so="$ctl/so"
+mkdir -p "$so"
+so_case() { # so_case <label> <expect ok|fail> <base-entries> <current-entries>
+    local label="$1" want="$2" got=ok
+    printf '%b' "$3" | LC_ALL=C sort -u > "$so/base"
+    printf '%b' "$4" | LC_ALL=C sort -u > "$so/cur"
+    ledger_shrink_only "$so/base" "$so/cur" > "$so/out" 2>&1 || got=fail
+    if [ "$got" != "$want" ]; then
+        printf 'FAIL  shrink-only %-30s want %-4s got %-4s (added=%s removed=%s)\n' \
+            "$label" "$want" "$got" "$LEDGER_ADDED" "$LEDGER_REMOVED"
+        tbl_bad=1
+    fi
+}
+SO_BASE='crates/a.rs:1\ncrates/b.rs:2\ncrates/c.rs:3\n'
+so_case 'unchanged'              ok   "$SO_BASE" "$SO_BASE"
+so_case 'one removed'            ok   "$SO_BASE" 'crates/a.rs:1\ncrates/b.rs:2\n'
+so_case 'all removed'            ok   "$SO_BASE" ''
+so_case 'one appended'           fail "$SO_BASE" "$SO_BASE"'crates/d.rs:4\n'
+so_case 'swap, count unchanged'  fail "$SO_BASE" 'crates/a.rs:1\ncrates/b.rs:2\ncrates/d.rs:4\n'
+so_case 'same file, new line'    fail "$SO_BASE" "$SO_BASE"'crates/a.rs:9\n'
+so_case 'remove one, add one'    fail "$SO_BASE" 'crates/a.rs:1\ncrates/d.rs:4\n'
+so_case 'empty base, one entry'  fail ''         'crates/a.rs:1\n'
+so_rows=8
+
+# THE COMPARAND RESOLVER, against a scratch repository — because the branch that
+# must NEVER be taken is "fall back to comparing this branch against itself", and
+# that branch cannot be exercised from inside a checkout that already satisfies
+# it. A missing comparand has to be provably LOUD.
+sr="$TMPD/scratch"
+sr_rows=0
+if mkdir -p "$sr/scripts" \
+   && git -C "$sr" init -q >/dev/null 2>&1 \
+   && git -C "$sr" config user.email selftest@example.invalid \
+   && git -C "$sr" config user.name selftest \
+   && printf 'x\n' > "$sr/scripts/unrelated.txt" \
+   && git -C "$sr" add -A \
+   && git -C "$sr" -c commit.gpgsign=false commit -qm 'no ledger yet' >/dev/null 2>&1; then
+    sr_noledger=$(git -C "$sr" rev-parse HEAD)
+    mkdir -p "$sr/$(dirname "$RUST_LEDGER")"
+    printf '# header\ncrates/a.rs:1\n' > "$sr/$RUST_LEDGER"
+    if git -C "$sr" add -A \
+       && git -C "$sr" -c commit.gpgsign=false commit -qm 'add ledger' >/dev/null 2>&1; then
+        sr_case() { # sr_case <label> <expect-mode> <ref>
+            local label="$1" want="$2" got
+            got=$(resolve_base_ref "$sr" "$3")
+            got="${got%%$'\t'*}"
+            sr_rows=$((sr_rows + 1))
+            if [ "$got" != "$want" ]; then
+                printf 'FAIL  comparand %-24s want %-12s got %s\n' "$label" "$want" "$got"
+                tbl_bad=1
+            fi
+        }
+        sr_case 'ref does not exist'   UNRESOLVABLE 'refs/heads/no-such-branch-xyzzy'
+        sr_case 'ref predates ledger'  ABSENT       "$sr_noledger"
+        sr_case 'ref carries ledger'   MERGEBASE    HEAD
+    else
+        printf 'FAIL  comparand table: could not commit in the scratch repo, so the\n'
+        printf '      UNRESOLVABLE/ABSENT branches are UNTESTED. That is not a skip.\n'
+        tbl_bad=1
+    fi
+else
+    printf 'FAIL  comparand table: could not build the scratch repo, so the branch\n'
+    printf '      that must never be taken is UNTESTED. A selftest that silently\n'
+    printf '      skips its hardest case is the defect this guard is about.\n'
+    tbl_bad=1
+fi
+
 # SIGPIPE REGRESSION CASE. Every fixture above is one line long, and on a
 # one-line file the `-q` form and the capture form behave identically — so the
 # whole table above stays green against a revert to `| grep -q`. This case is
@@ -721,12 +947,13 @@ fi
 
 if [ "$tbl_bad" -eq 0 ]; then
     printf 'ok    sigpipe: hit found though upstream emits %s bytes (>64KB buffer)\n' "$upstream_bytes"
-    printf 'ok    case table: %s shell must-match, %s must-not-match, %s cfg, %s rust, %s ledger — all correct\n' \
+    printf 'ok    case table: %s shell must-match, %s must-not-match, %s cfg, %s rust,\n' \
         "$(( $(grep -c . "$ctl/must_match") + $(grep -c . "$ctl/must_match_shapes") ))" \
         "$(grep -c . "$ctl/must_not_match")" \
         "$(( $(grep -c . "$ctl/cfg_must_match") + $(grep -c . "$ctl/cfg_must_not_match") ))" \
-        "$(( $(grep -c . "$ctl/rust_must_match") + $(grep -c . "$ctl/rust_must_not_match") ))" \
-        "$lr_rows"
+        "$(( $(grep -c . "$ctl/rust_must_match") + $(grep -c . "$ctl/rust_must_not_match") ))"
+    printf '               %s ledger, %s shrink-only, %s comparand — all correct\n' \
+        "$lr_rows" "$so_rows" "$sr_rows"
 else
     rc=1
 fi
