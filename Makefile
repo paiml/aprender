@@ -134,7 +134,7 @@ test-model: ## Run model falsification tests ONE AT A TIME (requires models/, ol
 	             f_perf_003 f_trueno_004 f_trueno_008 f_rosetta_002 f_qa_002; do \
 		echo "  ⏳ $$test"; \
 		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 \
-		cargo test --features model-tests --test falsification_spec_v10_tests "$$test" \
+		cargo test -p aprender-core --features model-tests --test falsification_spec_v10_tests "$$test" \
 			> /tmp/apr-test-model-$$test.log 2>&1 \
 			|| { rc=1; echo "  ❌ $$test FAILED"; }; \
 		grep "test result:" /tmp/apr-test-model-$$test.log || true; \
@@ -145,7 +145,7 @@ test-model: ## Run model falsification tests ONE AT A TIME (requires models/, ol
 test-spec: ## Run ALL spec falsification tests (structural only, no models)
 	@echo "🔬 Running spec structural tests..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 \
-		cargo test --features model-tests \
+		cargo test -p aprender-core --features model-tests \
 			--test falsification_spec_v10_tests \
 			--test falsification_stress_tests \
 			--test falsification_gpu_state_tests \
