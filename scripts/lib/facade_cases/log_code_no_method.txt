@@ -1,0 +1,5 @@
+error[E0599]: no method named `verify` found for struct `Proof`
+ --> examples/compat_probe.rs:9:11
+  |
+9 |     proof.verify();
+  |           ^^^^^^ method not found in `Proof`
