@@ -80,7 +80,7 @@ jobs:
           - name: blackwell-gb10
             arch: ARM64
             select: blackwell
-    runs-on: [self-hosted, Linux, "${{ matrix.arch }}", cuda]
+    runs-on: [self-hosted, Linux, "${{ matrix.arch }}", cuda, "${{ matrix.select }}"]
     timeout-minutes: 90
     env:
       APR_PARITY_MODEL: ${{ vars.APR_PARITY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr' }}
