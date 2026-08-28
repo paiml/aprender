@@ -1,0 +1,3 @@
+error: couldn't read examples/compat_invoke.rs: No such file or directory (os error 2)
+
+error: could not compile `provable-contracts` (example "compat_invoke") due to 1 previous error

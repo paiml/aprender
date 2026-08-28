@@ -106,6 +106,35 @@ FACADE_WS="${REPO_ROOT}/crates/facades"
 # "not the aprender target dir"; only cache locality differs, so the fallback
 # is safe rather than silent.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# cargo exits non-zero for two categories of reason, and only one of them is
+# about the code under test. aprender#2574 taught this for the `cargo test`
+# block below -- "the reader could not tell a signature drift from an OOM-killed
+# rustc" -- but the fix stopped at that one block and left this residual, which
+# is the shape a published-artifact audit keeps finding: the earlier fix was
+# real and incomplete.
+#
+# On 2026-08-27 the residual came due. rustc was un-spawnable on a clean-room
+# runner (`could not execute process ... (os error 2)`) while compiling
+# `equivalent` -- a crate that cannot fail to compile -- and this gate reported
+# `0.3.1 consumer code no longer compiles against the facades`. `gate`
+# hard-requires guard-runner-labels, so a runner fault presented as a facade
+# regression and blocked every open PR behind a phantom.
+#
+# ENV still exits 1. A gate that goes green on "we could not tell" is the
+# defect class this repo names most often. The claim just has to be true.
+classify_cargo_failure() {  # $1=logfile -> ENV | CODE
+    # Anchored on cargo's OWN framing of a spawn/IO/resource fault, never on a
+    # bare phrase: `No such file or directory` also appears in the legitimate
+    # rustc diagnostic for a source file the repo really is missing, and that
+    # is CODE. See row C7.
+    if grep -qE 'could not execute process|could not parse/generate dep info|No space left on device|signal: (9|15)|failed to acquire package cache lock|error: failed to download|Connection refused|Temporary failure in name resolution' "$1"; then
+        printf 'ENV\n'
+    else
+        printf 'CODE\n'
+    fi
+}
+
 if [ "${1:-}" = "--self-test" ]; then
     # Must-match / must-not-match table for the structural checker. Fixtures are
     # committed JSON under scripts/lib/facade_cases/ rather than inline
@@ -147,8 +176,36 @@ if [ "${1:-}" = "--self-test" ]; then
     run_case 'row 7 a facade declaring a [[bin]] is REJECTED' 1 root_good.json facade_cli_declares_bin.json 'FAIL  R7'
     run_case 'row 8 the signpost facade depending on upstream is REJECTED' 1 root_good.json facade_cli_depends_upstream.json 'FAIL  R3'
 
+    # ---- Rows C1..C7: the failure CLASSIFIER -------------------------------
+    # Rows 1-8 above probe the python structural checker only. The classifier
+    # is a NEW surface, so it gets its own must-match/must-not-match table
+    # rather than inheriting rows 1-8's green: extending a guard's scope
+    # requires re-mutating in the new scope, the old proof does not transfer.
+    # Guard regexes in this repo have been wrong five times; every one was
+    # caught by a table like this and none by review.
+    run_classify() {  # name want fixture
+        local name="$1" want="$2" got
+        got="$( classify_cargo_failure "$CASES/$3" )"
+        if [ "$got" = "$want" ]; then
+            printf 'ok    %s -> %s\n' "$name" "$got"
+        else
+            printf 'FAIL  %s: classified %s, expected %s\n' "$name" "$got" "$want"; fails=1
+        fi
+    }
+    run_classify 'C1 rustc un-spawnable (the 2026-08-27 outage)' ENV  log_env_rustc_missing.txt
+    run_classify 'C2 ENOSPC via dep-info'                        ENV  log_env_enospc.txt
+    run_classify 'C3 OOM-killed rustc (signal 9)'                ENV  log_env_oom_kill.txt
+    run_classify 'C4 package cache lock unavailable'             ENV  log_env_cache_lock.txt
+    run_classify 'C5 a genuine unresolved import'                CODE log_code_unresolved_import.txt
+    run_classify 'C6 a genuine missing method'                   CODE log_code_no_method.txt
+    # C7 is the discrimination case and the reason the pattern is anchored on
+    # cargo's spawn framing rather than on the bare phrase: rustc says
+    # "No such file or directory (os error 2)" for a source file the repo is
+    # actually missing, and that is a real defect the gate must still report.
+    run_classify 'C7 missing SOURCE file is CODE, not ENV'       CODE log_code_missing_source.txt
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (8/8)\n'
+    printf '\nSELF-TEST PASSED (8/8 structural + 7/7 classifier)\n'
     exit 0
 fi
 
@@ -157,7 +214,8 @@ printf '=== crates.io compatibility facades (check_facade_compat.sh) ===\n\n'
 rc=0
 
 ROOT_MD="$(mktemp)"; FAC_MD="$(mktemp)"; BINLOG="$(mktemp)"; TESTLOG="$(mktemp)"
-trap 'rm -f "${ROOT_MD:?}" "${FAC_MD:?}" "${BINLOG:?}" "${TESTLOG:?}"' EXIT
+CHECKLOG="$(mktemp)"
+trap 'rm -f "${ROOT_MD:?}" "${FAC_MD:?}" "${BINLOG:?}" "${TESTLOG:?}" "${CHECKLOG:?}"' EXIT
 ( cd "$REPO_ROOT" && cargo metadata --no-deps --format-version 1 ) > "$ROOT_MD" 2>/dev/null
 ( cd "$FACADE_WS" && cargo metadata --no-deps --format-version 1 ) > "$FAC_MD" 2>/dev/null
 # VACUOUS guard: an empty or unparsable metadata document must be RED, never a
@@ -200,12 +258,25 @@ else
 fi
 
 printf -- '\n--- COMPATIBILITY: 0.3.1 consumer code against the facade -----------\n'
-if ( cd "$FACADE_WS" && cargo check --quiet --workspace --all-targets --target-dir "$TD" ) 2>&1 \
-        | grep -vE '^(warning: [a-z-]+@|    Finished|\s*$)'; then :; fi
-if ( cd "$FACADE_WS" && cargo check --quiet --workspace --all-targets --target-dir "$TD" ) >/dev/null 2>&1; then
+# ONE invocation, exactly as the block below. This ran cargo TWICE: the first
+# for display, the second -- output to /dev/null -- for the verdict. So the text
+# shown to the reader was produced by a different run, under a different machine
+# state, than the one that decided. #2574 states the rule six lines down; this
+# block predated it. `rc=$?` is read directly and never through a pipe.
+if ( cd "$FACADE_WS" && cargo check --quiet --workspace --all-targets --target-dir "$TD" ) > "$CHECKLOG" 2>&1; then
     printf 'ok    27 vendored 0.3.1 examples + probes compile against the facades\n'
+elif [ "$( classify_cargo_failure "$CHECKLOG" )" = 'ENV' ]; then
+    printf 'ENV   cargo check could not run to a verdict on this host -- this is a\n'
+    printf '      runner fault, NOT evidence that the facades regressed. Triage the\n'
+    printf '      runner (toolchain, disk, OOM), then re-run. cargo output (%s lines):\n' \
+        "$( wc -l < "$CHECKLOG" | tr -d ' ' )"
+    sed 's/^/      | /' "$CHECKLOG"
+    rc=1
 else
-    printf 'FAIL  0.3.1 consumer code no longer compiles against the facades\n'; rc=1
+    printf 'FAIL  0.3.1 consumer code no longer compiles against the facades\n'
+    printf '      cargo output follows (%s lines):\n' "$( wc -l < "$CHECKLOG" | tr -d ' ' )"
+    sed 's/^/      | /' "$CHECKLOG"
+    rc=1
 fi
 
 printf -- '\n--- BEHAVIOUR: the five 0.3.1 attribute macros still expand ---------\n'
