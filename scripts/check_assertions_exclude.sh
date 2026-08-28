@@ -264,6 +264,27 @@ if [ "$nsites" -eq 0 ] && [ -s "$BASELINE" ]; then
   exit 1
 fi
 
+# THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
+#
+# Everything above compares the scan against the baseline AS IT STANDS IN THE
+# WORKING TREE, and that is not a ratchet. NEW (a finding with no entry) and
+# STALE (an entry with no finding) are the only two properties a working tree
+# can answer, and a commit that appends one line AND lands the matching
+# violation satisfies both at once: not new, because it is baselined; not
+# stale, because the finding is real.
+#
+# Measured, not argued: appending one entry cloned from this file's own last
+# real entry returned rc=0 from this guard, under its own words:
+#     "the committed sum can only fall"
+# Twelve guards in scripts/ failed the same probe.
+#
+# So growth is now compared against merge-base(HEAD, origin/main), falling
+# back to the origin/main TIP because CI checks out shallow — a ref this
+# branch cannot rewrite, and never the branch against itself.
+# shellcheck source=scripts/lib_baseline_ratchet.sh
+. "${REPO_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+baseline_ratchet_check "${REPO_ROOT}" scripts/assertion_exclusion_baseline.txt keyed || exit 1
+
 if [ ! -f "$BASELINE" ]; then
   printf 'FAIL: %s is missing. Create it with --update-baseline.\n' "$BASELINE"
   exit 1

@@ -4,8 +4,10 @@
 #
 # THE RATCHET: this file may only SHRINK. Remove a line by deleting
 # the claim, or by citing the evidence/ receipt that produced it
-# within three lines of it. Adding a line requires editing this
-# header and arguing for it.
+# within three lines of it. A line may only LEAVE this file: it is
+# compared against origin/main by check_perf_claims_cite_receipts.sh
+# and by check_baseline_ratchets.sh, so an append is REFUSED, not
+# merely discouraged.
 #
 # A DANGLING citation is never baselined — see the guard header.
 book/src/best-practices/performance.md:250

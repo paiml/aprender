@@ -128,8 +128,17 @@ run_lane() { # run_lane <class> <apr-flags> <llama-ngl> -> writes $WORK/<class>.
 # A published apr has no GPU path at all, so its only honest lane is cpu, and
 # that is the finding rather than a gap in coverage.
 run_lane cpu "--no-gpu" 0
-if "$APR" serve run --help 2>&1 | grep -q -- '--gpu' && \
-   strings -a "$APR" 2>/dev/null | grep -qE 'cudarc|libcuda\.so|libcublas|Metal'; then
+# Both probes read a herestring, never a pipe. `grep -q` exits on its FIRST
+# match, the producer takes SIGPIPE, and `set -o pipefail` hands the pipeline
+# the producer's 141 -- so the condition was FALSE on a binary that does
+# contain the markers. Measured on gx10 and reproduced on lambda: 141 on
+# 10/10 repeats with pipefail, 0 without, while the pattern matches 5 times.
+# Every receipt therefore recorded `accel_absent` for a CUDA-capable apr,
+# which is a fabricated provenance field emitted by the provenance producer.
+APR_HELP="$( "$APR" serve run --help 2>&1 )"
+APR_STRINGS="$( strings -a "$APR" 2>/dev/null )"
+if grep -q -- '--gpu' <<< "$APR_HELP" && \
+   grep -qE 'cudarc|libcuda\.so|libcublas|Metal' <<< "$APR_STRINGS"; then
     run_lane accel "--gpu" 999
 else
     # Say WHY, in the receipt, in a form the gate can read. A gate that demands
