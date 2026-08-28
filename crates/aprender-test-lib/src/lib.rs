@@ -564,6 +564,14 @@ pub mod animation;
 )]
 pub mod presentar;
 
+/// APR-PERF-GATE-001 v2.2 §4.4 — the serving-performance measurement protocol.
+///
+/// Termination rule, metric definitions, bootstrap CI, and raw-sample retention
+/// for `apr test llm bench`. Ungated on purpose: CI runs
+/// `cargo nextest run --profile ci --workspace --lib` with no `--features`, so a
+/// protocol placed behind the `llm` feature would never be tested in CI.
+pub mod perf_gate;
+
 /// LLM Testing: Correctness assertions and load testing for OpenAI-compatible APIs.
 ///
 /// Feature-gated behind `llm`. Provides HTTP client, assertion builders,

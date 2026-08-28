@@ -59,6 +59,12 @@ mp4 = { workspace = true, optional = true }
 crossterm = { workspace = true, optional = true }
 regex = { workspace = true }
 sha2 = { workspace = true }
+# PERF-024 (APR-PERF-GATE-001 v2.2 §4.4.5): raw per-request samples are retained
+# as gzipped JSONL beside every receipt -- a summary-only receipt cannot be
+# resampled and is rejected. Not feature-gated: `src/perf/` must compile (and
+# its tests must RUN) under default features, because CI is
+# `cargo nextest run --profile ci --workspace --lib` with no --features.
+flate2 = "1"
 serde_yaml_ng = { workspace = true }
 
 # Tracing and UUID (available on all targets)
