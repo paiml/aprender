@@ -38,12 +38,84 @@ build_flags_gx10   = "cmake -B build -DGGML_CUDA=ON -DGGML_CUDA_ARCHITECTURES=12
 build_flags_intel  = "cmake -B build -DGGML_NATIVE=ON"
 build_flags_mini   = "cmake -B build -DGGML_METAL=ON"
 
-# BOOTSTRAP. `build_commit = "UNPINNED"` is the honest state today: no ratio
-# has been measured yet, so there is nothing to invalidate by choosing a pin
-# later. The resolver treats UNPINNED as "report, never gate" — it will not
-# silently accept whatever llama.cpp happens to be installed and call it
-# pinned. Set this to the real build tag in the commit that first measures a
-# ratio, and that commit is the start of the comparable series.
+# ── PER-HOST COMMITS (PERF-033, aprender#2706) ─────────────────────────────
+#
+# `build_commit` above is the FLEET DEFAULT. Any host may override it with
+# `build_commit_<host>`, in the same style as the flags, and the resolver reads
+# `build_commit_$LLAMA_PIN_HOST` when that key exists and the global otherwise.
+#
+# WHY AN OVERRIDE HAS TO EXIST. The flags were already per-host while the
+# commit was one global value, and the flags are per-host precisely because the
+# comparator is a DIFFERENT ARTIFACT on each machine. Nothing guarantees one
+# upstream commit configures, compiles and runs on x86_64+CUDA, aarch64+CUDA,
+# AVX-512 CPU and arm64 Metal at once. When one does not, today's shape offers
+# only two moves: bump the global — invalidating every OTHER host's series for
+# a problem on one host — or let that host run unpinned. A declared per-host
+# commit is the third move, and it is the only one that keeps the property.
+#
+# WHY IT IS AN OVERRIDE AND NOT A REQUIRED KEY PER HOST. A default that every
+# host shares is the state we actually want: it is what makes the four hosts'
+# comparators the SAME upstream code, differing only in the flags each platform
+# needs. A missing per-host key therefore means "this host uses the fleet pin",
+# not "this host is unpinned" — every path ends at a literal commit, and a
+# binary that does not report it is refused exactly as before.
+#
+# WHAT AN OVERRIDE COSTS, stated because it is a real cost: two hosts on
+# different commits have ratios that are not comparable TO EACH OTHER. That was
+# already true — a 4090 and a GB10 and a Xeon are not comparable either, and
+# the receipts are per host (evidence/dogfood/<version>/<host>.json) for that
+# reason. What must stay true is that each host's series is comparable ACROSS
+# TIME, and a per-host pin is what preserves that.
+#
+# No host overrides today. That is a finding, not an omission — see the survey
+# below.
+#
+# ── THE FLEET, SURVEYED 2026-08-28 (PERF-033) ──────────────────────────────
+#
+# PERF-030 recorded gx10 as unable to reach a measurement because its
+# comparator reports `version: 1 (23b8cc49)` and the pin says 39173bcac. The
+# resolver's refusal was CORRECT and the diagnosis was incomplete: gx10 has
+# FOUR llama.cpp build trees, and the parity chain was pointed at the wrong
+# one. Every string below is the binary's own `--version` output, read on the
+# host on 2026-08-28:
+#
+#   lambda  x86_64 + RTX 4090 (sm_89)
+#     /home/noah/src/llama.cpp/build/bin        version: 7746 (39173bcac)  MATCHES
+#
+#   gx10    aarch64 + GB10 (sm_121)
+#     ~/src/llama.cpp-pin/build/bin             version: 7746 (39173bcac)  MATCHES
+#         CMakeCache: GGML_CUDA=ON, CMAKE_CUDA_ARCHITECTURES=121, Release;
+#         llama-bench + llama-cli + llama-server all present; built 2026-08-25.
+#     ~/llama.cpp/build-perf011/bin             version: 1 (23b8cc49)      refused
+#     ~/llama.cpp/build/bin                     version: 1 (23b8cc4)       refused
+#     ~/src/llama.cpp/build/bin                 version: 1 (b0f0dd3)       refused
+#
+#   intel   x86_64, no discrete GPU
+#     ~/src/llama.cpp/build/bin                 version: 1 (35bee03)       refused
+#         llama-server only — no llama-cli, and build/tools/llama-bench is the
+#         cmake object DIRECTORY, not a binary. intel cannot run the CLI lane
+#         until llama-bench is built there.
+#
+#   mini    arm64 macOS + Metal
+#     no llama.cpp binary found anywhere on the host.
+#
+# So the pin is SATISFIABLE on lambda and on gx10 today, with no override, and
+# is unsatisfied on intel and mini because the comparator was never built there
+# — a build task, not a declaration problem. Declaring intel's 35bee03 or
+# mini's absence as this fleet's pin would be recording whatever the machine
+# happens to have and calling it a decision, which is the one thing this file
+# exists to prevent.
+#
+# BOOTSTRAP / UNPINNED. `"UNPINNED"` is the honest sentinel for "no comparator
+# has been chosen yet", and it is expressible at BOTH levels: globally, and per
+# host as `build_commit_mini = "UNPINNED"` for a host that has not chosen one
+# while the rest of the fleet is pinned. The resolver treats UNPINNED as
+# "report, never gate" — it will not silently accept whatever llama.cpp happens
+# to be installed and call it pinned, and scripts/lib/bench_receipt.py rejects a
+# parity receipt whose comparator build_commit is UNPINNED, so an existence-only
+# row can never harden into a threshold by accident. Set the real build tag in
+# the commit that first measures a ratio on that host; that commit is the start
+# of its comparable series.
 
 
 # ── THE FAIRNESS PROTOCOL (PARITY-010, aprender#2677) ──────────────────────
