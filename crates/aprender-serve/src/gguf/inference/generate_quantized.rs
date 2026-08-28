@@ -185,21 +185,37 @@ impl OwnedQuantizedModel {
         top_p: f32,
         r: f32,
     ) -> u32 {
-        // Apply temperature
-        let scaled: Vec<f32> = logits.iter().map(|&x| x / temperature).collect();
+        // PERF-034: one reusable per-thread buffer instead of three fresh Vecs per
+        // token. On Qwen2.5 (vocab 152,064) the old body allocated `scaled` (608 KB),
+        // `indexed` (2.4 MB), the stable sort's n/2 scratch (~1.2 MB) and `probs`,
+        // *every single token*, on the hottest loop in the system.
+        crate::sampling_select::with_candidate_scratch(|indexed| {
+        // Temperature scaling is fused into the candidate build: the separate
+        // `scaled: Vec<f32>` was read exactly once and then dropped.
+        crate::sampling_select::fill_scaled(indexed, logits, temperature);
 
-        // Get top-k indices
-        let mut indexed: Vec<(usize, f32)> = scaled.iter().copied().enumerate().collect();
-        indexed.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        // Get top-k indices.
+        //
         // `top_k == 0` means "disabled" in llama.cpp and Ollama, and both the
         // Ollama-compat and OpenAI-compat surfaces pass it straight through. An
         // unguarded `truncate(0)` empties `indexed`, so `probs` is empty and the
         // inverse-CDF loop below falls through to `probs.last().map_or(0, ..)` —
         // returning token 0 on EVERY step (`!!!!!!`). Guard exactly as the live
         // MoE sampler does (infer/qwen3_moe_generate.rs:104).
-        if top_k > 0 && top_k < indexed.len() {
-            indexed.truncate(top_k);
-        }
+        //
+        // PERF-034: this was `sort_by` over the WHOLE vocabulary — O(V log V), about
+        // 2.6M `partial_cmp` calls through a closure — to keep `top_k = 40` entries.
+        // `retain_top_k_sorted` selects in O(V) and sorts only the survivors. It is
+        // bit-exact: the stable `sort_by` resolved value ties by original position,
+        // which on an `.enumerate()`-built vector is index-ascending, and that total
+        // order is now stated explicitly so an unstable selection cannot disagree.
+        // See `sampling_select` for the full argument and its equivalence tests.
+        let keep = if top_k > 0 {
+            top_k.min(indexed.len())
+        } else {
+            indexed.len()
+        };
+        crate::sampling_select::retain_top_k_sorted(indexed, keep);
 
         // Top-p (nucleus): keep the smallest prefix whose cumulative softmax mass
         // reaches `top_p`. Ported from the live MoE sampler
@@ -232,24 +248,27 @@ impl OwnedQuantizedModel {
             }
         }
 
-        // Softmax over the filtered set
+        // Softmax over the filtered set.
+        //
+        // PERF-034: the per-element probability is folded straight into the walk
+        // below instead of being collected into a `probs: Vec<(usize, f32)>`. Rust
+        // f32 arithmetic is strict IEEE-754 single precision with no contraction, so
+        // `(v - max_val).exp() / exp_sum` produces the identical bits whether it is
+        // stored in a Vec first or consumed immediately.
         let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
         let exp_sum: f32 = indexed.iter().map(|(_, v)| (v - max_val).exp()).sum();
-        let probs: Vec<(usize, f32)> = indexed
-            .iter()
-            .map(|(i, v)| (*i, (v - max_val).exp() / exp_sum))
-            .collect();
 
         // Inverse-CDF draw from the categorical distribution
         let mut cumulative = 0.0;
-        for &(idx, prob) in &probs {
-            cumulative += prob;
+        for &(idx, v) in indexed.iter() {
+            cumulative += (v - max_val).exp() / exp_sum;
             if cumulative >= r {
                 return idx as u32;
             }
         }
 
-        probs.last().map_or(0, |(idx, _)| *idx as u32)
+        indexed.last().map_or(0, |(idx, _)| *idx as u32)
+        })
     }
 
     /// Top-k sampling with temperature (entropy-seeded RNG).

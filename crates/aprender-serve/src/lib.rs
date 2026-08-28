@@ -411,6 +411,13 @@ pub mod safetensors_cuda;
 /// Converts HuggingFace SafeTensors models to AprTransformer for inference.
 /// Requires config.json and tokenizer.json in the same directory.
 pub mod safetensors_infer;
+/// PERF-034: partial selection + scratch reuse shared by the decode samplers.
+///
+/// The top-k samplers full-sorted the entire vocabulary (152k entries on Qwen2.5)
+/// once per token to keep `top_k = 40`, allocating ~3.6 MB per token in the process.
+/// This module provides the `O(V)` selection and the reusable per-thread scratch
+/// they now share, along with the argument for why the replacement is bit-exact.
+pub mod sampling_select;
 /// Continuous batching scheduler
 ///
 /// Per spec §8: Implements continuous batching for LLM serving based on vLLM/Orca.
