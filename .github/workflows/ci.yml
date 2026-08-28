@@ -518,6 +518,28 @@ jobs:
         run: bash scripts/check_lockfile_current.sh
       - name: "lockfile guard must still turn RED (case table)"
         run: bash scripts/check_lockfile_current.sh --self-test
+      # aprender#2734. The required `ci / gate` is produced by the reusable
+      # sovereign-ci workflow, whose lint and test steps both END in a fallback
+      # that narrows SCOPE on failure instead of reporting it:
+      #   cargo clippy $CLIPPY_ARGS ... || cargo clippy -p "$REPO_NAME" ... || fail
+      # The second command is not a retry of the same work -- it is a strictly
+      # smaller scope, and taking it emits no ::warning:: at all. So a green
+      # gate cannot distinguish "the configured scope passed" from "the
+      # configured scope failed and a smaller one passed".
+      #
+      # The fallback is UPSTREAM and nothing here can disarm it. What this repo
+      # can do is hold the two scopes EQUAL, so a silent narrowing has nothing
+      # to mask. MEASURED: they are equal today only because the `aprender`
+      # facade declares exactly two targets (lib + bin) and `--all-targets`
+      # adds test/bench/example targets that do not exist. That is an accident
+      # of the tree, not an invariant -- one root-level tests/*.rs opens the
+      # window with no diff to review. This step is what makes it an invariant.
+      # Metadata + YAML only (`cargo metadata --no-deps` does no resolution, so
+      # it cannot rewrite the lock the two steps above just checked).
+      - name: "`ci / gate` must have nothing left to narrow (case table)"
+        run: bash scripts/check_gate_scope_not_narrowed.sh --self-test
+      - name: "`ci / gate` must have nothing left to narrow"
+        run: bash scripts/check_gate_scope_not_narrowed.sh
       # #2640: the SAME defect class as the two steps above, one level up. The
       # dogfood release runner existed as two 1170-line copies whose divergence
       # was, in every hunk, a pin for a release verifier that one copy had and

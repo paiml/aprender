@@ -1,0 +1,13 @@
+# Fixture: the caller opts into the workspace test scope, which arms the
+# upstream `--workspace --lib` -> `--lib -p <repo>` narrowing.
+name: CI
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  ci:
+    uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
+    with:
+      repo: aprender
+      test_workspace: true
+    secrets: inherit
