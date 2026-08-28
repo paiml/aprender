@@ -347,7 +347,7 @@ apr,POST /stream/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/a
 apr,POST /tokenize,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:96,high
 apr,POST /v1/batch/completions,9,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:150,medium
 apr,POST /v1/chat/completions,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:132,high
-apr,"POST /v1/chat/completions (stream:true, SSE)",4,x86_64-linux;nvidia-cuda,llama.cpp,no,3,http-apr-serve,"crates/aprender-serve/src/api/openai_handlers.rs:539-570 (backend branches crates/aprender-serve/src/api/cuda_chat_backend.rs:121,267,390,808)",high
+apr,"POST /v1/chat/completions (stream:true, SSE)",4,x86_64-linux;nvidia-cuda,llama.cpp,no,3,http-apr-serve,"crates/aprender-serve/src/api/openai_handlers.rs:755-787 (stream branches crates/aprender-serve/src/api/cuda_chat_backend.rs:129,275,405,520,986; ignore_eos fail-closed 12,362,471)",high
 apr,POST /v1/chat/completions/stream,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:137,high
 apr,POST /v1/completions,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:131,high
 apr,"POST /v1/completions (stream:true, SSE)",2,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/gpu_completions_handler.rs:398 (SSE :340-378),high

@@ -42,6 +42,77 @@ llama_pin_get() {
         "$llama_pin_file" | head -1
 }
 
+# Same reader, but for a key whose value may be UNQUOTED (`threads = 8`) or
+# quoted (`batch_size = "default"`). llama_pin_get above matches quoted values
+# only, which is correct for build_commit and silently returns EMPTY for every
+# numeric knob — an empty value that reads as "not declared" is how a knob goes
+# missing without anyone noticing.
+llama_pin_get_raw() {
+    llama_pin_raw_key="${1:-}"
+    llama_pin_raw_file="${2:-scripts/llama_pin.toml}"
+    [ -n "$llama_pin_raw_key" ] || return 2
+    [ -f "$llama_pin_raw_file" ] || return 2
+    sed -n "s/^[[:space:]]*${llama_pin_raw_key}[[:space:]]*=[[:space:]]*\(.*\)[[:space:]]*$/\1/p" \
+        "$llama_pin_raw_file" \
+        | head -1 \
+        | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/'
+}
+
+# THE COMPARATOR SERVER'S KNOB FLAGS, BUILT FROM THE DECLARATION (#2737).
+#
+# WHY THIS IS A FUNCTION AND NOT A LINE IN THE CALLER. It used to be a line in
+# the caller — three of them, in fact, and they did not agree:
+#
+#   llama_pin.toml:92    batch_size = 1                  the declaration
+#   llama_pin.toml:173   ... -b 1 --no-warmup            hardcoded, copy 1
+#   parity_host_receipt.sh:108  ... -b 1 --no-warmup     hardcoded, copy 2
+#
+# A declared value that no execution path reads is not a declaration, it is a
+# comment that looks enforceable. Two hardcoded copies of it can drift from the
+# declaration and from each other, and nothing would have said so. Now there is
+# ONE producer: the declaration is the input, this function is the only reader,
+# and scripts/check_comparator_flags.sh refuses any invocation that disagrees
+# with what this emits.
+#
+# `-ngl` is deliberately a PARAMETER, not a pin key. The cpu lane must run the
+# comparator at `-ngl 0` so a cpu-class apr is never scored against a CUDA
+# comparator (parity_host_receipt.sh, reason 3 in its header). That is a lane
+# property, not a protocol knob, and forcing it through the pin would make the
+# cpu lane unexpressible.
+#
+# Usage:  llama_comparator_server_flags <ngl> [pin-file]
+# Prints the flags on one line; word-splitting at the call site is intended.
+# Returns non-zero WITHOUT printing a partial list if the declaration cannot be
+# read — a half-built comparator invocation is worse than none.
+llama_comparator_server_flags() {
+    llama_cs_ngl="${1:-}"
+    llama_cs_file="${2:-scripts/llama_pin.toml}"
+    [ -n "$llama_cs_ngl" ] || return 2
+    [ -f "$llama_cs_file" ] || return 2
+
+    llama_cs_ctx=$(llama_pin_get_raw context_length "$llama_cs_file")
+    llama_cs_thr=$(llama_pin_get_raw threads "$llama_cs_file")
+    llama_cs_bat=$(llama_pin_get_raw batch_size "$llama_cs_file")
+    llama_cs_par=$(llama_pin_get_raw comparator_parallel "$llama_cs_file")
+
+    # Every one of these must be DECLARED. An empty read is a missing key, and
+    # a missing key here is the silent-degree-of-freedom failure (#2677).
+    for llama_cs_v in "$llama_cs_ctx" "$llama_cs_thr" "$llama_cs_bat" "$llama_cs_par"; do
+        [ -n "$llama_cs_v" ] || return 3
+    done
+    # Numeric knobs must be numeric; the two optional ones are numeric OR the
+    # literal "default", which means "pass no flag and let llama.cpp choose".
+    case "$llama_cs_ctx" in ''|*[!0-9]*) return 3 ;; esac
+    case "$llama_cs_thr" in ''|*[!0-9]*) return 3 ;; esac
+    case "$llama_cs_bat" in default) ;; ''|*[!0-9]*) return 3 ;; esac
+    case "$llama_cs_par" in default) ;; ''|*[!0-9]*) return 3 ;; esac
+
+    llama_cs_out="-ngl $llama_cs_ngl -c $llama_cs_ctx -t $llama_cs_thr"
+    [ "$llama_cs_bat" = "default" ] || llama_cs_out="$llama_cs_out -b $llama_cs_bat"
+    [ "$llama_cs_par" = "default" ] || llama_cs_out="$llama_cs_out -np $llama_cs_par"
+    printf '%s --no-warmup\n' "$llama_cs_out"
+}
+
 # Resolve and verify. Returns:
 #   0 = pinned, running, and reporting the declared build
 #   1 = a binary was named but it is NOT the declared build (or cannot run)

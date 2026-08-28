@@ -8,6 +8,14 @@ fn try_safetensors_cuda_backend(
     start: Instant,
     cancel: &CancelToken,
 ) -> Option<Response> {
+    // PERF-039: fail closed rather than silently dropping `ignore_eos`.
+    if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
+        state,
+        request,
+        "SafeTensors CUDA",
+    ) {
+        return Some(r);
+    }
     let model_lock = state.safetensors_cuda_model()?;
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
@@ -350,6 +358,15 @@ fn try_apr_transformer_backend(
 ) -> Option<Response> {
     use crate::apr_transformer::GenerateConfig;
 
+    // PERF-039: fail closed rather than silently dropping `ignore_eos`.
+    if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
+        state,
+        request,
+        "APR transformer (f32)",
+    ) {
+        return Some(r);
+    }
+
     let apr_transformer = state.apr_transformer()?;
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
@@ -450,6 +467,14 @@ fn registry_fallback(
     start: Instant,
     cancel: &CancelToken,
 ) -> Response {
+    // PERF-039: fail closed rather than silently dropping `ignore_eos`.
+    if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
+        state,
+        request,
+        "dense registry",
+    ) {
+        return r;
+    }
     let model_id = if request.model == "default" || request.model.is_empty() {
         None
     } else {
@@ -621,7 +646,12 @@ async fn try_apr_q4k_chat_backend(
     let prompt_tokens = prompt_ids.len();
     let (max_tokens, temperature, _eos_single) =
         chat_gen_params(request, &tokenizer, state.model_eos_token_id());
-    let eos_ids = state.model_eos_ids();
+    // PERF-039: ignore_eos empties the stop set for this backend too.
+    let eos_ids = if request.ignore_eos.unwrap_or(false) {
+        Vec::new()
+    } else {
+        state.model_eos_ids()
+    };
 
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
@@ -818,6 +848,23 @@ fn cpu_chat_backends(
     registry_fallback(state, request, request_id, start, cancel)
 }
 
+/// PERF-039: `ignore_eos: true` empties the stop set, which every decode loop
+/// reads as "never stop on a token". `max_tokens` still bounds the loop.
+///
+/// Extracted rather than written inline so that merging PERF-039 does not move
+/// `try_qwen3_moe_backend`'s cognitive complexity (26 on main, already over the
+/// pre-commit hook's threshold of 25) even by one.
+fn stop_tokens_unless_ignore_eos(
+    request: &ChatCompletionRequest,
+    eos: impl IntoIterator<Item = u32>,
+) -> Vec<u32> {
+    if request.ignore_eos.unwrap_or(false) {
+        Vec::new()
+    } else {
+        eos.into_iter().collect()
+    }
+}
+
 /// aprender#1789 Option B: qwen3_moe MoE-aware dispatch for /v1/chat/completions.
 ///
 /// Detects qwen3_moe architecture + dispatches inference through
@@ -919,7 +966,7 @@ fn try_qwen3_moe_backend(
             .get_token_id("<|im_end|>")
             .or_else(|| tokenizer.get_token_id("<|endoftext|>"))
     });
-    let stop_tokens: Vec<u32> = eos_id.into_iter().collect();
+    let stop_tokens: Vec<u32> = stop_tokens_unless_ignore_eos(request, eos_id);
     let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature: request.temperature.unwrap_or(defaults.temperature),
