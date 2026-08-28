@@ -55,13 +55,21 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 #
 #   set   — the entry LIST may only shrink. Subset, not count: counting passes
 #           a swap, which is an append wearing the old total.
+#   coord — as set, plus ONE permitted growth: entries are <path>:<line>, and
+#           an added entry is legal only when its TEXT is already present in the
+#           same file at the comparand, at no greater count. That is a DETECTOR
+#           WIDENING — the violation was already in the tree and a better
+#           detector now sees it — and it is mechanically distinguishable from
+#           LAUNDERING, where the violation arrives in the same commit as its
+#           baseline entry and the text is therefore absent at the comparand.
+#           Opt-in per baseline; see lib_baseline_ratchet.sh's header.
 #   count — the file holds one integer, which may only fall.
 #   keyed — lines are <path><TAB><count>; no key may rise, no key may appear.
 #   none  — not a ratchet by its own stated contract; the reason is the value.
 classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassified
     case "$1" in
         assertion_exclusion_baseline.txt)        printf 'keyed\n' ;;
-        claim_literal_baseline.txt)              printf 'set\n' ;;
+        claim_literal_baseline.txt)              printf 'coord\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
@@ -261,6 +269,141 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
             esac
             printf '' > "$SR/$P"
 
+            # ---------------------------------------------------------------
+            # KIND `coord`: the widening rule, in BOTH directions.
+            #
+            # This is the row set that decides whether the rule is worth
+            # having. `coord` is strictly weaker than `set` on exactly one
+            # axis, so the LAUNDERING row is not a formality: if it does not
+            # go red, the rule buys a bookkeeping convenience at the price of
+            # the property PERF-028 exists to enforce, and the right answer
+            # would have been to drop the detector widening instead.
+            #
+            # The scratch repo's comparand carries a source file with two
+            # claims and a baseline naming only the first -- a detector that
+            # catches 1 of 2 shapes, which is PERF-010's situation in
+            # miniature.
+            CS='src/claims.md'
+            coord_setup() {
+                mkdir -p "$SR/src" || return 1
+                printf '%b' '# claims\napr is 8x slower than llama.cpp\napr is 2.9x faster than Ollama\nfiller\n' > "$SR/$CS" || return 1
+                printf '%b' '# header\nsrc/claims.md:2\n' > "$SR/$P" || return 1
+                git -C "$SR" add -A >/dev/null 2>&1 || return 1
+                git -C "$SR" -c commit.gpgsign=false commit -qm 'coord comparand' >/dev/null 2>&1 || return 1
+                SR_COORD=$(git -C "$SR" rev-parse HEAD) || return 1
+                return 0
+            }
+            # coord_row <label> <want-rc> <claims-file> <baseline-file>
+            coord_row() {
+                local got
+                printf '%b' "$3" > "$SR/$CS"
+                printf '%b' "$4" > "$SR/$P"
+                ( BASELINE_RATCHET_BASE_REF="$SR_COORD" \
+                  baseline_ratchet_check "$SR" "$P" coord ) >/dev/null 2>&1
+                got=$?
+                rows=$((rows + 1))
+                if [ "$got" != "$2" ]; then
+                    printf 'FAIL  %-46s want rc=%s got rc=%s\n' "$1" "$2" "$got"
+                    bad=1
+                fi
+            }
+            CS_BASE='# claims\napr is 8x slower than llama.cpp\napr is 2.9x faster than Ollama\nfiller\n'
+            if coord_setup; then
+                # -- the two acts the rule must separate --------------------
+                # WIDENING: the source file is untouched; the baseline gains
+                # the claim the old detector could not see. PERMITTED.
+                coord_row 'coord WIDENING: pre-existing text baselined' 0 \
+                    "$CS_BASE" '# header\nsrc/claims.md:2\nsrc/claims.md:3\n'
+                # LAUNDERING: the baseline gains an entry AND the violation it
+                # points at arrives in the same tree. REFUSED. If this row
+                # goes green the rule is worthless.
+                coord_row 'coord LAUNDERING: entry + its new violation' 1 \
+                    "$CS_BASE"'apr is 12x faster than vLLM\n' \
+                    '# header\nsrc/claims.md:2\nsrc/claims.md:5\n'
+
+                # -- discrimination: PER ENTRY, not per batch ---------------
+                # One qualifying widening does not license its neighbour.
+                coord_row 'coord one widening + one new text -> RED' 1 \
+                    "$CS_BASE"'apr is 12x faster than vLLM\n' \
+                    '# header\nsrc/claims.md:2\nsrc/claims.md:3\nsrc/claims.md:5\n'
+
+                # -- TEXT, not coordinate -----------------------------------
+                # The claim moved because a line was inserted above it. A
+                # coordinate-keyed rule calls that new; three of PERF-010's
+                # fourteen entries are exactly this.
+                coord_row 'coord claim MOVED by an insertion above it' 0 \
+                    '# claims\ninserted\napr is 8x slower than llama.cpp\napr is 2.9x faster than Ollama\nfiller\n' \
+                    '# header\nsrc/claims.md:3\nsrc/claims.md:4\n'
+                # ... and the same tree under kind `set` is a RED. This is the
+                # control that says the new kind is doing something, and names
+                # exactly what.
+                printf '%b' '# claims\ninserted\napr is 8x slower than llama.cpp\napr is 2.9x faster than Ollama\nfiller\n' > "$SR/$CS"
+                printf '%b' '# header\nsrc/claims.md:3\nsrc/claims.md:4\n' > "$SR/$P"
+                ( BASELINE_RATCHET_BASE_REF="$SR_COORD" \
+                  baseline_ratchet_check "$SR" "$P" set ) >/dev/null 2>&1
+                say_row 'coord control: same tree under kind set is RED' 1 $?
+
+                # -- occurrences may not RISE -------------------------------
+                # Copying an already-baselined claim to a second place in the
+                # same file would otherwise pass: its text IS at the comparand.
+                coord_row 'coord DUPLICATED claim (text at base, count up)' 1 \
+                    "$CS_BASE"'apr is 2.9x faster than Ollama\n' \
+                    '# header\nsrc/claims.md:2\nsrc/claims.md:5\n'
+
+                # -- fail closed. None of these ESTABLISHES a widening ------
+                coord_row 'coord added entry is not a coordinate' 1 \
+                    "$CS_BASE" '# header\nsrc/claims.md:2\nnot-a-coordinate\n'
+                coord_row 'coord added entry points past end of file' 1 \
+                    "$CS_BASE" '# header\nsrc/claims.md:2\nsrc/claims.md:999\n'
+                coord_row 'coord added entry points at a blank line' 1 \
+                    '# claims\napr is 8x slower than llama.cpp\n\nfiller\n' \
+                    '# header\nsrc/claims.md:2\nsrc/claims.md:3\n'
+                # A file absent at the comparand cannot witness anything, even
+                # when the identical text lives in a file that IS there.
+                printf '%b' 'apr is 2.9x faster than Ollama\n' > "$SR/src/new.md"
+                coord_row 'coord path absent at the comparand' 1 \
+                    "$CS_BASE" '# header\nsrc/claims.md:2\nsrc/new.md:1\n'
+                rm -f "$SR/src/new.md"
+
+                # -- and the ordinary ratchet properties still hold ---------
+                coord_row 'coord unchanged'        0 "$CS_BASE" '# header\nsrc/claims.md:2\n'
+                coord_row 'coord shrink to empty'  0 "$CS_BASE" '# header\n'
+                # A SWAP is still growth: the dropped entry does not pay for
+                # an added one whose text is new.
+                coord_row 'coord swap, count unchanged, new text' 1 \
+                    "$CS_BASE"'apr is 12x faster than vLLM\n' \
+                    '# header\nsrc/claims.md:5\n'
+
+                # The permitted path must also SAY it grew. A row reading
+                # "did not grow" after growth is the lying-verdict class this
+                # library is about, and it would read as green in a log.
+                printf '%b' "$CS_BASE" > "$SR/$CS"
+                printf '%b' '# header\nsrc/claims.md:2\nsrc/claims.md:3\n' > "$SR/$P"
+                w_out=$( BASELINE_RATCHET_BASE_REF="$SR_COORD" \
+                         baseline_ratchet_check "$SR" "$P" coord 2>&1 )
+                rows=$((rows + 1))
+                case "$w_out" in
+                    *'GREW BY 1'*'WIDENING'*) : ;;
+                    *)  printf 'FAIL  a permitted widening did not REPORT the growth. Its row:\n'
+                        printf '%s\n' "$w_out"
+                        bad=1 ;;
+                esac
+                rows=$((rows + 1))
+                case "$w_out" in
+                    *'did not grow'*)
+                        printf 'FAIL  a widening printed "did not grow" after growing.\n'
+                        bad=1 ;;
+                esac
+                git -C "$SR" checkout -q -- . >/dev/null 2>&1 || true
+                rm -f "$SR/$CS"
+                printf '%b' '# header\na\nb\n' > "$SR/$P"
+            else
+                printf 'FAIL  coord scratch fixture could not be built, so the WIDENING rule\n'
+                printf '      is UNTESTED in both directions. That is not a skip: the\n'
+                printf '      laundering row is the one that keeps this kind honest.\n'
+                bad=1
+            fi
+
             # A DELETED baseline is not "no growth". Both directions must be loud.
             rm -f "$SR/$P"
             ( BASELINE_RATCHET_BASE_REF="$SR_BASE" \
@@ -304,9 +447,9 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
         printf '\nSELF-TEST FAILED\n'
         exit 1
     fi
-    printf 'PASS  case table only: %s rows (set, count, keyed, comparand resolver,\n' "$rows"
-    printf '      end-to-end, classification totality). NO baseline in this tree was\n'
-    printf '      compared — run with no arguments for that.\n'
+    printf 'PASS  case table only: %s rows (set, coord, count, keyed, comparand\n' "$rows"
+    printf '      resolver, end-to-end, classification totality). NO baseline in\n'
+    printf '      this tree was compared — run with no arguments for that.\n'
     exit 0
 fi
 
@@ -323,9 +466,9 @@ while IFS= read -r f; do
     n_total=$((n_total + 1))
     if ! entry=$(classify "$f"); then
         printf 'FAIL  %s is not classified.\n' "scripts/$f"
-        printf '      Every baseline is either shrink-only (set / count / keyed) or is\n'
-        printf '      NOT a ratchet and says why. An unclassified file is neither, and\n'
-        printf '      "no rule" is how a baseline arrives that nothing ever compares.\n'
+        printf '      Every baseline is either shrink-only (set / coord / count / keyed)\n'
+        printf '      or is NOT a ratchet and says why. An unclassified file is neither,\n'
+        printf '      and "no rule" is how a baseline arrives that nothing ever compares.\n'
         printf '      Add it to classify() in %s.\n' "$(basename "$0")"
         rc=1
         continue

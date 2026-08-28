@@ -505,10 +505,20 @@ fi
 # So growth is now compared against merge-base(HEAD, origin/main), falling
 # back to the origin/main TIP because CI checks out shallow — a ref this
 # branch cannot rewrite, and never the branch against itself.
+#
+# KIND `coord`, NOT `set`. This baseline's entries are `<path>:<line>`
+# coordinates, and this guard is the one whose DETECTOR gets widened: PERF-010
+# took the ratio pattern from 1 of 6 shapes to 6 of 6, and fourteen claims that
+# were already in the tree became visible at once. `coord` permits exactly that
+# growth and nothing else — an added entry is legal only when its TEXT is
+# already present in the same file at the comparand, at no greater count. A
+# violation created in the same commit as its baseline entry is still refused,
+# which is the whole point of the ratchet. See lib_baseline_ratchet.sh's header
+# for why text and not coordinate: three of the fourteen had merely moved.
 RATCHET_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib_baseline_ratchet.sh
 . "${RATCHET_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
-baseline_ratchet_check "$RATCHET_ROOT" scripts/claim_literal_baseline.txt set || rc=1
+baseline_ratchet_check "$RATCHET_ROOT" scripts/claim_literal_baseline.txt coord || rc=1
 
 printf '\n'
 if [ "$rc" -eq 0 ]; then

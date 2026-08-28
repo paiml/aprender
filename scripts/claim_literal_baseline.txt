@@ -33,8 +33,15 @@
 # because the guard now looks where the claims are, not because new claims were
 # written. Shrink-only from here.
 #
-# WIDENED AGAIN 2026-08-28 (PERF-010). Twelve entries were ADDED, which a
-# shrink-only file forbids without an argument, so here it is.
+# WIDENED AGAIN 2026-08-28 (PERF-010). Fourteen entries were ADDED. The
+# permission is now MECHANICAL, not this header: check_no_claim_literals.sh
+# ratchets this file with kind `coord`, which admits an added entry only when
+# its TEXT is already present in the same file at the comparand, at no greater
+# count. That is a DETECTOR WIDENING and it is provable; LAUNDERING -- a
+# baseline entry and its violation arriving in one commit -- leaves the text
+# absent at the comparand and is still refused. The paragraphs below are the
+# record of WHY each line is here, which is worth keeping, but they are no
+# longer what makes the growth legal. See scripts/lib_baseline_ratchet.sh.
 #
 # The comparator pattern required the competitor's name to sit IMMEDIATELY
 # after the ratio and to be spelled with an ASCII `x`. Both assumptions fail on

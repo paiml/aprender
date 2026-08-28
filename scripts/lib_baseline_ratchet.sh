@@ -67,10 +67,65 @@
 # after the guarantee was overridden is lying in the way this whole file is
 # about.
 #
-# CONSEQUENCE, STATED PLAINLY: an entry may only LEAVE a ratcheted baseline.
-# Adding one is not "hard", it is refused, and there is no in-branch way around
-# it. If a baseline genuinely must grow, that is a decision to argue in a PR
-# that changes the guard's contract — not a line to slip into a data file.
+# CONSEQUENCE, STATED PLAINLY: an entry may only LEAVE a ratcheted baseline
+# of kind `set`, `count` or `keyed`. Adding one is not "hard", it is refused,
+# and there is no in-branch way around it.
+#
+# THE ONE GROWTH THAT IS NOT LAUNDERING (kind `coord`)
+# ---------------------------------------------------
+# There are two different acts and the rule above could not tell them apart:
+#
+#   LAUNDERING  a baseline entry and its matching violation added in the SAME
+#               commit. Nothing detected it before because nothing compared the
+#               file to anything; this library exists to refuse it, and it stays
+#               refused.
+#   WIDENING    the violations were ALREADY in the tree. A better detector now
+#               sees them. Nothing new entered.
+#
+# PERF-010 widened the `[X]`-figure guard from catching 1 of 6 ratio shapes to
+# 6 of 6 — it had required the competitor's name to sit immediately after the
+# ratio in ASCII, so "36.9x over FasterTransformer" and the U+00D7 form the
+# epic's own headline fabrication was written in both walked past it. Fourteen
+# pre-existing claims surfaced. Every one of them was in the tree at the
+# comparand, verbatim; three had merely MOVED because the same commit inserted
+# 28 lines above them. This ratchet refused all fourteen, and the only ways out
+# were to delete eight dated `docs/qa/` post-mortems — seven of which are
+# admissions that apr is SLOWER, and under-claiming is as much a reporting
+# failure here as over-claiming — or to drop the detector improvement. Neither
+# is a thing a bookkeeping rule should be able to force.
+#
+# So kind `coord` adds a rule that is MECHANICAL, never an argument in a header:
+#
+#     growth is permitted only when every added entry's TEXT is already present
+#     at the comparand, in the same file, at no greater number of occurrences.
+#
+#   * TEXT, not coordinate. A line that moved is not a new claim, and a
+#     coordinate-keyed test calls it one — the same lesson that re-keyed
+#     check_no_claim_literals.sh off FILE:LINE.
+#   * PER ENTRY, not per batch. One added entry whose text is absent at the
+#     comparand fails the whole file, however many of its neighbours qualify.
+#   * OCCURRENCES MAY NOT RISE. Otherwise a launderer could copy an existing
+#     baselined claim to a second place in the same file and call it a widening.
+#   * FAIL CLOSED. An entry that is not a `<path>:<line>` coordinate, a path
+#     absent at the comparand, a line past end of file, an empty line, an
+#     unreadable blob: none of these ESTABLISHES a widening, so each one leaves
+#     the growth refused. "Could not tell" is never green.
+#   * OPT IN. `set` is unchanged and stays the default. A baseline gets `coord`
+#     only when its entries really are coordinates AND a detector widening is
+#     the growth it must be able to express. Today that is
+#     claim_literal_baseline.txt alone; perf_claim_citation_baseline.txt is
+#     coordinate-keyed too and is deliberately left on the stricter `set`,
+#     because nothing has needed it.
+#
+# The row this prints says GREW-BY-WIDENING, never "did not grow". A gate that
+# reports no growth after growth is the lying-verdict class this whole file is
+# about.
+#
+# KNOWN LIMIT, stated rather than discovered later: `coord` cannot tell a
+# widening from a commit that MOVES a pre-existing violation to a new line and
+# baselines it there. Both leave the text present at the comparand at the same
+# count. The claim is the same claim either way, so the guard's own subject
+# matter is unchanged — but it is a hole, and it is here in writing.
 #
 # OPTION-NEUTRAL. This file is SOURCED, and `set` in a sourced file mutates the
 # CALLER's shell (see check_sourced_libs_option_neutral.sh, and the nightly it
@@ -134,6 +189,75 @@ _br_cmp_count() { # _br_cmp_count <base-file> <cur-file>
     return 0
 }
 
+# ---------------------------------------------------------------------------
+# _br_cmp_coord — subset semantics as `set`, PLUS the widening rule above.
+#
+# Unlike the other comparators this one needs the repository, not just two
+# files: establishing "the text was already there" means reading <path> out of
+# the comparand COMMIT, which is a different blob per entry.
+_br_cmp_coord() { # _br_cmp_coord <base-file> <cur-file> <root> <ref>
+    local base="$1" cur="$2" root="$3" ref="$4"
+    local added entry path lineno text n_now n_base blob slug tmp
+    BR_DELTA=""
+    BR_WIDENED=0
+    BR_REMOVED=$(LC_ALL=C comm -23 <(_br_entries "$base") <(_br_entries "$cur") | grep -c . || true)
+    added=$(LC_ALL=C comm -13 <(_br_entries "$base") <(_br_entries "$cur"))
+    [ -n "$added" ] || return 0
+
+    tmp=$(mktemp -d) || {
+        BR_DELTA='        + no scratch directory, so no widening can be ESTABLISHED and the
+          growth stands refused. "Could not tell" is not green.'
+        return 1
+    }
+
+    # A heredoc, never `printf | while`: the loop must run in THIS shell or
+    # every BR_* assignment below is discarded with the subshell.
+    while IFS= read -r entry; do
+        [ -n "$entry" ] || continue
+        path=${entry%:*}
+        lineno=${entry##*:}
+        case "$lineno" in
+            '' | *[!0-9]*)
+                BR_DELTA="${BR_DELTA}"$'\n'"        + ${entry}  -- not a <path>:<line> coordinate"
+                continue ;;
+        esac
+        if [ ! -f "$root/$path" ]; then
+            BR_DELTA="${BR_DELTA}"$'\n'"        + ${entry}  -- no such file in the working tree"
+            continue
+        fi
+        text=$(sed -n "${lineno}p" "$root/$path")
+        if [ -z "$text" ]; then
+            BR_DELTA="${BR_DELTA}"$'\n'"        + ${entry}  -- that line is empty or past end of file"
+            continue
+        fi
+        slug=$(printf '%s' "$path" | tr -c 'A-Za-z0-9' '_')
+        blob="$tmp/$slug"
+        if [ ! -f "$blob" ] && ! git -C "$root" show "${ref}:${path}" > "$blob" 2>/dev/null; then
+            rm -f "$blob"
+            BR_DELTA="${BR_DELTA}"$'\n'"        + ${entry}  -- ${path} does not exist at the comparand"
+            continue
+        fi
+        n_base=$(LC_ALL=C grep -Fxc -- "$text" "$blob" 2>/dev/null) || n_base=0
+        n_now=$(LC_ALL=C grep -Fxc -- "$text" "$root/$path" 2>/dev/null) || n_now=0
+        if [ "$n_base" -gt 0 ] && [ "$n_now" -le "$n_base" ]; then
+            BR_WIDENED=$((BR_WIDENED + 1))
+            continue
+        fi
+        if [ "$n_base" -eq 0 ]; then
+            BR_DELTA="${BR_DELTA}"$'\n'"        + ${entry}  -- NEW TEXT. Absent from ${path} at the comparand:"
+        else
+            BR_DELTA="${BR_DELTA}"$'\n'"        + ${entry}  -- that text now occurs ${n_now}x, was ${n_base}x at the comparand:"
+        fi
+        BR_DELTA="${BR_DELTA}"$'\n'"              ${text:0:100}"
+    done <<EOF
+$added
+EOF
+
+    rm -rf "${tmp:?}"
+    BR_DELTA=${BR_DELTA#$'\n'}
+    [ -z "$BR_DELTA" ]
+}
+
 # Comment stripping happens in grep, NOT in awk. An awk program carrying
 # `/^[ \t]*#/` reads to a shell linter as a `[ ` test with parentheses inside
 # it: bashrs reports SC1028/SC2104 errors against a line that is awk source,
@@ -183,7 +307,7 @@ baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
 # ---------------------------------------------------------------------------
 # The entry point every guard calls.
 #
-#     baseline_ratchet_check <root> <baseline-path-relative-to-root> <set|count|keyed>
+#     baseline_ratchet_check <root> <baseline-path-relative-to-root> <set|coord|count|keyed>
 #
 # rc 0 = the baseline did not grow against a ref this branch cannot rewrite.
 # rc 1 = it grew, or growth is UNMEASURABLE. Both are failures, and they are
@@ -191,7 +315,7 @@ baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
 
 baseline_ratchet_check() {
     local root="$1" path="$2" kind="$3"
-    local resolution mode ref tmp base_copy how note cmp_rc
+    local resolution mode ref tmp base_copy how note cmp_rc short
 
     if [ ! -f "$root/$path" ]; then
         printf 'FAIL  ratchet  %s is missing from the working tree. Growth is\n' "$path"
@@ -236,6 +360,7 @@ baseline_ratchet_check() {
 
     BR_DELTA=""
     BR_REMOVED=0
+    BR_WIDENED=0
     # `if` rather than `cmd; rc=$?`: a comparator returns 1 BY DESIGN on the
     # growth path, and a caller running `set -e` (check_no_claim_literals.sh
     # does) would die there before printing a single verdict row -- rc=1 with
@@ -243,6 +368,7 @@ baseline_ratchet_check() {
     # capture is the difference between a RED and a crash.
     case "$kind" in
         set)   if _br_cmp_set   "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
+        coord) if _br_cmp_coord "$base_copy" "$root/$path" "$root" "$ref"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         count) if _br_cmp_count "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         keyed) if _br_cmp_keyed "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         *)
@@ -263,9 +389,17 @@ baseline_ratchet_check() {
     fi
 
     if [ "$cmp_rc" -eq 0 ]; then
-        printf 'ok    ratchet  %s did not grow (%s removed) vs %s\n' \
-            "$path" "$BR_REMOVED" \
-            "$(git -C "$root" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"
+        short=$(git -C "$root" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")
+        if [ "${BR_WIDENED:-0}" -gt 0 ]; then
+            # NOT "did not grow". It grew. Say so, and say what made it legal.
+            printf 'ok    widened  %s GREW BY %s, and every added entry is a\n' "$path" "$BR_WIDENED"
+            printf '               WIDENING: its text is already in the same file at %s, at no\n' "$short"
+            printf '               greater count. Nothing new entered the tree -- a better\n'
+            printf '               detector saw what was already there. (%s removed.)\n' "$BR_REMOVED"
+        else
+            printf 'ok    ratchet  %s did not grow (%s removed) vs %s\n' \
+                "$path" "$BR_REMOVED" "$short"
+        fi
         printf '               comparand: %s (%s)\n' "$how" "$note"
         return 0
     fi
