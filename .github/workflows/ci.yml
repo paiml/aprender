@@ -304,6 +304,63 @@ jobs:
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
+      - name: CUDA compile check (PERF-035, epic APR-PERF-GATE-001)
+        # WHY THIS EXISTS. No required check passes `--features cuda`: the
+        # reusable `ci` job builds only the facade (cargo metadata reports
+        # workspace_default_members = 1, and `test_workspace` is not passed, so
+        # its scope is `--lib` on the root package), and the workspace-test step
+        # above runs default features. So the cuda-gated code in aprender-serve
+        # (622 cfg sites, ~80k lines) and aprender-train (570 sites) is not
+        # compiled by anything blocking on a PR.
+        #
+        # MUTATION-VERIFIED in the shape it ships. Injecting a type error into
+        # crates/aprender-serve/src/cuda/mod.rs leaves the universe of the step
+        # above -- `--workspace --lib` minus aprender-gpu/aprender-cuda-edge/
+        # aprender-compute -- GREEN (rc=0), while this command goes RED
+        # (rc=101, error[E0308]). Name the universe explicitly: the exclusions
+        # above stop only those crates' TESTS. aprender-gpu's cuda code is in
+        # fact type-checked on every PR, because aprender-explain depends on it
+        # with features = ["cuda"] non-optionally; aprender-serve's is not.
+        #
+        # WHY `check` AND NOT `build`. The clean-room container has no CUDA
+        # toolkit and does not need one: no build.rs in the workspace (25
+        # scanned) references nvcc/cublas/cuda, aprender-gpu's cuda feature is
+        # just ["dep:libloading"] (runtime dlopen), and `cargo check` never
+        # links. Verified by running this check in rust:1.95-slim with
+        # --network none, no nvcc, no libcuda and no libcublas: rc=0.
+        #
+        # HONEST SCOPE. This closes a ~24h window, not an infinite one --
+        # qwen-story-daily already compiles the same five cuda crates nightly
+        # via `cargo install --features cuda`. The value is merge-queue exposure
+        # and attribution, not "nothing else catches it". It is a deterministic
+        # compile check, not a wall-clock assertion, so it cannot flake into
+        # blocking the queue -- the failure mode that has hit four required
+        # checks in this repo, one of which blocked every open PR.
+        #
+        # COST (measured): 51s wall, 176 of 558 crate-units re-checked, +1.8 GB
+        # against a per-run target dir that measures 185 GB. It reuses this
+        # job's target-dir mount and sccache, which is what keeps it marginal.
+        #
+        # Deliberately its own step: the "Integration tests" step below is a
+        # single physical line that only one PR at a time may edit without a
+        # merge-queue conflict.
+        timeout-minutes: 25
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "/home/noah/data/sccache:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            "$IMAGE" \
+            cargo check --locked -p aprender --features cuda
       - name: Integration tests
         # #2465: the four FALSIFY-AUTH targets were appended here because they
         # were DARK — `falsify_auth_002` appeared nowhere in .github/, scripts/
