@@ -1749,7 +1749,19 @@ pub enum LlmSubcommand {
         /// samples and 60 s of wall-clock have elapsed — whichever bound is
         /// satisfied last. Ignores --warmup, --duration, --runs and --cooldown,
         /// which are the legacy mode's knobs.
-        #[arg(long, requires = "receipt")]
+        ///
+        /// The legacy mode's server-lifecycle and comparison flags are REFUSED
+        /// rather than ignored here. `apr serve --gpu` accepting a flag it
+        /// silently drops is one of this project's named adoption killers, and
+        /// a `--band --output report.json` that produced no report — or a
+        /// `--start` that never started anything and then failed a confusing
+        /// health check — would be the same defect in the tool that exists to
+        /// catch it. The band mode's report IS `--receipt`.
+        #[arg(
+            long,
+            requires = "receipt",
+            conflicts_with_all = ["start", "output", "baseline", "fail_on_regression"]
+        )]
         band: bool,
         /// Directory to write `receipt.json` and the gzipped JSONL samples into.
         #[arg(long)]
