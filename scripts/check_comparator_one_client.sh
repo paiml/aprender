@@ -44,11 +44,25 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 AWK_WALKER="$(mktemp)" || exit 2
+# Scratch for the walkers. WALK_ERR holds ONE invocation's stderr, WALK_FAIL
+# accumulates every invocation that failed, and WALK_LOG gets one line per
+# invocation that COMPLETED. The last two are files rather than variables on
+# purpose: every walk runs inside a `$( )` subshell, so a counter kept in a
+# variable would be discarded along with the subshell — which is how a walker
+# can die on every file and still leave the parent believing it swept the tree.
+WALK_ERR="$(mktemp)" || exit 2
+WALK_FAIL="$(mktemp)" || exit 2
+WALK_LOG="$(mktemp)" || exit 2
+WALK_TMP="$(mktemp)" || exit 2
 CASE_DIR=""
+PROBE_DIR=""
 cleanup() {
-    rm -f "$AWK_WALKER"
+    rm -f "$AWK_WALKER" "$WALK_ERR" "$WALK_FAIL" "$WALK_LOG" "$WALK_TMP"
     if [ -n "$CASE_DIR" ]; then
         rm -rf "${CASE_DIR:?}"
+    fi
+    if [ -n "$PROBE_DIR" ]; then
+        rm -rf "${PROBE_DIR:?}"
     fi
     return 0
 }
@@ -186,7 +200,32 @@ BEGIN { hd = ""; contline = 0; cont_q = 0; cont_cmdpos = 1 }
 }
 AWK
 
-walk_shell() { awk -f "$AWK_WALKER" "$1" 2>/dev/null; }
+# THE WALKER'S OWN EVIDENCE IS NEVER DISCARDED.
+#
+# `awk -f "$AWK_WALKER" "$1" 2>/dev/null` was the hole. A walker that is
+# missing, empty, unparseable or bypassed emits NO LINES, and no lines is
+# exactly what a clean file emits — so its failure was indistinguishable from
+# its success, and the one diagnostic that could tell them apart went to
+# /dev/null. Measured on this file before the fix: pointing AWK_WALKER at a
+# path that does not exist still printed "files=10469  invocations=0" and "OK".
+#
+# So every invocation now records three things: its exit status, its stderr,
+# and — on success only — one line in WALK_LOG that no other code path can
+# write. rc is read from the assignment directly, never through a pipe.
+_walk_failed() {   # tool, file, rc
+    printf '  WALKER-ERROR  %s on %s: rc=%s %s\n' "$1" "$2" "$3" \
+        "$(tr '\n' ' ' < "$WALK_ERR")" >&2
+    printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$WALK_FAIL"
+    return 1
+}
+
+walk_shell() {
+    local out rc
+    out="$(awk -f "$AWK_WALKER" "$1" 2>"$WALK_ERR")"; rc=$?
+    if [ "$rc" -ne 0 ] || [ -s "$WALK_ERR" ]; then _walk_failed awk "$1" "$rc"; return 1; fi
+    printf 'shell\t%s\n' "$1" >> "$WALK_LOG"
+    printf '%s' "$out"
+}
 
 # A make recipe is shell WRAPPED in make syntax. Two things have to go before
 # the shell walker sees it, or `\t@$(LLAMA_BENCH) -m $(MODEL)` reads as the
@@ -194,8 +233,16 @@ walk_shell() { awk -f "$AWK_WALKER" "$1" 2>/dev/null; }
 # and `-`, and make's `$(VAR)` — which is a variable reference, not a command
 # substitution. Line numbers are preserved because nothing is added or removed.
 walk_make() {
-    sed -e 's/\$(\([A-Za-z_][A-Za-z0-9_]*\))/$\1/g' -e 's/^\(\t\)[@+-]*/\1/' "$1" 2>/dev/null \
-      | awk -f "$AWK_WALKER" 2>/dev/null
+    local out rc
+    sed -e 's/\$(\([A-Za-z_][A-Za-z0-9_]*\))/$\1/g' -e 's/^\(\t\)[@+-]*/\1/' "$1" \
+        > "$WALK_TMP" 2>"$WALK_ERR"; rc=$?
+    if [ "$rc" -ne 0 ] || [ -s "$WALK_ERR" ]; then _walk_failed sed "$1" "$rc"; return 1; fi
+    # Two commands, not a pipeline: `out=$(a | b)` leaves PIPESTATUS describing
+    # the assignment, so the sed half of the old pipeline could fail unseen.
+    out="$(awk -f "$AWK_WALKER" "$WALK_TMP" 2>"$WALK_ERR")"; rc=$?
+    if [ "$rc" -ne 0 ] || [ -s "$WALK_ERR" ]; then _walk_failed awk "$1" "$rc"; return 1; fi
+    printf 'make\t%s\n' "$1" >> "$WALK_LOG"
+    printf '%s' "$out"
 }
 
 # Python and Rust cannot be walked as shell. There the comparator binary can
@@ -205,8 +252,83 @@ walk_make() {
 # does the reference to llama.cpp's compare-llama-bench.py in bench_receipt.py.
 LITERAL_RE='("|'"'"')([^"'"'"']*/)?llama-bench("|'"'"')'
 walk_literal() {
-    sed -e 's://.*$::' -e 's:^[[:space:]]*#.*$::' "$1" 2>/dev/null \
-      | grep -nE "$LITERAL_RE" || true
+    local out rc
+    sed -e 's://.*$::' -e 's:^[[:space:]]*#.*$::' "$1" > "$WALK_TMP" 2>"$WALK_ERR"; rc=$?
+    if [ "$rc" -ne 0 ] || [ -s "$WALK_ERR" ]; then _walk_failed sed "$1" "$rc"; return 1; fi
+    out="$(grep -nE "$LITERAL_RE" "$WALK_TMP" 2>"$WALK_ERR")"; rc=$?
+    # grep rc=1 is "no match", the ordinary answer here; rc>=2 is a real error.
+    # The old `|| true` swallowed both, so a grep that could not run read as a
+    # clean file. Stderr is checked at every rc, including 0.
+    if [ "$rc" -gt 1 ] || [ -s "$WALK_ERR" ]; then _walk_failed grep "$1" "$rc"; return 1; fi
+    printf 'literal\t%s\n' "$1" >> "$WALK_LOG"
+    printf '%s' "$out"
+}
+
+# ---------------------------------------------------------------------------
+# THE WALKER, PROVED ENGAGED — the second sentinel.
+#
+# The pre-filter sentinel further down proves the FILTER returned files. It
+# says nothing whatever about the walker that reads them, and the first version
+# of this guard treated the one as proof of the other. It is not: the filter
+# can hand over 200 candidates to a walker that is absent, empty, blind, mute
+# or bypassed, and the sweep then prints "invocations=0 / OK" over a tree it
+# never read. Five mutations of the walker alone were measured against that
+# version and every one of them PASSED (rc=0) with byte-identical output.
+#
+# An exit-status check alone does not close it either: emptying the awk program
+# leaves awk exiting 0 and printing nothing. So the walker has to produce
+# something only a WORKING walker can produce. Each walker is run here over a
+# fixture whose classification is known exactly, and its own output is compared
+# against the expected string — which carries the LINE NUMBER the walker itself
+# computed. The fixtures' first lines name the same token in prose, so a walker
+# that flags everything fails the probe as surely as one that flags nothing.
+#
+# The fixtures are written with printf from single-quoted format strings, so
+# the token sits in ARGUMENT position and this file still passes its own gate.
+# ---------------------------------------------------------------------------
+_probe_check() {   # label, expected, got
+    if [ "$3" = "$2" ]; then
+        return 0
+    fi
+    printf '  WALKER-DEAD  %s walker returned [%s], expected [%s]\n' "$1" "$3" "$2" >&2
+    return 1
+}
+
+prove_walkers_engaged() {
+    local d exp got bad=0
+    PROBE_DIR="$(mktemp -d)" || return 1
+    d="$PROBE_DIR"
+    case "$d" in
+        /tmp/*|/var/folders/*) : ;;
+        *) printf '  WALKER-DEAD  refusing probe dir %s\n' "$d" >&2; return 1 ;;
+    esac
+
+    # shell: line 1 is prose and must be ignored, line 2 is an invocation.
+    printf '# prose naming llama-bench is not an invocation\n./llama-bench -m probe.gguf -n 8\n' > "$d/probe.sh"
+    exp="$(printf '2\t%s' "$(sed -n '2p' "$d/probe.sh")")"
+    got="$(walk_shell "$d/probe.sh")"
+    _probe_check shell "$exp" "$got" || bad=1
+
+    # make: the recipe on line 3, after prefix stripping and $(VAR) rewriting.
+    printf '# prose naming llama-bench in a makefile\nbench:\n\t@$(LLAMA_BENCH) -m $(MODEL) -n 8\n' > "$d/probe.mk"
+    exp="$(printf '3\t\t$LLAMA_BENCH -m $MODEL -n 8')"
+    got="$(walk_make "$d/probe.mk")"
+    _probe_check make "$exp" "$got" || bad=1
+
+    # literal: line 1 is a comment stripped by sed, line 2 is a string literal.
+    printf '// llama-bench named in a comment stays green\nlet _ = Command::new("llama-bench").arg("-m");\n' > "$d/probe.rs"
+    exp="$(printf '2:%s' "$(sed -n '2p' "$d/probe.rs")")"
+    got="$(walk_literal "$d/probe.rs")"
+    _probe_check literal "$exp" "$got" || bad=1
+
+    # A walker that failed OUTRIGHT already filed itself; report that too, so a
+    # probe that somehow matched anyway cannot launder an errored invocation.
+    if [ -s "$WALK_FAIL" ]; then
+        printf '  WALKER-DEAD  %s walker invocation(s) errored during the probe\n' \
+            "$(grep -c . "$WALK_FAIL")" >&2
+        bad=1
+    fi
+    [ "$bad" = 0 ]
 }
 
 # UNIVERSE: tracked UNION working tree. A `git ls-files`-only universe hands an
@@ -229,6 +351,19 @@ universe() {
       find "$ROOT/crates" -mindepth 2 -maxdepth 3 -path '*/scripts/*' \
           \( -name '*.sh' -o -name '*.py' \) -type f 2>/dev/null \
           | sed "s|^$ROOT/||" || true
+      # ...and the same free pass was still open on the two types the globs
+      # above claim REPO-WIDE rather than under a directory: `*.rs` and the
+      # makefiles. Measured, not assumed: dropping
+      #     fn d() { let _ = Command::new("llama-bench").arg("-m"); }
+      # into crates/aprender-core/src/ left the gate at rc=0 while UNTRACKED
+      # and went to rc=1 the moment `git add -N` put it in ls-files' output.
+      # Same file, same walker, same predicate — only the universe differed.
+      # Pruned at the build dirs, which hold no hand-written comparator and
+      # would otherwise dominate the walk.
+      find "$ROOT" \( -name .git -o -name target -o -name 'target_*' \
+                     -o -name node_modules -o -name vendor -o -name .venv \) -prune -o \
+          -type f \( -name '*.rs' -o -name 'Makefile' -o -name '*.mk' \) -print 2>/dev/null \
+          | sed "s|^$ROOT/||" || true
     } | LC_ALL=C sort -u
 }
 
@@ -247,11 +382,16 @@ candidates() {
 }
 
 scan() {
-    local base="$1" rel f hits n=0 scanned=0 uni cand
+    local base="$1" rel f hits n=0 scanned=0 ncand=0 walked=0 uni cand
     uni="$(mktemp)"; cand="$(mktemp)"
     universe > "$uni"
     scanned=$(grep -c . "$uni")
     ( cd "$base" && candidates "$uni" ) > "$cand"
+    ncand=$(grep -c . "$cand")
+    # The probe above ran the walkers three times. Those invocations prove the
+    # walker is alive; they are not coverage of the TREE, so the ledger starts
+    # empty here and every line in it from now on is a file that was walked.
+    : > "$WALK_LOG"
     # POKA-YOKE FOR THE FILTER ITSELF. If xargs or grep fails — a BSD xargs with
     # no `-r`, a locale surprise, a permissions error — `candidates` returns
     # nothing, every file is skipped, and the gate reports OK over a full
@@ -262,7 +402,7 @@ scan() {
     if ! grep -qxF 'scripts/check_comparator_one_client.sh' "$cand"; then
         printf '  FILTER-BROKEN  the pre-filter did not return this guard itself\n' >&2
         rm -f "$uni" "$cand"
-        printf 'FILTER_BROKEN %s\n' "$scanned"
+        printf 'FILTER_BROKEN %s 0 0\n' "$scanned"
         return 0
     fi
     while IFS= read -r rel; do
@@ -283,14 +423,31 @@ scan() {
         fi
     done < "$cand"
     rm -f "$uni" "$cand"
-    printf '%s %s\n' "$n" "$scanned"
+    walked=$(grep -c . "$WALK_LOG")
+    # A walker that dies PART WAY through leaves the count short while the
+    # verdict still reads "invocations=0". The caller compares the two.
+    if [ -s "$WALK_FAIL" ]; then
+        printf 'WALKER_ERROR %s %s %s\n' "$scanned" "$ncand" "$walked"
+        return 0
+    fi
+    printf '%s %s %s %s\n' "$n" "$scanned" "$ncand" "$walked"
 }
 
 gate() {
     echo "=== one client, both servers (PERF-019 / I-15) ==="
-    local out n scanned
+    local out n scanned ncand walked
+    # STAGE 1 of 3. Nothing below this line means anything until the walker is
+    # known to work, because every way it can break is silent.
+    if ! prove_walkers_engaged; then
+        echo "FAIL: the walker did not classify its own probe fixtures. The"
+        echo "      sweep below would have reported 'invocations=0' over a tree"
+        echo "      it never read — a missing, empty, blind or bypassed walker"
+        echo "      emits no lines, and no lines is what a clean file emits."
+        return 1
+    fi
+    echo "  walker: ENGAGED (shell, make and literal probes classified exactly)"
     out="$(scan "$ROOT")"
-    n="${out%% *}"; scanned="${out##* }"
+    read -r n scanned ncand walked <<< "$out"
     if [ "$n" = "FILTER_BROKEN" ]; then
         echo "  files=$scanned  invocations=<not computed>"
         echo "FAIL: the candidate pre-filter returned nothing usable, so every"
@@ -299,7 +456,24 @@ gate() {
         echo "      on this host."
         return 1
     fi
-    echo "  files=$scanned  invocations=$n"
+    echo "  filter: ENGAGED (this guard is in its own candidate set)"
+    if [ "$n" = "WALKER_ERROR" ]; then
+        echo "  files=$scanned  candidates=$ncand  walked=$walked  invocations=<not computed>"
+        echo "FAIL: a walker invocation errored mid-sweep. Its stderr is above."
+        echo "      The verdict is withheld: an errored walk returns no lines,"
+        echo "      which is indistinguishable from a clean file."
+        return 1
+    fi
+    echo "  files=$scanned  candidates=$ncand  walked=$walked  invocations=$n"
+    # STAGE 3. Every candidate the filter produced must have been WALKED. This
+    # is the arithmetic the first version never did: it counted the universe,
+    # never the files a walker actually read.
+    if [ "$walked" -lt 1 ] || [ "$walked" != "$ncand" ]; then
+        echo "FAIL: the filter offered $ncand candidate(s) and a walker read"
+        echo "      $walked of them. A file that is never walked cannot be"
+        echo "      reported clean."
+        return 1
+    fi
     # VACUITY: a sweep over nothing is not a pass.
     if [ "$scanned" -lt 200 ]; then
         echo "FAIL: scanned only $scanned file(s); the universe collapsed."
@@ -322,6 +496,15 @@ gate() {
 # scripts/check_no_competing_harnesses.sh and check_no_fabricated_baselines.sh.
 # ---------------------------------------------------------------------------
 selftest() {
+    # The case table is written entirely in terms of the walkers, so a dead
+    # walker would turn every must-match row BROKE and every must-not-match row
+    # ok. Prove it first and say so, rather than reading the mixture.
+    echo "=== the walker is alive (probe fixtures, exact output) ==="
+    if ! prove_walkers_engaged; then
+        echo "  BROKE the walker cannot classify its own fixtures"
+        return 1
+    fi
+    echo "  ok    shell, make and literal walkers returned the expected lines"
     CASE_DIR="$(mktemp -d)" || exit 2
     case "$CASE_DIR" in /tmp/*|/var/folders/*) : ;; *) echo "refusing $CASE_DIR"; exit 2 ;; esac
     local pass=0 fail=0
