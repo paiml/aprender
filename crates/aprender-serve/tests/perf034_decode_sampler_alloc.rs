@@ -14,8 +14,14 @@
 //! ```text
 //! cargo test -p aprender-serve --release --test perf034_decode_sampler_alloc -- --nocapture
 //! PERF034_TIMING=1 cargo test -p aprender-serve --release \
-//!     --test perf034_decode_sampler_alloc -- --nocapture --test-threads=1
+//!     --test perf034_decode_sampler_alloc -- --nocapture
 //! ```
+//!
+//! No `--test-threads=1` is required, and that is load-bearing rather than tidy: the
+//! first version of this harness counted into process-global atomics and was correct
+//! ONLY under `--test-threads=1`. Run the default way, the nucleus test's
+//! allocations were charged to the steady-state test's window and both tests
+//! reported the same wrong total. Counting is now per-thread; see `Counting`.
 //!
 //! NOTE: the workspace CI job runs `--lib` only, so nothing here gates a merge. The
 //! behavioural equivalence proof deliberately lives in the lib unit tests
@@ -25,7 +31,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use realizar::gguf::OwnedQuantizedModel;
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::cell::Cell;
 use std::time::Instant;
 
 /// Qwen2.5's vocabulary. The whole point of PERF-034 is that this number is the
@@ -40,9 +46,41 @@ const TOP_K: usize = 40;
 
 struct Counting;
 
-static COUNTING_ON: AtomicBool = AtomicBool::new(false);
-static ALLOC_CALLS: AtomicU64 = AtomicU64::new(0);
-static ALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
+thread_local! {
+    /// Counting is per-THREAD, deliberately, and this is the second version.
+    ///
+    /// The first used process-global atomics, and it was WRONG in the only way that
+    /// mattered: `libtest` runs `#[test]`s on concurrent threads by default, so the
+    /// nucleus test's allocations landed inside the steady-state test's measurement
+    /// window and *both* tests then reported the same polluted total (33 allocations
+    /// / 5376 bytes -- byte-identical between two tests measuring different things).
+    /// It only read correctly under `--test-threads=1`, which is not how anyone runs
+    /// `cargo test`. A measurement harness that is silently wrong under the default
+    /// invocation is worse than no harness.
+    ///
+    /// `Cell<u64>` / `Cell<bool>` with `const` initialisers have no `Drop` and no
+    /// lazy initialiser, so reading them from inside `alloc` neither allocates nor
+    /// registers a TLS destructor -- the two ways a thread-local can deadlock or
+    /// recurse inside a global allocator.
+    static COUNTING_ON: Cell<bool> = const { Cell::new(false) };
+    static ALLOC_CALLS: Cell<u64> = const { Cell::new(0) };
+    static ALLOC_BYTES: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Charge one allocation of `size` bytes to the calling thread, if that thread is
+/// currently measuring. Allocations on every other thread are ignored.
+#[inline]
+fn record(size: usize) {
+    // `try_with` rather than `with`: during thread teardown the slot may be gone, and
+    // an allocator must never panic. These types have no destructor so this should
+    // not happen, but the allocator is the wrong place to be confident.
+    let _ = COUNTING_ON.try_with(|on| {
+        if on.get() {
+            let _ = ALLOC_CALLS.try_with(|c| c.set(c.get().wrapping_add(1)));
+            let _ = ALLOC_BYTES.try_with(|b| b.set(b.get().wrapping_add(size as u64)));
+        }
+    });
+}
 
 // SAFETY: `Counting` is a pure pass-through to the `System` allocator. It adds only
 // relaxed atomic counter updates, which allocate nothing and cannot re-enter the
@@ -50,10 +88,7 @@ static ALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
 // `GlobalAlloc` contract is therefore upheld exactly as `System` upholds it.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if COUNTING_ON.load(Ordering::Relaxed) {
-            ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
-            ALLOC_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
-        }
+        record(layout.size());
         // SAFETY: `layout` is forwarded unmodified from a caller that already
         // satisfied `GlobalAlloc::alloc`'s preconditions.
         unsafe { System.alloc(layout) }
@@ -65,10 +100,7 @@ unsafe impl GlobalAlloc for Counting {
         unsafe { System.dealloc(ptr, layout) }
     }
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        if COUNTING_ON.load(Ordering::Relaxed) {
-            ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
-            ALLOC_BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
-        }
+        record(new_size);
         // SAFETY: `ptr`/`layout` came from this allocator and `new_size` is the
         // caller's, all forwarded unmodified to the same `System` allocator.
         unsafe { System.realloc(ptr, layout, new_size) }
@@ -84,20 +116,21 @@ struct AllocStats {
     bytes: u64,
 }
 
-/// Count every heap allocation `f` performs. Single-threaded by construction — the
-/// counters are process-wide, so a concurrent test would pollute them, which is why
-/// the timing/allocation tests here do no work on other threads.
+/// Count every heap allocation `f` performs **on the calling thread**.
+///
+/// Concurrent tests cannot pollute this: another thread's allocations are charged to
+/// that thread's own counters, which nobody reads.
 fn measure_allocs<R>(f: impl FnOnce() -> R) -> (R, AllocStats) {
-    ALLOC_CALLS.store(0, Ordering::SeqCst);
-    ALLOC_BYTES.store(0, Ordering::SeqCst);
-    COUNTING_ON.store(true, Ordering::SeqCst);
+    ALLOC_CALLS.with(|c| c.set(0));
+    ALLOC_BYTES.with(|b| b.set(0));
+    COUNTING_ON.with(|on| on.set(true));
     let out = f();
-    COUNTING_ON.store(false, Ordering::SeqCst);
+    COUNTING_ON.with(|on| on.set(false));
     (
         out,
         AllocStats {
-            calls: ALLOC_CALLS.load(Ordering::SeqCst),
-            bytes: ALLOC_BYTES.load(Ordering::SeqCst),
+            calls: ALLOC_CALLS.with(Cell::get),
+            bytes: ALLOC_BYTES.with(Cell::get),
         },
     )
 }
@@ -280,7 +313,11 @@ fn perf034_steady_state_decode_sampling_allocates_nothing() {
 }
 
 #[test]
-fn perf034_nucleus_path_allocation_is_bounded_by_top_k_not_vocab() {
+fn perf034_nucleus_path_also_allocates_nothing() {
+    // top_p < 1.0 takes the nucleus branch, which used to materialise one
+    // `exp_vals: Vec<f32>` per token (measured at exactly 1.00 allocs/token,
+    // 160 B/token = 40 f32 at the default top_k). That Vec is gone too, so this
+    // configuration must also reach zero.
     const STEPS: usize = 32;
     let logits = pseudo_logits(VOCAB, 2);
 
@@ -299,22 +336,71 @@ fn perf034_nucleus_path_allocation_is_bounded_by_top_k_not_vocab() {
 
     let n = STEPS as u64;
     println!(
-        "PERF-034 allocation, top_p=0.9: {} allocations ({} bytes) over {n} steps \
-         = {:.2} allocs/token, {:.0} B/token",
+        "PERF-034 allocation, vocab={VOCAB} top_k={TOP_K} top_p=0.9, {n} decode steps\n\
+         \x20 after:  {:>7} allocations ({:>11} bytes) = {:>6.2} allocs/token, {:>10.0} B/token",
         new_stats.calls,
         new_stats.bytes,
         new_stats.calls as f64 / n as f64,
         new_stats.bytes as f64 / n as f64,
     );
 
-    // The nucleus branch still materialises one `exp_vals` Vec, but over the *top-k
-    // candidates*, not the vocabulary: bytes/token must scale with top_k, not VOCAB.
-    let per_token = new_stats.bytes as f64 / n as f64;
-    assert!(
-        per_token < (TOP_K * 64) as f64,
-        "nucleus allocation should be bounded by top_k ({TOP_K}), got {per_token:.0} B/token"
+    assert_eq!(
+        new_stats.calls, 0,
+        "nucleus-path decode sampling must not allocate; got {new_stats:?}"
     );
     assert_ne!(sink, u32::MAX);
+}
+
+/// The harness must measure THIS thread only.
+///
+/// This is the regression test for the defect this file shipped with: process-global
+/// counters, so a `#[test]` running concurrently on another thread was charged into
+/// whichever measurement window happened to be open. It went unnoticed because the
+/// harness was only ever run with `--test-threads=1`.
+///
+/// RED-on-regression: revert `record` to process-global atomics and this fails --
+/// the spawned thread's megabytes land in the measured total.
+#[test]
+fn perf034_measurement_is_isolated_from_other_threads() {
+    // Warm this thread's scratch so the measured region is genuinely allocation-free.
+    let logits = pseudo_logits(4096, 9);
+    let mut warm = StdRng::seed_from_u64(1);
+    let sink = OwnedQuantizedModel::sample_topk_seeded(&logits, 0.7, TOP_K, 1.0, &mut warm);
+
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_thread = std::sync::Arc::clone(&stop);
+    // A noisy neighbour doing exactly what a concurrent test does: allocate hard.
+    let noisy = std::thread::spawn(move || {
+        let mut churn = 0usize;
+        while !stop_thread.load(std::sync::atomic::Ordering::Relaxed) {
+            let v: Vec<u8> = vec![7u8; 64 * 1024];
+            churn = churn.wrapping_add(v.len());
+        }
+        churn
+    });
+
+    let mut rng = StdRng::seed_from_u64(2);
+    let (out, stats) = measure_allocs(|| {
+        let mut acc = 0u32;
+        for _ in 0..2048 {
+            acc ^= OwnedQuantizedModel::sample_topk_seeded(&logits, 0.7, TOP_K, 1.0, &mut rng);
+        }
+        acc
+    });
+
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let churn = noisy.join().unwrap_or(0);
+
+    assert!(
+        churn > 0,
+        "the noisy thread never allocated, so this proves nothing"
+    );
+    assert_eq!(
+        stats.calls, 0,
+        "another thread's allocations leaked into this measurement: {stats:?} \
+         (neighbour churned {churn} bytes)"
+    );
+    assert_ne!(sink ^ out, u32::MAX);
 }
 
 // ---------------------------------------------------------------------------

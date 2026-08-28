@@ -118,13 +118,21 @@ fn sample_from_logits(
         // Top-p (nucleus): keep smallest set with cumulative softmax >= top_p
         if config.top_p > 0.0 && config.top_p < 1.0 {
             let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
-            let exp_vals: Vec<f32> = indexed.iter().map(|(_, v)| (v - max_val).exp()).collect();
-            let total: f32 = exp_vals.iter().sum();
+            // PERF-034: the exponential is recomputed in the walk below instead of
+            // being collected into an `exp_vals: Vec<f32>` -- the last per-token
+            // allocation left on this path. `f32::exp` lowers to a call to `expf`
+            // (Rust links no vector math library, so there is no scalar-vs-vector
+            // variant to disagree), it is a deterministic pure function of its
+            // argument, and the sum is folded in the same left-to-right order. Every
+            // f32 is therefore bit-identical to the one the Vec used to hold; the
+            // cost is at most `top_k` extra exponentials, against one heap
+            // allocation per token.
+            let total: f32 = indexed.iter().map(|(_, v)| (v - max_val).exp()).sum();
             if total > 0.0 {
                 let mut cumulative = 0.0;
                 let mut cutoff = indexed.len();
-                for (i, &ev) in exp_vals.iter().enumerate() {
-                    cumulative += ev / total;
+                for (i, (_, v)) in indexed.iter().enumerate() {
+                    cumulative += (v - max_val).exp() / total;
                     if cumulative >= config.top_p {
                         cutoff = i + 1;
                         break;
