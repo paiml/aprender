@@ -90,8 +90,18 @@ impl Sampler for TopPSampler {
             .map(|(i, &logit)| (i, logit, (logit - max_logit).exp() / exp_sum))
             .collect();
 
-        // Sort by probability descending
-        indexed.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort by probability descending.
+        //
+        // PERF-034: `sort_unstable_by` allocates nothing; the stable `sort_by` it
+        // replaces allocated an n/2 scratch buffer. Making the tiebreak explicit
+        // (index ascending) is what the stable sort already did implicitly, so the
+        // permutation is unchanged — and with distinct indices the comparator has no
+        // ties, so the sorted order is unique.
+        indexed.sort_unstable_by(|a, b| {
+            b.2.partial_cmp(&a.2)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
 
         // Find cutoff
         let mut cumsum = 0.0;
