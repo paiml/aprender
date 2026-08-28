@@ -96,6 +96,23 @@ pub struct ChatCompletionRequest {
     /// qwen3-moe-sampling-v1 V1_002: same seed → same tokens.
     #[serde(default)]
     pub seed: Option<u64>,
+    /// Suppress end-of-sequence stopping, so a request generates exactly
+    /// `max_tokens` regardless of when the model would have stopped.
+    ///
+    /// **Not an OpenAI field.** vLLM, SGLang and llama.cpp's server all carry
+    /// it as an extension, and APR-PERF-GATE-001 v2.2 §4.3.1 requires it: with
+    /// EOS live, the tokens generated per band are whatever the model decides,
+    /// so an Arm A ratchet floor committed over that work drifts with the
+    /// model's stopping behaviour rather than with the server's throughput.
+    ///
+    /// **Not every chat backend honours it, and the ones that cannot REFUSE
+    /// the request rather than serving it with EOS still live** — a silently
+    /// dropped `ignore_eos` is worse than an absent one, because the harness
+    /// would then record a pinned token budget it never got. See
+    /// `chat_stop_tokens` for the backends that honour it and
+    /// `reject_unsupported_ignore_eos` for the ones that refuse.
+    #[serde(default)]
+    pub ignore_eos: Option<bool>,
     /// Number of completions to generate.
     ///
     /// Only `1` is supported; any other value is rejected at deserialization
