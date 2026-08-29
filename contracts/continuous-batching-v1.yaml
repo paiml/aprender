@@ -340,6 +340,56 @@ falsification_tests:
     interleaved conversion caches and the cuBLAS workspace are the candidates
     that exist only on the second call. APR_LAYER_TRACE=1 already reports the
     per-layer hidden state and would be extended to q/k/v and the FFN scratch.
+
+    ROUND 4 (PERF-050 cont., apr 0.64.0 (68d812e1a) and (072c22cd6), RTX 4090).
+    The bisect ran. Two results, one of them a refutation.
+
+    THE STACK IS DETERMINISTIC; THE OUTPUT STAGE IS NOT. With APR_LAYER_TRACE=1
+    under the configuration where SELF fails, the 28 per-layer hidden_buf2 traces
+    are BIT-IDENTICAL between the two forwards while the logits differ (SELF
+    cosine 0.673570). Twenty-eight layers are excluded in a single run. What
+    remains between the last identical hidden state and the differing logits is
+    the output stage: the output RMSNorm and the LM head GEMM.
+
+    A NAMED DEFECT, REFUTED AS THE CAUSE. cuBLASLt FP8 requires the batch
+    dimension aligned to 16, so cublas_prefill_fp8_gemm requests m_padded * k of
+    fp8_activation_scratch and issues the GEMM with m_padded as its batch
+    dimension, while convert_f32_to_e4m3_device_scaled writes only m * k. At m = 1
+    that is one row written and sixteen read. The tail is not inert -- E4M3 has
+    NaN encodings, and what occupies that region is the previous GEMM's
+    activations, so the GEMM's input depends on call history. It is a real defect
+    and wants its own ticket.
+
+    It is NOT the mechanism behind the non-determinism. Measured in ONE binary via
+    APR_FP8_PAD_ZERO rather than across two builds: SELF fails either way, cosine
+    0.286372 with the padding undefined and 0.563568 with it zeroed, both far from
+    the 1.0 identical inputs require. The flag therefore ships default OFF.
+
+    A FIX ATTEMPT REJECTED AND RECORDED. Zeroing inside
+    ensure_fp8_activation_scratch is the obvious placement and is wrong: that
+    allocator runs on every GEMM including the PMAT-084 activation-cache hits,
+    where K and V deliberately reuse Q's converted activation, so it wipes exactly
+    what the hit exists to reuse. It degraded the output rather than fixing it,
+    and was caught because the M=1 ORACLE's own argmax moved off the 13552 it
+    returns in every other run. The zeroing lives at the end of the conversion,
+    which runs only on a cache miss.
+
+    A PROCESS BLOCKER WORTH ITS OWN TICKET. cublas_prefill_gemm is ALREADY at
+    Cognitive 30 against a threshold of 25 at HEAD, verified with
+    `pmat analyze complexity` on a stashed tree. The pre-commit gate scans staged
+    files, so ANY edit to gemm.rs -- the file holding the FP8 GEMM at the centre of
+    this investigation -- is rejected regardless of what the edit does. That is why
+    the per-GEMM input fingerprint could not be placed at its natural site.
+
+    WHAT WOULD SETTLE IT NEXT. The remaining surface is small and named: output
+    RMSNorm (hidden_buf2 -> normed_hidden_buf) and the LM head GEMM
+    (normed_hidden_buf -> logits_buf) at m = 1, n = 151936, k = 1536. The same
+    double-forward already proves their INPUT is identical, so the next step is to
+    fingerprint normed_hidden_buf and logits_buf by content on both calls: if
+    normed_hidden differs, the batched RMSNorm is at fault; if it matches and the
+    logits differ, it is the LM head GEMM, whose FP8 route allocates
+    fp16_activation_scratch of n * m_padded = 2,430,976 elements on the first call
+    and reuses it on the second.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
