@@ -540,6 +540,14 @@ jobs:
         run: bash scripts/check_gate_scope_not_narrowed.sh --self-test
       - name: "`ci / gate` must have nothing left to narrow"
         run: bash scripts/check_gate_scope_not_narrowed.sh
+      # The #2766 complexity DELTA gate lives in a hook generated into .git/,
+      # which CI cannot inspect. What CI CAN inspect is the tracked wiring that
+      # installs it. A guard whose script exists while nothing calls it is the
+      # failure mode this repo keeps hitting, so the wiring is what gets checked.
+      - name: The complexity delta gate stays wired into every install surface
+        run: bash scripts/check_complexity_gate_wiring.sh
+      - name: Complexity delta gate case tables (33 regex + 14 behavioural + 19 installer)
+        run: make hooks-delta-test
       # #2640: the SAME defect class as the two steps above, one level up. The
       # dogfood release runner existed as two 1170-line copies whose divergence
       # was, in every hunk, a pin for a release verifier that one copy had and
