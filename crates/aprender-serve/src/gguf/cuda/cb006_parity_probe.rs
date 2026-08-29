@@ -164,6 +164,30 @@ impl OwnedQuantizedModelCuda {
             Err(e) => eprintln!("[CB-006-PARITY] batched re-run failed: {e}"),
         }
 
+        // 1b. SENSITIVITY control: the batched path on a PERTURBED embedding. Must DIVERGE.
+        //
+        // Across two runs the batched argmax was 15 whether the embedding was the real one or
+        // the all-zero buffer of the withdrawn measurement, while the oracle's argmax moved
+        // (19415 -> 13552) as an input-dependent function must. If a forward pass does not
+        // depend on its input it is not reading it, which is what the allocation-size lead
+        // predicts: a read of memory that was never written. SELF cannot see this — it feeds
+        // the same input twice and identical output is exactly what it wants.
+        let mut sens_in = state.embed_buf.clone();
+        for v in sens_in.iter_mut() {
+            *v = -*v;
+        }
+        match self
+            .executor
+            .forward_batched_to_logits(&sens_in, &state.pos_buf, nl, hd, id, vs, eps)
+        {
+            Ok(flipped) => report(
+                "SENSITIVE",
+                &compare_logits(&batched, &flipped),
+                "DIVERGE(else the batched forward ignores its input)",
+            ),
+            Err(e) => eprintln!("[CB-006-PARITY] sensitivity forward failed: {e}"),
+        }
+
         // 2. The M=1 oracle, on the single KV cache the same prefill populated. Stride is
         //    zeroed around the call so the M=1 path does not take the batched attention branch,
         //    exactly as add_slot_to_batch does.
