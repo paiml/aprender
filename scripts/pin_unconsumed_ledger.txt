@@ -1,0 +1,68 @@
+# pin_unconsumed_ledger.txt -- keys scripts/llama_pin.toml DECLARES that no code
+# reads, recorded 2026-08-29 by scripts/check_pin_keys_consumed.sh (#2743).
+#
+# THIS IS DEBT, NOT AN EXEMPTION. Every line is a field that looks enforceable
+# and is not: editing it changes nothing, and nothing says so. That is the
+# defect #2743 is about; these are the instances not fixed in the same pass,
+# each with the reason it was not.
+#
+# THE RATCHET IS TWO-WAY, and both directions are enforced by the guard:
+#   * a key that is dead and NOT listed here FAILS -- debt may not grow
+#   * a key listed here that BECOMES consumed FAILS until its line is deleted --
+#     the ledger may not rot into a list of things that are secretly fine
+#
+# Measured state when this file was written: 35 keys declared, 27 consumed
+# (PRODUCER 5, SUBSTITUTED 9, READ 13), 8 unconsumed and listed below.
+#
+# Fixed in #2743 rather than listed: flash_attention (now PRODUCER -- it reaches
+# the comparator invocation), band_floor and band_ceiling and
+# http_concurrency_bands (now READ by scripts/lib/parity_block.py, which had
+# hardcoded all three while emitting `protocol_ref: llama_pin.toml#protocol.http`
+# and citing the pin as its authority for numbers it had never read), name and
+# http_stream (now compared against the invocations in check_bench_protocol.sh).
+#
+# format:  <key>  <reason>
+
+# ---------------------------------------------------------------------------
+# THE SYMMETRIC GAP: apr's side of the protocol has no producer.
+# ---------------------------------------------------------------------------
+# The comparator's invocation is built by llama_comparator_server_flags from the
+# declaration, and check_comparator_flags.sh refuses any drift. apr's side has
+# no equivalent: scripts/parity_host_receipt.sh hand-writes `"$APR" serve run`
+# and `"$APR" test llm bench` argument by argument. So the three keys that
+# describe apr's invocation are declarations with no reader -- exactly the shape
+# that let `-b 1` be retyped three times on the comparator side (#2737).
+# Closing it means an apr-side producer, symmetric to the comparator's.
+#
+# harness_command left this list during the same change: joining http_stream to
+# it made check_bench_protocol.sh read it. Its ARGUMENTS are still hand-written,
+# so the join is partial -- but the key itself is now compared, and the ledger
+# records only keys nothing reads.
+apr_serve_command   no apr-side flags producer exists; parity_host_receipt.sh hand-writes the invocation
+apr_trials          declared 7, but no CLI-lane runner reads it; the HTTP lane uses http_runs instead
+
+# ---------------------------------------------------------------------------
+# WORKLOAD IDENTITY: declared, never applied.
+# ---------------------------------------------------------------------------
+# prompt_id names the workload the differential is supposed to run, and neither
+# invocation uses it: comparator_command passes `-p 0` (generation only) and
+# apr_command never substitutes it. Whether the fix is to apply the prompt or to
+# delete the key is the open half of #2743 -- a generation-only differential may
+# legitimately have no prompt, in which case the honest change is removal.
+prompt_id           declared workload id; comparator_command passes -p 0 and apr_command never substitutes it
+quantization        declared Q4_K_M; nothing verifies the model actually loaded is that quantization
+
+# ---------------------------------------------------------------------------
+# BUILD RECIPES: reproduction instructions with no mechanical reader.
+# ---------------------------------------------------------------------------
+# These are per-host cmake lines a human runs to build the comparator. They are
+# genuinely useful as a record, and genuinely unenforced: nothing checks that the
+# binary llama_bin.sh resolved was built with them. The gx10 line is the sharp
+# one -- its own comment says omitting -DGGML_CUDA_ARCHITECTURES=121 JITs from
+# stale PTX and produces CORRECT OUTPUT SLOWLY, firing no correctness gate. That
+# is a performance defect invisible to every check we have, described in a field
+# that no check reads.
+build_flags_lambda  per-host cmake recipe; nothing verifies the resolved binary was built with it
+build_flags_gx10    same, and the -DGGML_CUDA_ARCHITECTURES=121 omission it warns about is unguarded
+build_flags_intel   same
+build_flags_mini    same

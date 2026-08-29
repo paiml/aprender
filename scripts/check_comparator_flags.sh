@@ -75,14 +75,17 @@ printf '\nthe producer, against fixture declarations\n'
 TD=$(mktemp -d) || exit 2
 trap 'rm -rf "${TD:?}"' EXIT
 
-mkpin() { # mkpin <file> <batch_size> <comparator_parallel> <ctx> <threads>
-    printf 'batch_size = %s\ncomparator_parallel = %s\ncontext_length = %s\nthreads = %s\n' \
-        "$2" "$3" "$4" "$5" > "$1"
+mkpin() { # mkpin <file> <batch_size> <comparator_parallel> <ctx> <threads> <flash_attention>
+    printf 'batch_size = %s\ncomparator_parallel = %s\ncontext_length = %s\nthreads = %s\nflash_attention = %s\n' \
+        "$2" "$3" "$4" "$5" "$6" > "$1"
 }
 
-row() { # row <name> <b> <np> <ctx> <thr> <expected-rc> <expected-flags>
+row() { # row <name> <b> <np> <ctx> <thr> <expected-rc> <expected-flags> [fa]
     local name="$1" want_rc="$6" want="$7" got got_rc
-    mkpin "$TD/pin.toml" "$2" "$3" "$4" "$5"
+    # flash_attention defaults to "default" so the pre-#2743 rows keep asserting
+    # exactly what they asserted before: adding a knob must not silently rewrite
+    # the expectations of the rows that were already passing.
+    mkpin "$TD/pin.toml" "$2" "$3" "$4" "$5" "${8:-\"default\"}"
     got=$(llama_comparator_server_flags 999 "$TD/pin.toml"); got_rc=$?
     if [ "$got_rc" != "$want_rc" ]; then
         printf 'FAIL  %-46s rc=%s, expected rc=%s\n' "$name" "$got_rc" "$want_rc"; rc=1; return
@@ -105,6 +108,36 @@ row 'a missing context_length REFUSES'             '"default"' '"default"' ''   
 row 'a missing threads REFUSES'                    '"default"' '"default"' 4096 ''  3 ''
 row 'a non-numeric, non-default batch_size REFUSES' '"auto"'   '"default"' 4096 8   3 ''
 row 'a non-numeric comparator_parallel REFUSES'    '"default"' '"auto"'    4096 8   3 ''
+
+# flash_attention (#2743). It was DECLARED `false` and passed nowhere: neither
+# invocation carried `-fa`, so the file described a configuration that had never
+# run. It is the `-b 1` defect with the sign reversed -- there a declared value
+# was enforced and handicapped the comparator, here a declared value was ignored
+# -- and both make the receipt's account of how the number was measured untrue.
+#
+# The spelling is era-bound: 4230/4235 take a bare `-fa`, the pinned 7746 takes
+# `-fa [on|off|auto]` and defaults to auto. A pin bump must re-check it.
+#          name                                       b          np       ctx   thr rc  expected                                    fa
+row 'flash_attention default emits NO -fa'         '"default"' '"default"' 4096 8   0 '-ngl 999 -c 4096 -t 8 --no-warmup'          '"default"'
+row 'flash_attention true emits -fa on'            '"default"' '"default"' 4096 8   0 '-ngl 999 -c 4096 -t 8 -fa on --no-warmup'   'true'
+row 'flash_attention false emits -fa off'          '"default"' '"default"' 4096 8   0 '-ngl 999 -c 4096 -t 8 -fa off --no-warmup'  'false'
+row 'a non-boolean flash_attention REFUSES'        '"default"' '"default"' 4096 8   3 ''                                           '"auto"'
+row 'flash_attention rides alongside -b and -np'   2048        4           4096 8   0 '-ngl 999 -c 4096 -t 8 -b 2048 -np 4 -fa on --no-warmup' 'true'
+
+# A MISSING flash_attention must REFUSE, not default to something. This is the
+# row that would have caught #2743 at birth: before the fix the key was absent
+# from every code path, so a pin without it produced a full, confident,
+# flag-complete invocation.
+{
+    printf 'batch_size = "default"\ncomparator_parallel = "default"\n'
+    printf 'context_length = 4096\nthreads = 8\n'
+} > "$TD/nofa.toml"
+if out=$(llama_comparator_server_flags 999 "$TD/nofa.toml") && [ -n "$out" ]; then
+    printf 'FAIL  %-46s an undeclared flash_attention produced [%s]\n' \
+        'a MISSING flash_attention REFUSES' "$out"; rc=1
+else
+    printf 'ok    %-46s refused\n' 'a MISSING flash_attention REFUSES'
+fi
 
 # An absent declaration file must refuse too, not default to something.
 if out=$(llama_comparator_server_flags 999 "$TD/does-not-exist.toml") && [ -n "$out" ]; then
@@ -139,7 +172,7 @@ BENCH=$(cmd_of comparator_command)
 # {threads} is compared on the value it resolves to, not on the word.
 render() {
     local s="$1" k v
-    for k in context_length threads batch_size comparator_parallel gpu_layers; do
+    for k in context_length threads batch_size comparator_parallel gpu_layers flash_attention; do
         v=$(decl_of "$k")
         s=${s//\{$k\}/$v}
     done
@@ -153,7 +186,7 @@ SERVE_R=$(render "$SERVE")
 BENCH_R=$(render "$BENCH")
 
 # Flag by flag, both directions, naming BOTH sides on a mismatch.
-for f in -c -t -b -np; do
+for f in -c -t -b -np -fa; do
     want=$(flag_value "$f" "$BUILT")
     got=$(flag_value "$f" "$SERVE_R")
     if [ "$want" = "$got" ]; then
@@ -213,7 +246,7 @@ if [ -z "$launch" ]; then
     rc=1
 else
     bad=""
-    for f in -b -np -c -t -ngl; do
+    for f in -b -np -c -t -ngl -fa; do
         v=$(flag_value "$f" "$launch")
         case "$v" in
             ABSENT|PRESENT) ;;

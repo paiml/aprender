@@ -168,8 +168,51 @@ comparator_parallel = "default"
 # wearing a GPU label.
 gpu_layers = "all"
 
-# Flash attention: on or off, but the SAME on both sides.
-flash_attention = false
+# Flash attention. TRI-STATE, resolved exactly like batch_size and
+# comparator_parallel: "default" means pass no `-fa` and take whatever the
+# pinned build does; `true`/`false` force it on/off. Read by
+# llama_comparator_server_flags, and by nothing else.
+#
+# IT SAID `false` AND NOTHING PASSED `-fa` (#2743). Neither invocation carried
+# the flag, so this line described a configuration that had never run. It is the
+# `-b 1` defect (#2737) with the sign reversed: there a declared value WAS
+# enforced and handicapped the comparator; here a declared value was NOT
+# enforced, so the receipt's own record of how the number was measured was
+# untrue. Both make the same thing false.
+#
+# WHY THE SPELLING MATTERS, AND WHY IT IS NOT A ONE-LINE FIX. `-fa` changed
+# shape between llama.cpp releases. Both shapes were observed on this dev box,
+# read from the binaries' own `--help`:
+#
+#   4230 (0c39f44d)      -fa, --flash-attn                bare boolean,
+#   4235 (5c7a5aa0)                                       "(default: disabled)"
+#   7746 (39173bcac)     -fa, --flash-attn [on|off|auto]  argument, default auto
+#        ^ the pinned build
+#
+# So this one unenforced line was accidentally CORRECT in the older era, where
+# off was the default, and silently WRONG in the pinned one, where auto may turn
+# flash attention on. It rotted on a comparator bump with no diff in this repo —
+# the cross-time drift build_commit exists to prevent. An unenforced declaration
+# does not merely fail to help; it decays into a false statement.
+#
+# WHY "default" AND NOT `false`. Same reasoning §4.6.1 settled for batch_size
+# and comparator_parallel: the floor asks whether a user is better served by
+# llama.cpp, and that question only means something against the llama.cpp a user
+# actually gets. Forcing `-fa off` would impose a handicap on the comparator
+# that no user experiences, which is how `-b 1` manufactured a 2.39x
+# overstatement in apr's favour. "default" cannot flatter apr in that direction.
+#
+# NOT YET MEASURED, AND SAID SO PLAINLY. #2743 registers a falsification —
+# run the pinned llama-server with and without an explicit `-fa off` on one host
+# and compare PREFILL — which needs the pinned build (7746) and gx10/lambda
+# hardware. Neither is available where this change was written; the local
+# binaries are era-4230, where the flag does not even take the argument the
+# pinned build wants. So this changes the MECHANISM (the declaration now reaches
+# the invocation, whatever it says) and does not claim a measurement it has not
+# taken. The resolved value is REPORTed per lane by parity_host_receipt.sh from
+# the line the server prints about itself (§4.4.9), so the first real run
+# records what actually happened rather than what this file hoped.
+flash_attention = "default"
 
 # Threads for any CPU-side work.
 threads = 8

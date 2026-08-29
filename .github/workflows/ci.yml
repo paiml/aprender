@@ -1055,6 +1055,26 @@ jobs:
       # own 13-row mutation table in front of the verdict on EVERY invocation.
       - name: Comparator flags match the declaration
         run: bash scripts/check_comparator_flags.sh
+      # aprender#2743: the pin declared `flash_attention = false` and NOTHING
+      # passed -fa. The guard above compares declaration against invocation, but
+      # only for the five flags that had already bitten us (-c -t -b -np -ngl) --
+      # 5 of the 35 keys the file declares. check_bench_protocol.sh listed
+      # flash_attention among its REQUIRED keys and asked only whether it was
+      # DECLARED, never comparing it to anything: collection was flawless, the
+      # comparison was missing.
+      #
+      # This is the general rule -- every declared key must be read by something
+      # -- and it is behavioural where it can be: a key counts as reaching the
+      # comparator only if PERTURBING it changes what the flags producer emits.
+      # It also found band_floor/band_ceiling/http_concurrency_bands hardcoded in
+      # scripts/lib/parity_block.py, the file that decides PASS/FAIL, while that
+      # file's own output cites the pin as its authority for them.
+      #
+      # Static over committed files: no bench hardware, no model, no receipt, so
+      # a PR can and must fail it. Its case tables run in front of the verdict on
+      # every invocation.
+      - name: Every declared pin field is consumed
+        run: bash scripts/check_pin_keys_consumed.sh
       # The deepest check in the surface sweep -- real generation through
       # /v1/chat/completions -- had never executed once: the probe binary was
       # built without --features llm (clap advertises `llm` regardless, only the
