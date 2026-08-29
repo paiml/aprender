@@ -73,7 +73,7 @@ pub fn build_cta64_wmma_fp16_cpasync(m: u32, n: u32, k: u32) -> PtxKernel {
             let c_4 = ctx.mov_u32_imm(4);
             let c_5 = ctx.mov_u32_imm(5);
             let c_16 = ctx.mov_u32_imm(16);
-            let c_63 = ctx.mov_u32_imm(63);
+            let _c_63 = ctx.mov_u32_imm(63);
             let c_64 = ctx.mov_u32_imm(64);
             let c_256 = ctx.mov_u32_imm(a_threads);
             let c_a_smem = ctx.mov_u32_imm(a_smem_bytes as u32);
@@ -352,7 +352,7 @@ pub fn build_cta64_mma_fp16_cpasync(_m: u32, n: u32, k: u32) -> PtxKernel {
             let warp_m_off = ctx.mul_u32_reg(warp_row, c_16);
             let warp_n_off = ctx.mul_u32_reg(warp_col, c_16);
 
-            let smem_base = ctx.shared_base_addr();
+            let _smem_base = ctx.shared_base_addr();
             let is_a_thread = ctx.setp_lt_u32(tid, c_256);
 
             // === cp.async load offsets (IDENTICAL to wmma version) ===
@@ -659,7 +659,7 @@ pub fn build_cta64x128_mma_fp16_cpasync(_m: u32, n: u32, k: u32) -> PtxKernel {
             let warp_m_off = ctx.mul_u32_reg(warp_row, c_16); // 0, 16, 32, 48
             let warp_n_off = ctx.mul_u32_reg(warp_col, c_32); // 0, 32, 64, 96
 
-            let smem_base = ctx.shared_base_addr();
+            let _smem_base = ctx.shared_base_addr();
             let is_a_thread = ctx.setp_lt_u32(tid, c_256);
 
             // === cp.async load offsets ===
@@ -675,16 +675,16 @@ pub fn build_cta64x128_mma_fp16_cpasync(_m: u32, n: u32, k: u32) -> PtxKernel {
             // local = tid-256, row = local/8, col = (local%8)*16 (16 FP16 = 32 bytes per chunk)
             // Wait: 256 threads × 16 bytes = 4096 bytes. B = 16×128×2 = 4096. OK!
             let b_local = ctx.sub_u32_reg(tid, c_256);
-            let b_row_in_tile = ctx.shr_u32(b_local, c_3); // local/8 (32 rows across 256 threads? No...)
-                                                           // 256 threads, 4096 bytes: each thread loads 16 bytes
-                                                           // B has 16 rows × 128 cols × 2 bytes = 4096 bytes
-                                                           // Arrange: thread loads 8 consecutive FP16 elements
-                                                           // local*8 gives element index, row = local*8/128, col = (local*8)%128
-                                                           // Actually: 256 threads × 16 bytes = 4096 bytes total.
-                                                           // Each thread loads 16 contiguous bytes = 8 FP16 elements.
-                                                           // Element index start = local * 8
-                                                           // Row = (local * 8) / 128 = local / 16
-                                                           // Col = (local * 8) % 128 = (local % 16) * 8
+            let _b_row_in_tile = ctx.shr_u32(b_local, c_3); // local/8 (32 rows across 256 threads? No...)
+                                                            // 256 threads, 4096 bytes: each thread loads 16 bytes
+                                                            // B has 16 rows × 128 cols × 2 bytes = 4096 bytes
+                                                            // Arrange: thread loads 8 consecutive FP16 elements
+                                                            // local*8 gives element index, row = local*8/128, col = (local*8)%128
+                                                            // Actually: 256 threads × 16 bytes = 4096 bytes total.
+                                                            // Each thread loads 16 contiguous bytes = 8 FP16 elements.
+                                                            // Element index start = local * 8
+                                                            // Row = (local * 8) / 128 = local / 16
+                                                            // Col = (local * 8) % 128 = (local % 16) * 8
             let c_mask15 = ctx.mov_u32_imm(15);
             let b_row_in_tile = ctx.shr_u32(b_local, c_4); // local/16
             let b_col_mod = ctx.and_u32(b_local, c_mask15); // local%16

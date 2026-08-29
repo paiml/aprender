@@ -439,7 +439,7 @@ fn output_text(result: &HuntResult) {
 
     // Severity summary
 
-    println!("Severity: {}", severity_summary_line(&result.stats),);
+    println!("Severity: {}", severity_summary_line(&result.stats));
     println!();
 
     // Category distribution chart

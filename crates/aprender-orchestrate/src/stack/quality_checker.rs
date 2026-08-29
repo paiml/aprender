@@ -178,6 +178,15 @@ impl QualityChecker {
     }
 
     /// Estimate rust project score when pmat is not available
+    // LEFT `async` DELIBERATELY. clippy is right that nothing here awaits — but
+    // nothing awaits anywhere in `QualityChecker`: every leaf shells out through
+    // a blocking `std::process::Command`, and the chain reaches the PUBLIC
+    // `check_component`. Measured by de-asyncing the two estimate_* helpers:
+    // the lint simply moved up to `run_rust_project_score` / `run_repo_score`,
+    // and de-asyncing those moves it to `check_component`, whose signature is
+    // this crate's API. Making that module honestly synchronous is worth doing
+    // and is not a toolchain-drift fix; it needs its own change.
+    #[allow(unknown_lints, clippy::unused_async_trait_impl)]
     async fn estimate_rust_score(&self, path: &Path) -> Result<Score> {
         let mut score = 50u32; // Base score
 
@@ -252,6 +261,8 @@ impl QualityChecker {
     }
 
     /// Estimate repo and readme scores when pmat is not available
+    // See estimate_rust_score above for why this stays `async`.
+    #[allow(unknown_lints, clippy::unused_async_trait_impl)]
     async fn estimate_repo_scores(&self, path: &Path) -> Result<(Score, Score)> {
         let mut repo_score = 40u32; // Base score
         let mut readme_score = 0u32;

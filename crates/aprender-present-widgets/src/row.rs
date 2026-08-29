@@ -171,7 +171,7 @@ impl Widget for Row {
             child_sizes.push(size);
         }
 
-        let gaps_width = self.gap * (self.children.len() - 1).max(0) as f32;
+        let gaps_width = self.gap * (self.children.len() - 1) as f32;
         let content_width = total_width + gaps_width;
         let remaining_space = (bounds.width - content_width).max(0.0);
 

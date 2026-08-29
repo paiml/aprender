@@ -6,6 +6,7 @@
 use super::KvStore;
 use crate::Result;
 use dashmap::DashMap;
+use std::future::Future;
 
 /// In-memory key-value store using lock-free concurrent hashmap.
 ///
@@ -66,21 +67,27 @@ impl Default for MemoryKvStore {
 }
 
 impl KvStore for MemoryKvStore {
-    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        Ok(self.store.get(key).map(|v| v.value().clone()))
+    // NOT `async fn`: every operation here is a synchronous DashMap access, so
+    // the futures resolve on their first poll. `std::future::ready` says that
+    // in the type instead of leaving an `async` block with nothing to suspend
+    // on. `+ Send` is carried over from the trait's own declaration in
+    // kv/mod.rs, which clippy's suggestion drops.
+    // clippy::unused_async_trait_impl (new in 1.98).
+    fn get(&self, key: &str) -> impl Future<Output = Result<Option<Vec<u8>>>> + Send {
+        std::future::ready(Ok(self.store.get(key).map(|v| v.value().clone())))
     }
 
-    async fn set(&self, key: &str, value: Vec<u8>) -> Result<()> {
+    fn set(&self, key: &str, value: Vec<u8>) -> impl Future<Output = Result<()>> + Send {
         self.store.insert(key.to_string(), value);
-        Ok(())
+        std::future::ready(Ok(()))
     }
 
-    async fn delete(&self, key: &str) -> Result<()> {
+    fn delete(&self, key: &str) -> impl Future<Output = Result<()>> + Send {
         self.store.remove(key);
-        Ok(())
+        std::future::ready(Ok(()))
     }
 
-    async fn exists(&self, key: &str) -> Result<bool> {
-        Ok(self.store.contains_key(key))
+    fn exists(&self, key: &str) -> impl Future<Output = Result<bool>> + Send {
+        std::future::ready(Ok(self.store.contains_key(key)))
     }
 }

@@ -109,9 +109,9 @@ pub fn build_cta128_wmma_fp16_cpasync(m: u32, n: u32, k: u32) -> PtxKernel {
             // Thread t loads: elements [t*8..t*8+7], i.e., row = (t*8)/16 = t/2, col = (t*8)%16
             // cp.async 0: smem_off = t*16, global_off = row*K + col
             // cp.async 1: smem_off = t*16 + 8, global_off = row*K + col + 4
-            let a_row_in_tile = ctx.shr_u32(tid, c_2); // t/4 (covers 0..63 for first half)
-                                                       // But we need rows 0..127 with 256 threads loading 8 elements each
-                                                       // Better: t*8/16 = t/2 for the row
+            let _a_row_in_tile = ctx.shr_u32(tid, c_2); // t/4 (covers 0..63 for first half)
+                                                        // But we need rows 0..127 with 256 threads loading 8 elements each
+                                                        // Better: t*8/16 = t/2 for the row
             let a_elem_start = ctx.mul_u32_reg(tid, c_8); // t * 8
             let a_row0 = ctx.shr_u32(a_elem_start, c_4); // (t*8) / 16
             let c_mask15 = ctx.mov_u32_imm(15);
@@ -241,8 +241,8 @@ pub fn build_cta128_wmma_fp16_cpasync(m: u32, n: u32, k: u32) -> PtxKernel {
             {
                 // A fragment addresses: warp_m_off + {0, 16} rows, compute_off
                 // B fragment addresses: warp_n_off + {0, 16} cols, compute_off
-                let stride_a = ctx.mov_u32_imm(16); // A leading dim in smem = tile_k=16
-                let stride_b = ctx.mov_u32_imm(128); // B leading dim in smem = tile_n=128
+                let _stride_a = ctx.mov_u32_imm(16); // A leading dim in smem = tile_k=16
+                let _stride_b = ctx.mov_u32_imm(128); // B leading dim in smem = tile_n=128
 
                 // Top-left (0,0): A at warp_m_off, B at warp_n_off
                 let a00_bytes = ctx.mul_u32_reg(warp_m_off, c_16);

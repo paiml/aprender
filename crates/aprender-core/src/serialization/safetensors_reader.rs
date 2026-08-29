@@ -130,11 +130,12 @@ pub(super) fn extract_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
     }
 
     let values: Vec<f32> = tensor_bytes
-        .chunks_exact(4)
-        .map(|chunk| {
-            let bytes: [u8; 4] = chunk.try_into().expect("chunk is 4 bytes");
-            f32::from_le_bytes(bytes)
-        })
+        .as_chunks::<4>()
+        .0
+        .iter()
+        // `as_chunks::<4>()` yields `&[u8; 4]`, so the width is a type rather
+        // than a runtime claim and the `try_into().expect(..)` is gone.
+        .map(|chunk| f32::from_le_bytes(*chunk))
         .collect();
 
     Ok(values)
@@ -150,11 +151,10 @@ pub(crate) fn extract_bf16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, Strin
     }
 
     let values: Vec<f32> = tensor_bytes
-        .chunks_exact(2)
-        .map(|chunk| {
-            let bytes: [u8; 2] = chunk.try_into().expect("chunk is 2 bytes");
-            bf16_to_f32(bytes)
-        })
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|chunk| bf16_to_f32(*chunk))
         .collect();
 
     Ok(values)
@@ -170,11 +170,10 @@ pub(crate) fn extract_f16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String
     }
 
     let values: Vec<f32> = tensor_bytes
-        .chunks_exact(2)
-        .map(|chunk| {
-            let bytes: [u8; 2] = chunk.try_into().expect("chunk is 2 bytes");
-            f16_to_f32(bytes)
-        })
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|chunk| f16_to_f32(*chunk))
         .collect();
 
     Ok(values)
