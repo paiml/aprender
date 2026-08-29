@@ -15,6 +15,42 @@ impl CudaExecutor {
     /// paid a stream synchronize plus a device-to-host copy on the hot path with no way to turn
     /// it off. `nonfinite` is reported because CB-006's residue returns all-NaN logits on the
     /// second batched request and the bisect has to name the layer that first sees them.
+    /// PERF-050 round 5: content fingerprint of one device buffer.
+    ///
+    /// The CB-006 bisect is down to two stages whose INPUT is already proven identical across
+    /// two invocations of the batched forward, so the split is decided by which of their two
+    /// OUTPUTS first differs. Pointer and length cannot answer that; contents can.
+    ///
+    /// `ALL-ZERO` is called out rather than printed as `sum=0 absmax=0`, because an unwritten
+    /// buffer and a legitimately zero tensor produce identical statistics. This investigation
+    /// has already had to withdraw one result to that exact confusion.
+    fn trace_buffer(&self, label: &str, ptr: u64, len: usize) {
+        if self.stream.synchronize().is_err() {
+            eprintln!("[CB-006-OUT] {label} SYNC FAILED");
+            return;
+        }
+        // SAFETY: non-owning view over a live device allocation of at least `len` f32; leaked
+        // below so Drop never frees the borrowed allocation.
+        let buf = unsafe { GpuBuffer::<f32>::from_raw_parts(ptr, len) };
+        let mut host = vec![0.0f32; len];
+        let res = buf.copy_to_host(&mut host);
+        std::mem::forget(buf);
+        if res.is_err() {
+            eprintln!("[CB-006-OUT] {label} DOWNLOAD FAILED ptr={ptr:#x} len={len}");
+            return;
+        }
+        let nonfinite = host.iter().filter(|v| !v.is_finite()).count();
+        let sum: f64 = host.iter().filter(|v| v.is_finite()).map(|v| f64::from(*v)).sum();
+        let absmax = host.iter().filter(|v| v.is_finite()).fold(0.0f32, |a, v| a.max(v.abs()));
+        let zero = host.iter().all(|v| *v == 0.0);
+        eprintln!(
+            "[CB-006-OUT] {label} ptr={ptr:#x} len={len} sum={sum:.6} absmax={absmax:.6} \
+             nonfinite={nonfinite} first2={:?}{}",
+            &host[..2.min(len)],
+            if zero { "  ALL-ZERO(SUSPECT)" } else { "" }
+        );
+    }
+
     fn trace_layer_hidden(
         &self,
         layer_idx: usize,
@@ -315,6 +351,13 @@ impl CudaExecutor {
         std::mem::forget(hidden_buf2);
         std::mem::forget(normed_hidden_buf);
 
+        // PERF-050 round 5: stage 1 of 2. If this differs between two identical forwards the
+        // batched output RMSNorm is at fault; if it matches and the logits differ, the LM head
+        // GEMM is.
+        if Self::layer_trace_enabled() {
+            self.trace_buffer("normed_hidden", normed_hidden_ptr, m * hidden_dim as usize);
+        }
+
         // LM head projection
         if self.lm_head_ptr == 0 {
             return Err(GpuError::InvalidLaunchConfig(
@@ -370,6 +413,11 @@ impl CudaExecutor {
         )?;
 
         std::mem::forget(normed_hidden_buf_wrapper);
+
+        // PERF-050 round 5: stage 2 of 2.
+        if Self::layer_trace_enabled() {
+            self.trace_buffer("logits", logits_buf.as_ptr(), m * vocab_size as usize);
+        }
 
         // PMAT-086: Removed redundant stream.synchronize() before argmax.
         // LM head GEMV and argmax both execute on self.stream — CUDA stream
