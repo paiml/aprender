@@ -983,6 +983,24 @@ jobs:
         run: bash scripts/check_perf_claims_cite_receipts.sh
       - name: Claims-cite-receipts guard can still go RED (case table)
         run: bash scripts/check_perf_claims_cite_receipts.sh --selftest
+      # PERF-044, the same rule one level up. docs/roadmaps/roadmap.yaml is the
+      # document that says what this epic has finished, and a `status:
+      # completed` there was a claim nothing could check: PERF-004 was marked
+      # completed while all three of its artifacts are absent from main and its
+      # PR #2716 is CLOSED unmerged, and seven entries said `planned` for work
+      # that had landed. `grep -rn roadmap scripts/ .github/ Makefile` returned
+      # one unrelated comment.
+      #
+      # 1109 completed claims across 23 pmat work-contract roadmaps cite
+      # nothing today; they are frozen shrink-only, so an entry NEWLY flipped
+      # to completed must cite a `proof:<path>` that exists and is non-empty,
+      # or a `proof:PR#<n>` that is MERGED. Text-only and deterministic (~4s,
+      # and it touches the network only for an entry that cites a PR, of which
+      # there are none), so it belongs in the merge phase beside PERF-010.
+      - name: Completed roadmap statuses cite something (PERF-044)
+        run: bash scripts/check_roadmap_completion_is_cited.sh
+      - name: Roadmap-citation guard can still go RED (case table)
+        run: bash scripts/check_roadmap_completion_is_cited.sh --selftest
       - name: One benchmarking entrypoint (PERF-009)
         run: bash scripts/check_no_competing_harnesses.sh
       - name: Competing-harness guard can still go RED (case table)
