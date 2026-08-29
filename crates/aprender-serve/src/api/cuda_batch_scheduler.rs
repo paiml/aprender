@@ -231,7 +231,21 @@ fn process_cuda_batch(
 ) {
     let m = batch.len();
 
-    if m == 1 {
+    // PERF-041: `channel_empty` is passed as `true` because THIS scheduler does
+    // not consult `rx` before taking the fast path — that omission is F-BATCH-003
+    // ("a request arriving mid-generation queues", measured RED 2026-08-26 at a
+    // 1.59 latency ratio against a 1.60 QUEUED prediction). Wiring `rx.is_empty()`
+    // here is NOT the fix and is deliberately not done: at m == 1 the batched path
+    // costs ~3x per token, so a joining peer would slow the in-flight request
+    // instead of speeding itself. batch-admission-v1 known_limitations says the
+    // remedy is closing that per-token gap, which is engine work with its own
+    // measurement. What routing through the predicate buys today is the
+    // F-BATCH-004 knob below, which makes the gap measurable.
+    if crate::api::batch_admission::fast_path_eligible(
+        m,
+        true,
+        crate::api::batch_admission::force_batched_path(),
+    ) {
         // Single request — use the optimized single-request path (138 tok/s vs 46 batched).
         // PMAT-073: Mid-batch joins only work for initial batches >1. For c=1→c=2
         // staggered arrivals, the second request queues until the first completes.

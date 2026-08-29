@@ -1,6 +1,89 @@
 // Batched forward pass dispatching M parallel sequences through all transformer layers.
 
 impl CudaExecutor {
+    /// PERF-050: `APR_LAYER_TRACE=1` enables the per-layer hidden-state trace used to bisect
+    /// FALSIFY-CB-006. Read once per process.
+    pub(crate) fn layer_trace_enabled() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var("APR_LAYER_TRACE").as_deref() == Ok("1"))
+    }
+
+    /// PERF-050: dump per-slot hidden-state statistics after one layer.
+    ///
+    /// Supersedes the realizr#220 diagnostic that sat inline in batched_forward_run_layers:
+    /// layer 0 only, m >= 3 only, and UNCONDITIONAL, so every decode step of every m >= 3 batch
+    /// paid a stream synchronize plus a device-to-host copy on the hot path with no way to turn
+    /// it off. `nonfinite` is reported because CB-006's residue returns all-NaN logits on the
+    /// second batched request and the bisect has to name the layer that first sees them.
+    /// PERF-050 round 5: content fingerprint of one device buffer.
+    ///
+    /// The CB-006 bisect is down to two stages whose INPUT is already proven identical across
+    /// two invocations of the batched forward, so the split is decided by which of their two
+    /// OUTPUTS first differs. Pointer and length cannot answer that; contents can.
+    ///
+    /// `ALL-ZERO` is called out rather than printed as `sum=0 absmax=0`, because an unwritten
+    /// buffer and a legitimately zero tensor produce identical statistics. This investigation
+    /// has already had to withdraw one result to that exact confusion.
+    pub(crate) fn trace_buffer(&self, label: &str, ptr: u64, len: usize) {
+        if self.stream.synchronize().is_err() {
+            eprintln!("[CB-006-OUT] {label} SYNC FAILED");
+            return;
+        }
+        // SAFETY: non-owning view over a live device allocation of at least `len` f32; leaked
+        // below so Drop never frees the borrowed allocation.
+        let buf = unsafe { GpuBuffer::<f32>::from_raw_parts(ptr, len) };
+        let mut host = vec![0.0f32; len];
+        let res = buf.copy_to_host(&mut host);
+        std::mem::forget(buf);
+        if res.is_err() {
+            eprintln!("[CB-006-OUT] {label} DOWNLOAD FAILED ptr={ptr:#x} len={len}");
+            return;
+        }
+        let nonfinite = host.iter().filter(|v| !v.is_finite()).count();
+        let sum: f64 = host.iter().filter(|v| v.is_finite()).map(|v| f64::from(*v)).sum();
+        let absmax = host.iter().filter(|v| v.is_finite()).fold(0.0f32, |a, v| a.max(v.abs()));
+        let zero = host.iter().all(|v| *v == 0.0);
+        eprintln!(
+            "[CB-006-OUT] {label} ptr={ptr:#x} len={len} sum={sum:.6} absmax={absmax:.6} \
+             nonfinite={nonfinite} first2={:?}{}",
+            &host[..2.min(len)],
+            if zero { "  ALL-ZERO(SUSPECT)" } else { "" }
+        );
+    }
+
+    fn trace_layer_hidden(
+        &self,
+        layer_idx: usize,
+        hidden_buf2_ptr: u64,
+        m: usize,
+        hidden_dim: u32,
+    ) -> Result<(), GpuError> {
+        self.stream.synchronize()?;
+        let hd = hidden_dim as usize;
+        // SAFETY: non-owning view over the already-allocated hidden_buf2 device region; leaked
+        // below so Drop never frees the borrowed allocation.
+        let buf = unsafe { GpuBuffer::<f32>::from_raw_parts(hidden_buf2_ptr, m * hd) };
+        let mut host = vec![0.0f32; m * hd];
+        let res = buf.copy_to_host(&mut host);
+        std::mem::forget(buf);
+        res?;
+        for seq in 0..m {
+            let slice = &host[seq * hd..(seq + 1) * hd];
+            let nonfinite = slice.iter().filter(|v| !v.is_finite()).count();
+            let sum: f32 = slice.iter().filter(|v| v.is_finite()).sum();
+            let absmax = slice
+                .iter()
+                .filter(|v| v.is_finite())
+                .fold(0.0f32, |a, v| a.max(v.abs()));
+            eprintln!(
+                "[CB-006-LAYER] layer={layer_idx} seq={seq} sum={sum:.4} absmax={absmax:.4} \
+                 nonfinite={nonfinite}/{hd} first4={:?}",
+                &slice[..4.min(hd)]
+            );
+        }
+        Ok(())
+    }
+
     /// PAR-111: Batched forward pass for M sequences returning M token IDs
     ///
     /// Processes M sequences in parallel through all transformer layers using
@@ -8,8 +91,17 @@ impl CudaExecutor {
     ///
     /// # Performance
     ///
-    /// - M=1: Baseline (~360 tok/s)
-    /// - M=4: 16x GEMV speedup → 857+ tok/s aggregate throughput
+    /// The intended win is that each weight is read and dequantized ONCE for all
+    /// M sequences instead of once per sequence, so the GEMV cost is amortized
+    /// across the batch.
+    ///
+    /// The per-M throughput figures this section used to give are WITHDRAWN and
+    /// deliberately not replaced. They were measured while this path emitted
+    /// garbage tokens to the `max_tokens` cap (aprender#2753) and while
+    /// `batched_forward_run_layers` carried an unconditional per-layer
+    /// synchronize and device-to-host copy (aprender#2764), so they were
+    /// throughput of garbage taken through a debug path. Re-measuring needs a
+    /// run on a path that terminates on a stop token.
     ///
     /// # Arguments
     ///
@@ -149,22 +241,10 @@ impl CudaExecutor {
             // Prevent drop of borrowed buffer (from_raw_parts doesn't own the memory)
             std::mem::forget(layer_input_buf);
 
-            // realizr#220 DIAGNOSTIC: dump hidden state after layer 0 for M>=3
-            if layer_idx == 0 && m >= 3 {
-                self.stream.synchronize()?;
-                let debug_len = m * hidden_dim as usize;
-                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
-                let debug_buf = unsafe { GpuBuffer::<f32>::from_raw_parts(hidden_buf2_ptr, debug_len) };
-                let mut debug_host = vec![0.0f32; debug_len];
-                debug_buf.copy_to_host(&mut debug_host)?;
-                std::mem::forget(debug_buf);
-                for seq in 0..m {
-                    let off = seq * hidden_dim as usize;
-                    let first4: Vec<f32> = debug_host[off..off+4].to_vec();
-                    let sum: f32 = debug_host[off..off+hidden_dim as usize].iter().sum();
-                    let nonzero = debug_host[off..off+hidden_dim as usize].iter().filter(|&&v| v != 0.0).count();
-                    eprintln!("[#220-DIAG] layer0 seq{}: first4={:?} sum={:.4} nonzero={}/{}", seq, first4, sum, nonzero, hidden_dim);
-                }
+            // PERF-050: per-layer hidden-state trace, the layer bisect for CB-006.
+            // Behind APR_LAYER_TRACE=1; see trace_layer_hidden.
+            if Self::layer_trace_enabled() {
+                self.trace_layer_hidden(layer_idx, hidden_buf2_ptr, m, hidden_dim)?;
             }
         }
 
@@ -280,6 +360,13 @@ impl CudaExecutor {
         std::mem::forget(hidden_buf2);
         std::mem::forget(normed_hidden_buf);
 
+        // PERF-050 round 5: stage 1 of 2. If this differs between two identical forwards the
+        // batched output RMSNorm is at fault; if it matches and the logits differ, the LM head
+        // GEMM is.
+        if Self::layer_trace_enabled() {
+            self.trace_buffer("normed_hidden", normed_hidden_ptr, m * hidden_dim as usize);
+        }
+
         // LM head projection
         if self.lm_head_ptr == 0 {
             return Err(GpuError::InvalidLaunchConfig(
@@ -336,6 +423,11 @@ impl CudaExecutor {
 
         std::mem::forget(normed_hidden_buf_wrapper);
 
+        // PERF-050 round 5: stage 2 of 2.
+        if Self::layer_trace_enabled() {
+            self.trace_buffer("logits", logits_buf.as_ptr(), m * vocab_size as usize);
+        }
+
         // PMAT-086: Removed redundant stream.synchronize() before argmax.
         // LM head GEMV and argmax both execute on self.stream — CUDA stream
         // ordering guarantees GEMV completes before argmax reads logits.
@@ -387,9 +479,19 @@ impl CudaExecutor {
     ///
     /// # Performance
     ///
-    /// - Without graphs (M=2): 404.6 tok/s
-    /// - With graphs (M=2): Target ~550+ tok/s (2x Ollama)
-    /// - Key: Combines batched GEMV efficiency + CUDA graph launch reduction
+    /// The intent is to combine batched GEMV efficiency with a reduction in
+    /// kernel-launch count from graph replay.
+    ///
+    /// The with/without-graph throughput figures and the Ollama ratio that stood
+    /// here are WITHDRAWN for the same reason as the sibling block above: they
+    /// were taken on a batched path that emitted garbage tokens (aprender#2753)
+    /// and through a per-layer synchronize in the decode loop (aprender#2764).
+    ///
+    /// Note for aprender#2758: `check_no_claim_literals.sh` did NOT flag these
+    /// two lines. `TARGET_RE` exempts the line carrying "Target", and the bare
+    /// `404.6 tok/s` on the line above it rode along unflagged. The exemption is
+    /// right in principle -- a target is a bar, not a claim -- but it should not
+    /// cover a measured figure sitting beside one.
     #[allow(clippy::too_many_arguments)]
     pub fn forward_batched_to_token_ids_graphed(
         &mut self,

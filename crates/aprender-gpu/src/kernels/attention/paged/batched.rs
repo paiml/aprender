@@ -219,8 +219,26 @@ impl Kernel for BatchedIncrementalAttentionKernel {
                 // Scale score
                 let score = ctx.mul_f32(dot, scale_reg);
 
-                // Online softmax update
-                let old_max = max_score;
+                // Online softmax update (Milakov & Gimelshein 2018).
+                //
+                // PERF-050 / FALSIFY-CB-008: copy max_score into a NEW register before the
+                // in-place max. `let old_max = max_score;` binds the SAME VirtualReg, so
+                // `max_f32_inplace` below clobbered it too and the rescale factor emitted as
+                // `sub.f32 %f27, %f8, %f8;` -> `ex2(0)` -> correction == 1.0 for every
+                // position. The running max still tracked correctly and `exp_score` was still
+                // right, so nothing overflowed or NaN'd; what broke is that `sum_exp` and the
+                // `out*` accumulators were never brought onto the new max's scale. Every term
+                // accumulated before a max increase stays weighted by exp(old_max - new_max)
+                // too much, which silently over-weights early KV positions by an unbounded
+                // factor. The output is a plausible-magnitude but wrong attention vector, and
+                // 28 layers of it is the `!!!!` / `strarstrar...` garbage in aprender#2753.
+                //
+                // The identical hazard is documented at the fixed sibling
+                // flash_decoding/chunk_kernel.rs; incremental.rs (the M=1 decode kernel that
+                // the fast path uses, and the reason m=1 looked healthy) sidesteps it by
+                // computing `new_max` into a fresh register instead of updating in place.
+                let old_max = ctx.mov_f32_imm(0.0);
+                ctx.mov_f32_reg(old_max, max_score);
                 ctx.max_f32_inplace(max_score, score);
                 let score_minus_max = ctx.sub_f32(score, max_score);
                 let score_log2 = ctx.mul_f32(score_minus_max, log2e);
@@ -292,5 +310,407 @@ impl Kernel for BatchedIncrementalAttentionKernel {
 
                 ctx.ret();
             })
+    }
+}
+
+/// FALSIFY-CB-008 (`contracts/continuous-batching-v1.yaml`), executed rather than described.
+///
+/// The contract's rule is "No frozen slots — all M slots produce distinct tokens per decode
+/// step (not constant)" and its `test:` field named a `BATCHED_DECODE_TRACE` log nobody ever
+/// read. aprender#2753 is that rule failing: every slot served from a batch emitted one token
+/// to the `max_tokens` cap. The mechanism turned out to be one line of this kernel, so the
+/// obligation is discharged here, at the defect, in a check that needs no GPU: PTX generation
+/// is pure string building, so this runs anywhere the `cuda` feature compiles.
+///
+/// WHAT IS ASSERTED. The online softmax (Milakov & Gimelshein 2018) must rescale the running
+/// `sum_exp` and output accumulators by `exp(old_max - new_max)` whenever the running max
+/// grows. That requires the OLD max to survive the in-place `max.f32` that computes the new
+/// one. `let old_max = max_score;` in a PTX builder does not copy a value, it binds the same
+/// VirtualReg — so the emitted correction was
+///
+/// ```text
+///     max.f32 %f8, %f8, %f23;     // running max updated in place
+///     sub.f32 %f27, %f8, %f8;     // "old_max - new_max" — the SAME register
+///     ex2.approx.f32 %f29, %f28;  // correction == exp2(0) == 1.0, always
+/// ```
+///
+/// Nothing overflows and nothing is NaN, which is why this survived: the running max is still
+/// right and `exp_score` is still right. Only the rescale is missing, so every term accumulated
+/// before a max increase keeps a weight that is too large by an unbounded factor. Twenty-eight
+/// layers of subtly-wrong attention is the `!!!!` / `strarstrar…` output in #2753.
+#[cfg(test)]
+mod cb008_online_softmax_rescale {
+    use super::BatchedIncrementalAttentionKernel;
+    use crate::kernels::attention::paged::flash_decoding::FlashDecodingChunkKernel;
+    use crate::kernels::Kernel;
+
+    /// One parsed `op.f32 dst, a, b;` line.
+    fn ternary(line: &str, op: &str) -> Option<(String, String, String)> {
+        let line = line.trim().trim_end_matches(';');
+        let rest = line.strip_prefix(op)?.trim();
+        let mut parts = rest.split(',').map(str::trim);
+        let dst = parts.next()?.to_string();
+        let a = parts.next()?.to_string();
+        let b = parts.next()?.to_string();
+        if parts.next().is_some() {
+            return None;
+        }
+        Some((dst, a, b))
+    }
+
+    /// The property, stated over emitted PTX.
+    ///
+    /// Returns `Err` when the shape this test reasons about is absent — a check that silently
+    /// finds nothing to check is the failure mode this repo keeps hitting, so "not found" is a
+    /// failure, never a pass.
+    fn rescale_reads_a_saved_max(ptx: &str) -> Result<(), String> {
+        // 1. The in-place running-max update: `max.f32 %fM, %fM, %fS;` (dst == first source).
+        let running_max = ptx
+            .lines()
+            .filter_map(|l| ternary(l, "max.f32"))
+            .find(|(dst, a, _)| dst == a)
+            .map(|(dst, _, _)| dst)
+            .ok_or_else(|| {
+                "no in-place `max.f32 %fM, %fM, %fS;` found — this kernel does not have the \
+                 online-softmax shape this test asserts about, so the assertion is vacuous"
+                    .to_string()
+            })?;
+
+        // 2. Every `ex2.approx.f32` argument, so we can tell the correction from exp_score.
+        let ex2_args: Vec<String> = ptx
+            .lines()
+            .filter_map(|l| {
+                let l = l.trim().trim_end_matches(';');
+                let rest = l.strip_prefix("ex2.approx.f32")?.trim();
+                rest.split(',').nth(1).map(|s| s.trim().to_string())
+            })
+            .collect();
+        if ex2_args.is_empty() {
+            return Err("no `ex2.approx.f32` found — no exponential, so no online softmax".into());
+        }
+
+        // 3. `mul.f32 %fX, %fD, %flog2e;` feeding one of those ex2 args, whose %fD came from a
+        //    `sub.f32 %fD, %fA, %fM` against the running max. That sub is the rescale term.
+        let subs: Vec<(String, String, String)> =
+            ptx.lines().filter_map(|l| ternary(l, "sub.f32")).collect();
+        let muls: Vec<(String, String, String)> =
+            ptx.lines().filter_map(|l| ternary(l, "mul.f32")).collect();
+
+        let mut checked = 0usize;
+        for (sub_dst, sub_a, sub_b) in &subs {
+            if sub_b != &running_max {
+                continue; // not `something - new_max`
+            }
+            let feeds_ex2 = muls
+                .iter()
+                .any(|(mul_dst, mul_a, _)| mul_a == sub_dst && ex2_args.contains(mul_dst));
+            if !feeds_ex2 {
+                continue;
+            }
+            checked += 1;
+            assert_ne!(
+                sub_a, sub_b,
+                "FALSIFY-CB-008: online-softmax rescale computes `{sub_a} - {sub_b}`, i.e. the \
+                 running max minus ITSELF, so the correction is exp2(0) == 1.0 for every KV \
+                 position and `sum_exp`/`out` are never brought onto the new max's scale. \
+                 `let old_max = max_score;` binds the same VirtualReg; copy it into a fresh one \
+                 with `mov_f32_imm` + `mov_f32_reg` first (see flash_decoding/chunk_kernel.rs). \
+                 This is aprender#2753: batched CUDA decode emitting a constant token to the cap."
+            );
+        }
+        if checked == 0 {
+            return Err(format!(
+                "found the running max ({running_max}) but no `sub.f32 _, _, {running_max}` \
+                 feeding an ex2 — the rescale term was not located, so nothing was asserted"
+            ));
+        }
+        Ok(())
+    }
+
+    /// The load-bearing case: the kernel that #2753 was traced to.
+    #[test]
+    fn batched_incremental_attention_rescales_online_softmax() {
+        // Qwen2.5-Coder-1.5B on the RTX 4090 where #2753 was reproduced: 2048 ctx, head_dim
+        // 128, 12 query heads, 2 KV heads (GQA), and a 4-slot batch.
+        let kernel = BatchedIncrementalAttentionKernel::new(2048, 128, 12, 2, 4);
+        let ptx = kernel.emit_ptx_for_target("sm_89");
+        rescale_reads_a_saved_max(&ptx).expect("PTX shape");
+    }
+
+    /// Discrimination case. This sibling kernel already carries the fix AND the comment
+    /// explaining the hazard, so it must stay GREEN: a checker that is RED on everything
+    /// proves nothing about the kernel it was written for.
+    #[test]
+    fn flash_decoding_chunk_kernel_stays_green() {
+        let kernel = FlashDecodingChunkKernel::new(2048, 128, 12, 2, 4);
+        let ptx = kernel.emit_ptx_for_target("sm_89");
+        rescale_reads_a_saved_max(&ptx).expect("PTX shape");
+    }
+
+    /// Positive control: the checker must be ABLE to fire. Without this, a future change to
+    /// how instructions are spelled would make `rescale_reads_a_saved_max` match nothing and
+    /// the two tests above would pass while asserting nothing.
+    #[test]
+    fn checker_rejects_a_self_subtraction() {
+        let poisoned = "\
+            max.f32 %f8, %f8, %f23;\n\
+            sub.f32 %f24, %f23, %f8;\n\
+            mul.f32 %f25, %f24, %f10;\n\
+            ex2.approx.f32 %f26, %f25;\n\
+            sub.f32 %f27, %f8, %f8;\n\
+            mul.f32 %f28, %f27, %f10;\n\
+            ex2.approx.f32 %f29, %f28;\n";
+        let caught = std::panic::catch_unwind(|| rescale_reads_a_saved_max(poisoned));
+        assert!(
+            caught.is_err(),
+            "the checker did not fire on PTX that literally contains \
+             `sub.f32 %f27, %f8, %f8;` — it cannot detect the defect it exists for"
+        );
+    }
+
+    /// And it must NOT fire on the repaired form of that same PTX.
+    #[test]
+    fn checker_accepts_a_saved_max() {
+        let repaired = "\
+            mov.f32 %f24, %f8;\n\
+            max.f32 %f8, %f8, %f23;\n\
+            sub.f32 %f25, %f23, %f8;\n\
+            mul.f32 %f26, %f25, %f10;\n\
+            ex2.approx.f32 %f27, %f26;\n\
+            sub.f32 %f28, %f24, %f8;\n\
+            mul.f32 %f29, %f28, %f10;\n\
+            ex2.approx.f32 %f30, %f29;\n";
+        rescale_reads_a_saved_max(repaired).expect("repaired PTX must pass");
+    }
+}
+
+/// FALSIFY-CB-008, numerically, on the device, at the shape production actually runs.
+///
+/// The codegen test above proves the rescale is *emitted*. This proves the kernel *computes the
+/// right thing*, against a CPU softmax reference written in one pass with no online rescaling,
+/// so it cannot share a bug with the kernel under test.
+///
+/// THE INPUT IS PART OF THE ASSERTION, in three ways that were each chosen to make a specific
+/// class of defect visible. An earlier version of this test had none of them and would have
+/// passed over all three:
+///
+/// 1. **Scores strictly increase with position.** This is the only condition under which a
+///    rescale correction stuck at 1.0 is observable at all; a flat score sequence passes with
+///    aprender#2753's defect fully in place.
+/// 2. **Q differs per (slot, head) and K/V differ per (slot, kv_group).** With one Q shared by
+///    every head and one K/V shared by every slot, a GQA head-mapping error or a slot-stride
+///    error reads the wrong data and gets the right answer anyway.
+/// 3. **Per-slot seq_len differs.** A kernel that ignored `seq_lens[batch_idx]` and used a
+///    single length for the batch would otherwise be indistinguishable.
+///
+/// The shape is the one aprender#2753 was reproduced at: Qwen2.5-Coder-1.5B on an RTX 4090,
+/// head_dim 128, 12 query heads over 2 KV heads (GQA 6:1), 2048-position cache.
+#[cfg(test)]
+#[cfg(feature = "cuda")]
+mod cb008_gpu_numerics {
+    use super::BatchedIncrementalAttentionKernel;
+    use crate::driver::{CudaContext, CudaModule, CudaStream, GpuBuffer, LaunchConfig};
+    use crate::kernels::Kernel;
+
+    const HEAD_DIM: usize = 128; // the kernel's 4-loads-per-lane shape
+    const NUM_HEADS: usize = 12;
+    const NUM_KV_HEADS: usize = 2; // GQA 6:1, as Qwen2.5-Coder-1.5B
+    const MAX_SEQ: usize = 2048; // --context-length the defect was reproduced at
+    const M: usize = 3; // not a power of two, and != NUM_KV_HEADS
+    const SEQ_LENS: [usize; M] = [17, 11, 5];
+
+    /// GQA mapping, stated once so the reference and the assertion cannot drift apart.
+    fn kv_group_of(head: usize) -> usize {
+        head * NUM_KV_HEADS / NUM_HEADS
+    }
+
+    fn q_at(slot: usize, head: usize, d: usize) -> f32 {
+        0.5 + 0.01 * ((slot * 5 + head * 3 + d) % 7) as f32
+    }
+
+    /// Positive base, so the dot product with a positive Q is positive and the growth factor
+    /// below makes the score strictly increasing in position.
+    fn k_base(slot: usize, group: usize, d: usize) -> f32 {
+        0.02 * (1 + (slot * 3 + group * 5 + d) % 11) as f32
+    }
+
+    fn k_at(slot: usize, group: usize, pos: usize, d: usize) -> f32 {
+        k_base(slot, group, d) * (1.0 + 0.6 * pos as f32)
+    }
+
+    fn v_at(slot: usize, group: usize, pos: usize, d: usize) -> f32 {
+        (pos as f32 + 1.0) + 0.01 * d as f32 + 0.5 * slot as f32 + 0.25 * group as f32
+    }
+
+    /// CPU reference: plain softmax attention in one pass, GQA modelled explicitly.
+    fn reference(slot: usize, head: usize) -> Vec<f32> {
+        let group = kv_group_of(head);
+        let seq_len = SEQ_LENS[slot];
+        let scale = 1.0 / (HEAD_DIM as f32).sqrt();
+        let scores: Vec<f32> = (0..seq_len)
+            .map(|p| {
+                let dot: f32 = (0..HEAD_DIM)
+                    .map(|d| q_at(slot, head, d) * k_at(slot, group, p, d))
+                    .sum();
+                dot * scale
+            })
+            .collect();
+        let max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let exps: Vec<f32> = scores.iter().map(|s| (s - max).exp()).collect();
+        let denom: f32 = exps.iter().sum();
+        (0..HEAD_DIM)
+            .map(|d| {
+                let acc: f32 = (0..seq_len)
+                    .map(|p| exps[p] * v_at(slot, group, p, d))
+                    .sum();
+                acc / denom
+            })
+            .collect()
+    }
+
+    #[test]
+    fn batched_attention_matches_cpu_softmax_at_production_shape() {
+        let Ok(ctx) = CudaContext::new(0) else {
+            println!(
+                "cb008_gpu_numerics: no CUDA device — SKIPPED. The always-on guard for this \
+                 defect is cb008_online_softmax_rescale (PTX codegen), which needs no device."
+            );
+            return;
+        };
+        let stream = CudaStream::new(&ctx).expect("stream");
+
+        // Sanity on the fixture itself: the scores must actually grow, or the test asserts
+        // nothing about the rescale. Checked, not assumed.
+        {
+            let scale = 1.0 / (HEAD_DIM as f32).sqrt();
+            let score = |p: usize| -> f32 {
+                (0..HEAD_DIM)
+                    .map(|d| q_at(0, 0, d) * k_at(0, 0, p, d))
+                    .sum::<f32>()
+                    * scale
+            };
+            let first = score(0);
+            let last = score(SEQ_LENS[0] - 1);
+            assert!(
+                last > first + 4.0,
+                "fixture is inert: scores span only {first}..{last}, so a rescale stuck at 1.0 \
+                 would be invisible and this test would assert nothing"
+            );
+            for p in 1..SEQ_LENS[0] {
+                assert!(
+                    score(p) > score(p - 1),
+                    "scores must increase at every position"
+                );
+            }
+        }
+
+        // q packed [M, NUM_HEADS, HEAD_DIM]
+        let mut q_host = vec![0.0f32; M * NUM_HEADS * HEAD_DIM];
+        for slot in 0..M {
+            for head in 0..NUM_HEADS {
+                for d in 0..HEAD_DIM {
+                    q_host[(slot * NUM_HEADS + head) * HEAD_DIM + d] = q_at(slot, head, d);
+                }
+            }
+        }
+        // K/V caches [M, NUM_KV_HEADS, MAX_SEQ, HEAD_DIM], contiguous, one buffer per tensor.
+        let slot_stride = NUM_KV_HEADS * MAX_SEQ * HEAD_DIM;
+        let mut k_host = vec![0.0f32; M * slot_stride];
+        let mut v_host = vec![0.0f32; M * slot_stride];
+        for slot in 0..M {
+            for group in 0..NUM_KV_HEADS {
+                for pos in 0..SEQ_LENS[slot] {
+                    let base = slot * slot_stride + (group * MAX_SEQ + pos) * HEAD_DIM;
+                    for d in 0..HEAD_DIM {
+                        k_host[base + d] = k_at(slot, group, pos, d);
+                        v_host[base + d] = v_at(slot, group, pos, d);
+                    }
+                }
+            }
+        }
+
+        let q_buf = GpuBuffer::from_host(&ctx, &q_host).expect("q");
+        let k_buf = GpuBuffer::from_host(&ctx, &k_host).expect("k");
+        let v_buf = GpuBuffer::from_host(&ctx, &v_host).expect("v");
+        let out_buf = GpuBuffer::<f32>::new(&ctx, M * NUM_HEADS * HEAD_DIM).expect("out");
+
+        let stride_bytes = (slot_stride * std::mem::size_of::<f32>()) as u64;
+        let k_ptrs: Vec<u64> = (0..M)
+            .map(|s| k_buf.as_ptr() + s as u64 * stride_bytes)
+            .collect();
+        let v_ptrs: Vec<u64> = (0..M)
+            .map(|s| v_buf.as_ptr() + s as u64 * stride_bytes)
+            .collect();
+        let seq_lens: Vec<u32> = SEQ_LENS.iter().map(|&s| s as u32).collect();
+        let k_ptrs_buf = GpuBuffer::from_host(&ctx, &k_ptrs).expect("k_ptrs");
+        let v_ptrs_buf = GpuBuffer::from_host(&ctx, &v_ptrs).expect("v_ptrs");
+        let seq_lens_buf = GpuBuffer::from_host(&ctx, &seq_lens).expect("seq_lens");
+
+        let kernel = BatchedIncrementalAttentionKernel::new(
+            MAX_SEQ as u32,
+            HEAD_DIM as u32,
+            NUM_HEADS as u32,
+            NUM_KV_HEADS as u32,
+            M as u32,
+        );
+        let ptx = kernel.emit_ptx_for_target("sm_89");
+        let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("module");
+
+        let config = LaunchConfig {
+            grid: (NUM_HEADS as u32, M as u32, 1),
+            block: (32, 1, 1),
+            shared_mem: 0,
+        };
+        let mut a0 = q_buf.as_ptr();
+        let mut a1 = k_ptrs_buf.as_ptr();
+        let mut a2 = v_ptrs_buf.as_ptr();
+        let mut a3 = out_buf.as_ptr();
+        let mut a4 = seq_lens_buf.as_ptr();
+        // SAFETY: every buffer above is a live device allocation of the size the kernel indexes,
+        // and the grid/block match the kernel's documented (num_heads, M) / one-warp shape.
+        unsafe {
+            stream
+                .launch_kernel(
+                    &mut module,
+                    kernel.name(),
+                    &config,
+                    &mut [
+                        std::ptr::from_mut(&mut a0).cast(),
+                        std::ptr::from_mut(&mut a1).cast(),
+                        std::ptr::from_mut(&mut a2).cast(),
+                        std::ptr::from_mut(&mut a3).cast(),
+                        std::ptr::from_mut(&mut a4).cast(),
+                    ],
+                )
+                .expect("launch");
+        }
+        stream.synchronize().expect("sync");
+
+        let mut got = vec![0.0f32; M * NUM_HEADS * HEAD_DIM];
+        out_buf.copy_to_host(&mut got).expect("download");
+
+        for slot in 0..M {
+            for head in 0..NUM_HEADS {
+                let want = reference(slot, head);
+                let base = (slot * NUM_HEADS + head) * HEAD_DIM;
+                for d in 0..HEAD_DIM {
+                    let g = got[base + d];
+                    let w = want[d];
+                    assert!(
+                        (g - w).abs() <= 2e-3 * w.abs().max(1.0),
+                        "FALSIFY-CB-008: batched attention slot {slot} head {head} \
+                         (kv group {group}, seq_len {sl}) dim {d} = {g}, CPU softmax \
+                         reference = {w}. Scores increase with position here, so the \
+                         online-softmax rescale runs at every step; a correction stuck at 1.0 \
+                         over-weights early KV positions and lands near the unweighted mean of \
+                         V instead of near V[seq_len-1]. Q differs per head and K/V per slot, \
+                         so a GQA head-mapping or slot-stride error also lands here. \
+                         See aprender#2753.",
+                        group = kv_group_of(head),
+                        sl = SEQ_LENS[slot]
+                    );
+                }
+            }
+        }
     }
 }

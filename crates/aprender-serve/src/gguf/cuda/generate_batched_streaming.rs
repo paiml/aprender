@@ -74,6 +74,24 @@ fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize, top_p: f
     probs.last().map_or(0, |(idx, _)| *idx as u32)
 }
 
+/// FALSIFY-CB-008 (`contracts/continuous-batching-v1.yaml`): "All M slots produce distinct
+/// tokens per decode step (not constant)". The contract named `BATCHED_DECODE_TRACE` as its
+/// evidence; the variable did not exist, so nothing could ever have read that log. It does now.
+///
+/// `BATCHED_DECODE_TRACE=1` emits one line per batched decode step:
+///
+/// ```text
+/// [CB-008] step=0 m=4 token_ids=[3156, 3156, 3156, 3156] positions=[16, 16, 16, 16] done=[..]
+/// ```
+///
+/// Read once per process. The existing `[PMAT-072] decode step` lines stop at step 3, which is
+/// too early to see a slot freeze; CB-008 is a property of the whole generation.
+#[cfg(feature = "cuda")]
+fn batched_decode_trace() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("BATCHED_DECODE_TRACE").as_deref() == Ok("1"))
+}
+
 /// PMAT-072: Decode state for step-wise batched generation.
 ///
 /// Extracted from `generate_batched_streaming` to allow lock release between
@@ -415,6 +433,11 @@ impl OwnedQuantizedModelCuda {
         // can skip KV iteration for done slots (seq_lens=0 → early exit).
         self.executor.batched_done_mask.clone_from(&state.done);
 
+        // PERF-050 round 3: in-process A/B against the M=1 oracle (APR_PARITY_PROBE=1).
+        // MUST sit here, not at the top of the step: embed_buf is only filled above, and at
+        // gen_idx 0 it is still the all-zero buffer batched_setup_and_prefill allocated.
+        self.cb006_parity_probe(state);
+
         timer.mark("prep");
 
         // PMAT-056: Multi-stream root cause fixed (scatter moved to self.stream),
@@ -497,6 +520,17 @@ impl OwnedQuantizedModelCuda {
             eprintln!(
                 "[PMAT-072] decode step {}: token_ids={token_ids:?}, done={:?}",
                 state.gen_idx, state.done
+            );
+        }
+
+        // FALSIFY-CB-008 evidence, every step rather than the first three.
+        if batched_decode_trace() {
+            eprintln!(
+                "[CB-008] step={} m={} token_ids={token_ids:?} positions={:?} done={:?}",
+                state.gen_idx,
+                state.m,
+                &state.pos_buf[..state.m],
+                state.done
             );
         }
 
@@ -1126,3 +1160,5 @@ mod pmat764_select_batched_token_tests {
         assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 2.0), 1);
     }
 }
+
+include!("cb006_parity_probe.rs");

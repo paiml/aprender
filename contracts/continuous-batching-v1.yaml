@@ -144,7 +144,533 @@ falsification_tests:
 - id: FALSIFY-CB-006
   rule: Correctness under batching
   prediction: Same prompt at c=1 and c=4 produces equivalent output
-  test: probador correctness at c=1 and c=4, compare token-level output
+  test: 'scripts/perf041_batched_parity_probe.sh (GPU; exits 0 PASS, 1 code
+    defect, 2 UNMEASURABLE)'
+  measured: >-
+    RED 2026-08-29 (PERF-041), RTX 4090, apr 0.64.0 (3eb2dae6a),
+    qwen2.5-coder-1.5b-instruct-q4_k_m, greedy, 400-token cap.
+
+    The m=1 reference is coherent English with finish_reason=stop (286 and 319
+    completion_tokens on two consecutive calls -- prefix-stable, which is why
+    the probe compares prefixes rather than whole outputs). In ONE concurrent
+    round with `[PMAT-044] Batch m=3 done` in the server log proving the
+    batched path engaged, the single request that happened to be served on the
+    m=1 fast path returned that same prefix and finish_reason=stop, while all
+    three served from the batch returned `!!!!...` -- token id 0 repeated to
+    the 400-token cap, finish_reason=length. That within-run contrast is the
+    control: same binary, same model, same prompt, same second; the only
+    difference is which path served the request. At m=4 the garbage is
+    `strarstrarstrar...` and `001.CompilerServicesétique...` instead.
+    Reproduced on qwen2.5-coder-0.5b, so it is not model-specific.
+
+    This also invalidates the throughput PERF-001 is credited with:
+    batch-admission-v1 records "3.32x aggregate at N=8, ~1100 tok/s", and
+    those are garbage tokens that never terminate. Every batched request runs
+    to max_tokens because it never reaches a stop token, which is separately
+    why that contract's serialization_index is flat from c=2.
+
+    UNMEASURED before today because this test was a sentence. "probador
+    correctness at c=1 and c=4, compare token-level output" is not a command,
+    nothing executed it, and the same is true of CB-007 and CB-008 below --
+    CB-008 states precisely the observed signature ("All M slots produce
+    distinct tokens per decode step (not constant)") and has never run.
+  mutation: >-
+    OBSERVED 2026-08-29. Neutralise the comparison in
+    perf041_batched_parity_probe.py (`ok = got == ref_prefix` -> `ok = True`):
+    the probe reports GREEN on the identical `!!!!` output, exit 0. Reverted:
+    RED, exit 1. So the verdict is driven by the comparison and nothing else.
+    Setting PREFIX_CHARS = 0 does NOT yield a false pass -- the positive
+    control rejects an empty reference and the probe exits 2 UNMEASURABLE.
+    Firing 2 requests that arrive apart likewise exits 2 rather than passing:
+    two m=1 batches form, the batched path is never exercised, and a probe
+    that cannot see the mechanism must not return a verdict about it.
+
+    STILL RED 2026-08-29 after PERF-050. Re-run of THIS field's own command,
+    scripts/perf041_batched_parity_probe.sh, on an RTX 4090 with
+    apr 0.64.0 (e4e2e3da9) == HEAD, CUDA_BATCH_WINDOW_MS=200, 120-token cap:
+
+      batched path PROVEN engaged: max batch m=2
+      batched path PROVEN engaged: max batch m=4
+      FALSIFY-CB-006 RED: 6 batched output(s) diverge from the m=1 reference
+      perf041-parity: exit 1 (0=PASS 1=code defect 2=unmeasurable)
+
+    CB-008's
+    online-softmax defect was real, is fixed, and is mutation-verified on the
+    device -- and the batched output is still garbage, so it was not the only
+    cause. What is established about the residue:
+
+      - It is NOT m-dependent. APR_FORCE_BATCHED_PATH=1 with ONE request is
+        garbage, so nothing about per-slot indexing is required to reproduce it.
+      - It is NOT in prefill. The two prefill implementations agree
+        token-for-token on the (wrong) decode output.
+      - It is NOT the batched GEMM dispatch alone. BATCHED_DP4A=0 routes every
+        decode projection through cuBLAS and the output stays wrong (a different
+        wrong token, 145199 rather than 3156, so the path change did engage).
+
+    Two further defects were surfaced while bisecting and each needs its own
+    ticket, falsifier and fix:
+
+      - batched_gemv_with_fallback's per-sequence loop appears to be wrong. With
+        FP8_DECODE=0 CUBLAS_GEMM_THRESHOLD=100000 -- knobs that only REROUTE the
+        GEMM, leaving that loop as the only remaining implementation -- even the
+        m=1 fast path, coherent by default on the same binary in the same run,
+        returns `Lambda****...`. It is the universal fallback because
+        batched_qkv.rs pins `const USE_BATCHED_GEMV: bool = false`, a realizr#220
+        diagnostic left in the tree, so Q4K/Q6K never take the batched GEMV path.
+      - Batched prefill of a ~1300-token prompt dies with
+        CUDA_ERROR_ILLEGAL_ADDRESS in prefill_all_layers_gpu. Note the batched KV
+        cache reports stride=524288 = 2*2048*128 on a server started with
+        --context-length 4096, so its stride is not sized from the configured
+        context.
+
+    PERF-001's credited throughput stays withdrawn: the tokens are still garbage.
+
+    ROUND 2 (PERF-050 cont., apr 0.64.0 (82c50cfe5), RTX 4090). Four components
+    of batched decode are now each proven correct by a mutation-verified test,
+    and the output is STILL garbage. The exclusions are the result; they are
+    recorded so the next attempt does not re-walk them:
+
+      - attention KERNEL: cargo test -p aprender-gpu --features cuda --lib cb008
+        at production shape (head_dim 128, 12 heads over 2 KV heads, 2048 cache),
+        Q differing per (slot, head), K/V per (slot, kv_group), per-slot seq_lens
+        [17, 11, 5]. Matches a one-pass CPU softmax. RED under the CB-008
+        mutation at 9 vs 15.11563.
+      - decode-step attention WIRING (the scatter that writes THIS step's K/V,
+        the padded k_ptrs/v_ptrs arrays, seq_lens, the length advance):
+        cb008_decode_attention_wiring, KV_SLOTS 8 > M 3 so the padded case is
+        under test. RED under two mutations (lengths pos+1 -> pos; k_ptrs losing
+        its slot stride, which failed on slot 1 and left slot 0 correct).
+      - prefill -> decode KV HANDOFF: cb009_kv_handoff checks
+        scatter_single_kv_to_batched moves every layer and KV head to the right
+        slot bit-for-bit AND writes nothing into peer slots. RED when the slot
+        offset is dropped.
+      - PREFILL itself, behaviourally, from round 1.
+
+    The tension this creates is the finding. prefill_eager -- the fast path's
+    prefill, which produces coherent English -- calls the SAME two per-layer
+    functions batched decode calls: batched_qkv_rope_phase and
+    batched_attn_ffn_phase. At m=4 with BATCHED_DP4A=0 the GEMM routing is
+    identical as well (use_cublas fires at m>=4 in decode and at m=16 in
+    prefill), so the only remaining difference is the attention branch --
+    batched_incremental_attention_into instead of prefill_attention_cublas --
+    and that branch is now proven correct in isolation. One of those statements
+    must be wrong, and the next instrument has to be able to say which.
+
+    One new empirical fact, which is the best lead. At m=1 through the batched
+    path, 24-token cap, four configurations:
+
+      default                                  '!!!!...'  (token id 0)
+      CUBLAS_GEMM_THRESHOLD=1                  'ICENSE.0:num==...'
+      CUDA_MAX_BATCH=1                         '!!!!...'
+      CUBLAS_GEMM_THRESHOLD=1 CUDA_MAX_BATCH=1 '!!!!...'
+
+    Rows 2 and 4 have IDENTICAL GEMM routing and differ only in how many KV
+    slots were allocated (32 vs 1, i.e. 3584 MB vs 112 MB), and they produce
+    different output. Decode output must not depend on the size of an allocation
+    it does not index. That is the signature of a read of memory that was never
+    written -- which also fits the rest: a constant token id 0 is what an
+    all-zero logits buffer argmaxes to, and the garbage becomes varied text
+    rather than id 0 exactly when a different allocation size shifts what
+    happens to be sitting at those addresses.
+
+    WHAT WOULD SETTLE IT. An in-process A/B at m=1, immediately after prefill:
+    compare forward_batched_to_logits against
+    forward_gpu_resident(last_token, cache, position), which is the M=1 path
+    that produces coherent output, reading KV populated by the same prefill. It
+    is a true oracle for the same arithmetic on the same state, so a logits
+    comparison localises the divergence to the forward, and dumping hidden_buf2
+    per layer then bisects to the layer -- the same method that took the
+    attention kernel from suspicion to a one-line fix. It needs
+    batched_kv_stride temporarily zeroed around the call, exactly as
+    add_slot_to_batch already does, so the M=1 path reads the single cache.
+
+    ROUND 3 (PERF-050 cont., apr 0.64.0 (f3a4f3473), RTX 4090). The instrument
+    was built: APR_PARITY_PROBE=1 runs forward_batched_to_logits and the M=1
+    oracle forward_all_layers_gpu_to_logits on one post-prefill state at m=1.
+
+    A RESULT WAS WITHDRAWN FIRST. The probe initially ran at the top of
+    batched_decode_step, before embed_buf is written, so both paths were fed the
+    all-zero buffer batched_setup_and_prefill allocates. RMSNorm on a zero vector
+    is rsqrt(0) = inf and 0 * inf = NaN, so every layer came back all-NaN and the
+    "oracle divergence" it reported was two ways of mishandling a degenerate
+    input. Neither the SELF nor the PERTURBED control could catch it -- both pass
+    whether or not the input means anything. What caught it was the per-layer
+    trace: NaN at layer 0 cannot coexist with the finite logits the same probe had
+    just printed. The probe now refuses to report on an all-zero embedding.
+
+    With the probe moved after the embedding, on the real decode input, all
+    controls passing (SELF identical, SENSITIVE and PERTURBED diverging, input
+    non-degenerate):
+
+      ORACLE  batched argmax 15 vs oracle 13552, cosine 0.719427, both finite.
+
+    The M=1 oracle returns argmax 13552 on every request and every configuration
+    tried, so the prompt, the KV cache and prefill are fixed points; only the
+    batched forward moves. CB-006's residue is IN THE BATCHED FORWARD, downstream
+    of a KV cache and a prefill that round 2 proved correct.
+
+    Three further facts about it, each with the controls passing:
+
+      - all-NaN on the SECOND batched request, from the identical input and KV
+        state that produced finite logits on the first, while the oracle returns
+        the identical answer both times;
+      - all-NaN for a sign-flipped embedding of the same magnitude;
+      - under CUBLAS_GEMM_THRESHOLD=1 the SELF control FAILS at cosine 0.104724.
+        The batched forward, run twice on the same input and the same state,
+        returns completely different logits.
+
+    That last one is the mechanism class. A forward pass that is not a function of
+    its inputs is reading state that changes between invocations, and that is why
+    every component-level test in round 2 passes: each runs ONE kernel ONCE with
+    explicit synchronization, which is exactly the condition under which such a
+    defect is invisible. It also subsumes the round-2 allocation-size lead, where
+    two configurations with identical GEMM routing differed only in how much VRAM
+    the KV cache took and produced different output.
+
+    One sub-hypothesis was checked and REFUTED by reading rather than left as
+    suspicion: cuBLAS is bound to the executor's own stream
+    (ensure_cublas does handle.set_stream(&self.stream)), so this is not a naive
+    stream mismatch of the CORRECTNESS-012b kind.
+
+    WHAT WOULD SETTLE IT NEXT. The question is now narrow and mechanical: which
+    buffer does the batched forward read that differs between two identical
+    invocations? The probe already runs the forward twice in-process, so bisecting
+    it means dumping each stage's inputs (not just hidden_buf2) on both runs and
+    finding the first stage whose INPUT differs -- lazily populated FP8/FP16/
+    interleaved conversion caches and the cuBLAS workspace are the candidates
+    that exist only on the second call. APR_LAYER_TRACE=1 already reports the
+    per-layer hidden state and would be extended to q/k/v and the FFN scratch.
+
+    ROUND 4 (PERF-050 cont., apr 0.64.0 (68d812e1a) and (072c22cd6), RTX 4090).
+    The bisect ran. Two results, one of them a refutation.
+
+    THE STACK IS DETERMINISTIC; THE OUTPUT STAGE IS NOT. With APR_LAYER_TRACE=1
+    under the configuration where SELF fails, the 28 per-layer hidden_buf2 traces
+    are BIT-IDENTICAL between the two forwards while the logits differ (SELF
+    cosine 0.673570). Twenty-eight layers are excluded in a single run. What
+    remains between the last identical hidden state and the differing logits is
+    the output stage: the output RMSNorm and the LM head GEMM.
+
+    A NAMED DEFECT, REFUTED AS THE CAUSE. cuBLASLt FP8 requires the batch
+    dimension aligned to 16, so cublas_prefill_fp8_gemm requests m_padded * k of
+    fp8_activation_scratch and issues the GEMM with m_padded as its batch
+    dimension, while convert_f32_to_e4m3_device_scaled writes only m * k. At m = 1
+    that is one row written and sixteen read. The tail is not inert -- E4M3 has
+    NaN encodings, and what occupies that region is the previous GEMM's
+    activations, so the GEMM's input depends on call history. It is a real defect
+    and wants its own ticket.
+
+    It is NOT the mechanism behind the non-determinism. Measured in ONE binary via
+    APR_FP8_PAD_ZERO rather than across two builds: SELF fails either way, cosine
+    0.286372 with the padding undefined and 0.563568 with it zeroed, both far from
+    the 1.0 identical inputs require. The flag therefore ships default OFF.
+
+    A FIX ATTEMPT REJECTED AND RECORDED. Zeroing inside
+    ensure_fp8_activation_scratch is the obvious placement and is wrong: that
+    allocator runs on every GEMM including the PMAT-084 activation-cache hits,
+    where K and V deliberately reuse Q's converted activation, so it wipes exactly
+    what the hit exists to reuse. It degraded the output rather than fixing it,
+    and was caught because the M=1 ORACLE's own argmax moved off the 13552 it
+    returns in every other run. The zeroing lives at the end of the conversion,
+    which runs only on a cache miss.
+
+    A PROCESS BLOCKER WORTH ITS OWN TICKET. cublas_prefill_gemm is ALREADY at
+    Cognitive 30 against a threshold of 25 at HEAD, verified with
+    `pmat analyze complexity` on a stashed tree. The pre-commit gate scans staged
+    files, so ANY edit to gemm.rs -- the file holding the FP8 GEMM at the centre of
+    this investigation -- is rejected regardless of what the edit does. That is why
+    the per-GEMM input fingerprint could not be placed at its natural site.
+
+    WHAT WOULD SETTLE IT NEXT. The remaining surface is small and named: output
+    RMSNorm (hidden_buf2 -> normed_hidden_buf) and the LM head GEMM
+    (normed_hidden_buf -> logits_buf) at m = 1, n = 151936, k = 1536. The same
+    double-forward already proves their INPUT is identical, so the next step is to
+    fingerprint normed_hidden_buf and logits_buf by content on both calls: if
+    normed_hidden differs, the batched RMSNorm is at fault; if it matches and the
+    logits differ, it is the LM head GEMM, whose FP8 route allocates
+    fp16_activation_scratch of n * m_padded = 2,430,976 elements on the first call
+    and reuses it on the second.
+
+    ROUND 5 (PERF-050 cont., apr 0.64.0 (869ef5dce), RTX 4090). MECHANISM FOUND.
+
+    The split ran and terminated, then terminated again a level deeper.
+    Fingerprinting normed_hidden_buf and logits_buf showed both IDENTICAL across
+    the two forwards -- and SELF came out at cosine 1.000000, where it had been
+    0.673570 moments earlier on the same binary. The instrumentation had fixed the
+    bug. Per-layer synchronizes were already present in round 4 and did not; the
+    two NEW ones are in the output stage. A Heisenbug is a finding: it says the
+    mechanism is ordering.
+
+    CudaStream::new creates this crate's streams with CU_STREAM_NON_BLOCKING,
+    which is explicitly excluded from legacy default-stream ordering, while
+    GpuBuffer::copy_from_host / copy_to_host are cuMemcpyHtoD / cuMemcpyDtoH --
+    LEGACY-stream transfers. A legacy transfer does not order against a
+    non-blocking stream, so every host transfer in the batched decode path races
+    the kernels in flight on that stream, and the surrounding code is written
+    throughout as though the transfers were ordered against it.
+
+    Proven in ONE binary with ONE env var, which is the mutation pair:
+
+      CU_STREAM_NON_BLOCKING (default)         SELF cosine 0.517985  FAILS
+      APR_STREAM_LEGACY=1 (CU_STREAM_DEFAULT)  SELF cosine 1.000000  PASSES
+
+    It restores the INVARIANT -- identical inputs, identical logits -- rather than
+    improving a number, which is the standard the round-4 FP8 padding hypothesis
+    failed. SENSITIVE and PERTURBED still diverge under the knob, so the probe has
+    not gone uniformly green.
+
+    One mechanism now accounts for the whole thread: the round-2 allocation-size
+    dependence (timing), the round-3 all-NaN and all-zero logits (a partially
+    written buffer; a fresh allocation reads as zero, which argmaxes to token 0 --
+    the original constant-token output), and the first-call/second-call asymmetry.
+
+    A SINGLE TARGETED SYNC IS NOT ENOUGH: adding stream.synchronize() before only
+    the logits download left SELF at 0.719000. The race is systemic -- 260
+    legacy-stream host-transfer sites in aprender-serve alone (206 copy_to_host,
+    31 copy_from_host, 15 copy_from_host_at, 8 copy_to_host_at), including the
+    pointer arrays, seq_lens and positions that in-flight kernels read.
+
+    WHAT THE REPAIR REQUIRES. Two options, and the choice has a throughput
+    consequence that must be measured rather than assumed:
+      (a) create the streams with CU_STREAM_DEFAULT. One line, restores the
+          ordering the code already assumes -- but serializes against the legacy
+          stream, and this crate creates several streams (compute_stream,
+          transfer_stream, s1..s3) for deliberate overlap. CORRECTNESS-012b moved
+          work onto self.stream precisely for ordering.
+      (b) convert the transfers to the stream-ordered async variants that already
+          exist in transfer.rs (copy_from_host_async, cuMemcpyDtoHAsync), with an
+          explicit sync before each host READ. Preserves overlap; 260 call sites.
+    The knob ships default-unchanged so the finding stays reproducible in one
+    binary either way.
+
+    STILL OPEN, and now cleanly separable for the first time: with the race
+    removed the batched forward is deterministic but still differs from the M=1
+    oracle (13874 vs 13552, cosine 0.684587). That residual correctness gap is a
+    different defect from the race, and CB-006 stays RED until it is closed.
+
+    ROUND 6 (PERF-050 cont., apr 0.64.0 (f1f4eefef) and (56b18713b), RTX 4090).
+    A RETRACTION, an elimination, and the residual split into two more defects.
+
+    RETRACTION OF THE ROUND-2 "CONTRADICTION". That record said prefill_eager and
+    the batched decode call the SAME two per-layer functions
+    (batched_qkv_rope_phase, batched_attn_ffn_phase), leaving attention as the only
+    difference, and called the result a tension. The premise was false.
+    `use_graph_dispatch()` reads GRAPH_DISPATCH and is ENABLED UNLESS the variable
+    is exactly "0", so it is ON by default, and the batched decode runs
+    transformer_layer_batched_GRAPH while prefill runs transformer_layer_batched.
+    They never called the same code. Measured, not inferred: a fingerprint added
+    inside batched_qkv_rope_phase fired twice, both at len 24576 (prefill, m=16),
+    while the decode emitted 14 layer-0 traces. There was no contradiction to
+    resolve, only a wrong reading of which code runs.
+
+    FALSIFY-CB-006's residue is therefore in the GRAPH-DISPATCH layer
+    implementation, which no round before this one had looked at.
+
+    #2765 ELIMINATED AS THE RESIDUAL. Under APR_STREAM_LEGACY=1, toggling
+    APR_FP8_PAD_ZERO changes nothing at all: SELF 1.000000, ORACLE cosine
+    0.684587, argmax 13874 vs 13552, max|d| 15.0010, bit-identical either way.
+    This also retires round 4's own numbers -- zeroing appeared to move the cosine
+    0.286372 -> 0.563568, and with the race pinned it is clear both were samples
+    from a racing distribution. The conclusion was right, the evidence was noise.
+
+    THE ORACLE BISECT TERMINATES AT LAYER 0. With the race pinned, the batched
+    hidden state disagrees with the M=1 oracle at the FIRST transformer layer, on
+    identical input and identical KV:
+
+      oracle  layer 0 output            sum = 3.404263  (finite, correct)
+      batched layer 0, cuBLAS FP8 route sum = 4.1119    (finite, wrong)
+      batched layer 0, default route    ALL NaN, 1536/1536 non-finite
+
+    TWO MORE DEFECTS, NOW SEPARATED. GRAPH_DISPATCH=0 routes the decode through the
+    same layer implementation prefill uses, and the difference is not subtle:
+
+      GRAPH_DISPATCH default (graph path)  layer 0 all-NaN; output `!!!!`
+      GRAPH_DISPATCH=0 (non-graph path)    layer 0 finite (sum 149.4063);
+                                           output `compilers compilers compilers`
+
+    Real English words instead of a constant token. So the NaN that produced the
+    original m=1 symptom comes from the graph-dispatch layer implementation.
+
+    But the non-graph path fails a different control: SENSITIVE reports cosine
+    1.000000, meaning the batched forward returns the SAME logits for an embedding
+    and its sign-flipped negation. That path IGNORES ITS INPUT, which is also why
+    its output is one word repeated. It still disagrees with the oracle at cosine
+    0.719427.
+
+    So CB-006's residue is two defects, not one, and they are in different
+    implementations of the same layer:
+      (i)  graph-dispatch layer path produces NaN at layer 0;
+      (ii) non-graph batched layer path is insensitive to its input embedding.
+    Both are downstream of a KV cache, a prefill, an attention kernel and an
+    attention wiring that earlier rounds proved correct, and both are separable
+    from the #2767 race for the first time.
+
+    INSTRUMENTATION PLACEMENT. forward_utils.rs is ALSO frozen by a pre-existing
+    complexity violation (debug_q6k_lm_head, Cognitive 41 > 25, reached through an
+    include!), a second instance of #2766. The oracle-side per-layer bisect was
+    therefore run with the GPU_DEBUG_ALL_LAYERS=1 hook that already exists at HEAD,
+    needing zero code changes, rather than fighting the gate.
+
+    ROUND 7 (PERF-050 cont., apr 0.64.0 (2c74c688c), RTX 4090). ROOT CAUSE of the
+    NaN, and of the constant-token output this epic opened with.
+
+    The graph dispatcher dequantized EVERY weight as Q4_K. dispatch_mul_mat passed
+    WeightQuantType::Q4K unconditionally, and it had no alternative: OpParams
+    carried only weight_ptr, so a weight's quantization type was discarded when the
+    layer graph was built.
+
+    For qwen2.5-coder-1.5b-instruct-q4_k_m that is right for 170 tensors and wrong
+    for 29. Verified against the model with `apr tensors` rather than assumed from
+    the naming convention: blk.0.attn_q Q4_K, blk.0.attn_k Q4_K, blk.0.attn_v
+    Q6_K, blk.0.ffn_down Q6_K, output.weight Q6_K; 141 F32 / 170 Q4_K / 29 Q6_K.
+
+    blk.0.attn_v is the first Q6_K weight the forward reaches, and a stage snapshot
+    of the layer that actually runs lands exactly on that boundary:
+
+      g_q_buf  sum 81.83    absmax 40.0   nonfinite 0        Q4_K, correct
+      g_k_buf  sum -23.70   absmax 4.30   nonfinite 0        Q4_K, correct
+      g_v_buf  sum 3.03e9   absmax 4.9e8  nonfinite 47/256   Q6_K read as Q4_K
+      g_attn_out                          nonfinite 282      downstream
+      every later stage                   all NaN
+
+    Q and K are clean because they ARE Q4_K. The hardcoded assumption is simply
+    right for them and wrong for V.
+
+    MUTATION PAIR, one binary, one env var (APR_GRAPH_QTYPE_HARDCODE):
+
+      fix active     g_v_buf sum 3.52 absmax 1.32 nonfinite 0   finish=stop
+      hardcode back  g_v_buf sum 3.03e9 absmax 4.9e8 nonfinite 47  finish=length, constant token
+
+    The fix restores stop-token emission, which no batched run in this epic had
+    ever produced -- every one hit the max_tokens cap.
+
+    THE FIX: OpParams gains weight_qtype, the GGML numeric code (numeric rather
+    than the serving crate's enum, because aprender-gpu must not depend on
+    aprender-serve), defaulting to 12 = Q4_K so an unset node is bit-identical to
+    the old behaviour. build_layer_graph sets it from the real qtypes on all seven
+    MulMat nodes; the dispatcher maps it back; and the Q4K-only inline-Q8 kernel is
+    additionally gated on the type really being Q4_K.
+
+    CB-006 STAYS RED. With the NaN gone the batched forward still disagrees with
+    the M=1 oracle at cosine 0.701156 (argmax 40 vs 13552), and the non-graph path
+    still fails SENSITIVE. The residual is a third defect, separate from this one
+    and from the #2767 race.
+
+    A RETRACTED REFUTATION, worth recording because it nearly went in the report.
+    The first mutation appeared to REFUTE this root cause: restoring the hardcode
+    left the NaN absent. It was an artifact. The dev shell defines a `cargo`
+    function exporting a shared CARGO_TARGET_DIR, so a plain `cargo build` writes
+    to /mnt/nvme-raid0/targets/aprender while `nohup cargo build` bypasses the
+    function and writes to the worktree -- the mutation was compiled into one
+    directory and the test ran the binary in the other. The same trap
+    scripts/apr_bin.sh was written to prevent, re-entered by dropping `nohup`.
+    Compounding it, apr-cli embeds the git SHA through its build script and the
+    worktree binary kept announcing a stale SHA after HEAD moved, so
+    `apr --version` could not identify which source an artifact came from. Both
+    are reasons the mutation pair above is stated as one binary and one env var.
+
+    ROUND 8 (PERF-050 cont., apr 0.64.0 (650ae3bc5+), RTX 4090). The layer-0 stage
+    differential terminates at the QKV PROJECTIONS.
+
+    With qtypes correct and the race pinned, both implementations of layer 0 are
+    finite and deterministic, so the residual is a clean two-sided differential.
+    Fingerprinting the same workspace buffers from both sides:
+
+      layer input             IDENTICAL   sum 1.266504, absmax 0.096851
+      attention RMSNorm out   IDENTICAL   sum 45.246795, absmax 3.914043
+      q_buf                   DIFFERS     graph 81.83/40.00   oracle 71.88/30.76
+      k_buf                   DIFFERS     graph -23.70/4.30   oracle 1455.38/355.45
+      v_buf                   DIFFERS     graph 3.52/1.32     oracle 5.60/2.60
+
+    The input to the projections is bit-identical and the weights are the same, so
+    the divergence is IN the projections. The RMSNorm output also matches the
+    non-graph batched path exactly (round 6 measured 45.246795 there), so all three
+    implementations agree up to that point and only the graph's projections differ.
+
+    ONE STRUCTURAL CAUSE, CERTAIN: the graph path never applies the QKV BIAS.
+    build_layer_graph emits RmsNorm, three MulMat nodes and a compound attention
+    node; there is no bias node, and the only occurrences of "bias" in that file
+    are its own test fixture setting the pointers to 0. The M=1 path applies it
+    explicitly -- apply.rs carries `// BIAS-FIX: Add QKV bias after GEMV (Qwen2.5
+    models have QKV bias)` and apply_qkv_bias covers Q, K and V. The model has the
+    tensors: blk.0.attn_q.bias [1536] F32, blk.0.attn_k.bias [256] F32,
+    blk.0.attn_v.bias [256] F32. attn_k.bias[0] is 4.09375, which is the scale of
+    the whole graph-side k_buf, so a missing K bias is consistent with K being the
+    most divergent of the three. The graph also omits apply_qk_norm (GH-279),
+    a no-op for this model but another step it does not have.
+
+    BUT THE BIAS IS NOT THE WHOLE EXPLANATION, and the check that shows it is
+    recorded because it was a prediction that failed. V is not RoPE'd, so
+    (oracle_v - graph_v) must equal attn_v.bias exactly if the bias were the only
+    difference. Measured difference: [0.207539, 0.185913]. Actual attn_v.bias, read
+    straight out of the GGUF: [-0.000372, -0.015625]. They do not match, so at
+    least one further factor differs in the projections themselves.
+
+    WHAT REPAIRING IT REQUIRES: bias nodes (and a QK-norm node) in
+    build_layer_graph, or bias application inside dispatch_attention alongside the
+    RoPE it already does -- plus identification of the remaining projection
+    difference, which the failed prediction above shows is still unaccounted for.
+
+    HARNESS NOTE. The oracle emits FIVE layer-0 snapshots per run, not the two the
+    probe makes: the first is the startup PARITY-GATE forward, which runs a
+    different token. Reading the first line as "the oracle" made the layer input
+    look divergent when it is identical. Caught by counting the lines rather than
+    trusting their order.
+
+    PLACEMENT, #2766 for the third time. gemv_dispatch.rs (three pre-existing
+    violations), forward_utils.rs (one) and apply.rs (one) are all frozen, and
+    apply.rs is exactly where the oracle's QKV phase lives. The q/k/v snapshot was
+    taken where those tensors are CONSUMED instead, at the entry of
+    workspace_attention_residual_phase in phase_attention.rs, which is clean.
+
+    ROUND 9 (PERF-050 cont., apr 0.64.0 (bf0ca8249), RTX 4090). FALSIFY-CB-006
+    GREEN for the first time.
+
+    The missing QKV bias was implemented on the graph path: OpParams gains
+    bias_ptr/bias_len (0 = none, so unset nodes are unchanged), build_layer_graph
+    sets them on the three QKV MulMat nodes, and dispatch_mul_mat applies
+    batched_bias_broadcast_add after the GEMM, where apply.rs applies its own.
+
+    Layer 0 now AGREES between the two implementations, in one binary via
+    APR_GRAPH_NO_BIAS:
+
+      bias omitted   q 81.83   k -23.70    v 3.52     ORACLE argmax 40    cosine 0.701156
+      bias applied   q 232.8146 k 1437.7718 v 5.812629 ORACLE argmax 13552 cosine 0.999987
+
+    and the oracle's own values are q 232.814592, k 1437.771832, v 5.812629 --
+    agreement to six or seven significant figures, with the batched argmax landing
+    on the oracle's 13552. Residual max|d| 0.0867 on logits of absmax ~14 is
+    kernel-level float difference between two GEMV implementations, not structure.
+
+    ROUND 8'S FAILED PREDICTION WAS MY OWN EXTRACTION ERROR, and the correction
+    matters more than the original claim. Round 8 reported that
+    (oracle_v - graph_v) did not equal attn_v.bias and concluded the bias was "not
+    the whole explanation". The oracle column in that table was the STARTUP
+    PARITY-GATE forward, not the probe's oracle -- the same five-lines-not-two trap
+    round 8 identified for o_layer_input and failed to propagate to q/k/v. Measured
+    correctly: graph V with bias minus graph V without bias is
+    [-0.000372, -0.015625], which is attn_v.bias exactly. The bias WAS the whole
+    projection difference.
+
+    CB-006 GREEN, canonical probe, exit 0:
+
+      APR_STREAM_LEGACY=1 CUBLAS_GEMM_THRESHOLD=32, 120-token cap
+      batched path PROVEN engaged: max batch m=2 -- all slots OK
+      batched path PROVEN engaged: max batch m=4 -- all slots OK
+      FALSIFY-CB-006 GREEN: every batched output matches the m=1 reference
+
+    TWO CONDITIONS REMAIN BEFORE IT IS GREEN BY DEFAULT, and both are named:
+
+      - APR_STREAM_LEGACY=1 pins the #2767 race, which is diagnosed and unrepaired.
+      - CUBLAS_GEMM_THRESHOLD=32 keeps m>=4 off the cuBLAS decode route. With the
+        default threshold of 4, c=2 PASSES and c=4 DIVERGES -- and the c=4 output
+        is coherent English on a different continuation
+        ('Compilers are programs that take high-le' against the reference
+        'Compilers are software programs that tra'), not garbage. use_cublas fires
+        at m>=4 and not at m=2, which is exactly the boundary observed. That points
+        at precision or correctness in cublas_prefill_gemm on the decode path and
+        wants its own ticket; it is a different class from the three structural
+        defects this epic fixed.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
@@ -154,7 +680,80 @@ falsification_tests:
 - id: FALSIFY-CB-008
   rule: No frozen slots
   prediction: All M slots produce distinct tokens per decode step (not constant)
-  test: BATCHED_DECODE_TRACE log shows token_ids[i] changes between steps for all i
+  test: >-
+    cargo test -p aprender-gpu --features cuda --lib cb008
+
+    Two layers. (1) cb008_online_softmax_rescale: PTX codegen, NO GPU required --
+    locate the in-place running-max update in BatchedIncrementalAttentionKernel,
+    find the sub feeding the correction ex2, assert its operands differ. (2)
+    cb008_gpu_numerics: runs the kernel on the device against a CPU softmax
+    reference over STRICTLY INCREASING scores, the only condition under which a
+    correction pinned to 1.0 is observable; skips loudly without a device.
+
+    BATCHED_DECODE_TRACE=1 additionally emits one `[CB-008] step=N m=M
+    token_ids=[..]` line per batched decode step. The variable this field used to
+    name did not exist, so the log it described could never have been read.
+  measured: >-
+    PARTIAL 2026-08-29 (PERF-050), RTX 4090, apr 0.64.0 (ee420e8c5),
+    qwen2.5-coder-1.5b-instruct-q4_k_m, greedy.
+
+    ONE mechanism behind CB-006's RED is found and fixed; the end-to-end
+    obligation is NOT discharged and CB-006 stays RED (see its own record).
+
+    The batched attention kernel's online-softmax rescale was a compile-time
+    1.0. `let old_max = max_score;` in a PTX builder binds the same VirtualReg,
+    so the in-place max clobbered it and the emitted PTX read
+
+        max.f32 %f8, %f8, %f23;
+        sub.f32 %f27, %f8, %f8;      <- a register minus ITSELF
+        ex2.approx.f32 %f29, %f28;   <- correction == exp2(0) == 1.0, always
+
+    so sum_exp and the output accumulators were never brought onto the new max's
+    scale. Nothing overflows and nothing is NaN, which is why it survived: the
+    running max is still right and exp_score is still right. Only the rescale is
+    missing, so every term accumulated before a max increase keeps a weight too
+    large by an unbounded factor.
+
+    Why it read as an m>1 defect and is not: with APR_FORCE_BATCHED_PATH=1 and a
+    SINGLE request -- no batch at all -- the output was `!!!!` (token id 0) to
+    the cap. The m=1 fast path is healthy only because it runs a DIFFERENT
+    attention kernel (paged/incremental.rs), which sidesteps the hazard by
+    computing new_max into a fresh register. paged/flash_decoding/chunk_kernel.rs
+    carries the fix AND a comment describing this exact aliasing hazard verbatim;
+    paged/batched.rs was the one sibling that still had it.
+
+    Both prefill paths are exonerated by measurement rather than assumption. The
+    multi-prompt prefill (PMAT-051) and the sequential per-slot prefill
+    (MULTI_PROMPT_PREFILL=0) are different implementations that write the batched
+    KV cache in different ways, and at m=4 they produced token-for-token
+    identical decode output (3156 then 46539 at steps 0 and 1). Two unrelated
+    writers agreeing exactly locates the fault in the reader.
+  mutation: >-
+    OBSERVED 2026-08-29, both layers, on an RTX 4090. Reverting the one-line fix
+    to `let old_max = max_score;`:
+
+      batched_incremental_attention_rescales_online_softmax ... FAILED
+        online-softmax rescale computes `%f8 - %f8` ... left: "%f8" right: "%f8"
+      batched_attention_matches_cpu_softmax_when_the_running_max_grows ... FAILED
+        slot 0 head 0 dim 0 = 4.5, CPU softmax reference = 7.5247297
+      flash_decoding_chunk_kernel_stays_green ... ok
+
+    Restored: 5/5 pass, and 2575 aprender-gpu lib tests pass.
+
+    4.5 is not arbitrary: V[p] = p+1 over eight positions, so 4.5 is their
+    unweighted mean. With the correction pinned to 1.0 the accumulated weights
+    collapse toward uniform and the kernel returns an average instead of a
+    softmax; the reference 7.52 is dominated by V[7] = 8, as a softmax over
+    increasing scores should be. That is the mechanism stated as a number.
+
+    The discrimination case is the point: flash_decoding_chunk_kernel_stays_green
+    holds under the mutation, so the checker is specific to the kernel it was
+    written for rather than RED on everything. Two further controls
+    (checker_rejects_a_self_subtraction, checker_accepts_a_saved_max) prove it
+    can fire at all, so a change in how instructions are spelled cannot turn it
+    into a test that scans nothing and passes. The GPU test's K is chosen so the
+    running max grows at every position -- a flat score sequence passes WITH the
+    bug in place, so the input is part of the assertion.
   if_fails: KV cache not populated for slot, or hidden state not indexed by slot
 - id: FALSIFY-CB-009
   rule: KV cache populated for all slots after prefill

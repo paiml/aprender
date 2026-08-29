@@ -62,6 +62,12 @@ pub use cancel_scope::request_cancel_token;
 // run under the default feature set. Gating the whole module put the only
 // cancellation-free decode loop in the crate outside every CI test job.
 pub mod apr_q4k_scheduler;
+// PERF-041: NOT `#[cfg(feature = "cuda")]`, on purpose. It holds the admission
+// predicate of contracts/batch-admission-v1.yaml and its exhaustive table test,
+// which `cargo test -p aprender-serve --lib batch_admission` must be able to
+// select in the default feature set — the same dark-target reasoning as the
+// comment above `apr_q4k_scheduler`.
+pub mod batch_admission;
 #[cfg(feature = "cuda")]
 pub mod cuda_batch_scheduler;
 #[cfg(feature = "cuda")]
@@ -168,8 +174,10 @@ pub struct AppState {
     /// Batch configuration for window timing and size thresholds (PARITY-052)
     #[cfg(feature = "gpu")]
     batch_config: Option<BatchConfig>,
-    /// CUDA-optimized model for high-performance GPU inference (PAR-111)
-    /// Uses pre-uploaded weights and batched workspaces for 755+ tok/s (2.6x Ollama)
+    /// CUDA-optimized model for GPU inference (PAR-111).
+    /// Uses pre-uploaded weights and batched workspaces. The throughput and
+    /// Ollama-ratio this comment used to assert were withdrawn: they were taken
+    /// on the batched path while it emitted garbage tokens (aprender#2753).
     #[cfg(feature = "cuda")]
     cuda_model: Option<Arc<std::sync::RwLock<crate::gguf::OwnedQuantizedModelCuda>>>,
     /// PMAT-044: CUDA batch scheduler for continuous batching on /v1/chat/completions

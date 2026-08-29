@@ -242,6 +242,26 @@ impl CudaExecutor {
         Ok(())
     }
 
+    /// PERF-050: set the dead-slot mask (PMAT-076) explicitly.
+    ///
+    /// Exists so a diagnostic can make its reading independent of where in a decode step it is
+    /// invoked. A stale mask sets seq_lens to 0 for a live slot, and the attention kernel's
+    /// online softmax then divides by a sum_exp that never accumulated, returning NaN.
+    pub fn set_batched_done_mask(&mut self, done: &[bool]) {
+        self.batched_done_mask.clear();
+        self.batched_done_mask.extend_from_slice(done);
+    }
+
+    /// PERF-050: read-only view of the per-slot batched KV lengths.
+    ///
+    /// FALSIFY-CB-009 is stated over this array ("batched_kv_lengths[i] == prefill_len for all
+    /// i in 0..M"), so a diagnostic that wants to check the obligation at runtime needs to see
+    /// it. Read-only on purpose: the field is owned by the scatter paths that maintain it.
+    #[must_use]
+    pub fn batched_kv_lengths(&self) -> &[usize] {
+        &self.batched_kv_lengths
+    }
+
     /// PAR-119: Reset batched KV caches for new generation
     pub fn reset_batched_kv_cache_gpu(&mut self) {
         for len in &mut self.batched_kv_lengths {
@@ -433,7 +453,8 @@ impl CudaExecutor {
 
     /// PMAT-058: Free batched KV caches to reclaim VRAM after batch decode.
     ///
-    /// Five-Whys: c=1 decode regresses 140→124 tok/s after c=4 batch.
+    /// Five-Whys: c=1 decode regresses after a c=4 batch (magnitude UNMEASURED
+    /// on a correct batched path — see aprender#2753).
     /// Why? SGEMM prefill (no FP16 cache) instead of HGEMM.
     /// Why? FP16 weight cache was cleared before batch decode (GH-141).
     /// Why? Not rebuilt because batched KV caches (~460MB) still occupy VRAM.
