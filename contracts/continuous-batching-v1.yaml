@@ -447,6 +447,69 @@ falsification_tests:
     removed the batched forward is deterministic but still differs from the M=1
     oracle (13874 vs 13552, cosine 0.684587). That residual correctness gap is a
     different defect from the race, and CB-006 stays RED until it is closed.
+
+    ROUND 6 (PERF-050 cont., apr 0.64.0 (f1f4eefef) and (56b18713b), RTX 4090).
+    A RETRACTION, an elimination, and the residual split into two more defects.
+
+    RETRACTION OF THE ROUND-2 "CONTRADICTION". That record said prefill_eager and
+    the batched decode call the SAME two per-layer functions
+    (batched_qkv_rope_phase, batched_attn_ffn_phase), leaving attention as the only
+    difference, and called the result a tension. The premise was false.
+    `use_graph_dispatch()` reads GRAPH_DISPATCH and is ENABLED UNLESS the variable
+    is exactly "0", so it is ON by default, and the batched decode runs
+    transformer_layer_batched_GRAPH while prefill runs transformer_layer_batched.
+    They never called the same code. Measured, not inferred: a fingerprint added
+    inside batched_qkv_rope_phase fired twice, both at len 24576 (prefill, m=16),
+    while the decode emitted 14 layer-0 traces. There was no contradiction to
+    resolve, only a wrong reading of which code runs.
+
+    FALSIFY-CB-006's residue is therefore in the GRAPH-DISPATCH layer
+    implementation, which no round before this one had looked at.
+
+    #2765 ELIMINATED AS THE RESIDUAL. Under APR_STREAM_LEGACY=1, toggling
+    APR_FP8_PAD_ZERO changes nothing at all: SELF 1.000000, ORACLE cosine
+    0.684587, argmax 13874 vs 13552, max|d| 15.0010, bit-identical either way.
+    This also retires round 4's own numbers -- zeroing appeared to move the cosine
+    0.286372 -> 0.563568, and with the race pinned it is clear both were samples
+    from a racing distribution. The conclusion was right, the evidence was noise.
+
+    THE ORACLE BISECT TERMINATES AT LAYER 0. With the race pinned, the batched
+    hidden state disagrees with the M=1 oracle at the FIRST transformer layer, on
+    identical input and identical KV:
+
+      oracle  layer 0 output            sum = 3.404263  (finite, correct)
+      batched layer 0, cuBLAS FP8 route sum = 4.1119    (finite, wrong)
+      batched layer 0, default route    ALL NaN, 1536/1536 non-finite
+
+    TWO MORE DEFECTS, NOW SEPARATED. GRAPH_DISPATCH=0 routes the decode through the
+    same layer implementation prefill uses, and the difference is not subtle:
+
+      GRAPH_DISPATCH default (graph path)  layer 0 all-NaN; output `!!!!`
+      GRAPH_DISPATCH=0 (non-graph path)    layer 0 finite (sum 149.4063);
+                                           output `compilers compilers compilers`
+
+    Real English words instead of a constant token. So the NaN that produced the
+    original m=1 symptom comes from the graph-dispatch layer implementation.
+
+    But the non-graph path fails a different control: SENSITIVE reports cosine
+    1.000000, meaning the batched forward returns the SAME logits for an embedding
+    and its sign-flipped negation. That path IGNORES ITS INPUT, which is also why
+    its output is one word repeated. It still disagrees with the oracle at cosine
+    0.719427.
+
+    So CB-006's residue is two defects, not one, and they are in different
+    implementations of the same layer:
+      (i)  graph-dispatch layer path produces NaN at layer 0;
+      (ii) non-graph batched layer path is insensitive to its input embedding.
+    Both are downstream of a KV cache, a prefill, an attention kernel and an
+    attention wiring that earlier rounds proved correct, and both are separable
+    from the #2767 race for the first time.
+
+    INSTRUMENTATION PLACEMENT. forward_utils.rs is ALSO frozen by a pre-existing
+    complexity violation (debug_q6k_lm_head, Cognitive 41 > 25, reached through an
+    include!), a second instance of #2766. The oracle-side per-layer bisect was
+    therefore run with the GPU_DEBUG_ALL_LAYERS=1 hook that already exists at HEAD,
+    needing zero code changes, rather than fighting the gate.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
