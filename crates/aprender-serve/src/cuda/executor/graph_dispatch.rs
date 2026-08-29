@@ -12,6 +12,26 @@ use trueno_gpu::GpuError;
 
 use super::CudaExecutor;
 
+impl CudaExecutor {
+    /// PERF-050: map the GGML type code carried on a graph node back to the executor's enum.
+    ///
+    /// Unknown codes fall back to Q4_K, which is what this dispatcher assumed for every weight
+    /// before the code was carried at all -- so an unrecognised type is no worse than the old
+    /// behaviour, and the types this model actually uses are all named.
+    fn qtype_from_ggml(code: u32) -> crate::cuda::types::WeightQuantType {
+        use crate::cuda::types::WeightQuantType as W;
+        match code {
+            2 => W::Q4_0,
+            3 => W::Q4_1,
+            6 => W::Q5_0,
+            8 => W::Q8_0,
+            13 => W::Q5K,
+            14 => W::Q6K,
+            _ => W::Q4K,
+        }
+    }
+}
+
 impl KernelDispatch for CudaExecutor {
     fn dispatch_mul_mat(
         &mut self,
@@ -33,10 +53,23 @@ impl KernelDispatch for CudaExecutor {
             trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(output_ptr, (m * n) as usize)
         };
 
+        // PERF-050 (aprender#2753): use the weight's ACTUAL quantization type.
+        //
+        // This dispatcher passed WeightQuantType::Q4K unconditionally, because OpParams carried
+        // only a pointer and the type was discarded at graph-build time. In
+        // qwen2.5-coder-1.5b-instruct-q4_k_m that is correct for 170 tensors and wrong for 29 --
+        // attn_v, ffn_down and the LM head are Q6_K -- so the first Q6_K weight the forward
+        // reached, blk.0.attn_v, was dequantized with the Q4_K kernel and produced absmax 4.9e8
+        // with 47 of 256 values non-finite, which became NaN across the whole layer and the
+        // constant-token output of aprender#2753.
+        let qtype = Self::qtype_from_ggml(node.params.weight_qtype);
+
         // PMAT-295: Use inline Q8 DP4A GEMV when enabled.
         // Single kernel launch (Q8 quantize fused into DP4A) for M=2-4 Q4K.
         // At M>=5, FP8 cuBLASLt fires. At M=1, existing DP4A with Q8 cache works.
+        // PERF-050: this kernel is Q4K-only, so it must not claim a Q6_K weight.
         let use_inline_q8 = Self::use_inline_q8_gemv()
+            && qtype == crate::cuda::types::WeightQuantType::Q4K
             && m >= 2
             && m <= 8
             && self.gpu_profile.q4k == crate::cuda::gpu_profile::Q4kVariant::HwDp4a
@@ -46,7 +79,7 @@ impl KernelDispatch for CudaExecutor {
             self.inline_q8_dp4a_q4k_gemv_into(weight_ptr, &input_buf, &output_buf, m, n, k)?;
         } else {
             self.batched_gemv_or_gemm(
-                crate::cuda::types::WeightQuantType::Q4K,
+                qtype,
                 weight_ptr,
                 &input_buf,
                 &output_buf,

@@ -8,7 +8,7 @@
 
 use trueno_gpu::graph::{ComputeGraph, OpParams, TensorOp};
 
-use crate::cuda::types::ValidatedLayerWeights;
+use crate::cuda::types::{ValidatedLayerWeights, WeightQuantType};
 
 /// Build a compute graph for one transformer decoder layer (Qwen2.5 architecture).
 ///
@@ -22,6 +22,21 @@ use crate::cuda::types::ValidatedLayerWeights;
 ///
 /// Returns the graph and the index of the final output node.
 #[allow(clippy::too_many_arguments)]
+/// PERF-050 (aprender#2753): GGML type code for a weight, so the graph can carry what the
+/// dispatcher used to assume.
+fn ggml_code(q: WeightQuantType) -> u32 {
+    match q {
+        WeightQuantType::Q4_0 => 2,
+        WeightQuantType::Q4_1 => 3,
+        WeightQuantType::Q5_0 => 6,
+        WeightQuantType::Q8_0 => 8,
+        WeightQuantType::Q4K => 12,
+        WeightQuantType::Q5K => 13,
+        WeightQuantType::Q6K => 14,
+        _ => 12,
+    }
+}
+
 pub fn build_layer_graph(
     layer_weights: &ValidatedLayerWeights,
     input_ptr: u64,
@@ -72,6 +87,7 @@ pub fn build_layer_graph(
         vec![normed_attn],
         OpParams {
             weight_ptr: layer_weights.attn_q_ptr,
+            weight_qtype: ggml_code(layer_weights.attn_q_qtype),
             ..Default::default()
         },
     );
@@ -84,6 +100,7 @@ pub fn build_layer_graph(
         vec![normed_attn],
         OpParams {
             weight_ptr: layer_weights.attn_k_ptr,
+            weight_qtype: ggml_code(layer_weights.attn_k_qtype),
             ..Default::default()
         },
     );
@@ -96,6 +113,7 @@ pub fn build_layer_graph(
         vec![normed_attn],
         OpParams {
             weight_ptr: layer_weights.attn_v_ptr,
+            weight_qtype: ggml_code(layer_weights.attn_v_qtype),
             ..Default::default()
         },
     );
@@ -122,6 +140,7 @@ pub fn build_layer_graph(
         vec![attn_out],
         OpParams {
             weight_ptr: layer_weights.attn_output_ptr,
+            weight_qtype: ggml_code(layer_weights.attn_output_qtype),
             ..Default::default()
         },
     );
@@ -158,6 +177,7 @@ pub fn build_layer_graph(
         vec![normed_ffn],
         OpParams {
             weight_ptr: layer_weights.ffn_gate_ptr,
+            weight_qtype: ggml_code(layer_weights.ffn_gate_qtype),
             ..Default::default()
         },
     );
@@ -170,6 +190,7 @@ pub fn build_layer_graph(
         vec![normed_ffn],
         OpParams {
             weight_ptr: layer_weights.ffn_up_ptr,
+            weight_qtype: ggml_code(layer_weights.ffn_up_qtype),
             ..Default::default()
         },
     );
@@ -192,6 +213,7 @@ pub fn build_layer_graph(
         vec![ffn_act],
         OpParams {
             weight_ptr: layer_weights.ffn_down_ptr,
+            weight_qtype: ggml_code(layer_weights.ffn_down_qtype),
             ..Default::default()
         },
     );
