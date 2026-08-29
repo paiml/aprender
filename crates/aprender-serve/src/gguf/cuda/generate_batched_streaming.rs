@@ -74,6 +74,24 @@ fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize, top_p: f
     probs.last().map_or(0, |(idx, _)| *idx as u32)
 }
 
+/// FALSIFY-CB-008 (`contracts/continuous-batching-v1.yaml`): "All M slots produce distinct
+/// tokens per decode step (not constant)". The contract named `BATCHED_DECODE_TRACE` as its
+/// evidence; the variable did not exist, so nothing could ever have read that log. It does now.
+///
+/// `BATCHED_DECODE_TRACE=1` emits one line per batched decode step:
+///
+/// ```text
+/// [CB-008] step=0 m=4 token_ids=[3156, 3156, 3156, 3156] positions=[16, 16, 16, 16] done=[..]
+/// ```
+///
+/// Read once per process. The existing `[PMAT-072] decode step` lines stop at step 3, which is
+/// too early to see a slot freeze; CB-008 is a property of the whole generation.
+#[cfg(feature = "cuda")]
+fn batched_decode_trace() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("BATCHED_DECODE_TRACE").as_deref() == Ok("1"))
+}
+
 /// PMAT-072: Decode state for step-wise batched generation.
 ///
 /// Extracted from `generate_batched_streaming` to allow lock release between
@@ -497,6 +515,17 @@ impl OwnedQuantizedModelCuda {
             eprintln!(
                 "[PMAT-072] decode step {}: token_ids={token_ids:?}, done={:?}",
                 state.gen_idx, state.done
+            );
+        }
+
+        // FALSIFY-CB-008 evidence, every step rather than the first three.
+        if batched_decode_trace() {
+            eprintln!(
+                "[CB-008] step={} m={} token_ids={token_ids:?} positions={:?} done={:?}",
+                state.gen_idx,
+                state.m,
+                &state.pos_buf[..state.m],
+                state.done
             );
         }
 
