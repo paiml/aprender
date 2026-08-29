@@ -224,6 +224,65 @@ falsification_tests:
         context.
 
     PERF-001's credited throughput stays withdrawn: the tokens are still garbage.
+
+    ROUND 2 (PERF-050 cont., apr 0.64.0 (82c50cfe5), RTX 4090). Four components
+    of batched decode are now each proven correct by a mutation-verified test,
+    and the output is STILL garbage. The exclusions are the result; they are
+    recorded so the next attempt does not re-walk them:
+
+      - attention KERNEL: cargo test -p aprender-gpu --features cuda --lib cb008
+        at production shape (head_dim 128, 12 heads over 2 KV heads, 2048 cache),
+        Q differing per (slot, head), K/V per (slot, kv_group), per-slot seq_lens
+        [17, 11, 5]. Matches a one-pass CPU softmax. RED under the CB-008
+        mutation at 9 vs 15.11563.
+      - decode-step attention WIRING (the scatter that writes THIS step's K/V,
+        the padded k_ptrs/v_ptrs arrays, seq_lens, the length advance):
+        cb008_decode_attention_wiring, KV_SLOTS 8 > M 3 so the padded case is
+        under test. RED under two mutations (lengths pos+1 -> pos; k_ptrs losing
+        its slot stride, which failed on slot 1 and left slot 0 correct).
+      - prefill -> decode KV HANDOFF: cb009_kv_handoff checks
+        scatter_single_kv_to_batched moves every layer and KV head to the right
+        slot bit-for-bit AND writes nothing into peer slots. RED when the slot
+        offset is dropped.
+      - PREFILL itself, behaviourally, from round 1.
+
+    The tension this creates is the finding. prefill_eager -- the fast path's
+    prefill, which produces coherent English -- calls the SAME two per-layer
+    functions batched decode calls: batched_qkv_rope_phase and
+    batched_attn_ffn_phase. At m=4 with BATCHED_DP4A=0 the GEMM routing is
+    identical as well (use_cublas fires at m>=4 in decode and at m=16 in
+    prefill), so the only remaining difference is the attention branch --
+    batched_incremental_attention_into instead of prefill_attention_cublas --
+    and that branch is now proven correct in isolation. One of those statements
+    must be wrong, and the next instrument has to be able to say which.
+
+    One new empirical fact, which is the best lead. At m=1 through the batched
+    path, 24-token cap, four configurations:
+
+      default                                  '!!!!...'  (token id 0)
+      CUBLAS_GEMM_THRESHOLD=1                  'ICENSE.0:num==...'
+      CUDA_MAX_BATCH=1                         '!!!!...'
+      CUBLAS_GEMM_THRESHOLD=1 CUDA_MAX_BATCH=1 '!!!!...'
+
+    Rows 2 and 4 have IDENTICAL GEMM routing and differ only in how many KV
+    slots were allocated (32 vs 1, i.e. 3584 MB vs 112 MB), and they produce
+    different output. Decode output must not depend on the size of an allocation
+    it does not index. That is the signature of a read of memory that was never
+    written -- which also fits the rest: a constant token id 0 is what an
+    all-zero logits buffer argmaxes to, and the garbage becomes varied text
+    rather than id 0 exactly when a different allocation size shifts what
+    happens to be sitting at those addresses.
+
+    WHAT WOULD SETTLE IT. An in-process A/B at m=1, immediately after prefill:
+    compare forward_batched_to_logits against
+    forward_gpu_resident(last_token, cache, position), which is the M=1 path
+    that produces coherent output, reading KV populated by the same prefill. It
+    is a true oracle for the same arithmetic on the same state, so a logits
+    comparison localises the divergence to the forward, and dumping hidden_buf2
+    per layer then bisects to the layer -- the same method that took the
+    attention kernel from suspicion to a one-line fix. It needs
+    batched_kv_stride temporarily zeroed around the call, exactly as
+    add_slot_to_batch already does, so the M=1 path reads the single cache.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
