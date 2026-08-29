@@ -390,6 +390,63 @@ falsification_tests:
     logits differ, it is the LM head GEMM, whose FP8 route allocates
     fp16_activation_scratch of n * m_padded = 2,430,976 elements on the first call
     and reuses it on the second.
+
+    ROUND 5 (PERF-050 cont., apr 0.64.0 (869ef5dce), RTX 4090). MECHANISM FOUND.
+
+    The split ran and terminated, then terminated again a level deeper.
+    Fingerprinting normed_hidden_buf and logits_buf showed both IDENTICAL across
+    the two forwards -- and SELF came out at cosine 1.000000, where it had been
+    0.673570 moments earlier on the same binary. The instrumentation had fixed the
+    bug. Per-layer synchronizes were already present in round 4 and did not; the
+    two NEW ones are in the output stage. A Heisenbug is a finding: it says the
+    mechanism is ordering.
+
+    CudaStream::new creates this crate's streams with CU_STREAM_NON_BLOCKING,
+    which is explicitly excluded from legacy default-stream ordering, while
+    GpuBuffer::copy_from_host / copy_to_host are cuMemcpyHtoD / cuMemcpyDtoH --
+    LEGACY-stream transfers. A legacy transfer does not order against a
+    non-blocking stream, so every host transfer in the batched decode path races
+    the kernels in flight on that stream, and the surrounding code is written
+    throughout as though the transfers were ordered against it.
+
+    Proven in ONE binary with ONE env var, which is the mutation pair:
+
+      CU_STREAM_NON_BLOCKING (default)         SELF cosine 0.517985  FAILS
+      APR_STREAM_LEGACY=1 (CU_STREAM_DEFAULT)  SELF cosine 1.000000  PASSES
+
+    It restores the INVARIANT -- identical inputs, identical logits -- rather than
+    improving a number, which is the standard the round-4 FP8 padding hypothesis
+    failed. SENSITIVE and PERTURBED still diverge under the knob, so the probe has
+    not gone uniformly green.
+
+    One mechanism now accounts for the whole thread: the round-2 allocation-size
+    dependence (timing), the round-3 all-NaN and all-zero logits (a partially
+    written buffer; a fresh allocation reads as zero, which argmaxes to token 0 --
+    the original constant-token output), and the first-call/second-call asymmetry.
+
+    A SINGLE TARGETED SYNC IS NOT ENOUGH: adding stream.synchronize() before only
+    the logits download left SELF at 0.719000. The race is systemic -- 260
+    legacy-stream host-transfer sites in aprender-serve alone (206 copy_to_host,
+    31 copy_from_host, 15 copy_from_host_at, 8 copy_to_host_at), including the
+    pointer arrays, seq_lens and positions that in-flight kernels read.
+
+    WHAT THE REPAIR REQUIRES. Two options, and the choice has a throughput
+    consequence that must be measured rather than assumed:
+      (a) create the streams with CU_STREAM_DEFAULT. One line, restores the
+          ordering the code already assumes -- but serializes against the legacy
+          stream, and this crate creates several streams (compute_stream,
+          transfer_stream, s1..s3) for deliberate overlap. CORRECTNESS-012b moved
+          work onto self.stream precisely for ordering.
+      (b) convert the transfers to the stream-ordered async variants that already
+          exist in transfer.rs (copy_from_host_async, cuMemcpyDtoHAsync), with an
+          explicit sync before each host READ. Preserves overlap; 260 call sites.
+    The knob ships default-unchanged so the finding stays reproducible in one
+    binary either way.
+
+    STILL OPEN, and now cleanly separable for the first time: with the race
+    removed the batched forward is deterministic but still differs from the M=1
+    oracle (13874 vs 13552, cosine 0.684587). That residual correctness gap is a
+    different defect from the race, and CB-006 stays RED until it is closed.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
