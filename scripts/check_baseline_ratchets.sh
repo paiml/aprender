@@ -58,10 +58,19 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 #   count — the file holds one integer, which may only fall.
 #   keyed — lines are <path><TAB><count>; no key may rise, no key may appear.
 #   none  — not a ratchet by its own stated contract; the reason is the value.
+#   set-aperture
+#         — `set`, plus the ONE admission a widened guard needs (PERF-049): an
+#           added <path>:<line> whose line is BYTE-IDENTICAL at the comparand,
+#           in a diff that also changes the owning guard, named in the value.
+#           Everything else is refused as `set` refuses it, and every admitted
+#           coordinate is printed. Without this the guard could never be
+#           widened at all: `check_no_claim_literals.sh` could not see the
+#           `2.93× Ollama` it was built for, and reading it reveals 18 claims
+#           that were already in the tree. See lib_baseline_ratchet.sh.
 classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassified
     case "$1" in
         assertion_exclusion_baseline.txt)        printf 'keyed\n' ;;
-        claim_literal_baseline.txt)              printf 'set\n' ;;
+        claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
@@ -258,6 +267,83 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
             e2e_row 'end-to-end swap at equal count' 1 '# header\na\nc\n'
             e2e_row 'end-to-end one entry deleted' 0 '# header\na\n'
 
+            # -- set-aperture (PERF-049). The admission is narrow and every
+            # branch of it must be shown to REFUSE, not just to admit. A rule
+            # exercised only on its happy path is a rule nobody has tested.
+            #
+            # The scratch repo gets a "guard" and two source files. `pre.md`
+            # exists at the comparand and is untouched here, so its line
+            # PREDATES; `fresh.md` is written by the working tree only.
+            printf 'the old claim, 2.93 times faster\n' > "$SR/pre.md"
+            printf 'GUARD v1\n' > "$SR/guard.sh"
+            git -C "$SR" add -A >/dev/null 2>&1
+            git -C "$SR" -c commit.gpgsign=false commit -qm 'aperture base' >/dev/null 2>&1
+            SR_APER=$(git -C "$SR" rev-parse HEAD)
+
+            ap_row() { # ap_row <label> <want-rc> <baseline-content> <guard-content> <pre.md-content>
+                local got
+                printf '%b' "$3" > "$SR/$P"
+                printf '%b' "$4" > "$SR/guard.sh"
+                printf '%b' "$5" > "$SR/pre.md"
+                printf 'written by this branch\n' > "$SR/fresh.md"
+                ( BASELINE_RATCHET_BASE_REF="$SR_APER" \
+                  baseline_ratchet_check "$SR" "$P" set-aperture guard.sh ) >/dev/null 2>&1
+                got=$?
+                rows=$((rows + 1))
+                if [ "$got" != "$2" ]; then
+                    printf 'FAIL  %-46s want rc=%s got rc=%s\n' "$1" "$2" "$got"
+                    bad=1
+                fi
+            }
+            AP_BASE='# header\npre.md:1\n'
+            # The one thing it must ADMIT: a line that predates the comparand,
+            # in a diff that moves the guard.
+            ap_row 'aperture reveal admitted'            0 "$AP_BASE" 'GUARD v2\n' 'the old claim, 2.93 times faster\n'
+            # (b) The aperture did not move -> nothing may be recorded. This is
+            # what keeps "record it instead of fixing it" off ordinary PRs.
+            ap_row 'aperture guard UNCHANGED refuses'    1 "$AP_BASE" 'GUARD v1\n' 'the old claim, 2.93 times faster\n'
+            # (a) PERF-028's laundering shape, which is the whole point: the
+            # entry and its matching violation in one commit.
+            ap_row 'aperture line REWRITTEN refuses'     1 "$AP_BASE" 'GUARD v2\n' 'a claim this branch just wrote\n'
+            ap_row 'aperture file absent at comparand'   1 '# header\nfresh.md:1\n' 'GUARD v2\n' 'the old claim, 2.93 times faster\n'
+            ap_row 'aperture line past end of file'      1 '# header\npre.md:9\n'  'GUARD v2\n' 'the old claim, 2.93 times faster\n'
+            ap_row 'aperture non-coordinate refuses'     1 '# header\nnot-a-coordinate\n' 'GUARD v2\n' 'the old claim, 2.93 times faster\n'
+            ap_row 'aperture non-numeric line refuses'   1 '# header\npre.md:x\n' 'GUARD v2\n' 'the old claim, 2.93 times faster\n'
+            # THIS ROW IS THE ONLY ONE THE NUMERIC CHECK CATCHES ALONE, and it
+            # was found by mutating that check rather than by reading it:
+            # deleting it left the table GREEN, because `pre.md:x` is refused
+            # one branch later ("empty in BOTH copies") when sed errors. `$` is
+            # not an error — it is sed's LAST-LINE address, so an entry reading
+            # `pre.md:$` would compare the last line to itself and be ADMITTED
+            # while naming no line at all.
+            ap_row 'aperture sed address ($) refuses'    1 '# header\npre.md:$\n' 'GUARD v2\n' 'the old claim, 2.93 times faster\n'
+            # Removal stays free, and an unchanged file stays green with no
+            # guard edit at all -- otherwise the new kind would be strictly
+            # WORSE than `set` on the ordinary path.
+            ap_row 'aperture unchanged is green'         0 '# header\n' 'GUARD v1\n' 'the old claim, 2.93 times faster\n'
+            # A missing owner argument must fail CLOSED. Called with no guard
+            # path, "could not check" must never read as "no growth".
+            printf '%b' "$AP_BASE" > "$SR/$P"
+            printf 'GUARD v2\n' > "$SR/guard.sh"
+            ( BASELINE_RATCHET_BASE_REF="$SR_APER" \
+              baseline_ratchet_check "$SR" "$P" set-aperture ) >/dev/null 2>&1
+            say_row 'aperture with NO owning guard refuses' 1 $?
+            # And the admission must be LOUD. A silent one is this file's own
+            # defect one level up.
+            printf '%b' "$AP_BASE" > "$SR/$P"
+            ap_out=$( BASELINE_RATCHET_BASE_REF="$SR_APER" \
+                      baseline_ratchet_check "$SR" "$P" set-aperture guard.sh 2>&1 )
+            rows=$((rows + 1))
+            case "$ap_out" in
+                *"APERTURE REVEAL"*"pre.md:1"*) : ;;
+                *)  printf 'FAIL  an aperture reveal was admitted without NAMING it. A\n'
+                    printf '      silent admission is the defect this file is about.\n'
+                    bad=1 ;;
+            esac
+            git -C "$SR" checkout -q -- . >/dev/null 2>&1
+            rm -f "$SR/fresh.md"
+            printf '# header\na\nb\n' > "$SR/$P"
+
             # A REAL RED IS NOT A CRASH, and both exit 1. A comparator returns
             # 1 BY DESIGN on the growth path, so a caller running `set -e`
             # (check_no_claim_literals.sh does) can die AT the call instead of
@@ -355,7 +441,7 @@ while IFS= read -r f; do
         continue
     fi
     n_ratchet=$((n_ratchet + 1))
-    baseline_ratchet_check "$REPO_ROOT" "scripts/$f" "$kind" || rc=1
+    baseline_ratchet_check "$REPO_ROOT" "scripts/$f" "$kind" "${entry#*$'\t'}" || rc=1
 done <<< "$(universe)"
 
 # Vacuity: a glob that matched nothing would compare nothing and look like a
