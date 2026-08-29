@@ -394,6 +394,9 @@ impl OwnedQuantizedModelCuda {
         &mut self,
         state: &mut BatchedDecodeState,
     ) -> Result<Vec<u32>> {
+        // PERF-050 round 3: in-process A/B against the M=1 oracle (APR_PARITY_PROBE=1).
+        self.cb006_parity_probe(state);
+
         // PMAT-286: Sub-phase timing inside decode step
         static DECODE_PHASE_TIMER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let timing = *DECODE_PHASE_TIMER.get_or_init(|| {
@@ -1155,3 +1158,5 @@ mod pmat764_select_batched_token_tests {
         assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 2.0), 1);
     }
 }
+
+include!("cb006_parity_probe.rs");

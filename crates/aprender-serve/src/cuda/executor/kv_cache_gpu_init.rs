@@ -242,6 +242,16 @@ impl CudaExecutor {
         Ok(())
     }
 
+    /// PERF-050: read-only view of the per-slot batched KV lengths.
+    ///
+    /// FALSIFY-CB-009 is stated over this array ("batched_kv_lengths[i] == prefill_len for all
+    /// i in 0..M"), so a diagnostic that wants to check the obligation at runtime needs to see
+    /// it. Read-only on purpose: the field is owned by the scatter paths that maintain it.
+    #[must_use]
+    pub fn batched_kv_lengths(&self) -> &[usize] {
+        &self.batched_kv_lengths
+    }
+
     /// PAR-119: Reset batched KV caches for new generation
     pub fn reset_batched_kv_cache_gpu(&mut self) {
         for len in &mut self.batched_kv_lengths {
