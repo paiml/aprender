@@ -46,61 +46,74 @@ CLAIM_RE='(println!|eprintln!|write!|writeln!|format!|\.red\(\)|\.green\(\)|\.ye
 # better provenance story, so it is banned by the same guard rather than a
 # second one that could rot separately.
 #
-# PERF-010 SPLIT THE PATTERN IN TWO, AND THE JOINER IS THE WHOLE FIX. §5's
-# status table listed the `[X]`-figure guard against this file as **not
-# written**, and it was right for a reason a reading of the regex does not
-# surface: the old form required the competitor's name to sit IMMEDIATELY after
-# the ratio, separated by nothing but spaces, and spelled with an ASCII `x`.
-# Both assumptions fail on the way people actually write the claim. Measured
-# against the six shapes the spec itself names, the old pattern caught ONE:
+# PERF-049 WIDENED RATIO_RE TWICE, AND THE GUARD COULD NOT SEE ITS OWN SUBJECT
+# UNTIL IT DID. The pattern was `[0-9.]+x` followed IMMEDIATELY by a competitor
+# name. Two spellings escaped it, and the registry had recorded this row as
+# proven using ONE OF THEM:
 #
-#   36.9x FasterTransformer          caught       (the only adjacent form)
-#   36.9x over FasterTransformer     MISSED       connector
-#   36.9× over FasterTransformer     MISSED       connector + U+00D7  <- §5's own mutation
-#   23x over static batching         MISSED       connector
-#   1.8x over vLLM                   MISSED       connector
-#   2.93× Ollama                     MISSED       U+00D7 alone
+#   (1) U+00D7. `2.93x Ollama` -> rc=1; `2.93× Ollama` -> rc=0. The multiplication
+#       sign is the character actually PUBLISHED — the book's "851.8 tok/s =
+#       2.93× Ollama", from a harness that never ran Ollama, is written with it.
+#       §5's registered mutation for this guard is `add "2.93× Ollama" to book/`,
+#       so running the mutation exactly as written left the guard GREEN. The row
+#       was evidence for a gate that, on the input the row itself named, could
+#       not fail.
 #
-# The `×` half is not academic: this repo's prose prefers the typographic sign,
-# so the single most quotable fabrication in the epic — "851.8 tok/s = 2.93×
-# Ollama" — was invisible in its own preferred spelling while the ASCII twin on
-# the line below it was caught. And the connector half is what hid a LIVE claim:
-# `book/src/tools/apr-cli.md:81` shipped "Batched GPU mode (2.9x faster than
-# Ollama)" past a green guard, because "faster than" stood between the ratio and
-# the name. That is the most natural English form of the exact sentence this
-# guard exists to ban.
+#   (2) ONE INTERVENING WORD. `36.9x FasterTransformer` was RED and `36.9x over
+#       FasterTransformer` was GREEN — and the second is the spelling §0.1 of
+#       APR-PERF-GATE-001 itself uses for the `[X]` figures I-12 bans.
 #
-# `(x|×)` rather than `[x×]`: `×` is two bytes in UTF-8 and a bracket expression
-# under a C locale becomes a BYTE class, which then matches the trailing byte of
-# unrelated multibyte characters. Alternation is locale-safe. (Same reasoning,
-# same words, as check_perf_claims_cite_receipts.sh — one dialect, two guards.)
+# THE GAP IS BOUNDED AT FIVE WORDS, AND THE BOUND WAS MEASURED RATHER THAN
+# PICKED. Over the 6900-file universe the new-hit set is IDENTICAL at 5 and at
+# 6; the last true positive to appear is at 5 ("the 8.2x performance gap between
+# realizar and llama.cpp"). Widths 0..6 produce ZERO false positives here, so
+# the bound is not what holds the false-positive rate down — the GAP WORD CLASS
+# is, and it is the load-bearing half:
 #
-# The connector list is deliberately CLOSED and short. It admits comparison
-# words only, so `3x larger than PyTorch uses` stays unmatched: that is a size
-# remark, not a speed ratio, and the case table asserts it. Widening to "any
-# text between a ratio and a competitor name" was tried and collapses into
-# "any ratio on a line that mentions a competitor", which flags a sentence like
-# "Ollama users will find 3x3 convolutions familiar".
-COMPARATOR_RE='Ollama|ollama|llama\.cpp|llama|vLLM|vllm|PyTorch|torch|FasterTransformer|fastertransformer|SGLang|sglang|TensorRT|tensorrt|TGI|tgi|LMDeploy|lmdeploy|TurboMind|turbomind|Orca|static[[:space:]]+batching'
-RATIO_JOIN='([[:space:]]+|[[:space:]]*(faster|slower|speedup)?[[:space:]]*(over|than|vs\.?|versus|compared[[:space:]]+to)[[:space:]]+)'
-RATIO_RE="[0-9]+(\.[0-9]+)?[[:space:]]*(x|×)$RATIO_JOIN($COMPARATOR_RE)"
+#   letters, with interior `.` or `-`, plus a <=3-letter abbreviation ending in
+#   a dot. NOT digits, NOT `|`, NOT `,`, NOT `(`.
+#
+# So a markdown table row cannot be crossed (`| 2x | fast | torch |` stays
+# green — the pipes are not gap words), a dimension cannot start one (`3x3
+# matrix`, `2x2 grid of llama tiles`), and a sentence boundary stops it
+# ("4x faster. Ollama uses ggml" stays green, because `faster.` is six letters
+# and only an abbreviation may carry a trailing dot, which is what keeps
+# `2.9x vs. Ollama` RED). Every one of those is a row in the case table; the
+# no-trailing-dot rule was measured to change nothing in this tree, so it is
+# free safety rather than a guess.
+#
+# The separator after the multiplier is `*` and not `+` so that `2.93×Ollama`,
+# the tight typographic form, is caught too. It costs nothing: a gap word may
+# not begin with a digit, so `1024x1024 torch` cannot be crossed either.
+MULT_RE='(x|×)'
+COMPETITOR_RE='(Ollama|ollama|llama\.cpp|llama|vLLM|vllm|PyTorch|torch|FasterTransformer|fastertransformer|SGLang|sglang|TensorRT|tensorrt|TGI|tgi|LMDeploy|lmdeploy|TurboMind|turbomind|Orca|static[[:space:]]+batching)'
+RATIO_GAP_RE='(([A-Za-z]+([.-][A-Za-z]+)*|[A-Za-z]{1,3}\.)[[:space:]]+){0,5}'
+# The LEFT boundary is not decoration. Without it `v1.8x release notes for
+# llama` matched — a version string, three ordinary words, and a product name.
+# It is the only false positive the case table found, and it found it twice
+# over: blocking a preceding LETTER alone still matched at `.8x`, because the
+# dot let the regex restart one character in. So a preceding letter, digit or
+# DOT all disqualify, and `v1.8x` has no position left to match from.
+RATIO_LEFT_RE='(^|[^0-9A-Za-z.])'
+RATIO_RE="${RATIO_LEFT_RE}[0-9]+(\.[0-9]+)?${MULT_RE}[[:space:]]*${RATIO_GAP_RE}${COMPETITOR_RE}"
 TPUT_RE='[0-9]{2,}\+?[[:space:]]*tok/s'
 
 # A PLACEHOLDER THAT HAS BEEN GIVEN A UNIT IS READ AS A MEASUREMENT. PERF-010's
-# second half. `Throughput: XX tok/s` in a shipped chapter does not read to a
-# user as "we have not measured this yet"; it reads as a table someone forgot to
-# finish, and the number that eventually fills it inherits whatever trust the
-# surrounding prose had already earned.
+# second half, and a class RATIO_RE above has nothing to say about. `Throughput:
+# XX tok/s` in a shipped chapter does not read to a user as "we have not
+# measured this yet"; it reads as a table someone forgot to finish, and the
+# number that eventually fills it inherits whatever trust the surrounding prose
+# had already earned.
 #
 # THE BINDING TO A UNIT IS THE ENTIRE DESIGN, and skipping it would have shipped
 # a guard that is pure noise. In THIS repo `[X]` is overwhelmingly a MARKDOWN
-# CHECKBOX — `- [X] APPROVED for Production`, `| Section 9 | [X] PASS / [ ] FAIL
-# |` — and a bare ban on the literal would have been born RED against ten
+# CHECKBOX -- `- [X] APPROVED for Production`, `| Section 9 | [X] PASS / [ ] FAIL
+# |` -- and a bare ban on the literal would have been born RED against ten
 # checked boxes in docs/qa/ and zero defects. (Worth stating plainly because the
 # collision is with the spec's own vocabulary: APR-PERF-GATE-001 uses `[X]` as a
 # PROVENANCE TAG meaning "external claim about a third-party system", which is
-# the class the RATIO_RE above handles. Neither of those is a placeholder. Three
-# meanings, one spelling.)
+# the class RATIO_RE handles. Neither of those is a placeholder. Three meanings,
+# one spelling.)
 #
 # So a placeholder counts only where a figure would go: immediately before a
 # throughput unit, a memory unit, a latency unit, or a ratio bound to a speed
@@ -111,7 +124,7 @@ TPUT_RE='[0-9]{2,}\+?[[:space:]]*tok/s'
 # RATCHET AGAINST A SHAPE, not a cleanup. The mutation table is therefore the
 # only evidence it works, since the tree cannot supply a true positive.
 #
-# Leading boundary is `(^|[^A-Za-z0-9_])` rather than `\b` — `\b` is a GNU
+# Leading boundary is `(^|[^A-Za-z0-9_])` rather than `\b` -- `\b` is a GNU
 # extension this file does not otherwise rely on, and the explicit form is what
 # keeps `MAXX tok/s` (a field name) from matching.
 PLACEHOLDER_TOK='(\[X+\]|\[TBD\]|\[TODO\]|\[N\]|TBD|TODO|XX+)'
@@ -235,76 +248,6 @@ if [ "${1:-}" = "--selftest" ]; then
     check nomatch 'println!("Non-kernel time dominates this pass");'     # a magnitude, no cause
     check nomatch '// investigate sampling sync later'                   # a comment, not printed
 
-    # PERF-010: THE MARKDOWN CLASS. Every row above runs through check(), which
-    # requires a Rust print macro on the line -- so not one of them can reach the
-    # detector that actually guards book/ and docs/. Prose has no macro; ALL of
-    # it is the printed surface, so the .md sweep applies the ratio, throughput
-    # and placeholder patterns directly. A table that only ever exercised the
-    # Rust path is how the `[X]`-figure gap survived being "covered by
-    # check_no_claim_literals.sh" in the spec's own status table.
-    mt=0; mf=0
-    check_md() { # check_md <match|nomatch> <one line of markdown>
-        local want="$1" line="$2" got=nomatch
-        # `<<<` and capture-then-test, never `printf | grep -q`: an early-exiting
-        # reader plus pipefail hands the pipeline the PRODUCER's SIGPIPE status
-        # (141) even on a successful match. That exact shape was a live fail-open
-        # on main.
-        if grep -qE "$RATIO_RE|$TPUT_RE|$PLACEHOLDER_RE" <<< "$line" \
-           && ! grep -qE "$TARGET_RE" <<< "$line"; then got=match; fi
-        mt=$((mt+1))
-        if [ "$got" = "$want" ]; then printf '  ok    %-8s %s\n' "$want" "$(printf '%s' "$line" | cut -c1-64)"
-        else printf '  FAIL  want %-8s got %-8s %s\n' "$want" "$got" "$(printf '%s' "$line" | cut -c1-52)"; mf=$((mf+1)); fi
-    }
-    printf -- '--- markdown class: [X] figures, comparators, placeholders ---\n'
-    # THE SIX SHAPES §0.1 NAMES. Row 2 is §5's mutation for this guard verbatim.
-    check_md match   'aprender achieves 36.9x FasterTransformer throughput.'
-    check_md match   'aprender achieves 36.9× over FasterTransformer.'
-    check_md match   'Continuous batching gives 23× over static batching.'
-    check_md match   'Throughput is 1.8× over vLLM on this workload.'
-    check_md match   '| GPU (batched M=16) | Qwen 1.5B | ~850 tok/s | 2.93× Ollama |'
-    # THE LIVE ONE. Verbatim from book/src/tools/apr-cli.md:81, which shipped
-    # past this guard while it was green because "faster than" sat in the join.
-    check_md match   '# Batched GPU mode (2.9x faster than Ollama)'
-    check_md match   'realizar is 8.2x slower than llama.cpp on CPU.'
-    check_md match   'c=4 TTFT = 256ms (10.7x vs llama.cpp 24ms).'
-    # DISCRIMINATION. A ratio is not a claim just because a competitor is named
-    # on the same line, and a size remark is not a speed ratio.
-    check_md nomatch 'Ollama users will recognise the 3x3 convolution kernel.'
-    check_md nomatch 'The .apr file is 3x larger than PyTorch pickle output.'
-    check_md nomatch 'Compression ratio: 24 bits -> 8 bits = 3x smaller.'
-    check_md nomatch 'Target: 2x Ollama throughput on the 1.5B model.'
-    check_md nomatch 'Install Ollama first, then run the comparison harness.'
-    # PLACEHOLDERS BOUND TO A UNIT.
-    check_md match   'Throughput: XX tok/s'
-    check_md match   '| Decode | [TBD] tok/s | 1.9 GB |'
-    check_md match   'apr is [X]x faster than the previous release.'
-    check_md match   'Speedup over the baseline: [TBD]×'
-    check_md match   'Cold start latency: TODO ms'
-    # ...AND THE CHECKBOXES THEY MUST NOT BE CONFUSED WITH. Without these five
-    # rows a bare `\[X\]` ban looks correct and is born red against docs/qa/.
-    # The checkbox rows are built from variables rather than written inline.
-    # bashrs -- which this repo mandates over shellcheck -- parses the `[ ]` and
-    # `[X]` of a MARKDOWN checkbox as a shell test bracket and raises SC1028 /
-    # SC2104 / SC1087 against rows that are correct English. Same class as the
-    # \042 dance for LIT above, and the same remedy: keep the token out of the
-    # source line. scripts/*.sh is gated on a SHRINK-ONLY bashrs error count, so
-    # five false errors here are five someone else has to triage.
-    # Even the ASSIGNMENTS are built from parts: bashrs flags a bare `'[ ]'`
-    # string as SC2104 "missing space before ]". Brackets by name, then.
-    OB='['; CB=']'
-    CHECKED="${OB}X${CB}"; UNCHECKED="${OB} ${CB}"
-    check_md nomatch "- $CHECKED APPROVED for Production"
-    check_md nomatch "| Section 9 Tests/CI/Coverage | $CHECKED PASS / $UNCHECKED FAIL |"
-    check_md nomatch "| 9.1.1 | All tests pass | 0 failures | $CHECKED | $UNCHECKED |"
-    check_md nomatch '- Other modules: TBD from CI results'
-    check_md nomatch 'TODO: add a benchmark harness for the graph module.'
-    check_md nomatch 'The MAXX tok/s field is reserved.'
-    # VACUITY: a table that shrank to nothing would sweep clean.
-    if [ "$mt" -lt 24 ]; then
-        printf '  FAIL  markdown table has %s row(s); at least 24 are required\n' "$mt"; mf=$((mf+1))
-    fi
-    printf '  %s markdown case(s), %s failure(s)\n' "$mt" "$mf"
-
     # PERF-016: the causal class, where NO print macro is on the line. Every row
     # here is invisible to check() above -- that is the whole point of the
     # widening, so the table runs the widened extractor instead.
@@ -351,8 +294,163 @@ if [ "${1:-}" = "--selftest" ]; then
     fi
     printf '  %s causal case(s), %s failure(s)\n' "$ct" "$cf"
 
+    # PERF-049: THE RATIO TABLE. Separate from check() above on purpose — check()
+    # requires a Rust print macro on the line, and the two spellings that
+    # escaped this guard were published in MARKDOWN, where there is no macro and
+    # the .md sweep applies RATIO_RE directly. A table that could only reach the
+    # macro path would have kept passing over the exact hole PERF-049 is about.
+    #
+    # This repo's claim patterns have been wrong FIVE times; every one was found
+    # by a table and none by review. Re-run the table, do not re-read the regex.
+    rt=0; rf=0
+    check_ratio() { # check_ratio <match|nomatch> <one line of prose>
+        local want="$1" line="$2" got=nomatch
+        # Herestrings, not `printf | grep -q`: an early-exiting reader hands the
+        # producer SIGPIPE and pipefail reports 141 though grep MATCHED.
+        if grep -qE "$RATIO_RE|$TPUT_RE" <<< "$line" && ! grep -qE "$TARGET_RE" <<< "$line"; then
+            got=match
+        fi
+        rt=$((rt+1))
+        if [ "$got" = "$want" ]; then printf '  ok    %-8s %s\n' "$want" "$(printf '%s' "$line" | cut -c1-66)"
+        else printf '  FAIL  want %-8s got %-8s %s\n' "$want" "$got" "$(printf '%s' "$line" | cut -c1-54)"; rf=$((rf+1)); fi
+    }
+    printf -- '--- ratio class (markdown surface: no print macro) ---\n'
+    # MUST MATCH -- the two spellings that escaped, and the neighbours that did not.
+    check_ratio match   'apr sustains 2.93x Ollama on this workload.'          # ASCII, zero gap
+    check_ratio match   'apr sustains 2.93× Ollama on this workload.'          # U+00D7, zero gap
+    check_ratio match   '851.8 tok/s = 2.93× Ollama'                           # the PUBLISHED form, verbatim
+    check_ratio match   '2.93×Ollama'                                          # tight typographic form
+    check_ratio match   '36.9x FasterTransformer'                              # [X] figure, zero gap
+    check_ratio match   '36.9x over FasterTransformer'                         # ONE gap word -- the spec's own spelling
+    check_ratio match   '36.9× over FasterTransformer'                         # both defects at once
+    check_ratio match   '23x over static batching'                             # gap + a two-word competitor
+    check_ratio match   '1.8x vLLM'
+    check_ratio match   '2.9x faster than Ollama'                              # TWO gap words
+    check_ratio match   '2.9x vs. Ollama'                                      # abbreviation may carry its dot
+    check_ratio match   '16x convergence gap vs PyTorch'                       # THREE gap words
+    check_ratio match   'the 8.2x performance gap between realizar and llama.cpp'   # FIVE, the bound
+    check_ratio match   '8x slower than llama.cpp'                             # integer ratio, self-deprecating
+    check_ratio match   'Already 2.9x FASTER than Ollama'                      # I-12: illegal in either direction
+    # MUST NOT MATCH. These matter as much: a false positive here reds every PR
+    # in the repository, which is a worse failure than the hole it closes.
+    check_ratio nomatch 'a 3x3 matrix'
+    check_ratio nomatch 'a 2x2 grid of llama tiles'                            # dimension, not a ratio
+    check_ratio nomatch 'reshaped to 1024x1024 before the torch export'        # digits are not gap words
+    check_ratio nomatch '| 2x | fast | yes | torch |'                          # a pipe is not a gap word
+    check_ratio nomatch 'v1.8x release notes for llama'                        # version string
+    check_ratio nomatch 'aprender v0.64.0 ships 2 torch-free crates'           # version + a bare count
+    check_ratio nomatch 'Our matmul is 4x faster. Ollama uses ggml.'           # sentence boundary stops the gap
+    check_ratio nomatch 'the 2x speedup we would need on six separate kernels before llama'  # SIX words > the bound
+    check_ratio nomatch 'Target: 2x Ollama should be ~1025 tok/s'              # TARGET_RE -- a bar, not a claim
+    check_ratio nomatch 'the decode ratio must be >= 1.0x llama.cpp'           # a threshold
+    check_ratio nomatch 'Ollama runs at 2.9x the batch size'                   # competitor BEFORE the ratio
+    check_ratio nomatch 'see section 2 for the llama loader'                   # no ratio at all
+    # VACUITY. A table that shrank to nothing would sweep clean, and both halves
+    # must stay populated -- an all-positive table proves nothing about noise.
+    if [ "$rt" -lt 27 ]; then
+        printf '  FAIL  ratio table has %s row(s); at least 27 are required\n' "$rt"; rf=$((rf+1))
+    fi
+    # The two spellings PERF-049 was opened for must be ASSERTED, not merely
+    # present: if a future edit narrows RATIO_RE back to ASCII-adjacent, this
+    # says so in the guard's own voice rather than in a silently shorter table.
+    if ! grep -qE "$RATIO_RE" <<< '2.93× Ollama'; then
+        printf '  FAIL  U+00D7 is not covered — the registered mutation cannot bite\n'; rf=$((rf+1))
+    fi
+    if ! grep -qE "$RATIO_RE" <<< '36.9x over FasterTransformer'; then
+        printf '  FAIL  one intervening word still defeats the adjacency\n'; rf=$((rf+1))
+    fi
+    printf '  %s ratio case(s), %s failure(s)\n' "$rt" "$rf"
+
+    # PERF-010: THE MARKDOWN SWEEP AS IT ACTUALLY RUNS. The ratio table above
+    # applies RATIO_RE|TPUT_RE; the .md sweep applies RATIO_RE|TPUT_RE|
+    # PLACEHOLDER_RE, and PLACEHOLDER_RE is a detector no row above touches.
+    # A table that exercised only the ratio half is how the `[X]`-figure gap
+    # survived being "covered by check_no_claim_literals.sh" in the spec's own
+    # status table.
+    mt=0; mf=0
+    check_md() { # check_md <match|nomatch> <one line of markdown>
+        local want="$1" line="$2" got=nomatch
+        # `<<<` and capture-then-test, never `printf | grep -q`: an early-exiting
+        # reader plus pipefail hands the pipeline the PRODUCER's SIGPIPE status
+        # (141) even on a successful match. That exact shape was a live fail-open
+        # on main.
+        if grep -qE "$RATIO_RE|$TPUT_RE|$PLACEHOLDER_RE" <<< "$line" \
+           && ! grep -qE "$TARGET_RE" <<< "$line"; then got=match; fi
+        mt=$((mt+1))
+        if [ "$got" = "$want" ]; then printf '  ok    %-8s %s\n' "$want" "$(printf '%s' "$line" | cut -c1-64)"
+        else printf '  FAIL  want %-8s got %-8s %s\n' "$want" "$got" "$(printf '%s' "$line" | cut -c1-52)"; mf=$((mf+1)); fi
+    }
+    printf -- '--- markdown class: [X] figures, comparators, placeholders ---\n'
+    # THE SIX SHAPES §0.1 NAMES, through the combined .md pattern.
+    check_md match   'aprender achieves 36.9x FasterTransformer throughput.'
+    check_md match   'aprender achieves 36.9× over FasterTransformer.'
+    check_md match   'Continuous batching gives 23× over static batching.'
+    check_md match   'Throughput is 1.8× over vLLM on this workload.'
+    check_md match   '| GPU (batched M=16) | Qwen 1.5B | ~850 tok/s | 2.93× Ollama |'
+    # THE LIVE ONE. Verbatim from book/src/tools/apr-cli.md:81, which shipped
+    # past this guard while it was green because "faster than" sat in the join.
+    check_md match   '# Batched GPU mode (2.9x faster than Ollama)'
+    check_md match   'realizar is 8.2x slower than llama.cpp on CPU.'
+    check_md match   'c=4 TTFT = 256ms (10.7x vs llama.cpp 24ms).'
+    # DISCRIMINATION. A ratio is not a claim just because a competitor is named
+    # on the same line.
+    check_md nomatch 'Ollama users will recognise the 3x3 convolution kernel.'
+    check_md nomatch 'Compression ratio: 24 bits -> 8 bits = 3x smaller.'
+    check_md nomatch 'Target: 2x Ollama throughput on the 1.5B model.'
+    check_md nomatch 'Install Ollama first, then run the comparison harness.'
+    # A SIZE RATIO AGAINST A NAMED COMPETITOR IS ALSO A CLAIM, and this row
+    # says so deliberately. PERF-010 wrote it as a must-NOT-match on the theory
+    # that only SPEED ratios lie, and enforced that with a closed connector
+    # list (over|than|vs|versus|compared to). PERF-049 replaced that list with a
+    # measured five-gap-word rule -- zero false positives over the 6900-file
+    # universe -- and this line matches under it. Re-judged rather than
+    # preserved: "3x larger than PyTorch" is an unreceipted comparative claim
+    # about a third-party system, which is the class the guard's own failure
+    # text describes. The connector list would also have missed "3x the memory
+    # of PyTorch". Kept as an assertion so a future narrowing is loud.
+    check_md match   'The .apr file is 3x larger than PyTorch pickle output.'
+    # PLACEHOLDERS BOUND TO A UNIT.
+    check_md match   'Throughput: XX tok/s'
+    check_md match   '| Decode | [TBD] tok/s | 1.9 GB |'
+    check_md match   'apr is [X]x faster than the previous release.'
+    check_md match   'Speedup over the baseline: [TBD]×'
+    check_md match   'Cold start latency: TODO ms'
+    # ...AND THE CHECKBOXES THEY MUST NOT BE CONFUSED WITH. Without these rows a
+    # bare `\[X\]` ban looks correct and is born red against docs/qa/.
+    # The checkbox rows are built from variables rather than written inline.
+    # bashrs -- which this repo mandates over shellcheck -- parses the `[ ]` and
+    # `[X]` of a MARKDOWN checkbox as a shell test bracket and raises SC1028 /
+    # SC2104 / SC1087 against rows that are correct English. Same class as the
+    # \042 dance for LIT above, and the same remedy: keep the token out of the
+    # source line. scripts/*.sh is gated on a SHRINK-ONLY bashrs error count, so
+    # five false errors here are five someone else has to triage.
+    # Even the ASSIGNMENTS are built from parts: bashrs flags a bare `'[ ]'`
+    # string as SC2104 "missing space before ]". Brackets by name, then.
+    OB='['; CB=']'
+    CHECKED="${OB}X${CB}"; UNCHECKED="${OB} ${CB}"
+    check_md nomatch "- $CHECKED APPROVED for Production"
+    check_md nomatch "| Section 9 Tests/CI/Coverage | $CHECKED PASS / $UNCHECKED FAIL |"
+    check_md nomatch "| 9.1.1 | All tests pass | 0 failures | $CHECKED | $UNCHECKED |"
+    check_md nomatch '- Other modules: TBD from CI results'
+    check_md nomatch 'TODO: add a benchmark harness for the graph module.'
+    check_md nomatch 'The MAXX tok/s field is reserved.'
+    # VACUITY: a table that shrank to nothing would sweep clean.
+    if [ "$mt" -lt 24 ]; then
+        printf '  FAIL  markdown table has %s row(s); at least 24 are required\n' "$mt"; mf=$((mf+1))
+    fi
+    # The placeholder half must be ASSERTED, not merely present: it is the only
+    # detector here with ZERO live instances, so a silent narrowing would leave
+    # a shorter table and no red.
+    if ! grep -qE "$PLACEHOLDER_RE" <<< 'Throughput: XX tok/s'; then
+        printf '  FAIL  a unit-bound placeholder is not covered\n'; mf=$((mf+1))
+    fi
+    if grep -qE "$PLACEHOLDER_RE" <<< '- [X] APPROVED for Production'; then
+        printf '  FAIL  PLACEHOLDER_RE reds a markdown checkbox\n'; mf=$((mf+1))
+    fi
+    printf '  %s markdown case(s), %s failure(s)\n' "$mt" "$mf"
+
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
-    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$mf" -eq 0 ] || exit 1
+    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$rf" -eq 0 ] && [ "$mf" -eq 0 ] || exit 1
     exit 0
 fi
 
@@ -505,20 +603,11 @@ fi
 # So growth is now compared against merge-base(HEAD, origin/main), falling
 # back to the origin/main TIP because CI checks out shallow — a ref this
 # branch cannot rewrite, and never the branch against itself.
-#
-# KIND `coord`, NOT `set`. This baseline's entries are `<path>:<line>`
-# coordinates, and this guard is the one whose DETECTOR gets widened: PERF-010
-# took the ratio pattern from 1 of 6 shapes to 6 of 6, and fourteen claims that
-# were already in the tree became visible at once. `coord` permits exactly that
-# growth and nothing else — an added entry is legal only when its TEXT is
-# already present in the same file at the comparand, at no greater count. A
-# violation created in the same commit as its baseline entry is still refused,
-# which is the whole point of the ratchet. See lib_baseline_ratchet.sh's header
-# for why text and not coordinate: three of the fourteen had merely moved.
 RATCHET_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib_baseline_ratchet.sh
 . "${RATCHET_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
-baseline_ratchet_check "$RATCHET_ROOT" scripts/claim_literal_baseline.txt coord || rc=1
+baseline_ratchet_check "$RATCHET_ROOT" scripts/claim_literal_baseline.txt set-aperture \
+    scripts/check_no_claim_literals.sh || rc=1
 
 printf '\n'
 if [ "$rc" -eq 0 ]; then

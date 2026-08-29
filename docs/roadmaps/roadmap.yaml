@@ -13139,7 +13139,7 @@ roadmap:
   github_issue: 2706
   item_type: task
   title: Iteration-level scheduling (Orca design) — REAL BUT PARTIAL, F-BATCH-001 red at c=2
-  status: completed
+  status: in_progress
   priority: high
   assigned_to: null
   created: *id001
@@ -13155,7 +13155,7 @@ roadmap:
   notes: 'VERIFIED on origin/main 2026-08-29: crates/aprender-serve/src/api/iteration_scheduler.rs
     implements the Orca (OSDI 2022) design. PARTIAL BY ITS OWN CONTRACT:
     contracts/batch-admission-v1.yaml F-BATCH-001 records verdict RED AT c=2 (serialization_index 2.45 >=
-    2), so the epic F-BATCH-001 acceptance criterion is NOT met.'
+    2), so the epic F-BATCH-001 acceptance criterion is NOT met. DOWNGRADED from completed 2026-08-29 by PERF-041: the credited 3.32x aggregate at N=8 is throughput of GARBAGE tokens. Batched CUDA decode emits a constant token to the max_tokens cap for every m>1 and never emits a stop token (#2753); the m=1 fast path in the same run returns coherent English with finish=stop. Aggregate at c=2 is honestly 0.82x of a SINGLE client. F-BATCH-001 stays RED and the mechanism, not just the margin, is unfinished.'
 - id: PERF-002
   github_issue: 2706
   item_type: task
@@ -13306,7 +13306,7 @@ roadmap:
   notes: 'CORRECTED from planned 2026-08-29. On origin/main: scripts/check_no_fabricated_baselines.sh
     (+545 lines, shape matching not literals) and scripts/fabricated_baseline_rust_sites.txt (73 lines,
     the committed true count), landed de8fbc407 / PR #2710. The shrink-only claim it printed but did not
-    enforce was armed in 50d2bc2bb / PR #2733 via scripts/check_baseline_ratchets.sh.'
+    enforce was armed in 50d2bc2bb / PR #2733 via scripts/check_baseline_ratchets.sh. proof:scripts/check_no_fabricated_baselines.sh'
 - id: PERF-009
   github_issue: 2706
   item_type: task
@@ -13348,7 +13348,7 @@ roadmap:
     (339 lines), scripts/perf_claim_citation_baseline.txt (156 lines), the widened
     scripts/check_no_claim_literals.sh and the book/ edits, all landed de8fbc407 / PR #2710. RESIDUAL,
     open in PR #2742: the [X]-figure detector caught 1 of 6 shapes and missed the U+00D7 form the epic
-    own headline fabrication is written in.'
+    own headline fabrication is written in. proof:scripts/check_perf_claims_cite_receipts.sh'
 - id: PERF-011
   github_issue: 2706
   item_type: task
@@ -13472,7 +13472,7 @@ roadmap:
   notes: 'CORRECTED from planned 2026-08-29. On origin/main:
     crates/apr-cli/src/commands/profile_perf016_tests.rs (198 lines) plus the annotated call sites in
     profile_ollama.rs:224/347/437 and profile.rs:380, landed de8fbc407 / PR #2710. The audit found a
-    third fabricated causal claim and a guard that was GREEN on it.'
+    third fabricated causal claim and a guard that was GREEN on it. proof:crates/apr-cli/src/commands/profile_perf016_tests.rs'
 - id: PERF-017
   github_issue: 2706
   item_type: task
@@ -13685,7 +13685,7 @@ roadmap:
     origin/main: crates/aprender-test-lib/src/perf_gate/drain.rs (778 lines) and perf_gate/receipt.rs
     (537 lines), landed 50d2bc2bb / PR #2733. receipt.rs refuses to synthesise what it cannot measure and
     names every absent field in unproduced_fields with its reason. PR #2724 was CLOSED unmerged; the
-    batch is what landed.'
+    batch is what landed. proof:crates/aprender-test-lib/src/perf_gate/drain.rs'
 - id: PERF-027
   github_issue: 2706
   item_type: task
@@ -13707,7 +13707,7 @@ roadmap:
     origin/main: scripts/cargo_classify.sh (265 lines, sourceable and option-neutral) applied at 11
     decision points across check_facade_compat.sh, check_book_examples_compile.sh,
     check_format_sovereignty.sh, check_wasm32_core_builds.sh, check_lockfile_current.sh and
-    check_readme_claims.sh, plus scripts/lib/cargo_failure_cases/ - landed 50d2bc2bb / PR #2733.'
+    check_readme_claims.sh, plus scripts/lib/cargo_failure_cases/ - landed 50d2bc2bb / PR #2733. proof:scripts/cargo_classify.sh'
 - id: PERF-028
   github_issue: 2706
   item_type: task
@@ -13728,7 +13728,7 @@ roadmap:
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. VERIFIED on
     origin/main: scripts/check_baseline_ratchets.sh (358 lines) and scripts/lib_baseline_ratchet.sh (284
     lines), landed 50d2bc2bb / PR #2733. Open PR #2742 extends it to tell a detector WIDENING from
-    LAUNDERING, which PERF-010 needed.'
+    LAUNDERING, which PERF-010 needed. proof:scripts/lib_baseline_ratchet.sh'
 - id: PERF-029
   github_issue: 2706
   item_type: task
@@ -13748,7 +13748,7 @@ roadmap:
   - receipt-rule
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. VERIFIED on
     origin/main: crates/aprender-serve/src/http_client/preflight.rs (370 lines, same sha256 as its
-    sibling benchmark_runner.rs) no longer exists in the tree; deleted in 50d2bc2bb / PR #2733.'
+    sibling benchmark_runner.rs) no longer exists in the tree; deleted in 50d2bc2bb / PR #2733. proof:PR#2733'
 - id: PERF-030
   github_issue: 2706
   item_type: task
@@ -13769,7 +13769,7 @@ roadmap:
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. VERIFIED on
     origin/main: scripts/parity_host_receipt.sh now reads both accelerator probes from herestrings, never
     a pipe, with the measurement in the comment (141 on 10/10 repeats with pipefail, 0 without, pattern
-    matches 5 times). Found on gx10, reproduced on lambda, landed 50d2bc2bb / PR #2733.'
+    matches 5 times). Found on gx10, reproduced on lambda, landed 50d2bc2bb / PR #2733. proof:scripts/parity_host_receipt.sh'
 - id: PERF-031
   github_issue: 2706
   item_type: task
@@ -13811,7 +13811,7 @@ roadmap:
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. VERIFIED on
     origin/main: scripts/check_hardcoded_paths.sh (+158 lines) and
     scripts/hardcoded_path_shipped_baseline.txt, with the --full mode now invoked from
-    .github/workflows/ci.yml; landed 50d2bc2bb / PR #2733.'
+    .github/workflows/ci.yml; landed 50d2bc2bb / PR #2733. proof:scripts/check_hardcoded_paths.sh'
 - id: PERF-033
   github_issue: 2706
   item_type: task

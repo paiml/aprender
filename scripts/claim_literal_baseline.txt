@@ -33,69 +33,53 @@
 # because the guard now looks where the claims are, not because new claims were
 # written. Shrink-only from here.
 #
-# WIDENED AGAIN 2026-08-28 (PERF-010). Fourteen entries were ADDED; TWO have
-# since been paid down and one more was PRUNED as stale, so eleven remain. The
-# permission is MECHANICAL, not this header: check_no_claim_literals.sh
-# ratchets this file with kind `coord`, which admits an added entry only when
-# its TEXT is already present in the same file at the comparand, at no greater
-# count. That is a DETECTOR WIDENING and it is provable; LAUNDERING -- a
-# baseline entry and its violation arriving in one commit -- leaves the text
-# absent at the comparand and is still refused. The paragraphs below are the
-# record of WHY each line is here, which is worth keeping, but they are no
-# longer what makes the growth legal. See scripts/lib_baseline_ratchet.sh.
+# APERTURE REVEAL 2026-08-29 (PERF-049, #2758). +18, and this is the FIRST
+# GROWTH this file has taken under a ratchet. RATIO_RE matched ASCII `x`
+# adjacent to a competitor name, so it could not read the two spellings that
+# are actually published: U+00D7 (`2.93× Ollama`, the book's own figure, and
+# the literal §5's registered mutation names -- which therefore left the guard
+# GREEN) and any form with an intervening word (`36.9x over FasterTransformer`,
+# the spelling §0.1 of APR-PERF-GATE-001 uses).
 #
-# The comparator pattern required the competitor's name to sit IMMEDIATELY
-# after the ratio and to be spelled with an ASCII `x`. Both assumptions fail on
-# the way the claim is actually written. Put to the six shapes APR-PERF-GATE-001
-# section 0.1 itself names, the old pattern caught ONE -- it could not see
-# `36.9x over FasterTransformer`, its unicode twin (which is section 5's own
-# stated mutation for this guard), `23x over static batching`, `1.8x over vLLM`,
-# or a bare `2.93x Ollama` written with U+00D7. That is why section 5's status
-# table listed the `[X]`-figure guard as **not written** against this file.
+# Not one line below was WRITTEN by that PR. All 18 are byte-identical at
+# 31732f5db and were sitting in the tree unread; the ratchet admitted them
+# under `set-aperture`, which proves exactly that and names each one in its
+# verdict row. All 18 were inspected: every one is a numeric ratio against a
+# named competitor -- four in shipped rustdoc, one in a book command comment
+# advertising `2.9x faster than Ollama`, two in a spec quoting the fabrication
+# in order to ban it, eleven in dated QA archives. None is ordinary prose that
+# happens to contain a number; the case table carries `3x3 matrix`, `2x2 grid`,
+# `1024x1024`, `v1.8x` and a markdown table row as must-NOT-match controls.
+# Recorded, not blessed. Shrink-only from here.
 #
-# The eleven below are what the widened pattern found and nobody has yet paid
-# down. NOT ONE IS NEW PROSE:
-# every one predates this commit and was invisible, which is the point. They
-# fall in three groups, and the classification is recorded so the next person
-# paying them down knows which lever applies:
 #
-#   2 rustdoc (`//!`, `///`) five-whys notes on CUDA paths, reaching users via
-#     `cargo doc`. FIXED, NOT BASELINED -- both entries are gone from the list
-#     below. Neither ratio had a receipt, both shipped in `cargo doc` output,
-#     and neither carried the analysis: dp4a_gemm.rs asks why prefill is
-#     bandwidth-bound and answers "HGEMM reads FP16 weights", which is the whole
-#     content of that step; prefill.rs keeps its own 256ms measurement, which
-#     the next line derives from. The comparator ratio was the only part
-#     removed, and it is not restated here -- a withdrawal that reprints the
-#     figure leaves the figure on the page.
-#   2 docs/benchmarking-gate-spec.md -- the document that NAMES this defect,
-#     quoting the fabricated figure in order to ban it. The self-reference trap
-#     that has reddened a sibling guard three times in this epic. Baselined
-#     rather than exempted: an exclusion for a whole file is how a guard is made
-#     unable to fail, and two recorded lines cost nothing.
-#   8 dated docs/qa/ five-whys analyses from 2026-01. Historical internal
-#     record, and all but one are ADMISSIONS OF BEING SLOWER. Deleting them
-#     would be conceding nothing and destroying the analysis; they are recorded.
+# MERGE RECORD 2026-08-29 (PERF-010 / #2742, merging #2763). Both branches
+# widened this guard independently and both recorded what the widening
+# revealed, so the two lists were reconciled against the MERGED tree rather
+# than concatenated. Net -8. Every line below is a live finding: the list is
+# exactly the sweep's output on this tree, which is the only reading under
+# which "known, must shrink" means anything.
 #
-# The one that is not an admission -- docs/qa/five-whys-gpu-performance-gap-
-# 2026-01-08.md:317, "32B: Now 3.1x faster than Ollama" -- is an UNVERIFIED
-# OVERCLAIM in a dated internal doc, flagged here explicitly rather than quietly
-# ratcheted, because the decode ratio against Ollama was formally WITHDRAWN
-# (measured 1.015-1.109x on sm_89, i.e. parity). It was left in place only
-# because it is a 32B claim and the withdrawal measured 1.5B; nobody has
-# measured 32B, so deleting it would be guessing in the other direction. It
-# needs a receipt or a deletion, and it is somebody's next ticket.
+# TEN ENTRIES WERE PAID DOWN OR RENUMBERED, none blessed:
 #
-# PRUNED 2026-08-28: docs/benchmarking-gate-spec.md:364 matched NOTHING. The
-# claim PERF-010 meant to record moved when the same commit inserted 28 lines
-# above it, and the coordinate it landed on carries a Jidoka status row with no
-# ratio in it at all. The `coord` widening rule cannot catch this -- that line's
-# text IS present at the comparand, so it passes -- and the guard's own STALE
-# report can. Both mechanisms are needed; neither subsumes the other.
+#   6 DELETED. book/src/tools/apr-cli.md:81 and its Performance table at
+#     :89-93 -- a shipped chapter advertising `2.9x faster than Ollama` and a
+#     batched-throughput table this branch's own measurements disproved. #2763
+#     recorded them; PERF-050 removed them. Deletion beats recording.
+#   2 DELETED. dp4a_gemm.rs:10 and prefill.rs:537, rustdoc notes stating a
+#     llama.cpp ratio with no receipt, reaching users through `cargo doc`. The
+#     ratio was the only part removed -- the analysis around it stayed, because
+#     a withdrawal that reprints the figure leaves the figure on the page.
+#     prefill.rs:1043 and transformer/init.rs:7 are NOT of this class and stay
+#     recorded.
+#   2 MOVED, NOT ADDED. docs/benchmarking-gate-spec.md:235 -> :263 and
+#     :308 -> :336. Both are the spec quoting the fabricated `2.93× Ollama` in
+#     order to BAN it, both were already recorded by #2763, and neither line's
+#     TEXT changed: PERF-019 inserted §3.3.1 at line 162 and everything below
+#     slid 28 lines. The ratchet admits them as MOVES -- byte-identical text in
+#     the same file at the comparand, at the same occurrence count -- and names
+#     both in its verdict row. See (a2) in scripts/lib_baseline_ratchet.sh.
 #
-# FIVE ENTRIES WERE REMOVED in the same commit: the book/src/tools/apr-cli.md
-# Performance table (lines 89-93) is DELETED, along with the `2.9x faster than
-# Ollama` line above it that the widening exposed. Net +7.
 book/src/advanced-testing/popperian-falsification.md:44
 crates/apr-cli/src/commands/bench_safetensors.rs:123
 crates/apr-cli/src/commands/bench_safetensors.rs:124
@@ -136,6 +120,7 @@ crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:10
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:31
 crates/aprender-serve/src/cuda/executor/layers/par-062.rs:257
+crates/aprender-serve/src/cuda/executor/layers/prefill.rs:1043
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs:277
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:32
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:33
@@ -162,20 +147,23 @@ crates/aprender-serve/src/tui.rs:108
 crates/aprender-test-lib/src/llm/training_scorecard.rs:217
 crates/aprender-train/src/models/llama_370m.rs:1458
 crates/aprender-train/src/models/llama_370m.rs:1463
+crates/aprender-train/src/transformer/init.rs:7
 docs/BEATS.md:133
 docs/BEATS.md:134
 docs/BEATS.md:65
 docs/BEATS.md:66
 docs/audits/dogfood-0.63.0-ledger.md:65
-docs/benchmarking-gate-spec.md:263
 docs/benchmarking-gate-spec.md:24
 docs/benchmarking-gate-spec.md:26
+docs/benchmarking-gate-spec.md:263
+docs/benchmarking-gate-spec.md:336
 docs/model-cards/albor-370m-v1.md:74
 docs/qa-cargo-run-example-conversion-minimize.md:128
 docs/qa/benchmark-matrix-2026-01-09.md:115
 docs/qa/benchmark-matrix-2026-01-09.md:12
 docs/qa/benchmark-matrix-2026-01-09.md:13
 docs/qa/benchmark-matrix-2026-01-09.md:133
+docs/qa/benchmark-matrix-2026-01-09.md:14
 docs/qa/benchmark-matrix-2026-01-09.md:186
 docs/qa/benchmark-matrix-2026-01-09.md:22
 docs/qa/benchmark-matrix-2026-01-09.md:23
@@ -197,6 +185,7 @@ docs/qa/benchmark-matrix-2026-01-09.md:71
 docs/qa/benchmark-matrix-2026-01-09.md:85
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:14
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:173
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:269
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:28
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:32
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:123
@@ -224,6 +213,7 @@ docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:323
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:391
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:398
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:4
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:403
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:496
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:587
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:681
@@ -237,4 +227,3 @@ docs/qa/test-matrix-results-2026-01-08.md:138
 docs/qa/test-matrix-results-2026-01-08.md:39
 docs/qa/test-matrix-results-2026-01-08.md:42
 docs/qa/test-matrix-results-2026-01-08.md:60
-docs/benchmarking-gate-spec.md:336
