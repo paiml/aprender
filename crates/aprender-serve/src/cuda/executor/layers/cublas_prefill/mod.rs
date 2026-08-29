@@ -1032,6 +1032,57 @@ impl CudaExecutor {
             )?;
         }
 
+        self.zero_fp8_activation_tail(dst_ptr, count)?;
         Ok(())
+    }
+
+    /// PERF-050 (aprender#2753): define the part of the FP8 activation scratch that the GEMM
+    /// READS but nothing WRITES.
+    ///
+    /// cuBLASLt FP8 needs the batch dimension aligned to 16, so `cublas_prefill_fp8_gemm` asks
+    /// for `m_padded * k` elements of scratch and issues the GEMM with `m_padded` as its batch
+    /// dimension -- but the conversion above only writes `m * k`. At m = 1 that is 1 row written
+    /// and 15 read. The tail is not inert: E4M3 has NaN encodings, and what is actually sitting
+    /// there is the previous GEMM's activations, so the GEMM's input depends on call history.
+    ///
+    /// That is the mechanism behind the batched forward not being a function of its inputs. The
+    /// first call after prefill reads prefill's leftovers; the second reads the first call's.
+    ///
+    /// Zeroing happens HERE, at the end of the conversion, and not in
+    /// `ensure_fp8_activation_scratch`. The scratch allocator runs on EVERY GEMM including the
+    /// PMAT-084 cache hits, where K and V deliberately reuse Q's converted activation -- zeroing
+    /// there wipes exactly the data the hit exists to reuse. That was tried, and it degraded the
+    /// output instead of fixing it. The conversion only runs on a cache MISS, so the prefix a
+    /// hit reuses stays intact and the tail behind it stays zero.
+    ///
+    /// DEFAULT OFF, opt in with `APR_FP8_PAD_ZERO=1`. The padding read is a real defect, but it
+    /// is NOT the cause of the non-determinism this was written to chase: measured in ONE binary
+    /// via this flag, the CB-006 SELF control fails either way (cosine 0.286372 with the padding
+    /// left undefined, 0.563568 with it zeroed -- both far from the 1.0 that identical inputs
+    /// require). Defaulting it on would change the numerics of every FP8 GEMM and add a host
+    /// copy per conversion, on no evidence of benefit. It needs its own ticket and its own
+    /// measurement.
+    fn zero_fp8_activation_tail(&mut self, dst_ptr: u64, written: u32) -> Result<(), GpuError> {
+        if !Self::fp8_pad_zero_enabled() {
+            return Ok(());
+        }
+        let size = self.fp8_activation_scratch_size;
+        let written = written as usize;
+        let Some(buf) = self.fp8_activation_scratch.as_mut() else {
+            return Ok(());
+        };
+        // Only this scratch is padded; other conversion targets are exact.
+        if buf.as_ptr() != dst_ptr || size <= written {
+            return Ok(());
+        }
+        let zeros = vec![0u8; size - written];
+        buf.copy_from_host_at(&zeros, written)?;
+        Ok(())
+    }
+
+    /// PERF-050: `APR_FP8_PAD_ZERO=1` enables zeroing the FP8 activation padding (default off).
+    fn fp8_pad_zero_enabled() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var("APR_FP8_PAD_ZERO").as_deref() == Ok("1"))
     }
 }
