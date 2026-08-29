@@ -17,6 +17,24 @@ impl CudaExecutor {
         skip_debug: bool,
         profiling: bool,
     ) -> Result<(), GpuError> {
+        // PERF-050 round 8: ORACLE side of the layer-0 stage differential.
+        //
+        // These q/k/v are the OUTPUT of workspace_qkv_rope_phase, which lives in apply.rs and
+        // cannot be edited -- that file already carries a complexity violation, the third
+        // instance of #2766 in this investigation (gemv_dispatch.rs has three, forward_utils.rs
+        // one). Snapshotting them where they are CONSUMED gets the same tensors without
+        // touching the frozen file.
+        //
+        // Labels mirror the graph path's `g_*` so the two are read side by side. Both
+        // implementations write these same workspace buffers, so the fingerprints are of the
+        // same memory computed two ways.
+        if Self::layer_trace_enabled() && layer_idx == 0 {
+            self.trace_buffer("o_q_buf", q_buf.as_ptr(), q_dim as usize);
+            let kv_dim = self.kv_num_kv_heads * self.kv_head_dim;
+            self.trace_buffer("o_k_buf", k_buf.as_ptr(), kv_dim);
+            self.trace_buffer("o_v_buf", v_buf.as_ptr(), kv_dim);
+        }
+
         // 3. PAR-051: Incremental attention into pre-allocated workspace buffer
         // Eliminates 28 GPU allocations per token
         // PAR-054-FIX: Use capture-safe version during graph capture to skip debug sync
@@ -31,6 +49,9 @@ impl CudaExecutor {
         let _seq_len = self.incremental_attention_into(layer_idx, q_buf, k_buf, v_buf, attn_out_buf)?;
         if profiling {
             self.stop_brick_id(timer_attn, 1);
+        }
+        if Self::layer_trace_enabled() && layer_idx == 0 {
+            self.trace_buffer("o_attn_out", attn_out_buf.as_ptr(), q_dim as usize);
         }
 
         // PAR-058-DEBUG: Check attention output (skip during graph capture)
