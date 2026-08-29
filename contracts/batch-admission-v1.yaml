@@ -137,14 +137,25 @@ falsification_tests:
     eager due to capture overhead" (PMAT-056). The batched loop also retakes
     model.write() every step, rescans for recycle/join, embeds per slot on the
     CPU and try_sends per slot -- per TOKEN, where the m=1 path takes the lock
-    once per generation. Measured with APR_FORCE_BATCHED_PATH=1 (F-BATCH-004's
-    own stated mutation, now a real knob): latency_fast(1) = 0.934s for 319
-    tokens = 2.93 ms/token; latency_batched(1) = 2.003s for 400 tokens = 5.01
-    ms/token. Token-normalised path_penalty = 1.71x. Host load was 21-33 on a
-    48-core box during this run, which inflates an eager-launch path more than
-    a graph-replay one, so 1.71x is an UPPER bound; the two figures the source
-    already carried, 138 vs 46 tok/s and PAR-106/108's 360 vs 225, bracket it
-    at 1.6-3.0x.
+    once per generation.
+
+    THE MAGNITUDE IS WITHDRAWN (PERF-050, 2026-08-29). This paragraph used to
+    carry a token-normalised path_penalty of 1.71x, from latency_fast(1) = 0.934s
+    for 319 tokens against latency_batched(1) = 2.003s for 400 tokens. That
+    comparison divided a run that TERMINATED on a stop token by one that ran to
+    the max_tokens cap emitting garbage, so its denominator was a defect, not a
+    decode speed. The batched side also carried an unconditional per-layer
+    synchronize and device-to-host copy in the decode loop (aprender#2764), and
+    the two figures it was bracketed against -- 138 vs 46 tok/s, and PAR-106/108's
+    360 vs 225 -- have since been deleted from the source for the same reason.
+
+    The MECHANISM above stands: c=1 replays a captured graph, c>1 launches
+    eagerly and retakes the model lock per token. Only the number is gone. As of
+    aprender#2753 the batched path terminates on a stop token and matches the m=1
+    reference, so a path penalty can now be measured honestly for the first time
+    -- and per PERF-009 it must be measured through scripts/perf_gate.sh, which is
+    why the one-off harness that produced 1.71x
+    (scripts/perf041_path_penalty_probe.sh) was deleted rather than allowlisted.
 
     Neither component scales with m. That is the whole explanation of the flat
     2.45/2.29/2.39, and neither component is serialization.
