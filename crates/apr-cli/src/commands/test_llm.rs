@@ -283,7 +283,7 @@ fn discard_stale_receipt(path: &Path) -> std::io::Result<bool> {
 fn resolve_prompts(profile: &str, file: Option<&Path>) -> Result<Vec<ChatRequest>> {
     if let Some(p) = file {
         return load_prompts_from_file(p)
-            .map_err(|e| CliError::InvalidFormat(format!("prompt file {}: {e}", p.display())));
+            .map_err(|e| CliError::InvalidFormat(format!("prompt corpus {e}")));
     }
     let parsed = PromptProfile::from_name(profile).ok_or_else(|| {
         CliError::InvalidInput(format!(
@@ -404,11 +404,12 @@ mod tests {
     #[test]
     fn a_prompt_file_overrides_the_profile() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("prompts.yaml");
+        let path = dir.path().join("prompts.jsonl");
         // Two prompts, so the count cannot coincide with a one-prompt profile.
+        // JSONL (PERF-039): one JSON object per line, no enclosing array.
         std::fs::write(
             &path,
-            "prompts:\n  - role: user\n    content: \"hi\"\n    max_tokens: 4\n  - role: user\n    content: \"there\"\n    max_tokens: 4\n",
+            "{\"prompt\":\"hi\",\"max_tokens\":4}\n{\"prompt\":\"there\",\"max_tokens\":4}\n",
         )
         .expect("write");
         let from_file = resolve_prompts("long", Some(&path)).expect("file should load");
@@ -424,10 +425,24 @@ mod tests {
     #[test]
     fn a_malformed_prompt_file_fails_rather_than_falling_back() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("bad.yaml");
-        std::fs::write(&path, "prompts: []\n").expect("write");
+
         // An empty workload would otherwise benchmark nothing and report a rate.
-        resolve_prompts("medium", Some(&path)).expect_err("an empty prompt set must fail");
+        let empty = dir.path().join("empty.jsonl");
+        std::fs::write(&empty, "").expect("write");
+        resolve_prompts("medium", Some(&empty)).expect_err("an empty prompt set must fail");
+
+        // PERF-039: the YAML `prompts:` corpus this loader used to accept must
+        // now be REFUSED here too, not silently resolved back to the profile.
+        // A silent fallback would run the `medium` workload while the report
+        // said it ran the file.
+        let yaml = dir.path().join("legacy.yaml");
+        std::fs::write(&yaml, "prompts:\n  - role: user\n    content: \"hi\"\n").expect("write");
+        let err = resolve_prompts("medium", Some(&yaml))
+            .expect_err("a YAML corpus must fail, not fall back to the profile");
+        assert!(
+            format!("{err}").contains("JSONL"),
+            "the failure must name the expected format; got: {err}"
+        );
     }
 
     #[test]

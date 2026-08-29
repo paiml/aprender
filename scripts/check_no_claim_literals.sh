@@ -36,14 +36,18 @@ MODE="${1:-}"
 rc=0
 # Progress lines go to stderr under --list so stdout is the list and nothing else.
 note() {
-    case "$MODE" in --list|--explain) printf '%s\n' "$1" >&2 ;; *) printf '%s\n' "$1" ;; esac
+    case "$MODE" in
+        --list|--explain|--keys-of) printf '%s\n' "$1" >&2 ;;
+        *)                          printf '%s\n' "$1" ;;
+    esac
 }
 # AN UNRECOGNISED ARGUMENT IS AN ERROR, NOT A CHECK RUN. `--selftest` mistyped
 # in ci.yml would otherwise fall through to the full scan and go green, and the
 # job would report that the case tables ran when they never did.
 case "$MODE" in
-    ''|--selftest|--list|--explain) : ;;
-    *) printf 'usage: %s [--selftest | --list | --explain <hash16|path>]\n' "$0" >&2
+    ''|--selftest|--list|--explain|--keys-of) : ;;
+    *) printf 'usage: %s [--selftest | --list | --explain <hash16|path>\n' "$0" >&2
+       printf '                 | --keys-of <file> <display-path>]\n' >&2
        exit 2 ;;
 esac
 note '--- claim literals on user-facing surfaces ------------------------'
@@ -58,7 +62,57 @@ CLAIM_RE='(println!|eprintln!|write!|writeln!|format!|\.red\(\)|\.green\(\)|\.ye
 # someone else's number is the same defect as fabricating our own, with a
 # better provenance story, so it is banned by the same guard rather than a
 # second one that could rot separately.
-RATIO_RE='[0-9]+(\.[0-9]+)?x[[:space:]]+(Ollama|ollama|llama\.cpp|llama|vLLM|vllm|PyTorch|torch|FasterTransformer|fastertransformer|SGLang|sglang|TensorRT|tensorrt|TGI|tgi|LMDeploy|lmdeploy|TurboMind|turbomind|static[[:space:]]+batching)'
+#
+# PERF-049 WIDENED RATIO_RE TWICE, AND THE GUARD COULD NOT SEE ITS OWN SUBJECT
+# UNTIL IT DID. The pattern was `[0-9.]+x` followed IMMEDIATELY by a competitor
+# name. Two spellings escaped it, and the registry had recorded this row as
+# proven using ONE OF THEM:
+#
+#   (1) U+00D7. `2.93x Ollama` -> rc=1; `2.93× Ollama` -> rc=0. The multiplication
+#       sign is the character actually PUBLISHED — the book's "851.8 tok/s =
+#       2.93× Ollama", from a harness that never ran Ollama, is written with it.
+#       §5's registered mutation for this guard is `add "2.93× Ollama" to book/`,
+#       so running the mutation exactly as written left the guard GREEN. The row
+#       was evidence for a gate that, on the input the row itself named, could
+#       not fail.
+#
+#   (2) ONE INTERVENING WORD. `36.9x FasterTransformer` was RED and `36.9x over
+#       FasterTransformer` was GREEN — and the second is the spelling §0.1 of
+#       APR-PERF-GATE-001 itself uses for the `[X]` figures I-12 bans.
+#
+# THE GAP IS BOUNDED AT FIVE WORDS, AND THE BOUND WAS MEASURED RATHER THAN
+# PICKED. Over the 6900-file universe the new-hit set is IDENTICAL at 5 and at
+# 6; the last true positive to appear is at 5 ("the 8.2x performance gap between
+# realizar and llama.cpp"). Widths 0..6 produce ZERO false positives here, so
+# the bound is not what holds the false-positive rate down — the GAP WORD CLASS
+# is, and it is the load-bearing half:
+#
+#   letters, with interior `.` or `-`, plus a <=3-letter abbreviation ending in
+#   a dot. NOT digits, NOT `|`, NOT `,`, NOT `(`.
+#
+# So a markdown table row cannot be crossed (`| 2x | fast | torch |` stays
+# green — the pipes are not gap words), a dimension cannot start one (`3x3
+# matrix`, `2x2 grid of llama tiles`), and a sentence boundary stops it
+# ("4x faster. Ollama uses ggml" stays green, because `faster.` is six letters
+# and only an abbreviation may carry a trailing dot, which is what keeps
+# `2.9x vs. Ollama` RED). Every one of those is a row in the case table; the
+# no-trailing-dot rule was measured to change nothing in this tree, so it is
+# free safety rather than a guess.
+#
+# The separator after the multiplier is `*` and not `+` so that `2.93×Ollama`,
+# the tight typographic form, is caught too. It costs nothing: a gap word may
+# not begin with a digit, so `1024x1024 torch` cannot be crossed either.
+MULT_RE='(x|×)'
+COMPETITOR_RE='(Ollama|ollama|llama\.cpp|llama|vLLM|vllm|PyTorch|torch|FasterTransformer|fastertransformer|SGLang|sglang|TensorRT|tensorrt|TGI|tgi|LMDeploy|lmdeploy|TurboMind|turbomind|static[[:space:]]+batching)'
+RATIO_GAP_RE='(([A-Za-z]+([.-][A-Za-z]+)*|[A-Za-z]{1,3}\.)[[:space:]]+){0,5}'
+# The LEFT boundary is not decoration. Without it `v1.8x release notes for
+# llama` matched — a version string, three ordinary words, and a product name.
+# It is the only false positive the case table found, and it found it twice
+# over: blocking a preceding LETTER alone still matched at `.8x`, because the
+# dot let the regex restart one character in. So a preceding letter, digit or
+# DOT all disqualify, and `v1.8x` has no position left to match from.
+RATIO_LEFT_RE='(^|[^0-9A-Za-z.])'
+RATIO_RE="${RATIO_LEFT_RE}[0-9]+(\.[0-9]+)?${MULT_RE}[[:space:]]*${RATIO_GAP_RE}${COMPETITOR_RE}"
 TPUT_RE='[0-9]{2,}\+?[[:space:]]*tok/s'
 
 # A TARGET says what we WANT; a CLAIM says what we GOT. Only the second lies.
@@ -227,6 +281,48 @@ claim_key() {
     printf '%s\t%s' "$1" "${h:0:16}"
 }
 
+# --keys-of <file> <display-path> prints the key of EVERY line of <file>, one
+# per input line, as `<display-path> TAB <hash16>`. It reads a file rather than
+# the working tree because its ONE caller is lib_baseline_ratchet.sh, which
+# feeds it `git show <comparand>:<path>` to ask whether a baselined claim
+# PREDATES the comparand.
+#
+# It exists so that the key has exactly ONE definition. The alternative — the
+# ratchet library re-deriving the hash from the same rules — is the drift this
+# file's --list note already refuses: two implementations of a key agree until
+# the day one of them is edited, and on that day every entry reads as new with
+# no way to tell whether the claims or the hasher moved.
+#
+# Every line is keyed, not only the ones the detectors match. Keying only
+# matched lines would ask the CURRENT patterns what the COMPARAND contained,
+# and a pattern edit would then silently change which claims are admitted as
+# pre-existing. A key is a property of the text; matching is a property of the
+# guard, and the two are kept apart.
+if [ "$MODE" = "--keys-of" ]; then
+    kfile="${2:-}"; kdisplay="${3:-}"
+    if [ -z "$kfile" ] || [ -z "$kdisplay" ]; then
+        printf 'usage: %s --keys-of <file> <display-path>\n' "$0" >&2
+        exit 2
+    fi
+    if [ ! -f "$kfile" ]; then
+        # Fail LOUD and non-zero. A silent empty listing would read to the
+        # caller as "no line in the comparand carries that key", which is the
+        # admission check answering NO for a reason that has nothing to do with
+        # the claim.
+        printf 'FAIL  --keys-of: no such file: %s\n' "$kfile" >&2
+        exit 2
+    fi
+    # `|| [ -n "$kline" ]` so a final line with no trailing newline is keyed
+    # too; without it the last claim in such a file would be invisible here and
+    # visible to the sweep, which is a disagreement between two halves of the
+    # same guard.
+    while IFS= read -r kline || [ -n "$kline" ]; do
+        claim_key "$kdisplay" "$kline"
+        printf '\n'
+    done < "$kfile"
+    exit 0
+fi
+
 if [ "${1:-}" = "--selftest" ]; then
     t=0; f=0
     check() { # check <expect match|nomatch> <line>
@@ -334,8 +430,75 @@ if [ "${1:-}" = "--selftest" ]; then
     kcheck diff 'same claim, different file' \
         'a/x.rs' 'println!("851.8 tok/s = 2.93x Ollama");' \
         'a/y.rs' 'println!("851.8 tok/s = 2.93x Ollama");'
+    # PERF-049: THE RATIO TABLE. Separate from check() above on purpose — check()
+    # requires a Rust print macro on the line, and the two spellings that
+    # escaped this guard were published in MARKDOWN, where there is no macro and
+    # the .md sweep applies RATIO_RE directly. A table that could only reach the
+    # macro path would have kept passing over the exact hole PERF-049 is about.
+    #
+    # This repo's claim patterns have been wrong FIVE times; every one was found
+    # by a table and none by review. Re-run the table, do not re-read the regex.
+    rt=0; rf=0
+    check_ratio() { # check_ratio <match|nomatch> <one line of prose>
+        local want="$1" line="$2" got=nomatch
+        # Herestrings, not `printf | grep -q`: an early-exiting reader hands the
+        # producer SIGPIPE and pipefail reports 141 though grep MATCHED.
+        if grep -qE "$RATIO_RE|$TPUT_RE" <<< "$line" && ! grep -qE "$TARGET_RE" <<< "$line"; then
+            got=match
+        fi
+        rt=$((rt+1))
+        if [ "$got" = "$want" ]; then printf '  ok    %-8s %s\n' "$want" "$(printf '%s' "$line" | cut -c1-66)"
+        else printf '  FAIL  want %-8s got %-8s %s\n' "$want" "$got" "$(printf '%s' "$line" | cut -c1-54)"; rf=$((rf+1)); fi
+    }
+    printf -- '--- ratio class (markdown surface: no print macro) ---\n'
+    # MUST MATCH -- the two spellings that escaped, and the neighbours that did not.
+    check_ratio match   'apr sustains 2.93x Ollama on this workload.'          # ASCII, zero gap
+    check_ratio match   'apr sustains 2.93× Ollama on this workload.'          # U+00D7, zero gap
+    check_ratio match   '851.8 tok/s = 2.93× Ollama'                           # the PUBLISHED form, verbatim
+    check_ratio match   '2.93×Ollama'                                          # tight typographic form
+    check_ratio match   '36.9x FasterTransformer'                              # [X] figure, zero gap
+    check_ratio match   '36.9x over FasterTransformer'                         # ONE gap word -- the spec's own spelling
+    check_ratio match   '36.9× over FasterTransformer'                         # both defects at once
+    check_ratio match   '23x over static batching'                             # gap + a two-word competitor
+    check_ratio match   '1.8x vLLM'
+    check_ratio match   '2.9x faster than Ollama'                              # TWO gap words
+    check_ratio match   '2.9x vs. Ollama'                                      # abbreviation may carry its dot
+    check_ratio match   '16x convergence gap vs PyTorch'                       # THREE gap words
+    check_ratio match   'the 8.2x performance gap between realizar and llama.cpp'   # FIVE, the bound
+    check_ratio match   '8x slower than llama.cpp'                             # integer ratio, self-deprecating
+    check_ratio match   'Already 2.9x FASTER than Ollama'                      # I-12: illegal in either direction
+    # MUST NOT MATCH. These matter as much: a false positive here reds every PR
+    # in the repository, which is a worse failure than the hole it closes.
+    check_ratio nomatch 'a 3x3 matrix'
+    check_ratio nomatch 'a 2x2 grid of llama tiles'                            # dimension, not a ratio
+    check_ratio nomatch 'reshaped to 1024x1024 before the torch export'        # digits are not gap words
+    check_ratio nomatch '| 2x | fast | yes | torch |'                          # a pipe is not a gap word
+    check_ratio nomatch 'v1.8x release notes for llama'                        # version string
+    check_ratio nomatch 'aprender v0.64.0 ships 2 torch-free crates'           # version + a bare count
+    check_ratio nomatch 'Our matmul is 4x faster. Ollama uses ggml.'           # sentence boundary stops the gap
+    check_ratio nomatch 'the 2x speedup we would need on six separate kernels before llama'  # SIX words > the bound
+    check_ratio nomatch 'Target: 2x Ollama should be ~1025 tok/s'              # TARGET_RE -- a bar, not a claim
+    check_ratio nomatch 'the decode ratio must be >= 1.0x llama.cpp'           # a threshold
+    check_ratio nomatch 'Ollama runs at 2.9x the batch size'                   # competitor BEFORE the ratio
+    check_ratio nomatch 'see section 2 for the llama loader'                   # no ratio at all
+    # VACUITY. A table that shrank to nothing would sweep clean, and both halves
+    # must stay populated -- an all-positive table proves nothing about noise.
+    if [ "$rt" -lt 27 ]; then
+        printf '  FAIL  ratio table has %s row(s); at least 27 are required\n' "$rt"; rf=$((rf+1))
+    fi
+    # The two spellings PERF-049 was opened for must be ASSERTED, not merely
+    # present: if a future edit narrows RATIO_RE back to ASCII-adjacent, this
+    # says so in the guard's own voice rather than in a silently shorter table.
+    if ! grep -qE "$RATIO_RE" <<< '2.93× Ollama'; then
+        printf '  FAIL  U+00D7 is not covered — the registered mutation cannot bite\n'; rf=$((rf+1))
+    fi
+    if ! grep -qE "$RATIO_RE" <<< '36.9x over FasterTransformer'; then
+        printf '  FAIL  one intervening word still defeats the adjacency\n'; rf=$((rf+1))
+    fi
+    printf '  %s ratio case(s), %s failure(s)\n' "$rt" "$rf"
+
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
-    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] || exit 1
+    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$rf" -eq 0 ] || exit 1
     exit 0
 fi
 
@@ -555,6 +718,29 @@ if [ -f "$BASELINE" ] && [ "${#base_count[@]}" -gt 0 ]; then
         printf '%s\n' "$shrunk"
     fi
 fi
+
+# THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
+#
+# Everything above compares the scan against the baseline AS IT STANDS IN THE
+# WORKING TREE, and that is not a ratchet. NEW (a finding with no entry) and
+# STALE (an entry with no finding) are the only two properties a working tree
+# can answer, and a commit that appends one line AND lands the matching
+# violation satisfies both at once: not new, because it is baselined; not
+# stale, because the finding is real.
+#
+# Measured, not argued: appending one entry cloned from this file's own last
+# real entry returned rc=0 from this guard, under its own words:
+#     "known (baselined, must shrink)"
+# Twelve guards in scripts/ failed the same probe.
+#
+# So growth is now compared against merge-base(HEAD, origin/main), falling
+# back to the origin/main TIP because CI checks out shallow — a ref this
+# branch cannot rewrite, and never the branch against itself.
+RATCHET_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib_baseline_ratchet.sh
+. "${RATCHET_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+baseline_ratchet_check "$RATCHET_ROOT" scripts/claim_literal_baseline.txt set-aperture \
+    scripts/check_no_claim_literals.sh || rc=1
 
 printf '\n'
 if [ "$rc" -eq 0 ]; then

@@ -87,7 +87,9 @@ impl GroundTruth {
     pub fn from_bin_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let bytes = std::fs::read(path)?;
         let data: Vec<f32> = bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect();
         Ok(Self::from_slice(&data))

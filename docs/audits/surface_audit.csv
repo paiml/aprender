@@ -33,7 +33,7 @@ apr,apr cgp profile wgpu,6,x86_64-linux,NONE,no,9,profiling,crates/aprender-cgp/
 apr,apr cgp roofline,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli.rs:64,low
 apr,apr cgp trace,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli.rs:99,low
 apr,apr cgp tui,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli.rs:115,low
-apr,apr chat,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:40,high
+apr,apr chat,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:40 (ACCELERATOR_GUARD crates/apr-cli/src/dispatch_analysis.rs:1694),high
 apr,apr check,2,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:770,high
 apr,apr check-finite-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1033,low
 apr,apr code,2,x86_64-linux,claude-code,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:790,high
@@ -347,7 +347,7 @@ apr,POST /stream/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/a
 apr,POST /tokenize,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:96,high
 apr,POST /v1/batch/completions,9,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:150,medium
 apr,POST /v1/chat/completions,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:132,high
-apr,"POST /v1/chat/completions (stream:true, SSE)",4,x86_64-linux;nvidia-cuda,llama.cpp,no,3,http-apr-serve,"crates/aprender-serve/src/api/openai_handlers.rs:539-570 (backend branches crates/aprender-serve/src/api/cuda_chat_backend.rs:121,267,390,808)",high
+apr,"POST /v1/chat/completions (stream:true, SSE)",4,x86_64-linux;nvidia-cuda,llama.cpp,no,3,http-apr-serve,"crates/aprender-serve/src/api/openai_handlers.rs:755-787 (stream branches crates/aprender-serve/src/api/cuda_chat_backend.rs:129,275,405,520,986; ignore_eos fail-closed 12,362,471)",high
 apr,POST /v1/chat/completions/stream,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:137,high
 apr,POST /v1/completions,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:131,high
 apr,"POST /v1/completions (stream:true, SSE)",2,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/gpu_completions_handler.rs:398 (SSE :340-378),high

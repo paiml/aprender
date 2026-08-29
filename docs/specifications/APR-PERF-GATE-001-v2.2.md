@@ -401,7 +401,58 @@ Features are read from the binary, never from `Cargo.toml`. Declared features ar
 | generation | `max_tokens = 128`, greedy, `seed = 0`, ignore-EOS | this doc |
 | context | 4096 | this doc |
 
-Mirrors `APR-BENCH-RFC-001`'s `pp512`/`tg128` so the canonical benchmark and this gate cross-validate. **`pp512` and `tg128` are never blended** — GB10 legitimately loses ~4× on decode while winning prefill, and a blended figure reports a correct machine as broken.
+Mirrors `APR-BENCH-RFC-001`'s `pp512`/`tg128` so the canonical benchmark and this gate cross-validate.
+
+**Corpus format — JSONL, and only JSONL (PERF-039).** One JSON object per line;
+no enclosing array, no YAML. An optional first line carrying a `_meta` key is
+the corpus's own provenance header and is not a request.
+
+```jsonl
+{"_meta":{"corpus":"W1","provenance":"SYNTHETIC — seeded PRNG over a fixed word pool","token_count_verified":false}}
+{"id":0,"prompt":"…","max_tokens":128,"temperature":0.0,"seed":0,"target_prompt_tokens":512}
+```
+
+`prompt` is required; `role`, `max_tokens`, `temperature`, `seed`, `ignore_eos`,
+`id` and `target_prompt_tokens` are optional. **Unknown fields are rejected**, so
+a record whose budget key is misspelled cannot load with a silently defaulted
+budget. W1 and W2 share this schema and one loader
+(`jugar_probar::llm::load_prompts_from_file`).
+
+This paragraph exists because the format was, until PERF-039, specified in three
+mutually incompatible places: this section named `.jsonl`, the only loader in the
+tree parsed YAML with a top-level `prompts:` key, and `apr test llm bench --prompts`
+advertised "a JSON array". The consequence was that `prompts-w2.jsonl` — the only
+corpus committed to the repo — could not be read by the only loader in the repo,
+and nothing noticed because nothing had tried. This document is the authority; the
+two implementations were the drift.
+
+**`target_prompt_tokens` is a target, not a measurement.** No tokenizer runs in
+the generator, so `512 ± 8` is asserted by the harness against the model's own
+tokenizer at measurement time and declared in the receipt's §4.4.6 `tokenization`
+block. **§4.3.1 does not say whether the 512 is counted before or after the chat
+template wrapper**; the corpus stores raw prompt text and the harness applies the
+template, so the receipt must declare which side of that boundary its count was
+taken on.
+
+**Prompts are distinct `[U]`.** "Fixed corpus" pins the corpus; it does not
+require one prompt repeated, and `[U]` marks distinctness as chosen here rather
+than derived. N identical prompts would let a server with prefix caching serve
+bands 2..c from cache, so Arm A's `agg(c)` would rise with `c` for a reason that
+is not batching — a gate measuring its own cache. Corpus size is 256 `[U]`:
+§4.4.2 consumes at most `8×16` sampled + `2×16` warmup = 160 requests at the
+widest band of §4.5.
+
+**ignore-EOS is a wire field with partial backend coverage (PERF-039).** `ignore_eos` had no representation on either side before PERF-039 — not in the
+harness's `ChatRequest`, not in the server's `ChatCompletionRequest` — so the
+§4.3.1 row above described a workload no client could request. It now exists on
+both. The quantized GGUF chat backend that W1's Q4_K_M model runs on honours it;
+the SafeTensors-CUDA, f32 APR-transformer and dense-registry backends stop on EOS
+in a way no request field reaches and therefore **refuse the request with 501**
+rather than serving it with EOS live. A silently dropped `ignore_eos` would let a
+receipt record a pinned token budget it never received, so a cell measured on one
+of those three backends is unrepresentable rather than wrong.
+
+**`pp512` and `tg128` are never blended** — GB10 legitimately loses ~4× on decode while winning prefill, and a blended figure reports a correct machine as broken.
 
 #### 4.3.2 W2 — ragged (N1, new in v2.1)
 
@@ -627,7 +678,7 @@ This is the metric chunked prefill exists to move. Without it, a batching implem
 
 - Comparand read from **protected `origin/main`**, never from the PR's own tree.
 - Arms A and D `kv_utilization`: **increase only**. Arm D `preempted_swap`, Arm E: **decrease only**. B1 floor: increases only, by recorded operator decision.
-- Claim literals, competing harnesses, unwired guards: **decrease only**.
+- Claim literals, competing harnesses, unwired guards: **decrease only** — with one admission, added by PERF-049 and named `set-aperture` in `scripts/lib_baseline_ratchet.sh`. A guard whose aperture WIDENS reveals claims that were already in the tree, and from the working tree alone that is the same diff as writing a fresh one, so the ratchet refused it and `check_no_claim_literals.sh` could not be widened at all. An entry may now be added iff (a) its `<path>:<line>` is **byte-identical at the comparand** — the branch neither wrote nor moved it — and (b) the **owning guard's own source changed** in the same diff. Every admitted coordinate is printed in the verdict row; everything else is refused exactly as before. This narrows, and does not remove, the rule that a finding is fixed rather than recorded.
 - A PR moving a baseline the forbidden way fails at **merge** phase.
 
 This is the answer to *"any state the author writes and the gate reads can be moved in the same commit."*
@@ -762,36 +813,58 @@ Decoupled from the gate by Arm A — ship the gate on all four hosts regardless 
 
 Every row requires: named mutation → **RED**; pre-fix **GREEN** as before-evidence in the PR body; discrimination check (no-op rebuild stays GREEN).
 
+**The Status column is a CLOSED vocabulary (PERF-047), and `scripts/check_mutation_registry.sh` enforces it.** Prose statuses are how this table rotted: `**not written**` sat beside three guards that had shipped, carried case tables and were named twice each in `ci.yml`, and nothing compared the words to the tree. Every row now opens with exactly one of:
+
+- **PROVEN** — the mutation named in this row was applied, the gate went RED, the row's discrimination case stayed GREEN, and the revert went GREEN. The Status cell carries the counts.
+- **PARTIAL** — a mutation exists and discriminates, but it is **not the one this row names**, or it covers only part of the arm. The Status cell says which half is uncovered. A PARTIAL row is not admissible evidence for the half it does not cover.
+- **UNCOVERED** — the file this row names ships a case table that a workflow runs, and **this rule is not in it**. The Status cell must quote the mutation that leaves the table green. This is the honest middle: a self-test exists and does not reach here. No row uses it today — cell completeness did, for the hour between finding the hole and closing it — and it exists so the next one has somewhere honest to sit instead of `**not written**`.
+- **UNPROVEN** — no mutation turns this gate RED.
+
+The rule is two-way, and both halves are the drift PERF-047 measured. A PROVEN, PARTIAL or UNCOVERED row must name, in backticks, a file that exists in the tree — a row claiming anything about a mutation must name something a person can run. An UNPROVEN row may **not** name a file whose self-test a workflow invokes: if a table exists and skips this rule, the status is UNCOVERED with the evidence, not silence. And UNCOVERED may not be used where no such table exists, or it becomes a softer spelling of UNPROVEN.
+
 | Gate / control | File `[C]` | Mutation → RED | Discrimination | Status |
 |---|---|---|---|---|
-| Arm A scaling | `scripts/perf_gate.sh` | cap in-flight semaphore to 1 | no-op rebuild green | **missing** |
-| Arm B1 aggregate floor | `scripts/perf_gate.sh` | inject `agg_ratio = 0.79` | `0.81` green | **missing** |
-| Arm B2 decode parity | `scripts/perf_gate.sh` | inject `decode_ratio = 0.99` | `1.01` green | **missing** |
-| **Arm D kv_utilization** | `scripts/perf_gate.sh` | reserve `max_seq_len` per request | on-demand alloc green | **missing** |
-| **Arm D swap ratchet** | `scripts/perf_gate.sh` | force swap preemption | recompute green | **missing** |
-| **Arm E interference** | `scripts/perf_gate.sh` | disable prefill chunking | chunked green | **missing** |
-| Arm C integrity | `scripts/lib/bench_receipt.py` | `completed = requested − 1` | equal green | claimed, unverified |
-| Band-completeness poka-yoke | `scripts/lib/bench_receipt.py` | omit `agg_tok_s` at c=1 | full band green | claimed, unverified |
-| **Tokenization poka-yoke** | `scripts/lib/bench_receipt.py` | omit `tokenization.method` | present green | **not written** |
-| **Drain rule** | `scripts/lib/bench_receipt.py` | count a post-`T` request | pre-`T` only green | **not written** |
-| Receipt table (23 cases) | `scripts/check_parity_receipt.sh` | per existing table | present | **the only verified one** |
-| Claim-literal guard | `scripts/check_no_claim_literals.sh` | add `"2.93× Ollama"` to `book/` | unrelated prose green | 8-case selftest |
-| **`[X]` figure guard** | `scripts/check_no_claim_literals.sh` | add `"36.9×"` to `docs/` | unrelated prose green | **not written** |
-| Fabricated-baseline guard | `scripts/check_no_fabricated_baselines.sh` | `${OLLAMA_BASELINE:-137}` in a **new** file | unrelated shell edit green | **weak** |
-| Competing-harness guard | `scripts/check_no_competing_harnesses.sh` | re-add `scripts/gpu_2x_benchmark.sh` | unrelated script green | **not written** |
-| Claims-cite-receipts | `scripts/check_perf_claims_cite_receipts.sh` | uncited number in `docs/` | cited number green | **not written** |
-| **Comparator-harness guard** | `scripts/perf_gate.sh` | drive comparator with `llama-bench` | same-client green | **not written** |
-| Resolver contract | `apr_bin.sh`, `llama_bin.sh` | replace `return 1` with `exit 1` | caller survives on `return` | **not written** |
-| Jidoka `--gpu` | `serve/mod.rs` | remove `ensure_accelerator_available` | CPU run without `--gpu` still succeeds | landed, mutation **unrecorded** |
-| **Explicit-wins (I-17)** | `serve/mod.rs` | let auto-fit override an explicitly-set `--gpu-layers` | unset arg auto-fitted → green | **not written** |
-| **Resolved-vs-requested (I-2)** | `serve/mod.rs` | emit `gpu_layers_resolved = gpu_layers_requested` on a partial offload | full offload, equal → green | **not written** |
-| **No-boolean-flag (I-18)** | CLI surface test | reintroduce a boolean `--gpu` with no resolution field | quantity flag → green | **not written** |
-| Ratchet direction | baseline files | move a baseline the forbidden way | correct direction green | **missing** |
-| Staleness arm | verdict job | receipt one commit stale | fresh receipt green | **not written** |
+| Arm A scaling | `scripts/perf_gate.sh` | delete BOTH c=1 clauses (`1 not in bands` and `agg(1) missing or zero`) | `baseline_healthy` green | PARTIAL — 19 → 18/19, `band_c1_absent` breaks. Deleting either clause alone leaves 19/19: they catch the same receipt, which is defence in depth rather than a hole. The band-presence half is proven; the **`scaling_efficiency < floor` comparison and the UNMEASURED-`expires` branch are UNREACHED** — neutering either leaves 19/19, because all 8 cells are `UNMEASURED` with a future expiry. v2.2's "cap the in-flight semaphore to 1" is a product mutation nothing implements. |
+| Arm B1 aggregate floor | `scripts/perf_gate.sh` | inject `agg_ratio = 0.79` | `0.80` green | PROVEN — `b1_aggregate_below_floor` / `b1_aggregate_at_floor`; neutering `ag<b1` gives 17/19 (it also breaks `serialization_shape_rejected`). `ci.yml:1011`. |
+| Arm B2 decode parity | `scripts/perf_gate.sh` | inject `decode_ratio = 0.99` | `1.00` green | PROVEN — `b2_decode_below_floor` / `b2_decode_at_floor`; neutering `de<b2` gives 18/19. |
+| **Arm D kv_utilization** | `scripts/perf_gate.sh` | omit `kv.bytes_used` / `bytes_reserved` at `--phase release` | present → green | PARTIAL — `armDE_absent_is_fatal_at_release` / `armDE_present_passes_release`; neutering **both** release exits gives 17/19. Arm D applies **no bound** until PERF-001, so "reserve `max_seq_len` per request" cannot turn it RED by construction. Only field presence can, and that is what is proven. |
+| **Arm D swap ratchet** | `scripts/perf_gate.sh` | omit `kv.preempted_swap` at `--phase release` | present → green | PARTIAL — same two cases. No swap ratchet exists; the threshold arrives with PERF-001. |
+| **Arm E interference** | `scripts/perf_gate.sh` | omit `itl` / `injector` on W2 at `--phase release` | W1 skips, W2 present → green | PARTIAL — `armE_absent_is_fatal_on_w2` / `armE_skipped_on_w1_with_d_present`; neutering **both** release exits gives 17/19. Same reporting-arm limit as Arm D. |
+| Arm C integrity | `scripts/perf_gate.sh`, `scripts/lib/bench_receipt.py` | `completed = requested − 1` | equal green | PROVEN — `completed_lt_requested` / `baseline_healthy`; neutering the comparison gives 18/19. Enforced in `perf_gate.sh::arm_c_integrity`, **not** in `bench_receipt.py`, which returns rc=0 on the same receipt. |
+| Band-completeness poka-yoke | `scripts/perf_gate.sh` | omit `aggregate_tok_per_sec` at c=1 | full band green | PARTIAL — measured directly: the gate goes RED (`FAIL ArmA agg(1) missing or zero`) and the full band PASSes. But **no self-test row covers it**, so a regression is invisible to CI, and it is a DETECTOR rather than a poka-yoke: `bench_receipt.py` returns rc=0 on the same receipt. §6's Poka-yoke row is corrected below. |
+| **Tokenization poka-yoke** | `scripts/perf_gate.sh`, `scripts/lib/bench_receipt.py` | omit `tokenization.method` | present green | PROVEN — `tokenization_absent` / `baseline_healthy`; neutering the check gives 18/19. |
+| **Drain rule** | `crates/aprender-test-lib/src/perf_gate/drain.rs`, `scripts/perf_gate.sh` | accept a request issued at or after `T` (`issued_ms >= window_ms` → `false`) | pre-`T` only green | PROVEN — `cargo test -p aprender-test-lib --lib perf_gate::` goes 34 → 33/34 on `a_request_issued_at_or_after_t_is_refused`, revert 34/34. `drain_ms` absence is separately covered by `drain_ms_absent` (neuter → 18/19). |
+| Receipt table (23 cases) | `scripts/check_parity_receipt.sh` | per existing table | the 6 valid cases stay valid | PROVEN — 23 cases, 6 valid / 17 invalid, one-sidedness asserted in both directions. **Named by no workflow**: it is on `scripts/unwired_guards_baseline.txt` and runs only in the release dogfood sweep via `[package.metadata.dogfood]`. |
+| Claim-literal guard | `scripts/check_no_claim_literals.sh` | add `"2.93× Ollama"` to `book/` | unrelated prose green | PROVEN (PERF-049, #2758) — rc=0 → **rc=1** naming `book/src/tools/apr-cli.md:1786`; unrelated prose in the same file rc=0; revert rc=0. **The mutation this cell names left the guard GREEN until PERF-049**: `RATIO_RE` matched ASCII `x` only, so the U+00D7 spelling — the one the book actually publishes — was unreadable, and this row was recorded as proof by a mutation that did not bite. 27 ratio case rows now assert both spellings; `ci.yml:969`, `:971`. |
+| **`[X]` figure guard** | `scripts/check_no_claim_literals.sh` | add `"36.9×"` to `docs/` | unrelated prose green | PROVEN (PERF-049, #2758) — rc=1 for `36.9× over FasterTransformer`, `36.9x over FasterTransformer`, `23x over static batching` and `1.8x over vLLM`; a line carrying `3x3 matrix`, `2x2 grid`, `1024x1024` and `v1.8x` beside `llama`/`torch` stays rc=0. **One intervening word used to defeat the adjacency, and that is the spelling §0.1 above uses**, so the guard was blind to the exact form this document writes. |
+| Fabricated-baseline guard | `scripts/check_no_fabricated_baselines.sh` | `${OLLAMA_BASELINE:-137}` in a **new** file | unrelated shell edit green | PROVEN — rc=1 naming the new file, rc=0 on the control; `OLLAMA_TPS=137` also rc=1, so it is shape recognition and not string equality against `291`. 52 case rows run in front of the verdict on **every** invocation, so the absent `--selftest` flag is a design choice, not a gap. |
+| Competing-harness guard | `scripts/check_no_competing_harnesses.sh` | re-add `scripts/gpu_2x_benchmark.sh` (`git show 64cb68177^:…`, 171 lines, untracked) | unrelated script green | PROVEN — rc=1, `COMPETING scripts/gpu_2x_benchmark.sh`, count=1 > baseline=0; the control script rc=0. The mutation is landed **untracked**, so the tracked-∪-working-tree universe is exercised too. 9 case rows, `ci.yml:989`. |
+| Claims-cite-receipts | `scripts/check_perf_claims_cite_receipts.sh` | uncited speed comparison in `docs/` | the same claim citing a real `evidence/` path green | PROVEN — rc=1 uncited, rc=0 cited, rc=1 on a dangling citation. 12 case rows, `ci.yml:985`. |
+| **Comparator-harness guard** | `scripts/check_no_competing_harnesses.sh` | a script driving `llama-bench` and printing tok/s | `scripts/parity_host_receipt.sh`, the same-client producer, green | PROVEN — rc=1 on the probe, rc=0 on the tree. It lives in the competing-harness predicate (`starts_server` lists `llama-bench`), **not** in `perf_gate.sh` as v2.2 recorded. Residual: the same-client producer stays green because it computes no rate itself, not because it is allowlisted. |
+| Resolver contract | `scripts/apr_bin.sh`, `scripts/llama_bin.sh` | replace `return 1` with `exit 1` | caller survives on `return` | UNPROVEN — nothing mutates it. `check_sourced_libs_option_neutral.sh` covers file-scope `set` and `check_apr_bin_resolution.sh` covers resolution ORDER; neither is this property. |
+| Jidoka `--gpu` | `crates/apr-cli/src/commands/serve/mod.rs`, `contracts/accelerator-request-v1.yaml` | delete `ensure_accelerator_available(config)?;` from `run()` | CPU run without `--gpu` still succeeds | PROVEN — `cargo test -p apr-cli --lib commands::serve::` goes 252 → 251/252 on `the_guard_is_actually_wired_into_run`, revert 252/252. F-ACCEL-001..004 record the build-conditional halves. The call site is the gate: every unit test survives deleting it, which is why that one test reads the source. |
+| **Explicit-wins (I-17)** | `crates/apr-cli/src/commands/serve/mod.rs`, `contracts/accelerator-request-v1.yaml` | `fits >= total_layers` → `true`, and `n <= fits` → `true` | `auto` still fitted → green | PROVEN — 252 → 251/252 on `an_explicit_request_that_does_not_fit_is_an_error`, `auto_resolves_to_what_fits` stays green, revert 252/252. F-ACCEL-005. |
+| **Resolved-vs-requested (I-2)** | `crates/apr-cli/src/commands/serve/mod.rs` | emit `gpu_layers_resolved = gpu_layers_requested` on a partial offload | full offload, equal → green | UNPROVEN — `gpu_layers_resolved` appears nowhere but in `receipt.rs`'s `unproduced_fields` list. The field this mutation would corrupt is not emitted yet, so the mutation has nothing to act on. |
+| **No-boolean-flag (I-18)** | `crates/apr-cli/src/commands/serve/mod.rs`, `contracts/accelerator-request-v1.yaml` | `wants_layers = false` | `--gpu-layers 0` still not an accelerator request → green | PROVEN — 252 → 251/252 on `gpu_layers_is_refused_on_a_build_with_no_accelerator`, revert 252/252. F-ACCEL-006. **I-18's wording claims more than is proven**: the boolean `--gpu` still exists as the deprecated spelling of `all`. What is enforced is that both spellings reach one refusal. |
+| Ratchet direction | `scripts/lib_baseline_ratchet.sh`, `scripts/check_baseline_ratchets.sh` | append one entry cloned from a baseline's own last real entry; and, for `set-aperture`, record a line this branch WROTE | delete an entry → green; a reveal that predates the comparand → green | PROVEN (PERF-049, #2758) — 42 case rows, `ci.yml:472`. Six named mutations run: forcing the aperture-moved test true, neutering the byte-identity comparison, neutering the coordinate parse, and silencing the admitted-entry list each take the table from PASS to a named FAIL; a comment reflow stays green. Neutering the coordinate parse was GREEN on the first pass — `pre.md:x` is refused one branch later — so the row that only it catches (`pre.md:$`, sed's last-line address) was added and the mutation now bites. |
+| **Cell completeness** | `scripts/perf_gate.sh` | `cell_completeness`'s `sys.exit(1)` → `sys.exit(0)` | a full band set → green | PROVEN — 19 → 18/19 on `cells_missing_bands_at_release`, control `cells_complete_at_release`. This row did not exist in v2.2 and the arm was exercised by nothing: every fixture carried all four bands, so the mutation left the table at 17/17. PERF-047 added both cases. The registry was incomplete, not merely stale. |
+| Staleness arm | verdict job (§4.9.1) | receipt one commit stale | fresh receipt green | UNPROVEN — no verdict job exists in `.github/workflows/`, and `receipt.commit ⊇ commit-under-test` is unimplemented. |
 
-**Coverage: 1 of 24** (1 of 14 at v2.0, 1 of 21 at v2.1 — the denominator grows because the gate grows). Target **24/24** before this document leaves DRAFT.
+**Coverage: 15 PROVEN, 7 PARTIAL, 3 UNPROVEN of 25** (v2.2 recorded "1 of 24"; v2.1 1 of 21, v2.0 1 of 14). The denominator grew by one because the registry was missing a row, not because the gate grew. Target **25 PROVEN** before this document leaves DRAFT.
 
-**On the fabricated-baseline guard.** A guard that knows the literal `291` proves string equality, not shape recognition; the mutation must use a **different** default. It is also **known-incomplete today**: the `"Using default Ollama baseline (318 tok/s from spec)"` branch and 15+ `225.0 // Ollama parity` literals in `crates/aprender-serve/src/gguf/tests/parity*.rs` `[C]` are outstanding. Commit the true count as the shrink-only baseline **now**, or the guard will be quietly widened later.
+**PERF-047 audit — the drift, measured in both directions (#2752, against `origin/main` at `31732f5db`, 2026-08-29).**
+
+- **Recorded as proof, not proven: 2.** *Band-completeness poka-yoke* named `bench_receipt.py` as the enforcer and was marked `claimed, unverified`; `bench_receipt.py` returns rc=0 on a receipt whose c=1 band has no `aggregate_tok_per_sec`, and no self-test row covers the rule at all. *Claim-literal guard* was marked with a case-table count and named a mutation — `"2.93× Ollama"`, with U+00D7 — that leaves the guard GREEN. This is the dangerous direction: a row read as evidence for a gate that, on the input the row itself names, cannot fail.
+- **Recorded as unproven, actually proven: 12**, plus 5 more where a discriminating mutation exists for a property adjacent to the one named (now PARTIAL). Three of the twelve — competing-harness, claims-cite-receipts, `[X]` figure — were `**not written**` beside guards that ship case tables and are invoked twice each in `ci.yml`. *Ratchet direction* was `**missing**` while `check_baseline_ratchets.sh --self-test` runs 31 rows at `ci.yml:472`. *Jidoka `--gpu`* was `mutation unrecorded` while the test that carries it names this registry row in its own doc comment.
+- **Rows the registry did not have: 1** — cell completeness. It gates release and was exercised by nothing: mutating its `sys.exit(1)` left the case table at 17/17. PERF-047 added the row, the mutation case and its control, so it lands PROVEN rather than recorded.
+
+The asymmetry matters. An understated row costs credit; an overstated one is a gate that cannot fail, wearing a citation. Both were present here, which is why the registry is now checked by `scripts/check_mutation_registry.sh` rather than by whoever reads it next.
+
+One more case-table row was green for the wrong reason and is fixed here: `zero_token_response` built its fixture with a stray `}`, so it was RED on a JSON parse error rather than on a zero-token band — neutering the zero-token rule itself left the table at 17/17. The fixture now parses, and the same mutation gives 18/19. `ci.yml:1025` runs the registry guard and `:1027` its case table.
+
+**On the fabricated-baseline guard.** A guard that knows the literal `291` proves string equality, not shape recognition; the mutation therefore uses a **different** default, and `${OLLAMA_BASELINE:-137}` and `OLLAMA_TPS=137` both go RED in a file the guard has never seen. v2.2 recorded two outstanding holes — the `"Using default Ollama baseline (318 tok/s from spec)"` branch and the `225.0 // Ollama parity` literals in `crates/aprender-serve/src/gguf/tests/parity*.rs` `[C]`. Both are now inside the shrink-only ledger `scripts/fabricated_baseline_rust_sites.txt` (73 lines, 36 Rust sites); the note is retained because ledgered is not fixed.
+
+**What the registry guard still cannot check.** It reads the table against the tree: that a claiming row names a file that exists, that an UNPROVEN row is not sitting beside a self-test a workflow runs, and that the unproven set only ever shrinks against `origin/main`. It cannot read the Mutation cell and decide whether that English sentence describes something real — the `2.93×` row is exactly that failure, and it was caught by running the mutation, not by any parser. The counts in a PROVEN cell are a human claim; the standing rule is that a PR moving a row to PROVEN quotes the RED, the discrimination and the revert in its body.
 
 ---
 
@@ -801,7 +874,7 @@ Every row requires: named mutation → **RED**; pre-fix **GREEN** as before-evid
 |---|---|---|
 | **Jidoka** — the product stops itself | `--gpu` on a build with no GPU backend fails rather than running on CPU. It stops the **product on the user's machine**, not just CI | `serve/mod.rs::ensure_accelerator_available` — landed, exit 9 with a working remedy; **mutation unrecorded** |
 | **Andon** — one visible signal | one `compute_class()` feeding banner, `/health`, `provenance.compute_class`; `max_in_flight`, the server declaring its own concurrency ceiling; **and `gpu_layers_requested` vs `_resolved`, the machine raising its own lamp when it gave the user less than they asked for** | PERF-006, PERF-021; §4.4.9 |
-| **Poka-yoke** — unwriteable, not detected | a lane must carry `bands`; a band must carry every metric; `tokenization.method` has no default; a ratio must derive from that band's own samples; a lane can never be greener than its worst band | `scripts/lib/bench_receipt.py` `[C]` |
+| **Poka-yoke** — unwriteable, not detected | a lane must carry `bands`; `tokenization.method` has no default; a ratio must derive from that band's own samples; a lane can never be greener than its worst band. **"A band must carry every metric" is NOT poka-yoke** — see the PERF-047 correction below | `scripts/lib/bench_receipt.py` `[C]`, `crates/aprender-test-lib/src/perf_gate/` `[C]` |
 | **Genchi Genbutsu** — go and see | the gemba is the clean-room-installed artifact on four hosts; the receipt is emitted by the process that installed it. **Not byte-identical to the user's binary — see X-E1** | Mode A A4 + `check_multiplatform_dogfood.sh` |
 | **Standardized work** | one entrypoint, one receipt schema, one verdict, one client for both servers — competing harnesses **deleted**. SGLang RFC #9808 is the counterfactual `[X]` | §9 — **deletion staged on branch, unshipped** (E1) |
 | **Kaizen** — a ratchet that cannot slip | comparand from protected `origin/main`; A and D up-only, D-swap and E down-only, claim literals down-only | §4.6.3 |
@@ -809,6 +882,8 @@ Every row requires: named mutation → **RED**; pre-fix **GREEN** as before-evid
 | **Muda** — waste made visible | `kv_bytes_reserved − kv_bytes_used` is reserved-but-never-used VRAM: inventory, in the TPS sense, expressed in bytes | Arm D |
 
 **P7 correction, retained.** `check_perf_claims_cite_receipts.sh` is a **detector** — it finds a bad number after someone wrote it. The poka-yoke is the receipt schema: a band missing a metric is *unrepresentable*. Both are needed; conflating them inflates how much of the problem is mistake-proofed. Detectors can be bypassed; unrepresentable states cannot.
+
+**PERF-047 correction (#2752).** The row above used to claim "a band must carry every metric" as an unrepresentable state. Measured: a receipt whose `c=1` band has no `aggregate_tok_per_sec` is accepted by `scripts/lib/bench_receipt.py` with rc=0, and is caught downstream by `perf_gate.sh`'s Arm A — `FAIL ArmA agg(1) missing or zero`. That is a detector, not a poka-yoke, and the same conflation P7 corrects one paragraph up. What IS unrepresentable is on the **producer** side: `crates/aprender-test-lib/src/perf_gate/` derives `drain_ms` and the request counters from per-request terminal records and offers no constructor that accepts a `drain_ms` scalar. Poka-yoke lives where the number is made, not where it is read.
 
 ---
 

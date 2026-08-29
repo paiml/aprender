@@ -7,10 +7,80 @@
 #
 # FORMAT (one entry per line, TAB-separated):
 #
-#     <file>  <hash16>  <count>
+#     <file>	<hash16>	<count>
 #
-# <hash16> is the first 16 hex digits of the sha256 of the matched LINE with
+# <hash16> is the first 16 hex digits of the sha256 of the matched LINE after
+# tabs are turned into spaces, runs of spaces collapsed, and the ends trimmed.
+# <count> is how many lines of <file> carry that key. Regenerate the list with
+#
+#     bash scripts/check_no_claim_literals.sh --list
+#
+# and read an entry back with `--explain <hash16>`. The guard that enforces
+# this file is the one that writes it; a bash one-off re-deriving the key would
+# drift from it.
+#
+# WHY THE KEY IS NOT <file>:<line>. It was, until PERF-006 added `pub mod
+# andon;` and a doc comment near the top of crates/aprender-serve/src/lib.rs.
+# That wrote no claim, and it slid three baselined claims onto new coordinates:
+# the guard reported them as newly written, and the ratchet could not admit
+# them at their new coordinates either, because the comparand does not hold
+# that text there. A red with no legal remedy, for a reason unrelated to the
+# property. A line NUMBER is not part of a claim; the claim text is.
+#
+# WHAT THE KEY SURVIVES, AND WHAT RE-KEYS IT. It survives inserting or deleting
+# lines anywhere in the file, reindenting, and re-aligning a markdown table
+# row. It RE-KEYS on any edit to the claim text, one digit included — that is
+# the ratchet: "1.9x Ollama" edited in place to "2.9x Ollama" is a DIFFERENT
+# claim and reds as new. Editing the text to dodge the key only makes the guard
+# louder: the old entry goes unmatched AND the new key arrives unbaselined.
+#
+# THE RATCHET: this file may only SHRINK, and that is the MECHANISM rather than
+# this sentence. For one commit the sentence read "adding a line requires
+# editing this header and arguing for it" while nothing compared the file to
+# anything: appending one entry and writing the matching claim printed
+# "known (baselined, must shrink): 138 / new: 0 / PASS" — grown from 137,
+# laundering the claim it had just admitted.
+#
+# It is now compared against origin/main by check_no_claim_literals.sh and by
+# check_baseline_ratchets.sh, under `set-aperture`. An entry may only LEAVE:
+# delete the claim, or derive it from a receipt under evidence/. An addition is
+# admitted only when the comparand's copy of <file> already carries <count>
+# lines with that key — a claim this branch wrote, moved in from another file,
+# or duplicated is refused, and every admission is NAMED in the verdict row.
+#
+# Already removed: the two printed banners in serve/server.rs, one of which
+# advertised "800+ tok/s (2.8x Ollama)" on a code path that HANGS on four
+# concurrent chat requests.
+#
+# RE-DERIVED 2026-08-27 in a WIDENED universe, so the old 62-entry list does not
+# transfer. Three holes were closed at once: a depth-5 glob that hid 1045 tracked
+# .rs files, a tracked-only universe, and book/ + docs/ being absent entirely
+# while §9's whole premise is that a claim a USER READS is the defect. The count
+# rises because the guard now looks where the claims are, not because new claims
+# were written.
+#
+# APERTURE REVEAL 2026-08-29 (PERF-049, #2758). +18, the first growth this file
+# took under a ratchet. RATIO_RE matched ASCII `x` adjacent to a competitor
+# name, so it could not read the two spellings that are actually published:
+# U+00D7 (`2.93× Ollama`, the book's own figure, and the literal §5's
+# registered mutation names -- which therefore left the guard GREEN) and any
+# form with an intervening word (`36.9x over FasterTransformer`, the spelling
+# §0.1 of APR-PERF-GATE-001 uses). Not one of the 18 was WRITTEN by that PR:
+# all are byte-identical at 31732f5db -- four in shipped rustdoc, one in a book
+# command comment advertising `2.9x faster than Ollama`, two in a spec quoting
+# the fabrication in order to ban it, eleven in dated QA archives. None is
+# ordinary prose that happens to contain a number; the case table carries
+# `3x3 matrix`, `2x2 grid`, `1024x1024`, `v1.8x` and a markdown table row as
+# must-NOT-match controls.
+#
+# RE-KEYED 2026-08-29 (#2711) from <file>:<line> onto the content key above.
+# The entry SET is unchanged by the re-key: all 154 are the same claims the
+# coordinate list held, and each one was admitted by showing that the
+# comparand's copy of its file already carries a line with that key.
+# Recorded, not blessed. Shrink-only from here.
+#
 book/src/advanced-testing/popperian-falsification.md	db77efbb304b3882	1
+book/src/tools/apr-cli.md	39721fbc746d6ce3	1
 book/src/tools/apr-cli.md	4d1cf41af1382afd	1
 book/src/tools/apr-cli.md	59c9091c07a47b29	1
 book/src/tools/apr-cli.md	7a234a7b3b367fa7	1
@@ -37,6 +107,7 @@ crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs	2a0ddc85f6
 crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs	dec77819bc924366	1
 crates/aprender-gpu/src/kernels/gemv/mod.rs	c11e0ca067b7bf9c	1
 crates/aprender-gpu/src/kernels/quantize/dot/packed_dp4a.rs	c18d9796db044679	1
+crates/aprender-gpu/src/kernels/quantize/dp4a_gemm.rs	3f4ec002c41019af	1
 crates/aprender-gpu/src/kernels/quantize/q4k/batched.rs	2a4e316011219c98	1
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs	0e4b34eee4fc5108	1
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs	e5a73af857a6ce45	1
@@ -55,6 +126,8 @@ crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs	4d16b32c8
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs	e0dccf7526650704	1
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs	cff08eb3a4782f96	1
 crates/aprender-serve/src/cuda/executor/layers/par-062.rs	81486f8d592a3751	1
+crates/aprender-serve/src/cuda/executor/layers/prefill.rs	35039ec1167b568d	1
+crates/aprender-serve/src/cuda/executor/layers/prefill.rs	d1bda11193f7b757	1
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs	81486f8d592a3751	1
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs	4d16b32c8b953f1f	1
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs	e0dccf7526650704	1
@@ -81,6 +154,7 @@ crates/aprender-serve/src/tui.rs	e02e3ee3255039de	1
 crates/aprender-test-lib/src/llm/training_scorecard.rs	fdb795a752e45718	1
 crates/aprender-train/src/models/llama_370m.rs	516cfba640ac0d19	1
 crates/aprender-train/src/models/llama_370m.rs	e2a4534e9c06bbe8	1
+crates/aprender-train/src/transformer/init.rs	915b402c3c2970e6	1
 docs/BEATS.md	59136cc85db9ba02	1
 docs/BEATS.md	643efb1efdf2e5a9	1
 docs/BEATS.md	80b93285051a7d92	1
@@ -88,9 +162,12 @@ docs/BEATS.md	d214194be5cb4241	1
 docs/audits/dogfood-0.63.0-ledger.md	e64950a5d96c697a	1
 docs/benchmarking-gate-spec.md	1e355d290f3f2024	1
 docs/benchmarking-gate-spec.md	6fdf7bd02e676444	1
+docs/benchmarking-gate-spec.md	97aed50b5b92c009	1
+docs/benchmarking-gate-spec.md	db92773dc9ab31e3	1
 docs/model-cards/albor-370m-v1.md	1766c7ba0bb91514	1
 docs/qa-cargo-run-example-conversion-minimize.md	83ac647c02e91ba1	1
 docs/qa/benchmark-matrix-2026-01-09.md	085da1ef56420a9b	1
+docs/qa/benchmark-matrix-2026-01-09.md	2d0fd355b7096582	1
 docs/qa/benchmark-matrix-2026-01-09.md	3accdba1f0143378	1
 docs/qa/benchmark-matrix-2026-01-09.md	4b421db933d9a696	1
 docs/qa/benchmark-matrix-2026-01-09.md	4f206a44b82723f1	1
@@ -98,17 +175,24 @@ docs/qa/benchmark-matrix-2026-01-09.md	503cbd64086f5959	1
 docs/qa/benchmark-matrix-2026-01-09.md	5af994316f351a68	2
 docs/qa/benchmark-matrix-2026-01-09.md	64f3de1877efd3b8	1
 docs/qa/benchmark-matrix-2026-01-09.md	72598fe494c4f8c4	1
+docs/qa/benchmark-matrix-2026-01-09.md	75aaa983d6c983d9	1
 docs/qa/benchmark-matrix-2026-01-09.md	7ee07566805e1634	1
 docs/qa/benchmark-matrix-2026-01-09.md	8d59d1518a7dc786	1
 docs/qa/benchmark-matrix-2026-01-09.md	9b3ebe257d21a98b	1
 docs/qa/benchmark-matrix-2026-01-09.md	9ecac9ccf71567af	1
 docs/qa/benchmark-matrix-2026-01-09.md	a265f772d1310f5e	1
+docs/qa/benchmark-matrix-2026-01-09.md	b18a6ada14c80b6d	1
 docs/qa/benchmark-matrix-2026-01-09.md	bef6b4bbc1341149	1
+docs/qa/benchmark-matrix-2026-01-09.md	c8c8dcad3b1a115f	1
 docs/qa/benchmark-matrix-2026-01-09.md	dd4cabc6ff659257	1
 docs/qa/benchmark-matrix-2026-01-09.md	ddf730a14828bfba	1
 docs/qa/benchmark-matrix-2026-01-09.md	de394eccd46459d2	1
 docs/qa/benchmark-matrix-2026-01-09.md	e27c075465a3643f	1
 docs/qa/benchmark-matrix-2026-01-09.md	ed6fae415fdd5871	1
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md	2074f5f0f16d15c3	1
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md	48d8ec1f84d70377	1
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md	60db327bdcbaba2a	1
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md	c6dc9958fd11cfee	1
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md	d44cb22bd2a66a26	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	12c6f5034b5cb923	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	139255219b7cc120	1
@@ -131,11 +215,13 @@ docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	ba2c2c0bcc921c19	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	c15c56de635cf01d	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	c7570460801d43e7	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	c7a69810f6ddfe80	1
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	cf37893c15477a9a	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	d2245886cb431484	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	d807399ce12a651d	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	db7ce38b658ce5d4	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	e236bdef11761e79	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	e7e46218adc25730	1
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	ec65b974aaa99681	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	ed528d0aad73b5b8	1
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md	f6147ace62a82d30	1
 docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md	7142332053ac8fd3	1
@@ -143,6 +229,7 @@ docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md	fc08d73e65795e61	1
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md	4e944bd216af949d	1
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md	f39ee5fd41294a2f	1
 docs/qa/popperian_falsification_checklist.md	0d332309caebd5b8	1
+docs/qa/test-matrix-results-2026-01-08.md	73cf0f36dbe36fcf	1
 docs/qa/test-matrix-results-2026-01-08.md	77f103d7eaa5c525	1
 docs/qa/test-matrix-results-2026-01-08.md	acf24c430b451987	1
 docs/qa/test-matrix-results-2026-01-08.md	fd34658b8f9651e5	1

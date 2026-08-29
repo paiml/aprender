@@ -24,7 +24,7 @@ pub(super) fn cmd_agent_pool(
 
     println!("{} Multi-Agent Pool", "🔀".bright_cyan().bold());
     println!("{}", "═".repeat(60).dimmed());
-    println!("  Agents: {}  Concurrency: {}", manifests.len(), max_concurrent,);
+    println!("  Agents: {}  Concurrency: {}", manifests.len(), max_concurrent);
     println!("  Prompt: {}", prompt.bright_yellow());
     println!();
 
@@ -48,25 +48,25 @@ pub(super) fn cmd_agent_pool(
     rt.block_on(async {
         let mut pool = AgentPool::new(driver, max_concurrent).with_memory(memory);
 
-        println!("{} Spawning {} agents...", "▶".bright_green(), agent_count,);
+        println!("{} Spawning {} agents...", "▶".bright_green(), agent_count);
 
         let ids = pool.fan_out(configs).map_err(|e| anyhow::anyhow!("pool fan-out: {e}"))?;
         for id in &ids {
-            println!("  {} Agent {id} spawned", "•".bright_blue(),);
+            println!("  {} Agent {id} spawned", "•".bright_blue());
         }
         println!();
 
-        println!("{} Waiting for results...", "⏳".bright_blue(),);
+        println!("{} Waiting for results...", "⏳".bright_blue());
         let results = pool.join_all().await;
 
         println!();
-        println!("{} Results ({}/{})", "✓".green(), results.len(), ids.len(),);
+        println!("{} Results ({}/{})", "✓".green(), results.len(), ids.len());
         println!("{}", "─".repeat(60).dimmed());
 
         for (id, result) in &results {
             match result {
                 Ok(r) => {
-                    println!("  {} Agent {id}: {}", "✓".green(), r.text,);
+                    println!("  {} Agent {id}: {}", "✓".green(), r.text);
                     println!(
                         "    {}",
                         format!(
@@ -77,7 +77,7 @@ pub(super) fn cmd_agent_pool(
                     );
                 }
                 Err(e) => {
-                    println!("  {} Agent {id}: {e}", "✗".bright_red(),);
+                    println!("  {} Agent {id}: {e}", "✗".bright_red());
                 }
             }
         }

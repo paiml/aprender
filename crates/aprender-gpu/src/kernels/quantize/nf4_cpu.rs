@@ -145,7 +145,7 @@ pub fn quantize_nf4(values: &[f32], rows: usize, cols: usize) -> Nf4Quantized {
         // Quantize: normalize to [-1, 1], find nearest codebook entry
         let inv_scale = if absmax > 0.0 { 1.0 / absmax } else { 0.0 };
 
-        for pair in block.chunks_exact(2) {
+        for pair in block.as_chunks::<2>().0 {
             let idx_lo = nearest_nf4_index(pair[0] * inv_scale);
             let idx_hi = nearest_nf4_index(pair[1] * inv_scale);
             data.push(idx_lo | (idx_hi << 4));

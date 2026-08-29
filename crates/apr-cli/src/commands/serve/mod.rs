@@ -757,6 +757,140 @@ mod accelerator_guard_tests {
     /// and it is the only thing here that fails when the wiring is removed —
     /// `serve::run` needs a model file and a bound port, so it cannot be driven
     /// from a unit test.
+    /// PERF-021 / I-2: NO DECISION SITE MAY READ THE BOOLEAN.
+    ///
+    /// The sibling gate above proves `--gpu` still REACHES the guard. This one
+    /// proves the quantity reaches the DECISION, which is the half that was
+    /// missing and the half #2696 actually turns on.
+    ///
+    /// Four sites chose GPU over CPU by reading `config.gpu`: handlers.rs:776,
+    /// handlers.rs:1084, handler_gpu_completion.rs:407 and :412. Meanwhile
+    /// `--gpu-layers` set only `config.gpu_layers`. On a `--features cuda`
+    /// build `--gpu-layers all` therefore passed the guard and served on CPU —
+    /// #2696 in the new spelling, shipped by the change that retired the old
+    /// one.
+    ///
+    /// Every unit test in this file survives that defect, because they all call
+    /// helpers directly. So does the branch's own
+    /// `gpu_layers_is_refused_on_a_build_with_no_accelerator`, which carries
+    /// `#[cfg(not(any(feature = "cuda", feature = "wgpu")))]` and therefore
+    /// COMPILES ONLY WHERE THE BUG CANNOT HAPPEN. This test has no cfg: it is a
+    /// source scan, so it runs on every build including the CUDA one.
+    #[test]
+    fn no_decision_site_reads_the_bare_accelerator_boolean() {
+        // (file, source) pairs for every module that chooses GPU vs CPU.
+        let sites: [(&str, &str); 2] = [
+            ("handlers.rs", include_str!("handlers.rs")),
+            (
+                "handler_gpu_completion.rs",
+                include_str!("handler_gpu_completion.rs"),
+            ),
+        ];
+        let mut offenders = Vec::new();
+        for (name, src) in sites {
+            for (i, line) in src.lines().enumerate() {
+                let t = line.trim_start();
+                if t.starts_with("//") || t.starts_with("///") {
+                    continue;
+                }
+                // The decision shapes that reintroduce the defect.
+                if line.contains("config.gpu &&")
+                    || line.contains("config.gpu ||")
+                    || line.contains("= config.gpu;")
+                    || line.contains("if config.gpu {")
+                {
+                    offenders.push(format!("{name}:{}: {}", i + 1, t));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "a GPU/CPU decision reads the boolean `config.gpu` instead of \
+             `config.wants_accelerator()`. `--gpu-layers all` then parses, \
+             validates, stores — and serves on CPU (#2696, new spelling). \
+             Offenders:\n  {}",
+            offenders.join("\n  ")
+        );
+    }
+
+    /// The positive half of I-2: the quantity alone must select the accelerator,
+    /// with the deprecated boolean unset. Build-independent by construction, so
+    /// unlike the cfg'd test below it runs on the CUDA build too.
+    #[test]
+    fn the_quantity_alone_selects_the_accelerator() {
+        let mut cfg = ServerConfig::default();
+        cfg.gpu = false; // the user did NOT type the deprecated boolean
+        cfg.gpu_layers = Some(GpuLayerRequest::All);
+        assert!(
+            cfg.wants_accelerator(),
+            "`--gpu-layers all` with no `--gpu` must select the accelerator; \
+             reading the boolean here is #2696"
+        );
+
+        cfg.gpu_layers = Some(GpuLayerRequest::None);
+        assert!(
+            !cfg.wants_accelerator(),
+            "`--gpu-layers 0` is an explicit CPU request and must NOT select it"
+        );
+
+        cfg.gpu_layers = Some(GpuLayerRequest::All);
+        cfg.no_gpu = true;
+        assert!(
+            !cfg.wants_accelerator(),
+            "`--no-gpu` must still win over a quantity"
+        );
+    }
+
+    /// PERF-021: the resolver must be CALLED, not merely defined.
+    ///
+    /// Every one of the 7 calls to `resolve_gpu_layers` lived inside
+    /// `#[cfg(test)]` while its own doc comment said "a request has a
+    /// RESOLUTION, and it is reported". It reported nothing. Its sibling
+    /// `ensure_accelerator_available` landed WIRED because it had a source-grep
+    /// gate; this one landed dead because it had none. That difference is the
+    /// entire explanation, so the gate comes with the call.
+    #[test]
+    fn the_resolver_is_actually_called_from_a_decision_path() {
+        let src = include_str!("handler_gpu_completion.rs");
+        assert!(
+            src.contains("config.resolve_layers(total_layers)?"),
+            "no decision path calls the resolver — `--gpu-layers` is parsed, \
+             validated, stored and never resolved, so nothing reports how many \
+             layers were placed (N4, and the reason #2696 was invisible)"
+        );
+        assert!(
+            src.contains("gpu-layers: requested="),
+            "the resolution is computed but not REPORTED. I-2 requires \
+             resolved-vs-requested to be observable; a resolution nobody can \
+             see is the boolean defect with more arithmetic"
+        );
+    }
+
+    /// A PARTIAL request must be refused, not rounded.
+    ///
+    /// `OwnedQuantizedModelCuda` takes no layer count and uploads every layer,
+    /// so accepting `--gpu-layers 12` on a 29-layer model would place 29 and
+    /// print 12 — a fabricated number in a log, which is worse than a refusal
+    /// and is precisely what this epic exists to remove.
+    #[test]
+    fn a_partial_offload_is_refused_because_the_loader_cannot_do_it() {
+        let mut cfg = ServerConfig::default();
+        cfg.gpu_layers = Some(GpuLayerRequest::Exact(12));
+        let e = cfg.resolve_layers(29).expect_err("partial must be refused");
+        let m = e.to_string();
+        assert!(m.contains("PARTIAL"), "must name the limitation: {m}");
+        assert!(m.contains("PERF-023"), "must cite the tracking item: {m}");
+
+        // The two honourable requests still work, or the refusal is a wall.
+        cfg.gpu_layers = Some(GpuLayerRequest::All);
+        assert_eq!(cfg.resolve_layers(29).expect("all"), 29);
+        cfg.gpu_layers = Some(GpuLayerRequest::None);
+        assert_eq!(cfg.resolve_layers(29).expect("none"), 0);
+        // `Exact(total)` is `all` by another spelling and must be accepted.
+        cfg.gpu_layers = Some(GpuLayerRequest::Exact(29));
+        assert_eq!(cfg.resolve_layers(29).expect("exact==total"), 29);
+    }
+
     #[test]
     fn the_guard_is_actually_wired_into_run() {
         let src = include_str!("mod.rs");

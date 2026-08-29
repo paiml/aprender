@@ -116,6 +116,17 @@ main_check() {
     rc=$?
     set -e
 
+    # `rc` is read correctly here and always has been -- and that was never the
+    # whole problem. A non-zero cargo exit was still NAMED as "${PKG} does not
+    # compile", which is a claim about the CODE, and cargo exits non-zero for
+    # host reasons too. On 2026-08-27 exactly that reading blocked every open PR
+    # in this repo from a different guard. ENV still returns 1: only the claim
+    # changes.
+    if [ "${rc}" -ne 0 ] && [ "$( classify_cargo_failure "${CHECK_LOG}" )" = 'ENV' ]; then
+        report_cargo_env_failure "${CHECK_LOG}" \
+            "whether ${PKG} compiles for ${TARGET}" >&2
+        return 1
+    fi
     if [ "${rc}" -ne 0 ]; then
         echo "FAIL: ${PKG} does not compile for ${TARGET} (exit ${rc})." >&2
         echo "----- errors -----" >&2
@@ -138,8 +149,14 @@ usage() {
 REPO_ROOT="$(git rev-parse --show-toplevel 2> /dev/null || pwd)"
 cd "${REPO_ROOT}" || exit 1
 
+. "${REPO_ROOT}/scripts/cargo_classify.sh" || exit 1
+
 case "${1:-}" in
     --self-test)
+        # The classifier table runs FIRST and needs no toolchain, so a host
+        # missing the wasm32 target still proves the ENV/CODE discrimination.
+        # Re-mutated in this scope rather than inheriting another guard's green.
+        cargo_classify_selftest || exit 1
         ensure_target || exit 1
         self_test || exit 1
         ;;
@@ -147,6 +164,9 @@ case "${1:-}" in
         usage
         ;;
     "")
+        # Armed here too: CI invokes this script with NO arguments, so without
+        # this line the classifier table would only ever run by hand.
+        cargo_classify_selftest --quiet || exit 1
         ensure_target || exit 1
         self_test || exit 1
         main_check || exit 1

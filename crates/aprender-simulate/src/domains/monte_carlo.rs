@@ -512,9 +512,7 @@ impl WorkStealingMonteCarlo {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            num_workers: std::thread::available_parallelism()
-                .map(std::num::NonZero::get)
-                .unwrap_or(4),
+            num_workers: std::thread::available_parallelism().map_or(4, std::num::NonZero::get),
         }
     }
 

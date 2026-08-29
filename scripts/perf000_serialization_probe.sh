@@ -12,7 +12,10 @@ set -uo pipefail
 # measurement attributable to a commit.
 . scripts/apr_bin.sh || exit 1
 BIN="$APR"
-MODEL=/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+# Same rule as the binary above: the model is resolved, never hardcoded.
+# APR_MODELS is the convention check_hardcoded_paths.sh documents; the
+# default keeps this working unchanged on a box that has ~/models.
+MODEL="${APR_MODELS:-$HOME/models}/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
 PORT=8407
 "$BIN" serve run "$MODEL" --gpu --port $PORT --context-length 4096 > /tmp/p000h.log 2>&1 &
 SP=$!

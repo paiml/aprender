@@ -279,8 +279,10 @@ if [ "${1:-}" = "--update" ]; then
         printf '# written. Recorded, not blessed.\n#\n'
         printf '# THE RATCHET: this file may only SHRINK. Remove a line by deleting\n'
         printf '# the claim, or by citing the evidence/ receipt that produced it\n'
-        printf '# within three lines of it. Adding a line requires editing this\n'
-        printf '# header and arguing for it.\n#\n'
+        printf '# within three lines of it. A line may only LEAVE this file: it is\n'
+        printf '# compared against origin/main by check_perf_claims_cite_receipts.sh\n'
+        printf '# and by check_baseline_ratchets.sh, so an append is REFUSED, not\n'
+        printf '# merely discouraged.\n#\n'
         printf '# A DANGLING citation is never baselined — see the guard header.\n'
         printf '%s\n' "$records" | grep -v '^$' \
             | awk -F: '$3=="uncited"{print $1":"$2}' | LC_ALL=C sort -u
@@ -326,6 +328,28 @@ if [ "$stale" -gt 0 ]; then
     printf 'REPORT %s stale baseline location/s no longer carry a claim — prune\n' "$stale"
     printf '       with --update, or the ratchet re-admits a claim there later.\n'
 fi
+
+# THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
+#
+# Everything above compares the scan against the baseline AS IT STANDS IN THE
+# WORKING TREE, and that is not a ratchet. NEW (a finding with no entry) and
+# STALE (an entry with no finding) are the only two properties a working tree
+# can answer, and a commit that appends one line AND lands the matching
+# violation satisfies both at once: not new, because it is baselined; not
+# stale, because the finding is real.
+#
+# Measured, not argued: appending one entry cloned from this file's own last
+# real entry returned rc=0 from this guard, under its own words:
+#     "THE RATCHET: this file may only SHRINK."
+# Twelve guards in scripts/ failed the same probe.
+#
+# So growth is now compared against merge-base(HEAD, origin/main), falling
+# back to the origin/main TIP because CI checks out shallow — a ref this
+# branch cannot rewrite, and never the branch against itself.
+RATCHET_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib_baseline_ratchet.sh
+. "${RATCHET_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+baseline_ratchet_check "$RATCHET_ROOT" scripts/perf_claim_citation_baseline.txt set || rc=1
 
 printf '\n'
 if [ "$rc" -eq 0 ]; then

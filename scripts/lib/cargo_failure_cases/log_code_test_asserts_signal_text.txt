@@ -1,0 +1,13 @@
+running 1 test
+test reaper::tests::formats_a_signal_9_exit ... FAILED
+
+failures:
+
+---- reaper::tests::formats_a_signal_9_exit stdout ----
+
+thread 'reaper::tests::formats_a_signal_9_exit' panicked at crates/apr-cli/src/reaper.rs:41:9:
+assertion `left == right` failed
+  left: "killed (signal: 9)"
+ right: "killed by SIGKILL"
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out

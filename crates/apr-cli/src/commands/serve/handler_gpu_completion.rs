@@ -403,13 +403,38 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
     let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config().vocab_size);
 
+    // PERF-021 / N4 / I-2: a request has a RESOLUTION, and it is reported.
+    //
+    // "A boolean accelerator flag has no observable resolution: `--gpu` can be
+    // ignored and nothing in the output changes. `-ngl 999` cannot be ignored,
+    // because the loader must state how many layers it placed." (v2.2, N4.)
+    //
+    // Printed on BOTH paths, including resolved=0. A line that appears only when
+    // the accelerator engaged reports success and is silent on the failure it
+    // exists to make visible — which is #2696's shape exactly.
+    let total_layers = u32::try_from(quantized_model.layers().len()).unwrap_or(u32::MAX);
+    let resolved_layers = config.resolve_layers(total_layers)?;
+    println!(
+        "gpu-layers: requested={} resolved={resolved_layers} total={total_layers} (backend={})",
+        config
+            .gpu_layers
+            .map_or_else(|| "none".to_string(), |r| r.to_string()),
+        if cfg!(feature = "cuda") {
+            "cuda"
+        } else if cfg!(feature = "wgpu") {
+            "wgpu"
+        } else {
+            "cpu"
+        }
+    );
+
     #[cfg(feature = "cuda")]
-    if config.gpu && config.batch {
+    if config.wants_accelerator() && config.batch {
         return start_gguf_server_gpu_batched(quantized_model, vocab, mapped_model, config);
     }
 
     #[cfg(feature = "cuda")]
-    if config.gpu && !config.no_gpu {
+    if config.wants_accelerator() {
         return start_gguf_server_cuda(quantized_model, vocab, mapped_model, config);
     }
 

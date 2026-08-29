@@ -442,6 +442,36 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
+      # THE COMPARAND, FETCHED ONCE, BEFORE ANY GUARD THAT NEEDS IT.
+      #
+      # Every shrink-only baseline in scripts/ is now compared against a ref a
+      # pull request cannot rewrite, because twelve of them were compared
+      # against nothing: appending one entry -- cloned from that file's own last
+      # real entry -- returned rc=0 from all twelve, and on two of them the
+      # appended entry laundered a violation created in the same commit.
+      #
+      # This step used to sit ~180 lines down, next to the one guard that
+      # needed it. Three ratcheted guards (shell lint, hand-rolled parsers,
+      # assertion exclusion) run BEFORE that point and would have had an
+      # unresolvable comparand -- which those guards treat as a hard failure,
+      # never as "no growth", so the mistake would have been loud rather than
+      # silent. It is still a mistake. One fetch, before all of them.
+      #
+      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
+      # ratchets fall back to the origin/main TIP. That is the STRICTER
+      # comparand, and it means the CI path is the tip path: a local run that
+      # passes on the merge-base can still red here, and CI is authoritative.
+      - name: Fetch origin/main as the comparand for every ratchet in this job
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      # A baseline that no guard compares to anything is an allowlist wearing
+      # the word "ratchet". This is the coverage backstop: every scripts/*.txt
+      # is classified shrink-only (and compared) or NOT-a-ratchet (with the
+      # reason printed), and an unclassified one is a hard failure -- so the
+      # next baseline file to arrive cannot arrive unratcheted.
+      - name: Baseline ratchet mutation table
+        run: bash scripts/check_baseline_ratchets.sh --self-test
+      - name: Every shrink-only baseline is classified and may not grow
+        run: bash scripts/check_baseline_ratchets.sh
       - name: Every self-hosted job must pin a discriminating label
         run: bash scripts/check_runner_labels.sh
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
@@ -731,11 +761,11 @@ jobs:
       # number in this repo to edit: every floor is derived at run time from a
       # ref a pull request cannot rewrite.
       #
-      # fetch-depth for this job is 1, so origin/main must be fetched. A failed
-      # fetch does NOT degrade to a self-comparison -- the guard hard-fails on an
-      # unresolvable comparand. Text-only, no build.
-      - name: Fetch origin/main for the dogfood coverage comparand
-        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      # fetch-depth for this job is 1, so origin/main must be fetched -- and it
+      # is now fetched ONCE, immediately after checkout, because the baseline
+      # ratchets that run earlier in this job need the same comparand. A failed
+      # fetch does NOT degrade to a self-comparison; every guard that uses it
+      # hard-fails on an unresolvable comparand.
       #
       # DOGFOOD_RECEIPT extends the T2 pairing rule to the receipt when a run
       # produces one. The rule is enforced on every channel a cluster-level ratio
@@ -953,6 +983,24 @@ jobs:
         run: bash scripts/check_perf_claims_cite_receipts.sh
       - name: Claims-cite-receipts guard can still go RED (case table)
         run: bash scripts/check_perf_claims_cite_receipts.sh --selftest
+      # PERF-044, the same rule one level up. docs/roadmaps/roadmap.yaml is the
+      # document that says what this epic has finished, and a `status:
+      # completed` there was a claim nothing could check: PERF-004 was marked
+      # completed while all three of its artifacts are absent from main and its
+      # PR #2716 is CLOSED unmerged, and seven entries said `planned` for work
+      # that had landed. `grep -rn roadmap scripts/ .github/ Makefile` returned
+      # one unrelated comment.
+      #
+      # 1109 completed claims across 23 pmat work-contract roadmaps cite
+      # nothing today; they are frozen shrink-only, so an entry NEWLY flipped
+      # to completed must cite a `proof:<path>` that exists and is non-empty,
+      # or a `proof:PR#<n>` that is MERGED. Text-only and deterministic (~4s,
+      # and it touches the network only for an entry that cites a PR, of which
+      # there are none), so it belongs in the merge phase beside PERF-010.
+      - name: Completed roadmap statuses cite something (PERF-044)
+        run: bash scripts/check_roadmap_completion_is_cited.sh
+      - name: Roadmap-citation guard can still go RED (case table)
+        run: bash scripts/check_roadmap_completion_is_cited.sh --selftest
       - name: One benchmarking entrypoint (PERF-009)
         run: bash scripts/check_no_competing_harnesses.sh
       - name: Competing-harness guard can still go RED (case table)
@@ -973,12 +1021,38 @@ jobs:
       # perf_gate.sh:326 requires four, so every release sweep would report
       # exit=2 forever — a usage error indistinguishable from a real regression.
       #
-      # What this DOES buy: the 17-case selftest genuinely discriminates
-      # (disabling the B1 aggregate floor drops it to 15 passed, 2 broken), so a
+      # What this DOES buy: the 29-case selftest genuinely discriminates
+      # (disabling the B1 aggregate floor drops it to 27 passed, 2 broken;
+      # unwiring the §4.9.1 signature arm drops it to 23 passed, 6 broken), so a
       # gate that silently stops discriminating now fails here rather than
       # certifying a release later.
       - name: Perf gate can still discriminate (APR-PERF-GATE-001, case table)
         run: bash scripts/perf_gate.sh --selftest
+      # PERF-007, the HOST half of §4.9.1. `perf_gate.sh --selftest` already
+      # runs this table, but check_guards_are_wired.sh cannot see one level of
+      # indirection and its remedy for an unwired guard is to wire it, not to
+      # baseline it. Named here so the signer's refusals — it will not sign
+      # another host's receipt, will not sign a receipt with no commit, will not
+      # mint a key — are executed by a workflow and not merely by a script that
+      # a workflow happens to call.
+      - name: Receipt signer refuses what it must (PERF-007, case table)
+        run: bash scripts/perf_receipt_sign.sh --selftest
+      # PERF-047. Section 5 of the spec is the epic's OWN ledger -- "a gate with
+      # no registered mutation is inadmissible" -- so which arms section 4.8 may
+      # read is decided by what it says, and nothing compared it to the tree.
+      # Audited 2026-08-29 it was wrong in BOTH directions at once: 12 rows said
+      # "not written" beside guards that ship case tables and are invoked twice
+      # each in THIS file, and 2 rows recorded as proof named a mutation that
+      # leaves its guard GREEN. One arm (cell completeness) had no row at all.
+      #
+      # The check is two-way and the ratchet has no separate baseline file: the
+      # registry at merge-base with main IS the comparand, so there is nowhere
+      # to record a downgrade. Text-only and deterministic, so it belongs in the
+      # merge phase beside the other section 4.1 guards.
+      - name: The mutation registry describes the tree (PERF-047)
+        run: bash scripts/check_mutation_registry.sh
+      - name: Mutation-registry guard can still go RED (case table)
+        run: bash scripts/check_mutation_registry.sh --self-test
       # The threshold rule is DERIVED, and the rule it replaced is falsified by
       # execution on every run rather than by a comment. 3-sigma pooled does not
       # catch the one regression on record (#2675).
@@ -995,6 +1069,26 @@ jobs:
       # the label of a performance result (#2677).
       - name: Benchmark fairness protocol is complete
         run: bash scripts/check_bench_protocol.sh
+      # aprender#2737: the pin declared batch_size = 1 while TWO other places
+      # retyped `-b 1` independently of it and a third declared
+      # context_length/threads that no execution ever read. `-b 1` does not tune
+      # llama.cpp, it switches its batching OFF -- measured on gx10 against the
+      # pinned build, the c=16 aggregate went 434.2 -> 181.9 tok/s while c=1
+      # moved 0.3%, which took the ratio this epic exists to compute from 2.03x
+      # to 4.85x in apr's favour. A handicapped denominator is not a benchmark.
+      # This asserts the declaration is the ONLY source of the comparator's
+      # knobs, in both directions.
+      #
+      # It lives HERE, and not in nightly-bench.yml where it was first wired,
+      # because it is a static consistency check over committed files: it needs
+      # no bench hardware, no model, and no receipt, so a PR can and must fail
+      # it. It was wired into the nightly lane only because the change that
+      # added it was barred from editing ci.yml.
+      #
+      # No separate --self-test step: this guard has no such flag, it runs its
+      # own 13-row mutation table in front of the verdict on EVERY invocation.
+      - name: Comparator flags match the declaration
+        run: bash scripts/check_comparator_flags.sh
       # The deepest check in the surface sweep -- real generation through
       # /v1/chat/completions -- had never executed once: the probe binary was
       # built without --features llm (clap advertises `llm` regardless, only the
@@ -1194,16 +1288,27 @@ jobs:
       # reported PASS. The two guards' universes are complementary, not nested.
       # contracts/ is now at ZERO and has no baseline to raise. Text-only, no build.
       #
-      # The whole-tree ratchet lives in `--full` and is NOT wired here: it shells
-      # out to `pmat analyze hardcoded-paths` (pmat#1017, the detector of record),
-      # and the clean-room pool measured pmat 3.31.0 on 2026-08-20, which has no
-      # such subcommand. Wiring it today would red every PR; `|| true` would make
-      # it a gate that cannot fail. Add the `--full` step here once the fleet
-      # carries pmat >= 3.32.0.
+      # The whole-tree ratchet lives in `--full`. It shells out to
+      # `pmat analyze hardcoded-paths` (pmat#1017, the detector of record), and
+      # the clean-room pool still measures pmat 3.31.0 (re-checked 2026-08-28),
+      # which has no such subcommand -- so a bare `--full` here would red every
+      # PR, and `|| true` would make it a gate that cannot fail.
+      #
+      # It used to be left unwired with a comment saying to promote it "once the
+      # fleet carries pmat >= 3.32.0". That is what this step is fixing: a
+      # comment is not a trigger, nothing re-evaluated the condition, and 20
+      # shipped machine-specific paths landed through the gap (299 vs baseline
+      # 278 on 62d23d8d1). --full-if-capable re-evaluates it on every run: it
+      # runs the ratchet and propagates its status where pmat can produce a
+      # verdict, and where it cannot it prints the version and the actual
+      # refusal text rather than assuming. The gate arms itself on the day the
+      # fleet upgrades, with no edit to this file.
       - name: No contract may name a machine-specific path
         run: bash scripts/check_hardcoded_paths.sh
       - name: Machine-specific-path guard case table
         run: bash scripts/check_hardcoded_paths.sh --self-test
+      - name: Whole-tree machine-specific-path ratchet (arms itself at pmat >= 3.32.0)
+        run: bash scripts/check_hardcoded_paths.sh --full-if-capable
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".

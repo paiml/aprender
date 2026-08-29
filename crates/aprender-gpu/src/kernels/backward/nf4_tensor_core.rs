@@ -196,7 +196,7 @@ impl Kernel for Nf4TensorCoreGemmBackwardAKernel {
                 // Global B coordinates: B[tile_k + k_out_in_tile, n_offset + n_shared_in_tile]
                 let global_k_out = ctx.add_u32_reg(tile_k, k_out_in_tile);
                 let global_n_shared = ctx.add_u32_reg(n_offset, n_shared_in_tile);
-                let ck = ctx.min_u32(global_k_out, k_minus_1);
+                let _ck = ctx.min_u32(global_k_out, k_minus_1);
                 let cn_b = ctx.min_u32(global_n_shared, n_minus_1);
 
                 // NF4 addressing: block_idx = global_k_out / 64

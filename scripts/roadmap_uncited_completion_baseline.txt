@@ -1,0 +1,1128 @@
+# Roadmap entries claiming `status: completed` that cite nothing, as of
+# the day check_roadmap_completion_is_cited.sh was written. RECORDED,
+# NOT BLESSED — PERF-004 is in this file and is known to be FALSE: its
+# three artifacts are absent from main and its PR #2716 is CLOSED
+# unmerged. This file is the census of an unproven backlog.
+#
+# THE RATCHET: it may only SHRINK. An entry leaves by citing a
+# `proof:<path>` or `proof:PR#<n>` in its notes, or by having its
+# status corrected. It is compared against origin/main by
+# check_roadmap_completion_is_cited.sh and by
+# check_baseline_ratchets.sh, so an APPEND IS REFUSED — a new
+# completed claim cannot be laundered in the commit that makes it.
+#
+# Keyed by <file><TAB><entry id>, never by line number: pmat reflows
+# these files (13516 -> 12804 lines in one unrelated edit) and a
+# line-keyed baseline would be invalidated wholesale.
+#
+# A DANGLING citation is never baselined — see the guard header.
+# Regenerate with: bash scripts/check_roadmap_completion_is_cited.sh --update
+book/docs/roadmaps/roadmap.yaml	Fix mdbook test failures - 9 failing code blocks in documentation
+book/docs/roadmaps/roadmap.yaml	Implement DBSCAN clustering algorithm (Issue #14)
+book/docs/roadmaps/roadmap.yaml	Mark GH-10 and GH-11 (Graph/Stats documentation) as completed
+crates/apr-cli/docs/roadmaps/roadmap.yaml	APR-FORMAT-002
+crates/apr-cli/docs/roadmaps/roadmap.yaml	APR-POKA-001
+crates/apr-cli/docs/roadmaps/roadmap.yaml	APR-TOK-001: Fix tokenizer decoding for coherent text output
+crates/apr-cli/docs/roadmaps/roadmap.yaml	APR-VERIFY-001
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Add APR-SPEC to book and verify examples
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Apply code review safety fixes: Add AprenderError enum and bounds checking to SIMD intrinsics
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Commit integration specification and proptest configuration
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix 4 failing Bayesian doctests
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 10 (remaining example chapters)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 11 (pca-iris.md remaining failures)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 4 (20 chapters remaining)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 5 (~17 chapters remaining)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 6 (~15 chapters remaining)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 7 (pca.md + classification-metrics.md)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 8 (cross-validation.md + graph-algorithms.md)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 9 (descriptive-statistics.md + gradient-descent.md)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix mdbook test failures in Bayesian inference chapters
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Fix remaining mdbook test failures - Phase 3 (21 chapters remaining)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-10
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-11
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-13
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-15
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-16
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-17
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-18
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-19
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-20
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-21
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-22
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-23
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-26
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-28
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-29
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-30
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-31
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-32
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-33
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-34
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-35
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-36
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-37
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-38
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-39
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-40
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-41
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-42
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-43
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-44
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-45
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-55
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-71
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-73
+crates/apr-cli/docs/roadmaps/roadmap.yaml	GH-9
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement ARIMA (Auto-Regressive Integrated Moving Average)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement Bayesian Linear Regression (analytical posterior)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement Bayesian Logistic Regression (Laplace approximation)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement Bayesian Model Selection (Bayes Factors, DIC, WAIC)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement Covariance and Correlation Matrices
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement Generalized Linear Models (GLM) - Poisson, Gamma, Binomial families
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement Independent Component Analysis (ICA)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement Statistical Hypothesis Tests (t-test, chi-square, ANOVA)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement apr-cli TUI command
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement document similarity (cosine, Jaccard, edit distance)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement extractive summarization (TextRank, TF-IDF)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Implement pattern-based entity extraction (emails, URLs, keywords)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	PMAT-081
+crates/apr-cli/docs/roadmaps/roadmap.yaml	PMAT-082
+crates/apr-cli/docs/roadmaps/roadmap.yaml	PMAT-083
+crates/apr-cli/docs/roadmaps/roadmap.yaml	PMAT-SHOWCASE-NEXT
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Phase 1: Classical Bayesian Inference - Conjugate Priors (Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Phase 1: Graph Pathfinding Algorithms (Dijkstra, A*, APSP, shortest_path)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Phase 2: Bayesian Examples & Documentation - Create cargo examples and book chapters for Gamma-Poisson, Normal-InverseGamma, and Dirichlet-Multinomial conjugate priors
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Phase 2: Components & Traversal (DFS, connected_components, SCCs, topological_sort)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Phase 3: Community & Link Analysis (label_propagation, common_neighbors, adamic_adar)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Phase 4: Graph Benchmarks & Spec Update
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Push 4 commits to origin/main (Bayesian documentation and doctest fixes)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Push completed work to origin/main (5 commits)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	SHOWCASE-BRICK-001
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Update roadmap status for completed TOP 10 algorithms (KNN, GBM, PCA)
+crates/apr-cli/docs/roadmaps/roadmap.yaml	Update trait signatures to use AprenderError instead of static str
+crates/apr-cli/docs/roadmaps/roadmap.yaml	aprender-tsp-v0.1.0
+crates/apr-cli/docs/roadmaps/roadmap.yaml	docs/specifications/qwen2.5-coder-showcase-demo.md
+crates/apr-cli/docs/roadmaps/roadmap.yaml	nlp-text-preprocessing
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-HEADLESS-001
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-PERF-001
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-PERF-002
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-PERF-003
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-PERF-004
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-SPEC-001
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-SPEC-001.1
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-SPEC-001.2
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-SPEC-001.3
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-SPEC-001.4
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-SPEC-001.5
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-SPEC-001.6
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-SPEC-001.7
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-SPEC-001.8
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CBTOP-SPEC-001.9
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	CGP-INF
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	PMAT-011
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	PMAT-012
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	PMAT-016
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	PMAT-017
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	PMAT-019
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	PMAT-035
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	QUANT-Q5K
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	REALIZAR-PARITY-001
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	SIMD-EXP
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	TRUENO-CUDA-TILE-001
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	TRUENO-GPU-001
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	TRUENO-PTX-DEBUG-001
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	TRUENO-SPEC-014
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	gpu-lz4-kernel-implementation
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	gpu-lz4-phase2
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	matmul-performance-optimization
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	matmul-phase2-large-matrices
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	phase:CBTOP-HEADLESS-001/Phase 1 - CLI and Core
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	phase:CBTOP-HEADLESS-001/Phase 2 - Bench Subcommand
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	phase:CBTOP-HEADLESS-001/Phase 3 - Testing
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	pmat-integration-complete
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:CBTOP-SPEC-001/CBTOP-SPEC-001.1
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:CBTOP-SPEC-001/CBTOP-SPEC-001.2
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:CBTOP-SPEC-001/CBTOP-SPEC-001.3
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:CBTOP-SPEC-001/CBTOP-SPEC-001.4
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:CBTOP-SPEC-001/CBTOP-SPEC-001.5
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:CBTOP-SPEC-001/CBTOP-SPEC-001.6
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:CBTOP-SPEC-001/CBTOP-SPEC-001.7
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:CBTOP-SPEC-001/CBTOP-SPEC-001.8
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:CBTOP-SPEC-001/CBTOP-SPEC-001.9
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:PMAT-012/PMAT-012.1
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:PMAT-012/PMAT-012.2
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:PMAT-012/PMAT-012.3
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:PMAT-012/PMAT-012.4
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:PMAT-012/PMAT-012.5
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:REALIZAR-PARITY-001/REALIZAR-PARITY-001.1
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:REALIZAR-PARITY-001/REALIZAR-PARITY-001.2
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:REALIZAR-PARITY-001/REALIZAR-PARITY-001.3
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:REALIZAR-PARITY-001/REALIZAR-PARITY-001.4
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:REALIZAR-PARITY-001/REALIZAR-PARITY-001.5
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:REALIZAR-PARITY-001/REALIZAR-PARITY-001.6
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:TRUENO-CUDA-TILE-001/TRUENO-CUDA-TILE-001.1
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:TRUENO-CUDA-TILE-001/TRUENO-CUDA-TILE-001.2
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:TRUENO-CUDA-TILE-001/TRUENO-CUDA-TILE-001.3
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:TRUENO-CUDA-TILE-001/TRUENO-CUDA-TILE-001.4
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:TRUENO-CUDA-TILE-001/TRUENO-CUDA-TILE-001.5
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:TRUENO-METAL-001/TRUENO-METAL-001.1
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:TRUENO-METAL-001/TRUENO-METAL-001.2
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:TRUENO-METAL-001/TRUENO-METAL-001.3
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:TRUENO-METAL-001/TRUENO-METAL-001.4
+crates/aprender-compute/docs/roadmaps/roadmap.yaml	sub:TRUENO-METAL-001/TRUENO-METAL-001.5
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	Add Qwen3-235B-A22B MoE model-specific contracts and artifacts
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-001
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-002
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-003
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-004
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-005
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-006
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-007
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-008
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-009
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-010
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-011
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-012
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-013
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-014
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-015
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-016
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-017
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-018
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-019
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-020
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-021
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-022
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-023
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-024
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-025
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-026
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-027
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-028
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-029
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-030
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-031
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-032
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-033
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-034
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-035
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-036
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-037
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-038
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-039
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-040
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-041
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-042
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-043
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-044
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-045
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-046
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-047
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-048
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-049
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-050
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-051
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-052
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-053
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-054
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-055
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-056
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-057
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-058
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-059
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-060
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-061
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-062
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-063
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-064
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-065
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-066
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-067
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-068
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-069
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-070
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-071
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-072
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-073
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-074
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-075
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-076
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-077
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-078
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-079
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-080
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-081
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-082
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-083
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-084
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-085
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-086
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-087
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-088
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-089
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-090
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-091
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-092
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-093
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-094
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-095
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-096
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-097
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-098
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-099
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-100
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-101
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-102
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-103
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-104
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-105
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-106
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-107
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-108
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-109
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-110
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-111
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-112
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-113
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-114
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-115
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-116
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-117
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-118
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-119
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-120
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-121
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-122
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-123
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-124
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-125
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-126
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-127
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-128
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-129
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-130
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-131
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-132
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-133
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-134
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-135
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-486
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-487
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-488
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-489
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-490
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-491
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-492
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-493
+crates/aprender-contracts-staging/docs/roadmaps/roadmap.yaml	PMAT-494
+crates/aprender-data/docs/roadmaps/roadmap.yaml	GH-12
+crates/aprender-data/docs/roadmaps/roadmap.yaml	GH-3
+crates/aprender-data/docs/roadmaps/roadmap.yaml	GH-4
+crates/aprender-db/docs/roadmaps/roadmap-original.yaml	CORE-001
+crates/aprender-db/docs/roadmaps/roadmap-original.yaml	CORE-002
+crates/aprender-db/docs/roadmaps/roadmap-original.yaml	CORE-003
+crates/aprender-db/docs/roadmaps/roadmap-original.yaml	CORE-004
+crates/aprender-db/docs/roadmaps/roadmap-original.yaml	CORE-005
+crates/aprender-db/docs/roadmaps/roadmap-original.yaml	CORE-006
+crates/aprender-db/docs/roadmaps/roadmap-original.yaml	CORE-007
+crates/aprender-db/docs/roadmaps/roadmap-original.yaml	CORE-008
+crates/aprender-db/docs/roadmaps/roadmap-original.yaml	CORE-009
+crates/aprender-db/docs/roadmaps/roadmap-original.yaml	GENCHI-GENBUTSU
+crates/aprender-db/docs/roadmaps/roadmap.yaml	GENCHI-GENBUTSU
+crates/aprender-db/docs/roadmaps/roadmap.yaml	PHASE2-001: Local multi-GPU data partitioning
+crates/aprender-db/docs/roadmaps/roadmap.yaml	gpu-syscall-tracing
+crates/aprender-db/docs/roadmaps/roadmap.yaml	phase4-e2e-testing
+crates/aprender-db/docs/roadmaps/roadmap.yaml	phase4-http-range
+crates/aprender-db/docs/roadmaps/roadmap.yaml	phase5-experiment-schema
+crates/aprender-orchestrate/book/docs/roadmaps/roadmap.yaml	COURSE-OUTLINE
+crates/aprender-orchestrate/book/docs/roadmaps/roadmap.yaml	MODULE-STRUCTURE
+crates/aprender-orchestrate/book/docs/roadmaps/roadmap.yaml	PMAT-UNWRAP
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	BOOK-SCORE
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	COURSE-LEVELS
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	DEP-REDUCE
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	GH-11
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	GH-14
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	GH-18
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	GH-19
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	GH-22
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	GH-23
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	GH-9
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	INTEG-001
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	INTEG-002
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	INTEG-003
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	ORACLE-LOCAL
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-004
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-024
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-025
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-026
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-057
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-058
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-059
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-060
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-061
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-062
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-063
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-064
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-065
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-066
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-067
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-068
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-069
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-070
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-071
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-072
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-073
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-074
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-075
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-076
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-077
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-078
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-079
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-080
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-081
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-082
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-083
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-084
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-085
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-086
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-087
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-088
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-089
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-090
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-091
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-092
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-093
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-094
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-095
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-096
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-097
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-098
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-099
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-100
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-102
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-103
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-104
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-105
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-106
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-107
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-108
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-109
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-110
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-111
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-112
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-113
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-114
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-115
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-116
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-117
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-118
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-119
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-120
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-121
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-122
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-123
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-124
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-125
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-126
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-127
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-128
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-129
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-130
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-131
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-132
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-133
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-134
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-135
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-136
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-137
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-138
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-139
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-139 [#2]
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-140
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-141
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-141 [#2]
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-142
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-143
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-144
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-145
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-146
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-147
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-148
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-149
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-150
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-151
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-152
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-153
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-154
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-155
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-156
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-158
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-159
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-160
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-161
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-162
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-163
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-164
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-165
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-166
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-167
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-168
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-169
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-170
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-171
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-172
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-173
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-174
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-175
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-176
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-177
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-178
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-179
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-180
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-181
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-182
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-183
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-184
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-185
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-186
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-187
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-188
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-189
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-190
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-191
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-192
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-193
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-194
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-195
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-196
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-197
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-198
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-199
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-ARCH
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-AUDIT
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-CLIPPY
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-COVERAGE
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-DENY
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-FMT
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-LINTS
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-MUTANTS
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-OUTDATED
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-SATD
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-STACK-GATES
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-TDG
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-TRACES
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	PMAT-UNWRAP
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	QA-PERF
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	QA-SEC4
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	QA-SEC5
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	QA-TUI
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	QUANT-Q5K
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	RAG-SQLITE-CLEANUP
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	SCORE-A-PLUS
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	SIMD-EXP
+crates/aprender-orchestrate/docs/roadmaps/roadmap.yaml	STACK-AUDIT
+crates/aprender-present/docs/roadmaps/roadmap.yaml	Implement TUI widgets from cbtop spec: TuiGauge, TuiTree, TuiConfusionMatrix, TuiBoxPlot, TuiSparkline, TuiHeatmap
+crates/aprender-present/docs/roadmaps/roadmap.yaml	Improve presentar-terminal test coverage to 95%
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-001
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-002
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-003
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-004
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-005
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-006
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-007
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-008
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-009
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-010
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-011
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-012
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-013
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-014
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-015
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-016
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-017
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-018
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-019
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-020
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-021
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-022
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-023
+crates/aprender-present/docs/roadmaps/roadmap.yaml	PMAT-024
+crates/aprender-present/docs/roadmaps/roadmap.yaml	SPEC-024 Architectural Enforcement
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	GH-16
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	GOLDEN-001
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	GOLDEN-040
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	GOLDEN-041
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	GOLDEN-042
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	GOLDEN-043
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	GOLDEN-044
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	INTEGRATION-001
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	REN-001
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	SEMANTIC-EQUIV-001
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	TIME-WEIGHT-001
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	UNWRAP-CRITICAL-001
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	phase:GOLDEN-001/Sprint 40: Golden Thread Core
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	phase:GOLDEN-001/Sprint 41: Causal Graph Analysis
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	phase:GOLDEN-001/Sprint 42: Batuta Integration
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	phase:GOLDEN-001/Sprint 43: Query Optimization
+crates/aprender-profile/docs/roadmaps/roadmap.yaml	phase:GOLDEN-001/Sprint 44: Build-Time Assertions
+crates/aprender-rag/docs/roadmaps/roadmap.yaml	GH-1
+crates/aprender-rag/docs/roadmaps/roadmap.yaml	GH-2
+crates/aprender-rag/docs/roadmaps/roadmap.yaml	PMAT-003
+crates/aprender-rag/docs/roadmaps/roadmap.yaml	PMAT-004
+crates/aprender-rag/docs/roadmaps/roadmap.yaml	PMAT-005
+crates/aprender-rag/docs/roadmaps/roadmap.yaml	PMAT-006
+crates/aprender-rag/docs/roadmaps/roadmap.yaml	PMAT-007
+crates/aprender-rag/docs/roadmaps/roadmap.yaml	PMAT-008
+crates/aprender-rag/docs/roadmaps/roadmap.yaml	PMAT-009
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	IMP-600
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	IMP-700
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	IMP-800
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	IMP-801
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	OOM-001
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-001
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-002
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-003
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-004
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-005
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-006
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-007
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-008
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-009
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-010
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-011
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-012
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-013
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-014
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-015
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-016
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-017
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-018
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-019
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-020
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-021
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-022
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-023
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-024
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-025
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-026
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-027
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-028
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-029
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-030
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-031
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-032
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-033
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-034
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-035
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-036
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-037
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-038
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-039
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-040
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-041
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-042
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-043
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-044
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-045
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-046
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-047
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-048
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-050
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-051
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-052
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-053
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-054
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-055
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-056
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-057
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-058
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-059
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-060
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-061
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-062
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-063
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-070
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-071
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-072
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-073
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-074
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-075
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-076
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-077
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-078
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-079
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-080
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-081
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-082
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-083
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-084
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-085
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PARITY-086
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PMAT-803
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	PMAT-COMPLY: Reduce dead code from 33% to 15%
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	QWEN-PMAT-001
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	QWEN-PMAT-002
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	QWEN-PMAT-011
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	QWEN-PMAT-013
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	sub:PARITY-002/PARITY-002-BATCH
+crates/aprender-serve/docs/roadmaps/roadmap.yaml	sub:PARITY-002/PARITY-002-GPU
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	GH-5
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	OR-001
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	ORBIT-001
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	PROBAR-100: 100% GUI and pixel coverage for all demos
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	TDD-001
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:COV-001/COV-001-01
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:COV-001/COV-001-02
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:COV-001/COV-001-03
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:COV-001/COV-001-04
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:COV-001/COV-001-05
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:OR-001/OR-001-01
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:OR-001/OR-001-02
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:OR-001/OR-001-03
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:OR-001/OR-001-04
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:OR-001/OR-001-05
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:OR-001/OR-001-06
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:OR-001/OR-001-07
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:OR-001/OR-001-08
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:OR-001/OR-001-09
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:OR-001/OR-001-10
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:ORBIT-001/ORBIT-001-01
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:ORBIT-001/ORBIT-001-02
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:ORBIT-001/ORBIT-001-03
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:ORBIT-001/ORBIT-001-04
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:ORBIT-001/ORBIT-001-05
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:ORBIT-001/ORBIT-001-06
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:ORBIT-001/ORBIT-001-07
+crates/aprender-simulate/docs/roadmaps/roadmap.yaml	sub:ORBIT-001/ORBIT-001-08
+crates/aprender-test/docs/roadmaps/roadmap.yaml	PIXEL-001
+crates/aprender-test/docs/roadmaps/roadmap.yaml	PROBAR-004
+crates/aprender-test/docs/roadmaps/roadmap.yaml	PROBAR-005: 95% coverage with fast mutation/property tests
+crates/aprender-test/docs/roadmaps/roadmap.yaml	PROBAR-WASM-001-IMPL
+crates/aprender-test/docs/roadmaps/roadmap.yaml	PROBAR-WASM-001-LOADTEST
+crates/aprender-test/docs/roadmaps/roadmap.yaml	PROBAR-WASM-002
+crates/aprender-test/docs/roadmaps/roadmap.yaml	docs/specifications/gui-playbook-testing-spec.md
+crates/aprender-test/docs/roadmaps/roadmap.yaml	docs/specifications/pixel-001-spec.md
+crates/aprender-test/docs/roadmaps/roadmap.yaml	https://github.com/paiml/probar/issues/5
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-002
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-004
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-005
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-006
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-008
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-011
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-012
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-013
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-014
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-015
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-016
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-017
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-018
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-019
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-020
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-021
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-022
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-023
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-024
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-031
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-032
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-033
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-034
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-035
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-155
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-156
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-157
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-158
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-159
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-160
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-161
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-162
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-163
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-164
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-165
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-166
+crates/aprender-train/docs/roadmaps/roadmap.yaml	ENT-167
+crates/aprender-train/docs/roadmaps/roadmap.yaml	GH-1
+crates/aprender-train/docs/roadmaps/roadmap.yaml	GH-2
+crates/aprender-train/docs/roadmaps/roadmap.yaml	GH-3
+crates/aprender-train/docs/roadmaps/roadmap.yaml	GH-4
+crates/aprender-train/docs/roadmaps/roadmap.yaml	GH-5
+crates/aprender-train/docs/roadmaps/roadmap.yaml	GH-6
+crates/aprender-train/docs/roadmaps/roadmap.yaml	GH-7
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-067
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-068
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-168
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-169
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-170
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-171
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-172
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-173
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-174
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-175
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-176
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-177
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-178
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-179
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-180
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-181
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-182
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-183
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-184
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-185
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-186
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-187
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-188
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-189
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-190
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-203
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-204
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-205
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-206
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-207
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-208
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-209
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-210
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-211
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-212
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-213
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-214
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-215
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-216
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-217
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-218
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-219
+crates/aprender-train/docs/roadmaps/roadmap.yaml	PMAT-220
+crates/aprender-verify-ml/docs/roadmaps/roadmap-v2.yaml	VERIFICAR-040
+crates/aprender-verify-ml/docs/roadmaps/roadmap-v2.yaml	VERIFICAR-042
+crates/aprender-verify-ml/docs/roadmaps/roadmap-v2.yaml	VERIFICAR-081
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	GH-2
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-040
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-041
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-042
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-050
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-051
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-052
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-053
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-060
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-061
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-062
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-070
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-071
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-080
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-081
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-090
+crates/aprender-verify-ml/docs/roadmaps/roadmap.yaml	VERIFICAR-091
+crates/aprender-viz-ttop/docs/roadmaps/roadmap.yaml	PoC: Port ttop CPU panel to presentar-terminal
+crates/aprender-viz-ttop/docs/roadmaps/roadmap.yaml	ttop: 95% coverage + benchmarking verification
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	PMAT-025
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-001
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-002
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-003
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-004
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-005
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-006
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-007
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-008
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-009
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-010
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-011
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-012
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-013
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-014
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-015
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-016
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-017
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-018
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-019
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-020
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-021
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-022
+crates/aprender-viz/docs/roadmaps/roadmap.yaml	TV-023
+docs/roadmaps/roadmap.yaml	APR-FORMAT-002
+docs/roadmaps/roadmap.yaml	APR-PARITY-001: APR/SafeTensors GGUF parity - all QA scripts pass
+docs/roadmaps/roadmap.yaml	APR-POKA-001
+docs/roadmaps/roadmap.yaml	APR-PUB-001
+docs/roadmaps/roadmap.yaml	APR-TOK-001: Fix tokenizer decoding for coherent text output
+docs/roadmaps/roadmap.yaml	APR-TRACE-001: Implement tracing features for APR serve path (5 failing tests)
+docs/roadmaps/roadmap.yaml	APR-VERIFY-001
+docs/roadmaps/roadmap.yaml	Add APR-SPEC to book and verify examples
+docs/roadmaps/roadmap.yaml	Add contract-driven property tests from provable-contracts
+docs/roadmaps/roadmap.yaml	Apply code review safety fixes: Add AprenderError enum and bounds checking to SIMD intrinsics
+docs/roadmaps/roadmap.yaml	BEAT-OLLAMA-DECODE-CI-001
+docs/roadmaps/roadmap.yaml	BENCH-003
+docs/roadmaps/roadmap.yaml	C-04-hardcoded-eos-chat
+docs/roadmaps/roadmap.yaml	CUDA-CI-NIGHTLY-001
+docs/roadmaps/roadmap.yaml	Commit integration specification and proptest configuration
+docs/roadmaps/roadmap.yaml	Fix 4 failing Bayesian doctests
+docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 10 (remaining example chapters)
+docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 11 (pca-iris.md remaining failures)
+docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 4 (20 chapters remaining)
+docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 5 (~17 chapters remaining)
+docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 6 (~15 chapters remaining)
+docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 7 (pca.md + classification-metrics.md)
+docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 8 (cross-validation.md + graph-algorithms.md)
+docs/roadmaps/roadmap.yaml	Fix mdbook test failures - Phase 9 (descriptive-statistics.md + gradient-descent.md)
+docs/roadmaps/roadmap.yaml	Fix mdbook test failures in Bayesian inference chapters
+docs/roadmaps/roadmap.yaml	Fix remaining mdbook test failures - Phase 3 (21 chapters remaining)
+docs/roadmaps/roadmap.yaml	GGUF-SERVE-001: Validate apr serve works for all GGUF model sizes (0.5B, 1B, 1.5B, 7B, 32B)
+docs/roadmaps/roadmap.yaml	GH-10
+docs/roadmaps/roadmap.yaml	GH-11
+docs/roadmaps/roadmap.yaml	GH-13
+docs/roadmaps/roadmap.yaml	GH-15
+docs/roadmaps/roadmap.yaml	GH-16
+docs/roadmaps/roadmap.yaml	GH-17
+docs/roadmaps/roadmap.yaml	GH-18
+docs/roadmaps/roadmap.yaml	GH-189
+docs/roadmaps/roadmap.yaml	GH-19
+docs/roadmaps/roadmap.yaml	GH-20
+docs/roadmaps/roadmap.yaml	GH-202
+docs/roadmaps/roadmap.yaml	GH-205
+docs/roadmaps/roadmap.yaml	GH-207
+docs/roadmaps/roadmap.yaml	GH-208
+docs/roadmaps/roadmap.yaml	GH-21
+docs/roadmaps/roadmap.yaml	GH-219
+docs/roadmaps/roadmap.yaml	GH-22
+docs/roadmaps/roadmap.yaml	GH-23
+docs/roadmaps/roadmap.yaml	GH-234/235/236: lm_head quantization skip, GPT-2 hidden_dim metadata, GGUF export architecture
+docs/roadmaps/roadmap.yaml	GH-237
+docs/roadmaps/roadmap.yaml	GH-242
+docs/roadmaps/roadmap.yaml	GH-243
+docs/roadmaps/roadmap.yaml	GH-244
+docs/roadmaps/roadmap.yaml	GH-246
+docs/roadmaps/roadmap.yaml	GH-247
+docs/roadmaps/roadmap.yaml	GH-248
+docs/roadmaps/roadmap.yaml	GH-249
+docs/roadmaps/roadmap.yaml	GH-250
+docs/roadmaps/roadmap.yaml	GH-251
+docs/roadmaps/roadmap.yaml	GH-252
+docs/roadmaps/roadmap.yaml	GH-253
+docs/roadmaps/roadmap.yaml	GH-254
+docs/roadmaps/roadmap.yaml	GH-256
+docs/roadmaps/roadmap.yaml	GH-26
+docs/roadmaps/roadmap.yaml	GH-279-4
+docs/roadmaps/roadmap.yaml	GH-28
+docs/roadmaps/roadmap.yaml	GH-280
+docs/roadmaps/roadmap.yaml	GH-282
+docs/roadmaps/roadmap.yaml	GH-29
+docs/roadmaps/roadmap.yaml	GH-30
+docs/roadmaps/roadmap.yaml	GH-306
+docs/roadmaps/roadmap.yaml	GH-31
+docs/roadmaps/roadmap.yaml	GH-32
+docs/roadmaps/roadmap.yaml	GH-324
+docs/roadmaps/roadmap.yaml	GH-33
+docs/roadmaps/roadmap.yaml	GH-336
+docs/roadmaps/roadmap.yaml	GH-337
+docs/roadmaps/roadmap.yaml	GH-338
+docs/roadmaps/roadmap.yaml	GH-339
+docs/roadmaps/roadmap.yaml	GH-34
+docs/roadmaps/roadmap.yaml	GH-340
+docs/roadmaps/roadmap.yaml	GH-341
+docs/roadmaps/roadmap.yaml	GH-35
+docs/roadmaps/roadmap.yaml	GH-36
+docs/roadmaps/roadmap.yaml	GH-366
+docs/roadmaps/roadmap.yaml	GH-37
+docs/roadmaps/roadmap.yaml	GH-38
+docs/roadmaps/roadmap.yaml	GH-39
+docs/roadmaps/roadmap.yaml	GH-40
+docs/roadmaps/roadmap.yaml	GH-41
+docs/roadmaps/roadmap.yaml	GH-42
+docs/roadmaps/roadmap.yaml	GH-43
+docs/roadmaps/roadmap.yaml	GH-44
+docs/roadmaps/roadmap.yaml	GH-45
+docs/roadmaps/roadmap.yaml	GH-479
+docs/roadmaps/roadmap.yaml	GH-55
+docs/roadmaps/roadmap.yaml	GH-71
+docs/roadmaps/roadmap.yaml	GH-73
+docs/roadmaps/roadmap.yaml	GH-80
+docs/roadmaps/roadmap.yaml	GH-9
+docs/roadmaps/roadmap.yaml	Implement ARIMA (Auto-Regressive Integrated Moving Average)
+docs/roadmaps/roadmap.yaml	Implement Bayesian Linear Regression (analytical posterior)
+docs/roadmaps/roadmap.yaml	Implement Bayesian Logistic Regression (Laplace approximation)
+docs/roadmaps/roadmap.yaml	Implement Bayesian Model Selection (Bayes Factors, DIC, WAIC)
+docs/roadmaps/roadmap.yaml	Implement Covariance and Correlation Matrices
+docs/roadmaps/roadmap.yaml	Implement Generalized Linear Models (GLM) - Poisson, Gamma, Binomial families
+docs/roadmaps/roadmap.yaml	Implement Independent Component Analysis (ICA)
+docs/roadmaps/roadmap.yaml	Implement Statistical Hypothesis Tests (t-test, chi-square, ANOVA)
+docs/roadmaps/roadmap.yaml	Implement apr-cli TUI command
+docs/roadmaps/roadmap.yaml	Implement document similarity (cosine, Jaccard, edit distance)
+docs/roadmaps/roadmap.yaml	Implement extractive summarization (TextRank, TF-IDF)
+docs/roadmaps/roadmap.yaml	Implement pattern-based entity extraction (emails, URLs, keywords)
+docs/roadmaps/roadmap.yaml	LAYOUT-001: Fix Q4K kernel layout mismatch - use row-major kernel for APR/GGUF
+docs/roadmaps/roadmap.yaml	PERF-000
+docs/roadmaps/roadmap.yaml	PERF-001
+docs/roadmaps/roadmap.yaml	PERF-002
+docs/roadmaps/roadmap.yaml	PERF-003
+docs/roadmaps/roadmap.yaml	PERF-004
+docs/roadmaps/roadmap.yaml	PERF-005
+docs/roadmaps/roadmap.yaml	PERF-009
+docs/roadmaps/roadmap.yaml	PERF-014
+docs/roadmaps/roadmap.yaml	PERF-015
+docs/roadmaps/roadmap.yaml	PILLAR1-005
+docs/roadmaps/roadmap.yaml	PILLAR1-006
+docs/roadmaps/roadmap.yaml	PMAT-081
+docs/roadmaps/roadmap.yaml	PMAT-082
+docs/roadmaps/roadmap.yaml	PMAT-083
+docs/roadmaps/roadmap.yaml	PMAT-084
+docs/roadmaps/roadmap.yaml	PMAT-085
+docs/roadmaps/roadmap.yaml	PMAT-086
+docs/roadmaps/roadmap.yaml	PMAT-087
+docs/roadmaps/roadmap.yaml	PMAT-088
+docs/roadmaps/roadmap.yaml	PMAT-089
+docs/roadmaps/roadmap.yaml	PMAT-090
+docs/roadmaps/roadmap.yaml	PMAT-091
+docs/roadmaps/roadmap.yaml	PMAT-092
+docs/roadmaps/roadmap.yaml	PMAT-093
+docs/roadmaps/roadmap.yaml	PMAT-094
+docs/roadmaps/roadmap.yaml	PMAT-095
+docs/roadmaps/roadmap.yaml	PMAT-096
+docs/roadmaps/roadmap.yaml	PMAT-097
+docs/roadmaps/roadmap.yaml	PMAT-098
+docs/roadmaps/roadmap.yaml	PMAT-099
+docs/roadmaps/roadmap.yaml	PMAT-099: APR format parity - fix AprTransformer config reading
+docs/roadmaps/roadmap.yaml	PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s
+docs/roadmaps/roadmap.yaml	PMAT-111
+docs/roadmaps/roadmap.yaml	PMAT-112
+docs/roadmaps/roadmap.yaml	PMAT-113
+docs/roadmaps/roadmap.yaml	PMAT-114
+docs/roadmaps/roadmap.yaml	PMAT-115
+docs/roadmaps/roadmap.yaml	PMAT-116
+docs/roadmaps/roadmap.yaml	PMAT-117
+docs/roadmaps/roadmap.yaml	PMAT-118
+docs/roadmaps/roadmap.yaml	PMAT-119
+docs/roadmaps/roadmap.yaml	PMAT-120
+docs/roadmaps/roadmap.yaml	PMAT-121
+docs/roadmaps/roadmap.yaml	PMAT-122
+docs/roadmaps/roadmap.yaml	PMAT-124
+docs/roadmaps/roadmap.yaml	PMAT-127: Fix F-APR-GGUF - APR from GGUF produces garbage
+docs/roadmaps/roadmap.yaml	PMAT-129: Fix F-SAFETENSORS-GPU - apr run should support SafeTensors GPU
+docs/roadmaps/roadmap.yaml	PMAT-130: Fix F-Q4_0 - GGUF Q4_0 dequantization produces garbage
+docs/roadmaps/roadmap.yaml	PMAT-131: Fix F-UX-033 - SafeTensors CPU should display backend type
+docs/roadmaps/roadmap.yaml	PMAT-190
+docs/roadmaps/roadmap.yaml	PMAT-191
+docs/roadmaps/roadmap.yaml	PMAT-192
+docs/roadmaps/roadmap.yaml	PMAT-193
+docs/roadmaps/roadmap.yaml	PMAT-194
+docs/roadmaps/roadmap.yaml	PMAT-195
+docs/roadmaps/roadmap.yaml	PMAT-196
+docs/roadmaps/roadmap.yaml	PMAT-197
+docs/roadmaps/roadmap.yaml	PMAT-198
+docs/roadmaps/roadmap.yaml	PMAT-199
+docs/roadmaps/roadmap.yaml	PMAT-200
+docs/roadmaps/roadmap.yaml	PMAT-201
+docs/roadmaps/roadmap.yaml	PMAT-203
+docs/roadmaps/roadmap.yaml	PMAT-204
+docs/roadmaps/roadmap.yaml	PMAT-205
+docs/roadmaps/roadmap.yaml	PMAT-206
+docs/roadmaps/roadmap.yaml	PMAT-207
+docs/roadmaps/roadmap.yaml	PMAT-208
+docs/roadmaps/roadmap.yaml	PMAT-209
+docs/roadmaps/roadmap.yaml	PMAT-210
+docs/roadmaps/roadmap.yaml	PMAT-211
+docs/roadmaps/roadmap.yaml	PMAT-212
+docs/roadmaps/roadmap.yaml	PMAT-213
+docs/roadmaps/roadmap.yaml	PMAT-214
+docs/roadmaps/roadmap.yaml	PMAT-217
+docs/roadmaps/roadmap.yaml	PMAT-218
+docs/roadmaps/roadmap.yaml	PMAT-219
+docs/roadmaps/roadmap.yaml	PMAT-220
+docs/roadmaps/roadmap.yaml	PMAT-221
+docs/roadmaps/roadmap.yaml	PMAT-222
+docs/roadmaps/roadmap.yaml	PMAT-223
+docs/roadmaps/roadmap.yaml	PMAT-224
+docs/roadmaps/roadmap.yaml	PMAT-225
+docs/roadmaps/roadmap.yaml	PMAT-226
+docs/roadmaps/roadmap.yaml	PMAT-227
+docs/roadmaps/roadmap.yaml	PMAT-228
+docs/roadmaps/roadmap.yaml	PMAT-230
+docs/roadmaps/roadmap.yaml	PMAT-231
+docs/roadmaps/roadmap.yaml	PMAT-232
+docs/roadmaps/roadmap.yaml	PMAT-233
+docs/roadmaps/roadmap.yaml	PMAT-234
+docs/roadmaps/roadmap.yaml	PMAT-235
+docs/roadmaps/roadmap.yaml	PMAT-243
+docs/roadmaps/roadmap.yaml	PMAT-244
+docs/roadmaps/roadmap.yaml	PMAT-245
+docs/roadmaps/roadmap.yaml	PMAT-246
+docs/roadmaps/roadmap.yaml	PMAT-257
+docs/roadmaps/roadmap.yaml	PMAT-258
+docs/roadmaps/roadmap.yaml	PMAT-259
+docs/roadmaps/roadmap.yaml	PMAT-260
+docs/roadmaps/roadmap.yaml	PMAT-261
+docs/roadmaps/roadmap.yaml	PMAT-262
+docs/roadmaps/roadmap.yaml	PMAT-283
+docs/roadmaps/roadmap.yaml	PMAT-284
+docs/roadmaps/roadmap.yaml	PMAT-285
+docs/roadmaps/roadmap.yaml	PMAT-286
+docs/roadmaps/roadmap.yaml	PMAT-287
+docs/roadmaps/roadmap.yaml	PMAT-288
+docs/roadmaps/roadmap.yaml	PMAT-293
+docs/roadmaps/roadmap.yaml	PMAT-295
+docs/roadmaps/roadmap.yaml	PMAT-296
+docs/roadmaps/roadmap.yaml	PMAT-297
+docs/roadmaps/roadmap.yaml	PMAT-298
+docs/roadmaps/roadmap.yaml	PMAT-299
+docs/roadmaps/roadmap.yaml	PMAT-328
+docs/roadmaps/roadmap.yaml	PMAT-330
+docs/roadmaps/roadmap.yaml	PMAT-331
+docs/roadmaps/roadmap.yaml	PMAT-332
+docs/roadmaps/roadmap.yaml	PMAT-333
+docs/roadmaps/roadmap.yaml	PMAT-334
+docs/roadmaps/roadmap.yaml	PMAT-335
+docs/roadmaps/roadmap.yaml	PMAT-336
+docs/roadmaps/roadmap.yaml	PMAT-337
+docs/roadmaps/roadmap.yaml	PMAT-342
+docs/roadmaps/roadmap.yaml	PMAT-367
+docs/roadmaps/roadmap.yaml	PMAT-368
+docs/roadmaps/roadmap.yaml	PMAT-369
+docs/roadmaps/roadmap.yaml	PMAT-370
+docs/roadmaps/roadmap.yaml	PMAT-371
+docs/roadmaps/roadmap.yaml	PMAT-480
+docs/roadmaps/roadmap.yaml	PMAT-481
+docs/roadmaps/roadmap.yaml	PMAT-482
+docs/roadmaps/roadmap.yaml	PMAT-483
+docs/roadmaps/roadmap.yaml	PMAT-484
+docs/roadmaps/roadmap.yaml	PMAT-485
+docs/roadmaps/roadmap.yaml	PMAT-486
+docs/roadmaps/roadmap.yaml	PMAT-487
+docs/roadmaps/roadmap.yaml	PMAT-488
+docs/roadmaps/roadmap.yaml	PMAT-489
+docs/roadmaps/roadmap.yaml	PMAT-490
+docs/roadmaps/roadmap.yaml	PMAT-491
+docs/roadmaps/roadmap.yaml	PMAT-492
+docs/roadmaps/roadmap.yaml	PMAT-493
+docs/roadmaps/roadmap.yaml	PMAT-494
+docs/roadmaps/roadmap.yaml	PMAT-495
+docs/roadmaps/roadmap.yaml	PMAT-496
+docs/roadmaps/roadmap.yaml	PMAT-681
+docs/roadmaps/roadmap.yaml	PMAT-692
+docs/roadmaps/roadmap.yaml	PMAT-693
+docs/roadmaps/roadmap.yaml	PMAT-694
+docs/roadmaps/roadmap.yaml	PMAT-695
+docs/roadmaps/roadmap.yaml	PMAT-696
+docs/roadmaps/roadmap.yaml	PMAT-697
+docs/roadmaps/roadmap.yaml	PMAT-730
+docs/roadmaps/roadmap.yaml	PMAT-733
+docs/roadmaps/roadmap.yaml	PMAT-735
+docs/roadmaps/roadmap.yaml	PMAT-737
+docs/roadmaps/roadmap.yaml	PMAT-CI-PASSGREP-001
+docs/roadmaps/roadmap.yaml	PMAT-PERF-009-CUDA
+docs/roadmaps/roadmap.yaml	PMAT-PHASE6: Re-run Phase 6 (marathon + throughput) with self-converted GGUF
+docs/roadmaps/roadmap.yaml	PMAT-QA-FMTPARITY-DECODE-001
+docs/roadmaps/roadmap.yaml	PMAT-ROSETTA-001
+docs/roadmaps/roadmap.yaml	PMAT-SHOWCASE-NEXT
+docs/roadmaps/roadmap.yaml	Phase 1: Classical Bayesian Inference - Conjugate Priors (Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial)
+docs/roadmaps/roadmap.yaml	Phase 1: Graph Pathfinding Algorithms (Dijkstra, A*, APSP, shortest_path)
+docs/roadmaps/roadmap.yaml	Phase 2: Bayesian Examples & Documentation - Create cargo examples and book chapters for Gamma-Poisson, Normal-InverseGamma, and Dirichlet-Multinomial conjugate priors
+docs/roadmaps/roadmap.yaml	Phase 2: Components & Traversal (DFS, connected_components, SCCs, topological_sort)
+docs/roadmaps/roadmap.yaml	Phase 3: Community & Link Analysis (label_propagation, common_neighbors, adamic_adar)
+docs/roadmaps/roadmap.yaml	Phase 4: Graph Benchmarks & Spec Update
+docs/roadmaps/roadmap.yaml	Push 4 commits to origin/main (Bayesian documentation and doctest fixes)
+docs/roadmaps/roadmap.yaml	Push completed work to origin/main (5 commits)
+docs/roadmaps/roadmap.yaml	ROADMAP-RECONCILE-2026-07-04
+docs/roadmaps/roadmap.yaml	SHOWCASE-BRICK-001
+docs/roadmaps/roadmap.yaml	Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements
+docs/roadmaps/roadmap.yaml	Update roadmap status for completed TOP 10 algorithms (KNN, GBM, PCA)
+docs/roadmaps/roadmap.yaml	Update trait signatures to use AprenderError instead of static str
+docs/roadmaps/roadmap.yaml	aprender-tsp-v0.1.0
+docs/roadmaps/roadmap.yaml	docs/specifications/qwen2.5-coder-showcase.md
+docs/roadmaps/roadmap.yaml	nlp-text-preprocessing
+docs/roadmaps/roadmap.yaml	qwen2.5-coder-showcase-demo
