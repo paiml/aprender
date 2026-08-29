@@ -453,7 +453,8 @@ impl CudaExecutor {
 
     /// PMAT-058: Free batched KV caches to reclaim VRAM after batch decode.
     ///
-    /// Five-Whys: c=1 decode regresses 140→124 tok/s after c=4 batch.
+    /// Five-Whys: c=1 decode regresses after a c=4 batch (magnitude UNMEASURED
+    /// on a correct batched path — see aprender#2753).
     /// Why? SGEMM prefill (no FP16 cache) instead of HGEMM.
     /// Why? FP16 weight cache was cleared before batch decode (GH-141).
     /// Why? Not rebuilt because batched KV caches (~460MB) still occupy VRAM.

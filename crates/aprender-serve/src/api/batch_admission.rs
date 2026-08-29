@@ -26,12 +26,20 @@
 /// Is the single-request fast path admissible for this batch?
 ///
 /// The fast path (`generate_single_request` → `generate_gpu_resident_streaming`)
-/// replays a captured CUDA decode graph and measures ~138 tok/s. The batched
-/// path (`batched_decode_step` → `forward_batched_to_token_ids`) launches every
-/// kernel eagerly — `BATCHED_GRAPH` is opt-in and documented as "still 25%
-/// slower than eager due to capture overhead" — and measures ~46 tok/s per slot.
-/// Taking the batched path when nothing else is pending therefore costs a lone
-/// client roughly 3x, which is what F-BATCH-004 forbids.
+/// replays a captured CUDA decode graph. The batched path (`batched_decode_step`
+/// → `forward_batched_to_token_ids`) launches every kernel eagerly, because
+/// `BATCHED_GRAPH` is opt-in and its own documentation says graph replay is
+/// slower than eager there owing to capture overhead. Taking the batched path
+/// when nothing else is pending therefore costs a lone client per-token latency
+/// it does not need to pay, which is what F-BATCH-004 forbids.
+///
+/// The MAGNITUDE of that penalty is UNMEASURED on a correct batched path. Every
+/// figure this comment used to carry was taken while batched decode emitted
+/// garbage tokens to the `max_tokens` cap (aprender#2753: the online-softmax
+/// rescale, the Q4_K weight-type hardcode and the missing QKV bias) and with a
+/// per-layer synchronize and device-to-host copy in the decode loop
+/// (aprender#2764). A ratio between a healthy path and a broken one, measured
+/// through a debug path, is not a throughput comparison.
 ///
 /// `force_batched` is the F-BATCH-004 mutation knob ("force the batched path
 /// unconditionally; the c=1 case must turn RED"), exposed via

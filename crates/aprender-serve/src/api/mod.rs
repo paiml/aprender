@@ -174,8 +174,10 @@ pub struct AppState {
     /// Batch configuration for window timing and size thresholds (PARITY-052)
     #[cfg(feature = "gpu")]
     batch_config: Option<BatchConfig>,
-    /// CUDA-optimized model for high-performance GPU inference (PAR-111)
-    /// Uses pre-uploaded weights and batched workspaces for 755+ tok/s (2.6x Ollama)
+    /// CUDA-optimized model for GPU inference (PAR-111).
+    /// Uses pre-uploaded weights and batched workspaces. The throughput and
+    /// Ollama-ratio this comment used to assert were withdrawn: they were taken
+    /// on the batched path while it emitted garbage tokens (aprender#2753).
     #[cfg(feature = "cuda")]
     cuda_model: Option<Arc<std::sync::RwLock<crate::gguf::OwnedQuantizedModelCuda>>>,
     /// PMAT-044: CUDA batch scheduler for continuous batching on /v1/chat/completions

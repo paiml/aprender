@@ -91,8 +91,17 @@ impl CudaExecutor {
     ///
     /// # Performance
     ///
-    /// - M=1: Baseline (~360 tok/s)
-    /// - M=4: 16x GEMV speedup → 857+ tok/s aggregate throughput
+    /// The intended win is that each weight is read and dequantized ONCE for all
+    /// M sequences instead of once per sequence, so the GEMV cost is amortized
+    /// across the batch.
+    ///
+    /// The per-M throughput figures this section used to give are WITHDRAWN and
+    /// deliberately not replaced. They were measured while this path emitted
+    /// garbage tokens to the `max_tokens` cap (aprender#2753) and while
+    /// `batched_forward_run_layers` carried an unconditional per-layer
+    /// synchronize and device-to-host copy (aprender#2764), so they were
+    /// throughput of garbage taken through a debug path. Re-measuring needs a
+    /// run on a path that terminates on a stop token.
     ///
     /// # Arguments
     ///
@@ -470,9 +479,19 @@ impl CudaExecutor {
     ///
     /// # Performance
     ///
-    /// - Without graphs (M=2): 404.6 tok/s
-    /// - With graphs (M=2): Target ~550+ tok/s (2x Ollama)
-    /// - Key: Combines batched GEMV efficiency + CUDA graph launch reduction
+    /// The intent is to combine batched GEMV efficiency with a reduction in
+    /// kernel-launch count from graph replay.
+    ///
+    /// The with/without-graph throughput figures and the Ollama ratio that stood
+    /// here are WITHDRAWN for the same reason as the sibling block above: they
+    /// were taken on a batched path that emitted garbage tokens (aprender#2753)
+    /// and through a per-layer synchronize in the decode loop (aprender#2764).
+    ///
+    /// Note for aprender#2758: `check_no_claim_literals.sh` did NOT flag these
+    /// two lines. `TARGET_RE` exempts the line carrying "Target", and the bare
+    /// `404.6 tok/s` on the line above it rode along unflagged. The exemption is
+    /// right in principle -- a target is a bar, not a claim -- but it should not
+    /// cover a measured figure sitting beside one.
     #[allow(clippy::too_many_arguments)]
     pub fn forward_batched_to_token_ids_graphed(
         &mut self,

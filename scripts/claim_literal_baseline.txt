@@ -87,14 +87,10 @@ crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:16
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/multi_warp_vectorized.rs:17
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:19
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:7
-crates/aprender-serve/src/api/mod.rs:172
 crates/aprender-serve/src/api/mod_app_state_gpu.rs:190
 crates/aprender-serve/src/api/mod_app_state_gpu.rs:312
 crates/aprender-serve/src/api/mod_app_state_gpu.rs:450
 crates/aprender-serve/src/cuda/executor/cached.rs:6
-crates/aprender-serve/src/cuda/executor/kv_cache_gpu_init.rs:436
-crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:11
-crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:12
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:10
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:31
