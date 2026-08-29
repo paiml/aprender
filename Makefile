@@ -37,7 +37,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
+.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify hooks-delta-test lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
 
 # Default target
 all: tier2
@@ -735,16 +735,31 @@ deny:
 	@echo "✅ cargo-deny checks passed"
 
 # Install PMAT pre-commit hooks
-hooks-install: ## Install PMAT pre-commit hooks
+# `pmat hooks install` REGENERATES .git/hooks/pre-commit, which reinstates the
+# absolute per-staged-file complexity scan that froze gemm.rs, forward_utils.rs,
+# gemv_dispatch.rs and apply.rs (#2766). The delta gate must therefore be
+# re-spliced every time; the installer is idempotent and fails loudly if the
+# generated hook has changed shape.
+hooks-install: ## Install PMAT pre-commit hooks (+ the #2766 complexity DELTA gate)
 	@echo "🔧 Installing PMAT pre-commit hooks..."
 	@pmat hooks install || exit 1
+	@bash scripts/install_complexity_delta_gate.sh || exit 1
 	@echo "✅ Hooks installed successfully"
 
 # Verify PMAT hooks
 hooks-verify: ## Verify PMAT hooks are working
 	@echo "🔍 Verifying PMAT hooks..."
 	@pmat hooks verify
+	@bash scripts/install_complexity_delta_gate.sh --check || exit 1
 	@pmat hooks run
+
+# Prove the complexity DELTA gate still holds the ratchet and still unfreezes
+# files carrying pre-existing violations (#2766).
+hooks-delta-test: ## Run the #2766 complexity delta gate case tables
+	@bash scripts/tests/complexity_delta_gate_regex_cases.sh
+	@bash scripts/tests/complexity_delta_gate_cases.sh
+	@bash scripts/tests/complexity_delta_gate_install_cases.sh
+	@bash scripts/check_complexity_gate_wiring.sh
 
 # Lint shell scripts (bashrs quality gates)
 lint-scripts: ## Lint shell scripts with bashrs (determinism + idempotency + safety)

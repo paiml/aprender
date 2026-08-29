@@ -100,3 +100,9 @@ per-layer-trace/
 # Python bytecode from scripts/*.py (dogfood gate helpers import each other)
 __pycache__/
 *.pyc
+
+# scripts/complexity_delta_gate.sh (#2766) materialises the HEAD version of a
+# staged file as a temporary DOT-PREFIXED SIBLING so pmat resolves include!()
+# against the real directory. An EXIT trap removes them; this is the belt to
+# that pair of braces.
+.pmat_delta_*

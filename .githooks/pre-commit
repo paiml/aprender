@@ -7,6 +7,11 @@ echo "── Tier 1: Format + Lint ──"
 cargo fmt -- --check
 cargo clippy -- -D warnings
 
+echo "── #2766: Complexity DELTA gate ──"
+# Absolute per-file thresholds froze every file carrying a pre-existing
+# violation. Gate on the delta instead: new or worsened violations still fail.
+bash "$(git rev-parse --show-toplevel)/scripts/complexity_delta_gate.sh"
+
 echo "── JA-02: Sovereignty Linting ──"
 pmat comply check --failures-only 2>/dev/null || true
 
