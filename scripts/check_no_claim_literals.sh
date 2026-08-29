@@ -86,7 +86,7 @@ CLAIM_RE='(println!|eprintln!|write!|writeln!|format!|\.red\(\)|\.green\(\)|\.ye
 # the tight typographic form, is caught too. It costs nothing: a gap word may
 # not begin with a digit, so `1024x1024 torch` cannot be crossed either.
 MULT_RE='(x|×)'
-COMPETITOR_RE='(Ollama|ollama|llama\.cpp|llama|vLLM|vllm|PyTorch|torch|FasterTransformer|fastertransformer|SGLang|sglang|TensorRT|tensorrt|TGI|tgi|LMDeploy|lmdeploy|TurboMind|turbomind|static[[:space:]]+batching)'
+COMPETITOR_RE='(Ollama|ollama|llama\.cpp|llama|vLLM|vllm|PyTorch|torch|FasterTransformer|fastertransformer|SGLang|sglang|TensorRT|tensorrt|TGI|tgi|LMDeploy|lmdeploy|TurboMind|turbomind|Orca|static[[:space:]]+batching)'
 RATIO_GAP_RE='(([A-Za-z]+([.-][A-Za-z]+)*|[A-Za-z]{1,3}\.)[[:space:]]+){0,5}'
 # The LEFT boundary is not decoration. Without it `v1.8x release notes for
 # llama` matched — a version string, three ordinary words, and a product name.
@@ -97,6 +97,39 @@ RATIO_GAP_RE='(([A-Za-z]+([.-][A-Za-z]+)*|[A-Za-z]{1,3}\.)[[:space:]]+){0,5}'
 RATIO_LEFT_RE='(^|[^0-9A-Za-z.])'
 RATIO_RE="${RATIO_LEFT_RE}[0-9]+(\.[0-9]+)?${MULT_RE}[[:space:]]*${RATIO_GAP_RE}${COMPETITOR_RE}"
 TPUT_RE='[0-9]{2,}\+?[[:space:]]*tok/s'
+
+# A PLACEHOLDER THAT HAS BEEN GIVEN A UNIT IS READ AS A MEASUREMENT. PERF-010's
+# second half, and a class RATIO_RE above has nothing to say about. `Throughput:
+# XX tok/s` in a shipped chapter does not read to a user as "we have not
+# measured this yet"; it reads as a table someone forgot to finish, and the
+# number that eventually fills it inherits whatever trust the surrounding prose
+# had already earned.
+#
+# THE BINDING TO A UNIT IS THE ENTIRE DESIGN, and skipping it would have shipped
+# a guard that is pure noise. In THIS repo `[X]` is overwhelmingly a MARKDOWN
+# CHECKBOX -- `- [X] APPROVED for Production`, `| Section 9 | [X] PASS / [ ] FAIL
+# |` -- and a bare ban on the literal would have been born RED against ten
+# checked boxes in docs/qa/ and zero defects. (Worth stating plainly because the
+# collision is with the spec's own vocabulary: APR-PERF-GATE-001 uses `[X]` as a
+# PROVENANCE TAG meaning "external claim about a third-party system", which is
+# the class RATIO_RE handles. Neither of those is a placeholder. Three meanings,
+# one spelling.)
+#
+# So a placeholder counts only where a figure would go: immediately before a
+# throughput unit, a memory unit, a latency unit, or a ratio bound to a speed
+# word. Every checkbox form fails that test, and the case table pins six of them
+# as must-not-match controls.
+#
+# Zero live instances today, and that is stated rather than hidden: this is a
+# RATCHET AGAINST A SHAPE, not a cleanup. The mutation table is therefore the
+# only evidence it works, since the tree cannot supply a true positive.
+#
+# Leading boundary is `(^|[^A-Za-z0-9_])` rather than `\b` -- `\b` is a GNU
+# extension this file does not otherwise rely on, and the explicit form is what
+# keeps `MAXX tok/s` (a field name) from matching.
+PLACEHOLDER_TOK='(\[X+\]|\[TBD\]|\[TODO\]|\[N\]|TBD|TODO|XX+)'
+PERF_UNIT_RE='(tok/s|tokens/s|tok/sec|(ms|GB|MB)([^A-Za-z0-9]|$)|(x|×)([[:space:]]+(faster|slower|speedup)|[[:space:]]*$)|%[[:space:]]*(faster|slower|speedup))'
+PLACEHOLDER_RE="(^|[^A-Za-z0-9_])${PLACEHOLDER_TOK}[[:space:]]*${PERF_UNIT_RE}"
 
 # A TARGET says what we WANT; a CLAIM says what we GOT. Only the second lies.
 # Lines that name themselves a target, a threshold or a comparison operator are
@@ -328,8 +361,96 @@ if [ "${1:-}" = "--selftest" ]; then
     fi
     printf '  %s ratio case(s), %s failure(s)\n' "$rt" "$rf"
 
+    # PERF-010: THE MARKDOWN SWEEP AS IT ACTUALLY RUNS. The ratio table above
+    # applies RATIO_RE|TPUT_RE; the .md sweep applies RATIO_RE|TPUT_RE|
+    # PLACEHOLDER_RE, and PLACEHOLDER_RE is a detector no row above touches.
+    # A table that exercised only the ratio half is how the `[X]`-figure gap
+    # survived being "covered by check_no_claim_literals.sh" in the spec's own
+    # status table.
+    mt=0; mf=0
+    check_md() { # check_md <match|nomatch> <one line of markdown>
+        local want="$1" line="$2" got=nomatch
+        # `<<<` and capture-then-test, never `printf | grep -q`: an early-exiting
+        # reader plus pipefail hands the pipeline the PRODUCER's SIGPIPE status
+        # (141) even on a successful match. That exact shape was a live fail-open
+        # on main.
+        if grep -qE "$RATIO_RE|$TPUT_RE|$PLACEHOLDER_RE" <<< "$line" \
+           && ! grep -qE "$TARGET_RE" <<< "$line"; then got=match; fi
+        mt=$((mt+1))
+        if [ "$got" = "$want" ]; then printf '  ok    %-8s %s\n' "$want" "$(printf '%s' "$line" | cut -c1-64)"
+        else printf '  FAIL  want %-8s got %-8s %s\n' "$want" "$got" "$(printf '%s' "$line" | cut -c1-52)"; mf=$((mf+1)); fi
+    }
+    printf -- '--- markdown class: [X] figures, comparators, placeholders ---\n'
+    # THE SIX SHAPES §0.1 NAMES, through the combined .md pattern.
+    check_md match   'aprender achieves 36.9x FasterTransformer throughput.'
+    check_md match   'aprender achieves 36.9× over FasterTransformer.'
+    check_md match   'Continuous batching gives 23× over static batching.'
+    check_md match   'Throughput is 1.8× over vLLM on this workload.'
+    check_md match   '| GPU (batched M=16) | Qwen 1.5B | ~850 tok/s | 2.93× Ollama |'
+    # THE LIVE ONE. Verbatim from book/src/tools/apr-cli.md:81, which shipped
+    # past this guard while it was green because "faster than" sat in the join.
+    check_md match   '# Batched GPU mode (2.9x faster than Ollama)'
+    check_md match   'realizar is 8.2x slower than llama.cpp on CPU.'
+    check_md match   'c=4 TTFT = 256ms (10.7x vs llama.cpp 24ms).'
+    # DISCRIMINATION. A ratio is not a claim just because a competitor is named
+    # on the same line.
+    check_md nomatch 'Ollama users will recognise the 3x3 convolution kernel.'
+    check_md nomatch 'Compression ratio: 24 bits -> 8 bits = 3x smaller.'
+    check_md nomatch 'Target: 2x Ollama throughput on the 1.5B model.'
+    check_md nomatch 'Install Ollama first, then run the comparison harness.'
+    # A SIZE RATIO AGAINST A NAMED COMPETITOR IS ALSO A CLAIM, and this row
+    # says so deliberately. PERF-010 wrote it as a must-NOT-match on the theory
+    # that only SPEED ratios lie, and enforced that with a closed connector
+    # list (over|than|vs|versus|compared to). PERF-049 replaced that list with a
+    # measured five-gap-word rule -- zero false positives over the 6900-file
+    # universe -- and this line matches under it. Re-judged rather than
+    # preserved: "3x larger than PyTorch" is an unreceipted comparative claim
+    # about a third-party system, which is the class the guard's own failure
+    # text describes. The connector list would also have missed "3x the memory
+    # of PyTorch". Kept as an assertion so a future narrowing is loud.
+    check_md match   'The .apr file is 3x larger than PyTorch pickle output.'
+    # PLACEHOLDERS BOUND TO A UNIT.
+    check_md match   'Throughput: XX tok/s'
+    check_md match   '| Decode | [TBD] tok/s | 1.9 GB |'
+    check_md match   'apr is [X]x faster than the previous release.'
+    check_md match   'Speedup over the baseline: [TBD]×'
+    check_md match   'Cold start latency: TODO ms'
+    # ...AND THE CHECKBOXES THEY MUST NOT BE CONFUSED WITH. Without these rows a
+    # bare `\[X\]` ban looks correct and is born red against docs/qa/.
+    # The checkbox rows are built from variables rather than written inline.
+    # bashrs -- which this repo mandates over shellcheck -- parses the `[ ]` and
+    # `[X]` of a MARKDOWN checkbox as a shell test bracket and raises SC1028 /
+    # SC2104 / SC1087 against rows that are correct English. Same class as the
+    # \042 dance for LIT above, and the same remedy: keep the token out of the
+    # source line. scripts/*.sh is gated on a SHRINK-ONLY bashrs error count, so
+    # five false errors here are five someone else has to triage.
+    # Even the ASSIGNMENTS are built from parts: bashrs flags a bare `'[ ]'`
+    # string as SC2104 "missing space before ]". Brackets by name, then.
+    OB='['; CB=']'
+    CHECKED="${OB}X${CB}"; UNCHECKED="${OB} ${CB}"
+    check_md nomatch "- $CHECKED APPROVED for Production"
+    check_md nomatch "| Section 9 Tests/CI/Coverage | $CHECKED PASS / $UNCHECKED FAIL |"
+    check_md nomatch "| 9.1.1 | All tests pass | 0 failures | $CHECKED | $UNCHECKED |"
+    check_md nomatch '- Other modules: TBD from CI results'
+    check_md nomatch 'TODO: add a benchmark harness for the graph module.'
+    check_md nomatch 'The MAXX tok/s field is reserved.'
+    # VACUITY: a table that shrank to nothing would sweep clean.
+    if [ "$mt" -lt 24 ]; then
+        printf '  FAIL  markdown table has %s row(s); at least 24 are required\n' "$mt"; mf=$((mf+1))
+    fi
+    # The placeholder half must be ASSERTED, not merely present: it is the only
+    # detector here with ZERO live instances, so a silent narrowing would leave
+    # a shorter table and no red.
+    if ! grep -qE "$PLACEHOLDER_RE" <<< 'Throughput: XX tok/s'; then
+        printf '  FAIL  a unit-bound placeholder is not covered\n'; mf=$((mf+1))
+    fi
+    if grep -qE "$PLACEHOLDER_RE" <<< '- [X] APPROVED for Production'; then
+        printf '  FAIL  PLACEHOLDER_RE reds a markdown checkbox\n'; mf=$((mf+1))
+    fi
+    printf '  %s markdown case(s), %s failure(s)\n' "$mt" "$mf"
+
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
-    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$rf" -eq 0 ] || exit 1
+    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$rf" -eq 0 ] && [ "$mf" -eq 0 ] || exit 1
     exit 0
 fi
 
@@ -412,7 +533,12 @@ mdfiles=()
 for f in "${SRC[@]}"; do case "$f" in *.md) mdfiles+=("$f") ;; esac; done
 mdhits=""
 if [ "${#mdfiles[@]}" -gt 0 ]; then
-    mdhits=$(grep -InE "$RATIO_RE|$TPUT_RE" "${mdfiles[@]}" 2>/dev/null \
+    # PLACEHOLDER_RE is applied to MARKDOWN ONLY, deliberately. In .rs a bare
+    # `TODO` is an ordinary code comment and SATD there is pmat's gate, not
+    # this one; adding it to the Rust sweep would import a large, already-owned
+    # debt class under a guard that has nothing to say about it. Prose is where
+    # an unfilled figure is read as a filled one.
+    mdhits=$(grep -InE "$RATIO_RE|$TPUT_RE|$PLACEHOLDER_RE" "${mdfiles[@]}" 2>/dev/null \
              | grep -vE "$TARGET_RE" || true)
 fi
 

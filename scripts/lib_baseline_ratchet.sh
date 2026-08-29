@@ -91,12 +91,34 @@
 #
 # An addition to a `set-aperture` baseline is ADMITTED only if BOTH hold:
 #
-#   (a) THE LINE PREDATES THE COMPARAND. The entry is `<path>:<line>`, and that
-#       line is BYTE-IDENTICAL at the comparand. This is what the working tree
-#       cannot answer and the comparand can. It closes PERF-028's laundering
-#       shape completely: a claim this branch wrote — or moved, or reflowed —
-#       has no byte-identical line at the comparand and is REFUSED, whether it
-#       arrived in this commit or five commits back on the same branch.
+#   (a) THE LINE PREDATES THE COMPARAND, by either of two proofs. The entry is
+#       `<path>:<line>`, and EITHER
+#         (a1) that line is BYTE-IDENTICAL at the comparand, OR
+#         (a2) it MOVED: the working tree's text for that line occurs in the
+#              SAME FILE at the comparand, at no greater number of occurrences.
+#       This is what the working tree cannot answer and the comparand can. It
+#       closes PERF-028's laundering shape: a claim this branch wrote has no
+#       text at the comparand at all and is REFUSED, whether it arrived in this
+#       commit or five commits back on the same branch.
+#
+#       (a2) IS NOT A RELAXATION FOR CONVENIENCE; WITHOUT IT THE RULE IS A TRAP.
+#       (a1) alone keys the admission on a COORDINATE, and a coordinate is not
+#       the claim — the text is. PERF-019 inserted §3.3.1, twenty-eight lines,
+#       into docs/benchmarking-gate-spec.md at line 162. Two claims already
+#       baselined at :235 and :308 — the spec quoting the fabricated `2.93×
+#       Ollama` in order to BAN it — slid to :263 and :336 untouched. Under
+#       (a1) those are two brand-new violations and the old entries go stale,
+#       so the only legal moves are to delete a document that exists to record
+#       the fabrication, or to abandon an unrelated subsection. Neither is a
+#       thing a bookkeeping rule should be able to force, and the trap arms for
+#       ANY edit above ANY baselined line in a file this guard reads.
+#
+#       The counting half is what keeps (a2) from being a hole: a launderer who
+#       COPIES an already-baselined claim to a second site in the same file
+#       raises its occurrence count, and that is refused. Text absent at the
+#       comparand is refused. Only a genuine relocation passes, and the claim
+#       is the same claim either way, so the guard's subject matter is
+#       unchanged. Both halves are rows in check_baseline_ratchets.sh.
 #
 #   (b) THE APERTURE ACTUALLY CHANGED. The owning guard's own source differs
 #       between the comparand and the working tree. A PR that does not touch
@@ -164,8 +186,10 @@ _br_cmp_set() { # _br_cmp_set <base-file> <cur-file>
 }
 
 # `set-aperture`. See the header. Same subset semantics as `_br_cmp_set`, with
-# ONE admission: an added `<path>:<line>` whose line is byte-identical at the
-# comparand, in a diff that also changes the owning guard.
+# ONE admission: an added `<path>:<line>` whose line PREDATES the comparand --
+# byte-identical there at the same coordinate, or, when it has MOVED, present
+# in the same file at the comparand at no greater number of occurrences -- in a
+# diff that also changes the owning guard.
 #
 # Both halves fail CLOSED. A coordinate that does not parse, a file the
 # comparand does not carry, a line past the end of either copy, an unreadable
@@ -174,7 +198,7 @@ _br_cmp_set() { # _br_cmp_set <base-file> <cur-file>
 # check" into "no growth"; that is the shape this whole file exists to refuse.
 _br_cmp_set_aperture() { # <base-file> <cur-file> <root> <ref> <owning-guard-path>
     local base="$1" cur="$2" root="$3" ref="$4" guard="$5"
-    local adds entry path line want got aperture_moved=0 refuse
+    local adds entry path line want got aperture_moved=0 refuse n_base n_now
 
     BR_ADMITTED=""
     BR_DELTA=""
@@ -220,7 +244,18 @@ _br_cmp_set_aperture() { # <base-file> <cur-file> <root> <ref> <owning-guard-pat
                 if [ -z "$want" ] && [ -z "$got" ]; then
                     refuse="line $line is empty or past the end in BOTH copies"
                 elif [ "$want" != "$got" ]; then
-                    refuse="this branch WROTE or MOVED that line, so it is a new violation"
+                    # (a2), the MOVE. See the header. The coordinate is not the
+                    # claim; the TEXT is. `grep -c` reads its whole input, so
+                    # there is no early exit to hand anyone a SIGPIPE, and it
+                    # exits 1 on a zero count -- hence the `|| n=0`.
+                    n_base=$(git -C "$root" show "${ref}:${path}" 2>/dev/null \
+                             | LC_ALL=C grep -Fxc -- "$got") || n_base=0
+                    n_now=$(LC_ALL=C grep -Fxc -- "$got" "$root/$path" 2>/dev/null) || n_now=0
+                    if [ "$n_base" -eq 0 ]; then
+                        refuse="this branch WROTE that line: its text is absent from $path at the comparand"
+                    elif [ "$n_now" -gt "$n_base" ]; then
+                        refuse="that text now occurs ${n_now}x in $path and was ${n_base}x at the comparand, so this branch ADDED one"
+                    fi
                 fi
             fi
         fi
@@ -432,9 +467,11 @@ baseline_ratchet_check() {
                 "$path" "$(printf '%s\n' "$BR_ADMITTED" | grep -c . || true)" \
                 "$(git -C "$root" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"
             printf '%s\n' "$BR_ADMITTED"
-            printf '               each line above is BYTE-IDENTICAL at the comparand and this diff\n'
-            printf '               changes %s. They are claims the guard could not\n' "$guard"
-            printf '               READ before, not claims this branch WROTE. Recorded, not blessed.\n'
+            printf '               each line above PREDATES the comparand -- byte-identical there,\n'
+            printf '               or moved with its text intact and no more occurrences than before\n'
+            printf '               -- and this diff changes %s. They are claims the\n' "$guard"
+            printf '               guard could not READ before, not claims this branch WROTE.\n'
+            printf '               Recorded, not blessed.\n'
         else
             printf 'ok    ratchet  %s did not grow (%s removed) vs %s\n' \
                 "$path" "$BR_REMOVED" \

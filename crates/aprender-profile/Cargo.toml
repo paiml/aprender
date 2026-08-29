@@ -161,10 +161,6 @@ name = "ring_buffer_overhead"
 harness = false
 
 [[bench]]
-name = "visualization_simd"
-harness = false
-
-[[bench]]
 name = "metrics_throughput"
 harness = false
 

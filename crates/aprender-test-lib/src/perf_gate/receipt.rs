@@ -41,6 +41,9 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
+use std::path::Path;
+use std::str::FromStr;
 
 use super::drain::{BandInput, ComparatorStatus, DerivedBand};
 
@@ -83,6 +86,35 @@ impl ComputeClass {
             Self::Wgpu => "wgpu",
             Self::Unknown => "unknown",
         }
+    }
+}
+
+/// Parse the wire token back.
+///
+/// The reverse of [`ComputeClass::wire_token`] rather than a second table:
+/// `wire_token` is what `bench_receipt.py` matches against `COMPUTE_CLASSES`,
+/// so a parser with its own spelling would let a receipt be written with a
+/// class the validator then rejects — after the measurement had been taken.
+/// `roundtrip_is_the_only_spelling` pins the two together.
+impl FromStr for ComputeClass {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        [
+            Self::Cpu,
+            Self::Cuda,
+            Self::Metal,
+            Self::Wgpu,
+            Self::Unknown,
+        ]
+        .into_iter()
+        .find(|c| c.wire_token() == s)
+        .ok_or_else(|| {
+            format!(
+                "compute_class {s:?}: expected one of cpu, cuda, metal, wgpu, unknown (I-2 \
+                 requires the path TAKEN, not the hardware present)"
+            )
+        })
     }
 }
 
@@ -210,10 +242,12 @@ impl TokenCountingMethod {
 /// > "Token counting must be **declared**". It is required rather than
 /// > defaulted precisely so it cannot be silently wrong.
 ///
-/// MERGE NOTE (PERF-024 / `feat/n1-band-cli`): that branch adds
-/// `perf_gate::protocol::Tokenization`, the measurement-side type, which
-/// serialises to exactly this shape. The integration commit should keep one of
-/// the two and re-point the other; they are the same block, not two blocks.
+/// PERF-024's measurement side used to carry a second spelling of this block,
+/// `perf_gate::protocol::Tokenization` — a struct with an `Option<String>`
+/// digest and a `validate()`. The merge kept this enum, because it makes
+/// "`client_tokenizer` with no digest" unrepresentable rather than merely
+/// rejected, and moved that struct's one extra behaviour
+/// ([`Self::require_counter`]) here. `protocol` now re-exports this type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenizationBlock {
     /// Server-reported counts.
@@ -258,6 +292,30 @@ impl TokenizationBlock {
                 "tokenization.tokenizer_sha256: {tokenizer_sha256:?} is not 64 lowercase hex \
                  characters — §4.4.6 requires it when method = client_tokenizer"
             )),
+        }
+    }
+
+    /// Poka-yoke for transports: a declared method the transport cannot honour
+    /// is refused at construction, not silently downgraded at measure time.
+    ///
+    /// Moved here from `protocol::Tokenization` when the two spellings of the
+    /// §4.4.6 block were merged — the enum kept the shape, this kept its one
+    /// behaviour the enum lacked.
+    ///
+    /// # Errors
+    /// When the declared method and the available counting machinery disagree.
+    pub fn require_counter(&self, has_client_counter: bool) -> Result<(), String> {
+        match (self.method(), has_client_counter) {
+            (TokenCountingMethod::ClientTokenizer, false) => Err(
+                "tokenization.method = client_tokenizer but no client TokenCounter was supplied"
+                    .to_string(),
+            ),
+            (TokenCountingMethod::ServerUsage, true) => Err(
+                "tokenization.method = server_usage but a client TokenCounter was supplied; \
+                 declare client_tokenizer or drop the counter"
+                    .to_string(),
+            ),
+            _ => Ok(()),
         }
     }
 
@@ -339,6 +397,36 @@ impl Workload {
             Self::W2 => "W2",
         }
     }
+}
+
+/// Parse the wire token back. As [`ComputeClass`]'s, derived from
+/// `wire_token` so the two cannot drift.
+impl FromStr for Workload {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        [Self::W1, Self::W2]
+            .into_iter()
+            .find(|w| w.wire_token() == s)
+            .ok_or_else(|| format!("workload {s:?}: expected W1 or W2 (§4.3)"))
+    }
+}
+
+/// SHA-256 of a file, as the 64 lowercase hex characters
+/// [`Provenance::validate`] and `bench_receipt.py` both demand.
+///
+/// Lives beside the validator on purpose. The digest is the one field of §4.2.2
+/// that a producer cannot type by hand, and a producer that formatted it
+/// differently from the way the validator matches it would fail only after the
+/// measurement had already been paid for.
+///
+/// # Errors
+/// When `path` cannot be opened or read.
+pub fn sha256_file(path: &Path) -> std::io::Result<String> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)?;
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// Everything needed to render one host × workload receipt.
@@ -534,4 +622,80 @@ fn is_sha256(value: &str) -> bool {
         && value
             .bytes()
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+#[cfg(test)]
+mod producer_tests {
+    //! The two conversions PERF-025's CLI needs, and the digest it cannot type.
+
+    use super::*;
+    use std::io::Write;
+
+    /// A parser with its own spelling would let a receipt be written with a
+    /// class `bench_receipt.py` then rejects — after the band had already run.
+    #[test]
+    fn compute_class_roundtrip_is_the_only_spelling() {
+        for c in [
+            ComputeClass::Cpu,
+            ComputeClass::Cuda,
+            ComputeClass::Metal,
+            ComputeClass::Wgpu,
+            ComputeClass::Unknown,
+        ] {
+            assert_eq!(
+                ComputeClass::from_str(c.wire_token()).expect("wire token must parse"),
+                c
+            );
+        }
+    }
+
+    /// `bench_receipt.py`'s `COMPUTE_CLASSES` tuple, spelled out here so that
+    /// adding a variant without teaching the validator goes red.
+    #[test]
+    fn the_wire_tokens_are_bench_receipt_pys_compute_classes() {
+        let tokens: Vec<&str> = ["cpu", "cuda", "metal", "wgpu", "unknown"].into();
+        for t in &tokens {
+            assert!(ComputeClass::from_str(t).is_ok(), "{t} must parse");
+        }
+        assert!(ComputeClass::from_str("tpu").is_err());
+        assert!(ComputeClass::from_str("gpu").is_err());
+        assert!(
+            ComputeClass::from_str("CUDA").is_err(),
+            "case is load-bearing"
+        );
+    }
+
+    #[test]
+    fn workload_roundtrips_and_refuses_anything_else() {
+        for w in [Workload::W1, Workload::W2] {
+            assert_eq!(Workload::from_str(w.wire_token()).expect("parses"), w);
+        }
+        assert!(Workload::from_str("W3").is_err());
+        assert!(Workload::from_str("w1").is_err());
+    }
+
+    /// The digest must be the shape `Provenance::validate` accepts, or the
+    /// producer writes a receipt its own validator rejects.
+    #[test]
+    fn sha256_file_produces_a_digest_provenance_accepts() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("payload.bin");
+        let mut f = std::fs::File::create(&path).expect("create");
+        f.write_all(b"abc").expect("write");
+        drop(f);
+
+        let digest = sha256_file(&path).expect("hashes");
+        // The published SHA-256 of "abc".
+        assert_eq!(
+            digest,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(digest.len(), 64);
+        assert!(is_sha256(&digest), "must satisfy the receipt's own check");
+    }
+
+    #[test]
+    fn sha256_file_reports_a_missing_file_rather_than_a_digest() {
+        assert!(sha256_file(Path::new("/nonexistent/perf-025")).is_err());
+    }
 }

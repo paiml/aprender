@@ -52,13 +52,35 @@
 # `1024x1024`, `v1.8x` and a markdown table row as must-NOT-match controls.
 # Recorded, not blessed. Shrink-only from here.
 #
+#
+# MERGE RECORD 2026-08-29 (PERF-010 / #2742, merging #2763). Both branches
+# widened this guard independently and both recorded what the widening
+# revealed, so the two lists were reconciled against the MERGED tree rather
+# than concatenated. Net -8. Every line below is a live finding: the list is
+# exactly the sweep's output on this tree, which is the only reading under
+# which "known, must shrink" means anything.
+#
+# TEN ENTRIES WERE PAID DOWN OR RENUMBERED, none blessed:
+#
+#   6 DELETED. book/src/tools/apr-cli.md:81 and its Performance table at
+#     :89-93 -- a shipped chapter advertising `2.9x faster than Ollama` and a
+#     batched-throughput table this branch's own measurements disproved. #2763
+#     recorded them; PERF-050 removed them. Deletion beats recording.
+#   2 DELETED. dp4a_gemm.rs:10 and prefill.rs:537, rustdoc notes stating a
+#     llama.cpp ratio with no receipt, reaching users through `cargo doc`. The
+#     ratio was the only part removed -- the analysis around it stayed, because
+#     a withdrawal that reprints the figure leaves the figure on the page.
+#     prefill.rs:1043 and transformer/init.rs:7 are NOT of this class and stay
+#     recorded.
+#   2 MOVED, NOT ADDED. docs/benchmarking-gate-spec.md:235 -> :263 and
+#     :308 -> :336. Both are the spec quoting the fabricated `2.93× Ollama` in
+#     order to BAN it, both were already recorded by #2763, and neither line's
+#     TEXT changed: PERF-019 inserted §3.3.1 at line 162 and everything below
+#     slid 28 lines. The ratchet admits them as MOVES -- byte-identical text in
+#     the same file at the comparand, at the same occurrence count -- and names
+#     both in its verdict row. See (a2) in scripts/lib_baseline_ratchet.sh.
+#
 book/src/advanced-testing/popperian-falsification.md:44
-book/src/tools/apr-cli.md:81
-book/src/tools/apr-cli.md:89
-book/src/tools/apr-cli.md:90
-book/src/tools/apr-cli.md:91
-book/src/tools/apr-cli.md:92
-book/src/tools/apr-cli.md:93
 crates/apr-cli/src/commands/bench_safetensors.rs:123
 crates/apr-cli/src/commands/bench_safetensors.rs:124
 crates/apr-cli/src/commands/benchmark.rs:438
@@ -80,7 +102,6 @@ crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:37
 crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:38
 crates/aprender-gpu/src/kernels/gemv/mod.rs:14
 crates/aprender-gpu/src/kernels/quantize/dot/packed_dp4a.rs:32
-crates/aprender-gpu/src/kernels/quantize/dp4a_gemm.rs:10
 crates/aprender-gpu/src/kernels/quantize/q4k/batched.rs:1
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:15
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:16
@@ -96,7 +117,6 @@ crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:31
 crates/aprender-serve/src/cuda/executor/layers/par-062.rs:257
 crates/aprender-serve/src/cuda/executor/layers/prefill.rs:1043
-crates/aprender-serve/src/cuda/executor/layers/prefill.rs:537
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs:277
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:32
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:33
@@ -129,10 +149,10 @@ docs/BEATS.md:134
 docs/BEATS.md:65
 docs/BEATS.md:66
 docs/audits/dogfood-0.63.0-ledger.md:65
-docs/benchmarking-gate-spec.md:235
 docs/benchmarking-gate-spec.md:24
 docs/benchmarking-gate-spec.md:26
-docs/benchmarking-gate-spec.md:308
+docs/benchmarking-gate-spec.md:263
+docs/benchmarking-gate-spec.md:336
 docs/model-cards/albor-370m-v1.md:74
 docs/qa-cargo-run-example-conversion-minimize.md:128
 docs/qa/benchmark-matrix-2026-01-09.md:115

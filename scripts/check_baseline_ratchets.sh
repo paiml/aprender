@@ -60,8 +60,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 #   none  — not a ratchet by its own stated contract; the reason is the value.
 #   set-aperture
 #         — `set`, plus the ONE admission a widened guard needs (PERF-049): an
-#           added <path>:<line> whose line is BYTE-IDENTICAL at the comparand,
-#           in a diff that also changes the owning guard, named in the value.
+#           added <path>:<line> whose line PREDATES the comparand — byte-identical
+#           there, or MOVED and still present in the same file at no greater
+#           count — in a diff that also changes the owning guard, named in the
+#           value.
 #           Everything else is refused as `set` refuses it, and every admitted
 #           coordinate is printed. Without this the guard could never be
 #           widened at all: `check_no_claim_literals.sh` could not see the
@@ -305,6 +307,24 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
             # (a) PERF-028's laundering shape, which is the whole point: the
             # entry and its matching violation in one commit.
             ap_row 'aperture line REWRITTEN refuses'     1 "$AP_BASE" 'GUARD v2\n' 'a claim this branch just wrote\n'
+            # (a2), THE MOVE. PERF-019 inserted a 28-line subsection above two
+            # already-baselined claims in docs/benchmarking-gate-spec.md, and
+            # under coordinate-identity alone both became brand-new violations
+            # with no legal remedy. The claim did not change; only its line did.
+            ap_row 'aperture line MOVED down is admitted'  0 '# header\npre.md:2\n' 'GUARD v2\n' \
+                'a line inserted above it\nthe old claim, 2.93 times faster\n'
+            # ...and the hole (a2) could have opened, closed by counting: a
+            # launderer COPIES a baselined claim to a second site in the same
+            # file, where its text IS present at the comparand. The occurrence
+            # count is what tells the two apart. If this row goes green, (a2)
+            # buys a bookkeeping convenience at the price of the property
+            # PERF-028 exists to enforce.
+            ap_row 'aperture line DUPLICATED refuses'      1 '# header\npre.md:2\n' 'GUARD v2\n' \
+                'the old claim, 2.93 times faster\nthe old claim, 2.93 times faster\n'
+            # A MOVED line still needs the aperture to have moved: (a2) widens
+            # (a), it does not bypass (b).
+            ap_row 'aperture MOVED without a guard edit refuses' 1 '# header\npre.md:2\n' 'GUARD v1\n' \
+                'a line inserted above it\nthe old claim, 2.93 times faster\n'
             ap_row 'aperture file absent at comparand'   1 '# header\nfresh.md:1\n' 'GUARD v2\n' 'the old claim, 2.93 times faster\n'
             ap_row 'aperture line past end of file'      1 '# header\npre.md:9\n'  'GUARD v2\n' 'the old claim, 2.93 times faster\n'
             ap_row 'aperture non-coordinate refuses'     1 '# header\nnot-a-coordinate\n' 'GUARD v2\n' 'the old claim, 2.93 times faster\n'

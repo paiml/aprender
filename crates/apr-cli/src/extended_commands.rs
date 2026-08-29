@@ -1733,6 +1733,106 @@ pub enum LlmSubcommand {
         /// refused.
         #[arg(long)]
         prompts: Option<PathBuf>,
+
+        // ------------------------------------------------------------------
+        // PERF-025 — the APR-PERF-GATE-001 v2.2 §4.4 conformant mode.
+        //
+        // PERF-024 shipped the conformant protocol and PERF-026 the receipt
+        // producer, and nothing called either: this subcommand still ran
+        // `LoadTest::run`, whose termination rule is "stop after --duration
+        // seconds" with no minimum sample count, no warmup-then-quiesce, no
+        // drain accounting and no tokenization block. A conformant protocol
+        // nothing can reach measures nothing.
+        //
+        // A MODE, NOT A SIBLING SUBCOMMAND: PERF-009 says one benchmarking
+        // entrypoint, and this drives the same LlmClient the legacy mode does.
+        //
+        // NOTE THE ABSENCE OF `--band-duration`. The 60 s wall-clock floor and
+        // the max(30, 8c) sample floor are the entire difference between a
+        // load test and a measurement, and a flag that shrinks them is the
+        // shortest path back to a gate that cannot fail. The only knob is
+        // --replicates, and going below the spec's N=3 is stated on stdout
+        // rather than silently accepted.
+        // ------------------------------------------------------------------
+        /// Run the §4.4-conformant band protocol and write receipts
+        /// `scripts/perf_gate.sh` can judge.
+        ///
+        /// Closed-loop at fixed concurrency, `2 x c` warmup requests, a 5 s
+        /// quiesce, then a window that closes only when BOTH `max(30, 8 x c)`
+        /// samples and 60 s of wall-clock have elapsed — whichever bound is
+        /// satisfied last. Ignores --warmup, --duration, --runs and --cooldown,
+        /// which are the legacy mode's knobs.
+        ///
+        /// The legacy mode's server-lifecycle and comparison flags are REFUSED
+        /// rather than ignored here. `apr serve --gpu` accepting a flag it
+        /// silently drops is one of this project's named adoption killers, and
+        /// a `--band --output report.json` that produced no report — or a
+        /// `--start` that never started anything and then failed a confusing
+        /// health check — would be the same defect in the tool that exists to
+        /// catch it. The band mode's report IS `--receipt`.
+        #[arg(
+            long,
+            requires = "receipt",
+            conflicts_with_all = ["start", "output", "baseline", "fail_on_regression"]
+        )]
+        band: bool,
+        /// Directory receiving `receipt.rN.json` and the gzipped JSONL samples.
+        #[arg(long)]
+        receipt: Option<PathBuf>,
+        /// Concurrency levels for --band. Arm A needs `c=1` to be present.
+        #[arg(long, default_value = "1,4,8,16")]
+        bands: String,
+        /// Full band replicates per cell (spec: N=3). Each replicate writes its
+        /// own independently judgeable receipt.
+        #[arg(long, default_value_t = commands::test_llm_band::default_replicates())]
+        replicates: usize,
+        /// Workload identifier recorded in the receipt.
+        #[arg(long, default_value = "W1", value_parser = ["W1", "W2"])]
+        workload: String,
+        /// Join key: which machine measured. Required by the receipt schema.
+        #[arg(long, required_if_eq("band", "true"), default_value = "")]
+        host: String,
+        /// Join key: which accelerator served the request.
+        #[arg(long, required_if_eq("band", "true"), default_value = "")]
+        accelerator: String,
+        /// Join key: which quantization the served model uses.
+        #[arg(long, required_if_eq("band", "true"), default_value = "")]
+        quantization: String,
+        /// The dispatch path the SERVER took — not the hardware present.
+        #[arg(long, default_value = "unknown",
+              value_parser = ["cpu", "cuda", "metal", "wgpu", "unknown"])]
+        compute_class: String,
+        /// A build feature of the SERVER, repeatable.
+        ///
+        /// Never defaulted from this client's own features: `bench_receipt.py`
+        /// uses it to refuse a compute_class the build cannot reach, and
+        /// pointing that check at the measuring binary instead of the measured
+        /// one would make it read green while checking nothing.
+        #[arg(long = "server-feature")]
+        server_features: Vec<String>,
+        /// How tokens were counted (§4.4.6). Absence of a valid value is fatal.
+        #[arg(long, default_value = "server_usage",
+              value_parser = ["server_usage", "client_tokenizer"])]
+        tokenization: String,
+        /// Tokenizer digest, required when --tokenization client_tokenizer.
+        #[arg(long)]
+        tokenizer_sha256: Option<String>,
+        /// Whether the token counts include special tokens (§4.4.6).
+        #[arg(long)]
+        counts_special_tokens: bool,
+        /// Whether the token counts include the echoed prompt (§4.4.6).
+        #[arg(long)]
+        counts_prompt_echo: bool,
+        /// Commit under measurement, for the release staleness arm.
+        #[arg(long)]
+        commit: Option<String>,
+        /// Who owes the comparator measurement this producer refuses to invent.
+        ///
+        /// §4.7.1: every cell is NOT_APPLICABLE or UNMEASURED here, never a
+        /// ratio. A ratio needs a baseline receipt (I-3) and a comparator lane
+        /// driven by this same binary (I-15); one lane cannot produce one.
+        #[arg(long, default_value = "perf-gate")]
+        comparator_owner: String,
     },
 }
 

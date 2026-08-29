@@ -5,6 +5,7 @@
 #
 #   bash scripts/check_perf_claims_cite_receipts.sh            # gate
 #   bash scripts/check_perf_claims_cite_receipts.sh --selftest # case table
+#   bash scripts/check_perf_claims_cite_receipts.sh --explain   # rule + debt map
 #   bash scripts/check_perf_claims_cite_receipts.sh --update   # re-baseline
 #
 # THE RULE IT ENFORCES (§3.2, verbatim):
@@ -67,6 +68,23 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
 BASELINE="scripts/perf_claim_citation_baseline.txt"
+
+# ARGUMENT VALIDATION, BEFORE ANY WORK. Every mode below is selected by an
+# equality test against "${1:-}", so before this case existed a typo fell
+# through every one of them and ran the DEFAULT GATE. `--self-test` (the
+# spelling check_gate5_stage.sh uses), `--selftests`, `--updated` — each of
+# those silently ran the ratchet and exited 0, and a caller who believed they
+# had run the case table would have been told PASSED by a mode that never
+# executed a single case. A guard that answers a question it was not asked is
+# the same defect class as a guard that cannot fail.
+case "${1:-}" in
+    ''|--selftest|--update|--explain) : ;;
+    *)
+        printf 'unknown arg: %s\n' "$1" >&2
+        printf 'usage: check_perf_claims_cite_receipts.sh [--selftest|--explain|--update]\n' >&2
+        exit 2
+        ;;
+esac
 
 # ---------------------------------------------------------------- patterns --
 # A SPEED COMPARISON: a ratio bound to a word that means "in less time".
@@ -271,6 +289,46 @@ for rel in "${SRC[@]}"; do
     [ -n "$r" ] && records="${records}${r}"$'\n'
 done
 records=$(printf '%s' "$records" | grep -v '^$' || true)
+
+# ----------------------------------------------------------------- explain --
+# The gate answers "may this land?". --explain answers "what do I do about it?",
+# which is a different question and the one an engineer paying the ratchet down
+# actually has. It prints the rule, the mechanical definition of a citation, and
+# the debt ranked BY FILE — because the work is per-file (open it, find the run
+# that produced the number, cite it) and a flat 146-line list sorted by path
+# hides that 30 files carry it and a handful carry most.
+#
+# It reuses the same scan as the gate rather than describing it. A help text
+# that paraphrases the implementation drifts from it, and the drift is invisible
+# precisely because nothing executes the prose.
+if [ "${1:-}" = "--explain" ]; then
+    printf '\nTHE RULE (APR-PERF-GATE-001 v2.2 section 3.2)\n'
+    printf '  A number in README.md, book/ or docs/ is legal iff it cites an\n'
+    printf '  evidence/ receipt path. This guard enforces it for the class that is\n'
+    printf '  allowed to exist at all: a speed comparison naming no competitor.\n'
+    printf '  A comparator ratio is illegal regardless of citation and is deleted\n'
+    printf '  by check_no_claim_literals.sh instead -- the two are disjoint, so a\n'
+    printf '  line never carries two contradictory remedies.\n'
+    printf '\nWHAT COUNTS AS A CITATION\n'
+    printf '  A token matching evidence/<path>, within %s lines either side of the\n' "$WINDOW"
+    printf '  claim, WHICH RESOLVES TO A FILE THAT EXISTS. A dangling citation is\n'
+    printf '  worse than none -- it buys trust with a file nobody can open -- so it\n'
+    printf '  fails even at a baselined location.\n'
+    printf '\nTHE THREE WAYS TO CLEAR A LINE\n'
+    printf '  1. cite it   add the evidence/ path of the run that produced it\n'
+    printf '  2. delete it if no run produced it, it is not a measurement\n'
+    printf '  3. re-word   if it is a TARGET, say so; a bar needs no receipt\n'
+    printf '\nDEBT BY FILE (uncited speed comparisons, worst first)\n'
+    if [ -n "$records" ]; then
+        printf '%s\n' "$records" | awk -F: '$3=="uncited"{print $1}' \
+            | LC_ALL=C sort | uniq -c | LC_ALL=C sort -rn \
+            | awk '{printf "  %5d  %s\n", $1, $2}'
+    else
+        printf '  none\n'
+    fi
+    printf '\n  %s total\n\n' "$(printf '%s\n' "$records" | grep -c . || true)"
+    exit 0
+fi
 
 if [ "${1:-}" = "--update" ]; then
     {

@@ -534,7 +534,7 @@ impl CudaExecutor {
 
     /// PMAT-051: Multi-prompt batched prefill — read weights once for all prompts.
     ///
-    /// Five-Whys: c=4 TTFT = 256ms (10.7x vs llama.cpp 24ms).
+    /// Five-Whys: c=4 TTFT = 256ms.
     /// Why? 4 sequential prefills × 59ms = 236ms.
     /// Why? Each prefill reads all weights (3 GB FP16) independently.
     /// Why? prefill_and_scatter loops over prompts, calling run_prefill per slot.

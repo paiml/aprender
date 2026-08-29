@@ -18,6 +18,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MATRIX="$ROOT/scripts/perf-matrix.yaml"
+# THE SCHEMA MAP (PERF-004). Every field below is classified there as PRODUCED,
+# DERIVED, POLICY or UNMEASURED, and the UNMEASURED entries carry an owning
+# ticket. Arm C reads it so an absent field is reported as the instrumentation
+# gap it is -- "drain_ms absent: the drain rule is not implemented in any
+# client (§4.4.7, owner PERF-004)" -- rather than as a schema error, which
+# names nothing and leaves the reader to guess whether the fix is a converter
+# or a measurement.
+FIELDS="$ROOT/scripts/perf-receipt-fields.yaml"
 
 die() { printf 'perf_gate: %s\n' "$*" >&2; exit 2; }
 
@@ -27,24 +35,61 @@ die() { printf 'perf_gate: %s\n' "$*" >&2; exit 2; }
 
 arm_c_integrity() {
   local receipt="$1" rc=0
-  python3 "$ROOT/scripts/lib/bench_receipt.py" "$receipt" >/dev/null 2>&1 \
-    || { echo "FAIL ArmC schema: bench_receipt.py rejected the receipt"; rc=1; }
-  python3 - "$receipt" <<'PY' || rc=1
-import json,sys
+  # The delegate's errors are PRINTED, not swallowed. They used to go to
+  # /dev/null behind "bench_receipt.py rejected the receipt", so the one line a
+  # reader got named neither the field nor the rule -- and every real artifact
+  # in the tree fails here, so that line was the whole diagnosis.
+  local schema_out
+  if ! schema_out="$(python3 "$ROOT/scripts/lib/bench_receipt.py" "$receipt" 2>&1)"; then
+    printf 'FAIL ArmC schema: %s\n' "$schema_out"
+    rc=1
+  fi
+  python3 - "$receipt" "$FIELDS" <<'PY' || rc=1
+import json,sys,yaml
 r=json.load(open(sys.argv[1]))
+fielddoc=yaml.safe_load(open(sys.argv[2])) or {}
+ledger=fielddoc.get("fields") or {}
+
+def why(field):
+    """The instrumentation gap behind an absent field, with its owner.
+
+    A gate that says 'absent' has told the reader the shape of the receipt. A
+    gate that says WHAT WOULD HAVE TO BE BUILT and WHO OWNS IT has told them
+    the shape of the work. The five fields that made every real artifact fail
+    here split two ways -- two derivable, three unmeasured -- and only this
+    lookup makes the difference visible at the point of failure.
+    """
+    e=ledger.get(field) or {}
+    if e.get("class")!="UNMEASURED":
+        return ""
+    needs=" ".join((e.get("needs") or "").split())
+    return f" -- {needs} ({e.get('spec')}, owner {e.get('owner')})"
+
 bad=[]
 req,comp=r.get("requested"),r.get("completed")
 if req is None or comp is None or req!=comp:
-    bad.append(f"completed({comp}) != requested({req})")
-if r.get("timeouts",0)!=0:
+    bad.append(f"completed({comp}) != requested({req}){why('completed')}")
+if r.get("timeouts") is None:
+    bad.append(f"timeouts absent{why('timeouts')}")
+elif r.get("timeouts")!=0:
     bad.append(f"timeouts={r.get('timeouts')} (fatal to this host's ratio)")
 if not (r.get("tokenization") or {}).get("method"):
-    bad.append("tokenization.method absent")
+    bad.append(f"tokenization.method absent{why('tokenization.method')}")
 if r.get("drain_ms") is None:
-    bad.append("drain_ms absent")
+    bad.append(f"drain_ms absent{why('drain_ms')}")
 for b in (r.get("bands") or []):
     if b.get("tokens_total",1)==0:
         bad.append(f"band {b.get('concurrency')}: zero-token response is a failure, not a fast request")
+    # THE OTHER SIDE OF THE RATIO. Arm C asserts completed == requested on the
+    # SUBJECT and never looked at the comparator, whose tok/s counts tokens
+    # from successful requests only over the same wall clock -- so every
+    # request the comparator loses lowers the denominator and flatters us.
+    # Reported, not failed: the comparator's loss rate has no committed
+    # threshold, and inventing one here is the defect this gate exists to stop.
+    cr,cc=b.get("comparator_requested"),b.get("comparator_completed")
+    if cr is not None and cc is not None and cc!=cr:
+        print(f"REPORT ArmC c={b.get('concurrency')} comparator completed {cc}/{cr} "
+              f"-- its lost requests lower the denominator of agg_ratio")
 for m in bad: print(f"FAIL ArmC {m}")
 sys.exit(1 if bad else 0)
 PY
@@ -449,6 +494,14 @@ with open(sys.argv[1], "w") as fh:
   _case baseline_healthy               "$OK" pass
   _case completed_lt_requested         "${OK/\"completed\":16/\"completed\":15}" fail
   _case a_timeout_is_fatal             "${OK/\"timeouts\":0/\"timeouts\":1}" fail
+  # AN ABSENT COUNTER IS NOT A ZERO COUNTER. This read `r.get("timeouts",0)`,
+  # so a receipt that never counted timeouts was indistinguishable from one
+  # that counted none -- and no producer in this tree counts them at all
+  # (loadtest.rs collapses every failure to one `failed` tally), so the default
+  # was doing all the work on every real artifact. That is the same shape as a
+  # missing measurement reading as a passing one, which is what this gate is
+  # for.
+  _case timeouts_absent_is_not_zero    "${OK/\"timeouts\":0,/}" fail
   _case tokenization_absent            "${OK/\"method\":\"hf-tokenizers\"/\"method\":\"\"}" fail
   _case drain_ms_absent                "${OK/\"drain_ms\":12/\"drain_ms\":null}" fail
   # THIS ROW WAS GREEN FOR THE WRONG REASON (PERF-047). The old substitution

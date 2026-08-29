@@ -199,7 +199,7 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
 /// A file overrides the profile; an unknown profile name is rejected rather
 /// than quietly falling back to a default, since a silent substitution changes
 /// the workload the report then claims to have run.
-fn resolve_prompts(profile: &str, file: Option<&Path>) -> Result<Vec<ChatRequest>> {
+pub(crate) fn resolve_prompts(profile: &str, file: Option<&Path>) -> Result<Vec<ChatRequest>> {
     if let Some(p) = file {
         return load_prompts_from_file(p)
             .map_err(|e| CliError::InvalidFormat(format!("prompt corpus {e}")));
@@ -213,7 +213,7 @@ fn resolve_prompts(profile: &str, file: Option<&Path>) -> Result<Vec<ChatRequest
 }
 
 /// One line naming the workload, so the report is self-describing.
-fn describe_workload(profile: &str, file: Option<&Path>, count: usize) -> String {
+pub(crate) fn describe_workload(profile: &str, file: Option<&Path>, count: usize) -> String {
     match file {
         Some(p) => format!("{} prompt(s) from {}", count, p.display()),
         None => format!("profile {profile} ({count} prompt(s))"),
@@ -379,4 +379,133 @@ mod tests {
         let p = Path::new("/tmp/x.json");
         assert!(describe_workload("medium", Some(p), 7).contains("x.json"));
     }
+}
+
+// ===========================================================================
+// PERF-025 — routing `apr test llm <SUB>`.
+//
+// The arm lives HERE rather than inline in `dispatch_analysis.rs`'s match.
+// That router was already at cognitive 24 against a threshold of 25, so adding
+// the band branch inline tipped it over; moving the whole arm out puts the
+// routing next to the two functions it routes to and leaves the router simpler
+// than it was.
+// ===========================================================================
+use crate::LlmSubcommand;
+
+/// Route `apr test llm <SUB>` (GH-876 Milestone 2; PERF-025 band mode).
+///
+/// # Errors
+/// Propagates whichever mode ran.
+pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
+    match command {
+        LlmSubcommand::Bench { band, .. } if *band => rt.block_on(dispatch_band(command)),
+        LlmSubcommand::Bench { .. } => rt.block_on(dispatch_legacy(command)),
+    }
+}
+
+/// TWO MODES, ONE ENTRYPOINT — the §4.4-conformant one.
+///
+/// `--band` selects PERF-024's `run_band`, which until PERF-025 was called by
+/// nothing outside its own tests.
+async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
+    let LlmSubcommand::Bench {
+        url,
+        model,
+        stream,
+        profile,
+        prompts,
+        receipt,
+        bands,
+        replicates,
+        workload,
+        host,
+        accelerator,
+        quantization,
+        compute_class,
+        server_features,
+        tokenization,
+        tokenizer_sha256,
+        counts_special_tokens,
+        counts_prompt_echo,
+        commit,
+        comparator_owner,
+        ..
+    } = command;
+    // Unreachable: clap's `requires = "receipt"` enforces it. Stated rather
+    // than unwrapped, because a receipt-less band run would measure for
+    // minutes and then discard the measurement.
+    let receipt = receipt
+        .as_deref()
+        .ok_or_else(|| CliError::InvalidInput("--band requires --receipt <DIR>".to_string()))?;
+    super::test_llm_band::run_bands(super::test_llm_band::BandArgs {
+        url,
+        model,
+        bands,
+        replicates: *replicates,
+        receipt,
+        workload,
+        host,
+        accelerator,
+        quantization,
+        compute_class,
+        server_features,
+        tokenization,
+        tokenizer_sha256: tokenizer_sha256.as_deref(),
+        counts_special_tokens: *counts_special_tokens,
+        counts_prompt_echo: *counts_prompt_echo,
+        commit: commit.as_deref(),
+        stream: *stream,
+        profile,
+        prompts: prompts.as_deref(),
+        comparator_owner,
+    })
+    .await
+}
+
+/// The pre-existing `LoadTest::run` lifecycle, unchanged.
+///
+/// Its termination rule is not touched: a great deal of tooling reads
+/// `LoadTestResult`, and changing when the run stops underneath those readers
+/// would silently change every number they have ever recorded.
+async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
+    let LlmSubcommand::Bench {
+        url,
+        model,
+        start,
+        health_timeout,
+        warmup,
+        duration,
+        concurrency,
+        runs,
+        cooldown,
+        runtime_name,
+        baseline,
+        fail_on_regression,
+        output,
+        stream,
+        profile,
+        prompts,
+        ..
+    } = command;
+    run_bench(BenchArgs {
+        url,
+        model,
+        start: start.as_deref(),
+        health_timeout: *health_timeout,
+        warmup: *warmup,
+        duration: *duration,
+        concurrency: *concurrency,
+        runs: *runs,
+        cooldown: *cooldown,
+        runtime_name,
+        baseline: baseline.as_deref(),
+        fail_on_regression: *fail_on_regression,
+        output: output.as_deref(),
+        stream: *stream,
+        profile,
+        prompts: prompts.as_deref(),
+    })
+    .await
 }
