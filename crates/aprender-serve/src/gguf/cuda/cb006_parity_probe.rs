@@ -111,6 +111,20 @@ impl OwnedQuantizedModelCuda {
             self.executor.batched_kv_lengths().first().copied()
         );
 
+        // The dead-slot mask is process-global and is refreshed LATER in batched_decode_step,
+        // so a probe that runs before that point inherits the PREVIOUS batch's mask. On the
+        // second request that mask is [true], which sets seq_lens[0] = 0, and the attention
+        // kernel's online softmax then divides by a sum_exp that never accumulated: 1/0 = inf,
+        // 0 * inf = NaN, and all 151936 logits come back non-finite. That was observed, and it
+        // was the PROBE's artifact rather than a production fault -- batched_decode_step always
+        // refreshes the mask before its own forward. The probe now sets it too, so its reading
+        // does not depend on where in the step it is called from.
+        //
+        // Worth recording even so: seq_len == 0 is undefended in that kernel, so any future
+        // caller that runs batched attention without refreshing the mask gets NaN rather than
+        // an error.
+        self.executor.set_batched_done_mask(&state.done);
+
         // 1. The batched path, twice — SELF control.
         let batched = match self
             .executor
