@@ -622,6 +622,55 @@ falsification_tests:
     apply.rs is exactly where the oracle's QKV phase lives. The q/k/v snapshot was
     taken where those tensors are CONSUMED instead, at the entry of
     workspace_attention_residual_phase in phase_attention.rs, which is clean.
+
+    ROUND 9 (PERF-050 cont., apr 0.64.0 (bf0ca8249), RTX 4090). FALSIFY-CB-006
+    GREEN for the first time.
+
+    The missing QKV bias was implemented on the graph path: OpParams gains
+    bias_ptr/bias_len (0 = none, so unset nodes are unchanged), build_layer_graph
+    sets them on the three QKV MulMat nodes, and dispatch_mul_mat applies
+    batched_bias_broadcast_add after the GEMM, where apply.rs applies its own.
+
+    Layer 0 now AGREES between the two implementations, in one binary via
+    APR_GRAPH_NO_BIAS:
+
+      bias omitted   q 81.83   k -23.70    v 3.52     ORACLE argmax 40    cosine 0.701156
+      bias applied   q 232.8146 k 1437.7718 v 5.812629 ORACLE argmax 13552 cosine 0.999987
+
+    and the oracle's own values are q 232.814592, k 1437.771832, v 5.812629 --
+    agreement to six or seven significant figures, with the batched argmax landing
+    on the oracle's 13552. Residual max|d| 0.0867 on logits of absmax ~14 is
+    kernel-level float difference between two GEMV implementations, not structure.
+
+    ROUND 8'S FAILED PREDICTION WAS MY OWN EXTRACTION ERROR, and the correction
+    matters more than the original claim. Round 8 reported that
+    (oracle_v - graph_v) did not equal attn_v.bias and concluded the bias was "not
+    the whole explanation". The oracle column in that table was the STARTUP
+    PARITY-GATE forward, not the probe's oracle -- the same five-lines-not-two trap
+    round 8 identified for o_layer_input and failed to propagate to q/k/v. Measured
+    correctly: graph V with bias minus graph V without bias is
+    [-0.000372, -0.015625], which is attn_v.bias exactly. The bias WAS the whole
+    projection difference.
+
+    CB-006 GREEN, canonical probe, exit 0:
+
+      APR_STREAM_LEGACY=1 CUBLAS_GEMM_THRESHOLD=32, 120-token cap
+      batched path PROVEN engaged: max batch m=2 -- all slots OK
+      batched path PROVEN engaged: max batch m=4 -- all slots OK
+      FALSIFY-CB-006 GREEN: every batched output matches the m=1 reference
+
+    TWO CONDITIONS REMAIN BEFORE IT IS GREEN BY DEFAULT, and both are named:
+
+      - APR_STREAM_LEGACY=1 pins the #2767 race, which is diagnosed and unrepaired.
+      - CUBLAS_GEMM_THRESHOLD=32 keeps m>=4 off the cuBLAS decode route. With the
+        default threshold of 4, c=2 PASSES and c=4 DIVERGES -- and the c=4 output
+        is coherent English on a different continuation
+        ('Compilers are programs that take high-le' against the reference
+        'Compilers are software programs that tra'), not garbage. use_cublas fires
+        at m>=4 and not at m=2, which is exactly the boundary observed. That points
+        at precision or correctness in cublas_prefill_gemm on the decode path and
+        wants its own ticket; it is a different class from the three structural
+        defects this epic fixed.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
