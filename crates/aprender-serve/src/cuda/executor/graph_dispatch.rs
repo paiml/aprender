@@ -62,7 +62,16 @@ impl KernelDispatch for CudaExecutor {
         // reached, blk.0.attn_v, was dequantized with the Q4_K kernel and produced absmax 4.9e8
         // with 47 of 256 values non-finite, which became NaN across the whole layer and the
         // constant-token output of aprender#2753.
-        let qtype = Self::qtype_from_ggml(node.params.weight_qtype);
+        // APR_GRAPH_QTYPE_HARDCODE=1 restores the pre-fix behaviour so the two can be compared
+        // in ONE binary. Comparing across two builds was tried and could not be attributed:
+        // apr-cli embeds the git SHA via its build script, and in this worktree the binary kept
+        // reporting a stale SHA after HEAD moved, so `apr --version` could not identify which
+        // source a given artifact came from.
+        let qtype = if std::env::var("APR_GRAPH_QTYPE_HARDCODE").as_deref() == Ok("1") {
+            crate::cuda::types::WeightQuantType::Q4K
+        } else {
+            Self::qtype_from_ggml(node.params.weight_qtype)
+        };
 
         // PMAT-295: Use inline Q8 DP4A GEMV when enabled.
         // Single kernel launch (Q8 quantize fused into DP4A) for M=2-4 Q4K.
