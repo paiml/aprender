@@ -283,6 +283,63 @@ falsification_tests:
     attention kernel from suspicion to a one-line fix. It needs
     batched_kv_stride temporarily zeroed around the call, exactly as
     add_slot_to_batch already does, so the M=1 path reads the single cache.
+
+    ROUND 3 (PERF-050 cont., apr 0.64.0 (f3a4f3473), RTX 4090). The instrument
+    was built: APR_PARITY_PROBE=1 runs forward_batched_to_logits and the M=1
+    oracle forward_all_layers_gpu_to_logits on one post-prefill state at m=1.
+
+    A RESULT WAS WITHDRAWN FIRST. The probe initially ran at the top of
+    batched_decode_step, before embed_buf is written, so both paths were fed the
+    all-zero buffer batched_setup_and_prefill allocates. RMSNorm on a zero vector
+    is rsqrt(0) = inf and 0 * inf = NaN, so every layer came back all-NaN and the
+    "oracle divergence" it reported was two ways of mishandling a degenerate
+    input. Neither the SELF nor the PERTURBED control could catch it -- both pass
+    whether or not the input means anything. What caught it was the per-layer
+    trace: NaN at layer 0 cannot coexist with the finite logits the same probe had
+    just printed. The probe now refuses to report on an all-zero embedding.
+
+    With the probe moved after the embedding, on the real decode input, all
+    controls passing (SELF identical, SENSITIVE and PERTURBED diverging, input
+    non-degenerate):
+
+      ORACLE  batched argmax 15 vs oracle 13552, cosine 0.719427, both finite.
+
+    The M=1 oracle returns argmax 13552 on every request and every configuration
+    tried, so the prompt, the KV cache and prefill are fixed points; only the
+    batched forward moves. CB-006's residue is IN THE BATCHED FORWARD, downstream
+    of a KV cache and a prefill that round 2 proved correct.
+
+    Three further facts about it, each with the controls passing:
+
+      - all-NaN on the SECOND batched request, from the identical input and KV
+        state that produced finite logits on the first, while the oracle returns
+        the identical answer both times;
+      - all-NaN for a sign-flipped embedding of the same magnitude;
+      - under CUBLAS_GEMM_THRESHOLD=1 the SELF control FAILS at cosine 0.104724.
+        The batched forward, run twice on the same input and the same state,
+        returns completely different logits.
+
+    That last one is the mechanism class. A forward pass that is not a function of
+    its inputs is reading state that changes between invocations, and that is why
+    every component-level test in round 2 passes: each runs ONE kernel ONCE with
+    explicit synchronization, which is exactly the condition under which such a
+    defect is invisible. It also subsumes the round-2 allocation-size lead, where
+    two configurations with identical GEMM routing differed only in how much VRAM
+    the KV cache took and produced different output.
+
+    One sub-hypothesis was checked and REFUTED by reading rather than left as
+    suspicion: cuBLAS is bound to the executor's own stream
+    (ensure_cublas does handle.set_stream(&self.stream)), so this is not a naive
+    stream mismatch of the CORRECTNESS-012b kind.
+
+    WHAT WOULD SETTLE IT NEXT. The question is now narrow and mechanical: which
+    buffer does the batched forward read that differs between two identical
+    invocations? The probe already runs the forward twice in-process, so bisecting
+    it means dumping each stage's inputs (not just hidden_buf2) on both runs and
+    finding the first stage whose INPUT differs -- lazily populated FP8/FP16/
+    interleaved conversion caches and the cuBLAS workspace are the candidates
+    that exist only on the second call. APR_LAYER_TRACE=1 already reports the
+    per-layer hidden state and would be extended to q/k/v and the FFN scratch.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
