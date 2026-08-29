@@ -1177,8 +1177,7 @@ impl ScoreCalculator {
     fn find_files(&self, pattern: &str) -> usize {
         let full_pattern = self.root.join(pattern);
         glob(full_pattern.to_string_lossy().as_ref())
-            .map(|paths| paths.filter_map(Result::ok).count())
-            .unwrap_or(0)
+            .map_or(0, |paths| paths.filter_map(Result::ok).count())
     }
 
     /// Generate recommendations from category scores

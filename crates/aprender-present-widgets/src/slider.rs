@@ -310,14 +310,12 @@ impl Widget for Slider {
             } => {
                 self.dragging = false;
             }
-            Event::MouseMove { position } => {
-                if self.dragging {
-                    let normalized = self.value_from_x(position.x);
-                    let old_value = self.value;
-                    self.set_from_normalized(normalized);
-                    if (self.value - old_value).abs() > f32::EPSILON {
-                        return Some(Box::new(SliderChanged { value: self.value }));
-                    }
+            Event::MouseMove { position } if self.dragging => {
+                let normalized = self.value_from_x(position.x);
+                let old_value = self.value;
+                self.set_from_normalized(normalized);
+                if (self.value - old_value).abs() > f32::EPSILON {
+                    return Some(Box::new(SliderChanged { value: self.value }));
                 }
             }
             _ => {}

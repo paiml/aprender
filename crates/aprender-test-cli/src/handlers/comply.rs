@@ -357,9 +357,9 @@ pub fn check_c002_console_errors() -> ComplianceResult {
 pub fn check_c003_custom_elements(path: &Path) -> ComplianceResult {
     let html_files = find_html_files_in_dir(path);
     let has_custom_elements = html_files.iter().any(|f| {
-        std::fs::read_to_string(f)
-            .map(|content| content.contains("customElements.define") || content.contains("<wasm-"))
-            .unwrap_or(false)
+        std::fs::read_to_string(f).is_ok_and(|content| {
+            content.contains("customElements.define") || content.contains("<wasm-")
+        })
     });
 
     if has_custom_elements {

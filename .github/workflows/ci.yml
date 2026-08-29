@@ -1021,12 +1021,22 @@ jobs:
       # perf_gate.sh:326 requires four, so every release sweep would report
       # exit=2 forever — a usage error indistinguishable from a real regression.
       #
-      # What this DOES buy: the 17-case selftest genuinely discriminates
-      # (disabling the B1 aggregate floor drops it to 15 passed, 2 broken), so a
+      # What this DOES buy: the 29-case selftest genuinely discriminates
+      # (disabling the B1 aggregate floor drops it to 27 passed, 2 broken;
+      # unwiring the §4.9.1 signature arm drops it to 23 passed, 6 broken), so a
       # gate that silently stops discriminating now fails here rather than
       # certifying a release later.
       - name: Perf gate can still discriminate (APR-PERF-GATE-001, case table)
         run: bash scripts/perf_gate.sh --selftest
+      # PERF-007, the HOST half of §4.9.1. `perf_gate.sh --selftest` already
+      # runs this table, but check_guards_are_wired.sh cannot see one level of
+      # indirection and its remedy for an unwired guard is to wire it, not to
+      # baseline it. Named here so the signer's refusals — it will not sign
+      # another host's receipt, will not sign a receipt with no commit, will not
+      # mint a key — are executed by a workflow and not merely by a script that
+      # a workflow happens to call.
+      - name: Receipt signer refuses what it must (PERF-007, case table)
+        run: bash scripts/perf_receipt_sign.sh --selftest
       # The threshold rule is DERIVED, and the rule it replaced is falsified by
       # execution on every run rather than by a comment. 3-sigma pooled does not
       # catch the one regression on record (#2675).
@@ -1043,6 +1053,26 @@ jobs:
       # the label of a performance result (#2677).
       - name: Benchmark fairness protocol is complete
         run: bash scripts/check_bench_protocol.sh
+      # aprender#2737: the pin declared batch_size = 1 while TWO other places
+      # retyped `-b 1` independently of it and a third declared
+      # context_length/threads that no execution ever read. `-b 1` does not tune
+      # llama.cpp, it switches its batching OFF -- measured on gx10 against the
+      # pinned build, the c=16 aggregate went 434.2 -> 181.9 tok/s while c=1
+      # moved 0.3%, which took the ratio this epic exists to compute from 2.03x
+      # to 4.85x in apr's favour. A handicapped denominator is not a benchmark.
+      # This asserts the declaration is the ONLY source of the comparator's
+      # knobs, in both directions.
+      #
+      # It lives HERE, and not in nightly-bench.yml where it was first wired,
+      # because it is a static consistency check over committed files: it needs
+      # no bench hardware, no model, and no receipt, so a PR can and must fail
+      # it. It was wired into the nightly lane only because the change that
+      # added it was barred from editing ci.yml.
+      #
+      # No separate --self-test step: this guard has no such flag, it runs its
+      # own 13-row mutation table in front of the verdict on EVERY invocation.
+      - name: Comparator flags match the declaration
+        run: bash scripts/check_comparator_flags.sh
       # The deepest check in the surface sweep -- real generation through
       # /v1/chat/completions -- had never executed once: the probe binary was
       # built without --features llm (clap advertises `llm` regardless, only the

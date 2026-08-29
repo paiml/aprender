@@ -356,9 +356,7 @@ fn calculate_tdg_fallback(path: &Path) -> Option<f64> {
             .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
             .take(10)
             .any(|e| {
-                std::fs::read_to_string(e.path())
-                    .ok()
-                    .is_some_and(|content| content.contains("#[test]"))
+                std::fs::read_to_string(e.path()).is_ok_and(|content| content.contains("#[test]"))
             });
 
     if !has_tests {

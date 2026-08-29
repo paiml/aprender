@@ -145,7 +145,7 @@ pub fn format_comparison_text(report: &ComparisonReport) -> String {
 
     output.push_str(&format!(
         "{:<25} {:>12} {:>12} {:>8}\n",
-        "Metric", &report.report_a_name, &report.report_b_name, "Winner"
+        "Metric", report.report_a_name, report.report_b_name, "Winner"
     ));
     output.push_str(&format!("{}\n", "─".repeat(60)));
 

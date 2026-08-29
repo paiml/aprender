@@ -105,6 +105,58 @@ fn chat_gen_params(
     (max_tokens, temperature, eos_token_id)
 }
 
+/// EOS stop tokens for a chat request, honouring `ignore_eos` (PERF-039).
+///
+/// Every decode loop in the tree stops on `config.stop_tokens.contains(&next)`,
+/// so an EMPTY `stop_tokens` already means "never stop on a token" — the engine
+/// mechanism for ignore-EOS existed before this function did. What was missing
+/// was any way for a client to ask for it: `ignore_eos` had no wire
+/// representation at all, on either side.
+///
+/// APR-PERF-GATE-001 v2.2 §4.3.1 pins W1 at `max_tokens = 128` with ignore-EOS
+/// precisely so the work per band is fixed. `max_tokens` still bounds the loop,
+/// so `ignore_eos` cannot produce an unbounded generation.
+fn chat_stop_tokens(request: &ChatCompletionRequest, eos_token_id: u32) -> Vec<u32> {
+    if request.ignore_eos.unwrap_or(false) {
+        Vec::new()
+    } else {
+        vec![eos_token_id]
+    }
+}
+
+/// Refuse `ignore_eos: true` on a backend that cannot honour it (PERF-039).
+///
+/// `Some(response)` means the caller must return it immediately.
+///
+/// Three chat backends stop on EOS in a way that no request field reaches:
+/// `try_safetensors_cuda_backend` passes a positional `eos_id: u32` into
+/// `model.generate`, and `try_apr_transformer_backend` and `registry_fallback`
+/// build configs whose stop behaviour is the model's own. Serving those
+/// requests anyway would hand the benchmark a token budget it did not get
+/// while the receipt recorded `ignore_eos: true` — a measurement of unpinned
+/// work labelled as pinned. Fail closed instead: 501 names the backend, and
+/// the operator learns the gate cannot be run on this model rather than
+/// learning nothing.
+fn reject_unsupported_ignore_eos(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    backend: &str,
+) -> Option<Response> {
+    if request.ignore_eos.unwrap_or(false) {
+        return Some(fail_response(
+            state,
+            StatusCode::NOT_IMPLEMENTED,
+            format!(
+                "`ignore_eos` is not supported by the {backend} chat backend; it would be \
+                 silently ignored and the response would stop on EOS anyway. Refused rather \
+                 than served, so a benchmark cannot record a pinned token budget it did not \
+                 receive (APR-PERF-GATE-001 v2.2 §4.3.1)."
+            ),
+        ));
+    }
+    None
+}
+
 /// Resolve the effective top-k for a chat sampling config (PMAT-760).
 ///
 /// Honors the request's `top_k` (the documented sampling control) when set, else defaults to
@@ -191,10 +243,174 @@ fn chat_quantized_config(
         repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
         repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
         seed: request.seed.unwrap_or(defaults.seed),
-        stop_tokens: vec![eos_token_id],
+        stop_tokens: chat_stop_tokens(request, eos_token_id),
         trace,
         cancel: cancel.clone(),
         ..defaults
+    }
+}
+
+#[cfg(test)]
+mod perf039_ignore_eos_tests {
+    use super::{chat_quantized_config, chat_stop_tokens, ChatCompletionRequest, ChatMessage};
+    use crate::tokenizer::BPETokenizer;
+
+    fn tokenizer() -> BPETokenizer {
+        BPETokenizer::new(vec!["<unk>".to_string(), "hi".to_string()], vec![], "<unk>")
+            .expect("test tokenizer")
+    }
+
+    fn request(ignore_eos: Option<bool>) -> ChatCompletionRequest {
+        ChatCompletionRequest {
+            model: "default".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            ignore_eos,
+            ..Default::default()
+        }
+    }
+
+    // MUTATION TABLE for `chat_stop_tokens`. The outcome each row EXCLUDES is
+    // "the field was accepted on the wire and then dropped", which is the only
+    // failure mode that matters here: a dropped `ignore_eos` leaves EOS live
+    // while the receipt records a pinned token budget.
+    //
+    //  ignore_eos   | stop_tokens | meaning
+    //  -------------|-------------|----------------------------------------
+    //  absent       | [eos]       | unchanged from pre-PERF-039
+    //  Some(false)  | [eos]       | explicit opt-out is not an opt-in
+    //  Some(true)   | []          | every decode loop then never stops on a token
+
+    #[test]
+    fn absent_ignore_eos_keeps_eos_stopping() {
+        assert_eq!(chat_stop_tokens(&request(None), 7), vec![7]);
+    }
+
+    #[test]
+    fn explicit_false_keeps_eos_stopping() {
+        assert_eq!(chat_stop_tokens(&request(Some(false)), 7), vec![7]);
+    }
+
+    #[test]
+    fn ignore_eos_empties_the_stop_set() {
+        assert!(
+            chat_stop_tokens(&request(Some(true)), 7).is_empty(),
+            "an empty stop set is what every decode loop reads as ignore-EOS"
+        );
+    }
+
+    /// The W1 path: `chat_quantized_config` feeds `try_quantized_backend`
+    /// (CPU GGUF) and `try_cuda_backend`, which is the backend
+    /// APR-PERF-GATE-001 §4.3.1's Q4_K_M model actually runs on.
+    #[test]
+    fn quantized_chat_config_honors_ignore_eos() {
+        let tok = tokenizer();
+        let cancel = crate::generate::CancelToken::never();
+        let on = chat_quantized_config(&request(Some(true)), &tok, Some(7), false, &cancel);
+        assert!(
+            on.stop_tokens.is_empty(),
+            "W1's backend must generate exactly max_tokens"
+        );
+        let off = chat_quantized_config(&request(None), &tok, Some(7), false, &cancel);
+        assert_eq!(
+            off.stop_tokens,
+            vec![7],
+            "default behaviour must not change"
+        );
+    }
+
+    /// `ignore_eos` must survive DESERIALIZATION, not just exist as a field.
+    ///
+    /// serde ignores unknown fields by default, so before this field existed a
+    /// client POSTing `"ignore_eos": true` got a 200 and EOS-terminated output
+    /// with nothing anywhere saying the parameter had been discarded. That is
+    /// the state this test excludes.
+    #[test]
+    fn ignore_eos_deserializes_from_the_wire() {
+        let req: ChatCompletionRequest = serde_json::from_str(
+            r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"ignore_eos":true,"seed":9}"#,
+        )
+        .expect("wire request must deserialize");
+        assert_eq!(req.ignore_eos, Some(true));
+        assert_eq!(req.seed, Some(9), "seed must survive the wire too");
+        let bare: ChatCompletionRequest =
+            serde_json::from_str(r#"{"model":"m","messages":[{"role":"user","content":"hi"}]}"#)
+                .expect("request without the field must still deserialize");
+        assert_eq!(bare.ignore_eos, None);
+    }
+}
+
+#[cfg(test)]
+mod perf039_ignore_eos_fail_closed_tests {
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::util::ServiceExt;
+
+    /// A backend that cannot honour `ignore_eos` must REFUSE, not serve.
+    ///
+    /// The test app resolves to a chat backend that stops on EOS in a way no
+    /// request field reaches. Serving the request would return 200 and
+    /// EOS-terminated text while the client believed the token count was
+    /// pinned — the exact "recorded but never compared" shape this epic
+    /// exists to remove. 501 is the outcome; the row that matters is that it
+    /// is NOT 200.
+    #[tokio::test]
+    async fn ignore_eos_on_an_unsupporting_backend_is_501_not_200() {
+        let app = crate::api::test_helpers::create_test_app_shared();
+        let body = serde_json::json!({
+            "model": "default",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "max_tokens": 8,
+            "ignore_eos": true
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("handler responds");
+        assert_ne!(
+            response.status(),
+            StatusCode::OK,
+            "serving `ignore_eos` on a backend that drops it reports pinned work that never happened"
+        );
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    }
+
+    /// The same request WITHOUT `ignore_eos` must be unaffected. Without this
+    /// row the test above would also pass on a handler that 501s everything.
+    #[tokio::test]
+    async fn the_same_request_without_ignore_eos_is_not_501() {
+        let app = crate::api::test_helpers::create_test_app_shared();
+        let body = serde_json::json!({
+            "model": "default",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "max_tokens": 8
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("handler responds");
+        assert_ne!(response.status(), StatusCode::NOT_IMPLEMENTED);
     }
 }
 
@@ -228,6 +444,7 @@ mod pmat821_chat_handler_threading_tests {
             repeat_penalty: None,
             repeat_last_n: None,
             seed: None,
+            ignore_eos: None,
             n: crate::api::ChoiceCount::ONE,
             stream: false,
             stop: None,
@@ -707,7 +924,10 @@ fn try_gpu_backend(
         max_tokens,
         temperature,
         top_k: resolve_chat_top_k(temperature, request.top_k),
-        stop_tokens: vec![eos_token_id as usize],
+        stop_tokens: chat_stop_tokens(request, eos_token_id)
+            .into_iter()
+            .map(|t| t as usize)
+            .collect(),
         trace: state.should_trace(trace_level),
         cancel: cancel.clone(),
     };
@@ -802,7 +1022,7 @@ fn try_cached_backend(
         max_tokens,
         temperature,
         top_k: resolve_chat_top_k(temperature, request.top_k),
-        stop_tokens: vec![eos_token_id],
+        stop_tokens: chat_stop_tokens(request, eos_token_id),
         trace: state.should_trace(trace_level),
         cancel: cancel.clone(),
         ..Default::default()

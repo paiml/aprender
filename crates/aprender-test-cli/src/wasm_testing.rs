@@ -188,8 +188,7 @@ impl Recording {
             viewport: Viewport::default(),
             start_time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_millis() as u64),
             duration_ms: 0,
             events: Vec::new(),
             metadata: RecordingMetadata::default(),
@@ -464,8 +463,7 @@ impl PerformanceBaseline {
             commit: commit.into(),
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
             metrics: Vec::new(),
         }
     }
