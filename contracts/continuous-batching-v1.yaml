@@ -568,6 +568,60 @@ falsification_tests:
     worktree binary kept announcing a stale SHA after HEAD moved, so
     `apr --version` could not identify which source an artifact came from. Both
     are reasons the mutation pair above is stated as one binary and one env var.
+
+    ROUND 8 (PERF-050 cont., apr 0.64.0 (650ae3bc5+), RTX 4090). The layer-0 stage
+    differential terminates at the QKV PROJECTIONS.
+
+    With qtypes correct and the race pinned, both implementations of layer 0 are
+    finite and deterministic, so the residual is a clean two-sided differential.
+    Fingerprinting the same workspace buffers from both sides:
+
+      layer input             IDENTICAL   sum 1.266504, absmax 0.096851
+      attention RMSNorm out   IDENTICAL   sum 45.246795, absmax 3.914043
+      q_buf                   DIFFERS     graph 81.83/40.00   oracle 71.88/30.76
+      k_buf                   DIFFERS     graph -23.70/4.30   oracle 1455.38/355.45
+      v_buf                   DIFFERS     graph 3.52/1.32     oracle 5.60/2.60
+
+    The input to the projections is bit-identical and the weights are the same, so
+    the divergence is IN the projections. The RMSNorm output also matches the
+    non-graph batched path exactly (round 6 measured 45.246795 there), so all three
+    implementations agree up to that point and only the graph's projections differ.
+
+    ONE STRUCTURAL CAUSE, CERTAIN: the graph path never applies the QKV BIAS.
+    build_layer_graph emits RmsNorm, three MulMat nodes and a compound attention
+    node; there is no bias node, and the only occurrences of "bias" in that file
+    are its own test fixture setting the pointers to 0. The M=1 path applies it
+    explicitly -- apply.rs carries `// BIAS-FIX: Add QKV bias after GEMV (Qwen2.5
+    models have QKV bias)` and apply_qkv_bias covers Q, K and V. The model has the
+    tensors: blk.0.attn_q.bias [1536] F32, blk.0.attn_k.bias [256] F32,
+    blk.0.attn_v.bias [256] F32. attn_k.bias[0] is 4.09375, which is the scale of
+    the whole graph-side k_buf, so a missing K bias is consistent with K being the
+    most divergent of the three. The graph also omits apply_qk_norm (GH-279),
+    a no-op for this model but another step it does not have.
+
+    BUT THE BIAS IS NOT THE WHOLE EXPLANATION, and the check that shows it is
+    recorded because it was a prediction that failed. V is not RoPE'd, so
+    (oracle_v - graph_v) must equal attn_v.bias exactly if the bias were the only
+    difference. Measured difference: [0.207539, 0.185913]. Actual attn_v.bias, read
+    straight out of the GGUF: [-0.000372, -0.015625]. They do not match, so at
+    least one further factor differs in the projections themselves.
+
+    WHAT REPAIRING IT REQUIRES: bias nodes (and a QK-norm node) in
+    build_layer_graph, or bias application inside dispatch_attention alongside the
+    RoPE it already does -- plus identification of the remaining projection
+    difference, which the failed prediction above shows is still unaccounted for.
+
+    HARNESS NOTE. The oracle emits FIVE layer-0 snapshots per run, not the two the
+    probe makes: the first is the startup PARITY-GATE forward, which runs a
+    different token. Reading the first line as "the oracle" made the layer input
+    look divergent when it is identical. Caught by counting the lines rather than
+    trusting their order.
+
+    PLACEMENT, #2766 for the third time. gemv_dispatch.rs (three pre-existing
+    violations), forward_utils.rs (one) and apply.rs (one) are all frozen, and
+    apply.rs is exactly where the oracle's QKV phase lives. The q/k/v snapshot was
+    taken where those tensors are CONSUMED instead, at the entry of
+    workspace_attention_residual_phase in phase_attention.rs, which is clean.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs

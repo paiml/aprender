@@ -148,6 +148,25 @@ impl KernelDispatch for CudaExecutor {
 
         std::mem::forget(input_buf);
         std::mem::forget(output_buf);
+
+        // PERF-050 round 8: graph-side RMSNorm output, to split "the norm differs" from "the
+        // projections differ". The layer input is already proven identical between the graph
+        // and the M=1 oracle, and all of Q, K and V differ, so it is one of those two.
+        //
+        // A sequence number is emitted because hidden_buf1 is written twice per layer -- the
+        // attention norm and the FFN norm -- and the post-layer snapshot only ever saw the
+        // second. Only call #0 of a forward is layer 0's attention norm.
+        if Self::layer_trace_enabled() {
+            static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let i = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if i < 3 {
+                self.trace_buffer(
+                    &format!("g_rmsnorm#{i}"),
+                    output_ptr,
+                    (m * hidden_dim) as usize,
+                );
+            }
+        }
         Ok(())
     }
 

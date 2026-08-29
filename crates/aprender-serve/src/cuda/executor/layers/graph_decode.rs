@@ -147,6 +147,7 @@ impl CudaExecutor {
         if Self::layer_trace_enabled() && layer_idx == 0 {
             let m = m as usize;
             for (label, ptr, width) in [
+                ("g_layer_input", input.as_ptr(), hidden_dim),
                 ("g_hidden_buf1(last write)", hidden_buf1_ptr, hidden_dim),
                 ("g_q_buf", q_buf_ptr, q_dim),
                 ("g_k_buf", k_buf_ptr, kv_dim),

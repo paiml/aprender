@@ -29,6 +29,12 @@ impl CudaExecutor {
         // implementations write these same workspace buffers, so the fingerprints are of the
         // same memory computed two ways.
         if Self::layer_trace_enabled() && layer_idx == 0 {
+            // Upstream of the projections: the layer INPUT and the attention RMSNorm output.
+            // All three of Q, K and V differ from the graph path, which points upstream of the
+            // projections, so these two decide between "the layer input already differs", "the
+            // norm differs" and "the projections differ".
+            self.trace_buffer("o_layer_input", input.as_ptr(), hidden_dim as usize);
+            self.trace_buffer("o_hidden_buf1(attn norm)", hidden_buf1.as_ptr(), hidden_dim as usize);
             self.trace_buffer("o_q_buf", q_buf.as_ptr(), q_dim as usize);
             let kv_dim = self.kv_num_kv_heads * self.kv_head_dim;
             self.trace_buffer("o_k_buf", k_buf.as_ptr(), kv_dim);
