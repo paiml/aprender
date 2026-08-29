@@ -109,6 +109,117 @@ impl CudaExecutor {
         Ok(())
     }
 
+    /// X1-KVALLOC (#2774): bytes `init_batched_kv_cache_gpu` allocates PER SLOT.
+    ///
+    /// Derived from the dimensions the allocation ITSELF uses --
+    /// `2 (K+V) x kv_num_kv_heads x kv_cache_max_len x kv_head_dim x 4 x num_layers` --
+    /// so a sizing decision can never disagree with the allocation it is sizing.
+    /// `kv_cache_max_len` is whatever `init_kv_cache_gpu` was given, i.e. the
+    /// CONFIGURED context, never a constant. That is the shape of #2762: a
+    /// batch/context number written as a literal is invisible until a
+    /// configuration diverges from it.
+    #[must_use]
+    pub fn batched_kv_bytes_per_slot(&self, num_layers: usize) -> usize {
+        2 * self.kv_num_kv_heads
+            * self.kv_cache_max_len
+            * self.kv_head_dim
+            * std::mem::size_of::<f32>()
+            * num_layers
+    }
+
+    /// X1-KVALLOC (#2774): how many batched KV slots fit in a VRAM budget.
+    ///
+    /// Pure, so the sizing RULE is testable without a GPU and cannot drift from
+    /// the arithmetic that the driver will actually be asked to satisfy.
+    ///
+    /// * `budget_bytes` -- VRAM the caller may spend on batched KV.
+    /// * `reserve_bytes` -- what must survive the allocation: prefill workspace,
+    ///   cuBLAS workspace, captured graphs, per-request activations.
+    /// * `requested` -- the scheduler's ceiling (`max_kv_slots`), an OPTIMISM.
+    /// * `admitted` -- the batch already accepted. Those requests exist; the
+    ///   result is never below it, because silently allocating fewer slots than
+    ///   admitted sequences would corrupt the ones that got no slot. Sizing
+    ///   cannot reject work -- admission has to.
+    #[must_use]
+    pub fn batched_kv_slots_that_fit(
+        budget_bytes: usize,
+        reserve_bytes: usize,
+        bytes_per_slot: usize,
+        requested: usize,
+        admitted: usize,
+    ) -> usize {
+        let floor = admitted.max(1);
+        if bytes_per_slot == 0 {
+            // Dimensions not known yet -- no basis to shrink anything.
+            return requested.max(floor);
+        }
+        let spendable = budget_bytes.saturating_sub(reserve_bytes);
+        let fits = spendable / bytes_per_slot;
+        requested.min(fits).max(floor)
+    }
+
+    /// X1-KVALLOC (#2774): clamp a requested batched-KV allocation to what
+    /// actually fits in VRAM *now*, i.e. with the weights and the FP8/FP16
+    /// prefill cache already resident.
+    ///
+    /// WHY THIS EXISTS. `compute_max_batch_for_memory` runs before weight
+    /// upload, so on a 24 GB RTX 4090 it returned its clamp ceiling (32) for
+    /// the 7B model; `batched_setup_and_prefill` then preallocated 32 slots for
+    /// a batch of 4. Measured on lambda-4090, `qwen2.5-coder-7b-instruct-q4_k_m`,
+    /// `--context-length 4096`:
+    ///
+    /// ```text
+    /// Failed to init batched KV cache for M=32: CUDA_ERROR_OUT_OF_MEMORY
+    /// ```
+    ///
+    /// -- with m=3. The already-allocated slots are added back to the budget
+    /// because `init_batched_kv_cache_gpu` frees them before growing, so they
+    /// are spendable even though the driver currently counts them as used.
+    #[must_use]
+    pub fn fit_batched_kv_alloc(
+        &self,
+        num_layers: usize,
+        requested: usize,
+        admitted: usize,
+    ) -> usize {
+        let bytes_per_slot = self.batched_kv_bytes_per_slot(num_layers);
+        let Ok((free, _total)) = self.context.memory_info() else {
+            // Cannot measure -> cannot justify shrinking. Fail OPEN and let the
+            // allocation report the real driver error rather than inventing one.
+            return requested.max(admitted).max(1);
+        };
+        let reclaimable = self.batched_kv_allocated_batch * bytes_per_slot;
+        let fitted = Self::batched_kv_slots_that_fit(
+            free.saturating_add(reclaimable),
+            Self::BATCHED_KV_VRAM_RESERVE_BYTES,
+            bytes_per_slot,
+            requested,
+            admitted,
+        );
+        if fitted != requested {
+            eprintln!(
+                "[X1-KVALLOC] batched KV sized to {} slots (asked {}, admitted {}): \
+                 {} MB free + {} MB reclaimable, {} MB/slot at ctx={}",
+                fitted,
+                requested,
+                admitted,
+                free / (1024 * 1024),
+                reclaimable / (1024 * 1024),
+                bytes_per_slot / (1024 * 1024),
+                self.kv_cache_max_len,
+            );
+        }
+        fitted
+    }
+
+    /// VRAM that must survive a batched-KV allocation: prefill workspace,
+    /// cuBLAS workspace, captured decode graphs, per-request activations.
+    ///
+    /// A `policy` number, not a measurement. Measured peak on lambda-4090 with
+    /// the 7B at c=4 was 21.5 GB of 24.0 GB with 7 GB of that batched KV, so the
+    /// non-KV working set past model residency is well under this.
+    pub const BATCHED_KV_VRAM_RESERVE_BYTES: usize = 1_536 * 1024 * 1024;
+
     /// PAR-119: Initialize batched KV caches for true multi-sequence batching
     ///
     /// Allocates M separate KV caches per layer, enabling parallel attention
@@ -232,10 +343,11 @@ impl CudaExecutor {
         self.memory_pool.record_allocation(total_bytes);
 
         eprintln!(
-            "[PAR-119] Initialized batched KV cache: {} layers × {} sequences, stride={}, total={}MB",
+            "[PAR-119] Initialized batched KV cache: {} layers × {} sequences, stride={} (ctx={}), total={}MB",
             num_layers,
             batch_size,
             stride,
+            max_len,
             total_bytes / (1024 * 1024)
         );
 

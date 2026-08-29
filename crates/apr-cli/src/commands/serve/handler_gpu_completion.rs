@@ -463,6 +463,46 @@ fn extract_gguf_vocab(
     })
 }
 
+/// #2762: resolve the KV-cache context length for the GGUF + CUDA serve path.
+///
+/// THE DEFECT. `--context-length` writes `REALIZR_CONTEXT_LENGTH`
+/// (`serve::run`, `serve/mod.rs`). This path read `REALIZR_MAX_SEQ_LEN` -- a
+/// name that is READ in exactly one place in the tree and WRITTEN in none. So
+/// `apr serve run --gpu` on a GGUF model always built its KV cache for 2048
+/// whatever the operator asked for, and said so in its own banner:
+///
+/// ```text
+/// $ apr serve run qwen2.5-coder-7b-instruct-q4_k_m.gguf --gpu --context-length 4096
+///   Max sequence length: 2048
+///   [PAR-119] ... stride=1048576 (ctx=2048)
+/// ```
+///
+/// `1048576 = 4 x 2048 x 128` is the stride #2762 reported. A prompt long
+/// enough to walk past the 2048-sized allocation then reads out of bounds:
+/// `CUDA_ERROR_ILLEGAL_ADDRESS` is the GOOD case.
+///
+/// `REALIZR_MAX_SEQ_LEN` is kept, and kept FIRST, because GH-129 introduced it
+/// as a memory-constrained-device escape hatch (Jetson, 7.4 GB unified) and an
+/// explicit override must still beat the flag. The 2048 default now applies
+/// only when neither is set.
+///
+/// NOTE ON SCOPE. This is NOT the same root as #2774 even though both land in
+/// the same allocation. #2774 is a VRAM budget computed before the weights are
+/// resident; this is a flag written to one name and read from another. They are
+/// the same SHAPE -- a batch/context constant that agrees with the default and
+/// so is invisible until a configuration diverges from it -- and they interact:
+/// while `--context-length` was ignored the batched KV was half-sized, which is
+/// the only reason the 7B appeared to survive c=4 on a 24 GB card at all.
+#[cfg(any(all(feature = "inference", feature = "cuda"), test))]
+fn resolve_serve_max_seq_len(explicit_override: Option<&str>, context_length: Option<&str>) -> usize {
+    const DEFAULT_MAX_SEQ_LEN: usize = 2048;
+    explicit_override
+        .and_then(|v| v.parse::<usize>().ok())
+        .or_else(|| context_length.and_then(|v| v.parse::<usize>().ok()))
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_MAX_SEQ_LEN)
+}
+
 /// Start GGUF server with CUDA acceleration (PAR-111).
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
@@ -480,11 +520,11 @@ fn start_gguf_server_cuda(
         "Enabling optimized CUDA acceleration (PAR-111)...".cyan()
     );
 
-    // GH-129: Allow max_seq_len override for memory-constrained devices (Jetson 7.4 GB unified)
-    let max_seq_len = std::env::var("REALIZR_MAX_SEQ_LEN")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(2048);
+    // GH-129 + #2762: resolve the KV-cache context length.
+    let max_seq_len = resolve_serve_max_seq_len(
+        std::env::var("REALIZR_MAX_SEQ_LEN").ok().as_deref(),
+        std::env::var("REALIZR_CONTEXT_LENGTH").ok().as_deref(),
+    );
     println!("  Max sequence length: {max_seq_len}");
 
     match OwnedQuantizedModelCuda::with_max_seq_len(quantized_model, 0, max_seq_len) {
@@ -590,3 +630,48 @@ fn preload_gpu_weights(cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda)
 }
 
 include!("server_runtime.rs");
+
+/// #2762 falsification. Each case FAILS on the pre-fix source, which read only
+/// `REALIZR_MAX_SEQ_LEN` -- a variable nothing in the tree ever sets.
+#[cfg(test)]
+mod ctx_length_2762_tests {
+    use super::resolve_serve_max_seq_len;
+
+    /// RED without the fix: `--context-length 4096` writes REALIZR_CONTEXT_LENGTH
+    /// and the old body ignored it, returning the 2048 default.
+    #[test]
+    fn context_length_flag_reaches_the_kv_cache() {
+        assert_eq!(
+            resolve_serve_max_seq_len(None, Some("4096")),
+            4096,
+            "--context-length is written to REALIZR_CONTEXT_LENGTH and must be \
+             the KV cache's max_len; ignoring it sizes the batched KV stride \
+             from a constant (#2762)"
+        );
+    }
+
+    /// DISCRIMINATION: stays GREEN both before and after. GH-129's explicit
+    /// override must still win, or a Jetson that lowered the context to fit
+    /// 7.4 GB of unified memory silently gets 4096 back.
+    #[test]
+    fn explicit_override_still_beats_the_flag() {
+        assert_eq!(resolve_serve_max_seq_len(Some("1024"), Some("4096")), 1024);
+    }
+
+    /// DISCRIMINATION: stays GREEN both before and after. With neither set the
+    /// historical default is unchanged, so this fix moves no default.
+    #[test]
+    fn default_is_unchanged_when_nothing_is_set() {
+        assert_eq!(resolve_serve_max_seq_len(None, None), 2048);
+    }
+
+    /// A garbled value must not resolve to 0 -- `num_kv_heads * 0 * head_dim`
+    /// is a zero-length KV cache, which the allocator accepts and the attention
+    /// kernel then reads out of.
+    #[test]
+    fn junk_and_zero_fall_back_to_the_default() {
+        assert_eq!(resolve_serve_max_seq_len(None, Some("banana")), 2048);
+        assert_eq!(resolve_serve_max_seq_len(None, Some("0")), 2048);
+        assert_eq!(resolve_serve_max_seq_len(Some("0"), None), 2048);
+    }
+}
