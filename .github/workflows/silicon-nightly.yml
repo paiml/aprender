@@ -1,0 +1,128 @@
+# SILICON NIGHTLY — the same arch-sensitive suite on every silicon we sanction,
+# reported PER SILICON rather than collapsed to one verdict (paiml/infra#361).
+#
+# WHY. aprender is the ML stack and its correctness is silicon-dependent: SIMD
+# paths, CUDA kernels, arch intrinsics, float behaviour. Two axes are exercised
+# nightly today — x86_64-CPU and aarch64+Blackwell — and the gap just widened on
+# purpose: #2740 makes cuda-nightly gx10-only because its x86_64 GPU leg ran on
+# lambda-labs, which must never be a CI host (paiml/infra#359). sm_89 was the
+# STABLE reference and sm_121 the higher-risk target with a history of JIT bugs.
+# We now gate only the risky one.
+#
+# THE UNCOVERED AXES ARE THE POINT, so they are DATA, not an absence. They live
+# in .github/silicon-coverage.txt with a status, and scripts/check_silicon_coverage.sh
+# fails this lane when a `required` axis has no runner that can serve it — and,
+# just as importantly, when a `pending:` axis DOES. A deferral that outlives its
+# own blocker is how a debt ledger becomes a blanket exemption.
+#
+# SCHEDULE. 03:30 UTC, chosen to miss the fleet's other lanes: clean-room sweep
+# 23:00, protection-drift 00:00, nightly-audit 02:00, quality-history 05:00.
+# GitHub cron is UTC-only; this is 05:30 Madrid on CEST, 04:30 on CET.
+name: Silicon Nightly
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+    inputs:
+      axis:
+        description: 'Run a single axis, or all'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - x86_64-cpu
+          - aarch64-cuda-sm121
+
+permissions:
+  contents: read
+
+jobs:
+  # THE POLICY GATE, FIRST AND BLOCKING. If an architecture stopped being tested,
+  # that is the finding — a green suite on the two remaining axes is exactly what
+  # a silent loss of coverage looks like.
+  coverage:
+    runs-on: [self-hosted, clean-room, intel]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # Probe the instrument before believing it. The label matcher must classify
+      # six committed cases — including a runner whose labels are a strict SUBSET
+      # of the selector, which must NOT match — or this exits 2 rather than green.
+      - name: The coverage guard's own matcher must be able to fail
+        run: bash scripts/check_silicon_coverage.sh --self-test
+
+      - name: Every required silicon axis must have a runner that can serve it
+        run: bash scripts/check_silicon_coverage.sh
+
+  x86_64-cpu:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.axis == 'all' || inputs.axis == 'x86_64-cpu' }}
+    runs-on: [self-hosted, clean-room, intel]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Put the runner's Rust toolchain on PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      # THE ARCH-SENSITIVE SUBSET, not the whole suite. Five legs of a full
+      # aprender run nightly is not free on a 16-runner fleet that already carries
+      # a ~6h clean-room sweep, and a lane that is too expensive gets disabled.
+      - name: SIMD and numeric paths (x86_64, widest vectors)
+        run: |
+          set -euo pipefail
+          nice -n 19 cargo test -p aprender-compute --release --lib
+          nice -n 19 cargo test -p aprender-primitives --release --lib
+
+  aarch64-cuda-sm121:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.axis == 'all' || inputs.axis == 'aarch64-cuda-sm121' }}
+    # LITERAL LABELS, not a matrix expression. paiml/infra#352 requires any
+    # selector that can reach gx10 to name `gpu`, and a guard can only check
+    # labels it can see — labels hidden behind `${{ }}` are invisible to it.
+    runs-on: [self-hosted, gpu, gx10, cuda, blackwell]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Put the runner's Rust toolchain on PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: NEON and numeric paths (aarch64)
+        run: |
+          set -euo pipefail
+          nice -n 19 cargo test -p aprender-compute --release --lib
+          nice -n 19 cargo test -p aprender-primitives --release --lib
+
+  # PER-SILICON REPORTING. The table is the deliverable: "silicon-nightly failed"
+  # is not actionable, "aarch64-cuda-sm121 failed and x86_64-cpu passed" is.
+  summary:
+    needs: [coverage, x86_64-cpu, aarch64-cuda-sm121]
+    if: always()
+    runs-on: [self-hosted, clean-room, intel]
+    steps:
+      - name: Report per silicon
+        run: |
+          {
+            echo "### Silicon nightly"
+            echo
+            echo "| axis | result |"
+            echo "|---|---|"
+            echo "| coverage policy | ${{ needs.coverage.result }} |"
+            echo "| x86_64-cpu | ${{ needs.x86_64-cpu.result }} |"
+            echo "| aarch64-cuda-sm121 | ${{ needs['aarch64-cuda-sm121'].result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # A deselected axis reports `skipped`; that is a scoped manual run, not
+          # a failure. Only failure/cancelled gate. `if: always()` WITHOUT this
+          # inspection is a job that is green whatever happened upstream — the
+          # exact shape this repo's beat guard exists to stamp out.
+          rc=0
+          for pair in \
+            "coverage:${{ needs.coverage.result }}" \
+            "x86_64-cpu:${{ needs.x86_64-cpu.result }}" \
+            "aarch64-cuda-sm121:${{ needs['aarch64-cuda-sm121'].result }}"; do
+            name="${pair%%:*}"; res="${pair#*:}"
+            if [ "$res" != "success" ] && [ "$res" != "skipped" ]; then
+              echo "::error::silicon axis $name: $res"
+              rc=1
+            fi
+          done
+          exit $rc
