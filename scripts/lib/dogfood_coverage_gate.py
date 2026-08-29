@@ -20,8 +20,10 @@ WHAT IS CHECKED
 ---------------
   G2.2 reconciliation  no feature present in the comparand may vanish
   G2.3 floors          covered / rows / per-binary covered may not fall;
-                       broken-and-ungated, UNKNOWN-hardware and
-                       low-confidence-and-ungated may not rise
+                       UNTRIAGED broken-and-ungated, UNKNOWN-hardware and
+                       low-confidence-and-ungated may not rise; and no feature
+                       that carried a gate on the comparand may be
+                       quality<=4-and-ungated now (gate-loss)
   G2.5 per-cluster     no cluster's gate count may fall and the zero-gate cluster
                        count may not rise (ratchet); no feature may CHANGE cluster
                        without a declared reassignment; a cluster leaves zero only
@@ -40,6 +42,7 @@ WHAT IS CHECKED
 Usage:
     python3 scripts/lib/dogfood_coverage_gate.py \
         --base <comparand.csv> --head <current.csv> --the44 <triage.yaml> \
+        --base-the44 <comparand-triage.yaml> \
         [--reassignments <log.yaml>] [--comparand-source ARMED|BOOTSTRAP] \
         [--comparand-ref <ref>] [--pair-scan <file> ...]
 """
@@ -128,6 +131,53 @@ def broken_and_ungated(rows):
     return {key(r) for r in rows if quality(r) <= 4 and not covered(r)}
 
 
+def untriaged_broken(rows, triage):
+    """The broken-and-ungated features carrying NEITHER an issue NOR a waiver.
+
+    This -- not the total -- is what G2.3 ratchets, and the difference is the
+    whole point of #2757. A ratchet on the TOTAL made a newly discovered defect
+    on ungated surface literally unrecordable: adding a 45th quality<=4 ungated
+    row failed the gate EVEN WITH a triage entry beside it. The honest paths it
+    left were "write the gate" or "fix the defect", both good in the abstract;
+    the CHEAP path under time pressure was to not record the finding, or to
+    score the row a 5. A ratchet whose least-effort escape is silence is
+    pointed at the ledger rather than at the defect count.
+
+    Ratcheting the untriaged count keeps every ounce of the pressure -- known
+    debt may only shrink, and un-triaging an entry to make room is itself a
+    rise -- while making an honest finding cost exactly one triage entry.
+
+    A feature with no entry at all counts as untriaged, so deleting the entry is
+    not a way out; G2.4 membership fails on that too, independently."""
+    return {f for _b, f in broken_and_ungated(rows)
+            if not any(triage.get(f, (False, False)))}
+
+
+def gate_loss(base, head):
+    """Features that carried a gate on the comparand and are quality<=4 AND
+    ungated now.
+
+    This is the half of the old total ratchet that was worth keeping, and it is
+    kept as a PER-ROW rule rather than a count so a swap cannot pay for it. The
+    total ratchet blocked three different moves at once:
+
+      (a) a row is ADDED quality<=4 and ungated        -- an honest new finding
+      (b) an existing ungated row is RE-SCORED down    -- an honest new finding
+      (c) a gated row LOSES its gate while quality<=4  -- a coverage regression
+
+    Only (c) is a regression, and only (c) is refused here. (a) and (b) are the
+    reports we want to be cheap, and they are now permitted with a triage entry.
+
+    A count-based floor cannot express (c) on its own: dropping a gate from a
+    broken row and adding one to a healthy row IN THE SAME CLUSTER leaves the
+    total covered count, the per-binary count and the per-cluster gate count all
+    untouched. Keyed per row, the swap has nowhere to hide -- which is why
+    removing the total ratchet is not a net weakening. Self-test M11d is exactly
+    that swap."""
+    was_gated = {key(r) for r in base if covered(r)}
+    return sorted(broken_and_ungated(head) & was_gated)
+
+
 def unknown_hardware(rows):
     return sum(1 for r in rows if r["verified_hardware"].strip().upper() == "UNKNOWN")
 
@@ -198,13 +248,37 @@ def _ratchet(findings, label, now, floor, direction, gate="G2.3 floors"):
     return ok
 
 
-def check_floors(base, head, findings):
+def _check_gate_loss(base, head, findings):
+    """No feature may arrive at quality<=4-and-ungated by LOSING its gate. See
+    gate_loss() for why this is a per-row rule and not a count."""
+    lost = gate_loss(base, head)
+    if lost:
+        findings.append(
+            "G2.3 gate-loss FAIL: {} feature(s) carried a gate on the comparand "
+            "and are quality<=4 AND ungated in this tree. A defect that HAD a "
+            "gate and lost it is a coverage regression, not a new finding, so a "
+            "triage entry does not excuse it -- restore the gate or raise the "
+            "quality with evidence:\n".format(len(lost))
+            + "\n".join(f"        - {b}: {f}" for b, f in lost[:20]))
+        return False
+    return True
+
+
+def check_floors(base, head, findings, base_triage, head_triage):
     ok = True
     ok &= _ratchet(findings, "total rows (the denominator)", len(head), len(base), "up")
     ok &= _ratchet(findings, "covered rows", sum(1 for r in head if covered(r)),
                    sum(1 for r in base if covered(r)), "up")
-    ok &= _ratchet(findings, "broken-and-ungated", len(broken_and_ungated(head)),
-                   len(broken_and_ungated(base)), "down")
+    # UNTRIAGED, not total -- #2757. Recording a new defect WITH a triage entry
+    # is permitted; leaving one untriaged, or un-triaging an existing entry to
+    # make room, is not. The comparand's floor is derived from the COMPARAND's
+    # triage file, never this tree's, or deleting a waiver would lower the floor
+    # in the same commit that breaks it -- the exact vacuity this whole gate
+    # exists to prevent.
+    ok &= _ratchet(findings, "UNTRIAGED broken-and-ungated",
+                   len(untriaged_broken(head, head_triage)),
+                   len(untriaged_broken(base, base_triage)), "down")
+    ok &= _check_gate_loss(base, head, findings)
     ok &= _ratchet(findings, "UNKNOWN verified_hardware", unknown_hardware(head),
                    unknown_hardware(base), "down")
     ok &= _ratchet(findings, "low-confidence AND ungated", low_and_ungated(head),
@@ -219,8 +293,20 @@ def check_floors(base, head, findings):
                        head_cov[binary], base_cov[binary], "up")
     if ok:
         n, d = sum(1 for r in head if covered(r)), len(head)
+        u_now = len(untriaged_broken(head, head_triage))
+        u_was = len(untriaged_broken(base, base_triage))
+        b_now = len(broken_and_ungated(head))
         print(f"  G2.3 floors          PASS  {n}/{d} covered "
               f"({100.0 * n / d:.1f}%), {len(base_cov)} per-binary floors held")
+        # The TOTAL is reported beside the ratcheted UNTRIAGED count on purpose.
+        # The number that is no longer a floor is exactly the number a reader
+        # would otherwise assume is one, and a ratchet that quietly stops
+        # covering a quantity it used to cover -- while still printing PASS --
+        # is how a gate becomes theatre. Say which of the two is load-bearing.
+        print(f"                             untriaged broken-and-ungated "
+              f"{u_now} (floor <= {u_was}); {b_now} broken-and-ungated in total, "
+              f"REPORTED not ratcheted -- recording a defect with a triage entry "
+              f"is allowed, losing a gate is not (G2.3 gate-loss)")
     return ok
 
 
@@ -707,8 +793,7 @@ def _check_release_arm(triage, findings):
     return not untriaged
 
 
-def check_waivers(base, head, triage_path, findings, release):
-    triage = parse_triage(triage_path)
+def check_waivers(base, head, triage, findings, release):
     broken_now = broken_and_ungated(head)
     broken_before = broken_and_ungated(base)
 
@@ -719,8 +804,10 @@ def check_waivers(base, head, triage_path, findings, release):
         ok = _check_release_arm(triage, findings) and ok
     if ok:
         arm = "release arm ON" if release else "release arm off"
+        n_untriaged = len(untriaged_broken(head, triage))
         print(f"  G2.4 waivers         PASS  {len(broken_now)} broken-and-ungated, "
-              f"{len(triage)} triaged, {len(newly)} new ({arm})")
+              f"{len(triage)} triage entries ({n_untriaged} carrying neither an "
+              f"issue nor a waiver), {len(newly)} new ({arm})")
     return ok
 
 
@@ -768,6 +855,15 @@ def run(args):
     declared = parse_reassignments(args.reassignments)
     release = bool(os.environ.get("DOGFOOD_RELEASE"))
 
+    # Two triage files, and the distinction is load-bearing. The FLOOR for the
+    # untriaged ratchet must come from the comparand's triage file, extracted by
+    # the shell from a ref a pull request cannot rewrite. Deriving it from this
+    # tree's file instead would let one commit delete a waiver and lower the
+    # floor by the same act -- a floor a PR can rewrite in the commit that
+    # breaks it, which is the original defect this whole gate was built against.
+    head_triage = parse_triage(args.the44)
+    base_triage = parse_triage(args.base_the44)
+
     # The banner must name the path that RAN. An earlier draft described
     # `read_ledger(..., allow_legacy=True)` as the active branch while
     # resolve_base_ref was in fact taking BOOTSTRAP first -- so the comparand was
@@ -783,7 +879,7 @@ def run(args):
 
     findings = []
     ok = check_reconciliation(base, head, findings)
-    ok = check_floors(base, head, findings) and ok
+    ok = check_floors(base, head, findings, base_triage, head_triage) and ok
     ok = check_cluster_floors(base, head, base_clustered, findings, release,
                               declared, armed_note) and ok
     if args.pair_scan:
@@ -795,7 +891,7 @@ def run(args):
                   "over {} and it must carry one over {}".format(
                       len(args.pair_scan), n_clusters, n_features))
         ok = pair_ok and ok
-    ok = check_waivers(base, head, args.the44, findings, release) and ok
+    ok = check_waivers(base, head, head_triage, findings, release) and ok
     for f in findings:
         print(f"  {f}")
     return 0 if ok else 1
@@ -805,7 +901,11 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--base", help="comparand ledger (from origin/main)")
     p.add_argument("--head", required=True, help="working-tree ledger")
-    p.add_argument("--the44", help="triage yaml")
+    p.add_argument("--the44", help="triage yaml (working tree)")
+    p.add_argument("--base-the44",
+                   help="triage yaml AS OF THE COMPARAND. The untriaged floor is "
+                        "derived from this and never from the working tree, so "
+                        "deleting a waiver cannot lower the floor it breaks.")
     p.add_argument("--reassignments", default=None,
                    help="declared cluster reassignment log (yaml)")
     p.add_argument("--comparand-source", default=None,
@@ -817,6 +917,15 @@ def main(argv=None):
     args = p.parse_args(argv)
     if args.base and not args.the44:
         p.error("--the44 is required alongside --base")
+    # Required, not defaulted to --the44. A missing comparand triage file must be
+    # LOUD: silently falling back to this tree's copy would make the untriaged
+    # floor self-referential -- always exactly equal to the current count, so the
+    # ratchet could never fire -- and it would print PASS while measuring
+    # nothing. That is the same shape as the UNRESOLVABLE comparand the shell
+    # wrapper hard-fails on, and it gets the same treatment.
+    if args.base and not args.base_the44:
+        p.error("--base-the44 is required alongside --base: the untriaged floor "
+                "must come from the comparand, not from the working tree")
     if not args.base and not args.pair_scan:
         p.error("give --base (full gate) or --pair-scan (T2-only mode)")
     try:

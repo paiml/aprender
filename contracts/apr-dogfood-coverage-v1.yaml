@@ -173,11 +173,36 @@ metadata:
     broken_and_ungated:
       command: "python3 scripts/dogfood_baseline.py  # section: totals"
       count: 44
-      direction: "may only DECREASE -- target 0"
+      direction: "REPORTED, not ratcheted -- the ratchet is on the UNTRIAGED subset"
       note: >
         All 44 are in `apr`. Each needs an open issue or a written waiver before
         the next release; the enumerated list is in the Phase 2 report and in
         .claude/skills/apr-dogfood/SKILL.md.
+
+        This TOTAL is measured and printed; what may not rise is the UNTRIAGED
+        subset below (#2757). Ratcheting the total made a newly discovered defect
+        on ungated surface unrecordable: a 45th quality<=4 ungated row failed the
+        gate EVEN WITH a triage entry, so the cheapest route to green was to not
+        record the finding, or to score the row a 5. That ratchets the ledger
+        rather than the defect count. The half of the total ratchet worth keeping
+        is per-row, not a count: see gate_loss.
+
+    untriaged_broken_and_ungated:
+      command: "python3 scripts/dogfood_baseline.py  # section: totals"
+      untriaged: 44
+      direction: "may only DECREASE -- target 0. THIS is the ratcheted quantity"
+      note: >
+        Broken-and-ungated features whose entry in docs/audits/dogfood-the-44.yaml
+        carries neither an issue nor a waiver. A feature with no entry at all
+        counts as untriaged, so deleting an entry is not an escape.
+
+        The FLOOR is derived from the comparand's triage file, extracted by
+        check_dogfood_coverage.sh from a ref a pull request cannot rewrite. Taken
+        from the working tree it would be self-referential -- deleting a waiver
+        would lower the floor by the same act that breaks it, which is the exact
+        vacuity this whole contract exists against. Proven by guard-mutation:
+        pointing base_triage at the working tree turns the M11c floor from 0 into
+        1 and the mutation goes GREEN.
 
 equations:
   gate_coverage_ratio:
@@ -207,12 +232,21 @@ equations:
 
   broken_and_ungated:
     formula: |
-      REQUIRE: |{ r : r.quality_1_10 <= 4 AND r.in_dogfood_skill != "yes" }| == 0
+      broken(L)    = { r in L : r.quality_1_10 <= 4 AND r.in_dogfood_skill != "yes" }
+      untriaged(L) = { f in broken(L) : the-44[f] has neither an issue nor a waiver }
+      gate_loss    = broken(HEAD) INTERSECT { r in BASE : r.in_dogfood_skill == "yes" }
+
+      REQUIRE: |untriaged(HEAD)| <= |untriaged(BASE)|      # ratchet, floor from BASE
+      REQUIRE: gate_loss == {}                             # per-row, not a count
+      TARGET:  |broken(HEAD)| == 0
     domain: "features carrying a live ledger defect"
     codomain: "non-negative integer"
     invariants:
     - "Baseline is 44, all 44 in the `apr` binary — every one a defect that shipped and would ship again unnoticed"
     - "Target is 0; at --release each remaining entry needs an open issue AND a written waiver"
+    - "The RATCHET is on untriaged(), not on broken(). Recording a newly found defect WITH a triage entry is permitted and must stay cheap; leaving it untriaged, or un-triaging an existing entry to make room, is refused (#2757)"
+    - "untriaged(BASE) is read from the COMPARAND's the-44, never the working tree's — a floor a PR can rewrite in the commit that breaks it is not a floor"
+    - "gate_loss is keyed PER ROW because a count cannot express it: dropping a gate from a broken row and adding one to a healthy row in the same cluster leaves the total covered count, the per-binary count and the per-cluster gate count all untouched (self-test M11d)"
 
   hardware_provenance:
     formula: |
@@ -366,19 +400,51 @@ falsification_tests:
     still turns the gate RED.
 
 - id: F-DOGCOV-003
-  rule: no broken-and-ungated feature
-  prediction: "every feature with quality <= 4 carries a gate, or an issue plus a waiver"
+  rule: no UNTRIAGED broken-and-ungated feature, and no feature loses a gate while broken
+  prediction: >
+    every feature with quality <= 4 either carries a gate, or carries an issue or
+    a written waiver; and no feature that had a gate on the comparand is
+    quality <= 4 and ungated now
   test: |
     python3 - <<'EOF'
-    import csv
+    import csv, sys
+    sys.path.insert(0, 'scripts/lib')
+    # Imported, never re-implemented. A falsification test that re-derives
+    # "untriaged" independently of the gate that enforces it can agree with the
+    # contract while disagreeing with the code, which is a green test over a
+    # broken rule.
+    from dogfood_coverage_gate import (broken_and_ungated, parse_triage,
+                                       untriaged_broken)
     rows = list(csv.DictReader(open('docs/audits/surface_audit.csv')))
-    bad = [r for r in rows
-           if int(r['quality_1_10']) <= 4 and r['in_dogfood_skill'].strip().lower() != 'yes']
-    print(f"{len(bad)} broken-and-ungated (baseline 44)")
-    assert len(bad) <= 44, f"grew to {len(bad)}"
+    triage = parse_triage('docs/audits/dogfood-the-44.yaml')
+    bad = broken_and_ungated(rows)
+    untriaged = untriaged_broken(rows, triage)
+    print(f"{len(bad)} broken-and-ungated, {len(untriaged)} untriaged (baseline 44)")
+    assert len(untriaged) <= 44, f"untriaged grew to {len(untriaged)}"
     EOF
-  if_fails: "a known-broken feature has no gate — it shipped once and will ship again unnoticed"
-  mutation: "set one covered row's quality to 2 and its in_dogfood_skill to no; the count must exceed 44"
+  if_fails: >
+    a known-broken feature has neither a gate nor a triage entry — it shipped
+    once and will ship again unnoticed, and nothing in the tree records that
+    anyone knows
+  mutation: >
+    M11, run 2026-08-29 in the self-test fixture: append a quality-3 ungated row
+    and a triage entry with `issue: null` / `waiver: null` (ledger md5
+    1f07023b -> 1759629f, the-44 b81bfbb7 -> 089b2436) -> RED naming
+    "UNTRIAGED broken-and-ungated". Changing ONLY `issue: null` -> `issue: 2757`
+    on that entry (089b2436 -> e336d28d) -> GREEN. Same row, same 205 rows, same
+    2 broken-and-ungated, opposite verdict: recording a defect is cheap,
+    leaving it untriaged is not.
+
+    M11c is the case the previous total-count ratchet could not express and
+    `_check_new_breakage` structurally cannot see: delete the waiver from a
+    GRANDFATHERED entry (b81bfbb7 -> 2030d713) -> RED. Guard-mutation, run the
+    same day: deleting the untriaged ratchet from check_floors turns M11c GREEN
+    with "G2.4 waivers PASS ... 0 new" in the same report, which is what proves
+    the ratchet is the only rule covering it.
+
+    ANTI-VACUITY on the floor: pointing base_triage at the working tree instead
+    of the comparand prints "floor <= 1" where it should print "floor <= 0" and
+    M11c goes GREEN — a floor lowered by the same edit that breaks it.
 
 - id: F-DOGCOV-004
   rule: hardware provenance never inferred

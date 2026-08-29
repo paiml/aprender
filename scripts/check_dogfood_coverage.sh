@@ -12,7 +12,8 @@
 # This script fails the build when the audited surface gets WORSE:
 #   G2.1 freshness       the ledger is behind the code it claims to describe
 #   G2.2 reconciliation  a ledger row vanished, taking its defect with it
-#   G2.3 floors          coverage fell, or a dark-row count rose
+#   G2.3 floors          coverage fell, the UNTRIAGED dark-row count rose, or a
+#                        row that had a gate lost it while still quality<=4
 #   G2.5 per-cluster     a cluster lost a gate, or the zero-gate cluster count
 #                        rose; at --release, every cluster_label must carry >= 1
 #                        gate. Cluster coverage is reported only BESIDE the
@@ -57,6 +58,17 @@
 #   M1  G2.1  move cited evidence, leave the ledger behind HEAD
 #   M2  G2.2  delete a ledger row for a live command
 #   M3  G2.3  flip one in_dogfood_skill yes -> no
+#   M11 G2.3  record a NEW quality<=4 ungated row and leave it untriaged (#2757).
+#             M11b is the paired GREEN and the point of the change: the SAME row
+#             with an issue on its triage entry must PASS, because a ratchet that
+#             makes an honest finding the most expensive option ratchets the
+#             LEDGER, not the defect count
+#   M11c G2.3 un-triage a GRANDFATHERED entry to make room. Invisible to
+#             _check_new_breakage, which only ever looks at newly-broken rows
+#   M11d G2.3 gate-loss: move a gate OFF a quality<=4 row onto a healthy one in
+#             the SAME cluster and binary, and file the loser with an issue.
+#             Every count-based floor survives that swap, so it is what the
+#             removed total ratchet was really buying. M11e is its paired GREEN
 #   M5  G2.5  move a cluster's ONLY gate to another cluster (totals unchanged)
 #   M6  T2    emit cluster coverage with no feature fraction beside it
 #   M7  T1    key a contract on the permuting id instead of the label
@@ -286,7 +298,7 @@ check_freshness() {
 # The gate proper.
 # ---------------------------------------------------------------------------
 run_gate() {
-  local root="$1" resolution mode ref basecsv rc frc
+  local root="$1" resolution mode ref basecsv basethe44 rc frc
   [ -f "$root/$LEDGER" ]   || fail "no ledger at $root/$LEDGER"
   [ -f "$root/$CONTRACT" ] || fail "no contract at $root/$CONTRACT"
   [ -f "$root/$THE44" ]    || fail "no triage file at $root/$THE44"
@@ -336,6 +348,23 @@ run_gate() {
   git -C "$root" show "${ref}:${LEDGER}" > "$basecsv" 2>/dev/null \
     || { rm -f "$basecsv"; fail "could not read ${ref}:${LEDGER}"; }
 
+  # The comparand's TRIAGE file, extracted from the same ref as the ledger.
+  # G2.3 now ratchets the UNTRIAGED broken-and-ungated count (#2757), and a
+  # floor derived from this tree's triage file would be self-referential: delete
+  # a waiver and the floor drops by the same act, so the ratchet could never
+  # fire. Reading it from `$ref` is what makes it a floor. A failure here is
+  # HARD, never a fallback to the working tree -- a comparand that cannot be
+  # read is the shape of the file being deleted to escape its own gate, and the
+  # same reasoning already governs the ledger two lines up.
+  basethe44="$(mktemp)"
+  git -C "$root" show "${ref}:${THE44}" > "$basethe44" 2>/dev/null \
+    || { rm -f "$basecsv" "$basethe44"
+         fail "could not read ${ref}:${THE44}.
+      The UNTRIAGED floor is derived from the comparand's triage file. Without
+      it there is no floor, and a PASS would mean nothing. If the triage file is
+      genuinely being retired, retire the G2.3 untriaged ratchet in the same
+      commit."; }
+
   # Freshness diffs against the branch's merge base, so it sees this branch's
   # changes and nobody else's -- in BOOTSTRAP too, where `ref` is HEAD itself
   # and a HEAD..HEAD diff would be empty and therefore vacuous.
@@ -355,10 +384,11 @@ run_gate() {
     esac
   done
   python3 "$root/$GATE_PY" --base "$basecsv" --head "$root/$LEDGER" \
-    --the44 "$root/$THE44" --reassignments "$root/$REASSIGN" \
+    --the44 "$root/$THE44" --base-the44 "$basethe44" \
+    --reassignments "$root/$REASSIGN" \
     --comparand-source "$mode" "${pairargs[@]}"
   rc=$?
-  rm -f "$basecsv"
+  rm -f "$basecsv" "$basethe44"
 
   if [ "$frc" -ne 0 ] || [ "$rc" -ne 0 ]; then
     printf '\nDOGFOOD COVERAGE GATE: FAIL\n'
@@ -394,6 +424,12 @@ selftest_build_repo() {
     printf 'demo,demo alpha,2,x86_64-linux,none,no,0,solo-cluster,crates/demo/src/m1.rs:1,high\n'
     printf 'demo,demo beta,6,UNKNOWN,none,yes,0,solo-cluster,crates/demo/src/m2.rs:1,high\n'
     printf 'demo,demo gamma,6,UNKNOWN,none,yes,1,pair-cluster,crates/demo/src/m3.rs:1,high\n'
+    # zeta and eta exist for M11d, the gate-loss swap: a quality<=4 row that
+    # HAS a gate, and a healthy ungated row in the SAME cluster to hand the gate
+    # to. Same cluster and same binary on purpose -- that is what makes every
+    # count-based floor hold across the swap, so only a per-row rule can see it.
+    printf 'demo,demo zeta,3,x86_64-linux,none,yes,1,pair-cluster,crates/demo/src/m3.rs:1,high\n'
+    printf 'demo,demo eta,6,x86_64-linux,none,no,1,pair-cluster,crates/demo/src/m3.rs:1,high\n'
     for i in $(seq 1 200); do
       printf 'demo,demo pad%s,6,UNKNOWN,none,no,2,pad-cluster,crates/demo/src/m1.rs:1,medium\n' "$i"
     done
@@ -419,10 +455,10 @@ selftest_build_repo() {
   # pairing, so the T2 scan is not vacuous before M9 removes it.
   mkdir -p "$td/$(dirname "$SKILL")"
   { printf '# fixture skill\n\n'
-    printf 'Allocation: clusters gated 2/3, features gated 2/203.\n'
+    printf 'Allocation: clusters gated 2/3, features gated 3/205.\n'
   } > "$td/$SKILL"
   { printf '# fixture receipt\n\n'
-    printf 'Coverage: clusters gated 2/3, features gated 2/203.\n'
+    printf 'Coverage: clusters gated 2/3, features gated 3/205.\n'
   } > "$td/docs/audits/receipt.md"
 
   # `git init` is NOT hermetic on a developer box: this machine sets
@@ -506,6 +542,66 @@ idguard_run() {
   return 1
 }
 
+# ---------------------------------------------------------------------------
+# A must-match / must-not-match table for the patterns the M11 mutations key on.
+#
+# selftest_mutate proves a pattern matched SOMETHING (the md5 moved). It cannot
+# prove the pattern did not match too MUCH -- an over-broad address edits rows
+# the mutation never meant to touch, and the verdict still looks right. The
+# patterns in this repository have been wrong six times; a table caught every
+# one and review caught none, so the table runs rather than being asserted in a
+# comment.
+#
+# grep BRE, not -E, because these are sed addresses and sed reads BRE. Testing
+# an ERE dialect would be a table about a pattern nobody runs.
+# `<<<` rather than a pipe: `printf ... | grep -q` returns 141 on SIGPIPE even
+# when grep MATCHED, which has produced a false RED here four times in one day.
+# ---------------------------------------------------------------------------
+regex_case() {
+  local pat="$1" subject="$2" expect="$3" label="$4" got
+  if grep -q "$pat" <<<"$subject"; then got="MATCH"; else got="NO-MATCH"; fi
+  if [ "$got" = "$expect" ]; then
+    printf '    %-8s %s\n' "$got" "$label"
+    return 0
+  fi
+  printf '    %-8s %s  WRONG (expected %s)\n' "$got" "$label" "$expect"
+  return 1
+}
+
+selftest_regex_table() {
+  local rc=0 p_feat='^- feature: .demo theta.$' p_waiv='^  waiver: .fixture: alpha'
+  local p_zeta='^- feature: .demo zeta.$'
+  printf '  M11 pattern table (sed addresses; over-broad is invisible to md5 engagement)\n'
+  # P1 -- the entry M11a appends, which M11b then triages.
+  regex_case "$p_feat" "- feature: 'demo theta'"    "MATCH"    "P1 the appended theta entry" || rc=1
+  regex_case "$p_feat" "- feature: 'demo thetaX'"   "NO-MATCH" "P1 not a longer feature name" || rc=1
+  regex_case "$p_feat" "- feature: 'demo alpha'"    "NO-MATCH" "P1 not a different entry" || rc=1
+  regex_case "$p_feat" "  - feature: 'demo theta'"  "NO-MATCH" "P1 not an indented copy" || rc=1
+  # P2 -- alpha's waiver, the line M11c deletes. It must not take `issue:` with
+  # it, and must not reach an entry whose waiver merely mentions alpha.
+  regex_case "$p_waiv" "  waiver: 'fixture: alpha is deliberately broken-and-ungated'" \
+    "MATCH" "P2 the fixture waiver on alpha" || rc=1
+  regex_case "$p_waiv" "  waiver: null"             "NO-MATCH" "P2 not an empty waiver" || rc=1
+  regex_case "$p_waiv" "  issue: 'fixture: alpha'"  "NO-MATCH" "P2 not the issue line" || rc=1
+  regex_case "$p_waiv" "    waiver: 'fixture: alpha'" "NO-MATCH" "P2 not a deeper indent" || rc=1
+  # P3 -- the 3-line zeta entry M11e deletes with `,+2d`.
+  regex_case "$p_zeta" "- feature: 'demo zeta'"     "MATCH"    "P3 the zeta entry" || rc=1
+  regex_case "$p_zeta" "- feature: 'demo zeta two'" "NO-MATCH" "P3 not a longer name" || rc=1
+  # P4 -- the ledger rows M11d swaps. The gate column is IN the pattern, so a
+  # row already in the target state cannot match and the swap cannot be applied
+  # twice without selftest_mutate noticing.
+  regex_case '^demo,demo zeta,3,x86_64-linux,none,yes,1,' \
+    "demo,demo zeta,3,x86_64-linux,none,yes,1,pair-cluster,crates/demo/src/m3.rs:1,high" \
+    "MATCH" "P4 zeta while still gated" || rc=1
+  regex_case '^demo,demo zeta,3,x86_64-linux,none,yes,1,' \
+    "demo,demo zeta,3,x86_64-linux,none,no,1,pair-cluster,crates/demo/src/m3.rs:1,high" \
+    "NO-MATCH" "P4 not zeta once already ungated" || rc=1
+  regex_case '^demo,demo zeta,3,x86_64-linux,none,yes,1,' \
+    "demo,demo eta,6,x86_64-linux,none,no,1,pair-cluster,crates/demo/src/m3.rs:1,high" \
+    "NO-MATCH" "P4 not the neighbouring eta row" || rc=1
+  return "$rc"
+}
+
 # A sed that fails to match reads exactly like a passing gate. Every mutation is
 # applied through this, which refuses to continue unless the file actually moved.
 selftest_mutate() {
@@ -528,6 +624,11 @@ if [ "${1:-}" = "--self-test" ]; then
   [ -n "${TD:-}" ] && [ -d "$TD" ] || fail "could not create a scratch dir"
   trap 'rm -rf "${TD:?}" "${TD:?}-shallow"' EXIT
   FAILED=0
+  # A literal single quote, for the YAML the M11 mutations append. `printf` and
+  # a leading `-` do not mix -- "- feature:" is parsed as an OPTION, not a
+  # format -- so caller-shaped text is routed through %s, exactly as
+  # selftest_build_repo does it.
+  Q="'"
 
   printf 'check_dogfood_coverage.sh --self-test\n'
   printf 'Scratch repo with a protected `main` carrying the ledger, so the ARMED\n'
@@ -575,6 +676,96 @@ if [ "${1:-}" = "--self-test" ]; then
     sed -i 's|^demo,demo gamma,6,UNKNOWN,none,yes,1,|demo,demo gamma,6,UNKNOWN,none,no,1,|' "$TD/$LEDGER" \
     && selftest_run "$TD" "coverage dropped" "RED" || FAILED=1
   git -C "$TD" checkout -q -- "$LEDGER"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
+
+  # --- M11 (G2.3, #2757): the UNTRIAGED ratchet, and what it deliberately
+  #     stopped blocking. Before this, G2.3 ratcheted the TOTAL
+  #     broken-and-ungated count, so recording a newly discovered defect on
+  #     ungated surface failed the gate EVEN WITH a triage entry. The cheapest
+  #     way to green was then to not record the finding, or to score the row a 5.
+  #     A ratchet whose least-effort escape is silence ratchets the LEDGER, not
+  #     the defect count.
+  #
+  #     The four cases below are one variable apart on purpose. M11a and M11b are
+  #     the SAME new ledger row, and differ only in whether its triage entry
+  #     carries an issue -- so the RED/GREEN split is attributable to triage and
+  #     to nothing else. M11b is the case that was RED before this change and is
+  #     the whole point of it.
+  selftest_regex_table || FAILED=1
+  printf 'M11 G2.3 untriaged (#2757) — record a new defect: refused untriaged, allowed triaged\n'
+  m11_add_row() {
+    printf 'demo,demo theta,3,x86_64-linux,none,no,1,pair-cluster,crates/demo/src/m3.rs:1,high\n' >> "$TD/$LEDGER"
+  }
+  m11_add_entry_untriaged() {
+    { printf '%s\n' "- feature: ${Q}demo theta${Q}" '  issue: null' '  waiver: null'
+    } >> "$TD/$THE44"
+  }
+  selftest_mutate "$TD/$LEDGER" "record a 205th quality<=4 ungated row" m11_add_row || FAILED=1
+  selftest_mutate "$TD/$THE44" "file it, untriaged" m11_add_entry_untriaged \
+    && selftest_run "$TD" "new defect recorded, left UNTRIAGED" "RED" \
+         "UNTRIAGED broken-and-ungated" || FAILED=1
+
+  # M11b: the ONLY edit is `issue: null` -> an issue number, on the row M11a
+  # just added. Same ledger, same 205 rows, same 2 broken-and-ungated. Opposite
+  # verdict. This is the case #2757 was filed about.
+  printf 'M11b G2.3 untriaged — the SAME row, now carrying an issue\n'
+  selftest_mutate "$TD/$THE44" "triage it: issue: null -> issue: 2757" \
+    sed -i '/^- feature: .demo theta.$/,+1 s/^  issue: null$/  issue: 2757/' "$TD/$THE44" \
+    && selftest_run "$TD" "new defect recorded WITH a triage entry" "GREEN" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER" "$THE44"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+
+  # M11c: the move the ratchet exists to stop, and the one `_check_new_breakage`
+  # structurally CANNOT see -- `demo alpha` is not NEWLY broken, it is
+  # grandfathered by the comparand, so the new-breakage rule never looks at it.
+  # Deleting its waiver raises the untriaged count without touching the ledger
+  # at all. The floor holds only because it is derived from the COMPARAND's
+  # triage file; taken from this tree it would have fallen by the same edit.
+  printf 'M11c G2.3 untriaged — un-triage an EXISTING entry to make room\n'
+  selftest_mutate "$TD/$THE44" "delete the waiver from alpha" \
+    sed -i '/^  waiver: .fixture: alpha/d' "$TD/$THE44" \
+    && selftest_run "$TD" "waiver deleted from a grandfathered entry" "RED" \
+         "UNTRIAGED broken-and-ungated" || FAILED=1
+  git -C "$TD" checkout -q -- "$THE44"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+
+  # M11d: THE GATE-LOSS SWAP -- proof that dropping the total ratchet is not a
+  # net weakening. Take the gate off `demo zeta` (quality 3) and put it on
+  # `demo eta` in the SAME cluster and the SAME binary, and file zeta with an
+  # issue. Every count survives: 205 rows, 3 covered, pair-cluster still 2
+  # gates, per-binary unchanged, untriaged still 0. Under the old TOTAL ratchet
+  # this was caught only incidentally, by the count going 1 -> 2; with that
+  # ratchet gone, nothing count-based can see it. Only the per-row gate-loss
+  # rule can, so the finding text is asserted.
+  printf 'M11d G2.3 gate-loss — move a gate OFF a broken row onto a healthy one, same cluster\n'
+  m11d_swap() {
+    sed -i -e 's|^demo,demo zeta,3,x86_64-linux,none,yes,1,|demo,demo zeta,3,x86_64-linux,none,no,1,|' \
+           -e 's|^demo,demo eta,6,x86_64-linux,none,no,1,|demo,demo eta,6,x86_64-linux,none,yes,1,|' \
+           "$TD/$LEDGER"
+  }
+  m11d_file_it() {
+    { printf '%s\n' "- feature: ${Q}demo zeta${Q}" '  issue: 2757' '  waiver: null'
+    } >> "$TD/$THE44"
+  }
+  selftest_mutate "$TD/$LEDGER" "ungate zeta, gate eta (same cluster)" m11d_swap || FAILED=1
+  selftest_mutate "$TD/$THE44" "file zeta with an issue" m11d_file_it \
+    && selftest_run "$TD" "gate moved off a broken row, fully triaged" "RED" \
+         "G2.3 gate-loss FAIL" || FAILED=1
+
+  # ...and the discrimination that says what gate-loss actually keys on. Same
+  # swap, but zeta's quality is raised out of the <=4 band: the defect is
+  # reported FIXED, so handing its gate to a neighbour is not a gate loss. If
+  # this went red too, the rule would be banning gate movement rather than
+  # protecting broken rows.
+  printf 'M11e G2.3 gate-loss — the same swap on a row no longer broken must NOT be red\n'
+  selftest_mutate "$TD/$LEDGER" "raise zeta out of the quality<=4 band" \
+    sed -i 's|^demo,demo zeta,3,x86_64-linux,none,no,1,|demo,demo zeta,6,x86_64-linux,none,no,1,|' \
+    "$TD/$LEDGER" || FAILED=1
+  selftest_mutate "$TD/$THE44" "drop the now-stale triage entry for zeta" \
+    sed -i '/^- feature: .demo zeta.$/,+2d' "$TD/$THE44" \
+    && selftest_run "$TD" "gate moved off a row that is no longer broken" "GREEN" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER" "$THE44"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
 
@@ -652,14 +843,14 @@ if [ "${1:-}" = "--self-test" ]; then
   #     That is vacuity one level up, which is the whole point of T2.
   printf 'M9  T2 — state a cluster ratio in the RECEIPT with no feature %% beside it\n'
   selftest_mutate "$TD/docs/audits/receipt.md" "drop the feature fraction from the receipt" \
-    sed -i 's|, features gated 2/203||' "$TD/docs/audits/receipt.md" \
+    sed -i 's|, features gated 3/205||' "$TD/docs/audits/receipt.md" \
     && selftest_run "$TD" "receipt states the proxy alone" "RED" \
          "G2.6 T2 FAIL" || FAILED=1
   git -C "$TD" checkout -q -- "docs/audits/receipt.md"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   # The same removal in the SKILL, because "one channel" was the defect.
   selftest_mutate "$TD/$SKILL" "drop the feature fraction from the skill" \
-    sed -i 's|, features gated 2/203||' "$TD/$SKILL" \
+    sed -i 's|, features gated 3/205||' "$TD/$SKILL" \
     && selftest_run "$TD" "skill states the proxy alone" "RED" \
          "G2.6 T2 FAIL" || FAILED=1
   git -C "$TD" checkout -q -- "$SKILL"
@@ -799,13 +990,15 @@ if [ "${1:-}" = "--self-test" ]; then
   printf '\n'
 
   if [ "$FAILED" -eq 0 ]; then
-    printf 'SELF-TEST PASS: every registered mutation RED (M5/M6/M8/M8b/M9 attributed\n'
-    printf 'by finding text, not by exit code alone), the provenance group RED on a\n'
-    printf 'placeholder / a deleted line / an absent SHA in a FULL clone, the\n'
-    printf 'anti-vacuity mutation RED, and every clean/no-op/restored tree GREEN --\n'
-    printf 'including the three GREENs that say what the arms actually want: a\n'
+    printf 'SELF-TEST PASS: every registered mutation RED (M5/M6/M8/M8b/M9/M11/M11c/\n'
+    printf 'M11d attributed by finding text, not by exit code alone), the provenance\n'
+    printf 'group RED on a placeholder / a deleted line / an absent SHA in a FULL\n'
+    printf 'clone, the anti-vacuity mutation RED, and every clean/no-op/restored tree\n'
+    printf 'GREEN -- including the five GREENs that say what the arms actually want: a\n'
     printf 're-audited ledger (M1), a gate WRITTEN in the zero cluster rather than\n'
-    printf 'moved into it (M8b), and the same absent SHA in a depth-1 clone.\n'
+    printf 'moved into it (M8b), the same absent SHA in a depth-1 clone, a new defect\n'
+    printf 'RECORDED with a triage entry (M11b), and a gate moved off a row that is no\n'
+    printf 'longer broken (M11e).\n'
     exit 0
   fi
   printf 'SELF-TEST FAIL\n'

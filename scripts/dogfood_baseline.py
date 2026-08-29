@@ -22,9 +22,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib
 # channels a cluster-level ratio can leave the repository through -- the gate
 # report, the receipt, this, and the skill -- and a pairing rule enforced at one
 # call site is a pairing rule with three ways around it.
-from dogfood_coverage_gate import enforce_pairing  # noqa: E402
+# untriaged_broken() and parse_triage() come from the same place for the same
+# reason: the UNTRIAGED count is the quantity G2.3 actually ratchets (#2757), and
+# a baseline printer that re-implemented "untriaged" could drift from the gate
+# that enforces it -- leaving a contract number nobody re-derives, which is the
+# one thing this script exists to prevent.
+from dogfood_coverage_gate import (  # noqa: E402
+    enforce_pairing, parse_triage, untriaged_broken)
 
 CSV_PATH = "docs/audits/surface_audit.csv"
+THE44_PATH = "docs/audits/dogfood-the-44.yaml"
 CONTRACT_PATH = "contracts/apr-dogfood-coverage-v1.yaml"
 
 BANDS = (("q1_2", 1, 2), ("q3_4", 3, 4), ("q5_6", 5, 6),
@@ -110,6 +117,8 @@ def compute(rows):
         "unknown_hardware": sum(1 for r in rows if is_unknown_hardware(r)),
         "low_and_uncovered": sum(1 for r in rows if is_low_and_uncovered(r)),
         "broken_and_ungated": sum(1 for r in rows if is_broken_and_ungated(r)),
+        "untriaged_broken_and_ungated": len(
+            untriaged_broken(rows, parse_triage(THE44_PATH))),
         "per_binary": per_binary(by_binary),
         "per_band": per_band(rows),
         "per_cluster": per_cluster(rows),
@@ -159,6 +168,10 @@ def report_lines(m):
     print(f"unknown_hardware: {m['unknown_hardware']}")
     print(f"low_and_uncovered: {m['low_and_uncovered']}")
     print(f"broken_and_ungated: {m['broken_and_ungated']}")
+    # The ratcheted quantity, printed beside the total it is a subset of. Naming
+    # only the total would leave a reader assuming the total is the floor, which
+    # is what it used to be and no longer is.
+    print(f"untriaged: {m['untriaged_broken_and_ungated']}")
     print()
     print("# per_binary")
     for b, (total, cov) in m["per_binary"].items():
@@ -192,6 +205,7 @@ def expected_lines(m):
                        ("unknown", "unknown_hardware"),
                        ("low_and_uncovered", "low_and_uncovered"),
                        ("count", "broken_and_ungated"),
+                       ("untriaged", "untriaged_broken_and_ungated"),
                        ("clusters", "clusters"),
                        ("clusters_at_zero_coverage", "clusters_at_zero")):
         out.append((f"totals {label}", f"{label}: {m[key]}"))
