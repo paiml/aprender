@@ -326,11 +326,9 @@ impl Widget for Checkbox {
             Event::MouseDown {
                 position,
                 button: MouseButton::Left,
-            } => {
-                if self.bounds.contains_point(position) {
-                    self.state = self.state.toggle();
-                    return Some(Box::new(CheckboxChanged { state: self.state }));
-                }
+            } if self.bounds.contains_point(position) => {
+                self.state = self.state.toggle();
+                return Some(Box::new(CheckboxChanged { state: self.state }));
             }
             _ => {}
         }

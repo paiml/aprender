@@ -176,7 +176,7 @@ pub fn dequantize_f16(data: &[u8]) -> Result<Vec<f32>> {
     let num_values = data.len() / 2;
     let mut result = Vec::with_capacity(num_values);
 
-    for chunk in data.chunks_exact(2) {
+    for chunk in data.as_chunks::<2>().0 {
         let h = u16::from_le_bytes([chunk[0], chunk[1]]);
         result.push(f16_to_f32(h));
     }

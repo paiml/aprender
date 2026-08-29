@@ -221,7 +221,7 @@ fn print_summary(
         "✗"
     };
     eprintln!();
-    eprintln!("pv certify — {icon} {edges_satisfied}/{edges_total} composition edges satisfied",);
+    eprintln!("pv certify — {icon} {edges_satisfied}/{edges_total} composition edges satisfied");
     if let Some(cfg) = config_proof {
         if let Some(tensors) = cfg.get("expected_tensors") {
             eprintln!("  Config: {tensors} expected tensors");
@@ -317,7 +317,7 @@ pub fn analyze_config(cfg_path: &Path) -> Result<serde_json::Value, Box<dyn std:
         .unwrap_or(nh);
     let v = json.get("vocab_size").and_then(Value::as_u64).unwrap_or(0);
 
-    let head_dim = if nh > 0 { h / nh } else { 0 };
+    let head_dim = h.checked_div(nh).unwrap_or(0);
     let expected_tensors = if l > 0 { 1 + l * 9 + 2 } else { 0 };
 
     let checks = [

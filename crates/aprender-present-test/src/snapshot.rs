@@ -263,7 +263,7 @@ impl Image {
     pub fn histogram(&self) -> [[u32; 256]; 4] {
         let mut hist = [[0u32; 256]; 4];
 
-        for chunk in self.data.chunks_exact(4) {
+        for chunk in self.data.as_chunks::<4>().0 {
             for (i, &val) in chunk.iter().enumerate() {
                 hist[i][val as usize] += 1;
             }
@@ -282,7 +282,7 @@ impl Image {
 
         let mut sums = [0.0f64; 4];
 
-        for chunk in self.data.chunks_exact(4) {
+        for chunk in self.data.as_chunks::<4>().0 {
             for (i, &val) in chunk.iter().enumerate() {
                 sums[i] += f64::from(val);
             }

@@ -130,7 +130,7 @@ fn extract_frames_ffmpeg(video: &Path, threshold: f64, min_interval: f64) -> Res
     fs::create_dir_all(&frames_dir)?;
 
     // Use ffmpeg select filter for scene detection + fps filter for minimum interval
-    let select_filter = format!("select='gt(scene\\,{threshold})',fps=1/{min_interval}",);
+    let select_filter = format!("select='gt(scene\\,{threshold})',fps=1/{min_interval}");
 
     let output_pattern = frames_dir
         .join("frame_%04d.png")

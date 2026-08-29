@@ -114,14 +114,12 @@ impl SafetensorsModel {
         }
 
         let values = bytes
-            .chunks_exact(4)
-            .map(|chunk| {
-                f32::from_le_bytes(
-                    chunk
-                        .try_into()
-                        .expect("chunks_exact(4) guarantees 4-byte slices"),
-                )
-            })
+            .as_chunks::<4>()
+            .0
+            .iter()
+            // `as_chunks::<4>()` yields `&[u8; 4]`, so the width is a type and
+            // the fallible conversion is gone.
+            .map(|chunk| f32::from_le_bytes(*chunk))
             .collect();
 
         Ok(values)
@@ -247,7 +245,9 @@ impl SafetensorsModel {
 
         // Convert F16 bytes to F32
         let values: Vec<f32> = bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|chunk| {
                 let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
                 half::f16::from_bits(bits).to_f32()

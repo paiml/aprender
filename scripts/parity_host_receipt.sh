@@ -87,12 +87,21 @@ BANDS=$(sed -n 's/^[[:space:]]*http_concurrency_bands[[:space:]]*=[[:space:]]*\[
         "$(dirname "$0")/llama_pin.toml" | tr -d ' ' | tr ',' ' ')
 [ -n "$BANDS" ] || { printf 'FAIL  llama_pin.toml declares no http_concurrency_bands\n' >&2; exit 1; }
 
+# Same rule on the apr side. This line read `--context-length 4096`, a literal
+# copy of the declared context_length, so apr and the comparator could have been
+# run at different context lengths with both "matching" a declaration neither
+# read (#2737).
+CTX=$(llama_pin_get_raw context_length "$(dirname "$0")/llama_pin.toml")
+case "$CTX" in
+    ''|*[!0-9]*) printf 'FAIL  llama_pin.toml declares no numeric context_length\n' >&2; exit 1 ;;
+esac
+
 run_lane() { # run_lane <class> <apr-flags> <llama-ngl> -> writes $WORK/<class>.json
     local klass="$1" apr_flags="$2" ngl="$3"
     local aport=8090 lport=8091
 
     # shellcheck disable=SC2086
-    "$APR" serve run "$MODEL" $apr_flags --port "$aport" --context-length 4096 \
+    "$APR" serve run "$MODEL" $apr_flags --port "$aport" --context-length "$CTX" \
         > "$WORK/apr-$klass.log" 2>&1 &
     SERVER_PIDS="$SERVER_PIDS $!"
     wait_healthy "$aport" 300 || { printf 'FAIL  apr did not become healthy for lane %s\n' "$klass" >&2; return 1; }
@@ -105,7 +114,25 @@ run_lane() { # run_lane <class> <apr-flags> <llama-ngl> -> writes $WORK/<class>.
     done
     kill_servers; SERVER_PIDS=""; sleep 5
 
-    "$LLAMA_SERVER" -m "$MODEL" --port "$lport" -ngl "$ngl" -c 4096 -t 8 -b 1 --no-warmup \
+    # THE COMPARATOR'S FLAGS COME FROM THE DECLARATION, NOT FROM THIS LINE.
+    #
+    # This line used to read `-c 4096 -t 8 -b 1`: a third copy of values that
+    # scripts/llama_pin.toml already declared as context_length, threads and
+    # batch_size. Three copies, no joins, and `-b 1` alone inflated the c=16
+    # aggregate ratio 2.03x -> 4.85x by switching llama.cpp's batching off
+    # (#2737). llama_comparator_server_flags is now the only producer, and
+    # scripts/check_comparator_flags.sh fails if this line grows a literal back.
+    #
+    # FAIL CLOSED. An unreadable declaration returns non-zero and prints
+    # nothing, so the alternative to correct flags is no run — never a run with
+    # a silently truncated flag list.
+    local lflags
+    lflags=$(llama_comparator_server_flags "$ngl" "$(dirname "$0")/llama_pin.toml") || {
+        printf 'FAIL  cannot build the comparator invocation from scripts/llama_pin.toml\n' >&2
+        return 1
+    }
+    # shellcheck disable=SC2086
+    "$LLAMA_SERVER" -m "$MODEL" --port "$lport" $lflags \
         > "$WORK/llama-$klass.log" 2>&1 &
     SERVER_PIDS="$SERVER_PIDS $!"
     wait_healthy "$lport" 300 || { printf 'FAIL  llama-server did not become healthy for lane %s\n' "$klass" >&2; return 1; }
@@ -113,6 +140,15 @@ run_lane() { # run_lane <class> <apr-flags> <llama-ngl> -> writes $WORK/<class>.
     if [ "$ngl" != "0" ] && grep -q "layers to GPU" "$WORK/llama-$klass.log"; then
         if grep -qi "CUDA" "$WORK/llama-$klass.log"; then ctaken=cuda; else ctaken=metal; fi
     fi
+    # RESOLVED, NOT REQUESTED (§4.4.9). `comparator_parallel = "default"` means
+    # we pass no `-np`, so the slot count is whatever the pinned build chose.
+    # Report the line the SERVER printed about itself rather than inferring it,
+    # so a pin bump that changes the auto value is visible in the lane output
+    # instead of silently moving every band above c=4.
+    local nparallel
+    nparallel=$(sed -n 's/.*n_parallel = \([0-9][0-9]*\).*/\1/p' "$WORK/llama-$klass.log" | head -1)
+    printf 'REPORT lane %s: comparator flags [%s]; server-reported n_parallel=%s\n' \
+        "$klass" "$lflags" "${nparallel:-unreported}" >&2
     for c in $BANDS; do
         "$APR" test llm bench --url "http://127.0.0.1:$lport" --model "$(basename "$MODEL" .gguf)" \
             --profile "$PROFILE" --warmup "$WARMUP" --duration "$DURATION" --runs "$RUNS" \

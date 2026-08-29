@@ -232,7 +232,7 @@ pub fn quantize_activations_q8k_into(
         });
     }
 
-    for (sb_idx, chunk) in activations.chunks_exact(256).enumerate() {
+    for (sb_idx, chunk) in activations.as_chunks::<256>().0.iter().enumerate() {
         Q8KSuperBlock::quantize_into(
             chunk,
             &mut scales[sb_idx],
@@ -264,11 +264,12 @@ pub fn quantize_to_q8_blocks(values: &[f32]) -> Result<Vec<Q8_0Block>> {
     }
 
     let blocks: Vec<Q8_0Block> = values
-        .chunks_exact(32)
-        .map(|chunk| {
-            let arr: [f32; 32] = chunk.try_into().expect("chunk is exactly 32 elements");
-            Q8_0Block::quantize(&arr)
-        })
+        .as_chunks::<32>()
+        .0
+        .iter()
+        // `as_chunks::<32>()` yields `&[f32; 32]`, so the width is a type and
+        // the fallible conversion is gone.
+        .map(Q8_0Block::quantize)
         .collect();
 
     Ok(blocks)
