@@ -88,6 +88,8 @@ pub fn build_layer_graph(
         OpParams {
             weight_ptr: layer_weights.attn_q_ptr,
             weight_qtype: ggml_code(layer_weights.attn_q_qtype),
+            bias_ptr: layer_weights.attn_q_bias_ptr,
+            bias_len: layer_weights.attn_q_bias_len,
             ..Default::default()
         },
     );
@@ -101,6 +103,8 @@ pub fn build_layer_graph(
         OpParams {
             weight_ptr: layer_weights.attn_k_ptr,
             weight_qtype: ggml_code(layer_weights.attn_k_qtype),
+            bias_ptr: layer_weights.attn_k_bias_ptr,
+            bias_len: layer_weights.attn_k_bias_len,
             ..Default::default()
         },
     );
@@ -114,6 +118,8 @@ pub fn build_layer_graph(
         OpParams {
             weight_ptr: layer_weights.attn_v_ptr,
             weight_qtype: ggml_code(layer_weights.attn_v_qtype),
+            bias_ptr: layer_weights.attn_v_bias_ptr,
+            bias_len: layer_weights.attn_v_bias_len,
             ..Default::default()
         },
     );

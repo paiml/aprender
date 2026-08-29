@@ -93,6 +93,14 @@ pub struct OpParams {
     /// on the serving crate's `WeightQuantType`. 12 = Q4_K, which is also the `Default`, so
     /// nodes that do not set it behave exactly as before.
     pub weight_qtype: u32,
+    /// PERF-050 (aprender#2769): bias vector applied after a MulMat, 0 when there is none.
+    ///
+    /// The graph had no bias node and no way to express one, so the QKV bias Qwen2.5 models
+    /// carry was silently dropped on this path while the M=1 path applied it. Defaults to 0,
+    /// which means "no bias" and reproduces the previous behaviour exactly.
+    pub bias_ptr: u64,
+    /// Length of `bias_ptr` in elements; 0 means no bias.
+    pub bias_len: usize,
 }
 
 /// GGML type code for Q4_K, the historical hardcoded assumption and this field's default.
@@ -227,6 +235,8 @@ impl Default for OpParams {
             // PERF-050: Q4_K, matching the assumption this field replaces, so an unset node is
             // bit-identical to the old behaviour.
             weight_qtype: GGML_TYPE_Q4_K,
+            bias_ptr: 0,
+            bias_len: 0,
         }
     }
 }

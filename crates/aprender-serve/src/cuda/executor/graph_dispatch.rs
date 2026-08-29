@@ -102,6 +102,24 @@ impl KernelDispatch for CudaExecutor {
 
         std::mem::forget(input_buf);
         std::mem::forget(output_buf);
+
+        // PERF-050 (aprender#2769): apply the bias the graph never had a node for.
+        //
+        // apply.rs does this on the M=1 path right after the GEMV -- "BIAS-FIX: Add QKV bias
+        // after GEMV (Qwen2.5 models have QKV bias)" -- and this path did not, because OpParams
+        // could not express a bias. blk.0.attn_k.bias[0] alone is 4.09375, the scale of the
+        // entire graph-side k_buf, so dropping it is not a rounding-level omission.
+        //
+        // `bias_len == 0` means no bias, so nodes that do not carry one are untouched.
+        // APR_GRAPH_NO_BIAS=1 restores the previous behaviour inside ONE binary, which is the
+        // only form of A/B this investigation trusts.
+        let bias_ptr = node.params.bias_ptr;
+        if bias_ptr != 0
+            && node.params.bias_len > 0
+            && std::env::var("APR_GRAPH_NO_BIAS").as_deref() != Ok("1")
+        {
+            self.batched_bias_broadcast_add(output_ptr, bias_ptr, n, m)?;
+        }
         Ok(())
     }
 
