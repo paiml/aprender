@@ -1751,8 +1751,13 @@ pub enum LlmSubcommand {
         // the max(30, 8c) sample floor are the entire difference between a
         // load test and a measurement, and a flag that shrinks them is the
         // shortest path back to a gate that cannot fail. The only knob is
-        // --replicates, and going below the spec's N=3 is stated on stdout
-        // rather than silently accepted.
+        // --replicates, and going below the spec's N=3 is written INTO THE
+        // RECEIPT -- `replicates.below_spec` plus a `stated_violations` entry
+        // perf_gate.sh reads -- not merely printed. This comment said "stated
+        // on stdout" while test_llm_band.rs said "written into the receipt
+        // directory" and the code did stdout; the receipt contained no mention
+        // of `replicate` at all, so an --replicates 1 run was
+        // byte-indistinguishable from one replicate of a spec cell (#2755).
         // ------------------------------------------------------------------
         /// Run the §4.4-conformant band protocol and write receipts
         /// `scripts/perf_gate.sh` can judge.
@@ -1784,9 +1789,24 @@ pub enum LlmSubcommand {
         bands: String,
         /// Full band replicates per cell (spec: N=3). Each replicate writes its
         /// own independently judgeable receipt.
+        ///
+        /// A value below N is recorded in every receipt as
+        /// `replicates.below_spec` and a `stated_violations` entry, which
+        /// `scripts/perf_gate.sh` REPORTs at merge phase and FAILs at release.
+        /// It is not refused: an under-replicated measurement is worth more
+        /// than none, but it must not read like a conformant one (#2755).
         #[arg(long, default_value_t = commands::test_llm_band::default_replicates())]
         replicates: usize,
-        /// Workload identifier recorded in the receipt.
+        /// Workload identifier recorded in the receipt (§4.3).
+        ///
+        /// Bound to the prompts actually sent: the receipt carries a digest and
+        /// the distinct-prompt count of the set, and the label is REFUSED when
+        /// the set holds fewer distinct prompts than the narrowest band's
+        /// `max(30, 8c)` sample floor. `--workload W1 --profile short` — one
+        /// prompt sent 30 times — used to be recorded as W1, which is the exact
+        /// degenerate case the committed corpus's own
+        /// `_meta.distinctness_rationale` names as invalidating Arm A (#2756).
+        /// Use `--prompts crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl`.
         #[arg(long, default_value = "W1", value_parser = ["W1", "W2"])]
         workload: String,
         /// Join key: which machine measured. Required by the receipt schema.
@@ -1811,6 +1831,15 @@ pub enum LlmSubcommand {
         #[arg(long = "server-feature")]
         server_features: Vec<String>,
         /// How tokens were counted (§4.4.6). Absence of a valid value is fatal.
+        ///
+        /// This is the REQUESTED method. The receipt records it under
+        /// `tokenization.method_requested` and reports the method actually
+        /// USED under `tokenization.method`, derived from the responses: a
+        /// stream that carries no `usage` object was counted client-side
+        /// whatever was declared here, and every streaming receipt this harness
+        /// produced before PERF-048 said `server_usage` over such counts
+        /// (#2754). A differing pair is recorded with its reason and read by
+        /// `scripts/perf_gate.sh`.
         #[arg(long, default_value = "server_usage",
               value_parser = ["server_usage", "client_tokenizer"])]
         tokenization: String,

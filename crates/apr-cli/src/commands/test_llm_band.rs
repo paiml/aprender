@@ -33,8 +33,16 @@
 //! The `max(30, 8c)` sample floor and the 60 s wall-clock floor are the entire
 //! difference between a load test and a measurement; a `--band-duration` would
 //! be the shortest path back to a gate that cannot fail. `--replicates` is the
-//! only knob, it defaults to §4.4.2's `N = 3`, and going below that is written
-//! into the receipt directory as a stated violation rather than silently taken.
+//! only knob and it defaults to §4.4.2's `N = 3`.
+//!
+//! Going below `N` is written **into the receipt** as `replicates.below_spec`
+//! and a `stated_violations` entry that `scripts/perf_gate.sh` reads. Until
+//! PERF-048 this comment said "written into the receipt directory", the CLI's
+//! own `--replicates` help said "stated on stdout", and the code did stdout:
+//! `grep -ic replicate receipt.r1.json` returned `0`, so an `--replicates 1`
+//! run was byte-indistinguishable from one replicate of a spec `N = 3` cell and
+//! reported itself conformant (#2755). Two doc comments disagreeing with each
+//! other and with the code is how that survived review.
 //!
 //! # One receipt per replicate, and why
 //!
@@ -55,10 +63,11 @@
 use crate::error::{CliError, Result};
 use apr_test::llm::band::{run_band, BandRun};
 use apr_test::llm::client::{ChatRequest, LlmClient};
-use apr_test::perf_gate::protocol::BandConfig;
+use apr_test::perf_gate::protocol::{min_sampled_requests, BandConfig};
 use apr_test::perf_gate::{
     sha256_file, write_samples_gz, BandInput, ComparatorStatus, ComputeClass, Provenance,
-    ReceiptInput, RequestOutcome, TokenizationBlock, Workload, REPLICATES,
+    ReceiptInput, Replicates, RequestOutcome, TokenizationBlock, TokenizationObservation, Workload,
+    WorkloadCorpus, REPLICATES,
 };
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -237,6 +246,55 @@ fn comparator_status(args: &BandArgs<'_>) -> ComparatorStatus {
     }
 }
 
+/// The prompt texts the harness will cycle, in issue order.
+///
+/// Every message's content, joined — not just the last user turn. Two corpora
+/// differing only in their system prompt are two different workloads, and a
+/// digest that could not tell them apart would be a label of the same kind
+/// `--workload` already was.
+fn prompt_texts(prompts: &[ChatRequest]) -> Vec<String> {
+    prompts
+        .iter()
+        .map(|p| {
+            p.messages
+                .iter()
+                .map(|m| m.content.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .collect()
+}
+
+/// §4.3 — bind `--workload` to the prompts actually sent, and refuse the label
+/// when the sent set cannot bear it (#2756).
+///
+/// The refusal happens **here**, before the health check and before the first
+/// request, so a corpus that cannot carry the label costs nothing rather than
+/// invalidating a 14-minute sweep after the fact.
+///
+/// Unlike the §4.4.6 downgrade, this refuses rather than states: a conformant
+/// corpus is committed in-tree, so refusing points at the fix instead of
+/// removing the measurement.
+fn build_corpus(
+    args: &BandArgs<'_>,
+    workload: Workload,
+    prompts: &[ChatRequest],
+    levels: &[usize],
+) -> Result<WorkloadCorpus> {
+    let source = describe_workload(args.profile, args.prompts, prompts.len());
+    let corpus = WorkloadCorpus::from_prompt_texts(&prompt_texts(prompts), source);
+    let narrowest = levels
+        .iter()
+        .copied()
+        .map(min_sampled_requests)
+        .min()
+        .unwrap_or_else(|| min_sampled_requests(1));
+    if let Some(refusal) = corpus.label_refusal(workload, narrowest) {
+        return Err(CliError::InvalidInput(refusal));
+    }
+    Ok(corpus)
+}
+
 /// One `run_band` result as the receipt producer's input.
 ///
 /// `RequestSample` records offsets from the band origin in **seconds**;
@@ -290,11 +348,43 @@ fn report_run(concurrency: usize, k: usize, replicates: usize, run: &BandRun) {
     }
 }
 
+/// Everything one replicate's receipt needs beyond the runs themselves.
+///
+/// A struct rather than seven positional arguments: this is the function that
+/// decides what the receipt ASSERTS, and a transposed pair here is exactly the
+/// class of defect PERF-048 exists to close.
+struct ReplicateContext<'a> {
+    tokenization: &'a TokenizationBlock,
+    provenance: &'a Provenance,
+    workload: Workload,
+    corpus: &'a WorkloadCorpus,
+    replicates: Replicates,
+    /// Departures from §4.4 the runs stated, carried into the receipt instead
+    /// of being printed and lost.
+    stated_violations: Vec<String>,
+}
+
+/// §4.4.6 — one replicate's observation is the sum of its bands'.
+///
+/// Summed rather than taken from a "representative" band: a receipt covers
+/// every band of one replicate, and a mixture in which one band's server
+/// reported usage and another's did not is the fallback class, not the server
+/// class. Summing is what makes that visible.
+fn observe_replicate(runs: &[(usize, BandRun)]) -> TokenizationObservation {
+    runs.iter().fold(
+        TokenizationObservation {
+            responses_with_server_usage: 0,
+            responses_counted_by_client_tokenizer: 0,
+            responses_counted: 0,
+        },
+        |acc, (_, run)| acc.merged(run.tokenization_observed),
+    )
+}
+
 /// Write one replicate's receipt and its per-band sample files.
 fn write_replicate(
     args: &BandArgs<'_>,
-    tokenization: &TokenizationBlock,
-    provenance: &Provenance,
+    ctx: &ReplicateContext<'_>,
     replicate: usize,
     runs: &[(usize, BandRun)],
 ) -> Result<PathBuf> {
@@ -312,12 +402,29 @@ fn write_replicate(
         );
     }
 
-    let workload = Workload::from_str(args.workload)
-        .map_err(|e| CliError::InvalidInput(format!("--workload: {e}")))?;
+    let mut stated_violations = ctx.stated_violations.clone();
+    for (_, run) in runs {
+        // §4.4 departures the run recorded. `BandRun::protocol_violations` was
+        // computed on every run and read only by `report_run`'s println, so a
+        // shrunken warmup or a SUSPECT drain left the receipt reading exactly
+        // like a clean one — the same shape as #2755's replicate count.
+        for v in &run.protocol_violations {
+            if !stated_violations.contains(v) {
+                stated_violations.push(v.clone());
+            }
+        }
+    }
     let input = ReceiptInput {
-        provenance: provenance.clone(),
-        tokenization: tokenization.clone(),
-        workload,
+        provenance: ctx.provenance.clone(),
+        tokenization: ctx.tokenization.clone(),
+        tokenization_observed: observe_replicate(runs),
+        workload: ctx.workload,
+        workload_corpus: ctx.corpus.clone(),
+        replicates: Replicates {
+            index: replicate + 1,
+            ..ctx.replicates
+        },
+        stated_violations,
         commit: args.commit.unwrap_or("UNPINNED").to_string(),
         bands: runs
             .iter()
@@ -371,6 +478,26 @@ pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
         })
         .collect();
 
+    // §4.3 — refuse a label the sent prompts cannot carry BEFORE the endpoint
+    // is touched. `--workload W1 --profile short` (one prompt, sent 30 times)
+    // used to produce a receipt saying `"workload": "W1"` (#2756).
+    let corpus = build_corpus(&args, workload, &prompts, &levels)?;
+    let widest = levels
+        .iter()
+        .copied()
+        .map(min_sampled_requests)
+        .max()
+        .unwrap_or_else(|| min_sampled_requests(1));
+    let mut stated_violations = Vec::new();
+    if let Some(v) = corpus.repetition_violation(workload, widest) {
+        stated_violations.push(v);
+    }
+    let replicates = Replicates {
+        index: 1,
+        effective: args.replicates,
+        required: REPLICATES,
+    };
+
     let client = LlmClient::new(args.url, args.model);
     client.health_check().await.map_err(|e| {
         CliError::InferenceFailed(format!("endpoint {} is not ready: {e}", args.url))
@@ -388,12 +515,19 @@ pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
          max(30, 8c) samples AND 60s wall-clock are met",
         args.replicates
     );
-    if args.replicates < REPLICATES {
-        println!(
-            "!        --replicates {} is below §4.4.2's N={REPLICATES}; the cell is \
-             under-replicated and its bootstrap CI is correspondingly weak",
-            args.replicates
-        );
+    println!(
+        "corpus   {} prompt(s), {} distinct, sha256 {}",
+        corpus.prompts, corpus.distinct_prompts, corpus.sha256
+    );
+    // Every one of these goes into the receipt as well. Printing is for the
+    // operator watching; the receipt is for the operator reading it a month
+    // later, and #2755 is what happens when only the first exists.
+    for v in replicates
+        .violation()
+        .into_iter()
+        .chain(stated_violations.clone())
+    {
+        println!("!        {v}");
     }
     if !args.stream {
         println!(
@@ -417,8 +551,14 @@ pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
         }
         written.push(write_replicate(
             &args,
-            &tokenization,
-            &provenance,
+            &ReplicateContext {
+                tokenization: &tokenization,
+                provenance: &provenance,
+                workload,
+                corpus: &corpus,
+                replicates,
+                stated_violations: stated_violations.clone(),
+            },
             k,
             &runs,
         )?);
@@ -586,5 +726,126 @@ mod tests {
     #[test]
     fn an_unknown_workload_is_refused() {
         assert!(Workload::from_str("W3").is_err());
+    }
+
+    // ----------------------------------------------------------- PERF-048 ---
+
+    use apr_test::llm::client::{ChatMessage, Role};
+
+    fn corpus_of(n: usize) -> Vec<ChatRequest> {
+        (0..n)
+            .map(|i| ChatRequest {
+                model: "m".to_string(),
+                messages: vec![ChatMessage {
+                    role: Role::User,
+                    content: format!("// w1-{i:04} body"),
+                }],
+                temperature: Some(0.0),
+                max_tokens: Some(128),
+                stream: Some(true),
+                seed: Some(0),
+                ignore_eos: Some(true),
+            })
+            .collect()
+    }
+
+    /// **THE PERF-045 INVOCATION**: `--workload W1 --profile short`, one prompt
+    /// sent 30 times, recorded as W1 (#2756). It must be refused where it was
+    /// typed — before the endpoint is touched, so no measurement is thrown
+    /// away.
+    ///
+    /// RED for: dropping the `label_refusal` call from `build_corpus`.
+    #[test]
+    fn a_one_prompt_corpus_cannot_be_labelled_w1() {
+        let a = args("1,4,8,16", "server_usage");
+        let err = build_corpus(&a, Workload::W1, &corpus_of(1), &[1, 4, 8, 16])
+            .expect_err("one prompt is not W1");
+        let msg = err.to_string();
+        assert!(msg.contains("prefix caching"), "{msg}");
+        assert!(msg.contains("prompts-w1.jsonl"), "{msg}");
+    }
+
+    /// THE DISCRIMINATION CASE: the committed corpus's size is accepted, and
+    /// the digest it produces is the one that goes in the receipt.
+    #[test]
+    fn a_committed_sized_corpus_is_accepted_and_digested() {
+        let a = args("1,4,8,16", "server_usage");
+        let c = build_corpus(&a, Workload::W1, &corpus_of(256), &[1, 4, 8, 16])
+            .expect("256 distinct prompts carry the label");
+        assert_eq!(c.prompts, 256);
+        assert_eq!(c.distinct_prompts, 256);
+        assert_eq!(c.sha256.len(), 64);
+        // ...and it does not repeat inside the widest declared band.
+        assert!(c.repetition_violation(Workload::W1, 128).is_none());
+    }
+
+    /// The floor tracks the NARROWEST band that will run, not a constant: a
+    /// c=16-only sweep needs 128 distinct prompts, not 30.
+    #[test]
+    fn the_refusal_floor_follows_the_narrowest_band() {
+        let a = args("16", "server_usage");
+        assert!(build_corpus(&a, Workload::W1, &corpus_of(30), &[16]).is_err());
+        assert!(build_corpus(&a, Workload::W1, &corpus_of(128), &[16]).is_ok());
+        // The same 30-prompt set is fine when c=1 is the narrowest band.
+        let a1 = args("1", "server_usage");
+        assert!(build_corpus(&a1, Workload::W1, &corpus_of(30), &[1]).is_ok());
+    }
+
+    /// The digest covers every message, so two corpora differing only in a
+    /// system turn are two corpora.
+    #[test]
+    fn the_digest_covers_every_message_not_just_the_last_turn() {
+        let plain = corpus_of(30);
+        let mut with_system = corpus_of(30);
+        with_system[0].messages.insert(
+            0,
+            ChatMessage {
+                role: Role::System,
+                content: "You are terse.".to_string(),
+            },
+        );
+        let a = args("1", "server_usage");
+        let x = build_corpus(&a, Workload::W1, &plain, &[1]).expect("ok");
+        let y = build_corpus(&a, Workload::W1, &with_system, &[1]).expect("ok");
+        assert_ne!(x.sha256, y.sha256);
+    }
+
+    /// §4.4.6 — the replicate's observation is the SUM over its bands, so one
+    /// band whose server went quiet downgrades the whole receipt rather than
+    /// being outvoted.
+    #[test]
+    fn a_replicates_observation_sums_its_bands() {
+        let merged = TokenizationObservation {
+            responses_with_server_usage: 30,
+            responses_counted_by_client_tokenizer: 0,
+            responses_counted: 30,
+        }
+        .merged(TokenizationObservation {
+            responses_with_server_usage: 0,
+            responses_counted_by_client_tokenizer: 0,
+            responses_counted: 32,
+        });
+        assert_eq!(merged.responses_counted, 62);
+        assert!(!merged.every_response_carried_server_usage());
+    }
+
+    /// §4.4.2 — the effective N reaches the receipt whatever it is, and the
+    /// index is per-replicate.
+    #[test]
+    fn the_effective_replicate_count_is_recorded() {
+        let below = Replicates {
+            index: 1,
+            effective: 1,
+            required: REPLICATES,
+        };
+        assert!(below.below_spec());
+        assert!(below.violation().is_some());
+        let spec = Replicates {
+            index: 3,
+            effective: REPLICATES,
+            required: REPLICATES,
+        };
+        assert!(!spec.below_spec());
+        assert!(spec.violation().is_none());
     }
 }

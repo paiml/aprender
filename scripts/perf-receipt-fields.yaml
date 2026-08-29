@@ -199,28 +199,199 @@ fields:
       SUSPECT` rule cannot be evaluated on any artifact this repo can produce.
       Implement the drain phase in the closed-loop client and record its length.
 
+  # PERF-048 reclassified this block. It was UNMEASURED with "no producer emits
+  # a tokenization block of any shape", and by the time PERF-045 ran the
+  # protocol for real that had stopped being true -- while the entry still said
+  # it. The ledger's own rotting-claim rule is checked only for PRODUCED
+  # entries, so an UNMEASURED entry that has quietly acquired a producer is the
+  # one direction this guard cannot see. Read the caveat on
+  # `tokenization.method` before trusting the word "produced" here: the block is
+  # emitted, and what it says about `server_usage` was false on every streaming
+  # receipt until #2754 was closed.
   tokenization:
-    class: UNMEASURED
+    class: PRODUCED
     required: always
-    owner: PERF-004
-    spec: "§4.4.6"
-    needs: the block below; no producer emits a tokenization block of any shape
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: self.resolved_tokenization().to_json()
 
   tokenization.method:
-    class: UNMEASURED
+    class: PRODUCED
     required: always
-    owner: PERF-004
-    spec: "§4.4.6"
-    needs: >-
-      The harness counts tokens from the server's own `usage.completion_tokens`
-      (loadtest.rs, send_one_request), which is §4.4.6's `server_usage` -- the
-      method the spec says is NOT canonical, because two servers' usage fields
-      are two implementations' opinions. Writing "server_usage" here would be
-      accurate about today and would silently arm a ratio §4.4.6 refuses. The
-      canonical `client_tokenizer` path does not exist, and the three sibling
-      fields the block requires (tokenizer_sha256, counts_special_tokens,
-      counts_prompt_echo) have no producer and nothing that could infer them.
-      SGLang RFC #9808 is the cited prior art for getting this wrong.
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: json!(self.used.wire_token())
+    caveat: >-
+      THE METHOD THAT WAS USED, NOT THE ONE THAT WAS REQUESTED. This field
+      carried `server_usage` on every streaming receipt the tree could produce
+      while the tokens were client-counted: `apr serve`'s SSE stream carries no
+      `usage` object, `llm::band::usage_counts` took its fallback arm without
+      saying so, and nothing cross-checked the declaration against the
+      observation (#2754). It is now derived from
+      `tokenization.responses_with_server_usage` and
+      `tokenization.responses_counted_by_client_tokenizer` and cannot be set by
+      a caller; the caller's declaration is recorded beside it under
+      `method_requested`. §4.4.6's `client_tokenizer` path still does not exist
+      in this harness -- it supplies no TokenCounter at all -- so the value a
+      streaming band against `apr serve` produces is `client_chunk_count`, a
+      count of SSE deltas that equals a token count only for a server emitting
+      one token per chunk. SGLang RFC #9808 is the cited prior art for getting
+      this wrong.
+
+  tokenization.method_requested:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: '"method_requested".into()'
+    caveat: >-
+      The operator's §4.4.6 declaration, kept beside the method actually used so
+      a downgrade is a visible pair rather than a silent substitution. Arm C
+      FAILS a differing pair that carries no `downgrade_reason`.
+
+  tokenization.downgrade_reason:
+    class: PRODUCED
+    required: conditional
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: 'pub fn downgrade_reason(&self) -> Option<String>'
+    caveat: >-
+      Present exactly when `method != method_requested`. Absent on a receipt
+      whose declaration stood, so its presence is itself the signal.
+
+  tokenization.tokenizer_sha256:
+    class: PRODUCED
+    required: conditional
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: 'if let Some(sha) = self.declared.digest()'
+    caveat: >-
+      §4.4.6 requires it whenever a client tokenizer did the counting. The
+      declaration's enum makes "client_tokenizer with no digest" unrepresentable;
+      `ResolvedTokenization::validate` applies the same rule to the method
+      actually USED, and Arm C applies it again to the emitted receipt.
+
+  tokenization.responses_with_server_usage:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/llm/band.rs
+      symbol: fn observe_tokenization
+    caveat: >-
+      THE OBSERVATION THE METHOD IS DERIVED FROM. Counted over completed
+      responses only: a failed or timed-out request carries no response to have
+      counted anything from, and folding it in would let a run of transport
+      errors downgrade a healthy declaration. Retained per request in the §4.4.5
+      samples as `server_usage`, so the receipt's §4.4.6 block can be re-derived
+      rather than trusted.
+
+  tokenization.responses_counted_by_client_tokenizer:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/llm/band.rs
+      symbol: fn observe_tokenization
+    caveat: >-
+      Zero for `apr test llm bench --band`, and that is the finding rather than
+      an omission: the harness supplies no TokenCounter anywhere, so
+      `--tokenization client_tokenizer` was exactly as unfalsifiable as the
+      `server_usage` declaration #2754 caught. A future producer with a real
+      client tokenizer sets it, and `method` follows.
+
+  tokenization.responses_counted:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/llm/band.rs
+      symbol: fn observe_tokenization
+    caveat: >-
+      The denominator. Zero is refused rather than defaulted: a resolution over
+      no responses names a counting method for a run that counted nothing.
+
+  # ------------------------------------------------------------ §4.3/§4.4.2 --
+  workload:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: json!(self.workload.wire_token())
+    caveat: >-
+      A LABEL. On its own it is free text -- `Workload::from_str` only checks the
+      string is W1 or W2 -- which is how a one-prompt-sent-30-times run came to
+      be recorded as W1 (#2756). `workload_corpus` below is what binds it.
+
+  workload_corpus:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: pub struct WorkloadCorpus
+
+  workload_corpus.sha256:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: pub fn from_prompt_texts
+    caveat: >-
+      SHA-256 over every message of every prompt, in issue order. Two corpora of
+      the same size differing in one system turn are two corpora.
+
+  workload_corpus.distinct_prompts:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: pub fn from_prompt_texts
+    caveat: >-
+      Arm C FAILS a receipt whose sent set holds fewer distinct prompts than the
+      narrowest band's max(30, 8c) sample floor. The committed W1 corpus's own
+      `_meta.distinctness_rationale` is the authority: "Identical prompts would
+      let prefix caching, not the scheduler, drive Arm A's scaling_efficiency."
+      The producer refuses the same condition before the sweep; the gate checks
+      it again because a gate that trusts its producer checks nothing.
+
+  replicates:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: pub struct Replicates
+
+  replicates.effective:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/apr-cli/src/commands/test_llm_band.rs
+      symbol: 'effective: args.replicates'
+    caveat: >-
+      Recorded unconditionally. `grep -ic replicate receipt.r1.json` was 0 before
+      PERF-048, so an `--replicates 1` run was byte-indistinguishable from one
+      replicate of a spec N=3 cell and reported itself conformant (#2755). The
+      warning went to stdout, which is not retained.
+
+  replicates.required:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/protocol.rs
+      symbol: pub const REPLICATES
+    caveat: >-
+      §4.4.2's N, carried in the receipt so it states the bar it is measured
+      against rather than requiring the reader to know it.
+
+  stated_violations:
+    class: PRODUCED
+    required: always
+    producer:
+      file: crates/aprender-test-lib/src/perf_gate/receipt.rs
+      symbol: fn all_stated_violations
+    caveat: >-
+      Every departure from §4.4 the run recorded: a below-spec N, a prompt set
+      that repeats inside the widest band, and each band's own
+      `protocol_violations` -- which were computed on every run and read only by
+      a println. REPORTed at merge phase and FATAL at release. An empty list is
+      a claim, not an absence, which is why the field is required.
 
   # ---------------------------------------------------------------- Arm D ---
   # §4.4.9's scheduler block. REPORTING today, blocking with PERF-001 -- and the

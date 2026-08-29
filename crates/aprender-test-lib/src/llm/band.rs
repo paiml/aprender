@@ -26,7 +26,9 @@ use std::time::{Duration, Instant};
 
 use crate::perf_gate::bootstrap::{bootstrap_agg_tok_s_ci, BootstrapCi};
 use crate::perf_gate::metrics::{BandMetrics, RequestSample};
-use crate::perf_gate::protocol::{BandConfig, ClientModel, Outcome, TokenizationBlock, REPLICATES};
+use crate::perf_gate::protocol::{
+    BandConfig, ClientModel, Outcome, TokenizationBlock, TokenizationObservation, REPLICATES,
+};
 use crate::perf_gate::window::{WindowController, WindowReport};
 
 use super::client::{ChatRequest, LlmClient, LlmClientError};
@@ -39,9 +41,18 @@ pub struct BandRun {
     pub config: BandConfig,
     /// §4.4.1 — recorded, not assumed.
     pub client_model: ClientModel,
-    /// §4.4.6 — required, supplied by the caller because only the caller knows
-    /// how its tokens were counted.
+    /// §4.4.6 — the caller's DECLARATION. Recorded, never trusted: see
+    /// [`Self::tokenization_observed`].
     pub tokenization: TokenizationBlock,
+    /// §4.4.6 — what this run OBSERVED about who counted the tokens, derived
+    /// from the retained samples.
+    ///
+    /// `apr serve`'s SSE stream carries no `usage` object, so a streaming band
+    /// against it counts client-side chunks while the caller declares
+    /// `server_usage` — and until PERF-048 nothing recorded the difference
+    /// (#2754). The receipt's `tokenization.method` is derived from this field,
+    /// not from `tokenization` above.
+    pub tokenization_observed: TokenizationObservation,
     /// §4.4.3 metrics.
     pub metrics: BandMetrics,
     /// §4.4.2/§4.4.7 window and drain accounting.
@@ -130,16 +141,29 @@ struct Observed {
     token_offsets: Vec<Duration>,
     generated_tokens: u32,
     prompt_tokens: u32,
+    /// Whether the two counts above came from a server `usage` object.
+    ///
+    /// This is the fact `usage_counts` used to consume and discard. It decides
+    /// the receipt's §4.4.6 `method`, so it travels with the numbers it
+    /// describes rather than being inferred later from their shape.
+    server_usage: bool,
 }
 
-fn usage_counts(usage: Option<&Usage>, fallback_tokens: u32) -> (u32, u32) {
-    usage.map_or((fallback_tokens, 0), |u| {
-        (u.completion_tokens, u.prompt_tokens)
+/// `(completion, prompt, came_from_server_usage)`.
+///
+/// The third element is the whole of PERF-048: this function has always taken a
+/// fallback arm when the response carried no `usage` object, and has never said
+/// so. `apr serve`'s SSE stream carries none at all — measured, `grep -c
+/// '"usage"'` over a full stream returns 0 — so on every streaming band the
+/// fallback was the ONLY arm, and the receipt still declared `server_usage`.
+fn usage_counts(usage: Option<&Usage>, fallback_tokens: u32) -> (u32, u32, bool) {
+    usage.map_or((fallback_tokens, 0, false), |u| {
+        (u.completion_tokens, u.prompt_tokens, true)
     })
 }
 
 fn observe_blocking(response: &ChatResponse) -> Observed {
-    let (generated_tokens, prompt_tokens) = usage_counts(response.usage.as_ref(), 0);
+    let (generated_tokens, prompt_tokens, server_usage) = usage_counts(response.usage.as_ref(), 0);
     Observed {
         // A non-streaming response has no per-token arrival information at all.
         // Empty rather than synthesised: §4.4.3's `itl_ms` and `decode_tok_s` are
@@ -148,6 +172,7 @@ fn observe_blocking(response: &ChatResponse) -> Observed {
         token_offsets: Vec::new(),
         generated_tokens,
         prompt_tokens,
+        server_usage,
     }
 }
 
@@ -156,13 +181,22 @@ fn observe_blocking(response: &ChatResponse) -> Observed {
 async fn issue(client: &LlmClient, prompt: &ChatRequest, stream: bool) -> Option<Observed> {
     if stream {
         let streamed = client.chat_completion_stream(prompt).await.ok()?;
+        // The fallback count is the number of SSE deltas with non-empty
+        // `content` — role-only chunks are excluded by the client, which
+        // PERF-045 verified (960 = 30 x 32 exactly). That equals a TOKEN count
+        // only for a server emitting one token per chunk. It is an observation
+        // about one server on one day, never an invariant: a server emitting
+        // multi-token chunks would make this number silently wrong, which is
+        // why `server_usage: false` travels with it and the receipt records the
+        // count under `client_chunk_count` rather than under any token method.
         let observed_tokens = u32::try_from(streamed.token_timestamps.len()).unwrap_or(u32::MAX);
-        let (generated_tokens, prompt_tokens) =
+        let (generated_tokens, prompt_tokens, server_usage) =
             usage_counts(streamed.usage.as_ref(), observed_tokens);
         return Some(Observed {
             token_offsets: streamed.token_timestamps,
             generated_tokens,
             prompt_tokens,
+            server_usage,
         });
     }
     let timed = client.send(prompt).await.ok()?;
@@ -194,6 +228,8 @@ fn sample_from(
             outcome: Outcome::Failed,
             in_flight_at_start,
             drained,
+            // No response arrived, so nothing counted anything.
+            server_usage: false,
         };
     };
     RequestSample {
@@ -213,7 +249,28 @@ fn sample_from(
         outcome: Outcome::Completed,
         in_flight_at_start,
         drained,
+        server_usage: observed.server_usage,
     }
+}
+
+/// §4.4.6 — what the completed responses revealed about who counted.
+///
+/// Only `Completed` samples are counted: a failed or timed-out request carries
+/// no response to have counted anything from, and folding it in as "no server
+/// usage" would let a run of transport errors downgrade a healthy declaration.
+fn observe_tokenization(samples: &[RequestSample]) -> TokenizationObservation {
+    // `from_server_usage_flags` records zero client-tokenizer counts, which is
+    // the truth for this harness: it supplies no `TokenCounter` anywhere, so a
+    // `--tokenization client_tokenizer` declaration was exactly as unfalsifiable
+    // as the `server_usage` one that #2754 caught. `TokenCounter` appears in
+    // this workspace only inside `TokenizationBlock::require_counter`'s two
+    // error strings.
+    TokenizationObservation::from_server_usage_flags(
+        samples
+            .iter()
+            .filter(|s| s.outcome == Outcome::Completed)
+            .map(|s| s.server_usage),
+    )
 }
 
 /// One closed-loop worker: admit, issue, wait for completion, immediately try to
@@ -330,11 +387,13 @@ pub async fn run_band(
     let metrics = BandMetrics::from_samples(band.concurrency, &collected);
     let agg_ci = bootstrap_agg_tok_s_ci(&collected, 0.95);
     let protocol_violations = violations(band, warmup_completed, &metrics, &window);
+    let tokenization_observed = observe_tokenization(&collected);
 
     Ok(BandRun {
         config: band.clone(),
         client_model: band.client_model,
         tokenization,
+        tokenization_observed,
         metrics,
         window,
         samples: collected,
@@ -368,6 +427,7 @@ pub async fn run_cell(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::perf_gate::protocol::{ResolvedTokenization, TokenCountingMethod};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
@@ -473,7 +533,7 @@ mod tests {
 
     /// An SSE server that emits `tokens` chunks `gap_ms` apart, so TTFT and the
     /// inter-token gaps have known values the client must be able to recover.
-    async fn serve_sse(mut sock: tokio::net::TcpStream, tokens: usize, gap_ms: u64) {
+    async fn serve_sse(mut sock: tokio::net::TcpStream, tokens: usize, gap_ms: u64, usage: bool) {
         consume_request(&mut sock).await;
         let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
                     Cache-Control: no-cache\r\nConnection: close\r\n\r\n";
@@ -490,19 +550,38 @@ mod tests {
             }
             let _ = sock.flush().await;
         }
+        // §4.4.6: `usage` is what `apr serve` does NOT emit. The default probe
+        // reproduces that; `usage: true` is the discrimination case, and having
+        // both is the only way to show the observation tracks the server rather
+        // than the declaration.
+        if usage {
+            let final_chunk = format!(
+                "data: {{\"choices\":[],\"usage\":{{\"prompt_tokens\":512,\
+                 \"completion_tokens\":{tokens},\"total_tokens\":{}}}}}\n\n",
+                512 + tokens
+            );
+            if sock.write_all(final_chunk.as_bytes()).await.is_err() {
+                return;
+            }
+            let _ = sock.flush().await;
+        }
         let _ = sock.write_all(b"data: [DONE]\n\n").await;
         let _ = sock.flush().await;
         let _ = sock.shutdown().await;
     }
 
     async fn spawn_sse_probe(tokens: usize, gap_ms: u64) -> String {
+        spawn_sse_probe_with(tokens, gap_ms, false).await
+    }
+
+    async fn spawn_sse_probe_with(tokens: usize, gap_ms: u64, usage: bool) -> String {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind loopback");
         let addr = listener.local_addr().expect("local addr");
         tokio::spawn(async move {
             while let Ok((sock, _)) = listener.accept().await {
-                tokio::spawn(serve_sse(sock, tokens, gap_ms));
+                tokio::spawn(serve_sse(sock, tokens, gap_ms, usage));
             }
         });
         format!("http://{addr}")
@@ -779,5 +858,146 @@ mod tests {
         assert_eq!(ci.resampling_unit, "whole_request");
         let again = bootstrap_agg_tok_s_ci(&run.samples, 0.95).expect("n >= 2");
         assert_eq!(&again, ci, "the interval must re-derive from the samples");
+    }
+
+    // ------------------------------------------------------------ #2754 -----
+
+    /// **THE PERF-045 DEFECT, END TO END.** `spawn_sse_probe` emits no `usage`
+    /// object — exactly what `apr serve`'s SSE stream does (measured:
+    /// `grep -c '"usage"'` over a full stream returns 0). Declaring
+    /// `server_usage` against it must produce a run that says
+    /// `client_chunk_count`.
+    ///
+    /// RED for: `usage_counts` returning a constant `true`, or `run_band`
+    /// copying the declaration into `tokenization_observed`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_stream_with_no_usage_object_downgrades_the_declared_method() {
+        let url = spawn_sse_probe(6, 5).await;
+        let client = LlmClient::new(&url, "m");
+        let run = run_band(&client, &prompts(), &tiny_band(2, 8), tokenization(), true)
+            .await
+            .expect("band runs");
+
+        let obs = run.tokenization_observed;
+        assert!(obs.responses_counted >= 8, "{obs:?}");
+        assert_eq!(
+            obs.responses_with_server_usage, 0,
+            "the probe emits no usage object: {obs:?}"
+        );
+        assert_eq!(obs.responses_counted_by_client_tokenizer, 0);
+        assert!(!obs.every_response_carried_server_usage());
+
+        let resolved = ResolvedTokenization::resolve(run.tokenization.clone(), obs);
+        assert_eq!(resolved.requested(), TokenCountingMethod::ServerUsage);
+        assert_eq!(resolved.used(), TokenCountingMethod::ClientChunkCount);
+        assert!(resolved.downgraded());
+
+        // And the fallback count is what the client saw, per request.
+        for s in run
+            .samples
+            .iter()
+            .filter(|s| s.outcome == Outcome::Completed)
+        {
+            assert!(!s.server_usage, "{s:?}");
+            assert_eq!(
+                s.generated_tokens as usize,
+                s.token_times_s.len(),
+                "the fallback count IS the streamed chunk count: {s:?}"
+            );
+        }
+    }
+
+    /// THE DISCRIMINATION CASE. The same protocol against a stream that DOES
+    /// carry a usage object leaves the declaration standing.
+    ///
+    /// Without this, "always report zero" would pass the test above.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_stream_that_reports_usage_keeps_the_declared_method() {
+        let url = spawn_sse_probe_with(6, 5, true).await;
+        let client = LlmClient::new(&url, "m");
+        let run = run_band(&client, &prompts(), &tiny_band(2, 8), tokenization(), true)
+            .await
+            .expect("band runs");
+
+        let obs = run.tokenization_observed;
+        assert!(obs.responses_counted >= 8, "{obs:?}");
+        assert_eq!(
+            obs.responses_with_server_usage, obs.responses_counted,
+            "every response carried a usage object: {obs:?}"
+        );
+        let resolved = ResolvedTokenization::resolve(run.tokenization.clone(), obs);
+        assert_eq!(resolved.used(), TokenCountingMethod::ServerUsage);
+        assert!(!resolved.downgraded());
+        for s in run
+            .samples
+            .iter()
+            .filter(|s| s.outcome == Outcome::Completed)
+        {
+            assert!(s.server_usage, "{s:?}");
+            assert_eq!(s.prompt_tokens, 512, "the server's own figure: {s:?}");
+        }
+    }
+
+    /// A non-streaming response carries `usage` on the body, and the same
+    /// observation records it. `apr serve`'s non-streaming endpoint DOES return
+    /// one, which is why #2754 is a streaming-only defect.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_blocking_response_with_usage_is_observed_as_server_counted() {
+        let probe = spawn_probe(2).await;
+        let client = LlmClient::new(&probe.url, "m");
+        let run = run_band(&client, &prompts(), &tiny_band(2, 8), tokenization(), false)
+            .await
+            .expect("band runs");
+
+        let obs = run.tokenization_observed;
+        assert_eq!(obs.responses_with_server_usage, obs.responses_counted);
+        assert!(obs.every_response_carried_server_usage(), "{obs:?}");
+        assert_eq!(
+            ResolvedTokenization::resolve(run.tokenization.clone(), obs).used(),
+            TokenCountingMethod::ServerUsage
+        );
+    }
+
+    /// A failed request counted nothing, so it must not drag the observation's
+    /// denominator up and downgrade a healthy declaration.
+    #[test]
+    fn a_failed_request_is_not_a_response_that_failed_to_report_usage() {
+        let mut ok = RequestSample {
+            index: 0,
+            worker: 0,
+            start_s: 0.0,
+            end_s: 1.0,
+            token_times_s: vec![0.1],
+            generated_tokens: 8,
+            prompt_tokens: 512,
+            outcome: Outcome::Completed,
+            in_flight_at_start: 1,
+            drained: false,
+            server_usage: true,
+        };
+        let failed = RequestSample {
+            index: 1,
+            outcome: Outcome::Failed,
+            server_usage: false,
+            ..ok.clone()
+        };
+        let timed_out = RequestSample {
+            index: 2,
+            outcome: Outcome::Timeout,
+            server_usage: false,
+            ..ok.clone()
+        };
+        let obs = observe_tokenization(&[ok.clone(), failed, timed_out]);
+        assert_eq!(obs.responses_counted, 1, "{obs:?}");
+        assert!(obs.every_response_carried_server_usage(), "{obs:?}");
+
+        // ...and one completed response that did NOT report usage still does.
+        ok.index = 3;
+        let mut silent = ok.clone();
+        silent.server_usage = false;
+        let obs = observe_tokenization(&[ok, silent]);
+        assert_eq!(obs.responses_counted, 2);
+        assert_eq!(obs.responses_with_server_usage, 1);
+        assert!(!obs.every_response_carried_server_usage(), "{obs:?}");
     }
 }

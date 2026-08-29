@@ -180,6 +180,7 @@ mod tests {
             outcome: Outcome::Completed,
             in_flight_at_start: 4,
             drained: false,
+            server_usage: true,
         }
     }
 

@@ -190,7 +190,9 @@ pub use super::drain::{Outcome, DRAIN_SUSPECT_FRACTION};
 /// merely rejected, and it is the one wired into the emitter
 /// `scripts/perf_gate.sh` reads. Keeping both would be two spellings of one
 /// schema, free to drift.
-pub use super::receipt::{TokenCountingMethod, TokenizationBlock};
+pub use super::receipt::{
+    ResolvedTokenization, TokenCountingMethod, TokenizationBlock, TokenizationObservation,
+};
 
 #[cfg(test)]
 mod tests {

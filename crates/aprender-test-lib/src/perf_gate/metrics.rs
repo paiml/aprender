@@ -41,6 +41,16 @@ pub struct RequestSample {
     /// i.e. during the §4.4.7 drain.
     #[serde(default)]
     pub drained: bool,
+    /// True when THIS response carried a server `usage` object, so
+    /// `generated_tokens` above is the server's own figure.
+    ///
+    /// False means the count is the client's fallback — the number of streamed
+    /// content chunks observed. §4.4.5 retains the samples so the receipt's
+    /// §4.4.6 block can be re-derived from them rather than trusted; before
+    /// PERF-048 that re-derivation was impossible, and every streaming receipt
+    /// declared `server_usage` over client-counted numbers (#2754).
+    #[serde(default)]
+    pub server_usage: bool,
 }
 
 impl RequestSample {
@@ -281,6 +291,7 @@ mod tests {
             outcome: Outcome::Completed,
             in_flight_at_start: 1,
             drained: false,
+            server_usage: true,
         }
     }
 

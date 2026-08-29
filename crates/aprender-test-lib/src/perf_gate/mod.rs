@@ -174,8 +174,9 @@ pub use protocol::{
     BOOTSTRAP_SEED, MIN_WALL_CLOCK, QUIESCE, REPLICATES, REQUEST_TIMEOUT,
 };
 pub use receipt::{
-    sha256_file, ComputeClass, KvBlock, Provenance, ReceiptInput, TokenCountingMethod,
-    TokenizationBlock, Workload, SERVER_ONLY_FIELDS,
+    sha256_file, ComputeClass, KvBlock, Provenance, ReceiptInput, Replicates, ResolvedTokenization,
+    TokenCountingMethod, TokenizationBlock, TokenizationObservation, Workload, WorkloadCorpus,
+    SERVER_ONLY_FIELDS,
 };
 pub use samples::{read_samples_gz, write_samples_gz, SamplesFile};
 pub use window::{WindowController, WindowReport};
@@ -232,6 +233,7 @@ mod conformance_tests {
                 outcome: Outcome::Completed,
                 in_flight_at_start: 4,
                 drained,
+                server_usage: true,
             });
             now += 0.25;
         }
@@ -411,15 +413,35 @@ mod gate_conformance_tests {
         }
     }
 
+    /// A corpus that carries its label: 256 distinct prompts, as the committed
+    /// W1 corpus has. The digest is over the texts, so two different sets
+    /// cannot share it.
+    fn corpus(distinct: usize) -> WorkloadCorpus {
+        let texts: Vec<String> = (0..distinct).map(|i| format!("// w1-{i:04}")).collect();
+        WorkloadCorpus::from_prompt_texts(&texts, "file prompts-w1.jsonl")
+    }
+
     fn receipt_input(kv: Option<KvBlock>) -> ReceiptInput {
         ReceiptInput {
             provenance: provenance(),
-            tokenization: TokenizationBlock::ClientTokenizer {
-                tokenizer_sha256: "b".repeat(64),
+            tokenization: TokenizationBlock::ServerUsage {
                 counts_special_tokens: false,
                 counts_prompt_echo: false,
             },
+            // Every response reported usage, so the declaration stands.
+            tokenization_observed: TokenizationObservation {
+                responses_with_server_usage: 30,
+                responses_counted_by_client_tokenizer: 0,
+                responses_counted: 30,
+            },
             workload: Workload::W1,
+            workload_corpus: corpus(256),
+            replicates: Replicates {
+                index: 1,
+                effective: 3,
+                required: REPLICATES,
+            },
+            stated_violations: Vec::new(),
             commit: "62d23d8d1".to_string(),
             bands: vec![
                 synthetic_band(1),

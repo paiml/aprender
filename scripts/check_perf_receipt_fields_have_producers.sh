@@ -55,8 +55,16 @@ DELEGATE = os.path.join(root, "scripts", "lib", "bench_receipt.py")
 # from BOTH this map and the ledger's non_receipt_receivers list is an error,
 # never a skip.
 PREFIX = {
+    # PERF-048 added `tok`, `rep` and `wc`: Arm C's 4.4.6/4.4.2/4.3 checks read
+    # several sub-fields each, and the chained `(r.get("x") or {}).get("y")`
+    # form the gate used for a single read does not survive that. They are
+    # NAMED receivers with a path prefix rather than skipped ones, so their
+    # fields stay inside this guard's universe -- a receiver added to
+    # non_receipt_receivers would have removed seven required fields from it.
     GATE: {"r": "", "b": "bands[].", "bands": "bands[].",
-           "kv": "kv.", "itl": "itl.", "inj": "injector."},
+           "kv": "kv.", "itl": "itl.", "inj": "injector.",
+           "tok": "tokenization.", "rep": "replicates.",
+           "wc": "workload_corpus."},
     DELEGATE: {"receipt": "", "prov": "provenance.",
                "subj_prov": "provenance.", "comp_prov": "provenance."},
 }
@@ -229,6 +237,23 @@ self_test() {
   esac
   trap 'rm -rf "${td:?}"' EXIT
 
+  # Every producer file the ledger names, READ FROM THE LEDGER.
+  #
+  # This used to be two hardcoded `cp` lines. PERF-048 added four producer files
+  # and `clean_tree` went red for a reason having nothing to do with the tree:
+  # a fixture universe that cannot follow the thing it is a fixture for is the
+  # same defect this guard exists to catch, one level up.
+  _producer_files() {
+    python3 - "$ROOT/scripts/perf-receipt-fields.yaml" <<'LEDGER'
+import sys, yaml
+doc = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+for spec in (doc.get("fields") or {}).values():
+    rel = ((spec or {}).get("producer") or {}).get("file")
+    if rel:
+        print(rel)
+LEDGER
+  }
+
   _fixture() { # name -> a fresh copy of the tree at $td/$1
     rm -rf "${td:?}/$1"
     mkdir -p "$td/$1/scripts/lib" "$td/$1/crates" "$td/$1/evidence"
@@ -238,8 +263,12 @@ self_test() {
     cp "$ROOT/scripts/lib/bench_receipt.py" "$td/$1/scripts/lib/"
     cp "$ROOT/scripts/lib/parity_block.py" "$td/$1/scripts/lib/"
     mkdir -p "$td/$1/crates/aprender-test-lib/src/llm" "$td/$1/crates/apr-cli/src/commands"
-    cp "$ROOT/crates/aprender-test-lib/src/llm/loadtest.rs" "$td/$1/crates/aprender-test-lib/src/llm/"
-    cp "$ROOT/crates/aprender-test-lib/src/llm/benchmark.rs" "$td/$1/crates/aprender-test-lib/src/llm/"
+    local rel
+    while IFS= read -r rel; do
+      [ -n "$rel" ] || continue
+      mkdir -p "$td/$1/$(dirname "$rel")"
+      cp "$ROOT/$rel" "$td/$1/$rel"
+    done < <(_producer_files)
   }
 
   _expect() { # name, expected(pass|fail)
@@ -310,6 +339,37 @@ MUT
   printf 'x=$(python3 -c "r={}; r.get(\\"drain_ms\\")")\n' \
     >> "$td/second_read_of_ledgered_field/scripts/perf_gate.sh"
   _expect second_read_of_ledgered_field pass
+
+  # MUTATION 6 -- PERF-048 widened this guard's scope with three new receipt
+  # receivers (`tok`, `rep`, `wc`), so the old proof does not transfer: these
+  # rows are the RED and the GREEN re-run INSIDE the new scope. A read through
+  # `tok` that nobody classified must be caught, and caught as an unclassified
+  # FIELD rather than as an unknown receiver -- the latter would mean `tok`'s
+  # seven fields had left this guard's universe entirely.
+  _fixture unclassified_read_through_a_new_receiver
+  cat >> "$td/unclassified_read_through_a_new_receiver/scripts/perf_gate.sh" <<'MUT'
+arm_h_tok() { python3 -c 'tok={}; print(tok.get("brand_new_subfield"))'; }
+MUT
+  _expect unclassified_read_through_a_new_receiver fail
+
+  _fixture unclassified_read_through_the_corpus_receiver
+  cat >> "$td/unclassified_read_through_the_corpus_receiver/scripts/perf_gate.sh" <<'MUT'
+arm_h_wc() { python3 -c 'wc={}; print(wc.get("brand_new_subfield"))'; }
+MUT
+  _expect unclassified_read_through_the_corpus_receiver fail
+
+  # DISCRIMINATION -- the same read WITH its ledger entry passes, under the
+  # `tokenization.` prefix. This is the row that proves `tok` is a recognised
+  # RECEIPT receiver rather than a skipped one: a skipped receiver would leave
+  # the new entry classified-and-read-by-nothing, and a wrong prefix would
+  # leave it unmatched. Both of those fail here; only the correct mapping passes.
+  _fixture classified_read_through_a_new_receiver
+  cat >> "$td/classified_read_through_a_new_receiver/scripts/perf_gate.sh" <<'MUT'
+arm_h_tok() { python3 -c 'tok={}; print(tok.get("brand_new_subfield"))'; }
+MUT
+  printf '  tokenization.brand_new_subfield:\n    class: PRODUCED\n    required: always\n    producer: {file: scripts/perf_gate.sh, symbol: "arm_c_integrity"}\n' \
+    >> "$td/classified_read_through_a_new_receiver/scripts/perf-receipt-fields.yaml"
+  _expect classified_read_through_a_new_receiver pass
 
   # DISCRIMINATION -- editing a producer file without touching the cited symbol
   # leaves the map intact. A guard that reddened on any edit to loadtest.rs
