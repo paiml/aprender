@@ -188,6 +188,10 @@ jobs:
             exit 1
           fi
           echo "PERF-053 model: $model"
+          # Flag-level first: no GPU needed, but the module only exists under `cuda`, and
+          # ci.yml EXCLUDES aprender-gpu from the workspace --lib run. Without this line the
+          # three perf053_* unit tests never execute anywhere.
+          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release perf053
           APR_FALSIFY_MODEL="$model" nice -n 19 cargo test -p aprender-serve --features cuda \
             --release --test falsify_stream_ordering_2767 -- --nocapture
 
