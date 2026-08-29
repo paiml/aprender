@@ -483,3 +483,170 @@ mod cb008_online_softmax_rescale {
         rescale_reads_a_saved_max(repaired).expect("repaired PTX must pass");
     }
 }
+
+/// FALSIFY-CB-008, numerically, on the device.
+///
+/// The codegen test above proves the rescale is *emitted*. This one proves it is *right*: it
+/// runs the kernel against a CPU softmax reference on K/V chosen so the running max grows at
+/// EVERY position, which is the only condition under which the missing rescale is observable.
+/// A flat or decreasing score sequence would pass with the bug in place, so the input is part
+/// of the assertion, not incidental to it.
+///
+/// Requires a CUDA device. When one is absent the test says so on stdout rather than passing
+/// quietly — the always-on guard for this defect is the codegen test above, not this.
+#[cfg(test)]
+#[cfg(feature = "cuda")]
+mod cb008_gpu_numerics {
+    use super::BatchedIncrementalAttentionKernel;
+    use crate::driver::{CudaContext, CudaModule, CudaStream, GpuBuffer, LaunchConfig};
+    use crate::kernels::Kernel;
+
+    const HEAD_DIM: usize = 128; // the kernel's 4-loads-per-lane shape
+    const NUM_HEADS: usize = 2;
+    const NUM_KV_HEADS: usize = 1; // GQA 2:1
+    const MAX_SEQ: usize = 8;
+    const M: usize = 2;
+
+    /// CPU reference: plain softmax attention, computed in one pass with no online rescaling,
+    /// so it cannot share a bug with the kernel under test.
+    fn reference(q: &[f32], k: &[f32], v: &[f32], seq_len: usize) -> Vec<f32> {
+        let scale = 1.0 / (HEAD_DIM as f32).sqrt();
+        let scores: Vec<f32> = (0..seq_len)
+            .map(|p| {
+                let dot: f32 = (0..HEAD_DIM).map(|d| q[d] * k[p * HEAD_DIM + d]).sum();
+                dot * scale
+            })
+            .collect();
+        let max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let exps: Vec<f32> = scores.iter().map(|s| (s - max).exp()).collect();
+        let denom: f32 = exps.iter().sum();
+        (0..HEAD_DIM)
+            .map(|d| {
+                let acc: f32 = (0..seq_len).map(|p| exps[p] * v[p * HEAD_DIM + d]).sum();
+                acc / denom
+            })
+            .collect()
+    }
+
+    #[test]
+    fn batched_attention_matches_cpu_softmax_when_the_running_max_grows() {
+        let Ok(ctx) = CudaContext::new(0) else {
+            println!(
+                "cb008_gpu_numerics: no CUDA device — SKIPPED. The always-on guard for this \
+                 defect is cb008_online_softmax_rescale (PTX codegen), which does not need one."
+            );
+            return;
+        };
+        let stream = CudaStream::new(&ctx).expect("stream");
+
+        // Scores strictly increasing in position: K[p] = 0.1*(p+1) everywhere, Q = 1 everywhere,
+        // so score(p) = 128 * 0.1 * (p+1) / sqrt(128) ~= 1.13*(p+1). Over 8 positions the max
+        // grows 7 times and spans e^7.9, so an absent rescale cannot hide in float noise.
+        let seq_len = MAX_SEQ;
+        let q_head: Vec<f32> = vec![1.0; HEAD_DIM];
+        let mut k_head = vec![0.0f32; MAX_SEQ * HEAD_DIM];
+        let mut v_head = vec![0.0f32; MAX_SEQ * HEAD_DIM];
+        for p in 0..seq_len {
+            for d in 0..HEAD_DIM {
+                k_head[p * HEAD_DIM + d] = 0.1 * (p as f32 + 1.0);
+                // V distinct per position AND per dim, so a wrong weighting shows up.
+                v_head[p * HEAD_DIM + d] = (p as f32 + 1.0) + 0.01 * d as f32;
+            }
+        }
+
+        // q packed [M, NUM_HEADS, HEAD_DIM]; both heads share the same q for simplicity.
+        let mut q_host = Vec::with_capacity(M * NUM_HEADS * HEAD_DIM);
+        for _ in 0..M * NUM_HEADS {
+            q_host.extend_from_slice(&q_head);
+        }
+        // K/V caches: [M, NUM_KV_HEADS, MAX_SEQ, HEAD_DIM], one contiguous buffer per tensor.
+        let slot_stride = NUM_KV_HEADS * MAX_SEQ * HEAD_DIM;
+        let mut k_host = vec![0.0f32; M * slot_stride];
+        let mut v_host = vec![0.0f32; M * slot_stride];
+        for slot in 0..M {
+            let base = slot * slot_stride;
+            k_host[base..base + MAX_SEQ * HEAD_DIM].copy_from_slice(&k_head);
+            v_host[base..base + MAX_SEQ * HEAD_DIM].copy_from_slice(&v_head);
+        }
+
+        let q_buf = GpuBuffer::from_host(&ctx, &q_host).expect("q");
+        let k_buf = GpuBuffer::from_host(&ctx, &k_host).expect("k");
+        let v_buf = GpuBuffer::from_host(&ctx, &v_host).expect("v");
+        let out_buf = GpuBuffer::<f32>::new(&ctx, M * NUM_HEADS * HEAD_DIM).expect("out");
+
+        let stride_bytes = (slot_stride * std::mem::size_of::<f32>()) as u64;
+        let k_ptrs: Vec<u64> = (0..M)
+            .map(|s| k_buf.as_ptr() + s as u64 * stride_bytes)
+            .collect();
+        let v_ptrs: Vec<u64> = (0..M)
+            .map(|s| v_buf.as_ptr() + s as u64 * stride_bytes)
+            .collect();
+        let seq_lens: Vec<u32> = vec![seq_len as u32; M];
+        let k_ptrs_buf = GpuBuffer::from_host(&ctx, &k_ptrs).expect("k_ptrs");
+        let v_ptrs_buf = GpuBuffer::from_host(&ctx, &v_ptrs).expect("v_ptrs");
+        let seq_lens_buf = GpuBuffer::from_host(&ctx, &seq_lens).expect("seq_lens");
+
+        let kernel = BatchedIncrementalAttentionKernel::new(
+            MAX_SEQ as u32,
+            HEAD_DIM as u32,
+            NUM_HEADS as u32,
+            NUM_KV_HEADS as u32,
+            M as u32,
+        );
+        let ptx = kernel.emit_ptx_for_target("sm_89");
+        let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("module");
+
+        let config = LaunchConfig {
+            grid: (NUM_HEADS as u32, M as u32, 1),
+            block: (32, 1, 1),
+            shared_mem: 0,
+        };
+        let mut a0 = q_buf.as_ptr();
+        let mut a1 = k_ptrs_buf.as_ptr();
+        let mut a2 = v_ptrs_buf.as_ptr();
+        let mut a3 = out_buf.as_ptr();
+        let mut a4 = seq_lens_buf.as_ptr();
+        // SAFETY: every buffer above is a live device allocation of the size the kernel indexes,
+        // and the grid/block match the kernel's documented (num_heads, M) / one-warp shape.
+        unsafe {
+            stream
+                .launch_kernel(
+                    &mut module,
+                    kernel.name(),
+                    &config,
+                    &mut [
+                        std::ptr::from_mut(&mut a0).cast(),
+                        std::ptr::from_mut(&mut a1).cast(),
+                        std::ptr::from_mut(&mut a2).cast(),
+                        std::ptr::from_mut(&mut a3).cast(),
+                        std::ptr::from_mut(&mut a4).cast(),
+                    ],
+                )
+                .expect("launch");
+        }
+        stream.synchronize().expect("sync");
+
+        let mut got = vec![0.0f32; M * NUM_HEADS * HEAD_DIM];
+        out_buf.copy_to_host(&mut got).expect("download");
+
+        let want = reference(&q_head, &k_head, &v_head, seq_len);
+        for slot in 0..M {
+            for head in 0..NUM_HEADS {
+                let base = (slot * NUM_HEADS + head) * HEAD_DIM;
+                for d in 0..HEAD_DIM {
+                    let g = got[base + d];
+                    let w = want[d];
+                    assert!(
+                        (g - w).abs() <= 1e-3 * w.abs().max(1.0),
+                        "FALSIFY-CB-008: batched attention slot {slot} head {head} dim {d} \
+                         = {g}, CPU softmax reference = {w}. Scores increase with position \
+                         here, so the online-softmax rescale runs every step; a correction \
+                         stuck at 1.0 over-weights early KV positions and lands near \
+                         V[0]..V[1] instead of V[{last}]. See aprender#2753.",
+                        last = seq_len - 1
+                    );
+                }
+            }
+        }
+    }
+}
