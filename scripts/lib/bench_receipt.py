@@ -42,18 +42,68 @@ JOIN_KEY_REQUIRED = ("host", "accelerator", "model", "quantization")
 # over the survivors reads as a slow result rather than a broken one. Naming it
 # forces a receipt to say so. (CRUX: SGLang asserts completed == requested.)
 DISCARD_REASONS = ("early_eos", "negative_delta", "nonzero_exit", "timeout")
+# A join-key value that is PRESENT, well-formed, and says nothing. Measured
+# 2026-08-29 (PERF-055): `apr test llm bench --band` writes `provenance.model`
+# straight from its own `--model` flag, whose default is the literal string
+# `default`, so a real band run against `apr serve` produced a receipt reading
+# `"model": "default"` and `scripts/perf_gate.sh` returned VERDICT PASS.
+#
+# NEITHER END VALIDATES IT. The producer copies the operator's string
+# (test_llm_band.rs `model: args.model.to_string()`), and the server echoes
+# whatever it is handed: the same run served qwen2.5-coder-0.5b-instruct-q4_k_m
+# while answering `"model": "llama3-70b-there-is-no-such-model"` for a request
+# that asked for it. So the schema authority is the ONLY place a meaningless
+# join key can be refused, and refusing it here is what keeps the field from
+# becoming a constant.
+#
+# THIS IS NOT THE #2696 CASE. That deferral -- absent join keys are reported,
+# not failed -- is scoped "until every producer emits it", and it stays. A
+# producer emitting `default` HAS emitted it; it asserted a fact it does not
+# have, which is strictly worse than silence, because the absent case at least
+# leaves `_join_key_incomplete` behind and this one leaves nothing at all.
+JOIN_KEY_PLACEHOLDERS = frozenset((
+    "default", "unknown", "unspecified", "none", "null", "nil", "n/a", "na",
+    "tbd", "todo", "fixme", "xxx", "placeholder", "example", "test", "dummy",
+    "foo", "bar", "-", "--", "?", "??",
+))
 
 
 def _err(errors, msg):
     errors.append(msg)
 
 
+def _is_placeholder(key, value):
+    """Is this join-key value present and meaningless?
+
+    A value equal to its own field name (`"model": "model"`) is included
+    because that is what a template that was never filled in looks like, and
+    it would otherwise sail through the literal list above.
+    """
+    if not isinstance(value, str):
+        return False
+    token = value.strip().lower()
+    return token in JOIN_KEY_PLACEHOLDERS or token == key
+
+
 def _check_join_key(prov, errors):
     """A receipt that does not say WHERE and on WHAT cannot be compared to
-    another. Reported, not failed, until every producer emits it (#2696)."""
+    another. Absent is reported, not failed, until every producer emits it
+    (#2696). PRESENT-AND-MEANINGLESS is failed here and now -- see
+    JOIN_KEY_PLACEHOLDERS for the measurement that put it there."""
     missing = [k for k in JOIN_KEY_REQUIRED if not prov.get(k)]
     if missing:
         prov.setdefault("_join_key_incomplete", missing)
+    for key in JOIN_KEY_REQUIRED:
+        if key in missing:
+            continue
+        value = prov.get(key)
+        if _is_placeholder(key, value):
+            _err(errors, "provenance.%s: %r is a placeholder, not a join key "
+                         "-- every receipt carrying it agrees on this field, so "
+                         "the field stops separating anything and cross-%s "
+                         "comparison becomes expressible again, which is the "
+                         "one thing the join key exists to prevent"
+                         % (key, value, key))
 
 
 def _check_provenance(prov, errors):
