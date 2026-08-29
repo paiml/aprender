@@ -771,9 +771,7 @@ impl Executor {
         }
 
         // Response should contain tokens (array or count)
-        let has_tokens = serde_json::from_str::<serde_json::Value>(&output.stdout)
-            .ok()
-            .is_some_and(|v| v.get("tokens").is_some() || v.get("count").is_some());
+        let has_tokens = serde_json::from_str::<serde_json::Value>(&output.stdout).is_ok_and(|v| v.get("tokens").is_some() || v.get("count").is_some());
 
         if has_tokens {
             Evidence::corroborated(&gate_id, scenario.clone(), &output.stdout, duration)

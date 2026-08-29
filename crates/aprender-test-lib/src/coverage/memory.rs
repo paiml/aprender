@@ -66,9 +66,11 @@ impl<'a> CoverageMemoryView<'a> {
     pub fn read_all_counters(&self) -> Vec<u64> {
         let slice = &self.memory[self.counter_base..];
         slice
-            .chunks_exact(8)
+            .as_chunks::<8>()
+            .0
+            .iter()
             .take(self.block_count)
-            .map(|b| u64::from_le_bytes(b.try_into().unwrap_or([0; 8])))
+            .map(|b| u64::from_le_bytes(*b))
             .collect()
     }
 

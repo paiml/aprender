@@ -141,7 +141,7 @@ impl Widget for Column {
             child_sizes.push(size);
         }
 
-        let gaps_height = self.gap * (self.children.len() - 1).max(0) as f32;
+        let gaps_height = self.gap * (self.children.len() - 1) as f32;
         let content_height = total_height + gaps_height;
         let remaining_space = (bounds.height - content_height).max(0.0);
 
