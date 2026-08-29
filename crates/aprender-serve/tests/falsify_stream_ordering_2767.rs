@@ -35,8 +35,11 @@
 //!   comparator cannot tell two different answers apart, the main assertion proves nothing, and
 //!   that failure is reported as such.
 //!
-//! Requires a GPU and a local model, so it self-skips loudly rather than reporting a code verdict
-//! on a host it cannot evaluate.
+//! Requires a GPU and a real model, named by `APR_FALSIFY_MODEL`. It does **not** skip when that
+//! is missing -- it FAILS, saying what is absent. A skip is indistinguishable from a pass in CI,
+//! and this is the only falsifier for a defect that answered one deterministic question 11
+//! different ways. See the note on `MODEL_ENV` for why a committed fixture cannot stand in here,
+//! and `.github/workflows/cuda-nightly.yml` for the lane that actually runs it.
 #![cfg(feature = "cuda")]
 
 use std::collections::BTreeMap;
@@ -56,58 +59,90 @@ const MAX_TOKENS: usize = 24;
 /// Below this, "every slot agrees" is a statement about near-empty outputs.
 const MIN_GENERATED: usize = 6;
 
-/// Models this can run on, in preference order. Override with `APR_FALSIFY_MODEL`.
+/// The model this runs against. **No default, no fallback, and no skip.**
 ///
-/// The 1.5B GGUF is FIRST because it is the model #2767 measured. The order matters more than
-/// it looks: the 0.5B `.apr` here FAILS the GPU/CPU parity gate on sm_89 (cosine 0.9636 against
-/// a 0.98 floor, a pre-existing and unrelated defect), and `OwnedQuantizedModelCuda::new`
-/// refuses it. Trying it first made this test SKIP -- a green that proved nothing. So a
-/// candidate that fails to load is skipped over rather than ending the run.
-const CANDIDATES: &[&str] = &[
-    "/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
-    "/home/noah/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
-    "/mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-q4k.apr",
-];
+/// `APR_FALSIFY_MODEL` must name a GGUF or `.apr` model that this GPU accepts. If it is unset,
+/// missing, or refused, this test goes RED. That is deliberate, and it is the narrow choice
+/// among the three shapes `scripts/check_test_fixture_paths.sh` accepts:
+///
+/// - **A committed fixture would be strictly better, and is MEASURED NOT TO WORK for this
+///   defect.** The synthetic, model-free falsifier for exactly this race already exists:
+///   `aprender-gpu`'s `test_sync_upload_visible_to_nonblocking_stream`, which uploads
+///   synchronously and reads back from a `CudaStream`. It caught 15 stale reads in 200 rounds
+///   when it was written; it now passes 128/128 under `APR_STREAM_NONBLOCKING=1
+///   APR_ORD9_DRAIN_SKIP=1` -- the exact pre-fix configuration it was built to catch. A
+///   committed fixture that stays green under the defect is the "green proving nothing" this
+///   file exists to eliminate. What a fixture CAN pin here is the flag, and it already does:
+///   the `perf053_*` unit tests in `aprender-gpu/src/driver/stream.rs` assert
+///   `CU_STREAM_DEFAULT` is the default with no GPU at all. The behavioural half needs enough
+///   kernels genuinely in flight to open the race window, and that is a real decode.
+/// - **A hardcoded path** under `/home` is green on every machine that lacks it, which is
+///   every machine but one. That is what this constant used to be, and it is the population
+///   `check_test_fixture_paths.sh` exists to stop growing.
+/// - **An env var that fails loudly when unset** is therefore the correct shape. On a
+///   `--features cuda` host that has not been provisioned this is RED and says what is
+///   missing, rather than passing quietly. `.github/workflows/cuda-nightly.yml` resolves a
+///   model, fails the job if it cannot, and sets this variable -- so the test does run
+///   somewhere, which is the other half of not being theatre.
+///
+/// Note that the fallback list this replaced was itself a scar: the 0.5B `.apr` in it FAILS
+/// the GPU/CPU parity gate on sm_89 (cosine 0.9636 against a 0.98 floor, a pre-existing and
+/// unrelated defect), so `OwnedQuantizedModelCuda::new` refuses it and the run walked on to
+/// the next entry. Naming exactly one model removes the silent walk-on: the model you asked
+/// for is the model that must produce the verdict.
+const MODEL_ENV: &str = "APR_FALSIFY_MODEL";
 
-fn candidates() -> Vec<String> {
-    match std::env::var("APR_FALSIFY_MODEL") {
-        Ok(p) => vec![p],
-        Err(_) => CANDIDATES.iter().map(|p| (*p).to_string()).collect(),
-    }
+fn model_path() -> String {
+    let Ok(path) = std::env::var(MODEL_ENV) else {
+        panic!(
+            "perf053 UNRUNNABLE: {MODEL_ENV} is not set.\n\
+             This falsifier needs a real decode on a real GPU -- see the note on MODEL_ENV for \
+             why a synthetic fixture cannot see this race. It fails rather than skips because a \
+             skip is indistinguishable from a pass, and this is the only falsifier for a defect \
+             that returned 11 distinct continuations to 40 identical greedy requests.\n\
+             Set {MODEL_ENV} to a GGUF or .apr model this GPU accepts, e.g.\n  \
+             {MODEL_ENV}=/path/to/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \\\n    \
+             cargo test -p aprender-serve --features cuda --release \\\n      \
+             --test falsify_stream_ordering_2767 -- --nocapture"
+        )
+    };
+    assert!(
+        Path::new(&path).exists(),
+        "perf053 UNRUNNABLE: {MODEL_ENV}={path} does not exist."
+    );
+    path
 }
 
-fn load(path: &str) -> Option<OwnedQuantizedModel> {
+fn load(path: &str) -> Result<OwnedQuantizedModel, String> {
     if path.ends_with(".apr") {
         let mapped = MappedAprModel::from_path(path)
-            .map_err(|e| eprintln!("[perf053] {path}: MappedAprModel::from_path: {e}"))
-            .ok()?;
-        OwnedQuantizedModel::from_apr(&mapped)
-            .map_err(|e| eprintln!("[perf053] {path}: from_apr: {e}"))
-            .ok()
+            .map_err(|e| format!("MappedAprModel::from_path: {e}"))?;
+        OwnedQuantizedModel::from_apr(&mapped).map_err(|e| format!("from_apr: {e}"))
     } else {
         let mapped = MappedGGUFModel::from_path(path)
-            .map_err(|e| eprintln!("[perf053] {path}: MappedGGUFModel::from_path: {e}"))
-            .ok()?;
-        OwnedQuantizedModel::from_mapped(&mapped)
-            .map_err(|e| eprintln!("[perf053] {path}: from_mapped: {e}"))
-            .ok()
+            .map_err(|e| format!("MappedGGUFModel::from_path: {e}"))?;
+        OwnedQuantizedModel::from_mapped(&mapped).map_err(|e| format!("from_mapped: {e}"))
     }
 }
 
-/// First candidate that exists, loads, AND is accepted by the GPU. Returns its path too, so the
-/// run says which model produced the verdict.
-fn open_gpu_model() -> Option<(String, OwnedQuantizedModelCuda)> {
-    for path in candidates() {
-        if !Path::new(&path).exists() {
-            continue;
-        }
-        let Some(model) = load(&path) else { continue };
-        match OwnedQuantizedModelCuda::new(model, 0) {
-            Ok(cuda) => return Some((path, cuda)),
-            Err(e) => eprintln!("[perf053] {path}: GPU refused it: {e}"),
-        }
+/// The model named by `APR_FALSIFY_MODEL`, loaded and accepted by the GPU. Returns its path
+/// too, so the run says which model produced the verdict. Every failure here PANICS: an
+/// unrunnable falsifier must be distinguishable from a passing one.
+fn open_gpu_model() -> (String, OwnedQuantizedModelCuda) {
+    let path = model_path();
+    let model = match load(&path) {
+        Ok(m) => m,
+        Err(e) => panic!("perf053 UNRUNNABLE: {MODEL_ENV}={path} could not be loaded: {e}"),
+    };
+    match OwnedQuantizedModelCuda::new(model, 0) {
+        Ok(cuda) => (path, cuda),
+        Err(e) => panic!(
+            "perf053 UNRUNNABLE: the GPU refused {MODEL_ENV}={path}: {e}\n\
+             This is reported as a failure, not a skip: a model the GPU will not take cannot \
+             produce a verdict on stream ordering, and pretending otherwise is how the \
+             previous fallback list turned a refusal into a green."
+        ),
     }
-    None
 }
 
 fn greedy(max_tokens: usize) -> QuantizedGenerateConfig {
@@ -156,14 +191,9 @@ fn perf053_identical_greedy_batches_return_one_continuation() {
         std::env::set_var("CUBLAS_GEMM_THRESHOLD", "32");
     }
 
-    let Some((path, mut cuda)) = open_gpu_model() else {
-        eprintln!(
-            "SKIP perf053: no usable GPU model on this host. Set APR_FALSIFY_MODEL. \
-             Tried {:?}",
-            candidates()
-        );
-        return;
-    };
+    // No `else { return }` here on purpose. This used to skip when it found no usable model,
+    // and a skip reads exactly like a pass in CI. `open_gpu_model` panics with what is missing.
+    let (path, mut cuda) = open_gpu_model();
     eprintln!("[perf053] model={path} rounds={ROUNDS} slots={SLOTS} max_tokens={MAX_TOKENS}");
 
     // Two prompts that must produce DIFFERENT answers. `alt` is the discrimination control.
