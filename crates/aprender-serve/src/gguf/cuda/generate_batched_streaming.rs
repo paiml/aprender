@@ -394,9 +394,6 @@ impl OwnedQuantizedModelCuda {
         &mut self,
         state: &mut BatchedDecodeState,
     ) -> Result<Vec<u32>> {
-        // PERF-050 round 3: in-process A/B against the M=1 oracle (APR_PARITY_PROBE=1).
-        self.cb006_parity_probe(state);
-
         // PMAT-286: Sub-phase timing inside decode step
         static DECODE_PHASE_TIMER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let timing = *DECODE_PHASE_TIMER.get_or_init(|| {
@@ -435,6 +432,11 @@ impl OwnedQuantizedModelCuda {
         // PMAT-076: Set dead slot mask before forward pass so attention kernel
         // can skip KV iteration for done slots (seq_lens=0 → early exit).
         self.executor.batched_done_mask.clone_from(&state.done);
+
+        // PERF-050 round 3: in-process A/B against the M=1 oracle (APR_PARITY_PROBE=1).
+        // MUST sit here, not at the top of the step: embed_buf is only filled above, and at
+        // gen_idx 0 it is still the all-zero buffer batched_setup_and_prefill allocated.
+        self.cb006_parity_probe(state);
 
         timer.mark("prep");
 

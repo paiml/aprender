@@ -104,6 +104,26 @@ impl OwnedQuantizedModelCuda {
             state.eps,
         );
         let position = state.positions[0] as u32;
+
+        // FIXTURE VALIDITY. The first version of this probe ran at the TOP of
+        // batched_decode_step, before the embedding is written, so it fed an all-zero vector to
+        // both paths. RMSNorm on a zero vector is rsqrt(0) = inf and 0 * inf = NaN, so every
+        // layer came back all-NaN and the "oracle divergence" it reported (cosine 0.803758) was
+        // a comparison of two different ways of mishandling a degenerate input, not a
+        // measurement of the defect.
+        //
+        // Neither the SELF nor the PERTURBED control could catch that: both pass whether or not
+        // the input means anything. An input check is a THIRD kind of control, and it belongs
+        // here rather than in the report, because a probe that cannot tell it is being fed
+        // garbage will keep producing confident numbers.
+        if state.embed_buf.iter().all(|v| *v == 0.0) {
+            eprintln!(
+                "[CB-006-PARITY] REFUSING TO REPORT: embed_buf is all zeros, so both paths would \
+                 be fed a degenerate input. The probe is being called before the embedding is \
+                 written. Nothing below would be a measurement of the batched decode."
+            );
+            return;
+        }
         eprintln!(
             "[CB-006-PARITY] m=1 step 0: token {} at position {position}, \
              batched_kv_lengths[0]={:?}",
