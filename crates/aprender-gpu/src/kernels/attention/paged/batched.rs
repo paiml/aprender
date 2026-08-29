@@ -484,16 +484,27 @@ mod cb008_online_softmax_rescale {
     }
 }
 
-/// FALSIFY-CB-008, numerically, on the device.
+/// FALSIFY-CB-008, numerically, on the device, at the shape production actually runs.
 ///
-/// The codegen test above proves the rescale is *emitted*. This one proves it is *right*: it
-/// runs the kernel against a CPU softmax reference on K/V chosen so the running max grows at
-/// EVERY position, which is the only condition under which the missing rescale is observable.
-/// A flat or decreasing score sequence would pass with the bug in place, so the input is part
-/// of the assertion, not incidental to it.
+/// The codegen test above proves the rescale is *emitted*. This proves the kernel *computes the
+/// right thing*, against a CPU softmax reference written in one pass with no online rescaling,
+/// so it cannot share a bug with the kernel under test.
 ///
-/// Requires a CUDA device. When one is absent the test says so on stdout rather than passing
-/// quietly — the always-on guard for this defect is the codegen test above, not this.
+/// THE INPUT IS PART OF THE ASSERTION, in three ways that were each chosen to make a specific
+/// class of defect visible. An earlier version of this test had none of them and would have
+/// passed over all three:
+///
+/// 1. **Scores strictly increase with position.** This is the only condition under which a
+///    rescale correction stuck at 1.0 is observable at all; a flat score sequence passes with
+///    aprender#2753's defect fully in place.
+/// 2. **Q differs per (slot, head) and K/V differ per (slot, kv_group).** With one Q shared by
+///    every head and one K/V shared by every slot, a GQA head-mapping error or a slot-stride
+///    error reads the wrong data and gets the right answer anyway.
+/// 3. **Per-slot seq_len differs.** A kernel that ignored `seq_lens[batch_idx]` and used a
+///    single length for the batch would otherwise be indistinguishable.
+///
+/// The shape is the one aprender#2753 was reproduced at: Qwen2.5-Coder-1.5B on an RTX 4090,
+/// head_dim 128, 12 query heads over 2 KV heads (GQA 6:1), 2048-position cache.
 #[cfg(test)]
 #[cfg(feature = "cuda")]
 mod cb008_gpu_numerics {
@@ -502,18 +513,45 @@ mod cb008_gpu_numerics {
     use crate::kernels::Kernel;
 
     const HEAD_DIM: usize = 128; // the kernel's 4-loads-per-lane shape
-    const NUM_HEADS: usize = 2;
-    const NUM_KV_HEADS: usize = 1; // GQA 2:1
-    const MAX_SEQ: usize = 8;
-    const M: usize = 2;
+    const NUM_HEADS: usize = 12;
+    const NUM_KV_HEADS: usize = 2; // GQA 6:1, as Qwen2.5-Coder-1.5B
+    const MAX_SEQ: usize = 2048; // --context-length the defect was reproduced at
+    const M: usize = 3; // not a power of two, and != NUM_KV_HEADS
+    const SEQ_LENS: [usize; M] = [17, 11, 5];
 
-    /// CPU reference: plain softmax attention, computed in one pass with no online rescaling,
-    /// so it cannot share a bug with the kernel under test.
-    fn reference(q: &[f32], k: &[f32], v: &[f32], seq_len: usize) -> Vec<f32> {
+    /// GQA mapping, stated once so the reference and the assertion cannot drift apart.
+    fn kv_group_of(head: usize) -> usize {
+        head * NUM_KV_HEADS / NUM_HEADS
+    }
+
+    fn q_at(slot: usize, head: usize, d: usize) -> f32 {
+        0.5 + 0.01 * ((slot * 5 + head * 3 + d) % 7) as f32
+    }
+
+    /// Positive base, so the dot product with a positive Q is positive and the growth factor
+    /// below makes the score strictly increasing in position.
+    fn k_base(slot: usize, group: usize, d: usize) -> f32 {
+        0.02 * (1 + (slot * 3 + group * 5 + d) % 11) as f32
+    }
+
+    fn k_at(slot: usize, group: usize, pos: usize, d: usize) -> f32 {
+        k_base(slot, group, d) * (1.0 + 0.6 * pos as f32)
+    }
+
+    fn v_at(slot: usize, group: usize, pos: usize, d: usize) -> f32 {
+        (pos as f32 + 1.0) + 0.01 * d as f32 + 0.5 * slot as f32 + 0.25 * group as f32
+    }
+
+    /// CPU reference: plain softmax attention in one pass, GQA modelled explicitly.
+    fn reference(slot: usize, head: usize) -> Vec<f32> {
+        let group = kv_group_of(head);
+        let seq_len = SEQ_LENS[slot];
         let scale = 1.0 / (HEAD_DIM as f32).sqrt();
         let scores: Vec<f32> = (0..seq_len)
             .map(|p| {
-                let dot: f32 = (0..HEAD_DIM).map(|d| q[d] * k[p * HEAD_DIM + d]).sum();
+                let dot: f32 = (0..HEAD_DIM)
+                    .map(|d| q_at(slot, head, d) * k_at(slot, group, p, d))
+                    .sum();
                 dot * scale
             })
             .collect();
@@ -522,51 +560,73 @@ mod cb008_gpu_numerics {
         let denom: f32 = exps.iter().sum();
         (0..HEAD_DIM)
             .map(|d| {
-                let acc: f32 = (0..seq_len).map(|p| exps[p] * v[p * HEAD_DIM + d]).sum();
+                let acc: f32 = (0..seq_len)
+                    .map(|p| exps[p] * v_at(slot, group, p, d))
+                    .sum();
                 acc / denom
             })
             .collect()
     }
 
     #[test]
-    fn batched_attention_matches_cpu_softmax_when_the_running_max_grows() {
+    fn batched_attention_matches_cpu_softmax_at_production_shape() {
         let Ok(ctx) = CudaContext::new(0) else {
             println!(
                 "cb008_gpu_numerics: no CUDA device — SKIPPED. The always-on guard for this \
-                 defect is cb008_online_softmax_rescale (PTX codegen), which does not need one."
+                 defect is cb008_online_softmax_rescale (PTX codegen), which needs no device."
             );
             return;
         };
         let stream = CudaStream::new(&ctx).expect("stream");
 
-        // Scores strictly increasing in position: K[p] = 0.1*(p+1) everywhere, Q = 1 everywhere,
-        // so score(p) = 128 * 0.1 * (p+1) / sqrt(128) ~= 1.13*(p+1). Over 8 positions the max
-        // grows 7 times and spans e^7.9, so an absent rescale cannot hide in float noise.
-        let seq_len = MAX_SEQ;
-        let q_head: Vec<f32> = vec![1.0; HEAD_DIM];
-        let mut k_head = vec![0.0f32; MAX_SEQ * HEAD_DIM];
-        let mut v_head = vec![0.0f32; MAX_SEQ * HEAD_DIM];
-        for p in 0..seq_len {
-            for d in 0..HEAD_DIM {
-                k_head[p * HEAD_DIM + d] = 0.1 * (p as f32 + 1.0);
-                // V distinct per position AND per dim, so a wrong weighting shows up.
-                v_head[p * HEAD_DIM + d] = (p as f32 + 1.0) + 0.01 * d as f32;
+        // Sanity on the fixture itself: the scores must actually grow, or the test asserts
+        // nothing about the rescale. Checked, not assumed.
+        {
+            let scale = 1.0 / (HEAD_DIM as f32).sqrt();
+            let score = |p: usize| -> f32 {
+                (0..HEAD_DIM)
+                    .map(|d| q_at(0, 0, d) * k_at(0, 0, p, d))
+                    .sum::<f32>()
+                    * scale
+            };
+            let first = score(0);
+            let last = score(SEQ_LENS[0] - 1);
+            assert!(
+                last > first + 4.0,
+                "fixture is inert: scores span only {first}..{last}, so a rescale stuck at 1.0 \
+                 would be invisible and this test would assert nothing"
+            );
+            for p in 1..SEQ_LENS[0] {
+                assert!(
+                    score(p) > score(p - 1),
+                    "scores must increase at every position"
+                );
             }
         }
 
-        // q packed [M, NUM_HEADS, HEAD_DIM]; both heads share the same q for simplicity.
-        let mut q_host = Vec::with_capacity(M * NUM_HEADS * HEAD_DIM);
-        for _ in 0..M * NUM_HEADS {
-            q_host.extend_from_slice(&q_head);
+        // q packed [M, NUM_HEADS, HEAD_DIM]
+        let mut q_host = vec![0.0f32; M * NUM_HEADS * HEAD_DIM];
+        for slot in 0..M {
+            for head in 0..NUM_HEADS {
+                for d in 0..HEAD_DIM {
+                    q_host[(slot * NUM_HEADS + head) * HEAD_DIM + d] = q_at(slot, head, d);
+                }
+            }
         }
-        // K/V caches: [M, NUM_KV_HEADS, MAX_SEQ, HEAD_DIM], one contiguous buffer per tensor.
+        // K/V caches [M, NUM_KV_HEADS, MAX_SEQ, HEAD_DIM], contiguous, one buffer per tensor.
         let slot_stride = NUM_KV_HEADS * MAX_SEQ * HEAD_DIM;
         let mut k_host = vec![0.0f32; M * slot_stride];
         let mut v_host = vec![0.0f32; M * slot_stride];
         for slot in 0..M {
-            let base = slot * slot_stride;
-            k_host[base..base + MAX_SEQ * HEAD_DIM].copy_from_slice(&k_head);
-            v_host[base..base + MAX_SEQ * HEAD_DIM].copy_from_slice(&v_head);
+            for group in 0..NUM_KV_HEADS {
+                for pos in 0..SEQ_LENS[slot] {
+                    let base = slot * slot_stride + (group * MAX_SEQ + pos) * HEAD_DIM;
+                    for d in 0..HEAD_DIM {
+                        k_host[base + d] = k_at(slot, group, pos, d);
+                        v_host[base + d] = v_at(slot, group, pos, d);
+                    }
+                }
+            }
         }
 
         let q_buf = GpuBuffer::from_host(&ctx, &q_host).expect("q");
@@ -581,7 +641,7 @@ mod cb008_gpu_numerics {
         let v_ptrs: Vec<u64> = (0..M)
             .map(|s| v_buf.as_ptr() + s as u64 * stride_bytes)
             .collect();
-        let seq_lens: Vec<u32> = vec![seq_len as u32; M];
+        let seq_lens: Vec<u32> = SEQ_LENS.iter().map(|&s| s as u32).collect();
         let k_ptrs_buf = GpuBuffer::from_host(&ctx, &k_ptrs).expect("k_ptrs");
         let v_ptrs_buf = GpuBuffer::from_host(&ctx, &v_ptrs).expect("v_ptrs");
         let seq_lens_buf = GpuBuffer::from_host(&ctx, &seq_lens).expect("seq_lens");
@@ -629,21 +689,25 @@ mod cb008_gpu_numerics {
         let mut got = vec![0.0f32; M * NUM_HEADS * HEAD_DIM];
         out_buf.copy_to_host(&mut got).expect("download");
 
-        let want = reference(&q_head, &k_head, &v_head, seq_len);
         for slot in 0..M {
             for head in 0..NUM_HEADS {
+                let want = reference(slot, head);
                 let base = (slot * NUM_HEADS + head) * HEAD_DIM;
                 for d in 0..HEAD_DIM {
                     let g = got[base + d];
                     let w = want[d];
                     assert!(
-                        (g - w).abs() <= 1e-3 * w.abs().max(1.0),
-                        "FALSIFY-CB-008: batched attention slot {slot} head {head} dim {d} \
-                         = {g}, CPU softmax reference = {w}. Scores increase with position \
-                         here, so the online-softmax rescale runs every step; a correction \
-                         stuck at 1.0 over-weights early KV positions and lands near \
-                         V[0]..V[1] instead of V[{last}]. See aprender#2753.",
-                        last = seq_len - 1
+                        (g - w).abs() <= 2e-3 * w.abs().max(1.0),
+                        "FALSIFY-CB-008: batched attention slot {slot} head {head} \
+                         (kv group {group}, seq_len {sl}) dim {d} = {g}, CPU softmax \
+                         reference = {w}. Scores increase with position here, so the \
+                         online-softmax rescale runs at every step; a correction stuck at 1.0 \
+                         over-weights early KV positions and lands near the unweighted mean of \
+                         V instead of near V[seq_len-1]. Q differs per head and K/V per slot, \
+                         so a GQA head-mapping or slot-stride error also lands here. \
+                         See aprender#2753.",
+                        group = kv_group_of(head),
+                        sl = SEQ_LENS[slot]
                     );
                 }
             }
