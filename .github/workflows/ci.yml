@@ -1037,6 +1037,22 @@ jobs:
       # a workflow happens to call.
       - name: Receipt signer refuses what it must (PERF-007, case table)
         run: bash scripts/perf_receipt_sign.sh --selftest
+      # PERF-047. Section 5 of the spec is the epic's OWN ledger -- "a gate with
+      # no registered mutation is inadmissible" -- so which arms section 4.8 may
+      # read is decided by what it says, and nothing compared it to the tree.
+      # Audited 2026-08-29 it was wrong in BOTH directions at once: 12 rows said
+      # "not written" beside guards that ship case tables and are invoked twice
+      # each in THIS file, and 2 rows recorded as proof named a mutation that
+      # leaves its guard GREEN. One arm (cell completeness) had no row at all.
+      #
+      # The check is two-way and the ratchet has no separate baseline file: the
+      # registry at merge-base with main IS the comparand, so there is nowhere
+      # to record a downgrade. Text-only and deterministic, so it belongs in the
+      # merge phase beside the other section 4.1 guards.
+      - name: The mutation registry describes the tree (PERF-047)
+        run: bash scripts/check_mutation_registry.sh
+      - name: Mutation-registry guard can still go RED (case table)
+        run: bash scripts/check_mutation_registry.sh --self-test
       # The threshold rule is DERIVED, and the rule it replaced is falsified by
       # execution on every run rather than by a comment. 3-sigma pooled does not
       # catch the one regression on record (#2675).
