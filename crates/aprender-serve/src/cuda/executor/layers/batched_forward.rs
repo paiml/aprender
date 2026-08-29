@@ -1,6 +1,53 @@
 // Batched forward pass dispatching M parallel sequences through all transformer layers.
 
 impl CudaExecutor {
+    /// PERF-050: `APR_LAYER_TRACE=1` enables the per-layer hidden-state trace used to bisect
+    /// FALSIFY-CB-006. Read once per process.
+    fn layer_trace_enabled() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var("APR_LAYER_TRACE").as_deref() == Ok("1"))
+    }
+
+    /// PERF-050: dump per-slot hidden-state statistics after one layer.
+    ///
+    /// Supersedes the realizr#220 diagnostic that sat inline in batched_forward_run_layers:
+    /// layer 0 only, m >= 3 only, and UNCONDITIONAL, so every decode step of every m >= 3 batch
+    /// paid a stream synchronize plus a device-to-host copy on the hot path with no way to turn
+    /// it off. `nonfinite` is reported because CB-006's residue returns all-NaN logits on the
+    /// second batched request and the bisect has to name the layer that first sees them.
+    fn trace_layer_hidden(
+        &self,
+        layer_idx: usize,
+        hidden_buf2_ptr: u64,
+        m: usize,
+        hidden_dim: u32,
+    ) -> Result<(), GpuError> {
+        self.stream.synchronize()?;
+        let hd = hidden_dim as usize;
+        // SAFETY: non-owning view over the already-allocated hidden_buf2 device region; leaked
+        // below so Drop never frees the borrowed allocation.
+        let buf = unsafe { GpuBuffer::<f32>::from_raw_parts(hidden_buf2_ptr, m * hd) };
+        let mut host = vec![0.0f32; m * hd];
+        let res = buf.copy_to_host(&mut host);
+        std::mem::forget(buf);
+        res?;
+        for seq in 0..m {
+            let slice = &host[seq * hd..(seq + 1) * hd];
+            let nonfinite = slice.iter().filter(|v| !v.is_finite()).count();
+            let sum: f32 = slice.iter().filter(|v| v.is_finite()).sum();
+            let absmax = slice
+                .iter()
+                .filter(|v| v.is_finite())
+                .fold(0.0f32, |a, v| a.max(v.abs()));
+            eprintln!(
+                "[CB-006-LAYER] layer={layer_idx} seq={seq} sum={sum:.4} absmax={absmax:.4} \
+                 nonfinite={nonfinite}/{hd} first4={:?}",
+                &slice[..4.min(hd)]
+            );
+        }
+        Ok(())
+    }
+
     /// PAR-111: Batched forward pass for M sequences returning M token IDs
     ///
     /// Processes M sequences in parallel through all transformer layers using
@@ -149,22 +196,10 @@ impl CudaExecutor {
             // Prevent drop of borrowed buffer (from_raw_parts doesn't own the memory)
             std::mem::forget(layer_input_buf);
 
-            // realizr#220 DIAGNOSTIC: dump hidden state after layer 0 for M>=3
-            if layer_idx == 0 && m >= 3 {
-                self.stream.synchronize()?;
-                let debug_len = m * hidden_dim as usize;
-                // SAFETY: constructs a non-owning `GpuBuffer` view over an already-allocated device region (`ptr`, element count `len`) that stays live for the kernel call; the view is `leak()`ed afterwards so its Drop never frees the borrowed device allocation (no double-free).
-                let debug_buf = unsafe { GpuBuffer::<f32>::from_raw_parts(hidden_buf2_ptr, debug_len) };
-                let mut debug_host = vec![0.0f32; debug_len];
-                debug_buf.copy_to_host(&mut debug_host)?;
-                std::mem::forget(debug_buf);
-                for seq in 0..m {
-                    let off = seq * hidden_dim as usize;
-                    let first4: Vec<f32> = debug_host[off..off+4].to_vec();
-                    let sum: f32 = debug_host[off..off+hidden_dim as usize].iter().sum();
-                    let nonzero = debug_host[off..off+hidden_dim as usize].iter().filter(|&&v| v != 0.0).count();
-                    eprintln!("[#220-DIAG] layer0 seq{}: first4={:?} sum={:.4} nonzero={}/{}", seq, first4, sum, nonzero, hidden_dim);
-                }
+            // PERF-050: per-layer hidden-state trace, the layer bisect for CB-006.
+            // Behind APR_LAYER_TRACE=1; see trace_layer_hidden.
+            if Self::layer_trace_enabled() {
+                self.trace_layer_hidden(layer_idx, hidden_buf2_ptr, m, hidden_dim)?;
             }
         }
 
