@@ -87,6 +87,14 @@ impl CudaExecutor {
             epsilon,
         )?;
 
+        // PERF-050 round 6: sub-layer split. The ORACLE bisect terminates at layer 0, and the
+        // batched layer-0 output is all-NaN under default GEMM routing. This says whether the
+        // NaN is already present BEFORE the first GEMM (input upload or batched RMSNorm) or
+        // arrives WITH it (aprender#2761's batched_gemv_with_fallback).
+        if Self::layer_trace_enabled() && _layer_idx == 0 {
+            self.trace_buffer("L0_after_rmsnorm", hidden_buf1_ptr, m as usize * hidden_dim as usize);
+        }
+
         // ========== 2. Q/K/V Projections (BATCHED GEMV or cuBLAS GEMM) ==========
         // PMAT-024: During prefill (M > threshold), use cuBLAS GEMM for Q4K weights.
         // This reads weights once instead of M/8 times, closing the 86x prefill gap.
@@ -149,6 +157,10 @@ impl CudaExecutor {
                 hidden_buf1, v_buf, hidden_buf1_ptr, v_buf_ptr,
                 m, kv_dim, hidden_dim,
             )?;
+        }
+
+        if Self::layer_trace_enabled() && _layer_idx == 0 {
+            self.trace_buffer("L0_after_q_proj", q_buf_ptr, m as usize * q_dim as usize);
         }
 
         // ========== 2b. QKV Bias (PMAT-046: batched broadcast) ==========

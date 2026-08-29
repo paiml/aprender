@@ -3,7 +3,7 @@
 impl CudaExecutor {
     /// PERF-050: `APR_LAYER_TRACE=1` enables the per-layer hidden-state trace used to bisect
     /// FALSIFY-CB-006. Read once per process.
-    fn layer_trace_enabled() -> bool {
+    pub(crate) fn layer_trace_enabled() -> bool {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *ON.get_or_init(|| std::env::var("APR_LAYER_TRACE").as_deref() == Ok("1"))
     }
@@ -24,7 +24,7 @@ impl CudaExecutor {
     /// `ALL-ZERO` is called out rather than printed as `sum=0 absmax=0`, because an unwritten
     /// buffer and a legitimately zero tensor produce identical statistics. This investigation
     /// has already had to withdraw one result to that exact confusion.
-    fn trace_buffer(&self, label: &str, ptr: u64, len: usize) {
+    pub(crate) fn trace_buffer(&self, label: &str, ptr: u64, len: usize) {
         if self.stream.synchronize().is_err() {
             eprintln!("[CB-006-OUT] {label} SYNC FAILED");
             return;
