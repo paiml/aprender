@@ -659,9 +659,25 @@ falsification_tests:
       batched path PROVEN engaged: max batch m=4 -- all slots OK
       FALSIFY-CB-006 GREEN: every batched output matches the m=1 reference
 
-    TWO CONDITIONS REMAIN BEFORE IT IS GREEN BY DEFAULT, and both are named:
+    TWO CONDITIONS REMAINED BEFORE IT WAS GREEN BY DEFAULT. ONE IS NOW
+    DISCHARGED (round 10, PERF-053 / #2767) and one is still open:
 
-      - APR_STREAM_LEGACY=1 pins the #2767 race, which is diagnosed and unrepaired.
+      - APR_STREAM_LEGACY=1 pinned the #2767 race. NO LONGER NEEDED: the race is
+        REPAIRED, and CU_STREAM_DEFAULT is now what CudaStream::new produces with
+        no env var at all. The knob is INVERTED rather than deleted --
+        APR_STREAM_NONBLOCKING=1 restores the old racy stream flag -- so the
+        measured cost of the repair stays reproducible in ONE binary. That cost is
+        real and is stated here rather than buried: agg_tok_s ratio 1.006 at c=1
+        (no measurable cost), 0.893 at c=4, 0.817 at c=8, replicate ranges
+        DISJOINT at c=4 and c=8. Against 11 distinct continuations out of 40 on
+        identical greedy input, that is the price of answering at all.
+        Falsifier: crates/aprender-serve/tests/falsify_stream_ordering_2767.rs
+        (perf053_identical_greedy_batches_return_one_continuation), wired into
+        .github/workflows/cuda-nightly.yml. Mutation-verified on RTX 4090 sm_89:
+        4 distinct continuations from 4 identical greedy batches of 4 with the
+        default reverted in source, 1 with it restored; and the per-BATCH (not
+        per-slot) signature #2767 reported was reproduced exactly -- all 4 slots
+        within a round agreed, the answer changed across rounds.
       - CUBLAS_GEMM_THRESHOLD=32 keeps m>=4 off the cuBLAS decode route. With the
         default threshold of 4, c=2 PASSES and c=4 DIVERGES -- and the c=4 output
         is coherent English on a different continuation
