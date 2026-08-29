@@ -23,15 +23,22 @@ name: CUDA Nightly (GPU QLoRA falsifiers)
 #      promote the lane to a required gate on training-path PRs, without
 #      auto-firing on every PR. It is NOT a required check — labeling is manual.
 #
-# CROSS-SILICON MATRIX (same suite on two self-hosted CUDA runners):
-#   - ada-4090      : lambda-vector, RTX 4090, sm_89,  x86-64, CUDA 12.8
-#                     (labels: self-hosted, Linux, X64, cuda)  -- direct WAN
+# SINGLE-SILICON, BY POLICY (paiml/infra#359).
 #   - blackwell-gb10: gx10, GB10, sm_121, aarch64, CUDA 13.0
-#                     (labels: self-hosted, Linux, ARM64, cuda) -- egress via a
-#                     forward proxy on lambda (10.42.0.10:8888) over the wired
-#                     10.42.0.0/24 link; the runner's .env carries HTTPS_PROXY.
-# sm_89 is the stable reference; sm_121 is the higher-risk target (historical
-# JIT bugs), which is exactly why both are gated.
+#                     (labels: self-hosted, gpu, Linux, ARM64, cuda, blackwell)
+#                     egress via a forward proxy on lambda (10.42.0.10:8888)
+#                     over the wired 10.42.0.0/24 link; the runner's .env
+#                     carries HTTPS_PROXY. That is a PROXY, not a runner.
+#
+# The `ada-4090` leg is GONE. It ran on lambda-labs, which is the workstation
+# and must never be a CI host — a rule that had already been broken once by a
+# repo-scoped runner standing up after the named service was retired. gx10 is
+# the fleet's only sanctioned GPU runner, and it is aarch64.
+#
+# WHAT THIS COSTS, stated rather than buried: sm_89 was the stable reference and
+# sm_121 the higher-risk target (historical JIT bugs). We now gate only the
+# risky one. A CUDA regression that reproduces on Ada but not Blackwell will not
+# be caught here.
 #
 # Toggle: gated behind vars.CUDA_RUNNER_READY so the lane can be disabled
 # without deleting the workflow.
@@ -42,7 +49,7 @@ on:
   workflow_dispatch:
     inputs:
       silicon:
-        description: "Which silicon to run (all | ada | blackwell)"
+        description: "Which silicon to run (all | blackwell) — ada retired, see infra#359"
         required: false
         default: "all"
       force:
@@ -74,13 +81,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: ada-4090
-            arch: X64
-            select: ada
           - name: blackwell-gb10
             arch: ARM64
             select: blackwell
-    runs-on: [self-hosted, Linux, "${{ matrix.arch }}", cuda, "${{ matrix.select }}"]
+    # LITERAL, not an expression. infra#352 requires a selector to name `gpu`,
+    # and a guard can only check labels it can see — labels hidden behind a
+    # matrix expression are invisible to it.
+    runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell]
     timeout-minutes: 90
     env:
       APR_PARITY_MODEL: ${{ vars.APR_PARITY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr' }}
@@ -160,45 +167,60 @@ jobs:
         run: |
           nice -n 19 cargo test -p aprender-train --features cuda --lib --release cuda_loss_window
 
-      # Pillar-4 marquee: apr decode throughput vs a resident ollama.
+      # Pillar-4 marquee: apr decode throughput against a resident ollama.
       #
-      # This beat needs a GPU *and* a resident ollama daemon *and* the Q4_K_M
-      # GGUF, which is why it is `#[ignore]`d. It was previously "wired" into the
-      # per-PR chained gate in ci.yml WITHOUT `--ignored`, where it executed zero
-      # tests and passed unconditionally (see scripts/check_beats_gated.sh rule
-      # 1b, which now makes that a build failure). Here it actually runs.
+      # THIS MOVED FROM ada-4090 TO gx10, and the reason it CAN move is that the
+      # assertion is no longer a beat claim. The file's own header withdrew the
+      # 1.371x claim on 2026-07-31; what is enforced now is a NO-COLLAPSE PARITY
+      # FLOOR at ratio 0.90 — apr's median-of-7 against ollama's, measured on the
+      # SAME box in the same run. That is a RATIO, so it does not carry sm_89's
+      # ~300 tok/s baseline with it, and the failure it exists to catch (the CPU
+      # fallback collapse, ratio ~0.065, a 14x violation) is silicon-independent.
       #
-      # ada-4090 only: the 1.10x ceiling and the ~300 tok/s ollama baseline were
-      # pinned on sm_89. GB10 has different decode characteristics and defaults
-      # to serial prefill, so running it there would compare against a baseline
-      # that was never measured on that silicon.
-      - name: Pillar-4 - apr vs ollama decode throughput beat (ada-4090 only)
-        if: steps.decide.outputs.proceed == 'true' && matrix.name == 'ada-4090'
+      # The earlier draft of this PR deleted the step instead and left the beat
+      # file in place. `check_beats_gated.sh` was right to refuse that: "A beat
+      # that no workflow executes is NEGATIVE EV... Wire it or delete it." Its
+      # contract, its BEATS.md entry and its roadmap ticket all still point at it,
+      # so wiring it is the honest half of that choice.
+      #
+      # ollama is DECLARED on gx10 (paiml/infra machines/gx10/forjar.yaml,
+      # `beat-incumbent` tag): pinned binary, systemd unit whose completion_check
+      # asks the daemon rather than systemd, and the q4_K_M model pulled to match
+      # the GGUF apr is handed. It is not sovereign tooling and does not pretend
+      # to be — it is the incumbent under measurement, and a comparative beat
+      # cannot run without its competitor.
+      - name: Pillar-4 - apr vs ollama decode throughput beat
+        if: steps.decide.outputs.proceed == 'true'
         env:
           # The beat's built-in APR_BIN default points at a hand-built artifact
-          # (/mnt/nvme-raid0/targets/...) that goes stale SILENTLY - on
-          # 2026-07-28 it was a day behind #2323, which changed the very Q4K
-          # kernel this beat measures. Always measure a binary built from the
-          # commit under test.
+          # that goes stale SILENTLY - on 2026-07-28 it was a day behind #2323,
+          # which changed the very Q4K kernel this beat measures. Always measure a
+          # binary built from the commit under test.
           APR_BIN: ${{ github.workspace }}/target/release/apr
           APR_GGUF: ${{ vars.APR_DECODE_GGUF || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' }}
           OLLAMA_MODEL: ${{ vars.OLLAMA_DECODE_MODEL || 'qwen2.5-coder:1.5b-instruct-q4_K_M' }}
         run: |
           set -euo pipefail
           # Fail loudly on a provisioning gap. Skipping here would restore the
-          # exact silence this whole change exists to remove.
-          command -v ollama >/dev/null 2>&1 || {
-            echo "::error::ollama not installed on ada-4090 - the Pillar-4 decode beat cannot measure its incumbent"
+          # exact silence this whole change exists to remove: the incumbent being
+          # absent is a broken gate, not a passing one.
+          "$HOME/.local/bin/ollama" --version >/dev/null 2>&1 || {
+            echo "::error::ollama is not installed on gx10 - the Pillar-4 decode beat cannot measure its incumbent."
+            echo "::error::It is declared in paiml/infra machines/gx10/forjar.yaml under the beat-incumbent tag."
             exit 1
           }
           if [ ! -f "$APR_GGUF" ]; then
-            echo "::error::APR_GGUF not found on ada-4090: $APR_GGUF"
+            echo "::error::APR_GGUF not found on gx10: $APR_GGUF"
             exit 1
           fi
-          ollama list | grep -q "$OLLAMA_MODEL" || {
+          "$HOME/.local/bin/ollama" list | grep -q "$OLLAMA_MODEL" || {
             echo "::error::ollama model not pulled: $OLLAMA_MODEL"
             exit 1
           }
           nice -n 19 cargo build --release --features cuda --bin apr
+          # `-- --ignored` is load-bearing. Without it this target compiles, runs
+          # 0 of its ignored tests, prints "ok. N passed; 0 failed; 1 ignored" and
+          # exits 0 forever - which is precisely what #2319 shipped and what
+          # check_beats_gated.sh rule 1b now makes a build failure.
           nice -n 19 cargo test -p aprender-serve --release \
             --test beat_ollama_decode_throughput_speed -- --ignored --nocapture
