@@ -55,8 +55,15 @@ DELEGATE = os.path.join(root, "scripts", "lib", "bench_receipt.py")
 # from BOTH this map and the ledger's non_receipt_receivers list is an error,
 # never a skip.
 PREFIX = {
+    # `prov` and `sig` are the two intermediates arm_c_signature binds before
+    # reading through them (`prov=r.get("provenance") or {}`). They address the
+    # same sub-objects `r["provenance"]` and `r["signature"]` do, so they are
+    # mapped rather than exempted: a receiver listed here still has EVERY key
+    # read through it checked against the ledger. `prov` already carried this
+    # meaning under DELEGATE.
     GATE: {"r": "", "b": "bands[].", "bands": "bands[].",
-           "kv": "kv.", "itl": "itl.", "inj": "injector."},
+           "kv": "kv.", "itl": "itl.", "inj": "injector.",
+           "prov": "provenance.", "sig": "signature."},
     DELEGATE: {"receipt": "", "prov": "provenance.",
                "subj_prov": "provenance.", "comp_prov": "provenance."},
 }
@@ -70,8 +77,11 @@ PREFIX = {
 # most likely to be wrong and least likely to be read.
 TOKEN = re.compile(r"""\.get\(\s*(['"])(\w+)\1|\[\s*(['"])(\w+)\3\s*\]""")
 # Text immediately before a token, when the receiver is a plain name possibly
-# followed by subscripts: `r`, `bands[c]`, `m["arms"]["B1"]`.
-RECV = re.compile(r'([A-Za-z_]\w*)(?:\[[^\]]*\])*\s*$')
+# followed by subscripts: `r`, `bands[c]`, `m["arms"]["B1"]`. The subscript
+# chain is CAPTURED rather than discarded -- see qualify().
+RECV = re.compile(r'([A-Za-z_]\w*)((?:\[[^\]]*\])*)\s*$')
+SUBSCRIPT = re.compile(r'\[([^\]]*)\]')
+LITERAL_KEY = re.compile(r'^\s*[\'"](\w+)[\'"]\s*$')
 # ... and when it is `(<name>.get("outer") or {})`, the one chained form in use.
 CHAIN = re.compile(r'([A-Za-z_]\w*)\.get\(\s*[\'"](\w+)[\'"]\s*\)\s*or\s*\{\}\s*\)\s*$')
 # ... and `(<name> or {})`, the null-coalescing form, where the receiver is the
@@ -85,6 +95,32 @@ with open(LEDGER, encoding="utf-8") as fh:
 fields = ledger.get("fields") or {}
 skip_recv = ledger.get("non_receipt_receivers") or {}
 dispatch = set(ledger.get("dispatch_keys") or [])
+
+
+def qualify(chain):
+    """The path a receiver's own subscript chain addresses, as a prefix.
+
+    `r["provenance"]["host"]` addresses provenance.host and
+    `r["bands"][0][...]` addresses bands[]..., but RECV used to swallow the
+    whole chain into the receiver name and report the bare leaf. That renamed
+    two real fields into `host` and `aggregate_tok_per_sec`, which are receipt
+    fields under NO spelling, while their true spellings sat classified in the
+    ledger the whole time. A map is keyed by a field's name, so a parser that
+    renames a field cannot be checked against it -- the guard demanded entries
+    for two fields that must never exist, and the obliging repair would have
+    invented them.
+
+    A literal key extends the path; an index INTO the last literal key makes it
+    a list, matching the `bands[].` spelling the ledger and PREFIX already use.
+    """
+    out = ""
+    for raw in SUBSCRIPT.findall(chain):
+        literal = LITERAL_KEY.match(raw)
+        if literal:
+            out += literal.group(1) + "."
+        elif out:
+            out = out[:-1] + "[]."
+    return out
 
 
 def read_set(path):
@@ -116,7 +152,8 @@ def read_set(path):
                     "leaves this guard's universe without saying so."
                     % (base, line, name))
                 continue
-            recv, qualified = plain.group(1), name
+            recv = plain.group(1)
+            qualified = qualify(plain.group(2)) + name
         if recv in allowed:
             continue
         if recv not in prefix:
@@ -237,6 +274,11 @@ self_test() {
     cp "$ROOT/scripts/perf-matrix.yaml" "$td/$1/scripts/"
     cp "$ROOT/scripts/lib/bench_receipt.py" "$td/$1/scripts/lib/"
     cp "$ROOT/scripts/lib/parity_block.py" "$td/$1/scripts/lib/"
+    # P4, the signer. Named as producer by `signature` and `signature.key_id`,
+    # so a fixture without it fails the producer-existence check on EVERY row
+    # -- including the pass-expected ones, which is how this omission announced
+    # itself rather than quietly weakening the table.
+    cp "$ROOT/scripts/lib/receipt_sig.py" "$td/$1/scripts/lib/"
     mkdir -p "$td/$1/crates/aprender-test-lib/src/llm" "$td/$1/crates/apr-cli/src/commands"
     cp "$ROOT/crates/aprender-test-lib/src/llm/loadtest.rs" "$td/$1/crates/aprender-test-lib/src/llm/"
     cp "$ROOT/crates/aprender-test-lib/src/llm/benchmark.rs" "$td/$1/crates/aprender-test-lib/src/llm/"
@@ -318,6 +360,41 @@ MUT
   printf '\n// an unrelated comment\n' \
     >> "$td/unrelated_producer_edit/crates/aprender-test-lib/src/llm/loadtest.rs"
   _expect unrelated_producer_edit pass
+
+  # DISCRIMINATION -- a nested literal chain must QUALIFY, not collapse to its
+  # leaf. `r["bands"][0]["tokens_total"]` addresses bands[].tokens_total, which
+  # the ledger classifies. RECV used to swallow the whole chain into the
+  # receiver, so this would have reported a bare `tokens_total` -- a receipt
+  # field under no spelling -- and reddened. That is verbatim the defect that
+  # made the merge queue demand ledger entries for `host` and
+  # `aggregate_tok_per_sec`: the obliging repair invents the two fields the
+  # parser named, and the map then documents a schema nothing has.
+  _fixture nested_chain_qualifies
+  cat >> "$td/nested_chain_qualifies/scripts/perf_gate.sh" <<'MUT'
+arm_h_nested() { python3 -c 'r={"bands":[{}]}; print(r["bands"][0]["tokens_total"])'; }
+MUT
+  _expect nested_chain_qualifies pass
+
+  # MUTATION 6 -- a nested chain whose LEAF is unclassified is still caught.
+  # Without this row the one above could be passing because nested reads left
+  # the universe altogether, which is the failure mode it exists to exclude.
+  _fixture nested_leaf_unclassified
+  cat >> "$td/nested_leaf_unclassified/scripts/perf_gate.sh" <<'MUT'
+arm_i_nested() { python3 -c 'r={"provenance":{}}; print(r["provenance"]["invented_leaf"])'; }
+MUT
+  _expect nested_leaf_unclassified fail
+
+  # MUTATION 7 -- mapping a receiver must CLASSIFY its keys, never exempt them.
+  # `sig` and `prov` joined PREFIX to resolve arm_c_signature. The cheap wrong
+  # fix was to list them under non_receipt_receivers instead, which reads as
+  # the same one-line repair and would have dropped every signature field out
+  # of the universe in silence. `signature.alg` is real and unclassified
+  # because nothing reads it; a read of it must redden.
+  _fixture mapped_receiver_still_checked
+  cat >> "$td/mapped_receiver_still_checked/scripts/perf_gate.sh" <<'MUT'
+arm_j_sig() { python3 -c 'sig={}; print(sig.get("alg"))'; }
+MUT
+  _expect mapped_receiver_still_checked fail
 
   printf '  %d passed, %d broken\n' "$pass" "$fail"
   [ "$fail" = 0 ]

@@ -21,8 +21,8 @@
 # a guard can check, instead of being rediscovered each time someone tries to
 # run the gate.
 #
-# THE THREE PRODUCERS
-# -------------------
+# THE FOUR PRODUCERS
+# ------------------
 #   P1  `apr test llm bench --output`  -> crates/apr-cli/src/commands/test_llm.rs
 #       emits BenchmarkReport verbatim: {runs:[LoadTestResult], aggregate, regressions}
 #       (crates/aprender-test-lib/src/llm/benchmark.rs). No provenance, no
@@ -33,6 +33,13 @@
 #       Converts P1 or P2. Derives what is derivable and REFUSES to write the
 #       rest, copying the UNMEASURED entries below into the receipt so the gate
 #       can name the gap and its owner instead of saying "ArmC schema".
+#   P4  scripts/lib/receipt_sig.py     -> the `signature` block (PERF-007).
+#       Called by scripts/perf_receipt_sign.sh ON THE MEASURING HOST, with a
+#       key scoped to that host. It is deliberately NOT reachable from P3: a
+#       renderer that runs anywhere and can sign its own output forges exactly
+#       the evidence the release arm exists to check. P4 signs; it never
+#       measures and never invents -- it refuses a receipt whose `commit` or
+#       `provenance.host` is absent rather than filling either in.
 #
 # CLASSES
 # -------
@@ -221,6 +228,66 @@ fields:
       fields the block requires (tokenizer_sha256, counts_special_tokens,
       counts_prompt_echo) have no producer and nothing that could infer them.
       SGLang RFC #9808 is the cited prior art for getting this wrong.
+
+  # ------------------------------------------------------------ Arm C-sig ---
+  # §4.9.1 / I-10, landed on main by PERF-007. The staleness arm is what makes
+  # Arm C a gate: two hosts are not CI runners and the fully-comparated one is
+  # do-not-revive, so the gate cannot run ON the host that measures. What
+  # reaches it is a FILE, and an unsigned file binds to no host and no commit.
+  #
+  # perf_gate.sh scopes this arm to `--phase release`, so these three are
+  # at-release rather than always. That skip is spec-mandated and is the arm's
+  # ONLY legal one -- receipt_sig.py has no "unsigned is exempt" path.
+  commit:
+    class: UNMEASURED
+    required: at-release
+    owner: PERF-007
+    spec: "§4.9.1"
+    needs: >-
+      The commit the MEASURED BINARY was built from. No producer writes it:
+      perf_receipt.py has no --commit flag, and giving it one that defaults to
+      its own checkout's HEAD would be the forbidden repair in its purest form.
+      The renderer converts artifacts on whatever box runs it, so its HEAD
+      attests to where the CONVERSION happened, not to where the measurement
+      did -- exactly the claim provenance.binary_sha256 exists because nobody
+      can make from the harness side. receipt_sig.py refuses rather than
+      defaults for the same reason: `_sign_target` raises NO-COMMIT because "a
+      signature over an invented one attests to nothing". Carry the commit out
+      of the host that BUILT and RAN the binary, beside binary_sha256, and make
+      it a required flag on perf_receipt.py the way --resolution now is.
+
+  signature:
+    class: PRODUCED
+    required: at-release
+    producer: {file: scripts/lib/receipt_sig.py, symbol: "signed[SIGNATURE_KEY] = {"}
+    caveat: >-
+      The producer is the SIGNING step on the measuring host
+      (scripts/perf_receipt_sign.sh -> receipt_sig.py::sign), never the
+      renderer. perf_receipt.py must NOT gain a --sign flag: it runs anywhere,
+      so a signature it applied would attest only that the renderer ran, which
+      is the one thing the gate already knows -- a renderer able to sign its
+      own output can forge the evidence the arm exists to check. receipt_sig.py
+      enforces the split at source, refusing a key_id whose host prefix does
+      not match provenance.host (KEY-HOST-MISMATCH), and that refusal is what
+      makes the signature evidence rather than decoration. Re-pointing this
+      producer at perf_receipt.py, or softening the class, hands the forgery
+      back.
+      PRODUCED describes the tool, not the fleet: no receipt under evidence/
+      carries a signature yet, because sign() refuses a receipt whose `commit`
+      is absent and `commit` above has no producer. The forjar deployment that
+      would run this on a host is explicitly NOT implemented -- see
+      perf_receipt_sign.sh, "WHAT THE FORJAR DEPLOYMENT WOULD BE".
+
+  signature.key_id:
+    class: PRODUCED
+    required: at-release
+    producer: {file: scripts/lib/receipt_sig.py, symbol: '"key_id": key_id,'}
+    caveat: >-
+      `<host>-<serial>`. The host half is load-bearing and checked on both
+      ends: key_id_host() is what lets sign() refuse another host's evidence
+      and the verifier reject a receipt signed by the wrong host's key.
+      Rotation is a new serial, never an edit in place -- load_keyring refuses
+      a duplicate key_id so a rotated key cannot keep validating silently.
 
   # ---------------------------------------------------------------- Arm D ---
   # §4.4.9's scheduler block. REPORTING today, blocking with PERF-001 -- and the
