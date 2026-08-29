@@ -184,6 +184,46 @@ falsification_tests:
     Firing 2 requests that arrive apart likewise exits 2 rather than passing:
     two m=1 batches form, the batched path is never exercised, and a probe
     that cannot see the mechanism must not return a verdict about it.
+
+    STILL RED 2026-08-29 after PERF-050. Re-run of THIS field's own command,
+    scripts/perf041_batched_parity_probe.sh, on an RTX 4090 with
+    apr 0.64.0 (e4e2e3da9) == HEAD, CUDA_BATCH_WINDOW_MS=200, 120-token cap:
+
+      batched path PROVEN engaged: max batch m=2
+      batched path PROVEN engaged: max batch m=4
+      FALSIFY-CB-006 RED: 6 batched output(s) diverge from the m=1 reference
+      perf041-parity: exit 1 (0=PASS 1=code defect 2=unmeasurable)
+
+    CB-008's
+    online-softmax defect was real, is fixed, and is mutation-verified on the
+    device -- and the batched output is still garbage, so it was not the only
+    cause. What is established about the residue:
+
+      - It is NOT m-dependent. APR_FORCE_BATCHED_PATH=1 with ONE request is
+        garbage, so nothing about per-slot indexing is required to reproduce it.
+      - It is NOT in prefill. The two prefill implementations agree
+        token-for-token on the (wrong) decode output.
+      - It is NOT the batched GEMM dispatch alone. BATCHED_DP4A=0 routes every
+        decode projection through cuBLAS and the output stays wrong (a different
+        wrong token, 145199 rather than 3156, so the path change did engage).
+
+    Two further defects were surfaced while bisecting and each needs its own
+    ticket, falsifier and fix:
+
+      - batched_gemv_with_fallback's per-sequence loop appears to be wrong. With
+        FP8_DECODE=0 CUBLAS_GEMM_THRESHOLD=100000 -- knobs that only REROUTE the
+        GEMM, leaving that loop as the only remaining implementation -- even the
+        m=1 fast path, coherent by default on the same binary in the same run,
+        returns `Lambda****...`. It is the universal fallback because
+        batched_qkv.rs pins `const USE_BATCHED_GEMV: bool = false`, a realizr#220
+        diagnostic left in the tree, so Q4K/Q6K never take the batched GEMV path.
+      - Batched prefill of a ~1300-token prompt dies with
+        CUDA_ERROR_ILLEGAL_ADDRESS in prefill_all_layers_gpu. Note the batched KV
+        cache reports stride=524288 = 2*2048*128 on a server started with
+        --context-length 4096, so its stride is not sized from the configured
+        context.
+
+    PERF-001's credited throughput stays withdrawn: the tokens are still garbage.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
@@ -193,7 +233,80 @@ falsification_tests:
 - id: FALSIFY-CB-008
   rule: No frozen slots
   prediction: All M slots produce distinct tokens per decode step (not constant)
-  test: BATCHED_DECODE_TRACE log shows token_ids[i] changes between steps for all i
+  test: >-
+    cargo test -p aprender-gpu --features cuda --lib cb008
+
+    Two layers. (1) cb008_online_softmax_rescale: PTX codegen, NO GPU required --
+    locate the in-place running-max update in BatchedIncrementalAttentionKernel,
+    find the sub feeding the correction ex2, assert its operands differ. (2)
+    cb008_gpu_numerics: runs the kernel on the device against a CPU softmax
+    reference over STRICTLY INCREASING scores, the only condition under which a
+    correction pinned to 1.0 is observable; skips loudly without a device.
+
+    BATCHED_DECODE_TRACE=1 additionally emits one `[CB-008] step=N m=M
+    token_ids=[..]` line per batched decode step. The variable this field used to
+    name did not exist, so the log it described could never have been read.
+  measured: >-
+    PARTIAL 2026-08-29 (PERF-050), RTX 4090, apr 0.64.0 (ee420e8c5),
+    qwen2.5-coder-1.5b-instruct-q4_k_m, greedy.
+
+    ONE mechanism behind CB-006's RED is found and fixed; the end-to-end
+    obligation is NOT discharged and CB-006 stays RED (see its own record).
+
+    The batched attention kernel's online-softmax rescale was a compile-time
+    1.0. `let old_max = max_score;` in a PTX builder binds the same VirtualReg,
+    so the in-place max clobbered it and the emitted PTX read
+
+        max.f32 %f8, %f8, %f23;
+        sub.f32 %f27, %f8, %f8;      <- a register minus ITSELF
+        ex2.approx.f32 %f29, %f28;   <- correction == exp2(0) == 1.0, always
+
+    so sum_exp and the output accumulators were never brought onto the new max's
+    scale. Nothing overflows and nothing is NaN, which is why it survived: the
+    running max is still right and exp_score is still right. Only the rescale is
+    missing, so every term accumulated before a max increase keeps a weight too
+    large by an unbounded factor.
+
+    Why it read as an m>1 defect and is not: with APR_FORCE_BATCHED_PATH=1 and a
+    SINGLE request -- no batch at all -- the output was `!!!!` (token id 0) to
+    the cap. The m=1 fast path is healthy only because it runs a DIFFERENT
+    attention kernel (paged/incremental.rs), which sidesteps the hazard by
+    computing new_max into a fresh register. paged/flash_decoding/chunk_kernel.rs
+    carries the fix AND a comment describing this exact aliasing hazard verbatim;
+    paged/batched.rs was the one sibling that still had it.
+
+    Both prefill paths are exonerated by measurement rather than assumption. The
+    multi-prompt prefill (PMAT-051) and the sequential per-slot prefill
+    (MULTI_PROMPT_PREFILL=0) are different implementations that write the batched
+    KV cache in different ways, and at m=4 they produced token-for-token
+    identical decode output (3156 then 46539 at steps 0 and 1). Two unrelated
+    writers agreeing exactly locates the fault in the reader.
+  mutation: >-
+    OBSERVED 2026-08-29, both layers, on an RTX 4090. Reverting the one-line fix
+    to `let old_max = max_score;`:
+
+      batched_incremental_attention_rescales_online_softmax ... FAILED
+        online-softmax rescale computes `%f8 - %f8` ... left: "%f8" right: "%f8"
+      batched_attention_matches_cpu_softmax_when_the_running_max_grows ... FAILED
+        slot 0 head 0 dim 0 = 4.5, CPU softmax reference = 7.5247297
+      flash_decoding_chunk_kernel_stays_green ... ok
+
+    Restored: 5/5 pass, and 2575 aprender-gpu lib tests pass.
+
+    4.5 is not arbitrary: V[p] = p+1 over eight positions, so 4.5 is their
+    unweighted mean. With the correction pinned to 1.0 the accumulated weights
+    collapse toward uniform and the kernel returns an average instead of a
+    softmax; the reference 7.52 is dominated by V[7] = 8, as a softmax over
+    increasing scores should be. That is the mechanism stated as a number.
+
+    The discrimination case is the point: flash_decoding_chunk_kernel_stays_green
+    holds under the mutation, so the checker is specific to the kernel it was
+    written for rather than RED on everything. Two further controls
+    (checker_rejects_a_self_subtraction, checker_accepts_a_saved_max) prove it
+    can fire at all, so a change in how instructions are spelled cannot turn it
+    into a test that scans nothing and passes. The GPU test's K is chosen so the
+    running max grows at every position -- a flat score sequence passes WITH the
+    bug in place, so the input is part of the assertion.
   if_fails: KV cache not populated for slot, or hidden state not indexed by slot
 - id: FALSIFY-CB-009
   rule: KV cache populated for all slots after prefill
