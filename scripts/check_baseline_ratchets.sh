@@ -83,6 +83,26 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
         unwired_guards_baseline.txt)             printf 'set\n' ;;
+        # NOT a ratchet either, and for a sharper reason: none of the three
+        # shrink-only kinds can express this file. `count` wants one integer.
+        # `keyed` wants <path><TAB><count>; the second field here is prose.
+        # `set` compares the WHOLE data line, so rewording a reason reads as a
+        # delete plus an add and FAILS — it would price honest edits to the
+        # reasons, which are the only thing making the debt reviewable. MEASURED
+        # 2026-08-29: classifying it `set` fails on this very branch, because
+        # origin/main carries no such file and the ratchet rightly refuses a
+        # missing comparand.
+        #
+        # What actually enforces it is stronger than shrink-only and is wired
+        # into ci.yml by this batch ("Every declared pin field is consumed"):
+        # check_pin_keys_consumed.sh ratchets the ledger in BOTH directions --
+        # a dead key that is NOT listed FAILS (debt may not grow), and a listed
+        # key that BECOMES consumed FAILS until its line is deleted (the ledger
+        # may not rot into a list of things that are secretly fine). Shrink-only
+        # forbids the first and is blind to the second. Both directions were
+        # mutation-verified RED before this line was written.
+        pin_unconsumed_ledger.txt)
+            printf 'none\tledger of llama_pin.toml keys; check_pin_keys_consumed.sh ratchets it BOTH ways (dead-and-unlisted FAILS, listed-but-consumed FAILS)\n' ;;
         # NOT a ratchet, and deliberately so. This file MODELS INTENT: its own
         # header says the declared set must match the OBSERVED set EXACTLY, an
         # entry whose duplicate no longer exists FAILS as stale, and adding a

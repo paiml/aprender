@@ -1,0 +1,76 @@
+{
+  "packages": [
+    {
+      "id": "path+file:///r#aprender@0.64.0",
+      "name": "aprender",
+      "version": "0.64.0",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "name": "aprender"
+        },
+        {
+          "kind": [
+            "bin"
+          ],
+          "name": "apr",
+          "required-features": [
+            "cli"
+          ]
+        },
+        {
+          "kind": [
+            "custom-build"
+          ],
+          "name": "build-script-build"
+        },
+        {
+          "kind": [
+            "bin"
+          ],
+          "name": "apr-helper"
+        }
+      ]
+    },
+    {
+      "id": "path+file:///r/crates/aprender-core#aprender-core@0.64.0",
+      "name": "aprender-core",
+      "version": "0.64.0",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "name": "aprender"
+        },
+        {
+          "kind": [
+            "test"
+          ],
+          "name": "book_contracts"
+        },
+        {
+          "kind": [
+            "bench"
+          ],
+          "name": "linreg"
+        },
+        {
+          "kind": [
+            "example"
+          ],
+          "name": "ch01"
+        }
+      ]
+    }
+  ],
+  "workspace_members": [
+    "path+file:///r#aprender@0.64.0",
+    "path+file:///r/crates/aprender-core#aprender-core@0.64.0"
+  ],
+  "workspace_default_members": [
+    "path+file:///r#aprender@0.64.0"
+  ]
+}

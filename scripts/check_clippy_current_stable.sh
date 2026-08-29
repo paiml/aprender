@@ -146,10 +146,29 @@ if ! ver_ge "$STABLE_VER" "$PINNED"; then
 fi
 
 # ── the actual gate ─────────────────────────────────────────────────
-# The sovereign-ci `lint` job's command, on current stable instead of the pin. Its
-# scope is a superset of the `cargo clippy -- -D warnings` that `make tier2` runs -
-# same packages, plus the root package's test/bench/example targets. Do NOT read the
-# status through a pipe (see CLAUDE.md "Verification Discipline" #1).
+# The sovereign-ci `lint` job's command, on current stable instead of the pin.
+#
+# THIS COMMENT USED TO CLAIM A SUPERSET THAT DOES NOT EXIST. It said the scope was
+# "same packages, plus the root package's test/bench/example targets" -- but the
+# root package HAS no test/bench/example targets. The root manifest is both
+# [workspace] and [package] and declares no `default-members`, so
+# `workspace_default_members` is 1 (the `aprender` facade alone), and that package
+# declares exactly two selectable targets: `lib aprender` and `bin apr`. There is
+# no root benches/ or examples/, and root tests/ holds one YAML fixture and no
+# .rs. So `--all-targets` selects nothing that a bare `cargo clippy` would not,
+# and this command's scope is EQUAL to `make tier2`'s, not a superset of it.
+# Measured with `cargo metadata --no-deps` on 50d2bc2bb; aprender#2734.
+#
+# `--all-targets` stays, because it is the lint job's command verbatim and it is
+# what makes this gate widen automatically the day a root target appears. What
+# changes is the claim: do not read a pass here as covering targets the facade
+# does not have. The 78 non-facade members' 1,782 test/bench/example/bin targets
+# (981 examples, 665 tests, 108 benches, 28 bins) are outside BOTH forms: clippy
+# reaches a member's LIB only, as a path dependency of the facade compiled under
+# RUSTC_WORKSPACE_WRAPPER, and never its other targets. Corroborated by #2721,
+# whose 71 findings from THIS command span 60+ member crates -- all in lib code.
+#
+# Do NOT read the status through a pipe (see CLAUDE.md "Verification Discipline" #1).
 echo "→ cargo +stable clippy --all-targets -- -D warnings   (pin $PINNED → stable $STABLE_VER)"
 if rustup run stable cargo clippy --all-targets -- -D warnings; then
     echo "✓ clean under current stable clippy ($STABLE_VER); the pin is $PINNED"
