@@ -1686,6 +1686,15 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             if let Some(ref b) = backend {
                 eprintln!("Backend override: {b}");
             }
+            // PERF-021: the third surface. `apr chat` accepted --gpu, verified
+            // nothing, and ran on CPU — the same defect as `apr run`, and
+            // unlike `apr run` it does not even carry the bespoke
+            // `--backend cuda` check. Three surfaces, one refusal, so a fix
+            // here cannot land on two of them again.
+            crate::accel::ensure_available(
+                *gpu && !*no_gpu,
+                &crate::accel::asked_flag(*gpu, backend.as_deref()),
+            )?;
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu { false } else { *no_gpu };
             chat::run(

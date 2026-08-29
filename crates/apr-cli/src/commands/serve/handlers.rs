@@ -773,7 +773,7 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
 fn start_safetensors_server_with_fallback(model_path: &Path, config: &ServerConfig) -> Result<()> {
     #[cfg(feature = "cuda")]
     {
-        let use_gpu = config.gpu && !config.no_gpu;
+        let use_gpu = config.wants_accelerator();
         if use_gpu {
             println!(
                 "{}",
@@ -1081,7 +1081,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     // immediately, so the fallback chain stays identical for non-batch builds.
     #[cfg(feature = "cuda")]
     {
-        let use_gpu = config.gpu && !config.no_gpu;
+        let use_gpu = config.wants_accelerator();
         if use_gpu {
             match start_apr_q4k_server_gpu(model_path, config) {
                 Ok(()) => return Ok(()),
