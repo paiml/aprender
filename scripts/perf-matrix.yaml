@@ -95,16 +95,74 @@ baselines:
         v2.1 figures are non-conformant to the §4.4 protocol (one-client rule,
         tokenization block, drain_ms). Re-measure before committing.
       expires: '2026-09-25'
-    W2: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+    W2: &w2_expires_with_perf_001
+      status: UNMEASURED
+      owner: perf-gate
+      # NOT A CALENDAR DATE, deliberately. All four W2 cells carried
+      # `expires: '2026-09-25'`, and under this file's own GROUNDING RULE that
+      # number is none of policy / inherited / ratchet -- it is an invented
+      # continuous threshold, in the one file that says there are none. It also
+      # contradicted the section it implements: §4.3.2 dates W2's expiry from
+      # an EVENT ("PERF-001 merge + 30 days"), not from the calendar, because
+      # "a serialising server has no batch for a long prefill to interfere
+      # with, so W2 measures nothing today and a blocking W2 would be
+      # permanently red -- a gate people learn to walk past".
+      #
+      # The clock is therefore ARMED BY THE ANCHOR below, not by a date typed
+      # here. Until PERF-001 merges the cell REPORTS and says so, naming what
+      # has to happen; the PR that lands batching sets `merged_on` and the
+      # 30-day clock starts, which is §4.3.2's "W2 becomes blocking in the same
+      # PR that lands batching, not later" made mechanical.
+      expires_after: {anchor: PERF-001, days: 30}
+      expiry_decided_by: '@noah'
+      expiry_cites: APR-PERF-GATE-001 v2.2 §4.3.2
+      expiry_decided_on: '2026-08-29'
+      reason: >-
+        §4.3.2: W2 is REPORTING and non-blocking at v2.2. Its expiry is
+        "PERF-001 merge + 30 days", owner @noah. The 2026-09-25 this cell used
+        to carry appears nowhere in §4.3.2 and had no author (PERF-056, #2777).
   gx10:
     W1: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
-    W2: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+    W2: *w2_expires_with_perf_001
   intel:
     W1: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
-    W2: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+    W2: *w2_expires_with_perf_001
   mini:
     W1: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
-    W2: {status: UNMEASURED, owner: perf-gate, expires: '2026-09-25'}
+    W2: *w2_expires_with_perf_001
+
+# EXPIRY ANCHORS (PERF-056, #2777). A cell may date its expiry from an EVENT
+# rather than the calendar, via `expires_after: {anchor: TICKET, days: N}`.
+# §4.3.2 does exactly this for W2 and the matrix had no way to say it, so the
+# rule was flattened into a hardcoded date that contradicted the section it
+# came from.
+#
+# An unresolved anchor is NOT a free pass and NOT a silent one: the cell
+# REPORTS with the anchor, its owner and its status printed on every run, so
+# "W2 is still waiting on PERF-001" is a line in the gate output rather than an
+# assumption. `perf_gate.sh` FAILS a cell whose anchor is undeclared here, whose
+# `days` is not a non-negative integer, that declares both `expires` and
+# `expires_after`, or whose anchor claims `status: merged` while recording no
+# `merged_on` -- an expiry hanging off an event nothing defines is the absent-
+# `expires` hole wearing a different field name.
+expiry_anchors:
+  PERF-001:
+    owner: '@noah'
+    github_issue: 2706
+    # DECLARED STATE, checked against docs/roadmaps/roadmap.yaml on 2026-08-29:
+    # `status: in_progress`, downgraded from completed the same day by PERF-041
+    # because the credited "3.32x aggregate at N=8" was throughput of GARBAGE
+    # tokens -- batched CUDA decode emitted a constant token to the max_tokens
+    # cap for every m>1 and never emitted a stop token (#2753), while the m=1
+    # fast path in the same run returned coherent English. Aggregate at c=2 is
+    # honestly 0.82x of a SINGLE client, and contracts/batch-admission-v1.yaml
+    # F-BATCH-001 is RED at c=2.
+    status: in_progress
+    # Set by the PR that lands batching (§4.3.2). Null means the clock has not
+    # started; it does not mean the cell is exempt.
+    merged_on: null
+    decided_by: '@noah'
+    cites: APR-PERF-GATE-001 v2.2 §4.3.2
 
 # CELL EXCEPTIONS. Three-valued, and the two values are NOT interchangeable:
 #   NOT_APPLICABLE — permanent, excluded from the denominator, needs decided_by

@@ -65,6 +65,14 @@ non_receipt_receivers:
     environ: process environment (PERF_GATE_TODAY, the injectable clock)
     fielddoc: this file, read by Arm C to name an absent field's owner
     e: one entry of this file
+    # PERF-056 (#2777): §4.3.2 dates W2's expiry from an EVENT, so `bl` may
+    # carry `expires_after: {anchor, days}` resolved against the matrix's
+    # `expiry_anchors:` block. Both receivers are matrix content, never receipt
+    # content -- classified here rather than left unknown, because an
+    # unrecognised receiver silently removes its fields from this guard's
+    # universe.
+    cond: the `expires_after` mapping of a baseline cell in perf-matrix.yaml
+    a: one entry of perf-matrix.yaml's `expiry_anchors:` block
   bench_receipt.py:
     band: the PARITY-lane band schema, a different document
     block: a parity block

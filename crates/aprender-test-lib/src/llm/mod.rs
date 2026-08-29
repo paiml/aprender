@@ -49,7 +49,10 @@ pub use loadtest::{
     LoadTest, LoadTestConfig, LoadTestResult, QualityFailure, QualityResult, RequestDetail,
     RequestRate, SweepLevel, SweepResult, TailAnalysis, TelemetryStat, ValidationMode,
 };
-pub use prompts::{load_from_file as load_prompts_from_file, load_profile, PromptProfile};
+pub use prompts::{
+    assert_prompt_tokens_in_band, load_corpus as load_prompt_corpus,
+    load_from_file as load_prompts_from_file, load_profile, Corpus, PromptProfile, PromptTokenBand,
+};
 #[cfg(feature = "llm")]
 pub use report::{to_json, to_markdown_row, to_markdown_table, update_performance_md};
 #[cfg(feature = "llm")]

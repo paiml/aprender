@@ -55,15 +55,16 @@
 use crate::error::{CliError, Result};
 use apr_test::llm::band::{run_band, BandRun};
 use apr_test::llm::client::{ChatRequest, LlmClient};
-use apr_test::perf_gate::protocol::BandConfig;
+use apr_test::llm::{assert_prompt_tokens_in_band, PromptTokenBand};
+use apr_test::perf_gate::protocol::{BandConfig, Outcome};
 use apr_test::perf_gate::{
     sha256_file, write_samples_gz, BandInput, ComparatorStatus, ComputeClass, Provenance,
-    ReceiptInput, RequestOutcome, TokenizationBlock, Workload, REPLICATES,
+    ReceiptInput, RequestOutcome, RequestSample, TokenizationBlock, Workload, REPLICATES,
 };
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use super::test_llm::{describe_workload, resolve_prompts};
+use super::test_llm::{describe_workload, resolve_corpus};
 
 /// Arguments for one §4.4-conformant band sweep.
 ///
@@ -363,7 +364,10 @@ pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
         CliError::InvalidFormat(format!("creating {}: {e}", args.receipt.display()))
     })?;
 
-    let prompts: Vec<ChatRequest> = resolve_prompts(args.profile, args.prompts)?
+    let corpus = resolve_corpus(args.profile, args.prompts)?;
+    let prompt_band = corpus.band;
+    let prompts: Vec<ChatRequest> = corpus
+        .requests
         .into_iter()
         .map(|mut p| {
             p.model = args.model.to_string();
@@ -412,6 +416,9 @@ pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
                 .map_err(|e| {
                     CliError::InferenceFailed(format!("band c={c} replicate {}: {e}", k + 1))
                 })?;
+            check_prompt_band(prompt_band, prompts.len(), &run.samples).map_err(|e| {
+                CliError::InvalidInput(format!("band c={c} replicate {}: {e}", k + 1))
+            })?;
             report_run(c, k, args.replicates, &run);
             runs.push((c, run));
         }
@@ -436,6 +443,46 @@ pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Assert §4.3.1's prompt-length band against what the server actually counted.
+///
+/// # The defect this closes (PERF-056, #2778)
+///
+/// `prompts-w1.jsonl`'s `_meta.token_count_note` says, in the file, that
+/// "the 512 +/-8 of 4.3.1 is asserted by the harness against the model's own
+/// tokenizer at measurement time". No line of code did that. The generator
+/// says so too and cannot do it (it runs no tokenizer); the loader says the
+/// harness does it; the harness did nothing. A workload 200 tokens off its
+/// declared shape would have been measured, receipted and ratcheted as W1.
+///
+/// This runs after each band because there is nowhere earlier it CAN run: the
+/// counts are the server's, reported per request. Under I-9 the run is spent
+/// either way — so the point is not to save the replicate, it is to stop the
+/// receipt being written as if the workload had been W1.
+///
+/// `RequestSample::index` is the monotone ISSUE index; the corpus is consumed
+/// modulo its length (`band.rs`'s `prompts[slot.0 % prompts.len()]`), so the
+/// prompt index is recovered the same way. Only `Completed` samples are read:
+/// a failed or timed-out request carries `prompt_tokens: 0` by construction,
+/// and counting those would red every band that saw one timeout.
+fn check_prompt_band(
+    prompt_band: Option<PromptTokenBand>,
+    corpus_len: usize,
+    samples: &[RequestSample],
+) -> std::result::Result<(), String> {
+    let Some(prompt_band) = prompt_band else {
+        return Ok(());
+    };
+    if corpus_len == 0 {
+        return Ok(());
+    }
+    let observed: Vec<(usize, u32)> = samples
+        .iter()
+        .filter(|s| s.outcome == Outcome::Completed)
+        .map(|s| (s.index % corpus_len, s.prompt_tokens))
+        .collect();
+    assert_prompt_tokens_in_band(prompt_band, &observed)
+}
+
 /// §4.4.2's `N`, re-exported so the CLI default and the spec constant cannot
 /// drift apart.
 #[must_use]
@@ -446,6 +493,107 @@ pub const fn default_replicates() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---------------------------------------------------------------------
+    // §4.3.1's PROMPT-LENGTH BAND, at the point of measurement (PERF-056,
+    // #2778). `prompts-w1.jsonl` promises in its own `_meta` that "the 512
+    // +/-8 of 4.3.1 is asserted by the harness against the model's own
+    // tokenizer at measurement time". This is the harness. Until PERF-056 it
+    // did nothing of the kind, and a W1 receipt could be written over a
+    // workload of any shape.
+    //
+    //  server-reported prompt_tokens over the band | must  | why
+    //  --------------------------------------------|-------|-----------------
+    //  every completed request at 512              | OK    |
+    //  504 / 520 at the edges       [BOUNDARY]     | OK    | the band is a band
+    //  one request at 521                          | ERR   | names the prompt
+    //  a FAILED request's structural 0  [BOUNDARY] | OK    | not a workload defect
+    //  no band declared (a --profile) [BOUNDARY]   | OK    | nothing claimed it
+    // ---------------------------------------------------------------------
+
+    const BAND_512: PromptTokenBand = PromptTokenBand {
+        target: 512,
+        tolerance: 8,
+    };
+
+    fn sample(index: usize, prompt_tokens: u32, outcome: Outcome) -> RequestSample {
+        RequestSample {
+            index,
+            worker: 0,
+            start_s: 0.0,
+            end_s: 1.0,
+            token_times_s: Vec::new(),
+            generated_tokens: 128,
+            prompt_tokens,
+            outcome,
+            in_flight_at_start: 1,
+            drained: false,
+        }
+    }
+
+    #[test]
+    fn prompt_band_in_band_run_is_accepted() {
+        let s: Vec<RequestSample> = (0..32)
+            .map(|i| sample(i, 512, Outcome::Completed))
+            .collect();
+        check_prompt_band(Some(BAND_512), 256, &s).expect("512 is dead centre");
+    }
+
+    #[test]
+    fn prompt_band_edges_stay_green() {
+        // DISCRIMINATION. 504 and 520 are conformant W1. A run reddened here
+        // is a gate that cannot pass, which is the mirror of the defect above.
+        let s: Vec<RequestSample> = (0..32)
+            .map(|i| sample(i, if i % 2 == 0 { 504 } else { 520 }, Outcome::Completed))
+            .collect();
+        check_prompt_band(Some(BAND_512), 256, &s).expect("both edges are INSIDE 512 +/- 8");
+    }
+
+    #[test]
+    fn prompt_band_one_out_of_band_request_fails_the_band_naming_the_prompt() {
+        let mut s: Vec<RequestSample> = (0..32)
+            .map(|i| sample(i, 512, Outcome::Completed))
+            .collect();
+        // Issue index 269 over a 256-prompt corpus is prompt 13 -- the modulo
+        // the worker loop uses, so the message points at the record an
+        // operator would actually edit.
+        s[7] = sample(269, 521, Outcome::Completed);
+        let err = check_prompt_band(Some(BAND_512), 256, &s)
+            .expect_err("521 is one token past the high edge");
+        assert!(
+            err.contains("prompt 13"),
+            "must name the CORPUS prompt: {err}"
+        );
+        assert!(err.contains("521"), "must give the actual length: {err}");
+        // REVERT -> GREEN.
+        s[7] = sample(269, 512, Outcome::Completed);
+        check_prompt_band(Some(BAND_512), 256, &s).expect("reverted run is in band");
+    }
+
+    #[test]
+    fn prompt_band_ignores_non_completed_samples() {
+        // DISCRIMINATION, and the one that would otherwise red every band that
+        // saw a single timeout: a failed or abandoned request carries
+        // `prompt_tokens: 0` BY CONSTRUCTION (band.rs's `sample_from`), not
+        // because the workload was wrong.
+        let mut s: Vec<RequestSample> = (0..32)
+            .map(|i| sample(i, 512, Outcome::Completed))
+            .collect();
+        s.push(sample(99, 0, Outcome::Failed));
+        s.push(sample(100, 0, Outcome::Timeout));
+        s.push(sample(101, 0, Outcome::AbandonedAtDrain));
+        check_prompt_band(Some(BAND_512), 256, &s)
+            .expect("a failed request's structural zero is not an out-of-band prompt");
+    }
+
+    #[test]
+    fn prompt_band_absent_declares_nothing_and_asserts_nothing() {
+        // A built-in `--profile` corpus declares no band. Inventing 512 +/- 8
+        // for it would be the fabricated-threshold defect this epic is named
+        // after, and would red every non-W1 run.
+        let s = vec![sample(0, 37, Outcome::Completed)];
+        check_prompt_band(None, 256, &s).expect("no claim, no rule");
+    }
 
     fn args<'a>(bands: &'a str, tokenization: &'a str) -> BandArgs<'a> {
         BandArgs {
