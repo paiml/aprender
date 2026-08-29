@@ -2,7 +2,8 @@
 # perf_gate.sh — APR-PERF-GATE-001 v2.2 §4, the release performance gate.
 #
 #   scripts/perf_gate.sh --host <name> --phase {merge|release} \
-#                        --workload {W1|W2} --receipt <path>
+#                        --workload {W1|W2} --receipt <path> \
+#                        [--commit <commit-under-test>]   # REQUIRED at release
 #   scripts/perf_gate.sh --selftest
 #
 # WHY THIS EXISTS. On 2026-08-25 apr measured 0.097x llama.cpp aggregate at
@@ -199,6 +200,66 @@ sys.exit(0)
 PY_E
 }
 
+arm_c_signature() {
+  # SECTION 4.5's Arm C table, release row:
+  #     | Receipt signature valid; `receipt.commit` contains
+  #       `commit-under-test` | release |
+  # and section 4.9.1: "The staleness arm is what makes it a gate. Without
+  # receipt.commit contains commit-under-test, evidence/ is a declared-state
+  # artifact."
+  #
+  # Two hosts are not CI runners and the fully-comparated one is
+  # do-not-revive, so the gate cannot run ON the host that measures. What
+  # arrives here is a FILE. Unsigned, that file binds to no host and no commit
+  # -- anyone can write one, and this gate would read it as evidence.
+  #
+  # The crypto and the ancestry test live in scripts/lib/receipt_sig.py, which
+  # scripts/perf_receipt_sign.sh also calls, so the signed payload cannot
+  # drift between producer and verifier. This function owns the PHASE rule and
+  # the andon line; it owns no key handling of its own.
+  local receipt="$1" host="$2" phase="$3" commit="$4"
+  if [ "$phase" != release ]; then
+    # The only legal skip in this arm, and it is spec-mandated: section 4.5
+    # scopes the rule to release. No PR can supply a host receipt, so wiring it
+    # at merge would be a required check that can never PASS -- the mirror of
+    # one that can never fail.
+    echo "SKIP  ArmC-sig signature+freshness is a RELEASE-phase rule (phase=$phase)"
+    return 0
+  fi
+  if [ -z "$commit" ]; then
+    # main() rejects this as a usage error; run_gate can also be called
+    # directly. An arm handed no input stands down silently unless told not to,
+    # and that is the cannot-fail shape.
+    echo "FAIL ArmC-sig NO-COMMIT-UNDER-TEST: release phase with no commit-under-test."
+    echo "      The staleness arm has nothing to compare, and an arm with no input is not a passing arm."
+    return 1
+  fi
+  python3 - "$receipt" "$ROOT" "$host" "$commit" <<'PY_SIG'
+import json,os,sys
+sys.path.insert(0, os.path.join(sys.argv[2], "scripts", "lib"))
+import receipt_sig
+r=json.load(open(sys.argv[1])); host=sys.argv[3]; cut=sys.argv[4]
+# The andon line: what this receipt CLAIMS, printed before anything is
+# believed. `<absent>` here is the shape of the defect this arm closes.
+sig=r.get("signature") or {}
+prov=r.get("provenance") or {}
+print("REPORT ArmC-sig receipt claims commit=%s host=%s key_id=%s "
+      "(commit-under-test=%s)"
+      % (r.get("commit") or "<absent>", prov.get("host") or "<absent>",
+         sig.get("key_id") or "<absent>", cut))
+# Injectable so the selftest can build a two-commit repo and prove BOTH
+# polarities of containment. Defaults to this checkout.
+git_dir = os.environ.get("PERF_GATE_GIT_DIR") or sys.argv[2]
+fails, report = receipt_sig.verify_receipt(
+    r, host, cut, os.environ.get("APR_PERF_RECEIPT_KEYRING"), git_dir)
+for line in report:
+    print(line)
+for code, message in fails:
+    print("FAIL ArmC-sig %s: %s" % (code, message))
+sys.exit(1 if fails else 0)
+PY_SIG
+}
+
 cell_completeness() {
   # release only: every host x band in the matrix must be present.
   local receipt="$1" host="$2"
@@ -215,9 +276,10 @@ PY
 }
 
 run_gate() {
-  local host="$1" phase="$2" workload="$3" receipt="$4" rc=0
+  local host="$1" phase="$2" workload="$3" receipt="$4" commit="${5:-}" rc=0
   [ -f "$receipt" ] || die "receipt not found: $receipt"
   arm_c_integrity "$receipt" || rc=1
+  arm_c_signature "$receipt" "$host" "$phase" "$commit" || rc=1
   arm_a_scaling  "$receipt" "$host" "$workload" || rc=1
   arm_b_adoption "$receipt" || rc=1
   arm_d_memory "$receipt" "$phase" || rc=1
@@ -265,7 +327,16 @@ selftest() {
   }
   _casepw() { # name, json, phase, workload, expect
     _mk "$1" "$2"
-    if run_gate lambda "$3" "$4" "$tmp/$1.json" >/dev/null 2>&1; then got=pass; else got=fail; fi
+    # A release run must satisfy the section 4.9.1 arm too. Signing here keeps
+    # each row testing the arm it is NAMED for; without it every release row
+    # below would go red on an unsigned receipt and prove nothing about Arm D
+    # or Arm E.
+    if [ "$3" = release ]; then
+      _sigstamp "$1" "$sigc1" lambda
+      _sigsign "$1" lambda-selftest
+      if ( export APR_PERF_RECEIPT_KEYRING="$sigkr"; export PERF_GATE_GIT_DIR="$sigrepo"; run_gate lambda release "$4" "$tmp/$1.json" "$sigc1" ) >/dev/null 2>&1
+      then got=pass; else got=fail; fi
+    elif run_gate lambda "$3" "$4" "$tmp/$1.json" >/dev/null 2>&1; then got=pass; else got=fail; fi
     if [ "$got" = "$5" ]; then
       printf '  ok    %-34s expect=%s\n' "$1" "$5"
       pass=$((pass + 1))
@@ -274,6 +345,88 @@ selftest() {
       fail=$((fail + 1))
     fi
   }
+  # ---- section 4.9.1 / I-10: signature + staleness (PERF-007) ---------------
+  # Registered mutation, section 5: "Staleness arm | verdict job | receipt one
+  # commit stale | fresh receipt green". Both polarities below, plus the three
+  # ways a receipt can be about SOMETHING ELSE rather than merely old. Each row
+  # asserts its own FAILURE CODE, not just the polarity: a stale receipt
+  # reported as WRONG-HOST sends the reader to the wrong fix, which is the
+  # apr_bin.sh STALE-vs-WRONG-TREE defect in a new place.
+  local sigrepo sigc0 sigc1 sigkr sigkeya sigkeyb
+  sigkeya=a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
+  sigkeyb=b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2
+  sigrepo="$tmp/sigrepo"
+  mkdir -p "$sigrepo"
+  git -C "$sigrepo" init -q --template= >/dev/null 2>&1
+  git -C "$sigrepo" config user.email selftest@example.invalid
+  git -C "$sigrepo" config user.name 'perf-gate selftest'
+  git -C "$sigrepo" config commit.gpgsign false
+  git -C "$sigrepo" config core.hooksPath "$tmp/nohooks"
+  printf '0\n' > "$sigrepo/f0"
+  git -C "$sigrepo" add -A
+  git -C "$sigrepo" commit -q -m c0
+  sigc0="$(git -C "$sigrepo" rev-parse HEAD)"
+  printf '1\n' > "$sigrepo/f1"
+  git -C "$sigrepo" add -A
+  git -C "$sigrepo" commit -q -m c1
+  sigc1="$(git -C "$sigrepo" rev-parse HEAD)"
+  sigkr="$tmp/keyring"
+  {
+    printf 'lambda-selftest %s\n' "$sigkeya"
+    printf 'gx10-selftest %s\n' "$sigkeyb"
+  } > "$sigkr"
+
+  _sigstamp() { # name, commit, host -- edits $tmp/<name>.json in place
+    python3 -c 'import json,sys
+with open(sys.argv[1]) as fh:
+    r = json.load(fh)
+r["commit"] = sys.argv[2]
+r["provenance"]["host"] = sys.argv[3]
+with open(sys.argv[1], "w") as fh:
+    json.dump(r, fh)' "$tmp/$1.json" "$2" "$3"
+  }
+  _sigfix() { # name, base-json, commit, host  -> $tmp/<name>.json
+    _mk "$1" "$2"
+    _sigstamp "$1" "$3" "$4"
+  }
+  _sigsign() { # name, key_id
+    python3 "$ROOT/scripts/lib/receipt_sig.py" --sign --in "$tmp/$1.json" \
+      --out "$tmp/$1.json" --key-id "$2" --keyring "$sigkr" \
+      --signed-at 2026-08-29T00:00:00Z >/dev/null
+  }
+  _casesig() { # name, fixture-name, host, commit-under-test, keyring, expect(pass|CODE)
+    local out rc=0
+    out="$( ( export APR_PERF_RECEIPT_KEYRING="$5"; export PERF_GATE_GIT_DIR="$sigrepo"; run_gate "$3" release W2 "$tmp/$2.json" "$4" ) 2>&1 )" || rc=$?
+    if [ "$6" = pass ]; then
+      if [ "$rc" = 0 ]; then
+        printf '  ok    %-34s expect=pass\n' "$1"
+        pass=$((pass + 1))
+      else
+        printf '  BROKE %-34s expected pass, gate said: %s\n' "$1" "$out"
+        fail=$((fail + 1))
+      fi
+      return 0
+    fi
+    # Herestring-free glob match: `producer | grep -q X` returns 141 under
+    # pipefail though grep MATCHED, because grep exits early and printf takes
+    # SIGPIPE. There is no pipe here at all.
+    case "$out" in
+      *"FAIL ArmC-sig $6"*)
+        if [ "$rc" = 0 ]; then
+          printf '  BROKE %-34s named %s and still exited 0\n' "$1" "$6"
+          fail=$((fail + 1))
+        else
+          printf '  ok    %-34s expect=%s\n' "$1" "$6"
+          pass=$((pass + 1))
+        fi
+        ;;
+      *)
+        printf '  BROKE %-34s expected %s, gate said: %s\n' "$1" "$6" "$out"
+        fail=$((fail + 1))
+        ;;
+    esac
+  }
+
   # Arms D and E are REPORTING: no bound is applied, but the FIELDS must exist
   # at release, or the arm instruments nothing while reading green.
   local FULLBANDS ARMDE
@@ -306,13 +459,92 @@ selftest() {
   # THE 2026-08-25 SHAPE: decode soaring while aggregate collapses.
   _case serialization_shape_rejected   "$(printf '%s' "$OK" | sed 's/"agg_ratio":0.9/"agg_ratio":0.097/g; s/"decode_ratio":1.1/"decode_ratio":1.554/g')" fail
   _case band_c1_absent                 "$(printf '%s' "$OK" | python3 -c 'import sys,json;r=json.load(sys.stdin);r["bands"]=[b for b in r["bands"] if b["concurrency"]!=1];print(json.dumps(r))')" fail
+  # GREEN SIDE. A signed receipt whose commit contains the commit under test.
+  _sigfix sig_fresh "$REL_DE" "$sigc1" lambda
+  _sigsign sig_fresh lambda-selftest
+  _casesig sig_signed_and_fresh_passes  sig_fresh lambda "$sigc1" "$sigkr" pass
+  # ... and it also covers an ANCESTOR of what it measured: `contains`, not `==`.
+  _casesig sig_covers_an_ancestor       sig_fresh lambda "$sigc0" "$sigkr" pass
+
+  # RED SIDE 1 -- FRESHNESS. Section 5's registered mutation, verbatim: a
+  # receipt one commit stale. Signature perfectly valid; the evidence is about
+  # older code. Remedy: re-measure.
+  _sigfix sig_stale "$REL_DE" "$sigc0" lambda
+  _sigsign sig_stale lambda-selftest
+  _casesig sig_one_commit_stale         sig_stale lambda "$sigc1" "$sigkr" STALE
+
+  # RED SIDE 2 -- IDENTITY. Different failures, different remedies. None of
+  # these is fixed by re-measuring.
+  _sigfix sig_unsigned "$REL_DE" "$sigc1" lambda
+  _casesig sig_unsigned_is_red          sig_unsigned lambda "$sigc1" "$sigkr" UNSIGNED
+  _casesig sig_no_keyring_is_red        sig_fresh lambda "$sigc1" "" NO-KEYRING
+  # An arm handed no input must FAIL, not stand down. run_gate is reachable
+  # without main()'s usage check -- this is the row that keeps that honest.
+  _casesig sig_no_commit_under_test     sig_fresh lambda "" "$sigkr" NO-COMMIT-UNDER-TEST
+  _sigfix sig_other_host "$REL_DE" "$sigc1" gx10
+  _sigsign sig_other_host gx10-selftest
+  _casesig sig_receipt_from_other_host  sig_other_host lambda "$sigc1" "$sigkr" WRONG-HOST
+
+  # RED SIDE 3 -- FORGERY. Sign a real receipt, then edit one number in the
+  # body. This is the "evidence/ is a file anyone can write" case made concrete.
+  cp "$tmp/sig_fresh.json" "$tmp/sig_forged.json"
+  python3 -c 'import json,sys
+with open(sys.argv[1]) as fh:
+    r = json.load(fh)
+r["bands"][0]["aggregate_tok_per_sec"] = 9999.0
+with open(sys.argv[1], "w") as fh:
+    json.dump(r, fh)' "$tmp/sig_forged.json"
+  _casesig sig_body_edited_after_signing sig_forged lambda "$sigc1" "$sigkr" FORGED
+
+  # DISCRIMINATION. The arm is release-scoped by section 4.5, so an unsigned
+  # receipt at MERGE phase must stay green -- otherwise every PR reds on a rule
+  # no PR can satisfy.
+  if run_gate lambda merge W2 "$tmp/sig_unsigned.json" >/dev/null 2>&1; then
+    printf '  ok    %-34s expect=pass\n' sig_unsigned_ok_at_merge
+    pass=$((pass + 1))
+  else
+    printf '  BROKE %-34s merge phase reddened on a release-only arm\n' sig_unsigned_ok_at_merge
+    fail=$((fail + 1))
+  fi
+
+  # main() must refuse `--phase release` with no `--commit` as a USAGE error
+  # (exit 2), in a subshell because `die` exits. A gate that silently accepts a
+  # release invocation missing the arm that makes it a gate is the whole defect.
+  if ( main --host lambda --phase release --workload W1 --receipt "$tmp/sig_fresh.json" ) >/dev/null 2>&1; then
+    printf '  BROKE %-34s release without --commit was accepted\n' main_requires_commit_at_release
+    fail=$((fail + 1))
+  else
+    printf '  ok    %-34s expect=usage-error\n' main_requires_commit_at_release
+    pass=$((pass + 1))
+  fi
+
+  # The fine-grained crypto/containment table and the host-side signer both
+  # carry their own case tables. Running them from HERE is what wires them:
+  # ci.yml already invokes `perf_gate.sh --selftest`, so neither needs a new
+  # workflow line, and a guard nothing invokes is this epic's most common
+  # finding.
+  if python3 "$ROOT/scripts/lib/receipt_sig.py" --selftest >/dev/null 2>&1; then
+    printf '  ok    %-34s expect=pass\n' receipt_sig_case_table
+    pass=$((pass + 1))
+  else
+    printf '  BROKE %-34s scripts/lib/receipt_sig.py --selftest failed\n' receipt_sig_case_table
+    fail=$((fail + 1))
+  fi
+  if bash "$ROOT/scripts/perf_receipt_sign.sh" --selftest >/dev/null 2>&1; then
+    printf '  ok    %-34s expect=pass\n' receipt_signer_case_table
+    pass=$((pass + 1))
+  else
+    printf '  BROKE %-34s scripts/perf_receipt_sign.sh --selftest failed\n' receipt_signer_case_table
+    fail=$((fail + 1))
+  fi
+
   printf '  %d passed, %d broken\n' "$pass" "$fail"
   rm -rf "${tmp:?refusing to rm an empty path}"
   [ "$fail" = 0 ]
 }
 
 main() {
-  local host="" phase="" workload="" receipt=""
+  local host="" phase="" workload="" receipt="" commit=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --selftest) selftest; return $? ;;
@@ -320,12 +552,19 @@ main() {
       --phase) phase="$2"; shift 2 ;;
       --workload) workload="$2"; shift 2 ;;
       --receipt) receipt="$2"; shift 2 ;;
+      --commit) commit="$2"; shift 2 ;;
       *) die "unknown argument: $1" ;;
     esac
   done
   [ -n "$host" ] && [ -n "$phase" ] && [ -n "$workload" ] && [ -n "$receipt" ] \
-    || die "usage: perf_gate.sh --host H --phase {merge|release} --workload {W1|W2} --receipt PATH"
+    || die "usage: perf_gate.sh --host H --phase {merge|release} --workload {W1|W2} --receipt PATH [--commit SHA]"
   case "$phase" in merge|release) ;; *) die "phase must be merge or release" ;; esac
-  run_gate "$host" "$phase" "$workload" "$receipt"
+  # A missing --commit at release is a USAGE error, never a skipped arm. An arm
+  # that quietly stands down when its input is absent is the cannot-fail shape
+  # this epic exists to remove.
+  if [ "$phase" = release ] && [ -z "$commit" ]; then
+    die "--commit <commit-under-test> is required at --phase release: the staleness arm (section 4.9.1) has nothing to compare without it, and it is the arm that makes this a gate"
+  fi
+  run_gate "$host" "$phase" "$workload" "$receipt" "$commit"
 }
 main "$@"
