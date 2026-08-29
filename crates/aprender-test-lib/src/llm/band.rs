@@ -712,10 +712,21 @@ mod tests {
     async fn drain_ms_and_window_ms_are_produced() {
         let probe = spawn_probe(30).await;
         let client = LlmClient::new(&probe.url, "m");
+        // 14 samples over c=4 deliberately does NOT divide evenly. With a
+        // multiple of c (the old `16`), all four workers complete their last
+        // request together, T is stamped after the final completion, and
+        // `drain_ms` is legitimately 0.0 -- so the assertion below was a
+        // statement about scheduling, not an invariant. It passed locally on
+        // jitter and failed 3/3 in CI with
+        // `requested: 16, drain_ms: 0.0, client_peak_in_flight: 4`.
+        //
+        // With 14, reaching the sample target necessarily leaves workers
+        // mid-request, so a drain exists for a reason arithmetic guarantees
+        // rather than for a reason the scheduler happens to supply.
         let run = run_band(
             &client,
             &prompts(),
-            &tiny_band(4, 16),
+            &tiny_band(4, 14),
             tokenization(),
             false,
         )
@@ -723,8 +734,8 @@ mod tests {
         .expect("band runs");
         assert!(run.window.window_ms > 0.0, "{:?}", run.window);
         assert!(run.window.drain_ms >= 0.0, "{:?}", run.window);
-        // The last admissions are still in flight when T is stamped, so a
-        // concurrent band always has a non-zero drain.
+        // Keeps its teeth: `>= 0.0` alone would pass a hardcoded zero, which is
+        // exactly the "producer emits nothing" defect this test exists to catch.
         assert!(run.window.drain_ms > 0.0, "{:?}", run.window);
     }
 
