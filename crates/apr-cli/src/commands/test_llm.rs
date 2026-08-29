@@ -26,9 +26,9 @@ use crate::error::{CliError, Result};
 use apr_test::llm::{
     benchmark::{Benchmark, BenchmarkConfig, BenchmarkReport},
     client::ChatRequest,
-    load_profile, load_prompts_from_file,
+    load_profile, load_prompt_corpus,
     loadtest::LoadTestResult,
-    PromptProfile,
+    Corpus, PromptProfile,
 };
 use std::path::Path;
 use std::time::Duration;
@@ -200,8 +200,20 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
 /// than quietly falling back to a default, since a silent substitution changes
 /// the workload the report then claims to have run.
 pub(crate) fn resolve_prompts(profile: &str, file: Option<&Path>) -> Result<Vec<ChatRequest>> {
+    resolve_corpus(profile, file).map(|c| c.requests)
+}
+
+/// As [`resolve_prompts`], but keeping the §4.3.1 prompt-length band the
+/// corpus declared in its own `_meta` header.
+///
+/// The band is DROPPED by `resolve_prompts` and kept here because only the
+/// §4.4-conformant band mode can check it: the invariant is over token counts
+/// the *server* reports, so it cannot be evaluated until requests have run.
+/// A built-in `--profile` declares no band — those prompt sets are not W1 and
+/// synthesising a 512 ± 8 claim for them would be inventing the threshold.
+pub(crate) fn resolve_corpus(profile: &str, file: Option<&Path>) -> Result<Corpus> {
     if let Some(p) = file {
-        return load_prompts_from_file(p)
+        return load_prompt_corpus(p)
             .map_err(|e| CliError::InvalidFormat(format!("prompt corpus {e}")));
     }
     let parsed = PromptProfile::from_name(profile).ok_or_else(|| {
@@ -209,7 +221,10 @@ pub(crate) fn resolve_prompts(profile: &str, file: Option<&Path>) -> Result<Vec<
             "unknown prompt profile {profile:?}; expected micro, short, medium or long"
         ))
     })?;
-    Ok(load_profile(parsed))
+    Ok(Corpus {
+        requests: load_profile(parsed),
+        band: None,
+    })
 }
 
 /// One line naming the workload, so the report is self-describing.
