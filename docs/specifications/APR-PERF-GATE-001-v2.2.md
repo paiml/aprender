@@ -678,7 +678,7 @@ This is the metric chunked prefill exists to move. Without it, a batching implem
 
 - Comparand read from **protected `origin/main`**, never from the PR's own tree.
 - Arms A and D `kv_utilization`: **increase only**. Arm D `preempted_swap`, Arm E: **decrease only**. B1 floor: increases only, by recorded operator decision.
-- Claim literals, competing harnesses, unwired guards: **decrease only**.
+- Claim literals, competing harnesses, unwired guards: **decrease only** — with one admission, added by PERF-049 and named `set-aperture` in `scripts/lib_baseline_ratchet.sh`. A guard whose aperture WIDENS reveals claims that were already in the tree, and from the working tree alone that is the same diff as writing a fresh one, so the ratchet refused it and `check_no_claim_literals.sh` could not be widened at all. An entry may now be added iff (a) its `<path>:<line>` is **byte-identical at the comparand** — the branch neither wrote nor moved it — and (b) the **owning guard's own source changed** in the same diff. Every admitted coordinate is printed in the verdict row; everything else is refused exactly as before. This narrows, and does not remove, the rule that a finding is fixed rather than recorded.
 - A PR moving a baseline the forbidden way fails at **merge** phase.
 
 This is the answer to *"any state the author writes and the gate reads can be moved in the same commit."*
@@ -826,8 +826,8 @@ Every row requires: named mutation → **RED**; pre-fix **GREEN** as before-evid
 | **Tokenization poka-yoke** | `scripts/lib/bench_receipt.py` | omit `tokenization.method` | present green | **not written** |
 | **Drain rule** | `scripts/lib/bench_receipt.py` | count a post-`T` request | pre-`T` only green | **not written** |
 | Receipt table (23 cases) | `scripts/check_parity_receipt.sh` | per existing table | present | **the only verified one** |
-| Claim-literal guard | `scripts/check_no_claim_literals.sh` | add `"2.93× Ollama"` to `book/` | unrelated prose green | 8-case selftest |
-| **`[X]` figure guard** | `scripts/check_no_claim_literals.sh` | add `"36.9×"` to `docs/` | unrelated prose green | **not written** |
+| Claim-literal guard | `scripts/check_no_claim_literals.sh` | add `"2.93× Ollama"` to `book/` | unrelated prose green | PROVEN (PERF-049, #2758) — rc=0 → **rc=1** naming `book/src/tools/apr-cli.md:1786`; unrelated prose in the same file rc=0; revert rc=0. **The mutation this cell names left the guard GREEN until PERF-049**: `RATIO_RE` matched ASCII `x` only, so the U+00D7 spelling — the one the book actually publishes — was unreadable, and this row was recorded as proof by a mutation that did not bite. 27 ratio case rows now assert both spellings; `ci.yml:969`, `:971`. |
+| **`[X]` figure guard** | `scripts/check_no_claim_literals.sh` | add `"36.9×"` to `docs/` | unrelated prose green | PROVEN (PERF-049, #2758) — rc=1 for `36.9× over FasterTransformer`, `36.9x over FasterTransformer`, `23x over static batching` and `1.8x over vLLM`; a line carrying `3x3 matrix`, `2x2 grid`, `1024x1024` and `v1.8x` beside `llama`/`torch` stays rc=0. **One intervening word used to defeat the adjacency, and that is the spelling §0.1 above uses**, so the guard was blind to the exact form this document writes. |
 | Fabricated-baseline guard | `scripts/check_no_fabricated_baselines.sh` | `${OLLAMA_BASELINE:-137}` in a **new** file | unrelated shell edit green | **weak** |
 | Competing-harness guard | `scripts/check_no_competing_harnesses.sh` | re-add `scripts/gpu_2x_benchmark.sh` | unrelated script green | **not written** |
 | Claims-cite-receipts | `scripts/check_perf_claims_cite_receipts.sh` | uncited number in `docs/` | cited number green | **not written** |
@@ -837,7 +837,7 @@ Every row requires: named mutation → **RED**; pre-fix **GREEN** as before-evid
 | **Explicit-wins (I-17)** | `serve/mod.rs` | let auto-fit override an explicitly-set `--gpu-layers` | unset arg auto-fitted → green | **not written** |
 | **Resolved-vs-requested (I-2)** | `serve/mod.rs` | emit `gpu_layers_resolved = gpu_layers_requested` on a partial offload | full offload, equal → green | **not written** |
 | **No-boolean-flag (I-18)** | CLI surface test | reintroduce a boolean `--gpu` with no resolution field | quantity flag → green | **not written** |
-| Ratchet direction | baseline files | move a baseline the forbidden way | correct direction green | **missing** |
+| Ratchet direction | `scripts/lib_baseline_ratchet.sh`, `scripts/check_baseline_ratchets.sh` | append one entry cloned from a baseline's own last real entry; and, for `set-aperture`, record a line this branch WROTE | delete an entry → green; a reveal that predates the comparand → green | PROVEN (PERF-049, #2758) — 42 case rows, `ci.yml:472`. Six named mutations run: forcing the aperture-moved test true, neutering the byte-identity comparison, neutering the coordinate parse, and silencing the admitted-entry list each take the table from PASS to a named FAIL; a comment reflow stays green. Neutering the coordinate parse was GREEN on the first pass — `pre.md:x` is refused one branch later — so the row that only it catches (`pre.md:$`, sed's last-line address) was added and the mutation now bites. |
 | Staleness arm | verdict job | receipt one commit stale | fresh receipt green | **not written** |
 
 **Coverage: 1 of 24** (1 of 14 at v2.0, 1 of 21 at v2.1 — the denominator grows because the gate grows). Target **24/24** before this document leaves DRAFT.
