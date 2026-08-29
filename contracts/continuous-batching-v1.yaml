@@ -510,6 +510,64 @@ falsification_tests:
     include!), a second instance of #2766. The oracle-side per-layer bisect was
     therefore run with the GPU_DEBUG_ALL_LAYERS=1 hook that already exists at HEAD,
     needing zero code changes, rather than fighting the gate.
+
+    ROUND 7 (PERF-050 cont., apr 0.64.0 (2c74c688c), RTX 4090). ROOT CAUSE of the
+    NaN, and of the constant-token output this epic opened with.
+
+    The graph dispatcher dequantized EVERY weight as Q4_K. dispatch_mul_mat passed
+    WeightQuantType::Q4K unconditionally, and it had no alternative: OpParams
+    carried only weight_ptr, so a weight's quantization type was discarded when the
+    layer graph was built.
+
+    For qwen2.5-coder-1.5b-instruct-q4_k_m that is right for 170 tensors and wrong
+    for 29. Verified against the model with `apr tensors` rather than assumed from
+    the naming convention: blk.0.attn_q Q4_K, blk.0.attn_k Q4_K, blk.0.attn_v
+    Q6_K, blk.0.ffn_down Q6_K, output.weight Q6_K; 141 F32 / 170 Q4_K / 29 Q6_K.
+
+    blk.0.attn_v is the first Q6_K weight the forward reaches, and a stage snapshot
+    of the layer that actually runs lands exactly on that boundary:
+
+      g_q_buf  sum 81.83    absmax 40.0   nonfinite 0        Q4_K, correct
+      g_k_buf  sum -23.70   absmax 4.30   nonfinite 0        Q4_K, correct
+      g_v_buf  sum 3.03e9   absmax 4.9e8  nonfinite 47/256   Q6_K read as Q4_K
+      g_attn_out                          nonfinite 282      downstream
+      every later stage                   all NaN
+
+    Q and K are clean because they ARE Q4_K. The hardcoded assumption is simply
+    right for them and wrong for V.
+
+    MUTATION PAIR, one binary, one env var (APR_GRAPH_QTYPE_HARDCODE):
+
+      fix active     g_v_buf sum 3.52 absmax 1.32 nonfinite 0   finish=stop
+      hardcode back  g_v_buf sum 3.03e9 absmax 4.9e8 nonfinite 47  finish=length, constant token
+
+    The fix restores stop-token emission, which no batched run in this epic had
+    ever produced -- every one hit the max_tokens cap.
+
+    THE FIX: OpParams gains weight_qtype, the GGML numeric code (numeric rather
+    than the serving crate's enum, because aprender-gpu must not depend on
+    aprender-serve), defaulting to 12 = Q4_K so an unset node is bit-identical to
+    the old behaviour. build_layer_graph sets it from the real qtypes on all seven
+    MulMat nodes; the dispatcher maps it back; and the Q4K-only inline-Q8 kernel is
+    additionally gated on the type really being Q4_K.
+
+    CB-006 STAYS RED. With the NaN gone the batched forward still disagrees with
+    the M=1 oracle at cosine 0.701156 (argmax 40 vs 13552), and the non-graph path
+    still fails SENSITIVE. The residual is a third defect, separate from this one
+    and from the #2767 race.
+
+    A RETRACTED REFUTATION, worth recording because it nearly went in the report.
+    The first mutation appeared to REFUTE this root cause: restoring the hardcode
+    left the NaN absent. It was an artifact. The dev shell defines a `cargo`
+    function exporting a shared CARGO_TARGET_DIR, so a plain `cargo build` writes
+    to /mnt/nvme-raid0/targets/aprender while `nohup cargo build` bypasses the
+    function and writes to the worktree -- the mutation was compiled into one
+    directory and the test ran the binary in the other. The same trap
+    scripts/apr_bin.sh was written to prevent, re-entered by dropping `nohup`.
+    Compounding it, apr-cli embeds the git SHA through its build script and the
+    worktree binary kept announcing a stale SHA after HEAD moved, so
+    `apr --version` could not identify which source an artifact came from. Both
+    are reasons the mutation pair above is stated as one binary and one env var.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
