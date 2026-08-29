@@ -60,8 +60,22 @@ impl CudaStream {
         let driver = get_driver()?;
 
         let mut stream: CUstream = ptr::null_mut();
+        // PERF-050 (aprender#2753): CU_STREAM_NON_BLOCKING is explicitly excluded from legacy
+        // default-stream ordering, while `GpuBuffer::copy_from_host` / `copy_to_host` are
+        // `cuMemcpyHtoD` / `cuMemcpyDtoH` -- LEGACY-stream transfers. So every host transfer in
+        // this crate races whatever kernels are in flight on this stream, and the surrounding
+        // code is written as though the transfers were ordered against it.
+        //
+        // `APR_STREAM_LEGACY=1` creates the stream with CU_STREAM_DEFAULT instead, restoring the
+        // implicit ordering that code assumes. Kept as a knob so the two can be compared in ONE
+        // binary rather than across two builds.
+        let flags = if std::env::var("APR_STREAM_LEGACY").as_deref() == Ok("1") {
+            crate::driver::sys::CU_STREAM_DEFAULT
+        } else {
+            CU_STREAM_NON_BLOCKING
+        };
         // SAFETY: stream pointer is valid
-        let result = unsafe { (driver.cuStreamCreate)(&mut stream, CU_STREAM_NON_BLOCKING) };
+        let result = unsafe { (driver.cuStreamCreate)(&mut stream, flags) };
         CudaDriver::check(result).map_err(|e| GpuError::StreamCreate(e.to_string()))?;
 
         Ok(Self { stream })
