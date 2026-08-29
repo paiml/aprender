@@ -72,6 +72,51 @@
 # it. If a baseline genuinely must grow, that is a decision to argue in a PR
 # that changes the guard's contract — not a line to slip into a data file.
 #
+# THE ONE CASE THAT SENTENCE COULD NOT EXPRESS, AND WHY `set-aperture` EXISTS
+# --------------------------------------------------------------------------
+# PERF-049. `check_no_claim_literals.sh` could not see the claim it was built
+# for: RATIO_RE matched ASCII `x` only, so the published `2.93× Ollama` (U+00D7)
+# passed, and so did `36.9x over FasterTransformer`, because one intervening
+# word defeated the adjacency. Widening the pattern reveals 18 claims that were
+# ALREADY IN THE TREE and that the guard had simply been unable to read.
+#
+# Recording them grows the baseline, and this library refused it — correctly,
+# because from the working tree an aperture reveal and a fresh violation are
+# the same diff. So the guard could not be widened at all: the ratchet's own
+# remedy, "fix the finding instead of recording it", asks a five-whys chain in
+# a dated QA archive to describe its own subject matter in euphemism, which is
+# the reason `docs/specifications/` is excluded from that guard in the first
+# place. The paragraph above names a PR that changes the guard's contract as
+# the venue for growth. This is the mechanism that venue needed.
+#
+# An addition to a `set-aperture` baseline is ADMITTED only if BOTH hold:
+#
+#   (a) THE LINE PREDATES THE COMPARAND. The entry is `<path>:<line>`, and that
+#       line is BYTE-IDENTICAL at the comparand. This is what the working tree
+#       cannot answer and the comparand can. It closes PERF-028's laundering
+#       shape completely: a claim this branch wrote — or moved, or reflowed —
+#       has no byte-identical line at the comparand and is REFUSED, whether it
+#       arrived in this commit or five commits back on the same branch.
+#
+#   (b) THE APERTURE ACTUALLY CHANGED. The owning guard's own source differs
+#       between the comparand and the working tree. A PR that does not touch
+#       the guard cannot record anything, so "record it instead of fixing it"
+#       stays unavailable on every ordinary PR.
+#
+# Everything else is refused exactly as `set` refuses it, and every admitted
+# entry is NAMED in the verdict row. A silent admission would be the defect
+# this file is about, one level up.
+#
+# THE RESIDUAL, STATED RATHER THAN LEFT TO BE FOUND. (a) and (b) together do
+# not prove the comparand's guard could not ALREADY see the line — proving that
+# means running the comparand's guard, and a guard that runs another version of
+# itself is a complexity this file will not carry. So a PR that edits the guard
+# could also record a pre-existing claim it could already see, instead of
+# fixing it. That diff grows a baseline AND edits a guard AND prints every
+# admitted coordinate, which is about as loud as an unproven step gets. It is
+# strictly narrower than the status quo it replaces, which was that the guard
+# could never be widened.
+#
 # OPTION-NEUTRAL. This file is SOURCED, and `set` in a sourced file mutates the
 # CALLER's shell (see check_sourced_libs_option_neutral.sh, and the nightly it
 # killed six lines in). There is no `set` at file scope here; every entry point
@@ -115,6 +160,82 @@ _br_number() { # _br_number <file> -> the single integer it holds, rc 1 if it ho
 _br_cmp_set() { # _br_cmp_set <base-file> <cur-file>
     BR_DELTA=$(LC_ALL=C comm -13 <(_br_entries "$1") <(_br_entries "$2") | sed 's/^/        + /')
     BR_REMOVED=$(LC_ALL=C comm -23 <(_br_entries "$1") <(_br_entries "$2") | grep -c . || true)
+    [ -z "$BR_DELTA" ]
+}
+
+# `set-aperture`. See the header. Same subset semantics as `_br_cmp_set`, with
+# ONE admission: an added `<path>:<line>` whose line is byte-identical at the
+# comparand, in a diff that also changes the owning guard.
+#
+# Both halves fail CLOSED. A coordinate that does not parse, a file the
+# comparand does not carry, a line past the end of either copy, an unreadable
+# blob, a guard path that was not supplied — every one of them lands in
+# BR_DELTA and reds the ratchet. There is no branch here that turns "could not
+# check" into "no growth"; that is the shape this whole file exists to refuse.
+_br_cmp_set_aperture() { # <base-file> <cur-file> <root> <ref> <owning-guard-path>
+    local base="$1" cur="$2" root="$3" ref="$4" guard="$5"
+    local adds entry path line want got aperture_moved=0 refuse
+
+    BR_ADMITTED=""
+    BR_DELTA=""
+    BR_REMOVED=$(LC_ALL=C comm -23 <(_br_entries "$base") <(_br_entries "$cur") | grep -c . || true)
+    adds=$(LC_ALL=C comm -13 <(_br_entries "$base") <(_br_entries "$cur"))
+    [ -n "$adds" ] || return 0
+
+    # (b) is a property of the DIFF, not of an entry, so it is decided once for
+    # the whole set. An empty or missing guard path leaves this 0 and every
+    # addition is refused: "could not check" is never "no growth".
+    if [ -n "$guard" ] && [ -e "$root/$guard" ]; then
+        if ! git -C "$root" diff --quiet "$ref" -- "$guard" 2>/dev/null; then
+            aperture_moved=1
+        fi
+    fi
+
+    while IFS= read -r entry; do
+        [ -n "$entry" ] || continue
+        refuse=""
+        path="${entry%:*}"
+        line="${entry##*:}"
+        if [ "$aperture_moved" -ne 1 ]; then
+            refuse="the owning guard is unchanged in this diff, so no aperture moved"
+        else
+            case "$entry" in
+                *:*) : ;;
+                *)   refuse="not a <path>:<line> coordinate" ;;
+            esac
+            if [ -z "$refuse" ]; then
+                case "$line" in
+                    '' | *[!0-9]*) refuse="not a <path>:<line> coordinate" ;;
+                esac
+            fi
+            if [ -z "$refuse" ] && ! git -C "$root" cat-file -e "${ref}:${path}" 2>/dev/null; then
+                refuse="the comparand does not carry $path, so the line cannot predate it"
+            fi
+            if [ -z "$refuse" ]; then
+                # No `| head`: an early-exiting reader hands the producer
+                # SIGPIPE, and under pipefail that invents a failure. sed reads
+                # its whole input.
+                want=$(git -C "$root" show "${ref}:${path}" 2>/dev/null | sed -n "${line}p")
+                got=$(sed -n "${line}p" "$root/$path" 2>/dev/null)
+                if [ -z "$want" ] && [ -z "$got" ]; then
+                    refuse="line $line is empty or past the end in BOTH copies"
+                elif [ "$want" != "$got" ]; then
+                    refuse="this branch WROTE or MOVED that line, so it is a new violation"
+                fi
+            fi
+        fi
+        if [ -n "$refuse" ]; then
+            BR_DELTA="${BR_DELTA}        + ${entry}
+              ${refuse}
+"
+        else
+            BR_ADMITTED="${BR_ADMITTED}        ~ ${entry}
+"
+        fi
+    done <<< "$adds"
+
+    BR_DELTA="${BR_DELTA%$'\n'}"
+    BR_ADMITTED="${BR_ADMITTED%$'\n'}"
     [ -z "$BR_DELTA" ]
 }
 
@@ -176,6 +297,30 @@ baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
         printf 'TIP\t%s\n' "$ref"
         return 0
     fi
+    # BOOTSTRAP -- the commit that INTRODUCES a baseline.
+    #
+    # This library landed AFTER every baseline it ratchets, so no existing one
+    # ever met its own first commit. The first new baseline does, and it would
+    # be blocked by the very gate it arms: neither protected ref can carry a
+    # file that does not exist yet, and ABSENT is a hard failure.
+    #
+    # Reachable ONLY when all three hold, which is exactly "the file is new":
+    #   * the comparand is the real protected ref, not an override. An
+    #     overridden ref keeps ABSENT, so the scratch-repo case table still
+    #     pins the loud branch;
+    #   * neither the merge-base nor the tip of origin/main carries it -- a
+    #     branch merely BEHIND a main that already has the baseline resolves
+    #     TIP and ratchets normally;
+    #   * it is present in the working tree. If it is absent there too, this
+    #     is a deletion, and baseline_ratchet_check fails before resolving.
+    #
+    # It is NOT reachable for any baseline currently in this repository: all of
+    # them are on origin/main. This verdict is additive, never a relaxation of
+    # a check that passes today.
+    if [ "$ref" = "origin/main" ] && [ -f "$root/$path" ]; then
+        printf 'BOOTSTRAP\t%s\n' "$ref"
+        return 0
+    fi
     printf 'ABSENT\t%s\n' "$ref"
     return 0
 }
@@ -183,14 +328,17 @@ baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
 # ---------------------------------------------------------------------------
 # The entry point every guard calls.
 #
-#     baseline_ratchet_check <root> <baseline-path-relative-to-root> <set|count|keyed>
+#     baseline_ratchet_check <root> <baseline-path> <set|count|keyed|set-aperture> [<owning-guard-path>]
+#
+# `set-aperture` takes a fifth argument, the owning guard, and without it every
+# addition is refused — see (b) in the header.
 #
 # rc 0 = the baseline did not grow against a ref this branch cannot rewrite.
 # rc 1 = it grew, or growth is UNMEASURABLE. Both are failures, and they are
 #        distinguished in the text but never in the status.
 
 baseline_ratchet_check() {
-    local root="$1" path="$2" kind="$3"
+    local root="$1" path="$2" kind="$3" guard="${4:-}"
     local resolution mode ref tmp base_copy how note cmp_rc
 
     if [ ! -f "$root/$path" ]; then
@@ -212,6 +360,15 @@ baseline_ratchet_check() {
             printf '               ratchet silently. In CI, before this guard runs:\n'
             printf '               git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'
             return 1 ;;
+        BOOTSTRAP)
+            printf 'REPORT ratchet %s is NOT ARMED on this commit: %s carries\n' "$path" "$ref"
+            printf '               no such file, because this commit is the one INTRODUCING\n'
+            printf '               it. Its %s entr(ies) are unratcheted for this pull\n' \
+                "$(grep -cvE '^[[:space:]]*(#|$)' "$root/$path" 2>/dev/null || printf 0)"
+            printf '               request ONLY, and are a REVIEWED claim rather than an\n'
+            printf '               enforced one. From the next commit the comparand carries\n'
+            printf '               the file and an append is REFUSED.\n'
+            return 0 ;;
         ABSENT)
             printf 'FAIL  ratchet  %s carries no %s, so there is nothing\n' "$ref" "$path"
             printf '               to shrink from. A missing comparand is not "no growth".\n'
@@ -236,6 +393,7 @@ baseline_ratchet_check() {
 
     BR_DELTA=""
     BR_REMOVED=0
+    BR_ADMITTED=""
     # `if` rather than `cmd; rc=$?`: a comparator returns 1 BY DESIGN on the
     # growth path, and a caller running `set -e` (check_no_claim_literals.sh
     # does) would die there before printing a single verdict row -- rc=1 with
@@ -245,6 +403,12 @@ baseline_ratchet_check() {
         set)   if _br_cmp_set   "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         count) if _br_cmp_count "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         keyed) if _br_cmp_keyed "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
+        set-aperture)
+            if _br_cmp_set_aperture "$base_copy" "$root/$path" "$root" "$ref" "$guard"; then
+                cmp_rc=0
+            else
+                cmp_rc=$?
+            fi ;;
         *)
             rm -rf "${tmp:?}"
             printf 'FAIL  ratchet  unknown comparison kind <%s> for %s.\n' "$kind" "$path"
@@ -263,9 +427,19 @@ baseline_ratchet_check() {
     fi
 
     if [ "$cmp_rc" -eq 0 ]; then
-        printf 'ok    ratchet  %s did not grow (%s removed) vs %s\n' \
-            "$path" "$BR_REMOVED" \
-            "$(git -C "$root" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"
+        if [ -n "$BR_ADMITTED" ]; then
+            printf 'ok    ratchet  %s grew by %s APERTURE REVEAL(s) vs %s\n' \
+                "$path" "$(printf '%s\n' "$BR_ADMITTED" | grep -c . || true)" \
+                "$(git -C "$root" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"
+            printf '%s\n' "$BR_ADMITTED"
+            printf '               each line above is BYTE-IDENTICAL at the comparand and this diff\n'
+            printf '               changes %s. They are claims the guard could not\n' "$guard"
+            printf '               READ before, not claims this branch WROTE. Recorded, not blessed.\n'
+        else
+            printf 'ok    ratchet  %s did not grow (%s removed) vs %s\n' \
+                "$path" "$BR_REMOVED" \
+                "$(git -C "$root" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"
+        fi
         printf '               comparand: %s (%s)\n' "$how" "$note"
         return 0
     fi

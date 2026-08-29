@@ -32,7 +32,28 @@
 # §9's whole premise is that a claim a USER READS is the defect. The count rises
 # because the guard now looks where the claims are, not because new claims were
 # written. Shrink-only from here.
+#
+# APERTURE REVEAL 2026-08-29 (PERF-049, #2758). +18, and this is the FIRST
+# GROWTH this file has taken under a ratchet. RATIO_RE matched ASCII `x`
+# adjacent to a competitor name, so it could not read the two spellings that
+# are actually published: U+00D7 (`2.93× Ollama`, the book's own figure, and
+# the literal §5's registered mutation names -- which therefore left the guard
+# GREEN) and any form with an intervening word (`36.9x over FasterTransformer`,
+# the spelling §0.1 of APR-PERF-GATE-001 uses).
+#
+# Not one line below was WRITTEN by that PR. All 18 are byte-identical at
+# 31732f5db and were sitting in the tree unread; the ratchet admitted them
+# under `set-aperture`, which proves exactly that and names each one in its
+# verdict row. All 18 were inspected: every one is a numeric ratio against a
+# named competitor -- four in shipped rustdoc, one in a book command comment
+# advertising `2.9x faster than Ollama`, two in a spec quoting the fabrication
+# in order to ban it, eleven in dated QA archives. None is ordinary prose that
+# happens to contain a number; the case table carries `3x3 matrix`, `2x2 grid`,
+# `1024x1024`, `v1.8x` and a markdown table row as must-NOT-match controls.
+# Recorded, not blessed. Shrink-only from here.
+#
 book/src/advanced-testing/popperian-falsification.md:44
+book/src/tools/apr-cli.md:81
 book/src/tools/apr-cli.md:89
 book/src/tools/apr-cli.md:90
 book/src/tools/apr-cli.md:91
@@ -59,6 +80,7 @@ crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:37
 crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:38
 crates/aprender-gpu/src/kernels/gemv/mod.rs:14
 crates/aprender-gpu/src/kernels/quantize/dot/packed_dp4a.rs:32
+crates/aprender-gpu/src/kernels/quantize/dp4a_gemm.rs:10
 crates/aprender-gpu/src/kernels/quantize/q4k/batched.rs:1
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:15
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:16
@@ -77,6 +99,8 @@ crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:10
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:31
 crates/aprender-serve/src/cuda/executor/layers/par-062.rs:257
+crates/aprender-serve/src/cuda/executor/layers/prefill.rs:1043
+crates/aprender-serve/src/cuda/executor/layers/prefill.rs:537
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs:277
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:32
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:33
@@ -103,18 +127,23 @@ crates/aprender-serve/src/tui.rs:108
 crates/aprender-test-lib/src/llm/training_scorecard.rs:217
 crates/aprender-train/src/models/llama_370m.rs:1458
 crates/aprender-train/src/models/llama_370m.rs:1463
+crates/aprender-train/src/transformer/init.rs:7
 docs/BEATS.md:133
 docs/BEATS.md:134
 docs/BEATS.md:65
 docs/BEATS.md:66
 docs/audits/dogfood-0.63.0-ledger.md:65
+docs/benchmarking-gate-spec.md:235
 docs/benchmarking-gate-spec.md:24
+docs/benchmarking-gate-spec.md:26
 docs/benchmarking-gate-spec.md:308
 docs/model-cards/albor-370m-v1.md:74
 docs/qa-cargo-run-example-conversion-minimize.md:128
 docs/qa/benchmark-matrix-2026-01-09.md:115
 docs/qa/benchmark-matrix-2026-01-09.md:12
+docs/qa/benchmark-matrix-2026-01-09.md:13
 docs/qa/benchmark-matrix-2026-01-09.md:133
+docs/qa/benchmark-matrix-2026-01-09.md:14
 docs/qa/benchmark-matrix-2026-01-09.md:186
 docs/qa/benchmark-matrix-2026-01-09.md:22
 docs/qa/benchmark-matrix-2026-01-09.md:23
@@ -132,7 +161,13 @@ docs/qa/benchmark-matrix-2026-01-09.md:40
 docs/qa/benchmark-matrix-2026-01-09.md:41
 docs/qa/benchmark-matrix-2026-01-09.md:42
 docs/qa/benchmark-matrix-2026-01-09.md:43
+docs/qa/benchmark-matrix-2026-01-09.md:71
+docs/qa/benchmark-matrix-2026-01-09.md:85
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:14
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:173
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:269
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:28
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:32
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:123
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:14
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:155
@@ -153,10 +188,12 @@ docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:309
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:310
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:311
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:312
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:317
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:323
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:391
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:398
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:4
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:403
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:496
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:587
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:681
@@ -166,6 +203,7 @@ docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:87
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md:280
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md:281
 docs/qa/popperian_falsification_checklist.md:17
+docs/qa/test-matrix-results-2026-01-08.md:138
 docs/qa/test-matrix-results-2026-01-08.md:39
 docs/qa/test-matrix-results-2026-01-08.md:42
 docs/qa/test-matrix-results-2026-01-08.md:60
