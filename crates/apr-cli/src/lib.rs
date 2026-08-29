@@ -46,6 +46,8 @@ mod generated_contracts;
 #[allow(unused_macros)]
 pub mod verbosity;
 
+/// PERF-021: the accelerator refusal, shared by serve, run and chat.
+mod accel;
 mod commands;
 pub mod error;
 mod output;
