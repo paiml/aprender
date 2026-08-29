@@ -1,0 +1,23 @@
+# Fixture: the shape ci.yml has today. Note the COMMENTED `test_workspace`
+# line -- copied verbatim from ci.yml, where it has sat since the sccache
+# pilot. It is the must-not-match row: a grep for `test_workspace` matches it
+# and would report an open window on a repo that never opted in.
+name: CI
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  ci:
+    uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
+    with:
+      repo: aprender
+      enable_sccache: true
+      use_nextest: true
+      # NOTE: coverage_min is intentionally NOT set on aprender. Making it
+      # meaningful here needs test_workspace: true + GPU-member test_args
+      # exclusions first (the PMAT-159 workspace blind-spot).
+    secrets: inherit
+  workspace-test:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    steps:
+      - run: echo "the repo-owned workspace test, no fallback"

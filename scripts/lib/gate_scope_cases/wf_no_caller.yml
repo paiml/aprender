@@ -1,0 +1,12 @@
+# Fixture: nothing calls sovereign-ci. This guard bounds that workflow's
+# fallback chain; with no caller it would pass over nothing, which is a fail
+# mode, not a clean run.
+name: CI
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: cargo build

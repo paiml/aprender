@@ -1,0 +1,14 @@
+# Fixture: the caller overrides clippy_args. The PRIMARY command's selection
+# changes; the fallback `cargo clippy -p <repo>` does not. This checker refuses
+# rather than guessing.
+name: CI
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  ci:
+    uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
+    with:
+      repo: aprender
+      clippy_args: --workspace --all-targets
+    secrets: inherit
