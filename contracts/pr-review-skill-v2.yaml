@@ -1,0 +1,583 @@
+metadata:
+  version: 2.0.0
+  created: '2026-08-30'
+  author: PAIML Engineering
+  kind: kernel
+  description: >-
+    A PR review is evidence only if every claim it makes says HOW it knows.
+    This contract holds the three rules that make the pr-review skill's receipt
+    falsifiable rather than decorative: the closed set of grounding marks (S1),
+    the machine-decidable blocking tier (S7), and the split between the four
+    metrics that stop the line and the four that are only recorded until they
+    have been measured thirty times (S8).
+
+    It is deliberately a `kernel` contract and NOT an exempt registry. The
+    operator ruling of 2026-08-21 stands: an exemption is not an honest verdict,
+    and a contract governing an enforcement artifact is the last place to claim
+    one.
+
+    STATE ON THIS COMMIT: DECLARED, NOT ARMED. PRREV-001 ships this file alone.
+    The guard it names (scripts/check_pr_review_receipt.sh), the fourteen
+    fixtures, the vendored schemas and the reviewer skill are PRREV-002..005 and
+    do not exist here. Seven of the eight falsification tests below are
+    therefore LIVE-PENDING and say so in the field the schema actually reads.
+    A contract that reads as governance while enforcing nothing is the #2504
+    shape; the remedy this repo settled on is to write the state down where a
+    reader cannot miss it, not to omit the contract until the guard lands.
+  references:
+  - 'PR-REVIEW-SKILL-002 v2 — grounded adversarial PR review with a signed receipt.
+    THE AUTHORITY FOR THIS FILE AND IT IS NOT IN THIS REPOSITORY at 745fa8588. It was
+    supplied out-of-tree. A contract whose source document cannot be opened from a
+    checkout is one rename away from unauditable: committing it under
+    docs/specifications/ is owed by PRREV-002.'
+  - 'Supersedes PR-REVIEW-SKILL-001 (draft, 2026-08-30). Spec S0 records what changed
+    (A1-A9) and, as load-bearing, what was REJECTED (R1-R6) — notably the SLSA Build L3
+    claim, which a skill invoked by the authoring agent cannot support. The receipt
+    declares attestation_level L1-self.'
+  - 'Spec S1 (grounding), S7 (blocking policy), S8 (instrumentation) — the three sections
+    this contract encodes. S2-S6 and S9-S12 are encoded by the artifacts of PRREV-002..007.'
+  - 'Spec S6.3 — the fourteen-row fixture table, of which rows 6, 7 and 14 are the
+    discrimination cases. Without them "refuse every receipt" reads green.'
+  - 'Spec S9 note — use `pv validate <file>`, NEVER `pv lint <FILE>`. MEASURED here on
+    745fa8588: `pv lint contracts/batch-admission-v1.yaml` prints "Gate 1: validate (0
+    contracts, 0 errors, 0 warnings)" and exits 0. See F-PRREV-008.'
+  - 'contracts/apr-bench-receipt-v1.yaml — the same problem one tier down. Spec S3.C.1
+    (the comparator block) is that contract''s provenance rule applied to a review claim
+    instead of a bench receipt.'
+  - 'The 2.93x-Ollama scar: the book published a comparative number from a harness that
+    never ran Ollama. Spec S3.C.1 + S7 class 4 is the mechanism that makes that
+    unwriteable rather than merely discouraged.'
+  - 'The 66-commit index-drift scar: an index answering about code that is not in the PR.
+    Spec A4 stamps index_commit into the receipt and gates on
+    `git merge-base --is-ancestor`.'
+  - 'PERF-055: ~7,200 lines across 46 files nearly re-implemented over code that already
+    existed. Spec S3.A duplication_hits is the highest-EV field in the receipt.'
+  depends_on:
+  - apr-bench-receipt-v1
+
+equations:
+
+  grounding_marks_are_closed:
+    formula: |
+      mark(claim) in { cited, measured, asserted }        -- and nothing else
+      cited    => query != "" and source_uri != ""
+                  and excerpt != "" and len(excerpt) <= 400
+                  and excerpt_sha256 = sha256(excerpt)
+      measured => command is argv[] and exit_code recorded and stdout_sha256 recorded
+      asserted => rationale != "" and precision_class = advisory
+      unmarked => REJECT(receipt)
+      asserted(c) contradicts measured(m) in the same receipt
+               => DROP(c), log finding.suppressed_by_measurement
+    domain: 'every claim the review makes about external reality, in findings.sarif
+      properties.grounding and in the in-toto predicate''s consultations block'
+    codomain: 'bool — the receipt is accepted or rejected whole; there is no partial
+      credit for a claim that is nearly grounded'
+    invariants:
+    - >-
+      THERE IS NO FOURTH CATEGORY. An unmarked claim is not a weaker claim, it is a
+      DEFECT IN THE REVIEW, and the guard rejects the receipt that carries it. The
+      failure this excludes is the one the repository has shipped most often: a
+      confident sentence about external reality with no way to tell whether anything
+      was consulted.
+    - >-
+      CITED IS VERIFIED, NOT MERELY LABELLED (S1.1). A recorded excerpt that does not
+      support its claim is the same failure as no excerpt. The guard therefore checks
+      excerpt_sha256 = sha256(excerpt) and excerpt != "" — a hash over an empty string
+      is a well-formed hash, so the non-empty check is not redundant with the digest
+      check and neither substitutes for the other.
+    - >-
+      ENTAILMENT IS NOT CHECKED AND THIS CONTRACT SAYS SO. Nothing here verifies that
+      the excerpt actually SUPPORTS the claim; that is Phase 3. A well-formed but
+      unsupportive citation passes. This is a stated residual risk (S1.1), written
+      into the contract rather than left for a reader to discover, because an
+      unstated residual is how a hash check comes to be read as a truth check.
+    - >-
+      CONTRADICTION IS FATAL TO THE CLAIM, NOT TO THE RUN (S1.2). An `asserted` claim
+      that contradicts a `measured` value in the same receipt is dropped and logged.
+      Failing the whole run instead would make the reviewer's incentive to omit the
+      measurement, which is the opposite of what this contract is for.
+    - >-
+      AN `asserted` CLAIM NEVER BLOCKS. That is what keeps judgement admissible
+      without letting it stop the line, and it is why precision_class is pinned to
+      advisory by the mark itself rather than chosen per finding.
+    preconditions:
+    - 'the receipt parses as an in-toto Statement v1 against the vendored schema before any mark is read'
+    - 'sha256 is computed over the excerpt bytes AS STORED, never over a re-wrapped or re-indented copy'
+    postconditions:
+    - 'every result in findings.sarif carries a non-empty properties.grounding'
+    - 'no result carries a grounding value outside { cited, measured, asserted }'
+    - 'every result carries a non-empty failure_scenario (S4.2)'
+
+  blocking_tier_is_objective_and_earned:
+    formula: |
+      BLOCK(pr) <=> any of the six machine-decidable classes:
+        B1  receipt missing, schema-invalid, or unsigned
+        B2  reviewer_actor.id = author_actor.id
+        B3  guard_mutation_score < 1.00     (guard-touching diff only)
+        B4  unverified_comparative_claim present
+        B5  breaking API surface with no semver bump
+        B6  index_is_ancestor = false AND verdict = PASS
+      FINDINGS  => blocks on a release branch only
+      DEGRADED  => never blocks; reason printed FIRST on the comment line
+      PASS      => proceeds
+      admission: blocks(Bi) requires precision(Bi) >= 0.90 on the rolling sample
+      demotion:  precision(Bi) < 0.90 => edit THIS FILE to advisory; never disable the gate
+    domain: 'a pull request carrying a receipt at evidence/pr-review/<pr>/<head_sha>/'
+    codomain: 'bool — and the boolean is a function of the receipt alone, so two
+      readers of the same receipt reach the same verdict'
+    invariants:
+    - >-
+      SIX CLASSES, NOT FIVE. The spec's S7 TABLE lists six blocking rows while its
+      prose beneath says "five objective, machine-decidable classes". The table is the
+      operative artifact and is encoded here in full; the prose is a miscount.
+      Dropping a row to reach five would be inventing policy, and silently writing
+      "five" over six rows would repeat the defect this contract exists to remove.
+      Recorded rather than quietly reconciled — see F-PRREV-003.
+    - >-
+      NONE OF THE SIX IS A JUDGEMENT CALL. That is the whole design constraint: a
+      blocking tier made of opinions freezes an active investigation, which is what
+      #2757 and #2766 did. Every class above is decided by reading the receipt, not by
+      agreeing with the reviewer.
+    - >-
+      FIXTURE ROW 10 IS NOT A SEVENTH CLASS. `base_sha` disagreeing with
+      `git merge-base origin/main head_sha` is RED under B1 (the receipt is invalid),
+      not under a class of its own. Said explicitly because a fixture row with no
+      named class is how a guard grows a rule nothing governs.
+    - >-
+      B5 IS THE ONE CLASS NO CONSULTATION PRODUCES. Nothing in S3's four consultations
+      emits `breaking API surface with no semver bump`, and no S8 metric measures its
+      precision — so the admission rule cannot be evaluated for it. It is carried here
+      because the spec's table carries it, and it is flagged because a blocking class
+      whose precision cannot be measured cannot be demoted by the mechanism that is
+      supposed to protect it.
+    - >-
+      DEMOTION IS A TICKET, NOT A CONFIG CHANGE. A class that falls below 0.90 is moved
+      to advisory BY EDITING THIS FILE, so the demotion is reviewable and dated. A
+      silent flag flip in CI leaves a gate that reads armed and is not.
+    - >-
+      DEGRADED PROCEEDS ON EVERY BRANCH, AND PUTS ITS REASON FIRST. An unreachable
+      source must be loud and non-blocking: making it block teaches reviewers to route
+      around the skill, and making it silent is the ConnectionRefused-reads-clean
+      failure the three-state SARIF encoding exists to prevent.
+    preconditions:
+    - 'BASE = git merge-base origin/main HEAD, and base_sha in the receipt equals it (S2)'
+    - 'the receipt signature verifies against the committed public key before any class is evaluated'
+    postconditions:
+    - 'a PR blocked by this contract cites exactly one of B1..B6 by name'
+    - 'no PR is blocked by a finding whose grounding is asserted'
+
+  instrument_before_ratchet:
+    formula: |
+      threshold(m) = UNSET  for m in { actionable_rate, effective_fp_rate,
+                                       audit_divergence, cost_per_actionable }
+                     while samples(m) < 30
+      samples(m) >= 30 =>
+        actionable_rate     : floor := measured - 5pp, monotone non-decreasing
+        effective_fp_rate   : <= 0.10 required for a class to REMAIN blocking
+        audit_divergence    : sets the re-review sampling rate
+        cost_per_actionable : ratchets DOWN quarterly
+    domain: 'the four continuous parameters of spec S8, over the rolling population of
+      reviewed pull requests'
+    codomain: 'a threshold or the absence of one; UNSET is a value here, not a gap'
+    invariants:
+    - >-
+      NO NUMBER MAY BE WRITTEN INTO THESE FOUR ROWS BEFORE THIRTY SAMPLES EXIST.
+      Inventing one would violate the same S1 grounding rule this contract exists to
+      enforce: a threshold with no measurement behind it is an `asserted` claim wearing
+      a `measured` mark, and it would be doing so in the file that defines the
+      difference. This is the single strongest reason the four rows below carry
+      `record-only` and not a plausible-looking default.
+    - >-
+      RECORD-ONLY IS NOT UNENFORCED. The guard still REJECTS a receipt whose `cost`
+      block is missing, and still rejects a blocking class with no precision sample.
+      What is absent is a THRESHOLD, not the measurement — the two failure modes look
+      identical in a report and are opposite in meaning.
+    - >-
+      A RATCHET MOVES ONE WAY. actionable_rate's floor may rise and never fall;
+      cost_per_actionable's ceiling may fall and never rise. A floor lowered to admit a
+      release is the defect APR-PERF-GATE-001 S10.1 already names.
+    - >-
+      effective_fp_rate IS THE ONLY ONE OF THE FOUR THAT CAN UN-ARM A GATE. It feeds
+      the S7 admission rule directly, so it is the one whose thirty samples are on the
+      critical path; the other three change reporting, not blocking.
+    - >-
+      THIRTY IS THE SPEC'S NUMBER AND IT IS NOT DERIVED HERE. It is a convention, not a
+      power calculation, and this contract does not dress it up as one. If a power
+      calculation is later done, it replaces the thirty and this invariant records that
+      it was measured.
+    preconditions:
+    - 'a sample is one merged PR that carried a schema-valid receipt; a DEGRADED receipt counts as a sample'
+    - 'the cost block records input_tokens, output_tokens and wall_seconds for every run, including runs that found nothing'
+    postconditions:
+    - 'this contract contains no numeric threshold for any of the four instrument-first metrics'
+    - 'every one of the four carries the literal severity instrument-only in the enforcement block'
+
+  four_defects_stop_the_line:
+    formula: |
+      guard_mutation_score  = 1.00   killed / attempted, on the guard itself
+      receipt_presence      = 1.00   PRs merged with a valid receipt / PRs merged
+      unmarked_claims       = 0      claims carrying no grounding mark
+      vacuous_consultations = 0      status = consulted with attempted = 0
+      ratchet(m) = NONE for all four
+    domain: 'the four jidoka parameters of spec S8'
+    codomain: 'exactly {1.00, 1.00, 0, 0} — a defined defect, not a target'
+    invariants:
+    - >-
+      A ZERO IS NOT A RATCHET. There is nothing to raise, so there is no direction in
+      which these four can rot. That is the point of separating them from the four
+      above: the same table holds two different KINDS of parameter, and conflating them
+      is precisely how a guessed threshold gets written next to a measured one.
+    - >-
+      guard_mutation_score = 1.00 IS THE ONE PLACE S7'S NARROWNESS DOES NOT APPLY
+      (S6.4). Every other verdict rests on the guard, so a guard that cannot fail
+      makes every green it emits a count of files rather than a verdict.
+    - >-
+      vacuous_consultations = 0 IS THE SAME SHAPE AS `pv lint <FILE>` PASSING OVER ZERO
+      CONTRACTS, and as `cargo test <no-such-filter>` printing `0 passed`: a pass-shaped
+      line from a scan that selected nothing. It is why this contract's own DONE-WHEN
+      is `pv validate <file>` and why F-PRREV-008 measures the vacuous form rather than
+      citing it.
+    - >-
+      receipt_presence = 1.00 MEANS A MISSING RECEIPT IS RED, NOT SKIPPED (S6.3). A
+      skipped check and a passed check are the same pixel in a status list.
+    - >-
+      unmarked_claims = 0 HAS NO FIXTURE ROW YET. S6.3's fourteen rows cover empty
+      `source`/`excerpt` (row 3), empty `failure_scenario` (row 11) and a digest
+      mismatch (row 12), but none covers a result carrying NO properties.grounding at
+      all. PRREV-003 owes a fifteenth row; until it exists this metric is asserted by
+      the contract and unexercised by the guard, which is stated here rather than
+      discovered later.
+    preconditions:
+    - 'the guard has passed its own positive control (S6.1) before any receipt verdict it emits is believed'
+    - 'the mutation set for the guard is committed, so `attempted` is a count of a fixed set and not of whatever happened to run'
+    postconditions:
+    - 'a receipt with status consulted and attempted 0 yields DEGRADED, never PASS'
+    - 'a merged PR without a schema-valid signed receipt is impossible while receipt_presence is armed'
+
+falsification_tests:
+
+# Seven of the eight below are LIVE-PENDING and every one says so IN `test:`, the
+# field the schema reads and `pv lint --strict-test-binding` classifies. The house
+# alternative is a `test_harness_status:` sibling key; that key is not a field of
+# `FalsificationTest`, serde drops it, and a dropped key that reads as governance is
+# #2465 exactly. The `mutation:` keys below are dropped for the same reason and are
+# addressed to a human PR author, not to a gate — no pv gate reads them, and none is
+# claimed to.
+
+- id: F-PRREV-001
+  rule: an unmarked claim is a defect in the review, not a lesser claim
+  prediction: >-
+    A receipt carrying a SARIF result with no properties.grounding is REJECTED with a
+    non-zero exit. The same receipt with grounding=asserted and a non-empty rationale
+    is ACCEPTED and the finding is non-blocking.
+  test: >-
+    LIVE-PENDING (PRREV-003) — no fixture in spec S6.3 exercises this. Rows 3, 11 and
+    12 cover an EMPTY source/excerpt, an empty failure_scenario and a digest mismatch;
+    a result with NO grounding property at all is uncovered. PRREV-003 owes fixture
+    row 15 plus the guard branch it exercises. Until both exist this prediction has
+    never been run and must not be read as discharged.
+  if_fails: >-
+    S8's unmarked_claims = 0 is unenforceable, and the whole S1 mark system degrades to
+    a labelling convention that a reviewer may simply omit — which is the pre-contract
+    status quo with extra ceremony
+  mutation: >-
+    delete the grounding-presence branch from the guard; fixture row 15 must turn RED.
+    A guard that still passes after the branch is deleted never had one.
+
+- id: F-PRREV-002
+  rule: cited is verified, not merely labelled
+  prediction: >-
+    A result with grounding=cited and excerpt_sha256 != sha256(excerpt) is REJECTED
+    (row 12); so is one with an empty source or excerpt (row 3). A cited result whose
+    digest matches a non-empty excerpt is ACCEPTED (row 14).
+  test: >-
+    LIVE-PENDING (PRREV-003) — scripts/check_pr_review_receipt.sh does not exist at
+    745fa8588; rows 3, 12 and 14 of the S6.3 table are unwritten.
+  if_fails: >-
+    a citation becomes a string a reviewer types, which is indistinguishable from
+    memory with a URL attached — the exact failure S3.B exists to stop
+  mutation: >-
+    replace the digest comparison with a presence check for the excerpt_sha256 key;
+    row 12 must turn RED while row 14 stays GREEN. Both arms are required: a mutation
+    that reds everything proves the guard is broken, not that it discriminates.
+
+- id: F-PRREV-003
+  rule: the blocking tier discriminates, and it has six rows
+  prediction: >-
+    Every RED row of S6.3 (1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13) exits non-zero and
+    names exactly one of B1..B6; every GREEN row (6, 7, 14) exits zero. B5 is expected
+    to be named by NO row, because no fixture exercises a semver break — that absence
+    is the assertion, not an oversight.
+  test: >-
+    LIVE-PENDING (PRREV-003) — the fourteen fixtures under tests/fixtures/pr-review/
+    and tests/pr-review.bats are unwritten at 745fa8588.
+  if_fails: >-
+    "refuse every receipt" and "verify every receipt" produce the same green, which is
+    the over-reach the discrimination rows 6, 7 and 14 were added to catch
+  mutation: >-
+    make the verdict function constant-RED, then constant-GREEN. Rows 6/7/14 must fail
+    under the first and rows 1..5/8..13 under the second. One arm alone proves nothing.
+
+- id: F-PRREV-004
+  rule: a blocking class is demoted by editing this contract, never by disabling the gate
+  prediction: >-
+    Setting a class's measured precision below 0.90 in the rolling sample makes the
+    guard REFUSE to block on it and REQUIRE that this file be edited; the CI step
+    remains enabled and continues to report the class as advisory.
+  test: >-
+    LIVE-PENDING (PRREV-003 + PRREV-006) — depends on both the guard and the CI wiring,
+    and on a precision sample that does not exist until PRs have been reviewed.
+  if_fails: >-
+    a noisy class is switched off in CI instead of demoted here, so the tier silently
+    shrinks and no artifact records that it did — Tricorder's finding is that an
+    analyzer above the false-positive bar gets disabled, and the only defence is to
+    make disabling it visible
+  mutation: >-
+    point the admission rule at a hardcoded 1.00 precision; every class must then stay
+    blocking regardless of its sample, and the fixture that supplies a 0.5-precision
+    class must turn RED.
+
+- id: F-PRREV-005
+  rule: no threshold is written for the four instrument-first metrics before thirty samples exist
+  prediction: >-
+    actionable_rate, effective_fp_rate, audit_divergence and cost_per_actionable each
+    carry the literal `record-only` and severity `instrument-only` in this file's
+    enforcement block, and no numeric bound. A PR that writes a number into any of the
+    four without also recording thirty samples is REJECTED.
+  test: >-
+    LIVE-PENDING (PRREV-003) — the check is a property of THIS FILE and is trivially
+    inspectable by a human today, but no committed guard asserts it. Deliberately not
+    shipped here as an ad-hoc regex: this repository's contract patterns have been
+    wrong six times and a case table caught every one, so the pattern belongs in
+    PRREV-003 beside its must-match / must-not-match table, not inline in a contract
+    where nothing can exercise it.
+  if_fails: >-
+    a plausible-looking default (0.10, 0.90, 30%) gets written into a row that has
+    never been measured, inside the very file that defines the difference between a
+    measured claim and an asserted one
+  mutation: >-
+    write `initial: 0.10` into the actionable_rate row; the guard must turn RED and
+    name the row. If it stays GREEN, S8's instrument-first half is decoration.
+
+- id: F-PRREV-006
+  rule: the four jidoka metrics are exactly 1.00, 1.00, 0, 0 and carry no ratchet
+  prediction: >-
+    guard_mutation_score and receipt_presence read 1.00; unmarked_claims and
+    vacuous_consultations read 0; none of the four carries a ratchet rule. A PR that
+    softens any of the four — 0.99, "target", a grace period — is REJECTED.
+  test: >-
+    LIVE-PENDING (PRREV-003), same reason as F-PRREV-005: the assertion is about this
+    file's contents and its regex belongs beside a case table.
+  if_fails: >-
+    the four line-stops become four more ratchets, and the first inconvenient PR lowers
+    one — which is how a floor comes to be "temporarily" lowered to permit a release
+  mutation: >-
+    change guard_mutation_score to 0.99 in the enforcement block; the guard must turn
+    RED. A 99% kill rate on the guard is a guard with a hole in it and nothing else.
+
+- id: F-PRREV-007
+  rule: a vacuous consultation is DEGRADED, never PASS
+  prediction: >-
+    A receipt with consultations.mutation.status=consulted and attempted=0 is REJECTED
+    when verdict=PASS (row 2). A receipt recording pmat as unreachable with
+    verdict=DEGRADED is ACCEPTED (row 6); the same receipt with verdict=PASS is
+    REJECTED (row 5).
+  test: >-
+    LIVE-PENDING (PRREV-003) — rows 2, 5 and 6 of the S6.3 table are unwritten.
+  if_fails: >-
+    "the source said nothing" and "I did not ask" become the same artifact, which is
+    the failure mode with the longest evidence list in this repository (#2754, #2779,
+    #2780, #2790, and pmat MCP returning ConnectionRefused on day one)
+  mutation: >-
+    remove the attempted-count check; row 2 must turn RED. Row 6 must stay GREEN under
+    the same mutation, or the guard is rejecting DEGRADED rather than rejecting vacuity.
+
+- id: F-PRREV-008
+  rule: this contract is gated per-file, because the directory-shaped invocation is vacuous over one file
+  prediction: >-
+    `pv validate contracts/pr-review-skill-v2.yaml` exits 0 having validated ONE
+    contract. `pv lint contracts/pr-review-skill-v2.yaml` also exits 0 and prints
+    PASS — having validated ZERO. The second is not a weaker check, it is no check.
+    MEASURED 2026-08-30 at 745fa8588 with the HEAD-built pv 0.64.0: `pv lint
+    contracts/batch-admission-v1.yaml` printed "Gate 1: validate (0 contracts, 0
+    errors, 0 warnings)" and "Result: PASS", exit 0. Recorded as a measurement rather
+    than repeated from spec S9, because a note asserting vacuity is exactly the kind
+    of claim this contract requires evidence for.
+  test: 'pv validate contracts/pr-review-skill-v2.yaml'
+  if_fails: >-
+    this contract joins the class it was written to remove: an artifact whose gate
+    passes over an empty set, reporting the same green as a gate that examined
+    everything
+  mutation: >-
+    swap the DONE-WHEN in the PRREV-001 ticket to `pv lint <FILE>` and delete every
+    equation from this file. `pv lint <FILE>` must still print PASS — that is the
+    demonstration, and it is why the ticket names `pv validate`.
+
+proof_obligations:
+
+- type: invariant
+  property: >-
+    Every claim in the receipt carries exactly one of the three grounding marks, and a
+    `cited` mark carries a non-empty excerpt whose sha256 matches the recorded digest
+    (F-PRREV-001, F-PRREV-002).
+  formal: 'forall c in claims: mark(c) in {cited, measured, asserted} and (mark(c) = cited => c.excerpt != "" and c.excerpt_sha256 = sha256(c.excerpt))'
+
+- type: invariant
+  property: >-
+    A PR is blocked if and only if it satisfies one of the six machine-decidable
+    classes B1..B6 of spec S7's table; the guard discriminates, proven by the three
+    GREEN rows of S6.3 (F-PRREV-003, F-PRREV-007).
+  formal: 'BLOCK(pr) <=> B1(pr) or B2(pr) or B3(pr) or B4(pr) or B5(pr) or B6(pr)'
+
+- type: soundness
+  property: >-
+    A class blocks only while its measured precision on the rolling sample is at least
+    0.90, and a class that falls below is demoted by editing this contract rather than
+    by disabling the gate (F-PRREV-004).
+  formal: 'blocks(Bi) => precision(Bi) >= 0.90; precision(Bi) < 0.90 => advisory(Bi) and gate_enabled'
+
+- type: invariant
+  property: >-
+    No numeric threshold exists for actionable_rate, effective_fp_rate,
+    audit_divergence or cost_per_actionable until thirty samples of that metric have
+    been recorded (F-PRREV-005).
+  formal: 'forall m in INSTRUMENT_FIRST: samples(m) < 30 => threshold(m) = UNSET'
+
+- type: invariant
+  property: >-
+    guard_mutation_score = 1.00, receipt_presence = 1.00, unmarked_claims = 0 and
+    vacuous_consultations = 0, none of the four carrying a ratchet (F-PRREV-006,
+    F-PRREV-008).
+  formal: 'guard_mutation_score = 1 and receipt_presence = 1 and unmarked_claims = 0 and vacuous_consultations = 0 and forall m in JIDOKA: ratchet(m) = NONE'
+
+kani_harnesses:
+
+# DECLARED AND NOT WRITTEN, said plainly. Two of the five obligations above are
+# genuinely finite — the grounding mark is a closed three-valued enum crossed with
+# present/absent on each required field, and the blocking tier is a boolean function
+# over six predicates, so 2^6 = 64 assignments is exhaustive. Neither is solver-work
+# today for a reason that is not a shortage of effort: THERE IS NO RUST SURFACE. The
+# guard is bash (S6) and the receipt is JSON. A Kani harness needs a Rust function to
+# bind to, and PRREV-003 ships a shell script.
+#
+# So the cheaper alternative named on each is the honest one, and it is the same
+# statement without a solver: an exhaustive table in tests/pr-review.bats. Recorded
+# this way because the #2644 audit found declared-but-unwritten harnesses inflating
+# contract scores, and the remedy that survived review was to say so in the file, not
+# to drop the declaration and lose the record of what SHOULD be proved.
+
+- id: KH-PRREV-001
+  obligation: grounding_marks_are_closed
+  property: no_claim_outside_the_three_marks_is_ever_accepted
+  bound: 3
+  actually_verified: false
+
+- id: KH-PRREV-002
+  obligation: blocking_tier_is_objective_and_earned
+  property: block_iff_one_of_b1_through_b6
+  bound: 6
+  actually_verified: false
+
+enforcement:
+
+  # Spec S8, encoded in a block the schema reads. The FOUR ROWS ABOVE THE LINE are
+  # jidoka line-stops with a fixed value; the FOUR BELOW carry `record-only` and no
+  # number, and inventing one for them would violate S1 inside the file that defines
+  # S1. That split is the whole point of the table and is why the two halves are
+  # marked with different severities rather than merely commented apart.
+
+  guard_mutation_score:
+    description: 'killed / attempted on the guard''s own committed mutation set (S6.4, S8)'
+    check: '= 1.00 — no ratchet; a guard-touching PR below 1.00 BLOCKS (S7 class B3)'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S6.4 and S8; the one place S7 narrowness does not apply'
+
+  receipt_presence:
+    description: 'PRs merged carrying a schema-valid signed receipt / PRs merged (S8)'
+    check: '= 1.00 — no ratchet; a missing receipt is RED, never skipped (S6.3)'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S8; S7 class B1'
+
+  unmarked_claims:
+    description: 'claims carrying no S1 grounding mark (S8)'
+    check: '= 0 — no ratchet. NOT YET EXERCISED BY ANY FIXTURE; PRREV-003 owes row 15 (F-PRREV-001)'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S1 and S8'
+
+  vacuous_consultations:
+    description: 'consultations recording status=consulted with attempted=0 (S8)'
+    check: '= 0 — no ratchet; the pass-over-zero shape, measured in F-PRREV-008'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S3.D, S4.1 and S8; fixture row 2'
+
+  actionable_rate:
+    description: 'findings the author acted on / findings posted (S8)'
+    check: 'record-only until 30 samples; then floor := measured - 5pp, monotone. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S8 — instrument, 30 samples, ratchet'
+
+  effective_fp_rate:
+    description: 'per blocking class, the measured effective false-positive rate (S8)'
+    check: 'record-only until 30 samples. It then feeds S7 admission (<= 0.10 to remain blocking) — the only one of the four that can un-arm a gate. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S7 admission rule and S8; Tricorder''s 10% bar'
+
+  audit_divergence:
+    description: 'disagreement rate between the reviewer and the 10% independent re-review (S5, S8)'
+    check: 'record-only until 30 audits; then it SETS the sampling rate. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S5 and S8'
+
+  cost_per_actionable:
+    description: '(input_tokens + output_tokens + wall_seconds) / actionable findings (S8)'
+    check: 'record-only until 30 samples; then ratchets DOWN quarterly. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S8; cost fields live in the in-toto predicate'
+
+qa_gate:
+  id: F-PRREV-GATE-001
+  name: 'a review claim is evidence only if it says how it knows'
+  description: >-
+    The organising gate for PR-REVIEW-SKILL-002 v2. It is not enough that a receipt
+    exists, parses, and is signed: S4.3 says plainly that a signature proves the
+    receipt came from CI, not that the review was honest, and conflating the two would
+    be the most sophisticated theater this repository has produced. What this gate
+    holds is narrower and checkable — every claim carries a mark, every `cited` mark
+    carries a digest that matches, the blocking tier is six machine-decidable classes
+    with a measured precision floor, and the eight S8 parameters are split into the
+    four that stop the line and the four that carry no number yet.
+  checks:
+  - grounding_mark_present_on_every_claim
+  - grounding_mark_in_closed_vocabulary
+  - cited_excerpt_nonempty_and_digest_matches
+  - asserted_never_blocks
+  - contradiction_suppressed_by_measurement
+  - blocking_tier_is_exactly_b1_through_b6
+  - blocking_class_precision_at_least_0_90
+  - demotion_edits_this_contract_not_the_ci_config
+  - four_jidoka_metrics_carry_no_ratchet
+  - four_instrument_first_metrics_carry_no_threshold
+  - vacuous_consultation_is_degraded_not_pass
+  - guard_positive_control_fires_before_any_verdict
+  pass_criteria: >-
+    All 8 falsification tests turn RED against a fixture that violates them and GREEN
+    against the honest fixture, through scripts/check_pr_review_receipt.sh, whose own
+    positive control (S6.1) must fire first.
+
+    NOT SATISFIED ON THIS COMMIT, AND THE CONTRACT SAYS SO RATHER THAN IMPLYING
+    OTHERWISE. PRREV-001 ships this file only. Seven of the eight tests are
+    LIVE-PENDING on PRREV-003; the eighth (F-PRREV-008) is measured and green. Nothing
+    here may be cited as evidence that a review was grounded until the guard exists and
+    has been mutation-verified to 100% per S6.4.
+  falsification: >-
+    Delete a required-field check from the guard and re-run the fourteen fixtures. If
+    the affected row does not turn RED, the guard's green is a count of files rather
+    than a verdict, and every verdict resting on it is withdrawn.
+
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 1
+  l3_kani_proved: 0
+  l4_lean_proved: 0
+  l4_sorry_count: 0
+  l4_not_applicable: 5

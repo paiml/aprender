@@ -612,6 +612,54 @@ bindings:
   signature: 'fn matmul(a: &Tensor, b: &Tensor) -> Tensor'
   status: implemented
   notes: 'autograd matmul realizes B@A; associativity proven in Theorems/Lora/MergeForwardEquiv.lean'
+# PRREV-001 — contracts/pr-review-skill-v2.yaml (PR-REVIEW-SKILL-002 v2, S9 step 1).
+#
+# THESE FOUR EQUATIONS HAVE NO RUST SURFACE, and the entries say so by OMITTING
+# module_path / function / signature rather than pointing them at a symbol that does
+# not exist. The artifact that will discharge them is scripts/check_pr_review_receipt.sh
+# (PRREV-003) — a bash guard over JSON documents — plus tests/pr-review.bats. The
+# `module_path` field is documented as a Rust module path; writing a shell path into it
+# would make this registry lie about the KIND of thing it names, which is the #2504
+# defect one tier over.
+#
+# `pending` is the only honest status here ("Planned but not started", skipped by
+# enforcement checks). It is the first non-`implemented` row in this file, and it must
+# become `implemented` in the SAME PR that lands the guard — a binding left at pending
+# after its implementation ships is a registry that under-reports its own coverage,
+# which is the mirror of the over-reporting the #2644 audit found.
+- contract: pr-review-skill-v2.yaml
+  equation: grounding_marks_are_closed
+  status: pending
+  notes: >-
+    S1. Discharged by the grounding-mark branches of scripts/check_pr_review_receipt.sh
+    against fixture rows 3, 11, 12 and 14 of spec S6.3 — plus row 15, which does not
+    exist yet and which F-PRREV-001 names as owed: no committed fixture exercises a
+    result carrying NO grounding property at all.
+- contract: pr-review-skill-v2.yaml
+  equation: blocking_tier_is_objective_and_earned
+  status: pending
+  notes: >-
+    S7. Discharged by the verdict function of scripts/check_pr_review_receipt.sh over
+    all fourteen S6.3 rows, including the three discrimination rows (6, 7, 14) without
+    which "refuse every receipt" reads green. Six blocking classes, not the five the
+    spec's prose miscounts — see the invariant on this equation.
+- contract: pr-review-skill-v2.yaml
+  equation: instrument_before_ratchet
+  status: pending
+  notes: >-
+    S8, the four continuous parameters. Discharged by a guard branch asserting that no
+    numeric threshold appears against actionable_rate, effective_fp_rate,
+    audit_divergence or cost_per_actionable while samples < 30. Its regex ships with a
+    must-match / must-not-match case table in PRREV-003; deliberately NOT inlined into
+    the contract, where nothing could exercise it.
+- contract: pr-review-skill-v2.yaml
+  equation: four_defects_stop_the_line
+  status: pending
+  notes: >-
+    S8, the four jidoka parameters. Discharged by the same guard asserting the literal
+    values 1.00 / 1.00 / 0 / 0 and the absence of any ratchet rule on them, and by
+    scripts/mutate-guard.sh proving a 100% kill on the guard's own mutation set (S6.4)
+    — the one metric whose shortfall blocks a guard-touching PR outright.
 critical_path:
 - softmax
 - rmsnorm
