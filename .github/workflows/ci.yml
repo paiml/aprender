@@ -1368,6 +1368,54 @@ jobs:
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
+  # ── PRREV-002: the vendored JSON Schemas ─────────────────────────────────
+  #
+  # PR-REVIEW-SKILL-002 v2 §6.2 vendors the in-toto Statement v1 and SARIF
+  # 2.1.0 schemas under schemas/ so the receipt gate never fetches a schema at
+  # gate time. This job asserts the vendored bytes still match their recorded
+  # SHA-256, that no $ref in either schema resolves off-file, and that the whole
+  # accept/reject fixture table validates inside a network namespace with no
+  # interfaces. It then mutates the guard and requires every mutant RED.
+  #
+  # DELIBERATELY NOT IN `gate`'s needs LIST. Nothing produces a receipt yet
+  # (PRREV-005), and check-jsonschema is a Python tool no other job in this
+  # repo installs. A brand-new required check whose first dependency is an
+  # uninstalled interpreter is how a queue gets evicted. PRREV-006 promotes
+  # this into `gate` alongside check_pr_review_receipt.sh, with a job-level
+  # `if:` and never a workflow-level `paths:` filter — a path-filtered required
+  # check never reports and blocks branch protection forever.
+  #
+  # The guard exits 2, not 1, when the ENVIRONMENT cannot answer (no
+  # check-jsonschema, or no unprivileged user namespace for `unshare -r -n`).
+  # Both are non-zero: an unmeasured gate is not a passing gate. The distinct
+  # code is so a broken box is never read as a broken tree.
+  vendored-schemas:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install check-jsonschema (network here, NEVER at gate time)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v uv >/dev/null 2>&1; then
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          uv tool install 'check-jsonschema==0.38.0'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: schemas/ are the bytes we vendored, and validate offline
+        shell: bash
+        run: bash scripts/check_vendored_schemas.sh
+
+      - name: the guard can still turn RED
+        shell: bash
+        run: bash scripts/mutate_vendored_schemas_guard.sh
+
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]
     needs: [ci, workspace-test, mutants, guard-runner-labels]

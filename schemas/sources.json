@@ -1,0 +1,93 @@
+{
+  "$comment": "Provenance for every file vendored under schemas/. PRREV-002, PR-REVIEW-SKILL-002 v2 §6.2. sha256 values here are cross-checked against schemas/MANIFEST.sha256 by scripts/check_vendored_schemas.sh — two independent records that must not drift apart.",
+  "ticket": "PRREV-002",
+  "spec": "PR-REVIEW-SKILL-002 v2 §6.2",
+  "fetched_utc": "2026-08-30",
+  "schemas": [
+    {
+      "path": "schemas/sarif-2.1.0.json",
+      "sha256": "c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e",
+      "bytes": 112768,
+      "origin": "vendored-verbatim",
+      "upstream": {
+        "standard": "Static Analysis Results Interchange Format (SARIF) Version 2.1.0, OASIS Standard incorporating Approved Errata 01",
+        "schema_id": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+        "json_schema_draft": "draft-04",
+        "sources_fetched": [
+          { "uri": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+            "sha256": "c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e" },
+          { "uri": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+            "repo_commit": "a560296ca8c921f3bdb8d4a8db57ab83dae968a7",
+            "commit_date": "2024-05-02T17:43:04Z",
+            "sha256": "c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e" }
+        ],
+        "two_source_agreement": "byte-identical (cmp exit 0) between the OASIS published document and the oasis-tcs/sarif-spec git blob",
+        "modifications": "none — byte-identical to both fetched sources",
+        "self_contained": "every $ref in this file is a local JSON Pointer (#/definitions/...); no $ref resolves off-host"
+      }
+    },
+    {
+      "path": "schemas/in-toto-statement-v1.json",
+      "sha256": "1f8ccf54b998c7d11f6fd6596a42bc20c5c111a56d527550a3a7a2bb9d6a7152",
+      "origin": "authored-in-repo",
+      "why_authored": "The in-toto Attestation Framework ships NO JSON Schema for the Statement layer. Upstream normative artifacts are Markdown plus protobuf; a recursive listing of in-toto/attestation@main contains exactly two .json files, both npm manifests. Recording this file as 'vendored from upstream' would be a fabricated provenance claim, so it is recorded as authored here, derived from the sources below.",
+      "upstream": {
+        "repo": "https://github.com/in-toto/attestation",
+        "repo_commit_at_authoring": "2dcd055e9f72e746687c306e35f4e59720ff45be",
+        "repo_commit_date": "2026-08-24T19:07:51Z",
+        "json_schema_draft": "2020-12",
+        "derived_from": [
+          { "uri": "https://raw.githubusercontent.com/in-toto/attestation/main/spec/v1/statement.md",
+            "role": "normative — Statement fields and requiredness",
+            "sha256": "cbe684a18b812b8b613d9202eb43b2ea24477f91a2ad6ca5be935185a455ebea" },
+          { "uri": "https://raw.githubusercontent.com/in-toto/attestation/main/spec/v1/resource_descriptor.md",
+            "role": "normative — ResourceDescriptor fields",
+            "sha256": "bee71bedd6a957771233cbbe6494144157b865992e53cc91d607a8e02a34c58a" },
+          { "uri": "https://raw.githubusercontent.com/in-toto/attestation/main/spec/v1/digest_set.md",
+            "role": "normative — DigestSet algorithms and lowercase-hex encoding",
+            "sha256": "0b1889fdea7f6d623b41555632aedf04ee4398cf02a32002060608c75ebb038e" },
+          { "uri": "https://raw.githubusercontent.com/in-toto/attestation/main/spec/v1/field_types.md",
+            "role": "normative — TypeURI (RFC 3986, lowercase scheme)",
+            "sha256": "7c14b278a5d14191b7284bac3b05565b91940ca619fedd5f08f3a3498e9a37aa" },
+          { "uri": "https://raw.githubusercontent.com/in-toto/attestation/main/spec/v1/README.md",
+            "role": "normative — parsing rules (unrecognized fields MUST be ignored; extension fields permitted)",
+            "sha256": "2c1b2b94b23a10783f7c3a7f69e092f1dd704f1bb9b54e0c36174612ec5653c3" },
+          { "uri": "https://raw.githubusercontent.com/in-toto/attestation/main/go/v1/statement.go",
+            "role": "reference implementation — Statement.Validate(): ErrSubjectRequired, ErrDigestRequired",
+            "sha256": "aec9e8ae6d6fefdcb3c202744baa1f7a774686010213118782699dbfe35c42b9" },
+          { "uri": "https://raw.githubusercontent.com/in-toto/attestation/main/go/v1/resource_descriptor.go",
+            "role": "reference implementation — per-algorithm digest byte lengths, custom algorithms unconstrained",
+            "sha256": "a5fd9b15291471a84ad0ce97bda5fdd0bbc900256c8b0b9f7f2b5c2bb2bb482f" }
+        ],
+        "authoring_rule": "Where the Markdown specification speaks, it wins. Where it is silent, the Go reference implementation fills the gap. Every application of that rule is listed under 'decisions'.",
+        "decisions": [
+          { "field": "subject", "constraint": "minItems: 1",
+            "basis": "markdown-silent + go-reference (ErrSubjectRequired)" },
+          { "field": "subject[].digest", "constraint": "required, minProperties: 1",
+            "basis": "markdown ('Each element MUST have digest set') + go-reference (ErrDigestRequired)" },
+          { "field": "predicate", "constraint": "NOT required",
+            "basis": "markdown wins — statement.md says 'optional ... MAY be omitted'. The Go reference disagrees (ErrPredicateRequired); the normative Markdown is followed, and the divergence is recorded rather than silently resolved." },
+          { "field": "digest values (named algorithms)", "constraint": "lowercase hex at the algorithm's exact byte length",
+            "basis": "markdown ('lowercase hex-encoded values') for the case, go-reference (HexLength/digestLengths) for the length. Go's hex.DecodeString also accepts UPPERCASE; the Markdown's 'lowercase' wins, so an uppercase digest is rejected here and accepted by the Go reference. Deliberate: a receipt is byte-compared, and a case-variant digest breaks that." },
+          { "field": "digest values (custom algorithms)", "constraint": "any non-empty string",
+            "basis": "go-reference — 'use of custom, unsupported algorithms is allowed and does not generate validation errors'" },
+          { "field": "additionalProperties (every object)", "constraint": "true",
+            "basis": "markdown parsing rules — consumers MUST ignore unrecognized fields; producers MAY add extension fields. additionalProperties:false here would reject conformant documents." }
+        ],
+        "not_enforced": [
+          "RFC 3986 s6.2.2.1 lowercase-AUTHORITY normalization on TypeURI. The scheme is enforced (^[a-z][a-z0-9+.-]*:); the authority is not. A full RFC 3986 regex was judged more likely to produce a false RED than to catch a defect.",
+          "base64 well-formedness of ResourceDescriptor.content (typed string, contentEncoding annotation only — contentEncoding is non-validating in 2020-12).",
+          "Semantic agreement between a subject digest and the artifact it names. That is the guard's job (PRREV-003), not the schema's."
+        ]
+      }
+    }
+  ],
+  "validator": {
+    "tool": "check-jsonschema",
+    "version_used": "0.38.0",
+    "obtain": "uv tool install check-jsonschema",
+    "obtain_pinned": "uv tool install 'check-jsonschema==0.38.0'",
+    "network": "required ONCE to install the validator; NEVER at gate time. scripts/check_vendored_schemas.sh proves the gate-time claim by re-running the full fixture table inside a network namespace with no interfaces (unshare -r -n) and an empty XDG_CACHE_HOME.",
+    "regex_variant": "default (ECMAScript via regress) — the patterns in in-toto-statement-v1.json are ECMA-262 compatible"
+  }
+}

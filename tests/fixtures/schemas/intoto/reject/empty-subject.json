@@ -1,0 +1,6 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [],
+  "predicateType": "https://paiml.dev/attestations/pr-review/v2",
+  "predicate": {}
+}
