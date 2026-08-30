@@ -1,0 +1,15 @@
+# NOT an Arm B measurement. llama.cpp on intel is `version: 1 (35bee03)`;
+# scripts/llama_pin.toml pins `7746 (39173bcac)`. This is a host-capability
+# reference only -- see evidence/perf-060/calibration.md section 8.
+#
+# intel, 2026-08-30, load average 20.35 1-min at start.
+# llama-server -m ~/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf --port 8098 -c 4096
+# build: 1 (35bee03) with GNU 11.4.0 for Linux x86_64
+# system info: n_threads = 16, n_threads_batch = 16, total_threads = 32
+# system_info: AVX2 = 1 | AVX512 = 1 | AVX512_VNNI = 1 | LLAMAFILE = 1 | OPENMP = 1 | REPACK = 1
+# llama_model_loader: 339 tensors -- f32: 141, q4_K: 169, q6_K: 29
+#
+# Same probe.py, same corpus, same model file, W1 records 1 and 2.
+# llama.cpp stopped on EOS at 104 / 102 tokens rather than running to 128.
+{"prompt_index": 2, "prompt_chars": 2531, "total_s": 18.005, "usage": null, "content_chunks": 104, "ttft_s": 9.537, "itl_p50_ms": 81.63, "decode_tok_s": 12.277, "tail_s": 0.079}
+{"prompt_index": 3, "prompt_chars": 2522, "total_s": 16.301, "usage": null, "content_chunks": 102, "ttft_s": 8.919, "itl_p50_ms": 72.302, "decode_tok_s": 13.818, "tail_s": 0.073}

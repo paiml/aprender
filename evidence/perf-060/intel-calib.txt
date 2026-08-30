@@ -1,0 +1,16 @@
+load_at_start:  08:05:35 up 2 days, 20:28,  1 user,  load average: 19.29, 20.83, 14.02
+--- r0 nonstream (captures usage.prompt_tokens) ---
+{"prompt_index": 1, "prompt_chars": 2507, "total_s": 80.587, "usage": {"prompt_tokens": 513, "completion_tokens": 128, "total_tokens": 641}, "text_head": "It appears that the code you've provided is a mix of various programming concepts and syntax elements from different languages, possibly a combination of Rust, JavaScript, and possibly some other lang"}
+--- r2 stream ---
+{"prompt_index": 2, "prompt_chars": 2531, "total_s": 78.804, "usage": null, "text_head": "It appears that the provided code snippet is a mix of various programming languages and syntax elements, making it difficult to understand its intended functionality. However, I can attempt to break down", "content_chunks": 128, "ttft_s": 62.21, "itl_p50_ms": 127.936, "decode_tok_s": 7.657, "tail_s": 0.008}
+load:  08:08:15 up 2 days, 20:31,  1 user,  load average: 22.75, 21.81, 15.47
+--- r3 stream ---
+{"prompt_index": 3, "prompt_chars": 2522, "total_s": 73.869, "usage": null, "text_head": "It appears that the code you've provided is a mix of various programming language syntax elements and keywords, possibly from multiple languages or a custom language. The text is quite long and contains", "content_chunks": 128, "ttft_s": 57.186, "itl_p50_ms": 129.574, "decode_tok_s": 7.614, "tail_s": 0.003}
+load:  08:09:29 up 2 days, 20:32,  1 user,  load average: 21.24, 21.46, 15.80
+--- r4 stream ---
+{"prompt_index": 4, "prompt_chars": 2534, "total_s": 81.325, "usage": null, "text_head": "It appears that the code you've provided is a mix of various programming concepts and syntax elements from different languages, possibly a combination of Rust, C++, and possibly some other languages. The", "content_chunks": 128, "ttft_s": 61.994, "itl_p50_ms": 151.875, "decode_tok_s": 6.574, "tail_s": 0.011}
+load:  08:10:50 up 2 days, 20:34,  1 user,  load average: 24.22, 22.07, 16.50
+--- r5 stream ---
+{"prompt_index": 5, "prompt_chars": 2508, "total_s": 81.891, "usage": null, "text_head": "It appears that the provided text is a mix of programming code and possibly some form of structured data or a language that is not immediately recognizable. The text contains a variety of keywords and", "content_chunks": 128, "ttft_s": 63.006, "itl_p50_ms": 148.411, "decode_tok_s": 6.728, "tail_s": 0.009}
+load:  08:12:12 up 2 days, 20:35,  1 user,  load average: 23.64, 22.32, 17.04
+DONE
