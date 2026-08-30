@@ -114,8 +114,19 @@ against the committed test pubkey:
 | **E-2771-B** | identical, plus one `cited` query carrying the §2.5.6.1 excerpt and its matching `excerpt_sha256` | **ACCEPT, exit 0** |
 
 All **4/4** positive controls fired first in both runs, so the guard was live and
-discriminating. The third escape — `cuda: not-triggered` — is closed by the trigger
-recomputation above (guard line 481). The review can no longer record silence.
+discriminating.
+
+**All three ways of recording silence are closed**, and each was checked in the merged
+guard rather than assumed from the fix's description:
+
+| escape | rule | line |
+|---|---|---|
+| `cuda: not-triggered` | rejected because the S3.B trigger is recomputed from the diff and fires 17× | 481 |
+| `cuda: consulted`, `queries: []` | rejected as a vacuous consultation — E-2771-A above | 554 |
+| `cuda: unreachable`, `verdict: PASS` | rejected; the loop at 432 runs over **every** consultation, not only `pmat`, so an unreachable docs server must read `DEGRADED` | 432–433 |
+
+The honest paths — a `no-authority-found` query, or `unreachable` + `DEGRADED` — stay open,
+which is what E-2771-B demonstrates in the other direction.
 
 That is PRREV-007's F2 discharged against the real PR, not against a fixture.
 
