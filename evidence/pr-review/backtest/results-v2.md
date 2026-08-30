@@ -295,8 +295,27 @@ surface from sitting under a `PASS`; nothing forbids an unsearched *ref* region.
 
 **Fix, in order of cost:** (a) at minimum, record `merge-base..origin/main` in
 `duplication_coverage` as `none` so it cannot sit under a `PASS` — the rule rows 23/24
-already state; (b) sweep it, which is one `git grep` over one ref and cheaper than the
-774-branch sweep already being paid for.
+already state; (b) sweep it.
+
+(b)'s cost and its yield were **measured, not estimated.** One `git grep -I -n -w -F` over
+`origin/main` with #2781's own 22 needles:
+
+```
+rc=0, 1 s, 1636 lines            (the 774-branch sweep on the same PR cost 20 s)
+```
+
+Of the 46 files #2742 added, **5 are hit — including
+`crates/apr-cli/src/commands/test_llm_band.rs`**, the prior art. Stated exactly: the
+needle that reaches it is `receipt.r1.json`, one of #2781's added evidence filenames,
+matched inside that file's `//!` doc comment. That is a lexical filename hit that lands on
+the right file, not a semantic proof, and it is still the difference between
+`duplication_hits: []` and a pointer at the module that produces the receipt format #2781
+is fixing the join key of. Recall is unknown and is not claimed — the same honesty the
+scan's own header already applies to itself.
+
+1636 raw lines is an upper bound, not a proposal: the sweep needs the `NEEDLE_MIN_LEN`,
+stop-list and ambient-drop filters the `HEAD` sweep already applies, and its
+`hits_total` / `hits_recorded` recorded the same way, so the ratio stays judgeable.
 
 ### #2742 — the actual PERF-055 duplication: **CAUGHT, both halves of F4**
 
