@@ -354,9 +354,11 @@ impl OwnedQuantizedModel {
                 )?;
             }
         } else {
-            for (pos, &token_id) in prompt.iter().enumerate() {
-                logits = self.forward_single_with_cache(token_id, &mut cache, pos)?;
-            }
+            // PREFILL-CPU (#2787): batched CPU prefill when the model is in the
+            // covered class, else the per-token loop unchanged. The traced arm
+            // above stays per-token deliberately: BrickProfiler measures
+            // per-token operations and a batched pass has none to attribute.
+            logits = self.prefill_prompt(prompt, &mut cache)?;
         }
         if config.trace {
             eprintln!(
@@ -573,9 +575,11 @@ impl OwnedQuantizedModel {
                 )?;
             }
         } else {
-            for (pos, &token_id) in prompt.iter().enumerate() {
-                logits = self.forward_single_with_cache(token_id, &mut cache, pos)?;
-            }
+            // PREFILL-CPU (#2787): batched CPU prefill when the model is in the
+            // covered class, else the per-token loop unchanged. The traced arm
+            // above stays per-token deliberately: BrickProfiler measures
+            // per-token operations and a batched pass has none to attribute.
+            logits = self.prefill_prompt(prompt, &mut cache)?;
         }
         if config.trace {
             eprintln!(

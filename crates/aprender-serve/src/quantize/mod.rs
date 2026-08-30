@@ -63,6 +63,7 @@ use crate::error::{RealizarError, Result};
 // ============================================================================
 
 pub mod activation;
+pub mod batched_matmul;
 pub mod bsum_precompute;
 pub mod contract_tests;
 pub mod dequant;
@@ -125,6 +126,12 @@ pub use simd::{extract_scale_min, read_f16};
 pub use format_trait::{Q4_0Fmt, Q8_0Fmt, QuantBlockFormat, QuantFamily, Q4K, Q5K, Q6K};
 pub use generic_dot::{compute_bsums, generic_fused_dot_scalar};
 pub use generic_matvec::{generic_parallel_matvec, generic_parallel_matvec_into};
+
+// Re-export the batched (multi-row) CPU prefill GEMM (#2787)
+pub use batched_matmul::{
+    batched_matmul_supports, fused_q4k_parallel_matmul_into, generic_parallel_matmul_into,
+    quantized_matmul_batch_into,
+};
 
 // Re-export fused gate+up kernel (PMAT-FFN-FUSION)
 pub use fused_gate_up::{

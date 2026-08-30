@@ -291,14 +291,11 @@ impl OwnedQuantizedModel {
             });
         }
 
-        // Process each position to populate KV cache
-        // (True batch prefill would compute all positions at once with causal attention)
-        let mut last_logits = Vec::new();
-        for (pos, &token_id) in prompt.iter().enumerate() {
-            last_logits = self.forward_single_with_cache(token_id, cache, pos)?;
-        }
-
-        Ok(last_logits)
+        // PREFILL-CPU (#2787): this function was named `prefill_batch` and its
+        // own comment admitted it wasn't one — "True batch prefill would compute
+        // all positions at once". `prefill_prompt` now does, when the model is in
+        // the covered class, and falls back to this same per-token loop when not.
+        self.prefill_prompt(prompt, cache)
     }
 
     /// Forward pass for a batch of tokens with GPU acceleration (IMP-107)
