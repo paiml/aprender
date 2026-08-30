@@ -667,8 +667,20 @@ validate_receipt() {
   # routed around, and the attestation is L1-self for exactly this class of field.
   if [ "$pmat_st" = "consulted" ]; then
     local cov_missing cov_bad cov_none dup_sib dup_scanned dup_total
-    jq -e '.predicate.consultations.pmat.duplication_hits | type == "array"' "$rcpt" >/dev/null 2>&1 \
-      || reject B1 "pmat.status is consulted but duplication_hits is not an array; S3.A requires it present even when empty" || return 1
+    # duplication_hits is NOT re-checked here. PRREV-009 wrote a `type == "array"` test at
+    # this point and PRREV-008 independently wrote a stronger one 129 lines up, over all
+    # four S3.A outputs at once; merging the two lanes left this one UNREACHABLE, because
+    # every receipt that could trip it has already been rejected by the earlier branch.
+    #
+    # The fixture table did not notice - 112 tests, 0 failures, straight over a dead rule.
+    # scripts/mutate-guard.sh did: `reject-50-drop` SURVIVED, which is the definition of a
+    # rule the guard states and nothing tests. Deleting it is the fix; a permanently
+    # unkillable mutant would put a hole in a score S8 fixes at one.
+    #
+    # It is also, exactly, the defect F4 exists to detect: two implementations of one rule,
+    # each green against its own copy, in the guard that implements F4. Recorded here
+    # rather than quietly removed, so the next person to add a per-field check looks 129
+    # lines up first.
 
     jq -e '.predicate.consultations.pmat.duplication_coverage | (type == "object") and (length > 0)' "$rcpt" >/dev/null 2>&1 \
       || reject B1 "pmat.status is consulted but duplication_coverage is absent; an unrecorded coverage claim cannot be told apart from a searched-and-empty one, and S3.0 forbids exactly that (F4)" || return 1

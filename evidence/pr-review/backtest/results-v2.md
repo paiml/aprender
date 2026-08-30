@@ -344,6 +344,54 @@ is not time-travelled and nothing here claims it is.
 
 ---
 
+### F8 — merging two lanes produced a dead validation branch, and only the mutation set saw it
+
+The brief's hard constraint is that any guard change keeps `guard_mutation_score` at 100%.
+`scripts/mutate-guard.sh` derives its `drop`/`flip` sites by **rescanning the guard for
+`reject B<n>`**, so the merged guard was mutated without anyone listing its new rules.
+
+Result on the merged tree: **184 mutants, 183 killed, 1 SURVIVED.**
+
+```
+reject-50-drop   drop   line 671   SURVIVED   rc=0   0 failing tests
+  || true B1 "pmat.status is consulted but duplication_hits is not an array; ..."
+```
+
+**It is unreachable code, and the merge created it.** Both PRREV-008 and PRREV-009
+independently implemented "`duplication_hits` must be an array":
+
+| lane | line | condition |
+|---|---|---|
+| PRREV-008 | 537–542 | **all four** S3.A outputs present and arrays — a strict superset |
+| PRREV-009 | 670–671 | `duplication_hits` is an array |
+
+Both sit inside `validate_receipt()`, both gated on the same `pmat_st = "consulted"`, and
+`reject … || return 1` returns at the first one. So **no receipt can ever reach line 671**:
+anything that would trip it was rejected 129 lines earlier. Dropping it changes nothing,
+which is exactly what a surviving mutant means — *a rule the guard states and nothing
+tests.*
+
+**The `flip` mutant at the same line was KILLED, and that is not evidence the branch is
+live.** `reject-50-flip` rewrites `A || reject … || return 1` into `A || reject … && return
+1`. Bash parses that left-to-right as `(A || reject …) && return 1`, so when `A` *succeeds*
+— which it does for every well-formed receipt — the `return 1` fires anyway. 33 tests
+failed, the first of them `S6.1 all four positive controls fire`, i.e. the mutant broke the
+success path rather than the rejection path. A site can look half-covered for a reason that
+has nothing to do with coverage; only the `drop` mutant asks the question §6.4 wants asked.
+
+`bats tests/pr-review.bats` was **112 tests, 0 failures** straight over it. The fixture
+table cannot see a dead branch; the mutation set is the only instrument that can. This is
+§6.4's whole argument, demonstrated on itself.
+
+And it is, precisely, **the defect F4 exists to detect — two implementations of one rule,
+each green against its own copy — inside the guard that implements F4.** Recorded rather
+than quietly deleted.
+
+**Fix:** remove the PRREV-009 branch and leave a comment at the site pointing 129 lines up,
+so the next per-field check is added to the existing list rather than beside it.
+
+---
+
 ## Duplication precision, measured — and a third catch found in the measuring
 
 The first draft of this section wrote *"0 true positives in 64 `HEAD`-side hits"*. That
@@ -414,6 +462,7 @@ the sibling sweep is not the only half that pays.**
 | **F5** — B4's regex weaker than `RATIO_RE` | **yes** | `36.9x over FasterTransformer` now matches; 35 firings on #2763 |
 | **F6** — B4 excludes `book/src/examples/` | **NEW, open** | 0→2 counterfactual on `da069a25f`; 2/14 must-match failures |
 | **F7** — `merge-base..origin/main` in no horizon | **NEW, open** | #2781's blind region is exactly #2742: 1 commit, 46 files, 11 of them the prior art |
+| **F8** — the merge left a dead validation branch | **NEW, FIXED in this branch** | `reject-50-drop` SURVIVED: 184 attempted, 183 killed. Removed; re-run is 182 mutants |
 
 ---
 
