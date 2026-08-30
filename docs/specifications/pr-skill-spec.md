@@ -1,6 +1,7 @@
 # PR-REVIEW-SKILL-001 — adversarial PR review with three mandatory consultations
 
-**Status:** DRAFT for review
+**Status:** SUPERSEDED by PR-REVIEW-SKILL-002-v2.md (2026-08-30). Retained for the audit trail.
+**Original status:** DRAFT for review
 **Author:** @noah (requested), drafted 2026-08-30
 **Supersedes:** nothing. Complements `/code-review`, `nightly-ux-crux`, and the 102 `check_*.sh` guards in `ci.yml`.
 
