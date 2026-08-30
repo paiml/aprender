@@ -60,6 +60,88 @@ control fire on the signature branch while still reporting `B1`). Their SHAs are
 on purpose — every class they pin is evaluated before the merge-base check, so they need
 no git repository and run identically in CI, in a worktree, and on a laptop.
 
+## Branch probes and the mutation set (§6.4)
+
+`scripts/mutate-guard.sh` is the guard's own falsifier. §6.4 requires 100% kill and §8
+records `guard_mutation_score` as **1.00 with no ratchet** — the one place §7's
+narrowness does not apply, because every other verdict rests on the guard.
+
+```bash
+scripts/mutate-guard.sh --list       # the catalogue
+scripts/mutate-guard.sh --jobs 16    # the sweep; exit 0 only at 100% kill
+```
+
+Two operators, applied at every `reject B<n>` site the guard contains, and the site list
+is **derived by scanning the guard on every run** rather than written down — a catalogue
+that has to be remembered falls behind the file it mutates:
+
+| operator | edit | what it proves |
+|---|---|---|
+| `drop` | `reject B` → `true B` | the rule is *tested*: something must go RED→GREEN |
+| `flip` | `\|\| return 1` → `&& return 1` | the branch's *sense* is right: a receipt satisfying the rule is now rejected, so a discrimination row must go GREEN→RED |
+
+plus named single-line edits to the control machinery, which is not a uniform `reject`
+site and cannot be derived. Each named entry must match **exactly one** line of the
+guard or the sweep refuses to run: an entry that matches nothing mutates nothing and
+scores a kill it never earned.
+
+Excluded on purpose: the two `case` gates around `rm -rf` and the `EXIT` trap. They are
+destructive-op guards, not validation branches — no receipt can reach them, so no
+fixture can kill them, and including them would park a permanent survivor in a score
+§8 fixes at one.
+
+### Why the probes exist
+
+The fifteen rows pin fifteen branches; the guard has fifty-odd. Every branch the rows
+leave untripped came back from the first sweep as a **surviving mutant** — a rule the
+guard states and nothing tests. `tests/pr-review.bats` therefore carries a second
+family, named for the branch rather than for a spec row:
+
+- shape and gates: `findings.sarif` absent, two JSON records, unparseable receipt,
+  unparseable SARIF, SARIF that parses but fails the vendored schema
+- signature material: the public key absent, the receipt unsigned
+- predicate identity: wrong `predicateType`, an `attestation_level` claiming more than
+  `L1-self`, `head_sha`/`base_sha`/`author_actor.id`/`reviewer_actor.id` absent, a
+  `subject[0].digest` that is not the head under review, a verdict outside the four,
+  `findings_ref.path` pointing elsewhere
+- diff boundary: an unresolvable head; a head sharing **no** history with `origin/main`
+- consultations: a status absent, a status outside the three-state vocabulary,
+  `attempted`/`killed` that are not counts, `index_commit` absent or unresolvable, and
+  `index_is_ancestor` *misreported* on a fresh index
+- grounding: an invented fourth category, a `cited` finding with an empty `source` or no
+  `excerpt_sha256`, an `asserted` finding classed `blocking`
+- comparative claims: a competitor ratio stated in a finding while
+  `comparative_claims[]` is empty — the never-ran-Ollama shape with one extra step
+- the guard's own preconditions: a needed tool off `PATH`, no repository at all, a
+  positive control that is *accepted*, a control measured against a permissive schema,
+  and each control's own `|| exit 1`
+
+A probe is **derived** from a committed row by one `jq` edit and **re-signed** with the
+committed test-only key, because the signature is verified before any semantic branch is
+reached — an unsigned probe would be rejected at the signature and would pin nothing.
+The derivation, the base bytes and the key are all committed, so a probe is reproducible
+from this tree: it is a shorter way of writing a fixture, not a weaker one.
+
+### Every case now asserts its reason, not just its class
+
+`B1` covers thirty-odd branches. A case that trips a *different* `B1` branch than the
+one it exists to pin still reports `B1` and still exits 1 — it passes for the wrong
+reason, and the mutant that dropped its branch lives.
+
+**Measured, not argued.** A counter-sweep ran the whole set against a copy of
+`tests/pr-review.bats` with every assertion made reason-blind: **110/119**, so **nine
+mutants die only because the reason is asserted**. They sit on seven guard branches —
+`head_sha` absent, `base_sha` absent, an unresolvable head, a non-numeric
+`mutation.attempted`, `index_commit` absent or unresolvable, and a `cited` finding with
+no `excerpt_sha256` — each of which falls through to a *neighbouring* `B1` branch and,
+class-only, reads as a correct rejection.
+
+The first candidate tested was **not** one of them, which is why this says *measured*:
+dropping the empty-excerpt check was predicted to leave row 3 rejected on the digest
+branch, and it does not. Row 3's `excerpt_sha256` is `sha256("")` on purpose, so with
+the check gone the receipt is **accepted** and the exit code alone kills the mutant. The
+prediction was wrong; the counter-sweep is what stands.
+
 ## Why a synthesized git repository
 
 `make-fixture-repo.sh` builds the repo the receipts are written against:

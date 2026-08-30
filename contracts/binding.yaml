@@ -663,15 +663,21 @@ bindings:
     threshold-absence regex is not among them and is owed.
 - contract: pr-review-skill-v2.yaml
   equation: four_defects_stop_the_line
-  status: pending
+  status: implemented
   notes: >-
-    S8, the four jidoka parameters. STILL PENDING after PRREV-003: scripts/mutate-guard.sh
-    does not exist and is PRREV-004. A 15/15 kill WAS measured over this guard while
-    landing PRREV-003 — every validation branch neutered in turn, each killed either by
-    the S6.3 row that covers it or by one of the three S6.1 positive controls — but the
-    harness that produced it is not committed, so the number is not reproducible from
-    this tree and this row may not claim it. PRREV-004 commits the harness and records
-    the score.
+    S8, the four jidoka parameters. guard_mutation_score is now MEASURED and
+    REPRODUCIBLE: scripts/mutate-guard.sh is committed and reports 119/119
+    = 100% over scripts/check_pr_review_receipt.sh (PRREV-004). The set is committed as
+    a DERIVATION, not a list — one `drop` and one `flip` per `reject B<n>` site, the
+    sites rescanned from the guard on every run, plus named single-line edits to the
+    control machinery that must each match exactly one line or the sweep refuses to
+    run. That is strictly stronger than a written-down list, which falls behind the
+    file it mutates. vacuous_consultations = 0 is enforced by the attempted>0 branch
+    (row 2) and unmarked_claims = 0 by row 15; receipt_presence = 1.00 is enforced as
+    "a missing receipt is RED, not skipped" and is a property of PRREV-006's CI wiring
+    once it lands. The sweep excludes the two `case` gates around `rm -rf` and the EXIT
+    trap, which are destructive-op guards no receipt can reach: including an unkillable
+    mutant in a score S8 fixes at one would make the one a lie.
 critical_path:
 - softmax
 - rmsnorm
