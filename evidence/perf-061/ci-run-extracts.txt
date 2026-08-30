@@ -1,0 +1,12 @@
+# Ordered trial series as emitted by beat_ollama_decode_throughput_speed on gx10 (GB10)
+# extracted verbatim from the two failing cuda-nightly runs
+
+## run 33292383055
+BEAT-OLLAMA-DECODE-THROUGHPUT [ENFORCED median-of-7 >= 0.90x]: apr_median7=105.6 apr_best=140.0 ollama_median=182.3 tok/s | ratio_median=0.579x ratio_best=0.767x (steady-state GPU decode) | apr trials=[111.80015721897114, 96.78273033155645, 96.41095168154254, 99.01373041964803, 111.42546245919478, 105.61927551778203, 139.95189153728398] ollama trials=[154.99, 182.79, 182.9, 182.35, 100.85]
+
+## run 33298580389
+BEAT-OLLAMA-DECODE-THROUGHPUT [ENFORCED median-of-7 >= 0.90x]: apr_median7=117.9 apr_best=142.7 ollama_median=182.3 tok/s | ratio_median=0.647x ratio_best=0.783x (steady-state GPU decode) | apr trials=[90.46895430611016, 107.41859684457867, 142.70583644573279, 132.87657012353367, 124.4651886425516, 106.7645341563099, 117.86372007366482] ollama trials=[181.14, 182.71, 182.28, 181.96, 183.12]
+
+## yield-to-training guard reading, same runs
+falsifiers (blackwell-gb10, ARM64, blackwell)	UNKNOWN STEP	2026-08-30T04:23:29.9583075Z blackwell-gb10: GPU memory.used=0 MiB, existing compute procs=0
+falsifiers (blackwell-gb10, ARM64, blackwell)	UNKNOWN STEP	2026-08-30T07:10:24.3207714Z blackwell-gb10: GPU memory.used=0 MiB, existing compute procs=0

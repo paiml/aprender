@@ -1,0 +1,15 @@
+Simulation: rate = 256000 / Delta,  Delta ~ N(2406, 330) ms
+The gate takes median-of-7 and best-of-up-to-9 from this SAME constant-rate process.
+
+  predicted ratio_median  = 0.584x   (2.5-97.5 pct: 0.520 .. 0.665)
+  predicted ratio_best    = 0.712x   (2.5-97.5 pct: 0.602 .. 0.924)
+  predicted best/median   = 1.212     (2.5-97.5 pct: 1.052 .. 1.582)
+
+  OBSERVED in the two failing cuda-nightly runs, for comparison:
+    33292383055: ratio_median=0.579x  ratio_best=0.768x  best/median=1.326
+    33298580389: ratio_median=0.647x  ratio_best=0.783x  best/median=1.210
+
+  => a CONSTANT-rate process, differenced this way, ALREADY produces a
+     best/median gap of ~1.3. `ratio_best > ratio_median` is a property of
+     the estimator (256000/Delta is a reciprocal, so right-skewed), not
+     evidence of a warmer/faster regime the median is missing.
