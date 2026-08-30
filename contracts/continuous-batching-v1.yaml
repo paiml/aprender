@@ -671,6 +671,92 @@ falsification_tests:
         at precision or correctness in cublas_prefill_gemm on the decode path and
         wants its own ticket; it is a different class from the three structural
         defects this epic fixed.
+
+    #2770 ANSWERED 2026-08-29: CORRECTNESS, in the Q6_K dequant -- and then a
+    SECOND, separable cause that IS precision. RTX 4090 sm_89, driver as installed,
+    qwen2.5-coder-1.5b-instruct-q4_k_m, greedy, APR_STREAM_LEGACY=1 throughout.
+    Two binaries, each attributed to its own worktree by cargo dep-info:
+    apr 0.64.0 (c00ba00cb) = origin/main, apr 0.64.0 (cc9bfb966) = the fix.
+
+    THE DIVERGENCE REPRODUCES AT m=1, so it was never about batching. Forcing the
+    batched forward onto the cuBLAS route with CUBLAS_GEMM_THRESHOLD=1 (plus
+    APR_FORCE_BATCHED_PATH=1) puts it under the existing APR_PARITY_PROBE M=1
+    oracle differential, with no batch and no concurrency. Pre-fix, ORACLE cosine
+    and max|d| against the M=1 oracle, by GEMM precision:
+
+      GEMV, route not taken     Q4_K/Q6_K native   0.999987   0.0867
+      FP8 E4M3  (default m>=4)  3 mantissa bits    0.966582   5.3081
+      HGEMM FP16 (FP8_PREFILL=0)  11 bits          0.967242   5.3313
+      SGEMM FP32 (+HGEMM_PREFILL=0) 24 bits        0.967283   5.3724
+      fused Q4K direct (no dequant at all)         0.965791   5.6955
+
+    Spanning 3 to 24 mantissa bits moves the error by 1.2%. A precision hypothesis
+    predicts the error collapses at FP32; it does not. Precision FALSIFIED as the
+    cause of this component.
+
+    THE STAGE DIFFERENTIAL NAMES THE TENSOR. APR_LAYER_TRACE=1 at layer 0, oracle
+    side bit-identical across every arm, at SGEMM FP32:
+
+      g_rmsnorm#0          45.246795  ==  o_hidden_buf1  45.246795
+      g_q_buf   Q4_K      232.814586  vs  o_q_buf       232.814592   (8 figures)
+      g_k_buf   Q4_K     1437.771829  vs  o_k_buf      1437.771832   (9 figures)
+      g_v_buf   Q6_K        2.928788  vs  o_v_buf         5.812629   WRONG
+
+    At full FP32 the Q4_K projections are exact and only the Q6_K one is wrong.
+    blk.0.attn_v is the sole Q6_K weight in layer 0 (apr tensors: [1536,256] Q6_K).
+
+    ROOT CAUSE: Q6KDequantKernel swapped the two bits of the group index. Q6_K
+    packs each 128-value half as four groups of 32 where the +32 ql byte step is
+    group & 1 and the high nibble is group >= 2; the kernel took the byte offset
+    from group >> 1 and the nibble from group & 1. Correct for groups 0 and 3,
+    where both bits agree; groups 1 and 2 exchange their low four bits while their
+    qh bits and sub-block scale stay right. Half of every super-block came out
+    near-but-not-right, so the model stayed fluent on a different continuation
+    instead of producing garbage. This kernel is the ONLY Q6_K reader on the cuBLAS
+    path -- FP8 caches from it, FP16 caches from it, SGEMM uses it directly --
+    which is exactly why the error was invariant to GEMM precision. The Q6_K GEMV
+    kernel always had it right and reads Q6_K in place, so m < 4 was unaffected and
+    the m>=4 boundary was only use_cublas firing. In Q4_K_M this corrupts attn_v,
+    ffn_down and the LM head of every layer, in prefill as well as decode.
+
+    AFTER THE FIX the ladder collapses, and what is left is a clean precision
+    effect that only FP8 shows:
+
+      GEMV                      0.999983   0.0905
+      FP8 E4M3                  0.998774   0.8655   <- the only remaining gap
+      HGEMM FP16                0.999983   0.0905   <- identical to GEMV
+      SGEMM FP32                0.999983   0.0905   <- identical to GEMV
+
+    FP16 and FP32 are now bit-identical to the GEMV route's own residual. The
+    remaining FP8 gap is max|d| 0.8655 on logits of absmax ~14, which is enough to
+    flip a greedy argmax on a near-tie into a different, coherent continuation.
+
+    END-TO-END, FOUR PROMPTS, c=8, batched path proven engaged at m=7 (perf041,
+    80-token cap). Four prompts because one is an anecdote:
+
+                          FP8 on (default)   FP8 off (FP16)
+      pre-fix  c00ba00cb      2 / 4 pass        1 / 4 pass
+      post-fix cc9bfb966      3 / 4 pass        4 / 4 pass
+
+    With FP8 removed as a confounder the fix takes CB-006 from 1/4 to 4/4. With FP8
+    on it goes 2/4 -> 3/4. The pre-fix row is not monotonic because two error
+    sources can cancel on a given prompt; stated rather than smoothed.
+
+    SO CB-006 IS STILL NOT GREEN BY DEFAULT, and the reason is now named and is a
+    different class: FP8 E4M3 decode precision, not a structural fault. The choice
+    it forces is a real one -- route decode off FP8, or state a tolerance the
+    parity probe honours -- and it is not made here.
+
+    TWO OBSERVATIONS ABOUT THE PROBE ITSELF, both measured:
+      - "batched path PROVEN engaged" only asserts m > 1. At the default threshold
+        a c=4 run formed max m=3 and passed while never reaching the m>=4 cuBLAS
+        route at all. Proving a batch formed is not proving the route under test
+        ran.
+      - CUBLAS_GEMM_THRESHOLD=32 combined with FP8_DECODE=0 makes the m=1
+        REFERENCE itself garbage ('Lambda*****' / '**0*0000...') on 80-token
+        prompts, so the probe returns 2 UNMEASURABLE. Reproduced byte-identically
+        on unmodified main, so it is pre-existing, not a regression. The two knobs
+        were not separated, and CUBLAS_GEMM_THRESHOLD=32 alone was not retested.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs

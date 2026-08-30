@@ -295,7 +295,21 @@ impl OwnedQuantizedModelCuda {
         // GH-141 ILLEGAL_ADDRESS was from a different root cause (stale graph pointers).
         // PMAT-073: Pre-allocate batched KV for max_kv_slots to enable mid-batch joins.
         // Extra slots cost ~224 MB/slot but avoid reallocation when new requests join.
-        let kv_alloc = max_kv_slots.max(m);
+        //
+        // X1-KVALLOC (#2774): ...but only the extra slots that FIT. `max_kv_slots`
+        // is `CUDA_MAX_BATCH`, which `compute_max_batch_for_memory` auto-sizes
+        // against VRAM measured BEFORE the weights are resident -- so on a 24 GB
+        // RTX 4090 the 7B model got the clamp ceiling, 32, and this line
+        // preallocated 32 slots for a batch of 3:
+        //
+        //   Failed to init batched KV cache for M=32: CUDA_ERROR_OUT_OF_MEMORY
+        //
+        // Three of four concurrent requests returned HTTP 500. `m` is the floor
+        // because those sequences are already admitted; the ceiling is now what
+        // the device can actually hold.
+        let kv_alloc = self
+            .executor
+            .fit_batched_kv_alloc(num_layers, max_kv_slots.max(m), m);
         self.executor
             .init_batched_kv_cache_gpu(num_layers, kv_alloc)
             .map_err(|e| RealizarError::UnsupportedOperation {
@@ -1162,3 +1176,33 @@ mod pmat764_select_batched_token_tests {
 }
 
 include!("cb006_parity_probe.rs");
+
+/// X1-KVALLOC (#2774) source gate.
+///
+/// The behaviour test for the sizing rule
+/// (`CudaExecutor::batched_kv_slots_that_fit`) needs `--features cuda` to
+/// compile, which is the same blind spot the defect lived in. This one is a
+/// source scan with no cfg, so it runs on every build and fails if the call
+/// site goes back to handing the scheduler's ceiling straight to the allocator.
+#[cfg(test)]
+mod x1_kvalloc_2774_source_gate {
+    #[test]
+    fn batched_kv_is_sized_against_the_device_not_the_ceiling() {
+        let src = include_str!("generate_batched_streaming.rs");
+        assert!(
+            src.contains("fit_batched_kv_alloc(num_layers, max_kv_slots.max(m), m)"),
+            "batched_setup_and_prefill no longer clamps the KV allocation to \
+             what fits: `max_kv_slots` is CUDA_MAX_BATCH, which on a 24 GB 4090 \
+             with the 7B model was the clamp ceiling 32, so a batch of 3 asked \
+             the driver for 14336 MiB and got CUDA_ERROR_OUT_OF_MEMORY (#2774)"
+        );
+        // Assembled at runtime: a source scan whose needle is written out
+        // literally matches ITS OWN source and fails on a correct tree. That is
+        // not hypothetical -- the first version of this test did exactly that.
+        let unclamped = format!("let kv_alloc = {}", "max_kv_slots.max(m);");
+        assert!(
+            !src.contains(&unclamped),
+            "the unclamped sizing is back (#2774)"
+        );
+    }
+}

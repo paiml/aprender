@@ -62,10 +62,13 @@
 //! - **Receipt emission.** Nothing here writes `receipt.json`.
 //!   `scripts/lib/bench_receipt.py` is the single schema authority and the
 //!   serialiser that feeds it is a separate ticket.
-//! - **W1/W2 workload construction** (§4.3), prompt corpora, and the
-//!   `prompt_tokens = 512 ± 8` assertion. Note in passing that
-//!   `crates/aprender-serve/benchmarks/qwen-coder/` contains `prompts-w2.jsonl`
-//!   but **no `prompts-w1.jsonl`**, which §4.3.1 names as W1's corpus.
+//! - **W1/W2 workload construction** (§4.3) and the prompt corpora. Both
+//!   corpora now exist under `crates/aprender-serve/benchmarks/qwen-coder/`
+//!   (`prompts-w1.jsonl` landed with PERF-039; this note used to say it was
+//!   missing). The `prompt_tokens = 512 ± 8` assertion is no longer absent
+//!   either — PERF-056 put it in `llm::prompts::assert_prompt_tokens_in_band`,
+//!   called from the band harness against the counts the SERVER reports,
+//!   because that is the only place the model's own tokenizer is observable.
 //! - **Running any band.** No baseline is measured or committed by this ticket.
 //!   Every cell in `scripts/perf-matrix.yaml` stays `UNMEASURED`.
 //!

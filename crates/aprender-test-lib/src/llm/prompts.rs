@@ -83,17 +83,189 @@ pub fn load_profile(profile: PromptProfile) -> Vec<ChatRequest> {
 /// requests and reports success is the vacuous pass this gate exists to
 /// remove.
 pub fn load_from_file(path: &Path) -> Result<Vec<ChatRequest>, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
-    parse_jsonl(&content).map_err(|e| format!("{}: {e}", path.display()))
+    load_corpus(path).map(|c| c.requests)
 }
 
-/// Parse a JSONL corpus body. Split out from [`load_from_file`] so the format
-/// contract is testable without touching the filesystem.
+/// Load a corpus **and the invariants its own `_meta` header declares**.
+///
+/// # The defect this closes (PERF-056, #2778)
+///
+/// `prompts-w1.jsonl`'s `_meta` block promises, in prose, that the corpus is
+/// 256 distinct prompts of a fixed shape at `target_prompt_tokens = 512`
+/// with `tolerance_tokens = 8`, `max_tokens = 128`, `temperature = 0.0` and
+/// `seed = 0`. The loader **discarded that block entirely** — it parsed the
+/// line only far enough to notice the `_meta` key and skip it. Every promise
+/// in it was therefore unenforced, and a corpus hand-edited (or regenerated
+/// with different flags) out of agreement with its own header would have
+/// loaded silently and been measured as W1.
+///
+/// A `_meta` block right about one property and unchecked about another is
+/// worse than one claiming nothing, because a reader believes it.
+///
+/// # What is enforced here, and what is not
+///
+/// Everything checkable **without a tokenizer** is enforced at load:
+/// `count`, per-record agreement with `_meta` on `max_tokens`, `temperature`,
+/// `seed` and `target_prompt_tokens`, `prompts_distinct`, and — when the
+/// generator recorded a `body_words` — the whitespace-word shape of every
+/// prompt.
+///
+/// **A word count is not a token count**, and this function does not pretend
+/// otherwise. §4.3.1's `512 ± 8` is a property of the *model's* tokenizer, and
+/// no tokenizer is reachable here: the corpus stores raw text and the model is
+/// a GGUF that is not in this tree. The band is therefore *returned*, in
+/// [`Corpus::band`], and asserted against real per-request counts by
+/// [`assert_prompt_tokens_in_band`] at measurement time — which is exactly
+/// what `_meta.token_count_note` says happens, and until PERF-056 did not.
+///
+/// # Errors
+/// As [`load_from_file`], plus any disagreement between the `_meta` header and
+/// the records that follow it. Every such message names the offending prompt.
+pub fn load_corpus(path: &Path) -> Result<Corpus, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    parse_corpus(&content).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// A loaded corpus: the requests, and the §4.3.1 band its header declared.
+#[derive(Debug, Clone)]
+pub struct Corpus {
+    /// The prompts, in file order.
+    pub requests: Vec<ChatRequest>,
+    /// `target_prompt_tokens ± tolerance_tokens`, when the corpus declared
+    /// both. `None` for a corpus with no `_meta` header (W2 has none) or one
+    /// that declares no band — such a corpus imposes no length invariant, and
+    /// inventing one for it would be the fabricated-threshold defect this
+    /// epic is named after.
+    pub band: Option<PromptTokenBand>,
+}
+
+/// §4.3.1's prompt-length invariant, exactly as a corpus declares it.
+///
+/// Half-open ranges and off-by-ones are how a `± 8` band silently becomes a
+/// `± 7` one, so the edges are named and tested rather than inlined at each
+/// use: `contains` is INCLUSIVE at both ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PromptTokenBand {
+    /// `_meta.target_prompt_tokens` — 512 for W1.
+    pub target: u32,
+    /// `_meta.tolerance_tokens` — 8 for W1.
+    pub tolerance: u32,
+}
+
+impl PromptTokenBand {
+    /// Inclusive lower edge.
+    #[must_use]
+    pub const fn lo(self) -> u32 {
+        self.target.saturating_sub(self.tolerance)
+    }
+
+    /// Inclusive upper edge.
+    #[must_use]
+    pub const fn hi(self) -> u32 {
+        self.target.saturating_add(self.tolerance)
+    }
+
+    /// True when `n` is inside the band. Both edges are IN.
+    #[must_use]
+    pub const fn contains(self, n: u32) -> bool {
+        n >= self.lo() && n <= self.hi()
+    }
+}
+
+impl std::fmt::Display for PromptTokenBand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "\u{a7}4.3.1 prompt_tokens = {} +/- {} (inclusive {}..={})",
+            self.target,
+            self.tolerance,
+            self.lo(),
+            self.hi()
+        )
+    }
+}
+
+/// Assert every observed prompt-token count sits inside the declared band.
+///
+/// `observed` is `(prompt index in the corpus, prompt_tokens the server
+/// reported)`, one entry per **completed** sampled request. This is the
+/// assertion `_meta.token_count_note` promised and nothing made:
+///
+/// > "The 512 +/-8 of 4.3.1 is asserted by the harness against the model's own
+/// > tokenizer at measurement time"
+///
+/// # Why a failure names the prompt
+///
+/// The remedy differs per cause and the number alone does not distinguish
+/// them. A corpus 40 tokens long everywhere means `--body-words` needs
+/// retuning and the corpus regenerating; one prompt out of 256 out of band
+/// means that record was edited. A bare "out of band" sends the reader to
+/// re-run the measurement, which under I-9 is the one thing that cannot fix it.
+///
+/// # Errors
+/// When any observed count is outside the band, when no completed request
+/// reported a count at all, or when every count is zero — which is what a
+/// server emitting no `usage` block looks like, and is an instrumentation gap
+/// rather than an out-of-band corpus. The three are separate messages because
+/// they have three different remedies.
+pub fn assert_prompt_tokens_in_band(
+    band: PromptTokenBand,
+    observed: &[(usize, u32)],
+) -> Result<(), String> {
+    if observed.is_empty() {
+        return Err(format!(
+            "{band} could not be checked: no completed request reported a prompt-token              count. An unverifiable invariant is not a satisfied one"
+        ));
+    }
+    if observed.iter().all(|&(_, n)| n == 0) {
+        return Err(format!(
+            "{band} could not be checked: all {} completed requests reported              prompt_tokens = 0, which is what a server that emits no `usage` block looks              like. This is an INSTRUMENTATION gap in the server or the transport, not a              corpus that is out of band -- re-measuring will not change it",
+            observed.len()
+        ));
+    }
+    let bad: Vec<(usize, u32)> = observed
+        .iter()
+        .copied()
+        .filter(|&(_, n)| !band.contains(n))
+        .collect();
+    if bad.is_empty() {
+        return Ok(());
+    }
+    let shown: Vec<String> = bad
+        .iter()
+        .take(8)
+        .map(|&(i, n)| format!("prompt {i}: {n} tokens"))
+        .collect();
+    let more = if bad.len() > shown.len() {
+        format!(", and {} more", bad.len() - shown.len())
+    } else {
+        String::new()
+    };
+    Err(format!(
+        "{band}: {} of {} completed requests are OUTSIDE the band -- {}{more}. \
+         Retune `scripts/gen_prompts_w1.py --body-words` and regenerate the corpus; \
+         this is a workload defect, and the band measured under it is not W1",
+        bad.len(),
+        observed.len(),
+        shown.join("; ")
+    ))
+}
+
+/// Parse a JSONL corpus body, discarding the `_meta` block. Kept so the
+/// pre-PERF-056 format-contract table below still binds to the shape rules
+/// alone; every production path goes through [`parse_corpus`].
+#[cfg(test)]
 fn parse_jsonl(content: &str) -> Result<Vec<ChatRequest>, String> {
+    parse_corpus(content).map(|c| c.requests)
+}
+
+/// The body of [`load_corpus`]: format contract, then `_meta` contract.
+fn parse_corpus(content: &str) -> Result<Corpus, String> {
     reject_non_jsonl_shape(content)?;
 
-    let mut requests = Vec::new();
+    let mut meta: Option<CorpusMeta> = None;
+    let mut records: Vec<PromptRecord> = Vec::new();
     for (idx, raw) in content.lines().enumerate() {
         let lineno = idx + 1;
         let line = raw.trim();
@@ -105,6 +277,7 @@ fn parse_jsonl(content: &str) -> Result<Vec<ChatRequest>, String> {
             // `_meta` object cannot hide in the middle of a corpus and quietly
             // shrink the workload by one request.
             if lineno == 1 {
+                meta = Some(parse_meta(line)?);
                 continue;
             }
             return Err(format!(
@@ -115,17 +288,196 @@ fn parse_jsonl(content: &str) -> Result<Vec<ChatRequest>, String> {
         let record: PromptRecord = serde_json::from_str(line).map_err(|e| {
             format!("line {lineno}: expected one JSON object per line (JSONL), got: {e}")
         })?;
-        requests.push(record.into_request());
+        records.push(record);
     }
 
-    if requests.is_empty() {
+    if records.is_empty() {
         return Err(
             "contains no prompt records — a benchmark corpus that loads zero prompts \
              would report success having issued no requests"
                 .to_string(),
         );
     }
-    Ok(requests)
+    let band = match &meta {
+        Some(m) => {
+            enforce_meta_contract(m, &records)?;
+            m.band()
+        }
+        None => None,
+    };
+    Ok(Corpus {
+        requests: records
+            .into_iter()
+            .map(PromptRecord::into_request)
+            .collect(),
+        band,
+    })
+}
+
+/// A `// w1-NNNN\n` header is two whitespace-delimited words (`//` and
+/// `w1-NNNN`). Named because it is the one place the load-time shape check is
+/// coupled to `scripts/gen_prompts_w1.py`'s header format.
+const HEADER_WHITESPACE_WORDS: usize = 2;
+
+/// Deserialize the line-1 `_meta` header.
+///
+/// Unknown fields are ALLOWED here, unlike [`PromptRecord`]: the header
+/// deliberately carries prose (`provenance`, `distinctness_rationale`,
+/// `template_boundary_open`) that no code reads and every reader does.
+fn parse_meta(line: &str) -> Result<CorpusMeta, String> {
+    #[derive(serde::Deserialize)]
+    struct MetaLine {
+        #[serde(rename = "_meta")]
+        meta: CorpusMeta,
+    }
+    serde_json::from_str::<MetaLine>(line)
+        .map(|m| m.meta)
+        .map_err(|e| format!("line 1: `_meta` header is not readable: {e}"))
+}
+
+/// The enforceable half of the `_meta` header.
+#[derive(Debug, Default, serde::Deserialize)]
+struct CorpusMeta {
+    count: Option<usize>,
+    body_words: Option<usize>,
+    target_prompt_tokens: Option<u32>,
+    tolerance_tokens: Option<u32>,
+    max_tokens: Option<u32>,
+    temperature: Option<f64>,
+    seed: Option<u64>,
+    prompts_distinct: Option<bool>,
+}
+
+impl CorpusMeta {
+    /// The declared band, when BOTH edges are declared.
+    ///
+    /// A target with no tolerance is not a band: reading the missing tolerance
+    /// as `0` would turn `512` into an exact-equality assertion no real
+    /// tokenizer satisfies, and defaulting it to `8` would invent §4.3.1's
+    /// number in a file that did not state it.
+    fn band(&self) -> Option<PromptTokenBand> {
+        match (self.target_prompt_tokens, self.tolerance_tokens) {
+            (Some(target), Some(tolerance)) => Some(PromptTokenBand { target, tolerance }),
+            _ => None,
+        }
+    }
+}
+
+/// Enforce every promise the `_meta` header makes that is checkable without a
+/// tokenizer. See [`load_corpus`] for what is deliberately NOT checked here.
+///
+/// Split into one predicate per promise rather than one long chain: the header
+/// gains fields over time, and a single function that grows a branch per field
+/// is how the fifth one gets added without a case in the table below it.
+fn enforce_meta_contract(meta: &CorpusMeta, records: &[PromptRecord]) -> Result<(), String> {
+    check_count(meta, records)?;
+    for (i, r) in records.iter().enumerate() {
+        check_record(meta, i, r)?;
+    }
+    check_distinct(meta, records)
+}
+
+/// `_meta.count` against the records that followed it.
+fn check_count(meta: &CorpusMeta, records: &[PromptRecord]) -> Result<(), String> {
+    match meta.count {
+        Some(want) if want != records.len() => Err(format!(
+            "`_meta.count` = {want} but the corpus carries {} prompt records",
+            records.len()
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// One record against the header. `who` names the record the way the FILE
+/// names it, so the message points at a line an operator can find.
+fn check_record(meta: &CorpusMeta, i: usize, r: &PromptRecord) -> Result<(), String> {
+    let who =
+        r.id.map_or_else(|| format!("record {}", i + 1), |v| format!("prompt {v}"));
+    agree(&who, "max_tokens", meta.max_tokens, r.max_tokens)?;
+    agree(&who, "seed", meta.seed, r.seed)?;
+    agree(
+        &who,
+        "target_prompt_tokens",
+        meta.target_prompt_tokens,
+        r.target_prompt_tokens,
+    )?;
+    check_temperature(&who, meta.temperature, r.temperature)?;
+    check_body_words(&who, meta.body_words, &r.prompt)
+}
+
+/// A record field that must equal the header's, when both are present. A
+/// header that declares nothing constrains nothing — silence is not a claim.
+fn agree<T: PartialEq + std::fmt::Display>(
+    who: &str,
+    field: &str,
+    want: Option<T>,
+    got: Option<T>,
+) -> Result<(), String> {
+    match (want, got) {
+        (Some(w), Some(g)) if w != g => {
+            Err(format!("{who}: {field} = {g} but `_meta.{field}` = {w}"))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// As [`agree`], but for the one field that is a float. `==` on `f64` is what
+/// the workspace lints allow here and would still be wrong: `0.0` written five
+/// ways must compare equal.
+fn check_temperature(who: &str, want: Option<f64>, got: Option<f64>) -> Result<(), String> {
+    match (want, got) {
+        (Some(w), Some(g)) if (w - g).abs() > f64::EPSILON => Err(format!(
+            "{who}: temperature = {g} but `_meta.temperature` = {w}"
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// The whitespace-word shape `scripts/gen_prompts_w1.py` recorded.
+///
+/// THE ONLY LENGTH CHECK POSSIBLE BEFORE A TOKENIZER EXISTS, and it is not
+/// §4.3.1's band — see [`load_corpus`] and [`assert_prompt_tokens_in_band`].
+fn check_body_words(who: &str, body_words: Option<usize>, prompt: &str) -> Result<(), String> {
+    let Some(body_words) = body_words else {
+        return Ok(());
+    };
+    let want = body_words + HEADER_WHITESPACE_WORDS;
+    let got = prompt.split_whitespace().count();
+    if want == got {
+        return Ok(());
+    }
+    Err(format!(
+        "{who}: {got} whitespace-delimited words, but `_meta.body_words` = \
+         {body_words} plus a {HEADER_WHITESPACE_WORDS}-word header declares \
+         {want}. A word count is NOT a token count and this is not \
+         \u{a7}4.3.1's band — it is the corpus failing to have the shape its own \
+         header describes, which is the only length check possible before a \
+         tokenizer exists"
+    ))
+}
+
+/// `_meta.prompts_distinct`, which until PERF-056 was enforced by exactly one
+/// test against exactly one committed file and by no loader at all.
+fn check_distinct(meta: &CorpusMeta, records: &[PromptRecord]) -> Result<(), String> {
+    if meta.prompts_distinct != Some(true) {
+        return Ok(());
+    }
+    let mut seen: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::with_capacity(records.len());
+    for (i, r) in records.iter().enumerate() {
+        if let Some(&first) = seen.get(r.prompt.as_str()) {
+            return Err(format!(
+                "`_meta.prompts_distinct` is true but records {} and {} carry the same \
+                 prompt. Identical prompts would let prefix caching, not the scheduler, \
+                 drive Arm A's scaling_efficiency — agg(c) would rise with c for a \
+                 reason that is not batching",
+                first + 1,
+                i + 1
+            ));
+        }
+        seen.insert(r.prompt.as_str(), i);
+    }
+    Ok(())
 }
 
 /// True when `line` is a JSONL provenance header (`{"_meta": ...}`).
@@ -183,12 +535,15 @@ struct PromptRecord {
     /// Suppress end-of-sequence stopping, so the token count per request is
     /// pinned to `max_tokens` (§4.3.1).
     ignore_eos: Option<bool>,
-    /// Recorded by the corpus for the receipt; not used to build the request.
-    #[allow(dead_code)]
+    /// Recorded by the corpus for the receipt, and used to NAME this record in
+    /// any `_meta`-contract failure. A message that says "record 137" when the
+    /// file says `"id":136` costs the reader the one lookup the message existed
+    /// to save.
     id: Option<u64>,
-    /// Recorded by the corpus for the receipt; the actual count is measured by
-    /// the harness against the model's own tokenizer, never asserted here.
-    #[allow(dead_code)]
+    /// Recorded by the corpus. Checked against `_meta.target_prompt_tokens` at
+    /// load (agreement, not length); the actual TOKEN count is measured by the
+    /// harness against the model's own tokenizer and asserted by
+    /// [`assert_prompt_tokens_in_band`], because no tokenizer is reachable here.
     target_prompt_tokens: Option<u32>,
 }
 
@@ -552,6 +907,306 @@ mod tests {
         let reqs =
             load_from_file(&path).unwrap_or_else(|e| panic!("committed W2 corpus must load: {e}"));
         assert_eq!(reqs.len(), 100);
+    }
+
+    // ---------------------------------------------------------------------
+    // §4.3.1's PROMPT-LENGTH INVARIANT (PERF-056, #2778).
+    //
+    // `prompts-w1.jsonl`'s `_meta` block promised, in two places, that the
+    // harness asserts `prompt_tokens = 512 ± 8` against the model's own
+    // tokenizer at measurement time. Nothing did. `grep -rn
+    // "target_prompt_tokens\|tolerance_tokens" --include="*.rs" --include="*.sh"
+    // --include="*.py"` on 9d45b927d found the generator that writes the
+    // promise, the loader field documented as "never asserted here", and no
+    // assertion anywhere — not in `perf_gate.sh`, not in `bench_receipt.py`,
+    // not in `perf_gate/`, whose own module docs list the "`prompt_tokens =
+    // 512 ± 8` assertion" under NOT IMPLEMENTED.
+    //
+    // MUTATION TABLE. Rows marked BOUNDARY are the discrimination cases: they
+    // must stay GREEN, or the band is not a band but a point.
+    //
+    //  observed prompt_tokens                | must  | message must name
+    //  --------------------------------------|-------|--------------------
+    //  512 (dead centre)                     | OK    |
+    //  504 = 512-8         [BOUNDARY]        | OK    |
+    //  520 = 512+8         [BOUNDARY]        | OK    |
+    //  503 = 512-9                           | ERR   | the prompt and 503
+    //  521 = 512+9                           | ERR   | the prompt and 521
+    //  one of 256 out of band                | ERR   | THAT prompt's index
+    //  every count 0 (no `usage` block)      | ERR   | "INSTRUMENTATION"
+    //  no completed request at all           | ERR   | "could not be checked"
+    // ---------------------------------------------------------------------
+
+    const W1_BAND: PromptTokenBand = PromptTokenBand {
+        target: 512,
+        tolerance: 8,
+    };
+
+    #[test]
+    fn band_edges_are_inclusive_on_both_sides() {
+        assert_eq!(W1_BAND.lo(), 504);
+        assert_eq!(W1_BAND.hi(), 520);
+        assert!(W1_BAND.contains(512), "dead centre");
+        assert!(W1_BAND.contains(504), "BOUNDARY: the low edge is IN");
+        assert!(W1_BAND.contains(520), "BOUNDARY: the high edge is IN");
+        assert!(!W1_BAND.contains(503), "one below the low edge is OUT");
+        assert!(!W1_BAND.contains(521), "one above the high edge is OUT");
+    }
+
+    #[test]
+    fn band_boundary_corpus_stays_green() {
+        // THE DISCRIMINATION CASE. A corpus sitting exactly on both edges is
+        // conformant. A `<`/`>` slip in either comparison reds this row while
+        // leaving every out-of-band row below still red, which is how a
+        // tightened band passes review as a fixed one.
+        let edges: Vec<(usize, u32)> = (0..64)
+            .map(|i| (i, if i % 2 == 0 { 504 } else { 520 }))
+            .collect();
+        assert_prompt_tokens_in_band(W1_BAND, &edges).expect("504 and 520 are INSIDE 512 ± 8");
+        assert_prompt_tokens_in_band(W1_BAND, &[(0, 512)]).expect("dead centre");
+    }
+
+    #[test]
+    fn band_one_perturbed_prompt_is_refused_naming_it() {
+        // THE NAMED MUTATION: 256 prompts in band, prompt 137 perturbed to
+        // 521 — one token past the high edge.
+        let mut observed: Vec<(usize, u32)> = (0..256).map(|i| (i, 512)).collect();
+        observed[137].1 = 521;
+        let err = assert_prompt_tokens_in_band(W1_BAND, &observed)
+            .expect_err("521 is OUTSIDE 512 ± 8 and must be refused");
+        assert!(err.contains("prompt 137"), "must name the prompt: {err}");
+        assert!(err.contains("521"), "must give the actual length: {err}");
+        assert!(err.contains("504"), "must state the band it failed: {err}");
+        assert!(
+            err.contains("1 of 256"),
+            "must say how much of the corpus is affected — one record is an \
+             edit, all 256 is a retune: {err}"
+        );
+
+        // REVERT -> GREEN. The same corpus with 137 put back is accepted, so
+        // the row above binds to the perturbation and not to the fixture.
+        observed[137].1 = 512;
+        assert_prompt_tokens_in_band(W1_BAND, &observed).expect("reverted corpus is in band");
+    }
+
+    #[test]
+    fn band_low_side_is_refused_too() {
+        // Both polarities. A guard checking only the upper edge is green on
+        // the failure mode the generator actually predicts: `--body-words`
+        // tuned too low.
+        let err =
+            assert_prompt_tokens_in_band(W1_BAND, &[(0, 503)]).expect_err("503 is OUTSIDE 512 ± 8");
+        assert!(err.contains("prompt 0") && err.contains("503"), "{err}");
+    }
+
+    #[test]
+    fn band_all_zero_counts_are_an_instrumentation_gap_not_an_out_of_band_corpus() {
+        // A server that emits no `usage` block reports 0 for every request.
+        // Calling that "corpus out of band" sends the reader to regenerate the
+        // corpus, which cannot fix it. Different cause, different message.
+        let err = assert_prompt_tokens_in_band(W1_BAND, &[(0, 0), (1, 0), (2, 0)])
+            .expect_err("an unverifiable invariant is not a satisfied one");
+        assert!(err.contains("INSTRUMENTATION"), "{err}");
+        assert!(err.contains("usage"), "{err}");
+    }
+
+    #[test]
+    fn band_with_no_observations_is_refused_not_vacuously_passed() {
+        let err = assert_prompt_tokens_in_band(W1_BAND, &[])
+            .expect_err("zero observations must not pass");
+        assert!(err.contains("could not be checked"), "{err}");
+    }
+
+    // ---------------------------------------------------------------------
+    // THE `_meta` CONTRACT (PERF-056). Before this, the header was parsed only
+    // far enough to notice the `_meta` key and skip the line: every promise in
+    // it — count, distinctness, max_tokens, temperature, seed, the declared
+    // band — was unenforced prose.
+    //
+    //  mutation of prompts-w1.jsonl's header/records | must | names
+    //  ----------------------------------------------|------|-------------
+    //  _meta.count disagrees with the record count    | ERR  | both numbers
+    //  a record's max_tokens != _meta.max_tokens      | ERR  | the prompt id
+    //  a record's seed != _meta.seed                  | ERR  | the prompt id
+    //  a record's temperature != _meta.temperature    | ERR  | the prompt id
+    //  a record's target_prompt_tokens disagrees      | ERR  | the prompt id
+    //  two identical prompts, prompts_distinct: true  | ERR  | both records
+    //  a prompt's word count != body_words + 2        | ERR  | the prompt id
+    //  the committed corpus, unmutated  [BOUNDARY]    | OK   | 256 records
+    // ---------------------------------------------------------------------
+
+    /// The committed W1 header, with `{OVERRIDE}` splice points.
+    fn w1_meta(extra: &str) -> String {
+        format!(
+            "{{\"_meta\":{{\"count\":2,\"max_tokens\":128,\"temperature\":0.0,\"seed\":0,\
+             \"target_prompt_tokens\":512,\"tolerance_tokens\":8,\"prompts_distinct\":true\
+             {extra}}}}}\n"
+        )
+    }
+
+    fn w1_rec(id: u64, prompt: &str) -> String {
+        format!(
+            "{{\"id\":{id},\"max_tokens\":128,\"temperature\":0.0,\"seed\":0,\
+             \"target_prompt_tokens\":512,\"prompt\":\"{prompt}\"}}\n"
+        )
+    }
+
+    #[test]
+    fn meta_contract_committed_shape_is_accepted() {
+        // BOUNDARY row: the un-mutated shape must load, or every red row below
+        // proves only that the fixture is broken.
+        let body = w1_meta("") + &w1_rec(0, "alpha") + &w1_rec(1, "beta");
+        let c = parse_corpus(&body).expect("the committed shape must load");
+        assert_eq!(c.requests.len(), 2);
+        assert_eq!(
+            c.band,
+            Some(PromptTokenBand {
+                target: 512,
+                tolerance: 8
+            })
+        );
+    }
+
+    #[test]
+    fn meta_contract_count_disagreement_is_refused() {
+        let body = w1_meta("") + &w1_rec(0, "alpha");
+        let err = parse_corpus(&body).expect_err("count 2 with 1 record must be refused");
+        assert!(
+            err.contains("`_meta.count` = 2") && err.contains("1 prompt records"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn meta_contract_per_record_disagreements_are_refused_naming_the_prompt() {
+        // A record silently disagreeing with its own header is how a corpus
+        // regenerated with different flags gets measured as W1. Each row
+        // mutates ONE field of prompt 1 and must be refused NAMING prompt 1 —
+        // "a record is wrong" would leave the reader to find which.
+        for (original, mutated, needle) in [
+            ("\"max_tokens\":128", "\"max_tokens\":64", "max_tokens = 64"),
+            ("\"seed\":0", "\"seed\":7", "seed = 7"),
+            (
+                "\"temperature\":0.0",
+                "\"temperature\":0.7",
+                "temperature = 0.7",
+            ),
+            (
+                "\"target_prompt_tokens\":512",
+                "\"target_prompt_tokens\":2048",
+                "target_prompt_tokens = 2048",
+            ),
+        ] {
+            let bad = w1_rec(1, "beta").replace(original, mutated);
+            assert!(bad.contains(mutated), "fixture did not mutate: {original}");
+            let body = w1_meta("") + &w1_rec(0, "alpha") + &bad;
+            let err = parse_corpus(&body)
+                .err()
+                .unwrap_or_else(|| panic!("{mutated} must be REFUSED, was accepted"));
+            assert!(err.contains("prompt 1"), "must name the prompt: {err}");
+            assert!(err.contains(needle), "must give both values: {err}");
+            // REVERT -> GREEN, per row, so each binds to its own mutation.
+            let good = w1_meta("") + &w1_rec(0, "alpha") + &w1_rec(1, "beta");
+            parse_corpus(&good).expect("reverted row must load");
+        }
+    }
+
+    #[test]
+    fn meta_contract_distinctness_is_enforced_not_merely_documented() {
+        // `_meta.distinctness_rationale` explains that identical prompts would
+        // let prefix caching, not the scheduler, drive Arm A's
+        // scaling_efficiency. Only ONE test asserted it, and only against the
+        // committed file — an operator-supplied corpus, or a regenerated one,
+        // was unchecked.
+        let body = w1_meta("") + &w1_rec(0, "same") + &w1_rec(1, "same");
+        let err = parse_corpus(&body).expect_err("duplicate prompts must be refused");
+        assert!(err.contains("records 1 and 2"), "must name both: {err}");
+        assert!(err.contains("prefix caching"), "must say why: {err}");
+        // DISCRIMINATION: with the flag absent, duplicates are legal. A corpus
+        // that never claimed distinctness must not be judged on it.
+        let permissive =
+            "{\"_meta\":{\"count\":2}}\n".to_string() + &w1_rec(0, "same") + &w1_rec(1, "same");
+        parse_corpus(&permissive).expect("no claim, no rule");
+    }
+
+    #[test]
+    fn meta_contract_body_words_shape_is_enforced() {
+        // The one LENGTH check possible before a tokenizer exists: the
+        // whitespace-word shape the generator recorded. `// w1-NNNN` is two
+        // words, so `body_words: 3` declares five.
+        let body = w1_meta(",\"body_words\":3") + &w1_rec(0, "// w1-0000 a b c");
+        let mut ok = body.replace("\"count\":2", "\"count\":1");
+        parse_corpus(&ok).expect("5 words == body_words 3 + 2-word header");
+        // PERTURB: one word short.
+        ok = ok.replace("// w1-0000 a b c", "// w1-0000 a b");
+        let err = parse_corpus(&ok).expect_err("4 words must be refused");
+        assert!(err.contains("prompt 0"), "must name the prompt: {err}");
+        assert!(
+            err.contains("4 whitespace"),
+            "must give the actual count: {err}"
+        );
+        assert!(
+            err.contains("NOT a token count"),
+            "must not let a word count masquerade as §4.3.1's band: {err}"
+        );
+    }
+
+    #[test]
+    fn meta_contract_band_needs_both_edges() {
+        // A target with no tolerance is not a band. Defaulting the tolerance
+        // to 0 would assert exact equality; defaulting it to 8 would invent
+        // §4.3.1's number in a corpus that never stated it.
+        let body = "{\"_meta\":{\"target_prompt_tokens\":512}}\n".to_string() + &w1_rec(0, "a");
+        assert_eq!(parse_corpus(&body).expect("loads").band, None);
+    }
+
+    #[test]
+    fn committed_w1_corpus_declares_the_512_pm_8_band() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl");
+        let corpus = load_corpus(&path).expect("committed W1 corpus must load");
+        assert_eq!(
+            corpus.band,
+            Some(PromptTokenBand {
+                target: 512,
+                tolerance: 8
+            }),
+            "§4.3.1's band must reach the harness, not stop at the header"
+        );
+        assert_eq!(corpus.requests.len(), 256);
+    }
+
+    #[test]
+    fn committed_w1_corpus_is_refused_when_one_prompt_is_perturbed() {
+        // THE FILE-LEVEL MUTATION. Read the committed corpus, drop one word
+        // from prompt 137, and the loader must refuse it NAMING that prompt.
+        // Reverting restores GREEN, so this binds to the perturbation.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl");
+        let good = std::fs::read_to_string(&path).expect("committed corpus is readable");
+        parse_corpus(&good).expect("unmutated: GREEN");
+
+        let mut lines: Vec<String> = good.lines().map(ToString::to_string).collect();
+        // Line 0 is `_meta`; line 138 is `"id":137`.
+        let victim = &mut lines[138];
+        assert!(
+            victim.contains("\"id\":137"),
+            "fixture drifted: {}",
+            &victim[..40]
+        );
+        let cut = victim.rfind(' ').expect("a 498-word prompt has spaces");
+        victim.replace_range(cut..=cut, "");
+        let mutated = lines.join("\n") + "\n";
+
+        let err = parse_corpus(&mutated).expect_err("a perturbed prompt must be REFUSED");
+        assert!(err.contains("prompt 137"), "must name the prompt: {err}");
+        assert!(
+            err.contains("497 whitespace"),
+            "must give the actual length: {err}"
+        );
+
+        // REVERT -> GREEN.
+        parse_corpus(&good).expect("reverted: GREEN");
     }
 
     #[test]

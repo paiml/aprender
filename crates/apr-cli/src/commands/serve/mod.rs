@@ -427,6 +427,68 @@ mod accelerator_guard_tests {
     /// `ensure_accelerator_available` landed WIRED because it had a source-grep
     /// gate; this one landed dead because it had none. That difference is the
     /// entire explanation, so the gate comes with the call.
+    /// #2762 source gate. The behaviour test for `resolve_serve_max_seq_len`
+    /// lives beside the function; this one proves the function is REACHED from
+    /// the serve path, and that the path reads the variable `--context-length`
+    /// actually writes.
+    ///
+    /// It has no cfg on purpose. The defect is that a CUDA-only code path read
+    /// a name nothing sets, so a test compiled only under `--features cuda`
+    /// would be the same blind spot one level up.
+    #[test]
+    fn the_gguf_cuda_serve_path_reads_the_context_length_flag() {
+        // SHIPPING CODE ONLY, and it took two tries to get that right.
+        //
+        // v1 scanned the whole file, so the doc comment on
+        // `resolve_serve_max_seq_len` -- which names the variable -- satisfied it.
+        // v2 stripped comments, and the ASSERTION MESSAGE inside that file's own
+        // `#[cfg(test)]` module still named it: the mutation that passes `None`
+        // for the context argument was applied and this gate STAYED GREEN.
+        // A source gate its own text satisfies is theater, in both spellings.
+        //
+        // So: cut at the first `#[cfg(test)]`, drop comments, and look for the
+        // ARGUMENT rather than the name -- assembled at runtime so this line
+        // cannot be its own evidence.
+        let whole = include_str!("handler_gpu_completion.rs");
+        let shipping = whole.split("#[cfg(test)]").next().unwrap_or(whole);
+        let src: String = shipping
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let reads_the_flag = format!(
+            "std::env::var({:?}).ok().as_deref()",
+            "REALIZR_CONTEXT".to_string() + "_LENGTH"
+        );
+        assert!(
+            src.contains(&reads_the_flag),
+            "the GGUF+CUDA serve path does not pass REALIZR_CONTEXT_LENGTH to the \
+             context resolver, and that variable is the only thing \
+             `--context-length` writes (serve/mod.rs). Before #2762 it sized the \
+             KV cache from REALIZR_MAX_SEQ_LEN -- a name READ in one place and \
+             WRITTEN in none -- so every server got 2048 and the batched KV \
+             stride was a constant the operator could not move"
+        );
+        assert!(
+            src.contains("resolve_serve_max_seq_len("),
+            "the context-length resolver is not called from the serve path"
+        );
+    }
+
+    /// `REALIZR_MAX_SEQ_LEN` is a GH-129 escape hatch. If a later change makes
+    /// something in the tree SET it, the precedence in
+    /// `resolve_serve_max_seq_len` stops being an operator override and becomes
+    /// a second, hidden default that outranks `--context-length` again.
+    #[test]
+    fn the_seq_len_escape_hatch_is_still_read_only() {
+        let src = include_str!("mod.rs");
+        assert!(
+            !src.contains("set_var(\"REALIZR_MAX_SEQ_LEN\""),
+            "REALIZR_MAX_SEQ_LEN is now written by the CLI; it takes precedence \
+             over --context-length, so writing it re-creates #2762"
+        );
+    }
+
     #[test]
     fn the_resolver_is_actually_called_from_a_decision_path() {
         let src = include_str!("handler_gpu_completion.rs");
