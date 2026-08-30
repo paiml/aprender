@@ -1365,6 +1365,43 @@ jobs:
         run: bash scripts/check_hardcoded_paths.sh --self-test
       - name: Whole-tree machine-specific-path ratchet (arms itself at pmat >= 3.32.0)
         run: bash scripts/check_hardcoded_paths.sh --full-if-capable
+      # PRREV-006. PR-REVIEW-SKILL-002 v2 §9 row 6 states how the receipt guard
+      # may be wired, and both halves are scars rather than style:
+      #
+      #   job-level `if:`, NOT a workflow-level `paths:` filter — a path-filtered
+      #   required check never reports and blocks branch protection forever.
+      #
+      # A `paths:` filter here would mean the workflow does not run at all on a
+      # PR that misses it, so a check the ruleset requires never produces a check
+      # run: the PR sits PENDING and nothing merges. This file carries BOTH
+      # required checks (`ci / gate` and `workspace-test`), so that is a deadlock,
+      # not a hypothetical. A job-level `if:` is the opposite shape — the workflow
+      # runs, the job reports `skipped`, and `gate` reads the result (`mutants` is
+      # the in-repo precedent).
+      #
+      # Until this step, that rule lived in a COMMENT further down this file, on
+      # `vendored-schemas`, and a comment is not a trigger — the exact shape that
+      # left check_hardcoded_paths.sh unwired for months, two steps above. So the rule
+      # is CHECKED: the receipt guard must be invoked by a non-comment line, by
+      # exactly one job, that job must carry an `if:` at job indentation (4
+      # spaces, not a step's 8), and that `if:` must evaluate TRUE on
+      # pull_request and FALSE on push / merge_group / workflow_dispatch. Both
+      # polarities, because "it has an `if:`" is satisfied by `if: always()`.
+      # Text-only, no build. Self-test first (Verification Discipline #7).
+      - name: "Receipt-wiring guard case table (both polarities of the if:)"
+        run: bash scripts/check_pr_review_wiring.sh --self-test
+      - name: The PR-review receipt guard is wired job-level, not path-filtered
+        run: bash scripts/check_pr_review_wiring.sh
+      # The case table above is evidence only for the branches it can turn RED,
+      # and on its first pass it could not turn three of them. Dropping either
+      # zero-count check left the guard still rejecting on the NEIGHBOURING
+      # more-than-one branch, and the step-level fixture used `- if:`, whose
+      # leading `- ` means a widened job-level pattern never matched it. Both
+      # survived a verdict-only table; the mutation set is what found them.
+      # 15/15 kill required, and an anchor that stops matching is reported as
+      # HARNESS-BROKEN rather than as a dead mutant. Text-only, no build.
+      - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
+        run: bash scripts/mutate_pr_review_wiring_guard.sh
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
@@ -1380,10 +1417,18 @@ jobs:
   # DELIBERATELY NOT IN `gate`'s needs LIST. Nothing produces a receipt yet
   # (PRREV-005), and check-jsonschema is a Python tool no other job in this
   # repo installs. A brand-new required check whose first dependency is an
-  # uninstalled interpreter is how a queue gets evicted. PRREV-006 promotes
-  # this into `gate` alongside check_pr_review_receipt.sh, with a job-level
-  # `if:` and never a workflow-level `paths:` filter — a path-filtered required
-  # check never reports and blocks branch protection forever.
+  # uninstalled interpreter is how a queue gets evicted.
+  #
+  # PRREV-006 UPDATE — what actually landed, so this paragraph is not a promise
+  # nothing keeps. PRREV-006 wired the receipt guard into `pr-review-receipt`
+  # below, with a job-level `if:` and no workflow-level `paths:` filter, and
+  # made that rule mechanical (check_pr_review_wiring.sh, run twice in
+  # guard-runner-labels). It did NOT promote either job into `gate`, for the
+  # reason this paragraph already gives and PRREV-006 shares verbatim: the same
+  # uninstalled interpreter, plus minisign. The spec agrees — §9 step 7 makes
+  # the backtest the acceptance test "before it is enabled". Promotion is
+  # PRREV-007's, and the arming condition it waits on is mechanical rather than
+  # written here: see the self-arming step in `pr-review-receipt`.
   #
   # The guard exits 2, not 1, when the ENVIRONMENT cannot answer (no
   # check-jsonschema, or no unprivileged user namespace for `unshare -r -n`).
@@ -1415,6 +1460,162 @@ jobs:
       - name: the guard can still turn RED
         shell: bash
         run: bash scripts/mutate_vendored_schemas_guard.sh
+
+  # ── PRREV-006: the receipt guard, wired ──────────────────────────────────
+  #
+  # PR-REVIEW-SKILL-002 v2 §9 row 6 is one sentence, and the `if:` below is what
+  # it is about:
+  #
+  #   job-level `if:`, NOT a workflow-level `paths:` filter — a path-filtered
+  #   required check never reports and blocks branch protection forever.
+  #
+  # A `paths:` filter stops the WORKFLOW from running at all on a PR that misses
+  # it, so a check the ruleset requires never produces a check run: the PR sits
+  # PENDING and nothing merges. This file carries BOTH required checks, so that
+  # is a deadlock rather than a hypothesis. A job-level `if:` is the opposite
+  # shape — the workflow runs, the job reports `skipped`, and `gate` reads the
+  # result. `mutants` below is the in-repo precedent.
+  #
+  # THE CONDITION IS A PRECONDITION, NOT A DODGE. The subject of this job is the
+  # receipt for ONE pull request, at evidence/pr-review/<pr>/<head_sha>/. On
+  # push, merge_group and workflow_dispatch there is no <pr>, so there is nothing
+  # for the check to be about. Both polarities of that claim are checked, not
+  # asserted: check_pr_review_wiring.sh (guard-runner-labels, above) evaluates
+  # this exact expression against all four events and fails if it runs where
+  # there is no PR or skips where there is one.
+  #
+  # FOUR ARMS. The first two are not the same check twice:
+  #   1. the guard over one GREEN and one RED fixture. It is the only arm that
+  #      survives an unobtainable bats, and it is the literal invocation
+  #      check_guards_are_wired.sh scans for — a guard named in a comment is not
+  #      wired. GREEN and RED together, because "refuse every receipt" reads
+  #      green against RED fixtures alone.
+  #   2. the 15-row fixture table (§6.3) under bats, positive controls included.
+  #   3. the guard's own mutation set (§6.4). §8 fixes guard_mutation_score at
+  #      100% with "no ratchet, it is a one". Wiring a guard and leaving its
+  #      falsifier dark would make the thing every other verdict rests on unable
+  #      to be SHOWN to fail — the epic's own most common defect class (§11).
+  #   4. this PR's own receipt, which arms itself (below).
+  #
+  # NOT IN `gate`'s needs, for vendored-schemas' reason plus a sharper one:
+  # nothing produces a receipt until PRREV-005, so a blocking receipt check today
+  # would red every PR including the one that lands PRREV-005 — a gate whose own
+  # remedy it makes impossible, which is how `apr test llm` shipped permanently
+  # unreachable. §9 step 7 makes the backtest the acceptance test "before it is
+  # enabled", so promotion is PRREV-007's. Arm 4 re-evaluates the arming
+  # condition on EVERY run rather than leaving it to a comment: the comment that
+  # said to promote check_hardcoded_paths.sh "once the fleet carries pmat >=
+  # 3.32.0" is two steps above this one, and 20 machine-specific paths landed
+  # through the gap while nothing re-read it.
+  pr-review-receipt:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 60
+    if: github.event_name == 'pull_request'
+    env:
+      # The `runner` context is NOT available in a job-level `env:` block —
+      # GitHub rejects the workflow with `Unrecognized named-value: runner`
+      # (#2791). $RUNNER_TEMP is read inside the run blocks instead.
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The guard REFUSES to run without minisign, check-jsonschema, bats and jq:
+      # "a gate that cannot run must not read green". They go into a per-JOB
+      # private root under $RUNNER_TEMP, never ~/.local/bin: mac-server hosts 16
+      # runners under one $HOME, and a concurrent writer to a shared bin
+      # directory is what made Coverage Nightly report an EMPTY coverage figure
+      # (#2353). $RUNNER_TEMP and not /tmp, because /tmp half-persists on a
+      # long-lived box and is emptied at boot (#2791). Versions and digests are
+      # pinned in the script, which exits 2 — distinct from the guard's own 1 —
+      # when the BOX cannot answer, so a broken runner is never read as a broken
+      # tree.
+      - name: Install the tools the receipt guard refuses to run without
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      # Arm 1. The receipts name commits in a purpose-built repository, not in
+      # aprender: for any commit reachable from aprender's own origin/main,
+      # `git merge-base origin/main X` is X itself, so the base_sha row would
+      # pass vacuously. Both exit codes are read from the guard itself, never
+      # through a pipe.
+      - name: The guard accepts an honest receipt and rejects a self-review
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIX=tests/fixtures/pr-review
+          "$FIX/make-fixture-repo.sh" "$RUNNER_TEMP/pr-review-fixture-repo" > /dev/null
+          export PR_REVIEW_REPO="$RUNNER_TEMP/pr-review-fixture-repo"
+          export PR_REVIEW_PUBKEY="$FIX/keys/pr-review-test.pub"
+
+          bash scripts/check_pr_review_receipt.sh "$FIX/row-14-complete-gpu-review"
+          echo "GREEN discrimination row accepted, as it must be"
+
+          rc=0
+          bash scripts/check_pr_review_receipt.sh "$FIX/row-08-self-review" || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "row 08 (reviewer_actor == author_actor) exited $rc, expected 1." >&2
+            echo "A guard that accepts a self-review has no verdict to give (§5, §7)." >&2
+            exit 1
+          fi
+          echo "RED discrimination row rejected under B2, as it must be"
+
+      # Arm 2. Every row of §6.3, plus the positive controls, plus the
+      # must-match/must-not-match tables behind the three trigger regexes. This
+      # file is 65 tests and was reachable from NO workflow until this job — the
+      # dark-target class this repository has hit with benches and with 58 cgp
+      # tests.
+      - name: The 15-row fixture table and both polarities of every trigger regex
+        shell: bash
+        run: bats tests/pr-review.bats
+
+      # Arm 3. §6.4: mechanically flip each validation branch and drop each
+      # required-field check, target 100% kill.
+      #
+      # The script's DEFAULT parallelism, because that is the only setting whose
+      # wall time was measured: 119/119 killed in 1125s at --jobs 12 on a
+      # 48-core box under load average 27 (2026-08-30). An earlier draft of this
+      # step wrote --jobs 8 with a plausible-sounding reason and no measurement
+      # behind it, which is how a number becomes folklore. timeout-minutes on
+      # this job is 60 against that 19 minutes; a slower runner has headroom and
+      # a hang still ends.
+      - name: The guard's mutation set must kill 100% (§6.4, §8 fixes this at one)
+        shell: bash
+        run: bash scripts/mutate-guard.sh
+
+      # Arm 4. THE ARMING CONDITION IS EVALUATED, NOT WRITTEN DOWN.
+      #
+      # .github/pr-review.pub is PRREV-005's committed public key and the guard's
+      # default PR_REVIEW_PUBKEY. Until it exists no receipt can be verified at
+      # all, so requiring one would red every PR — including the one that lands
+      # PRREV-005. The day that key lands, this step starts REQUIRING a receipt
+      # for the PR with no edit to this file, the same way
+      # check_hardcoded_paths.sh --full-if-capable arms itself.
+      #
+      # The armed branch deepens the checkout first: the guard resolves base_sha
+      # against `git merge-base origin/main <head>`, which a fetch-depth-1
+      # checkout cannot answer. It does not paper over a failure there — an
+      # unresolvable head is a B1 rejection in the guard, loudly.
+      - name: This PR's own receipt (arms itself when PRREV-005 lands the key)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBKEY=.github/pr-review.pub
+          if [ ! -f "$PUBKEY" ]; then
+            echo "NOT ARMED: $PUBKEY is absent, so no receipt can be verified yet."
+            echo "  It arrives with PRREV-005 (the reviewer that emits and signs receipts)."
+            echo "  This step re-evaluates that on every run; it is not waiting on an edit."
+            exit 0
+          fi
+          git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main \
+            || git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          DIR="evidence/pr-review/${PR_NUMBER}/${PR_HEAD_SHA}"
+          echo "ARMED: requiring a valid signed receipt at $DIR"
+          bash scripts/check_pr_review_receipt.sh "$DIR"
 
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]
