@@ -89,7 +89,10 @@ Two must-match, two must-not-match, on real PRs.
 > ordering. `GpuBuffer::copy_from_host` and `copy_to_host` are `cuMemcpyHtoD` and
 > `cuMemcpyDtoH` — LEGACY-stream transfers.
 
-Restated in the PR body. No citation in either.
+Restated in the PR body. **No citation in either, counted rather than eyeballed:**
+`docs.nvidia|programming guide|cuda c\+\+|nvidia\.com|§2\.5` matches **0** lines of the
+993-line commit-message corpus and **0** lines of the PR body, and the body contains **no
+URL of any kind**.
 
 **The authority exists and was fetched this run.** One `search_cuda_docs` call returned the
 CUDA C++ Programming Guide **§2.5.6.1 Legacy Default Stream**, verbatim:
