@@ -506,12 +506,22 @@ this time against `da069a25f`, the commit that actually published it, rather tha
 fixture — is **still accepted**, because B4's surface predicate discards 34.7% of the
 published book.
 
-**It is NOT safe to enable.** Two things must change first:
+**`guard_mutation_score` on the merged tree was 183/184 = 99.46%, which is a FAIL.** §8
+fixes it at 100% with no ratchet, and §7 makes a sub-100% score on a guard-touching PR a
+blocking class. The survivor (F8) is removed in this branch and the set re-run at 182
+mutants; **that re-run's result is the number that counts, and until it reads 182/182 the
+score is not a pass.** A partial mutation run is not a mutation score — the same rule as
+`Skip` not being a pass.
+
+**It is NOT safe to enable.** Three things must change first:
 
 - **F6 (blocking-class, one line):** exempt `book/**` from the Rust-layout exclusions, add
   a `mutate-guard.sh` mutant that puts `book/src/examples/` back out of scope, and add a
   fixture row publishing under `book/src/examples/`. Precision is already measured: 2 true
   positives on the scar commit, 0 false positives across 153 current pages and 300 commits.
+- **F8 (done here, needs its re-run to land):** the dead branch is removed and `bats` is
+  112/0 after the removal; the 182-mutant re-run must read 182/182 before the score can be
+  claimed.
 - **F7 (design, not a patch):** decide whether `merge-base..origin/main` is swept or merely
   recorded. Either is acceptable; **silence is not**, because the receipt currently reads
   `duplication_horizon: ["HEAD", "…unmerged into origin/main"]` under a `PASS` while a
