@@ -212,9 +212,18 @@ caveat PRREV-008 recorded for the scope it kept. The one true positive is outsid
 window, at `da069a25f`, and it is the one the spec is about.
 
 **Fix:** `book/**` is prose, not a Rust project layout. Exempt it from the
-`tests|benches|examples|fixtures` exclusions and re-mutate — `mutate-guard.sh` already
-carries `book-removed-from-b4-scope`; it needs a sibling that puts `book/src/examples/`
-back in, and rows 16/17 need a variant published under `book/src/examples/`.
+`tests|benches|examples|fixtures` exclusions — the counterfactual above inserted
+`book/*) ;;` *after* the `tests` line and *before* the `benches|examples` line, which is
+enough to catch `da069a25f` but is not the whole exemption; the shipped fix should sit
+ahead of all four so a future `book/src/tests/` page is covered too (none exists today).
+
+Then **re-mutate in the widened scope — the old proof does not transfer**, which is F1's
+own lesson applied to its successor. `mutate-guard.sh` already carries
+`book-removed-from-b4-scope`; it needs a sibling that puts `book/src/examples/` back out
+of scope, and §6.3 needs a row-16 variant published under `book/src/examples/` rather than
+`book/src/tools/`. Without that row the fixture table would go green on a guard that still
+cannot see a third of the book — the exact shape of the guard-universe defect that has now
+been found six times in this repository and seven with this one.
 
 ### #2781 — `duplication_hits: []`, and the reason is **F7**, not F4
 
