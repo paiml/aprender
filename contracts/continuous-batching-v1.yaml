@@ -671,6 +671,119 @@ falsification_tests:
         at precision or correctness in cublas_prefill_gemm on the decode path and
         wants its own ticket; it is a different class from the three structural
         defects this epic fixed.
+
+    ROUND 10 (PERF-059 / #2785, apr 0.64.0 (34248e8fe) = unmodified main, RTX
+    4090, ctx 2048, --gpu-layers all, greedy, 40-token cap, APR_LAYER_TRACE
+    unset and verified absent from every server log). #2785's PREMISE IS FALSE,
+    AND THE TWO CONDITIONS ABOVE COVER LESS THAN THEY CLAIM.
+
+    #2785 recorded the 7B CUDA path emitting garbage, observed that the 1.5B on
+    the same box was coherent, and concluded a 7B-specific defect was blocking
+    W1. Both halves are wrong, and the second is the one that mattered.
+
+    THE 1.5B IS ALSO GARBAGE AT c=4. It is coherent only at c=1. Three of four
+    slots returned '1111-1, - --tingting-lite-1-iting, -1,11-1, necessary-'
+    against its own c=1 reference 'Certainly! Below is a Python function that
+    takes a list as input'. And a SINGLE request forced through the batched path
+    (APR_FORCE_BATCHED_PATH=1, no concurrency, no second slot) is garbage on
+    BOTH models -- 7B 'importimportimport string# 9#|#_closure/th4/th', 1.5B
+    '1: inst:济济SDK.济).[ potrà1、'. Nothing about this defect needs a batch,
+    a second slot, or the 7B.
+
+    THE 7B's M=1 ORACLE IS SOUND, which closes the ticket's suggested first cut.
+    forward_gpu_resident against forward_single_with_cache, position by position
+    over a 57-token probe: cosine >= 0.999812 everywhere, argmax identical at 56
+    of 57 positions (one late-position near-tie at cosine 0.999917). The
+    quantisation mix the ticket proposed as the difference is IDENTICAL between
+    the two models, read out of both GGUF headers rather than assumed: 169 Q4_K
+    / 141 F32 / 29 Q6_K each, same per-role map (attn_v and ffn_down Q6_K on 14
+    of 28 layers, output.weight Q6_K, token_embd Q4_K). There is no 7B-only
+    qtype for a dispatcher to mishandle. The architecture differs (hidden
+    3584/1536, 28/12 heads, 4/2 kv heads, GQA 7:1 against 6:1, ffn
+    18944/8960) but no measurement here separates the models.
+
+    THE LADDER. 7B, one binary, three env vars, each arm's OWN c=1 output as the
+    reference, concurrency c as requested and the batch m formed read back from
+    the server's [PMAT-044] lines:
+
+      STREAM_LEGACY  CUBLAS_THR  FP8_DECODE   c=1   c=2   c=4    c=6/8/16
+      unset          4 (default) default      ref    -    GARBAGE    -
+      unset          32          default       -     -    GARBAGE    -
+      1              4 (default) default      ref    -    wrong      -
+      1              32          default      ref   ref   ref (m=4)  wrong
+      1              32          0            GARB  GARB  ref (m=4)  ref
+      1              4 (default) 0            ref   ref   ref (m=3)  wrong
+
+    NO CONFIGURATION IS CORRECT ACROSS THE FOUR BANDS THE MATRIX ASKS FOR.
+    APR_STREAM_LEGACY=1 CUBLAS_GEMM_THRESHOLD=32 covers c=1..4 and fails c>=6;
+    adding FP8_DECODE=0 covers c>=3 and breaks c=1 and c=2. They are disjoint at
+    the ends, and arm A's scaling formula divides agg(c) by agg(1), so the two
+    cannot be spliced: c=1 and c=16 must come from one configuration.
+
+    THE GARBAGE IS THE #2767 RACE, SEPARATED FROM THE REST. Pinning it alone
+    (row 3) turns garbage into a coherent prefix that degrades -- 'Here is a
+    Python function that calculates the sum of a listodzi listodzioli' -- and
+    leaving it live while removing the cuBLAS route (row 2) leaves garbage that
+    is NONDETERMINISTIC: two c=4 runs at identical settings on one server
+    produced two different corruptions ('import0importimport...' and
+    'import#0import0import0#import###...'), and within a run 3 of 4 slots were
+    corrupt while 1 was correct. Determinism is the discriminator: every
+    non-race arm below reproduces byte-identically across slots and runs.
+
+    THE m>=5 BOUNDARY IS THE FP8 E4M3 DECODE ROUTE, NAMED AND PREDICTED BEFORE
+    IT WAS TESTED. Under the two conditions above the 7B matches its reference
+    at m=1,2,4 and diverges at m=6,8,16. CUBLAS_GEMM_THRESHOLD=32 has already
+    taken the cuBLAS route out at those m, so the boundary is elsewhere, and
+    there is exactly one predicate at m=5 on that path:
+
+      batched_qkv.rs:119   let fp8_will_fire = self.gpu_profile.fp8_decode && m >= 5;
+      batched_ffn.rs:111   let fp8_will_fire = self.gpu_profile.fp8_decode && m >= 5;
+      cublas_prefill/attention.rs:1020  if self.gpu_profile.fp8_decode && m >= 5
+
+    At m>=5 fp8_will_fire disables the fused DP4A QKV and gate+up paths and
+    batched_gemv_or_gemm routes those projections to cublas_prefill_gemm's FP8
+    E4M3 arm. PREDICTION: FP8_DECODE=0 should restore m=6,8,16 and change
+    nothing at m<=4. MEASURED (row 5): m=6, m=8 and m=16 all return the c=1
+    reference text exactly, m=4 unchanged. This is the same FP8 E4M3 decode
+    precision this record already named as the reason CB-006 is not green by
+    default; what is new is that it silently rewrites the completion at every
+    band the matrix measures except c=1 and c=4.
+
+    ROW 6 SHOWS THE cuBLAS ROUTE IS STILL THE THIRD CAUSE. With FP8 decode off
+    but the DEFAULT threshold of 4, m=8 and m=16 go back onto cuBLAS and the
+    text corrupts again, to the same 'listodzi listodzioli' continuation. That
+    is consistent with the Q6_K GPU dequant defect measured under #2770 and
+    fixed on the #2783 branch, which is NOT on main at this SHA.
+
+    ROW 5's c=1 AND c=2 GARBAGE IS THE PRE-EXISTING ITEM THIS RECORD ALREADY
+    NAMES ('CUBLAS_GEMM_THRESHOLD=32 with FP8_DECODE=0 makes the m=1 reference
+    itself garbage, reproduced byte-identically on unmodified main'). Confirmed
+    here on the 7B, 3 of 3 repetitions byte-identical, and extending to m=2.
+
+    SEPARATELY, `apr run --gpu` ON THE 7B HAS NEVER BEEN A CUDA RUN. The F2
+    parity gate rejects the GPU path at cosine 0.9278 (position 46, argmax
+    matching) on 3 of 3 runs and falls back through wgpu to CPU. The 1.5B does
+    not fall back. So any 7B tok/s taken from `apr run --gpu` is a CPU number
+    with a GPU label. The rejection is prompt-specific rather than a defect in
+    the oracle -- the 57-token probe above scores >= 0.9998 on the same code
+    path -- and a chat-templated probe reproduces cosine dips to 0.989 at
+    positions whose argmax is a special token. Which of the two is right is not
+    settled here.
+
+    WHAT REPAIRING THIS REQUIRES, in the order the bands need it:
+      (a) the #2767 race, options (a) and (b) already recorded above. Until it
+          is repaired NO band is trustworthy by default, because the corruption
+          is nondeterministic and a green run proves nothing about the next one.
+      (b) FP8 E4M3 decode at m>=5: either route decode off FP8 by default in
+          detect_fp8_decode, or state a tolerance and make the probe honour it.
+          As it stands the route changes the text at every band above c=4.
+      (c) the cuBLAS m>=4 decode route: land #2783's cc9bfb966 and re-run row 6.
+
+    CONSEQUENCE FOR APR-PERF-GATE-001. W1 is not blocked by a 7B defect and
+    PERF-059 as scoped has no 7B-specific root cause to find. Bands 4, 8 and 16
+    are unmeasurable on lambda for BOTH workloads at this SHA, and the blocker
+    is this obligation, already open. Reproduce with
+    scripts/perf059_band_ladder.sh (self-test: --prove-can-fail).
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
