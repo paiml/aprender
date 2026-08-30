@@ -190,11 +190,24 @@ at `da069a25f` itself. `book/src/examples/` is the only excluded subtree in the 
 `tests/`, `benches/` or `fixtures/` directory exists there — so the 34.7% is entirely this
 one exclusion.
 
-**Case table, run against the guard's own `--match-shipped-surface`** (14 rows,
-`evidence/pr-review/backtest/shipped-surface-f6-cases.tsv`): **12 ok, 2 FAIL, both
-must-match, both `book/src/examples/`.** The 12 passes prove the runner is live — an
+**Case table, run against the guard's own `--match-shipped-surface`** (17 rows,
+`evidence/pr-review/backtest/shipped-surface-f6-cases.tsv`): **15 ok, 2 FAIL, both
+must-match, both `book/src/examples/`.** The 15 passes prove the runner is live — an
 earlier attempt at this table reported 8 spurious passes because `bash` was not found
-inside the loop and a stale `$rc` was read; only the must-match rows exposed it.
+inside the loop and a stale `$rc` was read; only the must-match rows exposed it, which is
+the whole reason a table has both polarities.
+
+Three of the rows are **single-variable controls** that isolate the cause to the literal
+directory name and nothing else about the path:
+
+| path | rc |
+|---|---|
+| `book/src/examples/showcase-benchmark.md` | **1 — excluded** |
+| `book/src/example/showcase-benchmark.md` (singular) | 0 — in scope |
+| `book/src/guides/showcase-benchmark.md` | 0 — in scope |
+| `book/examples/x.md` | 1 — excluded, so it is the name anywhere in the path, not the depth |
+
+Same file, same extension, same prefix; only the directory name varies.
 
 **Counterfactual pair, same diff, one line changed** (`book/*) ;;` inserted ahead of the
 benches/examples exclusion):

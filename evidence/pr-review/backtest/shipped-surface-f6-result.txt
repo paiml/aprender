@@ -12,3 +12,6 @@ ok   expect=nomatch  got=nomatch  tests/fixtures/pr-review/build-fixtures.sh
 ok   expect=nomatch  got=nomatch  docs/specifications/APR-PERF-GATE-001-v2.2.md
 ok   expect=nomatch  got=nomatch  scripts/check_no_claim_literals.sh
 ok   expect=nomatch  got=nomatch  README.md
+ok   expect=match    got=match    book/src/example/showcase-benchmark.md
+ok   expect=match    got=match    book/src/guides/showcase-benchmark.md
+ok   expect=nomatch  got=nomatch  book/examples/x.md

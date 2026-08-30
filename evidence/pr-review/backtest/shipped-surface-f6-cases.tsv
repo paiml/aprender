@@ -13,3 +13,6 @@ nomatch	tests/fixtures/pr-review/build-fixtures.sh	a fixture generator
 nomatch	docs/specifications/APR-PERF-GATE-001-v2.2.md	docs prose - MEASURED OUT at 40% precision, deliberate
 nomatch	scripts/check_no_claim_literals.sh	the claim guard's own case table - blocking it has no honest remedy
 nomatch	README.md	repo root prose, not the book
+match	book/src/example/showcase-benchmark.md	SINGLE-VARIABLE CONTROL: same path, directory renamed examples -> example. Passes.
+match	book/src/guides/showcase-benchmark.md	SINGLE-VARIABLE CONTROL: same path, directory renamed examples -> guides. Passes.
+nomatch	book/examples/x.md	the exclusion is on the NAME anywhere in the path, not on book/src/ depth
