@@ -1,0 +1,88 @@
+{
+  "spec": "APR-PERF-GATE-001 v2.2 §4.4",
+  "commit": "a184073efc1c0f6e1d077fb23cefe2cfcc6f1aaa",
+  "workload": "W1",
+  "client_model": "closed_loop",
+  "provenance": {
+    "binary_path": "/tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/bin/apr-r1",
+    "binary_sha256": "70e62d71a39e418ed1deb377c5056e48d77463c768be1a510d107b068cda8d81",
+    "resolution": "current_exe",
+    "compute_class": "cpu",
+    "host": "lambda",
+    "accelerator": "cpu",
+    "model": "qwen2.5-coder-0.5b-instruct-q4_k_m",
+    "quantization": "Q4_K_M",
+    "feature_set": [
+      "cli"
+    ]
+  },
+  "tokenization": {
+    "method": "server_usage",
+    "counts_special_tokens": false,
+    "counts_prompt_echo": false
+  },
+  "requested": 30,
+  "completed": 30,
+  "timeouts": 0,
+  "truncated": 0,
+  "errors": 0,
+  "drain_ms": 0.0,
+  "n": 30,
+  "samples_ms": [
+    5063.003554000001,
+    5090.965128000002,
+    4533.8947130000015,
+    4337.638588000002,
+    4291.53685,
+    4805.941577999998,
+    5388.655502000001,
+    5570.196790000009,
+    5329.580247999998,
+    4857.787277999996,
+    4689.891107999996,
+    4834.7353710000025,
+    4366.363832000003,
+    4623.0577450000055,
+    5102.047044000006,
+    4878.474512999994,
+    4756.858414000002,
+    5016.55997799999,
+    5113.868501000019,
+    5145.839046000008,
+    5202.440136999998,
+    5193.915320999993,
+    4800.062099999996,
+    4809.656383999987,
+    4848.753232000003,
+    5106.6674150000035,
+    5161.222967000023,
+    5193.0830260000075,
+    5315.667509999999,
+    5220.9533760000195
+  ],
+  "bands": [
+    {
+      "concurrency": 1,
+      "aggregate_tok_per_sec": 0.20181725806055847,
+      "tokens_total": 30,
+      "span_ms": 148649.329043,
+      "window_ms": 148649.353821,
+      "drain_ms": 0.0,
+      "requested": 30,
+      "completed": 30,
+      "timeouts": 0,
+      "truncated": 0,
+      "errors": 0,
+      "suspect": [],
+      "comparator_status": "UNMEASURED",
+      "comparator_owner": "perf-gate",
+      "comparator_reason": "APR-PERF-GATE-001 I-3/I-15: a comparator ratio needs a baseline receipt and a comparator lane driven by this same client binary. `apr test llm bench --band` measures one lane, so it declares the ratio unmeasured rather than deriving one."
+    }
+  ],
+  "unproduced_fields": [
+    "§4.4.9 scheduler block (max_in_flight, admission_rejected, preempted_recompute, preempted_swap, kv_blocks_total, kv_blocks_peak_used, kv_bytes_reserved, kv_bytes_used, gpu_layers_requested, gpu_layers_resolved, gpu_layers_total, backend_loaded[], autofit_applied[]) — every one is reported by the SERVER. I-16: max_in_flight is reported by the server, not inferred by the harness; I-2: gpu_layers_resolved is read from the loader and never inferred. A client-side estimate would read exactly like a measurement, so none is emitted.",
+    "Arm D `kv` block (bytes_used, bytes_reserved, admission_rejected, preempted_swap) — server-reported. Absent here, so this receipt is legal at merge phase and correctly FAILS at release phase rather than carrying invented memory figures.",
+    "§4.5 c=1: ttft_ms p50/p95 — the transport did not stream, so the client never observed a first-token instant",
+    "§4.5 c=1: itl_ms p50/p95 and decode_tok_per_sec — the transport did not stream, so there are no per-token arrival times to pool"
+  ]
+}
