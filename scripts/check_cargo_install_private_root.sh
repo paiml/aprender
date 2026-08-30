@@ -165,6 +165,12 @@ self_test() {
     probe declares_private_root 0 '      CARGO_HOME: /tmp/cargo-home-security-intel-clean-room-14'
     probe declares_private_root 0 '      CARGO_INSTALL_ROOT: /tmp/apr-cov-tools-123-1'
     probe declares_private_root 0 '          export CARGO_INSTALL_ROOT=/tmp/tools'
+    # The shape this repo now uses. $RUNNER_TEMP is under the runner's own
+    # _work tree and is wiped per JOB, so it is private without the
+    # half-persistence of a /tmp root (paiml/infra shared-$HOME guard,
+    # rule cargo-install-boot-volatile).
+    probe declares_private_root 0 '      CARGO_INSTALL_ROOT: ${{ runner.temp }}/apr-cov-tools'
+    probe declares_private_root 0 '          export CARGO_INSTALL_ROOT="$RUNNER_TEMP/tools"'
     probe declares_private_root 1 '          export CARGO_INSTALL_ROOT="$HOME/.cargo"'
     probe declares_private_root 1 '      CARGO_HOME: ~/.cargo'
     probe declares_private_root 1 '          # CARGO_INSTALL_ROOT would help here'
@@ -297,9 +303,9 @@ main() {
         printf '\n%s shared-~/.cargo/bin exposure(s) on self-hosted jobs.\n' "$violations" >&2
         printf 'mac-server runs 16 runners under one $HOME, so `cargo install` there\n' >&2
         printf 'replaces a binary that another running job is about to exec (aprender#2353:\n' >&2
-        printf 'cargo-llvm-cov, ENOENT, empty coverage figure). Give the job a per-run root:\n' >&2
+        printf 'cargo-llvm-cov, ENOENT, empty coverage figure). Give the job a private root:\n' >&2
         printf '  env:\n' >&2
-        printf '    CARGO_INSTALL_ROOT: /tmp/<tool>-${{ github.run_id }}-${{ github.run_attempt }}\n' >&2
+        printf '    CARGO_INSTALL_ROOT: ${{ runner.temp }}/<tool>\n' >&2
         printf '  ... and put "$CARGO_INSTALL_ROOT/bin" FIRST on PATH.\n' >&2
         exit 1
     fi
