@@ -1,0 +1,45 @@
+[package]
+name = "aprender-mcp-setfit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Thin single-model MCP server: SetFit classification over the pmcp SDK"
+keywords = ["mcp", "setfit", "classification", "aprender", "pmcp"]
+categories = ["science", "web-programming"]
+readme = "README.md"
+# Not published until the pmcp.run pilot proves the template. The crate is a
+# deployment unit, not a library other crates should depend on.
+publish = false
+
+[lib]
+name = "aprender_mcp_setfit"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aprender-mcp-setfit"
+path = "src/main.rs"
+
+[dependencies]
+# The verified SetFit inference path (D-09): loader + VerifiedSetFitModel::classify.
+# This server is a TRANSPORT over core's one implementation — it re-implements
+# nothing (OPS-03). `setfit` gates the whole inference module.
+aprender = { path = "../aprender-core", version = "0.64.0", package = "aprender-core", features = ["setfit"] }
+# PAIML's Rust MCP SDK. The same `2.x` line the workspace already resolves for
+# aprender-mcp's dispatcher scaffold (2.9.0 in Cargo.lock — no new duplicate).
+# `streamable-http` is what the pmcp.run Lambda loopback serves; on stdio it is
+# unused but harmless. `schema-generation` powers `tool_typed_with_description`.
+pmcp = { version = "2.9", features = ["streamable-http", "schema-generation"] }
+# The JsonSchema derive on ClassifyArgs — same major pmcp's schema-generation uses.
+schemars = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
