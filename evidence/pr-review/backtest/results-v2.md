@@ -26,11 +26,17 @@ still failing is the one §9's prose singles out hardest.
 | PERF-055 duplication | **#2742** (merged) | **CAUGHT — both halves of F4, twice over** | 17 prior-art files on two concurrent unmerged siblings, 4 of them non-Rust; **and** 4 names the PR gives a second definition site on its own branch, one of them a shell function, none acknowledged |
 | never-ran-Ollama benchmark | `da069a25f` (the real publication) | **NOT CAUGHT** | B4 excludes `book/src/examples/` — 34.7% of the published book, and the directory the claim was published in. **F6** |
 
-**Two new findings, both measured, both reproducible: F6 and F7.** F6 is why case 3 still
-fails. F7 is why #2781 returns `duplication_hits: []`, and it also **falsifies PRREV-007's
-own account of #2781** — that PR's prior art was never reachable at the diff boundary §2
-mandates, and the earlier backtest believed otherwise because it measured in a worktree
-sitting on a descendant of main.
+**Three new findings, all measured, all reproducible: F6, F7 and F8.** F6 is why case 3
+still fails. F7 is why #2781 returns `duplication_hits: []`, and it also **falsifies
+PRREV-007's own account of #2781** — that PR's prior art was never reachable at the diff
+boundary §2 mandates, and the earlier backtest believed otherwise because it measured in a
+worktree sitting on a descendant of main. F8 is a **dead validation branch the merge itself
+created**, which took `guard_mutation_score` to 183/184 while `bats` stayed 112/0; it is
+fixed in this branch.
+
+**A fourth catch surfaced from correcting this report's own prose** — see "Duplication
+precision", where a sentence written from the needle names rather than from the tree turned
+out to be hiding four real same-name redefinitions on #2742.
 
 **Per §9 step 7's own terms — *"If the skill would not have caught … the never-ran-Ollama
 benchmark, the design is wrong and changes before it is enabled"* — the design is still
