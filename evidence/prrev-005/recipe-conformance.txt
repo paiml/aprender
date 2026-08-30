@@ -1,0 +1,97 @@
+PR-REVIEW-SKILL-002 v2 §9 step 5 — the reviewer skill, and proof its emit recipe is not fiction.
+PRREV-005.  host: Linux 6.8.0-90-generic   date: 2026-08-30
+subject: the real repository at 5928ec2a7 (PRREV-004's tip), NOT the synthetic fixture repo.
+guard:   scripts/check_pr_review_receipt.sh  (PRREV-003, mutation set 119/119 per PRREV-004)
+
+WHY THIS FILE EXISTS.  A SKILL.md that prints a receipt recipe nobody executed is the
+same artifact as a gate nobody mutated: it reads as governance and enforces nothing.
+The recipe in .claude/skills/pr-review/SKILL.md §4 was run step for step and the result
+was handed to the guard.
+
+WHAT THIS IS NOT.  It is not a review of anything, and it is deliberately NOT stored
+under evidence/pr-review/.  Putting a mechanics probe in the review ledger would pollute
+§8's receipt_presence and actionable_rate with a receipt that reviewed nothing.
+
+--- consultation transports, as measured this run ---
+  pmat MCP            ConnectionRefused          (the session's own MCP roster reports it)
+  pmat CLI            answered, pmat 3.34.0      -> the consultation is `consulted`, and the
+                                                    receipt records BOTH facts:
+                                                    transport:"cli",
+                                                    transport_unavailable:["mcp: ConnectionRefused"]
+  nvidia-cuda-docs    answered (Programming Guide 2.5.8, Implicit Synchronization)
+  cargo-mutants       NOT run: a concurrent `mutate-guard.sh --jobs 12` (pid 3779868,
+                      wt-prrev-006) held the box.  -> status `unreachable`, verdict DEGRADED.
+
+  That last row is the point.  The honest encoding of "the required work did not happen"
+  is not a quieter PASS; it is `executionSuccessful:false` + an error notification +
+  DEGRADED, and the guard rejects the alternative (control n2 below).
+
+--- pmat index, §3.A ---
+  cold build in this worktree: 45.4 s, 87,592 functions in 10,317 files.
+  index_commit = 5928ec2a7 (stamped by this run; pmat records no such field itself)
+  index_is_ancestor = true (recomputed by the guard, which rejects a disagreement)
+  Counter-case, measured: /home/noah/src/aprender/.pmat/ was built at d6c6c6f8f, which is
+  NOT an ancestor of 5928ec2a7.  Borrowing that index would have been B6.
+
+--- §3.B trigger, evaluated by the guard rather than by eye ---
+  5 of the diff's paths fire CUDA_PATH_RE, every one a FIXTURE FILENAME containing "cuda":
+    tests/fixtures/pr-review/cuda-message-cases.tsv
+    tests/fixtures/pr-review/cuda-path-cases.tsv
+    tests/fixtures/pr-review/row-01-cuda-not-triggered-on-cuda-diff/{findings.sarif,receipt.intoto.jsonl,receipt.intoto.jsonl.minisig}
+  No CUDA source changed.  The consultation was performed anyway; recording it as
+  not-triggered is REJECTED (control n1).
+
+--- §3.A satd_introduced, and why it is [] ---
+  A naive `git diff | grep -E '^\+' | grep -E 'TODO|FIXME|HACK|XXX'` returns 2 hits.
+  Both are the XXXXXX template of `mktemp -d`.  satd_introduced=[] is the measured truth;
+  reporting 2 would have made deleting an mktemp template look like paying down debt.
+
+--- POSITIVE RUN ---
+$ PR_REVIEW_PUBKEY=<throwaway> bash scripts/check_pr_review_receipt.sh <receipt-dir>
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+ACCEPT  <receipt-dir>
+exit_code=0
+
+--- NEGATIVE CONTROLS ---
+Each is the ACCEPTED receipt with ONE field changed, then re-hashed and RE-SIGNED, so it
+can only fire on the branch it names.  (An unsigned mutant fires on the signature branch
+and proves nothing about the rule it was meant to test — the guard's own comments record
+that exact mislabel.)
+
+NEG n1-cuda-not-triggered  REJECT rc=1  [its S3.B trigger fires on this diff]
+NEG n2-unreachable-pass    REJECT rc=1  [unreachable but the verdict is PASS]
+NEG n3-no-grounding        REJECT rc=1  [carries no properties.grounding]
+NEG n4-excerpt-digest      REJECT rc=1  [excerpt_sha256]
+NEGATIVE-CONTROLS RC=0
+
+--- §12 summary line, GENERATED FROM THE RECEIPT (not typed) ---
+DEGRADED: the S3.D guard-scope mutation sweep was not performed in this invocation | pr-review v2.0.0 | verdict=DEGRADED | consultations: pmat=consulted cuda=consulted crux=not-triggered mutation=unreachable | findings=3 (cited=1 measured=2 asserted=0) | index=5928ec2 ancestor=true | receipt=evidence/pr-review/none/5928ec2a7c68a2c3d967b8eeb74d0d1287f4064c/receipt.intoto.jsonl (L1-self, signed)
+
+  DEGRADED puts its reason first, per spec §12.  The counts after `findings=` are read
+  off the SARIF, so a run that grounded nothing cannot hide it in prose.
+
+--- WHAT IS STILL MISSING (nothing here should be read as CI-ready) ---
+1. .github/pr-review.pub DOES NOT EXIST.  The guard defaults PR_REVIEW_PUBKEY to it and
+   rejects when it is absent.  This run used a throwaway minisign key passed through
+   PR_REVIEW_PUBKEY; the key is NOT committed, so accepted-receipt.intoto.jsonl below is
+   committed WITHOUT its .minisig.  That is deliberate: a signature nobody can verify is
+   not evidence.  The signature proved the recipe produces a verifiable artifact.  It
+   proves nothing about CI provenance, and nothing at all about whether a review was
+   honest — §4.3.
+2. Nothing invokes the skill from ci.yml.  PRREV-006.
+3. The PRREV-007 backtest against >=3 merged APR-PERF-GATE-001 PRs has NOT run.  Until it
+   does, "this skill would have caught the ungrounded CUDA claim / PERF-055 / the
+   never-ran-Ollama benchmark" is the spec reasoning about itself, which is not evidence.
+
+--- REPRODUCE ---
+  minisign -G -W -p /tmp/t.pub -s /tmp/t.key
+  minisign -q -S -s /tmp/t.key -m evidence/prrev-005/accepted-receipt.intoto.jsonl </dev/null
+  d=$(mktemp -d); cp evidence/prrev-005/accepted-receipt.intoto.jsonl "$d/receipt.intoto.jsonl"
+  cp evidence/prrev-005/accepted-findings.sarif "$d/findings.sarif"
+  cp evidence/prrev-005/accepted-receipt.intoto.jsonl.minisig "$d/receipt.intoto.jsonl.minisig"
+  PR_REVIEW_PUBKEY=/tmp/t.pub bash scripts/check_pr_review_receipt.sh "$d"
+  # requires origin/main to still contain 745fa8588 and the commit 5928ec2a7 to resolve:
+  # the guard recomputes merge-base(origin/main, head_sha) and rejects any other base_sha.
