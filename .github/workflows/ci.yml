@@ -1286,9 +1286,17 @@ jobs:
       # cargo-llvm-cov ENOENT, empty coverage figure). Install into a per-run
       # root and put it FIRST on PATH so the freshly installed binary is the one
       # that runs, here and in the steps that follow.
+      # $RUNNER_TEMP, not /tmp. /tmp is emptied at boot, so a root there
+      # HALF-persists: it survives between jobs on a long-lived self-hosted
+      # box and vanishes on reboot, which is the shape paiml/infra's
+      # shared-$HOME guard blocks as `cargo-install-boot-volatile`.
+      # $RUNNER_TEMP is under the runner's own _work tree and is wiped per
+      # JOB, so it is private for the same reason the per-run name was,
+      # and the compile is paid honestly every run instead of
+      # four-times-in-sixteen.
       - name: Install cargo-deny (if absent)
         env:
-          CARGO_INSTALL_ROOT: /tmp/cargo-deny-${{ github.run_id }}-${{ github.run_attempt }}
+          CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-deny
         run: |
           if ! command -v cargo-deny > /dev/null 2>&1; then
             cargo install cargo-deny --locked
@@ -1531,7 +1539,11 @@ jobs:
               # the host toolchain -- but the guard reads workflow text and cannot
               # see that, and "the guard cannot tell" is not a reason to exempt.
               # Declaring the root makes it true rather than merely argued.
-              export CARGO_INSTALL_ROOT=/tmp/cargo-mutants-root
+              # /usr/local, not /tmp: this root is destroyed with the --rm
+              # container either way, but /tmp is what paiml/infra's
+              # shared-$HOME guard reads as boot-volatile, and "the guard
+              # cannot tell" is not a reason to keep the ambiguous spelling.
+              export CARGO_INSTALL_ROOT=/usr/local/cargo-mutants-root
               export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
               if ! cargo mutants --version > /dev/null 2>&1; then
                 echo "cargo-mutants absent from image; installing"

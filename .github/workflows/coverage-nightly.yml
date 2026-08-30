@@ -54,14 +54,24 @@ jobs:
       # exec'd, which nothing but a concurrent writer to that path can produce.
       #
       # The fix removes the shared path rather than retrying around it: every
-      # `cargo install` in this job lands in a directory named after THIS run,
+      # `cargo install` in this job lands in a directory private to THIS job,
       # which no other job can address. Note this deliberately redirects only
       # the INSTALL ROOT, not CARGO_HOME (which is what the `security` job
       # isolates): the registry/git caches under ~/.cargo are guarded by cargo's
       # own package-cache lock and are safe to share, while a private CARGO_HOME
       # would re-download the whole dependency graph every night for no gain.
-      COV_TOOLS: /tmp/apr-cov-tools-${{ github.run_id }}-${{ github.run_attempt }}
-      CARGO_INSTALL_ROOT: /tmp/apr-cov-tools-${{ github.run_id }}-${{ github.run_attempt }}
+      #
+      # 2026-08-30: that root moved off /tmp. /tmp is emptied at boot, so a
+      # root there HALF-persists — it survives between jobs on a long-lived
+      # self-hosted box and vanishes on reboot. That is the shape paiml/infra's
+      # shared-$HOME guard blocks as `cargo-install-boot-volatile`. $RUNNER_TEMP
+      # lives under the runner's own _work tree and is wiped per JOB: private
+      # for the same reason the per-run name was, and it never half-persists,
+      # so the compile is paid honestly every run.
+      #
+      # It is resolved in a step rather than here because the `runner` context
+      # is NOT available in a job-level `env:` block — GitHub rejects the
+      # workflow with `Unrecognized named-value: runner`. See the first step.
     steps:
       # clean: false — a coverage run builds from source and doesn't need a
       # pristine tree, and the default git-clean choked on root-owned leftovers
@@ -70,6 +80,15 @@ jobs:
       - uses: actions/checkout@v7
         with:
           clean: false
+
+      # The job-private tool root, published to every later step. $RUNNER_TEMP
+      # is only knowable at step time (see the job `env:` comment above), and
+      # every consumer below reads $COV_TOOLS, so it is resolved once here.
+      - name: Resolve the job-private tool root
+        run: |
+          set -euo pipefail
+          echo "COV_TOOLS=$RUNNER_TEMP/apr-cov-tools" >> "$GITHUB_ENV"
+          echo "CARGO_INSTALL_ROOT=$RUNNER_TEMP/apr-cov-tools" >> "$GITHUB_ENV"
 
       # Provision cargo-llvm-cov WITHOUT touching ~/.cargo/bin (#2353).
       #
@@ -86,7 +105,7 @@ jobs:
       #
       # Fail closed. A coverage run without a working cargo-llvm-cov must be RED
       # here, not a green job that reports an empty percentage.
-      - name: Provision cargo-llvm-cov into the per-run private root
+      - name: Provision cargo-llvm-cov into the job-private root
         run: |
           set -euo pipefail
           mkdir -p "$COV_TOOLS/bin"
@@ -147,7 +166,7 @@ jobs:
           case "$resolved" in
             "$COV_TOOLS/bin/"*) ;;
             *)
-              echo "::error::cargo-llvm-cov resolved to '${resolved:-<none>}', not the per-run private root $COV_TOOLS/bin"
+              echo "::error::cargo-llvm-cov resolved to '${resolved:-<none>}', not the job-private root $COV_TOOLS/bin"
               echo "::error::a concurrent job could replace that path mid-run (aprender#2353)"
               exit 1
               ;;
@@ -184,7 +203,7 @@ jobs:
       # on PATH for raw run: steps on these runners, so source the cargo env; and
       # `|| true` keeps a pmat failure from aborting the job (the coverage % below
       # is the core deliverable; gap ranking is a bonus).
-      # CARGO_INSTALL_ROOT (job env) sends this install to the per-run root too,
+      # CARGO_INSTALL_ROOT (set in the first step) sends this install to the job-private root too,
       # so this step cannot clobber another job's pmat either — the exposure is
       # symmetric and #2353 only happened to be observed from the victim side.
       - name: Ensure pmat installed
@@ -254,13 +273,18 @@ jobs:
             gh issue create --title "$title" --body "$body" && echo "created tracking issue"
           fi
 
-      # A per-run directory that is never removed is just a slower leak. Drop
+      # A tool root that is never removed is just a slower leak. Drop
       # this run's, then sweep any orphan left by a hard-killed run (which skips
       # even `if: always()` steps — the same failure mode the workspace-test
       # ownership-restore step exists for).
-      - name: Remove the per-run tool root
+      - name: Remove the job-private tool root
         if: always()
         run: |
-          rm -rf "$COV_TOOLS"
+          # Never `rm -rf` an unvalidated variable: if the resolve step above
+          # died, COV_TOOLS is unset and this would be `rm -rf ""`.
+          if [ -n "${COV_TOOLS:-}" ]; then rm -rf "$COV_TOOLS"; fi
+          # Legacy sweep: roots left under /tmp by runs from before the move to
+          # $RUNNER_TEMP. Nothing new lands there — $RUNNER_TEMP is wiped per
+          # job — so this only reaps what earlier runs abandoned.
           find /tmp -maxdepth 1 -name 'apr-cov-tools-*' -uid "$(id -u)" -mtime +1 \
             -exec rm -rf {} + 2>/dev/null || true
