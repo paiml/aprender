@@ -1,6 +1,6 @@
 # PR-REVIEW-SKILL-002 — grounded adversarial PR review with a signed receipt
 
-**Status:** SPEC for implementation
+**Status:** v2.1 — amended by its own implementation. Built through `PRREV-001`..`PRREV-007`; **§9 step 7, the acceptance test, FAILED (1 of 3) and the skill is NOT enabled.** See §0.1 and §9.1.
 **Supersedes:** PR-REVIEW-SKILL-001 (draft, 2026-08-30)
 **Complements:** `dogfood.sh`, `nightly-ux-crux`, the `check_*.sh` guards in `ci.yml`, `pmat comply check`
 **Workflow:** `pmat work add` → branch → PR → `ci / gate`. Contract ships in the same PR as the implementation.
@@ -33,6 +33,22 @@ Two inputs drove v2: external prior-art research, and the SGCR/attestation resea
 | R4 | Predicate type `slsa.dev/verification_summary/v1` | VSA has a fixed schema (`verifier`, `policy`, `verificationResult`, `verifiedLevels`). Review payload does not fit it. Use a custom predicate type. |
 | R5 | DORA throughput/stability figures as load-bearing | Fine as motivation, not as a threshold source. No threshold in this spec derives from them. |
 | R6 | Full SCIP/LIP live-intelligence layer as a v2 requirement | Real upgrade, wrong phase. `pmat query` + `index_commit` recording closes the actual defect now. SCIP via `rust-analyzer scip .` is a Phase 3 pick (§9). |
+
+---
+
+## §0.1 Amendments after implementation (v2.1, 2026-08-30)
+
+v2 was written before it was built. Building it — `PRREV-001` through `PRREV-007` — falsified four statements this spec makes about itself, and then the acceptance test in §9 step 7 returned RED. All five are recorded here rather than quietly reconciled, because a spec that repairs its own defects without saying which ones it had is precisely the artifact this spec exists to make impossible.
+
+| # | defect | found by | ruling | now in |
+|---|---|---|---|---|
+| **D1** | §7's table lists **six** blocking rows; the prose beneath said "five" | `PRREV-001`, writing `contracts/pr-review-skill-v2.yaml` | **Six stands; the prose was the error** (operator ruling, recorded). Dropping a row to reach five would invent policy; writing "five" over six rows would repeat the defect the spec exists to prevent. The rows now carry ids **B1..B6** so the count cannot drift again. | §7, §11 |
+| **D2** | §6.3 fixture row 10 (`base_sha` ≠ merge-base) named no §7 class | `PRREV-001`; the guard admitted it under B1 and said so in its header | Row 10 is **B1** — the receipt is invalid — not a seventh class. Every fixture row now names its governing class. A fixture row with no governing class is how a guard grows a rule nothing owns. | §6.3 |
+| **D3** | **B5 was unmeasurable by its own admission rule** — no §3 consultation emitted it, no §8 metric measured its precision | `PRREV-001`; restated by the guard header, `B5 … (no consultation emits this)` | **B5 keeps its row and gets a producer and a metric.** Moving it out of the tier would reach five by the route D1 forbids. §3.C.2 is the producer; §7.1 says what an unmeasured precision means, so the admission rule is applicable to B5 in both directions instead of neither. B5 is carried **advisory** until `PRREV-011` ships the producer. | §3.C.2, §7.1, §8 |
+| **D4** | §8's `unmarked_claims = 0` had **no fixture** | `PRREV-003`, building the fourteen rows | §6.3 gains **row 15** — a result carrying no `properties.grounding` at all. A metric with no fixture reads as exercised when nothing exercises it: §8's own `vacuous_consultations` defect applied to §8. Every §8 row now names what exercises it. | §6.3, §8 |
+| **D5** | **§9 step 7, the acceptance test, FAILED**: 1 of 3 named cases caught | `PRREV-007` backtest against merged #2781, #2771, #2763 | **The skill is not enabled.** §9.1 records the verdict and the five findings (F1–F5) that land first. | §9.1 |
+
+D1–D4 are contradictions inside the spec, fixed below. D5 is the spec's own acceptance test returning RED; it is recorded below and fixed by tickets, not by prose.
 
 ---
 
@@ -148,6 +164,26 @@ comparator:
 ```
 
 Absent any field, the claim is reclassified `asserted`, marked `unverified_comparative_claim`, and — per §7 — **blocks**. The book published *"2.93× Ollama"* from a harness that never ran Ollama; this is the gate that makes that impossible rather than merely discouraged.
+
+**§3.C.2 Breaking surface and the semver bump — B5's producer (D3).** §7 lists *"breaking API surface with no semver bump"* as a blocking class. v2 shipped that row with **no consultation emitting it and no metric measuring it**, so §7's own admission rule could not be applied to it. §3.C is the producer: the surfaces it already triggers on — CLI subcommand or flag, HTTP route, MCP tool, config key, output format — *are* the API surface, plus the public Rust items of each crate in `affected_crates[]`.
+
+Required output per changed crate, under `consultations.crux.semver`:
+
+```yaml
+semver:
+  breaking_surface:                    # [] is a claim that none exists, not a silence
+    - kind: cli-flag | http-route | mcp-tool | config-key | output-format | rust-pub-item
+      id: "apr bench --band"           # the removed or incompatibly changed thing
+      change: removed | renamed | type-changed | default-changed
+      evidence: { command: [...], exit_code: 0, stdout_sha256: "..." }
+  version_base: "0.64.0"               # git show <base_sha>:Cargo.toml
+  version_head: "0.64.1"               # git show <head_sha>:Cargo.toml
+  bump: none | patch | minor | major
+```
+
+B5 fires when `breaking_surface[]` is non-empty and `bump` is below the change it declares (pre-1.0: below `minor`). Both inputs are read from the tree, never from prose: the surface from `cargo metadata` plus the CLI / route / tool enumerations `dogfood_surfaces.sh` already walks **at runtime**, the versions from `git show <sha>:Cargo.toml`.
+
+**This producer ships no new regex, deliberately** — every input is structured, so the decision is a comparison and not a match. It therefore owes no must-match / must-not-match case table. Any later regex form of it owes one: this repo's patterns have been wrong six times, a case table caught every one, and review caught none.
 
 ### §3.D Mutation — adversarial falsification (scoped)
 
@@ -276,30 +312,35 @@ Schemas are **vendored** under `schemas/` with a recorded SHA-256. Fetching a sc
 
 Every row a committed fixture under `tests/fixtures/pr-review/`, exercised by `bats-core`.
 
-| # | fixture | verdict |
-|---|---|---|
-| 1 | `cuda.status: not-triggered` on a diff touching `src/cuda/` | RED |
-| 2 | `mutation.attempted: 0` with `status: consulted` | RED |
-| 3 | finding `grounding: cited` with empty `source` or `excerpt` | RED |
-| 4 | comparative claim `grounding: cited`, no comparator command/hash | RED |
-| 5 | `pmat.status: unreachable`, `verdict: PASS` | RED |
-| 6 | `pmat.status: unreachable`, `verdict: DEGRADED` | **GREEN** |
-| 7 | honest receipt, docs-only PR, all consultations `not-triggered` | **GREEN** |
-| 8 | `reviewer_actor == author_actor` | RED |
-| 9 | `index_commit` not an ancestor of `head_sha`, `verdict: PASS` | RED |
-| 10 | `base_sha` ≠ `git merge-base origin/main head_sha` | RED |
-| 11 | finding with empty `failure_scenario` | RED |
-| 12 | `excerpt_sha256` ≠ `sha256(excerpt)` | RED |
-| 13 | valid receipt, invalid signature | RED |
-| 14 | complete receipt on a GPU PR, all four consulted, findings present | **GREEN** |
+| # | fixture | verdict | governing §7 class |
+|---|---|---|---|
+| 1 | `cuda.status: not-triggered` on a diff touching `src/cuda/` | RED | B1 |
+| 2 | `mutation.attempted: 0` with `status: consulted` | RED | B1 |
+| 3 | finding `grounding: cited` with empty `source` or `excerpt` | RED | B1 |
+| 4 | comparative claim `grounding: cited`, no comparator command/hash | RED | B4 |
+| 5 | `pmat.status: unreachable`, `verdict: PASS` | RED | B1 |
+| 6 | `pmat.status: unreachable`, `verdict: DEGRADED` | **GREEN** | — |
+| 7 | honest receipt, docs-only PR, all consultations `not-triggered` | **GREEN** | — |
+| 8 | `reviewer_actor == author_actor` | RED | B2 |
+| 9 | `index_commit` not an ancestor of `head_sha`, `verdict: PASS` | RED | B6 |
+| 10 | `base_sha` ≠ `git merge-base origin/main head_sha` | RED | **B1** |
+| 11 | finding with empty `failure_scenario` | RED | B1 |
+| 12 | `excerpt_sha256` ≠ `sha256(excerpt)` | RED | B1 |
+| 13 | valid receipt, invalid signature | RED | B1 |
+| 14 | complete receipt on a GPU PR, all four consulted, findings present | **GREEN** | — |
+| 15 | finding carrying **no `properties.grounding` mark at all** | RED | B1 |
 
 Rows 6, 7, 14 are **discrimination cases**. Without them, "refuse every receipt" reads green — the over-reach a discrimination case already caught in PERF-055 and the #2766 delta-gate work.
+
+**Every RED row names the class that rejects it (D2).** Row 10 in particular: `base_sha` disagreeing with `git merge-base origin/main head_sha` is RED **under B1 — the receipt is invalid** — not under a seventh blocking class. Stated rather than left to be inferred, because a fixture row with no governing class is how a guard grows a rule nothing owns, and an ungoverned rule is not demotable by §7's admission mechanism. Two classes are named by no row, and that is a coverage statement, not a gap: **B3** is scored by §6.4's committed mutation set rather than by a receipt fixture, and **B5** has no producer to fixture until §3.C.2 ships (D3).
+
+**Row 15 is §8's `unmarked_claims = 0`, exercised (D4).** Rows 3, 11 and 12 cover an empty `source`/`excerpt`, an empty `failure_scenario` and a digest mismatch — none of them covers a result with *no grounding mark at all*, which is the exact claim §1's "there is no fourth category" makes. Without row 15 the metric read as exercised while nothing exercised it: §8's own `vacuous_consultations` shape, turned on §8.
 
 **A missing receipt is RED, not skipped.**
 
 ### §6.4 Guard mutation set
 
-Fourteen fixtures is a floor, not adequacy. Additionally:
+Fifteen fixtures is a floor, not adequacy. Additionally:
 
 ```bash
 cargo mutants --file scripts/check_pr_review_receipt.sh   # or: scripts/mutate-guard.sh
@@ -311,21 +352,34 @@ Mechanically flip each validation branch and drop each required-field check. **T
 
 ## §7 Blocking policy
 
-| verdict / class | feature branch | release branch |
-|---|---|---|
-| missing / invalid / unsigned receipt | **BLOCKS** | BLOCKS |
-| `reviewer_actor == author_actor` | **BLOCKS** | BLOCKS |
-| guard mutation score < 100% (guard-touching PR) | **BLOCKS** | BLOCKS |
-| `unverified_comparative_claim` | **BLOCKS** | BLOCKS |
-| breaking API surface with no semver bump | **BLOCKS** | BLOCKS |
-| stale index (`index_is_ancestor: false`) with `verdict: PASS` | **BLOCKS** | BLOCKS |
-| `FINDINGS` (everything else) | proceeds, posted as comment | **BLOCKS** |
-| `DEGRADED` | proceeds, marked in first line of comment | proceeds, marked |
-| `PASS` | proceeds | proceeds |
+| id | verdict / class | feature branch | release branch | producer | precision metric |
+|---|---|---|---|---|---|
+| **B1** | missing / invalid / unsigned / internally inconsistent receipt | **BLOCKS** | BLOCKS | the guard, §6 | `effective_fp_rate[B1]` |
+| **B2** | `reviewer_actor == author_actor` | **BLOCKS** | BLOCKS | the guard, §5 | `effective_fp_rate[B2]` |
+| **B3** | guard mutation score < 100% (guard-touching PR) | **BLOCKS** | BLOCKS | §6.4 mutation set | `guard_mutation_score` (§8; a one, not a sample) |
+| **B4** | `unverified_comparative_claim` | **BLOCKS** | BLOCKS | §3.C.1 — **but see F1: as built it never reads the diff** | `effective_fp_rate[B4]` |
+| **B5** | breaking API surface with no semver bump | **advisory until `PRREV-011`** (§7.1) | advisory until `PRREV-011` | §3.C.2 (owed) | `effective_fp_rate[B5]`, `samples(B5)` |
+| **B6** | stale index (`index_is_ancestor: false`) with `verdict: PASS` | **BLOCKS** | BLOCKS | §3.A ancestor check | `effective_fp_rate[B6]` |
+| — | `FINDINGS` (everything else) | proceeds, posted as comment | **BLOCKS** | — | — |
+| — | `DEGRADED` | proceeds, marked in first line of comment | proceeds, marked | — | — |
+| — | `PASS` | proceeds | proceeds | — | — |
 
-The blocking tier is five objective, machine-decidable classes. None of them is a judgement call, so none of them can freeze an active investigation the way #2766 and #2757 did.
+The blocking tier is **six** objective, machine-decidable classes — B1 through B6, counted by their ids rather than by reading the table twice. None of them is a judgement call, so none of them can freeze an active investigation the way #2766 and #2757 did.
+
+> **Ruling, recorded (D1).** v2 shipped this six-row table under prose that said "five". **Six stands; the prose was the error.** Dropping a row to reach five would have invented policy — deleting a blocking class is a policy change, and a spec is not where a policy change happens as a typo fix. Writing "five" over six rows would have repeated exactly the defect this spec exists to prevent: a count asserted from memory, sitting next to the artifact that refutes it. The ids exist so the next reader counts labels, not lines.
 
 **Admission rule for the blocking tier:** a class may block only while its measured precision on the rolling sample is ≥90% — Tricorder's ≤10% effective-false-positive bar. A class that falls below is auto-demoted to advisory by editing `contracts/pr-review-skill-v2.yaml`, not by disabling the gate. Demotion is a ticket, not a silent config change.
+
+**§7.1 A class whose precision cannot accrue cannot block (D3).** The admission rule is a **demotion** rule: it strips blocking status from a class that has been measured and found below the bar. Read instead as a *promotion* gate it would disarm the entire tier on day one, when no class has a sample — which is neither what it says nor what Tricorder's bar is. Its real precondition is therefore not *"has 30 samples"* but **"has a producer, so a sample accrues."**
+
+B5 failed that precondition, and v2 said so nowhere. B1, B2, B4 and B6 accrue a sample from the first PR reviewed; B3 is scored against §6.4's committed mutation set rather than sampled at all. Every one of them can be measured, and therefore demoted. **B5 had no producer: nothing emitted it, so `samples(B5)` was permanently 0, so `precision(B5)` was undefined, so the rule governing the blocking tier could never be applied to a member of the blocking tier in either direction.** A class that cannot be demoted by the mechanism that protects the tier is not a governed class — it is an ungoverned one wearing a label.
+
+Closure, both halves required:
+
+1. **A producer** — §3.C.2, `consultations.crux.semver`. B5 fires when `breaking_surface[]` is non-empty and `bump` is below the change it declares.
+2. **A metric** — `effective_fp_rate` is measured **per class**, and §8 now records `samples(Bi)` beside it, so a class whose sample is not accruing is visible in the instrumentation instead of discoverable only by reading §3 for a producer that is not there.
+
+**Until `PRREV-011` ships §3.C.2, B5 is carried as `advisory`, not blocking** — recorded in `contracts/pr-review-skill-v2.yaml` by exactly the edit a demotion would use, so the state is dated and reviewable. The row is not dropped; dropping it would reach five by the route D1 forbids. What changed is that B5's state is now *stated* rather than unstateable.
 
 ---
 
@@ -333,18 +387,20 @@ The blocking tier is five objective, machine-decidable classes. None of them is 
 
 No threshold below is invented. Each is `instrument → 30 samples → ratchet`.
 
-| metric | definition | initial | ratchet rule |
-|---|---|---|---|
-| `actionable_rate` | findings the author acted on ÷ findings posted | record only | after 30 PRs, floor at measured − 5pp, monotone |
-| `effective_fp_rate` | per blocking class | record only | must be ≤10% to stay blocking |
-| `audit_divergence` | second-reviewer disagreement rate | record only | after 30 audits, set sampling from it |
-| `cost_per_actionable` | tokens + wall-seconds ÷ actionable findings | record only | ratchet down quarterly |
-| `guard_mutation_score` | killed ÷ attempted on the guard | **100%** | zero — no ratchet, it is a one |
-| `receipt_presence` | PRs with a valid receipt ÷ PRs merged | **100%** | zero |
-| `unmarked_claims` | claims with no grounding mark | **0** | zero |
-| `vacuous_consultations` | `status: consulted` with `attempted: 0` | **0** | zero |
+| metric | definition | initial | ratchet rule | exercised by |
+|---|---|---|---|---|
+| `actionable_rate` | findings the author acted on ÷ findings posted | record only | after 30 PRs, floor at measured − 5pp, monotone | live PRs |
+| `effective_fp_rate` | **per blocking class**, with `samples(Bi)` recorded beside it | record only | must be ≤10% to stay blocking; a class whose sample cannot accrue cannot block (§7.1) | live PRs, per class B1..B6 |
+| `audit_divergence` | second-reviewer disagreement rate | record only | after 30 audits, set sampling from it | §5's 10% audit sample |
+| `cost_per_actionable` | tokens + wall-seconds ÷ actionable findings | record only | ratchet down quarterly | the receipt `cost` block |
+| `guard_mutation_score` | killed ÷ attempted on the guard | **100%** | zero — no ratchet, it is a one | §6.4 mutation set |
+| `receipt_presence` | PRs with a valid receipt ÷ PRs merged | **100%** | zero | §6.3, "a missing receipt is RED, not skipped" |
+| `unmarked_claims` | claims with no grounding mark | **0** | zero | **§6.3 row 15** |
+| `vacuous_consultations` | `status: consulted` with `attempted: 0` | **0** | zero | §6.3 row 2 — **`mutation` only; see F2** |
 
 Four zeros/ones (jidoka: the line stops on a defined defect). Four instrument-first continuous parameters (kaizen: ratchet the measured baseline, never invent it). `pmat` logs the cost fields; feed them to the routing calculator already in use.
+
+**Every metric names what exercises it (D4).** v2's `unmarked_claims = 0` had no fixture at all: rows 3, 11 and 12 covered an empty `source`/`excerpt`, an empty `failure_scenario` and a digest mismatch, and not one of them covered a result with no grounding mark. A metric with no fixture reads as exercised when nothing exercises it — which is this table's own `vacuous_consultations` defect, applied to this table. §6.3 row 15 closes it. The column stays so the next unfixtured metric is visible on sight rather than found by building it: `vacuous_consultations`'s own entry now shows, in the column, that it is enforced for `mutation` and for nothing else (F2).
 
 ---
 
@@ -356,13 +412,53 @@ Each step is a `pmat work add` ticket. Nothing consumes an artifact before its f
 |---|---|---|---|
 | 1 | `PRREV-001` | `contracts/pr-review-skill-v2.yaml` + `binding.yaml` entry | `pv validate <file>` exit 0 (per-file — **never** `pv lint <FILE>`, which passes over zero contracts); `pv lint contracts` 8/8 |
 | 2 | `PRREV-002` | vendored `schemas/in-toto-statement-v1.json`, `schemas/sarif-2.1.0.json` + SHA-256 manifest | `check-jsonschema` runs offline |
-| 3 | `PRREV-003` | 14 fixtures + `scripts/check_pr_review_receipt.sh` + `tests/pr-review.bats` | all 14 rows produce the required verdict; positive control fires |
+| 3 | `PRREV-003` | 15 fixtures + `scripts/check_pr_review_receipt.sh` + `tests/pr-review.bats` | all 15 rows produce the required verdict, each naming its §7 class; positive control fires |
 | 4 | `PRREV-004` | guard mutation set | 100% kill, score recorded |
 | 5 | `PRREV-005` | `.claude/skills/pr-review/SKILL.md` — the reviewer itself | emits a schema-valid signed receipt on a real PR |
 | 6 | `PRREV-006` | wire into `ci.yml` beside existing guards | job-level `if:`, **not** workflow-level `paths:` — a path-filtered required check never reports and blocks branch protection forever |
-| 7 | `PRREV-007` | **backtest**: run against ≥3 merged PRs from APR-PERF-GATE-001 | it catches ≥1 real defect those reviews missed |
+| 7 | `PRREV-007` | **backtest**: run against ≥3 merged PRs from APR-PERF-GATE-001 | it catches ≥1 real defect those reviews missed — **RAN, RETURNED RED, see §9.1** |
 
 **Step 7 is the acceptance test for the spec.** If the skill would not have caught the ungrounded CUDA stream claim, the PERF-055 duplication, or the never-ran-Ollama benchmark, the design is wrong and changes before it is enabled. Genchi genbutsu: go and look at the actual PRs, not at the spec's own reasoning about them.
+
+### §9.1 Backtest outcome — **FAILED**, 1 of 3 (`PRREV-007`, 2026-08-30)
+
+Run against three merged PRs from APR-PERF-GATE-001 — #2781, #2771, #2763 — with open #2776 as corroboration. Evidence on `feat/prrev-007-backtest`: `evidence/pr-review/backtest/results.md`, `guard-transcripts.txt`, `comparative-claim-backtest-cases.tsv`. Genchi genbutsu as §9 step 7 demands: every verdict below came from running the trigger, the consultation or the guard against the real PR or a signed probe, not from reasoning about the spec's account of them.
+
+| §9 step 7's named case | PR | result |
+|---|---|---|
+| ungrounded CUDA stream claim | #2771 (merged, restating #2776) | **caught — but nothing forces the ask** (F2) |
+| PERF-055 duplication | #2781 | **caught on the Rust half; blind on 48.8% of the diff; optional at the gate** (F3, F4) |
+| never-ran-Ollama benchmark | #2763 | **NOT caught** (F1) |
+
+**1 of 3.** §9 step 7's own terms are *"If the skill would not have caught … the never-ran-Ollama benchmark, the design is wrong and changes before it is enabled."* It would not have. **The design is wrong, `PRREV-006`'s wiring is committed but the skill is NOT enabled, and F1–F4 land and step 7 is re-run before it is.**
+
+Recording this in the spec is not optional. A spec whose acceptance test failed and does not say so is §11's row *"Review that 'passes' without doing anything"*, one level up — and it is the same shape as the `2.93× Ollama` scar that produced §3.C.1: a published claim whose harness never ran.
+
+| # | finding | class | fix |
+|---|---|---|---|
+| **F1** | **B4 never reads the diff.** `match_comparative` has one call site, inside a loop over *findings the reviewer wrote*; B4's only inputs are the receipt and the SARIF. Nothing scans the diff, the PR body, the docs or the benchmark output — the four surfaces §3.C.1 names. Proved with a signed discrimination pair over one identical diff carrying `2.93× Ollama` in `book/`: **E1 (reviewer silent) → ACCEPT exit 0; E1-control (same diff, ratio written into a finding) → REJECT [B4] exit 1.** All four positive controls fired first in both runs, so the guard was live; the only variable was whether the reviewer chose to mention it. B4 therefore cannot distinguish *"there was no comparative claim"* from *"the reviewer did not look."* §3.C.1 claims to make the book's ratio unwriteable; as built it is discouraged. | blocking-class defect; §11's *"Competitor claim with no source"* row does not hold | run `match_comparative` over `git diff "$base" "$head"` **and** the PR body, exactly as §3.B's trigger is already recomputed, and reject a ratio found there against `comparative_claims: []`. **Then re-mutate in the widened scope — the old proof does not transfer.** |
+| **F2** | **`cuda: consulted` with `queries: []` is ACCEPTED.** Row-14's receipt with `queries` emptied, re-signed, over a diff touching `src/cuda/kernel.cu` → ACCEPT, exit 0. The guard enforces the analogous rule for mutation (`attempted: 0` with `status: consulted` is rejected) and §8 sets `vacuous_consultations = 0`; CUDA has no such branch. Per-consultation audit: **only `cuda` recomputes its trigger from the diff, only `mutation` checks vacuity, and no consultation does both.** So the ungrounded stream claim could ship under a receipt reading `cuda: consulted` that asked nothing — *"the docs said nothing"* and *"I did not ask"* become the same artifact again, one level above where §3.B stops it. | §8 `vacuous_consultations = 0` unenforced for 3 of 4 consultations | `cuda.status: consulted` with zero `queries[]` is `DEGRADED`, never `PASS`. A `no-authority-found` entry **is** a query, so §3.B's honest path stays open. Same rule for `crux.surfaces[]` when its trigger fires. |
+| **F3** | **§3.A is optional at the gate although §3.A calls it unconditional.** Row-14's receipt with `pmat` replaced by `{"status":"not-triggered"}`, re-signed, over a **code** diff → ACCEPT, exit 0. §3.A says *"Trigger: unconditional"*, *"every PR"*, and calls `duplication_hits` the highest-EV field in the receipt. A reviewer skips all of it by writing three words. Fixture row 7 blesses `pmat: not-triggered`, and its own `trigger_reason` reads *"pmat is unconditional; not-triggered is never correct for it"* — a fixture stating the rule it exempts. | §3.A unenforced | `pmat: not-triggered` is a rejection on any diff carrying a code file. Row 7 then carries `pmat: consulted`. |
+| **F4** | **`duplication_hits` is blind to 48.8% of the very diff it was designed for.** (a) pmat's semantic index is Rust-only. Of #2742's 7,244 insertions — the spec's own "~7,200 lines across 46 files" — 3,711 are `.rs` and **3,533 are `.sh`/`.py`/`.yaml`/docs and outside semantic reach**; a query aimed squarely at `perf_gate.sh`'s job returned 10 results, all `.rs`. The guards, gates, receipt libraries and harnesses this epic keeps re-implementing are precisely that half. This backtest is itself an instance: the guard's `COMPARATIVE_RE` is a second implementation of `check_no_claim_literals.sh`'s `RATIO_RE`, in shell, flagged by nothing. (b) Prior art on an **unmerged sibling branch is invisible by construction** — B6 requires `index_commit` to be an ancestor of `HEAD`, correct for staleness, and it also guarantees the index holds only this branch's history. Measured live: a query for what `scripts/check_pr_review_wiring.sh` does, while that file existed only on the unmerged sibling `feat/prrev-006-wiring`, returned unrelated Rust. An agent about to write it a second time gets `duplication_hits: []` — a green light to duplicate. #2781 got lucky on ordering by 18 hours. | §3.A's highest-EV field under-delivers | sweep the non-Rust surface (`pmat query --literal` / `--regex` over `scripts/**`, or `git grep`), **and record `duplication_horizon` in the receipt** — e.g. `["HEAD"]` vs `["HEAD", "origin/feat/*"]` — so *"nothing found"* is distinguishable from *"did not look off this branch"*. An unstated horizon is the same defect as an unstated `no-authority-found`. |
+| **F5** | **B4's regex and its case table were built from the pattern, not the corpus** (advisory). 16 subjects drawn from this repo's real claim corpus: zero false positives on either regex, three must-match misses for B4 — including `36.9x over FasterTransformer`, **the spelling APR-PERF-GATE-001 §0.1 itself uses**. The cause is structural, not a typo: B4 allows a zero-word gap between ratio and competitor where #2763 measured a five-word bound, and the two competitor lists are neither a superset of the other. The shipped fixture passes 13/13 because its subjects were written from `COMPARATIVE_RE`'s own vocabulary — a guard universe built from the wrong side. | duplicated blocking rule, drifting | one regex, sourced from `check_no_claim_literals.sh`, with the union of the competitor lists and the measured five-word gap. Two independently drifting patterns for one blocking rule is the duplication F4 exists to detect. |
+
+**Tickets. None of F1–F4 is optional before enablement.**
+
+| owed | ticket | gate |
+|---|---|---|
+| F1 — B4 reads the diff and the PR body, re-mutated in the widened scope | `PRREV-008` | blocks enablement |
+| F2 — vacuity check on `cuda` and `crux` | `PRREV-009` | blocks enablement |
+| D1–D4 — this spec amendment | `PRREV-010` | — |
+| D3 — §3.C.2, B5's producer, **plus the `contracts/pr-review-skill-v2.yaml` edit that records B5 as advisory** (the contract still reads B5 blocking; until `PRREV-011` lands, spec and contract disagree, and this row is where that is owed) | `PRREV-011` | blocks B5 blocking |
+| F3, F4 — `pmat` mandatory at the gate; non-Rust sweep + `duplication_horizon` | `PRREV-012` | blocks enablement |
+| F5 — one comparative regex, union list, five-word gap, shared case table | `PRREV-013` | advisory; before B4's first demotion review |
+| re-run §9 step 7 against the same three merged PRs | `PRREV-014` | **is** enablement |
+
+**What the backtest did *not* falsify**, recorded so F1–F5 are not read as a verdict on the whole design: §3.B's path and message triggers discriminated **2/2 must-match and 2/2 must-not-match on real PRs**, including the deliberately over-broad `*cuda*`; the guard's four positive controls fired first on every run, and E1-control proves it is not a guard that reads red by refusing everything either; B6 and the merge-base recomputation behaved exactly as specified throughout; neither comparative regex produced a false positive on 16 real subjects; and pointed at a checkout without `schemas/`, the guard **halted with POSITIVE CONTROL MISFIRED rather than validating** — a control that fired for the wrong reason refused to be evidence.
+
+**Two divergences where the spec loses, recorded because they change what §9 step 7 can claim.** (i) #2776 is an **open** PR and #2767 is an **issue**, not a PR; the merged spine is #2781/#2771/#2763 and #2776 is corroboration only. The ungrounded stream claim is not lost by this — #2771 **merged** restating it. (ii) **The PERF-055 duplication did not ship.** #2781's author found the prior art by hand and wrote one commit; §11's row reads as though the duplication happened. What is testable is whether §3.A *would* have found it, and it would, for the Rust half. (iii) All four PRs carry `reviews=0, comments=0` — *"defects those reviews missed"* means defects the author's own verification section missed, and **§5's author/reviewer separation, the control A5 calls the first configuration that beats single-agent, has never been exercised on this epic.**
+
+One gap noted so it is not rediscovered: #2771's second defect was found with **`apr tensors`**, and **§3 has no consultation that inspects the artifact under test**, though this repo's standing rule is *"`apr qa` first"*. Out of `PRREV-007`'s scope; recorded here, unowned.
 
 **Phase 3 (not this spec):** SCIP index via `rust-analyzer scip .` replacing `pmat query` for cross-file resolution; entailment checking on `cited` excerpts; JWS countersigning for multi-agent chains.
 
@@ -378,6 +474,11 @@ Each step is a `pmat work add` ticket. Nothing consumes an artifact before its f
 | 8.4 | every PR or size threshold | **Closed** — every PR. `pmat` always (cheap, deterministic); CUDA/CRUX/mutation trigger on shape. Cost is instrumented (§8), so a threshold can be *derived* later rather than guessed now. |
 | 8.5 | `FINDINGS` on a release branch | **Closed — blocks.** §7. A release branch is the last boundary; the routed-around argument does not apply where the alternative is shipping. |
 | — | entailment verification of `cited` excerpts | **Open**, Phase 3. Residual risk stated in §1.1 rather than hidden. |
+| §7 (v2) | six blocking rows under prose saying "five" | **Closed — six** (D1). Rows carry ids B1..B6; the prose was the error, and dropping a row to reach five would have invented policy. |
+| §6.3 (v2) | fixture row 10 governed by no class | **Closed — B1** (D2). Every fixture row now names its class; B3 and B5 are named by no row, and the table says why. |
+| §7 (v2) | B5 blocking with no producer and no metric | **Closed — producer + metric, and advisory meanwhile** (D3). §3.C.2 emits it (`PRREV-011`); §7.1 defines what an unaccruing sample means so the admission rule applies in both directions. |
+| §8 (v2) | `unmarked_claims = 0` with no fixture | **Closed — row 15** (D4). Every §8 row now names what exercises it. |
+| §9 step 7 | does the design pass its own acceptance test? | **Closed — NO, 1 of 3** (D5, §9.1). Not enabled. F1–F4 and a re-run (`PRREV-014`) first. |
 
 ---
 
@@ -388,12 +489,16 @@ Each step is a `pmat work add` ticket. Nothing consumes an artifact before its f
 | Device semantics asserted from stale memory | §3.B mandatory consultation | 18% regression on an ungrounded stream claim |
 | "Source said nothing" ≡ "didn't ask" | §3.0 SARIF three-state, `no-authority-found` | #2754, #2779, #2780, #2790 |
 | Unreachable source reads clean | §3.0, fixture rows 5–6 | pmat MCP `ConnectionRefused` |
-| Re-implementing what exists | §3.A `duplication_hits` | PERF-055, ~7,200 lines across 46 files |
-| Competitor claim with no source | §3.C.1, blocking | *"2.93× Ollama"* from a harness that never ran Ollama |
+| Re-implementing what exists | §3.A `duplication_hits` — **Rust half only; see F4** | PERF-055, ~7,200 lines across 46 files (3,533 of them outside the index) |
+| Competitor claim with no source | §3.C.1, blocking — **NOT YET HELD; see F1** | *"2.93× Ollama"* from a harness that never ran Ollama |
 | Diff scope polluted by other agents' merges | §2 `merge-base` | parallel-worktree agent workflow |
 | Index answers about code not in the PR | §3.A ancestor check, fixture row 9 | 66-commit index drift |
 | Guard that cannot fail | §6.3 + §6.4, 100% kill | the epic's most common defect class |
-| Guard that blocks work instead of defects | §7 five objective classes | #2757, #2766 |
+| Guard that blocks work instead of defects | §7's **six** objective classes, B1..B6 | #2757, #2766 |
+| A blocking class its own admission rule cannot govern | §7.1 + §3.C.2 give B5 a producer and a metric | B5 shipped in v2 with neither (D3) |
+| A fixture row no class owns | §6.3's `governing §7 class` column | row 10 (D2) |
+| A metric that reads exercised while nothing exercises it | §6.3 row 15; §8's `exercised by` column | `unmarked_claims = 0` (D4) |
+| A spec whose acceptance test failed and does not say so | §9.1, recorded as RED before anything consumes it | `PRREV-007`, 1 of 3 (D5) |
 | Review that "passes" without doing anything | fixture rows 1, 2, 11, 14 | — |
 | Self-review that flatters itself | §5, fixture row 8 | Huang et al. ICLR'24; self-preference bias |
 | Signed receipt mistaken for an honest one | §4.3 stated plainly, `L1-self` | R1 |
