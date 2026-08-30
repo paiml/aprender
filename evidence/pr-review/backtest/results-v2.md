@@ -23,7 +23,7 @@ still failing is the one §9's prose singles out hardest.
 | §9 named case | subject | verdict | why |
 |---|---|---|---|
 | ungrounded CUDA stream claim | **#2771** (merged) | **CAUGHT, and no longer hollow** | trigger fires 17/27 paths; `queries: []` now REJECTS over #2771's real SHAs; the authority is one query away and was fetched this run |
-| PERF-055 duplication | **#2742** (merged) | **CAUGHT — both halves of F4** | 17 prior-art files on two concurrent unmerged siblings, 4 of them non-Rust |
+| PERF-055 duplication | **#2742** (merged) | **CAUGHT — both halves of F4, twice over** | 17 prior-art files on two concurrent unmerged siblings, 4 of them non-Rust; **and** 4 names the PR gives a second definition site on its own branch, one of them a shell function, none acknowledged |
 | never-ran-Ollama benchmark | `da069a25f` (the real publication) | **NOT CAUGHT** | B4 excludes `book/src/examples/` — 34.7% of the published book, and the directory the claim was published in. **F6** |
 
 **Two new findings, both measured, both reproducible: F6 and F7.** F6 is why case 3 still
@@ -344,22 +344,62 @@ is not time-travelled and nothing here claims it is.
 
 ---
 
-## Duplication precision, measured
+## Duplication precision, measured — and a third catch found in the measuring
 
-| subject | needles | hits | true positives |
+The first draft of this section wrote *"0 true positives in 64 `HEAD`-side hits"*. That
+was **read off the needle names, not measured**, and it was wrong. Classifying every
+distinct `(needle, path)` pair by whether the *unchanged* file actually **defines** the
+name — and then whether the PR adds a **second definition site** — changes the answer.
+
+| subject | distinct `HEAD` pairs | pairs where the hit file DEFINES the name | of those, the PR adds a SECOND definition site |
 |---|---|---|---|
-| #2771 | 73 | 12 (all `HEAD`) | **0** — `record_error`, `ternary` in unrelated crates |
-| #2781 | 23 | 0 | 0 |
-| #2763 | 38 | 1 (`HEAD`) | **0** — `mutation_registry` in an unrelated contract YAML |
-| #2742 | 246 | 68 (51 `HEAD` / 17 `branch`) | **17** — all on the branch side |
+| #2771 | 7 | 2 (`record_error`, `ternary`) | 2, but see below |
+| #2781 | 0 | 0 | 0 |
+| #2763 | 1 | 0 | 0 |
+| **#2742** | **22** | **5** | **4** |
 
-**0 true positives in 64 `HEAD`-side hits; 17 of 17 on the branch side.** The lexical
-HEAD sweep is noise on these four PRs; the sibling sweep is where the value is.
-`duplication_hits` is advisory, so §7's ≥90% admission rule does not bite — but a field
-that returns 12 ambient names on a GPU PR will be skimmed, and the script's own
-`symbols_searched` / `hits_total` fields exist so this ratio is judged rather than trusted.
-Raising `NEEDLE_MIN_LEN` or dropping single-word ambient names is a candidate; it is not
-proposed here because nothing was measured about what it would cost in recall.
+**#2771's two are name collisions, not prior art.** `record_error` is defined in a ublk
+block driver (`aprender-zram/bins/trueno-ublk/src/ublk/multi_queue.rs`) and `ternary` in a
+JavaScript test generator (`aprender-test-js-gen/src/builder.rs`), on a PR about CUDA
+batched decode. Generic names in unrelated crates. A reviewer skims past them, correctly.
+
+**#2742's four are real, and the review did not mention any of them.** Counted in the
+tree at #2742's own head — two definition sites where the base had one:
+
+| name | prior definition | the second one #2742 adds |
+|---|---|---|
+| **`resolve_base_ref`** | `scripts/check_dogfood_coverage.sh:108` | `scripts/check_no_fabricated_baselines.sh:561` — **shell, outside any semantic index** |
+| `itl_gaps_ms` | `perf_gate/drain.rs:126` | `perf_gate/metrics.rs` — same module |
+| `exceeds_budget` | `llm/experiment.rs:173` | `perf_gate/samples.rs` — same crate |
+| `a_dominating_request_is_annotated_suspect` | `perf_gate/drain.rs:528` | `perf_gate/window.rs` — same module, a test name |
+
+(A fifth candidate, `resolve_prompts`, is **not** a duplication: only one definition site
+exists, so the hit is a use. It is listed because dropping it silently would be the same
+generosity the first draft of this section committed.)
+
+`resolve_base_ref` was read, not inferred. Both are `resolve_base_ref() { local root="$1"
+ref="$2" ... }`, both emit the same `printf '<MODE>\t<commit-ish>'` protocol, and both open
+with the identical `git rev-parse --verify --quiet "${ref}^{commit}"` guard printing
+`UNRESOLVABLE`. They then diverge — `ARMED|BOOTSTRAP|ABSENT` against `$LEDGER` versus
+`MERGEBASE|TIP|ABSENT` against `$RUST_LEDGER` — and they are indented differently (2 spaces
+vs 4), which is why a token-level clone detector might see it and `pmat query` cannot: it
+does not index `.sh` at all.
+
+Two of the four names (`resolve_base_ref`, `exceeds_budget`) and the whole shell surface
+are outside `pmat`'s reach. `grep -c` over #2742's PR body and its 1,100-line merge commit
+message returns **0** for all four names, and neither text mentions a duplication of this
+kind. So this is a **third real defect the review missed**, on a merged PR, surfaced by the
+mechanism F4 added.
+
+**What this does and does not license.** A second definition of the same name is a
+*signal*, not a proof of redundancy: `a_dominating_request_is_annotated_suspect` is a
+duplicated test name, which is a weaker finding than two guards resolving a base ref two
+ways. `duplication_hits` remains advisory, so §7's ≥90% admission rule does not bite. The
+useful precision statement is the one the table gives: on a PR that does not duplicate, the
+HEAD sweep returns a handful of ambient names; on the PR that does, it returns four
+same-name redefinitions in the feature area the PR is about, plus 17 files on the sibling
+branches. **The needle filter is doing more work than the first draft credited it for, and
+the sibling sweep is not the only half that pays.**
 
 ---
 
@@ -396,13 +436,20 @@ proposed here because nothing was measured about what it would cost in recall.
 ## Does this meet §9 step 7's bar, and is it safe to enable?
 
 **The §9 table row — "it catches ≥1 real defect those reviews missed" across ≥3 merged
-PRs — is MET.** Two, on four merged PRs, each proved by a running mechanism:
+PRs — is MET.** Three, on four merged PRs, each proved by a running mechanism:
 
-1. **#2771** — a device-behaviour claim merged with no source, where the authority exists;
-   the review can no longer record silence, and the discrimination pair over the real SHAs
-   proves both directions.
-2. **#2742** — 17 prior-art files across two concurrent unmerged siblings, 4 of them
-   outside any semantic index, on the very PR §11 cites as the duplication scar.
+1. **#2771** — a device-behaviour claim merged with no source, where the authority exists
+   and 0 of 993 commit-message lines and 0 body lines cite it; the review can no longer
+   record silence by any of the three available spellings, and the discrimination pair over
+   the real SHAs proves both directions.
+2. **#2742, off-branch** — 17 prior-art files across two concurrent unmerged siblings,
+   4 of them outside any semantic index, on the very PR §11 cites as the duplication scar.
+3. **#2742, on-branch** — four names given a **second definition site** by the PR, none
+   mentioned in its body or its 1,100-line merge message: `resolve_base_ref`
+   (`check_dogfood_coverage.sh` → `check_no_fabricated_baselines.sh`, **shell**),
+   `itl_gaps_ms`, `exceeds_budget`, `a_dominating_request_is_annotated_suspect`. This one
+   was found by *correcting* a claim this report had itself asserted rather than measured —
+   see "Duplication precision".
 
 **The §9 prose bar is NOT met: 2 of 3.** §9 step 7 names three cases and says the design is
 wrong if the skill would not have caught them. The never-ran-Ollama benchmark — tested
