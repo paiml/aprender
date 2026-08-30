@@ -1,3 +1,19 @@
+> **SUPERSEDED by `results-v2.md` (PRREV-011, 2026-08-31).** Kept verbatim as a dated
+> record — not rewritten. Two of its statements were falsified there, by measurement:
+>
+> - **#2781's base.** This file reads it from GitHub's `baseRefOid` (`9d45b927d`, #2742's
+>   merge). §2 mandates `git merge-base origin/main HEAD`, which is `c00ba00cb`.
+>   `git merge-base --is-ancestor 9d45b927d 808f1a9b2` is **NO** and
+>   `git grep -w run_bands 808f1a9b2` is **rc=1**. So "#2781 got lucky on timing — the
+>   prior art was reachable because #2742 merged 17 hours earlier" is wrong: it was
+>   reachable only inside this backtest's own worktree, which sat on a descendant of
+>   `main`. That is the "READ `origin/main`, not the checkout" scar, here.
+> - **"§3.A would have caught it on the Rust half" for #2781.** #2781 is +368/−3 and does
+>   not carry the duplication at all; #2742 does. Re-run against #2742, the sibling sweep
+>   returns 17 prior-art files on two concurrent unmerged branches, 4 of them non-Rust.
+>
+> F1–F5 below are all discharged. F6 and F7 in `results-v2.md` replace them.
+
 # PRREV-007 — the backtest
 
 **Spec:** `PR-REVIEW-SKILL-002 v2` §9 step 7, the acceptance test for the whole design.
