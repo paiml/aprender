@@ -13,7 +13,7 @@
 #
 # COLD START: the first request after idle pays the ~87MB model load (~10s
 # observed on the 2048MB function). The timeout below covers it.
-# RUN WITH:  cargo pmcp test run <url> --scenarios tests/scenarios/ --transport jsonrpc
+# RUN WITH:  cargo pmcp test run <url> --scenarios crates/aprender-mcp-setfit/scenarios/ --transport jsonrpc
 # `--transport jsonrpc` is REQUIRED, not a preference: cargo-pmcp's `test run`
 # calls mcp-tester's run_scenario_with_transport, which (unlike mcp-tester's
 # own CLI) never runs the initialize step, so the default http transport fails

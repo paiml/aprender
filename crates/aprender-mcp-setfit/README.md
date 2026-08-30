@@ -8,10 +8,15 @@ server (that's `crates/aprender-mcp`, the developer toolchain surface).
 
 ## Run locally (stdio)
 
+You need a trained `setfit-apr-v1` artifact. In-tree today that means building
+one through `aprender-core`: `aprender::setfit::import` to bring in a fitted
+encoder + head, then `aprender::setfit::write_setfit_apr` to serialize it. The
+`apr setfit train` CLI that produces one in a single command is not upstream
+yet; until it is, the artifact comes from your own training run.
+
 ```bash
-# Train an artifact first — recipe in
-# crates/aprender-mcp/tests/e2e_setfit_predict.rs
-cargo run -p aprender-mcp-setfit -- --model models/setfit-abortion-s17x8.apr
+cargo run -p aprender-mcp-setfit -- --model path/to/model.apr
+# or: APRENDER_SETFIT_MODEL=path/to/model.apr cargo run -p aprender-mcp-setfit
 ```
 
 Register in an MCP client (Claude Desktop / Claude Code / Cursor) as a stdio

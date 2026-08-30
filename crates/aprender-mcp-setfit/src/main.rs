@@ -15,8 +15,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-/// Server name advertised in `initialize`.
-const SERVER_NAME: &str = "aprender-setfit-predict";
+use aprender_mcp_setfit::{ENV_MODEL, SERVER_NAME};
 
 fn model_path_from(mut args: std::env::Args) -> Result<PathBuf, String> {
     let mut model: Option<PathBuf> = None;
@@ -37,11 +36,11 @@ fn model_path_from(mut args: std::env::Args) -> Result<PathBuf, String> {
         }
     }
     model
-        .or_else(|| std::env::var_os("APRENDER_SETFIT_MODEL").map(PathBuf::from))
+        .or_else(|| std::env::var_os(ENV_MODEL).map(PathBuf::from))
         .ok_or_else(|| {
-            String::from(
-                "no model: pass --model <FILE> or set APRENDER_SETFIT_MODEL to a \
-                 setfit-apr-v1 artifact",
+            format!(
+                "no model: pass --model <FILE> or set {ENV_MODEL} to a \
+                 setfit-apr-v1 artifact"
             )
         })
 }

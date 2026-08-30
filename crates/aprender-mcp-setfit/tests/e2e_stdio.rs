@@ -1,12 +1,15 @@
 //! E2E-SETFIT-PMCP-001 — the thin server classifies over live stdio MCP.
 //!
-//! Env-gated on `APR_MCP_E2E_SETFIT_MODEL` exactly like
-//! `aprender-mcp/tests/e2e_setfit_predict.rs` (println! SKIP + early return,
-//! never `#[ignore]`): no SetFit-tagged artifact can be checked in (F-10), so
-//! the model must be trained first — the reproduction recipe lives in that
-//! test's header. Unlike that test, the binary under test belongs to THIS
-//! crate, so `env!("CARGO_BIN_EXE_...")` pins it exactly — no PATH, no
-//! cargo_bin fallback, no shadowed-artifact ambiguity.
+//! Env-gated on `APR_MCP_E2E_SETFIT_MODEL`, with a println! SKIP + early return
+//! rather than `#[ignore]`, so a run without an artifact says so out loud
+//! instead of reporting a silent pass. No SetFit-tagged artifact can be checked
+//! in (F-10), and no in-tree command produces one in a single step yet, so the
+//! model has to come from a training run of your own — build the artifact with
+//! `aprender::setfit::import` + `write_setfit_apr` and point the variable at it.
+//!
+//! The binary under test is pinned with `env!("CARGO_BIN_EXE_...")` — no PATH
+//! lookup and no cargo_bin guess, so there is no shadowed-artifact ambiguity
+//! about which build answered.
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! expands to .unwrap() internally
 
@@ -62,7 +65,7 @@ fn the_thin_server_classifies_a_batch_over_live_stdio() {
     let Some(model) = std::env::var_os(ENV_MODEL) else {
         println!(
             "E2E-SETFIT-PMCP-001 SKIP: {ENV_MODEL} unset — train a setfit-apr-v1 artifact \
-             (recipe in aprender-mcp/tests/e2e_setfit_predict.rs) and export the var"
+             (see this file's header) and export the var"
         );
         return;
     };

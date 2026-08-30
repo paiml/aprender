@@ -37,6 +37,9 @@ schemars = "1.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+# ModelLoadError's Display/Error impls. Workspace-pinned and already used by
+# 20+ sibling crates — the house style for error enums here.
+thiserror = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

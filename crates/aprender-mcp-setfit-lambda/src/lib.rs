@@ -26,9 +26,21 @@ pub static EMBEDDED_MODEL: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mod
 /// to the pmcp.run API Gateway in front. Measured in the reference
 /// deployments: a stateful/SSE config returns `503 "Server is in error
 /// state"` once deployed.
+///
+/// `max_request_bytes` is narrowed from pmcp's 4 MB default to the contract's
+/// `MAX_REQUEST_BODY_BYTES` (~1 MiB). pmcp rejects an oversized body with HTTP
+/// 413 BEFORE any JSON parsing — the bound core's own doc demands of a reading
+/// surface, since "a bound checked after tokenization is not a bound on the work
+/// an attacker can request" (`contracts/setfit-apr-v1.yaml`). Left at the
+/// default, the deployed server accepted four times what it advertises, and the
+/// only enforcement was `precheck`'s post-parse estimate. `precheck` still runs:
+/// it is the sole bound on the stdio transport, which has no HTTP body at all.
 #[must_use]
 pub fn server_config() -> StreamableHttpServerConfig {
-    StreamableHttpServerConfig::stateless()
+    StreamableHttpServerConfig {
+        max_request_bytes: aprender_mcp_setfit::MAX_REQUEST_BODY_BYTES as usize,
+        ..StreamableHttpServerConfig::stateless()
+    }
 }
 
 /// Load the model this deployment serves: embedded bytes if the build staged
@@ -45,11 +57,6 @@ pub fn resolve_model() -> Result<Arc<aprender_mcp_setfit::Model>, ModelLoadError
     if !EMBEDDED_MODEL.is_empty() {
         return aprender_mcp_setfit::load_model_from_bytes(EMBEDDED_MODEL).map(Arc::new);
     }
-    let path = std::env::var_os("APRENDER_SETFIT_MODEL").ok_or_else(|| {
-        ModelLoadError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "no embedded model in this build and APRENDER_SETFIT_MODEL is unset",
-        ))
-    })?;
+    let path = std::env::var_os(aprender_mcp_setfit::ENV_MODEL).ok_or(ModelLoadError::NoModel)?;
     aprender_mcp_setfit::load_model_from_path(std::path::Path::new(&path)).map(Arc::new)
 }

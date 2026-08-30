@@ -26,29 +26,41 @@
 //! as `apr predict --input` bounds the file it reads and `/v1/classify`
 //! bounds the HTTP body.
 
-// schemars' JsonSchema derive and serde_json::json! both expand to .unwrap()
-// internally, and the derive's generated impl lands at file scope where a
-// struct-level allow cannot reach it. Same precedent as aprender-mcp's tools.
-#![allow(clippy::disallowed_methods)]
-
 use std::path::Path;
 use std::sync::Arc;
 
 use aprender::setfit::{
     load_setfit_apr, read_setfit_apr_bytes_bounded, ClassifyError, ClassifyRequestDocument,
-    SetFitArtifactError, VerifiedSetFitModel, MAX_BATCH_TEXTS, MAX_REQUEST_BODY_BYTES,
+    SetFitArtifactError, VerifiedSetFitModel, MAX_BATCH_TEXTS,
 };
 use pmcp::types::capabilities::ServerCapabilities;
 use pmcp::Server;
-use schemars::JsonSchema;
-use serde::Deserialize;
 
 // Transport crates (the Lambda wrapper) hold the loaded model in their state;
 // re-exported so they depend on this crate alone, not on aprender-core.
 pub use aprender::setfit::VerifiedSetFitModel as Model;
 
+// The contract's request-body bound, re-exported for the same reason: a
+// transport must configure it on the surface that reads the bytes, and the
+// Lambda crate has no aprender-core dependency to reach it through.
+pub use aprender::setfit::MAX_REQUEST_BODY_BYTES;
+
 /// The one tool this server advertises.
 pub const TOOL_NAME: &str = "classify";
+
+/// The identity this server reports in `initialize`, and in the Lambda health
+/// payload. Lives here rather than in each binary: it is what clients key on
+/// and what `scenarios/*.yaml` are written against, so the stdio binary and the
+/// deployed Lambda must not be able to advertise different names.
+pub const SERVER_NAME: &str = "aprender-setfit-predict";
+
+/// The environment variable naming the model artifact.
+///
+/// Read at BUILD time by the Lambda's `build.rs` (to embed the bytes) and at
+/// RUN time by both transports (as a path). Three readers across two crates and
+/// two phases, so the spelling is owned once — a mismatch fails silently, by
+/// falling through to a door that then reports the wrong reason.
+pub const ENV_MODEL: &str = "APRENDER_SETFIT_MODEL";
 
 /// Tool description served on `tools/list`.
 pub const TOOL_DESCRIPTION: &str = "Classify texts with the SetFit classifier this server was \
@@ -67,49 +79,69 @@ pub const TOOL_DESCRIPTION: &str = "Classify texts with the SetFit classifier th
 /// schema needs a [`JsonSchema`] derive that core's document does not carry;
 /// [`ClassifyArgs::into_document`] is the total conversion between them, and
 /// a unit test pins the two shapes against each other.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ClassifyArgs {
-    /// The ordered texts to classify; order is response order. One COMPLETE
-    /// document per element (a whole post, comment, or message) — do not split
-    /// a document across elements, and do not concatenate documents into one.
-    pub texts: Vec<String>,
-    /// Include per-class logits in each result. Defaults to false.
-    #[serde(default)]
-    pub include_logits: bool,
-}
+pub use args::ClassifyArgs;
 
-impl ClassifyArgs {
-    /// Convert into the ONE request document every aprender surface parses.
-    #[must_use]
-    pub fn into_document(self) -> ClassifyRequestDocument {
-        let mut document = ClassifyRequestDocument::new(self.texts);
-        if self.include_logits {
-            document = document.with_logits();
+mod args {
+    // schemars' JsonSchema derive expands to .unwrap() internally, and the
+    // generated impl lands at module scope where a struct-level allow cannot
+    // reach it. Scoped to this module ON PURPOSE: aprender-mcp's precedent puts
+    // this attribute on individual tool MODULES, so at a crate root it would
+    // lift the repo-wide `unwrap()` ban off both loader doors, `precheck` and
+    // `build_server` — everything the ban exists to protect.
+    #![allow(clippy::disallowed_methods)]
+
+    use super::ClassifyRequestDocument;
+    use schemars::JsonSchema;
+    use serde::Deserialize;
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    #[serde(deny_unknown_fields)]
+    pub struct ClassifyArgs {
+        /// The ordered texts to classify; order is response order. One COMPLETE
+        /// document per element (a whole post, comment, or message) — do not split
+        /// a document across elements, and do not concatenate documents into one.
+        pub texts: Vec<String>,
+        /// Include per-class logits in each result. Defaults to false.
+        #[serde(default)]
+        pub include_logits: bool,
+    }
+
+    impl ClassifyArgs {
+        /// Convert into the ONE request document every aprender surface parses.
+        #[must_use]
+        pub fn into_document(self) -> ClassifyRequestDocument {
+            let mut document = ClassifyRequestDocument::new(self.texts);
+            if self.include_logits {
+                document = document.with_logits();
+            }
+            document
         }
-        document
     }
 }
 
 /// Why a model failed to load at startup.
-#[derive(Debug)]
+///
+/// Crate-local rather than re-using core's [`SetFitArtifactError`] on purpose:
+/// core's is `#[non_exhaustive]`, so a new variant there would otherwise become
+/// a breaking change in every transport's public error surface.
+#[derive(Debug, thiserror::Error)]
 pub enum ModelLoadError {
     /// The artifact file could not be opened or statted.
-    Io(std::io::Error),
+    #[error("cannot read model artifact: {0}")]
+    Io(#[from] std::io::Error),
     /// The bytes were read but refused by the verification ladder.
-    Artifact(SetFitArtifactError),
+    #[error("model artifact refused: {0}")]
+    Artifact(#[from] SetFitArtifactError),
+    /// Neither door was open: nothing embedded, and no path configured.
+    ///
+    /// A distinct variant because it is the likeliest deployment
+    /// misconfiguration and it is not a filesystem failure. Reporting it as a
+    /// synthetic `io::ErrorKind::NotFound` printed it as "cannot read model
+    /// artifact", which sends the reader looking for a file that was never
+    /// named.
+    #[error("no model: this build embedded none and {ENV_MODEL} is unset")]
+    NoModel,
 }
-
-impl std::fmt::Display for ModelLoadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(e) => write!(f, "cannot read model artifact: {e}"),
-            Self::Artifact(e) => write!(f, "model artifact refused: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for ModelLoadError {}
 
 /// Load and fully verify a `setfit-apr-v1` artifact from a file path.
 ///
@@ -124,11 +156,10 @@ impl std::error::Error for ModelLoadError {}
 /// [`ModelLoadError::Artifact`] for an oversized read or any rung of the
 /// verification ladder refusing the artifact.
 pub fn load_model_from_path(path: &Path) -> Result<VerifiedSetFitModel, ModelLoadError> {
-    let file = std::fs::File::open(path).map_err(ModelLoadError::Io)?;
-    let declared_len = file.metadata().map_err(ModelLoadError::Io)?.len();
-    let bytes = read_setfit_apr_bytes_bounded(file, Some(declared_len))
-        .map_err(ModelLoadError::Artifact)?;
-    load_setfit_apr(&bytes).map_err(ModelLoadError::Artifact)
+    let file = std::fs::File::open(path)?;
+    let declared_len = file.metadata()?.len();
+    let bytes = read_setfit_apr_bytes_bounded(file, Some(declared_len))?;
+    Ok(load_setfit_apr(&bytes)?)
 }
 
 /// Load and fully verify a `setfit-apr-v1` artifact from bytes already in
@@ -140,7 +171,7 @@ pub fn load_model_from_path(path: &Path) -> Result<VerifiedSetFitModel, ModelLoa
 /// [`ModelLoadError::Artifact`] for any rung of the verification ladder
 /// refusing the artifact.
 pub fn load_model_from_bytes(bytes: &[u8]) -> Result<VerifiedSetFitModel, ModelLoadError> {
-    load_setfit_apr(bytes).map_err(ModelLoadError::Artifact)
+    Ok(load_setfit_apr(bytes)?)
 }
 
 /// Validate a request and convert it to the shared document.

@@ -28,8 +28,11 @@ pmcp = { version = "2.9", features = ["streamable-http", "schema-generation"] }
 
 lambda_http = "0.13"
 tokio = { workspace = true }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-once_cell = "1.19"
+# No features: the only URL this client ever builds is `http://127.0.0.1:<port>`
+# on loopback, and nothing calls `.json()`. `rustls-tls` and `json` were both
+# dead here. (rustls still enters the tree via pmcp's own hyper-rustls, so this
+# is dead-feature hygiene rather than a binary-size win.)
+reqwest = { version = "0.12", default-features = false }
 
 serde_json = { workspace = true }
 tracing = "0.1"
