@@ -17,7 +17,18 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MATRIX="$ROOT/scripts/perf-matrix.yaml"
+# Injectable for the same reason PERF_GATE_TODAY is: the expiry rules below
+# have FAIL branches that no well-formed committed matrix can reach, and a
+# branch no case can enter is a branch nothing proves.
+MATRIX="${PERF_GATE_MATRIX:-$ROOT/scripts/perf-matrix.yaml}"
+# THE SCHEMA MAP (PERF-004). Every field below is classified there as PRODUCED,
+# DERIVED, POLICY or UNMEASURED, and the UNMEASURED entries carry an owning
+# ticket. Arm C reads it so an absent field is reported as the instrumentation
+# gap it is -- "drain_ms absent: the drain rule is not implemented in any
+# client (§4.4.7, owner PERF-004)" -- rather than as a schema error, which
+# names nothing and leaves the reader to guess whether the fix is a converter
+# or a measurement.
+FIELDS="$ROOT/scripts/perf-receipt-fields.yaml"
 
 die() { printf 'perf_gate: %s\n' "$*" >&2; exit 2; }
 
@@ -27,24 +38,61 @@ die() { printf 'perf_gate: %s\n' "$*" >&2; exit 2; }
 
 arm_c_integrity() {
   local receipt="$1" rc=0
-  python3 "$ROOT/scripts/lib/bench_receipt.py" "$receipt" >/dev/null 2>&1 \
-    || { echo "FAIL ArmC schema: bench_receipt.py rejected the receipt"; rc=1; }
-  python3 - "$receipt" <<'PY' || rc=1
-import json,sys
+  # The delegate's errors are PRINTED, not swallowed. They used to go to
+  # /dev/null behind "bench_receipt.py rejected the receipt", so the one line a
+  # reader got named neither the field nor the rule -- and every real artifact
+  # in the tree fails here, so that line was the whole diagnosis.
+  local schema_out
+  if ! schema_out="$(python3 "$ROOT/scripts/lib/bench_receipt.py" "$receipt" 2>&1)"; then
+    printf 'FAIL ArmC schema: %s\n' "$schema_out"
+    rc=1
+  fi
+  python3 - "$receipt" "$FIELDS" <<'PY' || rc=1
+import json,sys,yaml
 r=json.load(open(sys.argv[1]))
+fielddoc=yaml.safe_load(open(sys.argv[2])) or {}
+ledger=fielddoc.get("fields") or {}
+
+def why(field):
+    """The instrumentation gap behind an absent field, with its owner.
+
+    A gate that says 'absent' has told the reader the shape of the receipt. A
+    gate that says WHAT WOULD HAVE TO BE BUILT and WHO OWNS IT has told them
+    the shape of the work. The five fields that made every real artifact fail
+    here split two ways -- two derivable, three unmeasured -- and only this
+    lookup makes the difference visible at the point of failure.
+    """
+    e=ledger.get(field) or {}
+    if e.get("class")!="UNMEASURED":
+        return ""
+    needs=" ".join((e.get("needs") or "").split())
+    return f" -- {needs} ({e.get('spec')}, owner {e.get('owner')})"
+
 bad=[]
 req,comp=r.get("requested"),r.get("completed")
 if req is None or comp is None or req!=comp:
-    bad.append(f"completed({comp}) != requested({req})")
-if r.get("timeouts",0)!=0:
+    bad.append(f"completed({comp}) != requested({req}){why('completed')}")
+if r.get("timeouts") is None:
+    bad.append(f"timeouts absent{why('timeouts')}")
+elif r.get("timeouts")!=0:
     bad.append(f"timeouts={r.get('timeouts')} (fatal to this host's ratio)")
 if not (r.get("tokenization") or {}).get("method"):
-    bad.append("tokenization.method absent")
+    bad.append(f"tokenization.method absent{why('tokenization.method')}")
 if r.get("drain_ms") is None:
-    bad.append("drain_ms absent")
+    bad.append(f"drain_ms absent{why('drain_ms')}")
 for b in (r.get("bands") or []):
     if b.get("tokens_total",1)==0:
         bad.append(f"band {b.get('concurrency')}: zero-token response is a failure, not a fast request")
+    # THE OTHER SIDE OF THE RATIO. Arm C asserts completed == requested on the
+    # SUBJECT and never looked at the comparator, whose tok/s counts tokens
+    # from successful requests only over the same wall clock -- so every
+    # request the comparator loses lowers the denominator and flatters us.
+    # Reported, not failed: the comparator's loss rate has no committed
+    # threshold, and inventing one here is the defect this gate exists to stop.
+    cr,cc=b.get("comparator_requested"),b.get("comparator_completed")
+    if cr is not None and cc is not None and cc!=cr:
+        print(f"REPORT ArmC c={b.get('concurrency')} comparator completed {cc}/{cr} "
+              f"-- its lost requests lower the denominator of agg_ratio")
 for m in bad: print(f"FAIL ArmC {m}")
 sys.exit(1 if bad else 0)
 PY
@@ -70,6 +118,67 @@ base=bands[1].get("aggregate_tok_per_sec")
 if not base:
     print("FAIL ArmA agg(1) missing or zero"); sys.exit(1)
 bl=((m.get("baselines") or {}).get(host) or {}).get(wl) or {}
+
+def resolve_expiry(bl, m):
+    """§4.7.3's deadline -- which is not always a calendar date (PERF-056, #2777).
+
+    All four W2 cells carried a hardcoded `expires: '2026-09-25'`. §4.3.2 dates
+    W2's expiry from an EVENT instead -- "PERF-001 merge + 30 days" -- because a
+    serialising server gives W2 nothing to measure and a blocking W2 would be
+    permanently red. Under perf-matrix.yaml's own GROUNDING RULE that 2026-09-25
+    was none of policy / inherited / ratchet: an invented continuous threshold,
+    in the one file that says there are none.
+
+    Returns (kind, detail):
+      ("date",    "YYYY-MM-DD")  a fixed deadline; compare it against TODAY
+      ("unarmed", "text")        an event-dated deadline whose event has not
+                                 happened. The cell REPORTS and the text names
+                                 the event, its status and its owner, so the
+                                 wait is a printed line and not an assumption
+      ("bad",     "reason")      the cell cannot be evaluated at all -> FAIL
+    """
+    fixed, cond = bl.get("expires"), bl.get("expires_after")
+    if fixed and cond:
+        return ("bad", "declares BOTH `expires` and `expires_after` -- two "
+                       "clocks is no clock; pick the one §4.3 gives this cell")
+    if fixed:
+        return ("date", str(fixed))
+    if not cond:
+        # UNCHANGED RULE, restated: defaulting an absent deadline to "never" is
+        # exactly how an UNMEASURED cell becomes permanent.
+        return ("bad", "UNMEASURED with no `expires` and no `expires_after` -- an "
+                       "UNMEASURED cell without a deadline never expires")
+    if not isinstance(cond, dict):
+        return ("bad", "`expires_after` must be a mapping {anchor: TICKET, days: N}, "
+                       "got %r" % (cond,))
+    name, days = cond.get("anchor"), cond.get("days")
+    if not name:
+        return ("bad", "`expires_after` names no `anchor`")
+    if not isinstance(days, int) or isinstance(days, bool) or days < 0:
+        return ("bad", "`expires_after.days` = %r is not a non-negative integer" % (days,))
+    anchors = m.get("expiry_anchors") or {}
+    if name not in anchors:
+        return ("bad", "`expires_after.anchor` = %s is not declared under "
+                       "`expiry_anchors:` -- an expiry hanging off an event this "
+                       "file never defines is the absent-`expires` hole wearing a "
+                       "different field name" % (name,))
+    a = anchors[name] or {}
+    merged, owner = a.get("merged_on"), a.get("owner") or "<no owner>"
+    if merged:
+        try:
+            d = datetime.date.fromisoformat(str(merged))
+        except ValueError:
+            return ("bad", "anchor %s has merged_on=%r, which is not an ISO date"
+                           % (name, merged))
+        return ("date", (d + datetime.timedelta(days=days)).isoformat())
+    if a.get("status") == "merged":
+        return ("bad", "anchor %s says status: merged but records no `merged_on`; "
+                       "a +%d-day clock cannot start from null" % (name, days))
+    return ("unarmed", "expiry is %s merge + %d days (§4.3.2); %s has NOT merged "
+                       "(status=%r, owner=%s), so the clock has not started"
+                       % (name, days, name, a.get("status"), owner))
+
+EXPIRY_KIND, EXPIRY_DETAIL = resolve_expiry(bl, m)
 fail=False
 for c in sorted(bands):
     if c==1: continue
@@ -86,19 +195,24 @@ for c in sorted(bands):
         # A cell with no `expires` at all is a FAIL, not a pass: the absent
         # field is exactly how an UNMEASURED cell would otherwise become
         # permanent, and defaulting it to "never" rewards omitting it.
-        exp = bl.get("expires")
-        if not exp:
-            print(f"FAIL ArmA c={c}: baseline UNMEASURED with no `expires` — an "
-                  f"UNMEASURED cell without a deadline never expires")
+        #
+        # §4.3.2 gives W2 an EVENT-dated expiry rather than a calendar one, so
+        # the deadline is resolved by `resolve_expiry` above and only the
+        # verdict is decided here.
+        if EXPIRY_KIND == "bad":
+            print(f"FAIL ArmA c={c}: baseline {EXPIRY_DETAIL}")
             fail=True
-        elif str(exp) < TODAY:
-            print(f"FAIL ArmA c={c}: baseline UNMEASURED and EXPIRED {exp} "
+        elif EXPIRY_KIND == "unarmed":
+            print(f"REPORT ArmA c={c} scaling_efficiency={eff:.4f} "
+                  f"(baseline UNMEASURED, {EXPIRY_DETAIL}, owner={bl.get('owner')})")
+        elif EXPIRY_DETAIL < TODAY:
+            print(f"FAIL ArmA c={c}: baseline UNMEASURED and EXPIRED {EXPIRY_DETAIL} "
                   f"(today {TODAY}, owner={bl.get('owner')}) — measure it or "
                   f"re-decide the cell; do not extend the date to stay green")
             fail=True
         else:
             print(f"REPORT ArmA c={c} scaling_efficiency={eff:.4f} "
-                  f"(baseline UNMEASURED until {exp}, owner={bl.get('owner')})")
+                  f"(baseline UNMEASURED until {EXPIRY_DETAIL}, owner={bl.get('owner')})")
     else:
         floor=bl.get(f"c{c}")
         if floor is None: print(f"FAIL ArmA c={c}: no committed baseline and status is not UNMEASURED"); fail=True
@@ -449,6 +563,14 @@ with open(sys.argv[1], "w") as fh:
   _case baseline_healthy               "$OK" pass
   _case completed_lt_requested         "${OK/\"completed\":16/\"completed\":15}" fail
   _case a_timeout_is_fatal             "${OK/\"timeouts\":0/\"timeouts\":1}" fail
+  # AN ABSENT COUNTER IS NOT A ZERO COUNTER. This read `r.get("timeouts",0)`,
+  # so a receipt that never counted timeouts was indistinguishable from one
+  # that counted none -- and no producer in this tree counts them at all
+  # (loadtest.rs collapses every failure to one `failed` tally), so the default
+  # was doing all the work on every real artifact. That is the same shape as a
+  # missing measurement reading as a passing one, which is what this gate is
+  # for.
+  _case timeouts_absent_is_not_zero    "${OK/\"timeouts\":0,/}" fail
   _case tokenization_absent            "${OK/\"method\":\"hf-tokenizers\"/\"method\":\"\"}" fail
   _case drain_ms_absent                "${OK/\"drain_ms\":12/\"drain_ms\":null}" fail
   # THIS ROW WAS GREEN FOR THE WRONG REASON (PERF-047). The old substitution
@@ -519,6 +641,102 @@ with open(sys.argv[1], "w") as fh:
     printf '  BROKE %-34s merge phase reddened on a release-only arm\n' sig_unsigned_ok_at_merge
     fail=$((fail + 1))
   fi
+
+  # ---- §4.7.3 THE EXPIRY CLOCK (PERF-056, #2777) ---------------------------
+  # `PERF_GATE_TODAY` was added "so the selftest can prove BOTH sides of the
+  # expiry boundary without waiting for a date to arrive", and then NO ROW EVER
+  # USED IT: on 9d45b927d `grep -n PERF_GATE_TODAY scripts/perf_gate.sh`
+  # returned exactly one line, its own definition. The clock deciding whether
+  # every UNMEASURED cell in the matrix may still REPORT was itself untested,
+  # which is the injectable-seam-with-no-case shape §5 catalogues.
+  #
+  # Rows 1-4 run against the COMMITTED matrix, so they break if the shipped
+  # file changes shape. Rows 5-11 need a matrix no well-formed committed one
+  # can be, and use $PERF_GATE_MATRIX for exactly that.
+  #
+  #  matrix / workload                       | today      | must | names
+  #  ----------------------------------------|------------|------|-------------
+  #  committed, W1 (fixed date)              | 2026-09-25 | pass | the date
+  #  committed, W1 (fixed date)              | 2026-09-26 | FAIL | EXPIRED
+  #  committed, W2 (event-dated)             | 2099-01-01 | pass | the ANCHOR
+  #  committed, W2 (event-dated)             | 2026-08-29 | pass | why unarmed
+  #  anchor merged 2026-09-01, +30d          | 2026-10-01 | pass | 2026-10-01
+  #  anchor merged 2026-09-01, +30d          | 2026-10-02 | FAIL | EXPIRED
+  #  anchor not declared in expiry_anchors   | any        | FAIL | undeclared
+  #  cell declares BOTH clocks               | any        | FAIL | two clocks
+  #  anchor status: merged, merged_on null   | any        | FAIL | null
+  #  cell declares NEITHER clock             | any        | FAIL | never expires
+  #  days is a string, not an integer        | any        | FAIL | integer
+  _mk expiry "$OK"
+  _mx() { # variant-name, python-edit-body -> prints the variant matrix path
+    python3 - "$ROOT/scripts/perf-matrix.yaml" "$tmp/matrix-$1.yaml" "$2" <<'PY_MX'
+import sys
+src, dst, edit = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(src, encoding="utf-8") as fh:
+    s = fh.read()
+for pair in edit.split("\x1e"):
+    if not pair:
+        continue
+    old, new = pair.split("\x1f")
+    assert old in s, (
+        "selftest matrix edit did not match %r. The committed matrix no longer has\n"
+        "the shape these expiry rows were written against -- most likely a W2 cell\n"
+        "lost its `expires_after:` event-dated expiry (PERF-056, #2777) or an\n"
+        "`expiry_anchors:` entry moved. Fix the matrix or the rows; do not delete\n"
+        "the rows." % old[:60])
+    s = s.replace(old, new)
+with open(dst, "w", encoding="utf-8") as fh:
+    fh.write(s)
+print(dst)
+PY_MX
+  }
+  _expiry() { # name, matrix(empty=committed), workload, today, expect, needle
+    local name="$1" mx="$2" wl="$3" today="$4" expect="$5" needle="$6"
+    local saved="$MATRIX" out rc=0
+    [ -n "$mx" ] && MATRIX="$mx"
+    out="$(PERF_GATE_TODAY="$today" run_gate lambda merge "$wl" "$tmp/expiry.json" 2>&1)" || rc=$?
+    MATRIX="$saved"
+    local got=pass
+    [ "$rc" = 0 ] || got=fail
+    if [ "$got" != "$expect" ]; then
+      printf '  BROKE %-34s expected %s got %s\n' "$name" "$expect" "$got"
+      fail=$((fail + 1))
+      return
+    fi
+    # POLARITY IS NOT ENOUGH. A row that only checks pass/fail is green when
+    # the gate fails for an unrelated reason, which is how a wrong diagnosis
+    # ships looking tested.
+    case "$out" in
+      *"$needle"*)
+        printf '  ok    %-34s expect=%s\n' "$name" "$expect"
+        pass=$((pass + 1)) ;;
+      *)
+        printf '  BROKE %-34s %s but never said %s\n' "$name" "$expect" "$needle"
+        fail=$((fail + 1)) ;;
+    esac
+  }
+  local MX_MERGED MX_NOANCHOR MX_BOTH MX_MERGEDNULL MX_NEITHER MX_BADDAYS
+  MX_MERGED="$(_mx merged "merged_on: null"$'\x1f'"merged_on: '2026-09-01'")"
+  MX_NOANCHOR="$(_mx noanchor "{anchor: PERF-001, days: 30}"$'\x1f'"{anchor: PERF-999, days: 30}")"
+  MX_BOTH="$(_mx both "expires_after: {anchor: PERF-001, days: 30}"$'\x1f'"expires_after: {anchor: PERF-001, days: 30}
+      expires: '2027-01-01'")"
+  MX_MERGEDNULL="$(_mx mergednull "status: in_progress
+    # Set by the PR"$'\x1f'"status: merged
+    # Set by the PR")"
+  MX_NEITHER="$(_mx neither "expires_after: {anchor: PERF-001, days: 30}"$'\x1f'"absent_on_purpose: true")"
+  MX_BADDAYS="$(_mx baddays "{anchor: PERF-001, days: 30}"$'\x1f'"{anchor: PERF-001, days: '30'}")"
+
+  _expiry expiry_w1_fixed_date_still_reports  ""              W1 2026-09-25 pass "UNMEASURED until 2026-09-25"
+  _expiry expiry_w1_fixed_date_expires        ""              W1 2026-09-26 fail "EXPIRED 2026-09-25"
+  _expiry expiry_w2_is_event_dated            ""              W2 2099-01-01 pass "PERF-001 merge + 30 days"
+  _expiry expiry_w2_says_why_it_is_unarmed    ""              W2 2026-08-29 pass "has NOT merged"
+  _expiry expiry_anchor_merge_arms_the_clock  "$MX_MERGED"    W2 2026-10-01 pass "UNMEASURED until 2026-10-01"
+  _expiry expiry_anchor_merge_then_expires    "$MX_MERGED"    W2 2026-10-02 fail "EXPIRED 2026-10-01"
+  _expiry expiry_undeclared_anchor_is_fatal   "$MX_NOANCHOR"  W2 2026-08-29 fail "not declared under"
+  _expiry expiry_two_clocks_is_fatal          "$MX_BOTH"      W2 2026-08-29 fail "two clocks is no clock"
+  _expiry expiry_merged_without_date_is_fatal "$MX_MERGEDNULL" W2 2026-08-29 fail "cannot start from null"
+  _expiry expiry_no_deadline_at_all_is_fatal  "$MX_NEITHER"   W2 2026-08-29 fail "never expires"
+  _expiry expiry_days_must_be_an_integer      "$MX_BADDAYS"   W2 2026-08-29 fail "non-negative integer"
 
   # main() must refuse `--phase release` with no `--commit` as a USAGE error
   # (exit 2), in a subshell because `die` exits. A gate that silently accepts a

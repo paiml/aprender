@@ -564,17 +564,25 @@ pub mod animation;
 )]
 pub mod presentar;
 
-/// APR-PERF-GATE-001 v2.2 §4.4.6 / §4.4.7 — the receipt producers.
+/// APR-PERF-GATE-001 v2.2 §4.4 — the serving-performance measurement protocol
+/// and the receipt producers that write its output.
 ///
-/// `scripts/perf_gate.sh` fails any receipt whose `drain_ms` or
-/// `tokenization` block is absent, and until PERF-026 nothing in the workspace
-/// produced either: `grep -rn "drain_ms" --include="*.rs" crates` returned zero
-/// lines, so the gate was green on its own hand-typed fixture and red on every
-/// measurement that could ever be taken.
+/// Two halves that compose. `protocol`/`window`/`metrics`/`bootstrap`/`samples`
+/// are §4.4.1-§4.4.5: the closed-loop admission and termination rule, the metric
+/// definitions, the bootstrap CI, and raw-sample retention. `drain`/`receipt`
+/// are §4.4.6/§4.4.7: `drain_ms`, the four request counters, the `tokenization`
+/// declaration, and the JSON `scripts/perf_gate.sh` actually reads.
+///
+/// `scripts/perf_gate.sh` fails any receipt whose `drain_ms` or `tokenization`
+/// block is absent, and until PERF-026 nothing in the workspace produced either:
+/// `grep -rn "drain_ms" --include="*.rs" crates` returned zero lines, so the
+/// gate was green on its own hand-typed fixture and red on every measurement
+/// that could ever be taken.
 ///
 /// Compiled under DEFAULT features on purpose. CI runs
-/// `cargo nextest run --workspace --lib` with no `--features`, so a producer
-/// placed behind the non-default `llm` feature would never be gated.
+/// `cargo nextest run --profile ci --workspace --lib` with no `--features`, so a
+/// protocol or producer placed behind the non-default `llm` feature would never
+/// be gated.
 #[allow(
     clippy::missing_errors_doc,
     clippy::must_use_candidate,

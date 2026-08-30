@@ -53,12 +53,12 @@ Three documents describe overlapping release work; each owns exactly one scope:
 ## Why this rewrite exists
 
 The v2.0 skill has 19 gates and they work — where they look. The surface audit
-(830 features across 28 binaries) measured where they look:
+(832 features across 28 binaries) measured where they look:
 
 | | Features | Covered by a gate | Coverage |
 |---|---:|---:|---:|
-| **Total** | 830 | 142 | **17.1%** |
-| `apr` | 367 | 142 | 38.7% |
+| **Total** | 832 | 142 | **17.1%** |
+| `apr` | 369 | 142 | 38.5% |
 | **The other 27 binaries** | **463** | **0** | **0.0%** |
 
 And coverage by quality band:
@@ -319,10 +319,13 @@ For every command with a `--task`-style selector, assert the set of documented
 values equals the set of reachable dispatch arms.
 
 Live defect: `apr eval --task` dispatches 10 named arms plus a default perplexity
-path (`dispatch_analysis.rs:1383-1419`), but `--help` documents exactly two
-(`extended_commands.rs:138`). Eight paths — `humaneval`, `mbpp`, `code`,
+path (`dispatch_analysis.rs:1389-1425`), but `--help` documents exactly two
+(`extended_commands.rs:138`). Nine paths — `humaneval`, `mbpp`, `code`,
 `contamination`, `compare`, `verify`, `correlation`, `human`, `plan` — are
-reachable and undocumented.
+reachable and undocumented. The line range was `1383-1419` when it was
+measured at `4bbfeb07f` and the arms have moved twice since; the count read
+"Eight" against a list of nine, and both were re-derived from the arms
+themselves rather than carried forward (PERF-046).
 
 Undocumented-but-reachable is RED. Documented-but-unreachable is RED. This is the
 phantom-subcommand protocol (v2.0 P9) generalized to flag domains.
@@ -387,10 +390,10 @@ Baselines below are **measured**, not chosen — computed from
 
 | Floor | Measured baseline | Threshold | Verdict rule |
 |---|---:|---:|---|
-| Overall coverage | **142/830 = 17.1%** | `>= 142` covered rows | **may never decrease** |
-| `apr` coverage | 142/367 = 38.7% | `>= 142` | may never decrease |
+| Overall coverage | **142/830 = 17.1%** (142/832 today) | `>= 142` covered rows | **may never decrease** |
+| `apr` coverage | 142/367 = 38.7% (142/369 today) | `>= 142` | may never decrease |
 | Per-binary coverage | **27 of 28 binaries at 0%** | covered may never fall | ratchet only — superseded at `--release` by the per-cluster arm below |
-| **Per-cluster coverage** | **9 of 14 clusters at 0 earned gates**, under 142 of 830 features gated | ≥ 1 **earned** gate per `cluster_label` | **RED at `--release`**; ratchet always |
+| **Per-cluster coverage** | **9 of 14 clusters at 0 earned gates**, under 142 of 830 features gated (142 of 832 today) | ≥ 1 **earned** gate per `cluster_label` | **RED at `--release`**; ratchet always |
 | **Cluster membership** | 0 declared reassignments | a feature may not change `cluster_label` undeclared | RED — a silent move retires an obligation |
 | Quality ≤ 4, uncovered | **44** | `0` | RED — a known-broken feature with no gate |
 | `verified_hardware` UNKNOWN | **427** | `<= 427` | may never increase |
@@ -442,7 +445,7 @@ and a half-migrated comparand is a hard failure, not an upgrade.
    cluster share a failure mode, so a gate on one member is evidence about the
    cluster. The goal is *n* gates per cluster allocated by expected defect yield,
    with *n* scaling **sub-linearly** in cluster size. Nine clusters at zero is
-   nine clusters with **no evidence at all** — that is the gap, not the 688
+   nine clusters with **no evidence at all** — that is the gap, not the 690
    uncovered rows.
 2. **Sibling sweep.** A defect in cluster X makes X's remaining members a
    mandatory sweep list in the same ticket. See Phase 3.
@@ -1457,12 +1460,12 @@ this table**, which is a dated sample.
 
 | cluster | n | gates | share of all gate effort | cluster coverage |
 |---|---:|---:|---:|---:|
-| `apr-lint-diag` | 66 | 55 | 38.7% | 83.3% |
+| `apr-lint-diag` | 68 | 55 | 38.7% | 80.9% |
 | `http-apr-serve` | 44 | 39 | 27.5% | 88.6% |
 | `apr-core-commands` | 109 | 38 | 26.8% | 34.9% |
 | *(11 others)* | 611 | 10 | 7.0% | 1.6% |
 
-**93.0% of gate effort sits over 26.4% of the surface. 142 gates / 830 features.**
+**93.0% of gate effort sits over 26.6% of the surface. 142 gates / 832 features.**
 
 Nobody chose that allocation; it accreted. Clustering is what makes it visible.
 Adding a 56th gate to `apr-lint-diag` buys less than the FIRST gate in
@@ -1473,7 +1476,7 @@ The nine clusters at zero, largest first: `http-orchestrate-banco` (95),
 `test-harness` (49), `rag-eval` (44), `qa-cgp` (37), `simulation` (18),
 `orchestrate-pacha-secrets` (17).
 
-**Report both numbers or neither (T2).** "5 of 14 clusters gated (35.7%)" without "142 of 830 features gated (17.1%)" beside it is a proxy masquerading as coverage, and the gate refuses to emit it — *on this line too*.
+**Report both numbers or neither (T2).** "5 of 14 clusters gated (35.7%)" without "142 of 832 features gated (17.1%)" beside it is a proxy masquerading as coverage, and the gate refuses to emit it — *on this line too*.
 
 The rule is about the NUMBER, not about a phrasing, and it is enforced on every
 surface that can emit one: the gate's own report, the receipt, the output of

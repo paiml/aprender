@@ -355,7 +355,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-core --features setfit --lib setfit && cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance && cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo test -p aprender-contracts-cli --test pv_surface_gate && cargo test -p aprender-contracts-cli --test cli_integration && cargo test -p aprender-contracts-cli --test ground_truth && cargo test -p aprender-contracts-cli --test version_identity && cargo build --examples --workspace --keep-going'
+            bash -c 'cargo test -p aprender-core --features setfit --lib setfit && cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance && cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo test -p aprender-contracts-cli --test pv_surface_gate && cargo test -p aprender-contracts-cli --test cli_integration && cargo test -p aprender-contracts-cli --test ground_truth && cargo test -p aprender-contracts-cli --test version_identity && cargo build --examples --workspace --keep-going && cargo check --workspace --benches --locked'
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
@@ -965,6 +965,15 @@ jobs:
       # named by no workflow enforces nothing, and recording that in a baseline
       # file would make the claim true only in the sense that the gap is
       # written down.
+      #
+      # This step is ALSO the I-12 `[X]`-figure gate, which v2.2 §5 listed as
+      # "not written" against this file. It was right: the comparator pattern
+      # required the competitor's name to sit immediately after the ratio, in
+      # ASCII, so of the six shapes §0.1 names it caught one. PERF-010 admits
+      # the connector ("36.9x over FasterTransformer") and U+00D7, and adds
+      # placeholders bound to a unit ("XX tok/s"). Twelve pre-existing sites
+      # surfaced and are baselined shrink-only; one was a LIVE comparator claim
+      # in book/ and is deleted.
       - name: No claim literals on user-facing surfaces
         run: bash scripts/check_no_claim_literals.sh
       - name: No claim-literal guard regression (case table)
@@ -1064,11 +1073,50 @@ jobs:
       # (#2676, closing the open half of #2647).
       - name: llama.cpp comparator pin discriminates
         run: bash scripts/check_llama_pin.sh
+      # PERF-019 / I-15. The pin above says WHICH llama.cpp; this says WHICH
+      # BINARY of it may be driven. 4.4.8/X7: llama-bench does not separate PP
+      # from TG under concurrent load, so a ratio built from it compares two
+      # CLIENTS with two servers attached rather than two servers. The rule is
+      # one client -- `apr test llm bench` -- against llama-server on both
+      # sides, which is what scripts/parity_host_receipt.sh already does.
+      #
+      # The tree was already clean when this landed; the guard is what keeps it
+      # clean. Neither existing guard covered it: check_no_competing_harnesses
+      # requires a file to ALSO compute a rate, and parity_host_receipt.sh
+      # computes none, so a llama-bench call added there stayed green (rc=0)
+      # with the defect in place.
+      - name: Comparator is not driven by llama-bench (I-15)
+        run: bash scripts/check_comparator_one_client.sh
+      - name: One-client guard can still go RED (case table)
+        run: bash scripts/check_comparator_one_client.sh --selftest
       # An unstated knob is a silent degree of freedom: it becomes whatever
       # each side defaults to, and the difference lands in the ratio wearing
       # the label of a performance result (#2677).
       - name: Benchmark fairness protocol is complete
         run: bash scripts/check_bench_protocol.sh
+      # PERF-004. scripts/perf_gate.sh read a receipt schema NOTHING in the tree
+      # wrote: four real artifacts all returned rc=1 and the only input that
+      # passed was the gate's own synthetic fixture. The tempting repair is to
+      # default the missing fields, which would hand-assign five numbers no
+      # instrument produces. scripts/perf-receipt-fields.yaml classifies every
+      # field the gate reads as PRODUCED, DERIVED, POLICY or UNMEASURED, and
+      # this holds the classification to the tree in both directions -- a new
+      # unclassified requirement, and an entry whose producer has since been
+      # deleted, are each a FAIL.
+      - name: Every field the perf gate reads has a producer or a named owner
+        run: bash scripts/check_perf_receipt_fields_have_producers.sh
+      - name: Schema-map guard can still go RED (case table + 5 mutations)
+        run: bash scripts/check_perf_receipt_fields_have_producers.sh --self-test
+      # The converter that closes the loop, end to end: a BenchmarkReport this
+      # repo can actually produce reaches a verdict, and what remains failing is
+      # the UNMEASURED bucket BY NAME rather than a schema error.
+      - name: Receipt converter round-trips into a gate verdict
+        run: python3 scripts/lib/perf_receipt.py --selftest
+      # NOT a second `perf_gate.sh --selftest` step. This commit was authored
+      # before #2709 landed, and carried its own copy; two identically-scoped
+      # invocations under two names is how a check comes to look twice as
+      # covered as it is. The case table runs once, above, as "Perf gate can
+      # still discriminate".
       # aprender#2737: the pin declared batch_size = 1 while TWO other places
       # retyped `-b 1` independently of it and a third declared
       # context_length/threads that no execution ever read. `-b 1` does not tune

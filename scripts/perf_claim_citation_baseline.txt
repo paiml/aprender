@@ -74,7 +74,6 @@ book/src/ml-fundamentals/feature-scaling.md:585
 book/src/ml-fundamentals/graph-algorithms.md:649
 book/src/ml-fundamentals/graph-components-traversal.md:512
 book/src/ml-fundamentals/graph-pathfinding.md:396
-book/src/tools/apr-cli.md:81
 docs/BEATS.md:112
 docs/BEATS.md:121
 docs/BEATS.md:227

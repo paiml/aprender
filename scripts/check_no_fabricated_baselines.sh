@@ -59,8 +59,41 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
+# ---------------------------------------------------------------------------
+# MODES, AND WHY AN UNKNOWN ARGUMENT IS FATAL.
+#
+# `--selftest` (the repo convention, cf. check_no_claim_literals.sh:140) runs the
+# case tables alone: the regexes and the ledger ratchet are exercised against
+# fixtures, with no repository scan. The plain invocation — what ci.yml:927 runs
+# — does the scan AND the tables.
+#
+# Before this pass the script read no arguments at all, so `--selftest` "worked"
+# by being IGNORED: it ran the full scan and exited 0, and so did `--slftest`,
+# and so did `--no-really-dont-check-anything`. Measured on the parent commit:
+# `bash scripts/check_no_fabricated_baselines.sh --this-flag-does-not-exist`
+# exited 0. A flag that is silently ignored is a flag that does not exist, and
+# the caller cannot tell the difference between "the mode ran" and "the mode is
+# not implemented" — this repo has already paid for that once, when a misspelled
+# nextest key meant NO timeout and killed the merge queue.
+MODE=full
+case "${1:-}" in
+    '')         : ;;
+    --selftest) MODE=selftest ;;
+    *)  printf 'usage: %s [--selftest]\n' "${0##*/}" >&2
+        printf 'refusing to run: unknown argument %s. Exiting 2 rather than\n' "$1" >&2
+        printf 'silently running something the caller did not ask for.\n' >&2
+        exit 2 ;;
+esac
+if [ "$#" -gt 1 ]; then
+    printf 'refusing to run: %s takes at most one argument, got %s.\n' "${0##*/}" "$#" >&2
+    exit 2
+fi
+
+TMPD=$(mktemp -d) || exit 2
+trap 'rm -rf "${TMPD:?}"' EXIT
+
 rc=0
-printf -- '--- no fabricated comparator baselines (F12) ------------------------\n'
+printf -- '--- no fabricated comparator baselines (F12) [mode: %s] -------------\n' "$MODE"
 
 # The competitor list is UNCHANGED by PERF-008 and is deliberately so: this pass
 # widens the SHAPE axis, and widening the NAME axis at the same time would leave
@@ -215,13 +248,23 @@ scan_file() {
 # is a silent FALSE NEGATIVE, a free pass for a real fabrication, not a noisy
 # false alarm.
 #
-# It is input-size dependent, which is why nothing noticed. On the one-line
-# fixtures in the case table below, upstream finishes before `-q` exits and the
-# hit is reported correctly; on a file large enough to fill the 64KB pipe buffer
-# it is lost every time. Measured on a 200k-line file: the `-q` form missed the
-# hit 5 runs out of 5, the capture-then-test form found it 5 out of 5. The
-# construct was inherited from the pre-PERF-008 guard, where the same line sat
-# on the only path that reports a violation.
+# It is input-size dependent, which is why nothing noticed — and the ONSET IS
+# FAR LOWER THAN THE PIPE BUFFER, which is why "64KB" was the wrong number to
+# reason with. Measured against a verbatim reconstruction of the parent
+# construct (`scan_file "$f" | grep -qvE "$CONFIG_SUFFIX"`, bash, pipefail), 20
+# runs per size, counting how often the hit was LOST:
+#
+#     upstream bytes   3584  7384  9284 10234 11184 13084 39786 165786
+#     hit lost (of 20)    0     0     0     2    19    20    20     20
+#
+# The producer here is itself a two-stage pipe (`grep -nE | grep -vE`), so what
+# has to fill is the FIRST stage's buffered output plus one pipe, not 64KB: loss
+# begins around 10KB and is total by 13KB. Between 9KB and 11KB it is a RACE —
+# the same input, the same binary, lost 2/20 then 19/20 — so a guard sitting in
+# that band reds and greens at random on identical input.
+#
+# zsh does NOT reproduce it; this is a bash + `set -o pipefail` behaviour, and
+# the reproduction must be run under bash or it reports the defect as absent.
 #
 # The regression case at the end of this file rebuilds a >64KB file and asserts
 # the hit still surfaces, because a fix with no failing test is a comment.
@@ -262,11 +305,16 @@ sweep() { # sweep <label> <pattern> <min-files> <file-list-on-stdin>
     return 0
 }
 
-sweep shell "$PATTERN" 100 < <(
-    { git ls-files 'scripts/*.sh' 'crates/*/scripts/*.sh' 2>/dev/null
-      find scripts -maxdepth 2 -type f -name '*.sh' 2>/dev/null
-    } | LC_ALL=C sort -u
-) || rc=1
+# THE SCANS RUN IN `full` MODE ONLY. `--selftest` exercises the rules against
+# fixtures; it deliberately does not touch the repository, so it stays valid on a
+# tree that is mid-edit and can be run by anyone changing a regex here.
+if [ "$MODE" = full ]; then
+    sweep shell "$PATTERN" 100 < <(
+        { git ls-files 'scripts/*.sh' 'crates/*/scripts/*.sh' 2>/dev/null
+          find scripts -maxdepth 2 -type f -name '*.sh' 2>/dev/null
+        } | LC_ALL=C sort -u
+    ) || rc=1
+fi
 
 # THE CONFIG UNIVERSE, and why it is not a speculative widening. scripts/lib/
 # holds bench_receipt.py and bench_threshold.py — the ONE receipt validator and
@@ -276,13 +324,15 @@ sweep shell "$PATTERN" 100 < <(
 # whether a receipt is honest was invisible to the guard that bans fabricated
 # baselines. Rule 6 applies and was obeyed: the mutation was re-run IN this
 # scope, not carried over from the shell one. See the mutation log in the PR.
-sweep config "$PATTERN_CFG|$PATTERN_JSON" 30 < <(
-    { git ls-files 'scripts/*.py' 'scripts/*.toml' 'scripts/*.yaml' 'scripts/*.yml' \
-                   '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null
-      find scripts .github/workflows -maxdepth 2 -type f \
-           \( -name '*.py' -o -name '*.toml' -o -name '*.yaml' -o -name '*.yml' \) 2>/dev/null
-    } | LC_ALL=C sort -u
-) || rc=1
+if [ "$MODE" = full ]; then
+    sweep config "$PATTERN_CFG|$PATTERN_JSON" 30 < <(
+        { git ls-files 'scripts/*.py' 'scripts/*.toml' 'scripts/*.yaml' 'scripts/*.yml' \
+                       '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null
+          find scripts .github/workflows -maxdepth 2 -type f \
+               \( -name '*.py' -o -name '*.toml' -o -name '*.yaml' -o -name '*.yml' \) 2>/dev/null
+        } | LC_ALL=C sort -u
+    ) || rc=1
+fi
 
 # ---------------------------------------------------------------------------
 # THE RUST SITES — a SHRINK-ONLY LEDGER, and explicitly NOT a construct ban.
@@ -297,13 +347,27 @@ sweep config "$PATTERN_CFG|$PATTERN_JSON" 30 < <(
 #   225.0 in aprender-serve src/tests/examples          22 lines
 #   ...of which are competitor-NAMED bindings            2   (parity016d, parity021c)
 #   ...in parity*.rs at all, on any value                4
-#   competitor-named bindings = bare literal, crates/**  29   <- the true count
-#   "default <competitor> baseline" announcements         2
+#   competitor-named bindings = bare literal, crates/**  35
+#   "default <competitor> baseline" announcements         1
+#   ------------------------------------------------------------
+#   TRUE TOTAL, ledgered                                 36
 #
-# So 225.0 is not the shape; parity*.rs is not the place. TWENTY of the 29 are
-# in crates/aprender-serve/examples/ and benches/, which §9 does not mention,
-# and one is in a different crate entirely (aprender-core/examples/
-# ch22_vs_llamacpp.rs). Chasing the literal would have found 2 of 29.
+# (That 35/1 split was itself measured while writing this comment, and the first
+# number written down — 34/2 — was wrong: there is exactly ONE announcement,
+# gpu_showcase_benchmark.rs:464. Counting is cheap; guessing is what produced the
+# 29 above.)
+#
+# So 225.0 is not the shape; parity*.rs is not the place. TWENTY-THREE of the 36
+# are in crates/aprender-serve/examples/ and benches/, which §9 does not mention,
+# and FOUR are in a different crate entirely (aprender-core/examples/, incl.
+# ch22_vs_llamacpp.rs). Chasing the literal would have found 2 of 36.
+#
+# THE 29/31 THAT USED TO STAND HERE WERE STALE — an intermediate count from this
+# guard's own development, left in the prose while the ledger went to 36. That is
+# the failure this block exists to prevent, committed into its own documentation.
+# Nothing detected it, because prose is not executed. It is why the printed row
+# now derives BOTH numbers at run time and fails when they disagree, and why no
+# total is hardcoded in this script.
 #
 # WHY A LEDGER AND NOT A BAN. A construct ban over Rust would be born RED
 # against 31 live sites, and a guard born red is deleted or ignored within the
@@ -316,7 +380,8 @@ sweep config "$PATTERN_CFG|$PATTERN_JSON" 30 < <(
 # competitor> = <bare numeric literal>;` — and it will miss a fabrication
 # assembled through a const table, a builder, or a match arm. Deleting the 31
 # sites is PERF-008-RUST, a separate ticket, and closing it retires this block
-# rather than tightening it.
+# rather than tightening it. The count is whatever the ledger holds and the tree
+# proves; see the printed `rust` row, not this comment.
 RUST_LEDGER="scripts/fabricated_baseline_rust_sites.txt"
 RUST_BIND='(let|const|static)[[:space:]]+(mut[[:space:]]+)?[A-Za-z0-9_]*('"$COMP"')[A-Za-z0-9_]*([[:space:]]*:[[:space:]]*[A-Za-z0-9_]+)?[[:space:]]*=[[:space:]]*[0-9]+(\.[0-9]+)?(_?f(32|64)|_?[iu](8|16|32|64|size))?[[:space:]]*[;,]'
 RUST_DEFAULT='default[[:space:]]+[A-Za-z.]*('"$COMP"')[A-Za-z.]*[[:space:]]+baseline'
@@ -343,62 +408,271 @@ RUST_NAME_DENY='(^|_)(trials?|runs?|timeout|port|retries|retry|seconds|secs|limi
 # that does it. Ledgering the comment as well as the code would mean any future
 # Rust comment EXPLAINING this ban becomes a violation of it. The println on 464
 # is the fabrication; the comment is a description of one.
+# ONE DECISION FUNCTION, CALLED BY BOTH THE SCAN AND THE CASE TABLE. Until this
+# pass the table re-implemented the scan's name extraction and denylist inline —
+# twice, once per direction. A table that exercises a COPY of the rule proves the
+# copy, and the two can drift apart in the direction that matters (the copy stays
+# strict, the shipped scan goes blind) with the table still green. `rust_is_fab`
+# is now the only place the rule exists.
+#
+# NO `... | grep -q` ANYWHERE ON A PRODUCED STREAM. `grep -q` exits at its first
+# match; under `set -o pipefail` the producer then takes SIGPIPE and the PIPELINE
+# reports 141, so the test reads FALSE though the pattern matched. The old
+# `printf '%s\n' "$nm" | grep -qE "$RUST_NAME_DENY"` was not exploitable — one
+# short name never fills a pipe buffer — but the construct is banned by this
+# file's own rule eight lines up, and a rule the file breaks itself is a rule
+# nobody else will keep. Herestrings throughout: no pipe, no SIGPIPE.
+rust_name_of() { # rust_name_of <line of rust>  -> the bound name, lowercased
+    sed -E 's/.*(let|const|static)[[:space:]]+(mut[[:space:]]+)?([A-Za-z0-9_]+).*/\3/' <<< "$1" \
+    | tr 'A-Z' 'a-z'
+}
+rust_is_fab() { # rust_is_fab <line of rust>  -> rc 0 if the line asserts a baseline
+    local line="$1" nm
+    grep -qE "$RUST_DEFAULT" <<< "$line" && return 0
+    grep -qE "$RUST_BIND"    <<< "$line" || return 1
+    nm=$(rust_name_of "$line")
+    grep -qE "$RUST_NAME_DENY" <<< "$nm" && return 1
+    return 0
+}
 rust_hits() {
-    { git grep --untracked -nIE "$RUST_BIND" -- 'crates/**/*.rs' 2>/dev/null || true; } \
+    { git grep --untracked -nIE "$RUST_BIND|$RUST_DEFAULT" -- 'crates/**/*.rs' 2>/dev/null || true; } \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|/\*|\*)' \
     | while IFS= read -r ln; do
-        nm=$(printf '%s\n' "${ln#*:*:}" \
-             | sed -E 's/.*(let|const|static)[[:space:]]+(mut[[:space:]]+)?([A-Za-z0-9_]+).*/\3/' \
-             | tr 'A-Z' 'a-z')
-        printf '%s\n' "$nm" | grep -qE "$RUST_NAME_DENY" && continue
-        printf '%s\n' "$ln"
+        rust_is_fab "${ln#*:*:}" && printf '%s\n' "$ln"
       done
-    { git grep --untracked -nIE "$RUST_DEFAULT" -- 'crates/**/*.rs' 2>/dev/null || true; } \
-    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|/\*|\*)'
 }
 
-rl_new=0
-rl_known=0
-if [ -f "$RUST_LEDGER" ]; then
-    all_rust=$(rust_hits | LC_ALL=C sort -u)
+# ledger_verdict — BOTH RATCHET DIRECTIONS, AND BOTH ARE FAILURES.
+#
+# A STALE ENTRY USED TO BE A REPORT, AND A REPORT IS A FREE PASS WITH A NOTE ON
+# IT. The comment it replaced already stated the harm — "an entry left in the
+# ledger after its site is deleted silently re-admits a fabrication at that
+# location later" — and then set rc nowhere, so nothing stopped it. Measured on
+# the parent commit, three runs:
+#
+#   H1  append `crates/aprender-core/src/zz_probe.rs:2` to the ledger, no such
+#       file                                             -> rc=0, "REPORT 1 …"
+#   H2  now CREATE that file with `let ollama_baseline_tps = 407.0;` on line 2
+#       -> rc=0, "ok    rust     37 ledgered site(s), 0 new"
+#   H3  control: the same fabrication with the ledger line removed
+#       -> rc=1, "FAIL  NEW fabricated baseline in Rust: …zz_probe.rs:2"
+#
+# H2 is the whole defect in one line: a brand-new fabricated baseline entered the
+# tree and the guard printed ok, because a dangling `path:line` from some earlier
+# deletion happened to name its location. The ledger is a ratchet only if
+# shrinkage is BANKED at the moment it happens; tolerated staleness turns each
+# retired site into a permanent one-shot exemption at a fixed coordinate.
+#
+# So: new -> FAIL (the number may not grow), stale -> FAIL (the number may not
+# be claimed larger than it is). Between the two, `entries == known == the true
+# count` is enforced mechanically rather than narrated, which is what §5 means by
+# "commit the true count". No literal total is hardcoded anywhere in this script
+# — a hardcoded total is the same defect one level up, and the sibling guard
+# check_guards_are_wired.sh shipped exactly that (`total=72` against a real 73).
+#
+# A LINE-NUMBER SHIFT IS ALREADY A FAILURE, so making stale fatal adds no new
+# class of breakage: an edit above a ledgered site moves the fabrication to a new
+# line, which is NEW (rc=1) under the old code too, and merely also stale now.
+ledger_verdict() { # ledger_verdict <ledger-file> <hits-file>  -> rc 0 iff clean
+    local ledger="$1" hitsf="$2" ln loc all
+    LEDGER_NEW=0; LEDGER_KNOWN=0; LEDGER_STALE=0; LEDGER_ENTRIES=0
+    all=$(LC_ALL=C sort -u "$hitsf")
     while IFS= read -r ln; do
         [ -n "$ln" ] || continue
-        loc="${ln%%:*}:$(printf '%s' "$ln" | cut -d: -f2)"
-        if grep -qxF "$loc" "$RUST_LEDGER"; then
-            rl_known=$((rl_known + 1))
+        loc="${ln%%:*}:$(cut -d: -f2 <<< "$ln")"
+        if grep -qxF "$loc" "$ledger"; then
+            LEDGER_KNOWN=$((LEDGER_KNOWN + 1))
         else
-            printf 'FAIL  NEW fabricated baseline in Rust: %s\n' "$(printf '%s' "$ln" | cut -c1-140)"
-            rl_new=$((rl_new + 1))
+            printf 'FAIL  NEW fabricated baseline in Rust: %s\n' "$(cut -c1-140 <<< "$ln")"
+            LEDGER_NEW=$((LEDGER_NEW + 1))
         fi
-    done <<< "$all_rust"
-
-    # THE RATCHET DIRECTION. Growth is a failure; shrinkage is the goal and must
-    # be BANKED, not merely tolerated — an entry left in the ledger after its
-    # site is deleted silently re-admits a fabrication at that location later.
-    rl_stale=0
+    done <<< "$all"
     while IFS= read -r loc; do
         [ -n "$loc" ] || continue
         case "$loc" in '#'*) continue ;; esac
-        case " $all_rust " in *"$loc:"*) : ;; *) rl_stale=$((rl_stale + 1)) ;; esac
-    done < "$RUST_LEDGER"
+        LEDGER_ENTRIES=$((LEDGER_ENTRIES + 1))
+        case " $all " in
+            *"$loc:"*) : ;;
+            *) printf 'FAIL  STALE ledger entry %s matches nothing. Prune it in the\n' "$loc"
+               printf '      commit that deleted the site, or it becomes a standing\n'
+               printf '      exemption for the next fabrication written at that line.\n'
+               LEDGER_STALE=$((LEDGER_STALE + 1)) ;;
+        esac
+    done < "$ledger"
+    [ "$LEDGER_NEW" -eq 0 ] && [ "$LEDGER_STALE" -eq 0 ]
+}
 
-    if [ "$rl_new" -gt 0 ]; then
+# ---------------------------------------------------------------------------
+# SHRINK-ONLY, ENFORCED — because for one commit it was only PRINTED.
+#
+# This file called the ledger SHRINK-ONLY in four places and nothing compared it
+# to anything. `ledger_verdict` above enforces the two properties that are
+# checkable from the WORKING TREE — no unledgered fabrication (new), no ledger
+# entry without a fabrication (stale) — and both are real. Neither is the ratchet.
+# A ledger line and its matching fabrication, added in the same commit, satisfies
+# both: it is not new (it is ledgered) and it is not stale (the site exists).
+#
+# Measured against the commit that added the stale->FAIL rule:
+#
+#     echo "crates/aprender-core/src/zz_grow.rs:2" >> $RUST_LEDGER
+#     printf '// p\nlet ollama_baseline_tps = 407.0;\n' > crates/…/zz_grow.rs
+#     bash scripts/check_no_fabricated_baselines.sh          -> rc=0
+#       ok    rust     37 ledgered site(s) = 37 ledger entr(ies), 0 new, 0 stale
+#                    (shrink-only, PERF-008-RUST; the count is enforced, not asserted)
+#
+# A fabricated baseline entered the tree, the ledger grew 36 -> 37, and the guard
+# printed PASS while emitting the words "the count is enforced, not asserted".
+# It was asserted. That is this epic's own defect class — a property stated in
+# prose and absent from the mechanism — committed by one of the epic's guards,
+# and the printed claim is what made it invisible: the row read as a receipt.
+#
+# THE MISSING PROPERTY IS A SUBSET, NOT A COUNT. Counting alone passes a swap
+# (drop one coordinate, add another, total unchanged), which is an append wearing
+# the old total. The current entry set must be a SUBSET of the comparand's:
+# removal is the point of a ratchet and stays green; any entry not already on the
+# comparand fails, whether it arrived by append or by substitution.
+#
+# THE COMPARAND IS A REF A PULL REQUEST CANNOT REWRITE. Deriving it from the
+# working tree would compare the branch against itself. This mirrors
+# check_dogfood_coverage.sh, which exists because a floor and its universe both
+# lived in one editable file: "There is no baseline NUMBER in this repository for
+# a PR to edit. To lower a floor you must land the change on main first."
+#
+# MERGE-BASE PREFERRED, TIP AS FALLBACK, SELF NEVER.
+#   * merge-base(HEAD, origin/main) isolates THIS branch's edits, so a branch
+#     that is merely behind main is green. It needs shared history.
+#   * If the merge-base is not computable — CI checks this repo out at
+#     fetch-depth 1, and a grafted shallow head has no common ancestor — the
+#     comparand falls back to the origin/main TIP, which needs no history and is
+#     STRICTLY STRONGER (it also forbids re-adding an entry main has deleted).
+#     The cost is a false red on a branch that is behind a main which has already
+#     shrunk the ledger; the remedy is `git rebase origin/main`, and the FAIL
+#     text says so. A green local run can therefore red in CI. CI is the
+#     authoritative one.
+#   * If NEITHER resolves, this is a hard failure. It never degrades to comparing
+#     the branch against itself: that would disarm the ratchet permanently and
+#     silently, which is the failure mode this whole guard is about.
+#
+# Set FABBASE_BASE_REF to override the comparand. The banner then says the ref is
+# NOT protected, because a gate that keeps printing its guarantee while the
+# guarantee has been overridden is lying in exactly the way this block was.
+BASE_REF="${FABBASE_BASE_REF:-origin/main}"
+
+resolve_base_ref() { # resolve_base_ref <root> <ref> -> "<MODE>\t<commit-ish>"
+    local root="$1" ref="$2" mb
+    if ! git -C "$root" rev-parse --verify --quiet "${ref}^{commit}" >/dev/null 2>&1; then
+        printf 'UNRESOLVABLE\t%s\n' "$ref"; return 0
+    fi
+    mb=$(git -C "$root" merge-base HEAD "$ref" 2>/dev/null) || mb=""
+    if [ -n "$mb" ] && git -C "$root" cat-file -e "${mb}:${RUST_LEDGER}" 2>/dev/null; then
+        printf 'MERGEBASE\t%s\n' "$mb"; return 0
+    fi
+    if git -C "$root" cat-file -e "${ref}:${RUST_LEDGER}" 2>/dev/null; then
+        printf 'TIP\t%s\n' "$ref"; return 0
+    fi
+    # The ref exists and carries no ledger. NOT a bootstrap: this ledger has been
+    # on main since #2710, so the shape is either a branch cut from before it, or
+    # a ledger deleted to escape its own gate. Both must be loud — an absent
+    # comparand read as "no growth" is a missing measurement read as clean.
+    printf 'ABSENT\t%s\n' "$ref"; return 0
+}
+
+ledger_entries_of() { # ledger_entries_of <file> -> the entry lines, sorted
+    grep -vE '^[[:space:]]*(#|$)' "$1" 2>/dev/null | LC_ALL=C sort -u
+}
+
+ledger_shrink_only() { # ledger_shrink_only <base-entries> <current-entries> -> rc 0 iff subset
+    local basef="$1" curf="$2" added
+    added=$(LC_ALL=C comm -13 "$basef" "$curf")
+    LEDGER_ADDED=0
+    [ -n "$added" ] && LEDGER_ADDED=$(grep -c . <<< "$added")
+    LEDGER_REMOVED=$(LC_ALL=C comm -23 "$basef" "$curf" | grep -c . || true)
+    if [ "$LEDGER_ADDED" -gt 0 ]; then
+        printf 'FAIL  the Rust ledger GREW by %s entr(ies). It is SHRINK-ONLY:\n' "$LEDGER_ADDED"
+        while IFS= read -r a; do
+            [ -n "$a" ] || continue
+            printf '        + %s\n' "$a"
+        done <<< "$added"
+        return 1
+    fi
+    return 0
+}
+
+rust_ledger_sweep() {
+    if [ ! -f "$RUST_LEDGER" ]; then
+        printf 'FAIL  %s is missing. The Rust site count is\n' "$RUST_LEDGER"
+        printf '      UNMEASURED without it, and an unmeasured ratchet is not a ratchet.\n'
+        rc=1
+        return
+    fi
+    rust_hits | LC_ALL=C sort -u > "$TMPD/rust_hits"
+    if ledger_verdict "$RUST_LEDGER" "$TMPD/rust_hits"; then
+        printf 'ok    rust     %s ledgered site(s) = %s ledger entr(ies), 0 new, 0 stale\n' \
+            "$LEDGER_KNOWN" "$LEDGER_ENTRIES"
+    else
         printf '      A comparator baseline is MEASURED or ABSENT, never asserted.\n'
         printf '      The Rust ledger is SHRINK-ONLY: %s is not an\n' "$RUST_LEDGER"
         printf '      allowlist to append to. Delete the literal, or derive it.\n'
         rc=1
+    fi
+
+    # THE RATCHET ITSELF. Separate row, separate verdict: the block above can be
+    # green on a ledger that grew by one, which is exactly how the growth defect
+    # hid behind a row that said "enforced".
+    local resolution mode ref
+    resolution="$(resolve_base_ref . "$BASE_REF")"
+    mode="${resolution%%$'\t'*}"; ref="${resolution##*$'\t'}"
+    case "$mode" in
+        UNRESOLVABLE)
+            printf 'FAIL  ledger   cannot resolve the comparand ref <%s>, so shrink-only is\n' "$ref"
+            printf '               UNMEASURED. It is NOT degraded to comparing this branch\n'
+            printf '               against itself — that disarms the ratchet silently. In CI:\n'
+            printf '               git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'
+            rc=1
+            return ;;
+        ABSENT)
+            printf 'FAIL  ledger   %s carries no %s, so there is\n' "$ref" "$RUST_LEDGER"
+            printf '               nothing to shrink from. A missing comparand is not "no\n'
+            printf '               growth". Either this branch predates the ledger (rebase\n'
+            printf '               onto main), or the ledger was deleted to escape its own\n'
+            printf '               gate. Retire the check in the same commit if it is genuinely\n'
+            printf '               being retired.\n'
+            rc=1
+            return ;;
+    esac
+    git show "${ref}:${RUST_LEDGER}" 2>/dev/null > "$TMPD/base_ledger" || {
+        printf 'FAIL  ledger   could not read %s:%s\n' "$ref" "$RUST_LEDGER"
+        rc=1
+        return
+    }
+    ledger_entries_of "$TMPD/base_ledger" > "$TMPD/base_entries"
+    ledger_entries_of "$RUST_LEDGER"     > "$TMPD/cur_entries"
+
+    local how note
+    case "$mode" in
+        MERGEBASE) how="merge-base with $BASE_REF" ;;
+        TIP)       how="tip of $BASE_REF (no merge-base available; stricter)" ;;
+        *)         how="$mode" ;;
+    esac
+    note="protected; a pull request cannot rewrite it"
+    [ "$BASE_REF" = "origin/main" ] || note="OVERRIDDEN via FABBASE_BASE_REF — NOT a protected ref"
+
+    if ledger_shrink_only "$TMPD/base_entries" "$TMPD/cur_entries"; then
+        printf 'ok    ledger   %s entr(ies), %s added, %s removed vs %s\n' \
+            "$(grep -c . "$TMPD/cur_entries" || true)" "$LEDGER_ADDED" "$LEDGER_REMOVED" \
+            "$(git rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"
+        printf '               comparand: %s (%s)\n' "$how" "$note"
     else
-        printf 'ok    rust     %s ledgered site(s), 0 new (shrink-only, PERF-008-RUST)\n' "$rl_known"
+        printf '               comparand: %s (%s)\n' "$how" "$note"
+        printf '               An entry may only LEAVE this file. Delete the literal in\n'
+        printf '               crates/ or derive it from a receipt under evidence/; do not\n'
+        printf '               ledger it. If the branch is merely behind a main that has\n'
+        printf '               already shrunk the ledger: git rebase origin/main.\n'
+        rc=1
     fi
-    if [ "$rl_stale" -gt 0 ]; then
-        printf 'REPORT %s ledger entry(ies) no longer match — prune them, or the\n' "$rl_stale"
-        printf '       ratchet re-admits a fabrication at that location for free.\n'
-    fi
-else
-    printf 'FAIL  %s is missing. The Rust site count is\n' "$RUST_LEDGER"
-    printf '      UNMEASURED without it, and an unmeasured ratchet is not a ratchet.\n'
-    rc=1
-fi
+}
+
+[ "$MODE" = full ] && rust_ledger_sweep
 
 if [ "$rc" -ne 0 ]; then
     printf '      Invoke the comparator and record its output, or record the\n'
@@ -417,7 +691,8 @@ fi
 # string equality rather than shape recognition. Every row below that could use
 # the birth numbers uses DIFFERENT ones (137, 318, 407, 44.5), and the shipped
 # mutation is `${OLLAMA_BASELINE:-137}` for the same reason.
-ctl=$(mktemp -d) || exit 2
+ctl="$TMPD/cases"
+mkdir -p "$ctl" || exit 2
 cat > "$ctl/must_match" <<'CASES'
 OLLAMA_BASELINE="${OLLAMA_BASELINE:-137}"
 OLLAMA_CPU=44
@@ -508,32 +783,128 @@ const OLLAMA_TRIALS: usize = 5;
     let ollama_ratio = ours / theirs;
     let decode_tps = 407.0;
 CASES
-while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    printf '%s\n' "$line" > "$ctl/one"
-    got=nomatch
-    if grep -qE "$RUST_BIND|$RUST_DEFAULT" "$ctl/one"; then
-        nm=$(printf '%s\n' "$line" \
-             | sed -E 's/.*(let|const|static)[[:space:]]+(mut[[:space:]]+)?([A-Za-z0-9_]+).*/\3/' \
-             | tr 'A-Z' 'a-z')
-        grep -qE "$RUST_NAME_DENY" <<< "$nm" || got=match
-        grep -qE "$RUST_DEFAULT" "$ctl/one" && got=match
+# THE TABLE CALLS THE SHIPPED FUNCTION. Both loops used to re-derive the bound
+# name and re-apply the denylist inline — a second implementation of the rule,
+# graded against itself. `rust_is_fab` is what rust_hits uses, so a change that
+# blinds the scan now reddens the table.
+run_rust_tbl() { # run_rust_tbl <file> <expect match|nomatch>
+    local file="$1" want="$2" line got
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        if rust_is_fab "$line"; then got=match; else got=nomatch; fi
+        if [ "$got" != "$want" ]; then
+            printf 'FAIL  rust want %-7s got %-7s : %s\n' "$want" "$got" "$line"
+            tbl_bad=1
+        fi
+    done < "$file"
+}
+run_rust_tbl "$ctl/rust_must_match"     match
+run_rust_tbl "$ctl/rust_must_not_match" nomatch
+
+# ---------------------------------------------------------------------------
+# THE LEDGER RATCHET, BOTH DIRECTIONS — the case table for the H1/H2/H3 defect
+# above. Without these rows the stale->FAIL change has no failing test, and a
+# revert to `REPORT` passes every other row in this file.
+lr="$ctl/lr"
+mkdir -p "$lr"
+lr_case() { # lr_case <label> <expect ok|fail> <ledger-lines> <hit-lines>
+    local label="$1" want="$2" got=ok
+    printf '%b' "$3" > "$lr/ledger"
+    printf '%b' "$4" > "$lr/hits"
+    ledger_verdict "$lr/ledger" "$lr/hits" > "$lr/out" 2>&1 || got=fail
+    if [ "$got" != "$want" ]; then
+        printf 'FAIL  ledger %-22s want %-4s got %-4s (new=%s known=%s stale=%s)\n' \
+            "$label" "$want" "$got" "$LEDGER_NEW" "$LEDGER_KNOWN" "$LEDGER_STALE"
+        tbl_bad=1
     fi
-    [ "$got" = match ] || { printf 'FAIL  rust want match   got %s : %s\n' "$got" "$line"; tbl_bad=1; }
-done < "$ctl/rust_must_match"
-while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    printf '%s\n' "$line" > "$ctl/one"
-    got=nomatch
-    if grep -qE "$RUST_BIND|$RUST_DEFAULT" "$ctl/one"; then
-        nm=$(printf '%s\n' "$line" \
-             | sed -E 's/.*(let|const|static)[[:space:]]+(mut[[:space:]]+)?([A-Za-z0-9_]+).*/\3/' \
-             | tr 'A-Z' 'a-z')
-        grep -qE "$RUST_NAME_DENY" <<< "$nm" || got=match
-        grep -qE "$RUST_DEFAULT" "$ctl/one" && got=match
+}
+LR_HIT='crates/a/src/x.rs:2:    let ollama_baseline = 137.0;\n'
+lr_case 'ledgered site'    ok   'crates/a/src/x.rs:2\n'                    "$LR_HIT"
+lr_case 'comments ignored' ok   '# a comment\n\ncrates/a/src/x.rs:2\n'    "$LR_HIT"
+lr_case 'new site'         fail 'crates/a/src/x.rs:2\n'                    "$LR_HIT"'crates/b/src/y.rs:9:    let vllm_tps = 407.0;\n'
+lr_case 'stale entry'      fail 'crates/a/src/x.rs:2\ncrates/gone.rs:1\n'  "$LR_HIT"
+lr_case 'empty ledger'     fail ''                                         "$LR_HIT"
+lr_case 'no hits at all'   ok   '# nothing ledgered yet\n'                 ''
+# `crates/a/src/x.rs:2` must NOT be satisfied by a hit at line 20 — a prefix
+# match here would exempt a whole file from its first ledgered line onwards.
+lr_case 'line 2 != line 20' fail 'crates/a/src/x.rs:2\n' 'crates/a/src/x.rs:20:    let ollama_baseline = 137.0;\n'
+lr_rows=7
+
+# ---------------------------------------------------------------------------
+# THE SHRINK-ONLY RATCHET, AS A TABLE. The rows above prove new/stale; NONE of
+# them covers GROWTH, which is why the previous commit's green did not transfer
+# and the append defect survived it. Rule 6: re-mutate in the new scope.
+#
+# `ledger_shrink_only` is a set operation, so the fixtures are entry lists. The
+# end-to-end forms (append with and without the matching fabrication, at the real
+# ledger) are in the PR body's mutation table; these rows are what fails at merge
+# if someone deletes the comparison.
+so="$ctl/so"
+mkdir -p "$so"
+so_case() { # so_case <label> <expect ok|fail> <base-entries> <current-entries>
+    local label="$1" want="$2" got=ok
+    printf '%b' "$3" | LC_ALL=C sort -u > "$so/base"
+    printf '%b' "$4" | LC_ALL=C sort -u > "$so/cur"
+    ledger_shrink_only "$so/base" "$so/cur" > "$so/out" 2>&1 || got=fail
+    if [ "$got" != "$want" ]; then
+        printf 'FAIL  shrink-only %-30s want %-4s got %-4s (added=%s removed=%s)\n' \
+            "$label" "$want" "$got" "$LEDGER_ADDED" "$LEDGER_REMOVED"
+        tbl_bad=1
     fi
-    [ "$got" = nomatch ] || { printf 'FAIL  rust want nomatch got %s : %s\n' "$got" "$line"; tbl_bad=1; }
-done < "$ctl/rust_must_not_match"
+}
+SO_BASE='crates/a.rs:1\ncrates/b.rs:2\ncrates/c.rs:3\n'
+so_case 'unchanged'              ok   "$SO_BASE" "$SO_BASE"
+so_case 'one removed'            ok   "$SO_BASE" 'crates/a.rs:1\ncrates/b.rs:2\n'
+so_case 'all removed'            ok   "$SO_BASE" ''
+so_case 'one appended'           fail "$SO_BASE" "$SO_BASE"'crates/d.rs:4\n'
+so_case 'swap, count unchanged'  fail "$SO_BASE" 'crates/a.rs:1\ncrates/b.rs:2\ncrates/d.rs:4\n'
+so_case 'same file, new line'    fail "$SO_BASE" "$SO_BASE"'crates/a.rs:9\n'
+so_case 'remove one, add one'    fail "$SO_BASE" 'crates/a.rs:1\ncrates/d.rs:4\n'
+so_case 'empty base, one entry'  fail ''         'crates/a.rs:1\n'
+so_rows=8
+
+# THE COMPARAND RESOLVER, against a scratch repository — because the branch that
+# must NEVER be taken is "fall back to comparing this branch against itself", and
+# that branch cannot be exercised from inside a checkout that already satisfies
+# it. A missing comparand has to be provably LOUD.
+sr="$TMPD/scratch"
+sr_rows=0
+if mkdir -p "$sr/scripts" \
+   && git -C "$sr" init -q >/dev/null 2>&1 \
+   && git -C "$sr" config user.email selftest@example.invalid \
+   && git -C "$sr" config user.name selftest \
+   && printf 'x\n' > "$sr/scripts/unrelated.txt" \
+   && git -C "$sr" add -A \
+   && git -C "$sr" -c commit.gpgsign=false commit -qm 'no ledger yet' >/dev/null 2>&1; then
+    sr_noledger=$(git -C "$sr" rev-parse HEAD)
+    mkdir -p "$sr/$(dirname "$RUST_LEDGER")"
+    printf '# header\ncrates/a.rs:1\n' > "$sr/$RUST_LEDGER"
+    if git -C "$sr" add -A \
+       && git -C "$sr" -c commit.gpgsign=false commit -qm 'add ledger' >/dev/null 2>&1; then
+        sr_case() { # sr_case <label> <expect-mode> <ref>
+            local label="$1" want="$2" got
+            got=$(resolve_base_ref "$sr" "$3")
+            got="${got%%$'\t'*}"
+            sr_rows=$((sr_rows + 1))
+            if [ "$got" != "$want" ]; then
+                printf 'FAIL  comparand %-24s want %-12s got %s\n' "$label" "$want" "$got"
+                tbl_bad=1
+            fi
+        }
+        sr_case 'ref does not exist'   UNRESOLVABLE 'refs/heads/no-such-branch-xyzzy'
+        sr_case 'ref predates ledger'  ABSENT       "$sr_noledger"
+        sr_case 'ref carries ledger'   MERGEBASE    HEAD
+    else
+        printf 'FAIL  comparand table: could not commit in the scratch repo, so the\n'
+        printf '      UNRESOLVABLE/ABSENT branches are UNTESTED. That is not a skip.\n'
+        tbl_bad=1
+    fi
+else
+    printf 'FAIL  comparand table: could not build the scratch repo, so the branch\n'
+    printf '      that must never be taken is UNTESTED. A selftest that silently\n'
+    printf '      skips its hardest case is the defect this guard is about.\n'
+    tbl_bad=1
+fi
 
 # SIGPIPE REGRESSION CASE. Every fixture above is one line long, and on a
 # one-line file the `-q` form and the capture form behave identically — so the
@@ -550,6 +921,12 @@ done < "$ctl/rust_must_not_match"
 # So the padding MATCHES. `grep -q` exits on line 2 while the writer still has
 # thousands of matching lines to push, the writer takes SIGPIPE, and pipefail
 # reports 141 for a pipeline whose reader succeeded.
+#
+# THE 65536 FLOOR BELOW IS A MARGIN, NOT THE THRESHOLD. Measured onset is ~10KB
+# (curve above); the fixture emits ~165KB, roughly 16x past the point where loss
+# is total. The floor is kept at the pipe-buffer size because it is the one
+# number that cannot get smaller on a different libc, and being over-strict on a
+# fixture costs nothing.
 big="$ctl/big_sigpipe.sh"
 { printf '#!/usr/bin/env bash\n'
   printf 'OLLAMA_BASELINE=137\n'
@@ -570,15 +947,16 @@ fi
 
 if [ "$tbl_bad" -eq 0 ]; then
     printf 'ok    sigpipe: hit found though upstream emits %s bytes (>64KB buffer)\n' "$upstream_bytes"
-    printf 'ok    case table: %s shell must-match, %s must-not-match, %s cfg, %s rust — all correct\n' \
+    printf 'ok    case table: %s shell must-match, %s must-not-match, %s cfg, %s rust,\n' \
         "$(( $(grep -c . "$ctl/must_match") + $(grep -c . "$ctl/must_match_shapes") ))" \
         "$(grep -c . "$ctl/must_not_match")" \
         "$(( $(grep -c . "$ctl/cfg_must_match") + $(grep -c . "$ctl/cfg_must_not_match") ))" \
         "$(( $(grep -c . "$ctl/rust_must_match") + $(grep -c . "$ctl/rust_must_not_match") ))"
+    printf '               %s ledger, %s shrink-only, %s comparand — all correct\n' \
+        "$lr_rows" "$so_rows" "$sr_rows"
 else
     rc=1
 fi
-rm -rf "${ctl:?}"
 
 # ---------------------------------------------------------------------------
 # RESIDUAL — shapes measured as MISSED and deliberately NOT claimed. Recorded
@@ -605,9 +983,15 @@ rm -rf "${ctl:?}"
 #   RUST, beyond the one binding shape — see the ledger block above.
 #
 printf '\n'
-if [ "$rc" -eq 0 ]; then
-    printf 'PASS  no comparator baseline is asserted rather than measured.\n'
-else
+# A SELFTEST PASS IS NOT A CLEAN TREE, and it must not be printable as one. The
+# two modes reach the same `exit 0`, so the only thing separating "the rules
+# discriminate" from "the repository holds no fabricated baseline" is this line.
+if [ "$rc" -ne 0 ]; then
     printf 'FAIL  see rows above (#2679, #2706 PERF-008).\n'
+elif [ "$MODE" = selftest ]; then
+    printf 'PASS  case table only. The rules discriminate; NO REPOSITORY SCAN was\n'
+    printf '      run, so this says nothing about the tree. Run with no arguments.\n'
+else
+    printf 'PASS  no comparator baseline is asserted rather than measured.\n'
 fi
 exit "$rc"

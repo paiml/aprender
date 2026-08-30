@@ -423,19 +423,6 @@ impl OwnedQuantizedModelCuda {
             });
         }
 
-        // PMAT-399: Auto-size max_batch if env var not set
-        if std::env::var("CUDA_MAX_BATCH").is_err() {
-            let auto_batch = executor.compute_max_batch_for_memory(
-                num_layers,
-                num_kv_heads,
-                head_dim,
-                max_seq_len,
-            );
-            // GH-611: Suppressed — was noisy in non-verbose mode
-            // Store for scheduler to pick up
-            std::env::set_var("CUDA_MAX_BATCH", auto_batch.to_string());
-        }
-
         // PAR-118: Initialize Flash Decoding for split-K attention acceleration.
         // Five-Whys: batched_incremental_attention uses Grid=(num_heads,M,1) Block=(32,1,1)
         // = only 896 threads on RTX 4090 for 7B (28 heads). Flash Decoding splits KV cache
@@ -509,7 +496,38 @@ impl OwnedQuantizedModelCuda {
         };
 
         // GH-199 ROOT CAUSE B + PARITY-GATE: preload weights and verify GPU correctness.
-        cuda_model.preload_and_verify()
+        let cuda_model = cuda_model.preload_and_verify()?;
+
+        // PMAT-399 / X1-KVALLOC (#2774): auto-size max_batch AFTER the weights
+        // and the FP8/FP16 prefill cache are resident.
+        //
+        // This ran BEFORE `preload_and_verify`, where `memory_info()` still
+        // reports an essentially empty card, so the budget overstated free VRAM
+        // by the entire model. Measured on lambda-4090 with
+        // `qwen2.5-coder-7b-instruct-q4_k_m` at `--context-length 4096`: 4.4 GB
+        // of Q4_K weights plus a 6.7 GB FP8 prefill cache are invisible at the
+        // old call site, so `compute_max_batch_for_memory` returned its clamp
+        // ceiling of 32 and the scheduler advertised `max_batch=32`. Measured
+        // after this move, the same server advertises `max_batch=12` and serves
+        // c=4/8/16 at 100% 200s with a 20471 MiB peak of 24564 MiB.
+        // `CUDA_MAX_BATCH` is the ADMISSION ceiling,
+        // and X1-KVALLOC's allocation floor is the admitted batch -- so an
+        // admission ceiling computed against fictional VRAM is still an OOM,
+        // one clamp further out. Both ends have to be measured against the
+        // same device state.
+        if std::env::var("CUDA_MAX_BATCH").is_err() {
+            let auto_batch = cuda_model.executor.compute_max_batch_for_memory(
+                num_layers,
+                num_kv_heads,
+                head_dim,
+                max_seq_len,
+            );
+            // GH-611: Suppressed — was noisy in non-verbose mode
+            // Store for scheduler to pick up
+            std::env::set_var("CUDA_MAX_BATCH", auto_batch.to_string());
+        }
+
+        Ok(cuda_model)
     }
 
     /// GH-129: Free CPU projection weight copies after GPU preload.

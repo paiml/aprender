@@ -1,11 +1,31 @@
 //! BEAT-OLLAMA-DECODE-THROUGHPUT — Pillar-4 SPEED beat (PMAT-755, audit gap #4).
-//! **ENFORCED manual/GPU gate (NOT a CPU-CI gate).**
+//! **ENFORCED GPU gate, run nightly on gx10.**
 //!
 //! `#[ignore]`d: it needs an NVIDIA GPU, an `apr` binary built `--features cuda`,
 //! a resident `ollama` daemon + the Q4_K_M model, and the matching GGUF on disk.
-//! NONE of those exist on the CPU-only self-hosted CI runners, so this ENFORCED
-//! gate is MANUAL/operator-gated (lambda-vector RTX 4090 or gx10 GB10), exactly
-//! like the cuda-oxide throughput beat. The CPU unit tests below DO run in CI.
+//! None of those exist on the CPU-only clean-room runners, so it runs in
+//! `.github/workflows/cuda-nightly.yml` on **gx10** (GB10, sm_121), which is the
+//! fleet's only sanctioned GPU runner. ollama and the model are DECLARED there —
+//! paiml/infra `machines/gx10/forjar.yaml`, tag `beat-incumbent` — rather than
+//! hand-installed, because a comparative beat whose incumbent is undeclared is
+//! one apt-get away from silently not running.
+//!
+//! It previously ran on lambda-vector (RTX 4090, sm_89). That leg is retired:
+//! lambda-labs is the workstation and must never be a CI host (paiml/infra#359).
+//!
+//! TWO CLAIMS THAT USED TO SIT HERE WERE FALSE, and both are recorded rather than
+//! quietly deleted:
+//!
+//!   - "The CPU unit tests below DO run in CI." They did not. This is an
+//!     integration test TARGET, so `cargo test --lib` never reaches it, and the
+//!     only workflow that named it ran `-- --ignored` (the beat) — the unit tests
+//!     below were compiled and skipped. One of them had been RED for a month:
+//!     `enforced_threshold_is_a_real_beat_with_margin` asserted `thresh > 1.0`
+//!     against the 1.371x provenance this very header withdrew, while the
+//!     constant it read had been 0.90 since. Nobody saw it because nothing ran
+//!     it. It is now `enforced_threshold_is_a_no_collapse_floor_not_a_beat` and
+//!     asserts what the constant means.
+//!   - "no NVIDIA CI runner" (in the `#[ignore]` reason). There is one: gx10.
 //!
 //! ## VERDICT 2026-07-31: the 1.371x BEAT CLAIM IS WITHDRAWN. This is now a
 //! ## NO-COLLAPSE PARITY FLOOR, not a beat. apr does not currently win here.
@@ -229,7 +249,7 @@ fn ollama_eval_tps_once(model: &str) -> Option<f64> {
 
 #[test]
 #[ignore = "ENFORCED manual/GPU gate: needs NVIDIA GPU + apr --features cuda (incl. #2049 FP8 \
-            stall fix) + ollama + Q4_K_M model (no NVIDIA CI runner; status=enforced, see contract)"]
+            stall fix) + ollama + Q4_K_M model; runs nightly on gx10 (GB10) via cuda-nightly.yml; status=enforced, see contract"]
 fn beat_ollama_decode_throughput_speed() {
     // APR_BIN is REQUIRED — there is deliberately no default path.
     //
@@ -372,25 +392,45 @@ fn median_of_seven_picks_middle() {
 }
 
 #[test]
-fn enforced_threshold_is_a_real_beat_with_margin() {
-    // status=enforced: the gate asserts apr median-of-7 >= ollama median x 1.10.
-    // 1.10 is a real beat (> 1.0) and sits well under the re-measured 1.37x median
-    // and even the worst single run's 1.23x, so the gate has a wide non-flaky margin.
-    // `black_box` defeats const-folding so clippy doesn't flag a constant assertion.
+fn enforced_threshold_is_a_no_collapse_floor_not_a_beat() {
+    // WAS `enforced_threshold_is_a_real_beat_with_margin`, and it asserted
+    // `thresh > 1.0` against provenance (1.371x median, 1.230x worst run) that
+    // this file's own header WITHDREW on 2026-07-31. ENFORCED_THRESHOLD has been
+    // 0.90 since, so the assertion was false — and nobody saw it, because no
+    // workflow executed this target: `cargo test --lib` does not reach an
+    // integration test, and the only site that named it (cuda-nightly's ada-4090
+    // leg) ran the ignored beat, not these unit tests.
+    //
+    // Measured on 2026-08-29, running the target directly:
+    //     test enforced_threshold_is_a_real_beat_with_margin ... FAILED
+    //     panicked at 'enforced threshold must be a real beat (> 1.0x)'
+    //
+    // The header even claimed "The CPU unit tests below DO run in CI." They did
+    // not. So this now asserts what the constant actually means.
+    //
+    // `black_box` defeats const-folding so clippy does not flag a constant
+    // assertion.
     let thresh = std::hint::black_box(ENFORCED_THRESHOLD);
-    let measured_median_ratio = std::hint::black_box(1.371_f64);
-    let worst_single_run_ratio = std::hint::black_box(1.230_f64);
+    // The failure this floor exists to catch: decode falling back to CPU SIMD,
+    // measured at ratio ~0.065 (a 14x violation of this floor).
+    let cpu_fallback_collapse_ratio = std::hint::black_box(0.065_f64);
+    // The worst honestly re-measured GPU run on sm_89 (2026-07-31, idle box).
+    let worst_measured_gpu_ratio = std::hint::black_box(1.015_f64);
+
     assert!(
-        thresh > 1.0,
-        "enforced threshold must be a real beat (> 1.0x)"
+        thresh < worst_measured_gpu_ratio,
+        "the floor must sit UNDER the worst measured GPU run, or it fails on a \
+         healthy night and teaches everyone to ignore it"
     );
     assert!(
-        thresh < worst_single_run_ratio,
-        "enforced 1.10x threshold must sit under the worst re-measured single run (1.23x) \
-         so even worst-case single samples clear it"
+        thresh > cpu_fallback_collapse_ratio,
+        "the floor must sit ABOVE the CPU-fallback collapse, or it cannot catch \
+         the one failure it exists for"
     );
     assert!(
-        worst_single_run_ratio < measured_median_ratio,
-        "sanity: worst single run < median"
+        thresh <= 1.0,
+        "this is a NO-COLLAPSE FLOOR, not a beat: a threshold above 1.0 asserts a \
+         win apr does not currently have, and the 1.371x claim it came from was \
+         withdrawn (see this file's header)"
     );
 }

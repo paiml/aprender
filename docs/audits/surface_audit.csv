@@ -234,6 +234,7 @@ apr,apr sim verify,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate
 apr,apr sim version,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulate/src/cli/args.rs:119,low
 apr,apr stamp,2,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:617,high
 apr,apr tensors,4,x86_64-linux;nvidia-cuda,safetensors,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:341,high
+apr,apr test llm bench,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1663 (dispatch crates/apr-cli/src/commands/test_llm.rs:399),medium
 apr,apr test tensor,4,x86_64-linux,NONE,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1615,high
 apr,apr tokenize apply,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:38,low
 apr,apr tokenize encode-corpus,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:131,low
@@ -268,16 +269,16 @@ apr,apr chat --backend cuda,6,x86_64-linux;nvidia-cuda,ollama,no,1,apr-lint-diag
 apr,apr chat --backend wgpu,6,UNKNOWN,ollama,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:85 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
 apr,apr code --input-format json,2,x86_64-linux,claude-code,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:793 (CodeInputFormat crates/apr-cli/src/commands_enum.rs:37),high
 apr,apr code --output-format json,2,x86_64-linux,claude-code,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:787 (CodeOutputFormat crates/apr-cli/src/commands_enum.rs:25),high
-apr,apr eval --task classify,6,x86_64-linux,scikit-learn,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1383 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task code,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1391 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task compare,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1415 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task contamination,6,x86_64-linux,huggingface-transformers,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1412 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task correlation,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1417 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task human,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1418 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task humaneval,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1394 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task mbpp,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1403 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task plan,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1419 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task verify,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1416 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task classify,6,x86_64-linux,scikit-learn,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1389 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task code,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1397 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task compare,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1421 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task contamination,6,x86_64-linux,huggingface-transformers,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1418 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task correlation,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1423 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task human,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1424 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task humaneval,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1400 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task mbpp,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1409 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task plan,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1425 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task verify,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1422 (flag crates/apr-cli/src/extended_commands.rs:139),high
 apr,apr export --format coreml,6,x86_64-linux;nvidia-cuda,pytorch,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
 apr,apr export --format gguf,6,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
 apr,apr export --format mlx,6,x86_64-linux;nvidia-cuda,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
@@ -306,6 +307,7 @@ apr,apr serve run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-
 apr,apr serve run --backend wgpu,4,UNKNOWN,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
 apr,apr serve run --no-cors,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:50 (router.rs:33-42),high
 apr,apr serve run --no-metrics,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (router.rs:33-42),high
+apr,apr test llm bench --band,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1778 (protocol crates/apr-cli/src/commands/test_llm_band.rs:348),medium
 apr,apr train apply --task classify,1,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:88,high
 apr,apr train apply --task pretrain,1,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:88,high
 apr,apr train plan --task classify,3,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:30,high

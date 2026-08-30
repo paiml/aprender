@@ -1,6 +1,80 @@
-//! APR-PERF-GATE-001 v2.2 §4.4.6 / §4.4.7 — the receipt producers.
+//! APR-PERF-GATE-001 v2.2 §4.4 — the measurement protocol, as code.
 //!
-//! # The defect this closes (PERF-026)
+//! # What this is, and what it is not
+//!
+//! This is **not a benchmarking harness.** The harness is
+//! [`crate::llm::loadtest::LoadTest`], reached from `apr test llm bench`, and it
+//! already drives `c` concurrent workers over external HTTP against both `apr
+//! serve` and `llama-server`. A second harness would be a
+//! `check_no_competing_harnesses.sh` violation and a PERF-009 regression.
+//!
+//! This module is the **protocol** the harness was missing: the termination
+//! rule, the metric definitions, the confidence interval, and the sample
+//! retention that turn a load test into a §4.4-conformant *measurement*. Every
+//! decision lives here as a pure function so it can be tested in microseconds
+//! and, crucially, so it is compiled under **default features**. `aprender-test-lib`'s
+//! `llm` feature is not default and CI runs
+//! `cargo nextest run --profile ci --workspace --lib` with no `--features`, so a
+//! test placed inside `llm/` never executes in CI. The protocol had to sit
+//! outside that gate to be gated at all.
+//!
+//! # §4.4 requirement → code, and what is NOT implemented
+//!
+//! | Clause | Requirement | Status | Where |
+//! |---|---|---|---|
+//! | §4.4.1 | closed-loop, `c` workers, issue → wait → immediately reissue | pre-existing | `llm/loadtest.rs` `run_phase_max` |
+//! | §4.4.1 | external HTTP on the same host, never in-process | pre-existing | `llm/client.rs` (reqwest to a URL) |
+//! | §4.4.1 | record `client_model: closed_loop` | **added** | [`protocol::ClientModel`] |
+//! | §4.4.2 | warmup `2 × c` requests, discarded | **added** | [`protocol::warmup_requests`], [`window::WindowController::with_bounds`] |
+//! | §4.4.2 | 5 s quiesce before the first sampled request | **added** | [`protocol::QUIESCE`], [`protocol::BandConfig::quiesce`] |
+//! | §4.4.2 | minimum sampled requests `max(30, 8 × c)` | **added** | [`protocol::min_sampled_requests`] |
+//! | §4.4.2 | minimum 60 s wall-clock per band | **added** | [`protocol::MIN_WALL_CLOCK`] |
+//! | §4.4.2 | termination = whichever bound is satisfied **last** | **added** | [`window::WindowController::try_admit`] |
+//! | §4.4.2 | `N = 3` full band replicates | **added** (constant + assertion) | [`protocol::REPLICATES`] |
+//! | §4.4.3 | `agg_tok_s` **wall-clock**, not the mean of per-request rates | **added** | [`metrics::agg_tok_s`], with [`metrics::mean_of_rates`] beside it purely so a test asserts they differ |
+//! | §4.4.3 | `decode_tok_s` = median of per-request `(tok-1)/(last-first)` | **added** | [`metrics::RequestSample::decode_tok_s`] |
+//! | §4.4.3 | `ttft_ms` p50/p95 | **added** (p95 was absent) | [`metrics::BandMetrics`] |
+//! | §4.4.3 | `itl_ms` **pooled** gaps, p50/p95 | **added** | [`metrics::RequestSample::itl_gaps_ms`] |
+//! | §4.4.3 | counts `completed`/`requested`/`timeouts`/`truncated` | **added** | [`drain::Outcome`], [`metrics::BandMetrics`] |
+//! | §4.4.3 | 120 s hard per-request timeout | pre-existing | `llm/client.rs:213` |
+//! | §4.4.4 | bootstrap percentile, 10 000 resamples, seed 2026, **whole requests** | **added** | [`bootstrap::bootstrap_ci`] |
+//! | §4.4.5 | raw samples retained as gzipped JSONL | **added** | [`samples::write_samples_gz`] |
+//! | §4.4.5 | `receipt_size_budget_bytes` | **deliberately unset** | [`samples::SamplesFile::exceeds_budget`] takes the budget as an argument; the spec forbids the literal until a full receipt is measured |
+//! | §4.4.6 | `tokenization` block, `method` with no default | **added** | [`receipt::TokenizationBlock`] |
+//! | §4.4.7 | no new request at or after `T`; drain to completion | pre-existing + **formalised** | [`window::WindowController`] |
+//! | §4.4.7 | `drain_ms` recorded | **added** | [`window::WindowReport::drain_ms`] |
+//! | §4.4.7 | `drain_ms > 0.5 × window` annotated `SUSPECT` | **added** | [`window::WindowReport::suspect`] |
+//!
+//! ## NOT implemented by this module — stated plainly
+//!
+//! - **§4.4.8 comparator harness.** One client driving both `apr serve` and
+//!   `llama-server` already exists (`scripts/parity_host_receipt.sh` runs the
+//!   same `apr test llm bench` against both). Nothing here changes or verifies
+//!   that, and the `tokenization`-block-must-match-across-lanes rule is a
+//!   *receipt validator's* job, not this module's.
+//! - **§4.4.9 scheduler observability.** `max_in_flight`, `admission_rejected`,
+//!   `preempted_*`, `kv_blocks_*`, `gpu_layers_*`, `backend_loaded[]`,
+//!   `autofit_applied[]` are all **server**-reported. A client cannot synthesise
+//!   them, and a client-side guess would be worse than a null.
+//!   [`window::WindowReport::client_peak_in_flight`] is the client's own
+//!   observation and is named so it can never be mistaken for the server's
+//!   `max_in_flight`.
+//! - **Receipt emission.** Nothing here writes `receipt.json`.
+//!   `scripts/lib/bench_receipt.py` is the single schema authority and the
+//!   serialiser that feeds it is a separate ticket.
+//! - **W1/W2 workload construction** (§4.3) and the prompt corpora. Both
+//!   corpora now exist under `crates/aprender-serve/benchmarks/qwen-coder/`
+//!   (`prompts-w1.jsonl` landed with PERF-039; this note used to say it was
+//!   missing). The `prompt_tokens = 512 ± 8` assertion is no longer absent
+//!   either — PERF-056 put it in `llm::prompts::assert_prompt_tokens_in_band`,
+//!   called from the band harness against the counts the SERVER reports,
+//!   because that is the only place the model's own tokenizer is observable.
+//! - **Running any band.** No baseline is measured or committed by this ticket.
+//!   Every cell in `scripts/perf-matrix.yaml` stays `UNMEASURED`.
+//!
+//! # The §4.4.6 / §4.4.7 half — the receipt producers (PERF-026)
+//!
+//! ## The defect this closes
 //!
 //! `scripts/perf_gate.sh:42` fails any receipt whose `drain_ms` is absent:
 //!
@@ -19,7 +93,7 @@
 //! The same held for §4.4.6's `tokenization` block, which the spec marks
 //! REQUIRED with no default.
 //!
-//! # What is here
+//! ## What is here
 //!
 //! - [`drain`] — the §4.4.7 producer. `drain_ms`, the four request counters,
 //!   and the `SUSPECT` annotation, all **derived from per-request terminal
@@ -28,7 +102,7 @@
 //!   declaration and §4.2 provenance into the JSON `scripts/perf_gate.sh` and
 //!   `scripts/lib/bench_receipt.py` actually read.
 //!
-//! # The definition that had to be right first (§4.4.7)
+//! ## The definition that had to be right first (§4.4.7)
 //!
 //! > `drain_ms` is the length of the **drain phase**: the last settlement of any
 //! > pre-`T` request, minus `T`, clamped at zero.
@@ -46,7 +120,7 @@
 //! is the only thing that increments `truncated`;
 //! `drain::tests::max_tokens_truncation_is_not_drain_truncation` is the guard.
 //!
-//! # What a client cannot produce, said rather than synthesised
+//! ## What a client cannot produce, said rather than synthesised
 //!
 //! §4.4.9's scheduler block is **server**-reported: I-16 requires
 //! `max_in_flight` come from the server rather than be inferred by the harness,
@@ -56,33 +130,131 @@
 //! invents provenance is worse than a missing field — it is indistinguishable
 //! from a real answer.
 //!
-//! # MERGE NOTE — PERF-024 on `feat/n1-band-cli`
+//! # Overlaps between the two halves, resolved here rather than left to drift
 //!
-//! That branch adds `window.rs`, `protocol.rs`, `metrics.rs`, `samples.rs` and
-//! `bootstrap.rs` to this same directory: the §4.4.1/§4.4.2 admission and
-//! termination rule, the §4.4.3 metric set, and the §4.4.4 bootstrap. The two
-//! halves compose — its `WindowController` decides *when* `T` falls and hands
-//! over per-request records; [`drain::BandInput`] derives the §4.4.7 numbers
-//! from those records and [`receipt::ReceiptInput`] writes them out, which
-//! PERF-024's own docs list as explicitly out of its scope ("Receipt emission.
-//! Nothing here writes `receipt.json`").
+//! `main`'s `perf_gate/mod.rs` named three and they are discharged in this
+//! merge commit, not deferred:
 //!
-//! Two overlaps must be resolved in the integration commit rather than left to
-//! drift: `protocol::Tokenization` and [`receipt::TokenizationBlock`] are the
-//! same §4.4.6 block, and `protocol::Outcome` and [`drain::Outcome`] are the
-//! same four counters. Keep one of each.
+//! - **`Outcome`.** `protocol::Outcome` and [`drain::Outcome`] were the same
+//!   four mutually-exclusive counters under two spellings. [`drain::Outcome`]
+//!   survives; `protocol` re-exports it. Its `AbandonedAtDrain` is the §4.4.7
+//!   sense of `truncated` said in a name that cannot be misread as
+//!   `finish_reason == "length"` — which is the exact confusion the other
+//!   spelling's own doc comment warned about while spelling the variant
+//!   `Truncated`.
+//! - **The §4.4.6 `tokenization` block.** `protocol::Tokenization` was a struct
+//!   with an `Option<String>` digest and a `validate()`;
+//!   [`receipt::TokenizationBlock`] is an enum in which "`client_tokenizer`
+//!   with no digest" is *unrepresentable* rather than merely rejected, and it
+//!   is the one actually wired into the emitter the gate reads. The enum
+//!   survives; `protocol::Tokenization` is gone, and its one behaviour the enum
+//!   lacked — [`receipt::TokenizationBlock::require_counter`], the poka-yoke
+//!   against a declared method the transport cannot honour — moved onto it.
+//! - **`percentile` and `DRAIN_SUSPECT_FRACTION`.** Byte-identical in
+//!   `drain.rs` and in `metrics.rs`/`protocol.rs` respectively. The `drain`
+//!   definitions survive; the others re-export. `protocol::REQUEST_TIMEOUT`
+//!   (a `Duration`) and [`drain::REQUEST_TIMEOUT_MS`] (an `f64`) are two
+//!   spellings the type system cannot merge, so
+//!   `conformance_tests::the_two_request_timeout_spellings_agree` pins them
+//!   together instead.
 
+pub mod bootstrap;
 pub mod drain;
+pub mod metrics;
+pub mod protocol;
 pub mod receipt;
+pub mod samples;
+pub mod window;
 
+pub use bootstrap::{bootstrap_agg_tok_s_ci, bootstrap_ci, BootstrapCi, SplitMix64, Statistic};
 pub use drain::{
     percentile, BandInput, ComparatorStatus, DerivedBand, Outcome, RequestOutcome,
     DRAIN_SUSPECT_FRACTION, REQUEST_TIMEOUT_MS,
 };
-pub use receipt::{
-    ComputeClass, KvBlock, Provenance, ReceiptInput, TokenCountingMethod, TokenizationBlock,
-    Workload, SERVER_ONLY_FIELDS,
+pub use metrics::{agg_tok_s, aggregate_terms, BandMetrics, RequestSample};
+pub use protocol::{
+    min_sampled_requests, warmup_requests, BandConfig, ClientModel, BOOTSTRAP_RESAMPLES,
+    BOOTSTRAP_SEED, MIN_WALL_CLOCK, QUIESCE, REPLICATES, REQUEST_TIMEOUT,
 };
+pub use receipt::{
+    sha256_file, ComputeClass, KvBlock, Provenance, ReceiptInput, TokenCountingMethod,
+    TokenizationBlock, Workload, SERVER_ONLY_FIELDS,
+};
+pub use samples::{read_samples_gz, write_samples_gz, SamplesFile};
+pub use window::{WindowController, WindowReport};
+
+#[cfg(test)]
+mod conformance_tests {
+    use super::*;
+
+    /// §4.4.2 — `N = 3` full band runs per cell. The constant exists so a
+    /// harness can assert against it rather than defaulting to 1 and calling a
+    /// single run a measurement.
+    #[test]
+    fn replicates_is_three() {
+        assert_eq!(REPLICATES, 3);
+    }
+
+    /// The four bands of §4.5, and the sample floor each one owes.
+    #[test]
+    fn every_declared_band_has_a_conformant_config() {
+        for (c, want_samples) in [(1_usize, 30_usize), (4, 32), (8, 64), (16, 128)] {
+            let cfg = BandConfig::conformant(c);
+            assert!(
+                cfg.is_conformant(),
+                "c={c}: {:?}",
+                cfg.conformance_violations()
+            );
+            assert_eq!(cfg.min_samples, want_samples, "c={c}");
+            assert_eq!(cfg.warmup_requests, 2 * c, "c={c}");
+            assert_eq!(cfg.client_model, ClientModel::ClosedLoop);
+        }
+    }
+
+    /// End to end over the pure protocol: admit under the real termination rule,
+    /// build samples, compute §4.4.3 metrics, and bound them with the §4.4.4 CI.
+    #[test]
+    fn protocol_composes_end_to_end() {
+        let cfg = BandConfig::conformant(4);
+        let mut w = WindowController::new(&cfg);
+        let mut samples = Vec::new();
+        // Four workers, each request taking 1 s, stepping the clock by 0.25 s.
+        let mut now = 0.0_f64;
+        while let Some(index) = w.try_admit(now) {
+            let start = now;
+            let end = now + 1.0;
+            let drained = w.complete(end);
+            samples.push(RequestSample {
+                index,
+                worker: index % 4,
+                start_s: start,
+                end_s: end,
+                token_times_s: (1..=8).map(|k| start + f64::from(k) * 0.125).collect(),
+                generated_tokens: 8,
+                prompt_tokens: 512,
+                outcome: Outcome::Completed,
+                in_flight_at_start: 4,
+                drained,
+            });
+            now += 0.25;
+        }
+        let report = w.report();
+        // 60 s at one admission per 0.25 s is 240 requests, well past max(30, 32).
+        assert!(report.requested >= cfg.min_samples, "{report:?}");
+        assert!(report.window_ms >= 60_000.0, "{report:?}");
+
+        let m = BandMetrics::from_samples(cfg.concurrency, &samples);
+        assert_eq!(m.requested, samples.len());
+        assert_eq!(m.completed, samples.len());
+        assert_eq!(m.timeouts, 0);
+        assert!(m.agg_tok_s > 0.0);
+
+        let ci = bootstrap_agg_tok_s_ci(&samples, 0.95).expect("n >= 2");
+        assert_eq!(ci.seed, BOOTSTRAP_SEED);
+        assert_eq!(ci.resamples, BOOTSTRAP_RESAMPLES);
+        assert!(ci.lower <= ci.point && ci.point <= ci.upper, "{ci:?}");
+    }
+}
 
 #[cfg(test)]
 mod gate_conformance_tests {
@@ -153,6 +325,19 @@ mod gate_conformance_tests {
              (I-3) and a lane driven by the same client binary (I-15, PERF-019).",
         ),
         ("decode_ratio", "As agg_ratio (I-3, I-15, PERF-019)."),
+        (
+            "comparator_requested",
+            "The COMPARATOR lane's request counter. `BandInput` takes one lane's \
+             `RequestOutcome`s and `ComparatorStatus` has no `Measured` variant, so this \
+             producer has nowhere to read it from. `scripts/perf-receipt-fields.yaml` names \
+             the real producer — `scripts/lib/perf_receipt.py` over the comparator runs — and \
+             marks the field `required: conditional`; `perf_gate.sh:88` reads it defensively \
+             (`if cr is not None and cc is not None`) and only REPORTs.",
+        ),
+        (
+            "comparator_completed",
+            "As comparator_requested (PERF-019, scripts/lib/perf_receipt.py).",
+        ),
     ];
 
     fn repo_root() -> PathBuf {

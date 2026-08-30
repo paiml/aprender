@@ -7,7 +7,7 @@
 //!
 //! ## Five-Whys Root Cause (PMAT-066)
 //!
-//! 1. WHY is TTFT 3.3x slower than llama.cpp? → HGEMM reads FP16 weights (2 B/elem)
+//! 1. WHY is prefill TTFT bandwidth-bound? → HGEMM reads FP16 weights (2 B/elem)
 //! 2. WHY read FP16? → cuBLAS HGEMM requires FP16 input format
 //! 3. WHY use cuBLAS HGEMM? → WMMA approach still dequants Q4K→FP16 in SHMEM (PMAT-045)
 //! 4. WHY dequant to FP16? → WMMA requires FP16×FP16→FP32 operands
