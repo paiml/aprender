@@ -16,14 +16,21 @@ metadata:
     and a contract governing an enforcement artifact is the last place to claim
     one.
 
-    STATE ON THIS COMMIT: DECLARED, NOT ARMED. PRREV-001 ships this file alone.
-    The guard it names (scripts/check_pr_review_receipt.sh), the fourteen
-    fixtures, the vendored schemas and the reviewer skill are PRREV-002..005 and
-    do not exist here. Seven of the eight falsification tests below are
-    therefore LIVE-PENDING and say so in the field the schema actually reads.
-    A contract that reads as governance while enforcing nothing is the #2504
-    shape; the remedy this repo settled on is to write the state down where a
-    reader cannot miss it, not to omit the contract until the guard lands.
+    STATE ON THIS COMMIT: BUILT AND MUTATION-VERIFIED, STILL NOT ARMED. The
+    guard (scripts/check_pr_review_receipt.sh), twenty-two fixtures, the
+    vendored schemas, the reviewer skill and the CI wiring all exist here;
+    the `pr-review-receipt` job is not yet a required check. Five of the eight
+    falsification tests below are green and bound to a command; three remain
+    LIVE-PENDING and say so in the field the schema actually reads.
+
+    This paragraph was rewritten by PRREV-008 and the previous text is worth
+    recording: it said "DECLARED, NOT ARMED. PRREV-001 ships this file alone.
+    The guard ... does not exist here." That was true when written and false
+    four commits later, and nothing made it say so. A contract that reads as
+    governance while enforcing nothing is the #2504 shape; a contract that
+    still describes a state the tree left behind is the same failure with the
+    sign flipped, and it is likelier, because nothing ever fails because a
+    status paragraph went stale.
   references:
   - 'PR-REVIEW-SKILL-002 v2 — grounded adversarial PR review with a signed receipt.
     THE AUTHORITY FOR THIS FILE AND IT IS NOT IN THIS REPOSITORY at 745fa8588. It was
@@ -37,7 +44,23 @@ metadata:
   - 'Spec S1 (grounding), S7 (blocking policy), S8 (instrumentation) — the three sections
     this contract encodes. S2-S6 and S9-S12 are encoded by the artifacts of PRREV-002..007.'
   - 'Spec S6.3 — the fourteen-row fixture table, of which rows 6, 7 and 14 are the
-    discrimination cases. Without them "refuse every receipt" reads green.'
+    discrimination cases. Without them "refuse every receipt" reads green. Rows 15-21 are
+    owed by this contract and by PRREV-008 rather than by S6.3, and row 17 is a fourth
+    discrimination case: without it B4 would forbid the honest path it exists to require.'
+  - 'Spec S9 step 7 — the backtest, and the acceptance test for the whole design: "If the
+    skill would not have caught [the three named cases], the design is wrong and changes
+    before it is enabled." It caught one of three. PRREV-008 is the change: B4 now
+    recomputes comparative claims from the diff rather than from the reviewer''s own
+    findings, every consultation carries both a recomputed trigger and an emptiness
+    check, S3.A is enforced as unconditional, and the comparative pattern is
+    check_no_claim_literals.sh''s measured RATIO_RE rather than a second implementation
+    of it.'
+  - 'Spec S3.A vs S6.3 row 7 — the spec CONTRADICTS ITSELF. S3.A says pmat''s trigger is
+    "unconditional" and S8.4 repeats it; row 7 says a docs-only PR may record all four
+    consultations as not-triggered. The two normative statements win over the
+    illustrative row: `pmat: not-triggered` is rejected, and row 7 is rebuilt with pmat
+    consulted so it keeps discriminating. Recorded here because a divergence from the
+    authority is only legitimate while it is written down.'
   - 'Spec S9 note — use `pv validate <file>`, NEVER `pv lint <FILE>`. MEASURED here on
     745fa8588: `pv lint contracts/batch-admission-v1.yaml` prints "Gate 1: validate (0
     contracts, 0 errors, 0 warnings)" and exits 0. See F-PRREV-008.'
@@ -241,12 +264,25 @@ equations:
       receipt_presence = 1.00 MEANS A MISSING RECEIPT IS RED, NOT SKIPPED (S6.3). A
       skipped check and a passed check are the same pixel in a status list.
     - >-
-      unmarked_claims = 0 HAS NO FIXTURE ROW YET. S6.3's fourteen rows cover empty
+      unmarked_claims = 0 IS NOW EXERCISED. S6.3's fourteen rows cover empty
       `source`/`excerpt` (row 3), empty `failure_scenario` (row 11) and a digest
-      mismatch (row 12), but none covers a result carrying NO properties.grounding at
-      all. PRREV-003 owes a fifteenth row; until it exists this metric is asserted by
-      the contract and unexercised by the guard, which is stated here rather than
-      discovered later.
+      mismatch (row 12), but none covered a result carrying NO properties.grounding at
+      all. PRREV-003 shipped the fifteenth row
+      (tests/fixtures/pr-review/row-15-finding-with-no-grounding-mark) and PRREV-004's
+      sweep kills both mutants on the branch it pins; PRREV-008 discharges the note. It
+      is recorded rather than deleted because the interval matters: for one commit the
+      metric read as governed while nothing exercised it, and a `check:` still saying
+      "not yet exercised" after the fixture lands is the same defect pointing the other
+      way.
+    - >-
+      vacuous_consultations = 0 WAS ENFORCED FOR ONE CONSULTATION IN FOUR until
+      PRREV-008. The guard rejected `mutation.attempted: 0` (row 2) and ACCEPTED
+      `cuda: consulted, queries: []`; symmetrically, only cuda's trigger was recomputed
+      from the diff, so `pmat`, `crux` and `mutation` could each be skipped outright by
+      writing `not-triggered`. Every consultation now carries both halves — a trigger
+      recomputed from `git diff` and an emptiness check — and rows 18-21 are the
+      fixtures. A metric enforced on one member of a set it quantifies over is not a
+      partial gate; it is a gate over one member, reported as if it covered the set.
     preconditions:
     - 'the guard has passed its own positive control (S6.1) before any receipt verdict it emits is believed'
     - 'the mutation set for the guard is committed, so `attempted` is a count of a fixed set and not of whatever happened to run'
@@ -256,8 +292,15 @@ equations:
 
 falsification_tests:
 
-# Seven of the eight below are LIVE-PENDING and every one says so IN `test:`, the
-# field the schema reads and `pv lint --strict-test-binding` classifies. The house
+# THREE of the eight below are LIVE-PENDING and every one says so IN `test:`, the
+# field the schema reads and `pv lint --strict-test-binding` classifies. It was seven at
+# PRREV-001, when this file shipped alone and the guard did not exist; PRREV-008
+# discharges the four whose recorded reason ("the guard does not exist at 745fa8588",
+# "the fixtures are unwritten") is no longer true, and REWRITES the reason on F-PRREV-004,
+# which is still pending but no longer for the reason it gives. A ledger that keeps saying
+# an artifact is unwritten after it lands is the same defect as one that claims a metric
+# is exercised when it is not; it just points the other way, and the next reader believes
+# whichever of the two files they happen to open first. The house
 # alternative is a `test_harness_status:` sibling key; that key is not a field of
 # `FalsificationTest`, serde drops it, and a dropped key that reads as governance is
 # #2465 exactly. The `mutation:` keys below are dropped for the same reason and are
@@ -270,12 +313,7 @@ falsification_tests:
     A receipt carrying a SARIF result with no properties.grounding is REJECTED with a
     non-zero exit. The same receipt with grounding=asserted and a non-empty rationale
     is ACCEPTED and the finding is non-blocking.
-  test: >-
-    LIVE-PENDING (PRREV-003) — no fixture in spec S6.3 exercises this. Rows 3, 11 and
-    12 cover an EMPTY source/excerpt, an empty failure_scenario and a digest mismatch;
-    a result with NO grounding property at all is uncovered. PRREV-003 owes fixture
-    row 15 plus the guard branch it exercises. Until both exist this prediction has
-    never been run and must not be read as discharged.
+  test: 'bats tests/pr-review.bats -f "row 15"'
   if_fails: >-
     S8's unmarked_claims = 0 is unenforceable, and the whole S1 mark system degrades to
     a labelling convention that a reviewer may simply omit — which is the pre-contract
@@ -290,9 +328,7 @@ falsification_tests:
     A result with grounding=cited and excerpt_sha256 != sha256(excerpt) is REJECTED
     (row 12); so is one with an empty source or excerpt (row 3). A cited result whose
     digest matches a non-empty excerpt is ACCEPTED (row 14).
-  test: >-
-    LIVE-PENDING (PRREV-003) — scripts/check_pr_review_receipt.sh does not exist at
-    745fa8588; rows 3, 12 and 14 of the S6.3 table are unwritten.
+  test: 'bats tests/pr-review.bats -f "row (3|12|14) "'
   if_fails: >-
     a citation becomes a string a reviewer types, which is indistinguishable from
     memory with a URL attached — the exact failure S3.B exists to stop
@@ -307,10 +343,11 @@ falsification_tests:
     Every RED row of S6.3 (1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13) exits non-zero and
     names exactly one of B1..B6; every GREEN row (6, 7, 14) exits zero. B5 is expected
     to be named by NO row, because no fixture exercises a semver break — that absence
-    is the assertion, not an oversight.
-  test: >-
-    LIVE-PENDING (PRREV-003) — the fourteen fixtures under tests/fixtures/pr-review/
-    and tests/pr-review.bats are unwritten at 745fa8588.
+    is the assertion, not an oversight. Extended by PRREV-008: rows 16, 18, 19, 20 and
+    21 are RED and row 17 is GREEN, and row 17 is a fourth discrimination case — it
+    carries the SAME published ratio as row 16 on the SAME diff, and differs only in
+    that the comparator is recorded.
+  test: 'bats tests/pr-review.bats'
   if_fails: >-
     "refuse every receipt" and "verify every receipt" produce the same green, which is
     the over-reach the discrimination rows 6, 7 and 14 were added to catch
@@ -325,8 +362,13 @@ falsification_tests:
     guard REFUSE to block on it and REQUIRE that this file be edited; the CI step
     remains enabled and continues to report the class as advisory.
   test: >-
-    LIVE-PENDING (PRREV-003 + PRREV-006) — depends on both the guard and the CI wiring,
-    and on a precision sample that does not exist until PRs have been reviewed.
+    LIVE-PENDING, and the REASON has changed: the guard (PRREV-003) and the CI wiring
+    (PRREV-006) both exist now, so what is missing is no longer an artifact but a
+    MEASUREMENT — the gate is not enabled, no PR has been reviewed under it, and a
+    precision sample of size zero cannot demote anything. Restating the reason rather
+    than leaving the old one is the point: "pending because the code is unwritten" and
+    "pending because nothing has been measured" are different states and only one of
+    them is fixed by writing code.
   if_fails: >-
     a noisy class is switched off in CI instead of demoted here, so the tier silently
     shrinks and no artifact records that it did — Tricorder's finding is that an
@@ -382,8 +424,7 @@ falsification_tests:
     when verdict=PASS (row 2). A receipt recording pmat as unreachable with
     verdict=DEGRADED is ACCEPTED (row 6); the same receipt with verdict=PASS is
     REJECTED (row 5).
-  test: >-
-    LIVE-PENDING (PRREV-003) — rows 2, 5 and 6 of the S6.3 table are unwritten.
+  test: 'bats tests/pr-review.bats -f "row (2|5|6|18) "'
   if_fails: >-
     "the source said nothing" and "I did not ask" become the same artifact, which is
     the failure mode with the longest evidence list in this repository (#2754, #2779,
@@ -500,13 +541,13 @@ enforcement:
 
   unmarked_claims:
     description: 'claims carrying no S1 grounding mark (S8)'
-    check: '= 0 — no ratchet. NOT YET EXERCISED BY ANY FIXTURE; PRREV-003 owes row 15 (F-PRREV-001)'
+    check: '= 0 — no ratchet. Exercised by fixture row 15 and killed in both directions by the PRREV-004 sweep (F-PRREV-001)'
     severity: line-stop
     reference: 'PR-REVIEW-SKILL-002 v2 S1 and S8'
 
   vacuous_consultations:
-    description: 'consultations recording status=consulted with attempted=0 (S8)'
-    check: '= 0 — no ratchet; the pass-over-zero shape, measured in F-PRREV-008'
+    description: 'consultations recording status=consulted while having consulted nothing (S8)'
+    check: '= 0 — no ratchet; the pass-over-zero shape, measured in F-PRREV-008. Enforced on ALL FOUR consultations since PRREV-008 (rows 2, 18, and the crux/pmat probes); before it, on mutation alone'
     severity: line-stop
     reference: 'PR-REVIEW-SKILL-002 v2 S3.D, S4.1 and S8; fixture row 2'
 
@@ -565,14 +606,25 @@ qa_gate:
     positive control (S6.1) must fire first.
 
     NOT SATISFIED ON THIS COMMIT, AND THE CONTRACT SAYS SO RATHER THAN IMPLYING
-    OTHERWISE. PRREV-001 ships this file only. Seven of the eight tests are
-    LIVE-PENDING on PRREV-003; the eighth (F-PRREV-008) is measured and green. Nothing
-    here may be cited as evidence that a review was grounded until the guard exists and
-    has been mutation-verified to 100% per S6.4.
+    OTHERWISE. At PRREV-001 this file shipped alone and seven of the eight tests were
+    LIVE-PENDING. At PRREV-008 five are green and bound to a command — F-PRREV-001,
+    -002, -003, -007 through `bats tests/pr-review.bats`, and F-PRREV-008 through
+    `pv validate` — and three remain LIVE-PENDING: F-PRREV-004 needs a precision sample
+    that only reviewed PRs can produce, and F-PRREV-005 / F-PRREV-006 assert properties
+    of THIS FILE that no committed guard reads yet.
+
+    THE GATE IS STILL NOT ENABLED, and that is deliberate. S9 step 7's backtest found
+    four defects in the artifact it tested; PRREV-008 fixes them and re-verifies in the
+    widened scope, but "the guard rejects what it should" is not the same claim as "the
+    review it gates was diligent". Nothing here may be cited as evidence that a review
+    was grounded.
   falsification: >-
-    Delete a required-field check from the guard and re-run the fourteen fixtures. If
+    Delete a required-field check from the guard and re-run the twenty-two fixtures. If
     the affected row does not turn RED, the guard's green is a count of files rather
-    than a verdict, and every verdict resting on it is withdrawn.
+    than a verdict, and every verdict resting on it is withdrawn. This is not a thought
+    experiment: scripts/mutate-guard.sh performs it at every `reject B<n>` site the
+    guard contains, deriving the site list by scanning the guard on every run so that a
+    rule added tomorrow is mutated without anyone remembering to add it.
 
 verification_summary:
   total_obligations: 5

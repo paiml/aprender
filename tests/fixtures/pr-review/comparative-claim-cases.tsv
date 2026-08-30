@@ -3,22 +3,72 @@
 # Driven by tests/pr-review.bats against
 #   scripts/check_pr_review_receipt.sh --match-comparative <subject>
 #
+# WHERE THE SUBJECTS COME FROM, AND WHY THE PREVIOUS TABLE PASSED 13/13 OVER A HOLE.
+# The first thirteen rows of this table were written from COMPARATIVE_RE's own
+# vocabulary — the connector list the pattern already had — so they could not fail on
+# a spelling the pattern never considered. The backtest re-ran the matcher over this
+# repository's REAL claim corpus (#2763/PERF-049, the withdrawn ollama decode claim,
+# #2776's internal A/B ratios) and found three must-match misses, one of them
+# `36.9x over FasterTransformer` — the spelling APR-PERF-GATE-001 §0.1 itself uses,
+# and the literal #2763 hardened check_no_claim_literals.sh to catch. A guard universe
+# built from the wrong side.
+#
+# The 16 CORPUS rows below are that backtest's table, verbatim in subject and reason
+# (evidence/pr-review/backtest/comparative-claim-backtest-cases.tsv). The BOUNDARY
+# rows are #2763's own, which pin the five-word gap bound and the left boundary this
+# pattern now inherits. The ORIGINAL rows are kept: every one of them still holds, so
+# the widening is a strict superset rather than a trade.
+#
 # A match makes the claim BLOCKING unless a full comparator is recorded (B4), so a
-# false positive here stops real work. The competitor must therefore be NAMED: a bare
-# "2x speedup" is self-relative and has no comparator to record. Demanding an artifact
-# hash for it would be exactly the over-reach the discrimination rows exist to catch.
+# false positive here stops real work. MEASURED from a pristine worktree of origin/main
+# 745fa8588 — not from a working checkout, which was 66 commits behind and reported four
+# different numbers: over its 6909-file shipped surface the pattern at 1e09ca749 hit 61
+# lines, this one hits 73, NONE of the 61 are lost, and all 12 additions are real
+# comparative claims. On this table the old pattern missed SEVEN must-match rows with
+# zero spurious matches. Transcript:
+# evidence/prrev-008/comparative-pattern-measurement.txt.
 #
 # expect	subject	why
+# --- CORPUS (backtest, 16 rows) --------------------------------------------
+MATCH	2.93× Ollama	the exact literal the book published (U+00D7); #2763's registered mutation
+MATCH	2.93x Ollama	ASCII spelling of the same claim
+MATCH	1.21x llama.cpp on aarch64 Q4_K	SKILL.md 3.C.1's own worked example
+MATCH	4.9x faster than scikit-learn	repo speed-wins evidence (GNB)
+MATCH	1.371x over ollama decode	the WITHDRAWN ollama decode claim
+MATCH	2.93 × Ollama	spaced multiplication sign; #2763's RATIO_RE misses this one and this pattern does not
+MATCH	36.9x over FasterTransformer	the spelling APR-PERF-GATE-001 §0.1 uses (#2763); NOMATCH before this fix
+MATCH	3.2x faster than HuggingFace transformers	competitor named with an intervening word; NOMATCH before this fix
+MATCH	1.8x vs vLLM	abbreviated comparator
+MATCH	2x speedup versus Ollama	'versus' spelled out; NOMATCH before this fix
+NO-MATCH	v1.8x release notes	the false positive #2763's 27-row table found
+NO-MATCH	3.32x aggregate at N=8	internal aggregate, no competitor (#2763/PERF-001)
+NO-MATCH	0.817x at c=8	#2776's internal A/B ratio vs its own other arm
+NO-MATCH	agg_tok_s ratio 0.893 at c=4	internal, no ratio-x form
+NO-MATCH	16x smaller footprint	internal footprint claim, no competitor
+NO-MATCH	the matrix is 4x4	dimensions, not a ratio
+# --- BOUNDARY (#2763's own rows: the gap bound and the left boundary) -------
+MATCH	36.9x FasterTransformer	[X] figure, zero gap
+MATCH	23x over static batching	gap plus a two-word competitor
+MATCH	2.9x vs. Ollama	only a <=3-letter abbreviation may carry a trailing dot, and 'vs.' is one
+MATCH	the 8.2x performance gap between realizar and llama.cpp	FIVE gap words: the measured bound itself
+MATCH	2.93×Ollama	the tight typographic form, zero separator
+NO-MATCH	| 2x | fast | yes | torch |	a pipe is not a gap word, so a markdown table row cannot be crossed
+NO-MATCH	Our matmul is 4x faster. Ollama uses ggml.	a sentence boundary stops the gap: 'faster.' is six letters with a dot
+NO-MATCH	the 2x speedup we would need on six separate kernels before llama	SIX gap words, one past the bound
+NO-MATCH	reshaped to 1024x1024 before the torch export	digits are not gap words, so a dimension cannot start one
+NO-MATCH	v1.8x release notes for llama	the left boundary: a preceding letter, digit or DOT all disqualify
+NO-MATCH	Ollama runs at 2.9x the batch size	the competitor precedes the ratio; this is not a claim about Ollama's speed
+NO-MATCH	a 2x2 grid of llama tiles	a dimension, not a ratio
+# --- ORIGINAL (kept: the widening loses none of them) -----------------------
 MATCH	apr sustains 2.93× Ollama on 1.5B Q4_K decode	the scar this rule exists for: the book published it from a harness that never ran Ollama
-MATCH	2.93x Ollama	ASCII x as well as the multiplication sign
-MATCH	3x faster than llama.cpp on the prefill	"faster than" connector
-MATCH	decode is 1.371x vs vLLM at concurrency 8	"vs" connector
+MATCH	3x faster than llama.cpp on the prefill	'faster than' connector
+MATCH	decode is 1.371x vs vLLM at concurrency 8	'vs' connector
 MATCH	Gaussian naive Bayes is 4.9x sklearn	direct competitor, no connector
 MATCH	1.8x PyTorch on the LinearRegression fit	competitor matched case-insensitively
 NO-MATCH	a 2x speedup on the fused gate+up path	self-relative: no competitor is named, so there is no comparator to demand
 NO-MATCH	the 4x4 tile is loaded once per midi-tile	a matrix shape
 NO-MATCH	thumbnail resolution 1920x1080	a resolution
 NO-MATCH	x86_64 build flags	no leading magnitude
-NO-MATCH	benchmarked on an 8x A100 node	a hardware count; A100 is not a competing runtime
+NO-MATCH	benchmarked on an 8x A100 node	a hardware count; A100 is not a competing runtime, and a digit cannot start a gap word
 NO-MATCH	uses 2x more memory than before	self-relative regression, not a competitor claim
-NO-MATCH	tuned for sm_90x occupancy	no whitespace-then-competitor after the x
+NO-MATCH	tuned for sm_90x occupancy	no competitor after the x

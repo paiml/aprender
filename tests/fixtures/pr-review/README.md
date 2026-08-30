@@ -21,7 +21,7 @@ because a rejection with no named class is how a guard grows a rule nothing gove
 | 4 | `row-04-comparative-claim-no-comparator` | RED | B4 | `2.93x Ollama` with no comparator `command` or `artifact_sha256` |
 | 5 | `row-05-unreachable-pmat-verdict-pass` | RED | B1 | `pmat.status: unreachable` with `verdict: PASS` |
 | 6 | `row-06-unreachable-pmat-verdict-degraded` | **GREEN** | — | the same unreachable source, honestly recorded as `DEGRADED` |
-| 7 | `row-07-honest-docs-only-all-not-triggered` | **GREEN** | — | a docs-only PR where nothing triggers, and nothing pretends to |
+| 7 | `row-07-honest-docs-only-pmat-consulted` | **GREEN** | — | a docs-only PR: `pmat` consulted and empty, nothing else triggered |
 | 8 | `row-08-self-review` | RED | B2 | `reviewer_actor.id == author_actor.id` |
 | 9 | `row-09-stale-index-verdict-pass` | RED | B6 | `index_commit` is not an ancestor of `head_sha`, verdict `PASS` |
 | 10 | `row-10-base-sha-not-merge-base` | RED | B1 | `base_sha` names main's tip, not the fork point |
@@ -30,17 +30,71 @@ because a rejection with no named class is how a guard grows a rule nothing gove
 | 13 | `row-13-invalid-signature` | RED | B1 | a real Ed25519 signature over different bytes |
 | 14 | `row-14-complete-gpu-review` | **GREEN** | — | all four consulted, a verified citation, a complete comparator |
 | 15 | `row-15-finding-with-no-grounding-mark` | RED | B1 | a finding carrying **no** `properties.grounding` at all |
+| 16 | `row-16-comparative-claim-only-in-the-diff` | RED | B4 | the diff publishes `2.93× Ollama` in `book/`; `comparative_claims` is empty |
+| 17 | `row-17-comparative-claim-recorded` | **GREEN** | — | the same diff, the same ratio, recorded with a complete comparator |
+| 18 | `row-18-cuda-consulted-no-queries` | RED | B1 | `cuda.status: consulted` with `queries: []` |
+| 19 | `row-19-pmat-not-triggered-on-a-code-diff` | RED | B1 | `pmat.status: not-triggered`, though §3.A is unconditional |
+| 20 | `row-20-mutation-not-triggered-on-a-code-diff` | RED | B1 | `mutation.status: not-triggered` on a diff changing Rust source |
+| 21 | `row-21-crux-not-triggered-on-a-claim-diff` | RED | B1 | `crux.status: not-triggered` on a diff publishing a competitor ratio |
+| 22 | `row-22-printed-ratio-not-the-quoted-one` | RED | B4 | one `.rs` file, the same ratio twice: a `format!` a user reads **fires**, the `//` comment two lines above it **does not** |
 
-**Rows 6, 7 and 14 are discrimination cases.** Without them, a guard that refuses every
+**Rows 6, 7, 14 and 17 are discrimination cases.** Without them, a guard that refuses every
 receipt reads green — the over-reach a discrimination case already caught in PERF-055
 and in the #2766 delta-gate work. Row 14 is the widest: it carries a `cited` finding
 whose digest matches, a `measured` finding, and a comparative claim with a full
 comparator, so a guard that refuses correct work fails on it.
 
 **Row 15 is not in §6.3.** It is owed to PRREV-003 by `contracts/pr-review-skill-v2.yaml`,
-whose falsification test `F-PRREV-001` is recorded LIVE-PENDING on exactly this case:
+whose falsification test `F-PRREV-001` was recorded LIVE-PENDING on exactly this case:
 rows 3, 11 and 12 cover a *malformed* grounding mark, but nothing covered a *missing*
-one — the single §8 metric (`unmarked_claims = 0`) the fourteen rows left asserted.
+one — the single §8 metric (`unmarked_claims = 0`) the fourteen rows left asserted. The
+row exists and is wired, so PRREV-008 discharges `F-PRREV-001` in the contract: a metric
+whose `check:` still reads *"NOT YET EXERCISED BY ANY FIXTURE"* while a fixture exercises
+it is a ledger that has stopped tracking the tree, and the next reader believes whichever
+of the two they happen to open.
+
+**Rows 16–22 are not in §6.3 either.** They are PRREV-008's, one per defect the §9 step-7
+backtest measured against this guard, and every one of them was **ACCEPTED** before:
+
+| defect | what was wrong | rows |
+|---|---|---|
+| F1 | `match_comparative` had one call site, over findings *the reviewer wrote*, so B4 never read the diff. A signed discrimination pair proved the verdict turned on the reviewer's candour, not on the diff. | 16, 17, 22 |
+| F2 | Only cuda's trigger was recomputed and only mutation's emptiness was checked; **no** consultation had both. | 18, 20, 21 + probes |
+| F3 | `pmat: not-triggered` was accepted on a code PR, though §3.A calls pmat unconditional — and row 7 *blessed* it with a `trigger_reason` reading "not-triggered is never correct for it". | 19, and row 7 rebuilt |
+| F5 | B4's pattern allowed a **zero-word** gap where #2763 measured **five**, so `36.9x over FasterTransformer` — the spelling APR-PERF-GATE-001 §0.1 uses — did not match. | the case table below |
+
+**Row 22 is the scope, and the scope was measured twice.** B4's diff half was first written
+over every changed `.rs` line and all of `docs/**`. Run against the last **300 commits of
+`origin/main`** it fires five times, on two commits — and **three of the five quote a
+fabricated claim in order to ban it**, two of them in `docs/benchmarking-gate-spec.md`
+(*"2.93× Ollama from a harness that never ran Ollama"*) and one in a `//` comment
+(*"// #2696: this printed \"Performance: 800+ tok/s (2.8x Ollama)\""*).
+
+Those three have **no honest remedy.** §3.C.1's exit is a recorded comparator command,
+version and log, and there is no log for a number nobody measured. 2 of 5 is **40%
+measured precision** against §7's ≥90% admission bar, so the class may not block there —
+a gate whose only exit is to fabricate the evidence it demands is worse than the hole it
+closes, and that is #2757 and #2766 exactly.
+
+So B4 blocks on `book/**.md` and on **printed literals and doc comments** in shipped
+`.rs` — the surfaces `check_no_claim_literals.sh` measured as user-facing, and where
+*"2.93× Ollama"* was actually published. Over the same 300 commits that scope fires
+**zero** times: no measured false positives **and** no measured true positives. That is
+not evidence of precision; it is evidence that this repository has not published a
+competitor ratio to the book in 300 commits, and it is written down as such.
+
+**Residual, recorded rather than hidden:** a comparative claim added to `docs/` prose or
+to a plain `//` comment is not blocked. Two real ones are named in the guard —
+`0.097× llama.cpp at c=16` and `// 15.7 tok/s decode, 0.099x llama.cpp`.
+
+Every consultation now carries **both halves**, which is the shape the audit found missing:
+
+| consultation | trigger recomputed from the diff | emptiness checked |
+|---|---|---|
+| `pmat` | unconditional (§3.A) — `not-triggered` is never legal | the four §3.A arrays must be present *as arrays* |
+| `cuda` | path + commit message (§3.B) | `queries[]` non-empty and well-formed |
+| `crux` | surface declaration + comparative claim (§3.C) | `surfaces[]` or `comparative_claims[]` non-empty; `crux_coverage`/`gap_effect` in vocabulary |
+| `mutation` | file shape (§3.D) | `attempted > 0`, `killed <= attempted`, survivors match the arithmetic |
 
 **A missing receipt is RED, not skipped**, and so is a run over zero receipts. Both are
 bats tests rather than table rows.
@@ -92,7 +146,7 @@ fixture can kill them, and including them would park a permanent survivor in a s
 
 ### Why the probes exist
 
-The fifteen rows pin fifteen branches; the guard has fifty-odd. Every branch the rows
+The twenty-two rows pin twenty-two branches; the guard has seventy-odd. Every branch the rows
 leave untripped came back from the first sweep as a **surviving mutant** — a rule the
 guard states and nothing tests. `tests/pr-review.bats` therefore carries a second
 family, named for the branch rather than for a spec row:
@@ -149,10 +203,20 @@ prediction was wrong; the counter-sweep is what stands.
 ```
 C1 ---- C2 ---- C3          <- main, and refs/remotes/origin/main
  \
-  +---- F1                  <- gpu-pr head   (adds src/cuda/kernel.cu)
+  +---- F1                  <- gpu-pr head    (adds src/cuda/kernel.cu)
   \
-   +--- D1                  <- docs-pr head  (adds docs/note.md)
+  +---- D1                  <- docs-pr head   (adds docs/note.md)
+  \
+  +---- G1                  <- claim-pr head  (adds book/…/apr-cli.md: 2.93× Ollama)
+  \
+   +--- S1                  <- code-pr head   (adds a plain .rs file)
 ```
+
+`G1` and `S1` are PRREV-008's. B4's diff half cannot be exercised without a head that
+**publishes** a ratio on a surface a user reads, and §3.D's trigger cannot be exercised
+without a head that touches Rust source — `F1` adds a `.cu` and `D1` adds markdown, so
+`mutation: not-triggered` was true on every head the fixtures had. A rule tested only
+against receipts is the circularity F1 was opened for.
 
 Rows 1, 9, 10 and 14 are not exercisable against aprender's own history: for **any**
 commit `X` reachable from `origin/main`, `git merge-base origin/main X` is `X` itself.
@@ -168,12 +232,32 @@ silently validating a different repository.
 
 ## Case tables
 
-`cuda-path-cases.tsv`, `cuda-message-cases.tsv`, `comparative-claim-cases.tsv` — every
-regex in the guard ships must-match **and** must-not-match rows, driven through
-`--match-path` / `--match-message` / `--match-comparative`. This repository's guard
-patterns have been wrong six times; a case table caught every one and review caught none.
+Eight tables — `cuda-path`, `cuda-message`, `comparative-claim`, `shipped-surface`,
+`rs-published`, `crux-surface`, `mutation-trigger`, `target` — each driven through its
+own `--match-*` predicate. Every regex in the guard ships must-match **and** must-not-match rows. This
+repository's guard patterns have been wrong six times; a case table caught every one and
+review caught none.
 
-Three deliberate gaps are pinned as NO-MATCH rows rather than silently widened:
+**The comparative table was itself an instance of the failure it exists to prevent.** Its
+first thirteen rows were written from `COMPARATIVE_RE`'s own vocabulary, so they passed
+13/13 over a hole: the pattern allowed a **zero-word gap** between the ratio and the
+competitor, where #2763/PERF-049 had already *measured* a five-word bound for the same
+rule. `36.9x over FasterTransformer` — the spelling APR-PERF-GATE-001 §0.1 uses, and the
+literal #2763 hardened `check_no_claim_literals.sh` to catch — did not match. A guard
+universe built from the wrong side.
+
+The pattern is now **`check_no_claim_literals.sh`'s `RATIO_RE`**, with the two competitor
+lists unioned, rather than a second implementation of the same rule. Measured over the
+6909-file shipped surface at `origin/main` `745fa8588`, read from a pristine worktree of
+that ref: **61 hits before, 73 after, none of the 61 lost, and all 12 additions real
+comparative claims.** On the table itself the old pattern missed **seven** must-match rows
+and produced zero spurious matches, so the change closes holes rather than trading
+precision for recall. The 16 CORPUS rows are the backtest's own table
+(`evidence/pr-review/backtest/comparative-claim-backtest-cases.tsv`), drawn from this
+repository's real claim corpus rather than from the pattern; the transcript of both
+measurements is `evidence/prrev-008/comparative-pattern-measurement.txt`.
+
+Deliberate gaps are pinned as NO-MATCH rows rather than silently widened:
 
 - `crates/aprender-compute/src/backends/gpu/device/mod.rs` — §3.B names
   `crates/aprender-gpu/**` and `*cuda*`/`*ptx*`/`*cublas*`/`*fp8*`/`*nvrtc*`, never
@@ -183,6 +267,23 @@ Three deliberate gaps are pinned as NO-MATCH rows rather than silently widened:
 - `Turing` and `Pascal` are absent from the architecture list, because "Turing complete"
   and "PascalCase" are commoner in this repository's commit messages than the parts. A
   blocking class must hold >=90% precision to stay armed (§7 admission rule).
+
+- `Command::new` is **not** a `crux-surface` token though clap uses it: 752 hits across
+  293 files, overwhelmingly `std::process::Command`. This class only fires on a receipt
+  claiming the surface did *not* change, so a false positive calls an honest reviewer a
+  liar.
+- `OutputFormat` and `#[serde(rename …)]` are not tokens either, so §3.C's *config key*
+  and *output format* routes are uncovered — 822 hits across 103 files for the first, and
+  no spelling of the second measured precisely enough to block on.
+- The **PR body** is outside B4's diff recomputation. Commit messages are not a
+  substitute: this repository's own commit messages quote the banned ratios in order to
+  ban them, so scanning them would red the very commits that fix the defect.
+- A comparative claim in `tests/`, `benches/`, `examples/`, a fixture, `docs/**` or a
+  plain `//` comment is out of scope — a target is not a claim, and a document quoting a
+  banned literal in order to ban it is not publishing it. Asserted by a bats test, both
+  because without that scope this guard could never be edited again without a comparator
+  for its own case table, and because the measurement above says the class would
+  otherwise block at 40% precision with no honest exit.
 
 Widening the patterns here would put the guard silently out of step with its spec.
 

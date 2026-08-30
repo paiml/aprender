@@ -88,7 +88,7 @@ assert_row() {
 
 # --- branch probes (PRREV-004) -----------------------------------------------
 #
-# The fifteen rows of S6.3 pin fifteen branches. The guard has more than fifty, and
+# The twenty-two committed rows pin twenty-two branches. The guard has more than seventy, and
 # S6.4 requires 100% kill on the mutation set - so every remaining branch needs a case
 # that trips IT, or dropping it is a rule nothing tests.
 #
@@ -135,7 +135,7 @@ assert_probe() {
 # --- S6.1 --------------------------------------------------------------------
 
 @test "S6.1 all four positive controls fire before anything is validated" {
-  run "$GUARD" "$FIX/row-07-honest-docs-only-all-not-triggered"
+  run "$GUARD" "$FIX/row-07-honest-docs-only-pmat-consulted"
   [ "$status" -eq 0 ]
   # Four controls at increasing depth. A schema-depth control alone stays green with
   # every semantic branch below it deleted; these three reach branches no S6.3 row does.
@@ -147,7 +147,7 @@ assert_probe() {
 
 @test "S6.1 the guard refuses to run at all when a positive-control fixture is gone" {
   PR_REVIEW_POSITIVE_CONTROL_DIR="$WORK/absent" run "$GUARD" \
-    "$FIX/row-07-honest-docs-only-all-not-triggered"
+    "$FIX/row-07-honest-docs-only-pmat-consulted"
   [ "$status" -eq 1 ]
   [[ "$output" == *"positive-control fixture missing"* ]]
   # An honest receipt must NOT be accepted when a control cannot run: without the
@@ -163,7 +163,7 @@ assert_probe() {
      "$FIX/positive-control/findings-digest/receipt.intoto.jsonl.minisig" \
      "$FIX/positive-control/findings-digest/findings.sarif" "$WORK/pc/self-review/"
   PR_REVIEW_POSITIVE_CONTROL_DIR="$WORK/pc" run "$GUARD" \
-    "$FIX/row-07-honest-docs-only-all-not-triggered"
+    "$FIX/row-07-honest-docs-only-pmat-consulted"
   [ "$status" -eq 1 ]
   [[ "$output" == *"POSITIVE CONTROL MISFIRED"* ]]
   # It must misfire ON THE CLASS, and say which class it expected and which it got.
@@ -185,7 +185,7 @@ assert_probe() {
      "$FIX/positive-control/cost-missing/receipt.intoto.jsonl.minisig" \
      "$FIX/positive-control/cost-missing/findings.sarif" "$WORK/pc2/findings-digest/"
   PR_REVIEW_POSITIVE_CONTROL_DIR="$WORK/pc2" run "$GUARD" \
-    "$FIX/row-07-honest-docs-only-all-not-triggered"
+    "$FIX/row-07-honest-docs-only-pmat-consulted"
   [ "$status" -eq 1 ]
   [[ "$output" == *"POSITIVE CONTROL MISFIRED"* ]]
   [[ "$output" == *"wrong branch"* ]]
@@ -223,8 +223,15 @@ assert_probe() {
   assert_row row-06-unreachable-pmat-verdict-degraded GREEN
 }
 
-@test "row 7  honest docs-only PR, all consultations not-triggered     GREEN     [discrimination]" {
-  assert_row row-07-honest-docs-only-all-not-triggered GREEN
+@test "row 7  honest docs-only PR, pmat consulted, rest not-triggered  GREEN     [discrimination]" {
+  # S6.3 writes this row as "all consultations not-triggered". S3.A and S8.4 both make
+  # pmat's trigger UNCONDITIONAL, so the spec contradicts itself and the two normative
+  # statements win over the illustrative row. The fixture previously carried
+  # `pmat: not-triggered` with a trigger_reason reading "pmat is unconditional;
+  # not-triggered is never correct for it" — it stated the rule it exempted, and the
+  # guard accepted it. Row 19 is the RED half; this stays the GREEN one, because a
+  # docs-only PR must still be accepted.
+  assert_row row-07-honest-docs-only-pmat-consulted GREEN
 }
 
 @test "row 8  reviewer_actor equals author_actor                         RED  B2" {
@@ -270,6 +277,70 @@ assert_probe() {
     "a finding carries no properties.grounding"
 }
 
+# --- PRREV-008: the four defects the backtest measured ------------------------
+#
+# S9 step 7 is the acceptance test for the whole spec, and it failed on three of its
+# four named cases. These six rows are the fixtures the fixes require. Each was RED
+# against the previous guard for no reason at all — it ACCEPTED every one of them.
+
+@test "row 16 the diff publishes a ratio, nothing records it           RED  B4" {
+  # F1, the worst of the four: `match_comparative` had ONE call site, inside a loop
+  # over findings THE REVIEWER WROTE. A blocking class that asks the reviewer whether
+  # the reviewer should be blocked is circular. Measured with a signed discrimination
+  # pair — identical diff, ACCEPT when the receipt was silent, REJECT when it was not.
+  assert_row row-16-comparative-claim-only-in-the-diff RED B4 \
+    "the diff publishes a comparative claim on a user-facing surface"
+}
+
+@test "row 17 the same ratio, RECORDED with a comparator             GREEN     [discrimination]" {
+  # Without this row, "block every PR that names a competitor" reads green — and B4
+  # would forbid the honest path it exists to require.
+  assert_row row-17-comparative-claim-recorded GREEN
+}
+
+@test "row 18 cuda consulted with queries: []                         RED  B1" {
+  # F2: the guard rejected the analogous `mutation.attempted: 0` and accepted this.
+  # S8 sets vacuous_consultations = 0; it was enforced for one consultation in four.
+  assert_row row-18-cuda-consulted-no-queries RED B1 \
+    "cuda.status is consulted with queries: []"
+}
+
+@test "row 19 pmat not-triggered on a diff changing Rust source       RED  B1" {
+  # F3: S3.A says "Trigger: unconditional" and S8.4 repeats it. Every other
+  # consultation in this receipt is honest, so exactly one rule can reject it.
+  assert_row row-19-pmat-not-triggered-on-a-code-diff RED B1 \
+    "consultations.pmat is not-triggered, but S3.A makes pmat unconditional"
+}
+
+@test "row 20 mutation not-triggered on a diff changing Rust source   RED  B1" {
+  # F2's other half: mutation's emptiness was checked and its trigger was not, so the
+  # consultation could be skipped outright by writing three words.
+  assert_row row-20-mutation-not-triggered-on-a-code-diff RED B1 \
+    "consultations.mutation is not-triggered but S3.D triggers on this diff"
+}
+
+@test "row 21 crux not-triggered on a diff publishing a ratio         RED  B1" {
+  # S3.C.1 lives under S3.C, so a comparative claim IS a crux trigger. Without this,
+  # a reviewer could put crux beyond the reach of every claim rule.
+  assert_row row-21-crux-not-triggered-on-a-claim-diff RED B1 \
+    "consultations.crux is not-triggered but its S3.C trigger fires on this diff"
+}
+
+@test "row 22 the printed ratio fires, the quoted one two lines up does not  RED  B4" {
+  # B4's SCOPE, measured rather than assumed. One .rs file carries the SAME ratio twice:
+  # first in a plain `//` comment that quotes the withdrawn claim in order to name it,
+  # then inside a `format!` a user reads. The comment is FIRST, and the guard rejects on
+  # the first match — so a reason naming the `format!` line is the proof that the comment
+  # was skipped. If the comment fired, it would be the line quoted back here.
+  assert_row row-22-printed-ratio-not-the-quoted-one RED B4 \
+    'format!("apr sustains 2.93x Ollama'
+  # ...and the half that says it discriminates: the quoted line must not appear at all.
+  run "$GUARD" "$FIX/row-22-printed-ratio-not-the-quoted-one"
+  [[ "$output" != *"The book published"* ]] || {
+    echo "the merely-quoted comment fired; B4 would block a withdrawal with no honest exit"
+    echo "$output"; return 1; }
+}
+
 # --- rules that are not rows -------------------------------------------------
 
 @test "a missing receipt is RED, not skipped" {
@@ -293,7 +364,7 @@ assert_probe() {
 
 @test "findings.sarif present but receipt absent is still RED" {
   mkdir -p "$WORK/sarif-only"
-  cp "$FIX/row-07-honest-docs-only-all-not-triggered/findings.sarif" "$WORK/sarif-only/"
+  cp "$FIX/row-07-honest-docs-only-pmat-consulted/findings.sarif" "$WORK/sarif-only/"
   run "$GUARD" "$WORK/sarif-only"
   [ "$status" -eq 1 ]
   [[ "$output" == *"receipt.intoto.jsonl is missing"* ]]
@@ -301,7 +372,7 @@ assert_probe() {
 
 @test "one bad receipt in a batch fails the whole run" {
   # A per-receipt loop that forgets to accumulate its status reports the LAST result.
-  run "$GUARD" "$FIX/row-07-honest-docs-only-all-not-triggered" \
+  run "$GUARD" "$FIX/row-07-honest-docs-only-pmat-consulted" \
                 "$FIX/row-08-self-review" \
                 "$FIX/row-14-complete-gpu-review"
   [ "$status" -eq 1 ]
@@ -348,6 +419,79 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   [ "$status" -eq 0 ] || { echo "$output"; false; }
 }
 
+@test "S3.C.1 the two spellings the backtest measured as MISSES are asserted" {
+  # The table above would still pass if it silently shrank. These two rows are the
+  # reason PRREV-008 exists: `36.9x over FasterTransformer` is the spelling
+  # APR-PERF-GATE-001 §0.1 uses and #2763 hardened its own guard to catch, and the
+  # previous pattern allowed a ZERO-word gap where #2763 measured five. Asserted in
+  # the harness's own voice so a future narrowing is loud rather than shorter.
+  "$GUARD" --match-comparative '36.9x over FasterTransformer'
+  "$GUARD" --match-comparative '2x speedup versus Ollama'
+  "$GUARD" --match-comparative '3.2x faster than HuggingFace transformers'
+  # ...and the bound is a BOUND: six gap words must not match, or the pattern is not
+  # #2763's measured rule any more, it is a wildcard with a competitor list.
+  run "$GUARD" --match-comparative 'the 2x speedup we would need on six separate kernels before llama'
+  [ "$status" -ne 0 ]
+}
+
+@test "the shipped surface B4 scans matches its case table, both polarities" {
+  run run_case_table shipped-surface --match-shipped-surface
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+}
+
+@test "the .rs line test matches its case table, both polarities" {
+  # The path says the file ships; this says the LINE is read. Both halves are needed:
+  # over 300 commits of origin/main every comparative claim added to a plain // comment
+  # was one this repository was WITHDRAWING, and B4's only remedy is a comparator log.
+  run run_case_table rs-published --match-rs-published
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+}
+
+@test "B4 does not block a claim it has no honest remedy for" {
+  # The two verbatim lines from origin/main that removed docs/ prose and plain comments
+  # from B4's scope. ce712eae0 quotes a fabricated ratio in order to ban it; there is no
+  # comparator log for a number nobody measured, so a block there can only be satisfied
+  # by inventing one. Asserted here rather than left to the tables, because this is the
+  # S7 admission rule in force, not a spelling detail.
+  run "$GUARD" --match-shipped-surface docs/benchmarking-gate-spec.md
+  [ "$status" -ne 0 ]
+  run "$GUARD" --match-rs-published '    // #2696: this printed "Performance: 800+ tok/s (2.8x Ollama)"'
+  [ "$status" -ne 0 ]
+  # ...while the surface the scar was published on still fires.
+  run "$GUARD" --match-shipped-surface book/src/tools/apr-cli.md
+  [ "$status" -eq 0 ]
+  run "$GUARD" --match-rs-published '    println!("851.8 tok/s = 2.93x Ollama");'
+  [ "$status" -eq 0 ]
+}
+
+@test "S3.C surface trigger matches its case table, both polarities" {
+  run run_case_table crux-surface --match-crux-surface
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+}
+
+@test "S3.D mutation trigger matches its case table, both polarities" {
+  run run_case_table mutation-trigger --match-mutation-trigger
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+}
+
+@test "the target suppressor matches its case table, both polarities" {
+  # Both polarities are expensive here: a miss reds a line stating a bar, and a
+  # spurious match silently EXEMPTS a published claim from B4.
+  run run_case_table target --match-target
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+}
+
+@test "B4's diff scan does not red the PR that adds its own case table" {
+  # The over-reach this scope exists to prevent, asserted rather than assumed: every
+  # subject in the comparative table is a banned ratio, and the table itself is a
+  # changed file on any PR that edits it. If fixtures were in scope, this guard could
+  # never be modified again without a comparator for thirteen invented claims.
+  run "$GUARD" --match-shipped-surface tests/fixtures/pr-review/comparative-claim-cases.tsv
+  [ "$status" -ne 0 ]
+  run "$GUARD" --match-shipped-surface docs/specifications/apr-perf-gate-001.md
+  [ "$status" -ne 0 ]
+}
+
 # --- the fixture repository itself -------------------------------------------
 
 @test "the fixture repository has the topology the receipts were written against" {
@@ -359,12 +503,12 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   [ "$status" -eq 0 ] || { echo "$output"; false; }
 }
 
-@test "every S6.3 row plus the contract's owed row has exactly one fixture directory" {
+@test "every S6.3 row, the contract's owed row, and PRREV-008's seven have a fixture" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 15 ] || { echo "expected 15 row fixtures (14 from S6.3 + row 15 owed by the contract), found $n"; false; }
+  [ "$n" -eq 22 ] || { echo "expected 22 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008), found $n"; false; }
   local i
-  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15; do
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
       || { echo "no fixture directory for row $i"; false; }
   done
@@ -383,7 +527,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 # =============================================================================
 # BRANCH PROBES (PRREV-004, S6.4)
 #
-# One case per validation branch the fifteen rows do not reach. Each exists because
+# One case per validation branch the twenty-two rows do not reach. Each exists because
 # the mutation sweep in scripts/mutate-guard.sh found the corresponding mutant ALIVE:
 # a rule the guard states and nothing tests. They are named for the branch, not for a
 # spec row, because they are not spec rows.
@@ -394,8 +538,8 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "probe findings.sarif absent                                     RED  B1" {
   local d="$WORK/probe-no-sarif"
   mkdir -p "$d"
-  cp "$FIX/row-07-honest-docs-only-all-not-triggered/receipt.intoto.jsonl" \
-     "$FIX/row-07-honest-docs-only-all-not-triggered/receipt.intoto.jsonl.minisig" "$d/"
+  cp "$FIX/row-07-honest-docs-only-pmat-consulted/receipt.intoto.jsonl" \
+     "$FIX/row-07-honest-docs-only-pmat-consulted/receipt.intoto.jsonl.minisig" "$d/"
   run "$GUARD" "$d"
   [ "$status" -eq 1 ]
   [[ "$output" == *"[B1]"* ]]
@@ -405,7 +549,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "probe receipt holding two JSON records is not JSON Lines        RED  B1" {
   # JSON Lines with two records parses as two Statements. Which one was signed, and
   # which one is the review? A file that cannot answer that is not a receipt.
-  local d="$WORK/probe-two-records" src="$FIX/row-07-honest-docs-only-all-not-triggered"
+  local d="$WORK/probe-two-records" src="$FIX/row-07-honest-docs-only-pmat-consulted"
   mkdir -p "$d"
   cp "$src/findings.sarif" "$d/"
   cat "$src/receipt.intoto.jsonl" "$src/receipt.intoto.jsonl" > "$d/receipt.intoto.jsonl"
@@ -417,7 +561,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 }
 
 @test "probe receipt that is not parseable JSON                        RED  B1" {
-  local d="$WORK/probe-receipt-not-json" src="$FIX/row-07-honest-docs-only-all-not-triggered"
+  local d="$WORK/probe-receipt-not-json" src="$FIX/row-07-honest-docs-only-pmat-consulted"
   mkdir -p "$d"
   cp "$src/findings.sarif" "$src/receipt.intoto.jsonl.minisig" "$d/"
   printf 'this is not JSON at all' > "$d/receipt.intoto.jsonl"
@@ -428,7 +572,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 }
 
 @test "probe findings.sarif that is not parseable JSON                 RED  B1" {
-  local d="$WORK/probe-sarif-not-json" src="$FIX/row-07-honest-docs-only-all-not-triggered"
+  local d="$WORK/probe-sarif-not-json" src="$FIX/row-07-honest-docs-only-pmat-consulted"
   mkdir -p "$d"
   cp "$src/receipt.intoto.jsonl" "$src/receipt.intoto.jsonl.minisig" "$d/"
   printf 'not json either' > "$d/findings.sarif"
@@ -442,7 +586,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   # Well-formed JSON, wrong shape. The receipt is untouched and still correctly
   # signed, so only the SARIF schema gate can reject this - which is the point:
   # dropping that gate must not leave a malformed findings file reading green.
-  local d="$WORK/probe-sarif-schema" src="$FIX/row-07-honest-docs-only-all-not-triggered"
+  local d="$WORK/probe-sarif-schema" src="$FIX/row-07-honest-docs-only-pmat-consulted"
   mkdir -p "$d"
   cp "$src/receipt.intoto.jsonl" "$src/receipt.intoto.jsonl.minisig" "$d/"
   printf '{"version":"2.1.0","runs":"this must be an array"}\n' > "$d/findings.sarif"
@@ -459,14 +603,14 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   # would fall through to minisign, which reports a missing key as a failed
   # verification - the same words for "the key is gone" and "this receipt is forged".
   PR_REVIEW_PUBKEY="$WORK/there-is-no-key-here.pub" \
-    run "$GUARD" "$FIX/row-07-honest-docs-only-all-not-triggered"
+    run "$GUARD" "$FIX/row-07-honest-docs-only-pmat-consulted"
   [ "$status" -eq 1 ]
   [[ "$output" == *"[B1]"* ]]
   [[ "$output" == *"is absent; an unverifiable signature is not a verified one"* ]]
 }
 
 @test "probe the receipt carries no signature at all                   RED  B1" {
-  local d="$WORK/probe-unsigned" src="$FIX/row-07-honest-docs-only-all-not-triggered"
+  local d="$WORK/probe-unsigned" src="$FIX/row-07-honest-docs-only-pmat-consulted"
   mkdir -p "$d"
   cp "$src/receipt.intoto.jsonl" "$src/findings.sarif" "$d/"
   run "$GUARD" "$d"
@@ -481,7 +625,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   # The in-toto Statement schema constrains predicateType only to a TypeURI: a SLSA
   # provenance, a VSA, or anything else at all validates against it. Only this branch
   # makes the receipt be a PR REVIEW.
-  assert_probe predicate-type row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe predicate-type row-07-honest-docs-only-pmat-consulted B1 \
     "predicateType is 'https://slsa.dev/verification_summary/v1'" \
     '.predicateType = "https://slsa.dev/verification_summary/v1"'
 }
@@ -490,18 +634,18 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   # R1: SLSA Build L3 requires an isolated builder the tenant cannot influence. A
   # skill invoked by the authoring agent is self-attestation. A receipt that claims
   # otherwise is the exact enforcement theatre the spec rejects, so it is refused.
-  assert_probe attestation-level row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe attestation-level row-07-honest-docs-only-pmat-consulted B1 \
     "attestation_level is 'SLSA-BUILD-L3'" \
     '.predicate.attestation_level = "SLSA-BUILD-L3"'
 }
 
 @test "probe head_sha is absent                                        RED  B1" {
-  assert_probe head-absent row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe head-absent row-07-honest-docs-only-pmat-consulted B1 \
     "predicate.head_sha is absent" 'del(.predicate.head_sha)'
 }
 
 @test "probe base_sha is absent                                        RED  B1" {
-  assert_probe base-absent row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe base-absent row-07-honest-docs-only-pmat-consulted B1 \
     "predicate.base_sha is absent" 'del(.predicate.base_sha)'
 }
 
@@ -509,38 +653,38 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   # in-toto binds the attestation to subject[].digest. If the predicate reviews a
   # different commit from the one the statement is ABOUT, the signature attests to
   # a review of something else.
-  assert_probe subject-digest row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe subject-digest row-07-honest-docs-only-pmat-consulted B1 \
     "the sha1 digest of subject 0 is" \
     '.subject[0].digest.sha1 = "0000000000000000000000000000000000000000"'
 }
 
 @test "probe verdict outside the four defined values                   RED  B1" {
-  assert_probe verdict-outside row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe verdict-outside row-07-honest-docs-only-pmat-consulted B1 \
     "verdict 'PROBABLY-FINE' is outside" '.predicate.verdict = "PROBABLY-FINE"'
 }
 
 @test "probe findings_ref.path points somewhere else                   RED  B1" {
-  assert_probe findings-ref-path row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe findings-ref-path row-07-honest-docs-only-pmat-consulted B1 \
     "findings_ref.path is 'somewhere-else.sarif'" \
     '.predicate.findings_ref.path = "somewhere-else.sarif"'
 }
 
 @test "probe author_actor.id is absent                                 RED  B1" {
-  assert_probe author-absent row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe author-absent row-07-honest-docs-only-pmat-consulted B1 \
     "author_actor.id is absent" 'del(.predicate.author_actor.id)'
 }
 
 @test "probe reviewer_actor.id is absent                               RED  B1" {
   # S5's separation cannot be checked against an absent reviewer, and an absent
   # reviewer is indistinguishable from no review at all.
-  assert_probe reviewer-absent row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe reviewer-absent row-07-honest-docs-only-pmat-consulted B1 \
     "reviewer_actor.id is absent" 'del(.predicate.reviewer_actor.id)'
 }
 
 # --- the diff boundary -------------------------------------------------------
 
 @test "probe head_sha does not resolve in the repository               RED  B1" {
-  assert_probe head-unresolvable row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe head-unresolvable row-07-honest-docs-only-pmat-consulted B1 \
     "does not resolve to a commit in" \
     '.predicate.head_sha = "0000000000000000000000000000000000000000"
      | .subject[0].digest.sha1 = "0000000000000000000000000000000000000000"'
@@ -567,7 +711,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   [ "$status" -ne 0 ]
 
   local d
-  d=$(make_probe orphan-head row-07-honest-docs-only-all-not-triggered \
+  d=$(make_probe orphan-head row-07-honest-docs-only-pmat-consulted \
       ".predicate.head_sha = \"$o1\" | .subject[0].digest.sha1 = \"$o1\"")
   PR_REVIEW_REPO="$repo" run "$GUARD" "$d"
   [ "$status" -eq 1 ]
@@ -580,13 +724,13 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "probe a consultation with no status at all                      RED  B1" {
   # S3.0: an omitted consultation must not be indistinguishable from one that ran
   # and found nothing.
-  assert_probe status-absent row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe status-absent row-07-honest-docs-only-pmat-consulted B1 \
     "consultations.crux.status is absent" 'del(.predicate.consultations.crux.status)'
 }
 
 @test "probe a consultation status outside the three-state vocabulary  RED  B1" {
   # "skipped" is the word that hides the difference S3.0 exists to make visible.
-  assert_probe status-invalid row-07-honest-docs-only-all-not-triggered B1 \
+  assert_probe status-invalid row-07-honest-docs-only-pmat-consulted B1 \
     "consultations.crux.status is 'skipped'" \
     '.predicate.consultations.crux.status = "skipped"'
 }
@@ -664,6 +808,96 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
      | .runs[0].results[0].properties.precision_class = "blocking"'
 }
 
+# --- every consultation's emptiness (PRREV-008 F2) ---------------------------
+#
+# The audit that opened PRREV-008: only cuda's trigger was recomputed from the diff and
+# only mutation's emptiness was checked, so NO consultation had both. Rows 18-21 pin the
+# four missing halves at the top level; these probes pin the sub-branches underneath,
+# each of which is a separate `reject` site and therefore a separate mutant.
+
+@test "probe pmat consulted with duplication_hits absent              RED  B1" {
+  # S3.A calls duplication_hits "the highest-EV field in the receipt" — PERF-055 nearly
+  # re-implemented ~7,200 lines across 46 files that already existed. An ABSENT key and
+  # an EMPTY array are "did not look" and "looked and found nothing", which is exactly
+  # the distinction S3.0 exists to make impossible to blur.
+  assert_probe pmat-no-duplication row-14-complete-gpu-review B1 \
+    "these S3.A outputs are absent or are not arrays: duplication_hits" \
+    'del(.predicate.consultations.pmat.duplication_hits)'
+}
+
+@test "probe pmat consulted with complexity_delta not an array        RED  B1" {
+  # "none" is the word a reviewer reaches for when there is nothing to report, and it
+  # is indistinguishable from the field never having been produced.
+  assert_probe pmat-scalar-delta row-14-complete-gpu-review B1 \
+    "absent or are not arrays: complexity_delta" \
+    '.predicate.consultations.pmat.complexity_delta = "none"'
+}
+
+@test "probe a cuda query whose result is outside the vocabulary      RED  B1" {
+  # S3.B admits exactly two outcomes: a citation, or a NAMED query that returned
+  # nothing. A third word puts "the docs said nothing" and "I did not ask" back into
+  # one field, one level below the status row 18 pins.
+  assert_probe cuda-query-result row-14-complete-gpu-review B1 \
+    'outside { found, no-authority-found }' \
+    '.predicate.consultations.cuda.queries[0].result = "inconclusive"'
+}
+
+@test "probe a cuda query recording found with no excerpt_sha256      RED  B1" {
+  # A `found` with nothing to verify against is an assertion wearing the mark of a
+  # citation — S1.1, applied to the consultation record rather than to the finding.
+  assert_probe cuda-found-no-digest row-14-complete-gpu-review B1 \
+    "records result found with no excerpt_sha256" \
+    'del(.predicate.consultations.cuda.queries[0].excerpt_sha256)'
+}
+
+@test "probe crux consulted with no surfaces key at all               RED  B1" {
+  assert_probe crux-no-surfaces row-14-complete-gpu-review B1 \
+    "these S3.C outputs are absent or are not arrays: surfaces" \
+    'del(.predicate.consultations.crux.surfaces)'
+}
+
+@test "probe crux consulted over nothing at all                       RED  B1" {
+  # The vacuous-pass shape: `pv lint <FILE>` returning PASS over zero contracts, in
+  # another costume. A crux run that looked at no surface and found no claim has the
+  # same artifact as one that was never run.
+  assert_probe crux-consulted-over-nothing row-14-complete-gpu-review B1 \
+    "consulted with no surfaces and no comparative claims" \
+    '.predicate.consultations.crux.surfaces = []
+     | .predicate.consultations.crux.comparative_claims = []'
+}
+
+@test "probe crux_coverage outside its vocabulary                     RED  B1" {
+  # S3.C: `crux_coverage: none` — no contract covers this surface — "is itself a
+  # finding". A blank or an invented word is how that finding goes unwritten.
+  assert_probe crux-coverage-vocab row-14-complete-gpu-review B1 \
+    "crux.crux_coverage is 'partial', outside { covered, none }" \
+    '.predicate.consultations.crux.crux_coverage = "partial"'
+}
+
+@test "probe gap_effect outside its vocabulary                        RED  B1" {
+  assert_probe crux-gap-vocab row-14-complete-gpu-review B1 \
+    "crux.gap_effect is 'unknown', outside { closes, widens, none }" \
+    '.predicate.consultations.crux.gap_effect = "unknown"'
+}
+
+@test "probe mutation killed exceeds attempted                        RED  B1" {
+  # guard_mutation_score is killed / attempted and S8 fixes it at one with no ratchet.
+  # A score ABOVE one is not a stricter guard, it is a miscount, and the number every
+  # other verdict rests on is read from these two fields.
+  assert_probe mutation-score-above-one row-14-complete-gpu-review B1 \
+    "killed=99 of attempted=37" \
+    '.predicate.consultations.mutation.killed = 99'
+}
+
+@test "probe mutation survivors do not match the arithmetic           RED  B1" {
+  # S3.D: "Surviving mutants are recorded with mutant, file, line, killed: false."
+  # Seven survivors and an empty list makes the only actionable half of the record
+  # unfalsifiable — a rule the guard states and nothing could check.
+  assert_probe mutation-survivors-miscount row-14-complete-gpu-review B1 \
+    "7 mutant/s survived, but survivors[] holds 0" \
+    '.predicate.consultations.mutation.killed = 30'
+}
+
 # --- comparative claims (S3.C.1) ---------------------------------------------
 
 @test "probe a competitor ratio stated in a finding but never recorded RED  B4" {
@@ -687,7 +921,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   local pd="$WORK/bash-only-path"
   mkdir -p "$pd"
   ln -sf "$(command -v bash)" "$pd/bash"
-  PATH="$pd" run "$GUARD" "$FIX/row-07-honest-docs-only-all-not-triggered"
+  PATH="$pd" run "$GUARD" "$FIX/row-07-honest-docs-only-pmat-consulted"
   [ "$status" -eq 1 ]
   [[ "$output" == *"cannot run:"* ]]
   [[ "$output" == *"minisign"* ]]
@@ -699,7 +933,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   # current directory, so the merge-base boundary would be computed in some other
   # repository entirely - and would still print a class and a reason.
   cd "$WORK"
-  PR_REVIEW_REPO="" run "$GUARD" "$FIX/row-07-honest-docs-only-all-not-triggered"
+  PR_REVIEW_REPO="" run "$GUARD" "$FIX/row-07-honest-docs-only-pmat-consulted"
   [ "$status" -eq 1 ]
   [[ "$output" == *"not in a git repository and PR_REVIEW_REPO is unset"* ]]
   [[ "$output" != *"ACCEPT"* ]]
@@ -710,11 +944,11 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   # self-review control is accepted - and the guard must refuse to validate anything,
   # because a green verdict from a guard whose controls do not fire is a count of files.
   seed_controls "$WORK/pc3"
-  cp "$FIX/row-07-honest-docs-only-all-not-triggered/receipt.intoto.jsonl" \
-     "$FIX/row-07-honest-docs-only-all-not-triggered/receipt.intoto.jsonl.minisig" \
-     "$FIX/row-07-honest-docs-only-all-not-triggered/findings.sarif" "$WORK/pc3/self-review/"
+  cp "$FIX/row-07-honest-docs-only-pmat-consulted/receipt.intoto.jsonl" \
+     "$FIX/row-07-honest-docs-only-pmat-consulted/receipt.intoto.jsonl.minisig" \
+     "$FIX/row-07-honest-docs-only-pmat-consulted/findings.sarif" "$WORK/pc3/self-review/"
   PR_REVIEW_POSITIVE_CONTROL_DIR="$WORK/pc3" run "$GUARD" \
-    "$FIX/row-07-honest-docs-only-all-not-triggered"
+    "$FIX/row-07-honest-docs-only-pmat-consulted"
   [ "$status" -eq 1 ]
   [[ "$output" == *"POSITIVE CONTROL FAILED"* ]]
   # ANCHORED: the failure message itself contains the word ACCEPTED, so the usual
@@ -735,7 +969,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
     > "$WORK/permissive/in-toto-statement-v1.json"
   cp "$REPO_ROOT/schemas/sarif-2.1.0.json" "$WORK/permissive/"
   PR_REVIEW_SCHEMA_DIR="$WORK/permissive" run "$GUARD" \
-    "$FIX/row-07-honest-docs-only-all-not-triggered"
+    "$FIX/row-07-honest-docs-only-pmat-consulted"
   [ "$status" -eq 1 ]
   [[ "$output" == *"POSITIVE CONTROL MISFIRED"* ]]
   run grep -c '^ACCEPT' <<<"$output"
@@ -758,7 +992,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
        "$FIX/positive-control/$donor/receipt.intoto.jsonl.minisig" \
        "$FIX/positive-control/$donor/findings.sarif" "$WORK/every-$victim/$victim/"
     PR_REVIEW_POSITIVE_CONTROL_DIR="$WORK/every-$victim" run "$GUARD" \
-      "$FIX/row-07-honest-docs-only-all-not-triggered"
+      "$FIX/row-07-honest-docs-only-pmat-consulted"
     [ "$status" -eq 1 ] || {
       echo "control $victim seeded with $donor: expected exit 1, got $status"
       echo "$output"; return 1; }

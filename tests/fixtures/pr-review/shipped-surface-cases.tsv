@@ -1,0 +1,39 @@
+# The user-facing surface B4 scans in the diff — must-match / must-not-match.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/check_pr_review_receipt.sh --match-shipped-surface <path>
+#
+# S3.C.1 says a comparative claim "in the diff, PR body, docs, or benchmark output" must
+# carry its comparator. Scanning EVERY changed path would red the very PR that adds this
+# table, and would red a specification that quotes a banned ratio in order to ban it. The
+# scope starts from the one check_no_claim_literals.sh already measured and defends —
+# library and binary sources plus the book, never tests, benches, examples or fixtures,
+# which state TARGETS by design.
+#
+# docs/**.md WAS IN THIS SCOPE AND WAS MEASURED OUT. Over the last 300 commits of
+# origin/main the diff scan fires five times, on two commits, and three of the five QUOTE
+# a fabricated claim in order to ban it — two of them in docs/benchmarking-gate-spec.md.
+# Those three have no honest remedy: S3.C.1's exit is a comparator command, version and
+# log, and there is no log for a number that was never measured. 2/5 is 40% measured
+# precision against S7's >=90% admission bar, so the class may not block on that surface.
+# The residual is recorded in the guard: a comparative claim added to docs/ prose is not
+# blocked, and two real ones are named there.
+#
+# expect	subject	why
+MATCH	book/src/tools/apr-cli.md	the book is where users read, and where the 2.93x Ollama claim was actually published
+MATCH	book/README.md	book/ at any depth
+MATCH	crates/apr-cli/src/commands/serve/server.rs	a shipped source path; the 2.8x Ollama string lived here — the LINE test then decides (see rs-published-cases.tsv)
+MATCH	crates/aprender-core/src/lib.rs	crates/*/src/**.rs at any depth
+MATCH	src/bin/apr.rs	the root binary is shipped source too
+NO-MATCH	docs/qa/benchmark-matrix-2026-01-09.md	MEASURED OUT, not overlooked: docs/ in this repository is overwhelmingly where claims are AUDITED, and a gate whose only exit is to fabricate a comparator log is worse than the hole it closes
+NO-MATCH	docs/benchmarking-gate-spec.md	the spec that quotes "2.93x Ollama from a harness that never ran Ollama" in order to ban it — the exact false positive that removed docs/ from this scope
+NO-MATCH	docs/specifications/apr-perf-gate-001.md	§0.1 of that spec QUOTES 36.9x over FasterTransformer in order to ban it; excluded by check_no_claim_literals.sh for the same reason
+NO-MATCH	tests/fixtures/pr-review/comparative-claim-cases.tsv	THIS FILE. A case table full of banned ratios must not red the PR that adds it
+NO-MATCH	crates/aprender-serve/src/api/tests/native_routes_2376.rs	a test states a target, not a result
+NO-MATCH	crates/aprender-core/benches/matmul.rs	a bench states a bar
+NO-MATCH	examples/qwen_inference.rs	an example is not a published claim
+NO-MATCH	scripts/check_no_claim_literals.sh	a guard naming the literals it bans is not publishing them
+NO-MATCH	evidence/pr-review/backtest/results.md	evidence records what was measured, including the claims under audit
+NO-MATCH	crates/aprender-core/src/format_tests.rs	a _tests.rs sibling is a test whatever directory it sits in
+NO-MATCH	CHANGELOG.md	KNOWN GAP, recorded not widened: a root-level markdown file is outside the universe check_no_claim_literals.sh defends, and widening here would put the two definitions out of step silently
+NO-MATCH	Cargo.toml	not a surface a claim can be published on

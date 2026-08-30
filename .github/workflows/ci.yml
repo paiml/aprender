@@ -1490,7 +1490,8 @@ jobs:
   #      check_guards_are_wired.sh scans for — a guard named in a comment is not
   #      wired. GREEN and RED together, because "refuse every receipt" reads
   #      green against RED fixtures alone.
-  #   2. the 15-row fixture table (§6.3) under bats, positive controls included.
+  #   2. the 22-row fixture table (§6.3 plus the rows PRREV-008 owes) under bats,
+  #      positive controls included.
   #   3. the guard's own mutation set (§6.4). §8 fixes guard_mutation_score at
   #      100% with "no ratchet, it is a one". Wiring a guard and leaving its
   #      falsifier dark would make the thing every other verdict rests on unable
@@ -1569,7 +1570,7 @@ jobs:
       # file is 65 tests and was reachable from NO workflow until this job — the
       # dark-target class this repository has hit with benches and with 58 cgp
       # tests.
-      - name: The 15-row fixture table and both polarities of every trigger regex
+      - name: The 22-row fixture table and both polarities of every trigger regex
         shell: bash
         run: bats tests/pr-review.bats
 

@@ -1,0 +1,28 @@
+# A TARGET is not a CLAIM — must-match / must-not-match case table.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/check_pr_review_receipt.sh --match-target <subject>
+#
+# This predicate SUPPRESSES B4, so its two polarities fail in opposite directions and
+# both are expensive. A miss reds a line stating a bar ("the decode ratio must be
+# >= 1.0x llama.cpp" is a threshold, and a threshold is allowed to be a constant —
+# that is what a bar IS). A spurious match silently EXEMPTS a published claim, which
+# is the never-ran-Ollama defect with a permission slip.
+#
+# Same spelling as check_no_claim_literals.sh's TARGET_RE, for the same reason the
+# ratio pattern is: two drifting definitions of "this is only a target" is how one of
+# them ends up blessing a claim the other bans.
+#
+# expect	subject	why
+MATCH	Target: 2x Ollama should be ~1025 tok/s	names itself a target
+MATCH	the decode ratio must be >= 1.0x llama.cpp	a threshold operator
+MATCH	Threshold: 2.93x Ollama	names itself a threshold
+MATCH	we expect 4x faster than llama.cpp once the kernel lands	states an expectation, not a measurement
+MATCH	PASS: 1.21x llama.cpp	a gate verdict line
+MATCH	the goal is 2x vLLM at c=8	names itself a goal
+MATCH	SPEC 3.C.1 bans 2.93x Ollama without a comparator	a spec quoting the literal in order to ban it
+NO-MATCH	apr sustains 2.93x Ollama on 1.5B Q4_K decode	a published claim about what we GOT
+NO-MATCH	851.8 tok/s = 2.93x Ollama	the form the book actually published
+NO-MATCH	realizar is 8.2x slower than llama.cpp on CPU	a measurement, however unflattering
+NO-MATCH	36.9x over FasterTransformer	an imported third-party figure is still a claim
+NO-MATCH	Continuous batching gives 23x over static batching	no bar, no operator, no target word

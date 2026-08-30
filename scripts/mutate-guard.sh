@@ -116,6 +116,13 @@ safe_rmtree() {
 
 # Named single-line edits to the control machinery. Each is  <old> <TAB> <new>  and
 # each must match exactly one line of the guard.
+#
+# NO BACKSLASH MAY APPEAR IN AN ANCHOR. The anchors reach awk through `-v`, which
+# expands escape sequences in the VALUE: an anchor written `CRUX_SURFACE_RE='(#\[arg`
+# arrives as `CRUX_SURFACE_RE='(#[arg` and matches nothing. That fails loudly here
+# ("matches 0 lines, not 1") rather than silently mutating nothing, which is the
+# only reason it is a nuisance and not a survivor. Anchor on the part of the
+# assignment before the first backslash.
 text_mutations() {
   cat <<'TSV'
 tools-absent-is-a-skip	if [ -n "$MISSING_TOOLS" ]; then	if false; then
@@ -138,8 +145,27 @@ cuda-path-regex-never-matches	CUDA_PATH_RE='(^crates/aprender-gpu/)	CUDA_PATH_RE
 cuda-path-regex-matches-everything	CUDA_PATH_RE='(^crates/aprender-gpu/)	CUDA_PATH_RE='(.)@@TRUNCATE@@
 cuda-message-regex-never-matches	CUDA_MSG_RE='(sm_[0-9]+)	CUDA_MSG_RE='(^$)@@TRUNCATE@@
 cuda-message-regex-matches-everything	CUDA_MSG_RE='(sm_[0-9]+)	CUDA_MSG_RE='(.)@@TRUNCATE@@
-comparative-regex-never-matches	COMPARATIVE_RE='[0-9]+	COMPARATIVE_RE='(^$)@@TRUNCATE@@
-comparative-regex-matches-everything	COMPARATIVE_RE='[0-9]+	COMPARATIVE_RE='(.)@@TRUNCATE@@
+shipped-surface-predicate-verdict-not-propagated	match_shipped_surface "${2?--match-shipped-surface needs an argument}"; exit $?	match_shipped_surface "${2?--match-shipped-surface needs an argument}"; exit 1
+crux-surface-predicate-verdict-not-propagated	match_crux_surface    "${2?--match-crux-surface needs an argument}";    exit $?	match_crux_surface    "${2?--match-crux-surface needs an argument}";    exit 1
+mutation-trigger-predicate-verdict-not-propagated	match_mutation_trigger "${2?--match-mutation-trigger needs an argument}"; exit $?	match_mutation_trigger "${2?--match-mutation-trigger needs an argument}"; exit 1
+target-predicate-verdict-not-propagated	match_target       "${2?--match-target needs an argument}";      exit $?	match_target       "${2?--match-target needs an argument}";      exit 1
+rs-published-predicate-verdict-not-propagated	match_rs_published "${2?--match-rs-published needs an argument}"; exit $?	match_rs_published "${2?--match-rs-published needs an argument}"; exit 1
+rs-published-regex-never-matches	RS_PUBLISHED_RE='(println!	RS_PUBLISHED_RE='(^$)@@TRUNCATE@@
+rs-published-regex-matches-everything	RS_PUBLISHED_RE='(println!	RS_PUBLISHED_RE='(.)@@TRUNCATE@@
+rs-line-test-not-applied	  case "$1" in *.rs) match_rs_published "$2" || return 1 ;; esac	  case "$1" in *.rs) true ;; esac
+docs-prose-back-in-b4-scope	src/*.rs|book/*.md) return 0 ;;	src/*.rs|book/*.md|docs/*.md) return 0 ;;
+book-removed-from-b4-scope	crates/*/src/*.rs|src/*.rs|book/*.md) return 0 ;;	crates/*/src/*.rs|src/*.rs) return 0 ;;
+comparative-competitor-list-never-matches	COMPETITOR_RE='(ollama	COMPETITOR_RE='(^$)@@TRUNCATE@@
+comparative-competitor-list-matches-everything	COMPETITOR_RE='(ollama	COMPETITOR_RE='(.)@@TRUNCATE@@
+comparative-gap-bound-unbounded	){0,5}	){0,99}
+comparative-left-boundary-dropped	RATIO_LEFT_RE='(^|	RATIO_LEFT_RE='(^|.)@@TRUNCATE@@
+comparative-mult-sign-ascii-only	MULT_RE='(x|	MULT_RE='(x)@@TRUNCATE@@
+target-suppressor-matches-everything	TARGET_RE='(	TARGET_RE='(.)@@TRUNCATE@@
+target-suppressor-never-matches	TARGET_RE='(	TARGET_RE='(^$)@@TRUNCATE@@
+crux-surface-regex-never-matches	CRUX_SURFACE_RE='(#	CRUX_SURFACE_RE='(^$)@@TRUNCATE@@
+crux-surface-regex-matches-everything	CRUX_SURFACE_RE='(#	CRUX_SURFACE_RE='(.)@@TRUNCATE@@
+mutation-trigger-regex-never-matches	MUTATION_TRIGGER_RE='(^|/)scripts	MUTATION_TRIGGER_RE='(^$)@@TRUNCATE@@
+mutation-trigger-regex-matches-everything	MUTATION_TRIGGER_RE='(^|/)scripts	MUTATION_TRIGGER_RE='(.)@@TRUNCATE@@
 self-review-misclassified-B1	reject B2 "reviewer_actor.id = author_actor.id	reject B1 "reviewer_actor.id = author_actor.id
 comparator-misclassified-B1	reject B4 "$claim"	reject B1 "$claim"
 stale-index-misclassified-B1	reject B6 "index_commit $idx is not an ancestor	reject B1 "index_commit $idx is not an ancestor
@@ -160,7 +186,7 @@ catalogue() {
     }
     END {
       if (bad) { exit 3 }
-      if (n < 40) {
+      if (n < 55) {
         printf "ONLY %d reject sites found; the guard has always had more\n", n > "/dev/stderr"
         exit 3
       }

@@ -17,8 +17,13 @@
 #   check_pr_review_receipt.sh --match-path <path>          predicate: S3.B path trigger
 #   check_pr_review_receipt.sh --match-message <text>       predicate: S3.B message trigger
 #   check_pr_review_receipt.sh --match-comparative <text>   predicate: S3.C.1 comparative claim
+#   check_pr_review_receipt.sh --match-shipped-surface <p>  predicate: the user-facing surface
+#   check_pr_review_receipt.sh --match-crux-surface <line>  predicate: S3.C surface trigger
+#   check_pr_review_receipt.sh --match-mutation-trigger <p> predicate: S3.D scope trigger
+#   check_pr_review_receipt.sh --match-target <text>        predicate: a bar, not a claim
+#   check_pr_review_receipt.sh --match-rs-published <line>  predicate: printed, or a doc comment
 #
-# The three --match-* forms are pure predicates over one string. They exist so the
+# The eight --match-* forms are pure predicates over one string. They exist so the
 # regexes can be driven by a must-match / must-not-match case table
 # (tests/fixtures/pr-review/*-cases.tsv) rather than by reading them. This repository's
 # guard patterns have been wrong six times; a table caught every one and review caught
@@ -67,16 +72,170 @@ CUDA_MSG_RE='(sm_[0-9]+)|(cu[A-Z][A-Za-z0-9_]+)|(cuda[A-Z][A-Za-z0-9_]+)|(Blackw
 # S3.C.1 "N x competitor". The competitor must be NAMED: a bare "2x speedup" is a
 # self-relative claim with no comparator to record, and demanding an artifact hash for
 # it would be exactly the over-reach the discrimination rows exist to catch.
-COMPARATIVE_RE='[0-9]+(\.[0-9]+)?[[:space:]]*(x|×)[[:space:]]+((faster[[:space:]]+than|vs\.?|over|of)[[:space:]]+)?(ollama|llama\.cpp|llama-cpp|llamacpp|vllm|pytorch|torch|sklearn|scikit-learn|unsloth|tensorrt|onnxruntime|onnx|transformers|candle|burn|ggml|tinygrad|mlx)'
+#
+# THIS PATTERN IS NOT ITS OWN. It is scripts/check_no_claim_literals.sh's RATIO_RE,
+# the one #2763/PERF-049 hardened, with the two competitor lists unioned. The first
+# draft here was a SECOND, independently drifting implementation of the same rule, and
+# it drifted exactly where PERF-049 said it would:
+#
+#   `36.9x over FasterTransformer` -- the spelling APR-PERF-GATE-001 S0.1 itself uses
+#   for the [X] figures, and the literal #2763 hardened its guard to catch -- did NOT
+#   match here. The first draft allowed a ZERO-word gap between the ratio and the
+#   competitor (a closed connector list: faster than / vs / over / of). #2763 replaced
+#   exactly that closed list with a MEASURED five-word bound: over its 6900-file
+#   universe the new-hit set is identical at widths 5 and 6, widths 0..6 produce zero
+#   false positives, and the last true positive appears at 5 ("the 8.2x performance gap
+#   between realizar and llama.cpp"). The bound is reused, not re-derived.
+#
+# The GAP WORD CLASS is the load-bearing half, not the bound: letters, with interior
+# `.` or `-`, plus a <=3-letter abbreviation ending in a dot. NOT digits, NOT `|`, NOT
+# `,`. So a markdown table row cannot be crossed, a dimension cannot start one
+# (`1024x1024 torch`), and a sentence boundary stops it (`4x faster. Ollama uses ggml`
+# stays clean, because `faster.` is six letters and only an abbreviation may carry a
+# trailing dot -- which is what keeps `2.9x vs. Ollama` RED).
+#
+# MEASURED, not argued, over this repository's shipped surface as
+# check_no_claim_literals.sh defines it - 6909 files at origin/main 745fa8588, read from
+# a pristine worktree of that ref and NOT from a working checkout, which was 66 commits
+# behind and gave four different numbers. The pattern at 1e09ca749 hit 61 lines, this one
+# hits 73, ZERO of the 61 are lost, and all 12 additions are real comparative claims
+# ("8.2x slower than llama.cpp", "16x convergence gap vs PyTorch", "APR is 2-3x slower
+# than Ollama"). Zero false positives from the widened competitor list. The transcript is
+# evidence/prrev-008/comparative-pattern-measurement.txt.
+#
+# ONE spelling is wider here than in #2763, and deliberately: `[[:space:]]*` before the
+# multiplication sign, so `2.93 × Ollama` matches. That form is a MUST-MATCH row of the
+# backtest's corpus table and #2763's RATIO_RE misses it. It cannot cross a digit (a gap
+# word may not begin with one), so `1024 x 1024 torch` stays clean.
+RATIO_LEFT_RE='(^|[^0-9A-Za-z.])'
+MULT_RE='(x|×)'
+RATIO_GAP_RE='(([A-Za-z]+([.-][A-Za-z]+)*|[A-Za-z]{1,3}\.)[[:space:]]+){0,5}'
+COMPETITOR_RE='(ollama|llama\.cpp|llama-cpp|llamacpp|llama|vllm|pytorch|torch|sklearn|scikit-learn|unsloth|tensorrt|onnxruntime|onnx|transformers|huggingface|candle|burn|ggml|tinygrad|mlx|fastertransformer|sglang|lmdeploy|turbomind|tgi|orca|static[[:space:]]+batching)'
+COMPARATIVE_RE="${RATIO_LEFT_RE}[0-9]+(\.[0-9]+)?[[:space:]]*${MULT_RE}[[:space:]]*${RATIO_GAP_RE}${COMPETITOR_RE}"
+
+# A TARGET says what we WANT; a CLAIM says what we GOT. Only the second needs a
+# comparator recorded, because only the second asserts a measurement. Same rule, same
+# spelling, as check_no_claim_literals.sh -- a bar is allowed to be a constant.
+TARGET_RE='([Tt]arget|[Tt]hreshold|[Gg]oal|[Ee]xpect|[Rr]equire|spec |SPEC|PASS:|FAIL:|>=|<=|[><] *[0-9])'
+
+# S3.C surface trigger. Every token below is a DECLARATION spelling measured in this
+# tree at 745fa8588, not a guess: #[arg( 2590 hits/86 files, #[command( 199/49,
+# .route( 238/35, Router::new 107/37, derive(Parser 111/47, derive(Subcommand 70/47,
+# long = " 84/26, short = ' 76/25, ToolDefinition 216 hits.
+#
+# `Command::new` is DELIBERATELY ABSENT though clap uses it: 752 hits across 293 files,
+# overwhelmingly std::process::Command. A blocking-tier class must hold >=90% precision
+# (S7 admission rule), and this class only fires on a receipt that claims the surface
+# did NOT change -- so a false positive here calls an honest reviewer a liar.
+#
+# CONFIG KEYS and OUTPUT FORMATS are named by S3.C and are NOT covered. Both spellings
+# measured badly: `OutputFormat` is 822 hits/103 files, nearly all internal uses of an
+# enum, and an output-format change usually surfaces as an ordinary println!. Recorded
+# as must-NOT-match rows in tests/fixtures/pr-review/crux-surface-cases.tsv rather than
+# widened here, exactly as the CUDA tables record their two gaps.
+CRUX_SURFACE_RE='(#\[arg\()|(#\[command\()|(\.route\()|(Router::new\()|(derive\(Parser)|(derive\(Subcommand)|((^|[^A-Za-z0-9_])long[[:space:]]*=[[:space:]]*")|((^|[^A-Za-z0-9_])short[[:space:]]*=[[:space:]]*.)|(ToolDefinition)'
+
+# S3.D scope trigger. Row 1 of its table (guard-shaped files) and row 2 (Rust source)
+# both TRIGGER; row 3 (docs / non-code) does not. The two rows differ in whether the
+# RESULT blocks, not in whether the consultation is owed, so one predicate answers
+# "is `not-triggered` a lie on this diff".
+MUTATION_TRIGGER_RE='(^|/)scripts/check_[^/]*\.sh$|(^|/)scripts/dogfood\.sh$|(^|/)dogfood\.sh$|(^|/)\.github/workflows/ci\.yml$|^contracts/[^/]*\.yaml$|\.rs$'
 
 match_cuda_path()    { grep -Eqi -- "$CUDA_PATH_RE"   <<<"$1"; }
 match_cuda_message() { grep -Eq  -- "$CUDA_MSG_RE"    <<<"$1"; }
 match_comparative()  { grep -Eqi -- "$COMPARATIVE_RE" <<<"$1"; }
+match_target()       { grep -Eq  -- "$TARGET_RE"      <<<"$1"; }
+match_crux_surface() { grep -Eq  -- "$CRUX_SURFACE_RE" <<<"$1"; }
+match_mutation_trigger() { grep -Eq -- "$MUTATION_TRIGGER_RE" <<<"$1"; }
+
+# The surface a USER READS. Scoped from check_no_claim_literals.sh's, and then MEASURED
+# against 300 commits of origin/main rather than assumed -- which changed it twice.
+#
+# Tests, benches, examples and fixtures state TARGETS and are out of scope BY DESIGN, and
+# that is not a convenience: it is what stops this guard from blocking the PR that adds
+# its own case table. docs/specifications/ needs no exclusion line of its own -- no part
+# of docs/ is on the inclusion list below -- but the reason #2763 excludes it is the same
+# reason all of docs/ came off: a specification quoting a banned ratio in order to ban it
+# is not publishing it.
+#
+# docs/**.md IS EXCLUDED TOO, AND THAT IS THE MEASUREMENT. The first draft here included
+# it. Over the last 300 commits of origin/main the diff scan fires five times, on two
+# commits, and every one is APR-PERF-GATE-001 writing ABOUT claims:
+#
+#   docs/benchmarking-gate-spec.md  "The book publishes a number no harness produced --
+#                                    '851.8 tok/s = 2.93x Ollama'"
+#   docs/benchmarking-gate-spec.md  "5.2 Failure #4 -- 2.93x Ollama from a harness that
+#                                    never ran Ollama"
+#   docs/benchmarking-gate-spec.md  "0.097x llama.cpp at c=16"     <- a real measurement
+#   crates/apr-cli/.../server.rs    "// #2696: this printed 'Performance: 800+ tok/s
+#                                    (2.8x Ollama)'"
+#   crates/apr-cli/src/dispatch.rs  "// 15.7 tok/s decode, 0.099x llama.cpp"  <- real
+#
+# Two of the five are real comparative claims; three QUOTE a fabricated claim in order to
+# ban it, and those three have NO HONEST REMEDY -- S3.C.1's exit is to record a comparator
+# command, version and log, and there is no comparator log for a number that was never
+# measured. A blocking class whose only exit is to fabricate the evidence it demands is
+# worse than the hole it closes, and S7's admission rule already forbids it: 2/5 is 40%
+# measured precision against a >=90% bar.
+#
+# So B4's diff half blocks on book/**.md and on PRINTED literals and doc comments in
+# shipped .rs -- the surfaces #2763 measured as user-facing, and where the 2.93x Ollama
+# claim was actually published. Over the same 300 commits that scope fires ZERO times,
+# which is stated as what it is: no measured false positives AND no measured true
+# positives. It is not evidence of precision, it is evidence that this repository has not
+# published a competitor ratio to the book in 300 commits.
+#
+# RESIDUAL, recorded rather than hidden: a comparative claim added to docs/ prose or to a
+# plain `//` comment is NOT blocked by B4. Two real ones are named above.
+match_shipped_surface() {
+  case "$1" in
+    tests/*|*/tests/*|test/*|*/test/*)         return 1 ;;
+    benches/*|*/benches/*|examples/*|*/examples/*) return 1 ;;
+    fixtures/*|*/fixtures/*|fixture/*|*/fixture/*) return 1 ;;
+    *_test.rs|*_tests.rs)                      return 1 ;;
+  esac
+  # docs/** carries no exclusion line because it carries no INCLUSION line: the list
+  # below is what B4 scans, and docs/ is not on it. An explicit `docs/*) return 1` was
+  # written here first and the mutation sweep reported it SURVIVED - a dead branch no
+  # receipt can reach, which is the same shape as a rule nothing tests. The exclusion
+  # that matters is the absence below, and `book-removed-from-b4-scope` /
+  # `docs-prose-back-in-b4-scope` in scripts/mutate-guard.sh mutate exactly that line.
+  case "$1" in
+    crates/*/src/*.rs|src/*.rs|book/*.md) return 0 ;;
+  esac
+  return 1
+}
+
+# In a .rs file a claim reaches a user through a PRINTED literal or a doc comment
+# (`cargo doc` publishes the second). A plain `//` comment does not, and this repository
+# writes a lot of them ABOUT claims it has withdrawn. Same split, same spelling, as
+# check_no_claim_literals.sh, which applies its ratio pattern to print macros and to
+# ///|//! and to nothing else in .rs.
+RS_PUBLISHED_RE='(println!|eprintln!|write!|writeln!|format!|\.red\(\)|\.green\(\)|\.yellow\(\)|\.cyan\(\))|(^[[:space:]]*(///|//!))'
+match_rs_published() { grep -Eq -- "$RS_PUBLISHED_RE" <<<"$1"; }
+
+# published_claim <path> <line> - S3.C.1's subject: a competitor ratio a USER READS.
+# ONE definition, called by B4's diff scan and by the S3.C claim trigger. Two copies of
+# a scoping rule drift, and the drift is invisible because each keeps passing against
+# its own copy -- which is exactly how B4's pattern came to be a second, weaker
+# implementation of #2763's RATIO_RE.
+published_claim() {
+  match_shipped_surface "$1" || return 1
+  case "$1" in *.rs) match_rs_published "$2" || return 1 ;; esac
+  match_comparative "$2" || return 1
+  if match_target "$2"; then return 1; fi
+  return 0
+}
 
 case "${1-}" in
   --match-path)        match_cuda_path    "${2?--match-path needs an argument}";        exit $? ;;
   --match-message)     match_cuda_message "${2?--match-message needs an argument}";     exit $? ;;
   --match-comparative) match_comparative  "${2?--match-comparative needs an argument}"; exit $? ;;
+  --match-shipped-surface) match_shipped_surface "${2?--match-shipped-surface needs an argument}"; exit $? ;;
+  --match-crux-surface)    match_crux_surface    "${2?--match-crux-surface needs an argument}";    exit $? ;;
+  --match-mutation-trigger) match_mutation_trigger "${2?--match-mutation-trigger needs an argument}"; exit $? ;;
+  --match-target)      match_target       "${2?--match-target needs an argument}";      exit $? ;;
+  --match-rs-published) match_rs_published "${2?--match-rs-published needs an argument}"; exit $? ;;
   -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
 esac
 
@@ -112,6 +271,39 @@ reject() { REJECT_CLASS=$1; REJECT_REASON=$2; return 1; }
 
 # sha256 of stdin, bare hex.
 sha256_stdin() { sha256sum | cut -d' ' -f1; }
+
+# ---------------------------------------------------------------------------
+# THE DIFF, READ BY THE GUARD ITSELF.
+#
+# Every recomputation below reads `git diff`, never the receipt's own account of it.
+# A blocking class that decides whether to block by consulting the report of the party
+# it may be about to block is circular, and B4 was exactly that: `match_comparative`
+# had ONE call site, inside a loop over findings THE REVIEWER WROTE. A diff publishing
+# `2.93x Ollama` was ACCEPTED when the receipt was silent about it, and REJECTED when
+# the reviewer chose to mention it -- same diff, same empty comparative_claims[], the
+# verdict turning only on the reviewer's candour. That is "no claim" and "did not look"
+# being the same artifact, which is the distinction S3.0 exists to make impossible.
+# ---------------------------------------------------------------------------
+
+# changed_lines <base> <head> [+|+-]
+# Emits  <path><TAB><line text>  for added (`+`) or added-and-removed (`+-`) lines.
+# Removed lines matter for a SURFACE change: deleting a flag changes the CLI too.
+changed_lines() {
+  local b=$1 h=$2 want=${3:-+}
+  git -C "$REPO" diff --unified=0 "$b" "$h" 2>/dev/null \
+  | awk -v want="$want" '
+      # The four header forms are matched EXACTLY. `/^--- /` would also swallow a
+      # deleted line whose own text begins with two dashes, and `/^\+\+\+ /` an added
+      # line beginning with two pluses: the diff prefix makes them indistinguishable
+      # from a header unless the a/ b/ /dev/null shape is required.
+      /^\+\+\+ b\//          { file = substr($0, 7); next }
+      /^\+\+\+ \/dev\/null/  { file = "?"; next }
+      /^--- a\//             { next }
+      /^--- \/dev\/null/     { next }
+      /^\+/ { print file "\t" substr($0, 2); next }
+      /^-/  { if (want == "+-") print file "\t" substr($0, 2) }
+    '
+}
 
 # -------------------------------------------------------------------------
 # validate_receipt <dir>
@@ -242,11 +434,170 @@ validate_receipt() {
     fi
   done
 
+  # =========================================================================
+  # EVERY CONSULTATION GETS BOTH HALVES.
+  #
+  # Audited before this block was written: only cuda's trigger was recomputed from the
+  # diff, only mutation's emptiness was checked, and NO consultation had both. So
+  # `cuda: consulted, queries: []` was ACCEPTED while the analogous
+  # `mutation.attempted: 0` was rejected, and `pmat: not-triggered` was ACCEPTED on a
+  # code PR though S3.A calls pmat unconditional. Half a rule per consultation is not
+  # three-quarters of a gate; it is four different gates, three of which cannot fail.
+  #
+  #                       trigger recomputed        emptiness checked
+  #   pmat                unconditional (S3.A)      the four S3.A arrays
+  #   cuda                path + message (S3.B)     queries[] non-empty, well-formed
+  #   crux                surface + claim (S3.C)    surfaces[] or claims[] non-empty
+  #   mutation            file shape (S3.D)         attempted > 0, counts coherent
+  # =========================================================================
+
+  # --- the diff, read once. ------------------------------------------------
+  local changed_files commit_msgs
+  changed_files=$(git -C "$REPO" diff --name-only "$base" "$head" 2>/dev/null || true)
+  commit_msgs=$(git -C "$REPO" log --format=%B "$base..$head" 2>/dev/null || true)
+
+  # --- B1: pmat is UNCONDITIONAL, so not-triggered is never true of it. -----
+  # S3.A: "Trigger: unconditional", and S8.4 repeats it -- "pmat always (cheap,
+  # deterministic); CUDA/CRUX/mutation trigger on shape". S6.3's row 7 reads "all
+  # consultations not-triggered", which contradicts both; the two normative statements
+  # win over the illustrative row, and row 7 now carries `pmat: consulted` with four
+  # empty arrays. That fixture previously blessed this exact defect with a
+  # trigger_reason reading "pmat is unconditional; not-triggered is never correct for
+  # it" -- a fixture stating the rule it exempted.
+  [ "$pmat_st" != "not-triggered" ] \
+    || reject B1 "consultations.pmat is not-triggered, but S3.A makes pmat unconditional on every PR; an unmeasured CB-200 is Skip, and Skip is not a pass" || return 1
+
+  # --- B1: the CUDA consultation was skipped while its trigger fired (row 1).
+  if [ "$cuda_st" = "not-triggered" ]; then
+    local f fired=''
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if match_cuda_path "$f"; then fired="path $f"; break; fi
+    done <<<"$changed_files"
+    if [ -z "$fired" ] && [ -n "$commit_msgs" ] && match_cuda_message "$commit_msgs"; then
+      fired="commit message"
+    fi
+    [ -z "$fired" ] \
+      || reject B1 "consultations.cuda is not-triggered but its S3.B trigger fires on this diff ($fired); 'the docs said nothing' and 'I did not ask' must not be the same artifact" || return 1
+  fi
+
+  # --- B1: the CRUX consultation was skipped while its trigger fired. -------
+  # Two routes, because S3.C has two: a changed surface DECLARATION, and S3.C.1's
+  # comparative claim. Both are recomputed from the diff.
+  if [ "$crux_st" = "not-triggered" ]; then
+    local cf cl crux_fired=''
+    while IFS=$'\t' read -r cf cl; do
+      [ -n "$cf" ] || continue
+      case "$cf" in
+        tests/*|*/tests/*|test/*|*/test/*|benches/*|*/benches/*|examples/*|*/examples/*|fixtures/*|*/fixtures/*) continue ;;
+      esac
+      if match_crux_surface "$cl"; then crux_fired="surface declaration in $cf"; break; fi
+    done < <(changed_lines "$base" "$head" '+-')
+    if [ -z "$crux_fired" ]; then
+      while IFS=$'\t' read -r cf cl; do
+        [ -n "$cf" ] || continue
+        published_claim "$cf" "$cl" || continue
+        crux_fired="comparative claim in $cf"; break
+      done < <(changed_lines "$base" "$head" '+')
+    fi
+    [ -z "$crux_fired" ] \
+      || reject B1 "consultations.crux is not-triggered but its S3.C trigger fires on this diff ($crux_fired); a surface nobody looked at is not a surface with no gap" || return 1
+  fi
+
+  # --- B1: the MUTATION consultation was skipped while its trigger fired. ---
+  # S3.D triggers on the FILE SHAPE. Rows 1 and 2 of its table differ in whether the
+  # result BLOCKS, not in whether the consultation is owed; only row 3 (docs/non-code)
+  # is untriggered. `unreachable` stays open as the honest path -- it is DEGRADED, and
+  # DEGRADED proceeds on a feature branch (S7).
+  if [ "$mut_st" = "not-triggered" ]; then
+    local mf mut_fired=''
+    while IFS= read -r mf; do
+      [ -n "$mf" ] || continue
+      if match_mutation_trigger "$mf"; then mut_fired="$mf"; break; fi
+    done <<<"$changed_files"
+    [ -z "$mut_fired" ] \
+      || reject B1 "consultations.mutation is not-triggered but S3.D triggers on this diff ($mut_fired); only docs and non-code are untriggered" || return 1
+  fi
+
+  # --- B1: pmat consulted must SHOW the four things S3.A requires. ---------
+  # An ABSENT key and an EMPTY array are the difference between "did not look" and
+  # "looked and found nothing" -- S3.0's whole subject, one level up from the SARIF.
+  # duplication_hits is the one S3.A calls "the highest-EV field in the receipt".
+  if [ "$pmat_st" = "consulted" ]; then
+    local pmat_missing
+    # TWO jq traps in four lines, both caught by a probe rather than by reading.
+    # (a) `$k` must be bound BEFORE has() is applied: in `$p|has(.)` the argument `.`
+    #     is evaluated against has()'s own INPUT, which is $p, so it asks whether the
+    #     object has a key named after itself - always false, and the check passed over
+    #     everything.
+    # (b) `getpath([$k])`, not `$p[$k]`: bashrs parses the jq program as shell and
+    #     raises SC1087 (array expansion) on the second form. scripts/ is gated on a
+    #     SHRINK-ONLY bashrs error count, so two false errors here are two someone else
+    #     has to triage. Same class as the \042 dance in check_no_claim_literals.sh.
+    pmat_missing=$(jq -r '.predicate.consultations.pmat as $p
+        | ["complexity_delta","tdg_delta","satd_introduced","duplication_hits"]
+        | map(. as $k | select((($p | has($k)) | not) or (($p | getpath([$k]) | type) != "array")))
+        | join(", ")' "$rcpt")
+    [ -z "$pmat_missing" ] \
+      || reject B1 "pmat.status is consulted but these S3.A outputs are absent or are not arrays: $pmat_missing; an absent field is 'did not look', which S3.0 requires to be distinguishable from an empty one" || return 1
+  fi
+
+  # --- B1: cuda consulted must have ASKED something. -----------------------
+  # The analogue of mutation.attempted = 0, and the one S8 counts as a
+  # `vacuous_consultation`. A `no-authority-found` entry IS a query, so the honest
+  # path -- "I asked and the corpus had nothing" -- stays open; what closes is
+  # recording a consultation that asked nothing at all.
+  if [ "$cuda_st" = "consulted" ]; then
+    local n_queries bad_query
+    n_queries=$(jq -r '[.predicate.consultations.cuda.queries[]?] | length' "$rcpt")
+    [ "$n_queries" -gt 0 ] \
+      || reject B1 "cuda.status is consulted with queries: []; a consultation that asked nothing is DEGRADED, not clean, exactly as mutation.attempted=0 is (S3.B, S8 vacuous_consultations)" || return 1
+    # `first`, NOT `| head -1`. An early-exiting reader hands the producer SIGPIPE and
+    # `set -o pipefail` then reports 141 for a command substitution that produced exactly
+    # the right answer. Four instances of that shape landed in this repository in one
+    # day, one of them a check that PASSED on the error. jq can take the first element
+    # itself, so there is no second process to close the pipe.
+    bad_query=$(jq -r '[
+        [ .predicate.consultations.cuda.queries[]? ] | to_entries[]
+        | .key as $i | .value as $q
+        | if (($q.q // "") | tostring | length) == 0 then "#\($i) has an empty q"
+          elif ((["found","no-authority-found"]) | index($q.result | tostring)) == null
+            then "#\($i) records result \"\($q.result)\", outside { found, no-authority-found }"
+          elif ($q.result == "found") and ((($q.excerpt_sha256 // "") | tostring | length) == 0)
+            then "#\($i) records result found with no excerpt_sha256"
+          else empty end ] | first // ""' "$rcpt")
+    [ -z "$bad_query" ] \
+      || reject B1 "cuda query $bad_query; S3.B requires every device-behaviour claim to carry either a citation or a NAMED query that returned nothing" || return 1
+  fi
+
+  # --- B1: crux consulted must have LOOKED at something. -------------------
+  if [ "$crux_st" = "consulted" ]; then
+    local crux_shape n_surfaces n_claims coverage gap
+    crux_shape=$(jq -r '.predicate.consultations.crux as $c
+        | ["surfaces","comparative_claims"]
+        | map(. as $k | select((($c | has($k)) | not) or (($c | getpath([$k]) | type) != "array")))
+        | join(", ")' "$rcpt")
+    [ -z "$crux_shape" ] \
+      || reject B1 "crux.status is consulted but these S3.C outputs are absent or are not arrays: $crux_shape" || return 1
+    n_surfaces=$(jq -r '[.predicate.consultations.crux.surfaces[]?] | length' "$rcpt")
+    n_claims=$(jq -r   '[.predicate.consultations.crux.comparative_claims[]?] | length' "$rcpt")
+    [ "$n_surfaces" -gt 0 ] || [ "$n_claims" -gt 0 ] \
+      || reject B1 "crux.status is consulted with no surfaces and no comparative claims; a consultation over nothing passes vacuously, which is the shape S3.D calls DEGRADED" || return 1
+    coverage=$(jq -r '.predicate.consultations.crux.crux_coverage // ""' "$rcpt")
+    gap=$(jq -r      '.predicate.consultations.crux.gap_effect    // ""' "$rcpt")
+    case "$coverage" in covered|none) ;;
+      *) reject B1 "crux.crux_coverage is '$coverage', outside { covered, none }; S3.C makes 'no contract covers this surface' a FINDING, not a blank" || return 1 ;;
+    esac
+    case "$gap" in closes|widens|none) ;;
+      *) reject B1 "crux.gap_effect is '$gap', outside { closes, widens, none }" || return 1 ;;
+    esac
+  fi
+
   # --- B1: a consulted-but-vacuous mutation run (row 2). -------------------
   # A mutation set that matches nothing passes vacuously - the same shape as
   # `pv lint <FILE>` returning PASS over zero contracts.
   if [ "$mut_st" = "consulted" ]; then
-    local attempted killed
+    local attempted killed n_survivors
     attempted=$(jq -r '.predicate.consultations.mutation.attempted // "null"' "$rcpt")
     killed=$(jq -r    '.predicate.consultations.mutation.killed    // "null"' "$rcpt")
     case "$attempted" in
@@ -255,22 +606,14 @@ validate_receipt() {
     [ "$attempted" -gt 0 ] \
       || reject B1 "mutation.status is consulted with attempted=0; a run that attempts nothing is DEGRADED, not clean (S3.D)" || return 1
     case "$killed" in ''|null|*[!0-9]*) reject B1 "mutation.killed is '$killed', not a count" || return 1 ;; esac
-  fi
-
-  # --- B1: the CUDA consultation was skipped while its trigger fired (row 1).
-  if [ "$cuda_st" = "not-triggered" ]; then
-    local f fired=''
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      if match_cuda_path "$f"; then fired="path $f"; break; fi
-    done < <(git -C "$REPO" diff --name-only "$base" "$head" 2>/dev/null || true)
-    if [ -z "$fired" ]; then
-      local msg
-      msg=$(git -C "$REPO" log --format=%B "$base..$head" 2>/dev/null || true)
-      if [ -n "$msg" ] && match_cuda_message "$msg"; then fired="commit message"; fi
-    fi
-    [ -z "$fired" ] \
-      || reject B1 "consultations.cuda is not-triggered but its S3.B trigger fires on this diff ($fired); 'the docs said nothing' and 'I did not ask' must not be the same artifact" || return 1
+    [ "$killed" -le "$attempted" ] \
+      || reject B1 "mutation records killed=$killed of attempted=$attempted; a score above one is a miscount, and guard_mutation_score is read from these two numbers" || return 1
+    # S3.D: "Surviving mutants are recorded with mutant, file, line, killed: false."
+    # A survivor count that does not match the arithmetic makes the survivors list -
+    # the only part a reader can act on - unfalsifiable.
+    n_survivors=$(jq -r '[.predicate.consultations.mutation.survivors[]?] | length' "$rcpt")
+    [ "$n_survivors" -eq $((attempted - killed)) ] \
+      || reject B1 "mutation records attempted=$attempted killed=$killed, so $((attempted - killed)) mutant/s survived, but survivors[] holds $n_survivors; S3.D requires every survivor to be named" || return 1
   fi
 
   # --- B6: a stale index must not read PASS (S3.A, row 9). ------------------
@@ -380,6 +723,40 @@ validate_receipt() {
     fi
   done < <(jq -r '.runs[]? | .results[]?
       | [(.ruleId // "<no ruleId>"), ((.message.text // "") | @base64)] | @tsv' "$sarif")
+
+  # --- B4, THE HALF THAT DOES NOT ASK THE REVIEWER. ------------------------
+  # The check above reads the SARIF, so it can only see a ratio the reviewer chose to
+  # write down. This one reads the DIFF, exactly as the S3.B trigger is recomputed
+  # thirty lines up. Measured with a signed discrimination pair before it existed: one
+  # head adding `apr sustains 2.93x Ollama on 1.5B Q4_K decode.` to book/ was ACCEPTED
+  # with comparative_claims: [] and a silent SARIF, and REJECTED [B4] when the same
+  # ratio appeared in a finding. Identical diff; the verdict turned on candour.
+  #
+  # SCOPED TO THE USER-FACING SURFACE, and that is load-bearing twice over: it is the
+  # surface S9's scar is about (the book published the ratio), and it is what keeps
+  # this rule from red-ing the PR that adds its own case table -- fixtures state
+  # targets, and a spec quoting a banned literal in order to ban it is not publishing
+  # a claim. TARGET_RE drops the remaining bars ("Target: 2x Ollama") for the same
+  # reason check_no_claim_literals.sh drops them.
+  #
+  # THREE GAPS, RECORDED RATHER THAN WIDENED.
+  #
+  # (a) The PR BODY is not read: this guard has no GitHub client. Commit messages are
+  #     not a substitute -- this repository's own commit messages QUOTE the banned
+  #     ratios in order to ban them, so scanning them would red the very commits that
+  #     fix the defect. S3.C.1 lists four surfaces; two are covered here.
+  # (b) docs/ prose is not read, and (c) neither is a plain `//` comment. Both were in
+  #     scope in the first draft and both were MEASURED OUT over 300 commits of
+  #     origin/main -- see match_shipped_surface, where the five hits that decided it
+  #     are listed one by one, three of them quotations with no honest remedy.
+  if [ "$n_recorded" -eq 0 ]; then
+    local dfile dline
+    while IFS=$'\t' read -r dfile dline; do
+      [ -n "$dfile" ] || continue
+      published_claim "$dfile" "$dline" || continue
+      reject B4 "the diff publishes a comparative claim on a user-facing surface -- $dfile: $(printf '%s' "$dline" | cut -c1-70) -- while consultations.crux.comparative_claims is empty; a competitor ratio the review never recorded is unverified and blocks (S3.C.1)" || return 1
+    done < <(changed_lines "$base" "$head" '+')
+  fi
 
   return 0
 }

@@ -26,11 +26,14 @@ command -v minisign >/dev/null || { echo "need minisign" >&2; exit 1; }
 # Commit SHAs of the fixture repository (tests/fixtures/pr-review/make-fixture-repo.sh).
 # Read from expected-shas.txt so there is ONE place they are written down.
 sha_of() { awk -v k="$1" '$1==k{print $2}' "$HERE/expected-shas.txt"; }
-C1=$(sha_of C1)   # the merge base of both fixture PRs
+C1=$(sha_of C1)   # the merge base of every fixture PR
 C3=$(sha_of C3)   # main's tip: NOT an ancestor of F1, so a stale index
 F1=$(sha_of F1)   # the GPU pull request head, adds src/cuda/kernel.cu
 D1=$(sha_of D1)   # the docs-only pull request head
-for v in C1 C3 F1 D1; do
+G1=$(sha_of G1)   # the claim head: PUBLISHES 2.93x Ollama in book/
+S1=$(sha_of S1)   # the code head: adds a plain .rs file, so S3.D triggers
+P1=$(sha_of P1)   # the printed head: the same ratio in a comment AND in a format!
+for v in C1 C3 F1 D1 G1 S1 P1; do
   [ -n "${!v}" ] || { echo "expected-shas.txt has no $v" >&2; exit 1; }
 done
 
@@ -101,14 +104,24 @@ JSON
 PMAT_OK="{\"status\":\"consulted\",\"index_commit\":\"$C1\",\"index_is_ancestor\":true,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0}"
 PMAT_STALE="{\"status\":\"consulted\",\"index_commit\":\"$C3\",\"index_is_ancestor\":false,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0}"
 PMAT_UNREACHABLE='{"status":"unreachable","trigger_reason":"pmat MCP server: ConnectionRefused"}'
-PMAT_NT='{"status":"not-triggered","trigger_reason":"pmat is unconditional; not-triggered is never correct for it"}'
+# NOT a PMAT_NT. The previous revision of this file carried one, used by row 7, whose
+# own trigger_reason read "pmat is unconditional; not-triggered is never correct for it"
+# - a fixture that stated the rule it exempted, and the guard accepted it. S3.A's
+# trigger is unconditional, so `not-triggered` is never a legal pmat status and the only
+# fixture that may carry it is row 19, which exists to be REJECTED for carrying it.
+PMAT_NT_ILLEGAL='{"status":"not-triggered","trigger_reason":"docs-only, nothing worth indexing"}'
 
 CUDA_OK="{\"status\":\"consulted\",\"trigger_reason\":\"diff touches src/cuda/kernel.cu\",\"queries\":[{\"q\":\"stream ordering guarantees between non-default streams\",\"excerpt_sha256\":\"$EXCERPT_SHA\",\"result\":\"found\"}]}"
 CUDA_NT='{"status":"not-triggered","trigger_reason":"no changed path and no commit message matches the S3.B trigger"}'
+CUDA_NO_QUERIES='{"status":"consulted","trigger_reason":"diff touches src/cuda/kernel.cu","queries":[]}'
 
 CRUX_NT='{"status":"not-triggered","trigger_reason":"no CLI flag, HTTP route, MCP tool, config key or output format changed","surfaces":[],"contracts":[],"comparative_claims":[]}'
 CRUX_OK_FULL="{\"status\":\"consulted\",\"surfaces\":[\"apr bench --gpu\"],\"contracts\":[\"CRUX-A-08\"],\"gap_effect\":\"closes\",\"crux_coverage\":\"covered\",\"comparative_claims\":[{\"claim\":\"1.21x llama.cpp on aarch64 Q4_K\",\"comparator\":{\"command\":[\"llama-cli\",\"-m\",\"qwen2.5-1.5b-q4_k_m.gguf\",\"-p\",\"2+2?\",\"-n\",\"128\",\"-ngl\",\"99\"],\"version\":\"llama.cpp b4021\",\"env_sha256\":\"9f2b1c4d5e6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e\",\"artifact_sha256\":\"1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809\",\"log_path\":\"evidence/bench/2026-08-30-gb10/comparator.log\"}}]}"
-CRUX_OK_BARE='{"status":"consulted","surfaces":[],"contracts":[],"gap_effect":"none","crux_coverage":"covered","comparative_claims":[]}'
+# The claim head's two shapes, which differ ONLY in whether the published ratio was
+# recorded. They are B4's discrimination pair, and rows 16 and 17 are the fixtures.
+CRUX_SAW_SURFACE_NO_CLAIM='{"status":"consulted","surfaces":["book/src/tools/apr-cli.md"],"contracts":[],"gap_effect":"none","crux_coverage":"none","comparative_claims":[]}'
+CRUX_SAW_BANNER_NO_CLAIM='{"status":"consulted","surfaces":["apr banner output"],"contracts":[],"gap_effect":"none","crux_coverage":"none","comparative_claims":[]}'
+CRUX_CLAIM_RECORDED="{\"status\":\"consulted\",\"surfaces\":[\"book/src/tools/apr-cli.md\"],\"contracts\":[\"CRUX-A-08\"],\"gap_effect\":\"none\",\"crux_coverage\":\"none\",\"comparative_claims\":[{\"claim\":\"2.93x Ollama on 1.5B Q4_K decode\",\"comparator\":{\"command\":[\"ollama\",\"run\",\"qwen2.5-coder:1.5b\",\"--verbose\"],\"version\":\"ollama 0.5.7\",\"env_sha256\":\"3c1d9e0f2a4b6c8d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f\",\"artifact_sha256\":\"5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d\",\"log_path\":\"evidence/bench/2026-08-30-ollama/comparator.log\"}}]}"
 CRUX_BAD_COMPARATOR='{"status":"consulted","surfaces":["docs/performance.md"],"contracts":["CRUX-A-08"],"gap_effect":"none","crux_coverage":"covered","comparative_claims":[{"claim":"2.93x Ollama","comparator":{"version":"ollama 0.5.7","env_sha256":"","log_path":"evidence/bench/none.log"}}]}'
 
 MUT_OK='{"status":"consulted","scope":"in-diff","attempted":37,"killed":37,"survivors":[]}'
@@ -237,14 +250,23 @@ RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_UNREACHABLE" "$CUDA_NT" "$CRUX_NT" "$
 emit row-06-unreachable-pmat-verdict-degraded "$SARIF" "$RCPT"
 
 # ===========================================================================
-# ROW 7 - honest docs-only PR, all consultations not-triggered        -> GREEN
+# ROW 7 - honest docs-only PR, pmat consulted, the rest not-triggered -> GREEN
 # DISCRIMINATION CASE.
+#
+# S6.3 writes this row as "all consultations not-triggered". S3.A and S8.4 both say
+# pmat's trigger is UNCONDITIONAL, so the spec contradicts itself here and the two
+# normative statements win over the illustrative row. This fixture previously carried
+# `pmat: not-triggered` with the trigger_reason "pmat is unconditional; not-triggered
+# is never correct for it" - it BLESSED the rule it stated, and the guard accepted it.
+# It now carries a consulted pmat whose four arrays are empty, which is the honest
+# shape of "ran and found nothing" and keeps the row discriminating: a docs-only PR
+# must still be ACCEPTED.
 # ===========================================================================
 SARIF=$(
 sarif_empty
 )
-RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_NT" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
-emit row-07-honest-docs-only-all-not-triggered "$SARIF" "$RCPT"
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
+emit row-07-honest-docs-only-pmat-consulted "$SARIF" "$RCPT"
 
 # ===========================================================================
 # ROW 8 - reviewer_actor = author_actor                              -> RED B2
@@ -322,7 +344,7 @@ emit row-12-excerpt-digest-mismatch "$SARIF" "$RCPT"
 SARIF=$(
 sarif_empty
 )
-RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_NT" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
 emit row-13-invalid-signature "$SARIF" "$RCPT"
 DECOY=$(mktemp); printf 'these are not the receipt bytes\n' > "$DECOY"
 minisign -q -S -s "$KEY" -m "$DECOY" -t "decoy" -c "decoy" </dev/null
@@ -387,6 +409,113 @@ sarif_one pmat '{
 )
 RCPT=$(receipt "$D1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
 emit row-15-finding-with-no-grounding-mark "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 16 - the diff PUBLISHES a competitor ratio, nothing records it  -> RED B4
+#
+# NOT one of S6.3's fourteen. B4's blocking half read only the receipt, so a head that
+# publishes `2.93x Ollama` in book/ was ACCEPTED whenever the reviewer stayed silent
+# about it, and REJECTED only when the reviewer wrote the ratio into a finding: the
+# same diff, the verdict turning on candour. The crux consultation here is HONEST in
+# every other respect - it names the surface it looked at - so nothing but the diff
+# recomputation can reject this receipt.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$G1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_SAW_SURFACE_NO_CLAIM" "$MUT_NT")
+emit row-16-comparative-claim-only-in-the-diff "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 17 - the same diff, the same ratio, RECORDED with a comparator   -> GREEN
+# DISCRIMINATION CASE for row 16. Without it, "reject every PR that mentions a
+# competitor" reads green, and B4 would block the honest path it exists to require.
+# ===========================================================================
+SARIF=$(
+sarif_one crux '{
+      "ruleId": "comparative_claim", "level": "note",
+      "message": { "text": "book/src/tools/apr-cli.md publishes 2.93x Ollama; the comparator command, version, environment and artifact hash are recorded." },
+      "properties": { "grounding": "measured",
+        "source": "evidence/bench/2026-08-30-ollama/comparator.log",
+        "failure_scenario": "A reader reproduces the published ratio and measures parity, because the harness never executed the comparator.",
+        "precision_class": "advisory" } }'
+)
+RCPT=$(receipt "$G1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_CLAIM_RECORDED" "$MUT_NT")
+emit row-17-comparative-claim-recorded "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 18 - cuda consulted, queries: []                                -> RED B1
+#
+# The vacuous-consultation shape the guard already rejected for mutation
+# (`attempted: 0`, row 2) and did not for cuda. S8 sets vacuous_consultations = 0 as
+# one of its four zeros; without this row that zero was enforced for one consultation
+# out of four.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$F1" "$C1" PASS "$PMAT_OK" "$CUDA_NO_QUERIES" "$CRUX_NT" "$MUT_OK")
+emit row-18-cuda-consulted-no-queries "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 19 - pmat not-triggered on a diff that changes Rust source      -> RED B1
+#
+# S3.A: "Trigger: unconditional". Every other consultation here is honest, so this
+# receipt is rejected for exactly one reason: the review skipped the consultation that
+# carries duplication_hits, which S3.A calls the highest-EV field in the receipt.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$S1" "$C1" PASS "$PMAT_NT_ILLEGAL" "$CUDA_NT" "$CRUX_NT" "$MUT_OK")
+emit row-19-pmat-not-triggered-on-a-code-diff "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 20 - mutation not-triggered on a diff that changes Rust source  -> RED B1
+#
+# S3.D's rows 1 and 2 differ in whether the RESULT blocks, not in whether the
+# consultation is owed. Before the trigger was recomputed, `not-triggered` was accepted
+# on any diff at all: the one consultation whose emptiness WAS checked could be skipped
+# outright by writing three words, which is the same hole one level up.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$S1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
+emit row-20-mutation-not-triggered-on-a-code-diff "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 21 - crux not-triggered on a diff publishing a competitor ratio -> RED B1
+#
+# S3.C.1 lives under S3.C, so a comparative claim in the diff IS a crux trigger. This
+# is the route B4's diff half depends on: without it a reviewer could put crux beyond
+# reach of every claim rule by declaring the consultation untriggered.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$G1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
+emit row-21-crux-not-triggered-on-a-claim-diff "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 22 - a ratio inside format!, and the SAME ratio in a plain comment -> RED B4
+#
+# The scope discrimination. B4's diff half must fire on the printed literal and must NOT
+# fire on the comment two lines above it, which quotes the withdrawn claim in order to
+# name it. The comment is FIRST in the file, so the rejection reason naming the format!
+# line is the proof that the comment was skipped: if the comment fired, it would be the
+# one quoted.
+#
+# Measured over 300 commits of origin/main, every comparative claim this repository has
+# added to a plain `//` comment was a claim it was WITHDRAWING, and a block on those has
+# no honest exit - S3.C.1's remedy is a comparator log, and there is no log for a number
+# nobody measured.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$P1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_SAW_BANNER_NO_CLAIM" "$MUT_OK")
+emit row-22-printed-ratio-not-the-quoted-one "$SARIF" "$RCPT"
 
 # ===========================================================================
 # THE POSITIVE CONTROLS (S6.1) - not rows of the S6.3 table.
