@@ -340,7 +340,7 @@ fn init_batch_model(
             ..Default::default()
                     };
                     // batch model-init has no prompt yet → BOS-probe fallback (PMAT-742)
-                    if validate_gpu_first_token(&mut cuda_model, &probe_config, &[]) {
+                    if validate_gpu_first_token(&mut cuda_model, &probe_config, &[]).is_ok() {
                         return Ok(BatchModel { gpu: Some(cuda_model), #[cfg(feature = "gpu")] wgpu: None, cpu: None });
                     }
                     eprintln!("[batch] CUDA validation failed, trying wgpu...");

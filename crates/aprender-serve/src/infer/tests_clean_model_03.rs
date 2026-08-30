@@ -71,6 +71,7 @@ fn main() {
             load_ms: 0.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         assert_eq!(result.input_token_count + result.generated_token_count, 0);
     }
@@ -87,6 +88,7 @@ fn main() {
             load_ms: f64::MAX,
             format: "GGUF".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
         assert_eq!(result.tokens.len(), 1_000_000);
     }
@@ -227,6 +229,7 @@ fn main() {
             load_ms: 50.0,
             format: "APR".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
 
         let mut cloned = original.clone();

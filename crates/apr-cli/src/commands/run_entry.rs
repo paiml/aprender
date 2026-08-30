@@ -552,20 +552,72 @@ fn print_benchmark_results(
         0.0
     };
 
+    // PERF-062 / #2790: WHICH PATH PRODUCED THIS NUMBER.
+    //
+    // Measured on this box, `apr` built from a866988e4 with `--features cuda`,
+    // qwen2.5-coder-7b Q4_K_M, `--gpu`: the F2 parity gate rejected CUDA at
+    // cosine 0.9403, wgpu was rejected at 0.7222, the run executed on CPU, and
+    // this block printed `tok/s: 0.4` with no compute class at all. A receipt
+    // built from it could label 0.4 tok/s `cuda` and every schema check would
+    // pass. The class is now beside the number it qualifies.
+    let compute = compute_fields();
+
     println!();
     println!("{}", "=== Benchmark Results ===".cyan().bold());
     println!("tok/s: {:.1}", tok_per_sec);
     println!("tokens: {}", tokens_generated);
     println!("latency: {:.2}ms", result.duration_secs * 1000.0);
     println!("model: {}", source);
+    println!("compute_requested: {}", compute.requested);
+    println!("compute_class: {}", compute.resolved);
     println!();
 
     if output_format == "json" {
         println!(
-            r#"{{"tok_s": {:.1}, "tokens": {}, "latency_ms": {:.2}}}"#,
+            r#"{{"tok_s": {:.1}, "tokens": {}, "latency_ms": {:.2}, "compute_requested": "{}", "compute_class": "{}", "compute_honoured": {}}}"#,
             tok_per_sec,
             tokens_generated,
-            result.duration_secs * 1000.0
+            result.duration_secs * 1000.0,
+            compute.requested,
+            compute.resolved,
+            compute.honoured,
         );
+    }
+}
+
+/// The three compute fields the benchmark block reports.
+///
+/// `resolved` is `"unmeasured"` when no engine recorded a resolution — never
+/// `"cpu"`. A printer that turns "nobody measured" into a class name
+/// manufactures the provenance this ticket exists to remove, and `"unmeasured"`
+/// is outside `bench_receipt.py`'s `COMPUTE_CLASSES`, so a receipt built from
+/// it is refused by the schema rather than accepted as a CPU run.
+struct ComputeFields {
+    requested: String,
+    resolved: String,
+    honoured: bool,
+}
+
+fn compute_fields() -> ComputeFields {
+    #[cfg(feature = "inference")]
+    {
+        if let Some(resolution) = crate::compute_latch::resolution() {
+            return ComputeFields {
+                requested: resolution.requested.wire().to_string(),
+                resolved: resolution.resolved.wire().to_string(),
+                honoured: resolution.honoured(),
+            };
+        }
+        return ComputeFields {
+            requested: crate::compute_latch::request().wire().to_string(),
+            resolved: "unmeasured".to_string(),
+            honoured: false,
+        };
+    }
+    #[cfg(not(feature = "inference"))]
+    ComputeFields {
+        requested: "auto".to_string(),
+        resolved: "unmeasured".to_string(),
+        honoured: false,
     }
 }

@@ -37,6 +37,7 @@ fn test_health_response_serialization() {
         status: "ok".to_string(),
         version: "1.0.0".to_string(),
         compute_mode: "cpu".to_string(),
+        compute_class: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 1.0,
     };
@@ -3015,6 +3016,7 @@ fn test_health_response_custom_status() {
         status: "degraded".to_string(),
         version: "0.0.0-dev".to_string(),
         compute_mode: "cpu".to_string(),
+        compute_class: "cpu".to_string(),
         model_loaded: false,
         uptime_sec: 0.5,
     };
@@ -4934,6 +4936,7 @@ fn test_health_response_roundtrip() {
         status: "ok".to_string(),
         version: "1.2.3".to_string(),
         compute_mode: "cpu".to_string(),
+        compute_class: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 42.0,
     };

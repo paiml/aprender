@@ -24,6 +24,7 @@ fn test_health_response_creation() {
         status: "ok".to_string(),
         version: "1.0.0".to_string(),
         compute_mode: "cpu".to_string(),
+        compute_class: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 1.5,
     };
@@ -41,6 +42,7 @@ fn test_health_response_serialization() {
         status: "ok".to_string(),
         version: "2.0.0".to_string(),
         compute_mode: "cpu".to_string(),
+        compute_class: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 2.0,
     };
@@ -67,6 +69,7 @@ proptest! {
             status: status.clone(),
             version: version.clone(),
             compute_mode: "cpu".to_string(),
+            compute_class: "cpu".to_string(),
             model_loaded,
             uptime_sec,
         };

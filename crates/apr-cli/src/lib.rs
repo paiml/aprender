@@ -49,6 +49,9 @@ pub mod verbosity;
 /// PERF-021: the accelerator refusal, shared by serve, run and chat.
 mod accel;
 mod commands;
+/// PERF-062 / #2790: the compute request in, the compute resolution out.
+#[cfg(feature = "inference")]
+pub mod compute_latch;
 pub mod error;
 mod output;
 pub mod pipe;

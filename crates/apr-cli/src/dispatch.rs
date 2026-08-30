@@ -206,6 +206,20 @@ or drop `--backend`."
                 *no_gpu || backend_forces_cpu
             };
 
+            // PERF-062 / #2790: LATCH THE REQUEST BEFORE IT IS COLLAPSED.
+            //
+            // The line above is where the fact dies: after it, `--gpu` and a
+            // bare `apr run` are the same `false`, so nothing downstream can
+            // report that an accelerator was asked for and refused. That is
+            // why the F2 fallback was unreportable rather than merely
+            // unreported — see `crate::compute_latch`.
+            #[cfg(feature = "inference")]
+            crate::compute_latch::latch_request(realizar::infer::ComputeRequest::from_flags(
+                *gpu,
+                *no_gpu,
+                backend.as_deref(),
+            ));
+
             // Batch JSONL mode: load model once, process all prompts
             #[cfg(feature = "inference")]
             if let Some(ref batch_file) = batch_jsonl {

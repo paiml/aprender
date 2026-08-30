@@ -219,6 +219,87 @@ pub enum LlmClientError {
     HealthCheckTimeout(Duration),
 }
 
+/// PERF-062 / #2780 — what the SERVER says about itself.
+///
+/// # The defect this closes
+///
+/// `provenance.model` is the join key whose whole purpose is to make a
+/// cross-host comparison *"impossible to express, not merely discouraged"*.
+/// The producer copied the operator's `--model` flag straight through, and
+/// clap's default for that flag is the literal string `default`, so the first
+/// real receipt read `"model": "default"` and the gate said PASS. #2781 made
+/// that particular string an error. It cannot catch the case that matters:
+/// an operator who types a *plausible* but wrong name. Measured — the same run
+/// served `qwen2.5-coder-0.5b-instruct-q4_k_m` while answering
+/// `"model":"llama3-70b-there-is-no-such-model"` without complaint.
+///
+/// The only cure is to stop asking the operator. Every field here is `None`
+/// unless a SERVER endpoint answered it. Nothing is defaulted, because a
+/// defaulted join key is the constant that stops the field separating anything.
+#[cfg(feature = "llm")]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ServerIdentity {
+    /// The model the server reports as loaded (`GET /api/tags` → `models[].model`).
+    pub model: Option<String>,
+    /// The quantization the server reports (`/api/tags` → `details.quantization_level`).
+    pub quantization: Option<String>,
+    /// The dispatch class the server reports (`GET /health` → `compute_class`).
+    pub compute_class: Option<String>,
+    /// Which endpoints answered, for the refusal message to name.
+    pub sources: Vec<String>,
+}
+
+/// A join-key value that is present, well-formed, and says nothing.
+///
+/// The SAME list `scripts/lib/bench_receipt.py` refuses, applied one step
+/// earlier so a placeholder is never adopted as a measured fact in the first
+/// place. `apr serve`'s own `GET /v1/models` answers `id: "default"` in
+/// single-model mode (`api/batch_processing.rs`), so without this a probe that
+/// preferred `/v1/models` would launder the placeholder into the receipt and
+/// call it server-read.
+#[cfg(feature = "llm")]
+pub const JOIN_KEY_PLACEHOLDERS: &[&str] = &[
+    "default",
+    "unknown",
+    "unspecified",
+    "none",
+    "null",
+    "nil",
+    "n/a",
+    "na",
+    "tbd",
+    "todo",
+    "fixme",
+    "xxx",
+    "placeholder",
+    "example",
+    "test",
+    "dummy",
+    "foo",
+    "bar",
+    "-",
+    "--",
+    "?",
+    "??",
+];
+
+/// Is this value present and meaningless?
+#[cfg(feature = "llm")]
+#[must_use]
+pub fn is_join_key_placeholder(value: &str) -> bool {
+    let token = value.trim().to_lowercase();
+    token.is_empty() || JOIN_KEY_PLACEHOLDERS.contains(&token.as_str())
+}
+
+/// Keep a server-reported string only when it says something.
+#[cfg(feature = "llm")]
+fn meaningful(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|v| !is_join_key_placeholder(v))
+        .map(str::to_string)
+}
+
 /// OpenAI-compatible HTTP client for LLM inference.
 #[cfg(feature = "llm")]
 #[derive(Debug, Clone)]
@@ -420,6 +501,97 @@ impl LlmClient {
             "No health endpoint responded at {}",
             self.base_url
         )))
+    }
+
+    /// Ask the SERVER what it loaded and which path it dispatches through.
+    ///
+    /// PERF-062 / #2780. Probe order is deliberate:
+    ///
+    /// * `GET /api/tags` names the LOADED model — `ollama_tags_handler` reads
+    ///   `state.model_source()`, the file the server actually opened.
+    /// * `GET /health` carries `compute_class`, read from the resident model
+    ///   variant, which is the path the handlers dispatch to (I-2: the path
+    ///   TAKEN, never the hardware present).
+    /// * `GET /v1/models` is probed LAST and its `id` is subject to the
+    ///   placeholder filter, because `apr serve` answers `"default"` there in
+    ///   single-model mode. Reading it first would launder the exact string
+    ///   #2781 spent a PR refusing.
+    ///
+    /// Every field stays `None` when no endpoint answered. This function never
+    /// falls back to `self.model` — that value came from the operator, and
+    /// echoing it back through a "server identity" API would be the same lie
+    /// with a longer call stack.
+    pub async fn server_identity(&self) -> ServerIdentity {
+        let mut out = ServerIdentity::default();
+
+        if let Ok(resp) = self
+            .client
+            .get(format!("{}/api/tags", self.base_url))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(body) = resp.json::<serde_json::Value>().await {
+                    let first = body.get("models").and_then(|m| m.get(0));
+                    if let Some(entry) = first {
+                        out.model = meaningful(entry.get("model").and_then(|v| v.as_str()))
+                            .or_else(|| meaningful(entry.get("name").and_then(|v| v.as_str())));
+                        out.quantization = meaningful(
+                            entry
+                                .get("details")
+                                .and_then(|d| d.get("quantization_level"))
+                                .and_then(|v| v.as_str()),
+                        );
+                    }
+                    if out.model.is_some() {
+                        out.sources.push("/api/tags".to_string());
+                    }
+                }
+            }
+        }
+
+        if let Ok(resp) = self
+            .client
+            .get(format!("{}/health", self.base_url))
+            .send()
+            .await
+        {
+            // `/health` answers 503 while loading and still carries a body. The
+            // status is about readiness, not about whether the body is true.
+            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                out.compute_class = meaningful(body.get("compute_class").and_then(|v| v.as_str()));
+                if out.compute_class.is_some() {
+                    out.sources.push("/health".to_string());
+                }
+            }
+        }
+
+        if out.model.is_none() {
+            if let Ok(resp) = self
+                .client
+                .get(format!("{}/v1/models", self.base_url))
+                .send()
+                .await
+            {
+                if resp.status().is_success() {
+                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+                        let first = body
+                            .get("data")
+                            .or_else(|| body.get("models"))
+                            .and_then(|m| m.get(0));
+                        if let Some(entry) = first {
+                            out.model = meaningful(entry.get("id").and_then(|v| v.as_str()))
+                                .or_else(|| meaningful(entry.get("name").and_then(|v| v.as_str())));
+                        }
+                    }
+                }
+                if out.model.is_some() {
+                    out.sources.push("/v1/models".to_string());
+                }
+            }
+        }
+
+        out
     }
 
     /// Send a streaming chat completion request and collect per-token timestamps.

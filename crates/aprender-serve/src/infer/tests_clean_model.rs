@@ -60,6 +60,7 @@
             load_ms: 2.0,
             format: "APR".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         let debug_str = format!("{:?}", result);
         assert!(debug_str.contains("text"));
@@ -80,6 +81,7 @@
             load_ms: 0.0,
             format: String::new(),
             used_gpu: false,
+            compute: Default::default(),
         };
         assert!(result.text.is_empty());
         assert!(result.tokens.is_empty());
@@ -98,6 +100,7 @@
             load_ms: 5000.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
         assert_eq!(result.text.len(), 10000);
         assert_eq!(result.tokens.len(), 1000);
@@ -117,6 +120,7 @@
                 load_ms: 1.0,
                 format: fmt.to_string(),
                 used_gpu: false,
+                compute: Default::default(),
             };
             assert_eq!(result.format, fmt);
         }

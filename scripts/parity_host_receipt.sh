@@ -69,12 +69,37 @@ wait_healthy() { # wait_healthy <port> <seconds>
 }
 
 # THE CLASS IS READ FROM THE SERVER'S OWN OUTPUT. `--gpu` proves nothing.
+#
+# PERF-062 / #2790 — AND NEITHER DOES A BANNER. Every `Backend:` line this
+# engine prints is printed by an ATTEMPT, so a reader that greps for one
+# classifies a REJECTED attempt as a success. Measured on lambda-vector, apr
+# built from a866988e4 with --features cuda, qwen2.5-coder-7b Q4_K_M, `--gpu`:
+#
+#     warning: GPU output diverges from CPU at position 59 (... cosine 0.9403)
+#     Backend: wgpu (Vulkan)
+#     warning: GPU (wgpu) path rejected ... cosine vs CPU = 0.722249 (< 0.99)
+#
+# The run executed on CPU. The `elif grep -qi "wgpu"` arm below returned
+# **wgpu** for that log -- a fabricated compute_class emitted by the provenance
+# producer, which is the class of defect this file's own header refuses.
+#
+# So the resolution line wins, and the banners are only a fallback for a log
+# written by an apr that predates it. The LAST line wins: one process, one
+# settled resolution, and a `tail -1` cannot be fooled by an earlier attempt.
 apr_class_from_log() {
+    local resolved
+    resolved=$(sed -n 's/^apr-compute: .*resolved=\([a-z]*\).*/\1/p' "$1" | tail -1)
+    case "$resolved" in
+        cpu|cuda|wgpu|metal) echo "$resolved"; return 0 ;;
+    esac
+    # No resolution line. Fall back to the banners, but never let a REFUSAL
+    # message spell a class into existence: `Backend: CPU (wgpu unavailable: ...)`
+    # and `GPU (wgpu) path rejected` both contain the word `wgpu`.
     if grep -qi "CUDA optimized model ready\|Enabling optimized CUDA acceleration" "$1"; then
         echo cuda
     elif grep -qi "metal.*ready\|Metal acceleration" "$1"; then
         echo metal
-    elif grep -qi "wgpu" "$1"; then
+    elif grep -qi "wgpu" "$1" && ! grep -qi "wgpu) path rejected\|wgpu unavailable\|wgpu failed\|wgpu not available" "$1"; then
         echo wgpu
     else
         echo cpu

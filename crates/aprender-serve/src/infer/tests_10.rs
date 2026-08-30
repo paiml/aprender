@@ -191,6 +191,7 @@ fn test_inference_result_debug() {
         load_ms: 0.0,
         format: "Mock".to_string(),
         used_gpu: false,
+        compute: Default::default(),
     };
     let debug = format!("{:?}", result);
     assert!(debug.contains("InferenceResult"));
@@ -209,6 +210,7 @@ fn test_inference_result_clone() {
         load_ms: 50.0,
         format: "GGUF".to_string(),
         used_gpu: true,
+        compute: Default::default(),
     };
     let cloned = result.clone();
     assert_eq!(cloned.text, "hello");

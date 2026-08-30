@@ -748,6 +748,20 @@ jobs:
       - name: Assertion-exclusion guard case table
         run: bash scripts/check_assertions_exclude.sh --self-test
 
+      # PERF-062 / #2790: provenance.compute_class must be the path TAKEN.
+      # scripts/parity_host_receipt.sh reads the class from the server's log,
+      # and every `Backend:` line the engine prints is printed by an ATTEMPT --
+      # so its `elif grep -qi "wgpu"` arm returned `wgpu` for a 7B run whose
+      # CUDA path was rejected by the F2 parity gate (cosine 0.9403), whose
+      # wgpu path was rejected at 0.7222, and which executed on CPU. Case
+      # table, because every apr-log-classification pattern in this repo has
+      # been wrong at least once and none were caught by reading the pattern.
+      # Text-only check, no build.
+      - name: compute_class is the path taken, not a banner
+        run: bash scripts/check_compute_resolution_line.sh
+      - name: compute_class guard case table
+        run: bash scripts/check_compute_resolution_line.sh --self-test
+
       # PMAT-742: the apr-dogfood coverage gate. The 0.63.0 surface audit found
       # 142 of 830 shipped features carry any gate at all (17.1%), and 27 of 28
       # binaries carry none. Where gates look they find defects at 72.5%; where

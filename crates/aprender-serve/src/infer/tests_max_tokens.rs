@@ -194,6 +194,7 @@ mod tests {
                 load_ms: 1.0,
                 format: format.to_string(),
                 used_gpu: false,
+                compute: Default::default(),
             };
             assert_eq!(result.format, format);
         }
@@ -213,6 +214,7 @@ mod tests {
                     load_ms: 1.0,
                     format: format.to_string(),
                     used_gpu,
+                    compute: Default::default(),
                 };
                 assert_eq!(result.used_gpu, used_gpu);
                 assert_eq!(result.format, format);

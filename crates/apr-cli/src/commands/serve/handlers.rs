@@ -1039,6 +1039,10 @@ struct AprHealthResponse {
     architecture: String,
     inference_enabled: bool,
     compute_mode: String,
+    /// PERF-062 / #2790: the dispatch class in `bench_receipt.py`'s vocabulary.
+    /// This APR-model server is CPU-only, and it says so rather than leaving a
+    /// reader to infer a class from `compute_mode`.
+    compute_class: String,
 }
 
 #[cfg(feature = "inference")]
@@ -1256,6 +1260,7 @@ fn build_apr_cpu_router(state: AprServerState, auth_gate: super::auth::AuthGate)
                         architecture: s.architecture.clone(),
                         inference_enabled: s.is_transformer,
                         compute_mode: "cpu".to_string(),
+                        compute_class: "cpu".to_string(),
                     })
                 }
             }),

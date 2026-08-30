@@ -1,0 +1,2 @@
+apr-compute: requested=cpu resolved=cpu honoured=true refused=-
+Generated 8 tokens in 5063.1ms (1.6 tok/s)

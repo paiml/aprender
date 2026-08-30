@@ -1,0 +1,21 @@
+[GH-129] Early kernel preload: 44 modules compiled
+[PMAT-082] cuBLASLt FP8 JIT warmed (1344×16×1344)
+[PMAT-053] FP8 weight cache: 197 matrices cached (6742.8 MB) in 245.1ms
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[trueno#243] ✓ Manual graph: 619 kernels. first_args=Some(["0x7bd4a91edc00", "0x7bd4a91fc000", "0x7bd4a8ff8000"]), last_args=Some(["0x7bd07e800000", "0x7bd338000000", "0x7bd49bf94800", "0xe00", "0x25200"]), current_logits_buf=0x7bd07e800000
+warning: GPU output diverges from CPU at position 59 (argmax 198 != 198, cosine 0.9403); min cosine 0.9403 — falling back to CPU
+Backend: wgpu (Vulkan)
+Preparing GPU weights: dequantizing 28 layers to F32
+  Dequantized layer 7/28
+  Dequantized layer 14/28
+  Dequantized layer 21/28
+  Dequantized layer 28/28
+GPU weights ready: 169 tensors, 6086.2 MB F32
+[wgpu] Skipping weight 'lm_head' (2180.0 MB > 2147.5 MB limit) — CPU fallback
+warning: GPU (wgpu) path rejected, attempting fallback: cosine vs CPU = 0.722249 (< 0.99) at step 1/3
+warning: --gpu was requested; this run resolved to compute_class=cpu.
+         refused cuda: GPU output diverges from CPU at position 59 (argmax 198 != 198, cosine 0.9403); min cosine 0.9403 — falling back to CPU
+         refused wgpu: Inference error: wgpu parity gate: cosine=0.722249 < 0.99 at step 1/3
+         Throughput from this run is a compute_class=cpu number. Labelling it as the requested class is the provenance defect aprender#2790 exists to remove.
+apr-compute: requested=accelerator resolved=cpu honoured=false refused=cuda,wgpu
+Generated 16 tokens in 30708.6ms (0.5 tok/s)

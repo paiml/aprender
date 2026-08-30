@@ -11,6 +11,7 @@
             load_ms: 111.1,
             format: "APR".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
 
         let cloned = original.clone();

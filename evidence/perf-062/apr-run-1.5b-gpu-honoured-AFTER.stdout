@@ -1,0 +1,10 @@
+
+=== Benchmark Results ===
+tok/s: 2.4
+tokens: 16
+latency: 6586.69ms
+model: /home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+compute_requested: accelerator
+compute_class: cuda
+
+{"tok_s": 2.4, "tokens": 16, "latency_ms": 6586.69, "compute_requested": "accelerator", "compute_class": "cuda", "compute_honoured": true}

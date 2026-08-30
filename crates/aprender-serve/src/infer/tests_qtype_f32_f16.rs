@@ -209,6 +209,7 @@ fn test_inference_result_fields() {
         load_ms: 50.0,
         format: "GGUF".to_string(),
         used_gpu: false,
+        compute: Default::default(),
     };
 
     assert_eq!(result.text, "Generated output");
@@ -234,6 +235,7 @@ fn test_inference_result_with_gpu() {
         load_ms: 100.0,
         format: "APR".to_string(),
         used_gpu: true,
+        compute: Default::default(),
     };
 
     assert!(result.used_gpu);
@@ -252,6 +254,7 @@ fn test_inference_result_clone() {
         load_ms: 1.0,
         format: "SafeTensors".to_string(),
         used_gpu: false,
+        compute: Default::default(),
     };
 
     let cloned = result.clone();
@@ -309,6 +312,7 @@ fn test_inference_result_empty_tokens() {
         load_ms: 0.0,
         format: "Unknown".to_string(),
         used_gpu: false,
+        compute: Default::default(),
     };
 
     assert!(result.tokens.is_empty());
@@ -327,6 +331,7 @@ fn test_inference_result_high_throughput() {
         load_ms: 0.1,
         format: "GGUF".to_string(),
         used_gpu: true,
+        compute: Default::default(),
     };
 
     assert!(result.tok_per_sec > 10000.0);

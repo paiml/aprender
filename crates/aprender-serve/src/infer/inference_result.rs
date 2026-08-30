@@ -20,6 +20,12 @@ pub struct InferenceResult {
     pub format: String,
     /// Whether GPU was used
     pub used_gpu: bool,
+    /// PERF-062 / #2790: what this run ASKED FOR and what it TOOK.
+    ///
+    /// `used_gpu` answers neither question. It cannot separate CUDA from wgpu
+    /// (#2779's shape), and it cannot say whether CPU was chosen or imposed —
+    /// the two cases that make a tok/s figure mean opposite things.
+    pub compute: ComputeResolution,
 }
 
 // ============================================================================
@@ -225,17 +231,29 @@ fn run_gguf_inference(
     // gguf_gpu_generate.rs short-circuit with an actual forward pass.
     let infer_start = Instant::now();
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
-    let (tokens, used_gpu) = if canonical_arch == "qwen3_moe" {
+    let (tokens, compute) = if canonical_arch == "qwen3_moe" {
         let tokens = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
             &mapped,
             &model,
             &input_tokens,
             &gen_config,
         )?;
-        (tokens, false) // CPU-only path; GPU MoE wiring is M32d follow-up
+        // CPU-only path; GPU MoE wiring is M32d follow-up. It is a refusal, and
+        // it is recorded as one rather than left to read as a CPU-by-choice run.
+        let mut moe = ComputeResolution::pending(config.compute_request);
+        if config.compute_request != ComputeRequest::Cpu && config.compute_request != ComputeRequest::Auto {
+            moe.refused(
+                ComputeClass::Cuda,
+                "qwen3_moe has no GPU forward path (M32d); MoE runs on CPU",
+            );
+        }
+        moe.settled_on(ComputeClass::Cpu);
+        moe.report();
+        (tokens, moe)
     } else {
         run_gguf_generate(model, &input_tokens, &gen_config, config)?
     };
+    let used_gpu = compute.resolved.is_accelerator();
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
 
     let generated_tokens = &tokens[input_token_count..];
@@ -270,6 +288,7 @@ fn run_gguf_inference(
         load_ms,
         format: "GGUF".to_string(),
         used_gpu,
+        compute,
     })
 }
 
@@ -571,12 +590,19 @@ not CUDA."
     )
 }
 
+/// Validate the CUDA path, returning the REASON it was refused.
+///
+/// PERF-062 / #2790: this used to return a bare `bool` and print its reason to
+/// stderr on the way out. The caller could then only turn `false` into a CPU
+/// fallback, so the reason existed on the console and NOWHERE ELSE — not in the
+/// result, not in a receipt. `Err(reason)` carries it to the one place that
+/// records what the run resolved to.
 #[cfg(feature = "cuda")]
 fn validate_gpu_first_token(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
     _gen_config: &crate::gguf::QuantizedGenerateConfig,
     probe_context: &[u32],
-) -> bool {
+) -> std::result::Result<(), String> {
     use crate::gguf::OwnedQuantizedKVCache;
 
     // SKIP_PARITY_GATE=1 bypasses both this F2 check and the cosine parity gate.
@@ -584,7 +610,7 @@ fn validate_gpu_first_token(
         .map(|v| v == "1")
         .unwrap_or(false)
     {
-        return true;
+        return Ok(());
     }
 
     // Build the probe: real prompt context (peaked distribution) when available,
@@ -602,7 +628,7 @@ fn validate_gpu_first_token(
                 Some(id) => vec![id],
                 None => {
                     eprintln!("warning: no prompt context and no BOS token — skipping the GPU-vs-CPU output check");
-                    return true;
+                    return Ok(());
                 },
             }
         } else {
@@ -616,7 +642,7 @@ fn validate_gpu_first_token(
     // — the pos0 distribution is a benign near-tie. The load-time parity gate is the
     // primary defense there; skip the per-position F2 check.
     if probe.len() < 2 {
-        return true;
+        return Ok(());
     }
 
     // CPU reference: forward the whole probe, KEEP THE LOGITS AT EVERY POSITION.
@@ -627,7 +653,8 @@ fn validate_gpu_first_token(
         for (pos, &tok) in probe.iter().enumerate() {
             match model.forward_single_with_cache(tok, &mut cpu_cache, pos) {
                 Ok(logits) => cpu_logits_per_pos.push(logits),
-                Err(_) => return true, // CPU forward failed — can't validate, assume GPU is fine
+                // CPU forward failed — can't validate, assume GPU is fine.
+                Err(_) => return Ok(()),
             }
         }
     }
@@ -667,8 +694,9 @@ fn validate_gpu_first_token(
                 // Unconditional, not verbose-gated: the user is about to silently
                 // receive a 20x slower backend, which they need to know regardless
                 // of verbosity.
-                eprintln!("{}", gpu_forward_failure_msg(pos, probe.len(), &e));
-                return false; // GPU forward failed — fail closed.
+                let msg = gpu_forward_failure_msg(pos, probe.len(), &e);
+                eprintln!("{msg}");
+                return Err(msg); // GPU forward failed — fail closed.
             },
         }
     }
@@ -687,17 +715,18 @@ fn validate_gpu_first_token(
                 report.min_cosine_real,
             );
         }
-        true
+        Ok(())
     } else {
-        eprintln!(
-            "warning: GPU output diverges from CPU at position {} (argmax {} != {}, cosine {:.4}); min cosine {:.4} — falling back to CPU",
+        let reason = format!(
+            "GPU output diverges from CPU at position {} (argmax {} != {}, cosine {:.4}); min cosine {:.4} — falling back to CPU",
             report.first_bad_pos,
             report.first_bad_gpu_argmax,
             report.first_bad_cpu_argmax,
             report.first_bad_cosine,
             report.min_cosine_real,
         );
-        false
+        eprintln!("warning: {reason}");
+        Err(reason)
     }
 }
 

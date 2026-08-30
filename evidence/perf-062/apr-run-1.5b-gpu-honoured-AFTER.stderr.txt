@@ -1,0 +1,9 @@
+[GH-129] Early kernel preload: 44 modules compiled
+[PMAT-082] cuBLASLt FP8 JIT warmed (624×16×624)
+[PMAT-053] FP8 weight cache: 197 matrices cached (1472.1 MB) in 248.9ms
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[trueno#243] ✓ Manual graph: 619 kernels. first_args=Some(["0x7477839e4000", "0x7477839f5a00", "0x747787de6000"]), last_args=Some(["0x7476a7260000", "0x747744000000", "0x7477839e1800", "0x600", "0x25180"]), current_logits_buf=0x7476a7260000
+[trueno#243] Manual graph construction: pos=98, has_graph=false, capture_failed=false, token_count=66
+[trueno#243] ✓ Manual graph: 619 kernels. first_args=Some(["0x7477839e4000", "0x7476a72f4600", "0x747787de6000"]), last_args=Some(["0x7476a7260000", "0x747744000000", "0x7477839e1800", "0x600", "0x25180"]), current_logits_buf=0x7476a7260000
+apr-compute: requested=accelerator resolved=cuda honoured=true refused=-
+Generated 16 tokens in 4331.7ms (3.7 tok/s)

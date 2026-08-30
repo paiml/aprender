@@ -330,6 +330,7 @@ mod tests {
             load_ms: 10.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
 
         let cloned = result.clone();
@@ -356,6 +357,7 @@ mod tests {
             load_ms: 1.0,
             format: "Mock".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
 
         let debug_str = format!("{:?}", result);

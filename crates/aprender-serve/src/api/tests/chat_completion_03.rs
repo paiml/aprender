@@ -407,6 +407,7 @@ fn test_health_response_serialize_cov() {
         status: "ok".to_string(),
         version: "1.0.0".to_string(),
         compute_mode: "cpu".to_string(),
+        compute_class: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 2.5,
     };

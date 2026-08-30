@@ -303,13 +303,35 @@ fn test_batch_process_result_debug_cov() {
 
 #[test]
 fn test_health_response_roundtrip_ext_cov() {
-    let json = r#"{"status":"ok","version":"2.0.0","compute_mode":"gpu","model_loaded":true,"uptime_sec":1.5}"#;
+    let json = r#"{"status":"ok","version":"2.0.0","compute_mode":"gpu","compute_class":"cuda","model_loaded":true,"uptime_sec":1.5}"#;
     let resp: HealthResponse = serde_json::from_str(json).expect("parse failed");
     assert_eq!(resp.status, "ok");
     assert_eq!(resp.version, "2.0.0");
     assert_eq!(resp.compute_mode, "gpu");
+    // PERF-062 / #2790: `compute_mode` collapses cuda and wgpu into "gpu".
+    // `compute_class` is the same decision at receipt granularity, and the two
+    // must not be readable off each other.
+    assert_eq!(resp.compute_class, "cuda");
     assert!(resp.model_loaded);
     assert_eq!(resp.uptime_sec, 1.5);
+}
+
+/// A body written by an `apr serve` that predates `compute_class` must still
+/// parse, and must come back ABSENT rather than as a plausible class.
+///
+/// This type is deserialized by clients probing a server they did not build.
+/// Turning a new provenance field into an outage for every older server would
+/// be a worse defect than the one it closes, and defaulting it to `"cpu"` would
+/// be the fabricated provenance the field exists to remove.
+#[test]
+fn a_health_body_without_compute_class_parses_as_absent() {
+    let json = r#"{"status":"ok","version":"0.63.0","compute_mode":"gpu","model_loaded":true,"uptime_sec":1.5}"#;
+    let resp: HealthResponse = serde_json::from_str(json).expect("an older body must still parse");
+    assert_eq!(resp.compute_mode, "gpu");
+    assert_eq!(
+        resp.compute_class, "",
+        "an absent class must stay absent, never be inferred from compute_mode"
+    );
 }
 
 #[test]

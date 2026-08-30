@@ -329,6 +329,11 @@ fn execute_with_realizar(
         .with_repeat_penalty(options.repeat_penalty)
         .with_repeat_last_n(options.repeat_last_n);
 
+    // PERF-062 / #2790: the request the dispatcher latched, not the collapsed
+    // bool. `no_gpu` alone cannot tell `--gpu` from no flag at all, and a
+    // request that cannot be distinguished from no request cannot be reported
+    // as unhonoured.
+    config = config.with_compute_request(crate::compute_latch::request());
     if options.no_gpu {
         config = config.without_gpu();
     }
@@ -373,6 +378,9 @@ fn execute_with_realizar(
     } else {
         None
     };
+    // PERF-062: hand the resolution back the same way the request came in.
+    crate::compute_latch::record_resolution(&result.compute);
+
     Ok(InferenceOutput {
         text: result.text,
         tokens_generated: Some(result.generated_token_count),

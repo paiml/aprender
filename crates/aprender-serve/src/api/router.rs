@@ -550,13 +550,22 @@ fn force_loading() -> bool {
 fn build_health_response(state: &AppState) -> HealthResponse {
     // BUG-HEALTH-001: all GPU dispatch paths must register as "gpu".
     let mut compute_mode = "cpu";
+    // PERF-062 / #2790: the SAME decision, kept at receipt granularity.
+    // `compute_mode` collapses cuda and wgpu into "gpu"; a receipt cannot.
+    // Read from the state the router will actually dispatch through, so it is
+    // the path TAKEN and not the hardware present.
+    let mut compute_class = "cpu";
     #[cfg(feature = "gpu")]
     if state.has_gpu_model() || state.has_cached_model() {
         compute_mode = "gpu";
+        compute_class = "wgpu";
     }
+    // CUDA last: on a build that has both, the CUDA model is what the handlers
+    // dispatch to, so it wins the class as well as the mode.
     #[cfg(feature = "cuda")]
     if state.has_cuda_model() {
         compute_mode = "gpu";
+        compute_class = "cuda";
     }
 
     let model_loaded = state.model_loaded();
@@ -574,6 +583,7 @@ fn build_health_response(state: &AppState) -> HealthResponse {
         status: status.to_string(),
         version: crate::VERSION.to_string(),
         compute_mode: compute_mode.to_string(),
+        compute_class: compute_class.to_string(),
         model_loaded,
         uptime_sec: server_uptime_sec(),
     }

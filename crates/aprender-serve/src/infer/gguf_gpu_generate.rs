@@ -278,13 +278,19 @@ fn try_wgpu_generate(
 
 /// Try GGUF GPU generation. Takes model by value to avoid expensive clone (~1GB).
 /// Returns `Ok(result)` on GPU success, `Err(model)` to return model for CPU fallback.
+/// PERF-062 / #2790: `resolution` is where a refusal GOES.
+///
+/// Every early return here used to discard its reason: `Err(Box::new(model))`
+/// says "fall back" and nothing else, so the caller could not tell an absent
+/// CUDA runtime from a parity rejection, and neither could a receipt.
 #[cfg(feature = "cuda")]
 fn try_gguf_gpu_generate(
     model: crate::gguf::OwnedQuantizedModel,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     verbose: bool,
-) -> std::result::Result<Result<(Vec<u32>, bool)>, Box<crate::gguf::OwnedQuantizedModel>> {
+    resolution: &mut ComputeResolution,
+) -> std::result::Result<Result<Vec<u32>>, Box<crate::gguf::OwnedQuantizedModel>> {
     use crate::gguf::OwnedQuantizedModelCuda;
 
     let mut cuda_model = match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
@@ -293,6 +299,7 @@ fn try_gguf_gpu_generate(
             if verbose {
                 eprintln!("Backend: CPU (GPU unavailable: {})", e);
             }
+            resolution.refused(ComputeClass::Cuda, format!("CUDA unavailable: {e}"));
             // Model is preserved inside CudaInitError for CPU fallback.
             // Boxed to keep the `Err` variant small (clippy::result_large_err).
             return Err(Box::new(e.into_model()));
@@ -307,8 +314,11 @@ fn try_gguf_gpu_generate(
         );
     }
 
-    if !validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
-        // Validation failed — extract model back for CPU fallback
+    if let Err(reason) = validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
+        // Validation failed — extract model back for CPU fallback, KEEPING the
+        // reason. This is the #2790 rejection: correct behaviour, previously
+        // unrecorded.
+        resolution.refused(ComputeClass::Cuda, reason);
         return Err(Box::new(cuda_model.into_model()));
     }
 
@@ -316,19 +326,44 @@ fn try_gguf_gpu_generate(
     // and resets GPU KV positions internally, so validation doesn't "consume" it.
     let result = cuda_model
         .generate_gpu_resident(input_tokens, gen_config)
-        .map(|tokens| (tokens, true))
         .map_err(|e| RealizarError::InferenceError(format!("GPU generation failed: {}", e)));
+    if result.is_ok() {
+        resolution.settled_on(ComputeClass::Cuda);
+    }
     Ok(result)
 }
 
+/// PERF-062 / #2790 — settle and REPORT the class for a non-GGUF cascade.
+///
+/// The APR and SafeTensors paths know which backend produced the tokens but
+/// never collected the reasons the others were declined, so their resolution
+/// carries no refusals and `andon()` says so explicitly. Reporting the class is
+/// still strictly better than `used_gpu: bool`: `apr run model.apr --gpu` that
+/// lands on CPU now states it, and `compute_class` in the benchmark block is
+/// the path taken rather than absent.
+fn apr_resolution(config: &InferenceConfig, resolved: ComputeClass) -> ComputeResolution {
+    let resolution = ComputeResolution::settled(config.compute_request, resolved);
+    resolution.report();
+    resolution
+}
+
 /// Run GGUF generation with GPU or CPU
+///
+/// PERF-062 / #2790: returns the RESOLUTION, not a bool.
+///
+/// A `bool` cannot distinguish CUDA from wgpu, and it cannot carry the reason a
+/// path was refused. `apr run --gpu` on a 7B reached CUDA, was rejected by the
+/// F2 parity gate at cosine 0.9403, fell through wgpu (rejected at 0.7222) to
+/// CPU, and returned `false` — indistinguishable from a plain CPU run.
 #[allow(unused_variables)] // config used only in CUDA feature
 fn run_gguf_generate(
     model: crate::gguf::OwnedQuantizedModel,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     config: &InferenceConfig,
-) -> Result<(Vec<u32>, bool)> {
+) -> Result<(Vec<u32>, ComputeResolution)> {
+    // Fail-closed: CPU until an accelerator proves it produced the tokens.
+    let mut resolution = ComputeResolution::pending(config.compute_request);
     // M32c.2.1: short-circuit MoE forward attempts BEFORE any GPU/CPU
     // dispatch. M32c.2 made `from_gguf` succeed for qwen3_moe by routing
     // to `from_gguf_for_moe` (which leaves dense FFN tensor refs as
@@ -362,8 +397,18 @@ fn run_gguf_generate(
     // GPU path: pass model by value (zero-clone) — model is returned on failure for CPU fallback
     #[cfg(feature = "cuda")]
     let model = if !config.no_gpu && !has_legacy_quant {
-        match try_gguf_gpu_generate(model, input_tokens, gen_config, config.verbose) {
-            Ok(result) => return result,
+        match try_gguf_gpu_generate(
+            model,
+            input_tokens,
+            gen_config,
+            config.verbose,
+            &mut resolution,
+        ) {
+            Ok(result) => {
+                let tokens = result?;
+                resolution.report();
+                return Ok((tokens, resolution));
+            },
             Err(returned_model) => *returned_model, // GPU failed, use returned model for CPU
         }
     } else {
@@ -375,11 +420,16 @@ fn run_gguf_generate(
     #[cfg(feature = "gpu")]
     if !config.no_gpu && !has_legacy_quant {
         match try_wgpu_generate(&model, input_tokens, gen_config, config.verbose) {
-            Ok(result) => return Ok(result),
+            Ok((tokens, _)) => {
+                resolution.settled_on(ComputeClass::Wgpu);
+                resolution.report();
+                return Ok((tokens, resolution));
+            },
             Err(e) => {
                 if config.verbose {
                     eprintln!("Backend: CPU (wgpu unavailable: {})", e);
                 }
+                resolution.refused(ComputeClass::Wgpu, e.to_string());
             }
         }
     }
@@ -388,7 +438,11 @@ fn run_gguf_generate(
     let tokens = model
         .generate_with_cache(input_tokens, gen_config)
         .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))?;
-    Ok((tokens, false))
+    // `pending` already says cpu; state it anyway so the settle is explicit at
+    // every exit and a future branch cannot inherit a stale class.
+    resolution.settled_on(ComputeClass::Cpu);
+    resolution.report();
+    Ok((tokens, resolution))
 }
 
 /// Run APR model inference (PAR-302, PMAT-APR-CUDA-001)
@@ -704,6 +758,7 @@ fn try_apr_wgpu_inference(
         tok_per_sec: if inference_ms > 0.0 { tokens_generated as f64 / (inference_ms / 1000.0) } else { 0.0 },
         format: "APR".to_string(),
         used_gpu: true,
+        compute: apr_resolution(config, ComputeClass::Wgpu),
     }))
 }
 
@@ -827,8 +882,8 @@ fn try_apr_cuda_inference(
     config.apply_sampling_to(&mut gen_config);
 
     eprintln!("[GH-480] F2 validation starting...");
-    if !validate_gpu_first_token(&mut cuda_model, &gen_config, input_tokens) {
-        eprintln!("[GH-480] F2 validation FAILED — falling back to CPU");
+    if let Err(reason) = validate_gpu_first_token(&mut cuda_model, &gen_config, input_tokens) {
+        eprintln!("[GH-480] F2 validation FAILED — falling back to CPU: {reason}");
         return None;
     }
     eprintln!("[GH-480] F2 validation PASSED — launching GPU generation");
@@ -869,6 +924,7 @@ fn try_apr_cuda_inference(
         load_ms,
         format: "APR".to_string(),
         used_gpu: true,
+        compute: apr_resolution(config, ComputeClass::Cuda),
     }))
 }
 
@@ -952,6 +1008,7 @@ fn run_apr_quantized_cpu_inference(
         load_ms,
         format: "APR".to_string(),
         used_gpu: false,
+        compute: apr_resolution(config, ComputeClass::Cpu),
     })
 }
 
@@ -1131,6 +1188,7 @@ fn try_safetensors_cuda_inference(
         load_ms,
         format: "SafeTensors".to_string(),
         used_gpu: true,
+        compute: apr_resolution(config, ComputeClass::Cuda),
     }))
 }
 

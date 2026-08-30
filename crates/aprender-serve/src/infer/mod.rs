@@ -68,6 +68,13 @@ pub struct InferenceConfig {
     pub repeat_last_n: usize,
     /// Disable GPU acceleration
     pub no_gpu: bool,
+    /// PERF-062 / #2790: what the operator ASKED FOR, as typed.
+    ///
+    /// `no_gpu` alone cannot express this. `apr run --gpu` and a bare `apr run`
+    /// both arrived here as `no_gpu: false`, so no code downstream could tell a
+    /// refused accelerator request from a default CPU run — which is why the
+    /// F2 fallback was unreportable rather than merely unreported.
+    pub compute_request: ComputeRequest,
     /// Enable inference tracing (APR-TRACE-001)
     pub trace: bool,
     /// Verbose tracing output
@@ -104,6 +111,7 @@ impl InferenceConfig {
             repeat_penalty: 1.0,
             repeat_last_n: 64,
             no_gpu: false,
+            compute_request: ComputeRequest::Auto,
             trace: false,
             trace_verbose: false,
             trace_output: None,
@@ -178,9 +186,29 @@ impl InferenceConfig {
     }
 
     /// Disable GPU acceleration
+    ///
+    /// This is a REQUEST, not just a switch: `--no-gpu` is recorded as
+    /// [`ComputeRequest::Cpu`] so a run that silently landed on an accelerator
+    /// is as reportable as one that silently landed on CPU (I-17, both
+    /// directions).
     #[must_use]
     pub fn without_gpu(mut self) -> Self {
         self.no_gpu = true;
+        self.compute_request = ComputeRequest::Cpu;
+        self
+    }
+
+    /// PERF-062: record what the operator asked for, as typed.
+    ///
+    /// Call this from every surface that accepts `--gpu` / `--no-gpu` /
+    /// `--backend`. A surface that does not is a surface whose downgrades are
+    /// unreportable — the `apr run` case measured in #2790.
+    #[must_use]
+    pub fn with_compute_request(mut self, request: ComputeRequest) -> Self {
+        self.compute_request = request;
+        if request == ComputeRequest::Cpu {
+            self.no_gpu = true;
+        }
         self
     }
 
@@ -567,6 +595,11 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
 fn safetensors_arch_to_template_hint(architecture: &str, _model_name: &str) -> &'static str {
     crate::tensor_names::normalize_architecture(architecture)
 }
+
+pub mod compute_resolution;
+pub use compute_resolution::{
+    ComputeClass, ComputeRequest, ComputeResolution, RESOLUTION_LINE_PREFIX,
+};
 
 include!("inference_result.rs");
 include!("gguf_gpu_generate.rs");

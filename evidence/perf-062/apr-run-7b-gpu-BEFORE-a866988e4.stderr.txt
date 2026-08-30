@@ -1,0 +1,16 @@
+[GH-129] Early kernel preload: 44 modules compiled
+[PMAT-082] cuBLASLt FP8 JIT warmed (1344×16×1344)
+[PMAT-053] FP8 weight cache: 197 matrices cached (6742.8 MB) in 229.4ms
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[trueno#243] ✓ Manual graph: 619 kernels. first_args=Some(["0x7f908b1edc00", "0x7f908b1fc000", "0x7f908aff8000"]), last_args=Some(["0x7f8c60800000", "0x7f8f1a000000", "0x7f907df94800", "0xe00", "0x25200"]), current_logits_buf=0x7f8c60800000
+warning: GPU output diverges from CPU at position 59 (argmax 198 != 198, cosine 0.9403); min cosine 0.9403 — falling back to CPU
+Backend: wgpu (Vulkan)
+Preparing GPU weights: dequantizing 28 layers to F32
+  Dequantized layer 7/28
+  Dequantized layer 14/28
+  Dequantized layer 21/28
+  Dequantized layer 28/28
+GPU weights ready: 169 tensors, 6086.2 MB F32
+[wgpu] Skipping weight 'lm_head' (2180.0 MB > 2147.5 MB limit) — CPU fallback
+warning: GPU (wgpu) path rejected, attempting fallback: cosine vs CPU = 0.722249 (< 0.99) at step 1/3
+Generated 16 tokens in 32678.3ms (0.5 tok/s)

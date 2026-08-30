@@ -454,6 +454,7 @@ fn test_health_response_serde() {
         status: "ok".to_string(),
         version: "0.3.5".to_string(),
         compute_mode: "cpu".to_string(),
+        compute_class: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 1.0,
     };

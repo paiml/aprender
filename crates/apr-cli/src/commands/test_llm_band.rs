@@ -54,7 +54,7 @@
 
 use crate::error::{CliError, Result};
 use apr_test::llm::band::{run_band, BandRun};
-use apr_test::llm::client::{ChatRequest, LlmClient};
+use apr_test::llm::client::{ChatRequest, LlmClient, ServerIdentity};
 use apr_test::llm::{assert_prompt_tokens_in_band, PromptTokenBand};
 use apr_test::perf_gate::protocol::{BandConfig, Outcome};
 use apr_test::perf_gate::{
@@ -198,12 +198,20 @@ fn build_tokenization(args: &BandArgs<'_>) -> Result<TokenizationBlock> {
 /// `compute_class` the build cannot reach; pointing that check at the measuring
 /// binary instead of the measured one would make it read green while checking
 /// nothing.
-fn build_provenance(args: &BandArgs<'_>) -> Result<Provenance> {
+fn build_provenance(args: &BandArgs<'_>, server: &ServerIdentity) -> Result<Provenance> {
     let exe = std::env::current_exe()
         .map_err(|e| CliError::InvalidInput(format!("cannot resolve current_exe: {e}")))?;
     let binary_sha256 = sha256_file(&exe)
         .map_err(|e| CliError::InvalidInput(format!("cannot hash {}: {e}", exe.display())))?;
-    let compute_class = ComputeClass::from_str(args.compute_class)
+    // PERF-062 / #2790 + #2780: BOTH of these come from the server or the run
+    // does not happen. See `resolve_from_server`.
+    let model = resolve_from_server("model", args.model, server.model.as_deref())?;
+    let compute_class_token = resolve_from_server(
+        "compute-class",
+        args.compute_class,
+        server.compute_class.as_deref(),
+    )?;
+    let compute_class = ComputeClass::from_str(&compute_class_token)
         .map_err(|e| CliError::InvalidInput(format!("--compute-class: {e}")))?;
     let prov = Provenance {
         binary_path: exe.display().to_string(),
@@ -212,12 +220,52 @@ fn build_provenance(args: &BandArgs<'_>) -> Result<Provenance> {
         compute_class,
         host: args.host.to_string(),
         accelerator: args.accelerator.to_string(),
-        model: args.model.to_string(),
+        model,
         quantization: args.quantization.to_string(),
         feature_set: args.server_features.to_vec(),
     };
     prov.validate().map_err(CliError::InvalidInput)?;
     Ok(prov)
+}
+
+/// PERF-062 — take the SERVER's answer, and refuse when the operator contradicts it.
+///
+/// # Why not just overwrite
+///
+/// Silently replacing the operator's `--model` would produce a correct receipt
+/// and leave the operator believing they measured something else. Under I-9 a
+/// band may not be re-run to green, so a run started against the wrong endpoint
+/// is a SPENT run whichever value the receipt ends up carrying. The only
+/// outcome worth engineering is the one that costs nothing: refuse before the
+/// first request.
+///
+/// # Why refuse when the server says nothing
+///
+/// `provenance.model` exists to make cross-host comparison unexpressible. A
+/// value the producer could not verify against the server is exactly the value
+/// #2780 measured: `apr test llm bench --band` served a 0.5B and answered
+/// `llama3-70b-there-is-no-such-model` without complaint. "The endpoint did not
+/// tell me" is not evidence that the flag was right.
+fn resolve_from_server(field: &str, flag: &str, server: Option<&str>) -> Result<String> {
+    let Some(server) = server else {
+        return Err(CliError::InvalidInput(format!(
+            "provenance.{field} could not be read from the endpoint, so this run refuses to \
+             assert it. --{field} {flag:?} is what the OPERATOR typed; the join key is what the \
+             SERVER loaded, and the two disagreeing is undetectable from the receipt (#2780). \
+             `apr serve` answers `GET /api/tags` (model) and `GET /health` (compute_class); a \
+             server that answers neither cannot support I-2 and its receipt would be \
+             unfalsifiable."
+        )));
+    };
+    if !flag.is_empty() && !flag.eq_ignore_ascii_case(server) {
+        return Err(CliError::InvalidInput(format!(
+            "provenance.{field}: the endpoint reports {server:?} and --{field} says {flag:?}. \
+             Refusing BEFORE the sweep rather than after: under I-9 a band may not be re-run to \
+             green, so a mislabelled cell is a spent run. Pass --{field} {server:?}, or point \
+             --url at the server you meant to measure."
+        )));
+    }
+    Ok(server.to_string())
 }
 
 /// §4.7.1 — this cell's comparator posture.
@@ -357,7 +405,11 @@ pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
     // before the first request. A 14-minute sweep that fails at receipt-write
     // time because `--host` was blank has thrown away the measurement.
     let tokenization = build_tokenization(&args)?;
-    let provenance = build_provenance(&args)?;
+    // PERF-062: ask the server who it is BEFORE spending a measurement on it.
+    // `LlmClient::new` is cheap and holds no connection; the sweep's own client
+    // is built below with the same base URL.
+    let identity = LlmClient::new(args.url, args.model).server_identity().await;
+    let provenance = build_provenance(&args, &identity)?;
     let workload = Workload::from_str(args.workload)
         .map_err(|e| CliError::InvalidInput(format!("--workload: {e}")))?;
     std::fs::create_dir_all(args.receipt).map_err(|e| {
@@ -620,6 +672,17 @@ mod tests {
         }
     }
 
+    /// A server that reports exactly what `args()` types, so the pre-existing
+    /// provenance tests keep exercising what they were written to exercise.
+    fn agreeing_server(a: &BandArgs<'_>) -> ServerIdentity {
+        ServerIdentity {
+            model: Some(a.model.to_string()),
+            quantization: Some(a.quantization.to_string()),
+            compute_class: Some(a.compute_class.to_string()),
+            sources: vec!["/api/tags".to_string(), "/health".to_string()],
+        }
+    }
+
     #[test]
     fn bands_parse_in_the_order_given() {
         assert_eq!(parse_bands("1,4,8,16").expect("valid"), vec![1, 4, 8, 16]);
@@ -676,7 +739,8 @@ mod tests {
     /// real 64-hex digest of the binary that is actually running.
     #[test]
     fn provenance_hashes_the_running_binary() {
-        let prov = build_provenance(&args("1", "server_usage")).expect("current_exe must hash");
+        let a = args("1", "server_usage");
+        let prov = build_provenance(&a, &agreeing_server(&a)).expect("current_exe must hash");
         assert_eq!(prov.binary_sha256.len(), 64);
         assert_eq!(prov.resolution, "current_exe");
         assert!(prov.validate().is_ok());
@@ -686,7 +750,8 @@ mod tests {
     fn an_unknown_compute_class_is_refused_where_it_was_typed() {
         let mut a = args("1", "server_usage");
         a.compute_class = "tpu";
-        let err = build_provenance(&a).expect_err("must reject");
+        let server = agreeing_server(&a);
+        let err = build_provenance(&a, &server).expect_err("must reject");
         assert!(err.to_string().contains("compute-class"), "{err}");
     }
 
@@ -696,13 +761,15 @@ mod tests {
     fn cuda_without_the_server_feature_is_refused() {
         let mut a = args("1", "server_usage");
         a.compute_class = "cuda";
-        assert!(build_provenance(&a).is_err());
+        let server = agreeing_server(&a);
+        assert!(build_provenance(&a, &server).is_err());
 
         let features = vec!["cuda".to_string()];
         let mut ok = args("1", "server_usage");
         ok.compute_class = "cuda";
         ok.server_features = &features;
-        assert!(build_provenance(&ok).is_ok());
+        let ok_server = agreeing_server(&ok);
+        assert!(build_provenance(&ok, &ok_server).is_ok());
     }
 
     /// An empty join key must be refused before the sweep, not after it.
@@ -710,7 +777,8 @@ mod tests {
     fn a_blank_join_key_is_refused() {
         let mut a = args("1", "server_usage");
         a.host = "";
-        let err = build_provenance(&a).expect_err("host is required");
+        let server = agreeing_server(&a);
+        let err = build_provenance(&a, &server).expect_err("host is required");
         assert!(err.to_string().contains("host"), "{err}");
     }
 
@@ -734,5 +802,113 @@ mod tests {
     #[test]
     fn an_unknown_workload_is_refused() {
         assert!(Workload::from_str("W3").is_err());
+    }
+
+    // ---------------------------------------------------------------------
+    // PERF-062 / #2780 — the join key comes from the SERVER
+    // ---------------------------------------------------------------------
+
+    /// THE DEFECT. A plausible but WRONG `--model` used to sail through: #2780
+    /// measured a run that served `qwen2.5-coder-0.5b-instruct-q4_k_m` while
+    /// answering `llama3-70b-there-is-no-such-model`, and every schema check
+    /// passed. The producer must now refuse it.
+    ///
+    /// Mutation: make `resolve_from_server` return `Ok(flag.to_string())` when
+    /// the two disagree — the echo it replaces — and this goes RED.
+    #[test]
+    fn a_plausible_but_wrong_model_flag_is_refused() {
+        let mut a = args("1", "server_usage");
+        a.model = "llama3-70b-there-is-no-such-model";
+        let server = ServerIdentity {
+            model: Some("qwen2.5-coder-0.5b-instruct-q4_k_m".to_string()),
+            quantization: Some("Q4_K_M".to_string()),
+            compute_class: Some("cpu".to_string()),
+            sources: vec!["/api/tags".to_string()],
+        };
+        let err = build_provenance(&a, &server).expect_err("a wrong join key must not survive");
+        let msg = err.to_string();
+        assert!(msg.contains("qwen2.5-coder-0.5b-instruct-q4_k_m"), "{msg}");
+        assert!(msg.contains("llama3-70b-there-is-no-such-model"), "{msg}");
+        assert!(
+            msg.contains("I-9"),
+            "the refusal must say why it is BEFORE the sweep: {msg}"
+        );
+    }
+
+    /// THE DISCRIMINATION CASE. Without it the rule could be "refuse every
+    /// join key" and the test above would still read green.
+    #[test]
+    fn a_model_flag_that_matches_the_server_is_accepted_and_recorded() {
+        let a = args("1", "server_usage");
+        let prov = build_provenance(&a, &agreeing_server(&a)).expect("agreement is accepted");
+        assert_eq!(prov.model, "qwen2.5-coder-1.5b-instruct");
+    }
+
+    /// The receipt records the SERVER's spelling, not the operator's. Case is
+    /// the cheapest way to prove which one was written without contriving a
+    /// mismatch the rule above would reject.
+    #[test]
+    fn the_receipt_carries_the_servers_string_not_the_flags() {
+        let mut a = args("1", "server_usage");
+        a.model = "QWEN2.5-Coder-1.5B-Instruct";
+        let mut server = agreeing_server(&a);
+        server.model = Some("qwen2.5-coder-1.5b-instruct".to_string());
+        let prov = build_provenance(&a, &server).expect("case-insensitive agreement");
+        assert_eq!(
+            prov.model, "qwen2.5-coder-1.5b-instruct",
+            "the join key must be the server's string, not the operator's"
+        );
+    }
+
+    /// A server that names no model cannot support a join key, and the producer
+    /// says so instead of falling back to the flag.
+    ///
+    /// Mutation: `.unwrap_or(flag)` in `resolve_from_server` — the shape the
+    /// producer had — and this goes RED.
+    #[test]
+    fn a_silent_server_is_refused_rather_than_defaulted_to_the_flag() {
+        let a = args("1", "server_usage");
+        let silent = ServerIdentity::default();
+        let err = build_provenance(&a, &silent).expect_err("unverifiable is not verified");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("/api/tags"),
+            "the refusal must name the remedy: {msg}"
+        );
+        assert!(msg.contains("2780"), "{msg}");
+    }
+
+    /// PERF-062 / #2790, the receipt half: `compute_class` is read from the
+    /// server too. An operator claiming `cuda` against a server that resolved
+    /// to `cpu` is the receipt that would label a CPU number `cuda`.
+    #[test]
+    fn a_compute_class_the_server_contradicts_is_refused() {
+        let features = vec!["cuda".to_string()];
+        let mut a = args("1", "server_usage");
+        a.compute_class = "cuda";
+        a.server_features = &features;
+        let mut server = agreeing_server(&a);
+        server.compute_class = Some("cpu".to_string());
+        let err = build_provenance(&a, &server).expect_err("cuda over a cpu server");
+        let msg = err.to_string();
+        assert!(msg.contains("compute-class"), "{msg}");
+        assert!(msg.contains("\"cpu\""), "{msg}");
+    }
+
+    /// `apr serve`'s own `GET /v1/models` answers `id: "default"` in
+    /// single-model mode. A probe that adopted it would launder the exact
+    /// string #2781 spent a PR refusing, so the placeholder filter runs on the
+    /// server's answer, not only on the operator's.
+    #[test]
+    fn a_placeholder_from_the_server_is_not_a_join_key() {
+        for value in ["default", "unknown", "  DEFAULT ", "", "n/a"] {
+            assert!(
+                apr_test::llm::is_join_key_placeholder(value),
+                "{value:?} must not be adoptable as a join key"
+            );
+        }
+        assert!(!apr_test::llm::is_join_key_placeholder(
+            "qwen2.5-coder-1.5b-instruct"
+        ));
     }
 }

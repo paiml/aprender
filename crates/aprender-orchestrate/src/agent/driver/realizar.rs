@@ -80,6 +80,10 @@ impl LlmDriver for RealizarDriver {
             // PMAT-156/158: Disable GPU only for APR models (wgpu shader bug).
             // GGUF models work fine with CUDA — keep GPU enabled for them.
             no_gpu: self.model_path.extension().is_some_and(|e| e == "apr"),
+            // PERF-062: this driver takes no compute flag from a user, so it
+            // asserts nothing about what was asked for. `Auto` is the
+            // claim-nothing value, not a request for CPU.
+            compute_request: realizar::infer::ComputeRequest::Auto,
             trace: false,
             trace_verbose: false,
             trace_output: None,

@@ -40,6 +40,7 @@
             load_ms: 0.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         assert!((result.inference_ms - 0.0).abs() < f64::EPSILON);
         assert!((result.tok_per_sec - 0.0).abs() < f64::EPSILON);
@@ -57,6 +58,7 @@
             load_ms: 1.0,
             format: "APR".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
         assert!(result.tok_per_sec > 10000.0);
     }
@@ -73,6 +75,7 @@
             load_ms: 1.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         assert!(result.text.is_empty());
         assert!(result.tokens.is_empty());
@@ -90,6 +93,7 @@
             load_ms: 2.0,
             format: "SafeTensors".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         assert!(result.tokens.is_empty());
         assert_eq!(result.format, "SafeTensors");
@@ -108,6 +112,7 @@
             load_ms: 100.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
         assert_eq!(result.tokens.len(), 10000);
     }
@@ -125,6 +130,7 @@
                 load_ms: 1.0,
                 format: format.to_string(),
                 used_gpu: false,
+                compute: Default::default(),
             };
             assert_eq!(result.format, format);
         }
@@ -302,6 +308,7 @@
             repeat_penalty: 1.0,
             repeat_last_n: 64,
             no_gpu: false,
+            compute_request: Default::default(),
             trace: true,
             trace_verbose: true,
             trace_output: Some(PathBuf::from("/trace.json")),
@@ -330,6 +337,7 @@
             repeat_penalty: 1.0,
             repeat_last_n: 64,
             no_gpu: true,
+            compute_request: Default::default(),
             trace: false,
             trace_verbose: false,
             trace_output: None,
@@ -356,6 +364,7 @@
             load_ms: 50.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
         assert_eq!(result.text, "generated output");
         assert_eq!(result.tokens.len(), 5);

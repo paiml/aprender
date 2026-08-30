@@ -31,12 +31,14 @@ pub mod training_scorecard;
 pub use assertion::{LlmAssertion, LlmAssertionError, LlmAssertionResult};
 #[cfg(feature = "llm")]
 pub use band::{run_band, run_cell, BandRun};
+#[cfg(feature = "llm")]
+pub use client::{
+    is_join_key_placeholder, LlmClient, LlmClientError, ServerIdentity, JOIN_KEY_PLACEHOLDERS,
+};
 pub use client::{
     BrickTrace, BrickTraceOp, ChatMessage, ChatRequest, ChatResponse, ChatResponseChoice, Role,
     StreamChunk, StreamedChatResponse, TimedChatResponse, Usage,
 };
-#[cfg(feature = "llm")]
-pub use client::{LlmClient, LlmClientError};
 pub use experiment::{
     BudgetConfig, DataAuditResult, EarlyStoppingConfig, Experiment, ExperimentRun,
     ExperimentStatus, KillCriterion, MetricSnapshot,

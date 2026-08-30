@@ -425,6 +425,15 @@ fields:
     class: PRODUCED
     required: always
     producer: {file: scripts/lib/parity_block.py, symbol: '"compute_class": klass'}
+    # PERF-062 / #2790. `klass` comes from parity_host_receipt.sh's
+    # apr_class_from_log(), which now reads the run's own `apr-compute:
+    # requested=... resolved=...` line. Before that it grepped for `Backend:`
+    # banners, and every one of those is printed by an ATTEMPT: a 7B `--gpu`
+    # run whose CUDA path was rejected by the F2 parity gate (cosine 0.9403)
+    # and whose wgpu path was rejected at 0.7222 executed on CPU and was
+    # classified `wgpu`. The band producer (apr test llm bench --band) reads
+    # the same fact from `GET /health`'s compute_class rather than from its
+    # own --compute-class flag, and refuses when the two disagree.
 
   provenance.feature_set:
     class: PRODUCED
@@ -448,6 +457,17 @@ fields:
     required: conditional
     producer: {file: scripts/lib/parity_block.py, symbol: "os.path.basename(args.model)"}
     formula: basename of the model path handed to the harness
+    # PERF-062 / #2780. The OTHER producer -- `apr test llm bench --band` --
+    # used to copy its own `--model` flag, whose clap default is the literal
+    # string `default`, so the first real receipt read `"model": "default"` and
+    # the gate said PASS. #2781 made that string an error; it cannot catch a
+    # plausible but WRONG name, and a run served a 0.5B while answering
+    # `llama3-70b-there-is-no-such-model` without complaint. That producer now
+    # reads `GET /api/tags` -- the model the server actually loaded -- and
+    # refuses BEFORE the sweep when the operator's flag disagrees, because under
+    # I-9 a band may not be re-run to green and a mislabelled cell is a spent
+    # run. parity_block.py's own basename is still a DERIVED path fact and is
+    # unchanged.
 
   provenance.quantization:
     class: UNMEASURED

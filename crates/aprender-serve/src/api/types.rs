@@ -26,6 +26,24 @@ pub struct HealthResponse {
     pub version: String,
     /// Compute mode: "cpu" or "gpu"
     pub compute_mode: String,
+    /// PERF-062 / #2790 — the dispatch path this server WILL TAKE, in
+    /// `bench_receipt.py`'s `COMPUTE_CLASSES` vocabulary (`cpu` / `cuda` /
+    /// `wgpu` / `metal`).
+    ///
+    /// `compute_mode` collapses every accelerator to `"gpu"`, which is not a
+    /// receipt vocabulary and cannot separate a CUDA server from a wgpu one
+    /// (#2779's shape). This field exists so a receipt producer can READ the
+    /// class from the server instead of echoing the `--compute-class` flag its
+    /// operator typed — the I-2 rule that `provenance.compute_class` is the
+    /// path taken, read from the running process, never the hardware present.
+    ///
+    /// `#[serde(default)]` because this type is DESERIALIZED by clients probing
+    /// a server they did not build. A client that hard-fails on a body written
+    /// by an older `apr serve` would turn a new field into an outage, and the
+    /// empty string it produces instead is honestly absent: every consumer here
+    /// filters it out rather than reading it as a class.
+    #[serde(default)]
+    pub compute_class: String,
     /// Whether a model is resident and ready for inference.
     pub model_loaded: bool,
     /// Seconds since the server process first bound a router.

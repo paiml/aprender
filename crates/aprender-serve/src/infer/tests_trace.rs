@@ -321,6 +321,7 @@
             load_ms: 0.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         assert!(result.text.is_empty());
         assert!(result.tokens.is_empty());
@@ -339,6 +340,7 @@
             load_ms: 500.0,
             format: "APR".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
         assert_eq!(result.text.len(), 100_000);
         assert_eq!(result.tokens.len(), 10000);
@@ -357,6 +359,7 @@
             load_ms: 1.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         // Fields are just stored, not validated
         assert_eq!(result.input_token_count, 100);

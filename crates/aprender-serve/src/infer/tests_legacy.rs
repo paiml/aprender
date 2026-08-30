@@ -190,6 +190,7 @@ fn test_inference_result_debug_gh219() {
         load_ms: 10.0,
         format: "Mock".to_string(),
         used_gpu: false,
+        compute: Default::default(),
     };
     let debug = format!("{:?}", result);
     assert!(debug.contains("Hello"));
@@ -208,6 +209,7 @@ fn test_inference_result_clone_gh219() {
         load_ms: 5.0,
         format: "GGUF".to_string(),
         used_gpu: true,
+        compute: Default::default(),
     };
     let cloned = result.clone();
     assert_eq!(cloned.text, result.text);

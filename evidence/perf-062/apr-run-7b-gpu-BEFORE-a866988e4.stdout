@@ -1,0 +1,8 @@
+
+=== Benchmark Results ===
+tok/s: 0.4
+tokens: 16
+latency: 39505.73ms
+model: /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+
+{"tok_s": 0.4, "tokens": 16, "latency_ms": 39505.73}

@@ -409,6 +409,7 @@ fn test_inference_result_debug_contains_all_fields() {
         load_ms: 45.678,
         format: "TestFormat".to_string(),
         used_gpu: true,
+        compute: Default::default(),
     };
     let debug = format!("{:?}", result);
     assert!(

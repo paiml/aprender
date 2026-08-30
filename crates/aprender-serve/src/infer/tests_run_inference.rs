@@ -133,6 +133,7 @@
             load_ms: 5.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         assert!(result.text.contains("世界"));
         assert!(result.text.contains("🌍"));
@@ -150,6 +151,7 @@
             load_ms: 1.0,
             format: "APR".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
         assert!(result.text.contains("fn main()"));
         assert!(result.text.contains("println!"));
@@ -427,6 +429,7 @@
             load_ms: 50.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
 
         let debug = format!("{:?}", result);

@@ -259,6 +259,7 @@ fn test_deep_apicov_health_response_structure() {
         status: "ok".to_string(),
         version: "0.1.0".to_string(),
         compute_mode: "cpu".to_string(),
+        compute_class: "cpu".to_string(),
         model_loaded: true,
         uptime_sec: 3.14,
     };

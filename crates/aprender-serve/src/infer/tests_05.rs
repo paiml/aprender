@@ -281,6 +281,7 @@ mod tests {
             load_ms: 5.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         let debug = format!("{:?}", result);
         assert!(debug.contains("hello"));
@@ -299,6 +300,7 @@ mod tests {
             load_ms: 0.0,
             format: "APR".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         let cloned = result.clone();
         assert_eq!(cloned.text, result.text);

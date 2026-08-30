@@ -175,6 +175,7 @@
             load_ms: 50.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         assert_eq!(result.text, "test");
         assert_eq!(result.tokens, vec![1, 2, 3]);
@@ -193,6 +194,7 @@
             load_ms: 5.0,
             format: "APR".to_string(),
             used_gpu: true,
+            compute: Default::default(),
         };
         let cloned = result.clone();
         assert_eq!(result.text, cloned.text);
@@ -291,6 +293,7 @@
             load_ms: 5.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            compute: Default::default(),
         };
         let debug_str = format!("{:?}", result);
         assert!(debug_str.contains("text"));
