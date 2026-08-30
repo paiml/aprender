@@ -362,9 +362,9 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "every S6.3 row plus the contract's owed row has exactly one fixture directory" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 15 ] || { echo "expected 15 row fixtures (14 from S6.3 + row 15 owed by the contract), found $n"; false; }
+  [ "$n" -eq 17 ] || { echo "expected 17 row fixtures (14 from S6.3, row 15 owed by the contract, rows 16-17 owed by PRREV-007 F4), found $n"; false; }
   local i
-  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15; do
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
       || { echo "no fixture directory for row $i"; false; }
   done
@@ -769,4 +769,375 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
       echo "control $victim misfired and the run still accepted a receipt"; return 1; }
   done
   [ "$n" -eq 3 ]
+}
+
+# =============================================================================
+# S3.A DUPLICATION COVERAGE (PRREV-009, from PRREV-007's backtest finding F4)
+#
+# F4, measured: `duplication_hits` is blind to 48.8% of the diff it was designed for.
+# pmat's semantic index is Rust-only, so shell, python and yaml are outside semantic
+# reach; and prior art on an UNMERGED SIBLING BRANCH is invisible by construction, so
+# PERF-055's prior art was found only because #2742 had merged 17 hours earlier.
+#
+# The repair has two halves and both are tested here:
+#   the RECORD  - a coverage map, a horizon and a needle count in the receipt, with the
+#                 guard rejecting an unrecorded claim and refusing PASS over an
+#                 unsearched surface (rows 16/17 and the probes below);
+#   the MECHANISM - scripts/pr_review_duplication_scan.sh, which actually searches the
+#                 non-Rust surface and the sibling branches. A record with no mechanism
+#                 behind it is a field that will be filled in by hand with whatever
+#                 reads green.
+# =============================================================================
+
+@test "row 16 a duplication surface that could not be searched, PASS    RED  B1" {
+  assert_row row-16-duplication-surface-unsearched-verdict-pass RED B1 \
+    "duplication_coverage could not search [shell, python, config, docs, other] and the verdict is PASS"
+}
+
+@test "row 17 the SAME unsearched surface, verdict DEGRADED          GREEN     [discrimination]" {
+  # Without this row the rule would punish the honest receipt exactly as hard as the
+  # silent one - and a coverage field that costs you a PASS whatever you write in it
+  # is a field that learns to stay empty.
+  assert_row row-17-duplication-surface-unsearched-verdict-degraded GREEN
+}
+
+@test "probe pmat consulted with duplication_hits not an array         RED  B1" {
+  assert_probe dup-hits-not-array row-14-complete-gpu-review B1 \
+    "duplication_hits is not an array" \
+    '.predicate.consultations.pmat.duplication_hits = "nothing like this exists"'
+}
+
+@test "probe pmat consulted with NO duplication_coverage at all        RED  B1" {
+  # The core of F4. A receipt with hits [] and no coverage map cannot distinguish
+  # "searched everywhere and found nothing" from "searched the Rust half".
+  assert_probe dup-cov-absent row-14-complete-gpu-review B1 \
+    "duplication_coverage is absent" \
+    'del(.predicate.consultations.pmat.duplication_coverage)'
+}
+
+@test "probe duplication_coverage missing one surface                  RED  B1" {
+  # Deleting `shell` is the exact shape of the defect: the surface pmat cannot see is
+  # the surface most likely to go unrecorded.
+  assert_probe dup-cov-missing-shell row-14-complete-gpu-review B1 \
+    "duplication_coverage records no verdict for: shell" \
+    'del(.predicate.consultations.pmat.duplication_coverage.shell)'
+}
+
+@test "probe duplication_coverage with a method outside the vocabulary RED  B1" {
+  # "yes" is not a coverage method. Without the vocabulary check any string reads as
+  # coverage, and `"shell": "best effort"` would pass while meaning nothing.
+  assert_probe dup-cov-bad-method row-14-complete-gpu-review B1 \
+    "holds a method outside { semantic, lexical, none }: shell=yes" \
+    '.predicate.consultations.pmat.duplication_coverage.shell = "yes"'
+}
+
+@test "probe duplication_horizon absent                                RED  B1" {
+  assert_probe dup-horizon-absent row-14-complete-gpu-review B1 \
+    "duplication_horizon is absent or is not a non-empty array" \
+    'del(.predicate.consultations.pmat.duplication_horizon)'
+}
+
+@test "probe duplication_horizon that is a string, not an array        RED  B1" {
+  # A scalar horizon is the shape a hand-written receipt takes. It parses, it reads
+  # like a statement, and nothing can be counted against it.
+  assert_probe dup-horizon-scalar row-14-complete-gpu-review B1 \
+    "duplication_horizon is absent or is not a non-empty array" \
+    '.predicate.consultations.pmat.duplication_horizon = "HEAD"'
+}
+
+@test "probe horizon_branches_total that is not a number               RED  B1" {
+  assert_probe dup-horizon-total-nan row-14-complete-gpu-review B1 \
+    "must both be whole numbers with 0 <= scanned <= total" \
+    '.predicate.consultations.pmat.horizon_branches_total = "many"'
+}
+
+@test "probe a FRACTIONAL horizon count, which would skip both rules   RED  B1" {
+  # Not a hypothetical. `[ "2.5" -lt 40 ]` is a bash ERROR, not a false comparison: the
+  # `if` reads false and BOTH horizon rules below it are skipped, so without the
+  # whole-number clause this receipt is ACCEPTED under a PASS despite covering a
+  # fraction of 40 branches. Written 2.5 and not 2.0 for a measured reason: jq's number
+  # type does not carry the trailing zero, `2.0 | floor == 2.0` is true, and the first
+  # draft of this probe was rejected by the CAPPED-horizon rule instead - passing while
+  # testing nothing about the branch it names.
+  assert_probe dup-horizon-fractional row-14-complete-gpu-review B1 \
+    "must both be whole numbers" \
+    '.predicate.verdict = "PASS"
+     | .predicate.consultations.pmat.horizon_branches_total = 40
+     | .predicate.consultations.pmat.horizon_branches_scanned = 2.5'
+}
+
+@test "probe horizon_branches_scanned greater than the total           RED  B1" {
+  # A sweep cannot cover more branches than exist. The inequality is what makes the
+  # denominator load-bearing rather than decorative.
+  assert_probe dup-horizon-over row-14-complete-gpu-review B1 \
+    "must both be whole numbers with 0 <= scanned <= total" \
+    '.predicate.consultations.pmat.horizon_branches_total = 4
+     | .predicate.consultations.pmat.horizon_branches_scanned = 9'
+}
+
+@test "probe sibling horizon claimed but zero branches scanned         RED  B1" {
+  # The `attempted: 0` shape one field over: a sweep that ran over nothing found
+  # nothing, and S3.D already calls that DEGRADED rather than clean for mutation.
+  assert_probe dup-horizon-vacuous row-14-complete-gpu-review B1 \
+    "with horizon_branches_scanned=0 of 6" \
+    '.predicate.consultations.pmat.horizon_branches_total = 6
+     | .predicate.consultations.pmat.horizon_branches_scanned = 0'
+}
+
+@test "probe a CAPPED horizon sweep still reading PASS                 RED  B1" {
+  # --max-branches / --horizon since are legitimate; reading PASS over the branches
+  # they skipped is not. The skipped branches were not searched, and unsearched is
+  # DEGRADED. Measured cost of the uncapped sweep on this repository: 18.6 s over 772
+  # branches (evidence/prrev-009/coverage-measurements.txt), so the cap is a choice.
+  assert_probe dup-horizon-capped-pass row-14-complete-gpu-review B1 \
+    "covered 2 of 40 sibling branches and the verdict is PASS" \
+    '.predicate.verdict = "PASS"
+     | .predicate.consultations.pmat.horizon_branches_total = 40
+     | .predicate.consultations.pmat.horizon_branches_scanned = 2'
+}
+
+@test "probe a capped horizon sweep marked DEGRADED                  GREEN     [discrimination]" {
+  # The same partial sweep, honestly labelled, is accepted. Without this the rule
+  # would forbid the partial sweep instead of forbidding the silence about it.
+  local d
+  d=$(make_probe dup-horizon-capped-degraded row-14-complete-gpu-review \
+      '.predicate.verdict = "DEGRADED"
+       | .predicate.consultations.pmat.horizon_branches_total = 40
+       | .predicate.consultations.pmat.horizon_branches_scanned = 2')
+  run "$GUARD" "$d"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [[ "$output" == *"ACCEPT"* ]]
+}
+
+@test "probe symbols_searched absent                                   RED  B1" {
+  # Record-only is not unenforced. Without the needle count, precision cannot be
+  # judged at all: a scan of one needle and a scan of two hundred read identically.
+  assert_probe dup-symbols-absent row-14-complete-gpu-review B1 \
+    "symbols_searched must be a number" \
+    'del(.predicate.consultations.pmat.symbols_searched)'
+}
+
+@test "probe a complete duplication block with real hits             GREEN     [discrimination]" {
+  # The widest acceptance case for this rule: coverage across every surface, a stated
+  # horizon that was swept in full, a needle count, and hits actually recorded. If the
+  # guard refuses this it refuses a correct scan.
+  local d
+  d=$(make_probe dup-complete row-14-complete-gpu-review \
+      '.predicate.consultations.pmat.horizon_branches_total = 772
+       | .predicate.consultations.pmat.horizon_branches_scanned = 772
+       | .predicate.consultations.pmat.symbols_searched = 4
+       | .predicate.consultations.pmat.duplication_hits = [
+           {"needle":"check_pr_review_wiring.sh","kind":"filename","where":"branch",
+            "ref":"origin/feat/prrev-006-wiring","path":"scripts/check_pr_review_wiring.sh",
+            "line":0,"method":"lexical"} ]')
+  run "$GUARD" "$d"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [[ "$output" == *"ACCEPT"* ]]
+}
+
+# =============================================================================
+# THE MECHANISM: scripts/pr_review_duplication_scan.sh
+#
+# The rules above make the guard reject a receipt that does not RECORD its coverage.
+# They cannot make a scan happen. Without a mechanism the coverage map is a field an
+# agent fills in with whatever reads green, which is a worse artifact than the empty
+# `duplication_hits: []` it replaces - it is the same silence with a signature on it.
+#
+# So the scanner is exercised against a purpose-built repository, on both halves of F4
+# and in both polarities. The repository is built here rather than in
+# tests/fixtures/pr-review/ because it needs an UNMERGED SIBLING BRANCH, and adding one
+# to the committed fixture repo would change nothing about rows 1-17 while making their
+# provenance harder to read.
+# =============================================================================
+
+SCAN="$BATS_TEST_DIRNAME/../scripts/pr_review_duplication_scan.sh"
+
+# make_scan_repo <dir> - main carries a SHELL definition; an unmerged sibling and the
+# PR under review both add the same new path. Deterministic identity and dates.
+make_scan_repo() {
+  local d=$1
+  mkdir -p "$d"
+  export GIT_AUTHOR_NAME=scanfix GIT_AUTHOR_EMAIL=scan@fixture.invalid
+  export GIT_COMMITTER_NAME=scanfix GIT_COMMITTER_EMAIL=scan@fixture.invalid
+  export GIT_AUTHOR_DATE="2026-02-02T00:00:00+0000" GIT_COMMITTER_DATE="2026-02-02T00:00:00+0000"
+  git -C "$d" init -q -b main .
+  git -C "$d" config core.hooksPath /dev/null
+  git -C "$d" config commit.gpgsign false
+  mkdir -p "$d/scripts" "$d/src"
+  # The prior art, in SHELL. pmat's semantic index cannot return this file; that is the
+  # whole of F4(a), and it is why the needle must be searched lexically.
+  printf '#!/usr/bin/env bash\nrender_band_receipt() {\n  printf receipt\n}\n' \
+    > "$d/scripts/existing_helper.sh"
+  printf 'baseline\n' > "$d/README.md"
+  git -C "$d" add -A && git -C "$d" commit -q -m "M1 baseline: a shell helper"
+  git -C "$d" update-ref refs/remotes/origin/main refs/heads/main
+
+  # The unmerged sibling: it already adds the file the PR is about to add.
+  git -C "$d" checkout -q -b sibling main
+  printf '#!/usr/bin/env bash\nsweep_band_matrix() { :; }\n' > "$d/scripts/shared_helper.sh"
+  git -C "$d" add -A && git -C "$d" commit -q -m "S1 sibling: shared_helper.sh, not merged"
+  git -C "$d" update-ref refs/remotes/origin/sibling refs/heads/sibling
+
+  # The pull request under review, forked from the same base.
+  git -C "$d" checkout -q -b pr main
+  printf '#!/usr/bin/env bash\nrender_band_receipt() { :; }\n' > "$d/scripts/shared_helper.sh"
+  printf 'pub fn render_band_receipt() {}\n' > "$d/src/newmod.rs"
+  git -C "$d" add -A && git -C "$d" commit -q -m "P1 pr: re-implement the helper"
+  git -C "$d" checkout -q main
+}
+
+# run_symbol_table - the needle-extraction case table. A FUNCTION invoked through
+# bats' `run`, because bats runs a test body under `set -e` and every NO-MATCH row
+# exits 1 by design: called inline, the first NO-MATCH row aborts the test before a
+# single polarity has been checked. Measured, not guessed - that is exactly how this
+# failed the first time it ran.
+run_symbol_table() {
+  local table="$FIX/duplication-symbol-cases.tsv"
+  local expect subject want why out rc rows=0 fails=0
+  while IFS=$'\t' read -r expect subject want why; do
+    case "$expect" in ''|'#'*) continue ;; esac
+    rows=$((rows + 1))
+    out=$("$SCAN" --extract-symbol "$subject" 2>/dev/null)
+    rc=$?
+    if [ "$expect" = MATCH ]; then
+      if [ "$rc" -ne 0 ]; then
+        echo "MISS      expected $want, got no match: $subject"; fails=$((fails + 1)); continue
+      fi
+      # The NAME is asserted, not merely that something matched: a pattern can match
+      # the right line and capture the wrong group, and that is invisible to a
+      # match/no-match table.
+      if [ "$out" != "$want" ]; then
+        echo "WRONG-NAME expected '$want', got '$out': $subject"; fails=$((fails + 1))
+      fi
+    elif [ "$expect" = NO-MATCH ] && [ "$rc" -eq 0 ]; then
+      echo "SPURIOUS  expected no match, got '$out': $subject"; fails=$((fails + 1))
+    fi
+  done < "$table"
+  [ "$rows" -ge 25 ] || { echo "case table has only $rows rows"; return 1; }
+  echo "$rows rows checked"
+  [ "$fails" -eq 0 ]
+}
+
+@test "S3.A the needle extraction matches its case table, both polarities" {
+  run run_symbol_table
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+}
+
+@test "F4a the scan reaches a SHELL definition, which pmat's index cannot" {
+  local d="$WORK/scanrepo-a"
+  make_scan_repo "$d"
+  local base head out
+  base=$(git -C "$d" rev-parse main)
+  head=$(git -C "$d" rev-parse pr)
+  out=$("$SCAN" --repo "$d" --base "$base" --head "$head" --horizon none) || {
+    echo "$out"; false; }
+  # The prior art lives in scripts/existing_helper.sh - a .sh file, outside any semantic
+  # index this repository has. If this assertion fails, duplication_hits is Rust-only
+  # again and F4(a) is back.
+  run jq -r '[.duplication_hits[] | select(.path | endswith(".sh"))] | length' <<<"$out"
+  [ "$output" -ge 1 ] || { echo "no shell-file hit in: $out"; false; }
+  run jq -r '[.duplication_hits[] | select(.needle == "render_band_receipt" and .path == "scripts/existing_helper.sh")] | length' <<<"$out"
+  [ "$output" -eq 1 ] || { echo "the shell definition was not attributed: $out"; false; }
+}
+
+@test "F4b the scan sees prior art on an UNMERGED sibling branch     [discrimination]" {
+  local d="$WORK/scanrepo-b"
+  make_scan_repo "$d"
+  local base head none all
+  base=$(git -C "$d" rev-parse main)
+  head=$(git -C "$d" rev-parse pr)
+
+  # A. what S3.A does today: the index cannot see off this branch.
+  none=$("$SCAN" --repo "$d" --base "$base" --head "$head" --horizon none)
+  run jq -r '[.duplication_hits[] | select(.where == "branch")] | length' <<<"$none"
+  [ "$output" -eq 0 ] || { echo "expected no branch hits with --horizon none: $none"; false; }
+  run jq -r '.duplication_coverage.sibling_branches' <<<"$none"
+  [ "$output" = none ]
+  run jq -r '.horizon_branches_scanned' <<<"$none"
+  [ "$output" -eq 0 ]
+
+  # B. the repair. SAME diff, SAME script; the horizon is the only variable.
+  all=$("$SCAN" --repo "$d" --base "$base" --head "$head")
+  run jq -r '[.duplication_hits[] | select(.where == "branch" and .ref == "origin/sibling" and .path == "scripts/shared_helper.sh")] | length' <<<"$all"
+  [ "$output" -eq 1 ] || { echo "the sibling branch's prior art was not found: $all"; false; }
+  run jq -r '.duplication_coverage.sibling_branches' <<<"$all"
+  [ "$output" = lexical ]
+  run jq -r '.horizon_branches_total' <<<"$all"
+  [ "$output" -eq 1 ]
+  run jq -r '.horizon_branches_scanned' <<<"$all"
+  [ "$output" -eq 1 ]
+}
+
+@test "the scan's own output satisfies every rule the guard enforces on it" {
+  # A mechanism whose output the guard would reject is two artifacts that disagree.
+  # This is the join between them, and it is asserted rather than assumed.
+  local d="$WORK/scanrepo-c"
+  make_scan_repo "$d"
+  local base head out
+  base=$(git -C "$d" rev-parse main)
+  head=$(git -C "$d" rev-parse pr)
+  out=$("$SCAN" --repo "$d" --base "$base" --head "$head" --rust-semantic)
+
+  run jq -e '(.duplication_hits | type == "array")
+             and (["rust","shell","python","config","docs","other","sibling_branches"]
+                  - (.duplication_coverage | keys) | length == 0)
+             and (.duplication_coverage | to_entries
+                  | map(.value as $v | ["semantic","lexical","none"] | index($v) != null) | all)
+             and (.duplication_horizon | (type == "array") and (length > 0) and (map(type == "string") | all))
+             and (.horizon_branches_total | type == "number")
+             and (.horizon_branches_scanned | type == "number")
+             and (.horizon_branches_scanned <= .horizon_branches_total)
+             and (.symbols_searched | type == "number")' <<<"$out"
+  [ "$status" -eq 0 ] || { echo "the scan output would be REJECTED by the guard: $out"; false; }
+
+  # --rust-semantic is a claim about the CALLER, not about this script: without it the
+  # honest value is `lexical`, because on its own the scan is a name match.
+  run jq -r '.duplication_coverage.rust' <<<"$out"
+  [ "$output" = semantic ]
+  out=$("$SCAN" --repo "$d" --base "$base" --head "$head")
+  run jq -r '.duplication_coverage.rust' <<<"$out"
+  [ "$output" = lexical ]
+}
+
+@test "a clone with no branch but main records sibling_branches: none, not lexical" {
+  # The shallow/CI-checkout case. `git for-each-ref refs/remotes/origin` enumerates what
+  # THIS clone has fetched, so a checkout holding only main has a horizon of zero
+  # branches - and "swept 0 of 0 in full" satisfies every count rule in the guard while
+  # having looked nowhere. The scan degrades the METHOD instead, and the guard's existing
+  # `none` may not read PASS rule turns that into DEGRADED.
+  local d="$WORK/scanrepo-e"
+  make_scan_repo "$d"
+  git -C "$d" update-ref -d refs/remotes/origin/sibling
+  local out
+  out=$("$SCAN" --repo "$d" --base "$(git -C "$d" rev-parse main)" --head "$(git -C "$d" rev-parse pr)")
+  run jq -r '.duplication_coverage.sibling_branches' <<<"$out"
+  [ "$output" = none ] || { echo "expected none, got '$output': $out"; false; }
+  run jq -r '.horizon_refs.local_origin_refs' <<<"$out"
+  [ "$output" -eq 1 ]
+  # With the sibling ref present the SAME repo records lexical - the discrimination arm,
+  # without which "always say none" would read green here.
+  make_scan_repo "$WORK/scanrepo-f"
+  out=$("$SCAN" --repo "$WORK/scanrepo-f" --base "$(git -C "$WORK/scanrepo-f" rev-parse main)" \
+        --head "$(git -C "$WORK/scanrepo-f" rev-parse pr)")
+  run jq -r '.duplication_coverage.sibling_branches' <<<"$out"
+  [ "$output" = lexical ]
+  run jq -r '.horizon_refs.local_origin_refs' <<<"$out"
+  [ "$output" -eq 2 ]
+}
+
+@test "the scan REFUSES rather than printing a coverage map it did not earn" {
+  # A scan that could not run must not print `lexical` for anything. Three ways in:
+  local d="$WORK/scanrepo-d"
+  make_scan_repo "$d"
+  run "$SCAN" --repo "$d" --base "$(git -C "$d" rev-parse main)"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"--head is required"* ]]
+
+  run "$SCAN" --repo "$d" --base deadbeefdeadbeefdeadbeefdeadbeefdeadbeef --head "$(git -C "$d" rev-parse pr)"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"does not resolve"* ]]
+
+  run "$SCAN" --repo "$d" --base "$(git -C "$d" rev-parse main)" --head "$(git -C "$d" rev-parse pr)" --horizon everything
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"--horizon must be all, since or none"* ]]
 }

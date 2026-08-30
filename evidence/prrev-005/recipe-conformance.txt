@@ -95,3 +95,20 @@ DEGRADED: the S3.D guard-scope mutation sweep was not performed in this invocati
   PR_REVIEW_PUBKEY=/tmp/t.pub bash scripts/check_pr_review_receipt.sh "$d"
   # requires origin/main to still contain 745fa8588 and the commit 5928ec2a7 to resolve:
   # the guard recomputes merge-base(origin/main, head_sha) and rejects any other base_sha.
+
+--------------------------------------------------------------------------------
+ADDENDUM (PRREV-009, 2026-08-30): THIS TRANSCRIPT IS NOW STALE, AND DELIBERATELY SO.
+
+`evidence/prrev-005/accepted-receipt.intoto.jsonl` records `pmat.status: consulted` with
+no `duplication_coverage`. Under the S3.A rules added by PRREV-009 (backtest finding F4)
+that receipt is REJECTED, not ACCEPTED — an unrecorded coverage claim cannot be told
+apart from a searched-and-empty one, and the guard now says so.
+
+The file is NOT being rewritten to pass. It is the record of what the skill produced on
+2026-08-30 against the guard as it then stood, and editing an evidence artifact so that
+a later gate accepts it is the shape of the defect this whole epic is about. Reproduce
+the ACCEPT above against `scripts/check_pr_review_receipt.sh` at 1e09ca749, and the
+REJECT against the tip; both are correct answers to different questions.
+
+Owed to whoever next regenerates this transcript: add the coverage block from
+`scripts/pr_review_duplication_scan.sh` and re-sign, then this becomes an ACCEPT again.

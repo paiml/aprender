@@ -1,0 +1,44 @@
+# S3.A duplication needle extraction — must-match / must-not-match case table.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/pr_review_duplication_scan.sh --extract-symbol <subject>
+#
+# The needles this produces are what the whole F4 repair searches FOR. A pattern that
+# over-matches floods the receipt with junk hits and trains a reader to ignore the
+# field; one that under-matches gives back the silence F4 exists to remove. Both
+# polarities are therefore pinned here, and the expected NAME is asserted, not merely
+# that something matched — a pattern can match the right line and capture the wrong
+# group. This repository`s guard patterns have been wrong six times; a case table
+# caught every one and review caught none. Read the rows, not the regex.
+#
+# expect\tsubject\texpected\twhy
+MATCH	+pub fn run_bands(cfg: &Config) -> Result<()> {	run_bands	the PERF-055 prior art pmat DID find; the lexical path must find it too
+MATCH	+fn perf_gate_verdict() {	perf_gate_verdict	a bare private fn
+MATCH	+pub(crate) async unsafe fn launch_kernel(x: u32) {	launch_kernel	every modifier the Rust grammar allows before `fn`
+MATCH	+    const fn block_size() -> usize {	block_size	const fn
+MATCH	+extern "C" fn apr_entry(argc: i32) {	apr_entry	extern "C" — the quoted ABI must not swallow the name
+MATCH	+pub struct BandReceipt {	BandReceipt	struct
+MATCH	+pub enum VerdictClass {	VerdictClass	enum
+MATCH	+trait ReceiptWriter {	ReceiptWriter	trait
+MATCH	+check_pr_review_wiring() {	check_pr_review_wiring	a shell function — the exact name the sibling branch already defines
+MATCH	+arm_c_integrity() { :; }	arm_c_integrity	a ONE-LINE shell function; end-anchoring the brace returned nothing here
+MATCH	+function assert_job_level_if {	assert_job_level_if	the `function` keyword with no parens
+MATCH	+function render_band {	render_band	`function` keyword form
+MATCH	+def render_receipt(path):	render_receipt	python def
+MATCH	+async def stream_tokens(req):	stream_tokens	python async def
+MATCH	+class BandRenderer:	BandRenderer	python class
+MATCH	+class ReceiptStore(BaseStore):	ReceiptStore	python class with a base
+NO-MATCH	+    // fn not_a_definition	-	a Rust line comment naming a function is not a definition
+NO-MATCH	+/// pub fn example() -> u32	-	a doc comment showing a signature is not one
+NO-MATCH	+# def helper(x):	-	a python/shell comment
+NO-MATCH	+    let x = foo();	-	a call site, not a definition
+NO-MATCH	+        setup()	-	a Rust tail expression; with the brace optional this matched as a shell function and was the largest source of junk needles
+NO-MATCH	+  something_else();	-	a statement
+NO-MATCH	+#[derive(Debug)]	-	an attribute
+NO-MATCH	+use crate::format::converter::write;	-	an import
+NO-MATCH	+  fnord(value)	-	`fn` is required to be a whole word; `fnord` must not read as one
+NO-MATCH	+  classic_path(x)	-	`class` is required to be a whole word
+NO-MATCH	+  defer_cleanup(x)	-	`def` is required to be a whole word
+NO-MATCH	+if [ -n "$x" ]; then	-	shell control flow
+NO-MATCH	+name: aprender-core	-	a yaml key
+NO-MATCH	+- fn something	-	a markdown bullet quoting a signature

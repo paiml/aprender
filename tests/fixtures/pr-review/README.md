@@ -201,3 +201,52 @@ describes.
 fixtures and nothing else. The production key referenced by §4.3 is `.github/pr-review.pub`,
 which PRREV-005/006 owes; the guard rejects a receipt when the public key is absent, because
 an unverifiable signature is not a verified one.
+
+## Rows 16 and 17 — the duplication coverage pair (PRREV-009, backtest finding F4)
+
+Not rows of spec S6.3's fourteen. They are owed by PRREV-007's backtest, which measured
+that `duplication_hits` — the field S3.A calls "the highest-EV field in the receipt" —
+is blind to 48.8% of the very diff S3.A cites as its evidence:
+
+| | measured |
+|---|---|
+| pmat's semantic index | Rust-only. A query for `arm_c_integrity`, a function *defined* at `scripts/perf_gate.sh:39`, returns 10 results, all `.rs`, and never that file. |
+| #2742, the prior art PERF-055 nearly rewrote | 46 files, 7,244 insertions, of which 3,533 (sh, py, yaml) are outside semantic reach. |
+| prior art on an unmerged sibling branch | invisible by construction — B6 requires `index_commit` to be an ancestor of HEAD. #2781 found #2742's because #2742 merged 17 hours earlier. |
+
+The repair records the coverage the run achieved, per surface, and rows 16/17 are the
+pair that keeps the record honest in **both** directions:
+
+| row | coverage | verdict | expected |
+|---|---|---|---|
+| 16 | `shell/python/config/docs/other: none` | `PASS` | **RED B1** — an unsearched surface must not read clean |
+| 17 | the SAME map | `DEGRADED` | **GREEN** — discrimination case |
+
+Row 17 is not decoration. Without it the rule would punish the honest receipt exactly as
+hard as the silent one, and a coverage field that costs a PASS whatever is written in it
+is a field that learns to stay empty. It is the same shape as rows 5 and 6 one level
+down: `unreachable` + `PASS` is RED, `unreachable` + `DEGRADED` is GREEN.
+
+`horizon_branches_total` and `horizon_branches_scanned` are **0/0** in every committed
+row, and that is correct rather than convenient: the fixture repository has one remote
+ref and no unmerged sibling, so the honest denominator is zero. The horizon rules that
+need a non-zero denominator are exercised by the branch probes in `tests/pr-review.bats`
+(`dup-horizon-vacuous`, `dup-horizon-capped-pass`, `dup-horizon-capped-degraded`), and
+the scanner itself is exercised against a purpose-built repo with a real unmerged sibling.
+
+## `duplication-symbol-cases.tsv`
+
+The must-match / must-not-match table for the needle extraction in
+`scripts/pr_review_duplication_scan.sh --extract-symbol`. Thirty rows, both polarities,
+and the expected NAME is asserted rather than only that something matched — a pattern can
+match the right line and capture the wrong group, which a match/no-match table cannot see.
+
+Two rows exist because the pattern was wrong when it was written, not because someone
+imagined the case:
+
+- `arm_c_integrity() { :; }` — the shell-function pattern end-anchored the `{`, so a
+  one-line function returned nothing and `symbols_searched` read 0 on a file holding
+  three definitions.
+- `        setup()` — with the `{` made optional to fix the above, a Rust tail expression
+  reads as a shell function definition. It is pinned NO-MATCH so the fix cannot be
+  re-applied in the over-broad direction.

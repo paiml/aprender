@@ -245,6 +245,47 @@ pmat query "<what the diff adds>" --limit 10       # duplication_hits[]
   `pmat query "<same>" --duplicates` are two minutes that have paid for this entire skill
   once already.
 
+**`pmat query` alone is HALF the search, and the receipt must say which half.** PRREV-007
+measured it and PRREV-009 reproduced it on a second symbol:
+
+| | measured |
+|---|---|
+| pmat's semantic index | **Rust-only.** `pmat query` for `arm_c_integrity` — a function *defined* at `scripts/perf_gate.sh:39` — returns 10 results, all `.rs`, and never that file. |
+| the diff S3.A cites as its evidence | #2742: 46 files, 7,244 insertions, of which **3,533 (48.8%) are sh, py and yaml** — outside semantic reach entirely. |
+| prior art on an unmerged sibling branch | **invisible by construction.** B6 requires `index_commit` to be an ancestor of HEAD, so the index can only hold this branch's history. #2781 found #2742's prior art because #2742 merged 17 hours earlier. Luck, not mechanism. |
+
+So run the second half as well, and record what each half reached:
+
+```bash
+scripts/pr_review_duplication_scan.sh --base "$BASE" --head "$HEAD_SHA" \
+    --rust-semantic --json /tmp/dup.json      # --rust-semantic ONLY if you ran pmat query
+jq -r '.duplication_coverage, .horizon_branches_scanned, .hits_total' /tmp/dup.json
+```
+
+It emits `duplication_hits[]`, `duplication_coverage{}`, `duplication_horizon[]`,
+`horizon_branches_{total,scanned}` and `symbols_searched` — copy all of them into the
+`pmat` block verbatim. Measured cost on this repository: **18.6 s** over the full
+772-branch horizon; 73 s on a 151-needle range. Put the wall time in `cost`.
+
+Three rules the guard enforces on what you copy, all of them S3.0 applied one level down
+— *"searched and found nothing" must not read the same as "could not search"*:
+
+1. **Every surface carries a method**, from `{ semantic, lexical, none }`. A surface with
+   no entry is REJECTED. `none` is honest and permitted.
+2. **`none` anywhere ⇒ the verdict is not `PASS`.** Exactly the rule rows 5 and 6 apply
+   to an unreachable consultation. Fixture rows 16/17 are the pair: the same coverage map
+   is RED under `PASS` and GREEN under `DEGRADED`. Being honest costs you the PASS, never
+   the receipt.
+3. **A partial horizon is not a swept one.** `horizon_branches_scanned <
+   horizon_branches_total` with `verdict: PASS` is REJECTED, and claiming the sibling
+   branches with `scanned: 0` over a non-empty horizon is the `attempted: 0` shape.
+
+**What the scan cannot do, and you must not imply otherwise.** It is an exact,
+word-boundary name match. A re-implementation under a *different* name is invisible to
+it; the sibling-branch half matches filenames only, not symbols. If you have reason to
+think the diff re-implements something under a new name, say so as an `asserted` finding
+with a rationale — never as `measured` off the back of this scan.
+
 ### §3.B NVIDIA CUDA documentation (triggered)
 
 **Trigger** — any changed path matching `crates/aprender-gpu/**`,
@@ -427,7 +468,14 @@ one: a pretty-printed Statement is many lines and is rejected as "holds N JSON r
                     "transport_unavailable": ["mcp: ConnectionRefused"],
                     "index_commit": "…", "index_is_ancestor": true,
                     "complexity_delta": [], "tdg_delta": [],
-                    "satd_introduced": [], "duplication_hits": [], "cache_hits": 0 },
+                    "satd_introduced": [], "duplication_hits": [], "cache_hits": 0,
+                    "duplication_coverage": { "rust": "semantic", "shell": "lexical",
+                        "python": "lexical", "config": "lexical", "docs": "lexical",
+                        "other": "lexical", "sibling_branches": "lexical" },
+                    "duplication_horizon": ["HEAD",
+                        "refs/remotes/origin/* unmerged into origin/main"],
+                    "horizon_branches_total": 0, "horizon_branches_scanned": 0,
+                    "symbols_searched": 0 },
       "cuda":     { "status": "…", "trigger_reason": "…", "queries": [] },
       "crux":     { "status": "…", "surfaces": [], "contracts": [],
                     "gap_effect": "none", "crux_coverage": "covered",
