@@ -1,0 +1,27 @@
+# S3.B CUDA path trigger — must-match / must-not-match case table.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/check_pr_review_receipt.sh --match-path <subject>
+#
+# This table exists because this repository's guard patterns have been wrong six
+# times and a case table caught every one while review caught none. Read the rows,
+# not the regex.
+#
+# expect	subject	why
+MATCH	crates/aprender-gpu/src/lib.rs	S3.B lists crates/aprender-gpu/** explicitly
+MATCH	crates/aprender-serve/src/cuda/stream.rs	S3.B lists crates/aprender-serve/src/cuda/** explicitly
+MATCH	src/cuda/kernel.cu	*cuda* — and this is the path the row-1 fixture's diff touches
+MATCH	crates/aprender-compute/src/backends/gpu/ptx_loader.rs	*ptx*
+MATCH	crates/aprender-serve/src/kernels/cublas_gemm.rs	*cublas*
+MATCH	docs/fp8-quantization.md	*fp8* — a docs path still carries a device claim (#2789 was an E4M3 question)
+MATCH	crates/aprender-compute/src/nvrtc_compile.rs	*nvrtc*
+MATCH	crates/aprender-compute/src/CUDA_NOTES.md	matched case-insensitively: a file about CUDA is a CUDA file
+MATCH	crates/aprender-serve/src/quantize/matmul_cuda.rs	*cuda* is a substring glob, not a prefix
+NO-MATCH	README.md	no trigger token
+NO-MATCH	docs/note.md	the row-7 docs-only fixture's only changed path; if this matched, row 7 could not be GREEN
+NO-MATCH	crates/aprender-core/src/lib.rs	training code, no device surface
+NO-MATCH	crates/aprender-serve/src/api/router.rs	serving code outside src/cuda/
+NO-MATCH	Cargo.toml	no trigger token
+NO-MATCH	crates/aprender-gpu-utils/src/lib.rs	crates/aprender-gpu/ requires the slash; a DIFFERENT crate whose name shares the prefix must not trigger
+NO-MATCH	crates/aprender-compute/src/backends/gpu/device/mod.rs	KNOWN GAP, recorded not widened: S3.B names crates/aprender-gpu/** and *cuda*/*ptx*/*cublas*/*fp8*/*nvrtc*, but never *gpu*. This real GPU file does not trigger. Widening the pattern here would put the guard out of step with its spec silently; the gap is pinned by this row instead.
+NO-MATCH	crates/aprender-serve/src/api/tests/native_routes_2376.rs	route tests are a CRUX surface, not a device claim

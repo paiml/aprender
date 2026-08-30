@@ -1,0 +1,24 @@
+# S3.C.1 comparative-claim detection — must-match / must-not-match case table.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/check_pr_review_receipt.sh --match-comparative <subject>
+#
+# A match makes the claim BLOCKING unless a full comparator is recorded (B4), so a
+# false positive here stops real work. The competitor must therefore be NAMED: a bare
+# "2x speedup" is self-relative and has no comparator to record. Demanding an artifact
+# hash for it would be exactly the over-reach the discrimination rows exist to catch.
+#
+# expect	subject	why
+MATCH	apr sustains 2.93× Ollama on 1.5B Q4_K decode	the scar this rule exists for: the book published it from a harness that never ran Ollama
+MATCH	2.93x Ollama	ASCII x as well as the multiplication sign
+MATCH	3x faster than llama.cpp on the prefill	"faster than" connector
+MATCH	decode is 1.371x vs vLLM at concurrency 8	"vs" connector
+MATCH	Gaussian naive Bayes is 4.9x sklearn	direct competitor, no connector
+MATCH	1.8x PyTorch on the LinearRegression fit	competitor matched case-insensitively
+NO-MATCH	a 2x speedup on the fused gate+up path	self-relative: no competitor is named, so there is no comparator to demand
+NO-MATCH	the 4x4 tile is loaded once per midi-tile	a matrix shape
+NO-MATCH	thumbnail resolution 1920x1080	a resolution
+NO-MATCH	x86_64 build flags	no leading magnitude
+NO-MATCH	benchmarked on an 8x A100 node	a hardware count; A100 is not a competing runtime
+NO-MATCH	uses 2x more memory than before	self-relative regression, not a competitor claim
+NO-MATCH	tuned for sm_90x occupancy	no whitespace-then-competitor after the x

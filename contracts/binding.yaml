@@ -629,37 +629,49 @@ bindings:
 # which is the mirror of the over-reporting the #2644 audit found.
 - contract: pr-review-skill-v2.yaml
   equation: grounding_marks_are_closed
-  status: pending
+  status: implemented
   notes: >-
     S1. Discharged by the grounding-mark branches of scripts/check_pr_review_receipt.sh
-    against fixture rows 3, 11, 12 and 14 of spec S6.3 — plus row 15, which does not
-    exist yet and which F-PRREV-001 names as owed: no committed fixture exercises a
-    result carrying NO grounding property at all.
+    against fixture rows 3, 11, 12 and 14 of spec S6.3, and by row 15 — the fixture
+    F-PRREV-001 named as owed, now committed at
+    tests/fixtures/pr-review/row-15-finding-with-no-grounding-mark/. Verified by
+    mutation, both arms: deleting the grounding-presence branch turns row 15 GREEN
+    while rows 6, 7 and 14 stay GREEN, so the branch is load-bearing and not a
+    refuse-everything.
 - contract: pr-review-skill-v2.yaml
   equation: blocking_tier_is_objective_and_earned
-  status: pending
+  status: implemented
   notes: >-
     S7. Discharged by the verdict function of scripts/check_pr_review_receipt.sh over
-    all fourteen S6.3 rows, including the three discrimination rows (6, 7, 14) without
-    which "refuse every receipt" reads green. Six blocking classes, not the five the
-    spec's prose miscounts — see the invariant on this equation.
+    all fourteen S6.3 rows plus row 15, including the three discrimination rows (6, 7,
+    14) without which "refuse every receipt" reads green. Each RED row is asserted to
+    name ONE class: rows 1, 2, 3, 5, 10, 11, 12, 13, 15 -> B1; row 8 -> B2; row 4 -> B4;
+    row 9 -> B6. B3 is PRREV-004 and B5 is emitted by no consultation, as the invariant
+    on this equation already records. Asserting the class, not just the exit code, is
+    what caught rows 9 and 10 both returning B1 from a jq `//` coercion of `false`.
 - contract: pr-review-skill-v2.yaml
   equation: instrument_before_ratchet
   status: pending
   notes: >-
     S8, the four continuous parameters. Discharged by a guard branch asserting that no
     numeric threshold appears against actionable_rate, effective_fp_rate,
-    audit_divergence or cost_per_actionable while samples < 30. Its regex ships with a
-    must-match / must-not-match case table in PRREV-003; deliberately NOT inlined into
-    the contract, where nothing could exercise it.
+    audit_divergence or cost_per_actionable while samples < 30. STILL PENDING after
+    PRREV-003: that branch reads the CONTRACT FILE, not a receipt, and no such guard
+    exists yet — scripts/check_pr_review_receipt.sh validates receipts only. The three
+    case tables PRREV-003 does ship (tests/fixtures/pr-review/*-cases.tsv) cover the
+    S3.B path and message triggers and the S3.C.1 comparative-claim regex; the
+    threshold-absence regex is not among them and is owed.
 - contract: pr-review-skill-v2.yaml
   equation: four_defects_stop_the_line
   status: pending
   notes: >-
-    S8, the four jidoka parameters. Discharged by the same guard asserting the literal
-    values 1.00 / 1.00 / 0 / 0 and the absence of any ratchet rule on them, and by
-    scripts/mutate-guard.sh proving a 100% kill on the guard's own mutation set (S6.4)
-    — the one metric whose shortfall blocks a guard-touching PR outright.
+    S8, the four jidoka parameters. STILL PENDING after PRREV-003: scripts/mutate-guard.sh
+    does not exist and is PRREV-004. A 15/15 kill WAS measured over this guard while
+    landing PRREV-003 — every validation branch neutered in turn, each killed either by
+    the S6.3 row that covers it or by one of the three S6.1 positive controls — but the
+    harness that produced it is not committed, so the number is not reproducible from
+    this tree and this row may not claim it. PRREV-004 commits the harness and records
+    the score.
 critical_path:
 - softmax
 - rmsnorm
