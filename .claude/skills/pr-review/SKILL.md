@@ -1,0 +1,751 @@
+---
+# EXPLICIT name (#2332 class, the same reason pre-release and apr-dogfood carry one).
+# Without it a skill takes its name from its directory, and a user-scope skill at
+# ~/.claude/skills/pr-review/ would shadow this file: it would never appear in the
+# session's skill listing, could not be invoked, and nothing would warn. Edits would
+# look effective and change nothing that runs. That is #2361, and it cost this repo a
+# hardened release-certifying skill that never executed.
+name: pr-review
+allowed-tools: Bash(git:*), Bash(pmat:*), Bash(jq:*), Bash(sha256sum:*), Bash(minisign:*), Bash(check-jsonschema:*), Bash(cargo:*), Bash(bash:*), Bash(gh:*), Bash(pv:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(cut:*), Bash(cat:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(mkdir:*), Bash(printf:*), Bash(command:*), Bash(base64:*), Read, Glob, Grep, mcp__nvidia-cuda-docs__search_cuda_docs
+description: Adversarial PR review that must show HOW it knows — four consultations, a three-state availability encoding no prose can fake, and a signed in-toto receipt whose own guard can reject it
+# MACS F4: pinned. A review whose verdict can block a merge is not a place to let effort
+# float; a cheap run that reports PASS is indistinguishable from a thorough one that does,
+# and the whole point of the receipt is that they should not be.
+effort: high
+---
+
+# pr-review — grounded adversarial review with a receipt that can be rejected
+
+**Version**: 2.0.0 (implements `PR-REVIEW-SKILL-002 v2`; this is that spec's §9 step 5)
+**Authority**: the spec. Where this file and the spec differ, **the spec wins** and the
+difference is a defect in this file.
+**Contract**: `contracts/pr-review-skill-v2.yaml` (§1 grounding, §7 blocking, §8 metrics)
+**Guard**: `scripts/check_pr_review_receipt.sh` — it validates what you emit here, it has
+its own positive controls, and its mutation set (`scripts/mutate-guard.sh`) reports
+119/119. **Run it on your own receipt before you post anything.**
+
+## Context
+
+- Branch: !`git branch --show-current`
+- Head: !`git rev-parse HEAD`
+- Merge base vs origin/main: !`git merge-base origin/main HEAD 2>/dev/null || echo "NO MERGE BASE — fetch origin first"`
+- Files in the diff: !`B=$(git merge-base origin/main HEAD 2>/dev/null) && git diff --name-only "$B" HEAD | wc -l || echo "UNKNOWN — no merge base"`
+- pmat index present: !`test -f .pmat/context.db && echo yes || echo "no — see §3.A precondition"`
+- Guard present: !`test -x scripts/check_pr_review_receipt.sh && echo yes || echo NO`
+- Tools: !`for t in git jq sha256sum check-jsonschema minisign pmat cargo-mutants; do command -v "$t" >/dev/null 2>&1 || printf 'MISSING:%s ' "$t"; done; echo ok`
+
+A `MISSING:` above is not a licence to skip a consultation. The guard treats an absent
+tool as a **rejection, never a skip** — "a gate that cannot execute its own checks must
+not report green". Install it, or emit `unreachable` and take the `DEGRADED`.
+
+## Where this file sits among the review artifacts
+
+Five things exist and each owns exactly one job. Restating another's job here is how a
+runner comes to exist twice (aprender#2640).
+
+| artifact | owns |
+|---|---|
+| `PR-REVIEW-SKILL-002 v2` (spec) | every rule. The authority. |
+| `contracts/pr-review-skill-v2.yaml` | §1 / §7 / §8 as falsifiable equations |
+| `schemas/` + `scripts/check_vendored_schemas.sh` | the offline schema gate |
+| `scripts/check_pr_review_receipt.sh` | **whether a receipt is acceptable** |
+| this file | **how to produce one honestly** |
+
+The guard decides acceptance. This file cannot loosen it and must not try: if a rule here
+is weaker than the guard, the guard wins and your receipt is rejected; if it is stronger,
+say why in the receipt rather than encoding a private policy nothing tests.
+
+---
+
+## §0 The three sentences this skill exists to make impossible
+
+1. *"I checked the CUDA docs and they didn't say anything."* — indistinguishable, in
+   prose, from never asking. §3.0 and §3.B make the two different **artifacts**.
+2. *"No issues found."* — indistinguishable, in prose, from a consultation that could not
+   run. §3.0 row 3.
+3. *"The receipt is signed."* — true, and it says nothing about whether the review was
+   done. §4.3.
+
+Every rule below is downstream of one of those three.
+
+---
+
+## §1 The grounding rule — three marks, and there is no fourth
+
+Every claim this review makes about external reality carries exactly one mark:
+
+| mark | means | required alongside it |
+|---|---|---|
+| `cited` | traced to a consultation **this run performed** | `source`, `excerpt` (≤400 chars), `excerpt_sha256` |
+| `measured` | produced by a command **this run executed** | `command` (argv array), `exit_code`, `stdout_sha256` |
+| `asserted` | reviewer judgement | `rationale`; **always** `precision_class: advisory` |
+
+An unmarked claim is not a weaker claim. It is a **defect in the review**, and the guard
+rejects the whole receipt that carries it (fixture row 15).
+
+Four rules that are easy to get wrong and are checked mechanically:
+
+- **`excerpt_sha256` is over the excerpt bytes AS STORED**, with no trailing newline.
+  `printf '%s' "$excerpt" | sha256sum`. Using `echo` adds `\n`, the digest changes, and
+  the guard rejects the citation as unverified (fixture row 12). This is the single most
+  common way a well-intentioned receipt fails.
+- **`asserted` never blocks.** A finding marked `asserted` with
+  `precision_class: blocking` is rejected. Judgement is welcome; judgement with a merge
+  block behind it is not.
+- **`failure_scenario` is required and non-empty on every result.** A finding that cannot
+  name the concrete failure it permits is a comment, and comments are not what this skill
+  is for.
+- **§1.2, contradiction is fatal to the claim, not to the run.** If an `asserted` claim
+  contradicts a `measured` value elsewhere in the same receipt, **drop the claim** and
+  record `finding.suppressed_by_measurement` in
+  `predicate.consultations.<k>.suppressed[]`. This is the anti-hallucination-snowball
+  rule: the measurement wins, and the fact that it had to win is itself recorded.
+
+**§1.1 residual risk, stated rather than hidden.** The guard verifies that
+`excerpt_sha256 = sha256(excerpt)` and that the excerpt is non-empty. It does **not**
+verify that the excerpt supports the claim. Entailment checking is Phase 3. Until then a
+well-formed citation of an irrelevant excerpt passes, and you are the only thing stopping
+it. Do not cite an excerpt you would not be willing to have quoted back at you next to
+your claim.
+
+---
+
+## §2 The diff boundary — merge-base, never `origin/main`
+
+```bash
+git fetch origin main --quiet          # do this FIRST; a stale origin/main moves BASE
+BASE=$(git merge-base origin/main HEAD)
+HEAD_SHA=$(git rev-parse HEAD)
+git diff --name-only "$BASE" "$HEAD_SHA"      # the only diff you review
+```
+
+`BASE` goes into the receipt as `base_sha`; the guard recomputes it and rejects any other
+value (fixture row 10). A floating `origin/main` pulls other agents' commits into your
+review, inflates tokens, and manufactures false positives — this repo runs parallel
+worktree agents, so that is the normal case, not the edge case.
+
+**Blast radius.** Consultations run over the changed crates *and their reverse
+dependencies*, recorded as `affected_crates[]`:
+
+```bash
+cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | .name'   # 79 packages
+```
+
+A consultation that skipped a crate listed in `affected_crates` is `DEGRADED`, not silent.
+
+**Baseline cache reuse** (complexity, TDG, semantic index) is admissible only when
+`git merge-base --is-ancestor "$baseline_commit" HEAD` exits 0 *and* the file's last
+modification is at or before `$baseline_commit`. Count the reuse into
+`consultations.pmat.cache_hits` — an uncounted cache is an unfalsifiable one.
+
+---
+
+## §3 The four consultations
+
+### §3.0 Unavailability is never silently green — and the encoding is the point
+
+Four states. They are distinguished by the **artifact**, never by the prose:
+
+| state | SARIF | predicate | verdict effect |
+|---|---|---|---|
+| consulted, found nothing | run present, `executionSuccessful: true`, `results: []`, `toolExecutionNotifications: []` | `status: consulted` | none |
+| consulted, found something | run present, `executionSuccessful: true`, `results` populated | `status: consulted` | `FINDINGS` |
+| **could not consult** | run present, `executionSuccessful: false`, ≥1 `error`-level `toolExecutionNotifications` | `status: unreachable` | **`DEGRADED`** — never `PASS` |
+| not triggered | **run object omitted entirely** | `status: not-triggered` + `trigger_reason` | none |
+
+Three rules that make this real rather than decorative:
+
+**(a) "Could not consult" is itself `measured`, not `asserted`.** Record the probe you
+ran and what it returned. `"the server seems down"` is an assertion about external
+reality with no evidence, which is the exact thing this skill exists to stop:
+
+```json
+{ "level": "error",
+  "message": { "text": "pmat MCP transport refused the connection; fell back to the CLI transport." },
+  "properties": { "grounding": "measured",
+                  "command": ["pmat", "query", "receipt guard", "--limit", "3"],
+                  "exit_code": 0, "stdout_sha256": "…" } }
+```
+
+**(b) A working fallback does not erase a dead transport.** `pmat` is reachable two ways:
+the CLI, and an MCP server (`pmat --mode mcp` starts the same analyzer). **The pmat MCP
+server is `ConnectionRefused` in this environment right now.** If the CLI answers, the
+consultation is honestly `consulted` — but record which transport answered and which one
+did not:
+
+```json
+"pmat": { "status": "consulted",
+          "transport": "cli",
+          "transport_unavailable": ["mcp: ConnectionRefused"],
+          … }
+```
+
+Without those two fields, "the MCP was refused and the CLI answered" and "everything was
+fine" are the same receipt. That is the same defect one tier up from the one §3.0 is
+about, and it is the reason this skill was written for the refused case rather than around
+it.
+
+**(c) You may not narrate around the encoding.** If you write "no CUDA concerns" in the PR
+comment while `cuda.status` is `unreachable`, the artifact and the prose disagree and the
+prose is the lie. Write the verdict the artifact supports.
+
+### §3.A `pmat` — quality and duplication (**every PR, unconditional**)
+
+**Precondition, non-negotiable.** Without an index, CB-200 is `Skip`, and **`Skip` is not
+a pass** — it is `DEGRADED`:
+
+```bash
+pmat query "x" >/dev/null            # builds .pmat/context.db if absent
+```
+
+Measured on this repository from a cold worktree: **45.4 s, 87,592 functions in 10,317
+files.** Budget for it; do not skip it.
+
+**Index staleness is gating, not cosmetic.** Record the commit the index was built from
+and prove the ancestry:
+
+```bash
+INDEX_COMMIT=$(git rev-parse HEAD)                 # at the moment the index was built
+git merge-base --is-ancestor "$INDEX_COMMIT" "$HEAD_SHA" && A=true || A=false
+```
+
+`pmat` does not itself record which commit it indexed, so **you** stamp it, and you stamp
+it from the worktree the index lives in. Two traps:
+
+- Using another checkout's index. `/home/noah/src/aprender/.pmat/` belongs to whatever
+  branch that checkout is on — measured today, **66 commits behind** and not an ancestor
+  of this branch. An index built there answers about code that is not in this PR. That is
+  the scar A4 exists for: `index_is_ancestor: false` with `verdict: PASS` is blocking
+  class **B6** and the guard rejects it (fixture row 9).
+- Recording ancestry you did not compute. The guard recomputes it and rejects a receipt
+  whose recorded value disagrees, **whatever the verdict** — a receipt that misreports
+  its own staleness is worse than a stale one.
+
+If the tree was dirty when the index was built, the index describes uncommitted content;
+record `index_worktree_dirty: true` beside it rather than pretending `HEAD` is exact.
+
+Required output, all four arrays present even when empty:
+
+```bash
+pmat analyze complexity --format json --path .     # complexity_delta[] — INCREASES ONLY
+pmat analyze tdg        --format json --path .     # tdg_delta[]        — A+…F per changed file
+pmat analyze satd       --format json --path .     # satd_introduced[]  — markers added BY THIS DIFF
+pmat query "<what the diff adds>" --limit 10       # duplication_hits[]
+```
+
+- `complexity_delta[]` is **increase-only** and comes from the AST/token walk `pmat`
+  performs. Never compute it from a line scan: a formatter run would then read as a
+  quality regression, and a gate that fires on `cargo fmt` gets routed around within a
+  week.
+- `satd_introduced[]` is markers **this diff added**, not markers the file already had.
+  Diff the two SATD reports; do not report the file's standing debt as your finding.
+- **`duplication_hits[]` is the highest-EV field in the receipt.** Before accepting that
+  the diff adds something new, search for it: PERF-055 nearly re-implemented ~7,200 lines
+  across 46 files that already existed. `pmat query "<the thing being added>"` and
+  `pmat query "<same>" --duplicates` are two minutes that have paid for this entire skill
+  once already.
+
+**`pmat query` alone is HALF the search, and the receipt must say which half.** PRREV-007
+measured it and PRREV-009 reproduced it on a second symbol:
+
+| | measured |
+|---|---|
+| pmat's semantic index | **Rust-only.** `pmat query` for `arm_c_integrity` — a function *defined* at `scripts/perf_gate.sh:39` — returns 10 results, all `.rs`, and never that file. |
+| the diff S3.A cites as its evidence | #2742: 46 files, 7,244 insertions, of which **3,533 (48.8%) are sh, py and yaml** — outside semantic reach entirely. |
+| prior art on an unmerged sibling branch | **invisible by construction.** B6 requires `index_commit` to be an ancestor of HEAD, so the index can only hold this branch's history. #2781 found #2742's prior art because #2742 merged 17 hours earlier. Luck, not mechanism. |
+
+So run the second half as well, and record what each half reached:
+
+```bash
+scripts/pr_review_duplication_scan.sh --base "$BASE" --head "$HEAD_SHA" \
+    --rust-semantic --json /tmp/dup.json      # --rust-semantic ONLY if you ran pmat query
+jq -r '.duplication_coverage, .horizon_branches_scanned, .hits_total' /tmp/dup.json
+```
+
+It emits `duplication_hits[]`, `duplication_coverage{}`, `duplication_horizon[]`,
+`horizon_branches_{total,scanned}` and `symbols_searched` — copy all of them into the
+`pmat` block verbatim. Measured cost on this repository: **18.6 s** over the full
+772-branch horizon; 73 s on a 151-needle range. Put the wall time in `cost`.
+
+Three rules the guard enforces on what you copy, all of them S3.0 applied one level down
+— *"searched and found nothing" must not read the same as "could not search"*:
+
+1. **Every surface carries a method**, from `{ semantic, lexical, none }`. A surface with
+   no entry is REJECTED. `none` is honest and permitted.
+2. **`none` anywhere ⇒ the verdict is not `PASS`.** Exactly the rule rows 5 and 6 apply
+   to an unreachable consultation. Fixture rows 16/17 are the pair: the same coverage map
+   is RED under `PASS` and GREEN under `DEGRADED`. Being honest costs you the PASS, never
+   the receipt.
+3. **A partial horizon is not a swept one.** `horizon_branches_scanned <
+   horizon_branches_total` with `verdict: PASS` is REJECTED, and claiming the sibling
+   branches with `scanned: 0` over a non-empty horizon is the `attempted: 0` shape.
+
+**What the scan cannot do, and you must not imply otherwise.** It is an exact,
+word-boundary name match. A re-implementation under a *different* name is invisible to
+it; the sibling-branch half matches filenames only, not symbols. If you have reason to
+think the diff re-implements something under a new name, say so as an `asserted` finding
+with a rationale — never as `measured` off the back of this scan.
+
+### §3.B NVIDIA CUDA documentation (triggered)
+
+**Trigger** — any changed path matching `crates/aprender-gpu/**`,
+`crates/aprender-serve/src/cuda/**`, `*cuda*`, `*ptx*`, `*cublas*`, `*fp8*`, `*nvrtc*`;
+or a PR body / commit message matching `sm_\d+`, `cu[A-Z]\w+`, `cuda[A-Z]\w+`, or a GPU
+architecture name.
+
+**Do not evaluate the trigger by eye. Ask the guard**, which owns the patterns and has a
+must-match / must-not-match case table behind them
+(`tests/fixtures/pr-review/cuda-{path,message}-cases.tsv`). This repo's guard regexes have
+been wrong six times; a table caught every one and review caught none:
+
+```bash
+git diff --name-only "$BASE" "$HEAD_SHA" | while IFS= read -r f; do
+  bash scripts/check_pr_review_receipt.sh --match-path "$f" && echo "TRIGGER: $f"
+done
+MSG=$(git log --format=%B "$BASE..$HEAD_SHA")
+bash scripts/check_pr_review_receipt.sh --match-message "$MSG" && echo "TRIGGER: message"
+```
+
+Read the status from the command, never from the tail of a pipeline — `$?` after a pipe
+is the **last** command's status, and this repo has lost time to exactly that twice
+(#2336, #2360).
+
+**The trigger is deliberately over-broad and you will meet that.** It is a
+case-insensitive match on `cuda` anywhere in the path, so a *fixture* named
+`row-01-cuda-not-triggered-on-cuda-diff/` fires it — measured, on this very branch, five
+paths. That is not a bug to route around. The correct response is `status: consulted` with
+a `trigger_reason` naming the false-positive path and a `no-authority-found` query, **not**
+`status: not-triggered`: the guard recomputes the trigger and rejects the receipt
+(fixture row 1). A wide trigger costs one query; a narrowed one costs the 18% regression
+that shipped on an ungrounded stream-ordering claim.
+
+**Required output.** For **every device-behaviour claim**, one of:
+
+- a `cited` entry — the query, the excerpt, the digest; or
+- an explicit `no-authority-found` entry **naming the query that returned nothing**.
+
+The second form is mandatory. Without it, *"the docs said nothing"* and *"I did not ask"*
+are the same artifact — which is the whole of #2754, #2779, #2780 and #2790.
+
+Consult via `mcp__nvidia-cuda-docs__search_cuda_docs`. If that server is unreachable,
+that is row 3 of §3.0: `unreachable`, `executionSuccessful: false`, `DEGRADED`. It is not
+a licence to answer from memory. #2765 (16-row alignment), #2789 (E4M3), #2771 (PTX
+aliasing) and #2786 (GB10 Blackwell) were all asked of memory while the docs server sat
+idle.
+
+### §3.C CRUX — user-facing surface and competitive claims (triggered)
+
+**Trigger**: the diff changes a CLI subcommand or flag, an HTTP route, an MCP tool, a
+config key, or an output format.
+
+**Scope is resolved (§10, 8.2 (a)): match on `category` + the changed surface. Do NOT run
+semantic search over all 277 `contracts/crux-*.yaml`** — that is the resolution the spec
+rejected, and it is also a 277-file read on every PR.
+
+Required per surface: covering contracts, the competitor behaviour from each contract's
+`competitor:` field, `gap_effect: closes | widens | none`, and — where nothing covers the
+surface — `crux_coverage: none`, **which is itself a finding**, not an absence of one.
+
+#### §3.C.1 Comparative performance claims — the `2.93× Ollama` rule
+
+Any claim of the form "N× *competitor*" **anywhere** in the diff, the PR body, the docs or
+the benchmark output must carry a complete comparator block:
+
+```json
+"comparative_claims": [
+  { "claim": "1.21x llama.cpp on aarch64 Q4_K",
+    "comparator": {
+      "command": ["llama-cli", "-m", "…", "-n", "128", "-ngl", "99"],
+      "version": "llama.cpp b4021",
+      "env_sha256": "…", "artifact_sha256": "…",
+      "log_path": "evidence/bench/<run-id>/comparator.log" } } ]
+```
+
+All five fields. **Absent any one of them the claim is reclassified `asserted`, marked
+`unverified_comparative_claim`, and BLOCKS** (§7, class B4; fixture row 4). The book
+published *"2.93× Ollama"* from a harness that never ran Ollama; this is the mechanism
+that makes that unwriteable rather than merely discouraged.
+
+Two things the guard checks that are easy to miss:
+
+- A comparative ratio written into a **finding's message** while
+  `comparative_claims` is empty is itself B4. You cannot state the ratio in prose and
+  omit the provenance.
+- `version` and `artifact_sha256` are **captured, not remembered**. Run the comparator,
+  read its version banner, hash the artifact you actually exercised. And never label a
+  run by intent: `CUDA_VISIBLE_DEVICES` says what was *visible*, never what was *used*.
+
+Before you record a ratio at all, ask whether one input produced it. **One failing input
+is an anecdote** — four neighbouring prompts once inverted a diagnosis from "GPU
+correctness defect" to "the gate sampled a near-tie" (#2359), and a first-reported 2.91×
+on GB10 turned out to be a bimodal median whose honest value was 1.21× (#2567).
+
+### §3.D Mutation — adversarial falsification (scoped)
+
+| the diff touches | requirement | blocking |
+|---|---|---|
+| `scripts/check_*.sh`, `dogfood.sh`, `ci.yml` gate logic, or a `contracts/*.yaml` falsifier | **100% kill** on that guard's committed mutation set | **yes** |
+| Rust source | `cargo mutants --in-diff <diff> --timeout 120 --jobs 4`, capped at `MUTANT_BUDGET=40` | advisory |
+| docs / non-code | not triggered | — |
+
+Bash guards are exercised with `bats-core` fixtures. For the receipt guard itself the
+mutation set already exists and is a derivation, not a list:
+
+```bash
+bash scripts/mutate-guard.sh          # 119/119 on scripts/check_pr_review_receipt.sh
+```
+
+**`attempted: 0` with `status: consulted` is rejected** (fixture row 2). A mutation set
+that matches nothing passes vacuously — the same shape as `pv lint <FILE>` returning PASS
+over zero contracts. If nothing was attempted, the honest encoding is `unreachable` and
+`DEGRADED`, not a clean run.
+
+Record survivors as `{ "mutant": …, "file": …, "line": …, "killed": false }`. A surviving
+mutant on a guard is not a scoring detail: it is a rule the guard *states* and nothing
+*tests*.
+
+---
+
+## §4 Emit the receipt
+
+Two artifacts, under `evidence/pr-review/<pr>/<head_sha>/` — a branch with no PR number
+yet uses `0000`, the convention PRREV-002's evidence already follows:
+
+```
+receipt.intoto.jsonl          # in-toto Statement v1, ONE JSON record on ONE line
+receipt.intoto.jsonl.minisig  # detached minisign signature over it
+findings.sarif                # SARIF 2.1.0, one run per CONSULTED consultation
+```
+
+> **Divergence from the spec, recorded rather than reconciled.** Spec §4 labels the
+> receipt *"DSSE-wrapped"*, but §4.1 shows a **bare** in-toto Statement and §4.3 signs it
+> with a **detached** `minisign` signature — a DSSE envelope carries its signatures
+> inside, in `payload`/`payloadType`/`signatures`. The normative bodies (§4.1, §4.3) and
+> the shipped guard both require the bare Statement: `check_pr_review_receipt.sh` reads
+> `.predicateType` off the top level and validates the file against
+> `schemas/in-toto-statement-v1.json`, so a DSSE envelope would be **rejected**. This
+> file follows §4.1 + §4.3. If DSSE is wanted, it is a spec amendment plus a guard
+> change, not a thing to improvise inside a receipt.
+
+### §4.1 Order matters — SARIF first, then hash, then receipt
+
+`findings_ref.sha256` must equal `sha256(findings.sarif)`, so the SARIF must be **final**
+before the receipt is written. Editing the SARIF afterwards silently invalidates the
+receipt; the guard catches it (positive control `findings-digest`), but only after you
+have wasted the run.
+
+```bash
+OUT="evidence/pr-review/$PR/$HEAD_SHA"; mkdir -p "$OUT"
+# 1. write $OUT/findings.sarif, complete.
+# 2. hash it — read the status from sha256sum, not from a pipeline tail:
+FINDINGS_SHA=$(sha256sum "$OUT/findings.sarif" | cut -d' ' -f1)
+# 3. write $OUT/receipt.intoto.jsonl with that digest, as ONE line:
+jq -c . receipt.pretty.json > "$OUT/receipt.intoto.jsonl"
+```
+
+`jq -c` is not cosmetic. The guard counts **records**, not newlines, and requires exactly
+one: a pretty-printed Statement is many lines and is rejected as "holds N JSON records".
+
+### §4.2 The receipt skeleton
+
+```json
+{ "_type": "https://in-toto.io/Statement/v1",
+  "subject": [ { "name": "git+https://github.com/paiml/aprender",
+                 "digest": { "sha1": "<head_sha>" } } ],
+  "predicateType": "https://paiml.dev/attestations/pr-review/v2",
+  "predicate": {
+    "skill_version": "2.0.0",
+    "attestation_level": "L1-self",
+    "pr": 2783,
+    "base_sha": "<merge-base>", "head_sha": "<head>",
+    "author_actor":   { "kind": "agent", "id": "agent:<model>/<authoring-session>" },
+    "reviewer_actor": { "kind": "agent", "id": "agent:<model>/<review-session>" },
+    "affected_crates": [],
+    "verdict": "PASS|FINDINGS|DEGRADED|BLOCK",
+    "degraded_reason": "<one clause; required whenever verdict is DEGRADED — §9 reads it>",
+    "consultations": {
+      "pmat":     { "status": "consulted", "transport": "cli",
+                    "transport_unavailable": ["mcp: ConnectionRefused"],
+                    "index_commit": "…", "index_is_ancestor": true,
+                    "complexity_delta": [], "tdg_delta": [],
+                    "satd_introduced": [], "duplication_hits": [], "cache_hits": 0,
+                    "duplication_coverage": { "rust": "semantic", "shell": "lexical",
+                        "python": "lexical", "config": "lexical", "docs": "lexical",
+                        "other": "lexical", "sibling_branches": "lexical" },
+                    "duplication_horizon": ["HEAD",
+                        "refs/remotes/origin/* unmerged into origin/main"],
+                    "horizon_branches_total": 0, "horizon_branches_scanned": 0,
+                    "symbols_searched": 0 },
+      "cuda":     { "status": "…", "trigger_reason": "…", "queries": [] },
+      "crux":     { "status": "…", "surfaces": [], "contracts": [],
+                    "gap_effect": "none", "crux_coverage": "covered",
+                    "comparative_claims": [] },
+      "mutation": { "status": "…", "scope": "guard|in-diff|not-triggered",
+                    "attempted": 0, "killed": 0, "survivors": [] } },
+    "findings_ref": { "path": "findings.sarif", "sha256": "<sha256 of findings.sarif>" },
+    "cost": { "input_tokens": 0, "output_tokens": 0, "wall_seconds": 0 } } }
+```
+
+Fields the guard checks that are easy to forget:
+
+- `subject[0].digest.sha1` **must equal** `predicate.head_sha`. A receipt whose subject is
+  a different commit reviews a different commit.
+- `attestation_level` is **`L1-self`**, always. A skill invoked by the agent that wrote
+  the code is self-attestation. SLSA Build L3 requires an isolated builder the tenant
+  cannot influence; claiming it here would be the enforcement theater this repo names as
+  its dominant failure mode (spec R1).
+- `cost` needs all three numeric fields. **Record-only is not unenforced** — §8's four
+  continuous metrics can only be ratcheted from a measured baseline, and a metric nobody
+  records is one nobody can ratchet.
+- `reviewer_actor.id != author_actor.id` (§5, class B2, fixture row 8).
+
+### §4.3 Signing — and the sentence that must accompany it
+
+```bash
+minisign -S -s "$PR_REVIEW_SIGNING_KEY" -m "$OUT/receipt.intoto.jsonl"
+minisign -V -m "$OUT/receipt.intoto.jsonl" -p .github/pr-review.pub    # verify your own
+```
+
+Repo-local key. **No Fulcio, no Rekor, no external transparency log** — an external SaaS
+in the verification path violates the sovereign constraint (spec R2). The transparency log
+is `evidence/pr-review/` under git.
+
+> **The signature proves the receipt came from the CI environment. It does not prove the
+> review was honest.** State this in the PR comment, every time. Cryptographic assurance
+> of provenance is not assurance of diligence, and conflating them would be the most
+> sophisticated form of theater this repository has yet produced — the spec says so in
+> those words, and it is the reason `attestation_level` reads `L1-self` and not something
+> more impressive.
+
+A signed receipt whose consultations are all `not-triggered` on a 4,000-line GPU PR is
+perfectly valid cryptography and a worthless review. The guard catches some of that
+(fixture rows 1, 2, 11, 14). It cannot catch all of it. You are the rest.
+
+### §4.4 Validate your own receipt before you post
+
+Non-optional. The guard runs its positive controls first, so a green from it means
+*"malformed receipts are still being rejected AND yours was accepted"*:
+
+```bash
+bash scripts/check_pr_review_receipt.sh "$OUT"      # exit 0 = ACCEPT
+```
+
+A `REJECT` line names exactly one blocking class (`B1`, `B2`, `B4`, `B6`) and the branch
+that fired. Fix the receipt. **Do not fix the guard** — if you believe the guard is wrong,
+that is a mutation-verified change to `scripts/check_pr_review_receipt.sh` plus a fixture,
+in its own PR, not an edit made to get your own review through.
+
+---
+
+## §5 Author / reviewer separation
+
+The review is a **separate invocation** from the authoring session: fresh context, an
+adversarial stance, and no access to the author's reasoning trace.
+
+| control | rule |
+|---|---|
+| distinct actor | `reviewer_actor.id != author_actor.id` — RED if equal |
+| grounded findings | ≥1 `measured` or `cited` finding on any PR over 200 changed lines |
+| independent audit | 10% of receipts re-reviewed, results under `evidence/pr-review/audit/` |
+
+Self-review is worth close to nothing: intrinsic self-correction degrades reasoning
+(Huang et al., ICLR'24), models self-prefer, and a same-model critic yields ≈0 gain. If
+you wrote the code, **you are not the reviewer** — say so and stop, rather than emitting a
+receipt whose two actor ids you had to invent to differ.
+
+Audit divergence is recorded only. **No threshold until 30 audited receipts exist** — §8
+is instrument-first, and a threshold invented before the measurement is the thing this
+repo has most often mistaken for rigour.
+
+---
+
+## §6 Verdict
+
+| condition | verdict |
+|---|---|
+| any consultation `unreachable`; or a stale index; or a skipped `affected_crates` entry; or `mutation.attempted: 0` | `DEGRADED` |
+| any blocking class (§7) fires | `BLOCK` |
+| findings present, none blocking | `FINDINGS` |
+| all triggered consultations ran, nothing found | `PASS` |
+
+`DEGRADED` and `PASS` are not interchangeable and the guard enforces it: `unreachable`
+plus `PASS` is a rejection (fixture row 5), `unreachable` plus `DEGRADED` is accepted
+(fixture row 6). **Rows 6, 7 and 14 are discrimination cases** — they exist so that
+"reject every receipt" cannot read as a working guard, which is the over-reach that
+already bit PERF-055 and the #2766 delta-gate work.
+
+## §7 Blocking policy — five objective classes, and nothing else
+
+| class | condition |
+|---|---|
+| B1 | missing / schema-invalid / unsigned / internally inconsistent receipt |
+| B2 | `reviewer_actor == author_actor` |
+| B3 | guard mutation score < 100% on a guard-touching PR |
+| B4 | `unverified_comparative_claim` |
+| B6 | `index_is_ancestor: false` with `verdict: PASS` |
+
+Plus: breaking API surface with no semver bump (B5 — no consultation emits it today, and
+the contract records that rather than pretending otherwise).
+
+Every one is machine-decidable. **None is a judgement call**, so none can freeze an active
+investigation the way #2757 and #2766 did. A `FINDINGS` verdict proceeds on a feature
+branch and blocks on a release branch — the release branch is the last boundary and the
+routed-around argument does not apply where the alternative is shipping.
+
+**Admission rule.** A class may block only while its measured precision on the rolling
+sample is ≥90% (Tricorder's ≤10% effective-false-positive bar). A class that falls below
+is demoted to advisory by **editing `contracts/pr-review-skill-v2.yaml`** — a ticket, not
+a silent config change, and never by disabling the gate.
+
+## §8 What to record, and what not to threshold
+
+Four zeros and ones — the line stops on these:
+`guard_mutation_score = 100%` · `receipt_presence = 100%` · `unmarked_claims = 0` ·
+`vacuous_consultations = 0`.
+
+Four instrument-first parameters — **record, do not threshold**, until 30 samples exist:
+`actionable_rate` · `effective_fp_rate` · `audit_divergence` · `cost_per_actionable`.
+
+Inventing a number for the second group is the failure this repo has repeated most: a
+`3 × pooled stddev` bench threshold returned GREEN on the only regression on record and
+its power *fell* as data accumulated (#2675). Fill `cost` honestly and let the baseline
+come from measurement.
+
+---
+
+## §9 The PR comment (spec §12)
+
+One line, exactly this shape:
+
+```
+pr-review v2.0.0 | verdict=<V> | consultations: pmat=<s> cuda=<s> crux=<s> mutation=<s>
+| findings=<n> (cited=<a> measured=<b> asserted=<c>) | index=<sha7> ancestor=<bool>
+| receipt=evidence/pr-review/<pr>/<sha>/receipt.intoto.jsonl (L1-self, signed)
+```
+
+**`DEGRADED` puts the reason FIRST**, before anything else on the line — a reader who
+stops after six words must still learn that this review did not fully run:
+
+```
+DEGRADED: pmat index is not an ancestor of head | pr-review v2.0.0 | verdict=DEGRADED | …
+```
+
+**Generate the line from the receipt. Do not type it.** A hand-written summary can
+disagree with the artifact it summarises, and then the prose is the thing people read:
+
+```bash
+jq -r --slurpfile s "$OUT/findings.sarif" '
+  .predicate as $p | ([$s[0].runs[]?.results[]?]) as $r |
+  (if $p.verdict=="DEGRADED"
+     then "DEGRADED: " + ($p.degraded_reason // "reason not recorded") + " | " else "" end) +
+  "pr-review v" + $p.skill_version + " | verdict=" + $p.verdict +
+  " | consultations: pmat=" + $p.consultations.pmat.status +
+  " cuda=" + $p.consultations.cuda.status +
+  " crux=" + $p.consultations.crux.status +
+  " mutation=" + $p.consultations.mutation.status +
+  " | findings=" + ($r|length|tostring) +
+  " (cited="    + ([$r[]|select(.properties.grounding=="cited")]   |length|tostring) +
+  " measured="  + ([$r[]|select(.properties.grounding=="measured")]|length|tostring) +
+  " asserted="  + ([$r[]|select(.properties.grounding=="asserted")]|length|tostring) + ")" +
+  " | index=" + ($p.consultations.pmat.index_commit // "none" | .[0:7]) +
+  " ancestor=" + ($p.consultations.pmat.index_is_ancestor|tostring) +
+  " | receipt=evidence/pr-review/" + (($p.pr // "none")|tostring) + "/" + $p.head_sha +
+    "/receipt.intoto.jsonl (L1-self, signed)"' "$OUT/receipt.intoto.jsonl"
+```
+
+Note what the counts do: `findings=3 (cited=1 measured=2 asserted=0)` is read off the
+SARIF, so a review that found things but grounded none of them cannot hide behind a
+sentence. A line reading `asserted=n` with `cited=0 measured=0` is a review that consulted
+nothing, and it says so in its own summary.
+
+Immediately beneath the line, both sentences, every time:
+
+> The signature proves this receipt was produced in the CI environment. It does **not**
+> prove the review was honest or complete — `attestation_level` is `L1-self`.
+> Verify it yourself: `bash scripts/check_pr_review_receipt.sh evidence/pr-review/<pr>/<sha>`
+
+Then the findings, each with its grounding mark visible. A finding whose mark is not shown
+to the human is an unmarked claim wearing a receipt.
+
+---
+
+## §10 Ways this review can be theater, and what stops each
+
+| the failure | what stops it |
+|---|---|
+| A confident claim from stale memory | §1 — three marks, no fourth; the guard rejects an unmarked claim |
+| "The docs said nothing" ≡ "I didn't ask" | §3.B `no-authority-found`, naming the query |
+| An unreachable source reading clean | §3.0 row 3 + fixture rows 5/6 |
+| A dead transport hidden by a live one | §3.0 (b) — `transport` / `transport_unavailable` |
+| Re-implementing what already exists | §3.A `duplication_hits` — PERF-055 |
+| A competitor ratio with no comparator | §3.C.1 + B4 — the 2.93× Ollama scar |
+| An index answering about other code | §3.A ancestry + B6 — the 66-commit drift |
+| Self-review flattering itself | §5 + B2 |
+| A green run that attempted nothing | `attempted: 0` rejected; `Skip` is not a pass |
+| A signed receipt read as an honest one | §4.3, stated in the comment, `L1-self` |
+| **This skill being shadowed and never running** | the explicit `name:` in the frontmatter |
+
+The last row is not hypothetical: a user-scope `~/.claude/skills/dogfood/` shadowed this
+repo's release-certifying skill, and hardening it edited a file that never ran (#2361).
+If a change to this file appears to have no effect, ask what else claims the name before
+asking what else is wrong with the change.
+
+## §11 Do not
+
+- **Do not** write a verdict the artifact does not support. The artifact is the review;
+  the prose is a rendering of it.
+- **Do not** relax the guard to pass your own receipt.
+- **Do not** answer a CUDA device-behaviour question from memory because the docs server
+  was slow.
+- **Do not** run semantic search over all 277 CRUX contracts (§10, 8.2 resolved as (a)).
+- **Do not** compute `complexity_delta` from a line scan.
+- **Do not** read an exit status through a pipe, and do not pipe a mutating command into
+  a truncating filter: `producer | grep -q X` can return 141 on SIGPIPE **despite a
+  match**, and a `git commit` piped into `head` dies silently with the file still staged
+  and HEAD unmoved.
+- **Do not** claim `attestation_level` above `L1-self`.
+- **Do not** emit a receipt at all if you authored the diff. Say so, and hand it to a
+  different invocation.
+
+---
+
+## §12 State of this skill on the commit that adds it
+
+Written down because a skill that reads as operational while one prerequisite is missing
+is the #2504 shape, and the remedy this repo settled on is to put the state where a reader
+cannot miss it.
+
+**The emit recipe above is executed, not described.** `evidence/prrev-005/` holds the
+transcript: a receipt built by following §4 step for step, over the real repository at
+`5928ec2a7`, was **ACCEPTED** by `scripts/check_pr_review_receipt.sh` with all four of the
+guard's positive controls firing first. Four negative controls were then run against the
+same real diff — not the synthetic fixture repo — each re-signed so it could only fire on
+the branch it names:
+
+| mutation of the accepted receipt | guard |
+|---|---|
+| `cuda.status: not-triggered` | REJECT — *"its S3.B trigger fires on this diff"* |
+| `verdict: PASS` with `mutation.status: unreachable` | REJECT — *"unreachable but the verdict is PASS"* |
+| a finding's `properties.grounding` deleted | REJECT — *"carries no properties.grounding"* |
+| `excerpt_sha256` corrupted | REJECT — *"excerpt_sha256 … is not verified"* |
+
+Those are §3.0's three-state rule, §1's grounding mark and §1.1's verified citation,
+each shown to be load-bearing on this repository rather than on a fixture.
+
+**Two things are missing, and until they land no receipt passes in CI:**
+
+1. **`.github/pr-review.pub` does not exist.** The guard defaults `PR_REVIEW_PUBKEY` to it
+   and rejects with *"public key … is absent; an unverifiable signature is not a verified
+   one"*. The conformance run above therefore used a throwaway key via `PR_REVIEW_PUBKEY`,
+   which proves the mechanics and proves nothing about CI provenance. Publishing the
+   public key and provisioning `PR_REVIEW_SIGNING_KEY` is **PRREV-006**.
+2. **Nothing invokes this skill from `ci.yml`.** Also PRREV-006 — and when it lands it
+   must be a **job-level `if:`, never a workflow-level `paths:` filter**: a path-filtered
+   required check never reports, and branch protection then blocks every PR forever.
+
+**Not yet done: the backtest (PRREV-007).** The spec is explicit that §9 step 7 is the
+acceptance test for the whole design — run this skill against ≥3 merged PRs from
+APR-PERF-GATE-001 and require it to catch ≥1 real defect those reviews missed. Until that
+has run, the evidence that this skill catches the ungrounded CUDA stream claim, the
+PERF-055 duplication and the never-ran-Ollama benchmark is the spec's own reasoning about
+them, which is not evidence. Genchi genbutsu: go and look at the actual PRs.

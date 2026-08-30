@@ -59,6 +59,7 @@ HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$HERE/.." && pwd)
 GUARD_REL=scripts/check_pr_review_receipt.sh
 BATS_REL=tests/pr-review.bats
+SCAN_REL=scripts/pr_review_duplication_scan.sh
 GUARD="$ROOT/$GUARD_REL"
 
 JOBS=12
@@ -242,6 +243,11 @@ build_tree() {
   cp -a "$ROOT/tests/fixtures/pr-review" "$d/tests/fixtures/pr-review"
   cp -a "$ROOT/$BATS_REL" "$d/$BATS_REL"
   cp -a "$GUARD" "$d/$GUARD_REL"
+  # The duplication scanner is NOT mutated here - it is a producer, not a guard, and no
+  # verdict rests on it. It is copied because tests/pr-review.bats exercises it, and a
+  # mutant tree missing it would fail the baseline for a reason that has nothing to do
+  # with the mutant. That is failure mode 2 at the top of this file, exactly.
+  cp -a "$ROOT/$SCAN_REL" "$d/$SCAN_REL"
 }
 
 # ---------------------------------------------------------------------------

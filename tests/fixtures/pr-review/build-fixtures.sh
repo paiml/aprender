@@ -101,8 +101,23 @@ receipt() {
 JSON
 }
 
-PMAT_OK="{\"status\":\"consulted\",\"index_commit\":\"$C1\",\"index_is_ancestor\":true,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0}"
-PMAT_STALE="{\"status\":\"consulted\",\"index_commit\":\"$C3\",\"index_is_ancestor\":false,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0}"
+# S3.A duplication coverage (PRREV-009 / backtest F4). Every surface carries a method,
+# because a surface with NO entry is the silently-absent coverage that made
+# `duplication_hits: []` read as "nothing like this exists" on a diff that was 48.8%
+# shell, python and yaml - none of which pmat's semantic index can see.
+#
+# total/scanned are 0/0 here and that is CORRECT rather than convenient: the fixture
+# repository has one remote ref (origin/main) and no unmerged sibling, so the honest
+# denominator is zero. The horizon rules that need a non-zero denominator are exercised
+# by the branch probes in tests/pr-review.bats, not by these rows.
+DUP_FULL='"duplication_coverage":{"rust":"semantic","shell":"lexical","python":"lexical","config":"lexical","docs":"lexical","other":"lexical","sibling_branches":"lexical"},"duplication_horizon":["HEAD","refs/remotes/origin/* unmerged into origin/main"],"horizon_branches_total":0,"horizon_branches_scanned":0,"symbols_searched":4'
+# The same run with the shell surface unreachable - e.g. git grep unavailable. Rows 16
+# and 17 are the same coverage under two different verdicts.
+DUP_SHELL_NONE='"duplication_coverage":{"rust":"semantic","shell":"none","python":"none","config":"none","docs":"none","other":"none","sibling_branches":"lexical"},"duplication_horizon":["HEAD","refs/remotes/origin/* unmerged into origin/main"],"horizon_branches_total":0,"horizon_branches_scanned":0,"symbols_searched":4'
+
+PMAT_OK="{\"status\":\"consulted\",\"index_commit\":\"$C1\",\"index_is_ancestor\":true,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0,$DUP_FULL}"
+PMAT_STALE="{\"status\":\"consulted\",\"index_commit\":\"$C3\",\"index_is_ancestor\":false,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0,$DUP_FULL}"
+PMAT_SHELL_BLIND="{\"status\":\"consulted\",\"index_commit\":\"$C1\",\"index_is_ancestor\":true,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0,$DUP_SHELL_NONE}"
 PMAT_UNREACHABLE='{"status":"unreachable","trigger_reason":"pmat MCP server: ConnectionRefused"}'
 # NOT a PMAT_NT. The previous revision of this file carried one, used by row 7, whose
 # own trigger_reason read "pmat is unconditional; not-triggered is never correct for it"
@@ -516,6 +531,42 @@ sarif_empty
 )
 RCPT=$(receipt "$P1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_SAW_BANNER_NO_CLAIM" "$MUT_OK")
 emit row-22-printed-ratio-not-the-quoted-one "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 23 - a duplication surface that could not be searched, verdict PASS -> RED B1
+#
+# NOT in spec S6.3's fourteen rows. It is owed by PRREV-007's backtest finding F4:
+# `duplication_hits: []` on a diff that is 48.8% shell/python/yaml meant "the half pmat
+# can see is clean" and read as "nothing like this exists". S3.0's three-state rule
+# applied to this field says the unsearched surface must not sit under a PASS - it is
+# the same rule rows 5 and 6 apply to an unreachable consultation, one level down.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_SHELL_BLIND" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
+emit row-23-duplication-surface-unsearched-verdict-pass "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 24 - the SAME unsearched surface, verdict DEGRADED             -> GREEN
+# DISCRIMINATION CASE for row 23. Without it, "reject every receipt that admits a gap" reads
+# green - and the rule would punish the honest receipt exactly as hard as the
+# silent one, which is how a coverage field learns to stay empty.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [ { "tool": { "driver": { "name": "pmat" } },
+              "invocations": [ { "executionSuccessful": false,
+                "toolExecutionNotifications": [ { "level": "error",
+                  "message": { "text": "pr_review_duplication_scan.sh: git grep unavailable; the shell, python, config, docs and other surfaces were NOT searched. Verdict DEGRADED." } } ] } ],
+              "results": [] } ] }
+JSON
+
+)
+RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_SHELL_BLIND" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
+emit row-24-duplication-surface-unsearched-verdict-degraded "$SARIF" "$RCPT"
 
 # ===========================================================================
 # THE POSITIVE CONTROLS (S6.1) - not rows of the S6.3 table.

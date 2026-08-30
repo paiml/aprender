@@ -643,6 +643,91 @@ validate_receipt() {
     fi
   fi
 
+  # --- B1: S3.A duplication coverage is RECORDED, never merely absent. -------
+  #
+  # PRREV-007 F4 measured two holes in the field S3.A calls "the highest-EV field in the
+  # receipt", and both have the same shape:
+  #
+  #   (a) pmat's semantic index is Rust-only. On #2742 - 46 files, 7,244 insertions -
+  #       3,533 of those insertions (48.8%) are sh, py and yaml, and a `pmat query`
+  #       cannot return any of them. `duplication_hits: []` therefore meant "the half I
+  #       can see is clean" and READ as "nothing like this exists".
+  #   (b) prior art on an UNMERGED SIBLING BRANCH is invisible by construction. #2781
+  #       found #2742's only because #2742 had merged 17 hours earlier. Luck, not
+  #       mechanism.
+  #
+  # S3.0 applied to this field: it must not be possible to read "searched and found
+  # nothing" as identical to "could not search". So the coverage the run ACHIEVED is
+  # recorded per surface, an unrecorded coverage claim is rejected, and a surface the run
+  # could not reach cannot sit under a PASS - exactly the rule rows 5 and 6 already
+  # apply to an unreachable consultation.
+  #
+  # scripts/pr_review_duplication_scan.sh produces this block. The guard does NOT re-run
+  # it: a gate that recomputes a 19-second sweep on every receipt is a gate that gets
+  # routed around, and the attestation is L1-self for exactly this class of field.
+  if [ "$pmat_st" = "consulted" ]; then
+    local cov_missing cov_bad cov_none dup_sib dup_scanned dup_total
+    jq -e '.predicate.consultations.pmat.duplication_hits | type == "array"' "$rcpt" >/dev/null 2>&1 \
+      || reject B1 "pmat.status is consulted but duplication_hits is not an array; S3.A requires it present even when empty" || return 1
+
+    jq -e '.predicate.consultations.pmat.duplication_coverage | (type == "object") and (length > 0)' "$rcpt" >/dev/null 2>&1 \
+      || reject B1 "pmat.status is consulted but duplication_coverage is absent; an unrecorded coverage claim cannot be told apart from a searched-and-empty one, and S3.0 forbids exactly that (F4)" || return 1
+
+    cov_missing=$(jq -r '(["rust","shell","python","config","docs","other","sibling_branches"]
+                          - (.predicate.consultations.pmat.duplication_coverage | keys)) | join(", ")' "$rcpt")
+    [ -z "$cov_missing" ] \
+      || reject B1 "duplication_coverage records no verdict for: $cov_missing; a surface with no entry is the silently-absent coverage F4 exists to stop" || return 1
+
+    # `.value` is bound to $v FIRST. Inside `["..."] | index(f)`, jq evaluates f with the
+    # ARRAY as input, so a bare `.value` there reads the array's non-existent .value,
+    # errors, and the check silently passes over everything. The dup-cov-bad-method probe
+    # caught exactly that: with the unbound form the guard ACCEPTED "shell": "yes".
+    cov_bad=$(jq -r '.predicate.consultations.pmat.duplication_coverage | to_entries
+                     | map(select(.value as $v | (["semantic","lexical","none"] | index($v | tostring)) == null))
+                     | map(.key + "=" + (.value | tostring)) | join(", ")' "$rcpt")
+    [ -z "$cov_bad" ] \
+      || reject B1 "duplication_coverage holds a method outside { semantic, lexical, none }: $cov_bad" || return 1
+
+    cov_none=$(jq -r '.predicate.consultations.pmat.duplication_coverage | to_entries
+                      | map(select(.value == "none")) | map(.key) | join(", ")' "$rcpt")
+    if [ -n "$cov_none" ] && [ "$verdict" = "PASS" ]; then
+      reject B1 "duplication_coverage could not search [$cov_none] and the verdict is PASS; a surface that was not searched must read DEGRADED, the same rule rows 5 and 6 apply to an unreachable consultation (S3.0)" || return 1
+    fi
+
+    jq -e '.predicate.consultations.pmat.duplication_horizon
+           | (type == "array") and (length > 0) and (map(type == "string") | all)' "$rcpt" >/dev/null 2>&1 \
+      || reject B1 "duplication_horizon is absent or is not a non-empty array of refspecs; an unstated horizon makes 'nothing found' and 'did not look off this branch' the same artifact (F4)" || return 1
+
+    # WHOLE numbers, and the `floor` clauses are not decoration. The two rules below
+    # compare these with `[ -lt ]`, which cannot read "2.0": it errors, the `if` reads
+    # false, and BOTH horizon rules are skipped - so a receipt writing
+    # `scanned: 2.0, total: 40` would sail past the capped-horizon check under a PASS.
+    # A guard that fails OPEN on a value its own type check admitted is the class this
+    # whole file exists to remove, so the type check admits integers only.
+    jq -e '.predicate.consultations.pmat
+           | (.horizon_branches_total | type == "number") and (.horizon_branches_scanned | type == "number")
+             and ((.horizon_branches_total | floor) == .horizon_branches_total)
+             and ((.horizon_branches_scanned | floor) == .horizon_branches_scanned)
+             and (.horizon_branches_scanned >= 0) and (.horizon_branches_scanned <= .horizon_branches_total)' \
+       "$rcpt" >/dev/null 2>&1 \
+      || reject B1 "horizon_branches_total and horizon_branches_scanned must both be whole numbers with 0 <= scanned <= total; the horizon's denominator is what makes a partial sweep visible, and a fractional count would make the shell comparisons below error and skip" || return 1
+
+    dup_sib=$(jq -r '.predicate.consultations.pmat.duplication_coverage.sibling_branches // ""' "$rcpt")
+    dup_scanned=$(jq -r '.predicate.consultations.pmat.horizon_branches_scanned' "$rcpt")
+    dup_total=$(jq -r '.predicate.consultations.pmat.horizon_branches_total' "$rcpt")
+
+    if [ "$dup_sib" != "none" ] && [ "$dup_scanned" -eq 0 ] && [ "$dup_total" -gt 0 ]; then
+      reject B1 "duplication_coverage claims the sibling branches were searched ($dup_sib) with horizon_branches_scanned=0 of $dup_total; a sweep that attempted nothing passes vacuously, which S3.D already calls DEGRADED for mutation" || return 1
+    fi
+
+    if [ "$dup_scanned" -lt "$dup_total" ] && [ "$verdict" = "PASS" ]; then
+      reject B1 "the horizon sweep covered $dup_scanned of $dup_total sibling branches and the verdict is PASS; the branches it skipped were not searched, and unsearched is DEGRADED (F4)" || return 1
+    fi
+
+    jq -e '.predicate.consultations.pmat.symbols_searched | type == "number"' "$rcpt" >/dev/null 2>&1 \
+      || reject B1 "pmat.symbols_searched must be a number; a scan whose needle count is unrecorded cannot have its precision judged, and record-only is not unenforced" || return 1
+  fi
+
   # --- S1 / S4.2: every claim carries a mark, and a cited mark is verified. --
   local v
   while IFS= read -r v; do
