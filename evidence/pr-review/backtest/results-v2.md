@@ -51,9 +51,14 @@ divergence in prose ("the PERF-055 duplication did not happen") and then went on
 
 Backtesting a named defect means backtesting the PR that carries it. So the spine here is
 **four** merged PRs — #2771, #2781, #2763, #2742 — which satisfies §9's "≥3 merged PRs"
-with #2781 kept in full because F7 is only visible on it. All four have
-`reviews=0, comments=0`; "defects those reviews missed" continues to mean defects the
-author's own verification section missed.
+with #2781 kept in full because F7 is only visible on it.
+
+Epic membership checked from the commit messages, not assumed: #2771 names
+`github_issue 2706` + PERF-009/PERF-050, #2781 names 2706 + PERF-055, #2763 names
+`APR-PERF-GATE-001` outright, and #2742's merge commit names `APR-PERF-GATE-001` and
+PERF-004 … PERF-019 (PERF-019 carries `github_issue: 2706` in `roadmap.yaml`). All four
+have **`reviews=0, comments=0`**; "defects those reviews missed" continues to mean defects
+the author's own verification section missed.
 
 `pmat`'s MCP server was `ConnectionRefused` for this entire run — §3.0's row 3 on day one,
 as designed. The `pmat` CLI (3.34.0) is present; the semantic half of §3.A was not
@@ -177,6 +182,13 @@ benches/*|*/benches/*|examples/*|*/examples/*) return 1 ;;
 book is **`book/src/examples/` — 153 of the book's 441 published `.md` pages, 34.7%** — and
 that is where the claim was published. `match_comparative` fires on the line; the surface
 predicate throws it away.
+
+*Published* is checked, not assumed: **all 153 appear in `book/src/SUMMARY.md`** on
+`origin/main`, so every one is a rendered mdBook chapter, and
+`- [Case Study: Showcase Benchmark](./examples/showcase-benchmark.md)` was in `SUMMARY.md`
+at `da069a25f` itself. `book/src/examples/` is the only excluded subtree in the book — no
+`tests/`, `benches/` or `fixtures/` directory exists there — so the 34.7% is entirely this
+one exclusion.
 
 **Case table, run against the guard's own `--match-shipped-surface`** (14 rows,
 `evidence/pr-review/backtest/shipped-surface-f6-cases.tsv`): **12 ok, 2 FAIL, both
