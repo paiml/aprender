@@ -32,7 +32,7 @@ PRREV-007's own account of #2781** — that PR's prior art was never reachable a
 boundary §2 mandates, and the earlier backtest believed otherwise because it measured in a
 worktree sitting on a descendant of main. F8 is a **dead validation branch the merge itself
 created**, which took `guard_mutation_score` to 183/184 while `bats` stayed 112/0; it is
-fixed in this branch.
+fixed here and the re-derived 182-mutant set is back to **100%**.
 
 **A fourth catch surfaced from correcting this report's own prose** — see "Duplication
 precision", where a sentence written from the needle names rather than from the tree turned
@@ -393,8 +393,23 @@ And it is, precisely, **the defect F4 exists to detect — two implementations o
 each green against its own copy — inside the guard that implements F4.** Recorded rather
 than quietly deleted.
 
-**Fix:** remove the PRREV-009 branch and leave a comment at the site pointing 129 lines up,
-so the next per-field check is added to the existing list rather than beside it.
+**Fix, applied in this branch:** the PRREV-009 branch is removed and the site keeps a
+comment pointing 129 lines up, so the next per-field check is added to the existing list
+rather than beside it.
+
+**Re-verified in the widened scope, because the old proof does not transfer.** The set
+re-derives its sites by rescanning, so it dropped to 182 mutants — exactly the two at the
+removed site and nothing else:
+
+```
+baseline GREEN: 112 tests, 0 failures      (in a mutant tree, before any mutant ran)
+attempted 182   killed 182   survived 0   invalid 0
+guard_mutation_score = 100% (182/182)
+```
+
+Both runs are committed verbatim: `guard-mutation-run1.tsv` (184/183/1, the FAIL) and
+`guard-mutation-run2.tsv` (182/182/0). Keeping the failing run is the point — a score of
+100% that was 99.46% an hour earlier is only meaningful with the earlier number beside it.
 
 ---
 
@@ -468,14 +483,18 @@ the sibling sweep is not the only half that pays.**
 | **F5** — B4's regex weaker than `RATIO_RE` | **yes** | `36.9x over FasterTransformer` now matches; 35 firings on #2763 |
 | **F6** — B4 excludes `book/src/examples/` | **NEW, open** | 0→2 counterfactual on `da069a25f`; 2/14 must-match failures |
 | **F7** — `merge-base..origin/main` in no horizon | **NEW, open** | #2781's blind region is exactly #2742: 1 commit, 46 files, 11 of them the prior art |
-| **F8** — the merge left a dead validation branch | **NEW, FIXED in this branch** | `reject-50-drop` SURVIVED: 184 attempted, 183 killed. Removed; re-run is 182 mutants |
+| **F8** — the merge left a dead validation branch | **NEW, FIXED and re-verified** | `reject-50-drop` SURVIVED at 184/183/1; removed, and the re-derived set is **182/182/0 = 100%** |
 
 ---
 
 ## What did NOT go wrong
 
 - The merged tree's fixture suite is **112 tests, 0 failures**, and `mutate-guard.sh`'s
-  baseline proved GREEN in a mutant tree before a single mutant ran.
+  baseline proved GREEN in a mutant tree before a single mutant ran — in **both** runs, so
+  the 183/184 was a real survivor and not a broken harness.
+- `mutate-guard.sh` derives its sites by rescanning rather than from a list, which is the
+  only reason F8 was found at all: nobody would have thought to add a mutant for a rule
+  that was created by a merge conflict resolution twenty minutes earlier.
 - The §3.B trigger discriminates on real PRs: 2/2 must-match, 2/2 must-not-match, both on
   paths and on commit messages.
 - The guard was live in every probe: 4/4 positive controls fired before each verdict, and
@@ -512,22 +531,19 @@ this time against `da069a25f`, the commit that actually published it, rather tha
 fixture — is **still accepted**, because B4's surface predicate discards 34.7% of the
 published book.
 
-**`guard_mutation_score` on the merged tree was 183/184 = 99.46%, which is a FAIL.** §8
-fixes it at 100% with no ratchet, and §7 makes a sub-100% score on a guard-touching PR a
-blocking class. The survivor (F8) is removed in this branch and the set re-run at 182
-mutants; **that re-run's result is the number that counts, and until it reads 182/182 the
-score is not a pass.** A partial mutation run is not a mutation score — the same rule as
-`Skip` not being a pass.
+**`guard_mutation_score` is 100% (182/182) — but only after a fix.** On the merged tree as
+handed over it measured **183/184 = 99.46%, a FAIL**: §8 fixes the metric at 100% with no
+ratchet and §7 makes a sub-100% score on a guard-touching PR a blocking class. The survivor
+was F8, a dead branch the merge itself created. It is removed here, `bats` is 112/0 after
+the removal, and the re-derived 182-mutant set is **182 killed, 0 survived, 0 invalid**.
+The brief's constraint is met — by repair, not by inheritance.
 
-**It is NOT safe to enable.** Three things must change first:
+**It is NOT safe to enable.** F8 is closed; two things still must change:
 
 - **F6 (blocking-class, one line):** exempt `book/**` from the Rust-layout exclusions, add
   a `mutate-guard.sh` mutant that puts `book/src/examples/` back out of scope, and add a
   fixture row publishing under `book/src/examples/`. Precision is already measured: 2 true
   positives on the scar commit, 0 false positives across 153 current pages and 300 commits.
-- **F8 (done here, needs its re-run to land):** the dead branch is removed and `bats` is
-  112/0 after the removal; the 182-mutant re-run must read 182/182 before the score can be
-  claimed.
 - **F7 (design, not a patch):** decide whether `merge-base..origin/main` is swept or merely
   recorded. Either is acceptable; **silence is not**, because the receipt currently reads
   `duplication_horizon: ["HEAD", "…unmerged into origin/main"]` under a `PASS` while a
