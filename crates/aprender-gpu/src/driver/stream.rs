@@ -14,7 +14,7 @@
 //! [2] Sourouri et al. (ICPADS 2014) demonstrates that overlapping computation
 //!     with communication via CUDA streams is essential for hiding PCIe latency.
 
-use std::ffi::c_void;
+use std::ffi::{c_uint, c_void};
 use std::ptr;
 
 use super::context::{get_driver, CudaContext};
@@ -22,7 +22,7 @@ use super::graph::{CaptureMode, CudaGraph, CudaGraphExec};
 use super::module::CudaModule;
 use super::sys::{
     CUevent, CUfunction, CUstream, CudaDriver, CUDA_ERROR_NOT_READY, CU_EVENT_DISABLE_TIMING,
-    CU_STREAM_NON_BLOCKING,
+    CU_STREAM_DEFAULT, CU_STREAM_NON_BLOCKING,
 };
 use super::types::LaunchConfig;
 use crate::GpuError;
@@ -48,10 +48,38 @@ pub struct CudaStream {
 unsafe impl Send for CudaStream {}
 unsafe impl Sync for CudaStream {}
 
+/// PERF-053 (aprender#2767): choose the `cuStreamCreate` flags.
+///
+/// `CU_STREAM_NON_BLOCKING` is explicitly EXCLUDED from legacy default-stream ordering, while
+/// `GpuBuffer::copy_from_host` / `copy_to_host` are `cuMemcpyHtoD` / `cuMemcpyDtoH` -- LEGACY
+/// stream transfers. A non-blocking stream therefore does not order against them, so every host
+/// transfer in this crate races whatever kernels are in flight, while the surrounding code is
+/// written throughout as though the transfers were ordered against it.
+///
+/// Measured at the level a user sees (aprender#2767): ten rounds of four concurrent IDENTICAL
+/// greedy requests returned **11 distinct continuations out of 40** under `CU_STREAM_NON_BLOCKING`,
+/// most of them garbage, against **1 out of 40** -- the correct answer -- under
+/// `CU_STREAM_DEFAULT`. So `CU_STREAM_DEFAULT` is the default here.
+///
+/// **This is not free.** The same measurement put wall-clock aggregate throughput at 1.006x of the
+/// non-blocking arm at c=1 (no measurable cost), **0.893x at c=4** and **0.817x at c=8**, ranges
+/// disjoint at both. `APR_STREAM_NONBLOCKING=1` restores the old, faster, RACY behaviour so that
+/// cost stays reproducible in ONE binary rather than across two builds. It is a measurement knob,
+/// not a supported production setting: it is known to return wrong answers under concurrency.
+#[must_use]
+pub fn stream_create_flags(nonblocking_env: Option<&str>) -> c_uint {
+    if nonblocking_env == Some("1") {
+        CU_STREAM_NON_BLOCKING
+    } else {
+        CU_STREAM_DEFAULT
+    }
+}
+
 impl CudaStream {
     /// Create a new CUDA stream
     ///
-    /// Creates a non-blocking stream that doesn't synchronize with stream 0.
+    /// Creates a stream that IS ordered against the legacy default stream, because this
+    /// crate's host transfers are legacy-stream transfers. See [`stream_create_flags`].
     ///
     /// # Errors
     ///
@@ -60,20 +88,7 @@ impl CudaStream {
         let driver = get_driver()?;
 
         let mut stream: CUstream = ptr::null_mut();
-        // PERF-050 (aprender#2753): CU_STREAM_NON_BLOCKING is explicitly excluded from legacy
-        // default-stream ordering, while `GpuBuffer::copy_from_host` / `copy_to_host` are
-        // `cuMemcpyHtoD` / `cuMemcpyDtoH` -- LEGACY-stream transfers. So every host transfer in
-        // this crate races whatever kernels are in flight on this stream, and the surrounding
-        // code is written as though the transfers were ordered against it.
-        //
-        // `APR_STREAM_LEGACY=1` creates the stream with CU_STREAM_DEFAULT instead, restoring the
-        // implicit ordering that code assumes. Kept as a knob so the two can be compared in ONE
-        // binary rather than across two builds.
-        let flags = if std::env::var("APR_STREAM_LEGACY").as_deref() == Ok("1") {
-            crate::driver::sys::CU_STREAM_DEFAULT
-        } else {
-            CU_STREAM_NON_BLOCKING
-        };
+        let flags = stream_create_flags(std::env::var("APR_STREAM_NONBLOCKING").ok().as_deref());
         // SAFETY: stream pointer is valid
         let result = unsafe { (driver.cuStreamCreate)(&mut stream, flags) };
         CudaDriver::check(result).map_err(|e| GpuError::StreamCreate(e.to_string()))?;
@@ -396,5 +411,45 @@ mod tests {
     fn test_stream_requires_cuda_feature() {
         // This test verifies the module compiles without cuda feature
         assert!(true);
+    }
+
+    // ------------------------------------------------------------------
+    // PERF-053 (aprender#2767): the ordering default, at the flag level.
+    //
+    // This is the SHAPE half of the falsification. It cannot see a race, so
+    // it is not the proof -- that is
+    // `aprender-serve/tests/falsify_stream_ordering_2767.rs`, which requires a
+    // GPU. What this pins is that the default is CU_STREAM_DEFAULT and that the
+    // escape hatch is opt-IN, on a host with no CUDA at all.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn perf053_default_stream_flag_is_legacy_ordered() {
+        // Unset env => ordered. This is the line the whole ticket is about.
+        assert_eq!(stream_create_flags(None), CU_STREAM_DEFAULT);
+    }
+
+    #[test]
+    fn perf053_nonblocking_is_opt_in_only() {
+        assert_eq!(stream_create_flags(Some("1")), CU_STREAM_NON_BLOCKING);
+        // Discrimination: anything that is not exactly "1" must NOT silently
+        // re-arm the racy path. A truthy-looking value is the classic way an
+        // opt-in knob turns itself back on.
+        for v in ["0", "", "true", "yes", "on", "TRUE", "2", "1 ", " 1"] {
+            assert_eq!(
+                stream_create_flags(Some(v)),
+                CU_STREAM_DEFAULT,
+                "APR_STREAM_NONBLOCKING={v:?} must not select the racy non-blocking path"
+            );
+        }
+    }
+
+    #[test]
+    fn perf053_the_two_flags_actually_differ() {
+        // Guard against the whole knob collapsing to a no-op if the two
+        // constants were ever defined the same. Without this, both tests above
+        // would pass on a tree where the escape hatch does nothing.
+        assert_ne!(CU_STREAM_DEFAULT, CU_STREAM_NON_BLOCKING);
+        assert_eq!(CU_STREAM_DEFAULT, 0);
     }
 }
