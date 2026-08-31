@@ -167,6 +167,41 @@ jobs:
         run: |
           nice -n 19 cargo test -p aprender-train --features cuda --lib --release cuda_loss_window
 
+      # PERF-053 / aprender#2767: repeated IDENTICAL greedy batches must return the SAME
+      # continuation. Before the CU_STREAM_DEFAULT default this returned 11 distinct
+      # continuations out of 40, most of them garbage, because this crate's host transfers
+      # (cuMemcpyHtoD/DtoH) are legacy-stream and do not order against a non-blocking stream.
+      #
+      # The test self-skips when it finds no usable GPU model, so the model is resolved and
+      # checked HERE. A skip would be a green that proves nothing, which is the exact failure
+      # mode this whole nightly exists to remove.
+      - name: PERF-053 - batched decode determinism falsifier (aprender#2767)
+        if: steps.decide.outputs.proceed == 'true'
+        env:
+          # Keep m >= 4 off the cuBLAS decode route, whose divergence at m >= 4 is a separate
+          # named defect (contracts/continuous-batching-v1.yaml, CB-006 round 9).
+          CUBLAS_GEMM_THRESHOLD: "32"
+        run: |
+          set -euo pipefail
+          gguf="${{ vars.APR_STREAM_FALSIFY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' }}"
+          if [ -f "$gguf" ]; then
+            model="$gguf"
+          elif [ -f "$APR_PARITY_MODEL" ]; then
+            model="$APR_PARITY_MODEL"
+          else
+            # ENV, not a code verdict -- but still exit 1. A probe that cannot run must not
+            # be silent.
+            echo "::error::PERF-053 UNMEASURABLE on ${{ matrix.name }} (provisioning, not a code defect): neither $gguf nor $APR_PARITY_MODEL is present"
+            exit 1
+          fi
+          echo "PERF-053 model: $model"
+          # Flag-level first: no GPU needed, but the module only exists under `cuda`, and
+          # ci.yml EXCLUDES aprender-gpu from the workspace --lib run. Without this line the
+          # three perf053_* unit tests never execute anywhere.
+          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release perf053
+          APR_FALSIFY_MODEL="$model" nice -n 19 cargo test -p aprender-serve --features cuda \
+            --release --test falsify_stream_ordering_2767 -- --nocapture
+
       # Pillar-4 marquee: apr decode throughput against a resident ollama.
       #
       # THIS MOVED FROM ada-4090 TO gx10, and the reason it CAN move is that the
