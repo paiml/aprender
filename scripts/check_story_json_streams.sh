@@ -49,7 +49,7 @@ want "RC_ERR is stderr only" "ERRLINE" "$RC_ERR"
 # A Rust panic is written to STDERR. If RC_ALL dropped it, the story would stop
 # detecting panics - a strictly worse failure than the one being fixed here.
 run_cmd 10 bash -c "echo normal; echo \"thread 'main' panicked at src/x.rs:1:1\" >&2"
-if printf '%s\n' "$RC_ALL" | grep -qE 'thread.*panicked'; then
+if grep -qE 'thread.*panicked' <<< "$RC_ALL" ; then
   ok "RC_ALL still sees a panic written to stderr"
 else
   bad "RC_ALL still sees a panic written to stderr" "match" "$RC_ALL"

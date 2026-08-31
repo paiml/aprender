@@ -64,7 +64,7 @@ esac
 GPU_BACKEND="none"
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
     GPU_BACKEND="cuda"
-elif $IS_MACOS && system_profiler SPDisplaysDataType 2>/dev/null | grep -q "Metal"; then
+elif $IS_MACOS && grep -q "Metal" <<< "$(system_profiler SPDisplaysDataType 2>/dev/null)"; then
     GPU_BACKEND="wgpu"  # Metal via WGPU on macOS
 fi
 
@@ -321,8 +321,8 @@ verify_simd_capabilities() {
         [[ "$flags" == *"avx512f"* ]] && avx512f=true
         [[ "$flags" == *"avx512bw"* ]] && avx512bw=true
     elif $IS_MACOS; then
-        avx512f=$(sysctl -n hw.optional.avx512f 2>/dev/null | grep -q 1 && echo true || echo false)
-        avx2=$(sysctl -n hw.optional.avx2_0 2>/dev/null | grep -q 1 && echo true || echo false)
+        avx512f=$(grep -q 1 <<< "$(sysctl -n hw.optional.avx512f 2>/dev/null)" && echo true || echo false)
+        avx2=$(grep -q 1 <<< "$(sysctl -n hw.optional.avx2_0 2>/dev/null)" && echo true || echo false)
     fi
 
     # Log to renacer trace

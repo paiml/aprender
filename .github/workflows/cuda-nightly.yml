@@ -213,7 +213,7 @@ jobs:
             echo "::error::APR_GGUF not found on gx10: $APR_GGUF"
             exit 1
           fi
-          "$HOME/.local/bin/ollama" list | grep -q "$OLLAMA_MODEL" || {
+          grep -q "$OLLAMA_MODEL" <<< "$("$HOME/.local/bin/ollama" list)" || {
             echo "::error::ollama model not pulled: $OLLAMA_MODEL"
             exit 1
           }

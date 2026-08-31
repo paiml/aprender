@@ -59,7 +59,7 @@ ensure_target() {
         echo "      Install rustup, or run the cargo command in this file by hand." >&2
         return 1
     fi
-    if rustup target list --installed 2> /dev/null | grep -qx "${TARGET}"; then
+    if grep -qx "${TARGET}" <<< "$(rustup target list --installed 2> /dev/null)" ; then
         return 0
     fi
     echo "note: ${TARGET} not installed; adding it."

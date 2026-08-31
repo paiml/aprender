@@ -221,7 +221,7 @@ for h in $HOSTS; do
                     while read -r lane ratio verdict; do
                         printf '      %-7s parity %-6s %sx vs llama.cpp  %s\n' "$h" "$lane" "$ratio" "$verdict"
                     done
-                    if python3 "$REPO_BENCH_VALIDATOR" --parity-ratio "$f" 2>/dev/null | grep -q ' FAIL$'; then
+                    if grep -q ' FAIL$' <<< "$(python3 "$REPO_BENCH_VALIDATOR" --parity-ratio "$f" 2>/dev/null)" ; then
                         printf 'FAIL  %-7s a parity lane is below its declared floor\n' "$h"
                         rc=1
                     else

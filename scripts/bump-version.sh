@@ -184,7 +184,7 @@ if [ "${1:-}" = "--check" ]; then
 fi
 
 NEW="${1:-}"
-if ! printf '%s' "$NEW" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+if ! grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$NEW" ; then
     printf 'Usage: %s <x.y.z> | --check | --self-test\n' "$0" >&2
     exit 2
 fi
