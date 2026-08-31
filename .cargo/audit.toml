@@ -19,59 +19,18 @@ ignore = [
     # rand 0.8.5 — unmaintained, transitive (no drop-in for 0.8 API)
     "RUSTSEC-2026-0097",
 
-    # wasmtime 43 + cranelift — test-only dep (aprender-test-lib), not production.
-    # v43 still has advisories for cranelift internals. Upgrade to >=43.0.2 when available.
-    "RUSTSEC-2026-0085",
-    "RUSTSEC-2026-0086",
-    "RUSTSEC-2026-0088",
-    "RUSTSEC-2026-0089",
-    "RUSTSEC-2026-0091",
-    "RUSTSEC-2026-0092",
-    "RUSTSEC-2026-0094",
-    "RUSTSEC-2026-0096",
-    # wasmtime 43 — table allocation panic (severity 5.9 medium). Same
-    # test-only dep + same upgrade path (>=43.0.2 / >=44.0.1) as the
-    # cranelift cluster above. Availability bug, not RCE. Published
-    # 2026-04-30; surfaced first on 2026-05-01 CI runs.
-    "RUSTSEC-2026-0114",
-    # wasmtime 43.0.2 — "Stores can mix up type indices between engines",
-    # severity 3.8 LOW. Published 2026-07-31 and broke the security gate the
-    # same day, blocking the v0.62.0 release.
-    #
-    # NOT taken on faith from the cluster above — the "test-only, not
-    # production" claim was re-verified for this one:
-    #   cargo tree -p aprender                        -> 0 wasmtime paths
-    #   cargo tree -p aprender --no-default-features  -> 0 wasmtime paths
-    # wasmtime is optional and gated behind aprender-test-lib's `runtime`
-    # feature, which NOTHING in the workspace enables (its only consumer,
-    # aprender-qa-runner, takes `features = ["llm-types"]`). It appears here
-    # solely because Cargo.lock records optional dependencies, so cargo-audit
-    # sees it while no shipped artifact ever links it.
-    #
-    # The fix is a real upgrade, not this line: 43 -> >=46.0.2,<47 or >=47.0.3,
-    # a four-major jump on a test-only dep. Tracked separately; revisit before
-    # anything starts enabling `runtime`.
-    "RUSTSEC-2026-0222",
-    # wasmtime 43.0.2 - "Filesystem sandbox escape when paths or symlinks
-    # contain trailing slashes", CVSS 8.8 HIGH. Published 2026-08-20; first
-    # broke the security gate on 2026-08-31, taking `ci / gate` -- a REQUIRED
-    # check -- red on every open pull request at once (#2799 through #2803).
-    #
-    # Highest severity in this cluster so far, so the reachability claim was
-    # re-verified rather than inherited from the entries above:
-    #   cargo tree -p aprender                        -> 0 wasmtime paths
-    #   cargo tree -p aprender --no-default-features  -> 0 wasmtime paths
-    #   cargo tree -p apr-cli                         -> 0 wasmtime paths
-    # wasmtime is optional and gated behind aprender-test-lib's `runtime`
-    # feature, which nothing in the workspace enables. No shipped artifact
-    # links it, and nothing here runs untrusted wasm with a preopened
-    # directory, which is the only way the escape is reachable at all.
-    #
-    # There is NO fixed 43.x: the advisory's ranges are >=24.0.13,<25,
-    # >=36.0.14,<37, >=46.0.3,<47 and >=47.0.4. So the real fix is the same
-    # three-major-version bump the -0222 note above already defers, and it
-    # must land before anything starts enabling `runtime`.
-    "RUSTSEC-2026-0269",
+    # wasmtime: the whole 43.x cluster is GONE. The workspace dep moved 43 ->
+    # 47.0.4, a patched line for every advisory that was exempted here (ten of
+    # them, plus the 8.8 filesystem-sandbox escape that took every open PR red
+    # on 2026-08-31). The `runtime` feature compiles and its 73 tests pass
+    # against 47.0.4 with ZERO source changes -- the deferral note that used to
+    # live here called it 'a four-major jump' and assumed API breakage; there
+    # was none. Deliberately naming no advisory id in this prose: CI builds its
+    # --ignore list by grepping every RUSTSEC token out of this file, comments
+    # included, so a mention here would silently re-exempt what we just fixed.
+    # Eleven entries go, not ten: #2805's same-day containment line for the
+    # 8.8 sandbox escape is one of them, obsolete for exactly the same reason
+    # as the 43.x cluster it was appended to.
 
     # rustls-webpki 0.101.7 — transitive via aws-smithy-http-client (rustls 0.21).
     # Direct 0.103.x path already bumped to >=0.103.12. The 0.101.7 pin lives
