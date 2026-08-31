@@ -19,9 +19,9 @@ metadata:
     STATE ON THIS COMMIT: BUILT AND MUTATION-VERIFIED, STILL NOT ARMED. The
     guard (scripts/check_pr_review_receipt.sh), twenty-six fixtures, the
     vendored schemas, the reviewer skill and the CI wiring all exist here;
-    the `pr-review-receipt` job is not yet a required check. Five of the eight
-    falsification tests below are green and bound to a command; three remain
-    LIVE-PENDING and say so in the field the schema actually reads.
+    the `pr-review-receipt` job is not yet a required check. Twelve of the
+    fifteen falsification tests below are green and bound to a command; three
+    remain LIVE-PENDING and say so in the field the schema actually reads.
 
     This paragraph was rewritten by PRREV-008 and the previous text is worth
     recording: it said "DECLARED, NOT ARMED. PRREV-001 ships this file alone.
@@ -445,7 +445,7 @@ equations:
 
 falsification_tests:
 
-# THREE of the eight below are LIVE-PENDING and every one says so IN `test:`, the
+# THREE of the fifteen below are LIVE-PENDING and every one says so IN `test:`, the
 # field the schema reads and `pv lint --strict-test-binding` classifies. It was seven at
 # PRREV-001, when this file shipped alone and the guard did not exist; PRREV-008
 # discharges the four whose recorded reason ("the guard does not exist at 745fa8588",
@@ -970,7 +970,7 @@ qa_gate:
   - a_pr_editing_the_merge_mechanism_cannot_merge_itself
   - every_refusal_path_is_exercised_by_a_committed_fixture
   pass_criteria: >-
-    All 11 falsification tests turn RED against a fixture that violates them and GREEN
+    All 15 falsification tests turn RED against a fixture that violates them and GREEN
     against the honest fixture, through scripts/check_pr_review_receipt.sh, whose own
     positive control (S6.1) must fire first.
 
@@ -980,7 +980,9 @@ qa_gate:
     -002, -003, -007 through `bats tests/pr-review.bats`, and F-PRREV-008 through
     `pv validate` — and three remain LIVE-PENDING: F-PRREV-004 needs a precision sample
     that only reviewed PRs can produce, and F-PRREV-005 / F-PRREV-006 assert properties
-    of THIS FILE that no committed guard reads yet.
+    of THIS FILE that no committed guard reads yet. At PRREV-012 the file carries 15:
+    the seven added since (F-PRREV-009 through F-PRREV-015) are each bound to a `bats`
+    command, so TWELVE of the fifteen are bound and the same three remain LIVE-PENDING.
 
     THE GATE IS STILL NOT ENABLED, and that is deliberate. S9 step 7's backtest found
     four defects in the artifact it tested; PRREV-008 fixes them and re-verifies in the
