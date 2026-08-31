@@ -120,13 +120,13 @@ while IFS= read -r hit; do
     while IFS= read -r pat; do
         [ -z "$pat" ] && continue
         # Only patterns that actually assert a zero count are in scope.
-        printf '%s\n' "$pat" | grep -qE "$KEYWORDS" || continue
+        grep -qE "$KEYWORDS" <<< "$pat" || continue
 
         CHECKED=$((CHECKED + 1))
 
         # THE PROBE. If a "zero errors" detector matches an all-failing line,
         # it can never turn red on that failure mode.
-        if printf '%s\n' "$PROBE" | grep -qE -- "$pat" 2>/dev/null; then
+        if grep -qE -- "$pat" 2>/dev/null <<< "$PROBE" ; then
             VIOLATIONS=$((VIOLATIONS + 1))
             printf 'FAIL-OPEN %s:%s\n' "$file" "$lineno"
             printf '          pattern: %s\n' "$pat"

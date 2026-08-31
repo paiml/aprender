@@ -86,8 +86,9 @@ facade_edges() {
         local up
         up=$(sed -n 's/^upstream *=.*package *= *"\([^"]*\)".*/\1/p' "${dir}Cargo.toml" | head -1)
         [ -n "$up" ] || continue
-        sed -n 's/^upstream *=.*version *= *"\([^"]*\)".*/\1/p' "${dir}Cargo.toml" | head -1 \
-            | grep -q . || continue
+        local ver
+        ver=$(sed -n 's/^upstream *=.*version *= *"\([^"]*\)".*/\1/p' "${dir}Cargo.toml" | head -1)
+        grep -q . <<< "$ver" || continue
         printf '%s\t%s\n' "$(basename "$dir")" "$up"
     done
 }

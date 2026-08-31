@@ -99,7 +99,7 @@ echo "Step 2: apr run + capture rendered prompt"
 CAPTURE_MODE=""
 START_EPOCH=$(date -u +%s)
 RUN_EXIT=0
-if "$APR_BINARY" run --help 2>&1 | grep -q -- '--print-prompt'; then
+if grep -q -- '--print-prompt' <<< "$("$APR_BINARY" run --help 2>&1)" ; then
     "$APR_BINARY" run "$MODEL" --system "$SYSTEM_MSG" --prompt "$USER_MSG" --print-prompt >"$RENDERED_FILE" 2>&1 || RUN_EXIT=$?
     CAPTURE_MODE="--print-prompt"
 else
