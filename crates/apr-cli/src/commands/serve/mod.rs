@@ -220,7 +220,7 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
     // error that misdescribes the build sends the operator to a rebuild that
     // changes nothing.
     let reason = if cfg!(any(feature = "cuda", feature = "wgpu")) {
-        "this build links a GPU backend, but not the one that request selects"
+        "this build links a GPU backend that request does not select"
     } else {
         "this build has no GPU backend compiled in"
     };

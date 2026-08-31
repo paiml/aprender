@@ -15,6 +15,7 @@ metadata:
     - "PMAT-925 / aprender#2217 (same closure, backend mask — the lock survived untouched)"
     - "APR-PERF-GATE-001 W1 mini cell: apr serve run <gguf> --backend wgpu --gpu-layers all, 603s elapsed, 0.0% CPU, state S, port never bound, reproduced twice on Apple M4 / macOS 26.5"
     - "Reproduced on x86_64-linux 2026-08-31: tests/gpu_cold_init_deadlock.rs times out at 120s under the origin/main lock order, returns in 0.13s after"
+    - "Verified on mini (aarch64-darwin, Apple M4) 2026-08-31 at 6453291c0: cold init returns in 0.08s; `apr serve run <gguf> --backend wgpu --gpu-layers all` prints `WGPU device ready (Vulkan/Metal)`, uploads 337 weights / 6174.7 MB to GPU, binds its port at 24s (was: never, in 603s), and answers `2+2` with `4`"
   registry: true
   tags:
     - gpu
