@@ -106,7 +106,7 @@ if [ "${1:-}" = "--self-test" ]; then
     mk w1/libx libx yes ""
     mk w1/appy appy no libx
     got=$(scan "$W" | tail -n +2)
-    if printf '%s' "$got" | grep -q "^appy	libx$"; then
+    if grep -q "^appy	libx$" <<< "$got" ; then
         printf 'ok    row 1 publishable -> unpublishable is reported\n'
     else
         printf 'FAIL  row 1 not reported; got [%s]\n' "$got"; fails=1
@@ -160,7 +160,7 @@ if [ "${1:-}" = "--self-test" ]; then
     fi
 
     # Row 5: with both workspaces merged, the same edge IS reported.
-    if scan "$W" "$WX" | tail -n +2 | grep -q "^face	libx$"; then
+    if grep -q "^face	libx$" <<< "$(scan "$W" "$WX" | tail -n +2)" ; then
         printf 'ok    row 5 scanning BOTH workspaces reports face -> libx\n'
     else
         printf 'FAIL  row 5 merged scan missed the cross-workspace edge; got [%s]\n' \

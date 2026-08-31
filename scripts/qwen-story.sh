@@ -188,7 +188,7 @@ beat2_trust() {
   emit_evidence "apr qa $M_15B_APR"
   # RC_ALL: the banner is a human-facing line and apr is free to put it on
   # either stream; this check is about presence, not about parsing.
-  if echo "$RC_ALL" | grep -q "ALL GATES PASSED"; then
+  if grep -q "ALL GATES PASSED" <<< "$RC_ALL" ; then
     emit_pass "B2 apr qa"
   else
     emit_fail "B2 apr qa" "no 'ALL GATES PASSED' line"
@@ -278,7 +278,7 @@ beat4_adapt() {
     emit_pass "B4 apr export (clean exit=5, no panic)"
   # RC_ALL, NOT RC_OUT: a Rust panic message is written to STDERR. Grepping
   # stdout alone would silently stop detecting panics.
-  elif [ "$RC_EC" -eq 101 ] || echo "$RC_ALL" | grep -qE 'thread.*panicked'; then
+  elif [ "$RC_EC" -eq 101 ] || grep -qE 'thread.*panicked' <<< "$RC_ALL" ; then
     emit_fail "B4 apr export" "PANIC (exit=$RC_EC)  -  #1865 regression"
   else
     emit_fail "B4 apr export" "unexpected exit=$RC_EC"
@@ -298,9 +298,9 @@ beat5_use() {
   fi
   run_cmd 120 apr run "$M_15B_APR" "fn sum(a: i32, b: i32) -> i32 {" --max-tokens 16
   # Heuristic gibberish detector  -  flag if chat-template tokens repeat.
-  if echo "$RC_OUT" | grep -qE '<\|im_start\|>.*<\|im_start\|>'; then
+  if grep -qE '<\|im_start\|>.*<\|im_start\|>' <<< "$RC_OUT" ; then
     emit_fail "B5 apr run" "gibberish (chat-template token repeats)"
-  elif [ "$RC_EC" -eq 0 ] && echo "$RC_OUT" | grep -qE 'Output:'; then
+  elif [ "$RC_EC" -eq 0 ] && grep -qE 'Output:' <<< "$RC_OUT" ; then
     emit_pass "B5 apr run (Rust code completion)"
   else
     emit_fail "B5 apr run" "exit=$RC_EC, no Output line"

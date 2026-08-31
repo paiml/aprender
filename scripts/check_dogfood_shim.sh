@@ -177,7 +177,7 @@ check_shim_file() {
         printf 'FAIL  3c shim EXITED 0 with the aprender checkout absent — it fell back to\n'
         printf '         something. A shim that degrades instead of failing is the shadow.\n'
         rc=1
-    elif ! printf '%s' "$out" | grep -qi 'REVISIT TRIGGER'; then
+    elif ! grep -qi 'REVISIT TRIGGER' <<< "$out" ; then
         printf 'FAIL  3c shim failed (rc=%s) but did not name the REVISIT TRIGGER. It must\n' "$srrc"
         printf '         say WHAT the reader is looking at, or the next person patches around it.\n'
         rc=1
@@ -208,7 +208,7 @@ self_test() {
     cp "$td/good.sh" "$td/gate.sh"
     printf 'mark pv-contracts PASS "ported"\n' >> "$td/gate.sh"
     out=$(check_shim_file "$td/gate.sh" 2>&1)
-    if printf '%s' "$out" | grep -q 'FAIL  3b'; then
+    if grep -q 'FAIL  3b' <<< "$out" ; then
         printf 'ok    row 2 a shim that invokes a gate is REJECTED\n'
     else
         printf 'FAIL  row 2 a shim invoking `mark pv-contracts` was accepted\n'; fails=1
@@ -218,7 +218,7 @@ self_test() {
     cp "$td/good.sh" "$td/long.sh"
     for _ in $(seq 1 "$((SHIM_MAX_LINES + 5))"); do printf '# padding\n' >> "$td/long.sh"; done
     out=$(check_shim_file "$td/long.sh" 2>&1)
-    if printf '%s' "$out" | grep -q 'FAIL  3a'; then
+    if grep -q 'FAIL  3a' <<< "$out" ; then
         printf 'ok    row 3 a shim over the line cap is REJECTED\n'
     else
         printf 'FAIL  row 3 an over-cap shim was accepted\n'; fails=1
@@ -227,7 +227,7 @@ self_test() {
     # Mutation C: the shim degrades instead of failing closed.
     printf '#!/usr/bin/env bash\nexit 0\n' > "$td/soft.sh"
     out=$(check_shim_file "$td/soft.sh" 2>&1)
-    if printf '%s' "$out" | grep -q 'FAIL  3c'; then
+    if grep -q 'FAIL  3c' <<< "$out" ; then
         printf 'ok    row 4 a shim that exits 0 without a checkout is REJECTED\n'
     else
         printf 'FAIL  row 4 a silently-succeeding shim was accepted\n'; fails=1
@@ -236,7 +236,7 @@ self_test() {
     # Mutation D: it fails, but says nothing useful.
     printf '#!/usr/bin/env bash\nexit 2\n' > "$td/mute.sh"
     out=$(check_shim_file "$td/mute.sh" 2>&1)
-    if printf '%s' "$out" | grep -q 'FAIL  3c'; then
+    if grep -q 'FAIL  3c' <<< "$out" ; then
         printf 'ok    row 5 a shim that fails MUTELY is REJECTED\n'
     else
         printf 'FAIL  row 5 a mute failing shim was accepted\n'; fails=1
@@ -247,7 +247,7 @@ self_test() {
     cp "$td/good.sh" "$td/midline.sh"
     printf 'true; mark pv-contracts PASS "ported"\n' >> "$td/midline.sh"
     out=$(check_shim_file "$td/midline.sh" 2>&1)
-    if printf '%s' "$out" | grep -q 'FAIL  3b'; then
+    if grep -q 'FAIL  3b' <<< "$out" ; then
         printf 'ok    row 6 a MID-LINE `; mark pv-contracts` is REJECTED\n'
     else
         printf 'FAIL  row 6 a mid-line gate invocation was accepted\n'; fails=1
@@ -259,7 +259,7 @@ self_test() {
     cp "$td/good.sh" "$td/dynamic.sh"
     printf 'mark "$dg_name" FAIL "declared but absent"\n' >> "$td/dynamic.sh"
     out=$(check_shim_file "$td/dynamic.sh" 2>&1)
-    if printf '%s' "$out" | grep -q 'FAIL  3b'; then
+    if grep -q 'FAIL  3b' <<< "$out" ; then
         printf 'ok    row 7 a DYNAMIC `mark "$name"` invocation is REJECTED\n'
     else
         printf 'FAIL  row 7 a dynamic gate invocation was accepted\n'; fails=1
@@ -363,9 +363,9 @@ while IFS= read -r f; do
     # installs nothing — it was flagged as a second sweep on the strength of
     # that sentence. Found when PARITY-003 and PARITY-011 met in the cumulative
     # stack head: each branch was green alone.
-    grep -vE '^[[:space:]]*#' "$f" 2>/dev/null | grep -q 'cargo install aprender' || continue
+    grep -q 'cargo install aprender' <<< "$(grep -vE '^[[:space:]]*#' "$f" 2>/dev/null)" || continue
     # ...and writes a per-host receipt. Both halves, or it is not a sweep.
-    grep -vE '^[[:space:]]*#' "$f" 2>/dev/null | grep -qE 'evidence/dogfood|install_rc' || continue
+    grep -qE 'evidence/dogfood|install_rc' <<< "$(grep -vE '^[[:space:]]*#' "$f" 2>/dev/null)" || continue
     sweep_hits="$sweep_hits $f"
 done < <(
     { git ls-files 'scripts/*.sh' 'crates/*/scripts/*.sh' 2>/dev/null

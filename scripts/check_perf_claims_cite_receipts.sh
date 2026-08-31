@@ -173,9 +173,9 @@ scan_file() {
         if [ "$hi" -gt "$total" ]; then hi="$total"; fi
         block=$(sed -n "${lo},${hi}p" "$f")
         cites=$(resolve_citations "$root" "$block")
-        if printf '%s\n' "$cites" | grep -q ' exists$'; then
+        if grep -q ' exists$' <<< "$cites" ; then
             continue                                   # cited, and it resolves
-        elif printf '%s\n' "$cites" | grep -q ' missing$'; then
+        elif grep -q ' missing$' <<< "$cites" ; then
             printf '%s:%s:dangling:%s\n' "$rel" "$n" "$text"
         else
             printf '%s:%s:uncited:%s\n' "$rel" "$n" "$text"
@@ -380,7 +380,7 @@ stale=0
 while IFS= read -r loc; do
     [ -n "$loc" ] || continue
     case "$loc" in '#'*) continue ;; esac
-    printf '%s\n' "$records" | grep -q "^${loc}:" || stale=$((stale + 1))
+    grep -q "^${loc}:" <<< "$records" || stale=$((stale + 1))
 done < "$BASELINE"
 if [ "$stale" -gt 0 ]; then
     printf 'REPORT %s stale baseline location/s no longer carry a claim — prune\n' "$stale"

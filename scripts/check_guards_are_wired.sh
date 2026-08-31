@@ -91,10 +91,11 @@ unwired_in() {
         # rather than by reading it. Erring strict is correct here: a `#` inside
         # a quoted YAML string would make a wired guard look unwired, which is a
         # loud false alarm rather than a silent miss.
-        if ! grep -rh --include='*.yml' --include='*.yaml' -- "$base" \
+        local mentions
+        mentions=$(grep -rh --include='*.yml' --include='*.yaml' -- "$base" \
                 "$root"/.github/workflows/ 2>/dev/null \
-             | sed 's/#.*$//' \
-             | grep -qE "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*${base}([[:space:]]|$|['\"])" ; then
+             | sed 's/#.*$//') || mentions=''
+        if ! grep -qE "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*${base}([[:space:]]|$|['\"])" <<< "$mentions" ; then
             printf '%s\n' "$base"
         fi
     done | LC_ALL=C sort

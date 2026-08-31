@@ -285,10 +285,10 @@ check_install_line() {
     # have forced the docs to avoid the clearest available wording. Only an
     # affirmative mention counts, so a `no <backend>` / `without <backend>` /
     # `not <backend>` is skipped. Both directions are in the case table below.
-    if printf '%s' "$install_line" | grep -qiE "(no|not|without|never)[[:space:]]+$backend"; then
+    if grep -qiE "(no|not|without|never)[[:space:]]+$backend" <<< "$install_line" ; then
       continue
     fi
-    if printf '%s' "$install_line" | grep -qiE "(^|[^a-z])$backend([^a-z]|$)"; then
+    if grep -qiE "(^|[^a-z])$backend([^a-z]|$)" <<< "$install_line" ; then
       printf 'FAIL FALSIFY-README-005 install_line: advertises %s, but default = [%s]\n' \
              "$backend" "$default_feats"
       printf '       %s\n' "$install_line"

@@ -89,7 +89,7 @@ trap cleanup EXIT INT TERM
 # Helper Functions
 # ============================================================================
 ensure_ublk_module() {
-    if ! lsmod | grep -q ublk_drv; then
+    if ! grep -q ublk_drv <<< "$(lsmod)" ; then
         log "Loading ublk_drv module..."
         modprobe ublk_drv || { log_fail "Cannot load ublk_drv"; return 1; }
         UBLK_LOADED=1
@@ -242,7 +242,7 @@ run_component_tests() {
     # F004: Device ID -1 auto-assigns
     log_info "F004: Auto-assign device ID"
     if "$TRUENO_UBLK" create --size 1G --foreground &
-       sleep 2 && ls /dev/ublkb* 2>/dev/null | grep -q ublkb; then
+       grep -q ublkb <<< "$(sleep 2 && ls /dev/ublkb* 2>/dev/null)" ; then
         log_pass "F004: Auto-assign worked"
         ((passed++))
     else
@@ -451,7 +451,7 @@ run_filesystem_tests() {
     log_info "F092: mkswap/swapon"
     if mkswap /dev/ublkb0 2>&1 | tee -a "$RESULTS_DIR/filesystem.log" && \
        swapon /dev/ublkb0 2>&1; then
-        if swapon --show | grep -q ublkb0; then
+        if grep -q ublkb0 <<< "$(swapon --show)" ; then
             log_pass "F092: Swap active on ublk device"
             ((passed++))
 
