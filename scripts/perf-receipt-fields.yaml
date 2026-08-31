@@ -237,6 +237,115 @@ fields:
       counts_prompt_echo) have no producer and nothing that could infer them.
       SGLang RFC #9808 is the cited prior art for getting this wrong.
 
+  tokenization.tokenizer_sha256:
+    class: UNMEASURED
+    required: conditional
+    owner: PERF-004
+    spec: "§4.4.6"
+    needs: >-
+      REQUIRED under method: client_tokenizer, optional otherwise, and nothing
+      computes it either way. perf_gate.sh's own receipt validator accepts
+      --tokenizer-sha256 as 64 lowercase hex characters
+      (perf_gate/receipt.rs:286-294) and NEVER HASHES A FILE, so today the field
+      is whatever the operator typed. It is not decoration: measured 2026-08-29,
+      two tokenizer.json files for qwen2.5-coder-7b are in circulation on the
+      fleet -- 7,031,645 B (c0382117...) and 11,421,892 B (3fd169731d...) -- and
+      two of the four hosts carry ONLY the second. They are semantically
+      identical (same vocab, same added_tokens, byte-identical id sequences on a
+      114-token ASCII/CJK/emoji probe) and differ only in how `model.merges` is
+      serialised, so the digest separates two files that behave the same. That
+      is the point: it names WHICH FILE ran, which nothing else in the receipt
+      can. Hash the file the client loaded, at load time.
+
+  tokenization.counts_special_tokens:
+    class: UNMEASURED
+    required: always
+    owner: PERF-004
+    spec: "§4.4.6"
+    needs: >-
+      Whether the lane's token counts include special tokens. Measured
+      2026-08-29 the two servers sit on OPPOSITE sides of this axis:
+      llama-server counts the stop token and apr does not, exactly +1 on every
+      naturally-terminated request and 0 when the response was truncated at
+      max_tokens. Nothing in the harness records it, so the axis on which the
+      two lanes provably disagree is the one the receipt does not carry. It is
+      derivable without new instrumentation: replay one prompt that terminates
+      naturally, compare the server's completion_tokens against the client's own
+      count of the decoded ids.
+
+  tokenization.counts_prompt_echo:
+    class: UNMEASURED
+    required: always
+    owner: PERF-004
+    spec: "§4.4.6"
+    needs: >-
+      Whether completion_tokens includes the echoed prompt. Measured 2026-08-29
+      it is false on BOTH servers, which is exactly why it must be recorded
+      rather than assumed: a field that is only ever written when it is
+      interesting is a field nobody writes. Same derivation as
+      counts_special_tokens, from the same replay.
+
+  tokenization.chat_template_sha256:
+    class: UNMEASURED
+    required: always
+    owner: PERF-019
+    spec: "§4.4.6"
+    needs: >-
+      The RESOLVED chat template each lane applied, digested -- not the template
+      file, which one of the two lanes does not have. Measured 2026-08-29 this
+      is where the whole prompt_tokens divergence lives: llama-server uses the
+      jinja template embedded in the GGUF, which injects Qwen's default system
+      message, while apr uses a hardcoded ChatML builder
+      (crates/aprender-serve/src/api/realize_handlers.rs, format_chat_messages)
+      with no system message and a constant 8-token wrapper. Reconstructing each
+      side's wrapper with the canonical tokenizer reproduces both lanes' counts
+      exactly. Obtainable from either shape: render the lane's resolved template
+      over ONE fixed probe conversation and sha256 the rendered bytes. A
+      hardcoded builder renders just as well as a jinja template, which is why
+      the digest is over the RENDERING and not over a file.
+
+  tokenization.corpus_prefill_tokens_median:
+    class: UNMEASURED
+    required: always
+    owner: PERF-019
+    spec: "§4.3.1"
+    needs: >-
+      The median, over the whole workload corpus, of the number of ids the lane
+      ACTUALLY PREFILLS -- after its own chat template, not the raw prompt text.
+      §4.3.1 already asks for this in words ("the receipt must declare which
+      side of that boundary its count was taken on") and no field existed to
+      carry the answer. It is the only OUTCOME in the tokenization block: every
+      other field is a declaration, and a declaration cannot be
+      wrong-and-detected, only false. Measured 2026-08-29 on W1: apr 513,
+      llama-server 534, deterministic on both sides (min == median == max),
+      constant delta -21, ratio 0.9607 -- 4.09% more prefill work charged to the
+      comparator and read out as throughput, while every field §4.4.6 names
+      agreed. TWO INSTRUMENTATION NOTES. (1) The raw-text count is 505 on all
+      three tokenizations and is NOT this number; a lane reporting it has
+      answered a different question. (2) §4.5 requires STREAMING and in
+      streaming mode neither server reports usage at all -- apr emits none even
+      with stream_options.include_usage, and `git grep stream_options` finds no
+      caller in this tree -- so this median comes from a separate NON-STREAMING
+      replay of the corpus, once per lane, and the client counts what it sent.
+
+  comparator_tokenization:
+    class: UNMEASURED
+    required: conditional
+    owner: PERF-019
+    spec: "§4.4.6"
+    needs: >-
+      The comparator lane's tokenization block, in the same shape as
+      `tokenization`, required whenever any band is gated by Arm B. I-11 refuses
+      a ratio across a tokenization mismatch, and a comparison needs two
+      operands: with this absent the rule reduces to validating one lane against
+      itself, which is what the gate did for the whole of v2.1 and v2.2. Its
+      SUBFIELDS are deliberately not classified one by one here -- perf_gate.sh
+      compares them key-by-key against the subject block rather than reading any
+      of them by name, so the schema of this block IS the schema of
+      `tokenization` above and two parallel copies could only drift apart.
+      Produced by measuring the comparator with the same client, which §4.4.8
+      already requires.
+
   # ------------------------------------------------------------ Arm C-sig ---
   # §4.9.1 / I-10, landed on main by PERF-007. The staleness arm is what makes
   # Arm C a gate: two hosts are not CI runners and the fully-comparated one is

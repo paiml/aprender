@@ -100,6 +100,288 @@ PY
   return "$rc"
 }
 
+arm_c_tokenization() {
+  # §4.4.6 / I-11 / I-13 — the FATAL tokenization-mismatch rule. Specified in
+  # v2.1, and until this function existed, implemented nowhere.
+  #
+  # WHAT WAS HERE. `arm_c_integrity` tested that `tokenization.method` was a
+  # non-empty STRING, and nothing else in the file read the block at all. The
+  # gate's own OK fixture carried `"method":"hf-tokenizers"` — which is not one
+  # of the two values §4.4.6 declares — so the single input proving the rule
+  # worked was itself illegal input. `counts_special_tokens` and
+  # `counts_prompt_echo` were read by ZERO lines. And there was no
+  # comparator-vs-measured comparison anywhere in the gate, which is the whole
+  # of I-11: "any comparator ratio refuses to execute on join-key mismatch —
+  # including a `tokenization` block mismatch".
+  #
+  # WHY THE BLOCK §4.4.6 SPECIFIES IS NOT ENOUGH — MEASURED, TWICE.
+  # On 2026-08-29 apr 0.64.0 (745fa8588, CPU) and llama-server 7746 (39173bcac,
+  # CUDA, 29/29 layers) were driven over the same W1 corpus against the same
+  # qwen2.5-coder-7b-instruct-q4_k_m.gguf. Both harnesses count tokens from the
+  # server's own `usage` object, so both lanes would have declared, HONESTLY:
+  #
+  #     method: server_usage      counts_prompt_echo: false
+  #
+  # The two blocks would have been IDENTICAL. The prompts the two servers
+  # actually prefilled were not: apr 513 tokens, llama 534, every run, min ==
+  # median == max on both sides. Constant delta −21, ratio 0.9607 — 4.09% more
+  # prefill work on the comparator, charged to the ratio as though it were
+  # throughput. A block that is identical across a 4.09% divergence is blind to
+  # the case it exists to catch.
+  #
+  # IT IS NOT THE VOCABULARY. On raw text all three tokenizations agree
+  # exactly: apr 505, llama 505, client 505. It is the CHAT TEMPLATE. llama
+  # applies the jinja template embedded in the GGUF, which injects Qwen's
+  # default system message; apr applies a hardcoded ChatML builder
+  # (crates/aprender-serve/src/api/realize_handlers.rs, `format_chat_messages`)
+  # with no system message and a constant 8-token wrapper. Reconstructing each
+  # side's wrapper with the canonical tokenizer reproduces both numbers exactly.
+  # And the divergence is not correctable: short prompt 25 vs 43 (−18), W1 513
+  # vs 534 (−21), special-token text 76 vs 57 (+19, ratio 1.333). It CHANGES
+  # SIGN with the input, so there is no constant offset and no constant ratio.
+  #
+  # EVERY FIELD §4.4.6 NAMES IS A DECLARATION. A declaration cannot be
+  # wrong-and-detected — it can only be false, and nothing in this gate can
+  # check the honesty of a boolean a producer wrote about itself. So this arm
+  # compares two fields that are OUTCOMES of the measurement rather than
+  # assertions about it:
+  #
+  #   chat_template_sha256          the RESOLVED wrapper each lane applied
+  #   corpus_prefill_tokens_median  the ids each lane ACTUALLY PREFILLED
+  #
+  # The second is the only field in the block that a mis-declaration cannot
+  # survive, and it is the one that reddens the 2026-08-29 pair. §4.3.1 already
+  # asks for it in words — "the receipt must declare which side of that
+  # boundary its count was taken on" — and no field existed to carry the answer.
+  #
+  # EQUALITY IS EXACT, and that is not a threshold. Two lanes that applied the
+  # same template and the same tokenizer to the same corpus produce the same
+  # count, not a nearby one. Any tolerance here would be an invented continuous
+  # threshold, which perf-matrix.yaml's GROUNDING RULE forbids outright; exact
+  # equality is the one rule that is not invented. It also has a consequence
+  # worth stating: under `server_usage` the two numbers come from two servers'
+  # opinions and will not agree, so this rule is what makes §4.4.6's canonical
+  # `client_tokenizer` the only method a real receipt can pass with.
+  local receipt="$1"
+  python3 - "$receipt" <<'PY_TOK'
+import json, re, sys
+
+r = json.load(open(sys.argv[1]))
+
+# §4.4.6: two legal values, NO DEFAULT (I-13). The absence of the field is
+# ALSO caught by arm_c_integrity, which names the owning ticket; that overlap
+# is deliberate defence in depth and the reason the illegal-VALUE row below is
+# the one that belongs to this arm alone.
+LEGAL_METHODS = ("server_usage", "client_tokenizer")
+CANONICAL = "client_tokenizer"
+# Required in every receipt whatever the method. `tokenizer_sha256` is NOT
+# here: §4.4.6 requires it only under `client_tokenizer`, and that conditional
+# is applied below.
+REQUIRED = ("method", "counts_special_tokens", "counts_prompt_echo",
+            "chat_template_sha256", "corpus_prefill_tokens_median")
+BOOLEANS = ("counts_special_tokens", "counts_prompt_echo")
+DIGESTS = ("tokenizer_sha256", "chat_template_sha256")
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
+# Field NAMES as constants. The block's schema is spelled LITERALLY exactly
+# once, in SCHEMA below, and the checks that run over BOTH lanes address fields
+# through these — so scripts/check_perf_receipt_fields_have_producers.sh reads
+# one declaration of this block rather than three copies of it drifting apart.
+NAME_METHOD = "method"
+NAME_TOKENIZER_SHA = "tokenizer_sha256"
+NAME_PREFILL = "corpus_prefill_tokens_median"
+
+subject_block = r.get("tokenization") or {}
+comparator_block = r.get("comparator_tokenization")
+
+# THE SCHEMA, SPELLED LITERALLY, ONCE.
+# scripts/check_perf_receipt_fields_have_producers.sh builds its universe from
+# LITERAL key reads, so a field addressed only through a variable leaves that
+# guard's universe without saying so — the "guard universe from the wrong side"
+# shape this epic has hit three times. Every field this arm requires is
+# therefore read by name here, and the shared checks below run over these
+# values rather than re-reading the block.
+SCHEMA = (
+    ("method",
+     (r.get("tokenization") or {}).get("method")),
+    ("tokenizer_sha256",
+     (r.get("tokenization") or {}).get("tokenizer_sha256")),
+    ("counts_special_tokens",
+     (r.get("tokenization") or {}).get("counts_special_tokens")),
+    ("counts_prompt_echo",
+     (r.get("tokenization") or {}).get("counts_prompt_echo")),
+    ("chat_template_sha256",
+     (r.get("tokenization") or {}).get("chat_template_sha256")),
+    ("corpus_prefill_tokens_median",
+     (r.get("tokenization") or {}).get("corpus_prefill_tokens_median")),
+)
+
+fails = []
+notes = []
+agreed = 0
+
+
+def shape(label, blk):
+    """Every rule that reads ONE lane's block."""
+    method = blk.get(NAME_METHOD)
+    for name in REQUIRED:
+        if blk.get(name) is None:
+            fails.append("%s.%s absent — §4.4.6 requires it in every receipt "
+                         "and gives it no default" % (label, name))
+    if method is not None and method not in LEGAL_METHODS:
+        fails.append(
+            "%s.method=%r is not one of %s. §4.4.6 declares two legal values "
+            "and no default; this gate tested only that the field was a "
+            "non-empty string, and its own OK fixture carried \"hf-tokenizers\", "
+            "so the input proving the rule worked was itself illegal"
+            % (label, method, list(LEGAL_METHODS)))
+    for name in BOOLEANS:
+        value = blk.get(name)
+        if value is not None and not isinstance(value, bool):
+            fails.append("%s.%s=%r is not a boolean" % (label, name, value))
+    if method == CANONICAL and blk.get(NAME_TOKENIZER_SHA) is None:
+        fails.append(
+            "%s.method=client_tokenizer with no tokenizer_sha256 — the "
+            "canonical method names a tokenizer the receipt then does not "
+            "identify. Measured 2026-08-29: TWO tokenizer.json files for this "
+            "model are in circulation on the fleet (7,031,645 B and "
+            "11,421,892 B, different digests, same vocabulary), and two of the "
+            "four hosts carry only the second. Which one ran is not inferable "
+            "from anything else in the receipt"
+            % (label,))
+    for name in DIGESTS:
+        value = blk.get(name)
+        if value is not None and not HEX64.match(str(value)):
+            fails.append("%s.%s=%r is not a 64-character lowercase hex digest"
+                         % (label, name, value))
+    prefill = blk.get(NAME_PREFILL)
+    if prefill is not None and (isinstance(prefill, bool)
+                                or not isinstance(prefill, int)
+                                or prefill <= 0):
+        fails.append(
+            "%s.corpus_prefill_tokens_median=%r is not a positive integer. It "
+            "is a COUNT OF IDS — the median, over the whole workload corpus, of "
+            "the id sequence the lane actually prefills after its own chat "
+            "template. The raw-text count (505 on W1, and identical on both "
+            "lanes) answers a different question" % (label, prefill))
+
+
+shape("tokenization", dict(SCHEMA))
+if isinstance(comparator_block, dict):
+    shape("comparator_tokenization", comparator_block)
+
+# IS THERE A RATIO TO REFUSE? §4.4.6 makes a block mismatch fatal to THE
+# RATIO. A band whose comparator side is NOT_APPLICABLE or UNMEASURED computes
+# none, so requiring a comparator block there would red a receipt that claims
+# nothing. Every other band is gated by Arm B, and for those the comparator
+# block is required: I-11's comparison cannot run against an absent operand,
+# and an arm that stands down when its input is missing is the cannot-fail
+# shape this gate exists to remove.
+armed = [b.get("concurrency") for b in (r.get("bands") or [])
+         if b.get("comparator_status") not in ("NOT_APPLICABLE", "UNMEASURED")]
+# `None` and an int do not sort against each other, and a band with no
+# `concurrency` is a receipt Arm A rejects one arm later — this one must not
+# die with a traceback on the way there.
+armed = sorted(armed, key=lambda c: (c is None, c or 0))
+if comparator_block is None:
+    if armed:
+        fails.append(
+            "comparator_tokenization absent while bands %s are gated by Arm B. "
+            "I-11 requires the measured lane's tokenization block to be "
+            "compared against its comparator baseline's, and a comparison with "
+            "one operand is not a comparison" % (armed,))
+    else:
+        notes.append("REPORT ArmC-tok no band is comparator-gated "
+                     "(comparator_status NOT_APPLICABLE/UNMEASURED on all of "
+                     "them), so there is no ratio and the I-11 comparison is "
+                     "not armed")
+elif not isinstance(comparator_block, dict):
+    # Nothing else in this gate reads the comparator block, so a scalar here
+    # reaches this arm. Named rather than raised: an AttributeError is
+    # fail-closed and diagnoses nothing.
+    fails.append(
+        "comparator_tokenization=%r is not an object — §4.4.6 declares a "
+        "block, and a scalar in its place has no fields to compare"
+        % (comparator_block,))
+else:
+    # THE UNION, not the subject's keys. A key present on one side only is a
+    # mismatch, not a field to skip: two blocks that do not even have the same
+    # shape have already failed to agree.
+    keys = sorted(set(subject_block) | set(comparator_block)
+                  | set(name for name, _ in SCHEMA))
+    diffs = [(k, subject_block.get(k), comparator_block.get(k))
+             for k in keys if subject_block.get(k) != comparator_block.get(k)]
+    if diffs:
+        fails.append(
+            "tokenization block MISMATCH against the comparator baseline — "
+            "§4.4.6: the ratio is REFUSED, not annotated (I-11)")
+        for name, mine, theirs in diffs:
+            fails.append("  %s: measured=%r comparator=%r" % (name, mine, theirs))
+            if name == "corpus_prefill_tokens_median" and isinstance(mine, int) \
+                    and isinstance(theirs, int) and theirs:
+                fails.append(
+                    "  the two lanes prefilled different prompts: %d vs %d "
+                    "(delta %+d, ratio %.4f). Every other field in this block "
+                    "can agree while this one does not — that is the measured "
+                    "2026-08-29 case, and it is why this field is compared"
+                    % (mine, theirs, mine - theirs, float(mine) / theirs))
+    else:
+        agreed = len(keys)
+
+# THE ANDON LINE. `server_usage` is legal and is NOT canonical: §4.4.6 says
+# server-reported usage fields are two implementations' opinions. Saying so on
+# every receipt that uses it is what keeps the exactly-equal rule below from
+# reading as pedantry when it reddens.
+if subject_block.get(NAME_METHOD) == "server_usage":
+    notes.append(
+        "REPORT ArmC-tok method=server_usage is legal and NOT canonical "
+        "(§4.4.6). Both counts are then a server's opinion of its own work; "
+        "the only thing separating this receipt from the 4.09% prefill "
+        "divergence measured on 2026-08-29 is that "
+        "corpus_prefill_tokens_median is compared")
+
+# WHAT THIS ARM STILL CANNOT SEE — stated because a rule whose blind spots are
+# unwritten gets read as covering them:
+#
+#  1. CORPUS IDENTITY. Two lanes could agree on a median computed over
+#     DIFFERENT prompt files. That is a join-key property (§4.4.8, "same
+#     workload file") and belongs beside host/accelerator/model/quantization in
+#     bench_receipt.py's JOIN_KEY_REQUIRED, not in this block. Uncaught here by
+#     design; owner PERF-019.
+#  2. BOTH LANES WRONG THE SAME WAY. Two lanes agreeing exactly on a prefill
+#     length that is outside §4.3.1's declared W1 band (512 ± 8) pass. The band
+#     is not represented in perf-matrix.yaml, and writing it in here would be
+#     an invented continuous threshold in the one file that says there are
+#     none.
+#  3. HONEST-LOOKING LIES. counts_special_tokens and counts_prompt_echo are
+#     still declarations. Two lanes that declare the same false value agree,
+#     and this arm sees agreement. Only the two outcome fields are proof.
+#  4. WHERE THE NUMBER CAME FROM. §4.5 requires STREAMING, and in streaming
+#     mode NEITHER server reports `usage` at all — apr emits none even with
+#     stream_options.include_usage, and `git grep stream_options` finds no
+#     caller. So corpus_prefill_tokens_median must come from a separate
+#     non-streaming replay of the corpus, and nothing here can tell such a
+#     replay from a number that was typed in. The signature arm (§4.9.1) binds
+#     the file to a host and a commit; it does not bind a field to an
+#     instrument.
+#  5. TOKENIZER CORRECTNESS. apr emits 7 ids where the reference emits 3 for
+#     `<|im_end|>` preceded by sentence punctuation — 4 junk ids instead of the
+#     turnstile. W1 prompts end on a word, so the W1 median does not move and
+#     this arm stays green on a real correctness defect. That needs its own
+#     falsifier against the reference tokenizer, not a receipt field.
+for line in notes:
+    print(line)
+for line in fails:
+    print(("FAIL ArmC-tok " + line) if not line.startswith("  ") else line)
+if not fails:
+    print("PASS  ArmC-tok %s"
+          % ("blocks agree on %d field(s) incl. the resolved chat template and "
+             "the measured prefill length" % agreed if agreed
+             else "measured lane declares a legal §4.4.6 block; no comparator "
+                  "ratio is armed"))
+sys.exit(1 if fails else 0)
+PY_TOK
+}
+
 arm_a_scaling() {
   # scaling_efficiency(c) = (agg(c)/agg(1))/c, ratchet-up-only per host+band.
   local receipt="$1" host="$2" workload="$3"
@@ -393,6 +675,7 @@ run_gate() {
   local host="$1" phase="$2" workload="$3" receipt="$4" commit="${5:-}" rc=0
   [ -f "$receipt" ] || die "receipt not found: $receipt"
   arm_c_integrity "$receipt" || rc=1
+  arm_c_tokenization "$receipt" || rc=1
   arm_c_signature "$receipt" "$host" "$phase" "$commit" || rc=1
   arm_a_scaling  "$receipt" "$host" "$workload" || rc=1
   arm_b_adoption "$receipt" || rc=1
@@ -420,11 +703,26 @@ selftest() {
     *) die "mktemp -d gave ${tmp:-<empty>}, refusing to rm -rf it" ;;
   esac
   _mk() { printf '%s' "$2" > "$tmp/$1.json"; }
+  # §4.4.6's block, in the CANONICAL shape, on BOTH lanes. The fixture this
+  # replaces carried `"method":"hf-tokenizers"` — not one of the two values
+  # §4.4.6 declares — so the OK case that proved the tokenization rule worked
+  # was itself illegal input, and every other tokenizer stack's name would have
+  # passed the same way.
+  #
+  # `corpus_prefill_tokens_median` LEADS each block on purpose: `"tokenization":{`
+  # and `"comparator_tokenization":{` are then distinct anchors, so a row below
+  # can mutate ONE lane without a positional trick. (`"tokenization":{"corpus`
+  # cannot match inside `comparator_tokenization` — the character before
+  # `tokenization` there is `r`, not a quote.)
+  local TOKFIELDS COMPTOK
+  TOKFIELDS='"method":"client_tokenizer","tokenizer_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","counts_special_tokens":true,"counts_prompt_echo":false,"chat_template_sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"'
+  COMPTOK='"comparator_tokenization":{"corpus_prefill_tokens_median":513,'"$TOKFIELDS"'},'
   local OK='{"requested":16,"completed":16,"timeouts":0,"drain_ms":12,
    "provenance":{"binary_path":"/opt/pinned-binary","binary_sha256":"0000000000000000000000000000000000000000000000000000000000000000",
                  "resolution":"apr_bin.sh","compute_class":"cuda","host":"lambda","accelerator":"rtx-4090",
                  "model":"qwen2.5-coder-1.5b-instruct","quantization":"Q4_K_M"},
-   "tokenization":{"method":"hf-tokenizers"},
+   "tokenization":{"corpus_prefill_tokens_median":513,'"$TOKFIELDS"'},
+   '"$COMPTOK"'
    "samples_ms":[10.0,11.0,10.5,10.2,10.8],
    "bands":[{"concurrency":1,"aggregate_tok_per_sec":100,"tokens_total":900,"agg_ratio":0.9,"decode_ratio":1.1},
             {"concurrency":4,"aggregate_tok_per_sec":360,"tokens_total":900,"agg_ratio":0.9,"decode_ratio":1.1}]}'
@@ -571,7 +869,7 @@ with open(sys.argv[1], "w") as fh:
   # missing measurement reading as a passing one, which is what this gate is
   # for.
   _case timeouts_absent_is_not_zero    "${OK/\"timeouts\":0,/}" fail
-  _case tokenization_absent            "${OK/\"method\":\"hf-tokenizers\"/\"method\":\"\"}" fail
+  _case tokenization_absent            "${OK/\"method\":\"client_tokenizer\"/\"method\":\"\"}" fail
   _case drain_ms_absent                "${OK/\"drain_ms\":12/\"drain_ms\":null}" fail
   # THIS ROW WAS GREEN FOR THE WRONG REASON (PERF-047). The old substitution
   # appended a stray `}`, so the fixture was not valid JSON and the case went
@@ -594,6 +892,106 @@ with open(sys.argv[1], "w") as fh:
   _casepw cells_missing_bands_at_release       "$REL_SHORT" release W2 fail
   _casepw cells_complete_at_release            "$REL_DE"    release W2 pass
   _case band_c1_absent                 "$(printf '%s' "$OK" | python3 -c 'import sys,json;r=json.load(sys.stdin);r["bands"]=[b for b in r["bands"] if b["concurrency"]!=1];print(json.dumps(r))')" fail
+
+  # ---- §4.4.6 / I-11: the tokenization block (PERF-057) --------------------
+  # THE RULE WAS SPECIFIED AND ABSENT. `perf_gate.sh:79` tested that
+  # `tokenization.method` was a non-empty STRING; nothing read the other three
+  # fields; and no line in the file compared the measured lane against its
+  # comparator. Every row below enters a branch that did not exist, and each
+  # asserts the SENTENCE the gate prints, not merely its colour — a row that
+  # checks polarity alone is green when the gate fails for an unrelated reason.
+  #
+  # The last row is the one that motivated the work: two blocks that are
+  # IDENTICAL field for field, and lanes that prefilled 513 vs 534 tokens
+  # (measured 2026-08-29, apr 0.64.0 vs llama-server 39173bcac, W1, min ==
+  # median == max on both sides). Under §4.4.6 as written that receipt PASSES.
+  local OK_NOCOMP OK_UNARMED
+  OK_NOCOMP="${OK/$COMPTOK/}"
+  # No band is comparator-gated, so no ratio exists and there is nothing to
+  # refuse: the comparison must say it is unarmed rather than demand an operand.
+  OK_UNARMED="${OK_NOCOMP//\"aggregate_tok_per_sec\"/\"comparator_status\":\"UNMEASURED\",\"aggregate_tok_per_sec\"}"
+  _tokcase() { # name, json, expect(pass|fail), needle
+    _mk "$1" "$2"
+    local out rc=0
+    out="$(run_gate lambda merge W1 "$tmp/$1.json" 2>&1)" || rc=$?
+    local got=pass
+    [ "$rc" = 0 ] || got=fail
+    if [ "$got" != "$3" ]; then
+      printf '  BROKE %-34s expected %s got %s\n' "$1" "$3" "$got"
+      fail=$((fail + 1))
+      return
+    fi
+    case "$out" in
+      *"$4"*)
+        printf '  ok    %-34s expect=%s\n' "$1" "$3"
+        pass=$((pass + 1)) ;;
+      *)
+        printf '  BROKE %-34s %s but never said %s\n' "$1" "$3" "$4"
+        fail=$((fail + 1)) ;;
+    esac
+  }
+  # --- one lane's block, on its own -----------------------------------------
+  _tokcase tok_blocks_match_passes "$OK" pass "blocks agree on"
+  # The value rule the old string test could not make: "hf-tokenizers" is a
+  # perfectly good non-empty string and is not one of the two legal values.
+  _tokcase tok_method_illegal_value \
+    "$(printf '%s' "$OK" | sed 's/"method":"client_tokenizer"/"method":"hf-tokenizers"/g')" \
+    fail "is not one of"
+  # ... and the other side of that rule: `server_usage` IS legal. A check that
+  # only ever accepts the canonical spelling is a different rule than §4.4.6's.
+  _tokcase tok_method_server_usage_is_legal \
+    "$(printf '%s' "$OK" | sed 's/"method":"client_tokenizer"/"method":"server_usage"/g')" \
+    pass "NOT canonical"
+  _tokcase tok_client_tokenizer_needs_digest \
+    "$(printf '%s' "$OK" | sed 's/"tokenizer_sha256":"c*",//g')" \
+    fail "with no tokenizer_sha256"
+  # ABSENCE-OR-CONSISTENCY. Under `server_usage` the server counted, so the
+  # receipt is not obliged to name a tokenizer; a digest it DOES carry is still
+  # checked for shape and still compared across the lanes.
+  _tokcase tok_server_usage_digest_optional \
+    "$(printf '%s' "$OK" | sed 's/"method":"client_tokenizer"/"method":"server_usage"/g; s/"tokenizer_sha256":"c*",//g')" \
+    pass "PASS  ArmC-tok"
+  _tokcase tok_digest_must_be_lowercase_hex \
+    "$(printf '%s' "$OK" | sed 's/"tokenizer_sha256":"c*"/"tokenizer_sha256":"CAFE"/g')" \
+    fail "lowercase hex"
+  _tokcase tok_counts_flag_absent_is_fatal \
+    "$(printf '%s' "$OK" | sed 's/"counts_special_tokens":true,//g')" \
+    fail "counts_special_tokens absent"
+  _tokcase tok_chat_template_absent_is_fatal \
+    "$(printf '%s' "$OK" | sed 's/,"chat_template_sha256":"d*"//g')" \
+    fail "chat_template_sha256 absent"
+  _tokcase tok_prefill_median_absent_is_fatal \
+    "$(printf '%s' "$OK" | sed 's/"corpus_prefill_tokens_median":513,//g')" \
+    fail "corpus_prefill_tokens_median absent"
+  _tokcase tok_prefill_median_must_be_positive "${OK//513/0}" fail "not a positive integer"
+  # --- I-11: the two lanes, compared ----------------------------------------
+  _tokcase tok_method_mismatch_is_fatal \
+    "${OK/\"method\":\"client_tokenizer\"/\"method\":\"server_usage\"}" \
+    fail "block MISMATCH"
+  # R2, measured: llama-server counts the stop token and apr does not, exactly
+  # +1 on every naturally-terminated request. That is this axis, with the two
+  # servers on opposite sides of it.
+  _tokcase tok_counts_special_mismatch_is_fatal \
+    "${OK/\"counts_special_tokens\":true/\"counts_special_tokens\":false}" \
+    fail "counts_special_tokens: measured="
+  _tokcase tok_chat_template_mismatch_is_fatal \
+    "${OK/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}" \
+    fail "chat_template_sha256: measured="
+  _tokcase tok_comparator_block_absent_is_fatal "$OK_NOCOMP" fail "comparator_tokenization absent"
+  _tokcase tok_unarmed_comparison_reports "$OK_UNARMED" pass "not armed"
+  # Nothing else in the gate reads this block, so a scalar here reaches this
+  # arm and nothing else. Unguarded it is an AttributeError: fail-closed, and
+  # a diagnosis of nothing.
+  _tokcase tok_comparator_block_not_an_object \
+    "${OK/$COMPTOK/\"comparator_tokenization\":\"server_usage\",}" \
+    fail "is not an object"
+  # THE ROW THIS WORK EXISTS FOR. Every field §4.4.6 names agrees. The lanes
+  # prefilled different prompts. Deleting `corpus_prefill_tokens_median` from
+  # the compared set turns THIS row — and only this row — green.
+  _tokcase tok_identical_blocks_divergent_prefill \
+    "${OK/\"comparator_tokenization\":{\"corpus_prefill_tokens_median\":513/\"comparator_tokenization\":{\"corpus_prefill_tokens_median\":534}" \
+    fail "513 vs 534 (delta -21, ratio 0.9607)"
+
   # GREEN SIDE. A signed receipt whose commit contains the commit under test.
   _sigfix sig_fresh "$REL_DE" "$sigc1" lambda
   _sigsign sig_fresh lambda-selftest
