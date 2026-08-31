@@ -666,7 +666,7 @@ bindings:
   status: implemented
   notes: >-
     S8, the four jidoka parameters. guard_mutation_score is now MEASURED and
-    REPRODUCIBLE: scripts/mutate-guard.sh is committed and reports 215/215
+    REPRODUCIBLE: scripts/mutate-guard.sh is committed and reports 217/217
     = 100% over scripts/check_pr_review_receipt.sh (PRREV-004; the set was 119 when
     PRREV-004 landed and this line went stale silently in the four commits that widened
     the guard, which is why scripts/check_pr_review_counts.sh now derives it). The set is committed as

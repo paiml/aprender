@@ -139,12 +139,21 @@ AG_IDENT="\"agy_version\":\"$AGY_VERSION\",\"binary_path\":\"$AGY_PATH\",\"model
 # The ordinary shape: agy ran, agreed with the primary about everything, raised nothing.
 # `divergence` is all zeros AND `findings` is empty, which the guard checks against each
 # other - four zeros beside twelve findings would otherwise read as perfect agreement.
-AG_OK="{\"status\":\"consulted\",\"attempted\":1,$AG_IDENT,\"exit_code\":0,\"duration_seconds\":9.52,$AG_USAGE,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":0,\"primary_only\":0,\"contradicted\":0},\"findings\":[]}"
+# THE AVAILABILITY TEST'S OWN RESULT, RECORDED. `exit_code: 0` is in this block and it
+# is NOT what decides the three-state, because rc 0 was MEASURED to be worthless here:
+# running S3.E step 3's documented invocation verbatim on 2026-08-31, a tool needed the
+# `command` permission, headless print mode auto-denied it, and agy reported rc 0,
+# `.status "SUCCESS"`, an empty `.response` and no `.structured_output` at all. The
+# three booleans are S3.E.4's three conjuncts, and a `consulted` receipt must carry them
+# all true - which is what row 36 breaks and row 37 records honestly.
+AG_OUT_OK='"output_check":{"structured_output_present":true,"reviewed":true,"schema_valid":true}'
+
+AG_OK="{\"status\":\"consulted\",\"attempted\":1,$AG_IDENT,\"exit_code\":0,\"duration_seconds\":9.52,$AG_USAGE,$AG_OUT_OK,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":0,\"primary_only\":0,\"contradicted\":0},\"findings\":[]}"
 
 # agy raised one thing the primary did not. The ledger says so: agy_only = 1, and the
 # findings array holds exactly that one. This is the shape rows 32 and 33 both use, so
 # the only variable between them is the finding's precision_class.
-AG_ONE_FINDING="{\"status\":\"consulted\",\"attempted\":1,$AG_IDENT,\"exit_code\":0,\"duration_seconds\":31.7,$AG_USAGE,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":1,\"primary_only\":2,\"contradicted\":0},\"findings\":[{\"id\":\"agy-1\",\"grounding\":\"measured\",\"summary\":\"the added retry loop has no bound\"}]}"
+AG_ONE_FINDING="{\"status\":\"consulted\",\"attempted\":1,$AG_IDENT,\"exit_code\":0,\"duration_seconds\":31.7,$AG_USAGE,$AG_OUT_OK,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":1,\"primary_only\":2,\"contradicted\":0},\"findings\":[{\"id\":\"agy-1\",\"grounding\":\"measured\",\"summary\":\"the added retry loop has no bound\"}]}"
 
 # S3.E's `unavailable` state. agy fails SLOWLY as readily as it fails fast:
 # --print-timeout defaults to 5m and a repository-scale review needs more, so the honest
@@ -156,7 +165,23 @@ AG_NT_ILLEGAL='{"status":"not-triggered","trigger_reason":"docs-only diff, nothi
 
 # The vacuous shape S8 fixes at zero, in the fifth arm: recorded as performed, having
 # invoked nothing. Same defect as mutation.attempted=0 and cuda.queries=[].
-AG_VACUOUS="{\"status\":\"consulted\",\"attempted\":0,$AG_IDENT,\"exit_code\":0,\"duration_seconds\":0,$AG_USAGE,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":0,\"primary_only\":0,\"contradicted\":0},\"findings\":[]}"
+AG_VACUOUS="{\"status\":\"consulted\",\"attempted\":0,$AG_IDENT,\"exit_code\":0,\"duration_seconds\":0,$AG_USAGE,$AG_OUT_OK,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":0,\"primary_only\":0,\"contradicted\":0},\"findings\":[]}"
+
+# ROW 36's SHAPE, AND IT IS A TRANSCRIPT RATHER THAN AN INVENTION. Every field here was
+# taken from a real run of S3.E step 3's documented invocation on 2026-08-31: rc 0,
+# `.status "SUCCESS"`, `.response ""`, `num_turns 1`, usage really spent (21237 in / 544
+# out / 21781 total), duration 6.700545979 - and NO `.structured_output`. The run
+# consumed tokens, exited clean and called itself a success while reviewing nothing. A
+# receipt that reads `exit_code: 0` off that and writes `consulted` is the whole defect.
+AG_NO_OUTPUT="{\"status\":\"consulted\",\"attempted\":1,$AG_IDENT,\"exit_code\":0,\"duration_seconds\":6.7,\"agy_status\":\"SUCCESS\",\"usage\":{\"input_tokens\":21237,\"output_tokens\":544,\"thinking_tokens\":420,\"cache_read_tokens\":8143,\"total_tokens\":21781},\"output_check\":{\"structured_output_present\":false,\"reviewed\":false,\"schema_valid\":false},\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":0,\"primary_only\":0,\"contradicted\":0},\"findings\":[]}"
+
+# ROW 37 - THE SAME RUN, RECORDED HONESTLY. Identical measurements, identical rc 0,
+# identical `.status "SUCCESS"` kept as the diagnostic S3.E.4 says it is - and
+# `unreachable`, because the artifact was absent. This is not row 29 with a new
+# `trigger_reason`: row 29's agy TIMED OUT, which is the failure mode a reader expects
+# to look like a failure. This one exited 0 and said SUCCESS, which is the failure mode
+# that looks like a clean review, and it is the one that shipped.
+AG_UNREACHABLE_DENIED='{"status":"unreachable","exit_code":0,"agy_status":"SUCCESS","duration_seconds":6.7,"trigger_reason":"agy exited 0 with .status SUCCESS, an empty .response and no .structured_output: a tool required the command permission that headless print mode cannot prompt for and it was auto-denied. rc 0 is not a review, so this is unavailable, not a run that found nothing."}'
 
 # S3.A duplication coverage (PRREV-009 / backtest F4). Every surface carries a method,
 # because a surface with NO entry is the silently-absent coverage that made
@@ -903,13 +928,72 @@ emit row-34-arm-e-not-triggered "$SARIF" "$RCPT"
 # `model_family: google/gemini` written beside `--model claude-opus-4-6-thinking` is the
 # same artifact.
 # ===========================================================================
-AG_SAME_FAMILY="{\"status\":\"consulted\",\"attempted\":1,\"agy_version\":\"$AGY_VERSION\",\"binary_path\":\"$AGY_PATH\",\"model_id\":\"claude-opus-4-6-thinking\",\"model_family\":\"google/gemini\",\"exit_code\":0,\"duration_seconds\":9.52,$AG_USAGE,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":0,\"primary_only\":0,\"contradicted\":0},\"findings\":[]}"
+AG_SAME_FAMILY="{\"status\":\"consulted\",\"attempted\":1,\"agy_version\":\"$AGY_VERSION\",\"binary_path\":\"$AGY_PATH\",\"model_id\":\"claude-opus-4-6-thinking\",\"model_family\":\"google/gemini\",\"exit_code\":0,\"duration_seconds\":9.52,$AG_USAGE,$AG_OUT_OK,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":0,\"primary_only\":0,\"contradicted\":0},\"findings\":[]}"
 SARIF=$(
 sarif_empty
 )
 RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
       "$AUTHOR" "$REVIEWER" "$AG_SAME_FAMILY")
 emit row-35-arm-e-routed-to-the-same-model-family "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 36 - agy exited 0 and produced nothing, recorded `consulted`    -> RED B1
+#
+# THE DEFECT THIS ROW EXISTS FOR WAS SHIPPED IN THIS SKILL, not imagined for a test.
+# S3.E step 3's documented invocation, run verbatim against a real checkout on
+# 2026-08-31, returned rc 0 and NO structured output: headless print mode cannot prompt
+# for a tool permission, so it auto-denied one and reported `.status "SUCCESS"` over an
+# empty response. Read through the exit code - which is what "run it and check rc" means
+# - that is a clean consultation. It is a review that never happened.
+#
+# A FAILURE THAT EXITS 0 IS THIS REPOSITORY'S RECURRING DEFECT: an EPIPE-inverted grep
+# that PASSED a safety check on the error, a chown swallowing errors, a timeout naming
+# no step, a `sed` draining its sibling's stream, a self-test satisfied by its own
+# vacuity floor, five make targets claiming CI. Six in one session. The fifth arm is
+# where it costs most, because a receipt that records a second vendor reviewed the diff
+# is the one artifact nobody re-derives.
+#
+# Every other field is honest and generous - real usage, real duration, attempted 1,
+# a resolved binary path, a Gemini model id, a balanced empty ledger - so nothing but
+# `output_check` can reject it. That is deliberate: the row must fail on the new rule
+# or it pins nothing, exactly as row 32 had to be rebuilt to stop passing on S1's.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_NO_OUTPUT")
+emit row-36-arm-e-consulted-with-no-usable-output "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 37 - THE SAME rc-0 RUN, recorded unreachable + DEGRADED       -> GREEN
+#
+# DISCRIMINATION CASE for row 36, and it carries a second job. Without it the new rule
+# reads green as "refuse any receipt whose agy exited 0", which would refuse EVERY
+# successful consultation - agy returns rc 0 when it works too. The variable between the
+# two rows is not the exit code, the duration, the usage or the status agy printed: all
+# four are identical. It is what the receipt CLAIMS about them.
+#
+# This is also the row that says what a reviewer on a box with a permission-denying agy
+# should actually write. `unreachable` + DEGRADED is the intended behaviour, the same
+# thing rows 29-30 say about a timeout and S3.0 says about pmat's ConnectionRefused, and
+# an arm that punished this record as hard as row 36 would teach the field to stay empty.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [ { "tool": { "driver": { "name": "antigravity" } },
+              "invocations": [ { "executionSuccessful": false,
+                "toolExecutionNotifications": [ { "level": "error",
+                  "message": { "text": "agy exited 0 with status SUCCESS and no structured_output: a tool permission was auto-denied in headless mode. Consultation could not be performed; verdict DEGRADED." } } ] } ],
+              "results": [] } ] }
+JSON
+
+)
+RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_UNREACHABLE_DENIED")
+emit row-37-arm-e-rc-zero-recorded-unreachable "$SARIF" "$RCPT"
 
 # ===========================================================================
 # THE POSITIVE CONTROLS (S6.1) - not rows of the S6.3 table.

@@ -271,8 +271,16 @@ apply() {
 # ---------------------------------------------------------------------------
 build_tree() {
   local d=$1
-  mkdir -p "$d/scripts" "$d/tests/fixtures"
+  mkdir -p "$d/scripts" "$d/tests/fixtures" "$d/.claude/skills/pr-review"
   cp -a "$ROOT/schemas" "$d/schemas"
+  # SKILL.md is copied because tests/pr-review.bats READS IT (PRREV-020's row asserting
+  # that S3.E step 3 still documents the disposable tree AND the file-based prompt
+  # together - the flag alone hands a second agent write access to the working
+  # checkout). A tree without it fails the BASELINE for a reason that has nothing to do
+  # with any mutant, which is failure mode 2 at the top of this file, and it would have
+  # aborted the whole sweep rather than reporting a survivor. The rule is the one
+  # already stated: whatever the suite reads, the mutant tree carries.
+  cp -a "$ROOT/.claude/skills/pr-review/SKILL.md" "$d/.claude/skills/pr-review/SKILL.md"
   cp -a "$ROOT/tests/fixtures/pr-review" "$d/tests/fixtures/pr-review"
   cp -a "$ROOT/$BATS_REL" "$d/$BATS_REL"
   cp -a "$GUARD" "$d/$GUARD_REL"
