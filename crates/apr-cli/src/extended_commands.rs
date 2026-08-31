@@ -1811,13 +1811,47 @@ pub enum LlmSubcommand {
         #[arg(long = "server-feature")]
         server_features: Vec<String>,
         /// How tokens were counted (§4.4.6). Absence of a valid value is fatal.
-        #[arg(long, default_value = "server_usage",
+        ///
+        /// REQUIRED under `--band`, and deliberately not defaulted there.
+        /// §4.4.6 says `method` has no default and its absence is schema-fatal
+        /// (I-13), and it names `client_tokenizer` the CANONICAL method —
+        /// "server-reported `usage` fields are two different implementations'
+        /// opinions". This argument nevertheless carried
+        /// `default_value = "server_usage"` on every path, so a band run that
+        /// simply forgot the flag produced a schema-valid receipt declaring the
+        /// non-canonical method, and under the streaming §4.5 requires, that
+        /// receipt's `prompt_tokens` are all zero because neither server emits a
+        /// `usage` block. A default that quietly picks the method the spec
+        /// argues against is the same defect class as a digest nobody computed.
+        ///
+        /// The default is KEPT for the legacy mode, which writes no §4.4.6
+        /// block and has two live callers in `scripts/parity_host_receipt.sh`.
+        /// `--band` has none — `git grep -- 'test llm bench --band'` over
+        /// `scripts/`, `Makefile` and `.github/workflows/` returns nothing — so
+        /// requiring it there breaks no caller that exists.
+        #[arg(long, required_if_eq("band", "true"), default_value = "server_usage",
               value_parser = ["server_usage", "client_tokenizer"])]
         tokenization: String,
-        /// Tokenizer digest, required when --tokenization client_tokenizer.
+        /// Path to the model's tokenizer.json. Required by --tokenization
+        /// client_tokenizer; the receipt's digest is computed from this file.
         #[arg(long)]
+        tokenizer: Option<PathBuf>,
+        /// ASSERT the tokenizer digest. Refuses the run when it does not match
+        /// the sha256 of --tokenizer; it cannot supply a digest.
+        ///
+        /// This flag used to be the receipt's ONLY source of
+        /// `tokenization.tokenizer_sha256`, validated as 64 lowercase hex
+        /// characters and nothing else -- so any 64-hex string named any
+        /// tokenizer, and no tokenizer had to exist. It is now an assertion
+        /// about a file the run opens.
+        #[arg(long, requires = "tokenizer")]
         tokenizer_sha256: Option<String>,
         /// Whether the token counts include special tokens (§4.4.6).
+        ///
+        /// A DECLARATION about the server, and therefore meaningful only under
+        /// --tokenization server_usage. Under client_tokenizer both this and
+        /// --counts-prompt-echo are facts of the client counter, which counts
+        /// neither, and passing them is refused rather than recorded.
         #[arg(long)]
         counts_special_tokens: bool,
         /// Whether the token counts include the echoed prompt (§4.4.6).
@@ -1891,6 +1925,182 @@ mod perf039_prompts_help_tests {
         assert!(
             !help.contains("JSON array"),
             "help must not still promise a JSON array; got: {help}"
+        );
+    }
+
+    fn bench() -> clap::Command {
+        super::LlmSubcommand::augment_subcommands(clap::Command::new("llm"))
+            .get_subcommands()
+            .find(|c: &&clap::Command| c.get_name() == "bench")
+            .expect("`bench` subcommand exists")
+            .clone()
+    }
+
+    /// §4.4.6's digest is COMPUTED, so the flag that produces it must exist on
+    /// the command line as well as in the code.
+    ///
+    /// The CLI three-surface rule: a counter reachable only from a library API
+    /// is a counter no receipt is ever produced by.
+    #[test]
+    fn the_band_mode_exposes_a_tokenizer_path() {
+        let bench = bench();
+        let arg = bench
+            .get_arguments()
+            .find(|a: &&clap::Arg| a.get_id() == "tokenizer")
+            .expect("`--tokenizer` argument exists");
+        let help: String = arg
+            .get_long_help()
+            .or_else(|| arg.get_help())
+            .map(ToString::to_string)
+            .expect("`--tokenizer` has help text");
+        assert!(help.contains("client_tokenizer"), "{help}");
+        assert!(help.contains("computed"), "{help}");
+    }
+
+    /// `--tokenizer-sha256` must be unusable on its own.
+    ///
+    /// It used to be the receipt's ONLY source of the §4.4.6 digest, so any 64
+    /// hex characters named any tokenizer and no tokenizer had to exist. clap
+    /// now refuses it without the file it is an assertion about, and the help
+    /// says which direction the check runs in.
+    #[test]
+    fn an_asserted_digest_requires_the_file_it_asserts_about() {
+        let bench = bench();
+        let arg = bench
+            .get_arguments()
+            .find(|a: &&clap::Arg| a.get_id() == "tokenizer_sha256")
+            .expect("`--tokenizer-sha256` argument exists");
+        let help: String = arg
+            .get_long_help()
+            .or_else(|| arg.get_help())
+            .map(ToString::to_string)
+            .expect("`--tokenizer-sha256` has help text");
+        assert!(help.contains("ASSERT"), "{help}");
+        assert!(
+            help.contains("cannot supply"),
+            "the help must say the flag no longer supplies a digest; got: {help}"
+        );
+    }
+
+    /// Every argument a `--band` parse needs EXCEPT the tokenizer pair, so the
+    /// two tests below differ in exactly the thing they are about.
+    ///
+    /// Written out because the first version of these tests supplied only
+    /// `--band --receipt` and the parse failed on the missing `--host`,
+    /// `--accelerator` and `--quantization`. The negative test passed, the
+    /// mutation that deleted `requires = "tokenizer"` did NOT turn it red, and
+    /// the assertion `msg.contains("--tokenizer")` had been matching
+    /// `--tokenizer-sha256 <TOKENIZER_SHA256>` inside clap's own usage line.
+    fn band_argv() -> Vec<String> {
+        let mut argv = band_argv_without_tokenization();
+        argv.extend(["--tokenization".to_string(), "client_tokenizer".to_string()]);
+        argv
+    }
+
+    /// `band_argv` minus the §4.4.6 method, for the one test that is about the
+    /// method being mandatory. Split out rather than inlined so `band_argv`
+    /// still differs from the tokenizer tests in exactly one thing.
+    fn band_argv_without_tokenization() -> Vec<String> {
+        [
+            "bench",
+            "--band",
+            "--receipt",
+            "/tmp/perf-gate-parse-test",
+            "--host",
+            "lambda",
+            "--accelerator",
+            "rtx-4090",
+            "--quantization",
+            "Q4_K_M",
+        ]
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+    }
+
+    /// §4.4.6 / I-13: `tokenization.method` has NO default, and its absence is
+    /// schema-fatal. It had `default_value = "server_usage"` on every path, so a
+    /// band run that forgot the flag emitted a schema-valid receipt declaring
+    /// the method §4.4.6 calls non-canonical — and, under the streaming §4.5
+    /// requires, one whose `prompt_tokens` are all zero.
+    ///
+    /// The paired positive control is
+    /// [`the_band_argv_parses_once_the_tokenizer_pair_is_complete`], whose argv
+    /// is this one plus `--tokenization`: if this test ever fails for an
+    /// unrelated missing argument, that one fails too.
+    #[test]
+    fn a_band_run_must_declare_its_token_counting_method() {
+        let mut argv = band_argv_without_tokenization();
+        argv.extend([
+            "--tokenizer".to_string(),
+            "/tmp/tokenizer.json".to_string(),
+        ]);
+        let err = bench()
+            .try_get_matches_from(&argv)
+            .expect_err("a band receipt may not default its §4.4.6 method");
+        let msg = err.to_string();
+        // Anchored on clap's rendering of the MISSING argument, value
+        // placeholder included, so this cannot pass by prefix-matching some
+        // other flag in the usage line.
+        assert!(
+            msg.contains("--tokenization <TOKENIZATION>"),
+            "clap must name the missing --tokenization; got:\n{msg}"
+        );
+    }
+
+    /// The legacy (non-`--band`) mode keeps its default, because it writes no
+    /// §4.4.6 block and `scripts/parity_host_receipt.sh` has two live callers
+    /// that do not pass the flag. Requiring it there would break them.
+    #[test]
+    fn the_legacy_bench_mode_still_parses_without_a_tokenization_method() {
+        let argv: Vec<String> = ["bench", "--url", "http://127.0.0.1:8080"]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        let m = bench()
+            .try_get_matches_from(&argv)
+            .expect("the legacy mode must still parse");
+        assert_eq!(
+            m.get_one::<String>("tokenization").map(String::as_str),
+            Some("server_usage")
+        );
+    }
+
+    /// The POSITIVE control. Without it the negative test below could pass
+    /// because the argv is malformed for some reason that has nothing to do
+    /// with the tokenizer — which is exactly how it first passed.
+    #[test]
+    fn the_band_argv_parses_once_the_tokenizer_pair_is_complete() {
+        let mut argv = band_argv();
+        argv.extend([
+            "--tokenizer".to_string(),
+            "/tmp/tokenizer.json".to_string(),
+            "--tokenizer-sha256".to_string(),
+            "a".repeat(64),
+        ]);
+        bench()
+            .try_get_matches_from(&argv)
+            .expect("the complete form must parse");
+    }
+
+    /// The clap-level refusal: an asserted digest with no file to assert about.
+    ///
+    /// The expected substring is `--tokenizer <TOKENIZER>` — clap's rendering of
+    /// the MISSING argument, complete with its value placeholder. A bare
+    /// `--tokenizer` would also match `--tokenizer-sha256 <TOKENIZER_SHA256>`
+    /// in the usage line, which is how this test first passed against a build
+    /// with the `requires` deleted.
+    #[test]
+    fn parsing_an_asserted_digest_without_a_tokenizer_fails() {
+        let mut argv = band_argv();
+        argv.extend(["--tokenizer-sha256".to_string(), "a".repeat(64)]);
+        let err = bench()
+            .try_get_matches_from(&argv)
+            .expect_err("a digest with no file asserts nothing");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--tokenizer <TOKENIZER>"),
+            "clap must name the missing --tokenizer; got:\n{msg}"
         );
     }
 }

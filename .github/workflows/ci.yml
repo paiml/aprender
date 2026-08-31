@@ -1107,6 +1107,19 @@ jobs:
         run: bash scripts/check_perf_receipt_fields_have_producers.sh
       - name: Schema-map guard can still go RED (case table + 5 mutations)
         run: bash scripts/check_perf_receipt_fields_have_producers.sh --self-test
+      # §4.4.6 names client_tokenizer the CANONICAL counting method, and under
+      # the streaming §4.5 requires it is the only one that can produce a
+      # judgeable W1 band: neither server emits a `usage` block when streaming,
+      # so `server_usage` yields prompt_tokens = 0 on every request. The CLI
+      # gained a real client-side counter and a computed digest, and nothing
+      # invoked them -- `git grep -- '--tokenization'` over scripts/, Makefile
+      # and .github/workflows/ returned one unrelated hit. This holds the
+      # declared band invocation, and every band invocation that appears later,
+      # to the canonical method.
+      - name: Band invocations use §4.4.6 client_tokenizer
+        run: bash scripts/check_band_client_tokenizer.sh
+      - name: Band-tokenization guard can still go RED (case table + injected producer)
+        run: bash scripts/check_band_client_tokenizer.sh --selftest
       # The converter that closes the loop, end to end: a BenchmarkReport this
       # repo can actually produce reaches a verdict, and what remains failing is
       # the UNMEASURED bucket BY NAME rather than a schema error.

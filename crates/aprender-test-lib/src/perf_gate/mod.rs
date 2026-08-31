@@ -164,6 +164,11 @@ pub mod metrics;
 pub mod protocol;
 pub mod receipt;
 pub mod samples;
+// APR-PERF-GATE-001 v2.2 §4.4.6 `method: client_tokenizer`. Behind `llm`
+// because it is the only thing here that needs the `tokenizers` crate, and
+// most consumers take this crate with `default-features = false`.
+#[cfg(feature = "llm")]
+pub mod tokenizer;
 pub mod window;
 
 pub use bootstrap::{bootstrap_agg_tok_s_ci, bootstrap_ci, BootstrapCi, SplitMix64, Statistic};
@@ -181,6 +186,10 @@ pub use receipt::{
     TokenizationBlock, Workload, SERVER_ONLY_FIELDS,
 };
 pub use samples::{read_samples_gz, write_samples_gz, SamplesFile};
+#[cfg(feature = "llm")]
+pub use tokenizer::{
+    ClientTokenizer, TokenAccounting, TokenizerError, COUNTS_PROMPT_ECHO, COUNTS_SPECIAL_TOKENS,
+};
 pub use window::{WindowController, WindowReport};
 
 #[cfg(test)]

@@ -80,15 +80,32 @@ WORD_POOL = (
     "recv", "wait", "lock", "free", "init", "start", "stop", "count", "sum",
 )
 
-# Chosen: 496 words of body. The header is `// w1-NNNN` plus a newline, which a
-# byte-level BPE renders in roughly 8 tokens for a four-digit id, so 496 body
-# words + ~8 header tokens lands near 504-512 and inside the +/-8 band IF every
-# body word is one token. That "IF" is the whole reason this is a --body-words
-# knob with a recorded value rather than a constant: when the harness measures
-# the real count and it sits outside 512 +/- 8, this number is retuned and the
-# corpus regenerated. Retuning it is the expected outcome of the first
-# measurement, not a defect in it.
-DEFAULT_BODY_WORDS = 496
+# Chosen: 503 words of body, and this number is now MEASURED rather than
+# reasoned. The header is `// w1-NNNN` plus a newline, which a byte-level BPE
+# renders in 9 tokens for a four-digit id; every word in the pool above encodes
+# as exactly one token, so the count is `body_words + 9` with no variance at
+# all -- min == median == max across all 256 records.
+#
+# WHY IT MOVED FROM 496. 496 was reasoned, not measured ("roughly 8 tokens...
+# lands near 504-512"), and the first thing able to measure it -- the section
+# 4.4.6 client_tokenizer counter -- put it at 505 on every one of the 256
+# prompts. 505 is INSIDE 512 +/- 8, by one token: the band's floor is 504, so
+# the blocking workload sat 0.198% above the value at which it fails. It had
+# been invisible because under `server_usage --stream` neither server emits a
+# usage block, so every observation was `prompt_tokens = 0` and the band
+# assertion failed as an instrumentation gap before it ever compared 505 to 504.
+#
+# 503 puts the count at exactly 512 -- the target, dead centre, 8 tokens of
+# margin on each side instead of 1 and 15. Measured with the canonical Qwen2.5-
+# Coder tokenizer.json, sha256 c0382117ea329cdf097041132f6d735924b697924d6f6fc
+# 3945713e96ce87539, 7,031,645 bytes; pinned by
+# `the_w1_corpus_counts_512_tokens_per_prompt`, which reads THIS file.
+#
+# The knob stays a knob. A tokenizer re-serialization that changes any word's
+# encoding moves the count, and the remedy is unchanged: retune --body-words and
+# regenerate. What changed is that a one-token perturbation no longer fails the
+# gate.
+DEFAULT_BODY_WORDS = 503
 
 
 def build(count, body_words):
@@ -133,7 +150,14 @@ def meta(count, body_words):
             "target_prompt_tokens is a TARGET. No tokenizer ran in this "
             "generator. The 512 +/-8 of 4.3.1 is asserted by the harness "
             "against the model's own tokenizer at measurement time; if it "
-            "fails, retune --body-words and regenerate."
+            "fails, retune --body-words and regenerate. body_words = 503 IS "
+            "the outcome of doing exactly that: the first measurement, by the "
+            "4.4.6 client_tokenizer counter against the canonical Qwen2.5-"
+            "Coder tokenizer (sha256 c0382117...), put body_words = 496 at 505 "
+            "tokens -- inside 512 +/- 8 by ONE token, 0.198% above the floor. "
+            "503 measures 512 exactly on all 256 records, 8 tokens of margin "
+            "each side. Pinned by "
+            "the_w1_corpus_counts_512_tokens_per_prompt, which reads this file."
         ),
         "template_boundary_open": (
             "4.3.1 does not say whether prompt_tokens = 512 is counted before "

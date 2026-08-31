@@ -278,14 +278,20 @@ mod tests {
             counts_prompt_echo: false,
         };
         assert!(ct.validate().is_ok());
-        assert!(ct.require_counter(false).is_err());
-        assert!(ct.require_counter(true).is_ok());
+        assert!(ct.require_counter(None).is_err());
+        assert!(ct.require_counter(Some(&"c".repeat(64))).is_ok());
+        // The arm a `bool` could never express: a counter IS present, and it is
+        // not the one the block names.
+        let borrowed = ct
+            .require_counter(Some(&"d".repeat(64)))
+            .expect_err("a digest for another file must be refused");
+        assert!(borrowed.contains("did not open"), "{borrowed}");
 
         let su = TokenizationBlock::ServerUsage {
             counts_special_tokens: true,
             counts_prompt_echo: false,
         };
-        assert!(su.require_counter(true).is_err());
-        assert!(su.require_counter(false).is_ok());
+        assert!(su.require_counter(Some(&"c".repeat(64))).is_err());
+        assert!(su.require_counter(None).is_ok());
     }
 }

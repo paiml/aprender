@@ -58,6 +58,41 @@ impl RequestSample {
     ///
     /// `None` when fewer than two tokens were observed, where the quantity is
     /// undefined rather than zero.
+    ///
+    /// # The numerator and the denominator count different things
+    ///
+    /// `generated_tokens` and `token_times_s` come from two different places.
+    /// Under §4.4.6 `client_tokenizer`, `generated_tokens` is the client's
+    /// re-encode of the assembled completion text; `token_times_s` has one entry
+    /// per non-empty SSE **content delta**
+    /// (`llm::client::chat_completion_stream`). Nothing makes a delta carry
+    /// exactly one token, so in principle this divides a token count by a span
+    /// bounded by delta arrivals, and if a server coalesced `k` tokens into the
+    /// first delta the span would start late while the numerator stayed whole —
+    /// `decode_tok_s` OVERSTATED.
+    ///
+    /// Measured, it does not diverge on the workload the gate blocks on. Sixteen
+    /// W1 prompts through the campaign's exact model
+    /// (`qwen2.5-coder-7b-instruct-q4_k_m.gguf`) and the pinned comparator build
+    /// (`b7746-39173bcac`, RTX 4090), `--temp 0 --ignore-eos -n 128`, each
+    /// completion re-encoded with the canonical tokenizer
+    /// (`c0382117…`, 7,031,645 bytes):
+    ///
+    /// ```text
+    /// server-generated tokens : min 128  median 128  max 128
+    /// client re-encode        : min 128  median 128  max 128
+    /// delta                   : 0 tokens, 0.000%, 16/16 exact
+    /// ```
+    ///
+    /// The mechanism that could make them differ is identified and does not
+    /// fire here: `aprender-serve`'s `streaming_text_deltas` holds a delta back
+    /// when it would end mid-multi-byte-character, merging it with the next. W1
+    /// output is 1 non-ASCII character in 9,766, so no delta is ever held. A
+    /// CJK- or emoji-heavy workload would be a different measurement, and this
+    /// note is where to start it.
+    ///
+    /// The `- 1` in the numerator is not part of that: it is §4.4.3's own
+    /// definition (`n - 1` gaps between `n` arrivals).
     #[must_use]
     pub fn decode_tok_s(&self) -> Option<f64> {
         if self.token_times_s.len() < 2 || self.generated_tokens < 2 {

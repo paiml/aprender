@@ -37,7 +37,7 @@ watch = ["dep:notify"]
 # LLM types and assertions (no HTTP dependencies)
 llm-types = []
 # LLM/API testing and load testing (includes llm-types + HTTP client)
-llm = ["llm-types", "dep:reqwest", "tokio", "futures"]
+llm = ["llm-types", "dep:reqwest", "tokio", "futures", "dep:tokenizers"]
 
 [lib]
 name = "jugar_probar"
@@ -89,6 +89,16 @@ proptest = { workspace = true, optional = true }
 
 # LLM testing (OpenAI-compatible API client)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
+
+# APR-PERF-GATE-001 v2.2 §4.4.6 `method: client_tokenizer` -- the client-side
+# token counter (`src/perf_gate/tokenizer.rs`).
+#
+# NOT a new dependency: `tokenizers` is already a workspace pin, already taken
+# with `default-features = false, features = ["fancy-regex"]` (no onig, no
+# native toolchain), and already built by `aprender-core`'s SetFit path. It is
+# `optional` and reached only through `llm`, so the default build of this crate
+# -- which most consumers take with `default-features = false` -- is unchanged.
+tokenizers = { workspace = true, optional = true }
 
 # AST analysis for state sync linter (PROBAR-WASM-003)
 syn = { workspace = true }

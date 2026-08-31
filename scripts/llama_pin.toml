@@ -255,3 +255,60 @@ http_stream = true
 apr_serve_command = "apr serve run {model} --gpu --port {port} --context-length {context_length}"
 comparator_serve_command = "{llama_server} -m {model} --port {port} -ngl 999 -c {context_length} -t {threads} --no-warmup"
 harness_command = "apr test llm bench --url http://127.0.0.1:{port} --model {model_name} --profile {http_profile} --warmup {http_warmup_secs} --duration {http_duration_secs} --runs {http_runs} --cooldown {http_cooldown_secs} --concurrency {http_concurrency} --stream --runtime-name {runtime_name}"
+
+# ---------------------------------------------------------------------------
+# THE §4.4-CONFORMANT LANE (APR-PERF-GATE-001 v2.2). Still keys of
+# [protocol.http] — one lane, two modes — rather than a new table, so
+# `llama_pin_get_raw` and every existing reader find them without change.
+#
+# `harness_command` above is the LEGACY mode. It writes no §4.4.6 tokenization
+# block, no drain accounting and no `receipt.rN.json`, so `scripts/perf_gate.sh`
+# cannot judge its output. The conformant producer is `apr test llm bench
+# --band`, and at the time this section was written it had **no caller anywhere
+# in the repository**: `git grep -- 'test llm bench --band' scripts/ Makefile
+# .github/workflows/` returned nothing, and `git grep -- '--tokenization'` over
+# the same three returned one unrelated hit in a doc-stub generator. A
+# conformant protocol with a conformant receipt producer and no invocation
+# measures nothing — the same shape PERF-025 closed one level up.
+#
+# THE METHOD IS DECLARED HERE, NOT LEFT TO THE OPERATOR'S MEMORY. §4.4.6:
+# "The canonical method is `client_tokenizer` with the model's own tokenizer,
+# applied identically to apr and to the comparator. Server-reported `usage`
+# fields are two different implementations' opinions." Measured on this fleet,
+# on one W1 corpus and one model file, the two servers' `usage` blocks reported
+# 513 and 534 prompt tokens for the same 505-token wire text — a 4.09% gap in
+# prefill work whose SIGN flips across prompt shapes, so it is not correctable
+# by an offset. And under `http_stream = true`, which §4.5 requires, NEITHER
+# server emits a `usage` block at all: `server_usage` yields `prompt_tokens = 0`
+# on every request and §4.3.1's band assertion refuses the run as an
+# instrumentation gap. `client_tokenizer` is not merely canonical here, it is
+# the only method that can produce a judgeable W1 band.
+band_tokenization_method = "client_tokenizer"
+
+# THE TOKENIZER IS PINNED BY DIGEST, NOT BY PATH. Two of the four fleet hosts
+# carry only a newer `tokenizers` re-save of the same vocabulary, and no single
+# absolute path is correct on all four — the path this fleet was told to use,
+# `~/models/qwen2.5-coder.canonical.tokenizer.json`, does not exist on `lambda`,
+# where the same bytes live as `qwen2.5-coder-1.5b-instruct-q4k.tokenizer.json`.
+# So `{tokenizer}` is supplied per host and its digest is COMPUTED from the file
+# the run opens (`ClientTokenizer::from_file`); this value is what
+# `--tokenizer-sha256` ASSERTS against. A mismatch refuses the run.
+#
+# `band_tokenizer_sha256` is `tokenizer.json` as HuggingFace serves it for
+# Qwen2.5-Coder, 7,031,645 bytes, verified on lambda 2026-08-31.
+# `band_tokenizer_sha256_resave` is the newer serialization: same 151,665
+# entries, same ids, differing only in how `model.merges` is written.
+band_tokenizer_sha256 = "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+band_tokenizer_sha256_resave = "3fd169731d2cbde95e10bf356d66d5997fd885dd8dbb6fb4684da3f23b2585d8"
+
+# THE FOURTH INVOCATION, VERBATIM. `{tokenizer}` is the host's copy of the file
+# whose digest is declared above; every other `{key}` is substituted from this
+# file. `--tokenization` is REQUIRED by the CLI under `--band` (it has no
+# default there, per §4.4.6/I-13), so an invocation that drops it is refused by
+# clap rather than silently downgraded to `server_usage`.
+#
+# ENFORCED, not merely written down: `scripts/check_band_client_tokenizer.sh`
+# fails if this command loses either flag, and fails if any OTHER `--band`
+# invocation that appears in `scripts/`, `Makefile` or `.github/workflows/` is
+# missing them. It is the reason this declaration cannot rot into decoration.
+band_harness_command = "apr test llm bench --band --url http://127.0.0.1:{port} --model {model_name} --receipt {receipt_dir} --bands {http_concurrency_bands} --workload {workload} --host {host} --accelerator {accelerator} --quantization {quantization} --compute-class {compute_class} --tokenization {band_tokenization_method} --tokenizer {tokenizer} --tokenizer-sha256 {band_tokenizer_sha256} --stream"

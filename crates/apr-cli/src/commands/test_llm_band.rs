@@ -58,8 +58,9 @@ use apr_test::llm::client::{ChatRequest, LlmClient};
 use apr_test::llm::{assert_prompt_tokens_in_band, PromptTokenBand};
 use apr_test::perf_gate::protocol::{BandConfig, Outcome};
 use apr_test::perf_gate::{
-    sha256_file, write_samples_gz, BandInput, ComparatorStatus, ComputeClass, Provenance,
-    ReceiptInput, RequestOutcome, RequestSample, TokenizationBlock, Workload, REPLICATES,
+    sha256_file, write_samples_gz, BandInput, ClientTokenizer, ComparatorStatus, ComputeClass,
+    Provenance, ReceiptInput, RequestOutcome, RequestSample, TokenAccounting, TokenizationBlock,
+    Workload, REPLICATES,
 };
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -96,7 +97,10 @@ pub struct BandArgs<'a> {
     pub server_features: &'a [String],
     /// §4.4.6 counting method.
     pub tokenization: &'a str,
-    /// §4.4.6 digest, required for `client_tokenizer`.
+    /// The model's `tokenizer.json`, required for `client_tokenizer`. The
+    /// receipt's digest is COMPUTED from this file.
+    pub tokenizer: Option<&'a Path>,
+    /// §4.4.6 digest, ASSERTED against the digest of `tokenizer`.
     pub tokenizer_sha256: Option<&'a str>,
     /// §4.4.6 — do the counts include special tokens?
     pub counts_special_tokens: bool,
@@ -157,33 +161,74 @@ fn parse_bands(spec: &str) -> Result<Vec<usize>> {
 
 /// §4.4.6 — `method` has no default, so an unknown value is refused rather than
 /// falling back to one of the two.
-fn build_tokenization(args: &BandArgs<'_>) -> Result<TokenizationBlock> {
-    let block = match args.tokenization {
-        "server_usage" => TokenizationBlock::ServerUsage {
-            counts_special_tokens: args.counts_special_tokens,
-            counts_prompt_echo: args.counts_prompt_echo,
-        },
+///
+/// # `client_tokenizer` now opens a file
+///
+/// It used to take `--tokenizer-sha256` and put whatever 64 hex characters the
+/// operator typed straight into the receipt. Nothing computed that digest,
+/// nothing counted a token client-side, and `perf_gate.sh:79` checks only that
+/// `tokenization.method` is a non-empty string — so a `client_tokenizer` receipt
+/// was a declaration with no referent, while the counts inside it were still the
+/// server's own `usage` block. Measured, that block differs between `apr serve`
+/// (513) and `llama-server` (534) on identical W1 prompts whose wire text is
+/// 505 tokens — the corpus has since been retuned to 512, which moves all three
+/// numbers together and leaves the disagreement exactly where it was.
+///
+/// The digest is now computed from `--tokenizer`, and `--tokenizer-sha256` is
+/// demoted to an assertion about it.
+fn build_accounting(args: &BandArgs<'_>) -> Result<TokenAccounting> {
+    match args.tokenization {
+        "server_usage" => {
+            if let Some(path) = args.tokenizer {
+                return Err(CliError::InvalidInput(format!(
+                    "--tokenizer {} was supplied with --tokenization server_usage: the counts \
+                     would come from the server anyway, so the tokenizer would be recorded and \
+                     never used. Declare client_tokenizer or drop --tokenizer.",
+                    path.display()
+                )));
+            }
+            Ok(TokenAccounting::server_usage(
+                args.counts_special_tokens,
+                args.counts_prompt_echo,
+            ))
+        }
         "client_tokenizer" => {
-            let sha = args.tokenizer_sha256.ok_or_else(|| {
+            let path = args.tokenizer.ok_or_else(|| {
                 CliError::InvalidInput(
-                    "--tokenization client_tokenizer requires --tokenizer-sha256".to_string(),
+                    "--tokenization client_tokenizer requires --tokenizer <PATH>: §4.4.6's \
+                     digest is computed from the tokenizer this run opens and counts with. A \
+                     digest cannot be declared."
+                        .to_string(),
                 )
             })?;
-            TokenizationBlock::ClientTokenizer {
-                tokenizer_sha256: sha.to_string(),
-                counts_special_tokens: args.counts_special_tokens,
-                counts_prompt_echo: args.counts_prompt_echo,
+            let counter = ClientTokenizer::from_file(path)
+                .map_err(|e| CliError::InvalidInput(e.to_string()))?;
+            if let Some(expected) = args.tokenizer_sha256 {
+                counter
+                    .assert_digest(expected)
+                    .map_err(|e| CliError::InvalidInput(e.to_string()))?;
             }
+            // The two §4.4.6 booleans are FACTS of this counter, not
+            // declarations about it: it encodes with `add_special_tokens =
+            // false` and counts the prompt and the completion from separate
+            // strings. Accepting `--counts-special-tokens` here would write a
+            // receipt field that contradicts the code that produced the numbers.
+            if args.counts_special_tokens || args.counts_prompt_echo {
+                return Err(CliError::InvalidInput(
+                    "--counts-special-tokens / --counts-prompt-echo are declarations about a \
+                     SERVER's counting semantics and cannot be set under --tokenization \
+                     client_tokenizer: the client counter counts neither, and the receipt \
+                     records what it actually did."
+                        .to_string(),
+                ));
+            }
+            Ok(TokenAccounting::client_tokenizer(counter))
         }
-        other => {
-            return Err(CliError::InvalidInput(format!(
-                "--tokenization {other:?}: expected server_usage or client_tokenizer (§4.4.6 \
-                 gives `method` no default)"
-            )))
-        }
-    };
-    block.validate().map_err(CliError::InvalidInput)?;
-    Ok(block)
+        other => Err(CliError::InvalidInput(format!(
+            "--tokenization {other:?}: expected server_usage or client_tokenizer (§4.4.6 \
+             gives `method` no default)"
+        ))),
+    }
 }
 
 /// Which binary is measuring, and what it hashes to.
@@ -356,7 +401,7 @@ pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
     // Everything that can be refused without spending a measurement is refused
     // before the first request. A 14-minute sweep that fails at receipt-write
     // time because `--host` was blank has thrown away the measurement.
-    let tokenization = build_tokenization(&args)?;
+    let accounting = build_accounting(&args)?;
     let provenance = build_provenance(&args)?;
     let workload = Workload::from_str(args.workload)
         .map_err(|e| CliError::InvalidInput(format!("--workload: {e}")))?;
@@ -405,13 +450,26 @@ pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
              without per-token arrival times and are omitted from the receipt"
         );
     }
+    match accounting.counter() {
+        Some(counter) => println!(
+            "tokens   §4.4.6 client_tokenizer — {} ({} bytes)\n         sha256 {}",
+            counter.origin(),
+            counter.source_len(),
+            counter.tokenizer_sha256()
+        ),
+        None => println!(
+            "tokens   §4.4.6 server_usage — the counts are the SERVER's own `usage` block. \
+             Two servers' usage blocks are two implementations' opinions; --tokenization \
+             client_tokenizer --tokenizer <PATH> counts both lanes with one tokenizer."
+        ),
+    }
 
     let mut written = Vec::new();
     for k in 0..args.replicates {
         let mut runs = Vec::with_capacity(levels.len());
         for &c in &levels {
             let band = BandConfig::conformant(c);
-            let run = run_band(&client, &prompts, &band, tokenization.clone(), args.stream)
+            let run = run_band(&client, &prompts, &band, &accounting, args.stream)
                 .await
                 .map_err(|e| {
                     CliError::InferenceFailed(format!("band c={c} replicate {}: {e}", k + 1))
@@ -424,7 +482,7 @@ pub async fn run_bands(args: BandArgs<'_>) -> Result<()> {
         }
         written.push(write_replicate(
             &args,
-            &tokenization,
+            accounting.block(),
             &provenance,
             k,
             &runs,
@@ -609,6 +667,7 @@ mod tests {
             compute_class: "cpu",
             server_features: &[],
             tokenization,
+            tokenizer: None,
             tokenizer_sha256: None,
             counts_special_tokens: true,
             counts_prompt_echo: false,
@@ -654,22 +713,119 @@ mod tests {
     /// §4.4.6 gives `method` no default; an unknown value must not fall back.
     #[test]
     fn an_unknown_tokenization_method_is_refused() {
-        let err = build_tokenization(&args("1", "guess")).expect_err("must reject");
+        let err = build_accounting(&args("1", "guess")).expect_err("must reject");
         let msg = err.to_string();
         assert!(msg.contains("server_usage"), "{msg}");
         assert!(msg.contains("client_tokenizer"), "{msg}");
     }
 
+    /// The in-tree MiniLM `tokenizer.json`, borrowed from SetFit's fixtures.
+    fn a_real_tokenizer() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../aprender-core/tests/fixtures/setfit/tokenizer.json")
+    }
+
+    /// A digest can no longer be typed; it has to be computed from a file.
     #[test]
-    fn client_tokenizer_without_a_digest_is_refused() {
-        let err =
-            build_tokenization(&args("1", "client_tokenizer")).expect_err("digest is required");
-        assert!(err.to_string().contains("tokenizer-sha256"), "{err}");
+    fn client_tokenizer_without_a_tokenizer_file_is_refused() {
+        let err = build_accounting(&args("1", "client_tokenizer")).expect_err("a file is required");
+        let msg = err.to_string();
+        assert!(msg.contains("--tokenizer <PATH>"), "{msg}");
+        assert!(msg.contains("cannot be declared"), "{msg}");
+    }
+
+    /// The §4.4.6 digest in the receipt is the sha256 of the bytes that were
+    /// opened, computed here rather than accepted from the command line.
+    #[test]
+    fn client_tokenizer_computes_the_digest_from_the_file_it_opens() {
+        let path = a_real_tokenizer();
+        let mut a = args("1", "client_tokenizer");
+        a.tokenizer = Some(&path);
+        a.counts_special_tokens = false;
+        let accounting = build_accounting(&a).expect("the fixture must load");
+
+        let expected =
+            apr_test::perf_gate::sha256_file(&path).expect("independent hash of the same file");
+        match accounting.block() {
+            TokenizationBlock::ClientTokenizer {
+                tokenizer_sha256,
+                counts_special_tokens,
+                counts_prompt_echo,
+            } => {
+                assert_eq!(tokenizer_sha256, &expected);
+                assert!(!counts_special_tokens);
+                assert!(!counts_prompt_echo);
+            }
+            other => panic!("expected client_tokenizer, got {other:?}"),
+        }
+        assert!(accounting.counter().is_some());
+    }
+
+    /// `--tokenizer-sha256` asserts. It refuses a run; it supplies nothing.
+    #[test]
+    fn an_asserted_digest_that_does_not_match_the_file_refuses_the_run() {
+        let path = a_real_tokenizer();
+        let wrong = "a".repeat(64);
+        let mut a = args("1", "client_tokenizer");
+        a.tokenizer = Some(&path);
+        a.tokenizer_sha256 = Some(&wrong);
+        a.counts_special_tokens = false;
+        let err = build_accounting(&a).expect_err("a wrong assertion must refuse the run");
+        let msg = err.to_string();
+        assert!(msg.contains("does not match"), "{msg}");
+        assert!(msg.contains("COMPUTED"), "{msg}");
     }
 
     #[test]
-    fn server_usage_needs_no_digest() {
-        assert!(build_tokenization(&args("1", "server_usage")).is_ok());
+    fn an_asserted_digest_that_matches_the_file_is_accepted() {
+        let path = a_real_tokenizer();
+        let right = apr_test::perf_gate::sha256_file(&path).expect("hash");
+        let mut a = args("1", "client_tokenizer");
+        a.tokenizer = Some(&path);
+        a.tokenizer_sha256 = Some(&right);
+        a.counts_special_tokens = false;
+        assert!(build_accounting(&a).is_ok());
+    }
+
+    #[test]
+    fn a_tokenizer_path_that_is_not_there_is_refused_where_it_was_typed() {
+        let missing = PathBuf::from("/nonexistent/perf-gate/tokenizer.json");
+        let mut a = args("1", "client_tokenizer");
+        a.tokenizer = Some(&missing);
+        a.counts_special_tokens = false;
+        let err = build_accounting(&a).expect_err("must refuse");
+        assert!(err.to_string().contains("cannot read tokenizer"), "{err}");
+    }
+
+    /// The §4.4.6 booleans describe a SERVER's semantics. Under
+    /// `client_tokenizer` they are facts of the counter, and the counter counts
+    /// neither special tokens nor an echoed prompt.
+    #[test]
+    fn declaring_special_token_counting_under_client_tokenizer_is_refused() {
+        let path = a_real_tokenizer();
+        let mut a = args("1", "client_tokenizer");
+        a.tokenizer = Some(&path);
+        a.counts_special_tokens = true;
+        let err = build_accounting(&a).expect_err("a contradicted receipt field");
+        let msg = err.to_string();
+        assert!(msg.contains("--counts-special-tokens"), "{msg}");
+        assert!(msg.contains("records what it actually did"), "{msg}");
+    }
+
+    /// A tokenizer that will never be consulted must not be recorded as if it
+    /// had been.
+    #[test]
+    fn a_tokenizer_under_server_usage_is_refused() {
+        let path = a_real_tokenizer();
+        let mut a = args("1", "server_usage");
+        a.tokenizer = Some(&path);
+        let err = build_accounting(&a).expect_err("must refuse");
+        assert!(err.to_string().contains("never used"), "{err}");
+    }
+
+    #[test]
+    fn server_usage_needs_no_tokenizer() {
+        assert!(build_accounting(&args("1", "server_usage")).is_ok());
     }
 
     /// The provenance the CLI builds must be one `bench_receipt.py` accepts: a

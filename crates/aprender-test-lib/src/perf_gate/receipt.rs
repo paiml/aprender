@@ -302,19 +302,64 @@ impl TokenizationBlock {
     /// §4.4.6 block were merged — the enum kept the shape, this kept its one
     /// behaviour the enum lacked.
     ///
+    /// # It used to take a `bool`, and nothing real ever supplied one
+    ///
+    /// The parameter was `has_client_counter: bool`, and `git grep
+    /// require_counter` outside this file returned nothing: the only two callers
+    /// were its own unit tests, which passed literal `true` and `false`. A
+    /// `bool` the caller invents cannot answer the question §4.4.6 actually
+    /// asks — *was this digest produced by a tokenizer this run opened?* — so
+    /// the argument is now the **computed digest** of the counter that will do
+    /// the counting, which only a
+    /// [`super::tokenizer::ClientTokenizer`] can produce, and which is compared
+    /// against the digest the receipt is about to carry.
+    ///
+    /// Without the third arm below, a caller that pairs a block with a counter
+    /// could declare `client_tokenizer`, carry a digest naming tokenizer A, and
+    /// count every token with tokenizer B. Both halves would be individually
+    /// well-formed and the receipt would be a lie about which vocabulary
+    /// produced its numbers.
+    ///
+    /// # The third arm is a BACKSTOP, not the producer's protection
+    ///
+    /// Stated plainly so nobody credits the wrong mechanism: the only caller
+    /// that can present a block and a counter from different sources is
+    /// `TokenAccounting::from_parts`, and that has no caller outside
+    /// `#[cfg(test)]`. On the CLI path every `TokenAccounting` comes from
+    /// `TokenAccounting::client_tokenizer` (which DERIVES the block from the
+    /// counter) or `TokenAccounting::server_usage` (which has no counter) — both
+    /// self-consistent by construction, so this arm cannot fire. Deleting it
+    /// turns three unit tests red and leaves the CLI's behaviour unchanged.
+    ///
+    /// That is the right shape. §4.4.6's honesty on the producer path comes from
+    /// derivation — a mistake that cannot be made — and this arm exists so the
+    /// eventual receipt-VERIFYING caller, which must accept a foreign block,
+    /// meets a rule rather than a convention.
+    ///
     /// # Errors
-    /// When the declared method and the available counting machinery disagree.
-    pub fn require_counter(&self, has_client_counter: bool) -> Result<(), String> {
-        match (self.method(), has_client_counter) {
-            (TokenCountingMethod::ClientTokenizer, false) => Err(
+    /// When the declared method and the available counting machinery disagree,
+    /// or when the declared digest is not the counter's own.
+    pub fn require_counter(&self, computed_digest: Option<&str>) -> Result<(), String> {
+        match (self, computed_digest) {
+            (Self::ClientTokenizer { .. }, None) => Err(
                 "tokenization.method = client_tokenizer but no client TokenCounter was supplied"
                     .to_string(),
             ),
-            (TokenCountingMethod::ServerUsage, true) => Err(
+            (Self::ServerUsage { .. }, Some(_)) => Err(
                 "tokenization.method = server_usage but a client TokenCounter was supplied; \
                  declare client_tokenizer or drop the counter"
                     .to_string(),
             ),
+            (
+                Self::ClientTokenizer {
+                    tokenizer_sha256, ..
+                },
+                Some(computed),
+            ) if tokenizer_sha256 != computed => Err(format!(
+                "tokenization.tokenizer_sha256 is {tokenizer_sha256}, but the tokenizer this run \
+                 opened hashes to {computed} — §4.4.6's digest names the vocabulary that produced \
+                 the counts, and this one names a file the run did not open"
+            )),
             _ => Ok(()),
         }
     }

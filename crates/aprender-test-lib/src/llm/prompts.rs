@@ -1176,6 +1176,18 @@ mod tests {
         assert_eq!(corpus.requests.len(), 256);
     }
 
+    /// The `prompt` of record `id` in a JSONL corpus body.
+    fn corpus_prompt(body: &str, id: u64) -> String {
+        body.lines()
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .find(|v| v.get("id").and_then(serde_json::Value::as_u64) == Some(id))
+            .and_then(|v| {
+                v.get("prompt")
+                    .and_then(|p| p.as_str().map(ToString::to_string))
+            })
+            .unwrap_or_else(|| panic!("corpus has no record with id {id}"))
+    }
+
     #[test]
     fn committed_w1_corpus_is_refused_when_one_prompt_is_perturbed() {
         // THE FILE-LEVEL MUTATION. Read the committed corpus, drop one word
@@ -1194,15 +1206,22 @@ mod tests {
             "fixture drifted: {}",
             &victim[..40]
         );
-        let cut = victim.rfind(' ').expect("a 498-word prompt has spaces");
+        // The expected length is DERIVED from the committed corpus, not retyped.
+        // It was `497 whitespace`, a literal that encoded `body_words = 496`,
+        // so retuning `--body-words` (which §4.3.1's band assertion is supposed
+        // to make routine) broke this test for a reason unrelated to what it
+        // tests.
+        let words_before = corpus_prompt(&good, 137).split_whitespace().count();
+        let cut = victim.rfind(' ').expect("a filler prompt has spaces");
         victim.replace_range(cut..=cut, "");
         let mutated = lines.join("\n") + "\n";
 
         let err = parse_corpus(&mutated).expect_err("a perturbed prompt must be REFUSED");
         assert!(err.contains("prompt 137"), "must name the prompt: {err}");
+        let want = format!("{} whitespace", words_before - 1);
         assert!(
-            err.contains("497 whitespace"),
-            "must give the actual length: {err}"
+            err.contains(&want),
+            "must give the actual length ({want}): {err}"
         );
 
         // REVERT -> GREEN.
