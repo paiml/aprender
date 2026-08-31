@@ -744,6 +744,16 @@ validate_receipt() {
     # S3.D: "Surviving mutants are recorded with mutant, file, line, killed: false."
     # A survivor count that does not match the arithmetic makes the survivors list -
     # the only part a reader can act on - unfalsifiable.
+    # `?` SUPPRESSES THE TYPE ERROR, NOT THE VALUE. `[ "12 survived"[]? ] | length` is
+    # 0 - not an error and not 12 - so a survivors field holding a STRING, a null, or
+    # nothing at all made this arithmetic agree with attempted == killed, and the clause
+    # below could not fire. An adversarial verifier shipped exactly that receipt through
+    # this guard and then through S13's arm script, which reads the same field with the
+    # same idiom. The type is established before the length is believed.
+    case "$(jq -r 'if (.predicate.consultations.mutation | has("survivors")) then (.predicate.consultations.mutation.survivors | type) else "absent" end' "$rcpt")" in
+      array) ;;
+      *) reject B1 "mutation.status is consulted and survivors is $(jq -r 'if (.predicate.consultations.mutation | has("survivors")) then "a " + (.predicate.consultations.mutation.survivors | type) else "absent" end' "$rcpt"), not a list; jq counts a non-list survivors field as EMPTY, so 'not recorded' and 'none survived' become the same artifact (S3.0, S3.D)" || return 1 ;;
+    esac
     n_survivors=$(jq -r '[.predicate.consultations.mutation.survivors[]?] | length' "$rcpt")
     [ "$n_survivors" -eq $((attempted - killed)) ] \
       || reject B1 "mutation records attempted=$attempted killed=$killed, so $((attempted - killed)) mutant/s survived, but survivors[] holds $n_survivors; S3.D requires every survivor to be named" || return 1

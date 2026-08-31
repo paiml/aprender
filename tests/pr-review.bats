@@ -906,6 +906,24 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
     '.predicate.consultations.mutation.killed = 30'
 }
 
+@test "probe a survivors field that is a STRING is not an empty one       RED  B1" {
+  # PRREV-019. `[ .survivors[]? ] | length` is 0 over a string: jq's `?` suppresses the
+  # TYPE ERROR, not the value. So a receipt confessing twelve survivors satisfied the
+  # arithmetic above (37 attempted, 37 killed, "0" survivors) and this guard accepted it.
+  # An adversarial verifier then walked it through S13's arm script, which read the same
+  # field with the same idiom.
+  assert_probe mutation-survivors-not-a-list row-14-complete-gpu-review B1 \
+    "survivors is a string, not a list" \
+    '.predicate.consultations.mutation.survivors = "12 survived, shipping anyway"'
+}
+
+@test "probe an ABSENT survivors field is 'not recorded', never 'none'      RED  B1" {
+  # The S3.0 half of the same defect: the field's absence read as an empty list.
+  assert_probe mutation-survivors-absent row-14-complete-gpu-review B1 \
+    "survivors is absent, not a list" \
+    'del(.predicate.consultations.mutation.survivors)'
+}
+
 # --- comparative claims (S3.C.1) ---------------------------------------------
 
 @test "probe a competitor ratio stated in a finding but never recorded RED  B4" {

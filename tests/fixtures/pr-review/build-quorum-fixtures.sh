@@ -117,6 +117,35 @@ R_VETO='{ "ruleId": "cross_vendor_reservation", "level": "warning",
     "precision_class": "advisory",
     "autonomy_effect": "refuse" } }'
 
+# THE FOLD / VOCABULARY TABLE. Each of these is R_BLOCKING or R_VETO with EXACTLY ONE
+# character-level edit to the field the S13.2 predicate reads. That is the whole point:
+# the rows they build differ from q-17 and q-20 in the SPELLING of one token and in
+# nothing else, so a row that passes for a reason other than the spelling is visible.
+#
+#   MUST fold INTO the vocabulary and refuse on the SUBSTANTIVE branch:
+#     "Blocking"  "BLOCKING"      -> Q6 "classed blocking under a PASS verdict"
+#     "Refuse"                    -> Q7 "autonomy_effect: refuse"
+#   MUST fall OUTSIDE the vocabulary and refuse on the VOCABULARY branch:
+#     "critical"  <absent>        -> Q6 "outside { blocking, advisory }"
+#     "veto"                      -> Q7 "outside { refuse }"
+#
+# Nine forged receipts were PERMITTED because the predicate compared these fields against
+# the ONE bad spelling and read everything else as consent. A blacklist over a field no
+# schema constrains is fail-open on its own complement; the table above is the whitelist
+# that replaced it, and these fixtures are what stop it silently narrowing again.
+R_BLOCKING_FOLDED=${R_BLOCKING/'"precision_class": "blocking"'/'"precision_class": "Blocking"'}
+R_BLOCKING_SHOUTED=${R_BLOCKING/'"precision_class": "blocking"'/'"precision_class": "BLOCKING"'}
+R_PC_NOVEL=${R_BLOCKING/'"precision_class": "blocking"'/'"precision_class": "critical"'}
+R_PC_ABSENT=${R_BLOCKING/'"precision_class": "blocking"'/'"note": "this result declines to name a precision class"'}
+R_VETO_FOLDED=${R_VETO/'"autonomy_effect": "refuse"'/'"autonomy_effect": "Refuse"'}
+R_AE_NOVEL=${R_VETO/'"autonomy_effect": "refuse"'/'"autonomy_effect": "veto"'}
+for v in R_BLOCKING_FOLDED R_BLOCKING_SHOUTED R_PC_NOVEL R_PC_ABSENT R_VETO_FOLDED R_AE_NOVEL; do
+  # A substitution that matched nothing builds a COPY of the row it was derived from,
+  # which then passes for the wrong reason. Checked rather than assumed.
+  [ "${!v}" != "$R_BLOCKING" ] && [ "${!v}" != "$R_VETO" ] \
+    || { echo "$v is identical to the shape it was derived from; the edit matched nothing" >&2; exit 1; }
+done
+
 # --- the base receipt ------------------------------------------------------
 # A COMPLETE, VALID, PASS receipt on the GPU head, carrying the S13 autonomy block.
 # Every row below is this document with ONE jq edit, so a row differs from the one that
@@ -358,6 +387,64 @@ emit q-50-delta-clean-with-no-needles \
 emit q-51-needles-digest-mismatch \
   ".predicate.autonomy.main_sha_at_review = \"$C1\"
    | .predicate.autonomy.delta_sweep.needles_sha256 = \"$ZERO$ZERO\"" \
+  "$ID" sarif_clean
+
+# ===========================================================================
+# PRREV-019 - THE FORGED-RECEIPT ROWS.
+#
+# An adversarial verifier holding tests/fixtures/pr-review/keys/pr-review-test-TEST-ONLY.key
+# produced nine receipts that scripts/pr_review_quorum_arm.sh PERMITTED. Every signature
+# was genuine and every document was schema-valid; each evaded a clause of the form
+# `refuse if field == "<the one bad spelling>"`. These rows are those receipts, reduced
+# to one variable each, so the clauses that now catch them cannot silently narrow back.
+#
+# THEY COME IN DISCRIMINATION PAIRS. q-58/q-60 carry the SAME field with two spellings
+# and must refuse on DIFFERENT branches - one folds into the vocabulary and is caught by
+# the substantive rule, the other does not and is caught by the vocabulary rule. A single
+# row could be satisfied by a clause that refuses everything; a pair cannot.
+# ===========================================================================
+
+# Q6 - precision_class. The vocabulary is two words (S13: "blocking|advisory").
+emit q-58-precision-class-outside-the-vocabulary "$ID" "$ID" sarif_result "$R_PC_NOVEL"
+emit q-59-precision-class-absent                 "$ID" "$ID" sarif_result "$R_PC_ABSENT"
+emit q-60-blocking-in-a-different-case           "$ID" "$ID" sarif_result "$R_BLOCKING_FOLDED"
+emit q-61-blocking-shouted                       "$ID" "$ID" sarif_result "$R_BLOCKING_SHOUTED"
+
+# Q7 - autonomy_effect. S13.5 defines exactly one value, so the field is absent or a veto.
+emit q-62-autonomy-effect-outside-the-vocabulary "$ID" "$ID" sarif_result "$R_AE_NOVEL"
+emit q-63-veto-in-a-different-case               "$ID" "$ID" sarif_result "$R_VETO_FOLDED"
+
+# Q5 - the quorum members are IDENTITIES, and a string comparison reads two spellings of
+# one identity as two identities. The vendors here are the NUMBERS 1 and 2 (distinct, and
+# not vendors); then one vendor with a trailing space, which counted as a second vendor
+# beside `anthropic`; then the AUTHOR's id with a trailing space, which walked past
+# `m.actor.id != author_actor.id`.
+emit q-64-vendor-is-not-an-identity \
+  '.predicate.autonomy.quorum[0].vendor = 1 | .predicate.autonomy.quorum[1].vendor = 2' "$ID" sarif_clean
+emit q-65-vendor-carries-trailing-whitespace \
+  '.predicate.autonomy.quorum[1].vendor = "anthropic "' "$ID" sarif_clean
+emit q-66-author-id-shifted-by-one-space \
+  ".predicate.autonomy.quorum[1].actor.id = \"$AUTHOR \"" "$ID" sarif_clean
+# ONE actor, two vendor LABELS. This satisfies |distinct vendor| >= 2 and is one
+# reviewer; S13.1 rests on the members failing DIFFERENTLY, which is about who ran.
+emit q-67-one-actor-under-two-vendors \
+  ".predicate.autonomy.quorum[1].actor.id = \"$REVIEWER\"" "$ID" sarif_clean
+
+# Q2 - jq's `?` suppresses the TYPE ERROR, not the value: over a string, `.survivors[]?`
+# yields the empty stream and the count is 0. The first row is the receipt that CONFESSED
+# twelve survivors and was counted as clean; the second is the S3.0 half - an absent
+# record read as an empty one.
+emit q-68-survivors-is-not-a-list \
+  '.predicate.consultations.mutation.survivors = "12 survived, shipping anyway"' "$ID" sarif_clean
+emit q-69-survivors-absent \
+  'del(.predicate.consultations.mutation.survivors)' "$ID" sarif_clean
+
+# Q4 - `rev-list A..origin/main` is empty when main has not moved AND when A is not on
+# main at all. The producer chooses A, so anchoring at the PR's own head collapses the
+# S13.3.b region to nothing and skips the sweep. F1 is this PR's head: it resolves, and
+# it is not an ancestor of origin/main.
+emit q-70-anchor-is-not-on-main \
+  ".predicate.autonomy.main_sha_at_review = \"$F1\" | .predicate.autonomy.delta_sweep.status = \"not-run\"" \
   "$ID" sarif_clean
 
 # ===========================================================================

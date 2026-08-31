@@ -1109,7 +1109,7 @@ enforcement:
 
   quorum_arm_mutation_score:
     description: 'killed / attempted on the arm script''s derived mutation set (S13.10)'
-    check: '= 1.00 — no ratchet, measured 122/122 by the derived set. A surviving mutant is a refusal path the arm script states and nothing tests, which under S13 is a merge nobody authorised'
+    check: '= 1.00 — no ratchet, measured 134/134 by the derived set. A surviving mutant is a refusal path the arm script states and nothing tests, which under S13 is a merge nobody authorised'
     severity: line-stop
     reference: 'PR-REVIEW-SKILL-002 v2 S13.10; scripts/mutate_quorum_arm.sh'
 

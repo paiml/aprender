@@ -666,7 +666,7 @@ bindings:
   status: implemented
   notes: >-
     S8, the four jidoka parameters. guard_mutation_score is now MEASURED and
-    REPRODUCIBLE: scripts/mutate-guard.sh is committed and reports 215/215
+    REPRODUCIBLE: scripts/mutate-guard.sh is committed and reports 217/217
     = 100% over scripts/check_pr_review_receipt.sh (PRREV-004; the set was 119 when
     PRREV-004 landed and this line went stale silently in the four commits that widened
     the guard, which is why scripts/check_pr_review_counts.sh now derives it). The set is committed as
@@ -729,7 +729,7 @@ bindings:
     instance of that hole. Discharged by scripts/pr_review_quorum_arm.sh -- the Q1..Q10
     refusal tier over the S13.2 predicate -- with tests/pr-review-quorum.bats as the
     table (67 rows, one per refusal path, plus four that must PERMIT) and
-    scripts/mutate_quorum_arm.sh as the falsifier (122/122, derived one `drop` and one
+    scripts/mutate_quorum_arm.sh as the falsifier (134/134, derived one `drop` and one
     `flip` per `refuse Q<n>` site so it cannot fall behind the script). NOT ARMED, and
     that is a property of the wiring rather than a promise: CI Arm 5 runs the arm script
     with --explain against committed fixtures and a purpose-built repository, Arm 6 runs

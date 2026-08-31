@@ -514,6 +514,134 @@ arm_row() {
   [[ "$output" != *"PERMIT"* ]]
 }
 
+# ---------------------------------------------------------------------------
+# PRREV-019 — the nine forged receipts.
+#
+# An adversarial verifier holding tests/fixtures/pr-review/keys/pr-review-test-TEST-ONLY.key
+# got nine bad receipts to PERMIT. Every signature was GENUINE — the key signs whatever
+# bytes it is given — every document was schema-valid, and every one of the nine evaded a
+# clause shaped `refuse if field == "<the one bad spelling>"`.
+#
+# THE ROWS BELOW COME IN PAIRS, AND THE PAIRING IS THE TEST. A vocabulary clause that
+# refuses everything would satisfy any single row; it cannot satisfy a pair whose two
+# members must refuse on DIFFERENT branches. q-58/q-59 carry a precision_class outside the
+# vocabulary and must refuse on the vocabulary branch; q-60/q-61 carry the SAME field in a
+# different case, must FOLD into the vocabulary, and must refuse on the substantive
+# blocking branch. Same field, one character different, opposite branch.
+# ---------------------------------------------------------------------------
+
+@test "q-58 a precision_class outside { blocking, advisory } is not a permission" {
+  arm_row q-58-precision-class-outside-the-vocabulary REFUSE Q6 "outside { blocking, advisory }"
+}
+
+@test "q-59 an ABSENT precision_class is not 'advisory' by default" {
+  # The S3.0 rule one level down: 'the reviewer did not classify this' and 'the reviewer
+  # classified this as harmless' must not be the same artifact.
+  arm_row q-59-precision-class-absent REFUSE Q6 "outside { blocking, advisory }"
+}
+
+@test "q-60 'Blocking' FOLDS into the vocabulary and refuses as a blocker, not as a typo" {
+  # The discrimination half of q-58. If this row refused on the VOCABULARY branch the
+  # fold would be doing nothing, and a receipt could still hide a blocker by shouting it.
+  arm_row q-60-blocking-in-a-different-case REFUSE Q6 "classed blocking under a PASS verdict"
+}
+
+@test "q-61 'BLOCKING' folds the same way" {
+  arm_row q-61-blocking-shouted REFUSE Q6 "classed blocking under a PASS verdict"
+}
+
+@test "q-62 an autonomy_effect outside { refuse } is not a grant of autonomy" {
+  arm_row q-62-autonomy-effect-outside-the-vocabulary REFUSE Q7 "outside { refuse }"
+}
+
+@test "q-63 'Refuse' FOLDS, and refuses as the S13.5 veto it is" {
+  # The forged receipt carried an explicit cross-vendor refusal spelled with a capital R
+  # and merged anyway. The pair with q-62 is what keeps the fold and the vocabulary from
+  # collapsing into one clause that cannot tell a veto from a typo.
+  arm_row q-63-veto-in-a-different-case REFUSE Q7 "autonomy_effect: refuse"
+}
+
+@test "q-64 a quorum vendor that is a NUMBER is distinct, and is not a vendor" {
+  arm_row q-64-vendor-is-not-an-identity REFUSE Q5 "not well-formed identities"
+}
+
+@test "q-65 'anthropic ' is not a second vendor beside 'anthropic'" {
+  # Rejected rather than trimmed. A receipt whose identities need normalising to be
+  # legible is malformed, and repairing it silently would hide the producer that emitted
+  # it — which is the defect, not the space.
+  arm_row q-65-vendor-carries-trailing-whitespace REFUSE Q5 "not well-formed identities"
+}
+
+@test "q-66 the author with one trailing space is still the author" {
+  arm_row q-66-author-id-shifted-by-one-space REFUSE Q5 "not well-formed identities"
+}
+
+@test "q-67 one actor listed twice under two vendor labels is ONE reviewer" {
+  # |distinct vendor| >= 2 holds and the quorum is one agent. S13.1 rests on the members
+  # failing DIFFERENTLY, which is a property of who ran — not of what they were labelled.
+  arm_row q-67-one-actor-under-two-vendors REFUSE Q5 "distinct actor id(s)"
+}
+
+@test "q-68 a survivors field that is a STRING is not an empty survivors field" {
+  # jq's `?` suppresses the TYPE ERROR, not the value: `[ "12 survived"[]? ] | length`
+  # is 0. A receipt that CONFESSED twelve survivors was counted as clean by the clause
+  # written to stop exactly that.
+  arm_row q-68-survivors-is-not-a-list REFUSE Q2 "survivors is a string, not an array"
+}
+
+@test "q-69 an ABSENT survivors field is 'not recorded', never 'none'" {
+  arm_row q-69-survivors-absent REFUSE Q2 "survivors is absent"
+}
+
+@test "q-70 an anchor that is not on main makes the delta region empty for the wrong reason" {
+  # `rev-list A..origin/main` is empty when main has not moved AND when A was never on
+  # main. The producer chooses A, so anchoring at the PR's own head collapses S13.3.b's
+  # region to nothing and skips the sweep with delta_sweep.status 'not-run'.
+  arm_row q-70-anchor-is-not-on-main REFUSE Q4 "is not an ancestor of origin/main"
+}
+
+@test "the fold is a whitelist over a literal list, and here is its case table" {
+  # S13.2 ships no new regex, so this table is over `index()` membership and a literal
+  # whitespace set. This repository's guard patterns have been wrong six times and a
+  # must-match / must-not-match table caught every one; re-run the table rather than
+  # re-reading the code.
+  local defs
+  defs=$(sed -n "/^JQ_DEFS='/,/^'$/p" "$ARM" | sed "1s/^JQ_DEFS='//; \$d")
+
+  # fold: MUST map every case variant onto the vocabulary member.
+  for v in blocking Blocking BLOCKING bLoCkInG; do
+    run jq -rn "$defs \"$v\" | fold"
+    [ "$output" = blocking ] || { echo "fold(\"$v\") = '$output', wanted 'blocking'"; return 1; }
+  done
+  # fold: MUST NOT map a different token, or surrounding whitespace, onto it.
+  for v in critical advisory "blocking " " blocking" blockings; do
+    run jq -rn "$defs \"$v\" | fold"
+    [ "$output" != blocking ] || { echo "fold(\"$v\") collapsed onto 'blocking'"; return 1; }
+  done
+  # fold: a non-string never becomes a vocabulary member.
+  for v in 1 null true '[]' '{}'; do
+    run jq -rn "$defs $v | fold"
+    [ "$output" != blocking ] && [ "$output" != advisory ] \
+      || { echo "fold($v) = '$output' entered the vocabulary"; return 1; }
+  done
+
+  # wellformed_id: MUST accept a plain identifier.
+  for v in anthropic google "agent:agy-1.1.22/session-cross-vendor" "a"; do
+    run jq -rn "$defs \"$v\" | wellformed_id"
+    [ "$output" = true ] || { echo "wellformed_id(\"$v\") = $output, wanted true"; return 1; }
+  done
+  # wellformed_id: MUST reject every shape the attack used, and the empty string.
+  for v in "anthropic " " anthropic" "" "	tabbed" "trailing	"; do
+    run jq -rn "$defs \"$v\" | wellformed_id"
+    [ "$output" = false ] || { echo "wellformed_id(\"$v\") = $output, wanted false"; return 1; }
+  done
+  # wellformed_id: MUST reject a non-string, whatever it is.
+  for v in 1 null true '[]' '{}'; do
+    run jq -rn "$defs $v | wellformed_id"
+    [ "$output" = false ] || { echo "wellformed_id($v) = $output, wanted false"; return 1; }
+  done
+}
+
 @test "MECHANISM_PATHS is a literal prefix list, and its own script is on it" {
   # The falsifiable property of S13.8: the PR that introduces S13 cannot auto-merge
   # itself. Checked here as a property of the list rather than of a fixture, because
@@ -542,5 +670,5 @@ arm_row() {
   # 58 cgp tests, and with tests/pr-review.bats itself before PRREV-006 wired it.
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'q-*' | wc -l)
-  [ "$n" -eq 56 ] || { echo "expected 56 q-* fixture directories (q-02..q-57; q-01 is a path that must NOT exist), found $n"; false; }
+  [ "$n" -eq 69 ] || { echo "expected 69 q-* fixture directories (q-02..q-70; q-01 is a path that must NOT exist), found $n"; false; }
 }

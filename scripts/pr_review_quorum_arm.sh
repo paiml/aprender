@@ -112,6 +112,51 @@ tests/pr-review-quorum.bats
 # reviews and is confined to this path by construction.
 EVIDENCE_PREFIX_TEMPLATE='evidence/pr-review/@@PR@@/'
 
+# ---------------------------------------------------------------------------
+# EVERY PRODUCER-SUPPLIED FIELD IS READ THROUGH A CLOSED VOCABULARY, NEVER A BLACKLIST.
+#
+# THE DEFECT THIS REMOVES, WRITTEN DOWN SO IT IS NOT REINTRODUCED. An adversarial
+# verifier holding the fixture signing key produced nine forged receipts that this
+# script PERMITTED. Every signature was genuine, every document was schema-valid, and
+# every one of the nine evaded a clause shaped `refuse if field == "<the one bad
+# spelling>"`. A blacklist over a free-text field is fail-OPEN on its own complement:
+# `Blocking`, `BLOCKING`, `critical`, an ABSENT field, `1`, `"12 survived, shipping
+# anyway"` and `anthropic ` all land in the good bucket, because none of them is the
+# single string the clause names.
+#
+# EVERY CLAUSE THAT SURVIVED THE SAME ATTACK WAS A WHITELIST - `verdict = "PASS"`,
+# `delta_sweep.status in { clean, dirty, not-run }`, `consultation.status in
+# { consulted, not-triggered }`, `grounding in { cited, measured, asserted }`. The
+# difference is not the field, not the author and not the amount of care: it is the
+# DIRECTION of the test. A whitelist refuses the spellings nobody thought of; a
+# blacklist admits them. So the rule here is mechanical and applies to every field the
+# receipt producer controls, whether or not an attack against it is known today.
+#
+# WHY THE SCHEMAS DID NOT CATCH THIS. They caught what they cover: `runs` as a string
+# and `executionSuccessful: "false"` are both rejected by the vendored SARIF schema
+# before this script runs. But SARIF leaves `properties` OPEN by design, and the
+# in-toto Statement schema never descends into `predicate`. `precision_class`,
+# `autonomy_effect`, `quorum[].vendor` and `mutation.survivors` all live in exactly
+# those two unconstrained regions - which is why they are the four fields the attack
+# found, and why the vocabulary has to be enforced HERE.
+#
+# NO NEW REGEX (S13.2 says this section ships none, and means it). Membership is
+# `index()` over a literal list; well-formedness is a character comparison against a
+# literal whitespace set. Both ship a must-match / must-not-match table in
+# tests/pr-review-quorum.bats, because this repository's guard patterns have been wrong
+# six times and a case table caught every one.
+JQ_DEFS='
+  # FOLDING CAN ONLY MERGE TWO SPELLINGS INTO ONE, NEVER SPLIT ONE INTO TWO, and every
+  # count taken through it wants that direction: a folded blocking-finding count can
+  # only go UP, and the folded distinct-VENDOR count can only go DOWN. Both are the
+  # fail-closed side. Folding is never a repair - a field that needed folding to be
+  # legible is separately refused by wellformed_id where identity is at stake.
+  def fold: tostring | ascii_downcase;
+  def wellformed_id: (type == "string") and (length > 0)
+      and ((.[0:1] | IN(" ", "\t", "\n", "\r")) | not)
+      and ((.[-1:] | IN(" ", "\t", "\n", "\r")) | not);
+'
+
 REFUSAL_EXIT=1
 REFUSE_CLASS=''
 REFUSE_REASON=''
@@ -222,14 +267,30 @@ phase_a() {
   # ASSERTED result classed blocking and q-17 a CITED one, both with
   # precision_class: blocking, and each must refuse on its own reason rather than on
   # the other's.
+  # THE VOCABULARY IS CLOSED BEFORE EITHER BLOCKING CLAUSE IS READ, and that ordering
+  # is the same argument as the one below it. S13 pins this field at two words
+  # ("precision_class": "blocking|advisory"); a third spelling is a receipt this
+  # predicate cannot interpret, and S3.0's rule - "I could not read it" and "it said
+  # nothing" must not be the same artifact - applies to a field exactly as it applies
+  # to a consultation. `Blocking` and `BLOCKING` FOLD INTO the vocabulary and are caught
+  # by the clauses below on their own reason; `critical` and an absent field do not, and
+  # are caught here. Four of the nine forged receipts came through this gap.
+  local pc_outside
+  pc_outside=$(jq -r "$JQ_DEFS"'[ .runs[]? | .results[]?
+      | select((.properties.precision_class | fold) as $c
+               | (["blocking","advisory"] | index($c)) == null)
+      | (.ruleId // "?") + " = " + ((.properties.precision_class // "<absent>") | tostring) ] | join("; ")' "$sarif")
+  [ -z "$pc_outside" ] \
+    || refuse Q6 "finding(s) carry a precision_class outside { blocking, advisory }: $pc_outside; S13 reads this field to decide whether a finding stops an unattended merge, so a spelling it cannot interpret is a refusal and never a default to yes" || return 1
+
   local n_asserted_blocking
-  n_asserted_blocking=$(jq -r '[ .runs[]? | .results[]?
-      | select(.properties.grounding == "asserted" and .properties.precision_class == "blocking") ] | length' "$sarif")
+  n_asserted_blocking=$(jq -r "$JQ_DEFS"'[ .runs[]? | .results[]?
+      | select((.properties.grounding | fold) == "asserted" and (.properties.precision_class | fold) == "blocking") ] | length' "$sarif")
   [ "$n_asserted_blocking" -eq 0 ] \
     || refuse Q6 "$n_asserted_blocking finding(s) are marked asserted AND classed blocking; an asserted claim never carries a blocking class (S1)" || return 1
 
   local n_blocking
-  n_blocking=$(jq -r '[ .runs[]? | .results[]? | select(.properties.precision_class == "blocking") ] | length' "$sarif")
+  n_blocking=$(jq -r "$JQ_DEFS"'[ .runs[]? | .results[]? | select((.properties.precision_class | fold) == "blocking") ] | length' "$sarif")
   [ "$n_blocking" -eq 0 ] \
     || refuse Q6 "findings.sarif carries $n_blocking finding(s) classed blocking under a PASS verdict; a surviving blocking-class finding does not arm a merge" || return 1
 
@@ -250,10 +311,24 @@ phase_a() {
   # second vendor is in the quorum, and it is expressed as a property on an
   # advisory finding so that nothing about S7's tier changes.
   local n_veto
-  n_veto=$(jq -r '[ .runs[]? | .results[]?
-      | select(.properties.autonomy_effect == "refuse") ] | length' "$sarif")
+  n_veto=$(jq -r "$JQ_DEFS"'[ .runs[]? | .results[]?
+      | select((.properties.autonomy_effect | fold) == "refuse") ] | length' "$sarif")
   [ "$n_veto" -eq 0 ] \
     || refuse Q7 "$n_veto advisory finding(s) carry autonomy_effect: refuse; the cross-vendor reviewer may not block the PR and may refuse the unattended merge, which is the only power S13.1 gives it (S13.5)" || return 1
+
+  # AND THE SAME CLOSED VOCABULARY ONE FIELD OVER. S13.5 defines exactly one value for
+  # `autonomy_effect`: "refuse". The field is therefore absent, or it is a veto - there
+  # is no third reading. A result carrying `Refuse` folds into the clause above; a
+  # result carrying anything ELSE is a producer saying something about autonomy that
+  # this predicate does not understand, and the one interpretation that must never be
+  # inferred from an uninterpretable token is consent.
+  local ae_outside
+  ae_outside=$(jq -r "$JQ_DEFS"'[ .runs[]? | .results[]?
+      | select((.properties // {}) | has("autonomy_effect"))
+      | select((.properties.autonomy_effect | fold) != "refuse")
+      | (.ruleId // "?") + " = " + (.properties.autonomy_effect | tostring) ] | join("; ")' "$sarif")
+  [ -z "$ae_outside" ] \
+    || refuse Q7 "finding(s) carry an autonomy_effect outside { refuse }: $ae_outside; S13.5 gives the field exactly one meaning, and a token this predicate cannot read is not a grant of autonomy" || return 1
 
   # --- Q5: separation, threefold (S13.1, strengthening S5). -----------------
   local author reviewer
@@ -263,8 +338,45 @@ phase_a() {
   [ "$reviewer" != "$author" ] \
     || refuse Q5 "reviewer_actor.id = author_actor.id = '$author'; S5 already blocks this, and S13 will not arm on it either" || return 1
 
+  # A QUORUM MEMBER IS AN IDENTITY, AND AN IDENTITY WITH TWO SPELLINGS IS TWO
+  # IDENTITIES TO A STRING COMPARISON. Three of the nine forged receipts turned on
+  # exactly that: `vendor: "anthropic "` counted as a second vendor beside `anthropic`,
+  # and an author id with a trailing space walked past `m.actor.id != author_actor.id`.
+  # A fourth wrote the vendors as the NUMBERS 1 and 2, which are distinct and are not
+  # vendors. The fields are rejected rather than repaired - a receipt whose identities
+  # need normalising to be legible is malformed, and silently repairing it would hide
+  # the producer defect that emitted it.
+  local member_malformed
+  member_malformed=$(jq -r "$JQ_DEFS"'[ .predicate.autonomy.quorum[]?
+      | (.role // "?") as $r
+      | if ((.vendor | wellformed_id) | not)
+          then $r + ".vendor = " + (.vendor | tojson)
+        elif (((.actor // {}).id | wellformed_id) | not)
+          then $r + ".actor.id = " + ((.actor // {}).id | tojson)
+        else empty end ] | join("; ")' "$rcpt")
+  [ -z "$member_malformed" ] \
+    || refuse Q5 "quorum member field(s) are not well-formed identities: $member_malformed; a vendor or actor id must be a non-empty string with no surrounding whitespace, because S13.1's whole safety argument is a comparison between these strings and two spellings of one identity defeat it" || return 1
+
+  # DISTINCT ACTORS, NOT MERELY DISTINCT VENDOR LABELS. A receipt listing ONE actor id
+  # twice under two vendor names satisfies |distinct vendor| >= 2 and is one reviewer.
+  # S13.1 rests on the members failing DIFFERENTLY, which is a property of who ran, not
+  # of what they were labelled.
+  local n_members n_actors
+  n_members=$(jq -r '[ .predicate.autonomy.quorum[]? ] | length' "$rcpt")
+  n_actors=$(jq -r "$JQ_DEFS"'[ .predicate.autonomy.quorum[]? | ((.actor // {}).id | fold) ] | unique | length' "$rcpt")
+  [ "$n_actors" -eq "$n_members" ] \
+    || refuse Q5 "the quorum lists $n_members member(s) but only $n_actors distinct actor id(s); a member listed twice under two vendor labels is one reviewer with two rows, and S13.1 requires two that FAIL DIFFERENTLY" || return 1
+
+  # THE LIMIT OF THIS CLAUSE, NAMED HERE SO IT IS NOT MISREAD AS COVERAGE (S13.13 gap 1).
+  # `vendor` is SELF-ASSERTED. One key signs the whole receipt, so the clauses above
+  # refuse a quorum that is internally INCONSISTENT - one actor under two labels, a
+  # vendor that is not a string, an identity with two spellings - and cannot refuse one
+  # that simply WRITES `vendor: "google"` beside a plausible actor id. Nothing in the
+  # document is evidence that a second vendor ever ran. Verifying that needs per-member
+  # signatures against a committed keyring, which is a change to the receipt format and
+  # to S4; until it exists, S13.1's cross-vendor property is ASSERTED, not verified.
   local n_vendors
-  n_vendors=$(jq -r '[ .predicate.autonomy.quorum[]? | .vendor // "" ] | map(select(length > 0)) | unique | length' "$rcpt")
+  n_vendors=$(jq -r "$JQ_DEFS"'[ .predicate.autonomy.quorum[]? | (.vendor | fold) ] | map(select(length > 0)) | unique | length' "$rcpt")
   [ "$n_vendors" -ge 2 ] \
     || refuse Q5 "the quorum spans $n_vendors distinct vendor(s); S13.1 requires at least two, because a second reviewer buys safety only if it FAILS DIFFERENTLY - two Claudes raise the count and not the independence" || return 1
 
@@ -274,8 +386,8 @@ phase_a() {
     || refuse Q5 "the quorum records no member in role(s): $roles_missing; S13.1's quorum is one primary reviewer and one cross-vendor reviewer, and a missing role is a member that never voted" || return 1
 
   local author_in_quorum
-  author_in_quorum=$(jq -r --arg a "$author" '[ .predicate.autonomy.quorum[]?
-      | select((.actor.id // "") == $a) | .role // "?" ] | join(", ")' "$rcpt")
+  author_in_quorum=$(jq -r --arg a "$author" "$JQ_DEFS"'[ .predicate.autonomy.quorum[]?
+      | select(((.actor // {}).id | fold) == ($a | fold)) | .role // "?" ] | join(", ")' "$rcpt")
   [ -z "$author_in_quorum" ] \
     || refuse Q5 "quorum member(s) in role [$author_in_quorum] carry the author's own actor id '$author'; a quorum whose second member is the author is S5's defect with an extra row in a table" || return 1
 
@@ -322,6 +434,25 @@ phase_a() {
              then "mutation attempted 0 mutants" else empty end) ] | join("; ")' "$rcpt")
   [ -z "$vacuous" ] \
     || refuse Q2 "vacuous consultation(s): $vacuous; a consultation over nothing passes vacuously, which is the shape S3.D already calls DEGRADED (S8 vacuous_consultations = 0, no ratchet)" || return 1
+
+  # `?` SUPPRESSES THE TYPE ERROR, NOT THE VALUE, AND THAT COST THE WHOLE CLAUSE.
+  # The survivor count below reads `[ .survivors[]? ] | length`. Over the STRING
+  # "12 survived, shipping anyway" that expression yields the empty stream and the
+  # count is 0, so a receipt that CONFESSED twelve survivors was read as having none.
+  # `null` and an absent field do the same thing for the same reason. That is S3.0's
+  # rule broken one level down: "not recorded" and "none" became the same artifact.
+  # The type is therefore established before the length is believed, and an absent
+  # survivors field is a refusal rather than an empty list.
+  local mutation_shape
+  mutation_shape=$(jq -r '.predicate.consultations.mutation as $m
+      | if ($m.status != "consulted") then empty
+        elif (($m | has("survivors")) | not) then "survivors is absent"
+        elif ($m.survivors | type) != "array" then "survivors is a " + ($m.survivors | type) + ", not an array"
+        elif ($m.attempted | type) != "number" then "attempted is a " + ($m.attempted | type) + ", not a number"
+        elif ($m.killed | type) != "number" then "killed is a " + ($m.killed | type) + ", not a number"
+        else empty end' "$rcpt")
+  [ -z "$mutation_shape" ] \
+    || refuse Q2 "the mutation record cannot be read as a mutation record: $mutation_shape; a survivor list that is not a list is counted by jq's '?' as EMPTY, so an unreadable record and a clean one become the same artifact, which is exactly what S3.0 forbids" || return 1
 
   local surviving
   surviving=$(jq -r 'if (.predicate.consultations.mutation.status == "consulted")
@@ -502,6 +633,18 @@ phase_b() {
   main_at_review=$(jq -r '.predicate.autonomy.main_sha_at_review' "$rcpt")
   git -C "$REPO" cat-file -e "${main_at_review}^{commit}" 2>/dev/null \
     || refuse Q4 "autonomy.main_sha_at_review $main_at_review does not resolve to a commit in $REPO; an unresolvable anchor makes the delta region unfalsifiable" || return 1
+
+  # AN EMPTY DELTA REGION MEANS ONE OF TWO THINGS, AND ONLY ONE OF THEM IS "MAIN HAS
+  # NOT MOVED". `rev-list A..origin/main` is also empty when A is not on main at all -
+  # when A DESCENDS from it, or forked off it. The producer chooses A, so before this
+  # clause a receipt could anchor the review at any commit ahead of main, collapse the
+  # region to nothing, and skip S13.3.b's sweep entirely with delta_sweep.status
+  # "not-run". One of the nine forged receipts did precisely that, and so does a receipt
+  # that anchors at its own PR head. The region argument is only sound if the anchor is
+  # a point main has actually passed through, which is an ancestry question and is asked
+  # here rather than inferred from an emptiness that has two causes.
+  git -C "$REPO" merge-base --is-ancestor "$main_at_review" refs/remotes/origin/main 2>/dev/null \
+    || refuse Q4 "autonomy.main_sha_at_review $main_at_review is not an ancestor of origin/main; the S13.3.b delta region main_sha_at_review..origin/main is only a measure of how far main moved when the anchor is a commit main moved FROM, and an anchor off main makes that region empty for a reason that has nothing to do with the sweep" || return 1
   # NOT A REFUSAL CLASS, and the reason is a measurement rather than a preference.
   # An unenumerable region is the BOX failing to answer, and this script's exit 2
   # exists so a broken environment is never read as a receipt defect. Written as a Q4
@@ -510,6 +653,12 @@ phase_b() {
   # against it), so no receipt can reach a branch that fires only when that ref is
   # missing. A permanently unkillable mutant would put a hole in a score S13.10 fixes
   # at one, so the branch stays what it always was - an environment exit.
+  # THE LIMIT OF THE CLAUSE BELOW (S13.13 gap 2). The endpoint is a remote-tracking ref
+  # in whatever clone this runs in. A STALE clone understates how far main moved, and the
+  # receipt producer - running in the same clone - records an anchor that matches it. The
+  # receipt is honest and the box is behind, so no clause over R, S and C can see it. The
+  # fix belongs in the S13.6 context producer (`main_sha`, fetched by the `gh` call that
+  # already talks to GitHub) and not here; it is not implemented, and it is not pretended.
   set +e
   region=$(git -C "$REPO" rev-list "$main_at_review..refs/remotes/origin/main" 2>/dev/null)
   region_rc=$?

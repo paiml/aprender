@@ -1521,8 +1521,8 @@ jobs:
   pr-review-receipt:
     runs-on: [self-hosted, X64, Linux, clean-room]
     # 150, not 120: Arm 3 alone measured 3091s (51.5 min) on an idle 48-core box over
-    # the 185-mutant set, and PRREV-015 adds Arms 5 and 6 — a 69-row bats table and a
-    # second, 122-mutant sweep over scripts/pr_review_quorum_arm.sh. This number has
+    # the 185-mutant set, and PRREV-015 adds Arms 5 and 6 — an 83-row bats table and a
+    # second, 134-mutant sweep over scripts/pr_review_quorum_arm.sh. This number has
     # already been wrong once here for exactly this reason (60 against a measured 51.5
     # left 8 minutes for four other arms, which is not headroom; it is a job that times
     # out the first time the runner is busy, and a cancelled job reads as a failure
@@ -1596,11 +1596,11 @@ jobs:
 
       # Arm 2. Every row of §6.3, plus the positive controls, plus the
       # must-match/must-not-match tables behind the three trigger regexes. This
-      # file is 149 tests and was reachable from NO workflow until this job — the
+      # file is 151 tests and was reachable from NO workflow until this job — the
       # dark-target class this repository has hit with benches and with 58 cgp
       # tests. Both numbers here are recomputed by check_pr_review_counts.sh; the
       # commit that wired this step wrote 65 and 22 over a file that already held
-      # 149 tests and 35 rows.
+      # 151 tests and 35 rows.
       - name: The 35-row fixture table and both polarities of every trigger regex
         shell: bash
         run: bats tests/pr-review.bats
@@ -1612,7 +1612,7 @@ jobs:
       # wall time has been measured: 185/185 killed in 3091s (51.5 min) at
       # --jobs 12 on a 48-core box, 2026-08-30.
       #
-      # THE SET IS 215/215 TODAY (PRREV-015 added S3.E), so that wall time is a
+      # THE SET IS 217/217 TODAY (PRREV-015 added S3.E), so that wall time is a
       # LOWER BOUND and not a current measurement. It is left as the number that
       # was actually measured, with its date and its set size beside it, rather
       # than rescaled: a scaled estimate wearing the shape of a measurement is
@@ -1710,7 +1710,7 @@ jobs:
       # a real gh on PATH that mutant would try to arm auto-merge on a live pull
       # request. The stub records the call and exits 1, and two rows assert the call
       # log is empty.
-      - name: "S13 quorum refusal table: 69 rows, one per refusal path, four that PERMIT"
+      - name: "S13 quorum refusal table: 83 rows, one per refusal path, four that PERMIT"
         shell: bash
         run: bats tests/pr-review-quorum.bats
 
@@ -1723,10 +1723,10 @@ jobs:
       # on every run — so it cannot fall behind the script; check_pr_review_counts.sh
       # fails this file when the number written here is not the number the script
       # derives. MEASURED at the default --jobs 12 on this 48-core box, 2026-08-31:
-      # 122/122 killed. It is a SEPARATE script from mutate-guard.sh rather than an
+      # 134/134 killed. It is a SEPARATE script from mutate-guard.sh rather than an
       # extension of it, because merging a 15-minute sweep into a 51-minute one buys
       # nothing and serialises them.
-      - name: "The arm script's 122-mutant set must kill 100% (S13.10, fixed at one)"
+      - name: "The arm script's 134-mutant set must kill 100% (S13.10, fixed at one)"
         shell: bash
         run: bash scripts/mutate_quorum_arm.sh
 
