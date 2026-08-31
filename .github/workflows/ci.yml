@@ -1520,11 +1520,14 @@ jobs:
   # through the gap while nothing re-read it.
   pr-review-receipt:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    # 120, not 60: Arm 3 alone measured 3091s (51.5 min) on an idle 48-core box
-    # over the 185-mutant set, and 60 left 8 minutes for the other four arms.
-    # See the Arm 3 comment below for the measurement and why the old 19-minute
-    # figure was stale.
-    timeout-minutes: 120
+    # 150, not 120: Arm 3 alone measured 3091s (51.5 min) on an idle 48-core box over
+    # the 185-mutant set, and PRREV-015 adds Arms 5 and 6 — a 69-row bats table and a
+    # second, 122-mutant sweep over scripts/pr_review_quorum_arm.sh. This number has
+    # already been wrong once here for exactly this reason (60 against a measured 51.5
+    # left 8 minutes for four other arms, which is not headroom; it is a job that times
+    # out the first time the runner is busy, and a cancelled job reads as a failure
+    # nobody can distinguish from a real one).
+    timeout-minutes: 150
     if: github.event_name == 'pull_request'
     env:
       # The `runner` context is NOT available in a job-level `env:` block —
@@ -1688,6 +1691,37 @@ jobs:
           git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main \
             || git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           bash scripts/check_pr_review_arm4.sh
+
+      # Arm 5. S13's refusal table. SHADOW ONLY — scripts/pr_review_quorum_arm.sh is
+      # invoked here with --explain against committed fixtures and a fixture
+      # repository, so it can merge nothing, and it is reachable from no step that
+      # can. S13.11 rung 0.
+      #
+      # The bats file exports a RECORDING STUB for gh before any row runs, and that is
+      # a safety device before it is an assertion: Arm 6 runs this same file against a
+      # MUTATED arm script, and one of the mutants disables the --explain guard. With
+      # a real gh on PATH that mutant would try to arm auto-merge on a live pull
+      # request. The stub records the call and exits 1, and two rows assert the call
+      # log is empty.
+      - name: "S13 quorum refusal table: 69 rows, one per refusal path, four that PERMIT"
+        shell: bash
+        run: bats tests/pr-review-quorum.bats
+
+      # Arm 6. S13.10 fixes quorum_arm_mutation_score at one with no ratchet, for the
+      # reason S6.4 gives one tier down and with more force: a surviving mutant is a
+      # refusal path the arm script STATES and nothing TESTS, and under S13 that is a
+      # merge nobody authorised.
+      #
+      # The set is DERIVED — one `drop` and one `flip` per `refuse Q<n>` site, rescanned
+      # on every run — so it cannot fall behind the script; check_pr_review_counts.sh
+      # fails this file when the number written here is not the number the script
+      # derives. MEASURED at the default --jobs 12 on this 48-core box, 2026-08-31:
+      # 122/122 killed. It is a SEPARATE script from mutate-guard.sh rather than an
+      # extension of it, because merging a 15-minute sweep into a 51-minute one buys
+      # nothing and serialises them.
+      - name: "The arm script's 122-mutant set must kill 100% (S13.10, fixed at one)"
+        shell: bash
+        run: bash scripts/mutate_quorum_arm.sh
 
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]

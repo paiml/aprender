@@ -365,6 +365,84 @@ equations:
     - 'no receipt reads PASS while any surface reads `none` or while the horizon sweep was partial'
     - 'a receipt recording `none` under DEGRADED is ACCEPTED (row 17), so honesty is never punished harder than silence'
 
+  autonomous_merge_requires_a_cross_vendor_quorum:
+    formula: |
+      ARM(pr) <=> receipt_guard_accepts(R)
+              and R.predicate.autonomy.requested = true
+              and R.predicate.verdict = "PASS"
+              and |{ m.vendor : m in R.predicate.autonomy.quorum }| >= 2
+              and { primary, cross_vendor } subset { m.role : m in quorum }
+              and forall m in quorum: m.actor.id != author_actor.id
+                                  and m.verdict = "PASS" and m.refusal = null
+              and no S.result carries precision_class = blocking
+              and no S.result carries autonomy_effect = "refuse"
+              and vacuous_consultations(R) = 0 and mutation.survivors = []
+              and paths(head_sha..PR.head) subset { evidence/pr-review/<pr>/** }
+              and (rev_list(main_sha_at_review..origin/main) = []
+                   or (delta_sweep.status = "clean"
+                       and delta_sweep.needles_sha256 = sha256(join(duplication_needles))))
+              and paths(base_sha..head_sha) intersect MECHANISM_PATHS = {}
+              and not exists_on_origin_main(".github/pr-review-autonomy.disabled")
+      NOT-ARM(pr) => the pull request stays green and a human merges it
+    domain: 'a pull request whose receipt carries a predicate.autonomy block (spec S13.2)'
+    codomain: 'PERMIT | REFUSE[Q1..Q10] — never BLOCK; S13 adds zero rows to the S7 tier'
+    invariants:
+    - >-
+      A REFUSAL IS NOT A BLOCK, AND THE LETTERING ENFORCES IT. The blocking tier stays
+      at six, B1..B6. Refusals are Q1..Q10 so that a log line cannot be read as a
+      blocking class, and a refused pull request is exactly as mergeable by a human as
+      it was before the arm script ran. Conflating the two would let S13 quietly widen
+      the blocking policy without amending S7 — the change nobody would notice.
+    - >-
+      VENDOR-DISTINCTNESS IS THE LOAD-BEARING PROPERTY, NOT MEMBER COUNT. The predicate
+      reads |distinct vendor| >= 2 and never |members| >= 2. A second Claude instance
+      shares the model, the prompt family, the three-mark vocabulary and the diff: it
+      raises the count and not the independence. A third vendor extends the quorum with
+      no edit to this file; two Claudes never satisfy it.
+    - >-
+      THE FOUR CONSULTATIONS ARE SOURCES AND DO NOT VOTE. A source has no verdict.
+      Counting them as members would count the same evidence twice — once as the
+      source's vote and once inside the primary reviewer's verdict, which IS a function
+      of that source's output. A five-member quorum built that way carries one
+      independent bit and four copies of it, which is the artifact-that-reads-as-N-checks
+      shape S6.1 and this contract's own D8 note exist to refuse.
+    - >-
+      DEGRADED NEVER MERGES, AND THE THROUGHPUT COST IS THE POINT. S3.0 exists so that
+      "could not consult" and "consulted, found nothing" are different artifacts.
+      Auto-merging on DEGRADED re-collapses that distinction exactly where it acquires
+      consequences. MEASURED: pmat MCP is ConnectionRefused in the authoring session and
+      6 of 8 recent reviews returned DEGRADED, so this rule would have refused all six.
+      That is the mechanism working; the remedy is to fix availability, never the rule.
+    - >-
+      VALIDITY IS DELEGATED, NEVER RE-IMPLEMENTED. The arm script shells out to
+      scripts/check_pr_review_receipt.sh for signature, schema, merge base, index
+      ancestry, the marks and B4 — one implementation, the one 185 mutants are run
+      against. A second copy inside the arm script would be two implementations of one
+      rule, each green against its own copy, which is D8 in the code written to enforce
+      D8. Fixture q-40b asserts the delegated refusal still carries the guard's own
+      class, because a delegation that swallows the callee's diagnosis is one nobody can
+      act on.
+    - >-
+      A PULL REQUEST THAT EDITS THE MERGE MECHANISM DOES NOT MERGE ITSELF. MECHANISM_PATHS
+      is a LITERAL PREFIX LIST and not a regex: matching is `case "$f" in "$m"*)`, which
+      cannot be wrong the way a pattern can, and this repository's guard patterns have
+      been wrong six times. The falsifiable consequence is that the pull request
+      introducing S13 touches every entry and is therefore refused under Q9 by its own
+      mechanism.
+    - >-
+      THE KILL SWITCH IS READ FROM origin/main AND NEVER FROM THE PR TREE. A branch that
+      deletes .github/pr-review-autonomy.disabled must not thereby turn autonomy back on.
+      It is evaluated FIRST in the repository phase, because an off switch consulted only
+      after five other checks have passed costs a minute of compute to use.
+    preconditions:
+    - 'every artifact-only clause is evaluated before every repository clause, so the positive control can fire in any working directory'
+    - 'the narrower clause precedes the general one: asserted-and-blocking before blocking, or the specific diagnosis is unreachable and its mutant is a permanent survivor'
+    - 'the PR context is an ARTIFACT produced by gh and consumed by one evaluator, so the live path and the test path are the same code'
+    postconditions:
+    - 'a refused pull request retains every check result it had; nothing is marked failed'
+    - 'the arming call is idempotent — an already-armed pull request reports ALREADY-ARMED and invokes nothing'
+    - 'autonomous_merge_reverts is recorded as 0/0 and READ AS UNDEFINED, never as clean'
+
 falsification_tests:
 
 # THREE of the eight below are LIVE-PENDING and every one says so IN `test:`, the
@@ -604,7 +682,101 @@ falsification_tests:
     flip mutants for the new branch by scanning for `reject B<n>`, so neither has to be
     remembered.
 
+- id: F-PRREV-012
+  rule: an autonomous merge needs two vendors, unanimous, neither of them the author
+  prediction: >-
+    A receipt whose quorum spans one vendor (q-23), lacks a cross_vendor member (q-24),
+    carries the author's own actor id (q-25) or records one non-null refusal (q-26) is
+    REFUSED under Q5 and NOT blocked. The same receipt with two vendors, both roles,
+    neither the author and no refusal (q-52) is PERMITTED.
+  test: 'bats tests/pr-review-quorum.bats -f "^q-2[3456] |^q-52 "'
+  if_fails: >-
+    the second reviewer becomes decoration: a single-vendor pair shares the model, the
+    prompt family and the diff, so the PASS that authorises the merge carries one
+    independent bit wearing two names
+  mutation: >-
+    drop the vendor-distinctness clause and q-23 must turn RED while q-52 stays GREEN.
+    Both arms are required: a mutation that reds everything proves the script is broken,
+    not that it discriminates. scripts/mutate_quorum_arm.sh derives that drop by scanning
+    for `refuse Q<n>`, so it does not have to be remembered.
+
+- id: F-PRREV-013
+  rule: DEGRADED does not auto-merge, and neither does a surviving blocking finding
+  prediction: >-
+    verdict=DEGRADED (q-15), an asserted finding classed blocking (q-16), a surviving
+    blocking-class finding (q-17), an unmarked claim (q-18) and a SARIF invocation with
+    executionSuccessful=false (q-19) are each REFUSED under Q6, each on its own branch —
+    the reason is asserted, not only the class.
+  test: 'bats tests/pr-review-quorum.bats -f "^q-1[56789] "'
+  if_fails: >-
+    a quorum proceeds when its sources were unreachable, which is an unreviewed merge
+    wearing a signed receipt — and S4.3 has already said a signature is a provenance
+    claim and never a diligence claim
+  mutation: >-
+    delete the verdict clause; q-15 must turn RED. Delete the asserted-and-blocking
+    clause and q-16 must turn RED while q-17 stays RED under its own reason — the two
+    rows differ in the grounding mark and in nothing else, which is what proves the
+    narrower clause is reachable.
+
+- id: F-PRREV-014
+  rule: the review must be OF the code about to merge, and of a main that has not moved
+  prediction: >-
+    A commit after the reviewed SHA that touches source is REFUSED under Q3 (q-47); the
+    same topology with the commit confined to evidence/pr-review/<pr>/** is PERMITTED
+    (q-53). A non-empty main_sha_at_review..origin/main region with no sweep is REFUSED
+    under Q4 (q-49); the same region swept, with the needle set recorded and its digest
+    matching, is PERMITTED (q-54).
+  test: 'bats tests/pr-review-quorum.bats -f "^q-4[6789] |^q-5[0134] "'
+  if_fails: >-
+    Arm 4's ancestor relaxation lets an unreviewed commit ride in behind the receipt,
+    and D7's blind region recurs in the TIME dimension — the queue merges at about one
+    PR an hour, so hours of main are unswept and, before S13, unnamed
+  mutation: >-
+    empty EVIDENCE_PREFIX_TEMPLATE and q-47 must turn GREEN-when-it-should-be-RED; point
+    it at a path nothing matches and q-53 must turn RED instead. Both directions are in
+    scripts/mutate_quorum_arm.sh as evidence-prefix-empty and evidence-prefix-never-matches.
+
+- id: F-PRREV-015
+  rule: a pull request that edits the merge mechanism does not merge itself
+  prediction: >-
+    A diff touching any MECHANISM_PATHS entry is REFUSED under Q9 (q-44). A diff touching
+    a guard-shaped file that is NOT a mechanism path reaches the mutation clause instead,
+    and is REFUSED under Q2 when the run is diff-scoped (q-45), PERMITTED when it is
+    guard-scoped at 100% (q-55). The kill switch on origin/main refuses everything (q-39)
+    while the SAME receipt permits against a repository without it (q-39b).
+  test: 'bats tests/pr-review-quorum.bats -f "^q-39|^q-44 |^q-45 |^q-55 "'
+  if_fails: >-
+    the mechanism can amend itself unattended — the one change that would remove every
+    other control in this file, and the one nobody would be watching for
+  mutation: >-
+    replace the scripts/check_pr_review_receipt.sh entry in MECHANISM_PATHS with a path
+    that does not exist and q-44 must turn RED; make the guard-shape case match everything
+    and q-52 must turn RED; make it match nothing and q-45 must turn RED. All three are in
+    scripts/mutate_quorum_arm.sh.
+
 proof_obligations:
+- type: invariant
+  property: >-
+    An autonomous merge is armed only when the quorum spans at least two distinct
+    vendors, holds both roles, excludes the author and is unanimous; a failure of any
+    conjunct REFUSES and never BLOCKS (F-PRREV-012, F-PRREV-015).
+  formal: 'ARM(pr) => |vendors(quorum)| >= 2 and {primary, cross_vendor} subset roles(quorum) and forall m: m.actor != author and m.verdict = PASS and m.refusal = null; not ARM(pr) => blocking_classes(pr) unchanged'
+
+- type: invariant
+  property: >-
+    No receipt that is not PASS, that carries a blocking-class finding, an unmarked
+    claim, a vacuous consultation, a surviving mutant or an unsearched surface arms a
+    merge (F-PRREV-013).
+  formal: 'ARM(pr) => verdict = PASS and blocking_findings = 0 and unmarked_claims = 0 and vacuous_consultations = 0 and survivors = [] and forall s in SURFACE: cov(s) != none'
+
+- type: invariant
+  property: >-
+    Every refusal path of scripts/pr_review_quorum_arm.sh is exercised by at least one
+    committed fixture, and the derived mutation set kills 100% of its drop and flip
+    mutants — the same rule S6.4 applies to the receipt guard, applied where the
+    consequence is a merge rather than a message (S13.10).
+  formal: 'forall q in refusal_sites(arm): exists row in q_table: refuses(row) = q; quorum_arm_mutation_score = 1'
+
 
 - type: invariant
   property: >-
@@ -733,6 +905,36 @@ enforcement:
     severity: instrument-only
     reference: 'PR-REVIEW-SKILL-002 v2 S8; cost fields live in the in-toto predicate'
 
+  quorum_arm_mutation_score:
+    description: 'killed / attempted on the arm script''s derived mutation set (S13.10)'
+    check: '= 1.00 — no ratchet, measured 122/122 by the derived set. A surviving mutant is a refusal path the arm script states and nothing tests, which under S13 is a merge nobody authorised'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S13.10; scripts/mutate_quorum_arm.sh'
+
+  refusal_paths_without_a_fixture:
+    description: 'refuse Q<n> sites in the arm script with no row in tests/pr-review-quorum.bats (S13.10)'
+    check: '= 0 — no ratchet; it is a zero. Derived, not counted by hand: the mutation set scans for `refuse Q<n>` and a site with no row leaves a SURVIVOR'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S13.4 and S13.10'
+
+  autonomous_merge_reverts:
+    description: 'merges armed by S13 that were later reverted / merges armed by S13 (S13.9)'
+    check: '0/0 — UNDEFINED, NOT CLEAN. record-only; no threshold until 30 samples. The coverage pipeline reported 0/0 for months and every reader took it for green; this row exists so that cannot happen twice'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S13.9 and S13.11; the COV_FLOOR scar'
+
+  autonomy_refusal_rate:
+    description: 'REFUSE / (PERMIT + REFUSE) over the --explain shadow lane (S13.9)'
+    check: 'record-only until 30 samples. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S13.9, S13.11 rung 1'
+
+  degraded_share:
+    description: 'receipts verdict=DEGRADED / receipts emitted (S13.3, S13.9)'
+    check: 'record-only until 30 samples. It is the measurement nobody had before S13: how often this fleet cannot actually review'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S13.3; PRREV-016 owes the transport: field that would make it attributable'
+
 qa_gate:
   id: F-PRREV-GATE-001
   name: 'a review claim is evidence only if it says how it knows'
@@ -763,6 +965,10 @@ qa_gate:
   - unsearched_merge_base_to_main_region_is_degraded_not_pass
   - book_prose_is_not_scoped_by_a_rust_project_layout
   - guard_positive_control_fires_before_any_verdict
+  - autonomous_merge_needs_two_vendors_unanimous_and_not_the_author
+  - degraded_never_arms_an_unattended_merge
+  - a_pr_editing_the_merge_mechanism_cannot_merge_itself
+  - every_refusal_path_is_exercised_by_a_committed_fixture
   pass_criteria: >-
     All 11 falsification tests turn RED against a fixture that violates them and GREEN
     against the honest fixture, through scripts/check_pr_review_receipt.sh, whose own
@@ -790,9 +996,9 @@ qa_gate:
     rule added tomorrow is mutated without anyone remembering to add it.
 
 verification_summary:
-  total_obligations: 6
+  total_obligations: 9
   l2_property_tested: 1
   l3_kani_proved: 0
   l4_lean_proved: 0
   l4_sorry_count: 0
-  l4_not_applicable: 6
+  l4_not_applicable: 9

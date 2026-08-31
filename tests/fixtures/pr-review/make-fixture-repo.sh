@@ -172,6 +172,65 @@ cat > "$DEST/book/src/examples/showcase-benchmark.md" <<'MD'
 MD
 commit "E1 book: publish the showcase decode ratio under examples/"
 
+# ===========================================================================
+# S13 (autonomous merge on quorum) needs five heads the S6.3 table never needed.
+# Every one of them is a REFUSAL PATH of scripts/pr_review_quorum_arm.sh, and a
+# refusal path with no head that exercises it is a gate that cannot fire.
+#
+# They are added AFTER E1 and forked from the same C1, so not one byte of C1..E1
+# changes: git addresses a commit by its content and its parents, and a new child
+# perturbs neither. The twenty-six committed row-* receipts keep their signatures.
+# ===========================================================================
+
+# --- M1: the pull request that edits the merge MECHANISM ----------------------
+# S13.8: a PR that changes the machinery deciding whether it may merge does not get
+# to apply the new machinery to itself. Without this head, Q9's mechanism clause can
+# only be tested against a receipt, which is the circularity S13.2 exists to remove.
+g checkout -q -b mech-pr "$(g rev-parse main~2)"
+mkdir -p "$DEST/scripts"
+printf '#!/usr/bin/env bash\n# a guard the PR is editing\nexit 0\n' \
+  > "$DEST/scripts/check_pr_review_receipt.sh"
+commit "M1 guard: change the receipt guard itself"
+
+# --- H1: a guard-shaped file that is NOT a mechanism path ---------------------
+# S13.2 clause (4) owes a GUARD-scoped mutation run on a guard-touching diff (S7 B3).
+# M1 cannot exercise it: Q9 refuses M1 before the mutation clause is ever reached, so
+# a fixture built on M1 would report a kill the clause never earned. H1 touches
+# scripts/check_no_claim_literals.sh, which is guard-shaped and is not on
+# MECHANISM_PATHS -- one variable different, opposite clause.
+g checkout -q -b guard-pr "$(g rev-parse main~2)"
+mkdir -p "$DEST/scripts"
+printf '#!/usr/bin/env bash\n# an ordinary guard, not part of the merge mechanism\nexit 0\n' \
+  > "$DEST/scripts/check_no_claim_literals.sh"
+commit "H1 guard: harden the claim-literal guard"
+
+# --- T1, T2: the two shapes of tip drift, forked from F1 ----------------------
+# S13.3.a constrains the CONTENT of the commits between the reviewed SHA and the tip,
+# not their count: they may touch evidence/pr-review/<pr>/** and nothing else. The two
+# heads differ in exactly one file and nothing else, so the rule is shown to
+# DISCRIMINATE rather than merely to refuse.
+g checkout -q -b tipclean-pr gpu-pr
+mkdir -p "$DEST/evidence/pr-review/2783/notes"
+printf 'the receipt of the reviewed commit, committed after it\n' \
+  > "$DEST/evidence/pr-review/2783/notes/receipt-note.txt"
+commit "T1 evidence: record the review of F1 (the commit that necessarily follows it)"
+
+g checkout -q -b tipdirty-pr gpu-pr
+printf 'pub fn slipped_in_after_the_review() {}\n' \
+  > "$DEST/crates/aprender-core/src/late.rs"
+commit "T2 core: a change nobody reviewed, riding in behind the receipt"
+
+# --- K1: an origin/main carrying the autonomy KILL SWITCH ---------------------
+# Not on refs/heads/main and not on refs/remotes/origin/main: pointing the remote ref
+# at this head is what a test does, so the DEFAULT topology stays the one the
+# twenty-six row receipts were signed against. Forked from main's tip, so
+# merge-base(K1, F1) is still C1 and every existing receipt stays valid under it.
+g checkout -q -b ksmain-pr main
+mkdir -p "$DEST/.github"
+printf 'autonomy disabled by the operator, 2026-08-31\n' \
+  > "$DEST/.github/pr-review-autonomy.disabled"
+commit "K1 ops: disable autonomous merge"
+
 g checkout -q main
 
 # --- prove the topology is the one the fixtures assume ------------------------
@@ -183,6 +242,11 @@ G1=$(g rev-parse claim-pr)
 S1=$(g rev-parse code-pr)
 P1=$(g rev-parse printed-pr)
 E1=$(g rev-parse examples-pr)
+M1=$(g rev-parse mech-pr)
+H1=$(g rev-parse guard-pr)
+T1=$(g rev-parse tipclean-pr)
+T2=$(g rev-parse tipdirty-pr)
+K1=$(g rev-parse ksmain-pr)
 
 [ "$(g merge-base refs/remotes/origin/main "$F1")" = "$C1" ] \
   || { echo "FIXTURE REPO BROKEN: merge-base(origin/main, F1) != C1" >&2; exit 1; }
@@ -216,8 +280,38 @@ if g diff --name-only "$C1" "$D1" | grep -qE '\.rs$'; then
   exit 1
 fi
 
+# The five S13 heads are asserted the same way, and for the same reason: a head that
+# stopped carrying its subject leaves the refusal it pins passing over nothing.
+g diff --name-only "$C1" "$M1" | grep -qx 'scripts/check_pr_review_receipt.sh' \
+  || { echo "FIXTURE REPO BROKEN: the mechanism PR touches no MECHANISM_PATHS entry" >&2; exit 1; }
+g diff --name-only "$C1" "$H1" | grep -qx 'scripts/check_no_claim_literals.sh' \
+  || { echo "FIXTURE REPO BROKEN: the guard PR touches no guard-shaped file" >&2; exit 1; }
+if g diff --name-only "$C1" "$H1" | grep -qx 'scripts/check_pr_review_receipt.sh'; then
+  echo "FIXTURE REPO BROKEN: the guard PR must NOT touch a mechanism path, or Q9 refuses it before the mutation clause is reached" >&2
+  exit 1
+fi
+g merge-base --is-ancestor "$F1" "$T1" \
+  || { echo "FIXTURE REPO BROKEN: T1 must be a descendant of F1 (S13.3.a needs a reviewed ancestor)" >&2; exit 1; }
+g merge-base --is-ancestor "$F1" "$T2" \
+  || { echo "FIXTURE REPO BROKEN: T2 must be a descendant of F1" >&2; exit 1; }
+if g diff --name-only "$F1" "$T1" | grep -qvx 'evidence/pr-review/2783/notes/receipt-note.txt'; then
+  echo "FIXTURE REPO BROKEN: the clean-tip PR touches something outside evidence/pr-review/2783/, so it cannot show the rule ADMITTING the honest path" >&2
+  exit 1
+fi
+g diff --name-only "$F1" "$T2" | grep -qx 'crates/aprender-core/src/late.rs' \
+  || { echo "FIXTURE REPO BROKEN: the dirty-tip PR carries no unreviewed source change" >&2; exit 1; }
+g cat-file -e "$K1:.github/pr-review-autonomy.disabled" \
+  || { echo "FIXTURE REPO BROKEN: the kill-switch head does not carry the kill switch" >&2; exit 1; }
+if g cat-file -e "refs/remotes/origin/main:.github/pr-review-autonomy.disabled" 2>/dev/null; then
+  echo "FIXTURE REPO BROKEN: the DEFAULT origin/main must NOT carry the kill switch, or every positive fixture refuses Q8" >&2
+  exit 1
+fi
+[ "$(g merge-base "$K1" "$F1")" = "$C1" ] \
+  || { echo "FIXTURE REPO BROKEN: merge-base(K1, F1) != C1, so pointing origin/main at K1 would invalidate every committed receipt" >&2; exit 1; }
+
 # --- assert the SHAs are the ones the committed receipts were written against --
-ACTUAL=$(printf 'C1 %s\nC3 %s\nF1 %s\nD1 %s\nG1 %s\nS1 %s\nP1 %s\nE1 %s\n' "$C1" "$C3" "$F1" "$D1" "$G1" "$S1" "$P1" "$E1")
+ACTUAL=$(printf 'C1 %s\nC3 %s\nF1 %s\nD1 %s\nG1 %s\nS1 %s\nP1 %s\nE1 %s\nM1 %s\nH1 %s\nT1 %s\nT2 %s\nK1 %s\n' \
+  "$C1" "$C3" "$F1" "$D1" "$G1" "$S1" "$P1" "$E1" "$M1" "$H1" "$T1" "$T2" "$K1")
 if [ "${PRREV_WRITE_EXPECTED_SHAS:-0}" = "1" ]; then
   printf '%s\n' "$ACTUAL" > "$HERE/expected-shas.txt"
   echo "wrote $HERE/expected-shas.txt" >&2

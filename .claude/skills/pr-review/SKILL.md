@@ -804,3 +804,171 @@ verbatim under `evidence/pr-review/backtest/` — `results.md`, `results-v2.md`,
 failures found (F1–F8) are what the guard now enforces; F9 is measured, unfixed, and named
 with its counterfactual. Genchi genbutsu: the verdicts came from running the guard against
 the real merged commits, not from the spec's reasoning about them.
+
+---
+
+## §13 Autonomous merge on quorum (DESIGNED AND BUILT, **NOT ARMED**)
+
+Spec §13. Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes.
+The mechanism exists — `scripts/pr_review_quorum_arm.sh`, a table of 69 rows, a 122-mutant
+set at 100% — and **it is reachable from no workflow that can merge anything.** §13.11 is
+the arming ladder; rung 0 is where this file is written.
+
+**Read this before doing anything else in this section.** Every other part of this skill
+makes a review harder to fake. §13 lets a merge happen with nobody watching, so a
+dishonest review stops being something a human reads and becomes something that ships.
+§13 therefore **adds zero rows to §7**. When the arm script refuses, the pull request is
+exactly as green as it was and a human merges it. The refusal classes are lettered
+**Q1..Q10** so a log line cannot be mistaken for a B-class block.
+
+### §13.1 What you record in the receipt
+
+Two new blocks. Both are **optional**: a receipt without them is a perfectly good receipt
+that does not authorise an unattended merge, and its absence is not a default to yes.
+
+```json
+"autonomy": {
+  "requested": true,
+  "main_sha_at_review": "<origin/main tip WHEN YOU REVIEWED>",
+  "quorum": [
+    { "role": "primary",      "vendor": "anthropic",
+      "actor": { "kind": "agent", "id": "agent:claude-opus-5/session-review" },
+      "verdict": "PASS", "refusal": null },
+    { "role": "cross_vendor", "vendor": "google",
+      "actor": { "kind": "agent", "id": "agent:agy-1.1.22/session-cross-vendor" },
+      "verdict": "PASS", "refusal": null }
+  ],
+  "delta_sweep": { "status": "clean",
+                   "region": "<main_sha_at_review>..refs/remotes/origin/main",
+                   "needles_sha256": "<sha256 of the needle list, joined by \n>",
+                   "hits": [] }
+}
+```
+
+and, inside `consultations.pmat`:
+
+```json
+"duplication_needles": ["fused_kernel_launch", "stream_ordering_guard", "..."]
+```
+
+**Four things that are easy to get wrong and are refused if you do.**
+
+1. `main_sha_at_review` is the tip of `origin/main` **at review time**, not at merge time.
+   The queue runs at about one PR an hour with `max_entries_to_build: 1`, so hours pass
+   and `main` moves; the region between the two is unswept, and before §13 it was also
+   unnamed. If that region is non-empty you owe a **delta sweep**, and the sweep must
+   **replay** the needle set — `needles_sha256 = sha256(join(duplication_needles, "\n"))`.
+   Re-deriving needles from the diff is a second implementation of §3.A's derivation,
+   each green against its own copy, which is the exact defect §3.A exists to catch.
+2. `vendor` is what makes the quorum a quorum. Two `anthropic` members raise the count
+   and not the independence, and the predicate reads `|distinct vendor| ≥ 2`.
+3. No quorum member may carry the author's actor id — not merely `reviewer_actor`.
+4. `refusal: null` means "no reservation". One non-null refusal ends it. No member may
+   clear another member's refusal.
+
+### §13.2 What the cross-vendor reviewer may do
+
+`agy` is **advisory** under §7 and may not block. §13 gives it exactly one power: it may
+refuse the unattended merge. Record that as a property on an advisory SARIF result:
+
+```json
+"properties": { "grounding": "asserted", "precision_class": "advisory",
+                "autonomy_effect": "refuse", "rationale": "...", "failure_scenario": "..." }
+```
+
+Nothing about §7's tier changes. A cross-vendor reviewer that could neither block nor
+refuse would be a consultation and not a member.
+
+### §13.3 Running the arm script
+
+```bash
+# SHADOW MODE. Evaluates the §13.2 predicate, prints PERMIT or REFUSE [Qn], merges nothing.
+bash scripts/pr_review_quorum_arm.sh --explain --pr 2795
+
+# HERMETIC (what the fixture table does): everything from artifacts, no network.
+bash scripts/pr_review_quorum_arm.sh --explain --pr 2783 \
+     --receipt tests/fixtures/pr-review/q-52-permits-a-clean-quorum \
+     --context tests/fixtures/pr-review/q-52-permits-a-clean-quorum/pr-context.json
+
+# THE ARMING VERB. Runs `gh pr merge <N> --squash --auto` on PERMIT and nothing else.
+bash scripts/pr_review_quorum_arm.sh --pr 2795
+```
+
+Exit codes: **0** permitted (and armed, unless `--explain`), **1** refused, **2** the box
+cannot answer. That third code is not decoration — three guards in one day here named a
+CODE cause for a broken box, and one of them blocked every PR.
+
+It is **idempotent**: an already-armed PR prints `ALREADY-ARMED` and calls nothing.
+
+### §13.4 DEGRADED does not auto-merge, and you do not work around it
+
+A `DEGRADED` receipt refuses under **Q6**. Do not "fix" throughput by recording
+`not-triggered` where you meant `unreachable` — §3.A's trigger is unconditional, the
+receipt guard rejects a `not-triggered` pmat outright, the arm script refuses any pmat
+status other than `consulted`, and an empty `trigger_reason` on any consultation is
+refused too.
+
+**Check the transport before you believe the source is down.** Measured on this box,
+2026-08-31: `pmat 3.34.0` is on `PATH`, `.pmat/context.db` exists, and
+`pmat query "receipt validation" --limit 3` exits 0 over 84,919 functions in 10,136 files
+— while the `pmat` **MCP server** refuses connections in the same session. §3.A's
+precondition is a shell command, not an MCP tool call. A DEGRADED verdict recorded because
+one transport was down is a misattribution, and `PRREV-016` owes the `transport:` field
+that would make it visible.
+
+### §13.5 The refusal classes
+
+| class | it refused because |
+|---|---|
+| **Q1** | the receipt is missing, unreadable, unsigned, invalid (delegated to the receipt guard), or carries no autonomy block |
+| **Q2** | a consultation did not run, ran over nothing, left a surviving mutant, or a guard-touching diff has no `scope: "guard"` 100% run |
+| **Q3** | a commit after the reviewed SHA touches something outside `evidence/pr-review/<pr>/**` |
+| **Q4** | `main` moved and the delta region was not swept clean, or the sweep did not replay the needle set |
+| **Q5** | single-vendor quorum, missing role, non-unanimous, or the author sits in it |
+| **Q6** | the verdict is not PASS, a finding blocks, a claim carries no mark, or a tool did not execute |
+| **Q7** | the cross-vendor reviewer set `autonomy_effect: refuse` |
+| **Q8** | the kill switch on `origin/main`, the `autonomy-hold` label, or an open CHANGES_REQUESTED |
+| **Q9** | the PR does not target `main`, or its diff touches `MECHANISM_PATHS` |
+| **Q10** | `workspace-test` or the gate check is not `success` |
+
+**A refusal is not a block.** Say so when you report one.
+
+### §13.6 The kill switch
+
+`.github/pr-review-autonomy.disabled` on `origin/main` refuses everything at every rung.
+It is read from `origin/main` and **never** from the PR tree, so a branch that deletes it
+does not turn autonomy back on. It is the first clause of the repository phase, because an
+off switch consulted only after five other checks have passed costs a minute of compute to
+use.
+
+### §13.7 What §13 will not do for you
+
+- It does not verify that a review was **honest**. `attestation_level: L1-self` still says
+  the skill was invoked by the authoring agent, and a signature is a provenance claim.
+- It does not read the **PR body**. `gh` produces `base_ref`, labels, reviews, checks and
+  the tip, and nothing else.
+- It does not check **entailment**. That is Phase 3 (§1.1).
+- It has **zero samples**. `autonomous_merge_reverts` is `0/0`, which is **undefined, not
+  clean** — the same shape as the coverage pipeline that read `0/0` for months.
+
+### §13.8 This PR cannot auto-merge itself
+
+`MECHANISM_PATHS` covers the skill, the key, the kill switch, `.github/workflows/`, the
+specification, both contracts, `schemas/`, the six `check_pr_review_*`/`mutate*` scripts,
+the arm script, the duplication scanner, the fixture tree and both bats files. The pull
+request that introduces §13 touches every one of them, so §13 refuses it under **Q9**.
+That is the first falsifiable property of the section, and `q-44` plus the
+`MECHANISM_PATHS` bats row are what hold it.
+
+### §13.9 Verifying the mechanism
+
+```bash
+bats tests/pr-review-quorum.bats            # 69 rows: one per refusal path, four that PERMIT
+bash scripts/mutate_quorum_arm.sh           # 122/122 — §13.10 fixes this at one, no ratchet
+bash scripts/mutate_quorum_arm.sh --list    # the catalogue, no mutants run
+```
+
+The mutation set is **derived** — one `drop` and one `flip` per `refuse Q<n>` site,
+rescanned on every run — so a refusal added to the arm script is mutated the next time this
+runs without anybody remembering to add it. Two branches were rewritten during the build
+because the set proved them unreachable rather than because anybody read them.

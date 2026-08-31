@@ -110,6 +110,44 @@ derive_bats_tests() {
     printf '%s\n' "$n"
 }
 
+# S13 (PRREV-015) adds a SECOND table, a SECOND bats file and a SECOND mutation set.
+# They are derived here rather than left uncounted, because the universe this guard
+# iterates is what decides whether it can fail at all: a table it has never heard of is
+# a table whose stated size can go stale exactly the way the first four did. Same shape
+# as the three above, one file over.
+derive_quorum_mutants() {
+    local root=$1 err rows tally rc=0
+    err=$(mktemp "${TMPDIR:-/tmp}/prcounts-qlist.XXXXXX") || return 1
+    rows=$( (cd "$root" && bash scripts/mutate_quorum_arm.sh --list 2>"$err") \
+            | awk -F'\t' '$2 == "drop" || $2 == "flip" || $2 == "text" { n += 1 } END { print n + 0 }' )
+    rc=${PIPESTATUS[0]}
+    tally=$(sed -n 's/^\([0-9][0-9]*\) mutants$/\1/p' "$err" | tail -1)
+    rm -f -- "$err"
+    [ "$rc" -eq 0 ] || return 1
+    [ -n "$tally" ] || return 1
+    [ "$rows" -gt 0 ] || return 1
+    [ "$rows" = "$tally" ] || {
+        echo "$PROG: mutate_quorum_arm.sh --list printed $rows catalogue rows but tallied $tally" >&2
+        return 1
+    }
+    printf '%s\n' "$rows"
+}
+
+derive_quorum_rows() {
+    local root=$1 n
+    n=$(find "$root/tests/fixtures/pr-review" -maxdepth 1 -type d -name 'q-*' 2>/dev/null | wc -l)
+    [ "$n" -gt 0 ] || return 1
+    printf '%s\n' "$n"
+}
+
+derive_quorum_bats_tests() {
+    local root=$1 n
+    [ -f "$root/tests/pr-review-quorum.bats" ] || return 1
+    n=$(grep -c '^@test ' "$root/tests/pr-review-quorum.bats")
+    [ "$n" -gt 0 ] || return 1
+    printf '%s\n' "$n"
+}
+
 # ---------------------------------------------------------------------------
 # The site table. id | file | occurrences | template (@N@ -> derived value)
 # ---------------------------------------------------------------------------
@@ -121,6 +159,18 @@ fixture_rows|.github/workflows/ci.yml|2|@N@-row
 fixture_rows|tests/pr-review.bats|1|@N@ row
 fixture_rows|tests/pr-review.bats|1|-eq @N@ ]
 bats_tests|.github/workflows/ci.yml|2|@N@ tests
+quorum_mutants|docs/specifications/PR-REVIEW-SKILL-002-v2.md|2|@N@/@N@
+quorum_mutants|.claude/skills/pr-review/SKILL.md|1|@N@/@N@
+quorum_mutants|contracts/pr-review-skill-v2.yaml|1|@N@/@N@
+quorum_mutants|.claude/skills/pr-review/SKILL.md|1|@N@-mutant
+quorum_mutants|.github/workflows/ci.yml|2|@N@-mutant
+quorum_mutants|docs/specifications/PR-REVIEW-SKILL-002-v2.md|2|@N@ mutants
+quorum_bats_tests|docs/specifications/PR-REVIEW-SKILL-002-v2.md|1|@N@ rows
+quorum_bats_tests|docs/specifications/PR-REVIEW-SKILL-002-v2.md|1|@N@-row
+quorum_bats_tests|.claude/skills/pr-review/SKILL.md|2|@N@ rows
+quorum_bats_tests|.github/workflows/ci.yml|1|@N@ rows
+quorum_rows|tests/pr-review-quorum.bats|1|-eq @N@ ]
+quorum_rows|tests/pr-review-quorum.bats|1|expected @N@ q-*
 '
 
 # ---------------------------------------------------------------------------
@@ -136,10 +186,17 @@ check() {
     derived[fixture_rows]=$v
     v=$(derive_bats_tests   "$root") || die_env "cannot derive the bats test count"
     derived[bats_tests]=$v
+    v=$(derive_quorum_mutants    "$root") || die_env "cannot derive the S13 mutation-set size (mutate_quorum_arm.sh --list)"
+    derived[quorum_mutants]=$v
+    v=$(derive_quorum_rows       "$root") || die_env "cannot derive the S13 q-* fixture-row count"
+    derived[quorum_rows]=$v
+    v=$(derive_quorum_bats_tests "$root") || die_env "cannot derive the S13 bats test count"
+    derived[quorum_bats_tests]=$v
 
     [ -n "$quiet" ] || {
         echo "=== the counts these files state as measured, against the tree ($PROG) ==="
         echo "derived:  mutants=${derived[mutants]}  fixture_rows=${derived[fixture_rows]}  bats_tests=${derived[bats_tests]}"
+        echo "          quorum_mutants=${derived[quorum_mutants]}  quorum_rows=${derived[quorum_rows]}  quorum_bats_tests=${derived[quorum_bats_tests]}"
     }
 
     local row id file want tmpl needle got
@@ -222,7 +279,11 @@ self_test() {
       tar -cf - .claude/skills/pr-review/SKILL.md contracts/binding.yaml \
                 .github/workflows/ci.yml tests/pr-review.bats \
                 scripts/mutate-guard.sh scripts/check_pr_review_receipt.sh \
-                scripts/check_pr_review_counts.sh tests/fixtures/pr-review ) \
+                scripts/check_pr_review_counts.sh tests/fixtures/pr-review \
+                contracts/pr-review-skill-v2.yaml \
+                docs/specifications/PR-REVIEW-SKILL-002-v2.md \
+                tests/pr-review-quorum.bats scripts/mutate_quorum_arm.sh \
+                scripts/pr_review_quorum_arm.sh ) \
       | ( cd "$base" && tar -xf - ) || die_env "could not stage a copy of the tree"
 
     row() {
@@ -261,6 +322,20 @@ self_test() {
     grow_rows()     { mkdir -p "$1/tests/fixtures/pr-review/row-27-invented"; }
     grow_mutants()  { sed -i 's#^  \[ -n "$head" \] || reject B1 "predicate.head_sha is absent" || return 1#&\n  [ -n "$head" ] || reject B1 "an invented rule nothing documents" || return 1#' \
                              "$1/scripts/check_pr_review_receipt.sh"; }
+    # DERIVED anchors, not literal ones. The four rows above were written with literal
+    # numbers and each goes stale the day its table grows: `stale_qrows` anchored on
+    # `-eq 55 ]` and stopped matching the moment a 56th fixture landed, at which point
+    # the harness correctly refused to report a verdict it had not earned
+    # (HARNESS-BROKEN). Reading the value from the same derivation the check uses makes
+    # the row self-maintaining while still performing a real edit.
+    stale_qmutants(){ local n; n=$(derive_quorum_mutants "$1")
+                      sed -i "s#$n/$n#$((n - 18))/$((n - 18))#" "$1/.claude/skills/pr-review/SKILL.md"; }
+    stale_qrows()   { local n; n=$(derive_quorum_rows "$1")
+                      sed -i "s#-eq $n \]#-eq $((n - 4)) ]#" "$1/tests/pr-review-quorum.bats"; }
+    grow_qrows()    { mkdir -p "$1/tests/fixtures/pr-review/q-99-invented"; }
+    grow_qbats()    { printf '\n@test "an S13 row the docs do not count" {\n  true\n}\n' >> "$1/tests/pr-review-quorum.bats"; }
+    grow_qmutants() { sed -i 's#^  \[ "$verdict" = "PASS" \] \\#  [ -n "$verdict" ] || refuse Q6 "an invented refusal nothing documents" || return 1\n&#' \
+                             "$1/scripts/pr_review_quorum_arm.sh"; }
 
     echo "--- check_pr_review_counts.sh --self-test ---"
     row baseline                0 "the tree as committed"                                   noop
@@ -271,12 +346,17 @@ self_test() {
     row tree-grew-a-test        1 "a bats test is added and no file says so"                grow_bats
     row tree-grew-a-fixture-row 1 "a row-* fixture is added and no file says so"            grow_rows
     row tree-grew-a-mutant      1 "a reject site is added and no file says so"              grow_mutants
+    row stale-quorum-mutation   1 "the S13 mutation score written back by 18"               stale_qmutants
+    row stale-quorum-rows       1 "the S13 row assertion written back by 4"                  stale_qrows
+    row tree-grew-a-quorum-row  1 "a q-* fixture is added and no file says so"              grow_qrows
+    row tree-grew-a-quorum-test 1 "an S13 bats test is added and no file says so"           grow_qbats
+    row tree-grew-a-refusal     1 "a refuse Q<n> site is added and no file says so"         grow_qmutants
 
     if [ "$fails" -ne 0 ]; then
         echo "--- $fails row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 8/8 rows, both polarities ---"
+    echo "--- 13/13 rows, both polarities ---"
     return 0
 }
 
@@ -287,9 +367,12 @@ done
 case "${1:-}" in
   --self-test) self_test; exit $? ;;
   --show)
-      printf 'mutants       %s\n' "$(derive_mutants      "$REPO_ROOT")"
-      printf 'fixture_rows  %s\n' "$(derive_fixture_rows "$REPO_ROOT")"
-      printf 'bats_tests    %s\n' "$(derive_bats_tests   "$REPO_ROOT")"
+      printf 'mutants            %s\n' "$(derive_mutants           "$REPO_ROOT")"
+      printf 'fixture_rows       %s\n' "$(derive_fixture_rows      "$REPO_ROOT")"
+      printf 'bats_tests         %s\n' "$(derive_bats_tests        "$REPO_ROOT")"
+      printf 'quorum_mutants     %s\n' "$(derive_quorum_mutants    "$REPO_ROOT")"
+      printf 'quorum_rows        %s\n' "$(derive_quorum_rows       "$REPO_ROOT")"
+      printf 'quorum_bats_tests  %s\n' "$(derive_quorum_bats_tests "$REPO_ROOT")"
       exit 0 ;;
   -h|--help) sed -n '2,55p' "$0"; exit 0 ;;
   '') check "$REPO_ROOT"; exit $? ;;

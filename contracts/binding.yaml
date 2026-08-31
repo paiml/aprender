@@ -718,6 +718,35 @@ bindings:
     the two repair lanes had left one of them DEAD -- two implementations of
     "duplication_hits must be an array", the superset returning 129 lines earlier -- and
     bats passed 112/0 straight over it. Only the mutation set saw it.
+- contract: pr-review-skill-v2.yaml
+  equation: autonomous_merge_requires_a_cross_vendor_quorum
+  status: implemented
+  notes: >-
+    S13. Registered in the SAME commit that declares the equation, deliberately:
+    https://github.com/paiml/aprender/issues/2797 records that an equation can be
+    declared and bound by nothing, with no PR-time gate able to see the gap, and the
+    section that lets a merge happen unattended is the last place to add a sixth
+    instance of that hole. Discharged by scripts/pr_review_quorum_arm.sh -- the Q1..Q10
+    refusal tier over the S13.2 predicate -- with tests/pr-review-quorum.bats as the
+    table (67 rows, one per refusal path, plus four that must PERMIT) and
+    scripts/mutate_quorum_arm.sh as the falsifier (122/122, derived one `drop` and one
+    `flip` per `refuse Q<n>` site so it cannot fall behind the script). NOT ARMED, and
+    that is a property of the wiring rather than a promise: CI Arm 5 runs the arm script
+    with --explain against committed fixtures and a purpose-built repository, Arm 6 runs
+    the same table against MUTATED copies under a recording `gh` stub that logs any call
+    and exits 1, and no step in any workflow invokes the arming verb. Receipt validity is
+    DELEGATED to scripts/check_pr_review_receipt.sh rather than re-implemented, and
+    fixture q-40b asserts the delegated refusal still carries the receipt guard's own
+    class (B6) -- a second copy of validity here would be the two-implementations defect
+    F8 already found once inside these same artifacts. Three of the four rows that must
+    PERMIT are DISCRIMINATION rows differing from a refusing row in ONE variable: q-53 vs
+    q-47 (which file the post-review commit touches), q-54 vs q-49 (whether the delta
+    region was swept), q-55 vs q-45 (the mutation scope on a guard-touching diff).
+    Two branches were rewritten during the build because the mutation set proved them
+    UNREACHABLE rather than because anybody read them -- the unenumerable-region branch
+    and the asserted-and-blocking clause -- and control 1's arming line was folded into a
+    shared one for the same reason. autonomous_merge_reverts is 0/0 and is recorded as
+    UNDEFINED, not clean.
 critical_path:
 - softmax
 - rmsnorm
