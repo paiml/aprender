@@ -166,51 +166,92 @@ jobs:
             sleep "$delay"
             delay=$((delay + 6))  # linear backoff: 4,10,16,22,28,34,...
           done
-      - name: Pre-flight target-dir consistency check
-        # Root cause (five-whys):
-        #   1. Why does workspace-test sometimes fail with "no such file or
-        #      directory .rcgu.o" / extern location missing / cc-rs can't
-        #      create .o? Cargo's incremental state on the per-PR target
-        #      dir is inconsistent.
-        #   2. Why inconsistent? A prior run was SIGKILL'd mid-compile and
-        #      left orphan .rmeta files (parts cargo had registered as built)
-        #      without the corresponding .rcgu.o codegen artifacts (which were
-        #      mid-write at the moment of the kill).
-        #   3. Why was it SIGKILL'd? concurrency.cancel-in-progress (line 22)
-        #      cancels the previous run as soon as a new commit lands on the
-        #      branch (and "Update branch" / strict-up-to-date triggers this
-        #      every time aprender main moves forward).
-        #   4. Why does this persist? The target dir is bind-mounted from a
-        #      per-PR persistent path /mnt/nvme-raid0/targets/aprender-ci/<PR>/,
-        #      so partial-compile state survives across runs.
-        #   5. Root cause: cargo's incremental state is not atomic-on-kill, so
-        #      a persistent shared target dir + cancel-in-progress = damage.
-        # Prevention (this step): BEFORE invoking cargo, check whether the
-        # immediately-preceding workflow run on this branch was cancelled. If
-        # yes, rm -rf the target dir contents. This is a one-time check at
-        # job start — NOT a retry-on-failure pattern (which the operator
-        # rejects under the "flake is not allowed" directive).
+      - name: Target-dir reclaim planner must still turn RED (case table)
+        # The planner below decides what gets rm -rf'd. Its own case table runs
+        # first, in the same job, so it cannot rot into a step that only ever
+        # passes: row 1a executes the OLD parent-wide removal against a fixture
+        # holding a live sibling and REQUIRES it to destroy that sibling, and
+        # row 2a requires a genuinely orphaned dir to still be reclaimed. A
+        # blanket skip passes row 1 and fails row 2.
+        run: bash scripts/ci_reclaim_target_dirs.sh --self-test
+      - name: Reclaim orphaned per-RUN target dirs (never a live sibling)
+        # WHAT THIS REPLACED, and why (#2825).
+        #
+        # This step used to run, whenever the previous run on the branch was
+        # cancelled:
+        #
+        #   docker run --rm \
+        #     -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+        #     "$IMAGE" bash -c 'rm -rf /workspace/target/* /workspace/target/.[!.]* ...'
+        #
+        # It mounted the PARENT. The tree is `aprender-ci/<PR>/run-<RUN_ID>`
+        # since #1693, so `<PR>/` is the shared parent of every run for that PR
+        # and `rm -rf <PR>/*` removed every sibling `run-*` directory with no
+        # notion of whether the run owning it was still building.
+        #
+        # Its own five-whys (whose text is preserved below) was written against
+        # a premise #1693 removed: "the target dir is bind-mounted from a per-PR
+        # persistent path /mnt/nvme-raid0/targets/aprender-ci/<PR>/, so partial-
+        # compile state survives across runs". Since #1693 the mount is per-RUN,
+        # so no other run's state can reach this run at all. The parent-wide
+        # removal bought nothing and could only take a sibling with it:
+        #
+        #   1. Why the "no such file or directory .rcgu.o" / missing-extern
+        #      failures? Cargo's incremental state on the target dir is
+        #      inconsistent.
+        #   2. Why inconsistent? A prior cargo was SIGKILL'd mid-compile and
+        #      left .rmeta without the matching .rcgu.o.
+        #   3. Why SIGKILL'd? concurrency.cancel-in-progress cancels the
+        #      previous run as soon as a new commit lands on the branch.
+        #   4. Why did it persist? -- ANSWERED BY #1693. It no longer does:
+        #      the mount is `<PR>/run-<RUN_ID>`, fresh per run.
+        #   5. So the residual risk is not stale state reaching this run; it is
+        #      this step reaching somebody else's live run.
+        #
+        # Measured 2026-08-31 over 36 of the last 100 runs:
+        #   * workspace-test and guard-runner-labels are two jobs of the SAME
+        #     run, on two runners of one host, and both mount
+        #     `<PR>/run-<RUN_ID>` (guard's "model-tests falsification suites"
+        #     step). Their job windows overlap by 21-29 minutes.
+        #   * The removal does fire: runs 33372476223 and 33375180919 both
+        #     logged "Previous run was cancelled; nuking target dir".
+        #   * The margin between this step and that sibling step on the shared
+        #     directory is uncontrolled and CHANGES SIGN -- +7.6 min at the
+        #     tightest (run 33369566809) and -10.8 min in run 33243677674,
+        #     where this step ran AFTER the sibling's cargo instead of before.
+        #     Nothing orders them; today it misses on luck, and the image pull
+        #     this job documents at up to 20 minutes moves it either way.
+        #
+        # So the removal is scoped: `run-<THIS_RUN_ID>` is never touched (a
+        # sibling JOB of this run is writing to it), and a sibling RUN's dir is
+        # reclaimed only when the API says that run is completed -- or, if the
+        # API cannot answer, only when the dir is older than the 100-minute job
+        # timeout. That age fallback is deliberate: sparing everything on an
+        # oracle outage would make this step inert exactly when it is needed.
+        # Cleanup never fails the build; a planner error downgrades to a
+        # warning and reclaims nothing.
         run: |
-          set -e
-          if [ -z "${{ github.event.pull_request.number }}" ]; then
-            echo "Not a PR run; skipping prior-cancel check"
+          set -uo pipefail
+          set +e
+          PARENT="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
+          PLAN="${RUNNER_TEMP:-/tmp}/reclaim-${GITHUB_RUN_ID}.txt"
+          bash scripts/ci_reclaim_target_dirs.sh "$PARENT" "$GITHUB_RUN_ID" > "$PLAN"
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning::reclaim planner exited ${rc}; reclaiming nothing (cleanup never fails the build)"
             exit 0
           fi
-          # Find the immediately-preceding workflow run on this branch.
-          # status=completed filter excludes the current in-progress run.
-          PREV_CONCLUSION=$(gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${GITHUB_HEAD_REF}&status=completed&per_page=1" \
-            --jq '.workflow_runs[0].conclusion' 2>/dev/null || echo "")
-          echo "Previous run conclusion on ${GITHUB_HEAD_REF}: ${PREV_CONCLUSION:-<none>}"
-          if [ "$PREV_CONCLUSION" = "cancelled" ]; then
-            echo "::warning::Previous run was cancelled; nuking target dir to prevent cargo cancel-damage"
-            docker run --rm \
-              -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
-              "$IMAGE" \
-              bash -c 'rm -rf /workspace/target/* /workspace/target/.[!.]* 2>/dev/null || true; ls -la /workspace/target/ || true'
-          else
-            echo "No cancel damage to clean (prior conclusion: ${PREV_CONCLUSION:-fresh-branch})"
+          if [ ! -s "$PLAN" ]; then
+            echo "Nothing to reclaim under ${PARENT}"
+            exit 0
           fi
+          echo "Reclaiming $(wc -l < "$PLAN") orphaned run dir(s):"
+          cat "$PLAN"
+          docker run --rm -i \
+            -v "${PARENT}:/parent" \
+            "$IMAGE" \
+            bash -c 'set -u; while read -r d; do case "$d" in run-*) rm -rf "/parent/${d:?}" ;; *) echo "refusing to remove: ${d}" ;; esac; done; ls -la /parent' \
+            < "$PLAN"
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Pre-build chown — fix per-RUN root ownership
