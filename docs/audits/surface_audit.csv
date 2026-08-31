@@ -316,13 +316,13 @@ apr,DELETE /api/delete,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-
 apr,GET /,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:252,high
 apr,GET /api/tags,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:165,high
 apr,GET /api/version,9,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:167,medium
-apr,GET /health,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:89,medium
-apr,GET /health/live,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:90,medium
-apr,GET /health/ready,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:91,medium
+apr,GET /health,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:89 (body crates/aprender-serve/src/api/router.rs:550),medium
+apr,GET /health/live,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:90 (body crates/aprender-serve/src/api/router.rs:550),medium
+apr,GET /health/ready,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:91 (body crates/aprender-serve/src/api/router.rs:550),medium
 apr,GET /metrics,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:116,medium
 apr,GET /metrics/dispatch,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:117,medium
 apr,GET /models,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:95,high
-apr,GET /ready,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:93,high
+apr,GET /ready,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:93 (body crates/aprender-serve/src/api/router.rs:550),high
 apr,GET /realize/model,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:105,high
 apr,GET /tensors,6,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/safetensors.rs:164,low
 apr,GET /v1/audit/:request_id,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:146,medium

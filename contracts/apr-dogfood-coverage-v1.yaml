@@ -49,6 +49,23 @@ metadata:
     # drifted, +45 lines at ce712eae0 and -39 at bd475b06f, so every citation was
     # 6 lines short of its arm), and two new rows for `apr test llm bench` and its
     # `--band` mode, which shipped with no ledger entry at all.
+    #
+    # PARTIAL RE-AUDIT, PERF-062 / PR #2803. `measured_commit` again does NOT
+    # move, and no row was added or removed: 832 stays 832, 142 stays 142.
+    #
+    # G2.1 fired because that branch edits crates/aprender-serve/src/api/router.rs,
+    # which 40 rows cite. All 40 were re-checked against the tree and all 40 still
+    # resolve to the route they name -- the edit is additive and sits ~275 lines
+    # below the lowest citation, so nothing drifted. That is the finding, and it is
+    # recorded rather than assumed.
+    #
+    # What the re-audit DID change is the evidence for the four rows whose
+    # RESPONSE BODY the branch alters (`GET /health`, `/health/live`,
+    # `/health/ready`, `/ready`, which all return build_health_response). Each
+    # cited only its route-table registration, and a route-table line cannot
+    # witness what the endpoint returns -- it was green while the payload gained a
+    # `compute_class` field. Each now also cites the builder, in the
+    # `path:line (label path:line)` form 69 other rows already use.
     ledger: docs/audits/surface_audit.csv
 
     overall:
