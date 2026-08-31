@@ -1500,7 +1500,7 @@ jobs:
   #      check_guards_are_wired.sh scans for — a guard named in a comment is not
   #      wired. GREEN and RED together, because "refuse every receipt" reads
   #      green against RED fixtures alone.
-  #   2. the 26-row fixture table (§6.3's fourteen plus the twelve PRREV-008 and
+  #   2. the 35-row fixture table (§6.3's fourteen plus the twelve PRREV-008 and
   #      PRREV-009 added) under bats, positive controls included.
   #   3. the guard's own mutation set (§6.4). §8 fixes guard_mutation_score at
   #      100% with "no ratchet, it is a one". Wiring a guard and leaving its
@@ -1596,12 +1596,12 @@ jobs:
 
       # Arm 2. Every row of §6.3, plus the positive controls, plus the
       # must-match/must-not-match tables behind the three trigger regexes. This
-      # file is 121 tests and was reachable from NO workflow until this job — the
+      # file is 149 tests and was reachable from NO workflow until this job — the
       # dark-target class this repository has hit with benches and with 58 cgp
       # tests. Both numbers here are recomputed by check_pr_review_counts.sh; the
       # commit that wired this step wrote 65 and 22 over a file that already held
-      # 121 tests and 26 rows.
-      - name: The 26-row fixture table and both polarities of every trigger regex
+      # 149 tests and 35 rows.
+      - name: The 35-row fixture table and both polarities of every trigger regex
         shell: bash
         run: bats tests/pr-review.bats
 
@@ -1609,8 +1609,15 @@ jobs:
       # required-field check, target 100% kill.
       #
       # The script's DEFAULT parallelism, because that is the only setting whose
-      # wall time was measured: 185/185 killed in 3091s (51.5 min) at --jobs 12
-      # on a 48-core box, 2026-08-30. The set is DERIVED — one `drop` and one
+      # wall time has been measured: 185/185 killed in 3091s (51.5 min) at
+      # --jobs 12 on a 48-core box, 2026-08-30.
+      #
+      # THE SET IS 215/215 TODAY (PRREV-015 added S3.E), so that wall time is a
+      # LOWER BOUND and not a current measurement. It is left as the number that
+      # was actually measured, with its date and its set size beside it, rather
+      # than rescaled: a scaled estimate wearing the shape of a measurement is
+      # the defect this whole job exists to catch. Re-measure before quoting it.
+      # The set is DERIVED — one `drop` and one
       # `flip` per `reject B<n>` site, rescanned from the guard on every run — so
       # its size moves when the guard does; `scripts/mutate-guard.sh --list`
       # prints it, and check_pr_review_counts.sh fails this file when the number

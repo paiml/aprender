@@ -514,9 +514,9 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "every S6.3 row, the contract's owed row, and PRREV-008's seven have a fixture" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 26 ] || { echo "expected 26 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6), found $n"; false; }
+  [ "$n" -eq 35 ] || { echo "expected 35 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E), found $n"; false; }
   local i
-  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26; do
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
       || { echo "no fixture directory for row $i"; false; }
   done
@@ -1541,4 +1541,293 @@ land_prior_art_on_main() {
   run "$SCAN" --repo "$d" --base "$(git -C "$d" rev-parse main)" --head "$(git -C "$d" rev-parse pr)" --horizon everything
   [ "$status" -eq 1 ]
   [[ "$output" == *"--horizon must be all, since or none"* ]]
+}
+
+# =============================================================================
+# S3.E — THE FOURTH-VENDOR ARM (PRREV-015).
+#
+# S3.A..S3.D consult SOURCES. S3.E consults a different REVIEWING AGENT, from a
+# different vendor and model family, in its own process. That is a materially stronger
+# form of S5's author/reviewer separation than a second prompt of the same model: S5
+# cites Huang et al. (ICLR'24) on self-preference bias and on intrinsic self-correction
+# degrading reasoning, and neither result is escaped by asking one family twice.
+#
+# The arm is ADVISORY and every test below is about the HONESTY OF THE RECORD, never
+# about what agy said. S7's admission rule admits a class to the blocking tier only
+# while its measured precision on the rolling sample is >= 90%; S3.E has zero samples,
+# so there is nothing for that rule to apply and the arm cannot block. What the guard
+# may refuse is a receipt that MISDESCRIBES what agy did — which is every rule here.
+# =============================================================================
+
+@test "row 27 a 2.0.0 receipt written before the arm existed        GREEN     [discrimination]" {
+  # THE ROW THAT KEEPS THE VERSION GATE HONEST IN BOTH DIRECTIONS. Without it,
+  # "require an antigravity block on every receipt ever written" reads green — and the
+  # only way to make this repository's one real receipt pass again
+  # (evidence/pr-review/2795/f5fe1479.../, skill_version 2.0.0, four consultations)
+  # would be to back-fill a block describing a consultation nobody performed. That is
+  # the never-ran-Ollama shape with a JSON schema in front of it.
+  assert_row row-27-legacy-2-0-0-receipt-has-no-arm-e GREEN
+}
+
+@test "row 28 a 2.1.0 receipt that owes the arm and omits it           RED  B1" {
+  # Row 27 with ONE field changed. S3.E's trigger is unconditional, so at 2.1.0 an
+  # absent block is the consultation missing, not "not applicable" — and S3.0's whole
+  # subject is that an absent record and an empty one must not be the same artifact.
+  assert_row row-28-arm-e-owed-and-absent RED B1 \
+    "owes the S3.E antigravity consultation and consultations.antigravity is absent"
+}
+
+@test "row 29 agy UNAVAILABLE, verdict PASS                            RED  B1" {
+  # S3.0 row 3 in the fifth arm. agy fails SLOWLY as readily as fast — --print-timeout
+  # defaults to 5m and a repository-scale review needs more — so a timeout is
+  # `unavailable`, never a run that found nothing. Those two are otherwise the same
+  # artifact, which is precisely what S3.0 exists to make impossible.
+  assert_row row-29-arm-e-unavailable-verdict-pass RED B1 \
+    "consultations.antigravity is unreachable but the verdict is PASS"
+}
+
+@test "row 30 the SAME unavailable agy, verdict DEGRADED             GREEN     [discrimination]" {
+  # Without it, "refuse every receipt whose agy did not run" reads green, and the arm
+  # punishes the honest DEGRADED exactly as hard as the silent PASS — which is how an
+  # unavailability field learns to stay empty. This is also the arm's intended
+  # behaviour on a box with no agy installed: DEGRADED proceeds on a feature branch.
+  assert_row row-30-arm-e-unavailable-verdict-degraded GREEN
+}
+
+@test "row 31 agy consulted having invoked nothing                     RED  B1" {
+  # S8's fourth zero — vacuous_consultations = 0 — in the fifth arm. The same artifact
+  # as mutation.attempted=0 (row 2) and cuda.queries=[] (row 18), and the same shape as
+  # `pv lint <FILE>` returning PASS over zero contracts.
+  assert_row row-31-arm-e-consulted-attempted-zero RED B1 \
+    "antigravity.status is consulted with attempted=0"
+}
+
+@test "row 32 an agy finding claiming a BLOCKING class                 RED  B1" {
+  # S7's admission rule: >= 90% measured precision on the rolling sample. S3.E has
+  # ZERO samples, so the rule that governs the tier has nothing to apply and the arm
+  # cannot be admitted to it.
+  assert_row row-32-arm-e-finding-claims-a-blocking-class RED B1 \
+    "S3.E is advisory until 30 samples exist"
+  # THE REASON IS LOAD-BEARING AND WAS MEASURED, NOT ASSUMED. The first build of this
+  # fixture marked the agy finding `asserted`, and it was rejected by S1's OLDER rule —
+  # "an asserted claim never blocks" — two hundred lines earlier. Same class, same exit
+  # code, and the row pinned NOTHING: drop S3.E's rule and it stays red on S1's. The
+  # finding is `measured` now, which is also the honest mark for an agent that ran its
+  # own commands, and the assertion below excludes the neighbouring branch by name.
+  run "$GUARD" "$FIX/row-32-arm-e-finding-claims-a-blocking-class"
+  [[ "$output" != *"an asserted claim never blocks"* ]] || {
+    echo "row 32 was rejected by S1's asserted rule, not by S3.E's advisory rule:"
+    echo "$output"; return 1; }
+}
+
+@test "row 33 the SAME agy finding, marked advisory                  GREEN     [discrimination]" {
+  # Without it, "refuse every receipt carrying an agy finding" reads green — and the
+  # arm becomes a rule whose only satisfiable behaviour is to find nothing, which is
+  # the opposite of why a second vendor is being consulted at all. One token differs
+  # from row 32.
+  assert_row row-33-arm-e-finding-advisory GREEN
+}
+
+@test "row 34 agy declared not-triggered                               RED  B1" {
+  # Row 19's rule (pmat: not-triggered) for the fifth arm, and STRICTER: pmat's
+  # illegality needed a code file in the diff, S3.E's needs nothing, because there is
+  # no diff shape a second opinion is not owed on. The head here is the DOCS-ONLY one,
+  # which is the hardest case for that claim and therefore the right one to pin it.
+  assert_row row-34-arm-e-not-triggered RED B1 \
+    "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional"
+}
+
+@test "probe skill_version absent                                      RED  B1" {
+  # The version selects the rule set the receipt is judged by (ARM_E_MIN_VERSION), so
+  # a receipt that omits it cannot be judged against any. Before S3.E nothing read the
+  # field at all and it was decoration.
+  assert_probe skill-version-absent row-07-honest-docs-only-pmat-consulted B1 \
+    "predicate.skill_version is absent" \
+    'del(.predicate.skill_version)'
+}
+
+@test "probe a 2.0.0 receipt that CARRIES an antigravity block is still checked RED B1" {
+  # THE VERSION GATE MUST NOT CREATE AN UNCHECKED FIELD. It exists to spare the honest
+  # historical receipt, not to open a lane where anything can be written under an old
+  # version number. `arm_e_required` and `arm_e_present` are two separate facts in the
+  # guard for exactly this reason: a block that is present is validated in full
+  # whatever the declared version says.
+  assert_probe arm-e-block-at-2-0-0 row-27-legacy-2-0-0-receipt-has-no-arm-e B1 \
+    "antigravity.status is consulted with attempted=0" \
+    '.predicate.consultations.antigravity = {"status":"consulted","attempted":0,"agy_version":"agy 1.1.22","binary_path":"/home/noah/.local/bin/agy","model_family":"google/antigravity","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2},"reverified_by_primary":false,"divergence":{"agreed":0,"agy_only":0,"primary_only":0,"contradicted":0},"findings":[]}'
+}
+
+@test "probe antigravity status outside its vocabulary                 RED  B1" {
+  # The status vocabulary is applied over a LIST and antigravity joins it rather than
+  # getting a private copy of the rule. Two implementations of one rule drift, and each
+  # stays green against its own copy — D8, in the guard that implements F4.
+  assert_probe arm-e-bad-status row-07-honest-docs-only-pmat-consulted B1 \
+    "consultations.antigravity.status is 'ran', outside { consulted, not-triggered, unreachable }" \
+    '.predicate.consultations.antigravity.status = "ran"'
+}
+
+@test "probe antigravity attempted that is not a count                 RED  B1" {
+  # "once" is not a number of invocations. Without the type check the comparison below
+  # it errors, the `if` reads false, and the vacuity rule is SKIPPED — a guard failing
+  # open on a value its own type check admitted, which is the class this file exists
+  # to remove.
+  assert_probe arm-e-attempted-not-a-count row-07-honest-docs-only-pmat-consulted B1 \
+    "antigravity.status is consulted but attempted is 'once'" \
+    '.predicate.consultations.antigravity.attempted = "once"'
+}
+
+@test "probe antigravity with no recorded agy version                  RED  B1" {
+  # This repository has had four `apr` binaries coexist, and a bare invocation resolve
+  # to a 26-day-old one. `agy_version` and `binary_path` are the OUTPUT of an explicit
+  # resolution, which is the opposite of a hardcoded path: it is provenance, recorded
+  # per run, and it is what makes a later precision sample attributable to a build.
+  assert_probe arm-e-no-version row-07-honest-docs-only-pmat-consulted B1 \
+    "S3.E identity fields are absent or empty: agy_version" \
+    'del(.predicate.consultations.antigravity.agy_version)'
+}
+
+@test "probe antigravity with no recorded model family                 RED  B1" {
+  # `model_family` is what makes "cross-vendor" a CHECKABLE claim rather than an
+  # asserted one. Without it the arm's entire justification — that this is not the same
+  # model family reviewing itself, S5 and A5 — rests on nothing in the artifact.
+  assert_probe arm-e-no-model-family row-07-honest-docs-only-pmat-consulted B1 \
+    "S3.E identity fields are absent or empty: model_family" \
+    'del(.predicate.consultations.antigravity.model_family)'
+}
+
+@test "probe antigravity usage missing a token count                   RED  B1" {
+  # S8's cost_per_actionable is fed from agy's own usage block, which is real token
+  # accounting rather than an estimate. Record-only is not unenforced — the same rule
+  # the receipt's own `cost` block already carries.
+  assert_probe arm-e-usage-incomplete row-07-honest-docs-only-pmat-consulted B1 \
+    "antigravity.usage must carry numeric input_tokens, output_tokens and total_tokens (missing or non-numeric: input_tokens)" \
+    'del(.predicate.consultations.antigravity.usage.input_tokens)'
+}
+
+@test "probe antigravity usage that is not an object                   RED  B1" {
+  assert_probe arm-e-usage-not-object row-07-honest-docs-only-pmat-consulted B1 \
+    "usage is not an object" \
+    '.predicate.consultations.antigravity.usage = "20836 in, 904 out"'
+}
+
+@test "probe reverified_by_primary absent                              RED  B1" {
+  # agy's `measured` claims were produced by agy's process. S1 defines `measured` as
+  # "produced by a command THIS RUN executed", and for an agy finding "this run" is
+  # agy's. THE RULING IS THAT THE PRIMARY DOES NOT RE-RUN THEM and the receipt says so
+  # here; re-running and adjudicating would dissolve the independence the arm exists to
+  # create. What is forbidden is leaving it unsaid.
+  assert_probe arm-e-reverified-absent row-07-honest-docs-only-pmat-consulted B1 \
+    "antigravity.reverified_by_primary must be present and boolean" \
+    'del(.predicate.consultations.antigravity.reverified_by_primary)'
+}
+
+@test "probe reverified_by_primary that is a string, not a boolean     RED  B1" {
+  # "no" is not false. A string here reads as an answer while committing to nothing,
+  # which is the shape of every field this spec has had to close.
+  assert_probe arm-e-reverified-string row-07-honest-docs-only-pmat-consulted B1 \
+    "antigravity.reverified_by_primary must be present and boolean" \
+    '.predicate.consultations.antigravity.reverified_by_primary = "no"'
+}
+
+@test "probe divergence with no contradicted column                    RED  B1" {
+  # `contradicted` is the row that matters and the row a lazy implementation drops: agy
+  # and the primary reached OPPOSITE conclusions on one subject. A receipt that cannot
+  # REPRESENT that is a receipt in which the primary always wins — which is the failure
+  # S5 names, one level up from the second-invocation audit.
+  assert_probe arm-e-divergence-no-contradicted row-07-honest-docs-only-pmat-consulted B1 \
+    "bad or missing: contradicted" \
+    'del(.predicate.consultations.antigravity.divergence.contradicted)'
+}
+
+@test "probe divergence with a negative count                          RED  B1" {
+  assert_probe arm-e-divergence-negative row-07-honest-docs-only-pmat-consulted B1 \
+    "bad or missing: agy_only" \
+    '.predicate.consultations.antigravity.divergence.agy_only = -1'
+}
+
+@test "probe divergence that is not an object                          RED  B1" {
+  assert_probe arm-e-divergence-not-object row-07-honest-docs-only-pmat-consulted B1 \
+    "divergence is not an object" \
+    '.predicate.consultations.antigravity.divergence = "none"'
+}
+
+@test "probe the divergence ledger does not account for the findings   RED  B1" {
+  # WITHOUT THE IDENTITY, `divergence` IS FOUR NUMBERS NOTHING CONSTRAINS, and
+  # {0,0,0,0} beside a non-empty findings array reads as perfect agreement. Every agy
+  # finding is exactly one of agreed, agy-only or contradicted; `primary_only` is
+  # deliberately OUTSIDE the identity because it counts the primary's findings agy did
+  # not raise, which are not in this array.
+  assert_probe arm-e-ledger-unbalanced row-33-arm-e-finding-advisory B1 \
+    "divergence accounts for 0 of them" \
+    '.predicate.consultations.antigravity.divergence = {"agreed":0,"agy_only":0,"primary_only":0,"contradicted":0}'
+}
+
+@test "probe an agy finding at level error but precision_class advisory GREEN    [discrimination]" {
+  # A finding is refused on its PRECISION CLASS, never on its content or its severity.
+  # agy may report anything it likes at `advisory`, and SARIF level `error` stays legal:
+  # the arm is advisory about AUTHORITY, not about how loudly it may speak. Without this
+  # row, "silence the second vendor" and "do not let it block" read the same.
+  local d
+  d=$(make_probe arm-e-error-level-advisory row-33-arm-e-finding-advisory '.' \
+      '.runs[0].results[0].level = "error"') || { echo "probe build failed"; false; }
+  run "$GUARD" "$d"
+  [ "$status" -eq 0 ] || { echo "expected GREEN, got exit $status:"; echo "$output"; false; }
+}
+
+@test "S3.E the not-a-second-vendor table matches, both polarities" {
+  # ANY REGEX IN THIS REPOSITORY SHIPS A CASE TABLE, and this one's universe is a
+  # command's OUTPUT rather than the pattern's own vocabulary — F5's lesson, where a
+  # table written from the regex passed 13/13 while missing three real spellings.
+  # All fourteen ids `agy models` printed are rows here.
+  run run_case_table arm-e-model --match-arm-e-same-family
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+}
+
+@test "S3.E the two Claude ids agy actually offers are asserted by name" {
+  # The table above would still pass if it silently shrank. These two are the reason
+  # this rule exists at all: they are in `agy models` output on the box this was
+  # measured on, so "agy is Antigravity, Antigravity is Google's" is not sufficient.
+  "$GUARD" --match-arm-e-same-family 'claude-sonnet-4-6'
+  "$GUARD" --match-arm-e-same-family 'claude-opus-4-6-thinking'
+  # ...and the rule must NOT be a wildcard that refuses every model, which would make
+  # the arm unusable and read as "correctly strict".
+  run "$GUARD" --match-arm-e-same-family 'gemini-3.1-pro-high'
+  [ "$status" -ne 0 ]
+}
+
+@test "row 35 agy routed to the primary reviewer's own model family    RED  B1" {
+  # ROW 7 WITH ONE TOKEN CHANGED. Every other field is honest — binary resolved and
+  # recorded, version recorded, usage real, ledger balanced, arm advisory — and the
+  # consultation is still the same model family reviewing itself. S5 cites Huang et al.
+  # (ICLR'24) for why that is worth close to nothing; A5 calls a separate grounded
+  # critic the first configuration that beats single-agent, and a same-family critic is
+  # not one.
+  assert_row row-35-arm-e-routed-to-the-same-model-family RED B1 \
+    "which is the reviewing agent's OWN model family"
+}
+
+@test "row 35's receipt is otherwise IDENTICAL to an accepted one   [single variable]" {
+  # A single-variable control, in the idiom F6's book/src/examples/ pair uses. If the
+  # two receipts differed anywhere else, row 35 would be evidence of nothing in
+  # particular. The diff below must be exactly the model id — and `model_family` is
+  # DELIBERATELY left reading google/gemini in row 35, because the whole point is that
+  # a label can say cross-vendor while the mechanism did not engage.
+  local a b
+  a=$(jq -S 'del(.predicate.consultations.antigravity.model_id)' \
+      "$FIX/row-07-honest-docs-only-pmat-consulted/receipt.intoto.jsonl")
+  b=$(jq -S 'del(.predicate.consultations.antigravity.model_id)' \
+      "$FIX/row-35-arm-e-routed-to-the-same-model-family/receipt.intoto.jsonl")
+  [ "$a" = "$b" ] || {
+    echo "row 35 differs from row 07 in more than the model id:"
+    diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") || true
+    return 1; }
+}
+
+@test "probe antigravity with no recorded model id                    RED  B1" {
+  # An unrecorded model id is not a smaller defect than a same-family one: it is the
+  # same defect with the evidence removed. The rule above can only fire on a value
+  # that is written down.
+  assert_probe arm-e-no-model-id row-07-honest-docs-only-pmat-consulted B1 \
+    "S3.E identity fields are absent or empty: model_id" \
+    'del(.predicate.consultations.antigravity.model_id)'
 }

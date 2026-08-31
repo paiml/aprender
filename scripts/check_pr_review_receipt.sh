@@ -12,6 +12,14 @@
 #   B5  breaking API surface with no semver bump   (no consultation emits this)
 #   B6  index_is_ancestor = false AND verdict = PASS
 #
+# S3.E (PRREV-015) adds a FIFTH consultation, `antigravity` - an independent reviewing
+# agent from a different vendor and model family, run as its own process. It is ADVISORY:
+# S7's admission rule lets a class block only while its measured precision is >= 90% on
+# the rolling sample, and S8 requires instrument -> 30 samples -> ratchet. There are zero
+# samples, so nothing S3.E emits may carry `precision_class: blocking`, and a receipt that
+# says otherwise is internally inconsistent - B1, not a new class. The rules below are
+# therefore about the HONESTY of the record, never about the content of agy's findings.
+#
 # USAGE
 #   check_pr_review_receipt.sh <receipt-dir> [<receipt-dir> ...]
 #   check_pr_review_receipt.sh --match-path <path>          predicate: S3.B path trigger
@@ -22,8 +30,9 @@
 #   check_pr_review_receipt.sh --match-mutation-trigger <p> predicate: S3.D scope trigger
 #   check_pr_review_receipt.sh --match-target <text>        predicate: a bar, not a claim
 #   check_pr_review_receipt.sh --match-rs-published <line>  predicate: printed, or a doc comment
+#   check_pr_review_receipt.sh --match-arm-e-same-family <id>  predicate: S3.E, not a second vendor
 #
-# The eight --match-* forms are pure predicates over one string. They exist so the
+# The nine --match-* forms are pure predicates over one string. They exist so the
 # regexes can be driven by a must-match / must-not-match case table
 # (tests/fixtures/pr-review/*-cases.tsv) rather than by reading them. This repository's
 # guard patterns have been wrong six times; a table caught every one and review caught
@@ -112,6 +121,38 @@ MULT_RE='(x|×)'
 RATIO_GAP_RE='(([A-Za-z]+([.-][A-Za-z]+)*|[A-Za-z]{1,3}\.)[[:space:]]+){0,5}'
 COMPETITOR_RE='(ollama|llama\.cpp|llama-cpp|llamacpp|llama|vllm|pytorch|torch|sklearn|scikit-learn|unsloth|tensorrt|onnxruntime|onnx|transformers|huggingface|candle|burn|ggml|tinygrad|mlx|fastertransformer|sglang|lmdeploy|turbomind|tgi|orca|static[[:space:]]+batching)'
 COMPARATIVE_RE="${RATIO_LEFT_RE}[0-9]+(\.[0-9]+)?[[:space:]]*${MULT_RE}[[:space:]]*${RATIO_GAP_RE}${COMPETITOR_RE}"
+
+# S3.E: THE MODELS THAT ARE NOT A SECOND VENDOR.
+#
+# MEASURED, and it is the finding that changed this arm's design. `agy models` on the
+# development box, 2026-08-31, returns fourteen ids - and TWO OF THEM ARE CLAUDE:
+#
+#   gemini-3.7-flash-{high,medium,low}   gemini-3.6-flash-{high,medium,low}
+#   gemini-3.5-flash-{high,medium,low}   gemini-3.1-pro-{high,low}
+#   claude-sonnet-4-6                    claude-opus-4-6-thinking
+#   gpt-oss-120b-medium
+#
+# agy is a HARNESS, not a model. Run with no `--model`, or with a Claude one, S3.E is
+# THE SAME MODEL FAMILY REVIEWING ITSELF wearing a cross-vendor label - which is exactly
+# the self-preference bias S5 cites Huang et al. (ICLR'24) about, and exactly this
+# repository's standing rule that a run must never be labelled by INTENT: a receipt
+# reading `model_family: cross-vendor` while `--model claude-opus-4-6-thinking` ran is
+# `device: GPU` printed by a build with no CUDA in it.
+#
+# So the model id is RECORDED as an argv element and CHECKED here. This is a
+# correctness rule for the arm, not a preference: with a same-family model the arm
+# delivers nothing S5 does not already have, while claiming to deliver A5's "first
+# configuration that beats single-agent".
+#
+# THE PATTERN IS DELIBERATELY WIDE, and can be, because its cost is asymmetric. A false
+# positive refuses a receipt and the reviewer picks another model id - a second of work.
+# A false negative silently voids the arm's entire justification and nothing in the
+# artifact says so. `opus`, `sonnet` and `haiku` are listed beside `claude` because a
+# harness may expose the model without the vendor prefix, and this is the one rule here
+# whose failure is invisible. Both polarities are pinned in
+# tests/fixtures/pr-review/arm-e-model-cases.tsv.
+ARM_E_SAME_FAMILY_RE='(claude|anthropic|opus|sonnet|haiku)'
+match_arm_e_same_family() { grep -Eqi -- "$ARM_E_SAME_FAMILY_RE" <<<"$1"; }
 
 # A TARGET says what we WANT; a CLAIM says what we GOT. Only the second needs a
 # comparator recorded, because only the second asserts a measurement. Same rule, same
@@ -261,6 +302,7 @@ case "${1-}" in
   --match-mutation-trigger) match_mutation_trigger "${2?--match-mutation-trigger needs an argument}"; exit $? ;;
   --match-target)      match_target       "${2?--match-target needs an argument}";      exit $? ;;
   --match-rs-published) match_rs_published "${2?--match-rs-published needs an argument}"; exit $? ;;
+  --match-arm-e-same-family) match_arm_e_same_family "${2?--match-arm-e-same-family needs an argument}"; exit $? ;;
   -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
 esac
 
@@ -289,6 +331,37 @@ fi
 
 VERDICTS='PASS FINDINGS DEGRADED BLOCK'
 PREDICATE_TYPE='https://paiml.dev/attestations/pr-review/v2'
+
+# S3.E is owed by receipts written at or after this skill version, and by no other.
+#
+# A RECEIPT IS A RECORD OF A REVIEW THAT HAPPENED, and this repository already holds one
+# - evidence/pr-review/2795/f5fe1479.../ - written at 2.0.0, before the arm existed. The
+# alternative to this gate was to back-fill an `antigravity` block into it so it would
+# keep validating. That is fabricating the evidence S3.C.1 exists to demand: a
+# consultation record for a consultation nobody performed, which is the never-ran-Ollama
+# shape with a JSON schema in front of it. So a 2.0.0 receipt is validated by 2.0.0's
+# rules and stays honest, and 2.1.0 owes the arm.
+#
+# THE HOLE THIS LEAVES IS STATED RATHER THAN PAPERED OVER: a reviewer who writes
+# `skill_version: 2.0.0` skips S3.E, and this guard cannot tell that from a genuine
+# 2.0.0 receipt, because both are exactly the same bytes. Closing it needs a check that
+# reads the TREE's current skill version and requires this PR's receipt to match it -
+# scripts/check_pr_review_arm4.sh's job, owed as PRREV-018, and deliberately NOT invented
+# here: S8 forbids a threshold nobody measured, and the arm it would protect is advisory
+# with zero samples. An advisory arm with a stated bypass is worth more than a blocking
+# one with an unstated closure.
+ARM_E_MIN_VERSION=2.1.0
+
+# version_ge A B - 0 when A >= B under version ordering.
+#
+# `sed -n 1p`, NOT `head -1`: head exits after the first line, hands sort SIGPIPE, and
+# under `set -o pipefail` the command substitution reports 141 for a pipeline that
+# produced exactly the right answer. That shape landed four times in this repository in
+# one day. sed without `q` reads its input to the end and closes no pipe.
+version_ge() {
+  lo=$(printf '%s\n%s\n' "$1" "$2" | sort -V | sed -n 1p)
+  [ "$lo" = "$2" ] || [ "$1" = "$2" ]
+}
 
 REJECT_CLASS=''
 REJECT_REASON=''
@@ -384,12 +457,19 @@ validate_receipt() {
   fi
 
   # --- read the predicate ---------------------------------------------------
-  local ptype alevel head base verdict author reviewer subj_sha
+  local ptype alevel head base verdict author reviewer subj_sha skill_ver
   ptype=$(jq -r '.predicateType // ""' "$rcpt")
   [ "$ptype" = "$PREDICATE_TYPE" ] || reject B1 "predicateType is '$ptype', expected '$PREDICATE_TYPE'" || return 1
 
   alevel=$(jq -r '.predicate.attestation_level // ""' "$rcpt")
   [ "$alevel" = "L1-self" ] || reject B1 "attestation_level is '$alevel'; a skill invoked by the authoring agent is self-attestation, and R1 requires it to say so" || return 1
+
+  # skill_version decides which rules this receipt is judged by (ARM_E_MIN_VERSION
+  # above), so an absent one is not a cosmetic omission: it is a receipt that does not
+  # say which contract it was written against.
+  skill_ver=$(jq -r '.predicate.skill_version // ""' "$rcpt")
+  [ -n "$skill_ver" ] \
+    || reject B1 "predicate.skill_version is absent; the version is what selects the rule set this receipt is judged by, so a receipt that omits it cannot be judged against any" || return 1
 
   head=$(jq -r '.predicate.head_sha // ""' "$rcpt")
   base=$(jq -r '.predicate.base_sha // ""' "$rcpt")
@@ -436,13 +516,37 @@ validate_receipt() {
     || reject B1 "base_sha $base is not git merge-base origin/main $head (= $computed_base); the diff scope of this review is not the merge base (S2)" || return 1
 
   # --- consultation statuses -----------------------------------------------
-  local pmat_st cuda_st crux_st mut_st
+  local pmat_st cuda_st crux_st mut_st ag_st
   pmat_st=$(jq -r '.predicate.consultations.pmat.status // ""' "$rcpt")
   cuda_st=$(jq -r '.predicate.consultations.cuda.status // ""' "$rcpt")
   crux_st=$(jq -r '.predicate.consultations.crux.status // ""' "$rcpt")
   mut_st=$(jq  -r '.predicate.consultations.mutation.status // ""' "$rcpt")
+  ag_st=$(jq   -r '.predicate.consultations.antigravity.status // ""' "$rcpt")
+
+  # --- S3.E: is the second-vendor arm owed, and is it here? ------------------
+  # TWO independent facts, because they fail differently. `arm_e_required` comes from
+  # the receipt's declared version; `arm_e_present` from whether the block exists. A
+  # 2.0.0 receipt that carries the block anyway is still checked in full - a block
+  # nothing validates is worse than no block, and the version gate exists to spare the
+  # honest historical receipt, not to open an unchecked field.
+  local arm_e_required=0 arm_e_present=0
+  if version_ge "$skill_ver" "$ARM_E_MIN_VERSION"; then arm_e_required=1; fi
+  if jq -e '.predicate.consultations | has("antigravity")' "$rcpt" >/dev/null 2>&1; then
+    arm_e_present=1
+  fi
+  if [ "$arm_e_required" -eq 1 ] && [ "$arm_e_present" -eq 0 ]; then
+    reject B1 "skill_version $skill_ver owes the S3.E antigravity consultation and consultations.antigravity is absent; S3.E's trigger is unconditional, exactly as S3.A's is, and an absent consultation is indistinguishable from one that found nothing (S3.0)" || return 1
+  fi
+
+  # The vocabulary and the unreachable rule are applied over a LIST, and antigravity
+  # joins it rather than getting a private copy of either rule. Two implementations of
+  # one rule drift, and each stays green against its own copy - F4 and D8, in the guard
+  # that implements F4.
+  local -a CONSULT=(pmat cuda crux mutation)
+  if [ "$arm_e_present" -eq 1 ]; then CONSULT+=(antigravity); fi
+
   local k st
-  for k in pmat cuda crux mutation; do
+  for k in "${CONSULT[@]}"; do
     st=$(jq -r --arg k "$k" '.predicate.consultations[$k].status // ""' "$rcpt")
     case "$st" in
       consulted|not-triggered|unreachable) ;;
@@ -452,7 +556,11 @@ validate_receipt() {
   done
 
   # --- B1: an unreachable source must not read clean (S3.0, rows 5 and 6). --
-  for k in pmat cuda crux mutation; do
+  # This is also S3.E's `unavailable` state. agy can fail SLOWLY - `--print-timeout`
+  # defaults to 5m and a repository-scale review needs more - so a timeout is recorded
+  # as `unreachable`, never as a run that found nothing. The two are the same artifact
+  # otherwise, which is the distinction S3.0 exists to make impossible.
+  for k in "${CONSULT[@]}"; do
     st=$(jq -r --arg k "$k" '.predicate.consultations[$k].status // ""' "$rcpt")
     if [ "$st" = "unreachable" ] && [ "$verdict" = "PASS" ]; then
       reject B1 "consultations.$k is unreachable but the verdict is PASS; an unreachable source must be DEGRADED, not clean (S3.0)" || return 1
@@ -639,6 +747,148 @@ validate_receipt() {
     n_survivors=$(jq -r '[.predicate.consultations.mutation.survivors[]?] | length' "$rcpt")
     [ "$n_survivors" -eq $((attempted - killed)) ] \
       || reject B1 "mutation records attempted=$attempted killed=$killed, so $((attempted - killed)) mutant/s survived, but survivors[] holds $n_survivors; S3.D requires every survivor to be named" || return 1
+  fi
+
+  # =========================================================================
+  # S3.E - THE FOURTH-VENDOR ARM.
+  #
+  # S3.A..S3.D consult SOURCES: an index, a documentation corpus, a contract set, a
+  # mutation run. S3.E consults a different REVIEWING AGENT, from a different vendor
+  # and a different model family, in its own process with its own tools. That is what
+  # makes it a stronger form of S5's separation than a second prompt of this model:
+  # S5 cites Huang et al. (ICLR'24) on self-preference bias and on intrinsic
+  # self-correction degrading reasoning, and neither result is escaped by asking the
+  # same family twice. A5 calls a separate grounded critic the first configuration
+  # that beats single-agent; a same-family critic is not one.
+  #
+  # EVERY RULE BELOW IS ABOUT THE RECORD, NOT ABOUT THE FINDINGS. The arm is advisory
+  # (zero samples, S7's admission rule), so the guard may not act on what agy SAID. It
+  # may only refuse a receipt that misdescribes what agy DID.
+  # =========================================================================
+  if [ "$arm_e_present" -eq 1 ]; then
+    # S3.E's trigger is unconditional - every PR - for the same reason S3.A's is, and
+    # the reason is not cost. A shape-based trigger exempts exactly the diffs where an
+    # independent reader is worth most: the small ones that look obvious, which is what
+    # every PR in S9's spine looked like to its author. All four carry `reviews=0,
+    # comments=0`, and S9.3 records that S5's separation "has still never been exercised
+    # on this epic". Cost is instrumented instead (`usage`, below), so a threshold can be
+    # DERIVED from 30 samples later rather than guessed now - S10 row 8.4's argument,
+    # reused because it is the same argument.
+    [ "$ag_st" != "not-triggered" ] \
+      || reject B1 "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional on every PR exactly as S3.A's is; a shape trigger would exempt the small diffs that look obvious, which is every PR in S9's spine" || return 1
+
+    if [ "$ag_st" = "consulted" ]; then
+      local ag_attempted ag_ident ag_usage ag_div ag_nfind ag_sum
+
+      # --- vacuity. The rule S8 fixes at zero, applied to the fifth arm. ----
+      # `attempted` is the number of agy INVOCATIONS this consultation made. Same
+      # shape, same zero, as mutation.attempted and cuda.queries[]: a consultation
+      # recorded as performed that performed nothing passes vacuously.
+      ag_attempted=$(jq -r '.predicate.consultations.antigravity.attempted // "null"' "$rcpt")
+      case "$ag_attempted" in
+        ''|null|*[!0-9]*) reject B1 "antigravity.status is consulted but attempted is '$ag_attempted', which is not a count of agy invocations" || return 1 ;;
+      esac
+      [ "$ag_attempted" -gt 0 ] \
+        || reject B1 "antigravity.status is consulted with attempted=0; a consultation that invoked nothing is DEGRADED, not clean, exactly as mutation.attempted=0 and cuda.queries=[] are (S8 vacuous_consultations = 0)" || return 1
+
+      # --- WHICH BINARY, AND WHOSE MODEL. ----------------------------------
+      # This repository has had four `apr` binaries coexist and a bare invocation
+      # resolve to a 26-day-old one; the standing rule is to resolve explicitly and
+      # record what was resolved. `binary_path` is the OUTPUT of that resolution, which
+      # is the opposite of a hardcoded path - it is provenance, recorded per run.
+      #
+      # `model_id` is what makes "cross-vendor" a CHECKABLE claim rather than an
+      # asserted one - it is the argv value, and the rule below reads it.
+      # `model_family` is the human-readable label beside it and is deliberately NOT
+      # what the rule reads: a label is what a receipt can get wrong for free, and
+      # row 35 is exactly a receipt whose model_family says google/gemini while its
+      # model_id says claude-opus-4-6-thinking. Without model_id the arm's whole
+      # justification - that it is not the same family reviewing itself, S5 - rests on
+      # nothing in the artifact an automated check can reach.
+      #
+      # The version is RECORDED, NOT PINNED. A pinned version makes the arm fail closed
+      # on an upgrade, and S7 has no measured reason to block anything here; an
+      # unrecorded one makes every later precision sample unattributable to a build.
+      ag_ident=$(jq -r '.predicate.consultations.antigravity as $a
+          | ["agy_version","binary_path","model_id","model_family"]
+          | map(. as $k | select((($a | has($k)) | not) or ((($a | getpath([$k])) // "" | tostring | length) == 0)))
+          | join(", ")' "$rcpt")
+      [ -z "$ag_ident" ] \
+        || reject B1 "antigravity.status is consulted but these S3.E identity fields are absent or empty: $ag_ident; a review by an unrecorded binary of an unrecorded model cannot be shown to be cross-vendor, which is the arm's whole justification (S5, A5)" || return 1
+
+      # --- THE ARM MUST ACTUALLY BE A SECOND VENDOR. -----------------------
+      # agy is a harness that can route to Claude: `agy models` lists
+      # claude-sonnet-4-6 and claude-opus-4-6-thinking beside the Gemini ids. With a
+      # Claude model - or with `--model` omitted and the default landing there - S3.E
+      # is the same family reviewing itself, S5's self-preference case, and the receipt
+      # would still read `antigravity` in every field a reader checks. The mechanism is
+      # proven ENGAGED here rather than asserted by the arm's name.
+      local ag_model
+      ag_model=$(jq -r '.predicate.consultations.antigravity.model_id // ""' "$rcpt")
+      if match_arm_e_same_family "$ag_model"; then
+        reject B1 "antigravity.model_id is '$ag_model', which is the reviewing agent's OWN model family; S3.E exists to be a different vendor and family than the primary reviewer (S5, A5, Huang et al. ICLR'24), and agy is a harness that can route to Claude - so a same-family model makes this arm self-review wearing a cross-vendor label" || return 1
+      fi
+
+      # --- COST, wired into S8's cost_per_actionable. -----------------------
+      # agy's own `usage` block is real token accounting, so S8's continuous metric has
+      # a numerator that was measured rather than estimated. Record-only is not
+      # unenforced - the same rule the receipt's own `cost` block already carries.
+      ag_usage=$(jq -r '.predicate.consultations.antigravity.usage as $u
+          | if ($u | type) != "object" then "usage is not an object"
+            else (["input_tokens","output_tokens","total_tokens"]
+                  | map(. as $k | select((($u | has($k)) | not) or ((($u | getpath([$k])) | type) != "number")))
+                  | join(", ")) end' "$rcpt")
+      [ -z "$ag_usage" ] \
+        || reject B1 "antigravity.usage must carry numeric input_tokens, output_tokens and total_tokens (missing or non-numeric: $ag_usage); S8's cost_per_actionable is fed from agy's own usage block, and record-only is not unenforced" || return 1
+
+      # --- WHOSE MEASUREMENT IS IT. ----------------------------------------
+      # agy runs as a separate process with its own tools, so a finding it marks
+      # `measured` was measured by IT, not by this reviewer. S1 says a `measured` claim
+      # is "produced by a command this run executed" - and for an agy finding, "this
+      # run" is agy's run.
+      #
+      # THE RULING, so the receipt does not have to be read twice to find it: the
+      # PRIMARY REVIEWER DOES NOT RE-RUN THEM, and the receipt says so in this field.
+      # Re-running and adjudicating would dissolve the independence the arm exists to
+      # create - the disagreement would disappear into the primary's judgement, which
+      # is the outcome `divergence` below exists to prevent. A run that DID re-verify
+      # records `true`, and then the re-run commands are the primary's own `measured`
+      # marks in the SARIF. What is forbidden is leaving it unsaid.
+      jq -e '.predicate.consultations.antigravity
+             | has("reverified_by_primary") and (.reverified_by_primary | type == "boolean")' \
+         "$rcpt" >/dev/null 2>&1 \
+        || reject B1 "antigravity.reverified_by_primary must be present and boolean; agy's 'measured' claims were produced by agy's process, and a receipt that does not say whether the primary reviewer re-ran them leaves the reader unable to tell whose measurement it is (S1)" || return 1
+
+      # --- DISAGREEMENT IS SIGNAL. ------------------------------------------
+      # Recorded, never resolved silently in the primary's favour. S5's audit_divergence
+      # is the same instrument one level up (a second invocation of the SAME reviewer);
+      # this is its cross-vendor sibling, and S8 records it as arm_e_agreement_rate.
+      #
+      # `contradicted` is the row that matters and the row a lazy implementation drops:
+      # agy and the primary reached OPPOSITE conclusions on one subject. A receipt that
+      # cannot represent that is a receipt in which the primary always wins.
+      ag_div=$(jq -r '.predicate.consultations.antigravity.divergence as $d
+          | if ($d | type) != "object" then "divergence is not an object"
+            else (["agreed","agy_only","primary_only","contradicted"]
+                  | map(. as $k | select((($d | has($k)) | not)
+                        or ((($d | getpath([$k])) | type) != "number")
+                        or ((($d | getpath([$k])) | floor) != ($d | getpath([$k])))
+                        or (($d | getpath([$k])) < 0)))
+                  | join(", ")) end' "$rcpt")
+      [ -z "$ag_div" ] \
+        || reject B1 "antigravity.divergence must carry whole non-negative agreed, agy_only, primary_only and contradicted (bad or missing: $ag_div); a disagreement with no place to be written down is a disagreement resolved in the primary's favour, which is the failure S5 names (Huang et al., ICLR'24)" || return 1
+
+      # Every agy finding is accounted for by exactly one of the three columns that
+      # describe an agy finding. `primary_only` is deliberately OUTSIDE the identity -
+      # it counts the primary's findings agy did not raise, which are not in this array.
+      # Without the identity, `divergence` is four numbers nothing constrains, and
+      # `{0,0,0,0}` beside twelve agy findings would read as perfect agreement.
+      ag_nfind=$(jq -r '[.predicate.consultations.antigravity.findings[]?] | length' "$rcpt")
+      ag_sum=$(jq -r '.predicate.consultations.antigravity.divergence
+                      | (.agreed + .agy_only + .contradicted)' "$rcpt")
+      [ "$ag_nfind" -eq "$ag_sum" ] \
+        || reject B1 "antigravity records $ag_nfind finding/s but divergence accounts for $ag_sum of them (agreed + agy_only + contradicted); every agy finding is exactly one of agreed, agy-only or contradicted, and an unbalanced ledger is one in which disagreement can go unrecorded" || return 1
+    fi
   fi
 
   # --- B6: a stale index must not read PASS (S3.A, row 9). ------------------
@@ -839,6 +1089,32 @@ validate_receipt() {
       .runs[]? | .results[]? | select(.properties.grounding == "cited")
       | [(.ruleId // "<no ruleId>"), .properties.excerpt_sha256,
           (.properties.excerpt | @base64) ] | @tsv' "$sarif")
+
+  # --- B1: S3.E IS ADVISORY, SO NOTHING IT EMITS MAY BLOCK. -----------------
+  #
+  # S7's admission rule: a class may block only while its measured precision on the
+  # rolling sample is >= 90%, and S8 requires instrument -> 30 samples -> ratchet. S3.E
+  # has ZERO samples, so it cannot be admitted to the blocking tier - not because anyone
+  # doubts agy, but because the rule that governs the tier has nothing to apply.
+  #
+  # This is S7.1's argument in the other direction. There it was B5, a class whose sample
+  # could never accrue and which therefore could not be DEMOTED. Here the sample WILL
+  # accrue - `arm_e_actionable_rate` and `arm_e_agreement_rate` are recorded from the
+  # first PR - so the arm can be PROMOTED later, by the same edit to
+  # contracts/pr-review-skill-v2.yaml a demotion would use, once 30 samples exist.
+  # Promotion is a ticket, not a silent config change, for exactly the reason demotion is.
+  #
+  # A finding is refused on its `precision_class`, never on its content or its severity:
+  # agy may report anything it likes at `advisory`, and level `error` is still allowed.
+  # What it may not do is claim an authority the instrumentation has not yet earned it.
+  local ag_blocking
+  while IFS= read -r ag_blocking; do
+    [ -n "$ag_blocking" ] || continue
+    reject B1 "the antigravity run states finding '$ag_blocking' with precision_class blocking; S3.E is advisory until 30 samples exist (S7's admission rule, S8's ratchet), so a blocking class from it is a receipt claiming an authority no measurement supports" || return 1
+  done < <(jq -r '
+      .runs[]? | select((.tool.driver.name // "") == "antigravity")
+      | .results[]? | select((.properties.precision_class // "") == "blocking")
+      | (.ruleId // "<no ruleId>")' "$sarif")
 
   # --- B4: a comparative claim carries its comparator (S3.C.1). -------------
   # The 2.93x Ollama rule: the book published that ratio from a harness that never

@@ -265,7 +265,7 @@ self_test() {
     cp -a "$fix/positive-control"                "$repo/tests/fixtures/pr-review/positive-control"
 
     # row-14 is the GREEN discrimination fixture: a complete receipt on a GPU PR,
-    # all four consultations, findings present, signed with the test key.
+    # all five consultations, findings present, signed with the test key.
     local rcpt="$fix/row-14-complete-gpu-review" head base
     head=$(receipt_head "$rcpt")
     [ -n "$head" ] || die_env "$rcpt carries no predicate.head_sha"

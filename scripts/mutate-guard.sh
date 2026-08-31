@@ -39,6 +39,32 @@
 #  3. Reading a status through a pipe. Every exit code below is read from the command
 #     itself, never from the tail of a pipeline.
 #
+# S3.E'S THREE NAMED SITES (PRREV-015). The version gate and the consultation list are
+# not `reject` sites, so the derived scan cannot see them, and they are the two places
+# the whole arm can be switched off without deleting a single rejection:
+#
+#   arm-e-never-required        the gate always false  -> a 2.1.0 receipt owes nothing.
+#                               Killed by row 28, which then reads GREEN.
+#   arm-e-always-required       the gate always true   -> a 2.0.0 receipt owes the arm.
+#                               Killed by row 27, the legacy discrimination case, which
+#                               then reads RED. Both polarities, because a gate mutated
+#                               in only one direction is a gate half-tested.
+#   arm-e-dropped-from-the-...  antigravity leaves the status/unreachable list -> the
+#                               `unavailable` rule stops applying to it. Killed by
+#                               row 29, which then reads GREEN with a PASS over a
+#                               timed-out agy.
+#
+# And three on S3.E's not-a-second-vendor regex, in the shape every other pattern here
+# carries. That rule is the arm's correctness property rather than a preference - agy
+# is a HARNESS and `agy models` lists two Claude ids beside the Gemini ones - so its
+# regex is mutated in BOTH directions like the trigger patterns are:
+#
+#   ...-regex-never-matches       every model id passes -> killed by row 35.
+#   ...-regex-matches-everything  every model id refused -> killed by row 07, and by
+#                                 the case table's twelve NO-MATCH rows.
+#   ...-predicate-verdict-...     the --match- form always reports MATCH -> killed by
+#                                 the case table, which is the only caller of it.
+#
 # EXCLUDED FROM THE SET, ON PURPOSE: the two `case` guards around `rm -rf` (the scratch
 # directory and the fixture-repo destination) and the EXIT trap. They are destructive-op
 # guards, not validation branches: no receipt can reach them, so no fixture can kill
@@ -171,6 +197,12 @@ mutation-trigger-regex-matches-everything	MUTATION_TRIGGER_RE='(^|/)scripts	MUTA
 self-review-misclassified-B1	reject B2 "reviewer_actor.id = author_actor.id	reject B1 "reviewer_actor.id = author_actor.id
 comparator-misclassified-B1	reject B4 "$claim"	reject B1 "$claim"
 stale-index-misclassified-B1	reject B6 "index_commit $idx is not an ancestor	reject B1 "index_commit $idx is not an ancestor
+arm-e-never-required	if version_ge "$skill_ver" "$ARM_E_MIN_VERSION"; then arm_e_required=1; fi	if false; then arm_e_required=1; fi
+arm-e-always-required	if version_ge "$skill_ver" "$ARM_E_MIN_VERSION"; then arm_e_required=1; fi	if true; then arm_e_required=1; fi
+arm-e-dropped-from-the-consultation-list	if [ "$arm_e_present" -eq 1 ]; then CONSULT+=(antigravity); fi	if [ "$arm_e_present" -eq 1 ]; then CONSULT+=(); fi
+arm-e-same-family-predicate-verdict-not-propagated	match_arm_e_same_family "${2?--match-arm-e-same-family needs an argument}"; exit $?	match_arm_e_same_family "${2?--match-arm-e-same-family needs an argument}"; exit 1
+arm-e-same-family-regex-never-matches	ARM_E_SAME_FAMILY_RE='(claude	ARM_E_SAME_FAMILY_RE='(^$)@@TRUNCATE@@
+arm-e-same-family-regex-matches-everything	ARM_E_SAME_FAMILY_RE='(claude	ARM_E_SAME_FAMILY_RE='(.)@@TRUNCATE@@
 TSV
 }
 

@@ -67,10 +67,18 @@ emit() {  # emit <row-dir> <sarif-json> <receipt-json-with-@@FINDINGS_SHA@@>
 
 # --- receipt builder -------------------------------------------------------
 # receipt <head> <base> <verdict> <pmat-json> <cuda-json> <crux-json> <mutation-json>
-#         [<author-id>] [<reviewer-id>]
+#         [<author-id>] [<reviewer-id>] [<antigravity-json>] [<skill-version>]
+#
+# ARG 10 IS THE EMPTY STRING TO OMIT THE ANTIGRAVITY KEY ENTIRELY, which is what row 27
+# needs: a 2.0.0 receipt written before S3.E existed, which the guard must still accept.
+# Arg 11 is the declared skill version, and it is what decides whether the arm is owed.
 receipt() {
   local head=$1 base=$2 verdict=$3 pmat=$4 cuda=$5 crux=$6 mut=$7
   local author=${8:-$AUTHOR} reviewer=${9:-$REVIEWER}
+  local ag=${10-$AG_OK} sv=${11:-2.1.0}
+  local agline=""
+  [ -z "$ag" ] || agline=",
+      \"antigravity\": $ag"
   cat <<JSON
 {
   "_type": "https://in-toto.io/Statement/v1",
@@ -80,7 +88,7 @@ receipt() {
   ],
   "predicateType": "https://paiml.dev/attestations/pr-review/v2",
   "predicate": {
-    "skill_version": "2.0.0",
+    "skill_version": "$sv",
     "attestation_level": "L1-self",
     "pr": 2783,
     "base_sha": "$base",
@@ -93,7 +101,7 @@ receipt() {
       "pmat": $pmat,
       "cuda": $cuda,
       "crux": $crux,
-      "mutation": $mut
+      "mutation": $mut$agline
     },
     "findings_ref": { "path": "findings.sarif", "sha256": "@@FINDINGS_SHA@@" },
     "cost": { "input_tokens": 41200, "output_tokens": 3180, "wall_seconds": 74 }
@@ -101,6 +109,54 @@ receipt() {
 }
 JSON
 }
+
+# --- S3.E, the second-vendor arm (the FIFTH consultation) -------------------------------------------
+#
+# THE NUMBERS BELOW WERE MEASURED, NOT INVENTED. One real print-mode invocation of the
+# binary `command -v agy` resolved to on the development box, 2026-08-31:
+#
+#   agy -p '<prompt>' --output-format json --json-schema <schema>
+#   -> rc 0, wall 13 s, duration_seconds 9.522230891, status SUCCESS,
+#      usage { input_tokens 20836, output_tokens 904, thinking_tokens 752,
+#              cache_read_tokens 8142, total_tokens 21740 }
+#
+# The usage block is what S8's cost_per_actionable is fed from, so a fixture carrying a
+# made-up one would be a fixture that cannot detect a made-up one.
+AGY_VERSION='agy 1.1.22'
+AGY_PATH='/home/noah/.local/bin/agy'
+AG_USAGE='"usage":{"input_tokens":20836,"output_tokens":904,"thinking_tokens":752,"cache_read_tokens":8142,"total_tokens":21740}'
+
+# THE MODEL ID IS THE ARM'S CORRECTNESS PROPERTY, NOT A LABEL. `agy models` on the same
+# box the same day printed fourteen ids, and TWO ARE CLAUDE - claude-sonnet-4-6 and
+# claude-opus-4-6-thinking. agy is a HARNESS, not a model: run with a Claude model, or
+# with --model omitted and the default landing there, S3.E is the primary reviewer's own
+# family reviewing itself while every field a reader checks still reads `antigravity`.
+# That is S5's self-preference case with a cross-vendor label on it, and it is this
+# repository's standing rule against labelling a run by intent.
+AGY_MODEL='gemini-3.1-pro-high'
+AG_IDENT="\"agy_version\":\"$AGY_VERSION\",\"binary_path\":\"$AGY_PATH\",\"model_id\":\"$AGY_MODEL\",\"model_family\":\"google/gemini\""
+
+# The ordinary shape: agy ran, agreed with the primary about everything, raised nothing.
+# `divergence` is all zeros AND `findings` is empty, which the guard checks against each
+# other - four zeros beside twelve findings would otherwise read as perfect agreement.
+AG_OK="{\"status\":\"consulted\",\"attempted\":1,$AG_IDENT,\"exit_code\":0,\"duration_seconds\":9.52,$AG_USAGE,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":0,\"primary_only\":0,\"contradicted\":0},\"findings\":[]}"
+
+# agy raised one thing the primary did not. The ledger says so: agy_only = 1, and the
+# findings array holds exactly that one. This is the shape rows 32 and 33 both use, so
+# the only variable between them is the finding's precision_class.
+AG_ONE_FINDING="{\"status\":\"consulted\",\"attempted\":1,$AG_IDENT,\"exit_code\":0,\"duration_seconds\":31.7,$AG_USAGE,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":1,\"primary_only\":2,\"contradicted\":0},\"findings\":[{\"id\":\"agy-1\",\"grounding\":\"measured\",\"summary\":\"the added retry loop has no bound\"}]}"
+
+# S3.E's `unavailable` state. agy fails SLOWLY as readily as it fails fast:
+# --print-timeout defaults to 5m and a repository-scale review needs more, so the honest
+# record of a timeout is unreachable - never a run that found nothing.
+AG_UNREACHABLE='{"status":"unreachable","trigger_reason":"agy exceeded --print-timeout 900s with no structured output; a timeout is unavailable, not a review that found nothing"}'
+
+# Illegal, and row 34 exists to be rejected for carrying it: S3.E is unconditional.
+AG_NT_ILLEGAL='{"status":"not-triggered","trigger_reason":"docs-only diff, nothing worth a second opinion"}'
+
+# The vacuous shape S8 fixes at zero, in the fifth arm: recorded as performed, having
+# invoked nothing. Same defect as mutation.attempted=0 and cuda.queries=[].
+AG_VACUOUS="{\"status\":\"consulted\",\"attempted\":0,$AG_IDENT,\"exit_code\":0,\"duration_seconds\":0,$AG_USAGE,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":0,\"primary_only\":0,\"contradicted\":0},\"findings\":[]}"
 
 # S3.A duplication coverage (PRREV-009 / backtest F4). Every surface carries a method,
 # because a surface with NO entry is the silently-absent coverage that made
@@ -618,6 +674,242 @@ sarif_one crux '{
 )
 RCPT=$(receipt "$E1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_EXAMPLES_CLAIM_RECORDED" "$MUT_NT")
 emit row-26-examples-page-ratio-recorded "$SARIF" "$RCPT"
+
+# ===========================================================================
+# S3.E - THE FOURTH-VENDOR ARM. Rows 27..34.
+#
+# Every row below sits on D1, the docs-only head, with pmat consulted and the other
+# three honestly not-triggered - the shape row 7 already proves is ACCEPTED. So the only
+# variable in each is the antigravity block or the declared skill version, and a row that
+# goes red goes red for its own reason and no other.
+# ===========================================================================
+
+# sarif_antigravity <precision_class> - one agy-origin result.
+# The two calls differ in ONE token. Everything else - the driver name that routes the
+# result to S3.E's rule, the grounding mark, the failure scenario - is byte-identical.
+#
+# THE GROUNDING MARK IS `measured`, AND THAT IS NOT DECORATION. The first draft wrote
+# `asserted`, and row 32 was then rejected by S1's OLDER rule - "an asserted claim never
+# blocks" - which fires two hundred lines before S3.E's. The row passed, exited 1, named
+# B1, and pinned NOTHING: drop S3.E's rule and row 32 stays red on S1's. A fixture that
+# is rejected for a reason other than the one it exists to test is mislabeled evidence,
+# which is why assert_row asserts the REASON and not only the class.
+#
+# `measured` is also the honest mark for this arm. agy runs as its own process with its
+# own tools, so the interesting agy finding is precisely the one it MEASURED - and S1's
+# asserted rule, which happens to cover the uninteresting case, covers none of them.
+sarif_antigravity() {
+  cat <<JSON
+{ "\$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [ { "tool": { "driver": { "name": "antigravity" } },
+              "invocations": [ { "executionSuccessful": true, "toolExecutionNotifications": [] } ],
+              "results": [ {
+                "ruleId": "agy-1", "level": "warning",
+                "message": { "text": "The retry loop added in this diff has no bound; a permanently failing dependency spins forever." },
+                "properties": { "grounding": "measured",
+                  "source": "antigravity (agy 1.1.22), independent review",
+                  "failure_scenario": "A dependency that fails every time is retried without limit, and the request never returns rather than returning an error.",
+                  "precision_class": "$1" } } ] } ] }
+JSON
+}
+
+# ===========================================================================
+# ROW 27 - a 2.0.0 receipt, written before S3.E existed, no arm at all -> GREEN
+#
+# DISCRIMINATION CASE, and the one that keeps the version gate honest in BOTH
+# directions. Without it, "require the antigravity block on every receipt ever written"
+# reads green - and the only way to make this repository's one real receipt
+# (evidence/pr-review/2795/f5fe1479.../, skill_version 2.0.0, four consultations) pass
+# again would be to back-fill an antigravity block describing a consultation nobody
+# performed. That is the never-ran-Ollama shape with a JSON schema in front of it, and
+# S3.C.1 exists to make it impossible, not to make it convenient.
+#
+# It also kills the `arm-e-always-required` mutant: with the version gate forced true,
+# this row is REJECTED and the row goes red.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "" "2.0.0")
+emit row-27-legacy-2-0-0-receipt-has-no-arm-e "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 28 - a 2.1.0 receipt that owes the arm and omits it            -> RED B1
+#
+# The other half of row 27, one field changed. S3.E's trigger is unconditional, so at
+# 2.1.0 an absent block is not "not applicable" - it is the consultation missing, and
+# S3.0's whole subject is that an absent record and an empty one must not be the same
+# artifact. Kills `arm-e-never-required`.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "" "2.1.0")
+emit row-28-arm-e-owed-and-absent "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 29 - agy UNAVAILABLE, verdict PASS                             -> RED B1
+#
+# The brief's rule and S3.0's row 3, in the fifth arm: a missing or failing agy must
+# surface as `unavailable` and DEGRADED, never as a silent pass. agy fails SLOWLY as
+# readily as fast - --print-timeout defaults to 5m and a repository-scale review needs
+# more - so the trigger_reason here is a TIMEOUT, which is the failure mode most likely
+# to be mistaken for "it ran and found nothing".
+#
+# Rows 5 and 6 are this same rule for pmat; this row is not a copy of the check but of
+# the CASE, because the guard applies one rule over a list and antigravity joins the
+# list. That is what makes the `antigravity-dropped-from-the-consultation-list` mutant
+# killable: with antigravity out of the list, this receipt is ACCEPTED.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [ { "tool": { "driver": { "name": "antigravity" } },
+              "invocations": [ { "executionSuccessful": false,
+                "toolExecutionNotifications": [ { "level": "error",
+                  "message": { "text": "agy exceeded --print-timeout 900s with no structured output. Consultation could not be performed; verdict DEGRADED." } } ] } ],
+              "results": [] } ] }
+JSON
+
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_UNREACHABLE")
+emit row-29-arm-e-unavailable-verdict-pass "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 30 - the SAME unavailable agy, verdict DEGRADED                 -> GREEN
+#
+# DISCRIMINATION CASE for row 29. Without it, "refuse every receipt whose agy did not
+# run" reads green, and the arm would punish the honest DEGRADED exactly as hard as the
+# silent PASS - which is how an unavailability field learns to stay empty. S3.E is
+# advisory and DEGRADED proceeds on a feature branch (S7), so this is not merely
+# tolerated: it is the arm's intended behaviour on a box where agy is not installed.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [ { "tool": { "driver": { "name": "antigravity" } },
+              "invocations": [ { "executionSuccessful": false,
+                "toolExecutionNotifications": [ { "level": "error",
+                  "message": { "text": "agy exceeded --print-timeout 900s with no structured output. Consultation could not be performed; verdict DEGRADED." } } ] } ],
+              "results": [] } ] }
+JSON
+
+)
+RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_UNREACHABLE")
+emit row-30-arm-e-unavailable-verdict-degraded "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 31 - agy consulted having invoked nothing                      -> RED B1
+#
+# The vacuous consultation the brief names, and S8's fourth zero applied to the fifth
+# arm. `status: consulted` with `attempted: 0` is the same artifact as
+# `mutation.attempted: 0` (row 2) and `cuda.queries: []` (row 18): a consultation
+# recorded as performed that performed nothing, which is the shape `pv lint <FILE>`
+# returning PASS over zero contracts already taught this repository to refuse.
+#
+# Every other field here is well-formed - version, path, model family, usage,
+# divergence, the empty findings array - so nothing but the count can reject it.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_VACUOUS")
+emit row-31-arm-e-consulted-attempted-zero "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 32 - an agy finding claiming a BLOCKING class                  -> RED B1
+#
+# S7's admission rule says a class may block only while its measured precision on the
+# rolling sample is >= 90%, and S8 says instrument -> 30 samples -> ratchet. S3.E has
+# ZERO samples. So the arm cannot be in the blocking tier yet, and a receipt that puts
+# it there is claiming an authority no measurement supports - internally inconsistent,
+# B1, not a new blocking class of its own.
+#
+# The receipt is otherwise perfectly honest: the ledger balances (agy_only 1, one
+# finding), the identity fields are recorded, the usage block is real.
+# ===========================================================================
+SARIF=$(
+sarif_antigravity blocking
+)
+RCPT=$(receipt "$D1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_ONE_FINDING")
+emit row-32-arm-e-finding-claims-a-blocking-class "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 33 - the SAME agy finding, marked advisory                      -> GREEN
+#
+# DISCRIMINATION CASE for row 32, and it is not decorative. Without it, "refuse every
+# receipt that carries an agy finding" reads green - and the arm would be a rule whose
+# only satisfiable behaviour is to find nothing, which is the opposite of why a second
+# vendor is being asked. One token differs from row 32.
+# ===========================================================================
+SARIF=$(
+sarif_antigravity advisory
+)
+RCPT=$(receipt "$D1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_ONE_FINDING")
+emit row-33-arm-e-finding-advisory "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 34 - agy declared not-triggered                                -> RED B1
+#
+# S3.E's trigger is unconditional, for the same reason S3.A's is and not for a cost
+# reason: a shape trigger exempts exactly the diffs where an independent reader is worth
+# most - the small ones that look obvious, which is what every PR in S9's spine looked
+# like to its author, all four of them carrying reviews=0 and comments=0.
+#
+# This is row 19's rule (pmat: not-triggered on a code diff) for the fifth arm, and it
+# is stricter: pmat's illegality needed a code file in the diff, and S3.E's does not,
+# because there is no diff shape a second opinion is not owed on. The head here is D1,
+# the DOCS-ONLY one, which is the hardest case for that claim and therefore the right
+# one to pin it with.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_NT_ILLEGAL")
+emit row-34-arm-e-not-triggered "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 35 - agy routed to the PRIMARY REVIEWER'S OWN MODEL FAMILY      -> RED B1
+#
+# THE ROW THE ARM WOULD BE WORTHLESS WITHOUT, and the one the design nearly shipped
+# without, because agy's name says Antigravity and Antigravity is Google's. `agy models`
+# prints fourteen ids and two of them are Claude. agy is a HARNESS, not a model.
+#
+# So a receipt can be honest in every other field - the binary resolved and recorded,
+# the version recorded, the usage block real, the divergence ledger balanced, the arm
+# marked advisory - and the consultation still be THE SAME MODEL FAMILY REVIEWING
+# ITSELF. S5 cites Huang et al. (ICLR'24) for why that is worth close to nothing, and
+# A5 calls a separate grounded critic the first configuration that beats single-agent;
+# a same-family critic is not one.
+#
+# This fixture is row 7 with ONE token changed - the model id - which is what makes it
+# evidence rather than illustration: nothing else about the receipt differs from a row
+# the guard ACCEPTS.
+#
+# It is also the standing verification rule this repository writes down and keeps
+# breaking: never label a run by intent, prove the mechanism ENGAGED. A harness printing
+# `device: GPU` from a build with no CUDA in it produced three findings from CPU runs.
+# `model_family: google/gemini` written beside `--model claude-opus-4-6-thinking` is the
+# same artifact.
+# ===========================================================================
+AG_SAME_FAMILY="{\"status\":\"consulted\",\"attempted\":1,\"agy_version\":\"$AGY_VERSION\",\"binary_path\":\"$AGY_PATH\",\"model_id\":\"claude-opus-4-6-thinking\",\"model_family\":\"google/gemini\",\"exit_code\":0,\"duration_seconds\":9.52,$AG_USAGE,\"reverified_by_primary\":false,\"divergence\":{\"agreed\":0,\"agy_only\":0,\"primary_only\":0,\"contradicted\":0},\"findings\":[]}"
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_SAME_FAMILY")
+emit row-35-arm-e-routed-to-the-same-model-family "$SARIF" "$RCPT"
 
 # ===========================================================================
 # THE POSITIVE CONTROLS (S6.1) - not rows of the S6.3 table.

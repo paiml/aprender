@@ -7,7 +7,7 @@
 # hardened release-certifying skill that never executed.
 name: pr-review
 allowed-tools: Bash(git:*), Bash(pmat:*), Bash(jq:*), Bash(sha256sum:*), Bash(minisign:*), Bash(check-jsonschema:*), Bash(cargo:*), Bash(bash:*), Bash(gh:*), Bash(pv:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(cut:*), Bash(cat:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(mkdir:*), Bash(printf:*), Bash(command:*), Bash(base64:*), Read, Glob, Grep, mcp__nvidia-cuda-docs__search_cuda_docs
-description: Adversarial PR review that must show HOW it knows — four consultations, a three-state availability encoding no prose can fake, and a signed in-toto receipt whose own guard can reject it
+description: Adversarial PR review that must show HOW it knows — five consultations (one of them a reviewing agent from a different vendor), a three-state availability encoding no prose can fake, and a signed in-toto receipt whose own guard can reject it
 # MACS F4: pinned. A review whose verdict can block a merge is not a place to let effort
 # float; a cheap run that reports PASS is indistinguishable from a thorough one that does,
 # and the whole point of the receipt is that they should not be.
@@ -22,7 +22,7 @@ difference is a defect in this file.
 **Contract**: `contracts/pr-review-skill-v2.yaml` (§1 grounding, §7 blocking, §8 metrics)
 **Guard**: `scripts/check_pr_review_receipt.sh` — it validates what you emit here, it has
 its own positive controls, and its mutation set (`scripts/mutate-guard.sh`) reports
-185/185. **Run it on your own receipt before you post anything.**
+215/215. **Run it on your own receipt before you post anything.**
 
 ## Context
 
@@ -140,7 +140,7 @@ modification is at or before `$baseline_commit`. Count the reuse into
 
 ---
 
-## §3 The four consultations
+## §3 The five consultations
 
 ### §3.0 Unavailability is never silently green — and the encoding is the point
 
@@ -417,7 +417,7 @@ Bash guards are exercised with `bats-core` fixtures. For the receipt guard itsel
 mutation set already exists and is a derivation, not a list:
 
 ```bash
-bash scripts/mutate-guard.sh          # 185/185 on scripts/check_pr_review_receipt.sh
+bash scripts/mutate-guard.sh          # 215/215 on scripts/check_pr_review_receipt.sh
 ```
 
 **`attempted: 0` with `status: consulted` is rejected** (fixture row 2). A mutation set
@@ -428,6 +428,175 @@ over zero contracts. If nothing was attempted, the honest encoding is `unreachab
 Record survivors as `{ "mutant": …, "file": …, "line": …, "killed": false }`. A surviving
 mutant on a guard is not a scoring detail: it is a rule the guard *states* and nothing
 *tests*.
+
+---
+
+### §3.E Antigravity — a second reviewer from a different vendor (**every PR**)
+
+§3.A–§3.D ask *sources*. §3.E asks **a different reviewing agent**: different vendor,
+different model family, its own process, its own tools. That is the only arm here whose
+separation survives Huang et al. (ICLR'24) — a fresh session is a different *actor*, not a
+different set of *weights*, and self-preference lives in the weights.
+
+**It is ADVISORY. It cannot block anything, and nothing you write from it may say it does.**
+
+#### Step 1 — resolve the binary, never invoke a bare `agy`
+
+```bash
+AGY=$(command -v agy) || AGY=""
+if [ -z "$AGY" ]; then
+  # UNAVAILABLE. Record it, verdict DEGRADED, and move on. This is the intended
+  # behaviour on a box with no agy, not a rollout bug.
+  arm_e_status=unreachable
+  arm_e_reason="agy is not on PATH"
+else
+  # `sed -n 1p`, NOT `head -1`. head exits after the first line and hands the producer
+  # SIGPIPE; under `set -o pipefail` the substitution then reports 141 for a command
+  # that produced exactly the right answer. Four instances of that shape landed in this
+  # repository in one day and one of them PASSED a safety check on the error. sed
+  # without `q` reads to EOF and closes no pipe.
+  AGY_VERSION=$("$AGY" --version 2>&1 | sed -n 1p)   # recorded verbatim
+fi
+```
+
+`binary_path` in the receipt is `$AGY` — **what the resolution produced**, recorded per
+run. That is the opposite of a hardcoded path, and it is the rule four coexisting `apr`
+binaries taught this repository. Do not hardcode `/home/…/agy`; do not call bare `agy`.
+
+#### Step 2 — PIN THE MODEL. This is the arm's correctness property, not a preference.
+
+```bash
+"$AGY" models        # prints 14 ids on the box this was written for
+```
+
+**Two of them are Claude** — `claude-sonnet-4-6` and `claude-opus-4-6-thinking` — beside
+eleven Gemini ids and `gpt-oss-120b-medium`. **`agy` is a harness, not a model.** With
+`--model` omitted, or pointed at a Claude id, §3.E is *you reviewing yourself* while every
+field in the receipt still reads `antigravity`.
+
+```bash
+AGY_MODEL=gemini-3.1-pro-high     # or any non-Anthropic id `agy models` offers
+```
+
+The guard checks it:
+
+```bash
+scripts/check_pr_review_receipt.sh --match-arm-e-same-family "$AGY_MODEL"   # exit 1 = OK
+```
+
+Exit **0** from that predicate means the id is your own family and the receipt will be
+**REJECTED [B1]**. This is the standing rule against labelling a run by intent: prove the
+mechanism engaged. `model_family: google/gemini` written beside `--model
+claude-opus-4-6-thinking` is `device: GPU` printed by a build with no CUDA in it.
+
+**Residual you must not paper over:** agy's JSON carries no `model` field, so `model_id`
+records what you *requested*, not what answered. Say so; do not claim more.
+
+#### Step 3 — run it, with a timeout that fits a repo-scale review
+
+```bash
+"$AGY" -p "$PROMPT" \
+  --output-format json \
+  --json-schema .claude/skills/pr-review/agy-review-v1.schema.json \
+  --model "$AGY_MODEL" \
+  --print-timeout 30m \
+  --add-dir "$PWD" > "$OUT/agy.json" 2> "$OUT/agy.err"
+rc=$?                                  # ON ITS OWN LINE. Never through a pipe.
+```
+
+`--print-timeout` **defaults to `5m0s`** and a repository-scale review will exceed it.
+**A timeout is `unreachable`, never "no findings."** agy fails slowly at least as readily
+as it fails fast, and a slow failure is the one that looks like a clean run. Measured: a
+*trivial* prompt took 44 s of `duration_seconds` and 54 s of wall clock.
+
+**DO NOT TEST `.status`. IT IS NOT A LIVENESS SIGNAL** — measured, after the first draft
+of this step said to test it:
+
+```
+rc=0  wall=54s
+.status            = ERROR
+.error             = "Your previous response contained an improperly formatted function
+                      call. Please retry with a properly formatted function call.
+                      Retries remaining: 3"
+.structured_output = {"findings":[{…one well-formed finding…}],"reviewed":true}
+```
+
+`.status` reflects the last internal turn, so a **recovered** retry leaves it `ERROR` on a
+run that finished and returned exactly what was asked for. A rule that treats
+`.status != "SUCCESS"` as unavailable discards good reviews and reports `DEGRADED` for a
+consultation that worked — a liveness check that fails closed on a healthy run, which is
+the defect class this whole skill exists to catch, in the step that classifies it.
+
+**The availability test is the artifact, not the label:**
+
+```bash
+if [ "$rc" -eq 0 ] && jq -e '.structured_output.reviewed == true' "$OUT/agy.json" >/dev/null 2>&1    && check-jsonschema --schemafile .claude/skills/pr-review/agy-review-v1.schema.json         <(jq '.structured_output' "$OUT/agy.json") >/dev/null 2>&1
+then arm_e_status=consulted; else arm_e_status=unreachable; fi
+```
+
+Record `.status` and `.error` in the receipt as diagnostics — they are worth having — but
+do not let them decide the three-state. Unavailable is: binary absent, `rc != 0`, missing
+or schema-invalid `.structured_output`, `reviewed: false`, unparseable JSON, or timeout.
+
+The prompt gives agy the merge-base diff (§2) and asks for findings under
+`.claude/skills/pr-review/agy-review-v1.schema.json`. Ask it for the **same three marks** §1 defines — a finding
+with no mark is dropped, not guessed at.
+
+#### Step 4 — read the record it produced, and record whose it is
+
+```bash
+jq -r '.usage | "\(.input_tokens) \(.output_tokens) \(.total_tokens)"' "$OUT/agy.json"
+jq -r '.duration_seconds' "$OUT/agy.json"
+```
+
+agy's `usage` block is **real token accounting from the process that spent them**, which is
+what §8's `cost_per_actionable` needs. Copy it into the receipt; the guard requires
+`input_tokens`, `output_tokens` and `total_tokens` to be present and numeric.
+
+**`total_tokens` is NOT the total.** Measured on the run above: `input 11163 + output 2327
+= total 13490`, while `thinking_tokens 2176` and `cache_read_tokens 47698` sit **outside**
+it — the cache reads alone are 3.5x the reported total. Copy all five fields, not three,
+and when you divide by actionable findings say which numerator you used. A cost metric
+built on a field named `total` that is not the total is a number that will be quoted for
+years by people who never opened the receipt.
+
+**`reverified_by_primary: false`.** agy's `measured` claims were measured by *agy*.
+**You do not re-run them.** Re-running and adjudicating dissolves the independence the arm
+exists to create — the disagreement disappears into your judgement, which is exactly what
+step 5 exists to prevent. If you *did* re-run something, write `true` and carry the
+commands as your own `measured` marks in the SARIF. What is forbidden is leaving it unsaid.
+
+#### Step 5 — the divergence ledger. Disagreement is signal.
+
+```json
+"divergence": { "agreed": 0, "agy_only": 1, "primary_only": 2, "contradicted": 0 }
+```
+
+| column | means |
+|---|---|
+| `agreed` | agy raised it and so did you |
+| `agy_only` | agy raised it, you did not |
+| `primary_only` | you raised it, agy did not |
+| `contradicted` | **you reached opposite conclusions on one subject** |
+
+**`contradicted` is the column that matters and the one you will be tempted to leave at
+zero.** A receipt that cannot represent two reviewers disagreeing is a receipt in which you
+always win, and the disagreement leaves no trace anywhere.
+
+The guard checks the arithmetic: `agreed + agy_only + contradicted == len(findings)`.
+`primary_only` is outside the identity — it counts *your* findings, which are not in agy's
+array. Do not "resolve" a contradiction by deleting agy's finding. Record both, mark yours
+with your own grounding, and let §8 count it.
+
+#### Step 6 — emit it advisory
+
+Every `antigravity` result in the SARIF carries `"precision_class": "advisory"`. Level
+`error` is fine — the arm is advisory about **authority**, not about volume. A `blocking`
+class from this run is **REJECTED [B1]**: §7 admits a class to the blocking tier only while
+its measured precision is ≥90% on a rolling sample, and §3.E has **zero** samples.
+
+Nothing about this changes until `arm_e_actionable_rate` has 30 of them, and the change is
+then a ticket editing `contracts/pr-review-skill-v2.yaml` — never a quiet edit here.
 
 ---
 
@@ -479,7 +648,7 @@ one: a pretty-printed Statement is many lines and is rejected as "holds N JSON r
                  "digest": { "sha1": "<head_sha>" } } ],
   "predicateType": "https://paiml.dev/attestations/pr-review/v2",
   "predicate": {
-    "skill_version": "2.0.0",
+    "skill_version": "2.1.0",
     "attestation_level": "L1-self",
     "pr": 2783,
     "base_sha": "<merge-base>", "head_sha": "<head>",
@@ -509,7 +678,18 @@ one: a pretty-printed Statement is many lines and is rejected as "holds N JSON r
                     "gap_effect": "none", "crux_coverage": "covered",
                     "comparative_claims": [] },
       "mutation": { "status": "…", "scope": "guard|in-diff|not-triggered",
-                    "attempted": 0, "killed": 0, "survivors": [] } },
+                    "attempted": 0, "killed": 0, "survivors": [] },
+      "antigravity": { "status": "consulted|unreachable", "attempted": 1,
+                    "agy_version": "agy 1.1.22",
+                    "binary_path": "<what `command -v agy` resolved to>",
+                    "model_id": "gemini-3.1-pro-high",
+                    "model_family": "google/gemini",
+                    "exit_code": 0, "duration_seconds": 0,
+                    "usage": { "input_tokens": 0, "output_tokens": 0, "total_tokens": 0 },
+                    "reverified_by_primary": false,
+                    "divergence": { "agreed": 0, "agy_only": 0,
+                                    "primary_only": 0, "contradicted": 0 },
+                    "findings": [] } },
     "findings_ref": { "path": "findings.sarif", "sha256": "<sha256 of findings.sarif>" },
     "cost": { "input_tokens": 0, "output_tokens": 0, "wall_seconds": 0 } } }
 ```
@@ -526,6 +706,15 @@ Fields the guard checks that are easy to forget:
   continuous metrics can only be ratcheted from a measured baseline, and a metric nobody
   records is one nobody can ratchet.
 - `reviewer_actor.id != author_actor.id` (§5, class B2, fixture row 8).
+- `skill_version` is **no longer decoration**: it selects the rule set the receipt is judged
+  by. At `2.1.0` and above the `antigravity` block is **required** (§3.E); a `2.0.0` receipt
+  predates the arm and is judged by `2.0.0`'s rules, which is why this repository's one real
+  receipt still validates instead of being back-filled with a consultation nobody performed.
+  Writing `2.0.0` to skip §3.E is a **stated bypass**, owed to `PRREV-016` — do not use it.
+- `antigravity.model_id` must not be your own model family (§3.E step 2, fixture row 35).
+  `agy models` lists two Claude ids; agy is a harness, not a model.
+- `antigravity.attempted: 0` under `status: consulted` is rejected (fixture row 31), exactly
+  as `mutation.attempted: 0` and `cuda.queries: []` are.
 
 ### §4.3 Signing — and the sentence that must accompany it
 
@@ -602,7 +791,7 @@ plus `PASS` is a rejection (fixture row 5), `unreachable` plus `DEGRADED` is acc
 "reject every receipt" cannot read as a working guard, which is the over-reach that
 already bit PERF-055 and the #2766 delta-gate work.
 
-## §7 Blocking policy — five objective classes, and nothing else
+## §7 Blocking policy — six objective classes, and nothing else
 
 | class | condition |
 |---|---|
@@ -619,6 +808,12 @@ Every one is machine-decidable. **None is a judgement call**, so none can freeze
 investigation the way #2757 and #2766 did. A `FINDINGS` verdict proceeds on a feature
 branch and blocks on a release branch — the release branch is the last boundary and the
 routed-around argument does not apply where the alternative is shipping.
+
+**§3.E is NOT in this table, and cannot be.** The admission rule below needs a measured
+precision on a rolling sample; §3.E has zero samples. An `antigravity` finding claiming
+`precision_class: blocking` is refused as an internally inconsistent receipt — **B1**, not a
+seventh class. Promotion happens after 30 samples, by editing
+`contracts/pr-review-skill-v2.yaml`, and it is a ticket.
 
 **Admission rule.** A class may block only while its measured precision on the rolling
 sample is ≥90% (Tricorder's ≤10% effective-false-positive bar). A class that falls below
@@ -646,16 +841,23 @@ come from measurement.
 One line, exactly this shape:
 
 ```
-pr-review v2.0.0 | verdict=<V> | consultations: pmat=<s> cuda=<s> crux=<s> mutation=<s>
+pr-review v2.1.0 | verdict=<V> | consultations: pmat=<s> cuda=<s> crux=<s> mutation=<s> agy=<s>
 | findings=<n> (cited=<a> measured=<b> asserted=<c>) | index=<sha7> ancestor=<bool>
+| agy=<model_id> advisory | divergence: agreed=<a> agy-only=<b> primary-only=<c> contradicted=<d>
 | receipt=evidence/pr-review/<pr>/<sha>/receipt.intoto.jsonl (L1-self, signed)
 ```
+
+**Name the MODEL, not the tool.** "agy" alone does not say whether the arm was cross-vendor,
+which is the one thing about it a reader needs. **Print `advisory` literally**, so nobody
+reads an agy finding as a merge blocker. And put the divergence counts on the line: a
+disagreement that has to be dug out of a JSON file is one that gets resolved in your favour
+by default.
 
 **`DEGRADED` puts the reason FIRST**, before anything else on the line — a reader who
 stops after six words must still learn that this review did not fully run:
 
 ```
-DEGRADED: pmat index is not an ancestor of head | pr-review v2.0.0 | verdict=DEGRADED | …
+DEGRADED: agy timed out at --print-timeout 30m | pr-review v2.1.0 | verdict=DEGRADED | …
 ```
 
 **Generate the line from the receipt. Do not type it.** A hand-written summary can
@@ -671,15 +873,37 @@ jq -r --slurpfile s "$OUT/findings.sarif" '
   " cuda=" + $p.consultations.cuda.status +
   " crux=" + $p.consultations.crux.status +
   " mutation=" + $p.consultations.mutation.status +
+  " agy=" + ($p.consultations.antigravity.status // "absent") +
   " | findings=" + ($r|length|tostring) +
   " (cited="    + ([$r[]|select(.properties.grounding=="cited")]   |length|tostring) +
   " measured="  + ([$r[]|select(.properties.grounding=="measured")]|length|tostring) +
   " asserted="  + ([$r[]|select(.properties.grounding=="asserted")]|length|tostring) + ")" +
   " | index=" + ($p.consultations.pmat.index_commit // "none" | .[0:7]) +
   " ancestor=" + ($p.consultations.pmat.index_is_ancestor|tostring) +
+  ($p.consultations.antigravity as $a
+   | if $a == null or $a.status != "consulted" then "" else
+     " | agy=" + ($a.model_id // "MODEL NOT RECORDED") + " advisory" +
+     ($a.divergence as $d | if $d == null then "" else
+        " | divergence: agreed=" + ($d.agreed|tostring) +
+        " agy-only="    + ($d.agy_only|tostring) +
+        " primary-only="+ ($d.primary_only|tostring) +
+        " contradicted="+ ($d.contradicted|tostring) end) end) +
   " | receipt=evidence/pr-review/" + (($p.pr // "none")|tostring) + "/" + $p.head_sha +
     "/receipt.intoto.jsonl (L1-self, signed)"' "$OUT/receipt.intoto.jsonl"
 ```
+
+**The §3.E half of the line names the MODEL, not the tool** — `agy` alone does not say
+whether the arm was cross-vendor, and that is the one thing about it a reader needs (§3.E.2).
+`advisory` is a literal, so nobody reads an agy finding as a merge blocker. The divergence
+counts are on the line rather than only in the receipt: a disagreement that has to be dug
+out of a JSON file is one that gets resolved in the primary's favour by default.
+
+A receipt with no `antigravity` block prints `agy=absent` and no §3.E clause — that is a
+`2.0.0` receipt (§3.E.8), and the line says so instead of failing to render. An
+`unreachable` arm prints `agy=unreachable` in the consultation list and **no model clause
+either**, because no model answered: printing `agy=<model> advisory` for a run that never
+happened would name a reviewer that did not review. The `DEGRADED:` prefix already leads
+the line in that case.
 
 Note what the counts do: `findings=3 (cited=1 measured=2 asserted=0)` is read off the
 SARIF, so a review that found things but grounded none of them cannot hide behind a

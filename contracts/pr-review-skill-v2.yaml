@@ -167,7 +167,7 @@ equations:
       not under a class of its own. Said explicitly because a fixture row with no
       named class is how a guard grows a rule nothing governs.
     - >-
-      B5 IS THE ONE CLASS NO CONSULTATION PRODUCES. Nothing in S3's four consultations
+      B5 IS THE ONE CLASS NO CONSULTATION PRODUCES. Nothing in S3's five consultations
       emits `breaking API surface with no semver bump`, and no S8 metric measures its
       precision — so the admission rule cannot be evaluated for it. It is carried here
       because the spec's table carries it, and it is flagged because a blocking class
@@ -442,6 +442,125 @@ equations:
     - 'a refused pull request retains every check result it had; nothing is marked failed'
     - 'the arming call is idempotent — an already-armed pull request reports ALREADY-ARMED and invokes nothing'
     - 'autonomous_merge_reverts is recorded as 0/0 and READ AS UNDEFINED, never as clean'
+  arm_e_is_a_second_vendor_and_is_advisory:
+    formula: |
+      -- S3.E. The FIFTH consultation. S3.A..S3.D ask SOURCES; this one asks a
+      -- different REVIEWING AGENT, in its own process, from another vendor.
+      owed(receipt)     <=> skill_version(receipt) >= 2.1.0
+      status(antigravity) in { consulted, unreachable }   -- never not-triggered
+      owed and absent(antigravity)          => REJECT(receipt)        [B1]
+      status = unreachable and verdict=PASS => REJECT(receipt)        [B1]
+      status = consulted and attempted = 0  => REJECT(receipt)        [B1]
+      status = consulted =>
+            agy_version != "" and binary_path != ""
+        and model_id    != "" and model_family != ""
+        and same_family(model_id) = false                             -- S3.E.2
+        and usage.{input_tokens,output_tokens,total_tokens} : number
+        and reverified_by_primary : bool
+        and divergence.{agreed,agy_only,primary_only,contradicted} : whole >= 0
+        and agreed + agy_only + contradicted = len(findings)          -- the ledger balances
+      precision_class(f) = blocking for f in run(antigravity)
+                                            => REJECT(receipt)        [B1]
+    domain: 'consultations.antigravity of a receipt declaring skill_version >= 2.1.0,
+      and every SARIF result whose tool.driver.name is `antigravity`'
+    codomain: 'bool — the receipt is accepted or rejected whole'
+    invariants:
+    - >-
+      A SECOND SESSION IS NOT A SECOND MODEL. S5's control makes reviewer_actor differ
+      from author_actor, which is a different ACTOR; Huang et al. (ICLR'24) is a result
+      about WEIGHTS. S3.E is the first arm of this contract whose separation survives
+      that objection, and it is why the arm exists at all rather than a sixth prompt.
+    - >-
+      `agy` IS A HARNESS, NOT A MODEL. `agy models` on 2026-08-31 returned fourteen ids
+      and TWO ARE CLAUDE (claude-sonnet-4-6, claude-opus-4-6-thinking) beside eleven
+      Gemini ids and gpt-oss-120b-medium. With --model omitted or pointed at a Claude id
+      the arm is the primary reviewer's own family reviewing itself, while every field a
+      reader checks still says `antigravity`. So model_id is recorded as an argv element
+      and CHECKED. This is the standing rule that a run is never labelled by INTENT: the
+      mechanism must be shown to have engaged.
+    - >-
+      THE ARM CANNOT BLOCK, AND THAT IS THE ADMISSION RULE WORKING RATHER THAN AN
+      OMISSION. S7 admits a class to the blocking tier only while its measured precision
+      on the rolling sample is >= 90%; S8 requires instrument -> 30 samples -> ratchet;
+      S3.E has ZERO samples, so the rule governing the tier has nothing to apply. A
+      blocking precision_class from this arm is an internally inconsistent receipt (B1),
+      NOT a seventh class. The tier stays at six, B1..B6.
+    - >-
+      IT IS S7.1 RUN THE OTHER WAY. B5 could never be DEMOTED because its sample could
+      never accrue. S3.E's sample accrues from the first reviewed PR, so it can be
+      PROMOTED — by exactly the edit to this file a demotion would use, once 30 samples
+      exist. Promotion is a ticket, not a silent config change.
+    - >-
+      A TIMEOUT IS `unavailable`, NEVER "no findings". agy's --print-timeout defaults to
+      5m0s and a repository-scale review needs more, so this arm fails SLOWLY at least as
+      readily as it fails fast — and a slow failure is the one most easily mistaken for a
+      clean run. unreachable + DEGRADED is also the arm's INTENDED behaviour on a box
+      with no agy installed, exactly as S3.0 already says of pmat's ConnectionRefused.
+    - >-
+      DISAGREEMENT IS RECORDED, NOT RESOLVED IN THE PRIMARY'S FAVOUR. `contradicted` is
+      the column a lazy implementation drops, and a receipt that cannot REPRESENT two
+      reviewers reaching opposite conclusions is one in which the primary always wins.
+      The ledger identity (agreed + agy_only + contradicted = len(findings)) is what
+      stops {0,0,0,0} sitting beside twelve findings and reading as perfect agreement.
+      `primary_only` is deliberately OUTSIDE the identity: it counts the primary's
+      findings, which are not in agy's array.
+    - >-
+      agy's `measured` CLAIMS ARE agy's. S1 defines measured as "produced by a command
+      THIS RUN executed", and agy is a separate process. THE RULING IS THAT THE PRIMARY
+      DOES NOT RE-RUN THEM and reverified_by_primary records it: re-running and
+      adjudicating would dissolve the independence the arm exists to create, collapsing
+      the disagreement into the primary's judgement. A run that DID re-verify writes
+      true and carries the commands as its own measured marks. What is forbidden is
+      leaving it unsaid.
+    - >-
+      THE VERSION GATE HAS A STATED BYPASS. A receipt is a RECORD OF A REVIEW THAT
+      HAPPENED, and evidence/pr-review/2795/f5fe1479.../ was written at 2.0.0 with four
+      consultations; back-filling an antigravity block into it would fabricate a
+      consultation nobody performed, which is the never-ran-Ollama shape with a JSON
+      schema in front of it. So 2.0.0 is judged by 2.0.0's rules. A reviewer who WRITES
+      2.0.0 therefore skips S3.E and the guard cannot tell that from a genuine 2.0.0
+      receipt. PRREV-018 owes the closure (arm 4 must require this PR's receipt to
+      declare the TREE's skill version). An advisory arm with a stated bypass is worth
+      more than a blocking one with an unstated closure.
+    - >-
+      MEASURED, NOT ASSERTED, on 2026-08-31: agy 1.1.22, 208429312 bytes,
+      sha256 2822292f...; one print-mode call returned rc 0, status SUCCESS,
+      duration_seconds 9.522, wall 13s, usage { input_tokens 20836, output_tokens 904,
+      thinking_tokens 752, cache_read_tokens 8142, total_tokens 21740 }. The usage block
+      is what feeds S8's cost_per_actionable, so a fixture carrying an invented one could
+      not detect an invented one.
+    - >-
+      agy's OWN `status` FIELD IS NOT A LIVENESS SIGNAL, MEASURED. A real invocation
+      returned rc 0, wall 54s, status=ERROR, error="Your previous response contained an
+      improperly formatted function call ... Retries remaining: 3", AND a complete
+      schema-valid structured_output with one well-formed finding: status reflects the
+      last internal turn, so a RECOVERED retry leaves it ERROR on a run that did exactly
+      what was asked. The first draft of S3.E.4 classified on that field and would have
+      discarded good reviews while reporting DEGRADED for a consultation that worked -
+      a liveness check failing closed on a healthy run, inside the clause that
+      classifies liveness. Availability is decided by rc = 0 AND a structured_output
+      that validates against the skill's schema with reviewed = true; status and error
+      are recorded as diagnostics and decide nothing.
+    - >-
+      `total_tokens` IS NOT THE TOTAL. Measured: input 11163 + output 2327 = total 13490,
+      while thinking_tokens 2176 and cache_read_tokens 47698 sit OUTSIDE it - the cache
+      reads alone are 3.5x the reported total. All five fields are recorded and any
+      cost_per_actionable figure states its numerator. A cost metric resting on a field
+      named `total` that is not the total is the 2.93x Ollama failure in miniature.
+    - >-
+      RESIDUAL, RECORDED RATHER THAN HIDDEN: agy's JSON output carries no `model` field,
+      so model_id records what was REQUESTED, not what answered. A silent server-side
+      fallback would not appear in the artifact. Closing it needs a field agy does not
+      currently emit.
+    preconditions:
+    - 'the agy binary is resolved with `command -v agy` and the resolved path recorded; a bare invocation and a hardcoded path are both refused by S3.E.1'
+    - '--model is passed explicitly and its value recorded as model_id; agy is a harness, not a model, and `agy models` offers two ids in the primary reviewer''s own family'
+    - 'a run that timed out, exited non-zero, or produced no parseable structured_output is recorded as unreachable BEFORE any finding of its is read'
+    postconditions:
+    - 'no result in the antigravity SARIF run carries precision_class blocking while S3.E has fewer than 30 samples'
+    - 'antigravity.model_id is outside the primary reviewer''s model family, so the arm is a second vendor in fact and not only in name'
+    - 'agreed + agy_only + contradicted equals len(antigravity.findings), so every agy finding is accounted for by exactly one column of the divergence ledger'
+    - 'reverified_by_primary is present and boolean, so whose measurement a `measured` agy claim is can be read off the receipt rather than inferred'
 
 falsification_tests:
 
@@ -753,6 +872,71 @@ falsification_tests:
     that does not exist and q-44 must turn RED; make the guard-shape case match everything
     and q-52 must turn RED; make it match nothing and q-45 must turn RED. All three are in
     scripts/mutate_quorum_arm.sh.
+  rule: a second REVIEWER, not a second prompt — and it must actually be a second vendor
+  prediction: >-
+    A receipt declaring skill_version 2.1.0 with no consultations.antigravity is
+    REJECTED [B1] (row 28); the SAME receipt at 2.0.0 is ACCEPTED (row 27), because a
+    receipt is a record of a review that happened and back-filling the block would
+    fabricate a consultation nobody performed. antigravity.status=not-triggered is
+    REJECTED even on a DOCS-ONLY diff (row 34) — S3.E's trigger is stricter than S3.A's,
+    which needs a code file. status=unreachable with verdict=PASS is REJECTED (row 29)
+    and the SAME receipt with verdict=DEGRADED is ACCEPTED (row 30). status=consulted
+    with attempted=0 is REJECTED (row 31). AND: a receipt whose
+    antigravity.model_id is `claude-opus-4-6-thinking` is REJECTED (row 35) though it is
+    byte-identical to an ACCEPTED receipt but for that one token — asserted by a
+    single-variable jq diff in tests/pr-review.bats, not by inspection.
+    MEASURED, and it is why row 35 exists: `agy models` on 2026-08-31 returned fourteen
+    ids and TWO ARE CLAUDE — claude-sonnet-4-6 and claude-opus-4-6-thinking — beside
+    eleven Gemini ids and gpt-oss-120b-medium. agy is a HARNESS, not a model, so
+    "Antigravity is Google's" does not establish that the arm is cross-vendor.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    S3.E becomes the primary reviewer talking to itself through a different binary while
+    every field a reader checks still says `antigravity` — the self-preference bias S5
+    cites Huang et al. (ICLR'24) for, with a cross-vendor label on it, and the standing
+    rule against labelling a run by INTENT rather than proving the mechanism engaged.
+    S9.3's open item ("S5's author/reviewer separation has still never been exercised on
+    this epic") would then be closed by an artifact that does not close it.
+  mutation: >-
+    `arm-e-never-required` forces the version gate false — row 28 must turn RED;
+    `arm-e-always-required` forces it true — row 27 must turn RED. BOTH directions,
+    because a gate mutated in one direction is a gate half-tested.
+    `arm-e-dropped-from-the-consultation-list` removes antigravity from the status and
+    unreachable lists — row 29 must turn RED. `arm-e-same-family-regex-never-matches`
+    must turn row 35 RED and `...-matches-everything` must turn row 07 RED. All five are
+    in scripts/mutate-guard.sh as NAMED sites, because none of them is a `reject B<n>`
+    line and the derived scan cannot see them.
+
+- id: F-PRREV-013
+  rule: an advisory arm may not acquire blocking authority, and disagreement is recorded rather than resolved
+  prediction: >-
+    A receipt whose `antigravity` SARIF run carries a result with
+    precision_class=blocking is REJECTED [B1] (row 32); the SAME finding at
+    precision_class=advisory is ACCEPTED (row 33), and it stays ACCEPTED at SARIF level
+    `error` — the arm is advisory about AUTHORITY, not about volume. A receipt whose
+    divergence ledger does not satisfy agreed + agy_only + contradicted = len(findings)
+    is REJECTED; one missing the `contradicted` column is REJECTED naming it; one with a
+    negative count is REJECTED. reverified_by_primary absent, or present as a string
+    rather than a boolean, is REJECTED.
+    ROW 32 WAS BUILT WRONG FIRST AND THE FAILURE IS PART OF THIS TEST: its agy finding
+    was marked `asserted`, so it went RED on S1's OLDER rule ("an asserted claim never
+    blocks") two hundred lines earlier in the guard — same class, same exit code, and
+    pinning NOTHING. It is `measured` now and the bats case asserts the ABSENCE of S1's
+    reason as well as the presence of S3.E's.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    S7's admission rule is applied to five classes and waived for the sixth arm, which
+    is the ungoverned-class defect D3 recorded for B5, pointing the other way; and
+    `contradicted` becomes a column nothing constrains, so {0,0,0,0} beside a dozen agy
+    findings reads as perfect agreement and every disagreement resolves silently in the
+    primary's favour — the failure S5 names, one level up from its second-invocation
+    audit.
+  mutation: >-
+    delete the antigravity blocking-class branch from
+    scripts/check_pr_review_receipt.sh — row 32 must turn RED while row 33 stays GREEN.
+    Delete the ledger-identity branch — the arm-e-ledger-unbalanced probe must turn RED.
+    Both mutants are DERIVED by scripts/mutate-guard.sh from the `reject B<n>` scan, so
+    neither has to be remembered when the guard grows.
 
 proof_obligations:
 - type: invariant
@@ -877,7 +1061,7 @@ enforcement:
 
   vacuous_consultations:
     description: 'consultations recording status=consulted while having consulted nothing (S8)'
-    check: '= 0 — no ratchet; the pass-over-zero shape, measured in F-PRREV-008. Enforced on ALL FOUR consultations since PRREV-008 (rows 2, 18, and the crux/pmat probes); before it, on mutation alone'
+    check: '= 0 — no ratchet; the pass-over-zero shape, measured in F-PRREV-008. Enforced on ALL FIVE consultations since PRREV-015 (rows 2, 18, 31, and the crux/pmat probes); on four since PRREV-008; before that, on mutation alone'
     severity: line-stop
     reference: 'PR-REVIEW-SKILL-002 v2 S3.D, S4.1 and S8; fixture row 2'
 
@@ -901,7 +1085,7 @@ enforcement:
 
   cost_per_actionable:
     description: '(input_tokens + output_tokens + wall_seconds) / actionable findings (S8)'
-    check: 'record-only until 30 samples; then ratchets DOWN quarterly. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    check: 'record-only until 30 samples; then ratchets DOWN quarterly. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN. S3.E contributes a MEASURED numerator: agy''s own usage block, emitted by the process that spent the tokens, rather than an estimate reconstructed afterwards'
     severity: instrument-only
     reference: 'PR-REVIEW-SKILL-002 v2 S8; cost fields live in the in-toto predicate'
 
@@ -934,6 +1118,39 @@ enforcement:
     check: 'record-only until 30 samples. It is the measurement nobody had before S13: how often this fleet cannot actually review'
     severity: instrument-only
     reference: 'PR-REVIEW-SKILL-002 v2 S13.3; PRREV-016 owes the transport: field that would make it attributable'
+  # --- S3.E, all four record-only, and there is NO exception ----------------
+  # The arm ships with zero samples on its first day, so S7's admission rule has nothing
+  # to apply to it (spec S3.E.6). Writing a number beside any of these before 30 samples
+  # would violate S8 inside the file that encodes S8.
+
+  arm_e_actionable_rate:
+    description: 'S3.E findings the author acted on / S3.E findings posted (S8, S3.E.6)'
+    check: 'record-only until 30 PRs carrying an S3.E consultation. IT IS ALSO THE PROMOTION GATE: S3.E may not enter the blocking tier before this number exists, which is what makes a later promotion a measurement rather than a decision. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S3.E.6 and S8; S7 admission rule'
+
+  arm_e_agreement_rate:
+    description: 'agreed / (agreed + agy_only + primary_only + contradicted) — S3.E.7''s ledger'
+    check: >-
+      record-only until 30 samples, and IT IS NOT A SCORE TO MAXIMISE. Agreement near
+      1.0 means the second vendor is repeating what the primary already knew and the arm
+      is paying tokens for nothing — the honest response is to retire it. Agreement near
+      0 means the two are not reviewing the same artifact. NEITHER END IS A TARGET,
+      which is exactly why it is instrumented before anyone writes a threshold beside it.
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S3.E.7 and S8'
+
+  arm_e_contradiction_rate:
+    description: 'contradicted / (agreed + agy_only + primary_only + contradicted) (S3.E.7)'
+    check: 'record-only until 30 samples. This is the ledger''s sharp edge: a contradiction is the case where one of the two reviewers is WRONG, and it is the only column that names a defect rather than a difference in coverage. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S3.E.7 and S8'
+
+  arm_e_unavailable_rate:
+    description: 'S3.E consultations recorded unreachable / S3.E consultations owed (S3.E.4)'
+    check: 'record-only until 30 samples. A rising value is the signal that agy''s --print-timeout is set below what a repository-scale review needs, which is the arm''s most likely silent failure. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S3.E.4 and S8'
 
 qa_gate:
   id: F-PRREV-GATE-001

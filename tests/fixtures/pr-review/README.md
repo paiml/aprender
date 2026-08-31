@@ -3,7 +3,7 @@
 Fixtures for `scripts/check_pr_review_receipt.sh`, exercised by `tests/pr-review.bats`.
 
 ```bash
-bats tests/pr-review.bats          # all rows, both case-table polarities
+bats tests/pr-review.bats          # all 35 rows, both polarities of all 10 case tables
 ```
 
 ## The table
@@ -39,6 +39,22 @@ because a rejection with no named class is how a guard grows a rule nothing gove
 | 22 | `row-22-printed-ratio-not-the-quoted-one` | RED | B4 | one `.rs` file, the same ratio twice: a `format!` a user reads **fires**, the `//` comment two lines above it **does not** |
 | 23 | `row-23-duplication-surface-unsearched-verdict-pass` | RED | B1 | `duplication_coverage` records shell/python/config/docs as unsearched, verdict `PASS` |
 | 24 | `row-24-duplication-surface-unsearched-verdict-degraded` | **GREEN** | — | the same unsearched map, verdict `DEGRADED` |
+| 25 | `row-25-examples-page-publishes-a-ratio` | RED | B4 | row 16 with **one directory changed**: the ratio under `book/src/examples/` |
+| 26 | `row-26-examples-page-ratio-recorded` | **GREEN** | — | the same page, the ratio recorded with a comparator |
+| 27 | `row-27-legacy-2-0-0-receipt-has-no-arm-e` | **GREEN** | — | a `skill_version: 2.0.0` receipt, written before §3.E existed |
+| 28 | `row-28-arm-e-owed-and-absent` | RED | B1 | a `2.1.0` receipt that owes §3.E and omits it |
+| 29 | `row-29-arm-e-unavailable-verdict-pass` | RED | B1 | agy timed out; `status: unreachable` under `verdict: PASS` |
+| 30 | `row-30-arm-e-unavailable-verdict-degraded` | **GREEN** | — | the same timed-out agy, verdict `DEGRADED` |
+| 31 | `row-31-arm-e-consulted-attempted-zero` | RED | B1 | `antigravity.status: consulted` with `attempted: 0` |
+| 32 | `row-32-arm-e-finding-claims-a-blocking-class` | RED | B1 | an `antigravity` finding at `precision_class: blocking` while the arm is advisory |
+| 33 | `row-33-arm-e-finding-advisory` | **GREEN** | — | the same finding at `advisory` — one token differs |
+| 34 | `row-34-arm-e-not-triggered` | RED | B1 | `antigravity.status: not-triggered` on a **docs-only** diff |
+| 35 | `row-35-arm-e-routed-to-the-same-model-family` | RED | B1 | row 7 with **one token changed**: `model_id: claude-opus-4-6-thinking` |
+
+**Rows 25 and 26 were absent from this table until PRREV-015 added rows 27–35**, though the
+fixtures shipped with PRREV-012. Recorded rather than quietly backfilled: a README that
+describes 24 of 26 committed fixtures is the same defect class as a metric with no fixture —
+a document that reads complete while something it governs is outside it.
 
 **Rows 6, 7, 14 and 17 are discrimination cases.** Without them, a guard that refuses every
 receipt reads green — the over-reach a discrimination case already caught in PERF-055
@@ -148,7 +164,7 @@ fixture can kill them, and including them would park a permanent survivor in a s
 
 ### Why the probes exist
 
-The twenty-two rows pin twenty-two branches; the guard has seventy-odd. Every branch the rows
+The committed rows pin one branch each; the guard has far more. Every branch the rows
 leave untripped came back from the first sweep as a **surviving mutant** — a rule the
 guard states and nothing tests. `tests/pr-review.bats` therefore carries a second
 family, named for the branch rather than for a spec row:
@@ -353,3 +369,33 @@ imagined the case:
 - `        setup()` — with the `{` made optional to fix the above, a Rust tail expression
   reads as a shell function definition. It is pinned NO-MATCH so the fix cannot be
   re-applied in the over-broad direction.
+
+---
+
+## `arm-e-model-cases.tsv` — §3.E's "not a second vendor" table (PRREV-015)
+
+Driven through `--match-arm-e-same-family`. **MATCH means the model id is the primary
+reviewer's own family, so §3.E is void and the receipt is rejected [B1].**
+
+**The universe is a command's output, not the pattern's vocabulary.** All fourteen ids
+`agy models` printed on 2026-08-31 are rows here, plus the spellings a harness might use
+for the same models without the vendor prefix. Building a table from the regex is F5, and
+F5 was expensive: sixteen real subjects, three must-match misses, on a table that passed
+13/13 because its subjects had been written from `COMPARATIVE_RE`'s own vocabulary.
+
+**Why this rule exists at all:** `agy` is Antigravity's CLI and Antigravity is Google's,
+which is *not* sufficient. `agy models` lists `claude-sonnet-4-6` and
+`claude-opus-4-6-thinking` beside eleven Gemini ids and `gpt-oss-120b-medium` — **agy is a
+harness, not a model**. Run with `--model` omitted or pointed at a Claude id, §3.E is the
+primary reviewer's own family reviewing itself while every field a reader checks still says
+`antigravity`. That is the self-preference bias §5 cites Huang et al. (ICLR'24) for, wearing
+a cross-vendor label, and it is the standing rule against labelling a run by *intent*.
+
+**The pattern errs wide, and the asymmetry is why.** A false positive costs a reviewer one
+edit to the model id. A false negative silently voids the arm's entire justification and
+nothing in the artifact says so. `opus`, `sonnet` and `haiku` sit beside `claude` because a
+harness may expose a model without its vendor prefix. This is the one rule in the guard
+whose failure is invisible.
+
+Row 35 is the end-to-end case: byte-identical to row 7 but for `model_id`, asserted by a
+single-variable `jq` diff in `tests/pr-review.bats` rather than by inspection.

@@ -1,6 +1,6 @@
 # PR-REVIEW-SKILL-002 — grounded adversarial PR review with a signed receipt
 
-**Status:** v2.3 — amended by its own implementation. Built through `PRREV-001`..`PRREV-012`. §9 step 7 was run three times: **FAILED 1 of 3** (`PRREV-007`, §9.1), **FAILED 2 of 3** (`PRREV-011`, §9.2), **PASSED 3 of 3** (`PRREV-012`, §9.3). See §0.1, §9.1, §9.2, §9.3.
+**Status:** v2.4 — amended by its own implementation. Built through `PRREV-001`..`PRREV-015`. `PRREV-015` adds **§3.E**, a fifth consultation and the first arm that gives §5's author/reviewer separation a different *model*, not merely a different session — shipped **advisory**, with zero samples, per §7's own admission rule. §9 step 7 was run three times: **FAILED 1 of 3** (`PRREV-007`, §9.1), **FAILED 2 of 3** (`PRREV-011`, §9.2), **PASSED 3 of 3** (`PRREV-012`, §9.3). See §0.1, §9.1, §9.2, §9.3.
 **Supersedes:** PR-REVIEW-SKILL-001 (draft, 2026-08-30)
 **Complements:** `dogfood.sh`, `nightly-ux-crux`, the `check_*.sh` guards in `ci.yml`, `pmat comply check`
 **Workflow:** `pmat work add` → branch → PR → `ci / gate`. Contract ships in the same PR as the implementation.
@@ -110,7 +110,13 @@ Recorded as `affected_crates[]`. A consultation that skipped a crate in `affecte
 
 ## §3 The consultations
 
-Four. Each has a trigger, a required output, and an unavailability behaviour.
+Five. Each has a trigger, a required output, and an unavailability behaviour.
+
+**§3.A–§3.D consult SOURCES — an index, a documentation corpus, a contract set, a mutation
+run. §3.E consults a different reviewing AGENT**, from a different vendor and model family,
+in its own process. That is a materially stronger form of §5's author/reviewer separation
+than a second prompt of this model, and it is the first arm of this spec that actually
+implements A5. See §3.E.
 
 ### §3.0 Unavailability is never silently green
 
@@ -244,6 +250,237 @@ Bash guards are exercised with `bats-core` fixtures (TAP output, `setup`/`teardo
 
 Surviving mutants are recorded with `mutant`, `file`, `line`, `killed: false`. A run that reports zero mutants attempted is `DEGRADED`, not clean: a mutation set that matches nothing passes vacuously, which is the same shape as `pv lint <FILE>` returning PASS over zero contracts.
 
+### §3.E Antigravity — an independent reviewer from a different vendor (**every PR**)
+
+**§3.A–§3.D consult sources. §3.E consults a different reviewing agent.** That is the
+whole of its justification and it is worth stating before the mechanics, because every
+rule below follows from it.
+
+§5 requires the reviewer actor to differ from the author actor, and cites Huang et al.
+(ICLR'24): intrinsic self-correction degrades reasoning, models self-prefer, and a
+same-model critic yields ≈0 gain. A5 concluded from that a *separate grounded critic* is
+the first configuration that beats single-agent. **A second invocation of the same model
+is not one.** §5's control as built is a different session id — fresh context and an
+adversarial prompt, which is real, and which does not escape a bias that lives in the
+weights. §3.E is the first arm of this spec that does: a different vendor, a different
+model family, a separate process with its own tools and its own filesystem view.
+
+§9.3 records that §5's separation "has still never been exercised on this epic" — all four
+PRs of the backtest spine carry `reviews=0, comments=0`. §3.E is the arm that exercises it.
+
+**§3.E.1 The invocation.**
+
+```bash
+AGY=$(command -v agy) || { record unavailable; exit; }   # resolved, never bare, never hardcoded
+"$AGY" --version                                          # recorded verbatim into the receipt
+"$AGY" -p "<review prompt>" \
+  --output-format json \
+  --json-schema .claude/skills/pr-review/agy-review-v1.schema.json \
+  --model gemini-3.1-pro-high \
+  --print-timeout 30m \
+  --add-dir "$PWD"
+```
+
+`binary_path` is the **output** of that resolution, recorded per run. That is the opposite
+of a hardcoded path: this repository has had four `apr` binaries coexist with a bare
+invocation resolving to a 26-day-old one, and the standing rule is resolve-then-record.
+The version is **recorded, not pinned** — a pinned version makes the arm fail closed on an
+upgrade, and §7 has no measured reason to block anything here; an unrecorded one makes
+every later precision sample unattributable to a build.
+
+Measured, 2026-08-31, on the box this was written on: `agy 1.1.22`, 208 429 312 bytes,
+`sha256 2822292f…`, and one real print-mode call returned `rc 0`, `status SUCCESS`,
+`duration_seconds 9.522`, wall 13 s, with `usage { input_tokens 20836, output_tokens 904,
+thinking_tokens 752, cache_read_tokens 8142, total_tokens 21740 }`.
+
+**§3.E.2 `--model` is not optional, and this is the arm's correctness property.**
+
+`agy models` prints **fourteen** ids, and **two of them are Claude**:
+
+```
+gemini-3.7-flash-{high,medium,low}   gemini-3.6-flash-{high,medium,low}
+gemini-3.5-flash-{high,medium,low}   gemini-3.1-pro-{high,low}
+claude-sonnet-4-6                    claude-opus-4-6-thinking
+gpt-oss-120b-medium
+```
+
+**agy is a harness, not a model.** Run with `--model` omitted, or pointed at a Claude id,
+§3.E is the primary reviewer's own model family reviewing itself — while every field a
+reader checks still reads `antigravity`. That is precisely Huang et al.'s self-preference
+case, wearing a cross-vendor label, and it is this repository's standing rule that a run is
+**never labelled by intent**: a harness printing `device: GPU` from a build with no CUDA in
+it produced three findings from CPU runs, and `model_family: google/gemini` written beside
+`--model claude-opus-4-6-thinking` is the same artifact.
+
+So `model_id` is recorded as an argv element and **checked**: a receipt whose `model_id` is
+in the primary reviewer's family is refused under **B1**, because the arm it describes
+delivers nothing §5 does not already have while claiming A5's result. Fixture row 35 is
+row 7 with that one token changed; the pattern ships a 22-row must-match/must-not-match
+table built from `agy models`' actual output, not from the pattern's own vocabulary (F5).
+
+**The residual, stated:** agy's JSON output carries no `model` field, so the receipt
+records what was **requested**, not what answered. A silent server-side fallback would not
+appear in the artifact. That is a real hole and it is named here rather than papered over;
+closing it needs a field agy does not currently emit.
+
+**§3.E.3 Trigger: every PR.** Decided, not offered.
+
+Unconditional, for §3.A's reason and not for a cost reason. A shape trigger exempts exactly
+the diffs where an independent reader is worth most — the small ones that look obvious,
+which is what all four PRs of §9's spine looked like to their authors. Cost is instrumented
+instead (§3.E.6), so a threshold can be **derived** from 30 samples later rather than
+guessed now: §10 row 8.4's argument, reused because it is the same argument.
+
+The trigger is stricter than §3.A's in one respect and the fixture table pins it on the
+hardest case: `pmat: not-triggered` is illegal only on a diff carrying a code file, and
+`antigravity: not-triggered` is illegal on **any** diff, including a docs-only one (row 34).
+There is no diff shape a second opinion is not owed on.
+
+**§3.E.4 Three states, and a timeout is `unavailable`.**
+
+| what happened | receipt | verdict effect |
+|---|---|---|
+| agy ran, returned structured output, raised nothing | `status: consulted`, `findings: []`, `divergence` all zero | none |
+| agy ran and raised something | `status: consulted`, populated `findings[]` | `FINDINGS` |
+| agy absent, `rc != 0`, missing / schema-invalid `structured_output`, `reviewed: false`, unparseable JSON, **or timed out** | `status: unreachable` + `error` notification in the SARIF run | **`DEGRADED`** |
+
+`not-triggered` is never a legal state for this arm (§3.E.3).
+
+**The availability test is the artifact, never agy's own label — measured.** The first
+draft of §3.E.4 said to treat `.status != "SUCCESS"` as unavailable. A real run then
+returned `rc 0`, wall 54 s, **`.status: ERROR`**, `.error:` *"Your previous response
+contained an improperly formatted function call… Retries remaining: 3"* — and a complete,
+schema-valid `structured_output` carrying one well-formed finding. `.status` reflects the
+last internal turn, so a **recovered** retry leaves it `ERROR` on a run that did exactly
+what was asked. The draft rule would have discarded a good review and reported `DEGRADED`
+for a consultation that worked: a liveness check that fails closed on a healthy run, which
+is the defect class this spec exists to catch, in the clause that classifies it.
+
+So availability is decided by `rc == 0` **and** a `structured_output` that validates
+against `.claude/skills/pr-review/agy-review-v1.schema.json` with `reviewed: true`.
+`.status` and `.error` are recorded as diagnostics and decide nothing. This is the same
+rule as §3.C.1's — the artifact, not the label — one arm over.
+
+**A timeout is `unavailable`, never "no findings."** `--print-timeout` defaults to `5m0s`
+and a repository-scale review needs more, so **agy fails slowly at least as readily as it
+fails fast** — and a slow failure is the one most easily mistaken for a clean run. Rows 29
+and 30 are the same timed-out agy under `PASS` and under `DEGRADED`: the first is refused,
+the second accepted. Without row 30 the arm would punish the honest `DEGRADED` exactly as
+hard as the silent `PASS`, which is how an unavailability field learns to stay empty.
+
+On a box with no agy installed, `unreachable` + `DEGRADED` is the arm's **intended**
+behaviour, not a rollout bug — the same thing §3.0 already says about `pmat` being
+`ConnectionRefused` on day one.
+
+**§3.E.5 Grounding: agy's `measured` claims are agy's. The primary does not re-run them.**
+
+agy's findings carry §1's marks like any others. But agy runs as a separate process with
+its own tools, so a finding it marks `measured` was produced by a command **agy's** run
+executed, not this one — and §1 defines `measured` as "produced by a command this run
+executed."
+
+**The ruling, so the receipt does not have to be read twice to find it: the primary
+reviewer does not re-run them, and `reverified_by_primary: false` records that.**
+
+Re-running and adjudicating would dissolve the independence the arm exists to create — the
+disagreement would disappear into the primary's judgement, which is exactly what §3.E.7
+exists to prevent. A run that *did* re-verify records `true`, and then the re-run commands
+are the primary's own `measured` marks in the SARIF. What is forbidden is leaving it unsaid:
+a reader who cannot tell whose measurement it is has an unattributable claim, which is §1's
+whole subject.
+
+**§3.E.6 §7: the arm starts ADVISORY, and cannot block.**
+
+§7's admission rule lets a class block only while its measured precision on the rolling
+sample is ≥90%, and §8 requires `instrument → 30 samples → ratchet`. **§3.E has zero
+samples.** So it cannot be admitted to the blocking tier — not because anyone doubts agy,
+but because the rule that governs the tier has nothing to apply.
+
+A finding is refused on its `precision_class`, never on its content or its severity: agy may
+report anything it likes at `advisory`, and SARIF level `error` stays legal. The arm is
+advisory about **authority**, not about how loudly it may speak. A receipt carrying an
+`antigravity` result at `precision_class: blocking` is internally inconsistent — **B1**, not
+a seventh blocking class. §7's table gains no row, and §11's "guard that blocks work instead
+of defects" keeps its count of six.
+
+This is §7.1's argument in the other direction. There it was **B5**, a class whose sample
+could never accrue and which therefore could not be *demoted*. Here the sample **will**
+accrue from the first PR reviewed, so the arm can be **promoted** later — by exactly the
+edit to `contracts/pr-review-skill-v2.yaml` a demotion would use, once 30 samples exist.
+Promotion is a ticket, not a silent config change, for the same reason demotion is.
+
+**§3.E.7 Disagreement is signal. It is recorded, not resolved in the primary's favour.**
+
+```yaml
+antigravity:
+  status: consulted | unreachable
+  attempted: 1                       # agy invocations; 0 under `consulted` is refused
+  agy_version: "agy 1.1.22"
+  binary_path: "/home/noah/.local/bin/agy"     # what `command -v agy` resolved to
+  model_id: "gemini-3.1-pro-high"              # the argv value, CHECKED (§3.E.2)
+  model_family: "google/gemini"
+  exit_code: 0
+  duration_seconds: 9.52
+  usage: { input_tokens: …, output_tokens: …, total_tokens: …,
+           thinking_tokens: …, cache_read_tokens: … }   # agy's own block; ALL FIVE
+  reverified_by_primary: false                 # §3.E.5, and it must be said
+  divergence:
+    agreed: 0          # agy raised it, the primary raised it too
+    agy_only: 1        # agy raised it, the primary did not
+    primary_only: 2    # the primary raised it, agy did not
+    contradicted: 0    # OPPOSITE conclusions on one subject
+  findings: [ … ]
+```
+
+`contradicted` is the row that matters and the row a lazy implementation drops. A receipt
+that cannot **represent** two reviewers reaching opposite conclusions is a receipt in which
+the primary always wins, and the disagreement leaves no trace — the failure §5 names, one
+level up from its second-invocation audit.
+
+**The ledger is checked, not merely required:** `agreed + agy_only + contradicted` must equal
+`len(findings)`. `primary_only` is deliberately outside that identity — it counts the
+primary's findings agy did not raise, which are not in this array. Without the identity,
+`divergence` is four numbers nothing constrains, and `{0,0,0,0}` beside twelve agy findings
+would read as perfect agreement.
+
+**§3.E.8 The version gate, and the hole it leaves.**
+
+A receipt is a **record of a review that happened**. This repository already holds one —
+`evidence/pr-review/2795/f5fe1479…/`, written at `skill_version 2.0.0` with four
+consultations, before this arm existed. The alternative to a version gate was to back-fill an
+`antigravity` block into it so it would keep validating, and that is **fabricating the
+evidence §3.C.1 exists to demand**: a consultation record for a consultation nobody
+performed, which is the never-ran-Ollama shape with a JSON schema in front of it.
+
+So the arm is owed by receipts declaring `skill_version ≥ 2.1.0`, and a 2.0.0 receipt is
+judged by 2.0.0's rules. Two facts are tracked separately — *is it owed* and *is it here* —
+so that the gate spares the honest historical receipt without opening an unchecked field: a
+block that is present is validated in full whatever version is declared (probe
+`arm-e-block-at-2-0-0`). Rows 27 and 28 are the two polarities, and the gate is mutated in
+both directions.
+
+**The hole, stated rather than papered over:** a reviewer who writes `skill_version: 2.0.0`
+skips §3.E, and the guard cannot distinguish that from a genuine 2.0.0 receipt, because they
+are the same bytes. Closing it needs a check that reads the **tree's** current skill version
+and requires this PR's receipt to match — `scripts/check_pr_review_arm4.sh`'s job, owed as
+**`PRREV-018`**, and deliberately not invented here: §8 forbids a threshold nobody measured,
+and the arm it would protect is advisory with zero samples. **An advisory arm with a stated
+bypass is worth more than a blocking one with an unstated closure.**
+
+**§3.E.9 What this arm does not do**, recorded so the section is not read as more than it is:
+
+- **The guard never reads agy's output.** It reads the *receipt*, so every rule in §3.E is
+  about whether the record is honest, not about whether agy was right. A receipt can be
+  perfectly valid and describe a useless review. That boundary is deliberate and is the same
+  one §3.A draws for `duplication_hits` — the guard does not re-run the 19-second sweep
+  either — but it is worth stating, because "the guard accepted it" will otherwise be read
+  as "the second reviewer agreed."
+- It does not verify agy's findings. §1.1's entailment problem applies to them exactly as it
+  applies to `cited` excerpts, and remains Phase 3.
+- `model_id` records what was requested, not what answered (§3.E.2).
+- One agy invocation is one sample of a stochastic process. §8's metrics are the answer, and
+  they are record-only until 30 exist — which is the point of shipping this advisory.
+
 ---
 
 ## §4 The receipt
@@ -287,7 +524,18 @@ findings.sarif           # SARIF 2.1.0 — the findings, one run per consultatio
                 "gap_effect": "closes|widens|none", "crux_coverage": "covered|none",
                 "comparative_claims": [] },
       "mutation": { "status": "...", "scope": "guard|in-diff|not-triggered",
-                    "attempted": 37, "killed": 37, "survivors": [] }
+                    "attempted": 37, "killed": 37, "survivors": [] },
+      "antigravity": { "status": "consulted|unreachable", "attempted": 1,
+                       "agy_version": "agy 1.1.22",
+                       "binary_path": "/home/noah/.local/bin/agy",
+                       "model_id": "gemini-3.1-pro-high",
+                       "model_family": "google/gemini",
+                       "exit_code": 0, "duration_seconds": 9.52,
+                       "usage": { "input_tokens": 0, "output_tokens": 0, "total_tokens": 0 },
+                       "reverified_by_primary": false,
+                       "divergence": { "agreed": 0, "agy_only": 0,
+                                       "primary_only": 0, "contradicted": 0 },
+                       "findings": [] }
     },
     "findings_ref": { "path": "findings.sarif", "sha256": "..." },
     "cost": { "input_tokens": 0, "output_tokens": 0, "wall_seconds": 0 }
@@ -295,11 +543,16 @@ findings.sarif           # SARIF 2.1.0 — the findings, one run per consultatio
 }
 ```
 
-`attempted: 0` with `status: consulted` is rejected by the guard. So is `reviewer_actor == author_actor` (§5).
+`attempted: 0` with `status: consulted` is rejected by the guard — for `mutation` and for
+`antigravity` alike. So is `reviewer_actor == author_actor` (§5), and so is an
+`antigravity.model_id` in the primary reviewer's own model family (§3.E.2).
+
+`skill_version` is no longer decoration: it selects the rule set the receipt is judged by
+(§3.E.8), so an absent one is rejected.
 
 ### §4.2 SARIF
 
-One `runs[]` entry per consultation, `tool.driver.name` ∈ {`pmat`, `nvidia-cuda-docs`, `crux`, `cargo-mutants`}. Each `result` carries in `properties`:
+One `runs[]` entry per consultation, `tool.driver.name` ∈ {`pmat`, `nvidia-cuda-docs`, `crux`, `cargo-mutants`, `antigravity`}. Each `result` carries in `properties`:
 
 ```json
 { "grounding": "cited|measured|asserted",
@@ -372,7 +625,7 @@ Every row a committed fixture under `tests/fixtures/pr-review/`, exercised by `b
 | 11 | finding with empty `failure_scenario` | RED | B1 |
 | 12 | `excerpt_sha256` ≠ `sha256(excerpt)` | RED | B1 |
 | 13 | valid receipt, invalid signature | RED | B1 |
-| 14 | complete receipt on a GPU PR, all four consulted, findings present | **GREEN** | — |
+| 14 | complete receipt on a GPU PR, all five consulted, findings present | **GREEN** | — |
 | 15 | finding carrying **no `properties.grounding` mark at all** | RED | B1 |
 | 16 | the **diff** publishes a ratio in `book/`, `comparative_claims: []` | RED | B4 |
 | 17 | the same diff, the ratio RECORDED with a full comparator | **GREEN** | — |
@@ -385,10 +638,42 @@ Every row a committed fixture under `tests/fixtures/pr-review/`, exercised by `b
 | 24 | the SAME unsearched surface, `verdict: DEGRADED` | **GREEN** | — |
 | 25 | the ratio published under **`book/src/examples/`**, `comparative_claims: []` | RED | B4 |
 | 26 | the same `book/src/examples/` page, the ratio RECORDED | **GREEN** | — |
+| 27 | a `skill_version: 2.0.0` receipt, written before §3.E existed, no arm | **GREEN** | — |
+| 28 | a `2.1.0` receipt that owes §3.E and omits it | RED | B1 |
+| 29 | `antigravity.status: unreachable` (timeout), `verdict: PASS` | RED | B1 |
+| 30 | the SAME timed-out agy, `verdict: DEGRADED` | **GREEN** | — |
+| 31 | `antigravity.status: consulted` with `attempted: 0` | RED | B1 |
+| 32 | an `antigravity` finding carrying `precision_class: blocking` | RED | B1 |
+| 33 | the SAME finding, `precision_class: advisory` | **GREEN** | — |
+| 34 | `antigravity.status: not-triggered` on a **docs-only** diff | RED | B1 |
+| 35 | `antigravity.model_id` in the primary reviewer's own model family | RED | B1 |
 
 Rows 16–22 are owed by §9.1's F1–F3; rows 23–24 by F4; rows **25–26 by F6 (D6)**. Row 25 is row 16 with **one directory changed**, and until D6 the two verdicts diverged: row 16 RED, row 25 ACCEPTED. Rows 17, 24 and 26 are discrimination arms — without them "block every PR that names a competitor", "reject every receipt that admits a gap" and "block every book page under `examples/`" each read green, and the rule would punish the honest receipt exactly as hard as the silent one.
 
-Rows 6, 7, 14, 17, 24 and 26 are **discrimination cases**. Without them, "refuse every receipt" reads green — the over-reach a discrimination case already caught in PERF-055 and the #2766 delta-gate work.
+Rows 6, 7, 14, 17, 24, 26, 27, 30 and 33 are **discrimination cases**. Without them, "refuse every receipt" reads green — the over-reach a discrimination case already caught in PERF-055 and the #2766 delta-gate work.
+
+**Rows 27–35 are §3.E (PRREV-015), and three of them are discrimination arms for a reason each.**
+Row 27 is what keeps the version gate honest in *both* directions: without it, "require an
+antigravity block on every receipt ever written" reads green, and the only way to revalidate
+this repository's one real receipt — `evidence/pr-review/2795/f5fe1479…/`, `2.0.0`, four
+consultations — would be to back-fill a block describing a consultation nobody performed
+(§3.E.8). Row 30 stops the arm punishing an honest `DEGRADED` as hard as a silent `PASS`.
+Row 33 stops it becoming a rule whose only satisfiable behaviour is to find nothing, which
+is the opposite of why a second vendor is being asked.
+
+**Row 32 was built wrong first, and the failure is instructive enough to record.** Its agy
+finding was originally marked `asserted`, and the row went red — on §1's *older* rule, "an
+asserted claim never blocks", two hundred lines earlier in the guard. Same class, same exit
+code, and the row pinned **nothing**: delete §3.E's advisory rule and row 32 stays red on
+§1's. It is `measured` now, which is also the honest mark for an agent that ran its own
+commands, and the bats case asserts the *absence* of §1's reason as well as the presence of
+§3.E's. This is why §6.3's harness asserts the rejection **reason** and not only the class.
+
+**Row 35 is row 7 with one token changed**, and it is the row this design nearly shipped
+without — because agy's name says Antigravity and Antigravity is Google's. `agy models`
+prints two Claude ids (§3.E.2). Every other field in row 35 is honest; the arm is still the
+primary reviewer's own family reviewing itself. A `[single variable]` bats case diffs the two
+receipts and requires the difference to be exactly `model_id`.
 
 **Every RED row names the class that rejects it (D2).** Row 10 in particular: `base_sha` disagreeing with `git merge-base origin/main head_sha` is RED **under B1 — the receipt is invalid** — not under a seventh blocking class. Stated rather than left to be inferred, because a fixture row with no governing class is how a guard grows a rule nothing owns, and an ungoverned rule is not demotable by §7's admission mechanism. Two classes are named by no row, and that is a coverage statement, not a gap: **B3** is scored by §6.4's committed mutation set rather than by a receipt fixture, and **B5** has no producer to fixture until §3.C.2 ships (D3).
 
@@ -405,6 +690,16 @@ cargo mutants --file scripts/check_pr_review_receipt.sh   # or: scripts/mutate-g
 ```
 
 Mechanically flip each validation branch and drop each required-field check. **Target: 100% kill. Surviving mutants are named in the receipt for the PR that adds them.** A mutation score below 100% on the guard blocks — this is the one place §7's narrowness does not apply, because the guard is the thing every other verdict rests on.
+
+**§3.E grew the set 185 → 215**, and six of the twenty-five are **named** rather than derived,
+because the `drop`/`flip` scan only sees `reject B<n>` sites and three of §3.E's switches are
+not rejections. `arm-e-never-required` and `arm-e-always-required` mutate the version gate in
+**both** directions — a gate mutated in one direction is a gate half-tested — and are killed
+by rows 28 and 27 respectively. `arm-e-dropped-from-the-consultation-list` takes `antigravity`
+out of the status/unreachable list so the `unavailable` rule stops applying to it, and is
+killed by row 29. The remaining three mutate §3.E.2's not-a-second-vendor regex in both
+polarities plus its `--match-` predicate, in the shape every other pattern here already
+carries.
 
 ---
 
@@ -425,6 +720,18 @@ Mechanically flip each validation branch and drop each required-field check. **T
 The blocking tier is **six** objective, machine-decidable classes — B1 through B6, counted by their ids rather than by reading the table twice. None of them is a judgement call, so none of them can freeze an active investigation the way #2766 and #2757 did.
 
 > **Ruling, recorded (D1).** v2 shipped this six-row table under prose that said "five". **Six stands; the prose was the error.** Dropping a row to reach five would have invented policy — deleting a blocking class is a policy change, and a spec is not where a policy change happens as a typo fix. Writing "five" over six rows would have repeated exactly the defect this spec exists to prevent: a count asserted from memory, sitting next to the artifact that refutes it. The ids exist so the next reader counts labels, not lines.
+
+**§3.E adds no row to this table, and that is the rule working rather than an omission.**
+The admission rule below lets a class block only while its measured precision is ≥90% on the
+rolling sample, and §8 requires `instrument → 30 samples → ratchet`. §3.E has **zero**
+samples, so there is nothing for the rule to apply and the arm cannot be admitted. An
+`antigravity` finding that claims `precision_class: blocking` is refused under **B1** — an
+internally inconsistent receipt — not under a seventh class. The tier stays at **six**, B1..B6.
+
+This is §7.1's argument run the other way. There, **B5** could never be *demoted* because its
+sample could never accrue. Here the sample accrues from the first PR, so §3.E can be
+**promoted** — by exactly the `contracts/pr-review-skill-v2.yaml` edit a demotion would use,
+once 30 samples exist. Promotion is a ticket, not a silent config change.
 
 **Admission rule for the blocking tier:** a class may block only while its measured precision on the rolling sample is ≥90% — Tricorder's ≤10% effective-false-positive bar. A class that falls below is auto-demoted to advisory by editing `contracts/pr-review-skill-v2.yaml`, not by disabling the gate. Demotion is a ticket, not a silent config change.
 
@@ -454,9 +761,43 @@ No threshold below is invented. Each is `instrument → 30 samples → ratchet`.
 | `guard_mutation_score` | killed ÷ attempted on the guard | **100%** | zero — no ratchet, it is a one | §6.4 mutation set |
 | `receipt_presence` | PRs with a valid receipt ÷ PRs merged | **100%** | zero | §6.3, "a missing receipt is RED, not skipped" |
 | `unmarked_claims` | claims with no grounding mark | **0** | zero | **§6.3 row 15** |
-| `vacuous_consultations` | `status: consulted` with `attempted: 0` | **0** | zero | §6.3 row 2 — **`mutation` only; see F2** |
+| `vacuous_consultations` | `status: consulted` with `attempted: 0` | **0** | zero | §6.3 rows 2, 18 and **31**; the `crux`/`pmat` probes |
+| `arm_e_actionable_rate` | §3.E findings the author acted on ÷ §3.E findings posted | **record only** | after 30 PRs carrying a §3.E consultation, floor at measured − 5pp; **also the promotion gate** — §3.E cannot enter the blocking tier before it | live PRs; `antigravity.findings[]` |
+| `arm_e_agreement_rate` | `agreed ÷ (agreed + agy_only + primary_only + contradicted)` | **record only** | none until 30 samples; a *high* value is not automatically good — see below | §3.E.7's ledger, §6.3 rows 32–33 |
+| `arm_e_contradiction_rate` | `contradicted ÷ (agreed + agy_only + primary_only + contradicted)` | **record only** | none until 30 samples | §3.E.7's ledger; the `arm-e-ledger-unbalanced` probe |
+| `arm_e_unavailable_rate` | §3.E consultations recorded `unreachable` ÷ §3.E consultations owed | **record only** | none until 30 samples | §6.3 rows 29–30 |
 
-Four zeros/ones (jidoka: the line stops on a defined defect). Four instrument-first continuous parameters (kaizen: ratchet the measured baseline, never invent it). `pmat` logs the cost fields; feed them to the routing calculator already in use.
+Four zeros/ones (jidoka: the line stops on a defined defect). **Eight** instrument-first
+continuous parameters (kaizen: ratchet the measured baseline, never invent it). `pmat` logs
+the cost fields; feed them to the routing calculator already in use.
+
+**§3.E's four rows are record-only and there is no exception**, because there are zero
+samples on the day it ships and §7's admission rule has nothing to apply to it (§3.E.6).
+`arm_e_actionable_rate` doubles as the **promotion gate**: it is the number that would let
+§3.E leave the advisory tier, so shipping it record-only is what makes a later promotion a
+measurement rather than a decision.
+
+**`arm_e_agreement_rate` is not a score to maximise, and writing it down as one would be the
+defect.** Agreement approaching 1.0 means the second vendor is telling the primary what it
+already knew — the arm is paying tokens for nothing, and the honest response is to retire it,
+not to celebrate. Agreement approaching 0 means the two are not reviewing the same artifact.
+Neither end is a target, which is exactly why it is instrumented for 30 samples before
+anybody writes a threshold beside it. `arm_e_contradiction_rate` is its sharp edge: a
+contradiction is the case where one of the two is *wrong*, and it is the only row of the
+ledger that names a defect rather than a difference in coverage.
+
+**`cost_per_actionable` gains a real numerator from this arm.** agy's `usage` block is
+token accounting emitted by the process that spent them, measured per invocation, rather
+than an estimate reconstructed afterwards. The guard requires `input_tokens`,
+`output_tokens` and `total_tokens` to be present and numeric: record-only is not
+unenforced, the same rule the receipt's own `cost` block already carries.
+
+**But `total_tokens` is not the total, and a metric built on it would say so wrongly for
+years.** Measured on one real invocation: `input 11163 + output 2327 = total 13490`, with
+`thinking_tokens 2176` and `cache_read_tokens 47698` **outside** it — the cache reads alone
+are 3.5× the reported total. So all five fields are recorded, and any `cost_per_actionable`
+figure states which numerator it used. This is the `2.93× Ollama` failure in miniature: a
+number with a plausible name, quoted by people who never opened the artifact behind it.
 
 **Every metric names what exercises it (D4).** v2's `unmarked_claims = 0` had no fixture at all: rows 3, 11 and 12 covered an empty `source`/`excerpt`, an empty `failure_scenario` and a digest mismatch, and not one of them covered a result with no grounding mark. A metric with no fixture reads as exercised when nothing exercises it — which is this table's own `vacuous_consultations` defect, applied to this table. §6.3 row 15 closes it. The column stays so the next unfixtured metric is visible on sight rather than found by building it: `vacuous_consultations`'s own entry now shows, in the column, that it is enforced for `mutation` and for nothing else (F2).
 
@@ -511,6 +852,8 @@ Recording this in the spec is not optional. A spec whose acceptance test failed 
 | F3, F4 — `pmat` mandatory at the gate; non-Rust sweep + `duplication_horizon` | `PRREV-012` | blocks enablement |
 | F5 — one comparative regex, union list, five-word gap, shared case table | `PRREV-013` | advisory; before B4's first demotion review |
 | re-run §9 step 7 against the same three merged PRs | `PRREV-014` | **is** enablement |
+| §3.E — the second-vendor arm: spec, SKILL steps, contract, guard, rows 27–35, 215/215 | `PRREV-015` | advisory; blocks nothing |
+| §3.E.8's stated bypass — `check_pr_review_arm4.sh` requires this PR's receipt to declare the TREE's skill version | `PRREV-018` | before §3.E is promoted out of advisory |
 
 **What the backtest did *not* falsify**, recorded so F1–F5 are not read as a verdict on the whole design: §3.B's path and message triggers discriminated **2/2 must-match and 2/2 must-not-match on real PRs**, including the deliberately over-broad `*cuda*`; the guard's four positive controls fired first on every run, and E1-control proves it is not a guard that reads red by refusing everything either; B6 and the merge-base recomputation behaved exactly as specified throughout; neither comparative regex produced a false positive on 16 real subjects; and pointed at a checkout without `schemas/`, the guard **halted with POSITIVE CONTROL MISFIRED rather than validating** — a control that fired for the wrong reason refused to be evidence.
 
@@ -571,9 +914,16 @@ table. `PRREV-011` is the second backtest, not D3's producer, and `PRREV-014` wa
 — §9.3 **is** the re-run it names.
 
 **Still open at 3 of 3**, so that a PASS is not read as a finish: **D9** (`README.md`);
-D3's B5 producer (§3.C.2), carried advisory; §5's author/reviewer separation has still
-never been exercised on this epic; and §1.1's entailment check on `cited` excerpts remains
-Phase 3. A signed receipt is a provenance claim, never a diligence claim — §4.3, and
+D3's B5 producer (§3.C.2), carried advisory; §1.1's entailment check on `cited` excerpts
+remains Phase 3; and §3.E.8's version-gate bypass (`PRREV-018`).
+
+**§5's author/reviewer separation "has still never been exercised on this epic" was the
+oldest of those, and §3.E is the arm that answers it** — with a caveat this spec has to state
+about itself. A different session id is a different actor; it is not a different *model*, and
+Huang et al. is a result about weights, not about context. §3.E is the first arm whose
+separation survives that objection, and it ships **advisory with zero samples** (§3.E.6), so
+what is closed today is that the control now exists and is instrumented — not that it has
+been shown to work. That measurement is `arm_e_actionable_rate`, and it needs 30 PRs. A signed receipt is a provenance claim, never a diligence claim — §4.3, and
 `attestation_level` reads `L1-self`.
 
 **Phase 3 (not this spec):** SCIP index via `rust-analyzer scip .` replacing `pmat query` for cross-file resolution; entailment checking on `cited` excerpts; JWS countersigning for multi-agent chains.
@@ -590,6 +940,9 @@ Phase 3. A signed receipt is a provenance claim, never a diligence claim — §4
 | 8.4 | every PR or size threshold | **Closed** — every PR. `pmat` always (cheap, deterministic); CUDA/CRUX/mutation trigger on shape. Cost is instrumented (§8), so a threshold can be *derived* later rather than guessed now. |
 | 8.5 | `FINDINGS` on a release branch | **Closed — blocks.** §7. A release branch is the last boundary; the routed-around argument does not apply where the alternative is shipping. |
 | — | entailment verification of `cited` excerpts | **Open**, Phase 3. Residual risk stated in §1.1 rather than hidden. |
+| 8.3 | self-review weakness, the part a fresh session does not fix | **Closed — §3.E** (PRREV-015). A different session id is a different actor, not a different model; Huang et al. is a result about weights. §3.E is a different vendor and family, advisory until 30 samples. |
+| §3.E | which model `agy` runs | **Closed — pinned and CHECKED** (§3.E.2). `agy models` lists two Claude ids; agy is a harness, not a model, so an unpinned `--model` silently makes the arm self-review. Row 35 + a 22-row case table. |
+| §3.E | receipts written before the arm existed | **Closed — a version gate, with its bypass stated** (§3.E.8). Back-filling the block would fabricate a consultation nobody performed. `PRREV-016` owes the closure. |
 | §7 (v2) | six blocking rows under prose saying "five" | **Closed — six** (D1). Rows carry ids B1..B6; the prose was the error, and dropping a row to reach five would have invented policy. |
 | §6.3 (v2) | fixture row 10 governed by no class | **Closed — B1** (D2). Every fixture row now names its class; B3 and B5 are named by no row, and the table says why. |
 | §7 (v2) | B5 blocking with no producer and no metric | **Closed — producer + metric, and advisory meanwhile** (D3). §3.C.2 emits it (`PRREV-011`); §7.1 defines what an unaccruing sample means so the admission rule applies in both directions. |
@@ -617,6 +970,11 @@ Phase 3. A signed receipt is a provenance claim, never a diligence claim — §4
 | A spec whose acceptance test failed and does not say so | §9.1, recorded as RED before anything consumes it | `PRREV-007`, 1 of 3 (D5) |
 | Review that "passes" without doing anything | fixture rows 1, 2, 11, 14 | — |
 | Self-review that flatters itself | §5, fixture row 8 | Huang et al. ICLR'24; self-preference bias |
+| Self-review that flatters itself **across sessions of the same model** | §3.E — a different vendor and model family, not a fresh context | §9.3: §5's separation had never been exercised on this epic |
+| A cross-vendor arm that is silently **not** cross-vendor | §3.E.2 — `model_id` recorded as argv and checked; row 35 | `agy models` lists claude-sonnet-4-6 and claude-opus-4-6-thinking |
+| A second reviewer that fails SLOWLY and reads as clean | §3.E.4 — a timeout is `unreachable`, rows 29–30 | `--print-timeout` defaults to 5m; a repo-scale review needs more |
+| Disagreement resolved silently in the primary's favour | §3.E.7's `divergence` ledger, arithmetic-checked | — |
+| An advisory arm quietly acquiring blocking authority | §3.E.6 — `precision_class: blocking` from §3.E is B1; row 32 | §7's admission rule has zero samples to apply |
 | Signed receipt mistaken for an honest one | §4.3 stated plainly, `L1-self` | R1 |
 
 ---
@@ -624,13 +982,20 @@ Phase 3. A signed receipt is a provenance claim, never a diligence claim — §4
 ## §12 One-line summary for the PR comment
 
 ```
-pr-review v2.0.0 | verdict=<V> | consultations: pmat=<s> cuda=<s> crux=<s> mutation=<s>
+pr-review v2.1.0 | verdict=<V> | consultations: pmat=<s> cuda=<s> crux=<s> mutation=<s> agy=<s>
 | findings=<n> (cited=<a> measured=<b> asserted=<c>) | index=<sha7> ancestor=<bool>
+| agy=<model_id> advisory | divergence: agreed=<a> agy-only=<b> primary-only=<c> contradicted=<d>
 | receipt=evidence/pr-review/<pr>/<sha>/receipt.intoto.jsonl (L1-self, signed)
 ```
 
 `DEGRADED` puts the reason first, before anything else on the line.
 
+**The §3.E line names the MODEL, not the tool**, because "agy" alone does not say whether the
+arm was cross-vendor — that is §3.E.2's whole finding, and a summary that hides it would be
+the label-by-intent defect in the one place a human actually reads. **`advisory` is printed
+literally**, so nobody reads an agy finding as a merge blocker (§3.E.6). And the divergence
+counts are on the line rather than only in the receipt: a disagreement that has to be dug out
+of a JSON file is a disagreement that gets resolved in the primary's favour by default.
 ---
 
 ## §13 Autonomous merge on quorum
