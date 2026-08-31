@@ -113,7 +113,15 @@ else
         for file in $STAGED_SHELL_FILES; do
             if [ -f "$file" ]; then
                 echo "   Linting: $file"
-                if ! bashrs lint "$file" 2>&1 | grep -q "0 error(s)"; then
+                # ANCHORED, and captured rather than piped into `grep -q`.
+                # `grep -q "0 error(s)"` is BRE, so the parens are LITERAL and
+                # "10 error(s)" CONTAINS "0 error(s)" -- this hook passed a file
+                # with ten errors (found by scripts/check_pass_grep_anchored.sh
+                # once its universe reached crates/ and its probe stopped
+                # assuming -E). Capture-then-test also keeps an early-exiting
+                # reader from handing bashrs a SIGPIPE.
+                bashrs_out=$(bashrs lint "$file" 2>&1)
+                if ! printf '%s\n' "$bashrs_out" | grep -qE '(^|[^0-9])0 error\(s\)'; then
                     echo -e "${RED}❌ bashrs found errors in $file${NC}"
                     BASHRS_FAILED=1
                 else
