@@ -94,13 +94,50 @@ jobs:
   # registry unreachable. Mirrored in the `mutants` job below.
   workspace-test:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    # 100, not 85. The step below sets `timeout-minutes: 75`, but "Set up runner"
-    # (image pull) has measured at 20 minutes, so 20 + 75 = 95 > 85 and the JOB
-    # timeout always fired first -- producing a bare "The operation was canceled"
-    # that names no step. Job 95162862834 died exactly on the 85-minute mark this
-    # way. The step timeout must be the one that can fire, because it points at
-    # the step; the job timeout is the backstop behind it.
-    timeout-minutes: 100
+    # 110, not 85 and not 180. The step below sets `timeout-minutes: 75`, but
+    # "Set up runner" (image pull) has measured at 20 minutes, so 20 + 75 = 95 > 85
+    # and the JOB timeout always fired first -- producing a bare "The operation was
+    # canceled" that names no step. Job 95162862834 died exactly on the 85-minute
+    # mark this way. A step timeout points at its step; the job timeout is the
+    # backstop behind it, so the step timeout should fire first wherever it can.
+    #
+    # 2026-08-31: 100 -> 110. Two measurements bracket this number. Both were taken
+    # over the last 300 ci.yml runs (2026-08-21..08-31), 263 of which have a
+    # workspace-test job, via
+    #   gh api "repos/paiml/aprender/actions/runs/<run_id>/jobs?per_page=100"
+    # reading each job's and each step's started_at/completed_at.
+    #
+    #   FLOOR -- what the job actually costs. Whole-job wall time over the 167
+    #   SUCCESSFUL workspace-test jobs: p50 49.8 / p90 79.9 / p95 86.0 / max 99.8
+    #   min. The old 100 therefore cleared the worst PASSING run by 0.2 min --
+    #   twelve seconds -- so ordinary fleet contention killed jobs outright.
+    #   Annotation "The job has exceeded the maximum execution time of 1h40m0s"
+    #   (gh api repos/paiml/aprender/check-runs/<job_id>/annotations) appears on
+    #   FOUR pull_request jobs on 2026-08-31 -- 99429841306, 99429947811,
+    #   99430178683, 99435047969 -- and earlier on 97080910427 (08-22),
+    #   98821621525 and 98885816137 (08-28). It was already firing for nine days.
+    #   110 is 1.10x the measured max.
+    #
+    #   CEILING -- what the merge queue will wait for. Ruleset 17836320
+    #   ("Merge Queue (main)", `gh api repos/paiml/aprender/rulesets/17836320`)
+    #   sets check_response_timeout_minutes: 120: an entry is dropped if its
+    #   required checks have not reported within 120 min of the merge group
+    #   forming, and that clock includes runner wait. Over the 64 merge_group runs
+    #   in the window, group-created -> workspace-test-started was p50 0.05 /
+    #   p90 3.92 / p95 7.05 min. 110 leaves 10 min for that wait, above p95.
+    #   Anything above ~113 is unreachable in the only path that merges, so the
+    #   80 minutes 180 would have added are 60 minutes of nothing plus a 3-hour
+    #   runner hold on a contended box.
+    #
+    #   NOT the cause: no merge-queue build was killed by this timeout. The two
+    #   long merge_group workspace-test jobs of 2026-08-31 ran 84.9 min
+    #   (99433658084) and 79.4 min (99441760471) and never reached 100. The first
+    #   was killed by THIS workflow's own `concurrency: cancel-in-progress` --
+    #   re-enqueuing PR #2776 formed a second merge_group run on the SAME
+    #   gh-readonly-queue ref, hence the same concurrency group ("Canceling since
+    #   a higher priority waiting request for ci-refs/heads/gh-readonly-queue/
+    #   main/pr-2776-745fa8588... exists"). The second was cancelled by hand.
+    timeout-minutes: 110
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
@@ -305,6 +342,37 @@ jobs:
             "$IMAGE" \
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
+        # 2026-08-31: this step had NO step timeout, so when it ran long the JOB
+        # timeout fired instead -- producing the bare "The operation was canceled"
+        # that names no step, which is precisely the failure the job-level comment
+        # above says the step timeout exists to prevent. All FOUR of that day's
+        # 100-minute kills were here; the lib step had already SUCCEEDED in
+        # 53.2 / 54.1 / 54.7 / 53.5 min in those same four jobs.
+        #
+        # 55 is measured on THIS step, not inferred from job totals. Subtracting
+        # the endpoints of a totals range from the endpoints of a lib-step range
+        # does not give the range of the per-run differences, and it was wrong
+        # here: that arithmetic said "21-39 min", the 170 successful Integration
+        # steps in 2026-08-21..08-31 actually ran
+        #   min 8.8  p50 20.3  p90 38.3  p95 42.6  p99 48.0  max 51.2 min
+        # -- a tail 12 minutes past the top of the inferred band.
+        #
+        # 55 is the SMALLEST value that would have killed none of those 170 runs
+        # (50 kills 2 of them) and it is 1.07x the observed max. Every larger
+        # value protects nothing more while shrinking the window in which THIS
+        # timeout -- the one that names the step -- fires ahead of the job
+        # timeout: with the 110-min job timeout and p95 fixed overhead of 6.3 min
+        # (pre-lib 1.4 + Compute tests 2.7 + post-integration 2.2), this step
+        # timeout precedes the job timeout whenever the lib step is <= 48.7 min,
+        # which is 91.5% of the 212 observed lib steps. At 75 it would be 52.4%.
+        #
+        # Residual, stated rather than papered over: 75 (lib) + 55 (this) + 6.3
+        # = 136 min > the 110 the merge queue's 120-min ceiling allows, so when
+        # BOTH steps run long the job timeout still fires first and still names
+        # no step. No timeout value fixes that -- only a faster job, less
+        # contention, or raising check_response_timeout_minutes on ruleset
+        # 17836320 (a repo-settings change, deliberately not made here).
+        timeout-minutes: 55
         # #2465: the four FALSIFY-AUTH targets were appended here because they
         # were DARK — `falsify_auth_002` appeared nowhere in .github/, scripts/
         # or Makefile, and neither did the contract loader
