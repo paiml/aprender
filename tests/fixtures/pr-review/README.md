@@ -21,7 +21,7 @@ because a rejection with no named class is how a guard grows a rule nothing gove
 | 4 | `row-04-comparative-claim-no-comparator` | RED | B4 | `2.93x Ollama` with no comparator `command` or `artifact_sha256` |
 | 5 | `row-05-unreachable-pmat-verdict-pass` | RED | B1 | `pmat.status: unreachable` with `verdict: PASS` |
 | 6 | `row-06-unreachable-pmat-verdict-degraded` | **GREEN** | — | the same unreachable source, honestly recorded as `DEGRADED` |
-| 7 | `row-07-honest-docs-only-pmat-consulted` | **GREEN** | — | a docs-only PR: `pmat` consulted and empty, nothing else triggered |
+| 7 | `row-07-honest-docs-only-pmat-consulted` | **GREEN** | — | a docs-only PR: `pmat` consulted and empty, `antigravity` consulted (§3.E.3 leaves it no other legal state), `cuda`/`crux`/`mutation` not triggered |
 | 8 | `row-08-self-review` | RED | B2 | `reviewer_actor.id == author_actor.id` |
 | 9 | `row-09-stale-index-verdict-pass` | RED | B6 | `index_commit` is not an ancestor of `head_sha`, verdict `PASS` |
 | 10 | `row-10-base-sha-not-merge-base` | RED | B1 | `base_sha` names main's tip, not the fork point |

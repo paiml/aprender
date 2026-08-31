@@ -17,11 +17,22 @@ metadata:
     one.
 
     STATE ON THIS COMMIT: BUILT AND MUTATION-VERIFIED, STILL NOT ARMED. The
-    guard (scripts/check_pr_review_receipt.sh), twenty-six fixtures, the
+    guard (scripts/check_pr_review_receipt.sh), the fixture table, the
     vendored schemas, the reviewer skill and the CI wiring all exist here;
-    the `pr-review-receipt` job is not yet a required check. Twelve of the
-    fifteen falsification tests below are green and bound to a command; three
+    the `pr-review-receipt` job is not yet a required check. All but THREE of
+    the falsification tests below are green and bound to a command; those three
     remain LIVE-PENDING and say so in the field the schema actually reads.
+
+    THE TOTALS ARE STATED ONCE EACH, ON PURPOSE. This paragraph used to restate
+    the fixture count and the falsification-test count, and both went stale: the
+    fixture count while the table grew from 26 to 35, and the test count while
+    the list grew from 11 to 15 to 17 - the second of those failing
+    `contract_data_integrity` on `pass_criteria says 11 tests, actual 15` for two
+    tickets. The falsification total now lives only in `qa_gate.pass_criteria`,
+    where scripts/check_pr_review_counts.sh derives it from the block and fails
+    this file when the two disagree; the fixture count lives in the places that
+    guard already checked. A number restated in four places is a number that will
+    be wrong in three of them.
 
     This paragraph was rewritten by PRREV-008 and the previous text is worth
     recording: it said "DECLARED, NOT ARMED. PRREV-001 ships this file alone.
@@ -471,9 +482,12 @@ equations:
       about WEIGHTS. S3.E is the first arm of this contract whose separation survives
       that objection, and it is why the arm exists at all rather than a sixth prompt.
     - >-
-      `agy` IS A HARNESS, NOT A MODEL. `agy models` on 2026-08-31 returned fourteen ids
-      and TWO ARE CLAUDE (claude-sonnet-4-6, claude-opus-4-6-thinking) beside eleven
-      Gemini ids and gpt-oss-120b-medium. With --model omitted or pointed at a Claude id
+      `agy` IS A HARNESS, NOT A MODEL. `agy models` on 2026-08-31 returned a catalogue in
+      which TWO ARE CLAUDE (claude-sonnet-4-6, claude-opus-4-6-thinking), beside Gemini
+      ids and gpt-oss-120b-medium. The SIZE of that catalogue is the vendor's and it
+      moved the same day - fourteen ids in one run, eleven hours later, the three
+      gemini-3.5-flash-* ids gone - so no rule here reads a count of it. What the rule
+      reads is that `claude-*` ids are in it. With --model omitted or pointed at a Claude id
       the arm is the primary reviewer's own family reviewing itself, while every field a
       reader checks still says `antigravity`. So model_id is recorded as an argv element
       and CHECKED. This is the standing rule that a run is never labelled by INTENT: the
@@ -564,7 +578,7 @@ equations:
 
 falsification_tests:
 
-# THREE of the fifteen below are LIVE-PENDING and every one says so IN `test:`, the
+# THREE of the entries below are LIVE-PENDING and every one says so IN `test:`, the
 # field the schema reads and `pv lint --strict-test-binding` classifies. It was seven at
 # PRREV-001, when this file shipped alone and the guard did not exist; PRREV-008
 # discharges the four whose recorded reason ("the guard does not exist at 745fa8588",
@@ -872,6 +886,8 @@ falsification_tests:
     that does not exist and q-44 must turn RED; make the guard-shape case match everything
     and q-52 must turn RED; make it match nothing and q-45 must turn RED. All three are in
     scripts/mutate_quorum_arm.sh.
+
+- id: F-PRREV-016
   rule: a second REVIEWER, not a second prompt — and it must actually be a second vendor
   prediction: >-
     A receipt declaring skill_version 2.1.0 with no consultations.antigravity is
@@ -885,10 +901,12 @@ falsification_tests:
     antigravity.model_id is `claude-opus-4-6-thinking` is REJECTED (row 35) though it is
     byte-identical to an ACCEPTED receipt but for that one token — asserted by a
     single-variable jq diff in tests/pr-review.bats, not by inspection.
-    MEASURED, and it is why row 35 exists: `agy models` on 2026-08-31 returned fourteen
-    ids and TWO ARE CLAUDE — claude-sonnet-4-6 and claude-opus-4-6-thinking — beside
-    eleven Gemini ids and gpt-oss-120b-medium. agy is a HARNESS, not a model, so
-    "Antigravity is Google's" does not establish that the arm is cross-vendor.
+    MEASURED, and it is why row 35 exists: `agy models` on 2026-08-31 returned a catalogue
+    of which TWO ARE CLAUDE — claude-sonnet-4-6 and claude-opus-4-6-thinking — beside the
+    Gemini ids and gpt-oss-120b-medium. agy is a HARNESS, not a model, so "Antigravity is
+    Google's" does not establish that the arm is cross-vendor. Re-measured hours later the
+    catalogue had shrunk from fourteen ids to eleven, so its SIZE is a vendor-side fact
+    this contract does not assert; the two Claude ids were in both runs.
   test: 'bats tests/pr-review.bats'
   if_fails: >-
     S3.E becomes the primary reviewer talking to itself through a different binary while
@@ -907,7 +925,7 @@ falsification_tests:
     in scripts/mutate-guard.sh as NAMED sites, because none of them is a `reject B<n>`
     line and the derived scan cannot see them.
 
-- id: F-PRREV-013
+- id: F-PRREV-017
   rule: an advisory arm may not acquire blocking authority, and disagreement is recorded rather than resolved
   prediction: >-
     A receipt whose `antigravity` SARIF run carries a result with
@@ -1187,7 +1205,7 @@ qa_gate:
   - a_pr_editing_the_merge_mechanism_cannot_merge_itself
   - every_refusal_path_is_exercised_by_a_committed_fixture
   pass_criteria: >-
-    All 15 falsification tests turn RED against a fixture that violates them and GREEN
+    All 17 falsification tests turn RED against a fixture that violates them and GREEN
     against the honest fixture, through scripts/check_pr_review_receipt.sh, whose own
     positive control (S6.1) must fire first.
 
@@ -1197,9 +1215,10 @@ qa_gate:
     -002, -003, -007 through `bats tests/pr-review.bats`, and F-PRREV-008 through
     `pv validate` — and three remain LIVE-PENDING: F-PRREV-004 needs a precision sample
     that only reviewed PRs can produce, and F-PRREV-005 / F-PRREV-006 assert properties
-    of THIS FILE that no committed guard reads yet. At PRREV-012 the file carries 15:
-    the seven added since (F-PRREV-009 through F-PRREV-015) are each bound to a `bats`
-    command, so TWELVE of the fifteen are bound and the same three remain LIVE-PENDING.
+    of THIS FILE that no committed guard reads yet. Everything added since - F-PRREV-009
+    through F-PRREV-017, the last two being S3.E's - is bound to a `bats` command, so all
+    but those same three are bound. The total is deliberately not restated here; it is in
+    the `All N falsification tests` line above, which is derived and checked.
 
     THE GATE IS STILL NOT ENABLED, and that is deliberate. S9 step 7's backtest found
     four defects in the artifact it tested; PRREV-008 fixes them and re-verifies in the
@@ -1207,7 +1226,7 @@ qa_gate:
     review it gates was diligent". Nothing here may be cited as evidence that a review
     was grounded.
   falsification: >-
-    Delete a required-field check from the guard and re-run the twenty-six fixtures. If
+    Delete a required-field check from the guard and re-run the whole fixture table. If
     the affected row does not turn RED, the guard's green is a count of files rather
     than a verdict, and every verdict resting on it is withdrawn. This is not a thought
     experiment: scripts/mutate-guard.sh performs it at every `reject B<n>` site the

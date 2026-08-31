@@ -1561,7 +1561,7 @@ jobs:
       # tests" and "22-row" survived four commits of growth. Self-test before
       # check, because a guard whose RED has never been seen is a guard whose
       # GREEN is a count of files (Verification Discipline #7).
-      - name: "Stated-count guard: each of the three shipped drifts turns it RED"
+      - name: "Stated-count guard: every stated-count drift turns it RED, both polarities"
         shell: bash
         run: bash scripts/check_pr_review_counts.sh --self-test
       - name: The counts these files state as measured equal the derived ones

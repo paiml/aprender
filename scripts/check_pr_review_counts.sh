@@ -148,6 +148,32 @@ derive_quorum_bats_tests() {
     printf '%s\n' "$n"
 }
 
+# Falsification tests: the contract's own list, counted from its `- id:` labels rather
+# than from the prose that states the total. It went stale unseen - `pass_criteria` said
+# 11 over 15 entries at PRREV-013 and over 17 at PRREV-015 - and the only thing that
+# noticed was `cargo test -p aprender-contracts --test validate_contracts` printing
+# `pr-review-skill-v2: pass_criteria says 11 tests, actual 17` into a corpus-wide failure
+# nobody reads per-contract. Counting labels and not lines, the same reason S7's rows
+# carry ids B1..B6.
+derive_falsification_tests() {
+    local root=$1 n
+    [ -f "$root/contracts/pr-review-skill-v2.yaml" ] || return 1
+    # THE UNIVERSE IS THE BLOCK, NOT A PREFIX. A first draft counted `^- id: F-PRREV-`
+    # and the `tree-grew-a-falsifier` row went GREEN when it should have gone RED: an
+    # entry added under any other id was invisible to the count that is supposed to
+    # notice entries being added. The file holds `- id: KH-PRREV-*` under
+    # `kani_harnesses:` too, so a bare `^- id:` over the whole file over-counts. The
+    # right universe is the one the key delimits - from `falsification_tests:` to the
+    # next top-level key - which is what the parser reading `pass_criteria` sees.
+    n=$(awk '/^falsification_tests:/ { inblock = 1; next }
+             /^[a-z_]+:/            { inblock = 0 }
+             inblock && /^- id: /   { n += 1 }
+             END                    { print n + 0 }' \
+        "$root/contracts/pr-review-skill-v2.yaml")
+    [ "$n" -gt 0 ] || return 1
+    printf '%s\n' "$n"
+}
+
 # ---------------------------------------------------------------------------
 # The site table. id | file | occurrences | template (@N@ -> derived value)
 # ---------------------------------------------------------------------------
@@ -171,6 +197,7 @@ quorum_bats_tests|.claude/skills/pr-review/SKILL.md|2|@N@ rows
 quorum_bats_tests|.github/workflows/ci.yml|1|@N@ rows
 quorum_rows|tests/pr-review-quorum.bats|1|-eq @N@ ]
 quorum_rows|tests/pr-review-quorum.bats|1|expected @N@ q-*
+falsification_tests|contracts/pr-review-skill-v2.yaml|1|All @N@ falsification tests
 '
 
 # ---------------------------------------------------------------------------
@@ -192,11 +219,14 @@ check() {
     derived[quorum_rows]=$v
     v=$(derive_quorum_bats_tests "$root") || die_env "cannot derive the S13 bats test count"
     derived[quorum_bats_tests]=$v
+    v=$(derive_falsification_tests "$root") || die_env "cannot derive the contract's falsification-test count"
+    derived[falsification_tests]=$v
 
     [ -n "$quiet" ] || {
         echo "=== the counts these files state as measured, against the tree ($PROG) ==="
         echo "derived:  mutants=${derived[mutants]}  fixture_rows=${derived[fixture_rows]}  bats_tests=${derived[bats_tests]}"
         echo "          quorum_mutants=${derived[quorum_mutants]}  quorum_rows=${derived[quorum_rows]}  quorum_bats_tests=${derived[quorum_bats_tests]}"
+        echo "          falsification_tests=${derived[falsification_tests]}"
     }
 
     local row id file want tmpl needle got
@@ -286,8 +316,10 @@ self_test() {
                 scripts/pr_review_quorum_arm.sh ) \
       | ( cd "$base" && tar -xf - ) || die_env "could not stage a copy of the tree"
 
+    local nrows=0
     row() {
         local id=$1 want=$2 desc=$3; shift 3
+        nrows=$((nrows + 1))
         local dir="$ST_ROOT/$id" got=0
         safe_rm_scratch "$dir" 'prcounts-selftest.'
         cp -a "$base" "$dir"
@@ -314,10 +346,32 @@ self_test() {
     }
 
     noop()          { :; }
-    stale_mutants() { sed -i 's#185/185#119/119#' "$1/.claude/skills/pr-review/SKILL.md"; }
-    stale_rows()    { sed -i 's#26-row#22-row#'   "$1/.github/workflows/ci.yml"; }
-    stale_tests()   { sed -i 's#121 tests#65 tests#' "$1/.github/workflows/ci.yml"; }
-    delete_claim()  { sed -i '0,\#185/185#{\#185/185#d}' "$1/contracts/binding.yaml"; }
+    # DERIVED ANCHORS, and the four rows below are why the paragraph under them exists.
+    # They were written with the literal numbers of their day - 185/185, 26-row,
+    # 121 tests - and PRREV-015 moved all three to 215/215, 35-row and 149 tests. Every
+    # stated count in the tree was updated; the four anchors that MUTATE those counts
+    # were not, so each edit matched nothing and `--self-test` exited 2 HARNESS-BROKEN
+    # on the very commit that widened the table. The harness caught itself, which is the
+    # only reason this is a fix and not a survivor: had the rows silently changed
+    # nothing, the table would have read 13/13 green over four mutations never applied.
+    # Reading the value from the same derivation the check uses makes each row
+    # self-maintaining, and the write-back is by ONE so no row depends on a magnitude.
+    stale_mutants() { local n; n=$(derive_mutants "$1")
+                      sed -i "s#$n/$n#$((n - 1))/$((n - 1))#" "$1/.claude/skills/pr-review/SKILL.md"; }
+    stale_rows()    { local n; n=$(derive_fixture_rows "$1")
+                      sed -i "s#$n-row#$((n - 1))-row#"   "$1/.github/workflows/ci.yml"; }
+    stale_tests()   { local n; n=$(derive_bats_tests "$1")
+                      sed -i "s#$n tests#$((n - 1)) tests#" "$1/.github/workflows/ci.yml"; }
+    delete_claim()  { local n; n=$(derive_mutants "$1")
+                      sed -i "0,\#$n/$n#{\#$n/$n#d}" "$1/contracts/binding.yaml"; }
+    stale_ftests()  { local n; n=$(derive_falsification_tests "$1")
+                      sed -i "s#All $n falsification tests#All $((n - 1)) falsification tests#" \
+                             "$1/contracts/pr-review-skill-v2.yaml"; }
+    # The invented id is deliberately NOT an F-PRREV- one: the row must fire on an entry
+    # being ADDED, not on it matching a naming convention, and a prefix-shaped derivation
+    # let exactly this edit through green.
+    grow_ftests()   { sed -i 's#^- id: F-PRREV-002$#- id: F-INVENTED-999\n  rule: a falsification test the contract does not count\n\n&#' \
+                             "$1/contracts/pr-review-skill-v2.yaml"; }
     grow_bats()     { printf '\n@test "a new test the docs do not count" {\n  true\n}\n' >> "$1/tests/pr-review.bats"; }
     grow_rows()     { mkdir -p "$1/tests/fixtures/pr-review/row-27-invented"; }
     grow_mutants()  { sed -i 's#^  \[ -n "$head" \] || reject B1 "predicate.head_sha is absent" || return 1#&\n  [ -n "$head" ] || reject B1 "an invented rule nothing documents" || return 1#' \
@@ -339,9 +393,9 @@ self_test() {
 
     echo "--- check_pr_review_counts.sh --self-test ---"
     row baseline                0 "the tree as committed"                                   noop
-    row stale-mutation-score    1 "185/185 written back to 119/119 (the shipped defect)"    stale_mutants
-    row stale-fixture-rows      1 "26-row written back to 22-row (the shipped defect)"      stale_rows
-    row stale-bats-count        1 "121 tests written back to 65 tests (the shipped defect)" stale_tests
+    row stale-mutation-score    1 "the mutation score written back by one"                  stale_mutants
+    row stale-fixture-rows      1 "the fixture-row count written back by one"               stale_rows
+    row stale-bats-count        1 "the bats test count written back by one"                 stale_tests
     row claim-deleted           1 "the sentence stating the count is deleted"               delete_claim
     row tree-grew-a-test        1 "a bats test is added and no file says so"                grow_bats
     row tree-grew-a-fixture-row 1 "a row-* fixture is added and no file says so"            grow_rows
@@ -351,12 +405,17 @@ self_test() {
     row tree-grew-a-quorum-row  1 "a q-* fixture is added and no file says so"              grow_qrows
     row tree-grew-a-quorum-test 1 "an S13 bats test is added and no file says so"           grow_qbats
     row tree-grew-a-refusal     1 "a refuse Q<n> site is added and no file says so"         grow_qmutants
+    row stale-falsifier-count   1 "the contract's falsification-test total written back by one" stale_ftests
+    row tree-grew-a-falsifier   1 "a falsification test is added and the contract does not count it" grow_ftests
 
     if [ "$fails" -ne 0 ]; then
         echo "--- $fails row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 13/13 rows, both polarities ---"
+    # COUNTED, not stated. This line said 13/13 while the table held 13 rows and would
+    # have said 13/13 over 15; a guard that hard-codes its own row count is the defect
+    # it exists to catch, one level in.
+    echo "--- $nrows/$nrows rows, both polarities ---"
     return 0
 }
 
@@ -373,6 +432,7 @@ case "${1:-}" in
       printf 'quorum_mutants     %s\n' "$(derive_quorum_mutants    "$REPO_ROOT")"
       printf 'quorum_rows        %s\n' "$(derive_quorum_rows       "$REPO_ROOT")"
       printf 'quorum_bats_tests  %s\n' "$(derive_quorum_bats_tests "$REPO_ROOT")"
+      printf 'falsification_tests %s\n' "$(derive_falsification_tests "$REPO_ROOT")"
       exit 0 ;;
   -h|--help) sed -n '2,55p' "$0"; exit 0 ;;
   '') check "$REPO_ROOT"; exit $? ;;

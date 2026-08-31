@@ -6,9 +6,13 @@
 # MATCH means "this model id is the PRIMARY reviewer's own family, so S3.E is void".
 # NO-MATCH means "this is a genuinely different vendor and family".
 #
-# THE UNIVERSE IS NOT INVENTED. The fourteen ids `agy models` printed on 2026-08-31 are
-# all here, every one of them, plus the spellings a harness might use for the same
-# models without the vendor prefix. Building a case table from the PATTERN rather than
+# THE UNIVERSE IS NOT INVENTED. Every id `agy models` printed on 2026-08-31 is here -
+# the UNION of two runs hours apart, because the catalogue MOVED between them: the three
+# gemini-3.5-flash-* ids were in the first and gone from the second. They stay in the
+# table. An id that has left the vendor's catalogue is still an id a stale script can
+# pass, and dropping it would shrink this table every time the vendor prunes theirs.
+# Beside them are the spellings a harness might use for the same models without the
+# vendor prefix. Building a case table from the PATTERN rather than
 # from the corpus is F5, and F5 was found the hard way: sixteen real subjects, three
 # must-match misses, on a table whose subjects had been written from the regex's own
 # vocabulary. So the corpus here is a command's output, pasted.

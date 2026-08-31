@@ -1778,7 +1778,10 @@ land_prior_art_on_main() {
   # ANY REGEX IN THIS REPOSITORY SHIPS A CASE TABLE, and this one's universe is a
   # command's OUTPUT rather than the pattern's own vocabulary — F5's lesson, where a
   # table written from the regex passed 13/13 while missing three real spellings.
-  # All fourteen ids `agy models` printed are rows here.
+  # Every id `agy models` printed is a row here - the UNION of two runs on 2026-08-31,
+  # because the catalogue MOVED between them (14 ids, then 11: the gemini-3.5-flash-*
+  # tier gone). An id the vendor has pruned is still an id a stale script can pass, so
+  # rows are never dropped when the vendor's list shrinks (D12).
   run run_case_table arm-e-model --match-arm-e-same-family
   [ "$status" -eq 0 ] || { echo "$output"; false; }
 }

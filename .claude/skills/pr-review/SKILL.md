@@ -466,7 +466,7 @@ binaries taught this repository. Do not hardcode `/home/…/agy`; do not call ba
 #### Step 2 — PIN THE MODEL. This is the arm's correctness property, not a preference.
 
 ```bash
-"$AGY" models        # prints 14 ids on the box this was written for
+"$AGY" models        # the catalogue is the VENDOR's and it moves: 14 ids, then 11, hours apart on 2026-08-31
 ```
 
 **Two of them are Claude** — `claude-sonnet-4-6` and `claude-opus-4-6-thinking` — beside

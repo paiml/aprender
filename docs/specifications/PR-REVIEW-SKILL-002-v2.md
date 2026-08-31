@@ -50,9 +50,10 @@ v2 was written before it was built. Building it — `PRREV-001` through `PRREV-0
 
 D1–D4 are contradictions inside the spec, fixed below. D5 is the spec's own acceptance test returning RED; it is recorded below and fixed by tickets, not by prose.
 
-**D6–D9, from the two re-runs.** The acceptance test was run three times and the second and
-third runs each found defects in the instrument the first had built. All four are recorded
-here for the same reason D1–D5 are.
+**D6–D9, from the two re-runs; D10–D12, from `PRREV-015`.** The acceptance test was run
+three times and the second and third runs each found defects in the instrument the first
+had built; `PRREV-015` then added a fifth consultation (§3.E) and three more surfaced
+before it was pushed. All seven are recorded here for the same reason D1–D5 are.
 
 | # | defect | found by | ruling | now in |
 |---|---|---|---|---|
@@ -60,6 +61,19 @@ here for the same reason D1–D5 are.
 | **D7** | **The duplication horizon had a third region, unswept AND unnamed.** §3.A's horizon was `HEAD` plus unmerged siblings. Prior art that landed on `origin/main` **after the merge base** is in neither — not on `HEAD` (the branch predates it), not an unmerged sibling (it merged), and B6 forbids an index newer than `HEAD` from supplying it. The receipt did not name the region, so `duplication_hits: []` under a `PASS` and "never looked there" were the same artifact. #2781's blind region was exactly #2742: 1 commit, 46 files, 11 of them the prior art. | `PRREV-011` backtest (F7) | **Swept, and recorded.** The horizon names three components — `head`, `siblings`, `merge_base_to_main` — whether or not each was reached, and `duplication_coverage` says which were. Measured, not estimated: one `git grep` over the region costs ~1 s against 20 s for the 774-branch sibling sweep, and on #2781 it returns `crates/apr-cli/src/commands/test_llm_band.rs` — 0 hits → 1. Fixed in `PRREV-012`. | §3.A, §4.1, §6.3 |
 | **D8** | **Merging two repair lanes created a dead validation branch** that `bats` could not see. `PRREV-008` and `PRREV-009` independently implemented "`duplication_hits` must be an array"; the earlier check is a strict superset and returns 129 lines sooner, so no receipt could reach the later one. 112 fixtures passed straight over it; only `mutate-guard.sh` saw it (`reject-50-drop` SURVIVED, 183/184 = 99.46%, a §7 blocking failure). | `PRREV-011` mutation sweep (F8) | **Removed, with a comment pointing 129 lines up.** It is the defect F4 exists to detect — two implementations of one rule, each green against its own copy — inside the guard that implements F4. §6.4's argument, demonstrated on itself: **a fixture table cannot find a dead branch; only the mutation set can.** | §6.4 |
 | **D9** | **`README.md` publishes competitor ratios and B4 does not read it.** `da069a25f` published `2.93x Ollama` to `README.md` on the same commit as the book page. A root-level `.md` is outside B4's inclusion list, which the case table already recorded as a KNOWN GAP — written before anyone knew `README.md` carried the claim. | `PRREV-012` backtest (F9) | **OPEN, measured, deliberately not fixed in `PRREV-012`.** A scope change ships with its precision measurement and moves the sibling definition in `check_no_claim_literals.sh` in the same commit, or the two drift silently. The measurement is done — 1 true positive at `da069a25f`, **0** would-be false positives over 1,457 added root-`.md` lines in 300 commits of `origin/main` — so the ticket starts from a number. | §9.3 |
+| **D10** | **Three statements about §3's arms were left describing four consultations after a fifth landed, and one of them refutes the table it sits under.** (a) §6.3 **row 7** reads *"all consultations `not-triggered`"*; its committed fixture has `pmat: consulted` (F3 made it so) **and** `antigravity: consulted` (§3.E.3 makes `not-triggered` illegal on any diff, docs-only included) — so a reviewer building row 7 from the spec builds a receipt the guard rejects, twice. (b) §8's closing paragraph says `vacuous_consultations` *"is enforced for `mutation` and for nothing else (F2)"* while the table cell three lines above it names rows 2, 18 and 31 — **the prose refutes the cell it is describing**, which is D1's exact shape. (c) That same cell credits a *"`pmat` probe"*; the pmat probe is a **shape** probe (absent-or-not-an-array), and pmat has no vacuity rule at all. | reading `PRREV-015` against the committed fixtures before pushing it | **All three corrected, and (c) is corrected by narrowing the claim rather than by adding a rule.** `duplication_hits: []` is a legitimate honest result, so pmat has no vacuity check *by design*; what stands in for one there is `duplication_coverage` — a surface recorded `none` under a `PASS` is refused (rows 23–24). The metric is enforced on **four arms of five**, and the table now says four and names them. Claiming the fifth would have been the cheaper edit and would have put an unenforced rule in the column that exists to show which rules are enforced. | §6.3, §8 |
+| **D11** | **`PRREV-015` would have taken `ci / gate` RED, and its own commit message reported a green tree.** Four defects, none of them visible to `bats tests/pr-review.bats`, which is the suite the ticket ran: (a) §3.E's falsification test was appended **into** `F-PRREV-015`'s body with no `- id:` of its own, giving that one entry two `rule` / `prediction` / `test` / `if_fails` / `mutation` keys; (b) the entry after it re-used the id `F-PRREV-013`, already taken 88 lines up; (c) `check_pr_review_counts.sh --self-test` exited **2, HARNESS-BROKEN** — four of its write-back rows were anchored on the literals `185/185`, `26-row` and `121 tests`, and `PRREV-015` moved every one of those to `215/215`, `35-row` and `149 tests` **without moving the anchors**, so four mutations matched nothing; (d) the contract's `pass_criteria` said *"All 11 falsification tests"* over 17 entries — and this one was **already RED on the branch before `PRREV-015` touched it**: at `f609ba5b9` it read 11 over **15**, and `cargo test -p aprender-contracts --test validate_contracts` was failing `contract_data_integrity` on that single line. The epic's own contract had been failing a `ci / gate` step for two tickets. | re-running the guards `ci / gate` runs, against the committed tree, before pushing | **All four fixed.** (a) and (b) are one `- id:` line and one renumber, and they are the load-bearing pair: `pv validate` exits **1** on them, and `cargo test -p aprender-contracts --test validate_contracts` goes from **9 passed / 1 failed to 7 passed / 3 failed** — measured in both directions, so this was a CI-visible RED and not a style note. (c) the four anchors now read their value from the same derivation the check uses, exactly as `stale_qrows` did after the identical drift one table earlier, and the self-test's own `13/13` tally is **counted** rather than stated. (d) `pass_criteria` reads 17 and `validate_contracts` goes **9 passed / 1 failed → 10 passed / 0 failed**, that one line having been the whole of the failure; and **`falsification_tests` joins the derived-count table** — the guard counts `- id:` entries inside the `falsification_tests:` block, so it cannot drift again. Its first draft counted the prefix `F-PRREV-` instead of the block, and the `tree-grew-a-falsifier` row went GREEN against an added entry: a universe built from the wrong side, caught by its own polarity row. | §6.3, §6.4 |
+| **D12** | **§3.E.2 quoted a count of a list this repository does not own, and it went stale within the day.** *"`agy models` prints **fourteen** ids"* was a real measurement. Re-run hours later on the same box it printed **eleven** — the three `gemini-3.5-flash-*` ids gone. Nothing was wrong with the measurement; what was wrong is stating a **vendor-side, server-fetched catalogue size** in the register this spec reserves for facts a reader can re-derive from the tree. | re-running `agy models` while checking `PRREV-015` | **The count is withdrawn as a claim and kept as a dated observation of both runs.** No rule reads it — `ARM_E_SAME_FAMILY_RE` matches `claude\|anthropic\|opus\|sonnet\|haiku`, never a list length — and the property that is actually load-bearing, *`claude-*` ids are in the catalogue*, held in both runs. The case table keeps the **union**: an id the vendor has pruned is still an id a stale script can pass, and shrinking the table whenever the vendor shrinks theirs would narrow the one rule here whose false negative is invisible. **`scripts/check_pr_review_receipt.sh`'s header comment still records the fourteen-id run and is deliberately NOT edited** — it is dated and true as taken, and editing the guard would invalidate a `guard_mutation_score` measured against those exact bytes. §6.4's rule cuts both ways. | §3.E.2, `arm-e-model-cases.tsv` |
+
+**D10, D11 and D12 were all found by re-running things — guards, and the tool itself — not
+by re-reading the diff**, and that is the only claim being made for them. They are **not** evidence that §5's author/reviewer
+separation was exercised: the reviewer here shares the author's model family, which is
+precisely the objection §3.E exists to answer, and answering it requires §3.E to *run*
+rather than to be specified. What D11 does demonstrate is narrower and still worth writing
+down: **a suite that is green is not a tree that is green.** `bats tests/pr-review.bats`
+passed 149/149 over a tree on which `pv validate` exited 1, `check_pr_review_counts.sh
+--self-test` exited 2, and two more of `validate_contracts`' ten tests had gone red — three
+of `ci / gate`'s own steps, none of them the one that had been run.
 
 ---
 
@@ -295,14 +309,27 @@ thinking_tokens 752, cache_read_tokens 8142, total_tokens 21740 }`.
 
 **§3.E.2 `--model` is not optional, and this is the arm's correctness property.**
 
-`agy models` prints **fourteen** ids, and **two of them are Claude**:
+`agy models` prints a list **two of which are Claude**. Measured 2026-08-31, in two runs
+hours apart on the same box:
 
 ```
-gemini-3.7-flash-{high,medium,low}   gemini-3.6-flash-{high,medium,low}
-gemini-3.5-flash-{high,medium,low}   gemini-3.1-pro-{high,low}
-claude-sonnet-4-6                    claude-opus-4-6-thinking
-gpt-oss-120b-medium
+run A (14 ids)                          run B (11 ids)
+gemini-3.7-flash-{high,medium,low}      gemini-3.7-flash-{high,medium,low}
+gemini-3.6-flash-{high,medium,low}      gemini-3.6-flash-{high,medium,low}
+gemini-3.5-flash-{high,medium,low}      —  gone
+gemini-3.1-pro-{high,low}               gemini-3.1-pro-{high,low}
+claude-sonnet-4-6                       claude-sonnet-4-6
+claude-opus-4-6-thinking                claude-opus-4-6-thinking
+gpt-oss-120b-medium                     gpt-oss-120b-medium
 ```
+
+**The count is the vendor's, not ours, and it moved within a single day** — the three
+`gemini-3.5-flash-*` ids were gone between the two runs. So a *count* of that list is not a
+fact about this repository and is not stated as one anywhere a check reads; what is stable,
+and what the rule actually reads, is that **`claude-*` ids are in it**. The case table
+(`tests/fixtures/pr-review/arm-e-model-cases.tsv`) keeps the union of both runs, because an
+id that disappears from the catalogue is still an id a stale script may pass, and this is
+the one rule here whose false negative is invisible, so it errs wide.
 
 **agy is a harness, not a model.** Run with `--model` omitted, or pointed at a Claude id,
 §3.E is the primary reviewer's own model family reviewing itself — while every field a
@@ -337,6 +364,16 @@ hardest case: `pmat: not-triggered` is illegal only on a diff carrying a code fi
 There is no diff shape a second opinion is not owed on.
 
 **§3.E.4 Three states, and a timeout is `unavailable`.**
+
+These are §3.0's rows, not a private vocabulary — the same three states in the same
+three-column shape, so a reader compares arms instead of learning a fifth dialect. The
+correspondence is exact: *consulted, found nothing* is §3.0 row 1; *consulted, found
+something* is row 2; *could not consult* is row 3. Row 4, *not triggered*, **has no
+counterpart here**, and that is the whole content of §3.E.3. §3.B's `no-authority-found` is
+row 1 wearing a name that fits a document corpus; for a reviewing agent the equivalent
+record is `findings: []` beside a balanced all-zero ledger — a positive statement that agy
+looked and raised nothing, distinguishable in the artifact from `unreachable`, which is the
+only property §3.0 actually asks for.
 
 | what happened | receipt | verdict effect |
 |---|---|---|
@@ -618,7 +655,7 @@ Every row a committed fixture under `tests/fixtures/pr-review/`, exercised by `b
 | 4 | comparative claim `grounding: cited`, no comparator command/hash | RED | B4 |
 | 5 | `pmat.status: unreachable`, `verdict: PASS` | RED | B1 |
 | 6 | `pmat.status: unreachable`, `verdict: DEGRADED` | **GREEN** | — |
-| 7 | honest receipt, docs-only PR, all consultations `not-triggered` | **GREEN** | — |
+| 7 | honest receipt, docs-only PR: `pmat` and `antigravity` consulted, the other three `not-triggered` | **GREEN** | — |
 | 8 | `reviewer_actor == author_actor` | RED | B2 |
 | 9 | `index_commit` not an ancestor of `head_sha`, `verdict: PASS` | RED | B6 |
 | 10 | `base_sha` ≠ `git merge-base origin/main head_sha` | RED | **B1** |
@@ -761,7 +798,7 @@ No threshold below is invented. Each is `instrument → 30 samples → ratchet`.
 | `guard_mutation_score` | killed ÷ attempted on the guard | **100%** | zero — no ratchet, it is a one | §6.4 mutation set |
 | `receipt_presence` | PRs with a valid receipt ÷ PRs merged | **100%** | zero | §6.3, "a missing receipt is RED, not skipped" |
 | `unmarked_claims` | claims with no grounding mark | **0** | zero | **§6.3 row 15** |
-| `vacuous_consultations` | `status: consulted` with `attempted: 0` | **0** | zero | §6.3 rows 2, 18 and **31**; the `crux`/`pmat` probes |
+| `vacuous_consultations` | `status: consulted` having invoked nothing | **0** | zero | §6.3 rows 2, 18 and **31**, plus the `crux-consulted-over-nothing` probe — **four arms of five; `pmat` is exempt by design, see below** |
 | `arm_e_actionable_rate` | §3.E findings the author acted on ÷ §3.E findings posted | **record only** | after 30 PRs carrying a §3.E consultation, floor at measured − 5pp; **also the promotion gate** — §3.E cannot enter the blocking tier before it | live PRs; `antigravity.findings[]` |
 | `arm_e_agreement_rate` | `agreed ÷ (agreed + agy_only + primary_only + contradicted)` | **record only** | none until 30 samples; a *high* value is not automatically good — see below | §3.E.7's ledger, §6.3 rows 32–33 |
 | `arm_e_contradiction_rate` | `contradicted ÷ (agreed + agy_only + primary_only + contradicted)` | **record only** | none until 30 samples | §3.E.7's ledger; the `arm-e-ledger-unbalanced` probe |
@@ -799,7 +836,7 @@ are 3.5× the reported total. So all five fields are recorded, and any `cost_per
 figure states which numerator it used. This is the `2.93× Ollama` failure in miniature: a
 number with a plausible name, quoted by people who never opened the artifact behind it.
 
-**Every metric names what exercises it (D4).** v2's `unmarked_claims = 0` had no fixture at all: rows 3, 11 and 12 covered an empty `source`/`excerpt`, an empty `failure_scenario` and a digest mismatch, and not one of them covered a result with no grounding mark. A metric with no fixture reads as exercised when nothing exercises it — which is this table's own `vacuous_consultations` defect, applied to this table. §6.3 row 15 closes it. The column stays so the next unfixtured metric is visible on sight rather than found by building it: `vacuous_consultations`'s own entry now shows, in the column, that it is enforced for `mutation` and for nothing else (F2).
+**Every metric names what exercises it (D4).** v2's `unmarked_claims = 0` had no fixture at all: rows 3, 11 and 12 covered an empty `source`/`excerpt`, an empty `failure_scenario` and a digest mismatch, and not one of them covered a result with no grounding mark. A metric with no fixture reads as exercised when nothing exercises it — which is this table's own `vacuous_consultations` defect, applied to this table. §6.3 row 15 closes it. The column stays so the next unfixtured metric is visible on sight rather than found by building it — and `vacuous_consultations` is where it earned its keep twice. At v2 the column read *`mutation` only, see F2*, and that was true. `PRREV-009` closed F2 for `cuda` and `crux` and `PRREV-015` closed it for `antigravity`, **and the sentence describing the column was left at v2's answer until D10 — a line of prose refuting the cell three rows above it, which is D1's shape in §8 instead of §7.** The column now reads four arms of five and names them. **`pmat` is the fifth and is exempt on purpose, not by omission:** `duplication_hits: []` is a legitimate honest result, so there is no count whose zero means *invoked nothing*. What stands in for vacuity there is `duplication_coverage` — a surface or region recorded `none` may not sit under a `PASS` (§3.A, rows 23–24). Writing *five* in that cell would have been one character cheaper and would have put an unenforced rule in the column whose whole job is to show which rules are enforced.
 
 ---
 
@@ -948,6 +985,9 @@ been shown to work. That measurement is `arm_e_actionable_rate`, and it needs 30
 | §7 (v2) | B5 blocking with no producer and no metric | **Closed — producer + metric, and advisory meanwhile** (D3). §3.C.2 emits it (`PRREV-011`); §7.1 defines what an unaccruing sample means so the admission rule applies in both directions. |
 | §8 (v2) | `unmarked_claims = 0` with no fixture | **Closed — row 15** (D4). Every §8 row now names what exercises it. |
 | §9 step 7 | does the design pass its own acceptance test? | **Closed — NO, 1 of 3** (D5, §9.1). Not enabled. F1–F4 and a re-run (`PRREV-014`) first. |
+| §6.3 / §8 (`PRREV-015`) | three descriptions of §3's arms left at four consultations | **Closed** (D10). Row 7's line now matches its own fixture; `vacuous_consultations` reads four arms of five and names `pmat`'s exemption instead of overclaiming a probe. |
+| §6.4 / the contract (`PRREV-015`) | a green `bats` run over a tree three `ci / gate` steps would have failed | **Closed** (D11). `pv validate`, `validate_contracts` and `--self-test` are all green, and `falsification_tests` joins the derived-count table so the count that was red for two tickets cannot drift again. |
+| §3.E.2 (`PRREV-015`) | a vendor-side catalogue size quoted as a measured property | **Closed — withdrawn as a claim, kept as a dated observation** (D12). No rule reads a list length; the case table keeps the union of both runs. |
 
 ---
 
@@ -996,6 +1036,7 @@ the label-by-intent defect in the one place a human actually reads. **`advisory`
 literally**, so nobody reads an agy finding as a merge blocker (§3.E.6). And the divergence
 counts are on the line rather than only in the receipt: a disagreement that has to be dug out
 of a JSON file is a disagreement that gets resolved in the primary's favour by default.
+
 ---
 
 ## §13 Autonomous merge on quorum
