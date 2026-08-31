@@ -1161,7 +1161,10 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 /// Contract: apr-cpu-q4k-routing-v1.yaml
 /// Loading path: MappedAprModel::from_path → OwnedQuantizedModel::from_apr → run_cpu_server.
 /// APR files from GGUF/SafeTensors import already contain Q4K tensors, so this avoids
-/// the slow AprTransformer F32 matmul path (9.5 → ~28 tok/s).
+/// the AprTransformer F32 matmul path, which dequantizes every weight to F32
+/// before each matmul. The throughput gap that motivated this route was measured
+/// on one host and never written to a receipt, so it is not restated here as a
+/// number a reader would take for a current measurement.
 #[cfg(feature = "inference")]
 fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()> {
     use realizar::apr::MappedAprModel;

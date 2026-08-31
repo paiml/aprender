@@ -1218,8 +1218,10 @@ mod cuda_silent_fallback_tests {
     /// The rejection used `Err(_)` and returned a bare `false`. Its caller
     /// (gguf_gpu_generate.rs:303) can only convert that into `Err(Box::new(model))`
     /// for CPU fallback, so the reason had nowhere to go. Observed on an RTX 4090:
-    /// CUDA initialises, the run silently ends on CPU at ~20 tok/s instead of ~400,
-    /// and nothing says why even under --verbose.
+    /// CUDA initialises, the run silently finishes on CPU, and nothing says why
+    /// even under --verbose. The two throughputs that made the gap obvious are
+    /// not restated here -- no receipt carries them, and the paragraph below
+    /// already gives the consequence in the beat's own recorded terms.
     ///
     /// That matters beyond ergonomics: throughput measured after a silent fallback
     /// is a fabrication. The Pillar-4 decode beat reports `ratio_median=0.070x` and

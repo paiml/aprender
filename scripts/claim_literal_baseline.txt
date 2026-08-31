@@ -87,7 +87,6 @@ crates/apr-cli/src/commands/benchmark.rs:438
 crates/apr-cli/src/commands/qa.rs:147
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:362
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:363
-crates/apr-cli/src/commands/serve/handlers.rs:1160
 crates/apr-cli/src/commands/serve/handlers_include_01.rs:4
 crates/apr-cli/src/commands/test_llm.rs:15
 crates/apr-cli/src/commands/test_llm.rs:18
@@ -135,7 +134,6 @@ crates/aprender-serve/src/gguf/cuda/speculative.rs:246
 crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized_02.rs:25
 crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized_02.rs:26
 crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe_gpu.rs:24
-crates/aprender-serve/src/infer/inference_result.rs:1192
 crates/aprender-serve/src/infer/qwen3_moe_generate.rs:21
 crates/aprender-serve/src/lib.rs:401
 crates/aprender-serve/src/safetensors_cuda.rs:4
