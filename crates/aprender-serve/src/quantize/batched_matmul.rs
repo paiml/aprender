@@ -6,10 +6,23 @@
 //! vector against the whole weight tensor. Prefill therefore ran the decode
 //! kernel once per prompt token, and a 7B Q4_K_M model streams ~4.4 GB of
 //! weights from RAM on every one of those calls. Measured on `lambda`
-//! (48-core x86_64, `qwen2.5-coder-7b-instruct-q4_k_m.gguf`, 513-token prompt):
-//! prefill **8.61 tok/s** against decode **7.76 tok/s** — a ratio of 1.11,
-//! i.e. prefill *was* decode. llama.cpp on the same class of box reaches
-//! 53.8-57.5 tok/s prefill because it batches.
+//! (48-core x86_64, `qwen2.5-coder-7b-instruct-q4_k_m.gguf`, 513-token prompt),
+//! prefill came out at the decode rate — i.e. prefill *was* decode.
+//!
+//! THE TWO RATES AND THEIR RATIO ARE IN THE RECEIPT, NOT HERE. They are the
+//! `prefill_tok_s`, `decode_tok_s` and `ratio` columns of
+//! `evidence/perf-2787/baseline-origin-main.csv` (row `rep=0`, taken on
+//! origin/main a866988e4, before this change); the host, model, prompt shape
+//! and the load the box was under are in `evidence/perf-2787/provenance.txt`.
+//! A figure typed into a doc comment is a claim a `cargo doc` reader takes as a
+//! measurement, and nothing can re-derive it or notice it going stale — which
+//! is what `scripts/check_no_claim_literals.sh` bans. Citing the receipt keeps
+//! the measurement and drops the unbacked literal.
+//!
+//! llama.cpp does not have this shape on the same class of box, because it
+//! batches its prefill — which is what this module makes apr do. No llama.cpp
+//! figure is quoted here: this branch measured none, and importing a
+//! third-party number would be the same defect with a better provenance story.
 //!
 //! # What it does
 //!
