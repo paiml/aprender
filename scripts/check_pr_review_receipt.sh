@@ -788,7 +788,7 @@ validate_receipt() {
       || reject B1 "consultations.antigravity is not-triggered, but S3.E's trigger is unconditional on every PR exactly as S3.A's is; a shape trigger would exempt the small diffs that look obvious, which is every PR in S9's spine" || return 1
 
     if [ "$ag_st" = "consulted" ]; then
-      local ag_attempted ag_ident ag_usage ag_div ag_nfind ag_sum
+      local ag_attempted ag_out ag_ident ag_usage ag_div ag_nfind ag_sum
 
       # --- vacuity. The rule S8 fixes at zero, applied to the fifth arm. ----
       # `attempted` is the number of agy INVOCATIONS this consultation made. Same
@@ -800,6 +800,44 @@ validate_receipt() {
       esac
       [ "$ag_attempted" -gt 0 ] \
         || reject B1 "antigravity.status is consulted with attempted=0; a consultation that invoked nothing is DEGRADED, not clean, exactly as mutation.attempted=0 and cuda.queries=[] are (S8 vacuous_consultations = 0)" || return 1
+
+      # --- rc 0 IS NOT A REVIEW. THE ARTIFACT IS. --------------------------
+      # MEASURED, 2026-08-31, running S3.E step 3's own documented invocation
+      # verbatim: a tool needed the `command` permission, headless print mode cannot
+      # prompt for it, and agy AUTO-DENIED it. What it then reported was
+      #
+      #     rc 0   .status "SUCCESS"   .response ""   num_turns 1
+      #     and NO .structured_output key at all
+      #
+      # with the only true account of the run on STDERR ("no output produced - a tool
+      # required the \"command\" permission that headless mode cannot prompt for, so it
+      # was auto-denied"). A failure that exits 0 is the defect class this repository
+      # has closed six times in one session - an EPIPE-inverted grep, a chown
+      # swallowing errors, a timeout naming no step, a `sed` draining its sibling's
+      # stream, a self-test satisfied by its own vacuity floor, five make targets
+      # claiming CI. Here it arrives in the arm whose entire job is to be a second
+      # opinion, and recorded as `consulted` it is a review that never happened,
+      # counted as one.
+      #
+      # NOTE WHICH LABEL LIED. S3.E.4 already refuses `.status != SUCCESS` as a
+      # liveness signal, on a run that returned a GOOD review under `.status: ERROR`.
+      # This is the OTHER polarity, measured: `.status: SUCCESS` over an EMPTY run.
+      # Both directions are now measured wrong, so the rule cannot be repaired by
+      # reading `.status` more carefully - only by reading the ARTIFACT.
+      #
+      # So `consulted` carries the AVAILABILITY TEST'S OWN RESULT and not the exit
+      # code: the three conjuncts of S3.E.4's test, each recorded as a boolean. The
+      # guard still never sees agy's JSON (S3.E.9) - what it refuses is a receipt
+      # whose `consulted` claim contradicts the test the same receipt reports.
+      ag_out=$(jq -r '.predicate.consultations.antigravity.output_check as $o
+          | if ($o | type) != "object" then "output_check is not an object"
+            else (["structured_output_present","reviewed","schema_valid"]
+                  | map(. as $k | select((($o | has($k)) | not)
+                        or ((($o | getpath([$k])) | type) != "boolean")
+                        or (($o | getpath([$k])) != true)))
+                  | join(", ")) end' "$rcpt")
+      [ -z "$ag_out" ] \
+        || reject B1 "antigravity.status is consulted but output_check does not record a passing availability test (bad, missing or not true: $ag_out); rc 0 is not a review - measured, agy auto-denied a permission in headless mode and reported rc 0, status SUCCESS, an empty response and NO structured_output, so a consultation recorded from an exit code is a review that never happened counted as one (S3.E.4)" || return 1
 
       # --- WHICH BINARY, AND WHOSE MODEL. ----------------------------------
       # This repository has had four `apr` binaries coexist and a bare invocation

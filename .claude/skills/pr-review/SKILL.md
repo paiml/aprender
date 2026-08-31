@@ -489,20 +489,126 @@ Exit **0** from that predicate means the id is your own family and the receipt w
 mechanism engaged. `model_family: google/gemini` written beside `--model
 claude-opus-4-6-thinking` is `device: GPU` printed by a build with no CUDA in it.
 
-**Residual you must not paper over:** agy's JSON carries no `model` field, so `model_id`
-records what you *requested*, not what answered. Say so; do not claim more.
+#### Step 2b — what this arm can honestly claim about vendor identity. Read this before writing `model_family`.
 
-#### Step 3 — run it, with a timeout that fits a repo-scale review
+**The pin records what was REQUESTED. Nothing in the artifact records what ANSWERED.**
+Both output formats were checked, on 2026-08-31, and neither carries the model:
+
+| format | what comes back | a model anywhere? |
+|---|---|---|
+| `--output-format json` | `conversation_id, status, response, duration_seconds, num_turns, json_schema, structured_output, usage` | **no** |
+| `--output-format stream-json` | `init` (with `conversation_id`, `cwd`, `tools[]`, `permission_mode`), `step_update`, `result` | **no** |
+
+So a silent server-side fallback — `--model gemini-3.1-pro-high` answered by something
+else — leaves **no trace in anything the receipt can quote.** `stream-json` was checked
+precisely because it looked like the place a model id would live; it is not.
+
+**A self-report probe was measured too, and it is not a control.** One extra invocation,
+same box, same day: `--model gemini-3.1-pro-high` answered *"Google Gemini 3.1 Pro"* and
+`--model claude-sonnet-4-6` answered *"Anthropic Claude Sonnet 4.6"* — it discriminates.
+It still cannot close the hole, for a reason no extra care fixes: it is a **claim by the
+thing being identified**, about a **different invocation** than the review. Two calls, two
+routes; the probe attests to the probe's route. Wiring it into the guard would put a
+number in the column that shows which properties are checked, next to a property that is
+not.
+
+**Therefore, stated plainly and not to be softened later: §3.E's cross-vendor property is
+UNVERIFIABLE FROM THE RECEIPT.** The pin is a real control — it stops the *accidental*
+Claude route, which is the likely failure and the one the catalogue invites — and
+`model_id` is a checkable argv value, which is why the guard checks it. What neither
+delivers is evidence that a second vendor answered. **§13.1 makes vendor-distinctness the
+load-bearing property of the quorum and encodes `|distinct vendor| ≥ 2`. That predicate
+reads a producer's assertion, not an artifact, and §13's guarantee is weaker than the
+argument for it assumes.** This is the same shape as a self-asserted `vendor` field failing
+to establish cross-vendor identity: one key signs the whole document, and nothing in it is
+evidence that a second vendor ever ran.
+
+Closing it takes a field agy does not emit, or a second signature from a key bound to the
+second vendor. Until one exists, write `model_family` as the label it is, and do not let
+any sentence downstream read the receipt as proof the arm was cross-vendor.
+
+#### Step 3 — run it in a DISPOSABLE tree, with the prompt and the diff as FILES
+
+**This recipe was run. The one this file used to print was also run, and it reviewed
+nothing while exiting 0.** Both failures below are measured, not anticipated.
 
 ```bash
-"$AGY" -p "$PROMPT" \
+# 1. A disposable copy of the PR head. `git archive | tar -x` gives agy a tree with no
+#    .git, no remotes, no worktree, and no way back to your checkout.
+REVIEW=$(mktemp -d)
+git archive "$HEAD_SHA" | tar -x -C "$REVIEW"
+
+# 2. The diff and the prompt go in as FILES. See "why not -p <the diff>" below.
+git diff "$BASE_SHA" "$HEAD_SHA"                    > "$REVIEW/.pr-review-diff.patch"
+cp .claude/skills/pr-review/agy-review-v1.schema.json "$REVIEW/.pr-review-schema.json"
+cat > "$REVIEW/.pr-review-prompt.md" <<'EOF'
+Review this pull request. The complete merge-base diff is in `.pr-review-diff.patch`
+at the root of this workspace: read that file first, then read whatever source it
+touches. Report findings under the required JSON schema. Every finding carries one of
+the three grounding marks: cited, measured, or asserted.
+EOF
+
+# 3. $OUT MUST BE ABSOLUTE BEFORE THE cd. §4.1 defines it relative
+#    ("evidence/pr-review/$PR/$HEAD_SHA"); redirecting to a relative $OUT after the cd
+#    writes the transcript INTO the disposable tree, and step 4 then deletes the only
+#    record of the run — silently, at rc 0. Same class as everything else on this page.
+OUT=$(cd "$OUT" && pwd)
+
+# 4. Run INSIDE the disposable tree. --dangerously-skip-permissions is safe HERE and
+#    only here: the only directory agy can write is the copy.
+cd "$REVIEW"
+"$AGY" -p "$(cat .pr-review-prompt.md)" \
   --output-format json \
-  --json-schema .claude/skills/pr-review/agy-review-v1.schema.json \
+  --json-schema .pr-review-schema.json \
   --model "$AGY_MODEL" \
   --print-timeout 30m \
+  --dangerously-skip-permissions \
   --add-dir "$PWD" > "$OUT/agy.json" 2> "$OUT/agy.err"
 rc=$?                                  # ON ITS OWN LINE. Never through a pipe.
+cd - >/dev/null && rm -rf "$REVIEW"
 ```
+
+Measured end to end on #2803's real merge-base diff (144 325 bytes, 19 283 files
+extracted): `rc 0`, `status SUCCESS`, `structured_output.reviewed true`,
+`duration_seconds 350`, and `git status` in the real checkout **empty afterwards**.
+
+**Why `--dangerously-skip-permissions`, and why the disposable tree is not optional.**
+Print mode cannot prompt, so a tool needing permission is **auto-denied**. Measured with
+this file's previous recipe, verbatim, on a real checkout:
+
+```
+rc=0                              <- clean
+.status            = "SUCCESS"    <- clean
+.response          = ""           <- empty
+.structured_output   ABSENT       <- there was no review
+usage                21 237 in / 544 out / 21 781 total   <- tokens really spent
+stderr: "no output produced - a tool required the "command" permission that headless
+         mode cannot prompt for, so it was auto-denied."
+```
+
+Only **stderr** told the truth. Note also which tools survive: `view_file` and
+`grep_search` are auto-approved, so a read-only prompt returns a perfectly good review
+and the recipe looks fine — until agy reaches for a command, which is exactly what a
+finding marked `measured` requires it to do. **The flag without the disposable tree is
+the wrong fix**: it hands a second agent write access to your working tree. The
+`git archive` copy is what makes the flag safe, so the two ship together or neither does.
+
+**Why not `-p "$(cat prompt-with-the-diff-inlined)"`.** It dies at `rc 127`,
+`argument list too long`, and the limit is **not `ARG_MAX`** — this box reports
+`getconf ARG_MAX` = 2 097 152 and still fails at 149 KB. The real cap is Linux's
+`MAX_ARG_STRLEN`, 32 pages, on a **single** argument. Bisected here:
+
+| argument bytes | result |
+|---|---|
+| 131 071 | rc 0 |
+| **131 072** | **refused, `argument list too long`** |
+| 144 325 (#2803's diff) | refused |
+
+The exit code is the shell's, not the kernel's — zsh reports **127** (where `agy` itself
+was measured), bash **126** for the same `E2BIG`. Assert the refusal, never the number.
+
+No `ulimit` and no `ARG_MAX` raises it. Any diff past 128 KiB must arrive as a file the
+agent reads — which is what step 2 above does, at a 310-byte prompt.
 
 `--print-timeout` **defaults to `5m0s`** and a repository-scale review will exceed it.
 **A timeout is `unreachable`, never "no findings."** agy fails slowly at least as readily
@@ -527,6 +633,12 @@ run that finished and returned exactly what was asked for. A rule that treats
 consultation that worked — a liveness check that fails closed on a healthy run, which is
 the defect class this whole skill exists to catch, in the step that classifies it.
 
+**AND THE OTHER POLARITY IS ALSO MEASURED, WHICH IS WHAT SETTLES IT.** The auto-denied run
+above reported `.status: "SUCCESS"` over an empty response and no `structured_output` at
+all. So `.status` has now been observed **wrong in both directions** — `ERROR` on a good
+review, `SUCCESS` on no review — and no amount of reading it more carefully repairs that.
+It is a diagnostic. It is not the test.
+
 **The availability test is the artifact, not the label:**
 
 ```bash
@@ -536,7 +648,25 @@ then arm_e_status=consulted; else arm_e_status=unreachable; fi
 
 Record `.status` and `.error` in the receipt as diagnostics — they are worth having — but
 do not let them decide the three-state. Unavailable is: binary absent, `rc != 0`, missing
-or schema-invalid `.structured_output`, `reviewed: false`, unparseable JSON, or timeout.
+or schema-invalid `.structured_output`, `reviewed: false`, unparseable JSON, a permission
+auto-denied in headless mode, or a timeout. **`rc == 0` is on neither side of that line.**
+
+**Then RECORD THE TEST'S OWN RESULT, not the exit code.** The three conjuncts above go
+into the receipt as three booleans, and the guard requires all three true under
+`consulted`:
+
+```yaml
+output_check:
+  structured_output_present: true    # the key existed at all
+  reviewed: true                     # .structured_output.reviewed == true
+  schema_valid: true                 # it validates against agy-review-v1.schema.json
+```
+
+A `consulted` receipt whose `output_check` is absent, non-boolean or false is **REJECTED
+[B1]** (fixture row 36). The honest record of the auto-denied run is row 37: the same
+`exit_code: 0`, the same `agy_status: "SUCCESS"`, the same duration — recorded
+`unreachable`, verdict `DEGRADED`. Those two rows differ in nothing agy reported, only in
+what the receipt claims about it.
 
 The prompt gives agy the merge-base diff (§2) and asks for findings under
 `.claude/skills/pr-review/agy-review-v1.schema.json`. Ask it for the **same three marks** §1 defines — a finding
@@ -685,7 +815,10 @@ one: a pretty-printed Statement is many lines and is rejected as "holds N JSON r
                     "model_id": "gemini-3.1-pro-high",
                     "model_family": "google/gemini",
                     "exit_code": 0, "duration_seconds": 0,
+                    "agy_status": "<.status, a DIAGNOSTIC - measured wrong BOTH ways>",
                     "usage": { "input_tokens": 0, "output_tokens": 0, "total_tokens": 0 },
+                    "output_check": { "structured_output_present": true,
+                                      "reviewed": true, "schema_valid": true },
                     "reverified_by_primary": false,
                     "divergence": { "agreed": 0, "agy_only": 0,
                                     "primary_only": 0, "contradicted": 0 },
@@ -847,8 +980,10 @@ pr-review v2.1.0 | verdict=<V> | consultations: pmat=<s> cuda=<s> crux=<s> mutat
 | receipt=evidence/pr-review/<pr>/<sha>/receipt.intoto.jsonl (L1-self, signed)
 ```
 
-**Name the MODEL, not the tool.** "agy" alone does not say whether the arm was cross-vendor,
-which is the one thing about it a reader needs. **Print `advisory` literally**, so nobody
+**Name the MODEL, not the tool.** "agy" alone does not even say which *family* was asked
+for, which is the first thing a reader needs. It is the **requested** id and not proof of
+what answered — §3.E.2b — so read the line as "this is what was asked for", never as
+"a second vendor reviewed this". **Print `advisory` literally**, so nobody
 reads an agy finding as a merge blocker. And put the divergence counts on the line: a
 disagreement that has to be dug out of a JSON file is one that gets resolved in your favour
 by default.
@@ -892,8 +1027,10 @@ jq -r --slurpfile s "$OUT/findings.sarif" '
     "/receipt.intoto.jsonl (L1-self, signed)"' "$OUT/receipt.intoto.jsonl"
 ```
 
-**The §3.E half of the line names the MODEL, not the tool** — `agy` alone does not say
-whether the arm was cross-vendor, and that is the one thing about it a reader needs (§3.E.2).
+**The §3.E half of the line names the MODEL, not the tool** — `agy` alone does not even say
+which family was asked for, and that is the first thing a reader needs (§3.E.2). It is the
+**requested** id: agy emits no model field in either output format, so the line records
+what was asked for and **not** that a second vendor answered (§3.E.2b).
 `advisory` is a literal, so nobody reads an agy finding as a merge blocker. The divergence
 counts are on the line rather than only in the receipt: a disagreement that has to be dug
 out of a JSON file is one that gets resolved in the primary's favour by default.

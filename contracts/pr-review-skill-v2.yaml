@@ -956,6 +956,80 @@ falsification_tests:
     Both mutants are DERIVED by scripts/mutate-guard.sh from the `reject B<n>` scan, so
     neither has to be remembered when the guard grows.
 
+- id: F-PRREV-018
+  rule: >-
+    a consultation is decided by the ARTIFACT it produced, never by the exit code and
+    never by the label the tool printed
+  prediction: >-
+    A receipt whose `antigravity.status` is `consulted` while `output_check` is absent,
+    is not an object, carries a non-boolean, or carries any of
+    structured_output_present / reviewed / schema_valid as false, is REJECTED [B1]
+    (row 36 and three probes). The SAME agy run - identical exit_code 0, identical
+    agy_status "SUCCESS", identical duration_seconds - recorded `unreachable` under
+    verdict DEGRADED is ACCEPTED (row 37).
+    THE NUMBERS IN BOTH ROWS ARE A TRANSCRIPT, NOT A HYPOTHESIS. S3.E step 3's
+    previously documented invocation, run verbatim against a real checkout on
+    2026-08-31, returned rc 0, .status "SUCCESS", an empty .response, 21 781 tokens
+    genuinely spent, and NO structured_output: a tool required the `command` permission
+    that headless print mode cannot prompt for, and it was auto-denied. The only true
+    account of the run was on stderr. rc 0 is therefore on NEITHER side of the
+    availability line, and `.status` is now measured wrong in BOTH directions - ERROR on
+    a review that was complete (PRREV-015) and SUCCESS on a run that reviewed nothing.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    A review that never happened is recorded as a consultation that found nothing, and
+    the fifth arm - the one whose whole purpose is to be an independent second opinion -
+    reports clean on every PR where a tool permission was denied. That is a failure that
+    exits 0, the class this repository closed six times in one session (an EPIPE-inverted
+    grep that PASSED a safety check on the error, a chown swallowing errors, a timeout
+    naming no step, a `sed` draining its sibling's stream, a self-test satisfied by its
+    own vacuity floor, five make targets claiming CI), arriving in the one artifact
+    nobody re-derives.
+  mutation: >-
+    delete the `output_check` branch from scripts/check_pr_review_receipt.sh - row 36
+    must turn RED. Invert it - row 33, a consulted receipt that SATISFIES the rule, must
+    turn RED. Both mutants are DERIVED by scripts/mutate-guard.sh from the `reject B<n>`
+    scan, so neither has to be remembered. Row 37 is the discrimination arm: without it
+    the rule reads green as "refuse any receipt whose agy exited 0", which would refuse
+    every consultation that worked, because agy returns 0 when it works too.
+
+- id: F-PRREV-019
+  rule: >-
+    a property the artifact cannot carry is not claimed as verified, and the sections
+    that rest on it say so
+  prediction: >-
+    docs/specifications/PR-REVIEW-SKILL-002-v2.md S3.E.2a states that agy emits no model
+    field in EITHER output format, that a self-report probe is rejected as a control, and
+    that S3.E's cross-vendor property is therefore UNVERIFIABLE FROM THE RECEIPT - naming
+    S13.1's two-distinct-vendor predicate as resting on an assertion. S3.E.9 carries the
+    same limit in its list of what the arm does not do.
+    MEASURED 2026-08-31, and this entry is the record of the measurement: `--output-format
+    json` returns conversation_id, status, response, duration_seconds, num_turns,
+    json_schema, structured_output and usage. `--output-format stream-json` returns an
+    `init` event carrying conversation_id, cwd, tools[] and permission_mode, then
+    step_update and result events carrying text, timing and usage. NEITHER carries the
+    answering model. A first-turn self-report DOES discriminate - `--model
+    gemini-3.1-pro-high` answered "Google Gemini 3.1 Pro" and `--model claude-sonnet-4-6`
+    answered "Anthropic Claude Sonnet 4.6" - and is rejected anyway, because it is a claim
+    by the thing being identified about a DIFFERENT invocation than the review.
+  test: >-
+    LIVE-PENDING - no committed guard reads this file's prose. Asserted by review of
+    S3.E.2a and S3.E.9 against the measurements recorded in this entry, exactly as
+    F-PRREV-005 and F-PRREV-006 are for their own claims about this file.
+  if_fails: >-
+    S13.1 keeps calling vendor-distinctness "the load-bearing property" while the
+    predicate that encodes it reads a string the producer wrote, and the spec that would
+    be quoted as the evidence for it is the spec that stayed silent. An unverifiable
+    property treated as verified is the class this repository keeps closing, and a check
+    invented to close it would be worse than the hole, because it reads as coverage.
+  mutation: >-
+    ADDRESSED TO A HUMAN AND NOT TO A GATE, like F-PRREV-005 and F-PRREV-006: delete
+    S3.E.2a's closing ruling and the S3.E.9 bullet, and nothing mechanical goes RED. That
+    is exactly why the entry says LIVE-PENDING in `test:` instead of naming a command it
+    does not have. Re-pin it by re-running `agy --output-format stream-json` and checking
+    the init event for a model field; the day one appears, this entry is dischargeable
+    and the residual can be closed rather than stated.
+
 proof_obligations:
 - type: invariant
   property: >-
@@ -1205,7 +1279,7 @@ qa_gate:
   - a_pr_editing_the_merge_mechanism_cannot_merge_itself
   - every_refusal_path_is_exercised_by_a_committed_fixture
   pass_criteria: >-
-    All 17 falsification tests turn RED against a fixture that violates them and GREEN
+    All 19 falsification tests turn RED against a fixture that violates them and GREEN
     against the honest fixture, through scripts/check_pr_review_receipt.sh, whose own
     positive control (S6.1) must fire first.
 
@@ -1213,11 +1287,15 @@ qa_gate:
     OTHERWISE. At PRREV-001 this file shipped alone and seven of the eight tests were
     LIVE-PENDING. At PRREV-008 five are green and bound to a command — F-PRREV-001,
     -002, -003, -007 through `bats tests/pr-review.bats`, and F-PRREV-008 through
-    `pv validate` — and three remain LIVE-PENDING: F-PRREV-004 needs a precision sample
-    that only reviewed PRs can produce, and F-PRREV-005 / F-PRREV-006 assert properties
-    of THIS FILE that no committed guard reads yet. Everything added since - F-PRREV-009
-    through F-PRREV-017, the last two being S3.E's - is bound to a `bats` command, so all
-    but those same three are bound. The total is deliberately not restated here; it is in
+    `pv validate` — and FOUR remain LIVE-PENDING: F-PRREV-004 needs a precision sample
+    that only reviewed PRs can produce, F-PRREV-005 / F-PRREV-006 assert properties
+    of THIS FILE that no committed guard reads yet, and PRREV-020 adds F-PRREV-019, which
+    asserts a STATED LIMIT - that S3.E's cross-vendor property is unverifiable from the
+    receipt - live-pending for the same reason those two are and not for want of effort:
+    the thing it pins is a sentence, and a prose `test:` never runs. F-PRREV-018, added in
+    the same ticket, IS bound to `bats`. Everything added since - F-PRREV-009
+    through F-PRREV-018 - is bound to a `bats` command, so all
+    but those same four are bound. The total is deliberately not restated here; it is in
     the `All N falsification tests` line above, which is derived and checked.
 
     THE GATE IS STILL NOT ENABLED, and that is deliberate. S9 step 7's backtest found

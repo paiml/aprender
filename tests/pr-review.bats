@@ -514,9 +514,9 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "every S6.3 row, the contract's owed row, and PRREV-008's seven have a fixture" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 35 ] || { echo "expected 35 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E), found $n"; false; }
+  [ "$n" -eq 37 ] || { echo "expected 37 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4), found $n"; false; }
   local i
-  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35; do
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
       || { echo "no fixture directory for row $i"; false; }
   done
@@ -1842,6 +1842,135 @@ land_prior_art_on_main() {
     echo "row 35 differs from row 07 in more than the model id:"
     diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") || true
     return 1; }
+}
+
+@test "S3.E a single argv element is capped at MAX_ARG_STRLEN, not at ARG_MAX" {
+  # THE MEASUREMENT S3.E.1(b)'s RECIPE IS BUILT ON, pinned so it cannot rot into folklore.
+  # The previous invocation inlined the diff with -p "$(cat …)" and died at rc 127,
+  # `argument list too long`, on any non-trivial PR — #2803's merge-base diff is 144 325
+  # bytes. THE OBVIOUS LIMIT IS THE WRONG ONE: `getconf ARG_MAX` reads 2 097 152 on this
+  # box, so a reader who checks it concludes there is room. The real cap is Linux's
+  # MAX_ARG_STRLEN — 32 pages on a SINGLE argument, raised by no ulimit and no ARG_MAX.
+  #
+  # BOTH POLARITIES, because a one-sided test passes on a box where everything fails.
+  # The rejection is what is asserted, NOT a particular exit code: the failing exec is
+  # reported 127 by zsh (where agy itself was measured) and 126 by bash. Pinning one of
+  # them would make this row a test of the shell.
+  local lim=131072 rc_under=0 rc_at=0
+  /bin/true "$(head -c $((lim - 1)) /dev/zero | tr '\0' 'x')" 2>/dev/null || rc_under=$?
+  /bin/true "$(head -c "$lim"       /dev/zero | tr '\0' 'x')" 2>/dev/null || rc_at=$?
+  [ "$rc_under" -eq 0 ] || {
+    echo "expected an argument of $((lim - 1)) bytes to be accepted, got rc=$rc_under"
+    echo "if this box's page size differs, the recipe's file-based prompt is still correct;"
+    echo "re-measure the boundary and update S3.E.1(b) rather than deleting this row."
+    return 1; }
+  [ "$rc_at" -ne 0 ] || {
+    echo "expected an argument of $lim bytes to be REFUSED, got rc=0."
+    echo "the cap this box enforces is larger than MAX_ARG_STRLEN was measured to be;"
+    echo "S3.E.1(b) states 131072 as MEASURED and must be re-measured, not widened."
+    return 1; }
+  # And the number the spec quotes is on the wrong side of it, which is the whole point.
+  [ 144325 -ge "$lim" ] || { echo "#2803's diff no longer exceeds the cap"; return 1; }
+}
+
+@test "S3.E the documented invocation carries the disposable tree and the file prompt" {
+  # A SHAPE GATE OVER PROSE, and it is labelled one: it cannot prove the recipe RUNS,
+  # only that the two fixes are still written down together. They are inseparable —
+  # --dangerously-skip-permissions alone hands a second agent write access to the
+  # working checkout, and the `git archive | tar -x` copy is what makes it safe — so a
+  # future edit that keeps the flag and drops the copy is the dangerous one, and this is
+  # the row that catches it.
+  local skill="$REPO_ROOT/.claude/skills/pr-review/SKILL.md"
+  grep -qF 'git archive "$HEAD_SHA" | tar -x -C "$REVIEW"' "$skill" || {
+    echo "S3.E step 3 no longer extracts the head into a disposable directory"; return 1; }
+  grep -qF -- '--dangerously-skip-permissions' "$skill" || {
+    echo "S3.E step 3 no longer passes --dangerously-skip-permissions; headless print mode"
+    echo "auto-denies tool permissions and returns rc 0 having reviewed nothing"; return 1; }
+  # The diff must reach agy as a FILE. If a future edit inlines it back into -p, the
+  # command dies at rc 127 on every non-trivial PR (row above).
+  grep -qF '.pr-review-diff.patch' "$skill" || {
+    echo "S3.E step 3 no longer passes the diff as a file"; return 1; }
+  # $OUT is RELATIVE in S4.1. The recipe cds into the disposable tree before
+  # redirecting into it, so it must be absolutised first — otherwise the transcript is
+  # written inside the copy and deleted with it, silently, at rc 0. That defect was in
+  # the first draft of this very recipe.
+  grep -qF 'OUT=$(cd "$OUT" && pwd)' "$skill" || {
+    echo "S3.E step 3 redirects to \$OUT after cd-ing away without absolutising it;"
+    echo "the agy transcript would land in the disposable tree and be deleted with it"
+    return 1; }
+  ! grep -qE '^\s*"\$AGY" -p "\$\(git diff' "$skill" || {
+    echo "S3.E step 3 inlines the diff into -p; that is rc 127 past 131072 bytes"; return 1; }
+}
+
+@test "row 36 agy exited 0 and produced nothing, recorded consulted     RED  B1" {
+  # THE ROW THAT EXISTS BECAUSE THIS SKILL SHIPPED THE DEFECT. S3.E step 3's documented
+  # invocation, run verbatim against a real checkout on 2026-08-31, returned rc 0 with
+  # NO structured output: headless print mode cannot prompt for a tool permission, so it
+  # auto-denied one, and reported `.status "SUCCESS"` over an empty `.response`. Read
+  # through the exit code, that is a clean consultation; it is a review that never
+  # happened. A FAILURE THAT EXITS 0 is the class this repository closed six times in
+  # one session, and the fifth arm is where it costs most.
+  assert_row row-36-arm-e-consulted-with-no-usable-output RED B1 \
+    "output_check does not record a passing availability test"
+  # THE REASON IS LOAD-BEARING, exactly as row 32's is. Every other field in this
+  # receipt is honest and generous - attempted 1, real usage, a resolved binary path, a
+  # Gemini model id, a balanced ledger - so if the rejection came from any neighbouring
+  # branch the row would pin nothing and would stay red with the new rule deleted.
+  run "$GUARD" "$FIX/row-36-arm-e-consulted-with-no-usable-output"
+  [[ "$output" != *"attempted=0"* ]] || {
+    echo "row 36 was rejected by the vacuity rule, not by the availability rule:"
+    echo "$output"; return 1; }
+  [[ "$output" != *"OWN model family"* ]] || {
+    echo "row 36 was rejected by the second-vendor rule, not by the availability rule:"
+    echo "$output"; return 1; }
+}
+
+@test "row 37 the SAME rc-0 run, recorded unreachable + DEGRADED      GREEN     [discrimination]" {
+  # Without it the new rule reads green as "refuse any receipt whose agy exited 0" -
+  # which refuses every consultation that WORKED, because agy returns rc 0 then too.
+  # The variable between rows 36 and 37 is not the exit code, the duration, the usage or
+  # the status agy printed: all four are identical, and both are transcripts of the same
+  # measured run. It is what the receipt CLAIMS about them.
+  assert_row row-37-arm-e-rc-zero-recorded-unreachable GREEN
+  # And the two rows really are the same run. If a later edit made row 37 pass by
+  # softening its measurements rather than by its honesty, this comparison goes red.
+  local a b
+  a=$(jq -r '.predicate.consultations.antigravity | [.exit_code, .agy_status, .duration_seconds] | @tsv' \
+      "$FIX/row-36-arm-e-consulted-with-no-usable-output/receipt.intoto.jsonl")
+  b=$(jq -r '.predicate.consultations.antigravity | [.exit_code, .agy_status, .duration_seconds] | @tsv' \
+      "$FIX/row-37-arm-e-rc-zero-recorded-unreachable/receipt.intoto.jsonl")
+  [ "$a" = "$b" ] || {
+    echo "rows 36 and 37 must record the SAME agy run; got:"
+    echo "  36: $a"; echo "  37: $b"; return 1; }
+}
+
+@test "probe an rc-0 consultation missing output_check entirely         RED  B1" {
+  # The absent-field polarity. Row 36 records the test and records it FAILING; this is
+  # the receipt that does not record it at all, which is the shape every pre-PRREV-020
+  # receipt has and the one a reviewer reaches for first. Absent is not passing.
+  assert_probe arm-e-output-check-absent row-07-honest-docs-only-pmat-consulted B1 \
+    "output_check is not an object" \
+    'del(.predicate.consultations.antigravity.output_check)'
+}
+
+@test "probe output_check present but schema_valid false               RED  B1" {
+  # The conjunct that a reviewer is likeliest to fudge: agy answered, the JSON parsed,
+  # `reviewed` is true - and the payload does not validate against the schema it was
+  # asked for. S3.E.4's test is a CONJUNCTION, so one false member fails it, and a
+  # rule that only read `structured_output_present` would accept this.
+  assert_probe arm-e-output-check-schema-invalid row-07-honest-docs-only-pmat-consulted B1 \
+    "not true: schema_valid" \
+    '.predicate.consultations.antigravity.output_check.schema_valid = false'
+}
+
+@test "probe output_check booleans written as strings                  RED  B1" {
+  # `"true"` is not `true`, and a receipt whose availability test is a STRING has
+  # recorded a word rather than a result. Same rule as reverified_by_primary's type
+  # check one branch down, for the same reason: a field that accepts any type accepts
+  # a field that was never computed.
+  assert_probe arm-e-output-check-stringy row-07-honest-docs-only-pmat-consulted B1 \
+    "not true: reviewed" \
+    '.predicate.consultations.antigravity.output_check.reviewed = "true"'
 }
 
 @test "probe antigravity with no recorded model id                    RED  B1" {

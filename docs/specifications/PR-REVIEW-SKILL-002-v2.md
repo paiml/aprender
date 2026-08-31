@@ -1,6 +1,6 @@
 # PR-REVIEW-SKILL-002 — grounded adversarial PR review with a signed receipt
 
-**Status:** v2.4 — amended by its own implementation. Built through `PRREV-001`..`PRREV-015`. `PRREV-015` adds **§3.E**, a fifth consultation and the first arm that gives §5's author/reviewer separation a different *model*, not merely a different session — shipped **advisory**, with zero samples, per §7's own admission rule. §9 step 7 was run three times: **FAILED 1 of 3** (`PRREV-007`, §9.1), **FAILED 2 of 3** (`PRREV-011`, §9.2), **PASSED 3 of 3** (`PRREV-012`, §9.3). See §0.1, §9.1, §9.2, §9.3.
+**Status:** v2.4 — amended by its own implementation. Built through `PRREV-001`..`PRREV-020`. `PRREV-015` adds **§3.E**, a fifth consultation and the first arm that gives §5's author/reviewer separation a different *model*, not merely a different session — shipped **advisory**, with zero samples, per §7's own admission rule. `PRREV-020` then RAN that arm against two real PRs and found it could not review this repository — two invocation defects and a claim about vendor identity the receipt cannot carry (D13, §3.E.1, §3.E.2a). §9 step 7 was run three times: **FAILED 1 of 3** (`PRREV-007`, §9.1), **FAILED 2 of 3** (`PRREV-011`, §9.2), **PASSED 3 of 3** (`PRREV-012`, §9.3). See §0.1, §9.1, §9.2, §9.3.
 **Supersedes:** PR-REVIEW-SKILL-001 (draft, 2026-08-30)
 **Complements:** `dogfood.sh`, `nightly-ux-crux`, the `check_*.sh` guards in `ci.yml`, `pmat comply check`
 **Workflow:** `pmat work add` → branch → PR → `ci / gate`. Contract ships in the same PR as the implementation.
@@ -64,6 +64,7 @@ before it was pushed. All seven are recorded here for the same reason D1–D5 ar
 | **D10** | **Three statements about §3's arms were left describing four consultations after a fifth landed, and one of them refutes the table it sits under.** (a) §6.3 **row 7** reads *"all consultations `not-triggered`"*; its committed fixture has `pmat: consulted` (F3 made it so) **and** `antigravity: consulted` (§3.E.3 makes `not-triggered` illegal on any diff, docs-only included) — so a reviewer building row 7 from the spec builds a receipt the guard rejects, twice. (b) §8's closing paragraph says `vacuous_consultations` *"is enforced for `mutation` and for nothing else (F2)"* while the table cell three lines above it names rows 2, 18 and 31 — **the prose refutes the cell it is describing**, which is D1's exact shape. (c) That same cell credits a *"`pmat` probe"*; the pmat probe is a **shape** probe (absent-or-not-an-array), and pmat has no vacuity rule at all. | reading `PRREV-015` against the committed fixtures before pushing it | **All three corrected, and (c) is corrected by narrowing the claim rather than by adding a rule.** `duplication_hits: []` is a legitimate honest result, so pmat has no vacuity check *by design*; what stands in for one there is `duplication_coverage` — a surface recorded `none` under a `PASS` is refused (rows 23–24). The metric is enforced on **four arms of five**, and the table now says four and names them. Claiming the fifth would have been the cheaper edit and would have put an unenforced rule in the column that exists to show which rules are enforced. | §6.3, §8 |
 | **D11** | **`PRREV-015` would have taken `ci / gate` RED, and its own commit message reported a green tree.** Four defects, none of them visible to `bats tests/pr-review.bats`, which is the suite the ticket ran: (a) §3.E's falsification test was appended **into** `F-PRREV-015`'s body with no `- id:` of its own, giving that one entry two `rule` / `prediction` / `test` / `if_fails` / `mutation` keys; (b) the entry after it re-used the id `F-PRREV-019`, already taken 88 lines up; (c) `check_pr_review_counts.sh --self-test` exited **2, HARNESS-BROKEN** — four of its write-back rows were anchored on the literals `185/185`, `26-row` and `121 tests`, and `PRREV-015` moved every one of those to `217/217`, `35-row` and `151 tests` **without moving the anchors**, so four mutations matched nothing; (d) the contract's `pass_criteria` said *"All 11 falsification tests"* over 17 entries — and this one was **already RED on the branch before `PRREV-015` touched it**: at `f609ba5b9` it read 11 over **15**, and `cargo test -p aprender-contracts --test validate_contracts` was failing `contract_data_integrity` on that single line. The epic's own contract had been failing a `ci / gate` step for two tickets. | re-running the guards `ci / gate` runs, against the committed tree, before pushing | **All four fixed.** (a) and (b) are one `- id:` line and one renumber, and they are the load-bearing pair: `pv validate` exits **1** on them, and `cargo test -p aprender-contracts --test validate_contracts` goes from **9 passed / 1 failed to 7 passed / 3 failed** — measured in both directions, so this was a CI-visible RED and not a style note. (c) the four anchors now read their value from the same derivation the check uses, exactly as `stale_qrows` did after the identical drift one table earlier, and the self-test's own `13/13` tally is **counted** rather than stated. (d) `pass_criteria` reads 17 and `validate_contracts` goes **9 passed / 1 failed → 10 passed / 0 failed**, that one line having been the whole of the failure; and **`falsification_tests` joins the derived-count table** — the guard counts `- id:` entries inside the `falsification_tests:` block, so it cannot drift again. Its first draft counted the prefix `F-PRREV-` instead of the block, and the `tree-grew-a-falsifier` row went GREEN against an added entry: a universe built from the wrong side, caught by its own polarity row. | §6.3, §6.4 |
 | **D12** | **§3.E.2 quoted a count of a list this repository does not own, and it went stale within the day.** *"`agy models` prints **fourteen** ids"* was a real measurement. Re-run hours later on the same box it printed **eleven** — the three `gemini-3.5-flash-*` ids gone. Nothing was wrong with the measurement; what was wrong is stating a **vendor-side, server-fetched catalogue size** in the register this spec reserves for facts a reader can re-derive from the tree. | re-running `agy models` while checking `PRREV-015` | **The count is withdrawn as a claim and kept as a dated observation of both runs.** No rule reads it — `ARM_E_SAME_FAMILY_RE` matches `claude\|anthropic\|opus\|sonnet\|haiku`, never a list length — and the property that is actually load-bearing, *`claude-*` ids are in the catalogue*, held in both runs. The case table keeps the **union**: an id the vendor has pruned is still an id a stale script can pass, and shrinking the table whenever the vendor shrinks theirs would narrow the one rule here whose false negative is invisible. **`scripts/check_pr_review_receipt.sh`'s header comment still records the fourteen-id run and is deliberately NOT edited** — it is dated and true as taken, and editing the guard would invalidate a `guard_mutation_score` measured against those exact bytes. §6.4's rule cuts both ways. | §3.E.2, `arm-e-model-cases.tsv` |
+| **D13** | **§3.E could not review this repository, and the section shipped saying it could.** Three defects, all found by pointing the arm at two real PRs rather than by reading it. (a) **The documented invocation returns `rc 0` having reviewed nothing.** Headless print mode cannot prompt, so a tool needing permission is auto-denied — measured: `rc 0`, `.status "SUCCESS"`, `.response ""`, 21 781 tokens spent, and **no `structured_output`**, with the only true account on stderr. It is conditional, which is worse than broken: `view_file` and `grep_search` are auto-approved, so a read-only prompt returns a good review and the recipe looks right — it fails exactly when agy reaches for a command, which is what a `measured` finding requires. (b) **`-p "$(cat prompt)"` dies at `rc 127`** on any non-trivial PR; #2803's merge-base diff is 144 325 bytes. (c) **The model was pinned but what answered is unrecordable**, and §3.E.2's one-line residual was doing the work of a bound on §13. | running §3.E against #2800 and #2803 (`PRREV-020`) | **(a) and (b) fixed, (c) settled by measurement and stated as a limit.** (a) The invocation now extracts the head with `git archive \| tar -x` into a disposable directory and runs there under `--dangerously-skip-permissions`; the flag and the throwaway tree are **inseparable** — alone the flag hands a second agent write access to the working checkout — and `git status` was verified empty after a full run. `rc 0` is now on neither side of the availability line, the receipt records the test's own three booleans, and rows 36–37 are the same measured run recorded dishonestly and honestly. (b) The cap is **`MAX_ARG_STRLEN`**, not `ARG_MAX`: `getconf ARG_MAX` reads 2 097 152 on the same box, and the bisected boundary is 131 072 bytes on a single argument. The diff arrives as a file; the prompt is 310 bytes. (c) `stream-json` was checked and carries no model either; a self-report probe discriminates and is **rejected as a control**, being a claim by the identified thing about a different invocation. §3.E.2a now says the cross-vendor property is unverifiable from the receipt, and that §13.1's `\|distinct vendor\| ≥ 2` therefore rests on an assertion. **And the fix's own first draft carried the same class of defect:** §4.1 defines `$OUT` relative, the new recipe `cd`s into the disposable tree before redirecting into `$OUT`, and step 4 `rm -rf`s that tree — so the only record of the consultation would have been deleted, silently, at `rc 0`. Caught by reading the recipe back, not by any check; `$OUT` is absolutised before the `cd` and the doc-shape row asserts it. | §3.E.1, §3.E.2a, §3.E.4 |
 
 **D10, D11 and D12 were all found by re-running things — guards, and the tool itself — not
 by re-reading the diff**, and that is the only claim being made for them. They are **not** evidence that §5's author/reviewer
@@ -282,18 +283,67 @@ model family, a separate process with its own tools and its own filesystem view.
 §9.3 records that §5's separation "has still never been exercised on this epic" — all four
 PRs of the backtest spine carry `reviews=0, comments=0`. §3.E is the arm that exercises it.
 
-**§3.E.1 The invocation.**
+**§3.E.1 The invocation, and the two ways the first one could not review this repository.**
 
 ```bash
 AGY=$(command -v agy) || { record unavailable; exit; }   # resolved, never bare, never hardcoded
 "$AGY" --version                                          # recorded verbatim into the receipt
-"$AGY" -p "<review prompt>" \
+
+REVIEW=$(mktemp -d)                                       # a DISPOSABLE copy of the head
+git archive "$HEAD_SHA" | tar -x -C "$REVIEW"             # no .git, no remotes, no way back
+git diff "$BASE_SHA" "$HEAD_SHA" > "$REVIEW/.pr-review-diff.patch"   # the diff is a FILE
+cp .claude/skills/pr-review/agy-review-v1.schema.json "$REVIEW/.pr-review-schema.json"
+# .pr-review-prompt.md points at the patch file; SKILL.md ships its text.
+OUT=$(cd "$OUT" && pwd)   # S4.1 defines $OUT RELATIVE; after the cd it would be
+cd "$REVIEW"              # written into the copy and deleted with it, at rc 0
+"$AGY" -p "$(cat .pr-review-prompt.md)" \
   --output-format json \
-  --json-schema .claude/skills/pr-review/agy-review-v1.schema.json \
+  --json-schema .pr-review-schema.json \
   --model gemini-3.1-pro-high \
   --print-timeout 30m \
+  --dangerously-skip-permissions \
   --add-dir "$PWD"
 ```
+
+**PRREV-020 rewrote this block after running the previous one. It did not work, and the
+way it failed is the reason §3.E.4 exists.** Both defects were found by pointing the arm
+at two real pull requests, and neither is visible by reading:
+
+**(a) A permission auto-denied in headless print mode returns `rc 0`.** Print mode cannot
+prompt, so a tool needing permission is denied and the run ends. Measured 2026-08-31,
+running **the block this one replaced** — same flags, no disposable tree, no
+`--dangerously-skip-permissions` — verbatim against a real checkout: `rc 0`, `.status "SUCCESS"`,
+`.response ""`, `num_turns 1`, `usage` recording 21 781 tokens genuinely spent — and **no
+`structured_output` key at all**. The only true account of the run was on **stderr**.
+Read through the exit code, that is a clean consultation; it is a review that never
+happened. A failure that exits 0 is the class this repository closed six times in a single
+session, and the fifth arm is where it costs most, because a receipt saying a second
+vendor read the diff is the one artifact nobody re-derives.
+
+The failure is also **conditional**, which is what makes it dangerous rather than merely
+broken: `view_file` and `grep_search` are auto-approved, so a read-only prompt returns a
+good review and the recipe looks correct. It breaks precisely when agy reaches for a
+command — which is what a finding marked `measured` requires.
+
+`--dangerously-skip-permissions` is the fix and **the disposable tree is not separable
+from it**: alone, the flag hands a second agent write access to the working checkout. The
+`git archive | tar -x` copy is what makes it safe, so the two ship together or neither
+does. Verified: after a full run, `git status` in the real checkout was empty.
+
+**(b) The diff cannot be an argv element, and `ARG_MAX` is the wrong name for why.** The
+replaced block inlined the prompt with `-p "$(cat …)"`. On #2803 that is *argument list
+too long* at 144 325 bytes of diff. `getconf ARG_MAX` on the same box reads
+**2 097 152**, so a reader checking the obvious limit concludes there is room. The real cap
+is Linux's `MAX_ARG_STRLEN` — 32 pages on a **single** argument, raised by no `ulimit`.
+Bisected: 131 071 bytes accepted, **131 072 bytes refused**. Any non-trivial PR exceeds
+it, so the diff arrives as a file the agent reads, and the prompt itself is 310 bytes. The
+exit code belongs to the shell rather than the kernel — zsh reports 127, bash 126 for the
+same `E2BIG` — so the bats row asserts the refusal and not the number.
+
+Measured end to end on #2803's real merge-base diff — 144 325 bytes, 19 283 files
+extracted: `rc 0`, `SUCCESS`, `structured_output.reviewed true`, `duration_seconds 350`.
+Note the duration against `--print-timeout`'s 5 m default: the working recipe would have
+timed out under it.
 
 `binary_path` is the **output** of that resolution, recorded per run. That is the opposite
 of a hardcoded path: this repository has had four `apr` binaries coexist with a bare
@@ -323,8 +373,14 @@ claude-opus-4-6-thinking                claude-opus-4-6-thinking
 gpt-oss-120b-medium                     gpt-oss-120b-medium
 ```
 
+A **third** run, 2026-08-31 23:14 while PRREV-020 was measuring, printed run B's eleven
+again — and both Claude ids again. That is the third independent confirmation of the only
+property any rule here reads, and the case table is unchanged by it (D12: rows are never
+dropped when the vendor's list shrinks). The transcript is
+`evidence/prrev-020/agy-models-third-run.txt`.
+
 **The count is the vendor's, not ours, and it moved within a single day** — the three
-`gemini-3.5-flash-*` ids were gone between the two runs. So a *count* of that list is not a
+`gemini-3.5-flash-*` ids were gone between the first two runs. So a *count* of that list is not a
 fact about this repository and is not stated as one anywhere a check reads; what is stable,
 and what the rule actually reads, is that **`claude-*` ids are in it**. The case table
 (`tests/fixtures/pr-review/arm-e-model-cases.tsv`) keeps the union of both runs, because an
@@ -345,10 +401,54 @@ delivers nothing §5 does not already have while claiming A5's result. Fixture r
 row 7 with that one token changed; the pattern ships a 22-row must-match/must-not-match
 table built from `agy models`' actual output, not from the pattern's own vocabulary (F5).
 
-**The residual, stated:** agy's JSON output carries no `model` field, so the receipt
-records what was **requested**, not what answered. A silent server-side fallback would not
-appear in the artifact. That is a real hole and it is named here rather than papered over;
-closing it needs a field agy does not currently emit.
+**§3.E.2a What this arm can honestly claim about vendor identity. The pin is necessary and
+it is not sufficient, and PRREV-020 went looking for the sufficient version before saying so.**
+
+Three candidate closures were considered; two were **measured**, and both fail.
+
+| candidate | result |
+|---|---|
+| `--output-format json` carries the answering model | **no.** Keys are `conversation_id, status, response, duration_seconds, num_turns, json_schema, structured_output, usage` |
+| `--output-format stream-json` carries it | **no.** Measured 2026-08-31: the `init` event carries `conversation_id`, `cwd`, `tools[]` and `permission_mode`; `step_update` and `result` carry text, timing and usage. No model, in any event |
+| a first-turn self-report probe | **discriminates, and is still not a control** — see below |
+
+`stream-json` was checked precisely because it is the plausible place for a model id, and
+the answer is not "it was inconvenient to parse": the field is not emitted. So a silent
+server-side fallback — `--model gemini-3.1-pro-high` answered by something else — leaves
+**no trace in anything the receipt can quote**.
+
+The self-report probe does work as far as it goes. Measured, one extra invocation per
+model, same box, same day: `--model gemini-3.1-pro-high` answered *"Google Gemini 3.1
+Pro"*; `--model claude-sonnet-4-6` answered *"Anthropic Claude Sonnet 4.6"*. It is
+nevertheless **rejected as a control**, for a reason no amount of care repairs: it is a
+claim by the thing being identified, about a **different invocation** than the review —
+two calls, two routes, and the probe attests to the probe's. Wiring it into the guard would
+put a green field in the column that shows which properties are *checked*, beside a
+property that is not. **A check invented to close an unverifiable property is worse than
+the acknowledged hole, because it reads as coverage.**
+
+**So, stated plainly and not to be softened by a later edit: §3.E's cross-vendor property
+is UNVERIFIABLE FROM THE RECEIPT.** What the pin does buy is real and worth the rule — it
+stops the *accidental* Claude route, which is the likely failure given that `agy models`
+offers two Claude ids, and `model_id` is a checkable argv value, which is why the guard
+checks it and why row 35 exists. What it does not buy is evidence that a second vendor
+answered.
+
+**This is a bound on §13, not a footnote to §3.E.** §13.1 makes vendor-distinctness *the*
+load-bearing property of the quorum — *"the predicate encodes `|distinct vendor| ≥ 2`
+rather than `|members| ≥ 2`"* — and that predicate reads a producer's assertion. **§13's
+safety argument is therefore weaker than §13.1's phrasing assumes**, and this spec says so
+in the section that would otherwise be quoted as the evidence for it. The forged-receipt
+work reaches the same wall from the other side: a self-asserted `vendor` field cannot
+establish cross-vendor identity, because one key signs the whole document and nothing in it
+is evidence that a second vendor ever ran.
+
+Closing it needs one of: a model field agy does not currently emit, or a second signature
+from a key bound to the second vendor in a committed keyring — at which point
+`|distinct vendor| ≥ 2` is a statement about two keys rather than two strings. Both are
+changes to the receipt format and to §4, and neither is made here. Until one is,
+`model_family` is a **label**, and no sentence downstream may read the receipt as proof the
+arm was cross-vendor.
 
 **§3.E.3 Trigger: every PR.** Decided, not offered.
 
@@ -379,7 +479,11 @@ only property §3.0 actually asks for.
 |---|---|---|
 | agy ran, returned structured output, raised nothing | `status: consulted`, `findings: []`, `divergence` all zero | none |
 | agy ran and raised something | `status: consulted`, populated `findings[]` | `FINDINGS` |
-| agy absent, `rc != 0`, missing / schema-invalid `structured_output`, `reviewed: false`, unparseable JSON, **or timed out** | `status: unreachable` + `error` notification in the SARIF run | **`DEGRADED`** |
+| agy absent, `rc != 0`, missing / schema-invalid `structured_output`, `reviewed: false`, unparseable JSON, a permission **auto-denied in headless mode**, or a timeout | `status: unreachable` + `error` notification in the SARIF run | **`DEGRADED`** |
+
+**`rc == 0` is on neither side of that line**, and PRREV-020 had to measure it to believe
+it. The auto-denied run exits 0; the successful run exits 0; the two are told apart only by
+whether the artifact is there.
 
 `not-triggered` is never a legal state for this arm (§3.E.3).
 
@@ -397,6 +501,30 @@ So availability is decided by `rc == 0` **and** a `structured_output` that valid
 against `.claude/skills/pr-review/agy-review-v1.schema.json` with `reviewed: true`.
 `.status` and `.error` are recorded as diagnostics and decide nothing. This is the same
 rule as §3.C.1's — the artifact, not the label — one arm over.
+
+**PRREV-020 measured the other polarity, and that is what closes the argument.** The
+auto-denied run of §3.E.1(a) reported **`.status: "SUCCESS"`** over an empty response and
+no `structured_output` at all. So `.status` is now observed wrong in **both** directions —
+`ERROR` on a review that was complete, `SUCCESS` on a run that reviewed nothing — and no
+rule that reads it more carefully can be right. It is a diagnostic. It is not the test.
+
+**And the test's own result is recorded, because a rule nothing writes down is a rule the
+guard cannot reach.** The guard never sees agy's JSON (§3.E.9), so the three conjuncts
+above go into the receipt as three booleans — `output_check.structured_output_present`,
+`.reviewed`, `.schema_valid` — and `status: consulted` requires all three present, boolean
+and true. Absent is not passing, and `"true"` is not `true`. Fixture row 36 is the
+auto-denied run recorded `consulted` and is refused **B1**; row 37 is *the same run* —
+identical `exit_code`, identical `agy_status`, identical duration — recorded `unreachable`
+under `DEGRADED`, and is accepted. The variable between them is not anything agy reported.
+It is what the receipt claims about it.
+
+What this rule can and cannot do is worth being exact about, since it is a self-reported
+field, like every other field in this block: it refuses a receipt that **contradicts itself** — a
+`consulted` claim beside a recorded failure — and it forces the availability test to be
+performed and written down rather than inferred from `$?`. It does not detect a producer
+that runs no test and writes three `true`s. That bound is the same one §3.E.9 already
+draws for the whole arm, and it is not a reason to skip the field: the receipt that shipped
+this defect recorded `exit_code: 0` **honestly** and drew the wrong conclusion from it.
 
 **A timeout is `unavailable`, never "no findings."** `--print-timeout` defaults to `5m0s`
 and a repository-scale review needs more, so **agy fails slowly at least as readily as it
@@ -456,10 +584,15 @@ antigravity:
   binary_path: "/home/noah/.local/bin/agy"     # what `command -v agy` resolved to
   model_id: "gemini-3.1-pro-high"              # the argv value, CHECKED (§3.E.2)
   model_family: "google/gemini"
-  exit_code: 0
+  exit_code: 0                                 # RECORDED, and it decides NOTHING (§3.E.4)
+  agy_status: "SUCCESS"                        # .status, a diagnostic; wrong in BOTH directions
   duration_seconds: 9.52
   usage: { input_tokens: …, output_tokens: …, total_tokens: …,
            thinking_tokens: …, cache_read_tokens: … }   # agy's own block; ALL FIVE
+  output_check:                                # the availability test's OWN result
+    structured_output_present: true            # all three required true under `consulted`
+    reviewed: true
+    schema_valid: true
   reverified_by_primary: false                 # §3.E.5, and it must be said
   divergence:
     agreed: 0          # agy raised it, the primary raised it too
@@ -514,7 +647,12 @@ bypass is worth more than a blocking one with an unstated closure.**
   as "the second reviewer agreed."
 - It does not verify agy's findings. §1.1's entailment problem applies to them exactly as it
   applies to `cited` excerpts, and remains Phase 3.
-- `model_id` records what was requested, not what answered (§3.E.2).
+- `model_id` records what was requested, not what answered, and **no output format agy
+  offers records what answered** — so the cross-vendor property is unverifiable from the
+  receipt, and §13.1's `|distinct vendor| ≥ 2` rests on an assertion (§3.E.2a). That is
+  the largest thing this arm does not do, and it is the arm's own justification.
+- `output_check` refuses a receipt that contradicts itself; it does not detect a producer
+  that skipped the test and wrote three `true`s (§3.E.4).
 - One agy invocation is one sample of a stochastic process. §8's metrics are the answer, and
   they are record-only until 30 exist — which is the point of shipping this advisory.
 
@@ -684,10 +822,23 @@ Every row a committed fixture under `tests/fixtures/pr-review/`, exercised by `b
 | 33 | the SAME finding, `precision_class: advisory` | **GREEN** | — |
 | 34 | `antigravity.status: not-triggered` on a **docs-only** diff | RED | B1 |
 | 35 | `antigravity.model_id` in the primary reviewer's own model family | RED | B1 |
+| 36 | agy exited **0** with `.status SUCCESS` and **no** `structured_output`, recorded `consulted` | RED | B1 |
+| 37 | the SAME rc-0 run recorded `unreachable`, `verdict: DEGRADED` | **GREEN** | — |
 
 Rows 16–22 are owed by §9.1's F1–F3; rows 23–24 by F4; rows **25–26 by F6 (D6)**. Row 25 is row 16 with **one directory changed**, and until D6 the two verdicts diverged: row 16 RED, row 25 ACCEPTED. Rows 17, 24 and 26 are discrimination arms — without them "block every PR that names a competitor", "reject every receipt that admits a gap" and "block every book page under `examples/`" each read green, and the rule would punish the honest receipt exactly as hard as the silent one.
 
 Rows 6, 7, 14, 17, 24, 26, 27, 30 and 33 are **discrimination cases**. Without them, "refuse every receipt" reads green — the over-reach a discrimination case already caught in PERF-055 and the #2766 delta-gate work.
+
+**Rows 36–37 are PRREV-020, and they are a transcript rather than a hypothesis.** Every
+number in row 36 was taken from one real run of §3.E.1's *previous* invocation: `rc 0`,
+`.status "SUCCESS"`, 21 781 tokens spent, `duration_seconds 6.70`, and no
+`structured_output`. Row 37 is that same run recorded honestly, and the bats case asserts
+the two receipts carry the **identical** `exit_code`, `agy_status` and `duration_seconds` —
+so a later edit cannot make row 37 pass by softening its measurements instead of by its
+honesty. Without row 37 the new rule reads green as *"refuse any receipt whose agy exited
+0"*, which refuses every consultation that worked, since agy returns 0 then too. Row 36's
+case additionally asserts the **absence** of the vacuity and second-vendor reasons, for
+row 32's lesson: a row that can be rejected by a neighbouring branch pins nothing.
 
 **Rows 27–35 are §3.E (PRREV-015), and three of them are discrimination arms for a reason each.**
 Row 27 is what keeps the version gate honest in *both* directions: without it, "require an
@@ -728,7 +879,10 @@ cargo mutants --file scripts/check_pr_review_receipt.sh   # or: scripts/mutate-g
 
 Mechanically flip each validation branch and drop each required-field check. **Target: 100% kill. Surviving mutants are named in the receipt for the PR that adds them.** A mutation score below 100% on the guard blocks — this is the one place §7's narrowness does not apply, because the guard is the thing every other verdict rests on.
 
-**§3.E grew the set 185 → 215**, and six of the twenty-five are **named** rather than derived,
+**§3.E grew the set 185 → 215, and PRREV-020's availability rule grew it to 217** — one
+`reject B1` site, so one `drop` and one `flip`, derived by the scan with nothing to
+remember. The `drop` is killed by row 36 going GREEN; the `flip` by row 33, a consulted
+receipt that satisfies the rule, going RED. Six of the twenty-five are **named** rather than derived,
 because the `drop`/`flip` scan only sees `reject B<n>` sites and three of §3.E's switches are
 not rejections. `arm-e-never-required` and `arm-e-always-required` mutate the version gate in
 **both** directions — a gate mutated in one direction is a gate half-tested — and are killed
@@ -889,7 +1043,8 @@ Recording this in the spec is not optional. A spec whose acceptance test failed 
 | F3, F4 — `pmat` mandatory at the gate; non-Rust sweep + `duplication_horizon` | `PRREV-012` | blocks enablement |
 | F5 — one comparative regex, union list, five-word gap, shared case table | `PRREV-019` | advisory; before B4's first demotion review |
 | re-run §9 step 7 against the same three merged PRs | `PRREV-014` | **is** enablement |
-| §3.E — the second-vendor arm: spec, SKILL steps, contract, guard, rows 27–35, 217/217 | `PRREV-015` | advisory; blocks nothing |
+| §3.E — the second-vendor arm: spec, SKILL steps, contract, guard, rows 27–35, 215/215 | `PRREV-015` | advisory; blocks nothing |
+| §3.E's two invocation defects + the vendor-identity limit: disposable tree, file-borne diff, `output_check`, rows 36–37, 217/217 | `PRREV-020` | advisory; blocks nothing |
 | §3.E.8's stated bypass — `check_pr_review_arm4.sh` requires this PR's receipt to declare the TREE's skill version | `PRREV-018` | before §3.E is promoted out of advisory |
 
 **What the backtest did *not* falsify**, recorded so F1–F5 are not read as a verdict on the whole design: §3.B's path and message triggers discriminated **2/2 must-match and 2/2 must-not-match on real PRs**, including the deliberately over-broad `*cuda*`; the guard's four positive controls fired first on every run, and E1-control proves it is not a guard that reads red by refusing everything either; B6 and the merge-base recomputation behaved exactly as specified throughout; neither comparative regex produced a false positive on 16 real subjects; and pointed at a checkout without `schemas/`, the guard **halted with POSITIVE CONTROL MISFIRED rather than validating** — a control that fired for the wrong reason refused to be evidence.
@@ -1011,7 +1166,7 @@ been shown to work. That measurement is `arm_e_actionable_rate`, and it needs 30
 | Review that "passes" without doing anything | fixture rows 1, 2, 11, 14 | — |
 | Self-review that flatters itself | §5, fixture row 8 | Huang et al. ICLR'24; self-preference bias |
 | Self-review that flatters itself **across sessions of the same model** | §3.E — a different vendor and model family, not a fresh context | §9.3: §5's separation had never been exercised on this epic |
-| A cross-vendor arm that is silently **not** cross-vendor | §3.E.2 — `model_id` recorded as argv and checked; row 35 | `agy models` lists claude-sonnet-4-6 and claude-opus-4-6-thinking |
+| A cross-vendor arm that is silently **not** cross-vendor | §3.E.2 — `model_id` recorded as argv and checked; row 35. **PARTIAL, and §3.E.2a says so:** this catches the *requested* id, not what answered | `agy models` lists claude-sonnet-4-6 and claude-opus-4-6-thinking; no output format agy offers carries the answering model |
 | A second reviewer that fails SLOWLY and reads as clean | §3.E.4 — a timeout is `unreachable`, rows 29–30 | `--print-timeout` defaults to 5m; a repo-scale review needs more |
 | Disagreement resolved silently in the primary's favour | §3.E.7's `divergence` ledger, arithmetic-checked | — |
 | An advisory arm quietly acquiring blocking authority | §3.E.6 — `precision_class: blocking` from §3.E is B1; row 32 | §7's admission rule has zero samples to apply |
@@ -1030,9 +1185,11 @@ pr-review v2.1.0 | verdict=<V> | consultations: pmat=<s> cuda=<s> crux=<s> mutat
 
 `DEGRADED` puts the reason first, before anything else on the line.
 
-**The §3.E line names the MODEL, not the tool**, because "agy" alone does not say whether the
-arm was cross-vendor — that is §3.E.2's whole finding, and a summary that hides it would be
-the label-by-intent defect in the one place a human actually reads. **`advisory` is printed
+**The §3.E line names the MODEL, not the tool**, because "agy" alone does not say which
+family was even asked for — that is §3.E.2's finding, and a summary that hides it would be
+the label-by-intent defect in the one place a human actually reads. **It is the requested
+id and the line means no more than that** (§3.E.2a): read as evidence a second vendor
+answered, the summary would assert exactly the property the receipt cannot carry. **`advisory` is printed
 literally**, so nobody reads an agy finding as a merge blocker (§3.E.6). And the divergence
 counts are on the line rather than only in the receipt: a disagreement that has to be dug out
 of a JSON file is a disagreement that gets resolved in the primary's favour by default.

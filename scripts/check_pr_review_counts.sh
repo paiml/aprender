@@ -181,6 +181,7 @@ SITES='
 mutants|.claude/skills/pr-review/SKILL.md|2|@N@/@N@
 mutants|contracts/binding.yaml|1|@N@/@N@
 mutants|.github/workflows/ci.yml|1|@N@/@N@
+mutants|docs/specifications/PR-REVIEW-SKILL-002-v2.md|1|@N@/@N@
 fixture_rows|.github/workflows/ci.yml|2|@N@-row
 fixture_rows|tests/pr-review.bats|1|@N@ row
 fixture_rows|tests/pr-review.bats|1|-eq @N@ ]
