@@ -2348,3 +2348,55 @@ mod tests_2417 {
         std::fs::remove_dir_all(&dir).ok();
     }
 }
+
+/// `--features wgpu` had NEVER COMPILED, on any host, since the feature was
+/// declared.
+///
+/// `execute_training_wgpu` above is `cfg(all(training, wgpu))` and names
+/// `entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline` and
+/// `entrenar::autograd::wgpu_training::WgpuTrainer`. Both are
+/// `#[cfg(feature = "gpu")]` in aprender-train, whose own default is `["tui"]`
+/// — and apr-cli's `wgpu` feature forwarded nothing to it. Result: E0432 +
+/// E0433, reproduced on aarch64-darwin AND x86_64-linux, so host-independent.
+///
+/// It survived because **no CI job builds `--features wgpu`**: a dark target
+/// cannot regress, because it never worked. These tests run on the DEFAULT
+/// build — they are the part of the gate that does not need the dark target to
+/// be built to notice the edge is missing.
+#[cfg(test)]
+mod wgpu_feature_graph_tests {
+    /// The manifest edge that makes the cfg block above resolvable.
+    ///
+    /// MUTATION TARGET: drop `entrenar?/gpu` from `wgpu = [...]`. That is the
+    /// exact state of `origin/main` at 75b178a93, and this test is RED there.
+    #[test]
+    fn the_wgpu_feature_forwards_the_training_gpu_edge() {
+        let manifest = include_str!("../../Cargo.toml");
+        let line = manifest
+            .lines()
+            .find(|l| l.trim_start().starts_with("wgpu = ["))
+            .expect("apr-cli must declare a `wgpu` feature");
+        assert!(
+            line.contains("entrenar?/gpu") || line.contains("entrenar/gpu"),
+            "`wgpu` does not forward `gpu` to aprender-train, so the \
+             `cfg(all(training, wgpu))` block in this file cannot resolve \
+             `entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline` \
+             (E0432) or `entrenar::autograd::wgpu_training` (E0433). \
+             `wgpu = {line}`"
+        );
+    }
+
+    /// The edge above is only load-bearing while the code still needs it. If
+    /// the entrenar references go away, this test says so instead of leaving a
+    /// feature edge nobody can justify.
+    #[test]
+    fn the_edge_is_still_needed_by_this_file() {
+        let src = include_str!("finetune.rs");
+        assert!(
+            src.contains("entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline")
+                && src.contains("entrenar::autograd::wgpu_training::WgpuTrainer"),
+            "the `entrenar?/gpu` edge in Cargo.toml is justified by these two \
+             paths; if they moved, move the justification with them"
+        );
+    }
+}

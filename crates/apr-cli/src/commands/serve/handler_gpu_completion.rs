@@ -413,20 +413,47 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     // the accelerator engaged reports success and is silent on the failure it
     // exists to make visible — which is #2696's shape exactly.
     let total_layers = u32::try_from(quantized_model.layers().len()).unwrap_or(u32::MAX);
-    let resolved_layers = config.resolve_layers(total_layers)?;
+    let requested_layers = config.resolve_layers(total_layers)?;
+
+    // I-2: the RESOLVED class is the one this run DISPATCHES to, not the one
+    // this build LINKS. The backend used to be `cfg!`-derived and
+    // `resolved_layers` was the request echoed back, so a `--features wgpu`
+    // build printed `resolved=28 (backend=wgpu)` and then served every one of
+    // those 28 layers on the CPU — while its own `/health` said
+    // `compute_mode: "cpu"` in the same process. See `gguf_dispatch_backend`.
+    let backend = super::gguf_dispatch_backend(config.wants_accelerator(), cfg!(feature = "cuda"));
+    let resolved_layers = if backend == "cpu" { 0 } else { requested_layers };
     println!(
-        "gpu-layers: requested={} resolved={resolved_layers} total={total_layers} (backend={})",
+        "gpu-layers: requested={} resolved={resolved_layers} total={total_layers} (backend={backend})",
         config
             .gpu_layers
             .map_or_else(|| "none".to_string(), |r| r.to_string()),
-        if cfg!(feature = "cuda") {
-            "cuda"
-        } else if cfg!(feature = "wgpu") {
-            "wgpu"
-        } else {
-            "cpu"
-        }
     );
+
+    // FAIL CLOSED. An accelerator was asked for and none was reached; serving
+    // anyway would record a cpu run under a receipt that had already announced
+    // a GPU. A refusal costs the operator one flag; a fabricated compute_class
+    // costs the measurement its meaning.
+    if requested_layers > 0 && resolved_layers == 0 {
+        return Err(CliError::FeatureDisabled(format!(
+            "--gpu-layers asked for {requested_layers} of {total_layers} layers on an \n\
+             accelerator, and this GGUF path resolved 0. Nothing was placed on a GPU.\n\
+             \n\
+             This build reaches the wgpu backend only through `--backend wgpu`, which \n\
+             takes a different loader; `--gpu-layers` alone selects the CUDA path, and \n\
+             this build has no CUDA compiled in. Run `apr serve run --list-devices` to \n\
+             see what it can dispatch to.\n\
+             \n\
+             Pick one, deliberately:\n\
+             \n\
+                 apr serve run MODEL --backend wgpu --gpu-layers all   # the wgpu path\n\
+                 apr serve run MODEL --gpu-layers 0                    # an honest CPU run\n\
+                 apr serve run MODEL --no-gpu                          # same, explicitly\n\
+             \n\
+             Refused rather than served, because the alternative is a run that \n\
+             announces a compute class it never achieved (#2696 / PERF-021 I-2)."
+        )));
+    }
 
     #[cfg(feature = "cuda")]
     if config.wants_accelerator() && config.batch {

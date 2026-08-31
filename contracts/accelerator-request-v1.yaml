@@ -1,5 +1,5 @@
 metadata:
-  version: 2.0.0
+  version: 2.1.0
   created: '2026-08-25'
   author: PAIML Engineering
   description: >-
@@ -10,6 +10,14 @@ metadata:
   - aprender#2696 — published binary is CPU-only; --gpu accepted and ignored
   - 'Measured 2026-08-25: 15.7 tok/s decode and 7.5s TTFT on an idle RTX 4090,
     against llama.cpp 158.9, because the request was dropped in silence'
+  - >-
+    v2.1 (2026-08-31, mini / Apple M4): can_dispatch was per-BUILD, not
+    per-DISPATCH. `--gpu-layers all` on a `--features wgpu` build passed the
+    guard, printed `gpu-layers: requested=all resolved=28 total=28
+    (backend=wgpu)`, and served all 28 layers on the CPU — while `/health` in
+    the same process answered `compute_mode: "cpu"`. The wgpu backend has no
+    `--gpu-layers` dispatch on any format; it is reached only by
+    `--backend wgpu`.
 equations:
   accelerator_request_resolves:
     formula: >-
@@ -17,7 +25,11 @@ equations:
     domain: >-
       requested(accel) is (config.gpu AND NOT config.no_gpu) OR
       config.backend in {gpu, cuda, wgpu}; can_dispatch(accel) is
-      cfg!(any(feature = "cuda", feature = "wgpu"))
+      per-DISPATCH, not per-build: backend=wgpu needs cfg!(feature = "wgpu");
+      every other spelling (--gpu, --gpu-layers, --backend cuda|gpu) selects
+      the CUDA dispatch and needs cfg!(feature = "cuda"). The v2.0 definition
+      cfg!(any(cuda, wgpu)) was the defect: it waved a --gpu-layers request
+      through on a wgpu-only build, which has no dispatch for it.
     codomain: Result<(), CliError> — Err(FeatureDisabled) or Ok(())
     invariants:
     - >-
@@ -31,8 +43,19 @@ equations:
       OVERRIDE IS HONOURED. no_gpu AND gpu implies Ok. --no-gpu continues to win,
       as it always did; this is the deliberate-CPU escape hatch the error names.
     - >-
-      CAPABLE BUILDS PASS. can_dispatch implies Ok for every request. A build
-      with the feature is never blocked by its own guard.
+      CAPABLE BUILDS PASS THE REQUESTS THEY CAN DISPATCH. can_dispatch(request)
+      implies Ok. A cuda build is never blocked on --gpu; a wgpu build is never
+      blocked on --backend wgpu. It is NOT "any accelerator linked implies Ok":
+      that reading is what shipped a CPU run under a wgpu banner.
+    - >-
+      THE REPORTED CLASS IS THE DISPATCHED CLASS. The `gpu-layers:` line reports
+      the backend this RUN takes and a resolved count that is 0 whenever that
+      backend is cpu. It is never derived from cfg! — a build-time label answers
+      "what could this binary do", and the operator asked "what did this run do".
+    - >-
+      FAIL CLOSED. requested > 0 AND resolved == 0 implies the serve path returns
+      Err rather than serving. An honest `resolved=0` followed by a CPU run still
+      produces a receipt for a run the operator asked not to have.
     - >-
       THE REMEDY IS REAL. The error names an install command whose feature is
       declared at the facade. aprender#2527 shipped an error naming a rebuild
@@ -112,11 +135,18 @@ proof_obligations:
     forall c: (not requested(c)) => result(c) = Ok
 - type: soundness
   property: >-
-    A build that CAN dispatch never refuses (F-ACCEL-003). Together with the
-    first obligation this makes result a total function of
-    (requested, can_dispatch), with exactly one Err cell.
+    A build that CAN dispatch THE REQUEST NAMED never refuses (F-ACCEL-003).
+    Together with the first obligation this makes result a total function of
+    (requested, can_dispatch(request)), with exactly one Err cell.
   formal: >-
-    forall c: can_dispatch => result(c) = Ok
+    forall c: can_dispatch(request(c)) => result(c) = Ok
+- type: invariant
+  property: >-
+    The reported resolution is a function of the DISPATCH, not of the request
+    and not of the build (F-ACCEL-008). resolved = 0 whenever the dispatched
+    backend is cpu, on every build and for every request.
+  formal: >-
+    forall c: dispatch(c) = cpu => reported_resolved(c) = 0
 kani_harnesses:
 # The predicate is pure boolean logic over four bools — no floats, no loops, no
 # allocation — so this is one of the rare properties genuinely decidable by
@@ -214,6 +244,48 @@ mutation_registry:
     a typo silently becomes CPU, which is silent degradation in miniature
   mutation: make the fallback arm return Ok(Self::None) instead of Err
 
+- id: F-ACCEL-008
+  rule: the reported resolution is the dispatch, never the request read back
+  prediction: >-
+    `gguf_dispatch_backend` returns "cuda" only when the CUDA dispatch is both
+    linked and selected, and "cpu" in the other three cells — including the
+    wgpu-linked one, because `start_gguf_server` has no wgpu dispatch to take.
+    `resolved_layers` is 0 whenever that backend is "cpu".
+  test: 'cargo test -p apr-cli --lib resolved_compute_class_tests'
+  if_fails: >-
+    the receipt claims a compute class the run never reached. Measured on mini
+    2026-08-31: `resolved=28 total=28 (backend=wgpu)` printed by a process whose
+    own /health said `compute_mode: "cpu"`.
+  mutation: >-
+    restore `let resolved_layers = config.resolve_layers(total_layers)?;` —
+    the_reported_resolution_is_not_the_request_read_back must turn RED
+- id: F-ACCEL-009
+  rule: a request that resolved to zero layers stops the run
+  prediction: >-
+    On a build whose GGUF path resolves 0 for a non-zero request, serve returns
+    Err naming `--backend wgpu`, `--gpu-layers 0` and `--no-gpu`, and does not
+    bind a port.
+  test: 'cargo test -p apr-cli --lib resolved_compute_class_tests'
+  if_fails: >-
+    an honest resolved=0 is printed and the CPU run proceeds anyway, so the
+    receipt exists and only its banner was corrected
+  mutation: >-
+    delete the `if requested_layers > 0 && resolved_layers == 0` branch —
+    an_unreachable_accelerator_request_fails_closed must turn RED
+- id: F-ACCEL-010
+  rule: the accelerated build must COMPILE before any of this can be observed
+  prediction: >-
+    apr-cli's `wgpu` feature forwards `entrenar?/gpu`, so `cargo check -p
+    apr-cli --features wgpu` succeeds.
+  test: 'cargo test -p apr-cli --lib wgpu_feature_graph_tests'
+  if_fails: >-
+    `--features wgpu` does not compile (E0432 + E0433), every rule above is
+    unobservable on the only build that can exercise it, and the host that needs
+    it has no binary. Reproduced on aarch64-darwin AND x86_64-linux at
+    75b178a93, so host-independent.
+  mutation: >-
+    drop `entrenar?/gpu` from the wgpu feature — that IS origin/main at
+    75b178a93; the_wgpu_feature_forwards_the_training_gpu_edge turns RED there
 known_limitations:
 - >-
   RESOLVED-VS-REQUESTED IS NOT YET WIRED TO THE RECEIPT. `resolve_gpu_layers`
@@ -228,3 +300,16 @@ known_limitations:
   Scope is the REQUEST, not the DISTRIBUTION. That `cargo install aprender`
   produces a CPU-only binary at all is aprender#2696's open half and is not
   addressed here.
+- >-
+  THE NON-GGUF FORMATS STILL HAVE NO `gpu-layers:` LINE. handlers.rs's APR and
+  SafeTensors paths gate their GPU branch on `#[cfg(feature = "cuda")]` and
+  print no resolution at all, so on a wgpu build `--gpu-layers all` on a
+  `.apr` model is now REFUSED by the guard (v2.1) but, were the guard removed,
+  would still degrade silently rather than visibly. The refusal is the fix that
+  is in scope; extending the resolution line to those two loaders is not.
+- >-
+  NO CI JOB BUILDS `--features wgpu`. F-ACCEL-010 is a manifest+source scan that
+  runs on the DEFAULT build precisely because the accelerated build is a dark
+  target: it cannot regress by turning red, because it had never been green.
+  Wiring an actual `--features wgpu` compile into CI is a separate change (the
+  #2808 class) and is deliberately NOT bundled here.

@@ -77,8 +77,23 @@ pub(crate) fn shared_instance() -> wgpu::Instance {
     static INSTANCE: OnceLock<wgpu::Instance> = OnceLock::new();
     INSTANCE
         .get_or_init(|| {
-            // Serialize the one-time enumeration against any other GPU init.
-            let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // NO LOCK HERE. This closure used to take `DEVICE_INIT_LOCK` to
+            // "serialize the one-time enumeration against any other GPU init",
+            // but every sync entry point below ALREADY held that lock when it
+            // reached here — and `std::sync::Mutex` is not reentrant. The very
+            // first `GpuDevice::new()` in a process therefore self-deadlocked:
+            // parked forever, 0.0% CPU, state S, between the caller's
+            // "Initializing WGPU device..." and "WGPU device ready" prints.
+            //
+            // Serialization is not lost. `OnceLock::get_or_init` already runs
+            // this closure exactly once process-wide with every other caller
+            // blocked, which is the whole of what PMAT-778 needed here (its
+            // race was *several instances* enumerating the freedreno ICD
+            // concurrently; there is now exactly one instance). Adapter and
+            // device acquisition stay serialized by `with_device_init_lock`,
+            // which primes this OnceLock BEFORE taking the mutex so the nesting
+            // cannot come back.
+            //
             // PMAT-925: constrain the instance to a non-GLES backend mask so the
             // broken GLES/EGL adapter (SIGABRT-in-Drop on Linux/AMD-RADV) is never
             // registered. `Instance::default()` would use `Backends::all()`
@@ -89,6 +104,34 @@ pub(crate) fn shared_instance() -> wgpu::Instance {
             })
         })
         .clone()
+}
+
+/// Run `f` with the process-global GPU-init lock held, instance already built.
+///
+/// **Lock order is the point of this function.** The shared `wgpu::Instance` is
+/// created FIRST, outside the guard, and only then is `DEVICE_INIT_LOCK` taken.
+/// Doing it the other way round is the deadlock PMAT-778 shipped: its
+/// `shared_instance()` took the same non-reentrant mutex for its one-time
+/// initialization, so the first sync GPU init in a process blocked on a lock it
+/// was already holding.
+///
+/// That defect was invisible for two reasons and both are worth writing down.
+/// It only bites when a sync entry point is the FIRST thing in the process to
+/// touch `shared_instance()` — `GpuDevice::is_available()`, `pool.rs` and
+/// `monitor/backends.rs` all reach the instance without the guard, so any run
+/// that probed availability first primed the `OnceLock` and never saw it.
+/// realizar's own wgpu path does exactly that (`gguf_gpu_generate.rs` calls
+/// `is_available()` before `new()`). The two cold callers left are both in
+/// apr-cli behind `--features wgpu`, a feature that had never compiled.
+///
+/// Every sync entry point must go through here rather than locking directly;
+/// `device_init_lock_is_only_taken_through_the_helper` enforces it.
+#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+fn with_device_init_lock<T>(f: impl FnOnce() -> T) -> T {
+    // Prime the OnceLock while the mutex is FREE.
+    let _instance = shared_instance();
+    let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    f()
 }
 
 /// GPU device manager
@@ -104,8 +147,7 @@ impl GpuDevice {
     pub fn new() -> Result<Self, String> {
         // PMAT-778: serialize concurrent native device creation (freedreno ICD
         // segfaults on the GB10 when instances/devices are created in parallel).
-        let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        runtime::block_on(async { Self::new_async().await })
+        with_device_init_lock(|| runtime::block_on(async { Self::new_async().await }))
     }
 
     /// Initialize GPU device (async, works on all platforms)
@@ -152,8 +194,9 @@ impl GpuDevice {
     #[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
     pub fn new_with_adapter_index(index: u32) -> Result<Self, String> {
         // PMAT-778: serialize concurrent native device creation (see DEVICE_INIT_LOCK).
-        let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        runtime::block_on(async { Self::new_with_adapter_index_async(index).await })
+        with_device_init_lock(|| {
+            runtime::block_on(async { Self::new_with_adapter_index_async(index).await })
+        })
     }
 
     /// Initialize GPU device with a specific adapter index (async, all platforms)
@@ -200,8 +243,7 @@ impl GpuDevice {
     pub fn list_adapters() -> Vec<(u32, String, String)> {
         // PMAT-778: serialize concurrent native instance/adapter enumeration
         // (freedreno ICD segfaults on the GB10 under concurrent init).
-        let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        runtime::block_on(Self::list_adapters_async())
+        with_device_init_lock(|| runtime::block_on(Self::list_adapters_async()))
     }
 
     /// List all available GPU adapters (async, all platforms)
@@ -559,5 +601,89 @@ mod tests {
             result,
             expected
         );
+    }
+}
+
+/// Lock-discipline guard for the PMAT-778 self-deadlock.
+///
+/// The behavioural falsifier is `tests/gpu_cold_init_deadlock.rs`, which needs
+/// a cold process to reproduce. This one runs in the lib test binary and fails
+/// on the SHAPE, so a re-introduction is caught even when some sibling test has
+/// already primed the instance `OnceLock` and hidden the hang.
+#[cfg(all(test, feature = "gpu", not(target_arch = "wasm32")))]
+mod device_init_lock_discipline {
+    /// MUTATION TARGET: put `DEVICE_INIT_LOCK.lock()` back inside
+    /// `shared_instance`'s `get_or_init`, or back into a sync entry point
+    /// directly. Either restores the reentrant acquisition.
+    /// The scan must not read the test modules — this file's own assertion
+    /// strings contain `DEVICE_INIT_LOCK.lock()` and would count as
+    /// acquisitions, which is a guard that reports its own text.
+    fn non_test_source() -> &'static str {
+        let src = include_str!("mod.rs");
+        src.split("#[cfg(all(test,").next().expect("split always yields a first element")
+    }
+
+    #[test]
+    fn the_init_lock_is_only_taken_through_the_priming_helper() {
+        let src = non_test_source();
+        let takers: Vec<(usize, &str)> = src
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| {
+                let t = l.trim_start();
+                !t.starts_with("//") && t.contains("DEVICE_INIT_LOCK.lock()")
+            })
+            .map(|(i, l)| (i + 1, l.trim()))
+            .collect();
+        assert_eq!(
+            takers.len(),
+            1,
+            "DEVICE_INIT_LOCK must be acquired in exactly one place — \
+             `with_device_init_lock`, which primes `shared_instance()` BEFORE \
+             taking the guard. std::sync::Mutex is not reentrant, so a second \
+             acquisition under the first parks the thread forever (0% CPU, \
+             state S) on the first GPU init in a process. Acquisitions: {takers:?}"
+        );
+
+        // And it is that helper, not some other single site.
+        let helper = src
+            .split("fn with_device_init_lock<T>")
+            .nth(1)
+            .expect("with_device_init_lock must exist");
+        let body_end = helper.find("\n}\n").unwrap_or(helper.len());
+        let body = &helper[..body_end];
+        assert!(
+            body.contains("DEVICE_INIT_LOCK.lock()"),
+            "the single acquisition is not inside `with_device_init_lock`"
+        );
+        assert!(
+            body.find("shared_instance()").expect("helper must prime the instance")
+                < body.find("DEVICE_INIT_LOCK.lock()").expect("checked above"),
+            "`with_device_init_lock` takes the guard BEFORE priming the shared \
+             instance. That is the deadlock, written the other way round: \
+             `shared_instance()`'s one-time init runs under a lock the caller \
+             already holds"
+        );
+    }
+
+    /// Every sync entry point must route through the helper. A new one that
+    /// locks by hand is the same defect with a new name.
+    #[test]
+    fn every_sync_entry_point_routes_through_the_helper() {
+        let src = non_test_source();
+        for entry in [
+            "pub fn new() -> Result<Self, String> {",
+            "pub fn new_with_adapter_index(index: u32) -> Result<Self, String> {",
+            "pub fn list_adapters() -> Vec<(u32, String, String)> {",
+        ] {
+            let body = src.split(entry).nth(1).unwrap_or_else(|| {
+                panic!("sync entry point moved or was renamed: {entry}");
+            });
+            let end = body.find("\n    }\n").unwrap_or(body.len());
+            assert!(
+                body[..end].contains("with_device_init_lock("),
+                "`{entry}` does not serialize through `with_device_init_lock`"
+            );
+        }
     }
 }

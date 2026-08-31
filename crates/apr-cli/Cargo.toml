@@ -89,7 +89,24 @@ inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda", "entrenar/cuda", "aprender-train-distill?/cuda"]
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
-wgpu = ["inference"]
+#
+# `entrenar?/gpu` is LOAD-BEARING, not decoration. `execute_training_wgpu`
+# (commands/finetune.rs) is `cfg(all(training, wgpu))` and names
+# `entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline` and
+# `entrenar::autograd::wgpu_training::WgpuTrainer` — both of which are
+# `#[cfg(feature = "gpu")]` in aprender-train, whose own default is `["tui"]`.
+# Without this edge `--features wgpu` fails to compile with E0432 + E0433 on
+# EVERY host (reproduced on aarch64-darwin and x86_64-linux). It was never
+# caught because no CI job builds `--features wgpu`: the target is dark, and
+# it had therefore never compiled since the feature was declared.
+#
+# `?` and not a plain `entrenar/gpu`: the code behind it is also gated on
+# `training`, so `--no-default-features --features wgpu` must NOT drag the
+# whole training stack in to satisfy a cfg block that is compiled out.
+# `trueno/gpu` needs no edge here — realizar's default features already carry
+# it (`realizar/gpu = ["trueno/gpu"]`), which is why the serve-side wgpu code
+# compiled while the finetune-side did not.
+wgpu = ["inference", "entrenar?/gpu"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]

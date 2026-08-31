@@ -1,0 +1,155 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-31'
+  author: PAIML Engineering
+  description: >-
+    The FIRST synchronous GPU device init in a process must RETURN. PMAT-778
+    (#2063) added DEVICE_INIT_LOCK to serialize native wgpu instance/adapter/
+    device creation and, in the same commit, added shared_instance() whose
+    OnceLock::get_or_init closure took that same non-reentrant mutex. Every sync
+    entry point took the lock and THEN called shared_instance(), so the first of
+    them to run in a process blocked on a lock it already held. The fix that
+    removed a concurrent-init crash introduced a cold-start deadlock.
+  references:
+    - "PMAT-778 / aprender#2063 (introduced DEVICE_INIT_LOCK and shared_instance in one commit)"
+    - "PMAT-925 / aprender#2217 (same closure, backend mask — the lock survived untouched)"
+    - "APR-PERF-GATE-001 W1 mini cell: apr serve run <gguf> --backend wgpu --gpu-layers all, 603s elapsed, 0.0% CPU, state S, port never bound, reproduced twice on Apple M4 / macOS 26.5"
+    - "Reproduced on x86_64-linux 2026-08-31: tests/gpu_cold_init_deadlock.rs times out at 120s under the origin/main lock order, returns in 0.13s after"
+  registry: true
+  tags:
+    - gpu
+    - wgpu
+    - liveness
+    - deadlock
+    - cold-start
+  kind: kernel
+
+five_whys:
+  symptom: >-
+    apr serve run --backend wgpu --gpu-layers all parks forever between the
+    "Initializing WGPU device..." and "WGPU device ready" prints: 603s elapsed,
+    0.0% CPU, state S, port never bound.
+  why_1: "GpuDevice::new() never returns from trueno::backends::gpu"
+  why_2: "new() takes DEVICE_INIT_LOCK and then calls shared_instance()"
+  why_3: "shared_instance()'s OnceLock::get_or_init closure took DEVICE_INIT_LOCK again"
+  why_4: "std::sync::Mutex is not reentrant, so the second acquisition on the same thread parks it against itself"
+  why_5: >-
+    Nothing bound the lock ORDER. The nesting is invisible on any run where some
+    other caller primed the instance OnceLock first — is_available(), pool.rs and
+    monitor/backends.rs all reach shared_instance() WITHOUT the guard, and
+    realizar's own wgpu path calls is_available() before new(). The only two cold
+    callers left were in apr-cli behind --features wgpu, a feature that had never
+    compiled, so the deadlock had no reachable caller until it did.
+  root_cause: >-
+    A process-global non-reentrant mutex was acquired at two nesting levels of
+    the same call chain. The instance must be created BEFORE the guard is taken,
+    and exactly one place may take the guard.
+
+equations:
+  cold_sync_gpu_init_terminates:
+    formula: "first_sync_init(process) terminates ∧ |acquire_sites(DEVICE_INIT_LOCK)| = 1"
+    domain: >-
+      the synchronous GPU entry points of aprender-compute — GpuDevice::new,
+      GpuDevice::new_with_adapter_index, GpuDevice::list_adapters — on a
+      native (non-wasm) target with feature gpu
+    codomain: "boolean — whether the call returns at all"
+    invariants:
+      - >-
+        LIVENESS. The first synchronous GPU init in a process returns, on a host
+        with a GPU and on a host without one. Absence of an adapter is an Err or
+        an empty Vec, never a park.
+      - >-
+        SINGLE ACQUISITION. DEVICE_INIT_LOCK is acquired in exactly ONE place in
+        the source: with_device_init_lock. A second site anywhere is a second
+        nesting level waiting to happen.
+      - >-
+        ORDER. with_device_init_lock calls shared_instance() BEFORE it takes the
+        guard. Priming the OnceLock under the guard is the deadlock written the
+        other way round.
+      - >-
+        ROUTING. Every synchronous entry point serializes through
+        with_device_init_lock rather than locking by hand, so PMAT-778's
+        serialization property is preserved and cannot be re-nested.
+      - >-
+        SERIALIZATION IS NOT LOST. OnceLock::get_or_init already runs the
+        instance constructor exactly once process-wide with every other caller
+        blocked, which is the whole of what PMAT-778 needed at that site; its
+        race was several INSTANCES enumerating the freedreno ICD concurrently,
+        and there is now exactly one instance.
+
+proof_obligations:
+  - type: liveness
+    property: "OBLIG-GPU-COLD-INIT-TERMINATES: the first sync GPU init in a process returns"
+    formal: "∀ process p: first_sync_gpu_init(p) ⇓"
+    applies_to: cold_sync_gpu_init_terminates
+  - type: invariant
+    property: "OBLIG-GPU-INIT-LOCK-SINGLE-SITE: the init lock has exactly one acquisition site"
+    formal: "|{s ∈ source : s acquires DEVICE_INIT_LOCK}| = 1"
+    applies_to: cold_sync_gpu_init_terminates
+  - type: invariant
+    property: "OBLIG-GPU-INIT-LOCK-ORDER: the shared instance is primed before the guard is taken"
+    formal: "index(shared_instance) < index(DEVICE_INIT_LOCK.lock) in with_device_init_lock"
+    applies_to: cold_sync_gpu_init_terminates
+
+falsification_tests:
+  - id: F-GPUINIT-001
+    rule: the first synchronous GPU init in a process must return
+    prediction: >-
+      A dedicated integration-test binary — a guaranteed-cold process, since
+      INSTANCE is a process-global OnceLock and any sibling test primes it —
+      calls GpuDevice::list_adapters() on a worker thread and receives a result
+      within 120s. It needs no GPU: the deadlock is upstream of adapter probing.
+    test: 'cargo test -p aprender-compute --features gpu --test gpu_cold_init_deadlock'
+    if_fails: >-
+      cold GPU init parks forever. Measured on mini (Apple M4): 603s, 0.0% CPU,
+      state S, port never bound, reproduced twice.
+    mutation: >-
+      restore the origin/main order — put DEVICE_INIT_LOCK.lock() back inside
+      shared_instance()'s get_or_init AND have list_adapters() lock before
+      calling it. OBSERVED RED 2026-08-31 on x86_64-linux: timed out at 120.00s,
+      1 failed. Reverted: 0.13s, 1 passed. A ~900x separation, both directions.
+  - id: F-GPUINIT-002
+    rule: the lock has exactly one acquisition site, and it primes first
+    prediction: >-
+      A source scan of device/mod.rs, excluding its own test modules, finds
+      exactly one DEVICE_INIT_LOCK.lock(); it is inside with_device_init_lock;
+      and shared_instance() appears before it in that function's body.
+    test: 'cargo test -p aprender-compute --features gpu --lib device_init_lock_discipline'
+    if_fails: >-
+      a re-introduced nesting is invisible in the lib test binary, because a
+      sibling test has already primed the instance OnceLock and hidden the hang.
+      This is the half of the gate that does not need a cold process.
+    mutation: >-
+      add DEVICE_INIT_LOCK.lock() back to shared_instance()'s get_or_init —
+      OBSERVED RED 2026-08-31 (1 passed, 1 failed), and note that F-GPUINIT-001
+      stayed GREEN under that partial mutation because the helper still primed
+      first. The two rules discriminate different halves of the property.
+  - id: F-GPUINIT-003
+    rule: every synchronous entry point routes through the helper
+    prediction: >-
+      new(), new_with_adapter_index() and list_adapters() each contain
+      with_device_init_lock( in their bodies.
+    test: 'cargo test -p aprender-compute --features gpu --lib device_init_lock_discipline'
+    if_fails: >-
+      a new sync entry point locks by hand and re-creates the nesting under a
+      different name, which is exactly how PMAT-925 edited this closure without
+      noticing the lock inside it
+    mutation: >-
+      revert list_adapters() to lock-then-block_on — OBSERVED RED 2026-08-31,
+      and F-GPUINIT-001 turned RED with it (the full origin/main order)
+
+known_limitations:
+  - >-
+    THE FALSIFIER COSTS 120s WHEN RED AND 0.13s WHEN GREEN. That asymmetry is
+    deliberate: a liveness property can only be falsified by a budget, and a
+    budget short enough to be cheap is a budget a slow ICD can trip. 120s is
+    ~1000x the observed green time and ~0.2x the observed hang.
+  - >-
+    THIS CONTRACT BINDS THE SYNC PATH ONLY. new_async() and friends take no lock
+    and are unaffected; a caller that drives them on its own executor is outside
+    the obligation.
+  - >-
+    NO CI JOB BUILDS aprender-compute --features gpu, so both tests are dark
+    targets today. They are written against the cold process anyway, because the
+    alternative is a defect with no falsifier at all. Wiring the gpu feature into
+    a CI lane is the #2808 class and is not bundled here.

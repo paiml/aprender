@@ -70,11 +70,28 @@ wait_healthy() { # wait_healthy <port> <seconds>
 
 # THE CLASS IS READ FROM THE SERVER'S OWN OUTPUT. `--gpu` proves nothing.
 apr_class_from_log() {
+    # I-2: read the RESOLVED class off the line the server printed about its own
+    # DISPATCH, never off an occurrence of a backend NAME somewhere in the log.
+    #
+    # `grep -qi "wgpu"` matched `gpu-layers: requested=none resolved=0 total=28
+    # (backend=wgpu)` -- a line apr prints on EVERY GGUF serve, including the
+    # deliberate `--no-gpu` cpu lane. On a `--features wgpu` build this receipt
+    # therefore recorded compute_class=wgpu for a run that was pinned to the CPU
+    # by its own flags. The backend half of that line is now the run's dispatch
+    # rather than a `cfg!` label, so it is authoritative and is read first.
+    local resolved
+    resolved=$(sed -n 's/^gpu-layers: .*(backend=\([a-z]*\))$/\1/p' "$1" | tail -1)
+    case "$resolved" in
+        cuda|wgpu|metal|cpu) printf '%s\n' "$resolved"; return 0 ;;
+    esac
+    # No `gpu-layers:` line: a non-GGUF format. Fall back to OUTCOME lines --
+    # each of these is printed only AFTER the accelerator was acquired, never
+    # on the strength of a flag or a compiled-in feature.
     if grep -qi "CUDA optimized model ready\|Enabling optimized CUDA acceleration" "$1"; then
         echo cuda
     elif grep -qi "metal.*ready\|Metal acceleration" "$1"; then
         echo metal
-    elif grep -qi "wgpu" "$1"; then
+    elif grep -q "WGPU device ready" "$1"; then
         echo wgpu
     else
         echo cpu
@@ -173,18 +190,42 @@ run_lane() {
 # A published apr has no GPU path at all, so its only honest lane is cpu, and
 # that is the finding rather than a gap in coverage.
 run_lane cpu "--no-gpu" 0
-# Both probes read a herestring, never a pipe. `grep -q` exits on its FIRST
+# ASK THE BINARY, DO NOT READ ITS STRINGS.
+#
+# This probe used to be `strings -a "$APR" | grep -qE 'cudarc|libcuda\.so|
+# libcublas|Metal'`. Every apr build links the `wgpu` crate -- realizar's
+# default features carry `gpu = ["trueno/gpu"]` -- and `wgpu-types`' Backend
+# enum puts the literal `Metal` in the binary. So the pattern matched a
+# CPU-only apr on every host and every platform, and the receipt scored it
+# ACCELERATED. That is the same class of fabrication the herestring fix below
+# was written to remove, in the opposite direction: `accel_absent` for a CUDA
+# build was a false negative, `accel present` for a CPU build is a false
+# POSITIVE, and a false positive gets published as a perf-matrix compute_class.
+#
+# `serve run --list-devices` is the binary reporting its own dispatch surface
+# from the same `cfg!` flags the dispatcher reads. If the flag is unsupported
+# (an older apr), the match fails and the receipt records accel_absent -- the
+# fail-closed direction.
+#
+# The probes read a herestring, never a pipe. `grep -q` exits on its FIRST
 # match, the producer takes SIGPIPE, and `set -o pipefail` hands the pipeline
 # the producer's 141 -- so the condition was FALSE on a binary that does
 # contain the markers. Measured on gx10 and reproduced on lambda: 141 on
 # 10/10 repeats with pipefail, 0 without, while the pattern matches 5 times.
-# Every receipt therefore recorded `accel_absent` for a CUDA-capable apr,
-# which is a fabricated provenance field emitted by the provenance producer.
 APR_HELP="$( "$APR" serve run --help 2>&1 )"
-APR_STRINGS="$( strings -a "$APR" 2>/dev/null )"
-if grep -q -- '--gpu' <<< "$APR_HELP" && \
-   grep -qE 'cudarc|libcuda\.so|libcublas|Metal' <<< "$APR_STRINGS"; then
-    run_lane accel "--gpu" 999
+APR_DEVICES="$( "$APR" serve run --list-devices 2>&1 || true )"
+# WHICH FLAG REACHES THE ACCELERATOR IS NOT UNIFORM. `--gpu`/`--gpu-layers`
+# select the CUDA dispatch; the wgpu backend has no `--gpu-layers` dispatch on
+# any format and is entered only by `--backend wgpu`. Passing `--gpu` on a
+# wgpu-only build is refused rather than silently served from the CPU.
+ACCEL_FLAGS=""
+if grep -qE '^  cuda +compiled in' <<< "$APR_DEVICES"; then
+    ACCEL_FLAGS="--gpu"
+elif grep -qE '^  wgpu +compiled in' <<< "$APR_DEVICES"; then
+    ACCEL_FLAGS="--backend wgpu --gpu-layers all"
+fi
+if grep -q -- '--gpu' <<< "$APR_HELP" && [ -n "$ACCEL_FLAGS" ]; then
+    run_lane accel "$ACCEL_FLAGS" 999
 else
     # Say WHY, in the receipt, in a form the gate can read. A gate that demands
     # a lane its own producer cannot emit is unsatisfiable, and an unsatisfiable

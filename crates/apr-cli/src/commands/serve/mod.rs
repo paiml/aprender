@@ -56,6 +56,47 @@ pub(crate) fn list_devices() -> Result<()> {
     Ok(())
 }
 
+/// PERF-021 / I-2: the backend this RUN dispatches to, not the one this BUILD
+/// links.
+///
+/// THE DEFECT THIS REPLACES. The GGUF serve path printed its backend as
+/// `if cfg!(feature = "cuda") { "cuda" } else if cfg!(feature = "wgpu") { "wgpu" }
+/// else { "cpu" }` — a BUILD-TIME label — alongside a `resolved=` count taken
+/// straight from the request. On mini (Apple M4, a `--features wgpu` build):
+///
+/// ```text
+/// $ apr serve run qwen2.5-coder-1.5b.gguf --gpu-layers all
+/// gpu-layers: requested=all resolved=28 total=28 (backend=wgpu)
+/// $ curl localhost:8080/health
+/// {"compute_mode":"cpu", ...}
+/// ```
+///
+/// Both lines came out of the same process. Nothing had been placed on any
+/// accelerator: the wgpu GGUF path is entered in `start_realizar_server` on
+/// `--backend wgpu` and returns from there, so anything reaching
+/// `start_gguf_server` on a wgpu build is served by `run_cpu_server`. The
+/// number `28` was the request read back to the operator as if it were an
+/// outcome — §4.4.9 / N4 exactly, in the receipt-producing path that the
+/// perf-matrix `compute_class` field is read from.
+///
+/// `cuda_linked` is passed rather than read here so the table below is
+/// exhaustive on every build, including the CPU-only one where the bug cannot
+/// occur. That is deliberate: `gpu_layers_is_refused_on_a_build_with_no_accelerator`
+/// carries `#[cfg(not(any(cuda, wgpu)))]` and therefore COMPILES ONLY WHERE THE
+/// BUG CANNOT HAPPEN, which is the failure mode this repo keeps re-learning.
+#[allow(dead_code)] // used by handler_gpu_completion.rs behind `inference`
+pub(crate) fn gguf_dispatch_backend(wants_accelerator: bool, cuda_linked: bool) -> &'static str {
+    if cuda_linked && wants_accelerator {
+        "cuda"
+    } else {
+        // No `wgpu` arm, and its absence is the finding rather than an
+        // oversight: `start_gguf_server` has no wgpu dispatch to reach. Adding
+        // the arm without adding the dispatch would re-create the fabricated
+        // label in one line.
+        "cpu"
+    }
+}
+
 /// PERF-021 countermeasure 3: a request has a RESOLUTION, and it is reported.
 ///
 /// `requested` is what the user asked for, `resolved` what the server will do,
@@ -137,31 +178,67 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
     if !wants_gpu {
         return Ok(());
     }
-    if cfg!(any(feature = "cuda", feature = "wgpu")) {
+    // I-2: can this build honour THE REQUEST THAT WAS MADE — not "does it link
+    // some accelerator". The weaker `cfg!(any(cuda, wgpu))` waved two real
+    // silent-CPU runs through:
+    //
+    //   * `--backend wgpu` on a cuda-only build printed "WGPU feature not
+    //     enabled", fell through to format detection, and served on CPU.
+    //   * `--gpu-layers all` on a wgpu-only build (mini, Apple M4) passed here
+    //     and served on CPU on EVERY format, because `--gpu-layers` selects the
+    //     CUDA dispatch and the wgpu backend has no `--gpu-layers` dispatch at
+    //     all — it is reachable only through `--backend wgpu`, which takes a
+    //     different loader in `start_realizar_server`.
+    //
+    // Both are #2696 with a different flag on the front. The predicate below
+    // asks which dispatch the request selects, then whether it is linked.
+    let honoured = match wants_backend {
+        Some("wgpu") => cfg!(feature = "wgpu"),
+        Some("cuda" | "gpu") => cfg!(feature = "cuda"),
+        // No backend named: `--gpu` / `--gpu-layers` select the CUDA dispatch.
+        _ => cfg!(feature = "cuda"),
+    };
+    if honoured {
         return Ok(());
     }
     // Quote back the flag the USER typed. `--gpu` sets gpu_layers to All on the
     // way in, so checking gpu_layers first would tell a user who typed `--gpu`
-    // about a flag they did not use.
-    let asked = if config.gpu {
+    // about a flag they did not use. A backend named but not linked outranks
+    // both, because that is the half of the request that cannot be honoured.
+    let unreachable_backend = wants_backend.filter(|b| matches!(*b, "wgpu" | "cuda" | "gpu"));
+    let asked = if let Some(b) = unreachable_backend {
+        format!("--backend {b}")
+    } else if config.gpu {
         "--gpu".to_string()
     } else if config.gpu_layers.is_some() {
         "--gpu-layers".to_string()
-    } else if let Some(b) = wants_backend.filter(|b| *b != "cpu") {
-        format!("--backend {b}")
     } else {
         "--gpu".to_string()
     };
+    // Say WHICH of the two things is missing. "no GPU backend compiled in" is
+    // false on a wgpu build being refused a `--gpu-layers` request, and an
+    // error that misdescribes the build sends the operator to a rebuild that
+    // changes nothing.
+    let reason = if cfg!(any(feature = "cuda", feature = "wgpu")) {
+        "this build links a GPU backend, but not the one that request selects"
+    } else {
+        "this build has no GPU backend compiled in"
+    };
     Err(CliError::FeatureDisabled(format!(
-        "{asked} was requested, but this build has no GPU backend compiled in, \n\
+        "{asked} was requested, but {reason}, \n\
          so the server would have run on CPU without telling you. On a 7B Q4_K_M \n\
          model that is roughly a tenth of the decode rate and several seconds of \n\
          extra latency to the first token (aprender#2696).\n\
+         \n\
+         `apr serve run --list-devices` reports what this binary can dispatch to.\n\
          \n\
          Install a build that has one:\n\
          \n\
         \x20    cargo install aprender --features cuda    # NVIDIA\n\
         \x20    cargo install aprender --features wgpu    # portable GPU backend\n\
+         \n\
+         On a wgpu build the accelerated path is `--backend wgpu`; `--gpu-layers`\n\
+         alone does not reach it.\n\
          \n\
          Or pass --no-gpu to run on CPU deliberately."
     )))
@@ -315,12 +392,43 @@ mod accelerator_guard_tests {
         }
     }
 
-    /// A build WITH the feature must not be blocked by its own guard.
+    /// A build WITH the dispatch a request selects must not be blocked by its
+    /// own guard. Split by backend: `--gpu` selects the CUDA dispatch, so only
+    /// a CUDA build may wave it through. A wgpu build passing `--gpu` was the
+    /// mini defect, not the happy path.
     #[test]
-    #[cfg(any(feature = "cuda", feature = "wgpu"))]
-    fn a_gpu_build_is_not_blocked() {
+    #[cfg(feature = "cuda")]
+    fn a_cuda_build_is_not_blocked() {
         ensure_accelerator_available(&cfg_with(true, false, None))
-            .expect("a build with an accelerator must pass its own guard");
+            .expect("a CUDA build must pass its own guard for --gpu");
+        ensure_accelerator_available(&cfg_with(false, false, Some("cuda")))
+            .expect("a CUDA build must pass its own guard for --backend cuda");
+    }
+
+    /// A wgpu build must reach its own backend by the flag that dispatches to
+    /// it, and must be refused the flag that does not.
+    #[test]
+    #[cfg(all(feature = "wgpu", not(feature = "cuda")))]
+    fn a_wgpu_build_reaches_wgpu_and_only_wgpu() {
+        ensure_accelerator_available(&cfg_with(false, false, Some("wgpu")))
+            .expect("a wgpu build must pass its own guard for --backend wgpu");
+
+        // THE DEFECT. `--gpu-layers all` on mini printed
+        // `resolved=28 (backend=wgpu)` and served every layer on the CPU.
+        let mut cfg = cfg_with(true, false, None);
+        cfg.gpu_layers = Some(GpuLayerRequest::All);
+        let msg = ensure_accelerator_available(&cfg)
+            .expect_err("--gpu-layers selects the CUDA dispatch; a wgpu-only build has none")
+            .to_string();
+        assert!(
+            msg.contains("--backend wgpu"),
+            "the refusal must name the flag that DOES reach this build's backend: {msg}"
+        );
+        assert!(
+            !msg.contains("no GPU backend compiled in"),
+            "this build HAS a GPU backend; misdescribing it sends the operator \
+             to a rebuild that changes nothing: {msg}"
+        );
     }
 
     /// THE CALL SITE IS THE GATE, NOT THE FUNCTION.
@@ -557,19 +665,26 @@ mod accelerator_guard_tests {
     /// (requested, can_dispatch) with exactly one Err cell.
     #[test]
     fn the_refusal_is_total_over_every_input() {
-        let linked = cfg!(any(feature = "cuda", feature = "wgpu"));
+        // Per-DISPATCH, not per-build: `--backend wgpu` needs the wgpu
+        // dispatch, everything else needs the CUDA one.
+        let cuda = cfg!(feature = "cuda");
+        let wgpu = cfg!(feature = "wgpu");
         for gpu in [false, true] {
             for no_gpu in [false, true] {
                 for backend in [None, Some("cpu"), Some("cuda"), Some("wgpu")] {
                     let cfg = cfg_with(gpu, no_gpu, backend);
                     let requested =
                         (gpu && !no_gpu) || matches!(backend, Some("cuda" | "wgpu" | "gpu"));
-                    let expect_err = requested && !linked;
+                    let honoured = match backend {
+                        Some("wgpu") => wgpu,
+                        _ => cuda,
+                    };
+                    let expect_err = requested && !honoured;
                     assert_eq!(
                         ensure_accelerator_available(&cfg).is_err(),
                         expect_err,
-                        "gpu={gpu} no_gpu={no_gpu} backend={backend:?} linked={linked}: \
-                         Err exactly when a request is made that this build cannot honour"
+                        "gpu={gpu} no_gpu={no_gpu} backend={backend:?} cuda={cuda} wgpu={wgpu}: \
+                         Err exactly when a request is made that this build cannot DISPATCH"
                     );
                 }
             }
@@ -706,5 +821,81 @@ mod gpu_layers_contract_tests {
         // ...and an explicit CPU request is not an accelerator request.
         cfg.gpu_layers = Some(GpuLayerRequest::None);
         ensure_accelerator_available(&cfg).expect("--gpu-layers 0 asks for no accelerator");
+    }
+}
+
+/// PERF-021 / I-2. The receipt may not claim a compute class the run did not
+/// reach.
+///
+/// Measured on mini (Apple M4, macOS 26.5, a `--features wgpu` build of
+/// `apr serve run qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --gpu-layers all`):
+///
+/// ```text
+/// gpu-layers: requested=all resolved=28 total=28 (backend=wgpu)
+/// $ curl -s localhost:8080/health
+/// {"status":"ok","compute_mode":"cpu",...}
+/// ```
+///
+/// One process, two answers. `/health` was the honest one.
+#[cfg(test)]
+mod resolved_compute_class_tests {
+    use super::*;
+
+    /// Total over the input space: two booleans, four cells, one "cuda".
+    #[test]
+    fn the_dispatch_backend_is_total_and_never_invents_wgpu() {
+        assert_eq!(gguf_dispatch_backend(true, true), "cuda");
+        assert_eq!(gguf_dispatch_backend(false, true), "cpu");
+        // The two cells that shipped the lie. A wgpu-linked build reaching
+        // `start_gguf_server` has no wgpu dispatch to take, so the only
+        // truthful answer is "cpu" — whatever the operator asked for.
+        assert_eq!(gguf_dispatch_backend(true, false), "cpu");
+        assert_eq!(gguf_dispatch_backend(false, false), "cpu");
+    }
+
+    /// MUTATION TARGET: restore `let resolved_layers = config.resolve_layers(..)`.
+    ///
+    /// That single line is the whole defect — the request echoed back into the
+    /// field that is supposed to report the outcome. It must not come back.
+    #[test]
+    fn the_reported_resolution_is_not_the_request_read_back() {
+        let src = include_str!("handler_gpu_completion.rs");
+        assert!(
+            !src.contains("let resolved_layers = config.resolve_layers("),
+            "`resolved_layers` is being assigned straight from the request \
+             again. On a build with no dispatch for it, that prints \
+             `resolved=28` for zero layers placed (#2696 / PERF-021 I-2)"
+        );
+        assert!(
+            src.contains(
+                "gguf_dispatch_backend(config.wants_accelerator(), cfg!(feature = \"cuda\"))"
+            ),
+            "the reported backend is not derived from the run's dispatch. A \
+             `cfg!`-derived label reports what the BUILD links, which is how \
+             `backend=wgpu` was printed by a run that served on the CPU"
+        );
+    }
+
+    /// MUTATION TARGET: delete the fail-closed branch.
+    ///
+    /// Printing an honest `resolved=0` and then serving anyway still produces a
+    /// receipt for a run the operator asked not to have. Under I-2 the run must
+    /// stop.
+    #[test]
+    fn an_unreachable_accelerator_request_fails_closed() {
+        let src = include_str!("handler_gpu_completion.rs");
+        assert!(
+            src.contains("if requested_layers > 0 && resolved_layers == 0 {"),
+            "the GGUF serve path no longer refuses a request it resolved to \
+             zero layers; it reports honestly and then serves on CPU anyway"
+        );
+        let tail = src
+            .split("if requested_layers > 0 && resolved_layers == 0 {")
+            .nth(1)
+            .expect("branch present");
+        assert!(
+            tail[..tail.len().min(400)].contains("return Err("),
+            "the fail-closed branch does not return an error"
+        );
     }
 }
