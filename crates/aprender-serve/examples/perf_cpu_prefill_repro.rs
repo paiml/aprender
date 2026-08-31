@@ -13,9 +13,19 @@ use std::time::Instant;
 
 fn main() -> Result<(), RealizarError> {
     let mut args = std::env::args().skip(1);
-    let model_path = args
-        .next()
-        .unwrap_or_else(|| "/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf".to_string());
+    // NO DEFAULT MODEL PATH. A fallback here is one developer's filesystem
+    // shipped inside an example -- `scripts/check_hardcoded_paths.sh` counts it
+    // as a shipped machine-specific path, and it is one: on any other box the
+    // example would fail at load with a path the user never typed. The model
+    // the #2787 measurement actually used is named in
+    // `evidence/perf-2787/provenance.txt`, which is where a path belongs.
+    let Some(model_path) = args.next() else {
+        eprintln!("usage: perf_cpu_prefill_repro <model.gguf> [prompt_tokens] [gen_tokens] [reps]");
+        eprintln!();
+        eprintln!("The model path is required; there is no default.");
+        eprintln!("See evidence/perf-2787/provenance.txt for the model this was measured with.");
+        std::process::exit(2);
+    };
     let n_prompt: usize = args.next().and_then(|s| s.parse().ok()).unwrap_or(513);
     let n_gen: usize = args.next().and_then(|s| s.parse().ok()).unwrap_or(128);
     let reps: usize = args.next().and_then(|s| s.parse().ok()).unwrap_or(3);
