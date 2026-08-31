@@ -22,7 +22,7 @@ difference is a defect in this file.
 **Contract**: `contracts/pr-review-skill-v2.yaml` (§1 grounding, §7 blocking, §8 metrics)
 **Guard**: `scripts/check_pr_review_receipt.sh` — it validates what you emit here, it has
 its own positive controls, and its mutation set (`scripts/mutate-guard.sh`) reports
-119/119. **Run it on your own receipt before you post anything.**
+185/185. **Run it on your own receipt before you post anything.**
 
 ## Context
 
@@ -319,8 +319,22 @@ is the **last** command's status, and this repo has lost time to exactly that tw
 
 **The trigger is deliberately over-broad and you will meet that.** It is a
 case-insensitive match on `cuda` anywhere in the path, so a *fixture* named
-`row-01-cuda-not-triggered-on-cuda-diff/` fires it — measured, on this very branch, five
-paths. That is not a bug to route around. The correct response is `status: consulted` with
+`row-01-cuda-not-triggered-on-cuda-diff/` fires it — **eight of the 202 changed paths at
+`0b7b876`**, all of them fixture filenames, recomputed with the guard's own predicate
+(`check_pr_review_receipt.sh --match-path`) rather than counted by eye; the sentence this
+replaces said "five", which was already wrong in the commit that shipped it. The number
+names its commit, because a count of a moving diff is stale the moment the branch moves —
+recompute it, do not read it:
+
+```bash
+BASE=$(git merge-base origin/main HEAD)
+git diff --name-only "$BASE"..HEAD \
+  | while IFS= read -r f; do
+      bash scripts/check_pr_review_receipt.sh --match-path "$f" && echo "$f"
+    done | wc -l
+```
+
+That is not a bug to route around. The correct response is `status: consulted` with
 a `trigger_reason` naming the false-positive path and a `no-authority-found` query, **not**
 `status: not-triggered`: the guard recomputes the trigger and rejects the receipt
 (fixture row 1). A wide trigger costs one query; a narrowed one costs the 18% regression
@@ -403,7 +417,7 @@ Bash guards are exercised with `bats-core` fixtures. For the receipt guard itsel
 mutation set already exists and is a derivation, not a list:
 
 ```bash
-bash scripts/mutate-guard.sh          # 119/119 on scripts/check_pr_review_receipt.sh
+bash scripts/mutate-guard.sh          # 185/185 on scripts/check_pr_review_receipt.sh
 ```
 
 **`attempted: 0` with `status: consulted` is rejected** (fixture row 2). A mutation set
@@ -746,20 +760,47 @@ the branch it names:
 Those are §3.0's three-state rule, §1's grounding mark and §1.1's verified citation,
 each shown to be load-bearing on this repository rather than on a fixture.
 
-**Two things are missing, and until they land no receipt passes in CI:**
+**Both of the things that used to be missing have landed.**
 
-1. **`.github/pr-review.pub` does not exist.** The guard defaults `PR_REVIEW_PUBKEY` to it
-   and rejects with *"public key … is absent; an unverifiable signature is not a verified
-   one"*. The conformance run above therefore used a throwaway key via `PR_REVIEW_PUBKEY`,
-   which proves the mechanics and proves nothing about CI provenance. Publishing the
-   public key and provisioning `PR_REVIEW_SIGNING_KEY` is **PRREV-006**.
-2. **Nothing invokes this skill from `ci.yml`.** Also PRREV-006 — and when it lands it
-   must be a **job-level `if:`, never a workflow-level `paths:` filter**: a path-filtered
-   required check never reports, and branch protection then blocks every PR forever.
+1. **`.github/pr-review.pub` is committed** (PRREV-013). The guard defaults
+   `PR_REVIEW_PUBKEY` to it, and the receipt under
+   `evidence/pr-review/2795/f5fe147.../` now **ACCEPTs under that default with no
+   override** — which it did not when this section was first written. The conformance
+   run described above passed only with `PR_REVIEW_PUBKEY` pointed at a throwaway key;
+   against the repository default the same receipt was
+   `REJECT [B1] public key .github/pr-review.pub is absent`. A default no receipt can
+   satisfy is not a default, and the ownership of fixing that was orphaned across three
+   files naming two different tickets.
 
-**Not yet done: the backtest (PRREV-007).** The spec is explicit that §9 step 7 is the
-acceptance test for the whole design — run this skill against ≥3 merged PRs from
-APR-PERF-GATE-001 and require it to catch ≥1 real defect those reviews missed. Until that
-has run, the evidence that this skill catches the ungrounded CUDA stream claim, the
-PERF-055 duplication and the never-ran-Ollama benchmark is the spec's own reasoning about
-them, which is not evidence. Genchi genbutsu: go and look at the actual PRs.
+   The secret half is **not in this repository and never will be**. It is held by whoever
+   runs the reviewer, at the path `$PR_REVIEW_SIGNING_KEY` names, and a copy is escrowed
+   in the repository secret `PR_REVIEW_SIGNING_KEY_B64` (base64 of the minisign
+   secret-key *file* — §4.3's `minisign -S -s` takes a path, so a CI signer materialises
+   it before use). Rotate with `minisign -G -W`, replace `.github/pr-review.pub`, re-set
+   the secret, re-sign.
+
+2. **`ci.yml` invokes the guard** — job `pr-review-receipt`: the stated-count guard, the
+   receipt guard over one GREEN and one RED fixture, the bats fixture table, the guard's
+   own mutation set, and this PR's own receipt. Job-level `if:`, no workflow-level
+   `paths:` filter, with `check_pr_review_wiring.sh` checking both polarities of that rule
+   mechanically rather than in a comment.
+
+   Arm 4 — this PR's own receipt — is now **armed and able to fail**. It used to begin
+   `if [ ! -f .github/pr-review.pub ]; then ... exit 0; fi` over a key nothing owned, so
+   it exited 0 on every run it ever had: a gate that cannot fail, inside the job built to
+   prevent gates that cannot fail, holding up `receipt_presence`, which §8 fixes at 100%
+   with no ratchet. Its *armed* branch was no better — it looked for
+   `evidence/pr-review/<pr>/<TIP SHA>`, which no pull request can produce, because
+   committing the receipt changes the tip. Both are fixed in
+   `scripts/check_pr_review_arm4.sh`, whose `--self-test` drives a hermetic case table —
+   against the deterministic fixture repo, not against this repository's history, so a
+   squash-merge cannot expire it — including the absent-key row that used to read green.
+
+**The backtest ran, three times, and the first two failed.** §9 step 7 is the acceptance
+test for the whole design, and it is recorded rather than summarised: PRREV-007 scored
+**1 of 3**, PRREV-011 **2 of 3**, PRREV-012 **3 of 3**. Each transcript is committed
+verbatim under `evidence/pr-review/backtest/` — `results.md`, `results-v2.md`,
+`results-v3.md` — rather than replaced by the run that passed. The eight defects the two
+failures found (F1–F8) are what the guard now enforces; F9 is measured, unfixed, and named
+with its counterfactual. Genchi genbutsu: the verdicts came from running the guard against
+the real merged commits, not from the spec's reasoning about them.

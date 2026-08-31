@@ -1484,14 +1484,24 @@ jobs:
   # this exact expression against all four events and fails if it runs where
   # there is no PR or skips where there is one.
   #
-  # FOUR ARMS. The first two are not the same check twice:
+  # FIVE ARMS. Arm 0 is text-only and runs first; the first two after it are not
+  # the same check twice:
+  #   0. the counts these files state as MEASURED, against what the tree derives.
+  #      The skill reviewed its own PR and found five stale ones — "119/119" in
+  #      four places over a set of 185, "65 tests" over 121, "22-row" over 26 —
+  #      each true when written and stale by the commit that shipped it. Two of
+  #      them are in the step NAMES below. check_pr_review_counts.sh derives the
+  #      three that a tree can derive and fails on any file that disagrees; its
+  #      --self-test writes each of the three shipped defects back in and requires
+  #      RED, then grows the tree three ways and requires RED again.
+  #   1..4 as before:
   #   1. the guard over one GREEN and one RED fixture. It is the only arm that
   #      survives an unobtainable bats, and it is the literal invocation
   #      check_guards_are_wired.sh scans for — a guard named in a comment is not
   #      wired. GREEN and RED together, because "refuse every receipt" reads
   #      green against RED fixtures alone.
-  #   2. the 22-row fixture table (§6.3 plus the rows PRREV-008 owes) under bats,
-  #      positive controls included.
+  #   2. the 26-row fixture table (§6.3's fourteen plus the twelve PRREV-008 and
+  #      PRREV-009 added) under bats, positive controls included.
   #   3. the guard's own mutation set (§6.4). §8 fixes guard_mutation_score at
   #      100% with "no ratchet, it is a one". Wiring a guard and leaving its
   #      falsifier dark would make the thing every other verdict rests on unable
@@ -1510,7 +1520,11 @@ jobs:
   # through the gap while nothing re-read it.
   pr-review-receipt:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    timeout-minutes: 60
+    # 120, not 60: Arm 3 alone measured 3091s (51.5 min) on an idle 48-core box
+    # over the 185-mutant set, and 60 left 8 minutes for the other four arms.
+    # See the Arm 3 comment below for the measurement and why the old 19-minute
+    # figure was stale.
+    timeout-minutes: 120
     if: github.event_name == 'pull_request'
     env:
       # The `runner` context is NOT available in a job-level `env:` block —
@@ -1538,6 +1552,18 @@ jobs:
           set -euo pipefail
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
           echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      # Arm 0. Text-only, no build, and FIRST: the arms below quote numbers in
+      # their own step names, and a step named after a stale number is how "65
+      # tests" and "22-row" survived four commits of growth. Self-test before
+      # check, because a guard whose RED has never been seen is a guard whose
+      # GREEN is a count of files (Verification Discipline #7).
+      - name: "Stated-count guard: each of the three shipped drifts turns it RED"
+        shell: bash
+        run: bash scripts/check_pr_review_counts.sh --self-test
+      - name: The counts these files state as measured equal the derived ones
+        shell: bash
+        run: bash scripts/check_pr_review_counts.sh
 
       # Arm 1. The receipts name commits in a purpose-built repository, not in
       # aprender: for any commit reachable from aprender's own origin/main,
@@ -1567,10 +1593,12 @@ jobs:
 
       # Arm 2. Every row of §6.3, plus the positive controls, plus the
       # must-match/must-not-match tables behind the three trigger regexes. This
-      # file is 65 tests and was reachable from NO workflow until this job — the
+      # file is 121 tests and was reachable from NO workflow until this job — the
       # dark-target class this repository has hit with benches and with 58 cgp
-      # tests.
-      - name: The 22-row fixture table and both polarities of every trigger regex
+      # tests. Both numbers here are recomputed by check_pr_review_counts.sh; the
+      # commit that wired this step wrote 65 and 22 over a file that already held
+      # 121 tests and 26 rows.
+      - name: The 26-row fixture table and both polarities of every trigger regex
         shell: bash
         run: bats tests/pr-review.bats
 
@@ -1578,45 +1606,88 @@ jobs:
       # required-field check, target 100% kill.
       #
       # The script's DEFAULT parallelism, because that is the only setting whose
-      # wall time was measured: 119/119 killed in 1125s at --jobs 12 on a
-      # 48-core box under load average 27 (2026-08-30). An earlier draft of this
-      # step wrote --jobs 8 with a plausible-sounding reason and no measurement
-      # behind it, which is how a number becomes folklore. timeout-minutes on
-      # this job is 60 against that 19 minutes; a slower runner has headroom and
-      # a hang still ends.
+      # wall time was measured: 185/185 killed in 3091s (51.5 min) at --jobs 12
+      # on a 48-core box, 2026-08-30. The set is DERIVED — one `drop` and one
+      # `flip` per `reject B<n>` site, rescanned from the guard on every run — so
+      # its size moves when the guard does; `scripts/mutate-guard.sh --list`
+      # prints it, and check_pr_review_counts.sh fails this file when the number
+      # written here is not the number the script derives. An earlier draft of
+      # this step wrote --jobs 8 with a plausible-sounding reason and no
+      # measurement behind it, which is how a number becomes folklore.
+      #
+      # THE TIMEOUT WAS A THIRD DEFECT IN THIS JOB, and the same one: this
+      # paragraph said "timeout-minutes on this job is 60 against that 19
+      # minutes; a slower runner has headroom". 19 minutes was 1125s over the
+      # 119-mutant set. The set is 185 and the same box takes 3091s — 51.5
+      # minutes against a 60-minute cap, on an IDLE box, before Arms 0-2 and 4
+      # have run at all. Headroom of 8 minutes is not headroom; it is a job that
+      # times out the first time the runner is busy, and a cancelled job reads
+      # as a failure nobody can distinguish from a real one (#2792's cargo-audit
+      # eviction, and "N runs cancelled at the SAME elapsed time is a timeout,
+      # not a flake"). Raised to 120.
       - name: The guard's mutation set must kill 100% (§6.4, §8 fixes this at one)
         shell: bash
         run: bash scripts/mutate-guard.sh
 
-      # Arm 4. THE ARMING CONDITION IS EVALUATED, NOT WRITTEN DOWN.
+      # Arm 4. ARMED (PRREV-013). It could previously neither fail nor pass.
       #
-      # .github/pr-review.pub is PRREV-005's committed public key and the guard's
-      # default PR_REVIEW_PUBKEY. Until it exists no receipt can be verified at
-      # all, so requiring one would red every PR — including the one that lands
-      # PRREV-005. The day that key lands, this step starts REQUIRING a receipt
-      # for the PR with no edit to this file, the same way
-      # check_hardcoded_paths.sh --full-if-capable arms itself.
+      # The step this replaces was six lines of inline YAML, and it carried BOTH
+      # halves of the same defect:
       #
-      # The armed branch deepens the checkout first: the guard resolves base_sha
-      # against `git merge-base origin/main <head>`, which a fetch-depth-1
-      # checkout cannot answer. It does not paper over a failure there — an
-      # unresolvable head is a B1 rejection in the guard, loudly.
-      - name: This PR's own receipt (arms itself when PRREV-005 lands the key)
+      #   * it began `if [ ! -f .github/pr-review.pub ]; then ... exit 0; fi`,
+      #     the key was absent, nothing owned shipping it (SKILL.md said
+      #     PRREV-006, the two comments above said PRREV-005, keys/README.md
+      #     hedged "PRREV-005/006"), and `PR_REVIEW_SIGNING_KEY` appeared in
+      #     zero workflows. So it EXITED 0 ON EVERY RUN IT EVER HAD. §8 fixes
+      #     `receipt_presence` at 100% "no ratchet, it is a one", and the job
+      #     written to enforce that could not fail — a gate that cannot fail,
+      #     inside the job built to prevent gates that cannot fail (§11).
+      #
+      #   * its armed branch then looked for `evidence/pr-review/<pr>/<TIP SHA>`,
+      #     which NO pull request can produce: committing the receipt changes the
+      #     tip, so a directory named after the tip cannot hold the review of the
+      #     tip. A gate that cannot pass, shipped in the same six lines as a gate
+      #     that cannot fail.
+      #
+      # Both are fixed in scripts/check_pr_review_arm4.sh, which is a SCRIPT and
+      # not inline YAML for the reason the `exit 0` survived unnoticed: Arms 1-3
+      # are all scripts with case tables, Arm 4 was the one reachable from no
+      # test, and Arm 4 is the one that broke. Its `--self-test` drives a case
+      # table, both polarities, including the absent-key row that used to read
+      # green — deliberately WITHOUT a row count written here, because a count of
+      # a table that grows is the drift Arm 0 exists to catch. The table is
+      # hermetic: it runs against tests/fixtures/pr-review/make-fixture-repo.sh,
+      # not against this repository's history, so a squash-merge cannot expire it.
+      # The self-test runs FIRST (Verification Discipline #7).
+      #
+      # .github/pr-review.pub is now COMMITTED — PRREV-013 generated the keypair,
+      # committed the public half, re-signed this PR's receipt with the secret
+      # half, and put that half in the repository secret PR_REVIEW_SIGNING_KEY_B64
+      # (base64 of the minisign secret-key FILE; §4.3's `minisign -S -s` takes a
+      # path, so a signer materialises it before use). The secret half is not in
+      # this repository and never will be. Rotation is `minisign -G -W`, replace
+      # .github/pr-review.pub, re-set the secret, re-sign.
+      #
+      # A MISSING RECEIPT IS NOW RED (§6.3, verbatim: "a missing receipt is RED,
+      # not skipped"). This job is deliberately still NOT in `gate`'s needs, so a
+      # red here does not block a merge; it makes `receipt_presence` a number
+      # somebody can read instead of a metric nothing measures. Promoting it into
+      # `gate` is a separate decision and wants 30 samples behind it, per §8.
+      #
+      # The step deepens the checkout first: base_sha resolves through
+      # `git merge-base origin/main <head>`, which a fetch-depth-1 checkout cannot
+      # answer. The script exits 2 rather than 0 or 1 when the BOX cannot answer,
+      # so a shallow clone is never read as a clean tree.
+      - name: "Arm 4 case table: the absent-key branch that used to exit 0 forever"
+        shell: bash
+        run: bash scripts/check_pr_review_arm4.sh --self-test
+      - name: This PR's own receipt, under the repository's own default key
         shell: bash
         run: |
           set -euo pipefail
-          PUBKEY=.github/pr-review.pub
-          if [ ! -f "$PUBKEY" ]; then
-            echo "NOT ARMED: $PUBKEY is absent, so no receipt can be verified yet."
-            echo "  It arrives with PRREV-005 (the reviewer that emits and signs receipts)."
-            echo "  This step re-evaluates that on every run; it is not waiting on an edit."
-            exit 0
-          fi
           git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main \
             || git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          DIR="evidence/pr-review/${PR_NUMBER}/${PR_HEAD_SHA}"
-          echo "ARMED: requiring a valid signed receipt at $DIR"
-          bash scripts/check_pr_review_receipt.sh "$DIR"
+          bash scripts/check_pr_review_arm4.sh
 
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]

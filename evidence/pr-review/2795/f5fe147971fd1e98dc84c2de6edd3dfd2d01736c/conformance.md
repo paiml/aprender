@@ -109,3 +109,41 @@ full independence would be the self-flattery S5 exists to prevent.
   `PRREV-DOGFOOD-05`), so those zeros are flagged rather than presented as measurements.
 - The signature proves whoever held the throwaway key produced this file. It does **not** prove
   the review was honest or complete. `attestation_level` is `L1-self` for that reason.
+
+---
+
+## Addendum — PRREV-013, 2026-08-31: this receipt now verifies under the repository default
+
+Appended, not rewritten. Everything above is the transcript of the run as it happened at
+`f5fe147`, including the two sentences that say the signature was a throwaway's — which
+was true then and is the finding that produced this addendum.
+
+**What changed:** `.github/pr-review.pub` is committed (PRREV-013), and
+`receipt.intoto.jsonl` has been **re-signed with the secret half of that key**. The receipt
+BYTES are unchanged — only the detached `.minisig` is new — so nothing above is restated by
+the re-signing; it is the same document under a key a reader of this repository can actually
+obtain.
+
+```
+$ bash scripts/check_pr_review_receipt.sh evidence/pr-review/2795/f5fe147971fd1e98dc84c2de6edd3dfd2d01736c
+ACCEPT  evidence/pr-review/2795/f5fe147971fd1e98dc84c2de6edd3dfd2d01736c        # rc=0
+```
+
+with **no `PR_REVIEW_PUBKEY` override**. Before this addendum the same command was
+`REJECT [B1] public key .github/pr-review.pub is absent`.
+
+`receipt-verification-key-THROWAWAY.pub` is **deleted**: it can no longer verify the
+signature beside it, and a public key that verifies nothing sitting next to a receipt is a
+worse artifact than no key at all. The superseded signature line is preserved here so the
+original signing event is not erased by its replacement:
+
+```
+# superseded signature over receipt.intoto.jsonl, throwaway key 4401F077A1B6314F
+RURPMbahd/ABRJ5e1EKyoZmro1sVrz5W+fHFtgpxLp0T0T8tvFq1oqKozyeDsK7j9iEtTxGoZXnDNawLKfLn1NT6qvW/UbFn2wc=
+```
+
+Two sentences above are now historical rather than current, and are left standing rather
+than edited: *"the signature proves whoever held the throwaway key produced this file"*, and
+the verification instruction naming the throwaway. What has NOT changed is the sentence that
+matters — `attestation_level` is still `L1-self`, and the signature still proves provenance
+and not diligence.

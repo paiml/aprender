@@ -666,18 +666,58 @@ bindings:
   status: implemented
   notes: >-
     S8, the four jidoka parameters. guard_mutation_score is now MEASURED and
-    REPRODUCIBLE: scripts/mutate-guard.sh is committed and reports 119/119
-    = 100% over scripts/check_pr_review_receipt.sh (PRREV-004). The set is committed as
+    REPRODUCIBLE: scripts/mutate-guard.sh is committed and reports 185/185
+    = 100% over scripts/check_pr_review_receipt.sh (PRREV-004; the set was 119 when
+    PRREV-004 landed and this line went stale silently in the four commits that widened
+    the guard, which is why scripts/check_pr_review_counts.sh now derives it). The set is committed as
     a DERIVATION, not a list — one `drop` and one `flip` per `reject B<n>` site, the
     sites rescanned from the guard on every run, plus named single-line edits to the
     control machinery that must each match exactly one line or the sweep refuses to
     run. That is strictly stronger than a written-down list, which falls behind the
     file it mutates. vacuous_consultations = 0 is enforced by the attempted>0 branch
-    (row 2) and unmarked_claims = 0 by row 15; receipt_presence = 1.00 is enforced as
-    "a missing receipt is RED, not skipped" and is a property of PRREV-006's CI wiring
-    once it lands. The sweep excludes the two `case` gates around `rm -rf` and the EXIT
+    (row 2) and unmarked_claims = 0 by row 15. receipt_presence = 1.00 was recorded here
+    as "a property of PRREV-006's CI wiring once it lands", AND THE WIRING LANDED WITHOUT
+    IT: PRREV-006's Arm 4 opened `if [ ! -f .github/pr-review.pub ]; then ... exit 0; fi`
+    over a public key no ticket owned, so the step exited 0 on every run it ever had, and
+    its armed branch looked for a directory named after the PR's TIP commit, which no PR
+    can produce because committing the receipt changes the tip. A metric fixed at 1.00
+    with no ratchet was therefore unenforceable by the job written to enforce it -- a gate
+    that cannot fail wrapped around a gate that cannot pass. PRREV-013 committed the key,
+    re-signed the receipt so it ACCEPTs under the repository default, and moved Arm 4 into
+    scripts/check_pr_review_arm4.sh, whose --self-test drives seven rows including the
+    absent-key one that used to read green. The job is still outside `gate`'s needs, so
+    receipt_presence is now MEASURED and VISIBLE rather than blocking; promoting it wants
+    the 30 samples S8 asks for and is not this entry's claim. The sweep excludes the two `case` gates around `rm -rf` and the EXIT
     trap, which are destructive-op guards no receipt can reach: including an unkillable
     mutant in a score S8 fixes at one would make the one a lie.
+- contract: pr-review-skill-v2.yaml
+  equation: duplication_coverage_is_recorded_per_surface
+  status: implemented
+  notes: >-
+    S3.A's duplication_hits, the field the spec calls the highest-EV in the receipt.
+    DECLARED BY PRREV-009 AND REGISTERED BY NOTHING until PRREV-013: the contract carried
+    five equations and this file bound four, and no PR-time gate could see the gap --
+    `pv validate` exits 0 on the contract alone, `pv verify-bindings` checks only that a
+    binding names a real equation and not that a real equation has a binding, and
+    dogfood.sh is not in ci.yml. An equation can therefore be declared and never bound,
+    which is a hole in the registry and not only in this contract; filed as
+    https://github.com/paiml/aprender/issues/2797 rather than closed by adding one entry
+    here, because one entry cannot close a class.
+    Discharged by the duplication-coverage branches of
+    scripts/check_pr_review_receipt.sh: the per-surface map over
+    { rust, shell, python, config, docs, other, sibling_branches, merge_base_to_main },
+    the three-region horizon, and the whole-number bounds on
+    horizon_branches_{scanned,total}. Fixture rows 23 and 24 are the discrimination
+    PAIR the invariant demands -- the SAME coverage map under `verdict: PASS` (RED, a
+    surface recorded `none` cannot sit under a PASS) and under `verdict: DEGRADED`
+    (GREEN, `none` is honest and costs the receipt its PASS, not its validity). Without
+    row 24 the rule would punish the honest receipt exactly as hard as the silent one,
+    and a field that costs a PASS whatever is written in it is a field that learns to
+    stay empty. Verified by mutation inside scripts/mutate-guard.sh's derived set, which
+    covers every `reject B<n>` site in these branches; PRREV-011's F8 found that merging
+    the two repair lanes had left one of them DEAD -- two implementations of
+    "duplication_hits must be an array", the superset returning 129 lines earlier -- and
+    bats passed 112/0 straight over it. Only the mutation set saw it.
 critical_path:
 - softmax
 - rmsnorm
