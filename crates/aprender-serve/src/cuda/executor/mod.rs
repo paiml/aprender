@@ -427,10 +427,18 @@ pub struct CudaExecutor {
     // Compute stream for kernel execution (PARITY-038)
     // PoolableStream: returned to pool on executor drop, not destroyed.
     compute_stream: PoolableStream,
-    // Transfer stream for async H2D/D2H copies (PARITY-038)
-    // Runs in parallel with compute_stream for overlapped execution
+    // Transfer stream for async H2D/D2H copies (PARITY-038).
+    //
+    // PERF-053 (aprender#2767): it carries NO production work. Its only users are
+    // `copy_to_gpu_async` / `copy_from_gpu_async` (zero callers anywhere, tests included) and
+    // `synchronize_transfer` / `synchronize_all` (test callers only). The "runs in parallel with
+    // compute_stream for overlapped execution" this comment used to claim does not happen.
     transfer_stream: PoolableStream,
-    // Legacy alias for compute_stream (kept for backward compatibility)
+    // A THIRD stream, distinct from compute_stream -- NOT an alias, whatever this comment used
+    // to say. `checkout_streams` mints three, and CORRECTNESS-011/012 deliberately move work onto
+    // THIS one ("Use self.stream (NOT compute_stream) to ensure synchronization"), which is only
+    // meaningful because they are different streams. Reading it as an alias makes those fixes
+    // look like no-ops.
     stream: PoolableStream,
     // PAR-054: CUDA Graph Capture for decode loop optimization
     // Captures ~280 kernel launches into single graph replay (~10us vs ~5.6ms)

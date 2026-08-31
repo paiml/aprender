@@ -52,6 +52,26 @@ ignore = [
     # a four-major jump on a test-only dep. Tracked separately; revisit before
     # anything starts enabling `runtime`.
     "RUSTSEC-2026-0222",
+    # wasmtime 43.0.2 - "Filesystem sandbox escape when paths or symlinks
+    # contain trailing slashes", CVSS 8.8 HIGH. Published 2026-08-20; first
+    # broke the security gate on 2026-08-31, taking `ci / gate` -- a REQUIRED
+    # check -- red on every open pull request at once (#2799 through #2803).
+    #
+    # Highest severity in this cluster so far, so the reachability claim was
+    # re-verified rather than inherited from the entries above:
+    #   cargo tree -p aprender                        -> 0 wasmtime paths
+    #   cargo tree -p aprender --no-default-features  -> 0 wasmtime paths
+    #   cargo tree -p apr-cli                         -> 0 wasmtime paths
+    # wasmtime is optional and gated behind aprender-test-lib's `runtime`
+    # feature, which nothing in the workspace enables. No shipped artifact
+    # links it, and nothing here runs untrusted wasm with a preopened
+    # directory, which is the only way the escape is reachable at all.
+    #
+    # There is NO fixed 43.x: the advisory's ranges are >=24.0.13,<25,
+    # >=36.0.14,<37, >=46.0.3,<47 and >=47.0.4. So the real fix is the same
+    # three-major-version bump the -0222 note above already defers, and it
+    # must land before anything starts enabling `runtime`.
+    "RUSTSEC-2026-0269",
 
     # rustls-webpki 0.101.7 — transitive via aws-smithy-http-client (rustls 0.21).
     # Direct 0.103.x path already bumped to >=0.103.12. The 0.101.7 pin lives
