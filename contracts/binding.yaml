@@ -665,9 +665,16 @@ bindings:
   equation: four_defects_stop_the_line
   status: implemented
   notes: >-
-    S8, the four jidoka parameters. guard_mutation_score is now MEASURED and
-    REPRODUCIBLE: scripts/mutate-guard.sh is committed and reports 217/217
-    = 100% over scripts/check_pr_review_receipt.sh (PRREV-004; the set was 119 when
+    S8, the four jidoka parameters. guard_mutation_score is REPRODUCIBLE:
+    scripts/mutate-guard.sh is committed and its DERIVED set is 219/219 over
+    scripts/check_pr_review_receipt.sh. THE SET SIZE IS DERIVED AND CERTAIN; THE KILL
+    COUNT ON THIS MERGED TREE IS PENDING, and is the `pr-review-receipt` job's Arm 3.
+    215/215 was measured on PRREV-015's tree and 185/185 on PRREV-013's, and neither
+    transfers: PRREV-019 and PRREV-020 each added one `reject B<n>` site (two mutants
+    each), and PRREV-020 gave every row-* fixture an output_check block, so the corpus
+    the sweep runs against moved as well as its size. The measurement lands here as a
+    follow-up commit, the way 804559ed5 discharged 03d795423's pending 185/185. S8 allows
+    no ratchet on this parameter: anything below 100% blocks. (PRREV-004; the set was 119 when
     PRREV-004 landed and this line went stale silently in the four commits that widened
     the guard, which is why scripts/check_pr_review_counts.sh now derives it). The set is committed as
     a DERIVATION, not a list — one `drop` and one `flip` per `reject B<n>` site, the
