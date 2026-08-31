@@ -463,6 +463,21 @@ jobs:
       # passes on the merge-base can still red here, and CI is authoritative.
       - name: Fetch origin/main as the comparand for every ratchet in this job
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      # aprender#2822. Case table FIRST, per the convention above: the probe
+      # below is only worth its 0.15s if the classifier it feeds can still turn
+      # RED. Seven rows over a throwaway tree - no cargo, no network, no host.
+      # Mutation-verified: deleting the sentinel rule, deleting the inode rule,
+      # or restoring the read-after-plant ordering bug each takes it RED.
+      #
+      # This step IS a gate and may fail the job. The probe and report steps are
+      # not and never can - a recorder that can red a required check is a
+      # liability, and #2822 is already red.
+      - name: "target-watch case table (aprender#2822)"
+        run: bash scripts/ci_target_watch.sh --self-test
+      - name: "target-watch: post-checkout"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "post-checkout"
       # A baseline that no guard compares to anything is an allowlist wearing
       # the word "ratchet". This is the coverage backstop: every scripts/*.txt
       # is classified shrink-only (and compared) or NOT-a-ratchet (with the
@@ -574,6 +589,10 @@ jobs:
         run: bash scripts/check_pv_version_parse.sh
       - name: "pv --version parse guard must still turn RED (case table)"
         run: bash scripts/check_pv_version_parse.sh --self-test
+      - name: "target-watch: before-cargo-install-bashrs"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-install-bashrs"
       # CLAUDE.md mandates bashrs over shellcheck; CI honoured that for SEVEN of
       # 72 scripts (`bashrs lint scripts/check_book_*.sh` in book.yml).
       # apr_bin.sh -- sourced by every gate in this repo -- was not one of them,
@@ -831,6 +850,10 @@ jobs:
         run: bash scripts/check_publish_safety.sh
       - name: Every include!() file is tracked by git (CB-510)
         run: bash scripts/check_include_files.sh
+      - name: "target-watch: before-pv-build"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-pv-build"
       # #2512: these two were invoked by NO workflow -- one Makefile-only
       # (`make tier3`, which CI does not run), one reachable from nothing at all.
       # Both pass today and are cheap, so there was never a reason for them to be
@@ -854,6 +877,10 @@ jobs:
         run: bash scripts/check_pv_bin_resolution.sh
       - name: Every contract cites a test that exists (strict-test-binding)
         run: bash scripts/check_contract_test_binding.sh
+      - name: "target-watch: before-contracts-tests"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-contracts-tests"
       # Poka-yoke (#2551): `cargo test -p aprender-contracts --test
       # validate_contracts` is the only thing that parses and validates the
       # contract corpus from Rust rather than through `pv lint`. It failed 3 of
@@ -874,8 +901,16 @@ jobs:
           cargo test -p aprender-contracts --test validate_contracts
           cargo test -p aprender-contracts --test kani_harness_generation
           cargo test -p aprender-contracts --test probar_test_generation
+      - name: "target-watch: before-wasm32-build"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-wasm32-build"
       - name: aprender-core builds for wasm32
         run: bash scripts/check_wasm32_core_builds.sh
+      - name: "target-watch: before-facade-compat"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-facade-compat"
       # aprender#2546: `provable-contracts*` were renamed to `aprender-contracts*`
       # and the published names left frozen at 0.3.1. A pin on the old name
       # resolved SILENTLY and installed a tool sixty versions behind. The names
@@ -1148,6 +1183,10 @@ jobs:
         run: bash scripts/check_dogfood_llm_probe_armed.sh
       - name: dogfood LLM probe guard case table
         run: bash scripts/check_dogfood_llm_probe_armed.sh --self-test
+      - name: "target-watch: before-profile-tests"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-profile-tests"
       # aprender-profile appeared in this file ZERO times while carrying 58
       # integration test targets. Running them found 110 failures -- 109 from a
       # single stale binary name left by the APR-MONO rename, dead since. Gated
@@ -1179,6 +1218,10 @@ jobs:
         run: bash scripts/check_model_tests_wired.sh
       - name: model-tests wiring case table
         run: bash scripts/check_model_tests_wired.sh --self-test
+      - name: "target-watch: before-model-tests-docker"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-model-tests-docker"
       - name: model-tests falsification suites (was gated by nothing, aprender#2522)
         # Runs INSIDE the image, on the same per-RUN target dir as the other
         # cargo steps, so the `model-tests` feature build reuses this run's
@@ -1201,8 +1244,16 @@ jobs:
               --test falsification_spec_v10_tests \
               --test falsification_stress_tests \
               --test falsification_gpu_state_tests
+      - name: "target-watch: before-book-examples"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-book-examples"
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
+      - name: "target-watch: before-cargo-package"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-package"
       # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
       # from the published crate while git still tracks it, so the crate compiles
       # in-tree and fails for everyone installing from crates.io. This guard is
@@ -1270,6 +1321,10 @@ jobs:
       - name: Publishable-deps guard case table
         run: bash scripts/check_publishable_deps_publishable.sh --self-test
 
+      - name: "target-watch: before-cargo-deny-install"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-deny-install"
       # `cargo deny` ran in ZERO workflows -- only `make deny`. Positive control:
       # 9 workflows mention `cargo`, 0 mentioned `deny`. Meanwhile the `security`
       # job runs `cargo audit` with continue-on-error, which cannot fail the build
@@ -1335,6 +1390,10 @@ jobs:
         run: bash scripts/check_test_fixture_paths.sh
       - name: Fixture-path guard case table
         run: bash scripts/check_test_fixture_paths.sh --self-test
+      - name: "target-watch: after-last-cargo-step"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "after-last-cargo-step"
       # #2532: the guard above has a universe of crates/**/tests?/**/*.rs, which
       # structurally excludes 100% of the 324 machine-specific paths pmat found
       # in SHIPPED code -- 46 of them inside contracts/ itself. Seventeen crux
@@ -1365,6 +1424,28 @@ jobs:
         run: bash scripts/check_hardcoded_paths.sh --self-test
       - name: Whole-tree machine-specific-path ratchet (arms itself at pmat >= 3.32.0)
         run: bash scripts/check_hardcoded_paths.sh --full-if-capable
+      # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
+      # and takes its own final probe first -- without that, a failure at
+      # step K leaves the last recorded boundary BEFORE K and the table
+      # reads clean, which is the whole failure mode being investigated.
+      #
+      # It also pulls the host journal for the job's window into the job
+      # log. That is the decisive evidence and the only evidence that
+      # expires: `_work/*/target` is deleted by HOST automation (a sibling
+      # runner's job-started hook, a systemd timer) which logs under its own
+      # tag and appears in NO GitHub log. See
+      # scripts/runner-infra/runner-disk-guard.sh, whose own header records
+      # this exact signature.
+      #
+      # continue-on-error is deliberate and is NOT a disarmed gate: nothing
+      # here asserts anything. The gate that can fail is the case table
+      # wired above.
+      - name: "target-watch: report (aprender#2822)"
+        if: always()
+        continue-on-error: true
+        run: |
+          bash scripts/ci_target_watch.sh probe post-job
+          bash scripts/ci_target_watch.sh report
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
