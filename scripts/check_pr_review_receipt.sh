@@ -187,7 +187,31 @@ match_mutation_trigger() { grep -Eq -- "$MUTATION_TRIGGER_RE" <<<"$1"; }
 #
 # RESIDUAL, recorded rather than hidden: a comparative claim added to docs/ prose or to a
 # plain `//` comment is NOT blocked by B4. Two real ones are named above.
+#
+# F6 -- THE BOOK IS PROSE, AND ITS DIRECTORY NAMES ARE CHAPTER NAMES, NOT A RUST LAYOUT.
+# The exclusion list below was scoped from a Rust project's layout, where `examples/` is
+# a cargo target directory. Applied to `book/**` it removed `book/src/examples/` -- and
+# that is 153 of the book's 441 published .md pages, 34.7%, every one of them listed in
+# book/src/SUMMARY.md on origin/main, so every one a rendered mdBook chapter. It is also
+# EXACTLY where `851.8 tok/s = 2.93x Ollama` was published, at da069a25f, from a harness
+# that never ran Ollama -- the scar S3.C.1, S9 and S11 are all written about.
+#
+# Measured, not argued (evidence/pr-review/backtest/results-v3.md):
+#   B4 over da069a25f^..da069a25f, book/ excluded  -> 0 fires    (the claim is ACCEPTED)
+#   B4 over the same diff, book/ exempted          -> 2 fires    (both the real claim)
+#   false positives over all 153 current book/src/examples/ pages          -> 0
+#   false positives over every added book/** line in 300 commits of main   -> 0
+#
+# So the book exemption is checked FIRST, ahead of all four exclusion lines, not merely
+# ahead of the benches|examples one: a future `book/src/tests/` chapter is a chapter too
+# (none exists today, and this is the difference between fixing the instance and fixing
+# the class). The Rust exclusions keep their full force everywhere else, which the case
+# table pins with `crates/aprender-core/examples/demo.rs` -> NO-MATCH beside
+# `book/src/examples/...` -> MATCH: same directory name, opposite verdict, one variable.
 match_shipped_surface() {
+  case "$1" in
+    book/*.md) return 0 ;;
+  esac
   case "$1" in
     tests/*|*/tests/*|test/*|*/test/*)         return 1 ;;
     benches/*|*/benches/*|examples/*|*/examples/*) return 1 ;;
@@ -198,10 +222,11 @@ match_shipped_surface() {
   # below is what B4 scans, and docs/ is not on it. An explicit `docs/*) return 1` was
   # written here first and the mutation sweep reported it SURVIVED - a dead branch no
   # receipt can reach, which is the same shape as a rule nothing tests. The exclusion
-  # that matters is the absence below, and `book-removed-from-b4-scope` /
-  # `docs-prose-back-in-b4-scope` in scripts/mutate-guard.sh mutate exactly that line.
+  # that matters is the absence below, and `docs-prose-back-in-b4-scope` in
+  # scripts/mutate-guard.sh mutates exactly that line; `book-removed-from-b4-scope` and
+  # `book-examples-back-out-of-scope` mutate the book exemption above it.
   case "$1" in
-    crates/*/src/*.rs|src/*.rs|book/*.md) return 0 ;;
+    crates/*/src/*.rs|src/*.rs) return 0 ;;
   esac
   return 1
 }
@@ -655,6 +680,13 @@ validate_receipt() {
   #   (b) prior art on an UNMERGED SIBLING BRANCH is invisible by construction. #2781
   #       found #2742's only because #2742 had merged 17 hours earlier. Luck, not
   #       mechanism.
+  #   (c) F7: prior art that landed on origin/main AFTER the merge base is in NEITHER
+  #       region, and the receipt did not even NAME that region. #2781's blind region is
+  #       exactly #2742 - 1 commit, 46 files, 11 of them the prior art, including
+  #       crates/apr-cli/src/commands/test_llm_band.rs. Measured, not estimated: one
+  #       `git grep` over it costs 1 s against 20 s for the 774-branch sibling sweep.
+  #       So it is swept, `merge_base_to_main` is a required coverage key, and the
+  #       horizon must name all three regions whether or not each was reached.
   #
   # S3.0 applied to this field: it must not be possible to read "searched and found
   # nothing" as identical to "could not search". So the coverage the run ACHIEVED is
@@ -666,7 +698,7 @@ validate_receipt() {
   # it: a gate that recomputes a 19-second sweep on every receipt is a gate that gets
   # routed around, and the attestation is L1-self for exactly this class of field.
   if [ "$pmat_st" = "consulted" ]; then
-    local cov_missing cov_bad cov_none dup_sib dup_scanned dup_total
+    local cov_missing cov_bad cov_none horizon_missing dup_sib dup_scanned dup_total
     # duplication_hits is NOT re-checked here. PRREV-009 wrote a `type == "array"` test at
     # this point and PRREV-008 independently wrote a stronger one 129 lines up, over all
     # four S3.A outputs at once; merging the two lanes left this one UNREACHABLE, because
@@ -685,7 +717,12 @@ validate_receipt() {
     jq -e '.predicate.consultations.pmat.duplication_coverage | (type == "object") and (length > 0)' "$rcpt" >/dev/null 2>&1 \
       || reject B1 "pmat.status is consulted but duplication_coverage is absent; an unrecorded coverage claim cannot be told apart from a searched-and-empty one, and S3.0 forbids exactly that (F4)" || return 1
 
-    cov_missing=$(jq -r '(["rust","shell","python","config","docs","other","sibling_branches"]
+    # `merge_base_to_main` joins this list rather than getting a rule of its own, and that
+    # is deliberate: the two rules below - a method outside the vocabulary is REJECTED,
+    # and `none` may not sit under a PASS - then apply to the third region for free. A new
+    # rule would need a new mutant and a new fixture; an entry in this list is covered by
+    # the ones already here. Degrade the METHOD, never the count.
+    cov_missing=$(jq -r '(["rust","shell","python","config","docs","other","sibling_branches","merge_base_to_main"]
                           - (.predicate.consultations.pmat.duplication_coverage | keys)) | join(", ")' "$rcpt")
     [ -z "$cov_missing" ] \
       || reject B1 "duplication_coverage records no verdict for: $cov_missing; a surface with no entry is the silently-absent coverage F4 exists to stop" || return 1
@@ -709,6 +746,24 @@ validate_receipt() {
     jq -e '.predicate.consultations.pmat.duplication_horizon
            | (type == "array") and (length > 0) and (map(type == "string") | all)' "$rcpt" >/dev/null 2>&1 \
       || reject B1 "duplication_horizon is absent or is not a non-empty array of refspecs; an unstated horizon makes 'nothing found' and 'did not look off this branch' the same artifact (F4)" || return 1
+
+    # F7: THE HORIZON NAMES ALL THREE REGIONS, WHETHER OR NOT EACH WAS REACHED.
+    #
+    # The scan used to build this array from the METHOD, so a region it did not sweep was
+    # simply ABSENT - and the pre-F7 receipt read
+    # `["HEAD","refs/remotes/origin/* unmerged into origin/main"]` under a PASS while a
+    # 46-file region sat outside both. An absent region is unfalsifiable: nothing in the
+    # artifact distinguishes "there is no such region" from "I never looked there". S3.0
+    # forbids exactly that, and F4's rows 23/24 already forbid it for an unsearched
+    # LANGUAGE surface; this is the same rule for an unsearched REF region.
+    #
+    # Each entry is `<component>=<refspec>`, so a region cannot be dropped by deleting a
+    # line, and the coverage map above says which of the three was actually searched.
+    horizon_missing=$(jq -r '(["head","siblings","merge_base_to_main"]
+                              - [ .predicate.consultations.pmat.duplication_horizon[]?
+                                  | (capture("^(?<k>[a-z_]+)=") | .k)? ]) | join(", ")' "$rcpt")
+    [ -z "$horizon_missing" ] \
+      || reject B1 "duplication_horizon names no region for: $horizon_missing; the horizon has three components (head, siblings, merge_base_to_main) and an unnamed one makes 'nothing found there' and 'never looked there' the same artifact (F7)" || return 1
 
     # WHOLE numbers, and the `floor` clauses are not decoration. The two rules below
     # compare these with `[ -lt ]`, which cannot read "2.0": it errors, the `if` reads

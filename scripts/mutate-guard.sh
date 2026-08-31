@@ -154,8 +154,9 @@ rs-published-predicate-verdict-not-propagated	match_rs_published "${2?--match-rs
 rs-published-regex-never-matches	RS_PUBLISHED_RE='(println!	RS_PUBLISHED_RE='(^$)@@TRUNCATE@@
 rs-published-regex-matches-everything	RS_PUBLISHED_RE='(println!	RS_PUBLISHED_RE='(.)@@TRUNCATE@@
 rs-line-test-not-applied	  case "$1" in *.rs) match_rs_published "$2" || return 1 ;; esac	  case "$1" in *.rs) true ;; esac
-docs-prose-back-in-b4-scope	src/*.rs|book/*.md) return 0 ;;	src/*.rs|book/*.md|docs/*.md) return 0 ;;
-book-removed-from-b4-scope	crates/*/src/*.rs|src/*.rs|book/*.md) return 0 ;;	crates/*/src/*.rs|src/*.rs) return 0 ;;
+docs-prose-back-in-b4-scope	crates/*/src/*.rs|src/*.rs) return 0 ;;	crates/*/src/*.rs|src/*.rs|docs/*.md) return 0 ;;
+book-removed-from-b4-scope	    book/*.md) return 0 ;;	    book/*.md) return 1 ;;
+book-examples-back-out-of-scope	    book/*.md) return 0 ;;	    book/*.md) case "$1" in */examples/*) return 1 ;; esac; return 0 ;;
 comparative-competitor-list-never-matches	COMPETITOR_RE='(ollama	COMPETITOR_RE='(^$)@@TRUNCATE@@
 comparative-competitor-list-matches-everything	COMPETITOR_RE='(ollama	COMPETITOR_RE='(.)@@TRUNCATE@@
 comparative-gap-bound-unbounded	){0,5}	){0,99}

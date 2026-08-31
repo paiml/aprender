@@ -17,7 +17,7 @@ metadata:
     one.
 
     STATE ON THIS COMMIT: BUILT AND MUTATION-VERIFIED, STILL NOT ARMED. The
-    guard (scripts/check_pr_review_receipt.sh), twenty-two fixtures, the
+    guard (scripts/check_pr_review_receipt.sh), twenty-six fixtures, the
     vendored schemas, the reviewer skill and the CI wiring all exist here;
     the `pr-review-receipt` job is not yet a required check. Five of the eight
     falsification tests below are green and bound to a command; three remain
@@ -293,12 +293,15 @@ equations:
   duplication_coverage_is_recorded_per_surface:
     formula: |
       duplication_coverage : SURFACE -> { semantic, lexical, none }
-        SURFACE = { rust, shell, python, config, docs, other, sibling_branches }
+        SURFACE = { rust, shell, python, config, docs, other,
+                    sibling_branches, merge_base_to_main }
+        REGION  = { head, siblings, merge_base_to_main }
       pmat.status = consulted =>
              duplication_hits is an array
          and dom(duplication_coverage) >= SURFACE
          and ran(duplication_coverage) subset { semantic, lexical, none }
          and duplication_horizon is a non-empty array of refspecs
+         and { r : "<r>=..." in duplication_horizon } >= REGION
          and horizon_branches_{total,scanned} in N (WHOLE numbers)
          and 0 <= horizon_branches_scanned <= horizon_branches_total
          and symbols_searched is a number
@@ -551,6 +554,56 @@ falsification_tests:
     must turn RED while row 17 stays GREEN. scripts/mutate-guard.sh derives both
     mutants by scanning for `reject B<n>`, so neither has to be remembered.
 
+- id: F-PRREV-010
+  rule: the book's own directory names are not a Rust project layout
+  prediction: >-
+    `--match-shipped-surface book/src/examples/showcase-benchmark.md` MATCHES, and
+    `--match-shipped-surface crates/aprender-core/examples/demo.rs` does NOT. Row 25 —
+    the same diff as row 16 with one directory changed — is REJECTED [B4] naming that
+    page, and row 26, the same page with the comparator recorded, is ACCEPTED. Both
+    arms are required: without row 26 "block every book page under examples/" reads
+    green, and the widening would have no honest exit.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    B4 goes back to discarding 34.7% of the published book — 153 of 441 pages, every
+    one of them listed in book/src/SUMMARY.md — including the page da069a25f published
+    `851.8 tok/s = 2.93x Ollama` to from a harness that never ran Ollama. That is the
+    publication S3.C.1, S9 step 7 and S11 are all written about, accepted by the gate
+    that names it. Measured on the real commit: 0 fires as merged, 2 with book/
+    exempted, 0 false positives over all 153 pages and over 300 commits of origin/main.
+  mutation: >-
+    `book-removed-from-b4-scope` puts the whole book out of scope and
+    `book-examples-back-out-of-scope` restores exactly the pre-F6 behaviour by
+    re-excluding */examples/* under book/. Both are in scripts/mutate-guard.sh and both
+    must be KILLED; the second is the one no fixture could kill before row 25 existed.
+
+- id: F-PRREV-011
+  rule: the duplication horizon has three regions and names all three, swept or not
+  prediction: >-
+    A receipt whose duplication_horizon is the pre-F7 spelling
+    ["HEAD", "refs/remotes/origin/* unmerged into origin/main"] is REJECTED naming all
+    three missing regions; one naming only head and siblings is REJECTED naming
+    merge_base_to_main. A coverage map with no merge_base_to_main key is REJECTED; one
+    recording it as `none` is REJECTED under PASS and ACCEPTED under DEGRADED. The
+    scanner, run against a repository where the prior art LANDED on origin/main after
+    the merge base, returns that file with where=main — and returns nothing for it when
+    the region is not swept, while still naming the region in the horizon.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    `merge-base..origin/main` stays in no region of the horizon and in no field of the
+    receipt, so `duplication_hits: []` under a PASS keeps meaning "there is nothing
+    like this" over a region nobody searched. Measured on #2781, whose blind region is
+    exactly #2742: one commit, 46 files, 11 of them the prior art, and a single
+    `git grep` over it costs 1 s against 20 s for the 774-branch sibling sweep and
+    returns crates/apr-cli/src/commands/test_llm_band.rs.
+  mutation: >-
+    delete the `merge_base_to_main` entry from the required-surface list in
+    scripts/check_pr_review_receipt.sh and the dup-cov-no-mergebase probe must turn
+    RED; delete the horizon-region branch and both horizon probes must turn RED while
+    the discrimination arm stays GREEN. scripts/mutate-guard.sh derives the drop and
+    flip mutants for the new branch by scanning for `reject B<n>`, so neither has to be
+    remembered.
+
 proof_obligations:
 
 - type: invariant
@@ -590,10 +643,11 @@ proof_obligations:
 
 - type: invariant
   property: >-
-    A consulted pmat block records a coverage method for every surface and the refs its
-    horizon actually swept; no receipt reads PASS while a surface reads `none` or while
-    the horizon sweep was partial (F-PRREV-009).
-  formal: 'forall s in SURFACE: cov(s) in {semantic, lexical, none} and (exists s: cov(s) = none or scanned < total) => verdict != PASS'
+    A consulted pmat block records a coverage method for every surface, NAMES all three
+    horizon regions whether or not each was reached, and records the refs its horizon
+    actually swept; no receipt reads PASS while a surface reads `none` or while the
+    horizon sweep was partial (F-PRREV-009, F-PRREV-011).
+  formal: 'forall s in SURFACE: cov(s) in {semantic, lexical, none} and REGION subset named(duplication_horizon) and (exists s: cov(s) = none or scanned < total) => verdict != PASS'
 
 kani_harnesses:
 
@@ -705,9 +759,12 @@ qa_gate:
   - vacuous_consultation_is_degraded_not_pass
   - duplication_coverage_recorded_for_every_surface
   - unsearched_duplication_surface_is_degraded_not_pass
+  - duplication_horizon_names_all_three_regions
+  - unsearched_merge_base_to_main_region_is_degraded_not_pass
+  - book_prose_is_not_scoped_by_a_rust_project_layout
   - guard_positive_control_fires_before_any_verdict
   pass_criteria: >-
-    All 9 falsification tests turn RED against a fixture that violates them and GREEN
+    All 11 falsification tests turn RED against a fixture that violates them and GREEN
     against the honest fixture, through scripts/check_pr_review_receipt.sh, whose own
     positive control (S6.1) must fire first.
 
@@ -725,7 +782,7 @@ qa_gate:
     review it gates was diligent". Nothing here may be cited as evidence that a review
     was grounded.
   falsification: >-
-    Delete a required-field check from the guard and re-run the twenty-two fixtures. If
+    Delete a required-field check from the guard and re-run the twenty-six fixtures. If
     the affected row does not turn RED, the guard's green is a count of files rather
     than a verdict, and every verdict resting on it is withdrawn. This is not a thought
     experiment: scripts/mutate-guard.sh performs it at every `reject B<n>` site the

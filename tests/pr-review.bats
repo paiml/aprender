@@ -462,6 +462,14 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   [ "$status" -eq 0 ]
   run "$GUARD" --match-rs-published '    println!("851.8 tok/s = 2.93x Ollama");'
   [ "$status" -eq 0 ]
+  # F6, asserted in the harness's own voice rather than left to the table, because this
+  # is the exact path da069a25f published to and a table can silently shrink.
+  run "$GUARD" --match-shipped-surface book/src/examples/showcase-benchmark.md
+  [ "$status" -eq 0 ]
+  # ...and the exemption is book/, NOT examples/. Same directory name, a cargo example
+  # target, still out of scope. One variable between the two lines.
+  run "$GUARD" --match-shipped-surface crates/aprender-core/examples/demo.rs
+  [ "$status" -ne 0 ]
 }
 
 @test "S3.C surface trigger matches its case table, both polarities" {
@@ -506,9 +514,9 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "every S6.3 row, the contract's owed row, and PRREV-008's seven have a fixture" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 24 ] || { echo "expected 24 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009), found $n"; false; }
+  [ "$n" -eq 26 ] || { echo "expected 26 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6), found $n"; false; }
   local i
-  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
       || { echo "no fixture directory for row $i"; false; }
   done
@@ -1028,6 +1036,29 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
     "duplication_coverage could not search [shell, python, config, docs, other] and the verdict is PASS"
 }
 
+@test "row 25 a ratio published under book/src/examples/               RED  B4" {
+  # F6, and it is row 16 with ONE directory changed. Until F6 the two verdicts diverged:
+  # row 16 RED, this one ACCEPTED, because `match_shipped_surface` excluded */examples/* —
+  # a cargo target-layout rule — and applied to the book that removed book/src/examples/,
+  # 153 of 441 published pages, 34.7%, every one of them in SUMMARY.md. da069a25f
+  # published `851.8 tok/s = 2.93x Ollama` into exactly that directory, and B4 fired ZERO
+  # times over it. The publication the spec is written about, accepted by the gate.
+  assert_row row-25-examples-page-publishes-a-ratio RED B4 \
+    "the diff publishes a comparative claim on a user-facing surface"
+  # The PATH is asserted, not merely the class: a rejection quoting some other file would
+  # be this row passing for a reason that has nothing to do with F6.
+  run "$GUARD" "$FIX/row-25-examples-page-publishes-a-ratio"
+  [[ "$output" == *"book/src/examples/showcase-benchmark.md"* ]] || {
+    echo "rejected, but not on the examples/ page — F6 is not what made this RED"
+    echo "$output"; return 1; }
+}
+
+@test "row 26 the same examples/ page, ratio RECORDED               GREEN     [discrimination]" {
+  # Without this, "block every book page under examples/" reads green and F6 would have
+  # widened B4 into a rule with no honest exit. The exit is row 17's, one directory over.
+  assert_row row-26-examples-page-ratio-recorded GREEN
+}
+
 @test "row 24 the SAME unsearched surface, verdict DEGRADED          GREEN     [discrimination]" {
   # Without this row the rule would punish the honest receipt exactly as hard as the
   # silent one - and a coverage field that costs you a PASS whatever you write in it
@@ -1084,6 +1115,66 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
   assert_probe dup-horizon-scalar row-14-complete-gpu-review B1 \
     "duplication_horizon is absent or is not a non-empty array" \
     '.predicate.consultations.pmat.duplication_horizon = "HEAD"'
+}
+
+@test "probe duplication_coverage with no merge_base_to_main region     RED  B1" {
+  # F7. `merge-base..origin/main` is the region #2781's prior art actually sat in — one
+  # commit, 46 files, 11 of them #2742's perf_gate work — and before F7 the coverage map
+  # had no key for it at all. An absent key is not a small omission: it is the one state
+  # S3.0 forbids, because nothing distinguishes it from a searched-and-empty region.
+  assert_probe dup-cov-no-mergebase row-14-complete-gpu-review B1 \
+    "duplication_coverage records no verdict for: merge_base_to_main" \
+    'del(.predicate.consultations.pmat.duplication_coverage.merge_base_to_main)'
+}
+
+@test "probe the merge_base_to_main region unsearched under a PASS     RED  B1" {
+  # The rule rows 23/24 apply to a language surface, applied to a REF region. It needs no
+  # new branch in the guard — merge_base_to_main is a coverage key like any other, so the
+  # existing `none may not read PASS` rule reaches it. Asserted here rather than assumed,
+  # because "it should be covered by the existing rule" is how a rule comes to cover
+  # nothing.
+  # row 07, not row 14: row 14's verdict is FINDINGS, and a probe built on it would be
+  # ACCEPTED for a reason that has nothing to do with the rule under test. The base row
+  # has to be a GREEN receipt whose verdict is actually PASS, or the polarity is fake.
+  assert_probe dup-mergebase-none-pass row-07-honest-docs-only-pmat-consulted B1 \
+    "duplication_coverage could not search [merge_base_to_main] and the verdict is PASS" \
+    '.predicate.consultations.pmat.duplication_coverage.merge_base_to_main = "none"'
+}
+
+@test "probe the SAME unsearched region, verdict DEGRADED            GREEN     [discrimination]" {
+  # Without this arm, "reject every receipt that admits a blind region" reads green, and
+  # the honest receipt is punished exactly as hard as the silent one — which is how a
+  # coverage field learns to stay empty.
+  local d
+  d=$(make_probe dup-mergebase-none-degraded row-07-honest-docs-only-pmat-consulted \
+      '.predicate.consultations.pmat.duplication_coverage.merge_base_to_main = "none"
+       | .predicate.verdict = "DEGRADED"')
+  run "$GUARD" "$d"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [[ "$output" == *"ACCEPT"* ]]
+}
+
+@test "probe duplication_horizon naming only two of its three regions  RED  B1" {
+  # F7's other half. The horizon used to be built from the METHOD, so a region that was
+  # not swept was simply ABSENT — and the pre-F7 receipt read
+  # ["HEAD","refs/remotes/origin/* unmerged into origin/main"] under a PASS while a
+  # 46-file region sat outside both. The horizon states which regions EXIST; the coverage
+  # map states which were SEARCHED. Neither is inferable from the other.
+  assert_probe dup-horizon-two-regions row-14-complete-gpu-review B1 \
+    "duplication_horizon names no region for: merge_base_to_main" \
+    '.predicate.consultations.pmat.duplication_horizon =
+       ["head=HEAD","siblings=refs/remotes/origin/* unmerged into origin/main"]'
+}
+
+@test "probe the pre-F7 horizon spelling, verbatim                     RED  B1" {
+  # The exact array every receipt in this epic carried before F7, quoted rather than
+  # paraphrased: an unlabelled ["HEAD", ...] names none of the three components, so it is
+  # rejected for ALL THREE. If a future edit made the labels optional, this row goes green
+  # and the regression is loud.
+  assert_probe dup-horizon-pre-f7 row-14-complete-gpu-review B1 \
+    "duplication_horizon names no region for: head, siblings, merge_base_to_main" \
+    '.predicate.consultations.pmat.duplication_horizon =
+       ["HEAD","refs/remotes/origin/* unmerged into origin/main"]'
 }
 
 @test "probe horizon_branches_total that is not a number               RED  B1" {
@@ -1309,6 +1400,73 @@ run_symbol_table() {
   [ "$output" -eq 1 ]
 }
 
+# land_prior_art_on_main <dir> - main advances PAST the fork, carrying the prior art.
+# This is the ordinary shape F7 is about: your branch is a day behind and someone merged
+# the thing you were about to write. #2781 against #2742, in miniature.
+land_prior_art_on_main() {
+  local d=$1
+  export GIT_AUTHOR_DATE="2026-02-03T00:00:00+0000" GIT_COMMITTER_DATE="2026-02-03T00:00:00+0000"
+  git -C "$d" checkout -q main
+  printf '#!/usr/bin/env bash\nrender_band_receipt() { :; }\n' > "$d/scripts/landed_helper.sh"
+  git -C "$d" add -A && git -C "$d" commit -q -m "M2 the prior art LANDS on main after the fork"
+  git -C "$d" update-ref refs/remotes/origin/main refs/heads/main
+}
+
+@test "F7 the scan sees prior art that LANDED on main after the merge base [discrimination]" {
+  local d="$WORK/scanrepo-g"
+  make_scan_repo "$d"
+  land_prior_art_on_main "$d"
+  local head base all none
+  head=$(git -C "$d" rev-parse pr)
+  # git merge-base, NOT origin/main and NOT GitHub's baseRefOid. Reading the base from
+  # baseRefOid is what made PRREV-007's #2781 result unreproducible outside its own
+  # worktree: baseRefOid was main's TIP at merge time, which is a descendant of the fork,
+  # so the blind region collapsed to nothing and the prior art looked reachable.
+  base=$(git -C "$d" merge-base refs/remotes/origin/main "$head")
+  [ "$base" != "$(git -C "$d" rev-parse refs/remotes/origin/main)" ] || {
+    echo "the fixture is degenerate: main did not advance past the fork"; false; }
+
+  # A. the pre-F7 horizon. The region is not swept, and — this is the whole finding —
+  #    the receipt did not even NAME it, so [] read as "there is nothing like this".
+  none=$("$SCAN" --repo "$d" --base "$base" --head "$head" --horizon none)
+  run jq -r '[.duplication_hits[] | select(.where == "main")] | length' <<<"$none"
+  [ "$output" -eq 0 ] || { echo "expected no main-region hits with --horizon none: $none"; false; }
+  run jq -r '.duplication_coverage.merge_base_to_main' <<<"$none"
+  [ "$output" = none ] || { echo "an unswept region must read none, got '$output': $none"; false; }
+  # ...and it is NAMED even when it was not searched. That is F7's rule: the horizon says
+  # which regions exist, the coverage map says which were reached.
+  run jq -r '[.duplication_horizon[] | select(startswith("merge_base_to_main="))] | length' <<<"$none"
+  [ "$output" -eq 1 ] || { echo "the unsearched region is absent from the horizon: $none"; false; }
+
+  # B. the repair. SAME diff, SAME script, the horizon is the only variable.
+  all=$("$SCAN" --repo "$d" --base "$base" --head "$head")
+  run jq -r '[.duplication_hits[] | select(.where == "main" and .ref == "origin/main" and .path == "scripts/landed_helper.sh" and .needle == "render_band_receipt")] | length' <<<"$all"
+  [ "$output" -eq 1 ] || { echo "the prior art that landed on main was not found: $all"; false; }
+  run jq -r '.duplication_coverage.merge_base_to_main' <<<"$all"
+  [ "$output" = lexical ]
+  run jq -r '.merge_base_to_main_files' <<<"$all"
+  [ "$output" -eq 1 ] || { echo "the region's denominator is wrong: $all"; false; }
+}
+
+@test "F7 the main-region sweep is SCOPED to the region, not to all of origin/main" {
+  # The grep takes a rev, not a diff, so without the region filter every hit already
+  # visible on HEAD would be counted a second time under a different `where` — and the
+  # hits_total / symbols_searched ratio the scan reports about itself would stop being
+  # judgeable. scripts/existing_helper.sh is present at the merge base, so it is a HEAD
+  # hit and must NOT also appear as a main-region hit.
+  local d="$WORK/scanrepo-h"
+  make_scan_repo "$d"
+  land_prior_art_on_main "$d"
+  local head base all
+  head=$(git -C "$d" rev-parse pr)
+  base=$(git -C "$d" merge-base refs/remotes/origin/main "$head")
+  all=$("$SCAN" --repo "$d" --base "$base" --head "$head")
+  run jq -r '[.duplication_hits[] | select(.where == "main" and .path == "scripts/existing_helper.sh")] | length' <<<"$all"
+  [ "$output" -eq 0 ] || { echo "a file unchanged since the merge base was double-counted: $all"; false; }
+  run jq -r '[.duplication_hits[] | select(.where == "HEAD" and .path == "scripts/existing_helper.sh")] | length' <<<"$all"
+  [ "$output" -eq 1 ] || { echo "the HEAD hit disappeared: $all"; false; }
+}
+
 @test "the scan's own output satisfies every rule the guard enforces on it" {
   # A mechanism whose output the guard would reject is two artifacts that disagree.
   # This is the join between them, and it is asserted rather than assumed.
@@ -1320,11 +1478,13 @@ run_symbol_table() {
   out=$("$SCAN" --repo "$d" --base "$base" --head "$head" --rust-semantic)
 
   run jq -e '(.duplication_hits | type == "array")
-             and (["rust","shell","python","config","docs","other","sibling_branches"]
+             and (["rust","shell","python","config","docs","other","sibling_branches","merge_base_to_main"]
                   - (.duplication_coverage | keys) | length == 0)
              and (.duplication_coverage | to_entries
                   | map(.value as $v | ["semantic","lexical","none"] | index($v) != null) | all)
              and (.duplication_horizon | (type == "array") and (length > 0) and (map(type == "string") | all))
+             and ((["head","siblings","merge_base_to_main"]
+                   - [ .duplication_horizon[] | (capture("^(?<k>[a-z_]+)=") | .k)? ]) | length == 0)
              and (.horizon_branches_total | type == "number")
              and (.horizon_branches_scanned | type == "number")
              and (.horizon_branches_scanned <= .horizon_branches_total)

@@ -19,6 +19,20 @@
 # The residual is recorded in the guard: a comparative claim added to docs/ prose is not
 # blocked, and two real ones are named there.
 #
+#
+# F6 -- book/** IS EXEMPT FROM THE RUST-LAYOUT EXCLUSIONS, and the rows below are the
+# measurement that decided it. `*/examples/*` was written for a cargo target directory.
+# The one directory it removed from the book is book/src/examples/ -- 153 of 441
+# published pages, 34.7%, all in book/src/SUMMARY.md -- and that is where
+# `851.8 tok/s = 2.93x Ollama` was published at da069a25f. B4 over that commit fired 0
+# times as merged and 2 times with book/ exempted; 0 false positives over all 153 pages
+# and over every added book/** line in 300 commits of origin/main.
+#
+# The exemption is scoped to book/ and nothing else. The pair
+#   MATCH     book/src/examples/showcase-benchmark.md
+#   NO-MATCH  crates/aprender-core/examples/demo.rs
+# is a single-variable control: same directory name, opposite verdict. If a future edit
+# widens the exemption past the book, the second row goes RED.
 # expect	subject	why
 MATCH	book/src/tools/apr-cli.md	the book is where users read, and where the 2.93x Ollama claim was actually published
 MATCH	book/README.md	book/ at any depth
@@ -37,3 +51,8 @@ NO-MATCH	evidence/pr-review/backtest/results.md	evidence records what was measur
 NO-MATCH	crates/aprender-core/src/format_tests.rs	a _tests.rs sibling is a test whatever directory it sits in
 NO-MATCH	CHANGELOG.md	KNOWN GAP, recorded not widened: a root-level markdown file is outside the universe check_no_claim_literals.sh defends, and widening here would put the two definitions out of step silently
 NO-MATCH	Cargo.toml	not a surface a claim can be published on
+MATCH	book/src/examples/showcase-benchmark.md	F6 THE SCAR: the page da069a25f published `851.8 tok/s = 2.93x Ollama` to; excluded until F6 by */examples/*, a Rust-layout rule applied to prose
+MATCH	book/src/examples/apr-cli-demo.md	one of the 153 published book pages under examples/, all of them in SUMMARY.md
+MATCH	book/examples/x.md	CONTROL, and it FLIPPED at F6: the old exclusion matched the name at any depth, so this was NO-MATCH. A book page is a book page at any depth
+NO-MATCH	crates/aprender-core/examples/demo.rs	SINGLE-VARIABLE CONTROL for the row above: same directory name, a cargo example target, still out of scope. The exemption is book/, not examples/
+NO-MATCH	book/src/examples/showcase-benchmark.rs	CONTROL: the exemption is book/**.md, not everything under book/. A .rs file there is not a rendered chapter

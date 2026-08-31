@@ -19,9 +19,20 @@
 #       art only because #2742 had merged 17 hours earlier. Reverse the order and S3.A
 #       returns []. That is luck, not mechanism.
 #
+#   (c) F7: prior art that landed on origin/main AFTER this branch's merge base is in
+#       NEITHER region. Not on HEAD - the branch predates it. Not an unmerged sibling -
+#       it merged. #2781's blind region is exactly #2742: 1 commit, 46 files, 11 of them
+#       the prior art. Measured: one git grep over that region costs 1 s against 20 s for
+#       the 774-branch sweep, and it returns test_llm_band.rs.
+#
 # So this script does the crude thing pmat cannot: a LEXICAL sweep for the diff's new
-# symbol and file names, over every text file regardless of language, and over the
-# unmerged sibling branches as well as HEAD.
+# symbol and file names, over every text file regardless of language, over the unmerged
+# sibling branches as well as HEAD, and over merge-base..origin/main.
+#
+# THE HORIZON HAS THREE COMPONENTS AND ALL THREE ARE ALWAYS NAMED - `head`, `siblings`,
+# `merge_base_to_main`. Whether each was SEARCHED is a separate field
+# (duplication_coverage), because a region that is absent from the horizon is a region
+# whose silence cannot be read.
 #
 # WHAT IT IS AND IS NOT - state this honestly or it becomes the next piece of theater
 #
@@ -290,34 +301,49 @@ sed 's/^[^:]*://' "$TMP/head-raw.txt" > "$TMP/head-hits.txt"
 # Attribute each surviving line to the needle that matched it, excluding the diff's own
 # files - or every needle would match the line that defined it. Word matching is done
 # by hand rather than with a GNU-only \y, so this runs the same under mawk.
-awk -v nf="$TMP/needles.txt" -v cf="$TMP/changed.txt" '
-  function isword(c) { return (c ~ /[A-Za-z0-9_]/) }
-  function wordfind(hay, nee,   p, off, before, after) {
-    off = 0
-    while (1) {
-      p = index(substr(hay, off + 1), nee)
-      if (p == 0) return 0
-      p += off
-      before = (p == 1) ? "" : substr(hay, p - 1, 1)
-      after  = substr(hay, p + length(nee), 1)
-      if (!isword(before) && !isword(after)) return 1
-      off = p
+#
+# ONE definition, called twice: once for the HEAD sweep and once for the
+# merge-base..origin/main sweep below. Two copies of an attribution rule drift, and the
+# drift is invisible because each keeps passing against its own copy - which is F4's own
+# finding, and F8 was that defect inside the guard that implements F4.
+#
+# attribute_hits <grep-output> <out.tsv> <region-file|"">
+#   region-file empty  -> every path is in scope (the HEAD sweep)
+#   region-file given  -> only paths listed there are in scope (a bounded region)
+attribute_hits() {
+  awk -v nf="$TMP/needles.txt" -v cf="$TMP/changed.txt" -v rf="$3" '
+    function isword(c) { return (c ~ /[A-Za-z0-9_]/) }
+    function wordfind(hay, nee,   p, off, before, after) {
+      off = 0
+      while (1) {
+        p = index(substr(hay, off + 1), nee)
+        if (p == 0) return 0
+        p += off
+        before = (p == 1) ? "" : substr(hay, p - 1, 1)
+        after  = substr(hay, p + length(nee), 1)
+        if (!isword(before) && !isword(after)) return 1
+        off = p
+      }
     }
-  }
-  BEGIN {
-    while ((getline l < nf) > 0) { if (l != "") needles[++nn] = l }
-    while ((getline l < cf) > 0) { if (l != "") changed[l] = 1 }
-  }
-  {
-    i = index($0, ":");            if (i == 0) next
-    path = substr($0, 1, i - 1);   rest = substr($0, i + 1)
-    j = index(rest, ":");          if (j == 0) next
-    line = substr(rest, 1, j - 1); content = substr(rest, j + 1)
-    if (path in changed) next
-    for (k = 1; k <= nn; k++) {
-      if (wordfind(content, needles[k])) { print needles[k] "\t" path "\t" line; break }
+    BEGIN {
+      while ((getline l < nf) > 0) { if (l != "") needles[++nn] = l }
+      while ((getline l < cf) > 0) { if (l != "") changed[l] = 1 }
+      if (rf != "") { use_region = 1
+        while ((getline l < rf) > 0) { if (l != "") region[l] = 1 } }
     }
-  }' "$TMP/head-hits.txt" > "$TMP/hits-head.tsv"
+    {
+      i = index($0, ":");            if (i == 0) next
+      path = substr($0, 1, i - 1);   rest = substr($0, i + 1)
+      j = index(rest, ":");          if (j == 0) next
+      line = substr(rest, 1, j - 1); content = substr(rest, j + 1)
+      if (path in changed) next
+      if (use_region && !(path in region)) next
+      for (k = 1; k <= nn; k++) {
+        if (wordfind(content, needles[k])) { print needles[k] "\t" path "\t" line; break }
+      }
+    }' "$1" > "$2"
+}
+attribute_hits "$TMP/head-hits.txt" "$TMP/hits-head.tsv" ""
 
 # ---------------------------------------------------------------------------
 # 3. The sibling-branch sweep: prior art that has not merged yet.
@@ -434,6 +460,66 @@ awk -F'\t' -v nf="$TMP/needles.txt" '
   }' "$TMP/branch-added.tsv" > "$TMP/hits-branch.tsv"
 
 # ---------------------------------------------------------------------------
+# 3b. THE THIRD REGION: merge-base..origin/main. (F7)
+#
+# The horizon had TWO regions - HEAD, and the unmerged siblings - and prior art that
+# landed on origin/main AFTER this branch's merge base is in NEITHER. It is not on HEAD
+# (the branch predates it), it is not an unmerged sibling (it merged), and B6 forbids an
+# index newer than HEAD from supplying it. The receipt did not even NAME the region, so
+# `duplication_hits: []` and "did not look there" were the same artifact - which is
+# precisely the defect F4 was raised to fix, one region over.
+#
+# This is the most ordinary shape there is: your branch is a day behind and someone
+# merged the thing you are about to write. Measured on #2781, whose blind region is
+# EXACTLY #2742 - 1 commit, 46 files, 11 of them the prior art the review missed:
+#
+#   git grep over origin/main with #2781's 22 needles   rc=0, 1 s, 1636 raw lines
+#   the 774-branch sibling sweep on the same PR         20 s
+#   of #2742's 46 files, 5 are hit, including crates/apr-cli/src/commands/test_llm_band.rs
+#
+# One second, against 20 for the region that found less. So it is SWEPT, not merely
+# recorded - and it is still recorded, because a region that could not be searched must
+# read `none` and `none` may not sit under a PASS.
+#
+# SCOPED TO THE REGION, not to all of origin/main. The grep runs over the whole tree
+# (git grep takes a rev, not a diff) and the attribution then keeps only paths in
+# `git diff --name-only BASE origin/main`. Without that filter every hit already visible
+# on HEAD would be counted a second time under a different `where`, and the ratio the
+# scan reports about itself would stop being judgeable.
+# ---------------------------------------------------------------------------
+MB_METHOD=none
+MB_FILES=0
+: > "$TMP/hits-main.tsv"
+: > "$TMP/main-changed.txt"
+MB_REFSPEC="$BASE..refs/remotes/origin/main"
+if [ "$HORIZON" != none ] && g rev-parse --verify --quiet refs/remotes/origin/main >/dev/null 2>&1; then
+  if g diff --name-only "$BASE" refs/remotes/origin/main > "$TMP/main-changed.txt" 2>/dev/null; then
+    MB_FILES=$(awk 'END { print NR + 0 }' "$TMP/main-changed.txt")
+    MB_METHOD=lexical
+    # An EMPTY region is searched-in-full, not unsearched: base == origin/main means main
+    # has not moved since the fork, and there is nothing there to find. Skipping the grep
+    # is an optimisation over zero files, not a coverage claim - MB_FILES records which.
+    if [ "$MB_FILES" -gt 0 ] && [ "$N_NEEDLE" -gt 0 ]; then
+      set +e
+      g grep -I -n -w -F --no-color "${NEEDLE_ARGS[@]}" refs/remotes/origin/main \
+         > "$TMP/main-raw.txt" 2> "$TMP/main.err"
+      mb_rc=$?
+      set -e
+      # Same three-way read as the HEAD sweep: 0 matched, 1 no matches, >1 the search
+      # itself failed - and a failed search is `none`, never "looked and found nothing".
+      if [ "$mb_rc" -gt 1 ]; then
+        MB_METHOD=none
+        : > "$TMP/main-raw.txt"
+      fi
+      sed 's/^[^:]*://' "$TMP/main-raw.txt" > "$TMP/main-hits.txt"
+      attribute_hits "$TMP/main-hits.txt" "$TMP/hits-main.tsv" "$TMP/main-changed.txt"
+    fi
+  else
+    : > "$TMP/main-changed.txt"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # 4. AMBIENT NEEDLES ARE DROPPED, AND THE DROP IS RECORDED.
 #
 # Duplication is a RARE name collision. A needle that matches half the tree is a common
@@ -446,7 +532,7 @@ awk -F'\t' -v nf="$TMP/needles.txt" '
 # recall given up without a number beside it is how a scan comes to look clean.
 # ---------------------------------------------------------------------------
 AMBIENT_MAX=${PR_REVIEW_AMBIENT_MAX:-8}
-cut -f1 "$TMP/hits-head.tsv" "$TMP/hits-branch.tsv" | awk 'NF' | sort | uniq -c \
+cut -f1 "$TMP/hits-head.tsv" "$TMP/hits-branch.tsv" "$TMP/hits-main.tsv" | awk 'NF' | sort | uniq -c \
   | awk -v m="$AMBIENT_MAX" '$1 > m { $1 = ""; sub(/^ +/, ""); print }' > "$TMP/ambient.txt"
 N_AMBIENT=$(awk 'END { print NR + 0 }' "$TMP/ambient.txt")
 drop_ambient() {  # <in.tsv> <out.tsv>
@@ -456,6 +542,7 @@ drop_ambient() {  # <in.tsv> <out.tsv>
 }
 drop_ambient "$TMP/hits-head.tsv"   "$TMP/hits-head-f.tsv"
 drop_ambient "$TMP/hits-branch.tsv" "$TMP/hits-branch-f.tsv"
+drop_ambient "$TMP/hits-main.tsv"   "$TMP/hits-main-f.tsv"
 
 # ---------------------------------------------------------------------------
 # 5. The coverage map, the horizon, and the cost. All three RECORDED, none inferred.
@@ -463,6 +550,7 @@ drop_ambient "$TMP/hits-branch.tsv" "$TMP/hits-branch-f.tsv"
 {
   awk -F'\t' '{ printf "{\"needle\":\"%s\",\"kind\":\"name\",\"where\":\"HEAD\",\"ref\":\"HEAD\",\"path\":\"%s\",\"line\":%d,\"method\":\"lexical\"}\n", $1, $2, $3 }' "$TMP/hits-head-f.tsv"
   awk -F'\t' '{ printf "{\"needle\":\"%s\",\"kind\":\"filename\",\"where\":\"branch\",\"ref\":\"%s\",\"path\":\"%s\",\"line\":0,\"method\":\"lexical\"}\n", $1, $2, $3 }' "$TMP/hits-branch-f.tsv"
+  awk -F'\t' '{ printf "{\"needle\":\"%s\",\"kind\":\"name\",\"where\":\"main\",\"ref\":\"origin/main\",\"path\":\"%s\",\"line\":%d,\"method\":\"lexical\"}\n", $1, $2, $3 }' "$TMP/hits-main-f.tsv"
 } | awk '!seen[$0]++' > "$TMP/hits.jsonl"
 
 HITS_TOTAL=$(awk 'END { print NR + 0 }' "$TMP/hits.jsonl")
@@ -470,10 +558,21 @@ HITS_CAP=${PR_REVIEW_HITS_CAP:-100}
 awk -v m="$HITS_CAP" 'NR <= m' "$TMP/hits.jsonl" > "$TMP/hits-cap.jsonl"
 HITS_RECORDED=$(awk 'END { print NR + 0 }' "$TMP/hits-cap.jsonl")
 
-HORIZON_LIST='["HEAD"]'
-if [ "$SIB_METHOD" = lexical ]; then
-  HORIZON_LIST='["HEAD","refs/remotes/origin/* unmerged into origin/main"]'
-fi
+# THE HORIZON NAMES ALL THREE REGIONS, ALWAYS. (F7)
+#
+# It used to be built from the METHOD - the sibling entry appeared only when the sweep
+# ran - so a region that was not searched was simply ABSENT from the horizon, and absent
+# is the one thing S3.0 forbids: it made "found nothing there" and "never looked there"
+# the same artifact. The horizon now states WHICH REGIONS EXIST; duplication_coverage
+# states whether each was SEARCHED. Two questions, two fields, neither inferable from
+# the other.
+#
+# Each entry is `<component>=<refspec>` and the guard requires all three components by
+# name, so a future region cannot be dropped by deleting a line.
+HORIZON_LIST=$(jq -n --arg head "head=$HEAD_REF" \
+  --arg sib "siblings=refs/remotes/origin/* unmerged into origin/main" \
+  --arg mb "merge_base_to_main=$MB_REFSPEC" \
+  '[$head, $sib, $mb]')
 
 END=$(date +%s)
 WALL=$((END - START))
@@ -483,6 +582,8 @@ jq -n \
   --arg rust "$RUST_METHOD" \
   --arg head_method "$HEAD_METHOD" \
   --arg sib "$SIB_METHOD" \
+  --arg mb "$MB_METHOD" \
+  --argjson mb_files "$MB_FILES" \
   --argjson horizon "$HORIZON_LIST" \
   --argjson br_total "$BR_TOTAL" \
   --argjson br_scanned "$BR_SCANNED" \
@@ -506,13 +607,15 @@ jq -n \
        config: $head_method,
        docs:   $head_method,
        other:  $head_method,
-       sibling_branches: $sib
+       sibling_branches: $sib,
+       merge_base_to_main: $mb
      },
      duplication_horizon: $horizon,
      horizon_branches_total: $br_total,
      horizon_branches_scanned: $br_scanned,
      horizon_refs: { local_origin_refs: $local_refs,
                      remote_heads: (if $remote_heads < 0 then null else $remote_heads end) },
+     merge_base_to_main_files: $mb_files,
      symbols_searched: $n_needle,
      needles: { symbol: $n_symbol, filename: $n_file, min_length: $minlen,
                 dropped_ambient: $ambient, ambient_max_hits: $ambient_max },

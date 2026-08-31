@@ -24,8 +24,11 @@
 #       +---- S1                  <- code-pr head   (adds a plain .rs file)
 #       \
 #        +--- P1                  <- printed-pr head (adds one .rs file carrying the SAME
-#                                    ratio twice: in a plain // comment, and inside a
-#                                    format! a user reads)
+#        \                           ratio twice: in a plain // comment, and inside a
+#         \                          format! a user reads)
+#         +-- E1                  <- examples-pr head (publishes the SAME ratio under
+#                                    book/src/examples/, the 34.7% of the book B4 could
+#                                    not see until F6)
 #
 # G1 AND S1 EXIST BECAUSE TWO BLOCKING RULES CANNOT BE EXERCISED WITHOUT THEM.
 # B4's diff half needs a head that publishes `2.93x Ollama` on a surface a user reads;
@@ -151,6 +154,24 @@ pub fn banner() -> String {
 RS
 commit "P1 core: add the banner helper"
 
+# --- E1: the ratio published where B4 could not see it ------------------------
+# F6's fixture head. `match_shipped_surface` excluded */examples/* -- a Rust cargo-target
+# rule -- and the one directory that removed from the book was book/src/examples/: 153 of
+# 441 published pages, 34.7%, every one listed in book/src/SUMMARY.md. da069a25f published
+# `851.8 tok/s = 2.93x Ollama` into exactly that directory, and B4 fired ZERO times on it.
+#
+# This head is G1's diff moved one directory over, so rows 25/26 differ from rows 16/17 in
+# the PATH and nothing else. Without it the case table would go green on a guard that
+# still cannot see a third of the book -- the guard-universe defect, seventh instance.
+g checkout -q -b examples-pr "$(g rev-parse main~2)"
+mkdir -p "$DEST/book/src/examples"
+cat > "$DEST/book/src/examples/showcase-benchmark.md" <<'MD'
+# Case Study: Showcase Benchmark
+
+- **GGUF GPU**: 851.8 tok/s = **2.93x Ollama** (291 tok/s baseline)
+MD
+commit "E1 book: publish the showcase decode ratio under examples/"
+
 g checkout -q main
 
 # --- prove the topology is the one the fixtures assume ------------------------
@@ -161,6 +182,7 @@ D1=$(g rev-parse docs-pr)
 G1=$(g rev-parse claim-pr)
 S1=$(g rev-parse code-pr)
 P1=$(g rev-parse printed-pr)
+E1=$(g rev-parse examples-pr)
 
 [ "$(g merge-base refs/remotes/origin/main "$F1")" = "$C1" ] \
   || { echo "FIXTURE REPO BROKEN: merge-base(origin/main, F1) != C1" >&2; exit 1; }
@@ -185,13 +207,17 @@ g diff "$C1" "$P1" | grep -q 'format!("apr sustains' \
   || { echo "FIXTURE REPO BROKEN: the printed PR publishes no ratio" >&2; exit 1; }
 g diff "$C1" "$P1" | grep -q '^+// The book published' \
   || { echo "FIXTURE REPO BROKEN: the printed PR carries no merely-quoted ratio, so nothing distinguishes the two" >&2; exit 1; }
+g diff --name-only "$C1" "$E1" | grep -qx 'book/src/examples/showcase-benchmark.md' \
+  || { echo "FIXTURE REPO BROKEN: the examples PR does not publish under book/src/examples/" >&2; exit 1; }
+g diff "$C1" "$E1" -- book | grep -q 'Ollama' \
+  || { echo "FIXTURE REPO BROKEN: the examples PR diff publishes no competitor ratio" >&2; exit 1; }
 if g diff --name-only "$C1" "$D1" | grep -qE '\.rs$'; then
   echo "FIXTURE REPO BROKEN: the docs PR must touch no Rust source, or S3.D triggers on it" >&2
   exit 1
 fi
 
 # --- assert the SHAs are the ones the committed receipts were written against --
-ACTUAL=$(printf 'C1 %s\nC3 %s\nF1 %s\nD1 %s\nG1 %s\nS1 %s\nP1 %s\n' "$C1" "$C3" "$F1" "$D1" "$G1" "$S1" "$P1")
+ACTUAL=$(printf 'C1 %s\nC3 %s\nF1 %s\nD1 %s\nG1 %s\nS1 %s\nP1 %s\nE1 %s\n' "$C1" "$C3" "$F1" "$D1" "$G1" "$S1" "$P1" "$E1")
 if [ "${PRREV_WRITE_EXPECTED_SHAS:-0}" = "1" ]; then
   printf '%s\n' "$ACTUAL" > "$HERE/expected-shas.txt"
   echo "wrote $HERE/expected-shas.txt" >&2

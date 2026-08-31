@@ -33,7 +33,8 @@ D1=$(sha_of D1)   # the docs-only pull request head
 G1=$(sha_of G1)   # the claim head: PUBLISHES 2.93x Ollama in book/
 S1=$(sha_of S1)   # the code head: adds a plain .rs file, so S3.D triggers
 P1=$(sha_of P1)   # the printed head: the same ratio in a comment AND in a format!
-for v in C1 C3 F1 D1 G1 S1 P1; do
+E1=$(sha_of E1)   # the examples head: the SAME ratio, under book/src/examples/ (F6)
+for v in C1 C3 F1 D1 G1 S1 P1 E1; do
   [ -n "${!v}" ] || { echo "expected-shas.txt has no $v" >&2; exit 1; }
 done
 
@@ -110,10 +111,14 @@ JSON
 # repository has one remote ref (origin/main) and no unmerged sibling, so the honest
 # denominator is zero. The horizon rules that need a non-zero denominator are exercised
 # by the branch probes in tests/pr-review.bats, not by these rows.
-DUP_FULL='"duplication_coverage":{"rust":"semantic","shell":"lexical","python":"lexical","config":"lexical","docs":"lexical","other":"lexical","sibling_branches":"lexical"},"duplication_horizon":["HEAD","refs/remotes/origin/* unmerged into origin/main"],"horizon_branches_total":0,"horizon_branches_scanned":0,"symbols_searched":4'
+# F7: the horizon names all THREE regions - head, siblings, merge_base_to_main - and
+# names them whether or not each was reached, because a region absent from the horizon
+# cannot be told apart from a region that was searched and held nothing. Whether each was
+# SEARCHED is the coverage map's job, one field down.
+DUP_FULL="\"duplication_coverage\":{\"rust\":\"semantic\",\"shell\":\"lexical\",\"python\":\"lexical\",\"config\":\"lexical\",\"docs\":\"lexical\",\"other\":\"lexical\",\"sibling_branches\":\"lexical\",\"merge_base_to_main\":\"lexical\"},\"duplication_horizon\":[\"head=HEAD\",\"siblings=refs/remotes/origin/* unmerged into origin/main\",\"merge_base_to_main=$C1..refs/remotes/origin/main\"],\"horizon_branches_total\":0,\"horizon_branches_scanned\":0,\"symbols_searched\":4"
 # The same run with the shell surface unreachable - e.g. git grep unavailable. Rows 16
 # and 17 are the same coverage under two different verdicts.
-DUP_SHELL_NONE='"duplication_coverage":{"rust":"semantic","shell":"none","python":"none","config":"none","docs":"none","other":"none","sibling_branches":"lexical"},"duplication_horizon":["HEAD","refs/remotes/origin/* unmerged into origin/main"],"horizon_branches_total":0,"horizon_branches_scanned":0,"symbols_searched":4'
+DUP_SHELL_NONE="\"duplication_coverage\":{\"rust\":\"semantic\",\"shell\":\"none\",\"python\":\"none\",\"config\":\"none\",\"docs\":\"none\",\"other\":\"none\",\"sibling_branches\":\"lexical\",\"merge_base_to_main\":\"lexical\"},\"duplication_horizon\":[\"head=HEAD\",\"siblings=refs/remotes/origin/* unmerged into origin/main\",\"merge_base_to_main=$C1..refs/remotes/origin/main\"],\"horizon_branches_total\":0,\"horizon_branches_scanned\":0,\"symbols_searched\":4"
 
 PMAT_OK="{\"status\":\"consulted\",\"index_commit\":\"$C1\",\"index_is_ancestor\":true,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0,$DUP_FULL}"
 PMAT_STALE="{\"status\":\"consulted\",\"index_commit\":\"$C3\",\"index_is_ancestor\":false,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0,$DUP_FULL}"
@@ -137,6 +142,13 @@ CRUX_OK_FULL="{\"status\":\"consulted\",\"surfaces\":[\"apr bench --gpu\"],\"con
 CRUX_SAW_SURFACE_NO_CLAIM='{"status":"consulted","surfaces":["book/src/tools/apr-cli.md"],"contracts":[],"gap_effect":"none","crux_coverage":"none","comparative_claims":[]}'
 CRUX_SAW_BANNER_NO_CLAIM='{"status":"consulted","surfaces":["apr banner output"],"contracts":[],"gap_effect":"none","crux_coverage":"none","comparative_claims":[]}'
 CRUX_CLAIM_RECORDED="{\"status\":\"consulted\",\"surfaces\":[\"book/src/tools/apr-cli.md\"],\"contracts\":[\"CRUX-A-08\"],\"gap_effect\":\"none\",\"crux_coverage\":\"none\",\"comparative_claims\":[{\"claim\":\"2.93x Ollama on 1.5B Q4_K decode\",\"comparator\":{\"command\":[\"ollama\",\"run\",\"qwen2.5-coder:1.5b\",\"--verbose\"],\"version\":\"ollama 0.5.7\",\"env_sha256\":\"3c1d9e0f2a4b6c8d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f\",\"artifact_sha256\":\"5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d\",\"log_path\":\"evidence/bench/2026-08-30-ollama/comparator.log\"}}]}"
+# F6's pair. Identical to CRUX_SAW_SURFACE_NO_CLAIM / CRUX_CLAIM_RECORDED except for the
+# PATH: book/src/examples/ rather than book/src/tools/. That one directory name is the
+# whole of F6 - */examples/* was a Rust cargo-target exclusion applied to prose, and it
+# removed 153 of the book's 441 published pages, including the one da069a25f published
+# `851.8 tok/s = 2.93x Ollama` to.
+CRUX_SAW_EXAMPLES_NO_CLAIM='{"status":"consulted","surfaces":["book/src/examples/showcase-benchmark.md"],"contracts":[],"gap_effect":"none","crux_coverage":"none","comparative_claims":[]}'
+CRUX_EXAMPLES_CLAIM_RECORDED="{\"status\":\"consulted\",\"surfaces\":[\"book/src/examples/showcase-benchmark.md\"],\"contracts\":[\"CRUX-A-08\"],\"gap_effect\":\"none\",\"crux_coverage\":\"none\",\"comparative_claims\":[{\"claim\":\"2.93x Ollama on 1.5B Q4_K decode\",\"comparator\":{\"command\":[\"ollama\",\"run\",\"qwen2.5-coder:1.5b\",\"--verbose\"],\"version\":\"ollama 0.5.7\",\"env_sha256\":\"3c1d9e0f2a4b6c8d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f\",\"artifact_sha256\":\"5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d\",\"log_path\":\"evidence/bench/2026-08-30-ollama/comparator.log\"}}]}"
 CRUX_BAD_COMPARATOR='{"status":"consulted","surfaces":["docs/performance.md"],"contracts":["CRUX-A-08"],"gap_effect":"none","crux_coverage":"covered","comparative_claims":[{"claim":"2.93x Ollama","comparator":{"version":"ollama 0.5.7","env_sha256":"","log_path":"evidence/bench/none.log"}}]}'
 
 MUT_OK='{"status":"consulted","scope":"in-diff","attempted":37,"killed":37,"survivors":[]}'
@@ -567,6 +579,45 @@ JSON
 )
 RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_SHELL_BLIND" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
 emit row-24-duplication-surface-unsearched-verdict-degraded "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 25 - the SAME ratio, published under book/src/examples/          -> RED B4
+#
+# F6. Row 16 is this fixture with one directory changed, and until F6 the two verdicts
+# DIVERGED: row 16 RED, this one ACCEPTED. `match_shipped_surface` excluded */examples/*,
+# a rule scoped from a cargo target layout, and applied to the book it removed
+# book/src/examples/ - 153 of 441 published pages, 34.7%, all of them in SUMMARY.md.
+# da069a25f published `851.8 tok/s = 2.93x Ollama` into precisely that directory and B4
+# fired ZERO times on it: the exact publication S3.C.1, S9 and S11 are written about,
+# accepted by the gate that names it.
+#
+# Without this row the case table goes green on a guard that cannot see a third of the
+# book - the guard-universe defect, whose seventh instance this is.
+# ===========================================================================
+SARIF=$(
+sarif_empty
+)
+RCPT=$(receipt "$E1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_SAW_EXAMPLES_NO_CLAIM" "$MUT_NT")
+emit row-25-examples-page-publishes-a-ratio "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 26 - the same book/src/examples/ page, ratio RECORDED             -> GREEN
+# DISCRIMINATION CASE for row 25, and it is not decorative: "block every book page under
+# examples/" would read green on row 25 alone, and F6 would have widened the scope into
+# a rule with no honest exit. The exit is the same one row 17 demonstrates - record the
+# comparator - and this proves it is still open one directory over.
+# ===========================================================================
+SARIF=$(
+sarif_one crux '{
+      "ruleId": "comparative_claim", "level": "note",
+      "message": { "text": "book/src/examples/showcase-benchmark.md publishes 2.93x Ollama; the comparator command, version, environment and artifact hash are recorded." },
+      "properties": { "grounding": "measured",
+        "source": "evidence/bench/2026-08-30-ollama/comparator.log",
+        "failure_scenario": "A reader reproduces the published ratio and measures parity, because the harness never executed the comparator.",
+        "precision_class": "advisory" } }'
+)
+RCPT=$(receipt "$E1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_EXAMPLES_CLAIM_RECORDED" "$MUT_NT")
+emit row-26-examples-page-ratio-recorded "$SARIF" "$RCPT"
 
 # ===========================================================================
 # THE POSITIVE CONTROLS (S6.1) - not rows of the S6.3 table.

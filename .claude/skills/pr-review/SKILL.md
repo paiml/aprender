@@ -253,6 +253,7 @@ measured it and PRREV-009 reproduced it on a second symbol:
 | pmat's semantic index | **Rust-only.** `pmat query` for `arm_c_integrity` — a function *defined* at `scripts/perf_gate.sh:39` — returns 10 results, all `.rs`, and never that file. |
 | the diff S3.A cites as its evidence | #2742: 46 files, 7,244 insertions, of which **3,533 (48.8%) are sh, py and yaml** — outside semantic reach entirely. |
 | prior art on an unmerged sibling branch | **invisible by construction.** B6 requires `index_commit` to be an ancestor of HEAD, so the index can only hold this branch's history. #2781 found #2742's prior art because #2742 merged 17 hours earlier. Luck, not mechanism. |
+| prior art that LANDED on `origin/main` after your merge base | **in neither region, and until F7 not even named.** Not on HEAD — your branch predates it. Not an unmerged sibling — it merged. #2781's blind region is exactly #2742: 1 commit, 46 files, 11 of them the prior art. One `git grep` over it costs **1 s** against 20 s for the 774-branch sweep, and it returns `crates/apr-cli/src/commands/test_llm_band.rs`. |
 
 So run the second half as well, and record what each half reached:
 
@@ -263,8 +264,14 @@ jq -r '.duplication_coverage, .horizon_branches_scanned, .hits_total' /tmp/dup.j
 ```
 
 It emits `duplication_hits[]`, `duplication_coverage{}`, `duplication_horizon[]`,
-`horizon_branches_{total,scanned}` and `symbols_searched` — copy all of them into the
-`pmat` block verbatim. Measured cost on this repository: **18.6 s** over the full
+`horizon_branches_{total,scanned}`, `merge_base_to_main_files` and `symbols_searched` —
+copy all of them into the `pmat` block verbatim.
+
+**The horizon has THREE components and the receipt names all three** — `head=`,
+`siblings=`, `merge_base_to_main=` — whether or not each was swept, because a region
+that is absent from the horizon cannot be told apart from one that was searched and held
+nothing. `duplication_coverage.merge_base_to_main` is the separate field that says which
+of the three were actually reached, and `none` there cannot sit under a `PASS`. Measured cost on this repository: **18.6 s** over the full
 772-branch horizon; 73 s on a 151-needle range. Put the wall time in `cost`.
 
 Three rules the guard enforces on what you copy, all of them S3.0 applied one level down
@@ -371,6 +378,10 @@ Two things the guard checks that are easy to miss:
 - A comparative ratio written into a **finding's message** while
   `comparative_claims` is empty is itself B4. You cannot state the ratio in prose and
   omit the provenance.
+- B4 also reads the **diff**, not only your receipt, over the surface a user reads:
+  `book/**.md` at any depth, and printed literals plus doc comments in shipped `.rs`.
+  `book/src/examples/` is **in** that scope — it is 153 of the book's 441 published
+  pages and the directory `851.8 tok/s = 2.93x Ollama` was actually published to.
 - `version` and `artifact_sha256` are **captured, not remembered**. Run the comparator,
   read its version banner, hash the artifact you actually exercised. And never label a
   run by intent: `CUDA_VISIBLE_DEVICES` says what was *visible*, never what was *used*.
@@ -471,10 +482,13 @@ one: a pretty-printed Statement is many lines and is rejected as "holds N JSON r
                     "satd_introduced": [], "duplication_hits": [], "cache_hits": 0,
                     "duplication_coverage": { "rust": "semantic", "shell": "lexical",
                         "python": "lexical", "config": "lexical", "docs": "lexical",
-                        "other": "lexical", "sibling_branches": "lexical" },
-                    "duplication_horizon": ["HEAD",
-                        "refs/remotes/origin/* unmerged into origin/main"],
+                        "other": "lexical", "sibling_branches": "lexical",
+                        "merge_base_to_main": "lexical" },
+                    "duplication_horizon": ["head=<head_sha>",
+                        "siblings=refs/remotes/origin/* unmerged into origin/main",
+                        "merge_base_to_main=<base_sha>..refs/remotes/origin/main"],
                     "horizon_branches_total": 0, "horizon_branches_scanned": 0,
+                    "merge_base_to_main_files": 0,
                     "symbols_searched": 0 },
       "cuda":     { "status": "…", "trigger_reason": "…", "queries": [] },
       "crux":     { "status": "…", "surfaces": [], "contracts": [],

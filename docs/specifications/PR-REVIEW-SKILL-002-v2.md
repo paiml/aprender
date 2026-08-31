@@ -1,6 +1,6 @@
 # PR-REVIEW-SKILL-002 — grounded adversarial PR review with a signed receipt
 
-**Status:** v2.1 — amended by its own implementation. Built through `PRREV-001`..`PRREV-007`; **§9 step 7, the acceptance test, FAILED (1 of 3) and the skill is NOT enabled.** See §0.1 and §9.1.
+**Status:** v2.3 — amended by its own implementation. Built through `PRREV-001`..`PRREV-012`. §9 step 7 was run three times: **FAILED 1 of 3** (`PRREV-007`, §9.1), **FAILED 2 of 3** (`PRREV-011`, §9.2), **PASSED 3 of 3** (`PRREV-012`, §9.3). See §0.1, §9.1, §9.2, §9.3.
 **Supersedes:** PR-REVIEW-SKILL-001 (draft, 2026-08-30)
 **Complements:** `dogfood.sh`, `nightly-ux-crux`, the `check_*.sh` guards in `ci.yml`, `pmat comply check`
 **Workflow:** `pmat work add` → branch → PR → `ci / gate`. Contract ships in the same PR as the implementation.
@@ -49,6 +49,17 @@ v2 was written before it was built. Building it — `PRREV-001` through `PRREV-0
 | **D5** | **§9 step 7, the acceptance test, FAILED**: 1 of 3 named cases caught | `PRREV-007` backtest against merged #2781, #2771, #2763 | **The skill is not enabled.** §9.1 records the verdict and the five findings (F1–F5) that land first. | §9.1 |
 
 D1–D4 are contradictions inside the spec, fixed below. D5 is the spec's own acceptance test returning RED; it is recorded below and fixed by tickets, not by prose.
+
+**D6–D9, from the two re-runs.** The acceptance test was run three times and the second and
+third runs each found defects in the instrument the first had built. All four are recorded
+here for the same reason D1–D5 are.
+
+| # | defect | found by | ruling | now in |
+|---|---|---|---|---|
+| **D6** | **B4's user-facing surface was scoped from a *Rust project layout*.** `match_shipped_surface` excluded `*/examples/*` — a cargo target-directory rule — and applied to `book/**` that removed `book/src/examples/`: **153 of the book's 441 published pages, 34.7%, every one listed in `book/src/SUMMARY.md`**, and precisely where `851.8 tok/s = 2.93x Ollama` was published at `da069a25f`. B4 fired **zero** times over the commit §3.C.1, §9 and §11 are all written about. | `PRREV-011` backtest (F6) | **`book/**` is prose and is exempt from the four Rust-layout exclusions, ahead of all of them** — a future `book/src/tests/` chapter is a chapter too. Fixed in `PRREV-012`: 0→2 fires on the real commit, 0 false positives over all 153 pages and over 300 commits of `origin/main`, §6.3 rows 25/26, and two mutants including one that restores the pre-fix behaviour exactly. | §3.C.1, §6.3 |
+| **D7** | **The duplication horizon had a third region, unswept AND unnamed.** §3.A's horizon was `HEAD` plus unmerged siblings. Prior art that landed on `origin/main` **after the merge base** is in neither — not on `HEAD` (the branch predates it), not an unmerged sibling (it merged), and B6 forbids an index newer than `HEAD` from supplying it. The receipt did not name the region, so `duplication_hits: []` under a `PASS` and "never looked there" were the same artifact. #2781's blind region was exactly #2742: 1 commit, 46 files, 11 of them the prior art. | `PRREV-011` backtest (F7) | **Swept, and recorded.** The horizon names three components — `head`, `siblings`, `merge_base_to_main` — whether or not each was reached, and `duplication_coverage` says which were. Measured, not estimated: one `git grep` over the region costs ~1 s against 20 s for the 774-branch sibling sweep, and on #2781 it returns `crates/apr-cli/src/commands/test_llm_band.rs` — 0 hits → 1. Fixed in `PRREV-012`. | §3.A, §4.1, §6.3 |
+| **D8** | **Merging two repair lanes created a dead validation branch** that `bats` could not see. `PRREV-008` and `PRREV-009` independently implemented "`duplication_hits` must be an array"; the earlier check is a strict superset and returns 129 lines sooner, so no receipt could reach the later one. 112 fixtures passed straight over it; only `mutate-guard.sh` saw it (`reject-50-drop` SURVIVED, 183/184 = 99.46%, a §7 blocking failure). | `PRREV-011` mutation sweep (F8) | **Removed, with a comment pointing 129 lines up.** It is the defect F4 exists to detect — two implementations of one rule, each green against its own copy — inside the guard that implements F4. §6.4's argument, demonstrated on itself: **a fixture table cannot find a dead branch; only the mutation set can.** | §6.4 |
+| **D9** | **`README.md` publishes competitor ratios and B4 does not read it.** `da069a25f` published `2.93x Ollama` to `README.md` on the same commit as the book page. A root-level `.md` is outside B4's inclusion list, which the case table already recorded as a KNOWN GAP — written before anyone knew `README.md` carried the claim. | `PRREV-012` backtest (F9) | **OPEN, measured, deliberately not fixed in `PRREV-012`.** A scope change ships with its precision measurement and moves the sibling definition in `check_no_claim_literals.sh` in the same commit, or the two drift silently. The measurement is done — 1 true positive at `da069a25f`, **0** would-be false positives over 1,457 added root-`.md` lines in 300 commits of `origin/main` — so the ticket starts from a number. | §9.3 |
 
 ---
 
@@ -133,6 +144,34 @@ git merge-base --is-ancestor "$index_commit" HEAD || echo "DEGRADED: stale index
 
 An unmeasured CB-200 is `Skip`, and **`Skip` is not a pass** — it is `DEGRADED`.
 
+**`duplication_hits[]` is `pmat query` PLUS a lexical sweep, and the receipt records which
+half reached what (D7, and F4 before it).** `pmat`'s semantic index is Rust-only; on #2742
+— the 46-file, 7,244-insertion diff §11 cites — 3,533 insertions (48.8%) are `sh`, `py` and
+`yaml` and outside semantic reach entirely. So `scripts/pr_review_duplication_scan.sh` runs
+the other half, and the receipt carries:
+
+```yaml
+duplication_coverage:                  # SURFACE -> semantic | lexical | none
+  rust: … shell: … python: … config: … docs: … other: …
+  sibling_branches: …
+  merge_base_to_main: …                # the third region (D7)
+duplication_horizon:                   # THE REGIONS THAT EXIST, all three, always named
+  - "head=<head_sha>"
+  - "siblings=refs/remotes/origin/* unmerged into origin/main"
+  - "merge_base_to_main=<base_sha>..refs/remotes/origin/main"
+```
+
+**Three regions, and the horizon names all three whether or not each was swept.** The
+horizon says which regions EXIST; `duplication_coverage` says which were SEARCHED. Neither
+is inferable from the other, and a region absent from the horizon cannot be told apart from
+one that was searched and held nothing — §3.0 one level down. `none` for any surface or
+region may not sit under a `PASS`.
+
+The third region is the ordinary case: your branch is a day behind and someone merged the
+thing you were about to write. It is not on `HEAD`, it is not an unmerged sibling, and B6
+forbids an index newer than `HEAD` from supplying it. Measured: one `git grep` over it costs
+~1 s against 20 s for the whole sibling sweep, and on #2781 it returns the prior art.
+
 ### §3.B NVIDIA CUDA documentation (triggered)
 
 Trigger: any changed path matching `crates/aprender-gpu/**`, `crates/aprender-serve/src/cuda/**`, `*cuda*`, `*ptx*`, `*cublas*`, `*fp8*`, `*nvrtc*`; or PR body/commit messages matching `sm_\d+`, `cu[A-Z]\w+`, `cuda[A-Z]\w+`, or a GPU architecture name.
@@ -164,6 +203,12 @@ comparator:
 ```
 
 Absent any field, the claim is reclassified `asserted`, marked `unverified_comparative_claim`, and — per §7 — **blocks**. The book published *"2.93× Ollama"* from a harness that never ran Ollama; this is the gate that makes that impossible rather than merely discouraged.
+
+**§3.C.1.1 The surface B4 scans, and why the book's own directory names are not a Rust layout (D6).** B4 reads the **diff** as well as the receipt, over the surface a user reads: `book/**.md` **at any depth**, and printed literals plus doc comments in shipped `.rs` (`crates/*/src/**.rs`, `src/**.rs`). Tests, benches, cargo `examples/` and fixtures state TARGETS and are out of scope by design — that is what stops this rule red-ing the PR that adds its own case table. `docs/` prose and plain `//` comments are out too, and that is a MEASUREMENT, not an oversight: over 300 commits of `origin/main` the scan fires five times there, three of them QUOTING a fabricated ratio in order to ban it, and those three have no honest remedy because §3.C.1's exit is a comparator log and there is no log for a number nobody measured. 2/5 is 40% against §7's ≥90% admission bar.
+
+**`book/**` is exempt from the Rust-layout exclusions, ahead of all four of them.** `*/examples/*` is a cargo target-directory rule; applied to the book it removed `book/src/examples/` — 153 of 441 published pages, 34.7%, every one in `book/src/SUMMARY.md` — and that is where `851.8 tok/s = 2.93x Ollama` was published. The exemption is scoped to `book/`, not to the name `examples/`, and the case table pins that with a single-variable control: `book/src/examples/showcase-benchmark.md` MATCH beside `crates/aprender-core/examples/demo.rs` NO-MATCH.
+
+**Residuals, recorded rather than hidden:** the PR **body** is not read (this guard has no GitHub client); `docs/` prose and plain `//` comments are measured out; and a **root-level `.md` such as `README.md` is not scanned** — which `da069a25f` also published this ratio to (D9).
 
 **§3.C.2 Breaking surface and the semver bump — B5's producer (D3).** §7 lists *"breaking API surface with no semver bump"* as a blocking class. v2 shipped that row with **no consultation emitting it and no metric measuring it**, so §7's own admission rule could not be applied to it. §3.C is the producer: the surfaces it already triggers on — CLI subcommand or flag, HTTP route, MCP tool, config key, output format — *are* the API surface, plus the public Rust items of each crate in `affected_crates[]`.
 
@@ -329,8 +374,21 @@ Every row a committed fixture under `tests/fixtures/pr-review/`, exercised by `b
 | 13 | valid receipt, invalid signature | RED | B1 |
 | 14 | complete receipt on a GPU PR, all four consulted, findings present | **GREEN** | — |
 | 15 | finding carrying **no `properties.grounding` mark at all** | RED | B1 |
+| 16 | the **diff** publishes a ratio in `book/`, `comparative_claims: []` | RED | B4 |
+| 17 | the same diff, the ratio RECORDED with a full comparator | **GREEN** | — |
+| 18 | `cuda.status: consulted` with `queries: []` | RED | B1 |
+| 19 | `pmat.status: not-triggered` on a diff changing Rust source | RED | B1 |
+| 20 | `mutation.status: not-triggered` on a diff changing Rust source | RED | B1 |
+| 21 | `crux.status: not-triggered` on a diff publishing a ratio | RED | B1 |
+| 22 | a ratio inside `format!` and the SAME ratio in a plain `//` comment two lines up | RED | B4 |
+| 23 | a duplication **surface** that could not be searched, `verdict: PASS` | RED | B1 |
+| 24 | the SAME unsearched surface, `verdict: DEGRADED` | **GREEN** | — |
+| 25 | the ratio published under **`book/src/examples/`**, `comparative_claims: []` | RED | B4 |
+| 26 | the same `book/src/examples/` page, the ratio RECORDED | **GREEN** | — |
 
-Rows 6, 7, 14 are **discrimination cases**. Without them, "refuse every receipt" reads green — the over-reach a discrimination case already caught in PERF-055 and the #2766 delta-gate work.
+Rows 16–22 are owed by §9.1's F1–F3; rows 23–24 by F4; rows **25–26 by F6 (D6)**. Row 25 is row 16 with **one directory changed**, and until D6 the two verdicts diverged: row 16 RED, row 25 ACCEPTED. Rows 17, 24 and 26 are discrimination arms — without them "block every PR that names a competitor", "reject every receipt that admits a gap" and "block every book page under `examples/`" each read green, and the rule would punish the honest receipt exactly as hard as the silent one.
+
+Rows 6, 7, 14, 17, 24 and 26 are **discrimination cases**. Without them, "refuse every receipt" reads green — the over-reach a discrimination case already caught in PERF-055 and the #2766 delta-gate work.
 
 **Every RED row names the class that rejects it (D2).** Row 10 in particular: `base_sha` disagreeing with `git merge-base origin/main head_sha` is RED **under B1 — the receipt is invalid** — not under a seventh blocking class. Stated rather than left to be inferred, because a fixture row with no governing class is how a guard grows a rule nothing owns, and an ungoverned rule is not demotable by §7's admission mechanism. Two classes are named by no row, and that is a coverage statement, not a gap: **B3** is scored by §6.4's committed mutation set rather than by a receipt fixture, and **B5** has no producer to fixture until §3.C.2 ships (D3).
 
@@ -459,6 +517,64 @@ Recording this in the spec is not optional. A spec whose acceptance test failed 
 **Two divergences where the spec loses, recorded because they change what §9 step 7 can claim.** (i) #2776 is an **open** PR and #2767 is an **issue**, not a PR; the merged spine is #2781/#2771/#2763 and #2776 is corroboration only. The ungrounded stream claim is not lost by this — #2771 **merged** restating it. (ii) **The PERF-055 duplication did not ship.** #2781's author found the prior art by hand and wrote one commit; §11's row reads as though the duplication happened. What is testable is whether §3.A *would* have found it, and it would, for the Rust half. (iii) All four PRs carry `reviews=0, comments=0` — *"defects those reviews missed"* means defects the author's own verification section missed, and **§5's author/reviewer separation, the control A5 calls the first configuration that beats single-agent, has never been exercised on this epic.**
 
 One gap noted so it is not rediscovered: #2771's second defect was found with **`apr tensors`**, and **§3 has no consultation that inspects the artifact under test**, though this repo's standing rule is *"`apr qa` first"*. Out of `PRREV-007`'s scope; recorded here, unowned.
+
+### §9.2 Backtest re-run — **FAILED**, 2 of 3 (`PRREV-011`, 2026-08-30)
+
+Re-run against the merged tree of `PRREV-008` ∪ `PRREV-009` ∪ `PRREV-010`. Evidence:
+`evidence/pr-review/backtest/results-v2.md`.
+
+**Two divergences from §9.1's spine, taken deliberately.** #2781 is **not** the PERF-055
+duplication PR — measured at the artifact it is +368/−3 across 13 files, a join-key fix.
+§11's *"~7,200 lines across 46 files"* is **#2742** (`a184073ef`, 46 files, 7,244
+insertions), also merged, also APR-PERF-GATE-001. And #2763's `2.93× Ollama` strings are
+**the claim guard's own case table**, so B4's silence there is correct. The spine became
+four merged PRs — #2771, #2781, #2763, #2742.
+
+| §9 named case | subject | result |
+|---|---|---|
+| ungrounded CUDA stream claim | #2771 | **caught**, and F2 removed the hollowness |
+| PERF-055 duplication | **#2742** | **caught, both halves of F4** — 17 prior-art files on two concurrent unmerged siblings, 4 outside any semantic index |
+| never-ran-Ollama benchmark | **`da069a25f`** | **NOT caught** — F6 |
+
+**2 of 3, and three new findings: F6, F7, F8** — recorded as D6, D7, D8 above. F8 took
+`guard_mutation_score` to **183/184 = 99.46%** on the merged tree as handed over, which
+§7 makes a blocking class; it was removed and the re-derived 182-mutant set returned to
+**182/182**. Keeping the failing run beside the passing one is the point: a 100% that was
+99.46% an hour earlier is only meaningful with the earlier number beside it.
+
+### §9.3 Backtest re-run — **PASSED**, 3 of 3 (`PRREV-012`, 2026-08-31)
+
+Run against the merged tree of `PRREV-008` ∪ `PRREV-009` ∪ `PRREV-010` ∪ `PRREV-011`, plus
+F6 and F7. Evidence: `evidence/pr-review/backtest/results-v3.md` and the seven `*-v3.*`
+files beside it.
+
+| §9 named case | subject | result | mechanism |
+|---|---|---|---|
+| ungrounded CUDA stream claim | #2771 | **CAUGHT** | trigger 17/27 paths, 8/1309 message lines, **0** citation lines; signed pair over the real SHAs: `queries: []` → REJECT [B1], one cited query → ACCEPT |
+| PERF-055 duplication | #2742 | **CAUGHT, in three regions** | 246 needles → 70 hits: 46 `HEAD` + 17 sibling-branch + **7 `merge-base..origin/main`** |
+| never-ran-Ollama benchmark | `da069a25f` | **CAUGHT** | B4 **0 → 2** on the real commit; end-to-end with **one byte-identical signed receipt run against both guards**: pre-F6 **ACCEPT**, post-F6 **REJECT [B4]**, honest arm still ACCEPT |
+
+**The boundary for case 3 is stated, not substituted.** `git merge-base origin/main
+da069a25f` returns **empty** — that commit predates the APR-MONO history rewrite and shares
+no ancestry with today's `origin/main`. The honest boundary is its own parent, `099c32287`.
+§2's rule is unchanged; what changes is that a subject with no merge base must say so
+rather than borrow a plausible-looking base.
+
+`guard_mutation_score` was **re-derived in the widened scope** — F1's own lesson applied to
+its successors — because F6 and F7 changed what the guard decides. The set grew 182 → 185
+(2 derived for F7's new `reject` site, 1 hand-written for F6's `case` arm, which is not a
+uniform `reject` site and cannot be derived).
+
+**Ticket-table drift, recorded rather than reconciled.** §9.1's table assigns `PRREV-012`
+to "F3, F4"; those landed in `PRREV-008`/`PRREV-009`, and the branch names ran ahead of the
+table. `PRREV-011` is the second backtest, not D3's producer, and `PRREV-014` was never cut
+— §9.3 **is** the re-run it names.
+
+**Still open at 3 of 3**, so that a PASS is not read as a finish: **D9** (`README.md`);
+D3's B5 producer (§3.C.2), carried advisory; §5's author/reviewer separation has still
+never been exercised on this epic; and §1.1's entailment check on `cited` excerpts remains
+Phase 3. A signed receipt is a provenance claim, never a diligence claim — §4.3, and
+`attestation_level` reads `L1-self`.
 
 **Phase 3 (not this spec):** SCIP index via `rust-analyzer scip .` replacing `pmat query` for cross-file resolution; entailment checking on `cited` excerpts; JWS countersigning for multi-agent chains.
 
