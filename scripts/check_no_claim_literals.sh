@@ -224,9 +224,9 @@ if [ "${1:-}" = "--selftest" ]; then
     t=0; f=0
     check() { # check <expect match|nomatch> <line>
         local want="$1" line="$2" got=nomatch
-        if printf '%s\n' "$line" | grep -qE "$CLAIM_RE" \
-           && printf '%s\n' "$line" | grep -qE "$RATIO_RE|$TPUT_RE|$DIAGNOSIS_RE" \
-           && ! printf '%s\n' "$line" | grep -qE "$TARGET_RE"; then got=match; fi
+        if grep -qE "$CLAIM_RE" <<< "$line" \
+           && grep -qE "$RATIO_RE|$TPUT_RE|$DIAGNOSIS_RE" <<< "$line" \
+           && ! grep -qE "$TARGET_RE" <<< "$line" ; then got=match; fi
         t=$((t+1))
         if [ "$got" = "$want" ]; then printf '  ok    %-8s %s\n' "$want" "$(printf '%s' "$line" | cut -c1-64)"
         else printf '  FAIL  want %-8s got %-8s %s\n' "$want" "$got" "$(printf '%s' "$line" | cut -c1-52)"; f=$((f+1)); fi

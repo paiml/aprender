@@ -48,7 +48,7 @@ trap "kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null" EXIT
 
 # Wait for server
 for i in $(seq 1 30); do
-    if curl -s "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -qi "ok\|healthy\|alive"; then
+    if grep -qi "ok\|healthy\|alive" <<< "$(curl -s "http://127.0.0.1:$PORT/health" 2>/dev/null)" ; then
         break
     fi
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then

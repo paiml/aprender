@@ -166,51 +166,92 @@ jobs:
             sleep "$delay"
             delay=$((delay + 6))  # linear backoff: 4,10,16,22,28,34,...
           done
-      - name: Pre-flight target-dir consistency check
-        # Root cause (five-whys):
-        #   1. Why does workspace-test sometimes fail with "no such file or
-        #      directory .rcgu.o" / extern location missing / cc-rs can't
-        #      create .o? Cargo's incremental state on the per-PR target
-        #      dir is inconsistent.
-        #   2. Why inconsistent? A prior run was SIGKILL'd mid-compile and
-        #      left orphan .rmeta files (parts cargo had registered as built)
-        #      without the corresponding .rcgu.o codegen artifacts (which were
-        #      mid-write at the moment of the kill).
-        #   3. Why was it SIGKILL'd? concurrency.cancel-in-progress (line 22)
-        #      cancels the previous run as soon as a new commit lands on the
-        #      branch (and "Update branch" / strict-up-to-date triggers this
-        #      every time aprender main moves forward).
-        #   4. Why does this persist? The target dir is bind-mounted from a
-        #      per-PR persistent path /mnt/nvme-raid0/targets/aprender-ci/<PR>/,
-        #      so partial-compile state survives across runs.
-        #   5. Root cause: cargo's incremental state is not atomic-on-kill, so
-        #      a persistent shared target dir + cancel-in-progress = damage.
-        # Prevention (this step): BEFORE invoking cargo, check whether the
-        # immediately-preceding workflow run on this branch was cancelled. If
-        # yes, rm -rf the target dir contents. This is a one-time check at
-        # job start — NOT a retry-on-failure pattern (which the operator
-        # rejects under the "flake is not allowed" directive).
+      - name: Target-dir reclaim planner must still turn RED (case table)
+        # The planner below decides what gets rm -rf'd. Its own case table runs
+        # first, in the same job, so it cannot rot into a step that only ever
+        # passes: row 1a executes the OLD parent-wide removal against a fixture
+        # holding a live sibling and REQUIRES it to destroy that sibling, and
+        # row 2a requires a genuinely orphaned dir to still be reclaimed. A
+        # blanket skip passes row 1 and fails row 2.
+        run: bash scripts/ci_reclaim_target_dirs.sh --self-test
+      - name: Reclaim orphaned per-RUN target dirs (never a live sibling)
+        # WHAT THIS REPLACED, and why (#2825).
+        #
+        # This step used to run, whenever the previous run on the branch was
+        # cancelled:
+        #
+        #   docker run --rm \
+        #     -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+        #     "$IMAGE" bash -c 'rm -rf /workspace/target/* /workspace/target/.[!.]* ...'
+        #
+        # It mounted the PARENT. The tree is `aprender-ci/<PR>/run-<RUN_ID>`
+        # since #1693, so `<PR>/` is the shared parent of every run for that PR
+        # and `rm -rf <PR>/*` removed every sibling `run-*` directory with no
+        # notion of whether the run owning it was still building.
+        #
+        # Its own five-whys (whose text is preserved below) was written against
+        # a premise #1693 removed: "the target dir is bind-mounted from a per-PR
+        # persistent path /mnt/nvme-raid0/targets/aprender-ci/<PR>/, so partial-
+        # compile state survives across runs". Since #1693 the mount is per-RUN,
+        # so no other run's state can reach this run at all. The parent-wide
+        # removal bought nothing and could only take a sibling with it:
+        #
+        #   1. Why the "no such file or directory .rcgu.o" / missing-extern
+        #      failures? Cargo's incremental state on the target dir is
+        #      inconsistent.
+        #   2. Why inconsistent? A prior cargo was SIGKILL'd mid-compile and
+        #      left .rmeta without the matching .rcgu.o.
+        #   3. Why SIGKILL'd? concurrency.cancel-in-progress cancels the
+        #      previous run as soon as a new commit lands on the branch.
+        #   4. Why did it persist? -- ANSWERED BY #1693. It no longer does:
+        #      the mount is `<PR>/run-<RUN_ID>`, fresh per run.
+        #   5. So the residual risk is not stale state reaching this run; it is
+        #      this step reaching somebody else's live run.
+        #
+        # Measured 2026-08-31 over 36 of the last 100 runs:
+        #   * workspace-test and guard-runner-labels are two jobs of the SAME
+        #     run, on two runners of one host, and both mount
+        #     `<PR>/run-<RUN_ID>` (guard's "model-tests falsification suites"
+        #     step). Their job windows overlap by 21-29 minutes.
+        #   * The removal does fire: runs 33372476223 and 33375180919 both
+        #     logged "Previous run was cancelled; nuking target dir".
+        #   * The margin between this step and that sibling step on the shared
+        #     directory is uncontrolled and CHANGES SIGN -- +7.6 min at the
+        #     tightest (run 33369566809) and -10.8 min in run 33243677674,
+        #     where this step ran AFTER the sibling's cargo instead of before.
+        #     Nothing orders them; today it misses on luck, and the image pull
+        #     this job documents at up to 20 minutes moves it either way.
+        #
+        # So the removal is scoped: `run-<THIS_RUN_ID>` is never touched (a
+        # sibling JOB of this run is writing to it), and a sibling RUN's dir is
+        # reclaimed only when the API says that run is completed -- or, if the
+        # API cannot answer, only when the dir is older than the 100-minute job
+        # timeout. That age fallback is deliberate: sparing everything on an
+        # oracle outage would make this step inert exactly when it is needed.
+        # Cleanup never fails the build; a planner error downgrades to a
+        # warning and reclaims nothing.
         run: |
-          set -e
-          if [ -z "${{ github.event.pull_request.number }}" ]; then
-            echo "Not a PR run; skipping prior-cancel check"
+          set -uo pipefail
+          set +e
+          PARENT="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
+          PLAN="${RUNNER_TEMP:-/tmp}/reclaim-${GITHUB_RUN_ID}.txt"
+          bash scripts/ci_reclaim_target_dirs.sh "$PARENT" "$GITHUB_RUN_ID" > "$PLAN"
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning::reclaim planner exited ${rc}; reclaiming nothing (cleanup never fails the build)"
             exit 0
           fi
-          # Find the immediately-preceding workflow run on this branch.
-          # status=completed filter excludes the current in-progress run.
-          PREV_CONCLUSION=$(gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${GITHUB_HEAD_REF}&status=completed&per_page=1" \
-            --jq '.workflow_runs[0].conclusion' 2>/dev/null || echo "")
-          echo "Previous run conclusion on ${GITHUB_HEAD_REF}: ${PREV_CONCLUSION:-<none>}"
-          if [ "$PREV_CONCLUSION" = "cancelled" ]; then
-            echo "::warning::Previous run was cancelled; nuking target dir to prevent cargo cancel-damage"
-            docker run --rm \
-              -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
-              "$IMAGE" \
-              bash -c 'rm -rf /workspace/target/* /workspace/target/.[!.]* 2>/dev/null || true; ls -la /workspace/target/ || true'
-          else
-            echo "No cancel damage to clean (prior conclusion: ${PREV_CONCLUSION:-fresh-branch})"
+          if [ ! -s "$PLAN" ]; then
+            echo "Nothing to reclaim under ${PARENT}"
+            exit 0
           fi
+          echo "Reclaiming $(wc -l < "$PLAN") orphaned run dir(s):"
+          cat "$PLAN"
+          docker run --rm -i \
+            -v "${PARENT}:/parent" \
+            "$IMAGE" \
+            bash -c 'set -u; while read -r d; do case "$d" in run-*) rm -rf "/parent/${d:?}" ;; *) echo "refusing to remove: ${d}" ;; esac; done; ls -la /parent' \
+            < "$PLAN"
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Pre-build chown — fix per-RUN root ownership
@@ -463,6 +504,21 @@ jobs:
       # passes on the merge-base can still red here, and CI is authoritative.
       - name: Fetch origin/main as the comparand for every ratchet in this job
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      # aprender#2822. Case table FIRST, per the convention above: the probe
+      # below is only worth its 0.15s if the classifier it feeds can still turn
+      # RED. Seven rows over a throwaway tree - no cargo, no network, no host.
+      # Mutation-verified: deleting the sentinel rule, deleting the inode rule,
+      # or restoring the read-after-plant ordering bug each takes it RED.
+      #
+      # This step IS a gate and may fail the job. The probe and report steps are
+      # not and never can - a recorder that can red a required check is a
+      # liability, and #2822 is already red.
+      - name: "target-watch case table (aprender#2822)"
+        run: bash scripts/ci_target_watch.sh --self-test
+      - name: "target-watch: post-checkout"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "post-checkout"
       # A baseline that no guard compares to anything is an allowlist wearing
       # the word "ratchet". This is the coverage backstop: every scripts/*.txt
       # is classified shrink-only (and compared) or NOT-a-ratchet (with the
@@ -574,6 +630,10 @@ jobs:
         run: bash scripts/check_pv_version_parse.sh
       - name: "pv --version parse guard must still turn RED (case table)"
         run: bash scripts/check_pv_version_parse.sh --self-test
+      - name: "target-watch: before-cargo-install-bashrs"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-install-bashrs"
       # CLAUDE.md mandates bashrs over shellcheck; CI honoured that for SEVEN of
       # 72 scripts (`bashrs lint scripts/check_book_*.sh` in book.yml).
       # apr_bin.sh -- sourced by every gate in this repo -- was not one of them,
@@ -831,6 +891,10 @@ jobs:
         run: bash scripts/check_publish_safety.sh
       - name: Every include!() file is tracked by git (CB-510)
         run: bash scripts/check_include_files.sh
+      - name: "target-watch: before-pv-build"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-pv-build"
       # #2512: these two were invoked by NO workflow -- one Makefile-only
       # (`make tier3`, which CI does not run), one reachable from nothing at all.
       # Both pass today and are cheap, so there was never a reason for them to be
@@ -854,6 +918,10 @@ jobs:
         run: bash scripts/check_pv_bin_resolution.sh
       - name: Every contract cites a test that exists (strict-test-binding)
         run: bash scripts/check_contract_test_binding.sh
+      - name: "target-watch: before-contracts-tests"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-contracts-tests"
       # Poka-yoke (#2551): `cargo test -p aprender-contracts --test
       # validate_contracts` is the only thing that parses and validates the
       # contract corpus from Rust rather than through `pv lint`. It failed 3 of
@@ -874,8 +942,16 @@ jobs:
           cargo test -p aprender-contracts --test validate_contracts
           cargo test -p aprender-contracts --test kani_harness_generation
           cargo test -p aprender-contracts --test probar_test_generation
+      - name: "target-watch: before-wasm32-build"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-wasm32-build"
       - name: aprender-core builds for wasm32
         run: bash scripts/check_wasm32_core_builds.sh
+      - name: "target-watch: before-facade-compat"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-facade-compat"
       # aprender#2546: `provable-contracts*` were renamed to `aprender-contracts*`
       # and the published names left frozen at 0.3.1. A pin on the old name
       # resolved SILENTLY and installed a tool sixty versions behind. The names
@@ -1148,6 +1224,10 @@ jobs:
         run: bash scripts/check_dogfood_llm_probe_armed.sh
       - name: dogfood LLM probe guard case table
         run: bash scripts/check_dogfood_llm_probe_armed.sh --self-test
+      - name: "target-watch: before-profile-tests"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-profile-tests"
       # aprender-profile appeared in this file ZERO times while carrying 58
       # integration test targets. Running them found 110 failures -- 109 from a
       # single stale binary name left by the APR-MONO rename, dead since. Gated
@@ -1179,6 +1259,10 @@ jobs:
         run: bash scripts/check_model_tests_wired.sh
       - name: model-tests wiring case table
         run: bash scripts/check_model_tests_wired.sh --self-test
+      - name: "target-watch: before-model-tests-docker"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-model-tests-docker"
       - name: model-tests falsification suites (was gated by nothing, aprender#2522)
         # Runs INSIDE the image, on the same per-RUN target dir as the other
         # cargo steps, so the `model-tests` feature build reuses this run's
@@ -1201,8 +1285,16 @@ jobs:
               --test falsification_spec_v10_tests \
               --test falsification_stress_tests \
               --test falsification_gpu_state_tests
+      - name: "target-watch: before-book-examples"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-book-examples"
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
+      - name: "target-watch: before-cargo-package"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-package"
       # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
       # from the published crate while git still tracks it, so the crate compiles
       # in-tree and fails for everyone installing from crates.io. This guard is
@@ -1270,6 +1362,10 @@ jobs:
       - name: Publishable-deps guard case table
         run: bash scripts/check_publishable_deps_publishable.sh --self-test
 
+      - name: "target-watch: before-cargo-deny-install"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-deny-install"
       # `cargo deny` ran in ZERO workflows -- only `make deny`. Positive control:
       # 9 workflows mention `cargo`, 0 mentioned `deny`. Meanwhile the `security`
       # job runs `cargo audit` with continue-on-error, which cannot fail the build
@@ -1335,6 +1431,10 @@ jobs:
         run: bash scripts/check_test_fixture_paths.sh
       - name: Fixture-path guard case table
         run: bash scripts/check_test_fixture_paths.sh --self-test
+      - name: "target-watch: after-last-cargo-step"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "after-last-cargo-step"
       # #2532: the guard above has a universe of crates/**/tests?/**/*.rs, which
       # structurally excludes 100% of the 324 machine-specific paths pmat found
       # in SHIPPED code -- 46 of them inside contracts/ itself. Seventeen crux
@@ -1402,6 +1502,28 @@ jobs:
       # HARNESS-BROKEN rather than as a dead mutant. Text-only, no build.
       - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
         run: bash scripts/mutate_pr_review_wiring_guard.sh
+      # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
+      # and takes its own final probe first -- without that, a failure at
+      # step K leaves the last recorded boundary BEFORE K and the table
+      # reads clean, which is the whole failure mode being investigated.
+      #
+      # It also pulls the host journal for the job's window into the job
+      # log. That is the decisive evidence and the only evidence that
+      # expires: `_work/*/target` is deleted by HOST automation (a sibling
+      # runner's job-started hook, a systemd timer) which logs under its own
+      # tag and appears in NO GitHub log. See
+      # scripts/runner-infra/runner-disk-guard.sh, whose own header records
+      # this exact signature.
+      #
+      # continue-on-error is deliberate and is NOT a disarmed gate: nothing
+      # here asserts anything. The gate that can fail is the case table
+      # wired above.
+      - name: "target-watch: report (aprender#2822)"
+        if: always()
+        continue-on-error: true
+        run: |
+          bash scripts/ci_target_watch.sh probe post-job
+          bash scripts/ci_target_watch.sh report
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".

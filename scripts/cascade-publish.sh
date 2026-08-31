@@ -138,10 +138,11 @@ version_live() {
   elif [ "$n" -eq 3 ]; then p="3/${crate:0:1}/${crate}"
   else p="${crate:0:2}/${crate:2:2}/${crate}"
   fi
-  curl -s --retry 3 --retry-delay 2 \
+  local idx
+  idx=$(curl -s --retry 3 --retry-delay 2 \
     -H "User-Agent: aprender-cascade-publish (release automation)" \
-    "https://index.crates.io/${p}" 2>/dev/null \
-    | grep -qF "\"vers\":\"${want}\""
+    "https://index.crates.io/${p}" 2>/dev/null) || idx=''
+  grep -qF "\"vers\":\"${want}\"" <<< "$idx"
 }
 
 # PUBLISH ORDER AS A PRECONDITION, NOT AS A COMMENT.
@@ -271,11 +272,11 @@ publish_crate() {
   fi
   local out
   out=$(cargo publish "${sel[@]}" --allow-dirty --locked 2>&1 | tail -6)
-  if echo "$out" | grep -q "Published $crate"; then
+  if grep -q "Published $crate" <<< "$out" ; then
     echo "✓ PUBLISHED"
     sleep 10  # let crates.io index settle before dependents try to fetch
     return 0
-  elif echo "$out" | grep -qE "already.*upload|already exists"; then
+  elif grep -qE "already.*upload|already exists" <<< "$out" ; then
     echo "(already on registry)"
     return 0
   # Surface the two FATAL classes that are NOT dep-ordering deferrals — a bare
@@ -287,10 +288,10 @@ publish_crate() {
   #      [patch.crates-io] in .cargo/config.toml points at ../<repo> paths that
   #      don't exist in a worktree. Fix: remove .cargo/config.toml before publish
   #      (the consolidated monorepo resolves siblings via in-tree path deps).
-  elif echo "$out" | grep -qiE "403|authentication failed"; then
+  elif grep -qiE "403|authentication failed" <<< "$out" ; then
     echo "FATAL-AUTH (403 — unset stale \$CARGO_REGISTRY_TOKEN; use ~/.cargo/credentials.toml)"
     return 1
-  elif echo "$out" | grep -qiE "failed to load source|no such file or directory"; then
+  elif grep -qiE "failed to load source|no such file or directory" <<< "$out" ; then
     echo "FATAL-CONFIG (dev [patch.crates-io] in .cargo/config.toml — remove it before publish)"
     return 1
   else

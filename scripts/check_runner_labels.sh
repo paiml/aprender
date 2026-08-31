@@ -21,8 +21,8 @@ fail=0
 
 while IFS=: read -r file line sel; do
   # Only inline self-hosted selectors.
-  printf '%s' "$sel" | grep -q 'self-hosted' || continue
-  if ! printf '%s' "$sel" | grep -qE "$DISCRIM"; then
+  grep -q 'self-hosted' <<< "$sel" || continue
+  if ! grep -qE "$DISCRIM" <<< "$sel" ; then
     echo "::error file=${file},line=${line}::self-hosted job lacks a discriminating runner label (need clean-room or a GPU/macOS label): ${sel# }"
     fail=1
   fi

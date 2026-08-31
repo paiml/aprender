@@ -50,7 +50,7 @@ fi
 
 # Gate 4: Page has PCU frontmatter
 if [ -f "$PAGE_PATH" ]; then
-    if head -1 "$PAGE_PATH" | grep -q "PCU:"; then
+    if grep -q "PCU:" <<< "$(head -1 "$PAGE_PATH")" ; then
         echo "  G4  PASS: PCU frontmatter"
     else
         echo "  G4  FAIL: no PCU frontmatter"
@@ -119,7 +119,7 @@ if [ -f "$PAGE_PATH" ]; then
         MISSING_SECTIONS=0
         while IFS= read -r section; do
             [ -z "$section" ] && continue
-            if ! echo "$PAGE_H2S" | grep -qiF "$section"; then
+            if ! grep -qiF "$section" <<< "$PAGE_H2S" ; then
                 MISSING_SECTIONS=$((MISSING_SECTIONS+1))
             fi
         done <<< "$CONTRACT_SECTIONS"
@@ -180,10 +180,10 @@ fi
 
 # Gate 12: arXiv IDs are well-formed (L3 partial fix)
 ARXIV_LINE=$(grep "arxiv:" "$CONTRACT" 2>/dev/null | head -1)
-if echo "$ARXIV_LINE" | grep -qP '\d{4}\.\d{4,5}'; then
+if grep -qP '\d{4}\.\d{4,5}' <<< "$ARXIV_LINE" ; then
     # Check format: YYMM.NNNNN
     BAD_IDS=$(echo "$ARXIV_LINE" | grep -oP '"[^"]*"' | tr -d '"' | while read -r id; do
-        echo "$id" | grep -qP '^\d{4}\.\d{4,5}$|^math/\d{7}$' || echo "$id"
+        grep -qP '^\d{4}\.\d{4,5}$|^math/\d{7}$' <<< "$id" || echo "$id"
     done)
     if [ -n "$BAD_IDS" ]; then
         echo "  G12 WARN: malformed arXiv ID(s): $BAD_IDS"

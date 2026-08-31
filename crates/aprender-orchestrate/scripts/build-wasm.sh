@@ -28,7 +28,7 @@ echo "================================="
 echo
 
 # Check if wasm32 target is installed
-if ! rustup target list | grep -q "wasm32-unknown-unknown (installed)"; then
+if ! grep -q "wasm32-unknown-unknown (installed)" <<< "$(rustup target list)" ; then
     echo -e "${YELLOW}⚠️  wasm32-unknown-unknown target not installed${NC}"
     echo "Installing..."
     rustup target add wasm32-unknown-unknown
