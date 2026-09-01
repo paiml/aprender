@@ -183,6 +183,8 @@ rs-line-test-not-applied	  case "$1" in *.rs) match_rs_published "$2" || return 
 docs-prose-back-in-b4-scope	crates/*/src/*.rs|src/*.rs) return 0 ;;	crates/*/src/*.rs|src/*.rs|docs/*.md) return 0 ;;
 book-removed-from-b4-scope	    book/*.md) return 0 ;;	    book/*.md) return 1 ;;
 book-examples-back-out-of-scope	    book/*.md) return 0 ;;	    book/*.md) case "$1" in */examples/*) return 1 ;; esac; return 0 ;;
+root-md-removed-from-b4-scope	    *.md)  return 0 ;;	    *.md)  return 1 ;;
+root-md-anchor-removed	    */*)   : ;;	    */*zzz-never-matches*)   : ;;
 comparative-competitor-list-never-matches	COMPETITOR_RE='(ollama	COMPETITOR_RE='(^$)@@TRUNCATE@@
 comparative-competitor-list-matches-everything	COMPETITOR_RE='(ollama	COMPETITOR_RE='(.)@@TRUNCATE@@
 comparative-gap-bound-unbounded	){0,5}	){0,99}
@@ -245,6 +247,22 @@ catalogue() {
 }
 
 # ---------------------------------------------------------------------------
+# snapshot_source <dest> - the sweep's OWN COPY of every input, taken once.
+# Same file list as build_tree, read from the live checkout exactly once. After this
+# returns, $ROOT is never read again by the sweep.
+# ---------------------------------------------------------------------------
+snapshot_source() {
+  local d=$1
+  mkdir -p "$d/scripts" "$d/tests/fixtures" "$d/.claude/skills/pr-review"
+  cp -a "$ROOT/schemas" "$d/schemas"
+  cp -a "$ROOT/.claude/skills/pr-review/SKILL.md" "$d/.claude/skills/pr-review/SKILL.md"
+  cp -a "$ROOT/tests/fixtures/pr-review" "$d/tests/fixtures/pr-review"
+  cp -a "$ROOT/$BATS_REL" "$d/$BATS_REL"
+  cp -a "$ROOT/$GUARD_REL" "$d/$GUARD_REL"
+  cp -a "$ROOT/$SCAN_REL" "$d/$SCAN_REL"
+}
+
+# ---------------------------------------------------------------------------
 # apply <lineno> <old> <new> <src> <dst>
 #
 # Substitutes on ONE line and proves it happened. `@@TRUNCATE@@` in <new> means "and
@@ -269,10 +287,21 @@ apply() {
 # Not just the guard: mutant #2 in the list at the top of this file was a bare tempdir,
 # and the fail-closed fixture lookup aborted every run before it validated anything.
 # ---------------------------------------------------------------------------
+# EVERY SOURCE BELOW IS $SNAP, NEVER $ROOT, AND THAT IS THE WHOLE POINT.
+#
+# It used to be $ROOT: the live checkout, re-read at the START OF EACH MUTANT, while
+# catalogue() had recorded every site's LINE NUMBER once at sweep start. A concurrent
+# edit between those two moments makes the run measure something nobody asked for --
+# observed, printing `SITE NOT PRESENT AT LINE 1361` eight times in one sweep.
+#
+# THE VISIBLE FAILURE IS THE LUCKY ONE. If the edit shifts a line but the site's old
+# text still occurs at that number, the mutant lands on the WRONG LINE, status_note
+# stays `ok`, and the suite is measured against a guard mutated somewhere nobody chose
+# -- reporting KILLED for a reason unrelated to the mutation and HIDING A SURVIVOR.
 build_tree() {
   local d=$1
   mkdir -p "$d/scripts" "$d/tests/fixtures" "$d/.claude/skills/pr-review"
-  cp -a "$ROOT/schemas" "$d/schemas"
+  cp -a "$SNAP/schemas" "$d/schemas"
   # SKILL.md is copied because tests/pr-review.bats READS IT (PRREV-020's row asserting
   # that S3.E step 3 still documents the disposable tree AND the file-based prompt
   # together - the flag alone hands a second agent write access to the working
@@ -280,21 +309,24 @@ build_tree() {
   # with any mutant, which is failure mode 2 at the top of this file, and it would have
   # aborted the whole sweep rather than reporting a survivor. The rule is the one
   # already stated: whatever the suite reads, the mutant tree carries.
-  cp -a "$ROOT/.claude/skills/pr-review/SKILL.md" "$d/.claude/skills/pr-review/SKILL.md"
-  cp -a "$ROOT/tests/fixtures/pr-review" "$d/tests/fixtures/pr-review"
-  cp -a "$ROOT/$BATS_REL" "$d/$BATS_REL"
-  cp -a "$GUARD" "$d/$GUARD_REL"
+  cp -a "$SNAP/.claude/skills/pr-review/SKILL.md" "$d/.claude/skills/pr-review/SKILL.md"
+  cp -a "$SNAP/tests/fixtures/pr-review" "$d/tests/fixtures/pr-review"
+  cp -a "$SNAP/$BATS_REL" "$d/$BATS_REL"
+  cp -a "$SNAP/$GUARD_REL" "$d/$GUARD_REL"
   # The duplication scanner is NOT mutated here - it is a producer, not a guard, and no
   # verdict rests on it. It is copied because tests/pr-review.bats exercises it, and a
   # mutant tree missing it would fail the baseline for a reason that has nothing to do
   # with the mutant. That is failure mode 2 at the top of this file, exactly.
-  cp -a "$ROOT/$SCAN_REL" "$d/$SCAN_REL"
+  cp -a "$SNAP/$SCAN_REL" "$d/$SCAN_REL"
 }
 
 # ---------------------------------------------------------------------------
 # --run-one: one mutant, in its own tree. Writes <workdir>/results/<id>.
 # ---------------------------------------------------------------------------
 if [ -n "$RUN_ONE" ]; then
+  SNAP="$WORKDIR/src"
+  GUARD="$SNAP/$GUARD_REL"
+  [ -f "$GUARD" ] || { echo "$PROG: FAIL - no snapshot at $GUARD" >&2; exit 1; }
   spec="$WORKDIR/specs/$RUN_ONE"
   [ -f "$spec" ] || { echo "no spec for $RUN_ONE" >&2; exit 1; }
   IFS=$'\t' read -r m_id m_op m_line m_old m_new < "$spec"
@@ -349,13 +381,6 @@ fi
 # ---------------------------------------------------------------------------
 # The sweep.
 # ---------------------------------------------------------------------------
-CAT=$(catalogue)
-if [ "$LIST_ONLY" = 1 ]; then
-  printf '%s\n' "$CAT"
-  printf '%s mutants\n' "$(printf '%s\n' "$CAT" | grep -c .)" >&2
-  exit 0
-fi
-
 WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/prrev-mutate.XXXXXX")
 case "$WORKDIR" in
   */prrev-mutate.*) ;;
@@ -365,6 +390,20 @@ export WORKDIR
 cleanup_workdir() { safe_rmtree "${WORKDIR:-}"; }
 trap cleanup_workdir EXIT
 mkdir -p "$WORKDIR/specs" "$WORKDIR/results" "$WORKDIR/logs" "$WORKDIR/trees"
+
+# THE SNAPSHOT COMES BEFORE catalogue(), because catalogue() records LINE NUMBERS and a
+# line number is only meaningful against the bytes it was read from.
+SNAP="$WORKDIR/src"
+snapshot_source "$SNAP"
+GUARD="$SNAP/$GUARD_REL"
+
+CAT=$(catalogue)
+if [ "$LIST_ONLY" = 1 ]; then
+  printf '%s\n' "$CAT"
+  printf '%s mutants\n' "$(printf '%s\n' "$CAT" | grep -c .)" >&2
+  exit 0
+fi
+
 
 # --- the baseline, FIRST. -------------------------------------------------
 # An unmutated tree must be GREEN here, or every "kill" below is a kill of the harness.
