@@ -1760,9 +1760,54 @@ jobs:
       # as a failure nobody can distinguish from a real one (#2792's cargo-audit
       # eviction, and "N runs cancelled at the SAME elapsed time is a timeout,
       # not a flake"). Raised to 120.
+      #
+      # AND A FOURTH: THIS STEP HAD NO `if:` AT ALL, so the full sweep ran on every
+      # pull request including docs-only ones -- while §3.D's own trigger table says
+      # the guard mutation set is required when the diff "touches scripts/check_*.sh,
+      # dogfood.sh, ci.yml gate logic, or a contracts/*.yaml falsifier" and that
+      # docs / non-code is "not triggered". CI contradicted the specification it
+      # enforces, and it was not a tidiness point: it is the queue. Measured
+      # 2026-09-01 -- three receipt jobs started within nine minutes of each other,
+      # the runner host's load average went 48 -> 133, and #2836's job was CANCELLED
+      # at exactly its 150-minute cap having proved nothing. A cancelled job reads as
+      # a failure nobody can distinguish from a real one.
+      #
+      # The decision is a SCRIPT with an 11-row case table, not an inline expression:
+      # this job's own Arm 4 post-mortem is that inline YAML is reachable from no test
+      # and its exit-0 branch passed every run it ever had. The table carries both
+      # polarities -- all seven sweep inputs must answer `yes`, and a docs-only and an
+      # unrelated-source diff must answer `no`, without which "always yes" reads green
+      # -- plus a fail-closed row and a row that fails when build_tree copies a path
+      # the list does not name.
+      - name: "Does this diff change anything the sweep reads? (§3.D trigger)"
+        id: sweep_needed
+        shell: bash
+        run: |
+          bash scripts/pr_review_sweep_needed.sh --self-test
+          BASE=$(git merge-base origin/main "${PR_HEAD_SHA}" 2>/dev/null) || BASE=""
+          if [ -z "$BASE" ]; then
+            echo "needed=yes" >> "$GITHUB_OUTPUT"
+            echo "::notice::merge-base unavailable; running the sweep (fail-closed)"
+            exit 0
+          fi
+          OUT=$(bash scripts/pr_review_sweep_needed.sh "$BASE" "${PR_HEAD_SHA}")
+          echo "$OUT" >> "$GITHUB_OUTPUT"
+          echo "::notice::sweep trigger -> $OUT"
+
       - name: The guard's mutation set must kill 100% (§6.4, §8 fixes this at one)
+        if: steps.sweep_needed.outputs.needed == 'yes'
         shell: bash
         run: bash scripts/mutate-guard.sh
+
+      # A SKIPPED SWEEP IS RECORDED, NEVER SILENT. §3.0's rule one level up: "not
+      # triggered" and "did not run" must not be the same artifact.
+      - name: "Sweep not triggered — record why (§3.0)"
+        if: steps.sweep_needed.outputs.needed != 'yes'
+        shell: bash
+        run: |
+          echo "guard_mutation_score: NOT-TRIGGERED — no sweep input changed in this diff."
+          echo "Inputs are the six paths build_tree copies plus scripts/mutate-guard.sh;"
+          echo "see scripts/pr_review_sweep_needed.sh. The score is unchanged from main's."
 
       # Arm 4. ARMED (PRREV-013). It could previously neither fail nor pass.
       #
