@@ -92,6 +92,32 @@
 # archive quoting the number it is diagnosing, a doc comment describing a gate
 # that passed at 4.1 tok/s). Those clear by REWORDING, not by deleting a
 # measurement; the other ~52 clear by citing the evidence/ receipt or going.
+# APERTURE REVEAL, D9 / PRREV-021 (2026-09-01): +12 entries, and this file GREW.
+# The twelve are root-level markdown -- README.md, CHANGELOG.md, CLAUDE.md -- which
+# entered the universe in the same commit that put them into B4's scope in
+# scripts/check_pr_review_receipt.sh. Not one of them is new text: every line is
+# byte-identical at the comparand, which is exactly what `set-aperture` verifies and
+# what the working tree alone cannot answer. da069a25f published `2.93x Ollama` to
+# README.md and nothing here could read it.
+#
+# README.md:233-235 IS THE ONE THAT IS DEBT RATHER THAN RECORD. It is a published
+# throughput table -- `225+ tok/s | RTX 4090` -- on the first page a user reads, and
+# the ratchet now requires it to shrink. CHANGELOG entries are a dated historical
+# record and CLAUDE.md:218/222 are a WRONG/CORRECT code illustration; they are
+# recorded, not blessed, in this file's own words.
+#
+CHANGELOG.md:1719
+CHANGELOG.md:1734
+CHANGELOG.md:1933
+CHANGELOG.md:1934
+CHANGELOG.md:955
+CHANGELOG.md:957
+CLAUDE.md:218
+CLAUDE.md:222
+CLAUDE.md:685
+README.md:233
+README.md:234
+README.md:235
 book/src/advanced-testing/popperian-falsification.md:44
 book/src/tools/apr-cli.md:996
 crates/apr-cli/src/commands/bench_safetensors.rs:123

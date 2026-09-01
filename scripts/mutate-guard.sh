@@ -183,6 +183,8 @@ rs-line-test-not-applied	  case "$1" in *.rs) match_rs_published "$2" || return 
 docs-prose-back-in-b4-scope	crates/*/src/*.rs|src/*.rs) return 0 ;;	crates/*/src/*.rs|src/*.rs|docs/*.md) return 0 ;;
 book-removed-from-b4-scope	    book/*.md) return 0 ;;	    book/*.md) return 1 ;;
 book-examples-back-out-of-scope	    book/*.md) return 0 ;;	    book/*.md) case "$1" in */examples/*) return 1 ;; esac; return 0 ;;
+root-md-removed-from-b4-scope	    *.md)  return 0 ;;	    *.md)  return 1 ;;
+root-md-anchor-removed	    */*)   : ;;	    */*zzz-never-matches*)   : ;;
 comparative-competitor-list-never-matches	COMPETITOR_RE='(ollama	COMPETITOR_RE='(^$)@@TRUNCATE@@
 comparative-competitor-list-matches-everything	COMPETITOR_RE='(ollama	COMPETITOR_RE='(.)@@TRUNCATE@@
 comparative-gap-bound-unbounded	){0,5}	){0,99}

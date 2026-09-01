@@ -572,9 +572,23 @@ fi
 #     mattered most: §9's whole point is that a claim a USER READS is the
 #     defect, and book/ is where users read. Five live `2.93x Ollama` claims sat
 #     in book/ while this guard reported PASS.
+# (d) ROOT-LEVEL *.md WAS NOT IN THE UNIVERSE EITHER, and it is where README.md is.
+#     da069a25f published `2.93x Ollama` to book/src/examples/showcase-benchmark.md AND
+#     to README.md. F6 brought the first into scope; the second stayed out of BOTH this
+#     universe and B4's, and F9 measured the hole rather than widening it, because a
+#     scope change that moves only one of the two definitions puts them out of step
+#     silently. This commit moves both. README.md is the first page a user reads, which
+#     is (c)'s own argument applied to the page above the book.
+#
+#     `:(glob)` IS LOAD-BEARING. A bare `'*.md'` pathspec matches at every depth -- 3460
+#     files here against 6 -- so it would pull in tests/, fixtures/ and evidence/ and
+#     re-admit the docs/specifications/ prose the grep below excludes by name. The
+#     `:(glob)` magic makes `*` stop at `/`, so the pathspec means what it reads as.
+#     `root-md-anchor-removed` in scripts/mutate-guard.sh mutates B4's matching anchor.
 mapfile -t SRC < <(
     { git ls-files 'crates/*/src/**/*.rs' 'crates/*/src/*.rs' 'src/**/*.rs' 'src/*.rs' \
-                   'book/**/*.md' 'book/*.md' 'docs/**/*.md' 'docs/*.md' 2>/dev/null
+                   'book/**/*.md' 'book/*.md' 'docs/**/*.md' 'docs/*.md' \
+                   ':(glob)*.md' 2>/dev/null
       find crates/*/src src book docs -type f \( -name '*.rs' -o -name '*.md' \) 2>/dev/null
     } | LC_ALL=C sort -u \
     | grep -vE '(^|/)(tests?|benches|examples)/' \

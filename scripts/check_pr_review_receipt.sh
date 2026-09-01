@@ -253,6 +253,29 @@ match_shipped_surface() {
   case "$1" in
     book/*.md) return 0 ;;
   esac
+  # D9 (PRREV-021). A ROOT-LEVEL *.md IS A PUBLISHED SURFACE, and it was the one
+  # region of da069a25f that stayed invisible after F6 exempted book/**. That commit
+  # published `2.93x Ollama` to TWO files: book/src/examples/showcase-benchmark.md,
+  # which F6 brought into scope, and README.md, which stayed out because a root-level
+  # markdown file matched no inclusion line here. The case table recorded that as a
+  # KNOWN GAP on the CHANGELOG.md row -- written before anyone knew README.md carried
+  # the claim. It did, and README.md is the first page a user reads.
+  #
+  # THE ANCHOR IS THE WHOLE RULE. `*.md` alone matches `docs/x.md` and
+  # `evidence/**/results.md` too -- bash case globs do not stop at `/` -- which would
+  # re-admit the docs/ surface that was deliberately MEASURED OUT above (2/5 precision,
+  # below S7's >=90% bar). `*/*) : ;;` consumes every path that has a separator, so only
+  # a path with none can reach the line below. `root-md-anchor-removed` in
+  # scripts/mutate-guard.sh deletes exactly that anchor, and the docs/ NO-MATCH rows
+  # kill it.
+  #
+  # The sibling universe in scripts/check_no_claim_literals.sh moves in THIS commit,
+  # per the rule F9 stated when it declined to widen: the two definitions go out of
+  # step silently otherwise.
+  case "$1" in
+    */*)   : ;;
+    *.md)  return 0 ;;
+  esac
   case "$1" in
     tests/*|*/tests/*|test/*|*/test/*)         return 1 ;;
     benches/*|*/benches/*|examples/*|*/examples/*) return 1 ;;

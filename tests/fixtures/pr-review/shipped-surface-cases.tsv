@@ -49,10 +49,13 @@ NO-MATCH	examples/qwen_inference.rs	an example is not a published claim
 NO-MATCH	scripts/check_no_claim_literals.sh	a guard naming the literals it bans is not publishing them
 NO-MATCH	evidence/pr-review/backtest/results.md	evidence records what was measured, including the claims under audit
 NO-MATCH	crates/aprender-core/src/format_tests.rs	a _tests.rs sibling is a test whatever directory it sits in
-NO-MATCH	CHANGELOG.md	KNOWN GAP, recorded not widened: a root-level markdown file is outside the universe check_no_claim_literals.sh defends, and widening here would put the two definitions out of step silently
+MATCH	CHANGELOG.md	D9 CLOSED: the KNOWN GAP this row used to record. A root-level .md is now in scope, and the sibling universe in check_no_claim_literals.sh moved in the SAME commit -- which is the condition F9 named when it declined to widen
 NO-MATCH	Cargo.toml	not a surface a claim can be published on
 MATCH	book/src/examples/showcase-benchmark.md	F6 THE SCAR: the page da069a25f published `851.8 tok/s = 2.93x Ollama` to; excluded until F6 by */examples/*, a Rust-layout rule applied to prose
 MATCH	book/src/examples/apr-cli-demo.md	one of the 153 published book pages under examples/, all of them in SUMMARY.md
 MATCH	book/examples/x.md	CONTROL, and it FLIPPED at F6: the old exclusion matched the name at any depth, so this was NO-MATCH. A book page is a book page at any depth
 NO-MATCH	crates/aprender-core/examples/demo.rs	SINGLE-VARIABLE CONTROL for the row above: same directory name, a cargo example target, still out of scope. The exemption is book/, not examples/
 NO-MATCH	book/src/examples/showcase-benchmark.rs	CONTROL: the exemption is book/**.md, not everything under book/. A .rs file there is not a rendered chapter
+MATCH	README.md	D9 THE SCAR: da069a25f published `2.93x Ollama` to README.md as well as to the book page F6 recovered, and B4 fired on neither. README.md is the first page a user reads
+NO-MATCH	crates/apr-cli/CHANGELOG.md	SINGLE-VARIABLE CONTROL for the CHANGELOG.md row: same filename, one directory down. The widening is ROOT-anchored, not a filename rule
+NO-MATCH	docs/README.md	SECOND CONTROL, and it is the one that guards the measured-out docs/ surface: `*.md` without the `*/*)` anchor matches this too, because bash case globs do not stop at `/`

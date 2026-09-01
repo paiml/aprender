@@ -410,9 +410,13 @@ Two things the guard checks that are easy to miss:
   `comparative_claims` is empty is itself B4. You cannot state the ratio in prose and
   omit the provenance.
 - B4 also reads the **diff**, not only your receipt, over the surface a user reads:
-  `book/**.md` at any depth, and printed literals plus doc comments in shipped `.rs`.
-  `book/src/examples/` is **in** that scope — it is 153 of the book's 441 published
-  pages and the directory `851.8 tok/s = 2.93x Ollama` was actually published to.
+  `book/**.md` at any depth, **a root-level `*.md`**, and printed literals plus doc
+  comments in shipped `.rs`. `book/src/examples/` is **in** that scope — it is 153 of
+  the book's 441 published pages and the directory `851.8 tok/s = 2.93x Ollama` was
+  actually published to. So is **`README.md`**: the same commit published the same
+  ratio there, and until `PRREV-021` neither definition could read it (D9). The
+  root-level rule is **anchored** — `docs/x.md` and `evidence/**/*.md` stay out, the
+  first because that surface was measured out at 40% precision, below §7's bar.
 - `version` and `artifact_sha256` are **captured, not remembered**. Run the comparator,
   read its version banner, hash the artifact you actually exercised. And never label a
   run by intent: `CUDA_VISIBLE_DEVICES` says what was *visible*, never what was *used*.
