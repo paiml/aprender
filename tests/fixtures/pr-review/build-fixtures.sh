@@ -1008,6 +1008,89 @@ RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
 emit row-37-arm-e-rc-zero-recorded-unreachable "$SARIF" "$RCPT"
 
 # ===========================================================================
+# ROW 38 - findings.sarif WITH AN EMPTY runs ARRAY                    -> RED  B1
+#
+# THE VACUITY. Every result-level rule in the guard is written
+# `.runs[]? | .results[]?`. Over an empty runs array each of them iterates the empty
+# set and finds nothing to reject, so the whole of S1 and S4.2 -- grounding marks,
+# failure_scenario, the cited-excerpt digest, precision_class, and B4's scan over the
+# reviewer's own findings -- passed silently. Measured before the rule existed: this
+# exact receipt returned rc=0 ACCEPT, while still declaring `verdict: FINDINGS` and
+# five consultations `consulted`. The positive controls fired correctly in the same
+# run, so it was genuine vacuity and not a broken harness.
+#
+# It is S8's `vacuous_consultations` shape one level up, and the same shape as
+# `pv lint <FILE>` passing over zero contracts: a GREEN that is a count of files.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [] }
+JSON
+)
+RCPT=$(receipt "$D1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_OK")
+emit row-38-sarif-with-no-runs "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 39 - a run whose tool.driver.name is outside the vocabulary     -> RED  B1
+#
+# S4.2 fixes the driver name to a closed set, and this is checked as a WHITELIST
+# because S13.13's forged-receipt post-mortem found that every clause which fell was a
+# blacklist over a field and every clause which survived was a whitelist. The
+# difference was the direction of the test, not the field.
+#
+# The spelling here is `Pmat` -- one capital -- because that is the cheapest way a run
+# hides from a selector that finds it by name, and the guard has such a selector:
+# `select(.tool.driver.name == "antigravity")`. A renamed run is not read by it and
+# not rejected either, so its findings simply do not exist.
+#
+# THE FIRST DRAFT OF THIS RULE ACCEPTED THIS ROW. Written
+# `select([...] | index(.) == null)`, the pipe rebinds `.` to the literal array so
+# `index(.)` asks whether the array contains ITSELF. Caught by running the row, never
+# by reading the line -- which is why the row is committed rather than the reasoning.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [ { "tool": { "driver": { "name": "Pmat" } },
+              "invocations": [ { "executionSuccessful": true } ],
+              "results": [] } ] }
+JSON
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_OK")
+emit row-39-run-driver-outside-vocabulary "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 40 - verdict FINDINGS beside zero results                       -> RED  B1
+#
+# The verdict and the artifact it points at must not be able to disagree about whether
+# anything was found. FINDINGS with an empty result set is byte-for-byte the same
+# review as PASS, which makes the verdict decorative on exactly the transition S7
+# reads to decide blocking.
+#
+# Its discrimination partner is row 7, which is `PASS` with an empty result set and
+# stays GREEN: the variable is the verdict, not the emptiness. Without that pair this
+# rule would read as "refuse any review that found nothing", which is the honest
+# outcome S3.0 row 1 exists to keep available.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [ { "tool": { "driver": { "name": "pmat" } },
+              "invocations": [ { "executionSuccessful": true } ],
+              "results": [] } ] }
+JSON
+)
+RCPT=$(receipt "$D1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_OK")
+emit row-40-findings-verdict-with-no-results "$SARIF" "$RCPT"
+
+# ===========================================================================
 # THE POSITIVE CONTROLS (S6.1) - not rows of the S6.3 table.
 #
 # scripts/check_pr_review_receipt.sh validates these BEFORE it validates anything
