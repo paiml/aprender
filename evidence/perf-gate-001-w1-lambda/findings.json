@@ -1,0 +1,135 @@
+{
+  "ticket": "APR-PERF-GATE-001 (paiml/aprender#2706)",
+  "cell": "host=lambda workload=W1 bands=[1,4,8,16] replicates=3",
+  "date": "2026-09-01",
+  "headline": "The first SS4.4-conformant W1 cell on lambda. Four bands x three replicates, 1622 sampled requests, zero timeouts, completed == requested in every band. Arm A SPOKE on all three receipts: scaling_efficiency 0.476 / 0.439 / 0.280 at c=4 / c=8 / c=16 (mean of N=3). The merge-phase gate is PASS on r1, r2 and r3; the release-phase gate is FAIL on the three gaps this cell cannot close and does not pretend to.",
+
+  "what_was_measured": {
+    "producer": "apr test llm bench --band",
+    "server": "apr serve run ~/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf --port 18090 --gpu-layers all",
+    "binary": "/mnt/nvme-raid0/perf-gate/target-cuda/release/apr",
+    "binary_sha256": "9d0b08b015e22fb3e2cade8f0862d31b03e970c16ac8f2abf77140b7b8b63ed5",
+    "binary_version": "apr 0.64.0 (745fa8588)",
+    "model_sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+    "corpus": "crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl",
+    "corpus_sha256": "c88c9fc1985bd79ddcd2b6737f692fb69057c9b3822cd12a2b7a4c5ef93bd292",
+    "corpus_body_words": 496,
+    "tokenization": "server_usage"
+  },
+
+  "binary_provenance_verified_before_the_run": {
+    "why": "Four apr binaries have coexisted on this box; a bare `apr` once resolved to a 26-day-old copy, and a sibling build at the SAME pinned SHA has NO CUDA. Naming a binary is not proving one.",
+    "version_reports_a_sha_not_plus_no_git": "apr 0.64.0 (745fa8588)",
+    "list_devices": "`serve run --list-devices` printed `cuda    compiled in` -- NOT `This build has NO accelerator compiled in`",
+    "commit_is_on_main": "git merge-base --is-ancestor 745fa8588 origin/main -> rc 0 (origin/main = 385db8a02)",
+    "the_other_binary_was_not_used": "/mnt/nvme-raid0/perf-gate/aprender/target/release/apr has the same SHA and no CUDA; receipt.provenance.binary_sha256 records 9d0b08b0..., which is the target-cuda build, not 607ec5cd..."
+  },
+
+  "gpu_mechanism_proved_engaged_not_labelled": {
+    "why": "A repro harness once printed `device: GPU` while built without --features cuda and three findings were reported from CPU runs. CUDA_VISIBLE_DEVICES says what is VISIBLE, never what was USED.",
+    "server_log_line": "gpu-layers: requested=all resolved=28 total=28 (backend=cuda)",
+    "health_endpoint": "{\"status\":\"ok\",\"version\":\"0.64.0\",\"compute_mode\":\"gpu\",\"model_loaded\":true}",
+    "nvidia_smi_during_the_run": "compute-apps listed pid 4122729 (the server) holding 14480 MiB; utilization.gpu 100 %, power.draw 451.60 W, temperature 70 C. A display client does not hold a compute context.",
+    "released_after": "server killed; nvidia-smi --query-compute-apps returned an empty list"
+  },
+
+  "protocol_conformance_confirmed_from_output_not_assumed": {
+    "replicates_N_3": "PASS -- --replicates 3 == SS4.4.2's N; the producer's under-replication warning line (`! --replicates n is below SS4.4.2's N=3`) did NOT print, and it prints unconditionally below N.",
+    "minimum_sampled_requests_max_30_8c": "PASS -- c=1: 55/56/56 (floor 30); c=4: 92 (floor 32); c=8: 168 (floor 64); c=16: 225 (floor 128). Every band exceeds its floor.",
+    "minimum_wall_clock_60s": "PASS -- window_ms per band ranges 60422.3 .. 61452.0 ms; the minimum over all 12 bands is 60422.3 ms.",
+    "termination_is_the_LATER_bound": "CONFIRMED -- at every band the 60 s wall clock closed last (sample counts overshoot their floors by 1.8x at c=1 and 1.76x at c=16), which is the intended behaviour for a host fast enough to hit the sample floor early.",
+    "drain_SS4_4_7": "CONFIRMED and NON-ZERO where it should be. At c=16, span_ms - window_ms == drain_ms exactly (r1 64017.9 - 61283.6 = 2734.5). At c=1 drain is 0.0 ms, which is correct: a single closed-loop worker has nothing in flight when the window closes.",
+    "warmup_2c_discarded_plus_5s_quiesce": {
+      "verdict": "CONFIRMED BY ARITHMETIC, not by reading the header line",
+      "method": "The warmup requests are discarded and never reach the receipt, so their presence was inferred from time that the receipt cannot account for.",
+      "measured_wall_clock": "producer launched 02:02:20, receipt.r3.json written 02:16:57.9 -> 877.9 s",
+      "accounted_by_the_receipt": "sum(window_ms) 733.0 s + sum(drain_ms) 8.2 s + 12 x 5 s quiesce 60.0 s = 801.2 s",
+      "residual": "76.7 s",
+      "predicted_warmup": "2 x c requests at concurrency c is 2 rounds; 2 x mean completed-request latency per band, summed over 12 bands = 66.5 s",
+      "conclusion": "The 76.7 s residual is the same order as the 66.5 s predicted warmup (the excess is receipt/sample writes plus warmup requests running colder than the steady-state mean). Had no warmup run, the residual would have been ~10 s. The mechanism engaged."
+    },
+    "prompt_length_band_SS4_3_1": {
+      "verdict": "PASS with 9 tokens of headroom on both edges",
+      "measured": "all 1622 retained samples report prompt_tokens = 513 (min = median = max)",
+      "band": "512 +/- 8, inclusive 504..520",
+      "note": "This independently reproduces the +8 chat-template delta measured in pre-flight and is why origin/main's body_words: 496 corpus was used rather than PR #2821's retune, which centres the CLIENT count at 512 but moves server_usage to 520 -- exactly the ceiling, zero margin."
+    },
+    "no_suspect_samples": "every band records suspect: []",
+    "integrity_counts": "requested == completed in all 12 bands; timeouts 0, truncated 0, errors 0 throughout (1622 sampled requests total)"
+  },
+
+  "arm_a_scaling_efficiency": {
+    "formula": "scaling_efficiency(c) = (agg(c) / agg(1)) / c",
+    "status": "REPORT -- perf-matrix.yaml carries lambda/W1 as status: UNMEASURED, owner perf-gate, expires 2026-09-25. Today is 2026-09-01, so the cell reports and does not ratchet yet.",
+    "per_replicate": {
+      "c4": [0.4795, 0.4747, 0.4741],
+      "c8": [0.4428, 0.4371, 0.4367],
+      "c16": [0.2814, 0.2790, 0.2787]
+    },
+    "mean_of_N3": {"c4": 0.4761, "c8": 0.4389, "c16": 0.2797},
+    "arm_a_was_not_silent": "#2830 records that arm_a_scaling emits NOTHING on a receipt whose only band is c=1, while the gate still returns VERDICT PASS -- so a merge-phase PASS is not by itself evidence Arm A evaluated anything. With four bands present it spoke: three REPORT ArmA lines are in gate-merge-r1.txt, gate-merge-r2.txt and gate-merge-r3.txt. That was checked, not assumed."
+  },
+
+  "per_band_aggregate_tok_per_sec": {
+    "c1": {"r1": 99.9134, "r2": 100.9458, "r3": 101.0711, "mean": 100.6434, "stdev": 0.6353},
+    "c4": {"r1": 191.6295, "r2": 191.6790, "r3": 191.6801, "mean": 191.6628, "stdev": 0.0289},
+    "c8": {"r1": 353.9187, "r2": 353.0166, "r3": 353.0728, "mean": 353.3361, "stdev": 0.5054},
+    "c16": {"r1": 449.8740, "r2": 450.5876, "r3": 450.7527, "mean": 450.4048, "stdev": 0.4670},
+    "dispersion_note": "Replicate-to-replicate stdev is 0.03 to 0.64 tok/s, i.e. under 0.7 % of the mean at every band. This is a dispersion OBSERVATION on N=3, not a committed threshold, and BENCH-003 still owns the sample-size parameters."
+  },
+
+  "gate_verdicts": {
+    "merge_r1": "VERDICT PASS host=lambda phase=merge workload=W1 (rc 0)",
+    "merge_r2": "VERDICT PASS host=lambda phase=merge workload=W1 (rc 0)",
+    "merge_r3": "VERDICT PASS host=lambda phase=merge workload=W1 (rc 0)",
+    "release_r1": "VERDICT FAIL host=lambda phase=release workload=W1 (rc 1) -- and FAIL is the correct verdict",
+    "cell_completeness": "PASS cells host=lambda all bands [1, 4, 8, 16] present -- this check runs only at release phase, and it is the check a one-band receipt would have failed"
+  },
+
+  "the_three_absences_recorded_as_absent": {
+    "arm_B_comparator": {
+      "gate_line": "REPORT ArmB c={1,4,8,16} UNMEASURED (Arm A still gates this cell)",
+      "why": "SS4.7.1 / I-3 / I-15: a comparator ratio needs a baseline receipt AND a comparator lane driven by this same client binary. `apr test llm bench --band` measures one lane, so comparator_status() returns UNMEASURED{owner} unconditionally. No invocation of this producer can emit a ratio, so none was invented.",
+      "owner": "perf-gate"
+    },
+    "arm_D_kv_block": {
+      "gate_line_merge": "REPORT ArmD instrumentation absent: kv.bytes_used/bytes_reserved, kv.admission_rejected, kv.preempted_swap",
+      "gate_line_release": "FAIL ArmD instrumentation absent: (same fields)",
+      "why": "Server-reported and unbuilt (PERF-018, status planned). The producer writes the reasoning into the receipt's unproduced_fields rather than emitting a client-side estimate that would read exactly like a measurement.",
+      "receipt_declares_it": true
+    },
+    "receipt_signature": {
+      "gate_line": "FAIL ArmC-sig UNSIGNED: receipt carries no `signature` object.",
+      "why": "There is no keyring on lambda. /etc/apr/perf-receipt.key is absent (verified: ls -> No such file or directory); PERF-007 is status planned.",
+      "this_is_the_expected_shape": "SS4.9.1 -- without `receipt.commit contains commit-under-test` over a verified signature, evidence/ is a declared-state artifact. An unsigned receipt is a FAILURE at release, not `signature not applicable`, and this cell does not pretend otherwise."
+    }
+  },
+
+  "defects_surfaced_by_this_run": {
+    "1_tokenizer_sha256_is_silently_dropped_under_server_usage": {
+      "severity": "low as measured here, but it is the named adoption-killer shape",
+      "what": "`--tokenizer-sha256 <digest>` is accepted by clap under `--tokenization server_usage` and then discarded. TokenizationBlock::ServerUsage has no digest field (crates/aprender-test-lib/src/perf_gate/receipt.rs), so build_tokenization() drops the argument on the floor.",
+      "evidence": "The run passed --tokenizer-sha256 c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539. All three receipts record tokenization = {method: server_usage, counts_special_tokens: false, counts_prompt_echo: false} with NO tokenizer_sha256 key.",
+      "why_it_matters": "`apr serve --gpu` accepting a flag it silently drops is one of this project's named adoption killers, and the band mode's own help text says the legacy lifecycle flags are REFUSED rather than ignored for exactly that reason. This flag is ignored rather than refused. The fix is to refuse it where it was typed -- `--tokenizer-sha256 is meaningless with --tokenization server_usage` -- not to record it.",
+      "did_not_affect_this_cell": "The digest is not part of what server_usage asserts; the measurement and the SS4.4.6 block are correct as recorded."
+    },
+    "2_the_SS4_4_4_bootstrap_has_no_callers": {
+      "severity": "medium -- the same landed-and-uncalled class PERF-025 closed for the protocol and the receipt producer",
+      "what": "SS4.4.4 requires a bootstrap percentile CI (10 000 resamples, seed 2026, whole-request resampling) and says `Seed in the receipt`. perf_gate::bootstrap implements it. Nothing calls it.",
+      "evidence": "grep for bootstrap_ci / bootstrap_agg_tok_s_ci / BootstrapCi across all *.rs, excluding bootstrap.rs itself, returns only aprender-train's unrelated classifier CIs -- zero hits in perf_gate/receipt.rs, perf_gate/drain.rs or test_llm_band.rs. BOOTSTRAP_SEED is referenced only inside bootstrap.rs and its own module tests.",
+      "consequence": "No `ci` block and no `seed` appear in any of the three receipts (top-level keys are: bands, client_model, commit, completed, drain_ms, errors, n, provenance, requested, samples_ms, spec, timeouts, tokenization, truncated, unproduced_fields, workload).",
+      "worse_than_the_absence": "The absence is NOT declared in unproduced_fields, which lists four other gaps precisely. An undeclared absent field is the shape SS4.4 and I-4 exist to prevent -- a reader cannot tell it from a field that was never required.",
+      "mitigation_that_holds_today": "SS4.4.4 is REPORTING at v2.2, so no gate reads it, and the interval is re-derivable: samples_ms and the gzipped per-request JSONL are retained (I-4 satisfied). This is a reporting gap, not a lost measurement."
+    },
+    "3_max_batch_autosized_below_the_top_band": {
+      "severity": "observation, recorded so the c=16 number is read correctly",
+      "what": "The server auto-sized continuous batching to max_batch=11 at load time (`CONTINUOUS BATCHING: max_batch=11, window=0ms`). Pre-flight on the same host got max_batch=12; the value falls out of free VRAM, which varies with what the desktop session is displaying.",
+      "consequence": "At c=16 the client holds 16 in flight (peak_in_flight 16 in every replicate) against a server admitting at most 11, so part of the c=16 result is queueing rather than batching. That is a real property of the host as configured and is NOT a protocol violation -- but it is the mechanism a reader should have in hand before treating scaling_efficiency(16) = 0.280 as a batching ceiling.",
+      "not_adjusted": "Nothing was changed to raise it. Freeing VRAM to chase a better number after the configuration was verified is the adaptation I-9 forbids."
+    }
+  },
+
+  "what_the_producer_refused": "Nothing. PRODUCER_RC=0. It refused no argument, aborted no band, and emitted no comparator ratio -- the last by design (SS4.7.1).",
+
+  "not_cited_deliberately": "A pre-flight figure near 0.278 at c=16, and the carried non-conformant [C] value 0.075, are NOT used as comparators anywhere above. The pre-flight number was N=1 assembled from two separate one-band runs, and the [C] figures are marked non-conformant to SS4.4 by the spec itself. This cell reports what it measured."
+}
