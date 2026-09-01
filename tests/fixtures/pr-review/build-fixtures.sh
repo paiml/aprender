@@ -1008,7 +1008,7 @@ RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
 emit row-37-arm-e-rc-zero-recorded-unreachable "$SARIF" "$RCPT"
 
 # ===========================================================================
-# ROW 38 - findings.sarif WITH AN EMPTY runs ARRAY                    -> RED  B1
+# ROW 41 - findings.sarif WITH AN EMPTY runs ARRAY                    -> RED  B1
 #
 # THE VACUITY. Every result-level rule in the guard is written
 # `.runs[]? | .results[]?`. Over an empty runs array each of them iterates the empty
@@ -1031,10 +1031,10 @@ JSON
 )
 RCPT=$(receipt "$D1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
       "$AUTHOR" "$REVIEWER" "$AG_OK")
-emit row-38-sarif-with-no-runs "$SARIF" "$RCPT"
+emit row-41-sarif-with-no-runs "$SARIF" "$RCPT"
 
 # ===========================================================================
-# ROW 39 - a run whose tool.driver.name is outside the vocabulary     -> RED  B1
+# ROW 42 - a run whose tool.driver.name is outside the vocabulary     -> RED  B1
 #
 # S4.2 fixes the driver name to a closed set, and this is checked as a WHITELIST
 # because S13.13's forged-receipt post-mortem found that every clause which fell was a
@@ -1062,10 +1062,10 @@ JSON
 )
 RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
       "$AUTHOR" "$REVIEWER" "$AG_OK")
-emit row-39-run-driver-outside-vocabulary "$SARIF" "$RCPT"
+emit row-42-run-driver-outside-vocabulary "$SARIF" "$RCPT"
 
 # ===========================================================================
-# ROW 40 - verdict FINDINGS beside zero results                       -> RED  B1
+# ROW 43 - verdict FINDINGS beside zero results                       -> RED  B1
 #
 # The verdict and the artifact it points at must not be able to disagree about whether
 # anything was found. FINDINGS with an empty result set is byte-for-byte the same
@@ -1088,7 +1088,7 @@ JSON
 )
 RCPT=$(receipt "$D1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
       "$AUTHOR" "$REVIEWER" "$AG_OK")
-emit row-40-findings-verdict-with-no-results "$SARIF" "$RCPT"
+emit row-43-findings-verdict-with-no-results "$SARIF" "$RCPT"
 
 # ===========================================================================
 # THE POSITIVE CONTROLS (S6.1) - not rows of the S6.3 table.

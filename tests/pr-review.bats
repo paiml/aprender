@@ -541,9 +541,9 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "every S6.3 row, the contract's owed row, and PRREV-008's seven have a fixture" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 40 ] || { echo "expected 40 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4 + rows 38-40 from PRREV-023/S4.2), found $n"; false; }
+  [ "$n" -eq 43 ] || { echo "expected 43 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4 + rows 38-40 from the pmat transport probes + rows 41-43 from PRREV-023/S4.2), found $n"; false; }
   local i
-  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40; do
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
       || { echo "no fixture directory for row $i"; false; }
   done
@@ -2011,16 +2011,16 @@ land_prior_art_on_main() {
 
 # --- PRREV-023: the runs array is not allowed to be empty --------------------
 
-@test "row 38 findings.sarif with an empty runs array                   RED  B1" {
+@test "row 41 findings.sarif with an empty runs array                   RED  B1" {
   # THE VACUITY. Every result rule in the guard reads `.runs[]? | .results[]?`, so over
   # an empty runs array each of them iterates nothing and finds nothing to reject. This
   # exact receipt returned rc=0 ACCEPT before the rule existed, while still declaring
   # verdict FINDINGS and five consultations consulted, and the four positive controls
   # fired correctly in that same run -- so it was genuine vacuity, not a broken harness.
-  assert_row row-38-sarif-with-no-runs RED B1 "carries no runs[]"
+  assert_row row-41-sarif-with-no-runs RED B1 "carries no runs[]"
 }
 
-@test "row 39 a run whose tool.driver.name is outside the vocabulary    RED  B1" {
+@test "row 42 a run whose tool.driver.name is outside the vocabulary    RED  B1" {
   # Checked as a WHITELIST. S13.13 found every clause that fell to the forged receipts
   # was a blacklist over a field and every clause that survived was a whitelist; the
   # difference was the direction of the test. `Pmat` is one capital, which is all it
@@ -2029,14 +2029,14 @@ land_prior_art_on_main() {
   # The first draft of the rule ACCEPTED this row: `select([...] | index(.) == null)`
   # rebinds `.` to the literal array through the pipe, so it asked whether the array
   # contained itself. Caught by running the row, not by reading the line.
-  assert_row row-39-run-driver-outside-vocabulary RED B1 "outside { pmat, nvidia-cuda-docs, crux, cargo-mutants, antigravity }"
+  assert_row row-42-run-driver-outside-vocabulary RED B1 "outside { pmat, nvidia-cuda-docs, crux, cargo-mutants, antigravity }"
 }
 
-@test "row 40 verdict FINDINGS beside zero results                      RED  B1" {
+@test "row 43 verdict FINDINGS beside zero results                      RED  B1" {
   # A verdict and the artifact it points at must not disagree about whether anything was
   # found. FINDINGS over an empty result set is the same review as PASS, which makes the
   # verdict decorative on exactly the transition S7 reads to decide blocking.
-  assert_row row-40-findings-verdict-with-no-results RED B1 "carries zero results"
+  assert_row row-43-findings-verdict-with-no-results RED B1 "carries zero results"
 }
 
 @test "row 7 is PASS with an empty result set and stays GREEN     [discrimination]" {

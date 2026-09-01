@@ -954,9 +954,12 @@ Every row a committed fixture under `tests/fixtures/pr-review/`, exercised by `b
 | 35 | `antigravity.model_id` in the primary reviewer's own model family | RED | B1 |
 | 36 | agy exited **0** with `.status SUCCESS` and **no** `structured_output`, recorded `consulted` | RED | B1 |
 | 37 | the SAME rc-0 run recorded `unreachable`, `verdict: DEGRADED` | **GREEN** | — |
-| 38 | `findings.sarif` with an **empty `runs` array** | RED | B1 |
-| 39 | a run whose `tool.driver.name` is outside the closed vocabulary | RED | B1 |
-| 40 | `verdict: FINDINGS` beside **zero results** | RED | B1 |
+| 38 | `pmat` unreachable with **no transport probed at all** | RED | B1 |
+| 39 | `pmat` unreachable with **only one transport** probed | RED | B1 |
+| 40 | `pmat` unreachable but the CLI recorded **no error** | RED | B1 |
+| 41 | `findings.sarif` with an **empty `runs` array** | RED | B1 |
+| 42 | a run whose `tool.driver.name` is outside the closed vocabulary | RED | B1 |
+| 43 | `verdict: FINDINGS` beside **zero results** | RED | B1 |
 
 Rows 16–22 are owed by §9.1's F1–F3; rows 23–24 by F4; rows **25–26 by F6 (D6)**. Row 25 is row 16 with **one directory changed**, and until D6 the two verdicts diverged: row 16 RED, row 25 ACCEPTED. Rows 17, 24 and 26 are discrimination arms — without them "block every PR that names a competitor", "reject every receipt that admits a gap" and "block every book page under `examples/`" each read green, and the rule would punish the honest receipt exactly as hard as the silent one.
 
