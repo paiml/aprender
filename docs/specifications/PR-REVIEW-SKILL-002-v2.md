@@ -1205,7 +1205,7 @@ of a JSON file is a disagreement that gets resolved in the primary's favour by d
 
 ## §13 Autonomous merge on quorum
 
-**Status: DESIGNED AND BUILT, NOT ARMED.** Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes. Nothing below is enabled by writing it down, and nothing is enabled by the code landing either. `scripts/pr_review_quorum_arm.sh` exists, its fixture table is 83 rows and its derived mutation set kills 134/134 — and it is reachable from no workflow that can merge anything. §13.11 is the arming ladder and every rung carries a falsifier that must be RED-verified before it is climbed.
+**Status: SHADOW MODE (§13.11 rung 1). STILL NOT ARMED.** Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes. Nothing below is enabled by writing it down, and nothing is enabled by the code landing either. `scripts/pr_review_quorum_arm.sh` exists, its fixture table is 83 rows and its derived mutation set kills 134/134. **As of 2026-09-01 it is reachable from one workflow — `pr-review-shadow` in `ci.yml` — which invokes it with `--explain` on every pull request and records the verdict. That job holds a read-only token and is in no `needs:` list, so the capability to merge is absent as well as unused.** §13.11 is the arming ladder and every rung carries a falsifier that must be RED-verified before it is climbed.
 
 ### §13.0 What this changes, and the one rule that has no precedent
 
@@ -1440,11 +1440,38 @@ Each rung has a falsifier that must be **RED-verified** before the rung is climb
 
 | rung | state | what it does | falsifier that must be RED first |
 |---|---|---|---|
-| **0** | **HERE** | the mechanism exists, reachable from no merging workflow | the 83-row table and the derived mutation set are green; `PRREV-017` owes the delta-sweep cost |
-| **1** | next | **shadow mode**: CI runs `--explain` on every PR and records `PERMIT`/`REFUSE [Qn]`. Merges nothing. | delete any one `refuse Q<n>` site and the corresponding q-row must turn RED |
+| **0** | climbed 2026-09-01 | the mechanism exists, reachable from no merging workflow | the 83-row table and the derived mutation set are green; `PRREV-017` owes the delta-sweep cost |
+| **1** | **HERE** (2026-09-01) | **shadow mode**: CI runs `--explain` on every PR and records `PERMIT`/`REFUSE [Qn]`. Merges nothing. | delete any one `refuse Q<n>` site and the corresponding q-row must turn RED — RED-verified by `scripts/mutate_quorum_arm.sh`, 134/134, already green as Arm 6 |
 | **2** | after 30 shadow samples | publish `autonomy_refusal_rate` and `degraded_share`; no threshold is set from fewer (§8) | a `--explain` run on a PR whose receipt is DEGRADED must record `Q6` and not `PERMIT` |
 | **3** | after rung 2 | arm on a **narrow class**: docs-only diffs, `MECHANISM_PATHS ∩ diff = ∅`, quorum unanimous | a docs-only PR carrying a hand-edited receipt must refuse; the kill switch must stop rung 3 with one commit |
 | **4** | not scheduled | arm on code diffs | `autonomous_merge_reverts` has ≥30 samples and a measured value, not `0/0` |
+
+**What rung 1 is, mechanically.** `ci.yml`'s `pr-review-shadow` job runs
+`scripts/pr_review_shadow_record.sh`, which invokes the arm with `--explain`, classifies
+the result and writes one sample. A `REFUSE` is a **sample, not a failure** — the job is
+green on both verdicts and red only when no sample could be taken (the arm could not
+answer, or its exit code and its output disagreed). That asymmetry is the point: a
+recorder that fails on `REFUSE` would be a gate, and §13 adds zero rows to §7.
+
+**The recorder applies §13's own two lessons to itself.** `rc` is not a verdict — an arm
+exiting 0 while printing nothing is a defect and not a `PERMIT`, for the same reason
+§3.E.4 refuses to read `agy`'s rc 0 as a consultation. And the refusal class is matched
+against the `Q1..Q10` vocabulary rather than screened for bad spellings, because §13's
+forgery post-mortem found that every clause that survived was a whitelist and every
+clause that fell was a blacklist. Twelve `--self-test` rows, five of them mutation-verified
+as load-bearing; the remaining seven are held by a neighbouring branch, which is stated
+here rather than assumed, since a first mutation pass reported three of them as survivors
+and a faithful one killed all three.
+
+**Rung 2 is blocked on samples, and the first four are all `Q1`.** Measured 2026-09-01
+against live pull requests #2795, #2825, #2831 and #2833: every one records
+`REFUSE [Q1]`. #2795 is the interesting row — it is the one PR in the repository that
+*has* a receipt, and it still refuses, because that receipt was produced before §13
+existed and carries no `predicate.autonomy` block. So the shadow lane's first finding is
+that the population rung 2 wants to measure does not exist yet: `autonomy_refusal_rate`
+over today's fleet is `4/4 Q1`, which measures receipt coverage and not quorum quality.
+That is a fact about the fleet, not a defect in the lane, and it is exactly what a shadow
+rung is for.
 
 **The kill switch is rung-independent.** `.github/pr-review-autonomy.disabled`, read from `origin/main` and never from the PR tree, refuses everything at every rung. It is the first clause of the repository phase and not the last, because it is the operator's off switch and an off switch consulted only after five other checks have passed is an off switch that costs a minute of compute to use.
 

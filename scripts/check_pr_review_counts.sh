@@ -148,6 +148,28 @@ derive_quorum_bats_tests() {
     printf '%s\n' "$n"
 }
 
+# Shadow-recorder rows (S13.11 rung 1). The ci.yml step that runs the recorder's case
+# table states the row count in its own step name, which is the exact register that let
+# "65 tests" and a "22-row" table survive four commits of growth. Counted from the
+# `row '<desc>' ` calls in the script's self_test, so adding a row without restating the
+# number is RED rather than invisible.
+derive_shadow_rows() {
+    local root=$1 n
+    [ -f "$root/scripts/pr_review_shadow_record.sh" ] || return 1
+    n=$(grep -cE "^    row '" "$root/scripts/pr_review_shadow_record.sh")
+    [ "$n" -gt 0 ] || return 1
+    printf '%s\n' "$n"
+}
+
+# Publisher rows (S13.11 rung 1). Same register, same failure mode as the recorder's.
+derive_publish_rows() {
+    local root=$1 n
+    [ -f "$root/scripts/pr_review_shadow_publish.sh" ] || return 1
+    n=$(grep -cE "^    row '" "$root/scripts/pr_review_shadow_publish.sh")
+    [ "$n" -gt 0 ] || return 1
+    printf '%s\n' "$n"
+}
+
 # Falsification tests: the contract's own list, counted from its `- id:` labels rather
 # than from the prose that states the total. It went stale unseen - `pass_criteria` said
 # 11 over 15 entries at PRREV-013 and over 17 at PRREV-015 - and the only thing that
@@ -186,7 +208,7 @@ fixture_rows|.github/workflows/ci.yml|2|@N@-row
 fixture_rows|tests/pr-review.bats|1|@N@ row
 fixture_rows|tests/pr-review.bats|1|-eq @N@ ]
 bats_tests|.github/workflows/ci.yml|2|@N@ tests
-quorum_mutants|docs/specifications/PR-REVIEW-SKILL-002-v2.md|2|@N@/@N@
+quorum_mutants|docs/specifications/PR-REVIEW-SKILL-002-v2.md|3|@N@/@N@
 quorum_mutants|.claude/skills/pr-review/SKILL.md|1|@N@/@N@
 quorum_mutants|contracts/pr-review-skill-v2.yaml|1|@N@/@N@
 quorum_mutants|.claude/skills/pr-review/SKILL.md|1|@N@-mutant
@@ -199,6 +221,8 @@ quorum_bats_tests|.github/workflows/ci.yml|1|@N@ rows
 quorum_rows|tests/pr-review-quorum.bats|1|-eq @N@ ]
 quorum_rows|tests/pr-review-quorum.bats|1|expected @N@ q-*
 falsification_tests|contracts/pr-review-skill-v2.yaml|1|All @N@ falsification tests
+shadow_rows|.github/workflows/ci.yml|1|case table: @N@ rows
+publish_rows|.github/workflows/ci.yml|1|Publisher case table: @N@ rows
 '
 
 # ---------------------------------------------------------------------------
@@ -222,12 +246,16 @@ check() {
     derived[quorum_bats_tests]=$v
     v=$(derive_falsification_tests "$root") || die_env "cannot derive the contract's falsification-test count"
     derived[falsification_tests]=$v
+    v=$(derive_shadow_rows "$root") || die_env "cannot derive the shadow-recorder case-table row count"
+    derived[shadow_rows]=$v
+    v=$(derive_publish_rows "$root") || die_env "cannot derive the publisher case-table row count"
+    derived[publish_rows]=$v
 
     [ -n "$quiet" ] || {
         echo "=== the counts these files state as measured, against the tree ($PROG) ==="
         echo "derived:  mutants=${derived[mutants]}  fixture_rows=${derived[fixture_rows]}  bats_tests=${derived[bats_tests]}"
         echo "          quorum_mutants=${derived[quorum_mutants]}  quorum_rows=${derived[quorum_rows]}  quorum_bats_tests=${derived[quorum_bats_tests]}"
-        echo "          falsification_tests=${derived[falsification_tests]}"
+        echo "          falsification_tests=${derived[falsification_tests]}  shadow_rows=${derived[shadow_rows]}  publish_rows=${derived[publish_rows]}"
     }
 
     local row id file want tmpl needle got
@@ -314,7 +342,9 @@ self_test() {
                 contracts/pr-review-skill-v2.yaml \
                 docs/specifications/PR-REVIEW-SKILL-002-v2.md \
                 tests/pr-review-quorum.bats scripts/mutate_quorum_arm.sh \
-                scripts/pr_review_quorum_arm.sh ) \
+                scripts/pr_review_quorum_arm.sh \
+                scripts/pr_review_shadow_record.sh \
+                scripts/pr_review_shadow_publish.sh ) \
       | ( cd "$base" && tar -xf - ) || die_env "could not stage a copy of the tree"
 
     local nrows=0
@@ -391,6 +421,13 @@ self_test() {
     grow_qbats()    { printf '\n@test "an S13 row the docs do not count" {\n  true\n}\n' >> "$1/tests/pr-review-quorum.bats"; }
     grow_qmutants() { sed -i 's#^  \[ "$verdict" = "PASS" \] \\#  [ -n "$verdict" ] || refuse Q6 "an invented refusal nothing documents" || return 1\n&#' \
                              "$1/scripts/pr_review_quorum_arm.sh"; }
+    # A row added to the shadow recorder's case table that no step name counts. The
+    # step name is the register that goes stale here, exactly as "158 tests" and the
+    # "22-row" table did, so the growth direction is the one worth testing.
+    grow_shadow()   { printf "\n    row 'an invented row nothing counts' PASS \"\$stub\" PERMIT '-'\n" \
+                             >> "$1/scripts/pr_review_shadow_record.sh"; }
+    grow_publish()  { printf "\n    row 'an invented publisher row' PASS \"\$stub\"\n" \
+                             >> "$1/scripts/pr_review_shadow_publish.sh"; }
 
     echo "--- check_pr_review_counts.sh --self-test ---"
     row baseline                0 "the tree as committed"                                   noop
@@ -408,6 +445,8 @@ self_test() {
     row tree-grew-a-refusal     1 "a refuse Q<n> site is added and no file says so"         grow_qmutants
     row stale-falsifier-count   1 "the contract's falsification-test total written back by one" stale_ftests
     row tree-grew-a-falsifier   1 "a falsification test is added and the contract does not count it" grow_ftests
+    row tree-grew-a-shadow-row  1 "a shadow-recorder case-table row is added and no step name says so" grow_shadow
+    row tree-grew-a-publish-row 1 "a publisher case-table row is added and no step name says so" grow_publish
 
     if [ "$fails" -ne 0 ]; then
         echo "--- $fails row(s) did not produce the required verdict ---" >&2
