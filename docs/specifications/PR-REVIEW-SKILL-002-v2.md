@@ -193,6 +193,54 @@ thing you were about to write. It is not on `HEAD`, it is not an unmerged siblin
 forbids an index newer than `HEAD` from supplying it. Measured: one `git grep` over it costs
 ~1 s against 20 s for the whole sibling sweep, and on #2781 it returns the prior art.
 
+#### §3.A.1 "pmat is unreachable" must be EARNED — operator ruling, 2026-09-01
+
+> *"'pmat doesn't work' is never accepted — toyota way."*
+
+**The measurement behind the rule.** Two of this repository's reviews recorded
+`pmat: unreachable` with a `DEGRADED` verdict, and both merged. The cause was not pmat.
+On the same box, the same day:
+
+| probe | result |
+|---|---|
+| `pmat --mode mcp` (stdio) | `initialize` OK, **19 tools** listed |
+| `pmat query` (CLI) | index loaded, **84,919 functions in 10,136 files** |
+| `pmat serve --transport http` on `:8765` | **HTTP 200**, full tool list, on the configured token |
+
+What had actually failed was **one transport**: an HTTP endpoint on a hand-started,
+unsupervised process, registered for a client that pmat's own `pmat mcp connect` tells
+you not to use it for — *"MCP over STDIO … **This is the right choice for Claude Code**
+and Claude Desktop on the same machine. No port, no token."* A working path existed and
+the receipt said the source was unreachable. That is the artifact this ruling bans.
+
+**The rule.** §3.A makes pmat unconditional, and pmat is the one arm with **two
+independent transports**. So `unreachable` is a claim about *both*, and a claim is not
+evidence: a receipt whose `consultations.pmat.status` is `unreachable` must carry
+`consultations.pmat.transports[]`, and
+
+1. the required set `{ stdio, cli }` must all appear — a **whitelist**, so a receipt may
+   probe more but never fewer, and renaming a probe to dodge the requirement lands in
+   the refusal rather than in the good bucket; and
+2. **every** listed transport must carry a non-empty `error`. A probe that recorded no
+   failure *succeeded*, and one reachable transport refutes `unreachable` outright — at
+   which point §3.A's consultation is owed over it.
+
+This is §3.E.4's shape one arm over: `agy` returning rc 0 is not a review, and pmat
+failing on one transport is not pmat being unreachable.
+
+**Rows 38–40** are the three ways the claim can be made without being earned (no probe,
+one probe, a probe that worked). **Row 6 is the GREEN half** and is why "reject every
+unreachable pmat" cannot read green either — an unreachable pmat that *earns* the claim
+is still accepted, because a box genuinely without pmat is a real thing.
+
+**One branch was removed while writing this, and the removal is the point.** A separate
+`transports`-is-not-a-list rejection was written first. Dropping it left the coverage
+check rejecting all four bad shapes anyway — absent, string, object, and a list of bare
+strings all yield no probed names — so it was a rule no fixture could independently
+kill, and `guard_mutation_score` is fixed at one with no ratchet. A rule that cannot
+fail alone is not a rule, it is a comment. The observed type survives as *diagnosis* in
+the surviving message, where it is genuinely useful.
+
 ### §3.B NVIDIA CUDA documentation (triggered)
 
 Trigger: any changed path matching `crates/aprender-gpu/**`, `crates/aprender-serve/src/cuda/**`, `*cuda*`, `*ptx*`, `*cublas*`, `*fp8*`, `*nvrtc*`; or PR body/commit messages matching `sm_\d+`, `cu[A-Z]\w+`, `cuda[A-Z]\w+`, or a GPU architecture name.
@@ -200,6 +248,41 @@ Trigger: any changed path matching `crates/aprender-gpu/**`, `crates/aprender-se
 Required output: for every device-behaviour claim, either a `cited` entry (query + excerpt) or an explicit `no-authority-found` entry naming the query that returned nothing. The second form is mandatory — without it, "the docs said nothing" is indistinguishable from "I did not ask."
 
 This is the consultation with the most evidence of being needed: the 18% regression shipped on an ungrounded stream-ordering claim, #2765 (16-row alignment), #2789 (E4M3), #2771 (PTX aliasing), #2786 (GB10 Blackwell) were all CUDA questions asked of memory while the docs server sat idle.
+
+#### §3.B.1 §3.B is an AGENT, and `agy` cannot host it — measured 2026-09-01
+
+The arm is dispatched as `cuda-docs-reviewer` (`.claude/agents/cuda-docs-reviewer.md`),
+the only member of the quorum holding `mcp__nvidia-cuda-docs__search_cuda_docs`. An
+agent and not an inline tool call for two reasons: a reviewer that also writes the patch
+is not an independent check (§5), and a dedicated context reads the whole diff for
+device-behaviour claims instead of consulting the corpus only where it already suspected
+an answer.
+
+**The obvious alternative — hang it on §3.E's `agy` — does not work, and the failure is
+instructive rather than incidental.**
+
+| probe | result |
+|---|---|
+| `agy mcp list` | `nvidia-cuda-docs  http  **enabled**  https://api.copilot.nsight.ngc.nvidia.com/mcp/cuda-docs` |
+| `agy -p '<CUDA question, cite the docs>'` | **`MCP_UNREACHABLE`**, 7.06 s, rc 0 |
+| `curl -X POST <that URL> -d '{"method":"tools/list"}'` | **`401 invalid_token`** — *"Your client should automatically re-register and obtain new tokens"* |
+| `mcp__nvidia-cuda-docs__search_cuda_docs` from this client | full §2.5.6 *Blocking and non-blocking streams* text returned |
+
+The endpoint requires OAuth **dynamic client registration**. `agy mcp add` accepts only
+a **static** `--header "Authorization: Bearer TOKEN"`; there is no login verb, no
+registration flow, and no auth subcommand. So `agy` holds a configuration it cannot
+authenticate, and **a server that is configured and enabled is not a server that
+answers.**
+
+That sentence is §3.A.1's pmat ruling one arm over, and it generalises: *enabled* is a
+statement about a config file, *answers* is a statement about the world, and only the
+second one is evidence. It is also why the rc-0 trap in §3.E.4 is not a quirk of `agy` —
+here `agy` returned **rc 0** while reaching nothing at all.
+
+**Consequence for the receipt:** `consultations.antigravity` carries no CUDA weight and
+must never be read as a second opinion on device behaviour. §3.B is single-sourced by
+construction, and its `unreachable` path is therefore load-bearing rather than
+theoretical.
 
 ### §3.C CRUX — user-facing surface and competitive claims (triggered)
 
@@ -1051,7 +1134,7 @@ Recording this in the spec is not optional. A spec whose acceptance test failed 
 | re-run §9 step 7 against the same three merged PRs | `PRREV-014` | **is** enablement |
 | §3.E — the second-vendor arm: spec, SKILL steps, contract, guard, rows 27–35, 215/215 | `PRREV-015` | advisory; blocks nothing |
 | §3.E's two invocation defects + the vendor-identity limit: disposable tree, file-borne diff, `output_check`, rows 36–37, 217/217 | `PRREV-020` | advisory; blocks nothing |
-| the merged tree's `guard_mutation_score`, **measured**. `PRREV-019` and `PRREV-020` were written on the same parent and merged here; the derived counts moved again (mutation set 217 → 219/219, `tests/pr-review.bats` 156 → 158) and **no sweep has run on the merged tree**. Neither lane's figure transfers: 215/215 was measured on `PRREV-015`'s tree, and `PRREV-020` gave every `row-*` fixture an `output_check` block, so the corpus the sweep runs against moved as well as its size. The set size above is derived by `scripts/mutate-guard.sh --list` and is certain; the kill count is Arm 3 of the `pr-review-receipt` job, and lands as a follow-up commit the way `804559ed5` discharged `03d795423`'s pending 185/185. §8 allows no ratchet here: below 100% blocks. | `PRREV-021` | **PENDING** — the number is unverified until Arm 3 reports |
+| the merged tree's `guard_mutation_score`, **measured**. `PRREV-019` and `PRREV-020` were written on the same parent and merged here; the derived counts moved again (mutation set 217 → 223/223, `tests/pr-review.bats` 156 → 158) and **no sweep has run on the merged tree**. Neither lane's figure transfers: 215/215 was measured on `PRREV-015`'s tree, and `PRREV-020` gave every `row-*` fixture an `output_check` block, so the corpus the sweep runs against moved as well as its size. The set size above is derived by `scripts/mutate-guard.sh --list` and is certain; the kill count is Arm 3 of the `pr-review-receipt` job, and lands as a follow-up commit the way `804559ed5` discharged `03d795423`'s pending 185/185. §8 allows no ratchet here: below 100% blocks. | `PRREV-021` | **PENDING** — the number is unverified until Arm 3 reports |
 | §3.E.8's stated bypass — `check_pr_review_arm4.sh` requires this PR's receipt to declare the TREE's skill version | `PRREV-018` | before §3.E is promoted out of advisory |
 
 **What the backtest did *not* falsify**, recorded so F1–F5 are not read as a verdict on the whole design: §3.B's path and message triggers discriminated **2/2 must-match and 2/2 must-not-match on real PRs**, including the deliberately over-broad `*cuda*`; the guard's four positive controls fired first on every run, and E1-control proves it is not a guard that reads red by refusing everything either; B6 and the merge-base recomputation behaved exactly as specified throughout; neither comparative regex produced a false positive on 16 real subjects; and pointed at a checkout without `schemas/`, the guard **halted with POSITIVE CONTROL MISFIRED rather than validating** — a control that fired for the wrong reason refused to be evidence.

@@ -567,6 +567,59 @@ validate_receipt() {
     fi
   done
 
+  # --- B1: "pmat is unreachable" must be EARNED, never asserted. ------------
+  # OPERATOR RULING, 2026-09-01: "'pmat doesn't work' is never accepted - toyota way."
+  #
+  # THE MEASUREMENT BEHIND THE RULE, so it is not re-litigated. Two of this
+  # repository's reviews recorded `pmat: unreachable` with a DEGRADED verdict and both
+  # merged. The cause was not pmat. On the same box, the same day: `pmat --mode mcp`
+  # answered `initialize` and listed 19 tools, and `pmat query` loaded an index of
+  # 84,919 functions across 10,136 files. What had actually failed was ONE transport -
+  # an HTTP endpoint on a hand-started, unsupervised process - while pmat's own
+  # `mcp connect` names stdio as "the right choice for Claude Code". A working path
+  # existed and the receipt said the source was unreachable.
+  #
+  # S3.A makes pmat unconditional, and pmat is the one arm with TWO INDEPENDENT
+  # TRANSPORTS. So `unreachable` here is a claim about both, and a claim is not
+  # evidence. This is S3.E.4's shape one arm over: agy returning rc 0 is not a review,
+  # and pmat failing on one transport is not pmat being unreachable.
+  #
+  # THE REQUIRED SET IS A WHITELIST, for S13's reason: every clause that survived the
+  # forged receipts was a whitelist and every clause that fell was a blacklist. A
+  # receipt may probe MORE transports; it may not probe fewer, and it may not rename
+  # one to escape the requirement.
+  if [ "$(jq -r '.predicate.consultations.pmat.status // ""' "$rcpt")" = "unreachable" ]; then
+    local tr_type probed missing_tr worked
+    tr_type=$(jq -r 'if (.predicate.consultations.pmat | has("transports"))
+                     then (.predicate.consultations.pmat.transports | type) else "absent" end' "$rcpt")
+
+    # THE TYPE IS REPORTED, NOT SEPARATELY REJECTED, AND THAT IS A MEASURED CHOICE.
+    # A `transports` that is absent, a string, an object, or a list of bare strings all
+    # yield NO probed names here - jq either iterates nothing or errors to stderr - so
+    # the coverage check below rejects every one of them. A separate type branch was
+    # written first and then removed: dropping it left this branch still rejecting all
+    # four shapes, i.e. it was a rule no fixture could independently kill, and
+    # `guard_mutation_score` is fixed at one with no ratchet. A rule that cannot fail
+    # alone is not a rule, it is a comment - so the type survives as DIAGNOSIS in the
+    # message, where it is genuinely useful, and the rejection has one owner.
+    probed=$(jq -r '[.predicate.consultations.pmat.transports[]? | .name? // empty] | join(" ")' "$rcpt" 2>/dev/null)
+    missing_tr=''
+    for want in stdio cli; do
+      case " $probed " in
+        *" $want "*) : ;;
+        *) missing_tr="$missing_tr $want" ;;
+      esac
+    done
+    [ -z "$missing_tr" ] \
+      || reject B1 "consultations.pmat.status is 'unreachable' but these transports were never probed:$missing_tr (probed: ${probed:-none}; transports is $tr_type). pmat has two independent transports and 'unreachable' is a claim about both; a transport nobody tried is not a transport that failed (S3.A, operator ruling 2026-09-01)" || return 1
+
+    # A probe with no error SUCCEEDED, and one success refutes `unreachable`.
+    worked=$(jq -r '[.predicate.consultations.pmat.transports[]
+                     | select((.error // "") == "") | .name] | join(", ")' "$rcpt")
+    [ -z "$worked" ] \
+      || reject B1 "consultations.pmat.status is 'unreachable' but transport(s) [$worked] recorded no error, i.e. they WORKED; one reachable transport refutes the claim, and S3.A's consultation is owed over it" || return 1
+  fi
+
   # =========================================================================
   # EVERY CONSULTATION GETS BOTH HALVES.
   #

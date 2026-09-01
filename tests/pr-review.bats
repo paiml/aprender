@@ -223,6 +223,33 @@ assert_probe() {
   assert_row row-06-unreachable-pmat-verdict-degraded GREEN
 }
 
+@test "row 38 pmat unreachable, no transport probed at all             RED       [andon]" {
+  # OPERATOR RULING 2026-09-01: "'pmat doesn't work' is never accepted - toyota way."
+  # Row 6 used to carry exactly this receipt and was GREEN. On the box that produced its
+  # "pmat MCP server: ConnectionRefused" message, `pmat --mode mcp` listed 19 tools and
+  # `pmat query` loaded 84,919 functions across 10,136 files - so what had failed was one
+  # transport on a hand-started, unsupervised HTTP server, not the source. S3.A makes pmat
+  # unconditional and pmat is the one arm with TWO independent transports, so `unreachable`
+  # is a claim about both and the probe of each must be recorded. Row 6 keeps the GREEN
+  # half: an unreachable pmat that EARNS the claim is still accepted.
+  assert_row row-38-pmat-unreachable-no-transport-probe RED
+}
+
+@test "row 39 pmat unreachable, only one transport probed              RED       [andon]" {
+  # A transport nobody tried is not a transport that failed. The required set is a
+  # WHITELIST - a receipt may probe more, never fewer, and renaming a probe to dodge the
+  # requirement lands here too rather than in the good bucket (S13's forgery lesson: every
+  # clause that survived was a whitelist, every clause that fell was a blacklist).
+  assert_row row-39-pmat-unreachable-one-transport-only RED
+}
+
+@test "row 40 pmat unreachable but the CLI recorded no error           RED       [andon]" {
+  # One reachable transport refutes `unreachable` outright, and S3.A's consultation is
+  # then owed over it. An empty-string error lands here too: a probe that recorded no
+  # failure SUCCEEDED, and "did not record" must not be readable as "failed".
+  assert_row row-40-pmat-unreachable-but-cli-worked RED
+}
+
 @test "row 7  honest docs-only PR, pmat consulted, rest not-triggered  GREEN     [discrimination]" {
   # S6.3 writes this row as "all consultations not-triggered". S3.A and S8.4 both make
   # pmat's trigger UNCONDITIONAL, so the spec contradicts itself and the two normative
@@ -514,7 +541,7 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "every S6.3 row, the contract's owed row, and PRREV-008's seven have a fixture" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 37 ] || { echo "expected 37 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4), found $n"; false; }
+  [ "$n" -eq 40 ] || { echo "expected 40 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4), found $n"; false; }
   local i
   for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
