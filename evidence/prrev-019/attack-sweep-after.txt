@@ -1,0 +1,61 @@
+# PRREV-019 -- the same adversarial corpus, run against the FIXED tree.
+# command:  identical to attack-sweep-before.txt; only the tree differs.
+#
+# 20 PERMIT -> 3. The three:
+#   sanity  the attacker's OWN clean control. It is SUPPOSED to permit; a run in
+#           which it refused would mean the fixes refuse everything, which is the
+#           failure mode the q-52..q-56 PERMIT rows exist to catch.
+#   D03 }   byte-identical (cmp: no differences), so ONE shape, not two. The
+#   D05 }   receipt is HONEST: it anchors at the clone's own refs/remotes/origin/main
+#           and declares a clean sweep over an empty region. The clone is stale.
+#           No clause over R, S and C can see that -- S13.13 gap 2.
+#
+# Every closed attack refuses under the class that names its defect, not under an
+# earlier clause that happens to fire first.
+
+PERMIT  D03-stale-origin-main
+PERMIT  D05
+PERMIT  sanity
+rc=1 [Q1]           A16-runs-is-a-string
+rc=1 [Q1]           A18-execsuccess-string
+rc=1 [Q1]           B02-symbols-STRING-ZERO
+rc=1 [Q1]           C01-killed-zero-of-37
+rc=1 [Q1]           D04b
+rc=1 [Q1]           D04-base
+rc=1 [Q1]           D04c
+rc=1 [Q1]           D04d
+rc=1 [Q1]           D04e
+rc=1 [Q2]           A12b-survivors-object
+rc=1 [Q2]           A12-survivors-string
+rc=1 [Q2]           A13-attempted-string
+rc=1 [Q2]           B01-attempted-STRING-ZERO
+rc=1 [Q2]           B01b-attempted-number-zero-control
+rc=1 [Q2]           B02b-symbols-number-zero-control
+rc=1 [Q2]           B03-survivors-null
+rc=1 [Q2]           B04-survivors-absent
+rc=1 [Q3]           D06
+rc=1 [Q4]           D00-control
+rc=1 [Q4]           D01-anchor-descends-from-main
+rc=1 [Q4]           D01b-anchor-descends-no-needles
+rc=1 [Q5]           A06-self-review
+rc=1 [Q5]           A14-vendor-whitespace
+rc=1 [Q5]           A15-vendor-numeric
+rc=1 [Q5]           B05-two-claudes-one-space
+rc=1 [Q5]           C02-one-actor-two-vendors
+rc=1 [Q5]           C03-cross-vendor-is-the-author-string-shift
+rc=1 [Q5]           C04-quorum-verdict-lowercase
+rc=1 [Q6]           A01-verdict-degraded
+rc=1 [Q6]           A02-blocking-lower
+rc=1 [Q6]           A03b-blocking-CAPITAL
+rc=1 [Q6]           A03-blocking-CAPITAL
+rc=1 [Q6]           A03c-blocking-BLOCKING
+rc=1 [Q6]           A04b-precision-class-absent
+rc=1 [Q6]           A04c-precision-class-novel
+rc=1 [Q6]           A04-no-precision-class
+rc=1 [Q6]           C05-verdict-pass-with-trailing-space
+rc=1 [Q6]           WORST
+rc=1 [Q7]           A05b-veto-CAPITAL
+rc=1 [Q7]           A05c-veto-lower-control
+rc=1 [Q7]           A05-veto-CAPITAL
+rc=1 [Q8]           D02a-killswitch-visible
+rc=1 [Q8]           D02b-killswitch-no-remote-ref

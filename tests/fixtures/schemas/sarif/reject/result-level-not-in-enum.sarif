@@ -1,0 +1,7 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    { "tool": { "driver": { "name": "crux" } },
+      "results": [ { "level": "blocking", "message": { "text": "level is an enum of none|note|warning|error" } } ] }
+  ]
+}

@@ -1,0 +1,36 @@
+PRREV-011's F6 case table, re-run against BOTH guards. One table, two guards, one variable.
+table:   /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/wt012/evidence/pr-review/backtest/shipped-surface-f6-cases.tsv  (byte-identical to PRREV-011's)
+PRE-F6:  wt011 = origin/feat/prrev-011-rebacktest e875f5912  sha256 fecd9eca78de400e
+POST-F6: this branch                                          sha256 ec1c41f7a955cc96
+
+runner control: a known MATCH matches and a known NO-MATCH does not. Live.
+
+PRE-F6    POST-F6   subject   [expect, from PRREV-011's table]
+--------- --------- ---------------------------------------------------------------
+nomatch   match     book/src/examples/showcase-benchmark.md  [expect match]   <-- CHANGED BY F6
+nomatch   match     book/src/examples/apr-cli-demo.md  [expect match]   <-- CHANGED BY F6
+match     match     book/src/tools/apr-cli.md  [expect match]
+match     match     book/src/introduction.md  [expect match]
+match     match     crates/apr-cli/src/commands/bench.rs  [expect match]
+match     match     src/bin/apr.rs  [expect match]
+nomatch   nomatch   crates/apr-cli/tests/cli_smoke.rs  [expect nomatch]
+nomatch   nomatch   crates/aprender-core/benches/matmul.rs  [expect nomatch]
+nomatch   nomatch   examples/qwen_inference.rs  [expect nomatch]
+nomatch   nomatch   crates/apr-cli/src/commands/serve_tests.rs  [expect nomatch]
+nomatch   nomatch   tests/fixtures/pr-review/build-fixtures.sh  [expect nomatch]
+nomatch   nomatch   docs/specifications/APR-PERF-GATE-001-v2.2.md  [expect nomatch]
+nomatch   nomatch   scripts/check_no_claim_literals.sh  [expect nomatch]
+nomatch   nomatch   README.md  [expect nomatch]
+match     match     book/src/example/showcase-benchmark.md  [expect match]
+match     match     book/src/guides/showcase-benchmark.md  [expect match]
+nomatch   match     book/examples/x.md  [expect nomatch]   <-- CHANGED BY F6
+
+rows=17   rows PRE-F6 got wrong=2   rows POST-F6 gets wrong=1   rows F6 changed=3
+
+The one remaining POST-F6 disagreement is an EXPECTATION change, not a defect:
+  book/examples/x.md  expect=nomatch in PRREV-011's table, and POST-F6 it MATCHES.
+  That row was written as a CONTROL to demonstrate the cause -- 'the exclusion is on
+  the NAME anywhere in the path, not on book/src/ depth'. Once book/ is exempt at any
+  depth, a book page under book/examples/ is a book page and must be in scope. The
+  shipped table (tests/fixtures/pr-review/shipped-surface-cases.tsv) carries it as
+  MATCH, with the flip and its reason written in the row.

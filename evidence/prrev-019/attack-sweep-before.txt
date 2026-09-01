@@ -1,0 +1,57 @@
+# PRREV-019 -- the adversarial receipt corpus, run against the PRISTINE tree.
+# tree:     f7eb5ab57 (feat/prrev-012-final, before PRREV-019)
+# corpus:   /mnt/nvme-raid0/prrev-adv/atk -- 46 receipts, EVERY ONE minisign-signed
+#           with tests/fixtures/pr-review/keys/pr-review-test-TEST-ONLY.key, so every
+#           one passes scripts/check_pr_review_receipt.sh's signature check cleanly.
+# command:  pr_review_quorum_arm.sh --explain --pr 2783 --receipt <dir> --context <dir>/pr-context.json
+#
+# 20 PERMIT. One of them ('sanity') is the attacker's OWN clean control and is
+# SUPPOSED to permit; D03 and D05 are byte-identical, so the corpus holds 18
+# distinct bad receipts that armed a merge.
+
+PERMIT  A03b-blocking-CAPITAL
+PERMIT  A03c-blocking-BLOCKING
+PERMIT  A04b-precision-class-absent
+PERMIT  A04c-precision-class-novel
+PERMIT  A05b-veto-CAPITAL
+PERMIT  A12-survivors-string
+PERMIT  A13-attempted-string
+PERMIT  A14-vendor-whitespace
+PERMIT  A15-vendor-numeric
+PERMIT  B03-survivors-null
+PERMIT  B04-survivors-absent
+PERMIT  B05-two-claudes-one-space
+PERMIT  C02-one-actor-two-vendors
+PERMIT  C03-cross-vendor-is-the-author-string-shift
+PERMIT  D01-anchor-descends-from-main
+PERMIT  D01b-anchor-descends-no-needles
+PERMIT  D03-stale-origin-main
+PERMIT  D05
+PERMIT  sanity
+PERMIT  WORST
+rc=1 [Q1]           A03-blocking-CAPITAL
+rc=1 [Q1]           A04-no-precision-class
+rc=1 [Q1]           A05-veto-CAPITAL
+rc=1 [Q1]           A16-runs-is-a-string
+rc=1 [Q1]           A18-execsuccess-string
+rc=1 [Q1]           B01-attempted-STRING-ZERO
+rc=1 [Q1]           B02-symbols-STRING-ZERO
+rc=1 [Q1]           C01-killed-zero-of-37
+rc=1 [Q1]           D04b
+rc=1 [Q1]           D04-base
+rc=1 [Q1]           D04c
+rc=1 [Q1]           D04d
+rc=1 [Q1]           D04e
+rc=1 [Q2]           A12b-survivors-object
+rc=1 [Q2]           B01b-attempted-number-zero-control
+rc=1 [Q2]           B02b-symbols-number-zero-control
+rc=1 [Q3]           D06
+rc=1 [Q4]           D00-control
+rc=1 [Q5]           A06-self-review
+rc=1 [Q5]           C04-quorum-verdict-lowercase
+rc=1 [Q6]           A01-verdict-degraded
+rc=1 [Q6]           A02-blocking-lower
+rc=1 [Q6]           C05-verdict-pass-with-trailing-space
+rc=1 [Q7]           A05c-veto-lower-control
+rc=1 [Q8]           D02a-killswitch-visible
+rc=1 [Q8]           D02b-killswitch-no-remote-ref

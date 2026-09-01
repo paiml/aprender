@@ -1,0 +1,288 @@
+PRREV-009 — F4: duplication_hits is blind to 48.8% of the diff it was designed for
+==================================================================================
+
+Every number below was produced by running the command shown, in this session, in the
+worktree at feat/prrev-009-dupfix (base origin/feat/prrev-006-wiring at 1e09ca749,
+origin/main at 745fa8588). None is carried over from PRREV-007's backtest; where a
+figure agrees with it, that is a reproduction, and the two are marked.
+
+
+1. THE RUST-ONLY CLAIM, RE-MEASURED FIRST-HAND
+----------------------------------------------
+PRREV-007 F4(a) reports pmat's semantic index as Rust-only. Re-measured here against a
+symbol that is DEFINED in a shell file on origin/main:
+
+  $ git show origin/main:scripts/perf_gate.sh | grep -nE '^[a-z_]+\(\) \{'
+    39:arm_c_integrity() {
+   377:cell_completeness() {
+   283:arm_e_interference() {
+
+  $ pmat query "arm_c_integrity perf gate integrity arm shell" --limit 10
+    Index: 84919 functions in 10136 files
+    10 results.  BY EXTENSION:  .rs 10
+    Rows naming scripts/perf_gate.sh: 0
+
+  The symbol is defined at scripts/perf_gate.sh:39. The semantic query for it returns
+  ten Rust functions and never that file. This reproduces F4(a) on a different symbol
+  than the backtest used, so it is a second instance, not a re-reading of the first.
+
+  $ bash scripts/pr_review_duplication_scan.sh --base origin/main --head <cf2> --horizon none
+    symbols_searched 5, hits_total 11, of which:
+      scripts/perf_gate.sh:39   arm_c_integrity      <- the definition pmat cannot return
+      scripts/perf_gate.sh:283  arm_e_interference
+      scripts/perf_gate.sh:377  cell_completeness
+      docs/specifications/APR-PERF-GATE-001-v2.2.md:833, roadmap.yaml:13219, ...
+
+  Recorded: evidence/prrev-009/counterfactual-shell-surface.json
+  The counterfactual head is a commit built with git plumbing off origin/main that adds
+  scripts/bench_arms.sh re-defining three functions perf_gate.sh already has. It is the
+  smallest faithful model of "an agent re-implements the shell half".
+
+  scripts/perf-matrix.yaml was READ by nothing here and WRITTEN by nothing. It is
+  untouched on this branch.
+
+
+2. THE SIBLING-BRANCH CLAIM, AS A DISCRIMINATION PAIR
+-----------------------------------------------------
+F4(b): prior art on an unmerged sibling branch is invisible by construction, and #2781
+found #2742's only because #2742 merged 17 hours earlier.
+
+Counterfactual: an agent on a branch off origin/main writing
+scripts/check_pr_review_wiring.sh from scratch. That file already exists — on the
+UNMERGED sibling feat/prrev-006-wiring. Both runs are the same diff and the same script;
+the only variable is the horizon.
+
+  A  --horizon none   (what S3.A prescribes today: the index cannot see off-branch)
+       sibling_branches: none   scanned 0 / 772   hits_total 0   duplication_hits []
+       -> a green light to duplicate
+
+  B  --horizon all    (the repair)
+       sibling_branches: lexical   scanned 772 / 772   hits_total 1
+       {"needle":"check_pr_review_wiring.sh","kind":"filename","where":"branch",
+        "ref":"origin/feat/prrev-006-wiring",
+        "path":"scripts/check_pr_review_wiring.sh","line":0,"method":"lexical"}
+
+  Recorded: counterfactual-sibling-horizon-none.json / -all.json.
+
+  This pair is what makes the claim falsifiable rather than argued. It also found two
+  real defects in the scanner while it was being written, both of which returned zero
+  hits from run B and are fixed:
+    - the end-anchored `{` in the shell-function pattern missed `name() { :; }`
+      (symbols_searched read 0 on a file with three function definitions);
+    - a "skip paths this diff also adds" filter silently discarded the strongest signal
+      there is, TWO BRANCHES ADDING THE SAME PATH — which is precisely this case.
+  Both are pinned: the first by duplication-symbol-cases.tsv, the second by the comment
+  at the branch-matching awk and by the bats scan test.
+
+
+3. COST — measured, because the horizon is the expensive half
+--------------------------------------------------------------
+  git ls-remote --heads origin                                786 heads      1.89 s
+  git for-each-ref --no-merged origin/main                    771 unmerged   0.12 s
+  ... plus --no-merged <head> --no-contains <head>            766-772 cand.  0.11 s
+  tree-only added-file sweep, 232 branches (30 days)                        2.75 s
+  tree-only added-file sweep, all 771 unmerged                            17.27 s
+  full scan, counterfactual head, --horizon all (772 branches)            18.60 s
+  full scan, PRREV-001..005 range (151 needles), --horizon all            73    s
+
+  The 73 s run is the honest upper end seen here: 115 of its 151 needles were file
+  basenames from a range that adds 115 files. The 18.6 s figure is the typical shape —
+  a one-file diff over the whole 772-branch horizon.
+
+  CONCLUSION, and it is the one that sets the default: the whole-horizon sweep costs
+  ~18 s. A cap is therefore a CHOICE, not a necessity, which is why --horizon all is the
+  default and why the guard refuses PASS when horizon_branches_scanned <
+  horizon_branches_total. If the sweep had cost ten minutes the honest design would have
+  been a cap plus a recorded partial; it does not, so it is not.
+
+  These go in the receipt's `cost` block and in horizon_branches_{total,scanned}, per
+  S8: instrument, then ratchet. No threshold here is invented.
+
+
+4. PRECISION — reported, not asserted
+--------------------------------------
+The first whole-range run returned 6,292 hits. Inspected by needle:
+
+  44 receipt        22 findings       15 README        5 README.md
+   4 SKILL.md        4 minimal         3 sources       2 engaged   (capped sample)
+
+Every one is a common word in this tree, not a second implementation. Duplication is a
+RARE name collision, so a needle over PR_REVIEW_AMBIENT_MAX (default 8) distinct hits is
+dropped whole and the count is recorded as needles.dropped_ambient. Recall given up
+without a number beside it is how a scan comes to look clean.
+
+Two other precision controls, both recorded in the output:
+  needles.min_length      6 by default. At 4 the sweep drowns in `new`, `run`, `path`.
+  the stop list           11 entries, deliberately short.
+
+WHAT THIS SCAN CANNOT DO, stated because an unstated residual is the whole failure mode
+this repair exists to close:
+  - It is LEXICAL. A re-implementation under a different name is invisible. The backtest's
+    own example — the pr-review guard's COMPARATIVE_RE being a second implementation of
+    check_no_claim_literals.sh's RATIO_RE — is NOT caught by this scan, because the two
+    names differ. Recorded here rather than left to be rediscovered.
+  - The sibling-branch half matches FILENAMES only, not symbols. Symbol matching off-branch
+    needs blobs; the tree-only sweep is what makes 772 branches affordable. The receipt
+    records the horizon so the limit is visible, and `check_pr_review_wiring.sh` — the case
+    F4 names — is exactly the filename shape.
+  - Its recall is UNKNOWN. This document does not claim one. What it claims is narrower
+    and checkable: 0% coverage of 48.8% of the diff is worse than lexical coverage of all
+    of it, and an unrecorded gap is worse than a recorded one.
+
+
+5. REPRODUCTION
+---------------
+The counterfactuals are built with git plumbing, so nothing is checked out and no
+branch is created. Both are commits off origin/main that exist only in the object store.
+
+  # F4(b): re-write scripts/check_pr_review_wiring.sh, which an unmerged sibling has
+  cat > /tmp/cf.sh <<'SH'
+  #!/usr/bin/env bash
+  set -euo pipefail
+  assert_job_level_if() { :; }
+  assert_no_workflow_paths_filter() { :; }
+  SH
+  BLOB=$(git hash-object -w /tmp/cf.sh)
+  MAIN=$(git rev-parse origin/main)
+  TS=$(git rev-parse "origin/main:scripts")
+  { git ls-tree "$TS"; printf '100755 blob %s\tcheck_pr_review_wiring.sh\n' "$BLOB"; } \
+    | sort -u -k4 > /tmp/s.tree
+  NS=$(git mktree < /tmp/s.tree)
+  { git ls-tree "$MAIN^{tree}" | grep -v $'\tscripts$'
+    printf '040000 tree %s\tscripts\n' "$NS"; } > /tmp/r.tree
+  CF=$(git commit-tree "$(git mktree < /tmp/r.tree)" -p "$MAIN" -m counterfactual)
+
+  bash scripts/pr_review_duplication_scan.sh --base "$MAIN" --head "$CF" --horizon none
+  bash scripts/pr_review_duplication_scan.sh --base "$MAIN" --head "$CF"
+
+Re-run on 2026-08-30 after the shell-pattern fix: byte-identical to
+counterfactual-sibling-horizon-all.json apart from wall_seconds.
+
+The same pair, deterministic and self-contained, is in tests/pr-review.bats as
+"F4b the scan sees prior art on an UNMERGED sibling branch [discrimination]", against a
+repository the test builds itself with a real unmerged sibling. The committed fixture
+repo is NOT extended for it: adding a branch there would change nothing about rows 1-17
+while making their provenance harder to read.
+
+
+6. RESIDUALS, STATED RATHER THAN LEFT TO BE FOUND
+--------------------------------------------------
+- THE GUARD CANNOT TELL "RAN THE SCAN" FROM "WROTE THE MAP BY HAND." It checks that a
+  coverage claim is complete, in-vocabulary and consistent with the verdict; it does not
+  re-run an 18-second sweep on every receipt, and it could not verify the result if it
+  did. This is the S4.3 limit said plainly one field over: the attestation is L1-self,
+  and a well-formed claim is not a true one. The honest fix is not a stdout_sha256 field
+  on this consultation alone — a fabricated hash is as cheap as a fabricated map, and
+  bolting provenance onto ONE consultation while pmat's complexity_delta, cuda's queries
+  and crux's surfaces carry none would read as assurance it does not provide. It belongs
+  with the vacuity work F2 asks for: one `measured` provenance shape for every
+  consultation, or none.
+
+- A `none` UNDER `FINDINGS` IS ACCEPTED. The rule implemented is the one rows 5 and 6
+  already state — `none` may not read PASS — not a stricter "must equal DEGRADED".
+  Widening it was declined rather than forgotten: it is a threshold nothing here
+  measured, and S8's rule is instrument first.
+
+- EXTRA KEYS IN duplication_coverage ARE ALLOWED if their value is in the vocabulary.
+  The seven required surfaces are a floor, so a future surface can be recorded before the
+  guard learns to require it.
+
+
+7. A HOLE THE NEW RULES OPENED, AND THE RED-TURN THAT CLOSED IT
+---------------------------------------------------------------
+The two horizon-verdict rules compare counts with `[ -lt ]` and `[ -eq ]`. Bash cannot
+compare a non-integer: `[ "2.5" -lt 40 ]` is an ERROR (status 2), the enclosing `if`
+reads false, and BOTH rules are SKIPPED. The type check as first written admitted any
+JSON number, so a receipt writing
+
+    horizon_branches_scanned: 2.5,  horizon_branches_total: 40,  verdict: PASS
+
+sailed past the capped-horizon rule. Measured, by deleting the two `floor` clauses and
+running the probe:
+
+    without the whole-number clauses:  ACCEPT, exit 0     <- fails OPEN
+    with them:                         REJECT [B1], exit 1
+
+The guard was restored byte-identical afterwards (`cmp -s`). The probe is written with
+2.5 and not 2.0 for a measured reason of its own: jq's number type does not carry a
+trailing zero, `2.0 | floor == 2.0` is true, and the first draft of the probe passed by
+tripping the CAPPED-horizon rule instead — a case that passes while testing nothing
+about the branch it names. That is the same defect the reason-assertion in
+tests/pr-review.bats exists to catch, found once more in a probe of my own.
+
+
+8. ONE THING I BROKE, RECORDED BECAUSE IT COST ANOTHER AGENT TIME
+-----------------------------------------------------------------
+To edit the guard I had to stop the running mutation sweep, and used
+
+    pkill -f 'mutate-guard.sh'
+
+A parallel agent was running the SAME script from the wt-prrev008 worktree. `-f` matches
+the whole command line and does not care which worktree it came from, so both sweeps
+died and both scratch trees were removed by their own EXIT traps. Nothing in this branch
+depends on that run; the cost was another agent's wall time, and PRREV-008's sweep needs
+re-running.
+
+The rule already written down for this is "pgrep -f matches its own shell; filter by
+PID". It generalises: -f matches every OTHER agent's shell too, and on a box running
+several worktrees of one repository the process names are identical BY CONSTRUCTION.
+Capture the PID at launch and kill that.
+
+
+9. WHY THE SWEEP RUNS OVER REMOTE-TRACKING REFS AND NOT OVER `git ls-remote`
+----------------------------------------------------------------------------
+The brief for this repair named `git ls-remote --heads origin` plus
+`git log origin/main..<branch>`. The implementation uses `git for-each-ref
+--no-merged refs/remotes/origin/main` instead, and the difference is deliberate:
+ls-remote returns NAMES, and diffing a branch needs its OBJECTS, which only a fetch
+provides. Running the sweep off ls-remote output would fail on every branch this clone
+has not fetched.
+
+So ls-remote is kept as a CROSS-CHECK rather than as the horizon, and both numbers go
+in the output:
+
+  horizon_refs: { local_origin_refs: 787, remote_heads: 787 }
+
+That closes a silent vacuity the local-refs design would otherwise have: on a shallow
+or CI checkout holding only main, the candidate set is empty and "swept 0 of 0 in full"
+satisfies every count rule in the guard while having looked nowhere. The scan now
+degrades the METHOD in that case — `sibling_branches: none` — so the guard's existing
+"`none` may not read PASS" rule turns it into DEGRADED. No new guard rule was added for
+it, and therefore no new mutant: the degradation is in the producer, where it belongs.
+
+Measured: ls-remote 1.89 s over 786 heads, bounded by `timeout 30` so an unreachable
+remote degrades the record (`remote_heads: null`) rather than hanging the review.
+
+A local/remote count MISMATCH is recorded and NOT auto-degraded. On a repository where
+branches appear hourly, a one-branch gap between the last fetch and the scan would make
+every receipt DEGRADED and the verdict would stop meaning anything. Recording both
+numbers lets a reader see the gap; SKILL.md tells the reviewer to `git fetch origin
+--prune` first. That is a threshold not invented, per S8.
+
+
+10. WHAT THE 100% MUTATION SCORE DOES AND DOES NOT COVER
+---------------------------------------------------------
+  attempted 139   killed 139   survived 0   invalid 0     (evidence/prrev-009/guard-mutation.tsv)
+  baseline GREEN: 86 tests, 0 failures
+  sha256(scripts/check_pr_review_receipt.sh) the sweep ran against:
+    36de09bef4442461e242fb7cca9f4f1cfdbce54f8a6a73a397b4822e9e82c41c
+
+The catalogue derives its sites by scanning the guard for `reject B<n>`, so the ten
+rules added here were mutated without anyone having to remember them: 114 derived
+mutants (57 sites x drop/flip) plus 25 named control mutations.
+
+TWO HONEST CAVEATS about that number, because a mutation score is exactly the kind of
+figure that gets quoted without its scope:
+
+  1. Section 9's ls-remote cross-check was added AFTER the sweep. The guard is
+     byte-identical to the swept version (verified with sha256), and the one test added
+     with it never invokes the guard — it runs only the scanner — so it passes
+     identically in a mutated and an unmutated tree and cannot change any KILLED or
+     SURVIVED verdict. The full suite was re-run green afterwards. This is stated rather
+     than left implicit, because "the sweep covered it" would have been false.
+  2. THE SCANNER IS NOT MUTATED AT ALL. scripts/mutate-guard.sh covers
+     check_pr_review_receipt.sh, and S6.4 scopes the 100% requirement to the guard
+     because that is what every other verdict rests on. The scanner is a PRODUCER: no
+     verdict rests on it, and its falsification is the discrimination pair in sections 2
+     and 5 plus the 30-row case table. If the scanner ever gains a rule that a verdict
+     depends on, it needs a mutation set of its own.

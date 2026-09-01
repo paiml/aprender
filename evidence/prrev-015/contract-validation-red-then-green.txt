@@ -1,0 +1,20 @@
+=== pv validate contracts/pr-review-skill-v2.yaml, BEFORE ===
+error: Failed to parse YAML: falsification_tests[14]: duplicate field `rule` at line 858 column 3
+exit 1
+
+=== AFTER ===
+
+0 error(s), 0 warning(s)
+Contract is valid.
+exit 0
+
+=== cargo test -p aprender-contracts --test validate_contracts ===
+-- branch base f609ba5b9 (pre-existing RED):
+pr-review-skill-v2: pass_criteria says 11 tests, actual 15
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.25s
+-- 584fb0db9 as committed (duplicate keys):
+Failed to parse pr-review-skill-v2: Failed to parse YAML: falsification_tests[14]: duplicate field `rule` at line 858 column 3
+called `Result::unwrap()` on an `Err` value: Yaml(Error("falsification_tests[14]: duplicate field `rule`", line: 858, column: 3))
+Failed to parse /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/mv/contracts/pr-review-skill-v2.yaml: Failed to parse YAML: falsification_tests[14]: duplicate field `rule` at line 858 column 3
+-- this tree:
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s

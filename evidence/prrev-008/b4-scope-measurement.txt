@@ -1,0 +1,54 @@
+PRREV-008 — B4's diff scan, scoped by measurement rather than by argument.
+
+THE QUESTION. B4 now recomputes comparative claims from the diff (F1). Over WHICH added
+lines? S3.C.1 says "in the diff, PR body, docs, or benchmark output". The first draft
+took that literally: every added line of every shipped .rs and every .md under book/ and
+docs/.
+
+THE MEASUREMENT. That scan was run over the last 300 commits of origin/main. It fires
+five times, on two commits, both of them APR-PERF-GATE-001:
+
+  A    d1b7d1995  crates/apr-cli/src/dispatch.rs                             // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surf
+  A    ce712eae0  crates/apr-cli/src/commands/serve/server.rs                // #2696: this printed "Performance: 800+ tok/s (2.8x Ollama
+  AB   ce712eae0  docs/benchmarking-gate-spec.md                 | 2 | **apr does not batch.** Aggregate throughput is flat at ~110 tok/s
+  AB   ce712eae0  docs/benchmarking-gate-spec.md                 | 4 | **The book publishes a number no harness produced** — "851.8 tok/s
+  AB   ce712eae0  docs/benchmarking-gate-spec.md                 ### 5.2 Failure #4 — 2.93× Ollama from a harness that never ran Ollama
+
+  (variant A = the .rs half only; AB = also reached by the #2763-faithful line test.)
+
+THE VERDICT. TWO of the five are real comparative claims a comparator could be recorded
+for -- `0.097x llama.cpp at c=16` in a docs table with a provenance column, and
+`0.099x llama.cpp` in a code comment. THREE quote a fabricated claim IN ORDER TO BAN IT:
+
+  "The book publishes a number no harness produced -- '851.8 tok/s = 2.93x Ollama'"
+  "5.2 Failure #4 -- 2.93x Ollama from a harness that never ran Ollama"
+  "// #2696: this printed 'Performance: 800+ tok/s (2.8x Ollama)'"
+
+Those three have NO HONEST REMEDY. S3.C.1's exit is a recorded comparator command,
+version, env hash, artifact hash and log path. There is no comparator log for a number
+nobody measured, so the only way to satisfy the gate is to invent one. A blocking class
+whose exit is to fabricate the evidence it demands is worse than the hole it closes.
+
+S7 already decides this without needing the argument: "a class may block only while its
+measured precision on the rolling sample is >=90%". 2/5 is 40%.
+
+THE SCOPE THAT SHIPPED. book/**.md, plus PRINTED literals and doc comments in shipped
+.rs -- the split check_no_claim_literals.sh already measured (it applies its own RATIO_RE
+to print macros and to ///|//! and to nothing else in .rs), and the surface where
+"2.93x Ollama" was actually published to readers.
+
+Over the same 300 commits that scope fires ZERO times. Stated as what it is: no measured
+false positives AND no measured true positives. It is not evidence of precision. It is
+evidence that this repository has not published a competitor ratio to the book in 300
+commits, which is the only thing 0/0 can mean.
+
+WHAT IT STILL CATCHES, and why the scope is not a retreat: fixture rows 16 and 22 are
+both RED under it, and row 16 is the E1 probe from the PRREV-007 backtest promoted to a
+committed fixture -- a head adding `apr sustains 2.93x Ollama on 1.5B Q4_K decode.` to
+book/, which the guard at 1e09ca749 ACCEPTED. Row 22 carries the same ratio twice in one
+.rs file and the guard must fire on the format! and not on the comment two lines above.
+
+RESIDUAL, RECORDED RATHER THAN HIDDEN. A comparative claim added to docs/ prose or to a
+plain // comment is not blocked by B4. The two real instances found in 300 commits are
+named above. Closing that residual needs a way to say "this line quotes a claim rather
+than making one", which is a receipt-schema change and not this ticket.

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paiml.dev/schemas/in-toto-statement-v1.json",
+  "title": "in-toto Attestation Framework — Statement layer, v1",
+  "description": "JSON Schema for the in-toto Statement v1 (https://in-toto.io/Statement/v1). Authored in-repo from the normative upstream specification; upstream ships no JSON Schema for this layer (only Markdown + protobuf). Provenance, source-document hashes, and every deliberate divergence are recorded in schemas/sources.json and schemas/README.md.",
+  "$comment": "additionalProperties is deliberately permissive at every object level: spec/v1/README.md 'Parsing rules' requires consumers to IGNORE unrecognized fields, and explicitly permits producer extension fields. A schema with additionalProperties:false here would reject spec-conformant documents.",
+  "type": "object",
+  "required": ["_type", "subject", "predicateType"],
+  "additionalProperties": true,
+  "properties": {
+    "_type": {
+      "description": "Identifier for the schema of the Statement. Always https://in-toto.io/Statement/v1 for this version of the spec. (spec/v1/statement.md)",
+      "type": "string",
+      "const": "https://in-toto.io/Statement/v1"
+    },
+    "subject": {
+      "description": "Set of software artifacts the attestation applies to. Non-empty; every element MUST set digest. (spec/v1/statement.md; go/v1/statement.go ErrSubjectRequired, ErrDigestRequired)",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/subjectResourceDescriptor" }
+    },
+    "predicateType": {
+      "description": "TypeURI identifying the type of the Predicate. (spec/v1/statement.md; spec/v1/field_types.md#TypeURI)",
+      "$ref": "#/$defs/typeUri"
+    },
+    "predicate": {
+      "description": "Additional parameters of the Predicate. Optional per spec/v1/statement.md: 'Unset is treated the same as set-but-empty. MAY be omitted if predicateType fully describes the predicate.'",
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "typeUri": {
+      "description": "Uniform Resource Identifier (RFC 3986) used as a collision-resistant type identifier. RFC 3986 s6.2.2.1 case normalization requires a lowercase scheme. Authority-case normalization is NOT enforced here — see schemas/README.md 'Residual risk'.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9+.-]*:"
+    },
+    "digestSet": {
+      "description": "Map of algorithm name to a string encoding of the digest. Named standard algorithms are constrained to lowercase hex of the algorithm's exact digest length; custom algorithms are accepted as any non-empty string, per spec/v1/digest_set.md and go/v1/resource_descriptor.go (isSupportedAlgorithm).",
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^md5$": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "^sha1$": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "^git(Blob|Commit|Tag|Tree)$": { "type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$" },
+        "^(sha224|sha512_224|sha3_224)$": { "type": "string", "pattern": "^[0-9a-f]{56}$" },
+        "^(sha256|sha512_256|sha3_256|dirHash)$": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "^(sha384|sha3_384)$": { "type": "string", "pattern": "^[0-9a-f]{96}$" },
+        "^(sha512|sha3_512)$": { "type": "string", "pattern": "^[0-9a-f]{128}$" },
+        "^(shake128|shake256|blake2b|blake2s|ripemd160|sm3|gost)$": { "type": "string", "pattern": "^([0-9a-f]{2})+$" }
+      },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "resourceDescriptorCommon": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "name": { "type": "string" },
+        "uri": { "type": "string", "minLength": 1 },
+        "digest": { "$ref": "#/$defs/digestSet" },
+        "content": { "type": "string", "contentEncoding": "base64" },
+        "downloadLocation": { "type": "string", "minLength": 1 },
+        "mediaType": { "type": "string" },
+        "annotations": { "type": "object" }
+      }
+    },
+    "subjectResourceDescriptor": {
+      "description": "A ResourceDescriptor appearing in Statement.subject. v1 Statements require digest to be set on every subject element (go/v1/statement.go: 'v1 statements require the digest to be set in the subject').",
+      "allOf": [{ "$ref": "#/$defs/resourceDescriptorCommon" }],
+      "type": "object",
+      "required": ["digest"]
+    }
+  }
+}
