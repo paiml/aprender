@@ -83,7 +83,7 @@ request gets the whole GPU in turn while llama.cpp shares it sixteen ways.
 > A gate that reports only per-user decode would call 0.097× aggregate a PASS.
 > — `scripts/llama_pin.toml`, in its own words
 
-**Therefore both metrics are always REPORTED, and neither is gated alone (I-4).**
+**Therefore both metrics are always REPORTED, and no verdict may be formed from one of them alone (I-4).** Which metric is *gated* is per-band and asymmetric — §7 sets it, and §2.2 below is why.
 
 **But they are not both gated at `≥ 1.0` on every band, and the reason is the fix itself.**
 apr's 1.554× decode at c=16 exists *because* it serialises. When continuous batching lands,
@@ -139,9 +139,11 @@ Laptop is bandwidth-starved where a 4090 is not). **This is not a scaling law, a
 this document rests on it.** It is recorded because it is the only cross-model data that exists;
 §12.2 owes the controlled measurement.
 
-**The policy it was first written to justify — that single-stream decode is not conceded —
-rests instead on §2.1 alone: 0.587× on the reference cell.** That measurement is sufficient,
-and it is not confounded.
+**The policy it was first written to justify — that single-stream decode is not conceded — may
+NOT rest on §2.1, which is withdrawn.** It rests instead on the *conservative default*: no
+conformant paired measurement of single-stream decode exists, and a cell is not conceded on the
+strength of a measurement nobody has taken. The indicative figure on `main` is **0.591×**, which
+is a reason to look, not a basis to concede. §12.2 owes the measurement that would settle it.
 
 ### §2.4 The one root cause ever actually isolated
 
@@ -231,7 +233,7 @@ from that epic. I-15 … I-18 are new and each is derived from a defect found in
 | **I-1** | Expected cell set enumerated from committed `perf-matrix.yaml`; the verdict job asserts every cell present | delete one cell's receipt |
 | **I-2** | `provenance.compute_class` is the dispatch path **taken**, read from the running process — never the hardware present. `gpu_layers_resolved` is read from the loader, never inferred from the request | report `cuda` on a CPU-only build |
 | **I-3** | No `ratio` is representable without a `baseline` object that itself passes every receipt rule | emit a ratio with a bare scalar baseline |
-| **I-4** | **Both `agg_ratio` and `dec_ratio` are REPORTED on every band; a receipt carrying one alone is schema-fatal.** Which is *gated* is asymmetric and set by §7 — never both at `≥1.0` on every band, because under batching the two trade against each other (§2.2) | emit a decode-only receipt at c=16 |
+| **I-4** | **Both `agg_ratio` and `dec_ratio` are REPORTED on every band; a receipt carrying one alone is schema-fatal — for receipts produced from this spec forward.** Receipts predating it (every one in `evidence/` today, §6.2b) are **historical records, not conformant receipts**: they may be cited as evidence of what a run did, and may not be used as a baseline or to support a parity claim. Which is *gated* is asymmetric and set by §7 — never both at `≥1.0` on every band, because under batching the two trade against each other (§2.2) | emit a decode-only receipt at c=16 |
 | **I-5** | `timeouts > 0` on any band is fatal to that host's ratio | inject one timeout |
 | **I-6** | No wall-clock ratio is a **merge**-phase check | promote a ratio arm to the required set |
 | **I-7** | Raw samples retained on every cell; summary-only receipts rejected | strip the samples array |
@@ -327,8 +329,11 @@ harness, not from this producer — which is why they exist at all.
 **(c) `perf-matrix.yaml` already encodes the rule §2.2 forbids.** `scripts/perf-matrix.yaml`
 declares Arm **B2 floor = 1.00 on every band** and `perf_gate.sh:246` implements it. That is
 exactly the "decode ≥ 1.0 everywhere" rule that would reject the continuous-batching PR (§2.2).
-**§7 supersedes it**, and the matrix must be edited in the same PR that lands this spec's gate,
-or the two definitions disagree silently.
+**§7 supersedes it — but not yet.** The matrix edit lands with the PR that makes §7
+*executable* (the comparator lane of §6.2a), not with this document. Until then **§7 is
+DESIGNED, NOT ARMED**: it gates nothing, `perf-matrix.yaml` remains the live rule, and the two
+do not silently disagree because only one of them runs. The gate PR moves both in one commit or
+neither.
 
 **(d) The measurement client omits `seed` and `ignore_eos` from the wire.**
 `crates/aprender-test-lib/src/llm/client.rs:436-448` rebuilds the request body with
@@ -398,12 +403,16 @@ them is how a project optimises one GPU and discovers portability failures at re
 The predecessor epic declared eight cells across four hosts and filled two in five days, and
 neither was ratcheted. This document gates **one** cell and reports the rest.
 
-| cell | host | model | status |
-|---|---|---|---|
-| **REFERENCE (gated)** | `lambda` RTX 4090, CUDA | Qwen2.5-Coder-7B Q4_K_M | the parity claim is made here |
-| gx10 (GB10, aarch64) | CUDA | same | REPORTING |
-| intel (`mac-server`) | CPU / wgpu | same | REPORTING |
-| mini (M4) | — | same | **blocked on #2841** — no backend to measure |
+| cell | host | model | parity status (§7 vocabulary) | gated? |
+|---|---|---|---|---|
+| **REFERENCE** | `lambda` RTX 4090, CUDA | Qwen2.5-Coder-7B Q4_K_M | `UNMEASURED` — owner perf-gate, expires 2026-09-25 | **yes**, once a conformant receipt exists |
+| gx10 (GB10, aarch64) | CUDA | same | `UNMEASURED` — owner perf-gate | no |
+| intel (`mac-server`) | CPU / wgpu | same | `UNMEASURED` — owner perf-gate | no |
+| mini (M4) | — | same | `UNMEASURED` — owner perf-gate, **blocked on #2841** (I-16: no build reaches the declared class) | no |
+
+Every cell is `UNMEASURED` today; **none is `MEASURED`, and none is `NOT_APPLICABLE`.** "Gated"
+is a separate column from status precisely so the two vocabularies do not blur — a cell can be
+the gated one and still be UNMEASURED, which is exactly today's state.
 
 **A second host may be promoted to gating only after the reference cell reaches parity.**
 Breadth before depth is what produced eight empty cells.
@@ -467,9 +476,24 @@ because concurrent work on both confounds every run.
 
 ## §11 Archived by this document
 
-Thirteen documents, ~14,800 lines, four repositories. Each moves to `docs/archive/` in its own
-repository with a one-line pointer here. **Nothing is deleted**; superseded material that is
+Thirteen documents, ~14,800 lines, four repositories. **Nothing is deleted**; superseded material
 still readable as current is the condition this document exists to end.
+
+**Their status is not uniform, and the difference matters to this document's central claim.**
+Checked 2026-09-01:
+
+| repo | documents | state |
+|---|---|---|
+| `aprender` | 2 | **archived by this PR**, with 42 `roadmap.yaml` references repointed |
+| `qwen-coder-deploy` | 3 | **archived and pushed** (`4fadc7c`) — the only sibling that was a live repo |
+| `realizar` | 9 | **the repository is ARCHIVED on GitHub** (read-only). Already superseded by the APR-MONO consolidation into `crates/aprender-serve` |
+| `trueno` | 1 | **the repository is ARCHIVED on GitHub** (read-only). Consolidated into `crates/aprender-compute` |
+
+So **ten of the thirteen were never live specs in a writable repository** — they sit in
+read-only archives that the monorepo consolidation had already superseded. The genuinely live
+overlap was **five documents in two repositories**, and after this PR it is one. Saying
+"thirteen live specs" would have overstated the problem in the document written to stop
+overstatement.
 
 | repo | document | lines |
 |---|---|---|
