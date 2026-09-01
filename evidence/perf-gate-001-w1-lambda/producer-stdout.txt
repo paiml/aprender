@@ -1,0 +1,50 @@
+protocol APR-PERF-GATE-001 v2.2 §4.4 (closed-loop, conformant)
+endpoint http://127.0.0.1:18090
+workload W1
+prompts  256 prompt(s) from crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl
+bands    [1, 4, 8, 16] x 3 replicate(s); warmup 2c, quiesce 5s, window closes when BOTH max(30, 8c) samples AND 60s wall-clock are met
+NOTE     --stream is off: §4.4.3 ttft_ms, itl_ms and decode_tok_s are UNDEFINED without per-token arrival times and are omitted from the receipt
+  c=1 replicate 1/3
+    agg 99.91 tok/s  decode 0.00 tok/s  requested 55  completed 55  timeouts 0  drain 0.0 ms  peak_in_flight 1
+  c=4 replicate 1/3
+    agg 191.63 tok/s  decode 0.00 tok/s  requested 92  completed 92  timeouts 0  drain 0.1 ms  peak_in_flight 4
+  c=8 replicate 1/3
+    agg 353.92 tok/s  decode 0.00 tok/s  requested 168  completed 168  timeouts 0  drain 0.1 ms  peak_in_flight 8
+  c=16 replicate 1/3
+    agg 449.87 tok/s  decode 0.00 tok/s  requested 225  completed 225  timeouts 0  drain 2734.5 ms  peak_in_flight 16
+samples  samples.c1.r1.jsonl.gz (55 rows, 1183 bytes)
+samples  samples.c4.r1.jsonl.gz (92 rows, 1616 bytes)
+samples  samples.c8.r1.jsonl.gz (168 rows, 2900 bytes)
+samples  samples.c16.r1.jsonl.gz (225 rows, 3958 bytes)
+receipt  /mnt/nvme-raid0/perf-gate/campaign-w1/evidence/perf-gate-001-w1-lambda/receipt.r1.json (17600 bytes)
+  c=1 replicate 2/3
+    agg 100.95 tok/s  decode 0.00 tok/s  requested 56  completed 56  timeouts 0  drain 0.0 ms  peak_in_flight 1
+  c=4 replicate 2/3
+    agg 191.68 tok/s  decode 0.00 tok/s  requested 92  completed 92  timeouts 0  drain 0.1 ms  peak_in_flight 4
+  c=8 replicate 2/3
+    agg 353.02 tok/s  decode 0.00 tok/s  requested 168  completed 168  timeouts 0  drain 0.2 ms  peak_in_flight 8
+  c=16 replicate 2/3
+    agg 450.59 tok/s  decode 0.00 tok/s  requested 225  completed 225  timeouts 0  drain 2722.9 ms  peak_in_flight 16
+samples  samples.c1.r2.jsonl.gz (56 rows, 1204 bytes)
+samples  samples.c4.r2.jsonl.gz (92 rows, 1633 bytes)
+samples  samples.c8.r2.jsonl.gz (168 rows, 2887 bytes)
+samples  samples.c16.r2.jsonl.gz (225 rows, 3995 bytes)
+receipt  /mnt/nvme-raid0/perf-gate/campaign-w1/evidence/perf-gate-001-w1-lambda/receipt.r2.json (17687 bytes)
+  c=1 replicate 3/3
+    agg 101.07 tok/s  decode 0.00 tok/s  requested 56  completed 56  timeouts 0  drain 0.0 ms  peak_in_flight 1
+  c=4 replicate 3/3
+    agg 191.68 tok/s  decode 0.00 tok/s  requested 92  completed 92  timeouts 0  drain 0.0 ms  peak_in_flight 4
+  c=8 replicate 3/3
+    agg 353.07 tok/s  decode 0.00 tok/s  requested 168  completed 168  timeouts 0  drain 0.1 ms  peak_in_flight 8
+  c=16 replicate 3/3
+    agg 450.75 tok/s  decode 0.00 tok/s  requested 225  completed 225  timeouts 0  drain 2724.0 ms  peak_in_flight 16
+samples  samples.c1.r3.jsonl.gz (56 rows, 1211 bytes)
+samples  samples.c4.r3.jsonl.gz (92 rows, 1581 bytes)
+samples  samples.c8.r3.jsonl.gz (168 rows, 2900 bytes)
+samples  samples.c16.r3.jsonl.gz (225 rows, 3990 bytes)
+receipt  /mnt/nvme-raid0/perf-gate/campaign-w1/evidence/perf-gate-001-w1-lambda/receipt.r3.json (17713 bytes)
+
+next
+  scripts/perf_gate.sh --host lambda --phase merge --workload W1 --receipt /mnt/nvme-raid0/perf-gate/campaign-w1/evidence/perf-gate-001-w1-lambda/receipt.r1.json
+  scripts/perf_gate.sh --host lambda --phase merge --workload W1 --receipt /mnt/nvme-raid0/perf-gate/campaign-w1/evidence/perf-gate-001-w1-lambda/receipt.r2.json
+  scripts/perf_gate.sh --host lambda --phase merge --workload W1 --receipt /mnt/nvme-raid0/perf-gate/campaign-w1/evidence/perf-gate-001-w1-lambda/receipt.r3.json
