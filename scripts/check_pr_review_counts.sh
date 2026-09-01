@@ -360,9 +360,18 @@ self_test() {
     local base="$ST_ROOT/tree"
     mkdir -p "$base"
     # Only the files the table names, plus what the derivations read.
+    #
+    # `schemas` AND `pr_review_duplication_scan.sh` ARE TWO OF THEM, since PRREV-022. Deriving the mutant count runs
+    # `mutate-guard.sh --list`, which now takes its snapshot BEFORE catalogue() reads a
+    # line number -- and snapshot_source() copies `schemas`. Without it the derivation
+    # dies `cp: cannot stat .../schemas` and the self-test exits 2, HARNESS-BROKEN.
+    # A staged tree that starves a derivation of an input it reads is the same defect
+    # class as a mutant tree missing SKILL.md: the run fails for a reason that has
+    # nothing to do with what it is measuring.
     ( cd "$REPO_ROOT" && \
       tar -cf - .claude/skills/pr-review/SKILL.md contracts/binding.yaml \
                 .github/workflows/ci.yml tests/pr-review.bats \
+                schemas scripts/pr_review_duplication_scan.sh \
                 scripts/mutate-guard.sh scripts/check_pr_review_receipt.sh \
                 scripts/check_pr_review_counts.sh tests/fixtures/pr-review \
                 contracts/pr-review-skill-v2.yaml \
