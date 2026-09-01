@@ -1,6 +1,6 @@
 # Performance parity with llama.cpp — inference
 
-**Status:** DRAFT for review · **Date:** 2026-09-01 · **Tree:** `origin/main` `b7bfcafa1`
+**Status:** REVIEWED DRAFT — quorum + `agy /teamwork`, four rules changed by review (§11.1) · **Date:** 2026-09-01 · **Tree:** `origin/main` `b7bfcafa1`
 **Supersedes:** epic #2706 (APR-PERF-GATE-001) and **thirteen** documents across four repositories (§11).
 **Scope:** the *only* specification governing inference performance of models in this project.
 
@@ -50,10 +50,28 @@ request gets the whole GPU in turn while llama.cpp shares it sixteen ways.
 > A gate that reports only per-user decode would call 0.097× aggregate a PASS.
 > — `scripts/llama_pin.toml`, in its own words
 
-**Therefore both metrics are gated, on every band (I-4).** This is the single most important
-rule in this document and it is derived from a measurement, not from taste.
+**Therefore both metrics are always REPORTED, and neither is gated alone (I-4).**
 
-### §2.3 The gap scales with model size
+**But they are not both gated at `≥ 1.0` on every band, and the reason is the fix itself.**
+apr's 1.554× decode at c=16 exists *because* it serialises. When continuous batching lands,
+aggregate rises and per-user decode necessarily **falls** toward the comparator's shared-GPU
+figure (llama.cpp is at 71.2 tok/s there). A rule demanding `dec_ratio ≥ 1.0` on every band
+would reject the very PR that fixes §9's defect #1 — it demands apr *dominate* on two metrics
+that trade against each other, which is a beat, not parity.
+
+So the gate is asymmetric, and §7 states it:
+
+| band | gated on | why |
+|---|---|---|
+| c=1 | `dec_ratio` vs comparator | no batching is possible; decode is the whole story |
+| c ∈ {4,8,16} | `agg_ratio` vs comparator | what the server delivers, and what batching improves |
+| every band | **both reported**; a receipt carrying one alone is schema-fatal | §2.2 |
+
+Decode at c>1 is a **non-regression floor against apr's own previous release**, never a
+comparator ratio — so the batching transition is permitted to cost per-user decode, while a
+silent collapse still cannot pass.
+
+### §2.3 Cross-model data, and what it does NOT establish
 
 `qwen-coder-deploy/docs/specifications/gpu-performance-spec.md`, measured **2026-03-12**, host
 `yoga` (RTX 4060 Laptop, 1900MHz), model **Qwen2.5-Coder-1.5B** Q4_K_M, `probador llm load`,
@@ -68,11 +86,15 @@ rule in this document and it is derived from a measurement, not from taste.
 | c=4 | realizr | 65.6 | 259.7 → **0.745×** | 39.8 ms | 15.3 ms |
 | c=4 | vLLM | 150.4 | **594.8** | 25.3 ms | 6.7 ms |
 
-**1.5B on a 4060 is 0.92× single-stream. 7B on a 4090 is 0.587×.** Two models, two hosts, one
-direction: the deficit grows with model size. **Any scope decision that concedes single-stream
-decode as "already at parity" is reading the small-model number.** `[U]` — the two runs differ
-in model, host, date and harness, so this is a *hypothesis with two supporting points*, not an
-established scaling law. §12 owes the controlled measurement.
+**1.5B on a 4060 is 0.92× single-stream. 7B on a 4090 is 0.587×.** `[U]` — two runs differing
+in model, host, date *and* harness, with the bottleneck plausibly shifting between them (a 4060
+Laptop is bandwidth-starved where a 4090 is not). **This is not a scaling law, and no rule in
+this document rests on it.** It is recorded because it is the only cross-model data that exists;
+§12.2 owes the controlled measurement.
+
+**The policy it was first written to justify — that single-stream decode is not conceded —
+rests instead on §2.1 alone: 0.587× on the reference cell.** That measurement is sufficient,
+and it is not confounded.
 
 ### §2.4 The one root cause ever actually isolated
 
@@ -162,7 +184,7 @@ from that epic. I-15 … I-18 are new and each is derived from a defect found in
 | **I-1** | Expected cell set enumerated from committed `perf-matrix.yaml`; the verdict job asserts every cell present | delete one cell's receipt |
 | **I-2** | `provenance.compute_class` is the dispatch path **taken**, read from the running process — never the hardware present. `gpu_layers_resolved` is read from the loader, never inferred from the request | report `cuda` on a CPU-only build |
 | **I-3** | No `ratio` is representable without a `baseline` object that itself passes every receipt rule | emit a ratio with a bare scalar baseline |
-| **I-4** | **Both `agg_ratio` and `dec_ratio` are gated on every band.** A receipt carrying one without the other is schema-fatal | emit a decode-only receipt at c=16 |
+| **I-4** | **Both `agg_ratio` and `dec_ratio` are REPORTED on every band; a receipt carrying one alone is schema-fatal.** Which is *gated* is asymmetric and set by §7 — never both at `≥1.0` on every band, because under batching the two trade against each other (§2.2) | emit a decode-only receipt at c=16 |
 | **I-5** | `timeouts > 0` on any band is fatal to that host's ratio | inject one timeout |
 | **I-6** | No wall-clock ratio is a **merge**-phase check | promote a ratio arm to the required set |
 | **I-7** | Raw samples retained on every cell; summary-only receipts rejected | strip the samples array |
@@ -198,17 +220,47 @@ under I-9.
 
 ## §7 The gate
 
-**Merge phase** — integrity only. No wall-clock ratio (I-6), because a timing check on a shared
-runner produces red PRs that are indistinguishable from real regressions, and the team routes
-around them.
+**Merge phase** — integrity, plus one *deterministic* speed check. No comparator ratio and no
+HTTP timing (I-6): a wall-clock ratio on a shared runner produces red PRs indistinguishable
+from real regressions, and the team routes around them.
 
-- receipt schema valid; every invariant in §6 that is checkable statically
-- **no timing assertion of any kind**
+- receipt schema valid; every §6 invariant checkable statically
+- **kernel microbenchmark gate (§7.1)** — deterministic, in-process, no socket
+- **no HTTP timing assertion of any kind**
 
-**Release phase** — the parity claim.
+**Release phase** — the parity claim, asymmetric per §2.2:
 
-- P-3: both ratios, every band, against the same-run comparator
-- every cell in `perf-matrix.yaml` present or explicitly `UNMEASURED` with owner and expiry
+| band | gated | against |
+|---|---|---|
+| c=1 | `dec_ratio ≥ 1.0` | the comparator, same run |
+| c ∈ {4,8,16} | `agg_ratio ≥ 1.0` | the comparator, same run |
+| c ∈ {4,8,16} | `dec_ratio` non-regression | **apr's own previous release**, not the comparator |
+
+Plus: every cell in `perf-matrix.yaml` present, or `UNMEASURED` with owner and expiry.
+
+### §7.1 The kernel microbenchmark gate — and why it is the cheap one
+
+§2.4 already names the mechanism behind single-stream decode: **M=1 GEMV memory coalescing**,
+192× on a prior codebase. If the bottleneck is a kernel, gating pull requests on a three-minute
+HTTP client-server harness over a socket is the wrong instrument at the wrong phase — it is
+slow, it is noisy, and its noise floor is unmeasured (§12.1).
+
+**Every PR is gated on an in-process, deterministic kernel benchmark** — M=1 GEMV at the
+reference model's shapes, plus the dequant-matmul path — asserted against a committed
+ratchet-down baseline, with no network, no server and no comparator. The E2E harness is a
+**release** instrument only.
+
+This is the one mechanism that makes this specification cheaper to run than its predecessor,
+whose measurement instrument cost more than its measurements. `[U]` — the microbenchmark's own
+variance is unmeasured, and it inherits §12.1's obligation before it may ratchet.
+
+### §7.2 No-regression on every functional cell, not just the gated one
+
+§8 gates *parity* on one cell. It does **not** exempt the others from regression: a change that
+doubles CUDA throughput and breaks CPU, wgpu or aarch64 must not merge green. Every cell that
+*functions* carries a correctness-and-non-regression check even while its parity status is
+REPORTING. Gating parity narrowly and regression broadly are different decisions, and conflating
+them is how a project optimises one GPU and discovers portability failures at release.
 
 **Three-valued cell status, and `Skip` is not a pass:**
 
@@ -255,11 +307,27 @@ because concurrent work on both confounds every run.
 ## §10 What this document does not do
 
 - **It does not set a latency threshold.** TTFT/ITL bounds are `UNMEASURED` (P-4).
-- **It does not define an attribution identity.** A per-phase wall-clock decomposition was
-  proposed and is **not adopted here**: under concurrency one request's queue wait is another's
-  kernel time on the same device, and a receipt covers 540 requests across 4 bands, so a
-  receipt-level identity over-counts. If it returns it must state per-request or per-run, and
-  the per-run form must be over device time, not wall clock.
+- **It does not define a *summing* attribution identity, and that refusal is now measured.**
+  A proposal required every receipt to satisfy
+  `wall_clock == t_prefill + t_decode_kernel + … + t_residual`, with a non-summing decomposition
+  schema-fatal. Run against the six committed W1 receipts, the sum of per-request samples over
+  each band's own span is **exactly the concurrency**:
+
+  | band | Σ samples_ms | span_ms | ratio |
+  |---|---|---|---|
+  | c=1  | 60,422.3  | 60,422.3 | **1.000** |
+  | c=4  | 245,806.9 | 61,451.9 | **4.000** |
+  | c=8  | 486,072.2 | 60,759.7 | **8.000** |
+  | c=16 | 994,186.0 | 64,017.9 | **15.530** |
+
+  Whole-receipt ratio **7.24** on lambda (r1/r2/r3: 7.24 / 7.22 / 7.23) and **3.36–3.54** on
+  gx10. Concurrent requests overlap, so a receipt-level sum over-counts by ×c *by construction*.
+
+  **What is adopted instead:** per-phase **averages** (Σ ÷ n, which is what the ×c cancels to)
+  and **device utilization**, neither of which requires a closed identity. Attribution is not
+  refused — *summing* is. A future amendment may add averaged phase timings, bounded by the
+  comparator's own vocabulary: llama.cpp's `result_timings` exposes `prompt_*` and `predict_*`
+  and nothing else, so any **paired** decomposition is a two-term one, not an eight-term one.
 - **It does not declare an iteration budget.** A declared budget with a retrospective five-whys
   is not a control; nothing in it can decline work.
 - **It does not gate a non-CUDA backend** (§8).
@@ -293,6 +361,25 @@ still readable as current is the condition this document exists to end.
 | trueno | `CUDA-parity-spec.md` | 1497 |
 
 ---
+
+## §11.1 How this document was reviewed, and what review changed
+
+Reviewed before leaving DRAFT by an agent quorum and by `agy /teamwork` (cross-vendor).
+**Four of its rules were wrong and were changed by review, not by the author:**
+
+| # | what review found | what changed |
+|---|---|---|
+| 1 | **I-4 as first written outlawed its own fix.** Gating `dec_ratio ≥ 1.0` on every band demands apr dominate two metrics that trade against each other; the continuous-batching PR that fixes §9 #1 would necessarily lower per-user decode and be rejected | §2.2 and §7 made **asymmetric** — decode vs comparator at c=1, aggregate vs comparator at c>1, decode as non-regression against apr's own prior release |
+| 2 | **The model-size scaling claim was doing policy work on two confounded points** | Demoted to `[U]`, load-bearing on nothing; the refusal to concede single-stream now rests on §2.1's 0.587× alone |
+| 3 | **Single-cell gating invites silent rot on the other backends** — a PR doubling CUDA and breaking Metal merges green | §7.2 added: parity gated narrowly, **non-regression gated broadly** |
+| 4 | **Refusing attribution outright was over-correction.** The over-count applies to *summing* overlapping spans, not to averaging or utilization | §10 rewritten: summing refused *with the measured ×c proof*; averages and utilization adopted |
+
+Review also supplied the argument for **§7.1**, the kernel microbenchmark gate — the one
+mechanism that makes this document cheaper to run than its predecessor. Its verdict on the
+first draft was **do not leave DRAFT**; §7.1, §7.2 and the I-4 correction are the response.
+
+The quorum's 37 verified objections against the rejected v3.0 plan supplied §10's measurement
+and the comparator-vocabulary bound.
 
 ## §12 Unmeasured, owed, and named
 
