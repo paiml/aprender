@@ -79,7 +79,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         hand_rolled_parsers_baseline.txt)        printf 'set\n' ;;
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;
         lockfile_registry_siblings_baseline.txt) printf 'set\n' ;;
-        perf_claim_citation_baseline.txt)        printf 'set\n' ;;
+        perf_claim_citation_baseline.txt)        printf 'set-aperture\tscripts/check_perf_claims_cite_receipts.sh\n' ;;
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
         test_fixture_path_baseline.txt)          printf 'count\n' ;;

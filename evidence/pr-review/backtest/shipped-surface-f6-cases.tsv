@@ -1,0 +1,18 @@
+expect	path	why
+match	book/src/examples/showcase-benchmark.md	THE SCAR: where `851.8 tok/s = 2.93x Ollama` was actually published (da069a25f)
+match	book/src/examples/apr-cli-demo.md	one of 153 published book pages under examples/
+match	book/src/tools/apr-cli.md	the page PRREV-008's row-16 fixture uses; already in scope
+match	book/src/introduction.md	an ordinary book page
+match	crates/apr-cli/src/commands/bench.rs	shipped Rust source
+match	src/bin/apr.rs	root binary source
+nomatch	crates/apr-cli/tests/cli_smoke.rs	a Rust integration test, not a user-facing surface
+nomatch	crates/aprender-core/benches/matmul.rs	a Rust benchmark
+nomatch	examples/qwen_inference.rs	a Rust example binary
+nomatch	crates/apr-cli/src/commands/serve_tests.rs	a _tests.rs unit-test file
+nomatch	tests/fixtures/pr-review/build-fixtures.sh	a fixture generator
+nomatch	docs/specifications/APR-PERF-GATE-001-v2.2.md	docs prose - MEASURED OUT at 40% precision, deliberate
+nomatch	scripts/check_no_claim_literals.sh	the claim guard's own case table - blocking it has no honest remedy
+nomatch	README.md	repo root prose, not the book
+match	book/src/example/showcase-benchmark.md	SINGLE-VARIABLE CONTROL: same path, directory renamed examples -> example. Passes.
+match	book/src/guides/showcase-benchmark.md	SINGLE-VARIABLE CONTROL: same path, directory renamed examples -> guides. Passes.
+nomatch	book/examples/x.md	the exclusion is on the NAME anywhere in the path, not on book/src/ depth

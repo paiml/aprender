@@ -63,7 +63,7 @@ forbidden_in() {
   local hit=""
   local f
   for f in ${FORBIDDEN}; do
-    if printf '%s\n' "${clo}" | grep -qx "${f}"; then
+    if grep -qx "${f}" <<< "${clo}" ; then
       hit="${hit} ${f}"
     fi
   done

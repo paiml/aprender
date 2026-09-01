@@ -1,0 +1,13 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    { "tool": { "driver": { "name": "pmat" } },
+      "invocations": [
+        { "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            { "level": "error", "message": { "text": "pmat MCP unreachable: ConnectionRefused" } }
+          ] }
+      ],
+      "results": [] }
+  ]
+}

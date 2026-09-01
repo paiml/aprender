@@ -70,7 +70,7 @@ for f in $PTOP_IMPL; do
 done
 
 # Run interface tests for ptop changes
-if echo "$STAGED" | grep -q 'crates/presentar-terminal/src/ptop/'; then
+if grep -q 'crates/presentar-terminal/src/ptop/' <<< "$STAGED" ; then
     echo "Running interface tests for ptop changes..."
     if ! cargo test -p presentar-terminal --features ptop --test cpu_exploded_async --quiet 2>/dev/null; then
         echo ""

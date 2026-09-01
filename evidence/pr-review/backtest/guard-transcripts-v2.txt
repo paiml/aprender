@@ -1,0 +1,50 @@
+# PRREV-011 guard transcripts — the probes this backtest's claims rest on
+
+## E-2771-A / E-2771-B — the S3.B compulsion, over PR #2771's REAL SHAs
+base_sha a596b063f2605390ad674f4acaeaea16d05cb225 (= git merge-base origin/main HEAD)
+head_sha 05d2c0a63478055a14aec133d76471c7bd3e3b3b
+PR_REVIEW_REPO=/home/noah/src/aprender  PR_REVIEW_PUBKEY=tests/fixtures/pr-review/keys/pr-review-test.pub
+
+--- E-2771-A: cuda.status=consulted, queries: []
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+REJECT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/probe/e2771-A  [B1]
+    cuda.status is consulted with queries: []; a consultation that asked nothing is DEGRADED, not clean, exactly as mutation.attempted=0 is (S3.B, S8 vacuous_consultations)
+exit=1
+
+--- E-2771-B: identical receipt + the CUDA Programming Guide S2.5.6.1 excerpt fetched this run
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+ACCEPT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/probe/e2771-B
+exit=0
+
+## F6 — B4 over da069a25f, the commit that actually published 2.93x Ollama
+$ b4scan  $(git rev-parse da069a25f^)..da069a25f   [guard predicates, as merged]
+B4 fires: 0
+
+$ b4scan  same range   [one line changed: book/* ahead of the */examples/* exclusion]
+B4-FIRES	book/src/examples/showcase-benchmark.md	**CORRECTNESS-012 fixed! Both GGUF and APR formats exceed 2X Ollama on GPU.**
+B4-FIRES	book/src/examples/showcase-benchmark.md	- **GGUF GPU**: 851.8 tok/s = **2.93x Ollama** (291 tok/s baseline)
+
+## The 17 sibling-branch duplication hits on #2742
+band.rs	origin/feat/n1-band-cli	crates/aprender-test-lib/src/llm/band.rs
+bootstrap.rs	origin/feat/n1-band-cli	crates/aprender-test-lib/src/perf_gate/bootstrap.rs
+protocol.rs	origin/feat/n1-band-cli	crates/aprender-test-lib/src/perf_gate/protocol.rs
+samples.rs	origin/feat/n1-band-cli	crates/aprender-test-lib/src/perf_gate/samples.rs
+window.rs	origin/feat/n1-band-cli	crates/aprender-test-lib/src/perf_gate/window.rs
+perf-024-measurement-protocol.md	origin/feat/n1-band-cli	docs/perf-024-measurement-protocol.md
+test_llm_band.rs	origin/feat/v7-receipt	crates/apr-cli/src/commands/test_llm_band.rs
+band.rs	origin/feat/v7-receipt	crates/aprender-test-lib/src/llm/band.rs
+bootstrap.rs	origin/feat/v7-receipt	crates/aprender-test-lib/src/perf_gate/bootstrap.rs
+protocol.rs	origin/feat/v7-receipt	crates/aprender-test-lib/src/perf_gate/protocol.rs
+samples.rs	origin/feat/v7-receipt	crates/aprender-test-lib/src/perf_gate/samples.rs
+window.rs	origin/feat/v7-receipt	crates/aprender-test-lib/src/perf_gate/window.rs
+perf-024-measurement-protocol.md	origin/feat/v7-receipt	docs/perf-024-measurement-protocol.md
+check_comparator_one_client.sh	origin/feat/v7-receipt	scripts/check_comparator_one_client.sh
+check_perf_receipt_fields_have_producers.sh	origin/feat/v7-receipt	scripts/check_perf_receipt_fields_have_producers.sh
+perf_receipt.py	origin/feat/v7-receipt	scripts/lib/perf_receipt.py
+perf-receipt-fields.yaml	origin/feat/v7-receipt	scripts/perf-receipt-fields.yaml

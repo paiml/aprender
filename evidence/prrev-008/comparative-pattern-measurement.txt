@@ -1,0 +1,73 @@
+PRREV-008 F5 — the comparative pattern, measured against the corpus rather than against
+itself.
+
+WHAT WAS WRONG. B4's COMPARATIVE_RE was a SECOND implementation of a rule this repository
+already had: scripts/check_no_claim_literals.sh's RATIO_RE, which #2763/PERF-049 had
+already hardened twice. The second copy allowed a ZERO-word gap between the ratio and the
+competitor (a closed connector list: faster than / vs / over / of) where #2763 had MEASURED
+a five-word bound. So `36.9x over FasterTransformer` — the spelling APR-PERF-GATE-001 §0.1
+uses for its [X] figures, and the literal #2763 hardened its own guard to catch — did not
+match.
+
+The 13-row case table passed 13/13 over that hole, because its subjects were written from
+COMPARATIVE_RE's own vocabulary. A guard universe built from the wrong side.
+
+THE FIX is not a wider pattern of its own: it is #2763's RATIO_LEFT_RE / MULT_RE /
+RATIO_GAP_RE composition with the two competitor lists unioned, plus one deliberate
+widening (`[[:space:]]*` before the multiplication sign, so `2.93 × Ollama` matches — a
+MUST-MATCH row of the backtest corpus that #2763's own pattern misses).
+
+MEASUREMENT 1 — THE CASE TABLE. 40 rows: the backtest's 16 corpus rows, #2763's 12
+boundary rows, and the original 12 that still hold.
+
+  rows                     40
+  guard at 1e09ca749       7 must-match MISSES, 0 must-not-match SPURIOUS
+  guard with PRREV-008     0 must-match MISSES, 0 must-not-match SPURIOUS
+
+  the seven the old pattern missed:
+  36.9x over FasterTransformer
+  3.2x faster than HuggingFace transformers
+  2x speedup versus Ollama
+  36.9x FasterTransformer
+  23x over static batching
+  the 8.2x performance gap between realizar and llama.cpp
+  2.93×Ollama
+
+  Zero spurious on either side: this is a strict closure of seven holes, not a trade of
+  precision for recall.
+
+MEASUREMENT 2 — THE TREE. Both patterns swept over the shipped surface exactly as
+check_no_claim_literals.sh defines it (crates/*/src/**.rs, src/**.rs, book/**.md,
+docs/**.md, minus tests/benches/examples/fixtures and docs/specifications/).
+
+READ FROM A PRISTINE WORKTREE OF origin/main, NOT FROM A WORKING CHECKOUT. The first run
+of this measurement was made in /home/noah/src/aprender, which was 66 commits behind on
+another branch with ~30 dirty files, and it reported a different universe (6810),
+different hit counts (64 -> 77) and a thirteenth "addition" in a file that does not exist
+on main. Both sets of numbers looked equally reasonable. The ones below are the ones a
+reader can reproduce.
+
+$ git worktree add --detach <tmp> origin/main && cd <tmp> && measure
+
+  universe: 6909 shipped source file(s), at 745fa8588
+  hits: 61 with the pattern at 1e09ca749, 73 with #2763-s RATIO_RE unioned
+  lost (old hit, new miss): 0
+  added: 12
+    crates/aprender-serve/src/gguf/cuda/generate_batched_streaming.rs:288:        // Five-Whys: c=4 TTFT = 659ms (29.9x gap vs llama.cpp 22ms).
+    crates/aprender-train/src/transformer/init.rs:7://! that caused a 16x convergence gap vs PyTorch (entrenar#309).
+    docs/qa/benchmark-matrix-2026-01-09.md:13:- **CPU all models**: 8x slower than llama.cpp (unchanged - needs separate fix)
+    docs/qa/benchmark-matrix-2026-01-09.md:71:**Problem:** APR 35-51x slower than llama.cpp on GPU for small models
+    docs/qa/benchmark-matrix-2026-01-09.md:85:**Problem:** APR 8x slower than llama.cpp on CPU
+    docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:14:realizar is 8.2x slower than llama.cpp on CPU for Qwen2.5-Coder-1.5B Q4_K_M model.
+    docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:223:   - Still ~8x slower than llama.cpp target
+    docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:269:After exhaustive empirical testing, we have identified that the 8.2x performance gap between
+    docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:28:**TRUE ROOT CAUSE:** Matmul kernel architecture is fundamentally 4x slower than llama.cpp.
+    docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:32:### Why 1: Why is realizar 8x slower than llama.cpp?
+    docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:403:**Conclusion:** The 5.4x gap vs llama.cpp is due to kernel efficiency, not allocatio
+    docs/qa/test-matrix-results-2026-01-08.md:138:2. **APR is 2-3x slower than Ollama** - Performance gap exists
+
+  Every one of the twelve additions is a real comparative claim about a named third-party
+  system, and NOTHING the old pattern caught is lost. The widened competitor list (burn,
+  candle, ggml, mlx, orca, tgi, torch, llama, fastertransformer, sglang, lmdeploy,
+  turbomind, huggingface, "static batching") produced no false positive on 6909 files,
+  which is why it is recorded as a measurement rather than defended as a judgement.

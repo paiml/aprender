@@ -1,0 +1,23 @@
+=== check_pr_review_counts.sh --self-test, BEFORE (tree at 584fb0db9) ===
+--- check_pr_review_counts.sh --self-test ---
+ok    baseline                   rc=0  the tree as committed
+check_pr_review_counts.sh: ENV - HARNESS-BROKEN: row stale-mutation-score's edit changed nothing (its anchor has drifted)
+
+=== check_pr_review_counts.sh --self-test, AFTER ===
+--- check_pr_review_counts.sh --self-test ---
+ok    baseline                   rc=0  the tree as committed
+ok    stale-mutation-score       rc=1  the mutation score written back by one
+ok    stale-fixture-rows         rc=1  the fixture-row count written back by one
+ok    stale-bats-count           rc=1  the bats test count written back by one
+ok    claim-deleted              rc=1  the sentence stating the count is deleted
+ok    tree-grew-a-test           rc=1  a bats test is added and no file says so
+ok    tree-grew-a-fixture-row    rc=1  a row-* fixture is added and no file says so
+ok    tree-grew-a-mutant         rc=1  a reject site is added and no file says so
+ok    stale-quorum-mutation      rc=1  the S13 mutation score written back by 18
+ok    stale-quorum-rows          rc=1  the S13 row assertion written back by 4
+ok    tree-grew-a-quorum-row     rc=1  a q-* fixture is added and no file says so
+ok    tree-grew-a-quorum-test    rc=1  an S13 bats test is added and no file says so
+ok    tree-grew-a-refusal        rc=1  a refuse Q<n> site is added and no file says so
+ok    stale-falsifier-count      rc=1  the contract's falsification-test total written back by one
+ok    tree-grew-a-falsifier      rc=1  a falsification test is added and the contract does not count it
+--- 15/15 rows, both polarities ---

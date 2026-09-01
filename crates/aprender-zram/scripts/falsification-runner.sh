@@ -115,7 +115,7 @@ test_F004() {
     log "F004: Device ID -1 auto-assigns"
     if "$TRUENO_UBLK" create --size 1G --foreground 2>/dev/null &
        sleep 2
-       ls /dev/ublkb* 2>/dev/null | grep -q ublkb; then
+       grep -q ublkb <<< "$(ls /dev/ublkb* 2>/dev/null)" ; then
         pass "F004"
         pkill -f "trueno-ublk.*foreground" 2>/dev/null || true
     else
@@ -126,7 +126,7 @@ test_F004() {
 test_F005() {
     log "F005: Device ID collision rejected"
     if pid1=$(start_device 1G 5); then
-        if "$TRUENO_UBLK" create --size 1G --dev-id 5 --foreground 2>&1 | grep -qi "exists\|error"; then
+        if grep -qi "exists\|error" <<< "$("$TRUENO_UBLK" create --size 1G --dev-id 5 --foreground 2>&1)" ; then
             pass "F005"
         else
             fail "F005" "Collision not rejected"
@@ -177,7 +177,7 @@ test_F007() {
 test_F008() {
     log "F008: Module unload with active device"
     if pid=$(start_device 1G 8); then
-        if rmmod ublk_drv 2>&1 | grep -qi "in use"; then
+        if grep -qi "in use" <<< "$(rmmod ublk_drv 2>&1)" ; then
             pass "F008"
         else
             # Module unloaded - reload it

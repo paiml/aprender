@@ -1,0 +1,224 @@
+== baseline: the unmutated guard in a mutant tree ==
+baseline GREEN: 149 tests, 0 failures
+
+== 215 mutants, 18 at a time ==
+arm-e-always-required                    text  L533  KILLED    row 27 a 2.0.0 receipt written before the arm existed        GREEN     [discrimination]
+arm-e-dropped-from-the-consultation-list text  L546  KILLED    row 29 agy UNAVAILABLE, verdict PASS                            RED  B1
+arm-e-never-required                     text  L533  KILLED    row 28 a 2.1.0 receipt that owes the arm and omits it           RED  B1
+arm-e-same-family-predicate-verdict-not-propagated text  L305  KILLED    S3.E the not-a-second-vendor table matches, both polarities
+arm-e-same-family-regex-matches-everything text  L154  KILLED    S6.1 all four positive controls fire before anything is validated
+arm-e-same-family-regex-never-matches    text  L154  KILLED    S3.E the not-a-second-vendor table matches, both polarities
+batch-status-not-accumulated             text  L1335 KILLED    row 1  cuda not-triggered on a diff touching src/cuda/            RED  B1
+book-examples-back-out-of-scope          text  L254  KILLED    the shipped surface B4 scans matches its case table, both polarities
+book-removed-from-b4-scope               text  L254  KILLED    row 16 the diff publishes a ratio, nothing records it           RED  B4
+comparative-competitor-list-matches-everything text  L122  KILLED    S3.C.1 comparative-claim detection matches its case table, both polarities
+comparative-competitor-list-never-matches text  L122  KILLED    row 16 the diff publishes a ratio, nothing records it           RED  B4
+comparative-gap-bound-unbounded          text  L121  KILLED    S3.C.1 comparative-claim detection matches its case table, both polarities
+comparative-left-boundary-dropped        text  L119  KILLED    S3.C.1 comparative-claim detection matches its case table, both polarities
+comparative-mult-sign-ascii-only         text  L120  KILLED    row 16 the diff publishes a ratio, nothing records it           RED  B4
+comparative-predicate-verdict-not-propagated text  L299  KILLED    S3.C.1 comparative-claim detection matches its case table, both polarities
+comparator-misclassified-B1              text  L1125 KILLED    row 4  comparative claim with no comparator command or hash       RED  B4
+control-1-unarmed                        text  L1290 KILLED    S6.1 the schema-depth control is measured against the VENDORED schema
+control-2-unarmed                        text  L1314 KILLED    S6.1 a control rejected under the wrong CLASS is a MISFIRE, not a pass
+control-3-unarmed                        text  L1315 KILLED    S6.1 a control rejected under the right class but the wrong BRANCH is a MISFIRE
+control-4-unarmed                        text  L1316 KILLED    S6.1 EVERY control stops the run when it misfires, not just the first
+control-acceptance-ignored               text  L1245 KILLED    S6.1 a positive control that is ACCEPTED fails the whole run
+control-class-unasserted                 text  L1254 KILLED    S6.1 a control rejected under the wrong CLASS is a MISFIRE, not a pass
+control-fixture-absence-ignored          text  L1298 KILLED    S6.1 the guard refuses to run at all when a positive-control fixture is gone
+control-reason-unasserted                text  L1265 KILLED    S6.1 a control rejected under the right class but the wrong BRANCH is a MISFIRE
+crux-surface-predicate-verdict-not-propagated text  L301  KILLED    S3.C surface trigger matches its case table, both polarities
+crux-surface-regex-matches-everything    text  L177  KILLED    S6.1 all four positive controls fire before anything is validated
+crux-surface-regex-never-matches         text  L177  KILLED    S3.C surface trigger matches its case table, both polarities
+cuda-message-regex-matches-everything    text  L79   KILLED    S6.1 all four positive controls fire before anything is validated
+cuda-message-regex-never-matches         text  L79   KILLED    S3.B CUDA message trigger matches its case table, both polarities
+cuda-path-regex-matches-everything       text  L69   KILLED    S6.1 all four positive controls fire before anything is validated
+cuda-path-regex-never-matches            text  L69   KILLED    row 1  cuda not-triggered on a diff touching src/cuda/            RED  B1
+docs-prose-back-in-b4-scope              text  L270  KILLED    the shipped surface B4 scans matches its case table, both polarities
+final-status-always-zero                 text  L1338 KILLED    row 1  cuda not-triggered on a diff touching src/cuda/            RED  B1
+message-predicate-verdict-not-propagated text  L298  KILLED    S3.B CUDA message trigger matches its case table, both polarities
+mutation-trigger-predicate-verdict-not-propagated text  L302  KILLED    S3.D mutation trigger matches its case table, both polarities
+mutation-trigger-regex-matches-everything text  L183  KILLED    S6.1 all four positive controls fire before anything is validated
+mutation-trigger-regex-never-matches     text  L183  KILLED    row 20 mutation not-triggered on a diff changing Rust source   RED  B1
+path-predicate-verdict-not-propagated    text  L297  KILLED    S3.B CUDA path trigger matches its case table, both polarities
+reject-01-drop                           drop  L420  KILLED    a receipt directory that does not exist is RED, not skipped
+reject-01-flip                           flip  L420  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-02-drop                           drop  L421  KILLED    a missing receipt is RED, not skipped
+reject-02-flip                           flip  L421  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-03-drop                           drop  L422  KILLED    probe findings.sarif absent                                     RED  B1
+reject-03-flip                           flip  L422  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-04-drop                           drop  L436  KILLED    probe receipt holding two JSON records is not JSON Lines        RED  B1
+reject-04-flip                           flip  L436  KILLED    probe receipt holding two JSON records is not JSON Lines        RED  B1
+reject-05-drop                           drop  L438  KILLED    probe receipt that is not parseable JSON                        RED  B1
+reject-05-flip                           flip  L438  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-06-drop                           drop  L439  KILLED    probe findings.sarif that is not parseable JSON                 RED  B1
+reject-06-flip                           flip  L439  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-07-drop                           drop  L444  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-07-flip                           flip  L444  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-08-drop                           drop  L447  KILLED    probe findings.sarif that parses but fails the SARIF schema     RED  B1
+reject-08-flip                           flip  L447  KILLED    probe findings.sarif that parses but fails the SARIF schema     RED  B1
+reject-09-drop                           drop  L453  KILLED    probe the public key is absent                                  RED  B1
+reject-09-flip                           flip  L453  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-10-drop                           drop  L454  KILLED    probe the receipt carries no signature at all                   RED  B1
+reject-10-flip                           flip  L454  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-11-drop                           drop  L456  KILLED    row 13 valid receipt, invalid signature                           RED  B1
+reject-11-flip                           flip  L456  KILLED    row 13 valid receipt, invalid signature                           RED  B1
+reject-12-drop                           drop  L462  KILLED    probe predicateType is some other attestation                   RED  B1
+reject-12-flip                           flip  L462  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-13-drop                           drop  L465  KILLED    probe attestation_level claims more than L1-self                RED  B1
+reject-13-flip                           flip  L465  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-14-drop                           drop  L472  KILLED    probe skill_version absent                                      RED  B1
+reject-14-flip                           flip  L472  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-15-drop                           drop  L481  KILLED    probe head_sha is absent                                        RED  B1
+reject-15-flip                           flip  L481  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-16-drop                           drop  L482  KILLED    probe base_sha is absent                                        RED  B1
+reject-16-flip                           flip  L482  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-17-drop                           drop  L483  KILLED    probe the subject digest is not the head the predicate reviews  RED  B1
+reject-17-flip                           flip  L483  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-18-drop                           drop  L485  KILLED    probe verdict outside the four defined values                   RED  B1
+reject-18-flip                           flip  L485  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-19-drop                           drop  L491  KILLED    probe findings_ref.path points somewhere else                   RED  B1
+reject-19-flip                           flip  L491  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-20-drop                           drop  L494  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-20-flip                           flip  L494  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-21-drop                           drop  L499  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-21-flip                           flip  L499  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-22-drop                           drop  L502  KILLED    probe author_actor.id is absent                                 RED  B1
+reject-22-flip                           flip  L502  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-23-drop                           drop  L503  KILLED    probe reviewer_actor.id is absent                               RED  B1
+reject-23-flip                           flip  L503  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-24-drop                           drop  L505  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-24-flip                           flip  L505  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-25-drop                           drop  L511  KILLED    probe head_sha does not resolve in the repository               RED  B1
+reject-25-flip                           flip  L511  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-26-drop                           drop  L514  KILLED    probe head_sha shares no history with origin/main               RED  B1
+reject-26-flip                           flip  L514  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-27-drop                           drop  L516  KILLED    row 10 base_sha is not git merge-base origin/main head_sha        RED  B1
+reject-27-flip                           flip  L516  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-28-drop                           drop  L538  KILLED    row 28 a 2.1.0 receipt that owes the arm and omits it           RED  B1
+reject-28-flip                           flip  L538  KILLED    row 28 a 2.1.0 receipt that owes the arm and omits it           RED  B1
+reject-29-drop                           drop  L553  KILLED    probe a consultation with no status at all                      RED  B1
+reject-29-flip                           flip  L553  KILLED    probe a consultation with no status at all                      RED  B1
+reject-30-drop                           drop  L554  KILLED    probe a consultation status outside the three-state vocabulary  RED  B1
+reject-30-flip                           flip  L554  KILLED    probe a consultation status outside the three-state vocabulary  RED  B1
+reject-31-drop                           drop  L566  KILLED    row 5  pmat unreachable with verdict PASS                         RED  B1
+reject-31-flip                           flip  L566  KILLED    row 5  pmat unreachable with verdict PASS                         RED  B1
+reject-32-drop                           drop  L601  KILLED    row 19 pmat not-triggered on a diff changing Rust source       RED  B1
+reject-32-flip                           flip  L601  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-33-drop                           drop  L614  KILLED    row 1  cuda not-triggered on a diff touching src/cuda/            RED  B1
+reject-33-flip                           flip  L614  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-34-drop                           drop  L637  KILLED    row 21 crux not-triggered on a diff publishing a ratio         RED  B1
+reject-34-flip                           flip  L637  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-35-drop                           drop  L652  KILLED    row 20 mutation not-triggered on a diff changing Rust source   RED  B1
+reject-35-flip                           flip  L652  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-36-drop                           drop  L675  KILLED    probe pmat consulted with duplication_hits absent              RED  B1
+reject-36-flip                           flip  L675  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-37-drop                           drop  L687  KILLED    row 18 cuda consulted with queries: []                         RED  B1
+reject-37-flip                           flip  L687  KILLED    row 2  mutation.attempted 0 with status consulted                 RED  B1
+reject-38-drop                           drop  L703  KILLED    probe a cuda query whose result is outside the vocabulary      RED  B1
+reject-38-flip                           flip  L703  KILLED    row 2  mutation.attempted 0 with status consulted                 RED  B1
+reject-39-drop                           drop  L714  KILLED    probe crux consulted with no surfaces key at all               RED  B1
+reject-39-flip                           flip  L714  KILLED    row 4  comparative claim with no comparator command or hash       RED  B4
+reject-40-drop                           drop  L718  KILLED    probe crux consulted over nothing at all                       RED  B1
+reject-40-flip                           flip  L718  KILLED    row 4  comparative claim with no comparator command or hash       RED  B4
+reject-41-drop                           drop  L722  KILLED    probe crux_coverage outside its vocabulary                     RED  B1
+reject-41-flip                           flip  L722  KILLED    probe crux_coverage outside its vocabulary                     RED  B1
+reject-42-drop                           drop  L725  KILLED    probe gap_effect outside its vocabulary                        RED  B1
+reject-42-flip                           flip  L725  KILLED    probe gap_effect outside its vocabulary                        RED  B1
+reject-43-drop                           drop  L737  KILLED    probe mutation.attempted is not a count                         RED  B1
+reject-43-flip                           flip  L737  KILLED    probe mutation.attempted is not a count                         RED  B1
+reject-44-drop                           drop  L740  KILLED    row 2  mutation.attempted 0 with status consulted                 RED  B1
+reject-44-flip                           flip  L740  KILLED    row 2  mutation.attempted 0 with status consulted                 RED  B1
+reject-45-drop                           drop  L741  KILLED    probe mutation.killed is not a count                            RED  B1
+reject-45-flip                           flip  L741  KILLED    probe mutation.killed is not a count                            RED  B1
+reject-46-drop                           drop  L743  KILLED    probe mutation killed exceeds attempted                        RED  B1
+reject-46-flip                           flip  L743  KILLED    row 9  index_commit not an ancestor of head_sha, verdict PASS     RED  B6
+reject-47-drop                           drop  L749  KILLED    probe mutation survivors do not match the arithmetic           RED  B1
+reject-47-flip                           flip  L749  KILLED    row 9  index_commit not an ancestor of head_sha, verdict PASS     RED  B6
+reject-48-drop                           drop  L778  KILLED    row 34 agy declared not-triggered                               RED  B1
+reject-48-flip                           flip  L778  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-49-drop                           drop  L789  KILLED    probe antigravity attempted that is not a count                 RED  B1
+reject-49-flip                           flip  L789  KILLED    probe antigravity attempted that is not a count                 RED  B1
+reject-50-drop                           drop  L792  KILLED    row 31 agy consulted having invoked nothing                     RED  B1
+reject-50-flip                           flip  L792  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-51-drop                           drop  L817  KILLED    probe antigravity with no recorded agy version                  RED  B1
+reject-51-flip                           flip  L817  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-52-drop                           drop  L829  KILLED    row 35 agy routed to the primary reviewer's own model family    RED  B1
+reject-52-flip                           flip  L829  KILLED    row 35 agy routed to the primary reviewer's own model family    RED  B1
+reject-53-drop                           drop  L842  KILLED    probe antigravity usage missing a token count                   RED  B1
+reject-53-flip                           flip  L842  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-54-drop                           drop  L860  KILLED    probe reverified_by_primary absent                              RED  B1
+reject-54-flip                           flip  L860  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-55-drop                           drop  L879  KILLED    probe divergence with no contradicted column                    RED  B1
+reject-55-flip                           flip  L879  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-56-drop                           drop  L890  KILLED    probe the divergence ledger does not account for the findings   RED  B1
+reject-56-flip                           flip  L890  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-57-drop                           drop  L904  KILLED    probe pmat consulted with no index_commit recorded              RED  B1
+reject-57-flip                           flip  L904  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-58-drop                           drop  L906  KILLED    probe pmat index_commit does not resolve in the repository      RED  B1
+reject-58-flip                           flip  L906  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-59-drop                           drop  L915  KILLED    probe index_is_ancestor is MISREPORTED as false                 RED  B1
+reject-59-flip                           flip  L915  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-60-drop                           drop  L917  KILLED    row 9  index_commit not an ancestor of head_sha, verdict PASS     RED  B6
+reject-60-flip                           flip  L917  KILLED    row 9  index_commit not an ancestor of head_sha, verdict PASS     RED  B6
+reject-61-drop                           drop  L968  KILLED    probe pmat consulted with NO duplication_coverage at all        RED  B1
+reject-61-flip                           flip  L968  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-62-drop                           drop  L978  KILLED    probe duplication_coverage missing one surface                  RED  B1
+reject-62-flip                           flip  L978  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-63-drop                           drop  L988  KILLED    probe duplication_coverage with a method outside the vocabulary RED  B1
+reject-63-flip                           flip  L988  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-64-drop                           drop  L993  KILLED    row 23 a duplication surface that could not be searched, PASS    RED  B1
+reject-64-flip                           flip  L993  KILLED    row 23 a duplication surface that could not be searched, PASS    RED  B1
+reject-65-drop                           drop  L998  KILLED    probe duplication_horizon absent                                RED  B1
+reject-65-flip                           flip  L998  KILLED    S6.1 all four positive controls fire before anything is validated
+reject-66-drop                           drop  L1016 KILLED    probe duplication_horizon naming only two of its three regions  RED  B1
+reject-66-flip                           flip  L1016 KILLED    S6.1 all four positive controls fire before anything is validated
+reject-67-drop                           drop  L1030 KILLED    probe horizon_branches_total that is not a number               RED  B1
+reject-67-flip                           flip  L1030 KILLED    S6.1 all four positive controls fire before anything is validated
+reject-68-drop                           drop  L1037 KILLED    probe sibling horizon claimed but zero branches scanned         RED  B1
+reject-68-flip                           flip  L1037 KILLED    probe sibling horizon claimed but zero branches scanned         RED  B1
+reject-69-drop                           drop  L1041 KILLED    probe a CAPPED horizon sweep still reading PASS                 RED  B1
+reject-69-flip                           flip  L1041 KILLED    probe a CAPPED horizon sweep still reading PASS                 RED  B1
+reject-70-drop                           drop  L1045 KILLED    probe symbols_searched absent                                   RED  B1
+reject-70-flip                           flip  L1045 KILLED    S6.1 all four positive controls fire before anything is validated
+reject-71-drop                           drop  L1053 KILLED    row 15 finding carrying no grounding mark at all                  RED  B1
+reject-71-flip                           flip  L1053 KILLED    row 15 finding carrying no grounding mark at all                  RED  B1
+reject-72-drop                           drop  L1054 KILLED    probe a grounding mark outside the three categories             RED  B1
+reject-72-flip                           flip  L1054 KILLED    probe a grounding mark outside the three categories             RED  B1
+reject-73-drop                           drop  L1055 KILLED    row 11 finding with an empty failure_scenario                     RED  B1
+reject-73-flip                           flip  L1055 KILLED    row 11 finding with an empty failure_scenario                     RED  B1
+reject-74-drop                           drop  L1056 KILLED    probe a cited finding with an empty source                      RED  B1
+reject-74-flip                           flip  L1056 KILLED    probe a cited finding with an empty source                      RED  B1
+reject-75-drop                           drop  L1057 KILLED    row 3  cited finding with an empty excerpt                        RED  B1
+reject-75-flip                           flip  L1057 KILLED    row 3  cited finding with an empty excerpt                        RED  B1
+reject-76-drop                           drop  L1058 KILLED    probe a cited finding with no excerpt_sha256                    RED  B1
+reject-76-flip                           flip  L1058 KILLED    probe a cited finding with no excerpt_sha256                    RED  B1
+reject-77-drop                           drop  L1059 KILLED    probe an asserted finding classed blocking                      RED  B1
+reject-77-flip                           flip  L1059 KILLED    probe an asserted finding classed blocking                      RED  B1
+reject-78-drop                           drop  L1087 KILLED    row 12 excerpt_sha256 is not sha256(excerpt)                      RED  B1
+reject-78-flip                           flip  L1087 KILLED    row 12 excerpt_sha256 is not sha256(excerpt)                      RED  B1
+reject-79-drop                           drop  L1113 KILLED    row 32 an agy finding claiming a BLOCKING class                 RED  B1
+reject-79-flip                           flip  L1113 KILLED    row 32 an agy finding claiming a BLOCKING class                 RED  B1
+reject-80-drop                           drop  L1125 KILLED    row 4  comparative claim with no comparator command or hash       RED  B4
+reject-80-flip                           flip  L1125 KILLED    row 4  comparative claim with no comparator command or hash       RED  B4
+reject-81-drop                           drop  L1150 KILLED    probe a competitor ratio stated in a finding but never recorded RED  B4
+reject-81-flip                           flip  L1150 KILLED    row 14 complete GPU review, all four consulted, findings        GREEN     [discrimination]
+reject-82-drop                           drop  L1185 KILLED    row 16 the diff publishes a ratio, nothing records it           RED  B4
+reject-82-flip                           flip  L1185 KILLED    row 16 the diff publishes a ratio, nothing records it           RED  B4
+repo-fallback-dropped                    text  L325  KILLED    no PR_REVIEW_REPO and no git repository is a REJECTION
+rs-line-test-not-applied                 text  L290  KILLED    row 22 the printed ratio fires, the quoted one two lines up does not  RED  B4
+rs-published-predicate-verdict-not-propagated text  L304  KILLED    the .rs line test matches its case table, both polarities
+rs-published-regex-matches-everything    text  L280  KILLED    row 22 the printed ratio fires, the quoted one two lines up does not  RED  B4
+rs-published-regex-never-matches         text  L280  KILLED    row 22 the printed ratio fires, the quoted one two lines up does not  RED  B4
+self-review-misclassified-B1             text  L505  KILLED    S6.1 all four positive controls fire before anything is validated
+shipped-surface-predicate-verdict-not-propagated text  L300  KILLED    the shipped surface B4 scans matches its case table, both polarities
+stale-index-misclassified-B1             text  L917  KILLED    row 9  index_commit not an ancestor of head_sha, verdict PASS     RED  B6
+target-predicate-verdict-not-propagated  text  L303  KILLED    the target suppressor matches its case table, both polarities
+target-suppressor-matches-everything     text  L160  KILLED    row 16 the diff publishes a ratio, nothing records it           RED  B4
+target-suppressor-never-matches          text  L160  KILLED    the target suppressor matches its case table, both polarities
+tools-absent-is-a-skip                   text  L316  KILLED    a tool the guard needs and cannot find is a REJECTION, not a skip
+zero-receipts-is-a-pass                  text  L1321 KILLED    a run over zero receipts is not a pass
+
+== guard_mutation_score ==
+attempted 215   killed 215   survived 0   invalid 0
+report: /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/mutation-run2.tsv
+guard_mutation_score = 100% (215/215)

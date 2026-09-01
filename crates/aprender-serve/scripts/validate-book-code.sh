@@ -55,7 +55,7 @@ for md_file in $MARKDOWN_FILES; do
         LINE_NUM=$((LINE_NUM + 1))
 
         # Start of rust code block
-        if echo "$line" | grep -q '^```rust'; then
+        if grep -q '^```rust' <<< "$line" ; then
             IN_CODE_BLOCK=true
             CODE_BLOCK=""
             TOTAL_CODE_BLOCKS=$((TOTAL_CODE_BLOCKS + 1))
@@ -64,7 +64,7 @@ for md_file in $MARKDOWN_FILES; do
         fi
 
         # End of code block
-        if echo "$line" | grep -q '^```$' && [ "$IN_CODE_BLOCK" = true ]; then
+        if grep -q '^```$' <<< "$line" && [ "$IN_CODE_BLOCK" = true ]; then
             IN_CODE_BLOCK=false
 
             # Skip empty code blocks
