@@ -1,0 +1,108 @@
+APR-PERF-GATE-001 v2.2 -- W1 cell on gx10 (GB10, aarch64), 2026-09-01.
+
+A TRANSCRIPT, not a harness. Under I-9 this cell is spent and may not be re-run
+to green, so what follows records exactly what was executed. It is deliberately
+not a .sh: an evidence file that looks re-runnable invites someone to re-run it,
+and the hardcoded binary path below is correct for THIS run and for nothing else
+(there is no canonical apr path -- .cargo/config.toml redirects the target dir
+and is gitignored, and a CPU-ONLY apr is what a bare `apr` resolves to on gx10).
+
+This is the second host cell; the first is lambda, PR #2831. The procedure is
+that PR's, unchanged except for the host join keys and the two deviations named
+at the bottom.
+
+--------------------------------------------------------------------- server --
+/home/noah/src/aprender-perf-gate/target/release/apr serve run \
+  /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+  --port 18090 --gpu-layers all
+
+verified before any measurement:
+  apr --version                    -> apr 0.64.0 (745fa8588)   [a SHA, not +no-git]
+  serve run --list-devices         -> "cuda    compiled in"
+  git merge-base --is-ancestor 745fa8588 origin/main -> rc 0  (origin/main = 385db8a02)
+  worktree HEAD                    -> 745fa8588783413669f4ac6170d4645e39c15be4
+  server log                       -> gpu-layers: requested=all resolved=28 total=28 (backend=cuda)
+  GET /health                      -> {"status":"ok","version":"0.64.0","compute_mode":"gpu","model_loaded":true}
+  nvidia-smi --query-compute-apps  -> pid 648124 attached, 175 MiB
+  nvidia-smi during the run        -> utilization.gpu 96 %, power.draw 74.75-76.99 W, temp 68->73 C
+  binary sha256                    -> c982f03e53ae734590a8f997ae5847474a66c117007cab175a7ee8b76a352623
+  model  sha256                    -> 509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c
+  corpus sha256                    -> c88c9fc1985bd79ddcd2b6737f692fb69057c9b3822cd12a2b7a4c5ef93bd292
+
+NOT used: /home/noah/.cargo/bin/apr -- which is what a bare `apr` resolves to on
+this host, is `apr 0.64.0 (a866988e)` (a DIFFERENT commit), sha256
+814b6524f390193dbf63d7d00a4297e93a7679bfbc5c312fa4a135b9c40f2211, and whose
+--list-devices prints "This build has NO accelerator compiled in". Both of the
+briefed traps are live on gx10; receipt.provenance.binary_sha256 records which
+binary actually measured.
+
+GB10 NOTE. `nvidia-smi --query-gpu=memory.used` reads [N/A] on this host --
+unified memory -- and the per-process figure is 175 MiB, not lambda's 14480 MiB.
+The 175 MiB is the CUDA context footprint, not model residency, and it does not
+move when the model is loaded. Per-process CONTEXT ATTACHMENT plus the 96 %
+utilisation under load is therefore the proof of engagement here; a gate
+asserting a non-zero GPU memory figure would read [N/A] forever on GB10.
+
+------------------------------------------------------------------- producer --
+/home/noah/src/aprender-perf-gate/target/release/apr test llm bench --band \
+  --url http://127.0.0.1:18090 \
+  --model qwen2.5-coder-7b-instruct-q4_k_m \
+  --prompts /home/noah/src/aprender-perf-gate/crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl \
+  --bands 1,4,8,16 \
+  --replicates 3 \
+  --workload W1 \
+  --host gx10 \
+  --accelerator gb10 \
+  --quantization q4_k_m \
+  --compute-class cuda \
+  --server-feature cuda \
+  --tokenization server_usage \
+  --commit 745fa8588 \
+  --comparator-owner perf-gate \
+  --receipt /home/noah/perf-gate-w1-gx10/evidence/perf-gate-001-w1-gx10
+
+Launched 00:33:37 UTC, exited 01:22:30 UTC -> 2933 s wall clock.
+Stdout is producer-stdout.txt; stderr was empty.
+
+`--accelerator gb10` is perf-matrix.yaml's declared accelerator for this host.
+
+The corpus is origin/main's (body_words: 496), NOT PR #2821's retune, for the
+reason PR #2831 gives. Measured here: all 774 retained samples report
+prompt_tokens = 513 -- byte-identical to lambda's 513, so the chat template
+resolves the same on aarch64.
+
+----------------------------------------------------------------------- gate --
+bash scripts/perf_gate.sh --host gx10 --phase merge   --workload W1 \
+     --receipt <...>/receipt.rN.json          # N = 1,2,3   -> rc 0
+bash scripts/perf_gate.sh --host gx10 --phase release --workload W1 \
+     --commit 745fa8588 \
+     --receipt <...>/receipt.r1.json                        -> rc 1
+
+Run from the gx10 worktree at 745fa8588. That is equivalent to running it from
+origin/main and was checked rather than assumed:
+  git diff --stat 745fa8588 origin/main -- scripts/perf_gate.sh \
+      scripts/perf-matrix.yaml scripts/perf-receipt-fields.yaml \
+      scripts/lib/bench_receipt.py
+  -> empty. The gate tooling is byte-identical between the two.
+
+Outputs are gate-merge-rN.txt and gate-release-r1.txt.
+
+scripts/perf-matrix.yaml was NOT modified.
+
+--------------------------------------------------- deviations from PR #2831 --
+1. `--tokenizer-sha256` was NOT passed. PR #2831 passed it and recorded, as its
+   defect 1, that it is SILENTLY DROPPED under --tokenization server_usage. The
+   flag is not part of the briefed argument set for this cell and passing a
+   known no-op only to re-observe it is not evidence. The receipts' tokenization
+   block is identical to lambda's either way.
+2. The producer's EXIT STATUS was not captured. It was launched under nohup in
+   the background so the run would survive the control session, and the exit
+   status was lost with the subshell. Completion is evidenced instead by all
+   three receipts being written, the terminal "next" block appearing in stdout,
+   and an empty stderr -- which is weaker than lambda's recorded `exit status 0`
+   and is recorded here as weaker rather than asserted as equivalent.
+3. server-startup.txt is the startup section only (67 lines, through the second
+   "Press Ctrl+C to stop"). This build emits per-request [PMAT-072]/[PMAT-075]
+   debug lines that lambda's log did not carry, so the raw log reached 1224
+   lines / 133 KB. NOTHING WAS DISCARDED: the complete unmodified log is
+   retained as server-full.log.gz beside it.

@@ -1,0 +1,12 @@
+PASS ArmC integrity
+SKIP  ArmC-sig signature+freshness is a RELEASE-phase rule (phase=merge)
+REPORT ArmA c=4 scaling_efficiency=0.4741 (baseline UNMEASURED until 2026-09-25, owner=perf-gate)
+REPORT ArmA c=8 scaling_efficiency=0.4367 (baseline UNMEASURED until 2026-09-25, owner=perf-gate)
+REPORT ArmA c=16 scaling_efficiency=0.2787 (baseline UNMEASURED until 2026-09-25, owner=perf-gate)
+REPORT ArmB c=1 UNMEASURED (Arm A still gates this cell)
+REPORT ArmB c=4 UNMEASURED (Arm A still gates this cell)
+REPORT ArmB c=8 UNMEASURED (Arm A still gates this cell)
+REPORT ArmB c=16 UNMEASURED (Arm A still gates this cell)
+REPORT ArmD instrumentation absent: kv.bytes_used/bytes_reserved, kv.admission_rejected, kv.preempted_swap
+SKIP  ArmE measured on W2 only (workload=W1)
+VERDICT PASS host=lambda phase=merge workload=W1

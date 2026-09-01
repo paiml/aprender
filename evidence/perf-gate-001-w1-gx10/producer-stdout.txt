@@ -1,0 +1,50 @@
+protocol APR-PERF-GATE-001 v2.2 §4.4 (closed-loop, conformant)
+endpoint http://127.0.0.1:18090
+workload W1
+prompts  256 prompt(s) from /home/noah/src/aprender-perf-gate/crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl
+bands    [1, 4, 8, 16] x 3 replicate(s); warmup 2c, quiesce 5s, window closes when BOTH max(30, 8c) samples AND 60s wall-clock are met
+NOTE     --stream is off: §4.4.3 ttft_ms, itl_ms and decode_tok_s are UNDEFINED without per-token arrival times and are omitted from the receipt
+  c=1 replicate 1/3
+    agg 6.20 tok/s  decode 0.00 tok/s  requested 30  completed 30  timeouts 0  drain 0.0 ms  peak_in_flight 1
+  c=4 replicate 1/3
+    agg 39.03 tok/s  decode 0.00 tok/s  requested 36  completed 36  timeouts 0  drain 0.2 ms  peak_in_flight 4
+  c=8 replicate 1/3
+    agg 84.42 tok/s  decode 0.00 tok/s  requested 64  completed 64  timeouts 0  drain 0.3 ms  peak_in_flight 8
+  c=16 replicate 1/3
+    agg 163.99 tok/s  decode 0.00 tok/s  requested 128  completed 128  timeouts 0  drain 0.9 ms  peak_in_flight 16
+samples  samples.c1.r1.jsonl.gz (30 rows, 736 bytes)
+samples  samples.c4.r1.jsonl.gz (36 rows, 817 bytes)
+samples  samples.c8.r1.jsonl.gz (64 rows, 1293 bytes)
+samples  samples.c16.r1.jsonl.gz (128 rows, 2514 bytes)
+receipt  /home/noah/perf-gate-w1-gx10/evidence/perf-gate-001-w1-gx10/receipt.r1.json (11136 bytes)
+  c=1 replicate 2/3
+    agg 6.20 tok/s  decode 0.00 tok/s  requested 30  completed 30  timeouts 0  drain 0.0 ms  peak_in_flight 1
+  c=4 replicate 2/3
+    agg 39.03 tok/s  decode 0.00 tok/s  requested 36  completed 36  timeouts 0  drain 0.2 ms  peak_in_flight 4
+  c=8 replicate 2/3
+    agg 60.25 tok/s  decode 0.00 tok/s  requested 64  completed 64  timeouts 0  drain 0.5 ms  peak_in_flight 8
+  c=16 replicate 2/3
+    agg 159.68 tok/s  decode 0.00 tok/s  requested 128  completed 128  timeouts 0  drain 0.8 ms  peak_in_flight 16
+samples  samples.c1.r2.jsonl.gz (30 rows, 723 bytes)
+samples  samples.c4.r2.jsonl.gz (36 rows, 829 bytes)
+samples  samples.c8.r2.jsonl.gz (64 rows, 1313 bytes)
+samples  samples.c16.r2.jsonl.gz (128 rows, 2527 bytes)
+receipt  /home/noah/perf-gate-w1-gx10/evidence/perf-gate-001-w1-gx10/receipt.r2.json (11121 bytes)
+  c=1 replicate 3/3
+    agg 6.21 tok/s  decode 0.00 tok/s  requested 30  completed 30  timeouts 0  drain 0.0 ms  peak_in_flight 1
+  c=4 replicate 3/3
+    agg 39.06 tok/s  decode 0.00 tok/s  requested 36  completed 36  timeouts 0  drain 0.1 ms  peak_in_flight 4
+  c=8 replicate 3/3
+    agg 84.62 tok/s  decode 0.00 tok/s  requested 64  completed 64  timeouts 0  drain 0.3 ms  peak_in_flight 8
+  c=16 replicate 3/3
+    agg 164.27 tok/s  decode 0.00 tok/s  requested 128  completed 128  timeouts 0  drain 0.8 ms  peak_in_flight 16
+samples  samples.c1.r3.jsonl.gz (30 rows, 730 bytes)
+samples  samples.c4.r3.jsonl.gz (36 rows, 823 bytes)
+samples  samples.c8.r3.jsonl.gz (64 rows, 1315 bytes)
+samples  samples.c16.r3.jsonl.gz (128 rows, 2497 bytes)
+receipt  /home/noah/perf-gate-w1-gx10/evidence/perf-gate-001-w1-gx10/receipt.r3.json (11091 bytes)
+
+next
+  scripts/perf_gate.sh --host gx10 --phase merge --workload W1 --receipt /home/noah/perf-gate-w1-gx10/evidence/perf-gate-001-w1-gx10/receipt.r1.json
+  scripts/perf_gate.sh --host gx10 --phase merge --workload W1 --receipt /home/noah/perf-gate-w1-gx10/evidence/perf-gate-001-w1-gx10/receipt.r2.json
+  scripts/perf_gate.sh --host gx10 --phase merge --workload W1 --receipt /home/noah/perf-gate-w1-gx10/evidence/perf-gate-001-w1-gx10/receipt.r3.json
