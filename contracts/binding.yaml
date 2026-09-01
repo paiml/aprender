@@ -612,6 +612,148 @@ bindings:
   signature: 'fn matmul(a: &Tensor, b: &Tensor) -> Tensor'
   status: implemented
   notes: 'autograd matmul realizes B@A; associativity proven in Theorems/Lora/MergeForwardEquiv.lean'
+# PRREV-001 — contracts/pr-review-skill-v2.yaml (PR-REVIEW-SKILL-002 v2, S9 step 1).
+#
+# THESE FOUR EQUATIONS HAVE NO RUST SURFACE, and the entries say so by OMITTING
+# module_path / function / signature rather than pointing them at a symbol that does
+# not exist. The artifact that will discharge them is scripts/check_pr_review_receipt.sh
+# (PRREV-003) — a bash guard over JSON documents — plus tests/pr-review.bats. The
+# `module_path` field is documented as a Rust module path; writing a shell path into it
+# would make this registry lie about the KIND of thing it names, which is the #2504
+# defect one tier over.
+#
+# `pending` is the only honest status here ("Planned but not started", skipped by
+# enforcement checks). It is the first non-`implemented` row in this file, and it must
+# become `implemented` in the SAME PR that lands the guard — a binding left at pending
+# after its implementation ships is a registry that under-reports its own coverage,
+# which is the mirror of the over-reporting the #2644 audit found.
+- contract: pr-review-skill-v2.yaml
+  equation: grounding_marks_are_closed
+  status: implemented
+  notes: >-
+    S1. Discharged by the grounding-mark branches of scripts/check_pr_review_receipt.sh
+    against fixture rows 3, 11, 12 and 14 of spec S6.3, and by row 15 — the fixture
+    F-PRREV-001 named as owed, now committed at
+    tests/fixtures/pr-review/row-15-finding-with-no-grounding-mark/. Verified by
+    mutation, both arms: deleting the grounding-presence branch turns row 15 GREEN
+    while rows 6, 7 and 14 stay GREEN, so the branch is load-bearing and not a
+    refuse-everything.
+- contract: pr-review-skill-v2.yaml
+  equation: blocking_tier_is_objective_and_earned
+  status: implemented
+  notes: >-
+    S7. Discharged by the verdict function of scripts/check_pr_review_receipt.sh over
+    all fourteen S6.3 rows plus row 15, including the three discrimination rows (6, 7,
+    14) without which "refuse every receipt" reads green. Each RED row is asserted to
+    name ONE class: rows 1, 2, 3, 5, 10, 11, 12, 13, 15 -> B1; row 8 -> B2; row 4 -> B4;
+    row 9 -> B6. B3 is PRREV-004 and B5 is emitted by no consultation, as the invariant
+    on this equation already records. Asserting the class, not just the exit code, is
+    what caught rows 9 and 10 both returning B1 from a jq `//` coercion of `false`.
+- contract: pr-review-skill-v2.yaml
+  equation: instrument_before_ratchet
+  status: pending
+  notes: >-
+    S8, the four continuous parameters. Discharged by a guard branch asserting that no
+    numeric threshold appears against actionable_rate, effective_fp_rate,
+    audit_divergence or cost_per_actionable while samples < 30. STILL PENDING after
+    PRREV-003: that branch reads the CONTRACT FILE, not a receipt, and no such guard
+    exists yet — scripts/check_pr_review_receipt.sh validates receipts only. The three
+    case tables PRREV-003 does ship (tests/fixtures/pr-review/*-cases.tsv) cover the
+    S3.B path and message triggers and the S3.C.1 comparative-claim regex; the
+    threshold-absence regex is not among them and is owed.
+- contract: pr-review-skill-v2.yaml
+  equation: four_defects_stop_the_line
+  status: implemented
+  notes: >-
+    S8, the four jidoka parameters. guard_mutation_score is REPRODUCIBLE:
+    scripts/mutate-guard.sh is committed and its DERIVED set is 219/219 over
+    scripts/check_pr_review_receipt.sh. THE SET SIZE IS DERIVED AND CERTAIN; THE KILL
+    COUNT ON THIS MERGED TREE IS PENDING, and is the `pr-review-receipt` job's Arm 3.
+    215/215 was measured on PRREV-015's tree and 185/185 on PRREV-013's, and neither
+    transfers: PRREV-019 and PRREV-020 each added one `reject B<n>` site (two mutants
+    each), and PRREV-020 gave every row-* fixture an output_check block, so the corpus
+    the sweep runs against moved as well as its size. The measurement lands here as a
+    follow-up commit, the way 804559ed5 discharged 03d795423's pending 185/185. S8 allows
+    no ratchet on this parameter: anything below 100% blocks. (PRREV-004; the set was 119 when
+    PRREV-004 landed and this line went stale silently in the four commits that widened
+    the guard, which is why scripts/check_pr_review_counts.sh now derives it). The set is committed as
+    a DERIVATION, not a list — one `drop` and one `flip` per `reject B<n>` site, the
+    sites rescanned from the guard on every run, plus named single-line edits to the
+    control machinery that must each match exactly one line or the sweep refuses to
+    run. That is strictly stronger than a written-down list, which falls behind the
+    file it mutates. vacuous_consultations = 0 is enforced by the attempted>0 branch
+    (row 2) and unmarked_claims = 0 by row 15. receipt_presence = 1.00 was recorded here
+    as "a property of PRREV-006's CI wiring once it lands", AND THE WIRING LANDED WITHOUT
+    IT: PRREV-006's Arm 4 opened `if [ ! -f .github/pr-review.pub ]; then ... exit 0; fi`
+    over a public key no ticket owned, so the step exited 0 on every run it ever had, and
+    its armed branch looked for a directory named after the PR's TIP commit, which no PR
+    can produce because committing the receipt changes the tip. A metric fixed at 1.00
+    with no ratchet was therefore unenforceable by the job written to enforce it -- a gate
+    that cannot fail wrapped around a gate that cannot pass. PRREV-013 committed the key,
+    re-signed the receipt so it ACCEPTs under the repository default, and moved Arm 4 into
+    scripts/check_pr_review_arm4.sh, whose --self-test drives seven rows including the
+    absent-key one that used to read green. The job is still outside `gate`'s needs, so
+    receipt_presence is now MEASURED and VISIBLE rather than blocking; promoting it wants
+    the 30 samples S8 asks for and is not this entry's claim. The sweep excludes the two `case` gates around `rm -rf` and the EXIT
+    trap, which are destructive-op guards no receipt can reach: including an unkillable
+    mutant in a score S8 fixes at one would make the one a lie.
+- contract: pr-review-skill-v2.yaml
+  equation: duplication_coverage_is_recorded_per_surface
+  status: implemented
+  notes: >-
+    S3.A's duplication_hits, the field the spec calls the highest-EV in the receipt.
+    DECLARED BY PRREV-009 AND REGISTERED BY NOTHING until PRREV-013: the contract carried
+    five equations and this file bound four, and no PR-time gate could see the gap --
+    `pv validate` exits 0 on the contract alone, `pv verify-bindings` checks only that a
+    binding names a real equation and not that a real equation has a binding, and
+    dogfood.sh is not in ci.yml. An equation can therefore be declared and never bound,
+    which is a hole in the registry and not only in this contract; filed as
+    https://github.com/paiml/aprender/issues/2797 rather than closed by adding one entry
+    here, because one entry cannot close a class.
+    Discharged by the duplication-coverage branches of
+    scripts/check_pr_review_receipt.sh: the per-surface map over
+    { rust, shell, python, config, docs, other, sibling_branches, merge_base_to_main },
+    the three-region horizon, and the whole-number bounds on
+    horizon_branches_{scanned,total}. Fixture rows 23 and 24 are the discrimination
+    PAIR the invariant demands -- the SAME coverage map under `verdict: PASS` (RED, a
+    surface recorded `none` cannot sit under a PASS) and under `verdict: DEGRADED`
+    (GREEN, `none` is honest and costs the receipt its PASS, not its validity). Without
+    row 24 the rule would punish the honest receipt exactly as hard as the silent one,
+    and a field that costs a PASS whatever is written in it is a field that learns to
+    stay empty. Verified by mutation inside scripts/mutate-guard.sh's derived set, which
+    covers every `reject B<n>` site in these branches; PRREV-011's F8 found that merging
+    the two repair lanes had left one of them DEAD -- two implementations of
+    "duplication_hits must be an array", the superset returning 129 lines earlier -- and
+    bats passed 112/0 straight over it. Only the mutation set saw it.
+- contract: pr-review-skill-v2.yaml
+  equation: autonomous_merge_requires_a_cross_vendor_quorum
+  status: implemented
+  notes: >-
+    S13. Registered in the SAME commit that declares the equation, deliberately:
+    https://github.com/paiml/aprender/issues/2797 records that an equation can be
+    declared and bound by nothing, with no PR-time gate able to see the gap, and the
+    section that lets a merge happen unattended is the last place to add a sixth
+    instance of that hole. Discharged by scripts/pr_review_quorum_arm.sh -- the Q1..Q10
+    refusal tier over the S13.2 predicate -- with tests/pr-review-quorum.bats as the
+    table (67 rows, one per refusal path, plus four that must PERMIT) and
+    scripts/mutate_quorum_arm.sh as the falsifier (134/134, derived one `drop` and one
+    `flip` per `refuse Q<n>` site so it cannot fall behind the script). NOT ARMED, and
+    that is a property of the wiring rather than a promise: CI Arm 5 runs the arm script
+    with --explain against committed fixtures and a purpose-built repository, Arm 6 runs
+    the same table against MUTATED copies under a recording `gh` stub that logs any call
+    and exits 1, and no step in any workflow invokes the arming verb. Receipt validity is
+    DELEGATED to scripts/check_pr_review_receipt.sh rather than re-implemented, and
+    fixture q-40b asserts the delegated refusal still carries the receipt guard's own
+    class (B6) -- a second copy of validity here would be the two-implementations defect
+    F8 already found once inside these same artifacts. Three of the four rows that must
+    PERMIT are DISCRIMINATION rows differing from a refusing row in ONE variable: q-53 vs
+    q-47 (which file the post-review commit touches), q-54 vs q-49 (whether the delta
+    region was swept), q-55 vs q-45 (the mutation scope on a guard-touching diff).
+    Two branches were rewritten during the build because the mutation set proved them
+    UNREACHABLE rather than because anybody read them -- the unenumerable-region branch
+    and the asserted-and-blocking clause -- and control 1's arming line was folded into a
+    shared one for the same reason. autonomous_merge_reverts is 0/0 and is recorded as
+    UNDEFINED, not clean.
 critical_path:
 - softmax
 - rmsnorm

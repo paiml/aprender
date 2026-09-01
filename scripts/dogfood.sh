@@ -96,7 +96,7 @@ fi
 # So the fallback is every declared feature MINUS known-broken quarantines, and
 # the exclusion is REPORTED. A silent exclusion is how a gate quietly stops
 # covering what it claims to.
-if awk '/^\[features\]/{f=1;next} /^\[/{f=0} f' Cargo.toml | grep -qE '^cli *='; then
+if grep -qE '^cli *=' <<< "$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f' Cargo.toml)" ; then
   FEATS="--features cli"; FEAT_NOTE="--features cli"
 else
   ALL_FEATS=$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f' Cargo.toml \
@@ -949,10 +949,10 @@ done
 if [ -n "$MKPATH" ]; then
   MK_RECIPE=$(awk '/^contracts:/{f=1;next} /^[^\t]/{f=0} f' "$MKPATH")
   MK_SMELL=""
-  printf '%s' "$MK_RECIPE" | grep -qE 'for .*; *do' \
-    && ! printf '%s' "$MK_RECIPE" | grep -qE '\|\| *exit' \
+  grep -qE 'for .*; *do' <<< "$MK_RECIPE" \
+    && ! grep -qE '\|\| *exit' <<< "$MK_RECIPE" \
     && MK_SMELL="a for-loop with no \`|| exit\` (exits with its LAST iteration)"
-  printf '%s' "$MK_RECIPE" | grep -qE '\|\| *true' \
+  grep -qE '\|\| *true' <<< "$MK_RECIPE" \
     && MK_SMELL="$MK_SMELL${MK_SMELL:+; }\`|| true\` swallows a real failure"
   if [ -n "$MK_SMELL" ]; then
     mark contracts-exit-integrity FAIL "the \`contracts:\` recipe launders its exit code: $MK_SMELL. Its GREEN cannot be believed — fix the recipe before trusting it."
@@ -1151,7 +1151,7 @@ else
     esac
     satisfied=""
     for w in $want; do
-      printf '%s' "$TP_NAMES" | grep -qw "$w" && satisfied=yes
+      grep -qw "$w" <<< "$TP_NAMES" && satisfied=yes
     done
     [ -n "$satisfied" ] || TP_INTRUDERS="$TP_INTRUDERS $probe(→${want// //})"
   done

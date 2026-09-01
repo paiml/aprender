@@ -1,0 +1,36 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "device_behaviour_claim",
+          "level": "error",
+          "message": {
+            "text": "Stream ordering claim."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs: CUDA C++ Programming Guide, Streams",
+            "excerpt": "Operations in different, non-default streams may execute concurrently; there is no implicit synchronization between them.",
+            "excerpt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "failure_scenario": "A race that only appears under load.",
+            "precision_class": "blocking"
+          }
+        }
+      ]
+    }
+  ]
+}

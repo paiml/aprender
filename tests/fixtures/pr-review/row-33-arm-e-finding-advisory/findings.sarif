@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-1",
+          "level": "warning",
+          "message": {
+            "text": "The retry loop added in this diff has no bound; a permanently failing dependency spins forever."
+          },
+          "properties": {
+            "grounding": "measured",
+            "source": "antigravity (agy 1.1.22), independent review",
+            "failure_scenario": "A dependency that fails every time is retried without limit, and the request never returns rather than returning an error.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

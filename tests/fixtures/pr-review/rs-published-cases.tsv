@@ -1,0 +1,32 @@
+# In a .rs file, does this LINE reach a user? — must-match / must-not-match.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/check_pr_review_receipt.sh --match-rs-published <line>
+#
+# The path test says the file ships; this says the line is READ. Same split, same
+# spelling, as check_no_claim_literals.sh, which applies its ratio pattern to print
+# macros and to ///|//! doc comments (published by cargo doc) and to nothing else in .rs.
+#
+# WHY THE SPLIT IS LOAD-BEARING HERE. Measured over 300 commits of origin/main, every
+# comparative claim this repository added to a plain `//` comment was a claim it was
+# WITHDRAWING — `// #2696: this printed "Performance: 800+ tok/s (2.8x Ollama)"`. B4's
+# remedy is a recorded comparator command, version and log; there is no log for a number
+# nobody measured, so a block on those lines has no honest exit. Fixture row 22 carries
+# both forms in ONE file, comment first, so the rejection reason proves which fired.
+#
+# expect	subject	why
+MATCH	    println!("Performance: 800+ tok/s (2.8x Ollama)");	the literal the audit found shipped in serve/server.rs
+MATCH	    eprintln!("{} vs ollama", ratio);	stderr is a surface too
+MATCH	    format!("apr sustains 2.93x Ollama on 1.5B Q4_K decode")	row 22's published half
+MATCH	        writeln!(f, "2.93x Ollama")?;	a formatter writes to a surface
+MATCH	    let s = "851.8 tok/s = 2.93x Ollama".green();	a colour method means it is printed
+MATCH	/// apr sustains 2.93x Ollama on this workload.	a doc comment IS published, by cargo doc
+MATCH	//! Crate-level: 2.93x Ollama on 1.5B Q4_K.	so is a module doc comment
+MATCH	    /// Indented doc comments are still doc comments	leading whitespace must not defeat the anchor
+NO-MATCH	// The book published 2.93x Ollama from a harness that never ran Ollama.	row 22's quoted half: a plain comment is not a surface a user reads
+NO-MATCH	    // #2696: this printed "Performance: 800+ tok/s (2.8x Ollama)" and measured nothing	VERBATIM from origin/main ce712eae0 — the false positive that produced this rule
+NO-MATCH	            // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with	VERBATIM from origin/main d1b7d1995. A REAL comparative claim that this scope does NOT block; recorded as a residual rather than hidden
+NO-MATCH	    let ollama_baseline = 163.0;	an assignment; check_no_fabricated_baselines.sh owns that class
+NO-MATCH	    /* 2.93x Ollama */	a block comment is not a doc comment
+NO-MATCH	    let ratio = decode / comparator;	ordinary code
+NO-MATCH	pub fn banner() -> String {	a signature
