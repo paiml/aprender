@@ -67,9 +67,23 @@ So the gate is asymmetric, and §7 states it:
 | c ∈ {4,8,16} | `agg_ratio` vs comparator | what the server delivers, and what batching improves |
 | every band | **both reported**; a receipt carrying one alone is schema-fatal | §2.2 |
 
-Decode at c>1 is a **non-regression floor against apr's own previous release**, never a
-comparator ratio — so the batching transition is permitted to cost per-user decode, while a
-silent collapse still cannot pass.
+**Decode at c>1 is REPORTING until aggregate parity is reached — it is not gated at all**, and
+the reason is that the obvious alternative is a trap. A non-regression floor against apr's *own
+previous release* looks safe and is not:
+
+```
+apr decode at c=16 today (serialising) : 110.6 tok/s
+llama.cpp decode at c=16 (batched)     :  71.2 tok/s
+after batching lands, apr decode -> ~71.2  =  a 35.6% DROP
+```
+
+A non-regression floor rejects that, so the "fixed" rule rejects the batching PR exactly as the
+comparator-ratio rule did — **the same defect in a new spelling**, which is this repository's
+most-repeated failure (#2707 shipped #2696 again under a new name).
+
+So: at c>1 decode is **recorded and never gated** until `agg_ratio ≥ 1.0`. Once batching has
+landed, a non-regression floor is established **from the post-batching baseline**, where it
+protects against silent collapse without forbidding the transition that has already happened.
 
 ### §2.3 Cross-model data, and what it does NOT establish
 
@@ -280,9 +294,9 @@ from real regressions, and the team routes around them.
 
 | band | gated | against |
 |---|---|---|
-| c=1 | `dec_ratio ≥ 1.0` | the comparator, same run |
+| c=1 | `dec_ratio ≥ 1.0` | the comparator, same run — **REPORTING until decode σ is measured (§12.1b)** |
 | c ∈ {4,8,16} | `agg_ratio ≥ 1.0` | the comparator, same run |
-| c ∈ {4,8,16} | `dec_ratio` non-regression | **apr's own previous release**, not the comparator |
+| c ∈ {4,8,16} | `dec_ratio` | **REPORTING** until `agg_ratio ≥ 1.0`; a non-regression floor is set from the **post-batching** baseline thereafter (§2.2) |
 
 Plus: every cell in `perf-matrix.yaml` present, or `UNMEASURED` with owner and expiry.
 
@@ -378,6 +392,14 @@ because concurrent work on both confounds every run.
   and nothing else, so any **paired** decomposition is a two-term one, not an eight-term one.
 - **It does not declare an iteration budget.** A declared budget with a retrospective five-whys
   is not a control; nothing in it can decline work.
+- **It does not claim the two levers are causally independent.** #2844 factors the 10.34× gap
+  into batching (6.07×) and kernel (1.70×), and `A × B = 10.34×` closes exactly — but that is an
+  **identity by construction**, not evidence. The causal reading requires per-token efficiency
+  under batching to equal per-token efficiency at M=1, and **it may not**: the kernel deficit was
+  measured on an M=1 GEMV, and a batched path runs M=B, which is different code with a different
+  arithmetic intensity. **The M=1 coalescing fix may not transfer to the batched regime at all.**
+  Step 2's exit therefore measures the *batched* kernel's efficiency, and Step 3 is scoped to
+  whichever kernel the batched decode path actually uses — not assumed to be the M=1 one.
 - **It does not gate a non-CUDA backend** (§8).
 - **It does not cover training throughput, LAPACK-bound solvers, or datacenter-scale serving.**
   These are `NOT_APPLICABLE` with `decided_by` recorded, not silently dropped.
@@ -438,6 +460,14 @@ and the comparator-vocabulary bound.
 | 12.3 | Whether llama.cpp can be driven at c>1 by our client without patching it | perf-gate | I-8 is unenforceable otherwise |
 | 12.4 | Instrumentation overhead of any per-phase timing | perf-gate | unpriced; §10 declines the identity partly for this reason |
 | 12.5 | `mini`'s backend decision | #2841 | I-16 blocks the cell until resolved |
+
+### §12.1b Decode has no measured noise floor, so it is not gated yet
+
+§12.1a measures σ for **aggregate** only. `decode_tok_per_sec` is not captured at all (§6.2b),
+so its variance over the socket is unknown. **A gate on a metric with no measured noise floor is
+a flaky gate**, and this project has already paid for that class. Decode gating at c=1 is
+therefore **REPORTING** until capture exists and σ is computed from N=3 — which costs no matrix
+run beyond the one Step 0 already needs.
 
 ### §12.1a The measured noise floor
 
