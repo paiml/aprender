@@ -1,0 +1,162 @@
+{
+  "ticket": "APR-PERF-GATE-001 (paiml/aprender#2706)",
+  "cell": "host=gx10 workload=W1 bands=[1,4,8,16] replicates=3",
+  "date": "2026-09-01",
+  "first_cell": "lambda, PR #2831. This is the SAME procedure on the second host.",
+  "headline": "The second SS4.4-conformant W1 cell, on gx10 (GB10, aarch64). Four bands x three replicates, 774 sampled requests, zero timeouts, completed == requested in every band. Arm A SPOKE on all three receipts: scaling_efficiency 1.573 / 1.540 / 1.639 at c=4 / c=8 / c=16 (mean of N=3). Merge-phase gate PASS on r1, r2 and r3; release-phase gate FAIL on the same three declared gaps as lambda. gx10's Arm A is SUPERLINEAR at every band, where lambda's was 0.476 / 0.439 / 0.280 -- the same formula, a very different machine.",
+
+  "what_was_measured": {
+    "producer": "apr test llm bench --band",
+    "server": "apr serve run ~/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf --port 18090 --gpu-layers all",
+    "binary": "/home/noah/src/aprender-perf-gate/target/release/apr",
+    "binary_sha256": "c982f03e53ae734590a8f997ae5847474a66c117007cab175a7ee8b76a352623",
+    "binary_version": "apr 0.64.0 (745fa8588)",
+    "model_sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+    "corpus": "crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl",
+    "corpus_sha256": "c88c9fc1985bd79ddcd2b6737f692fb69057c9b3822cd12a2b7a4c5ef93bd292",
+    "corpus_body_words": 496,
+    "tokenization": "server_usage",
+    "host_hardware": "NVIDIA GB10 (Grace Blackwell, sm_121a), aarch64, 20 cores, 119 GB unified memory, driver 590.48.01, CUDA 13.1"
+  },
+
+  "binary_provenance_verified_before_the_run": {
+    "why": "Both briefed traps are LIVE on gx10, and the CPU-only one is what a bare `apr` resolves to.",
+    "version_reports_a_sha_not_plus_no_git": "apr 0.64.0 (745fa8588)",
+    "list_devices": "`serve run --list-devices` printed `cuda    compiled in` -- NOT `This build has NO accelerator compiled in`",
+    "commit_is_on_main": "git merge-base --is-ancestor 745fa8588 origin/main -> rc 0 (origin/main = 385db8a02)",
+    "worktree_head": "745fa8588783413669f4ac6170d4645e39c15be4, clean apart from one untracked generated file",
+    "the_cpu_only_sibling_was_not_used": "/home/noah/.cargo/bin/apr is the ONLY apr on PATH on gx10. It is `apr 0.64.0 (a866988e)` -- a DIFFERENT commit from the pinned one -- sha256 814b6524f390193dbf63d7d00a4297e93a7679bfbc5c312fa4a135b9c40f2211, and its --list-devices prints `This build has NO accelerator compiled in`. It is disqualified twice over. receipt.provenance.binary_sha256 records c982f03e..., the CUDA worktree build.",
+    "gate_tooling_not_stale": "The gate was run from the worktree at 745fa8588. `git diff --stat 745fa8588 origin/main -- scripts/perf_gate.sh scripts/perf-matrix.yaml scripts/perf-receipt-fields.yaml scripts/lib/bench_receipt.py` is EMPTY, so this is byte-identical to running it from origin/main. Checked, not assumed."
+  },
+
+  "gpu_mechanism_proved_engaged_not_labelled": {
+    "server_log_line": "gpu-layers: requested=all resolved=28 total=28 (backend=cuda)",
+    "health_endpoint": "{\"status\":\"ok\",\"version\":\"0.64.0\",\"compute_mode\":\"gpu\",\"model_loaded\":true}",
+    "nvidia_smi_during_the_run": "compute-apps listed pid 648124 (the server) attached and holding 175 MiB; utilization.gpu 96 %, power.draw 74.75-76.99 W, temperature 68 -> 73 C across five samples 5 s apart. Idle before the run the list was EMPTY; after the server was killed it was empty again.",
+    "gb10_differs_from_lambda_and_that_is_expected": "lambda read 14480 MiB at 100 % and 451.60 W. On GB10 `--query-gpu=memory.used` reads [N/A] (unified memory) and the per-process figure is 175 MiB -- the CUDA CONTEXT footprint, not model residency. The engagement proof on this host is per-process context attachment plus 96 % utilisation under load, exactly as feedback_cuda_probe_false_negative_on_split_so prescribes for GB10. A gate asserting a non-zero GPU memory figure would read [N/A] forever here.",
+    "server_side_differences_from_lambda_worth_recording": [
+      "CONTINUOUS BATCHING: max_batch=32, window=0ms  (lambda auto-sized to max_batch=11). gx10's batcher is therefore NOT saturated at c=16, where lambda's was; [PMAT-075] `Reusing batched KV cache: 28 layers x 32 sequences` appears 92 times.",
+      "[PMAT-053] FP8 cache SKIPPED: `requires sm_89-sm_9x (have sm_90, cc=121)`. On lambda the same build cached 197 matrices / 6742.8 MB in 173.0 ms. This is a logged capability difference between the two hosts, recorded here as an observation; no attempt was made to change it.",
+      "[GH-480] `Patched N backward branch(es) for sm_121 JIT workaround` appears 25+ times at load; absent on lambda."
+    ]
+  },
+
+  "protocol_conformance_confirmed_from_output_not_assumed": {
+    "replicates_N_3": "PASS -- the producer's under-replication warning did NOT print (grep -c 'below' on producer-stdout.txt = 0), and it prints unconditionally below N. All three receipts record n = 258.",
+    "minimum_sampled_requests_max_30_8c": "PASS -- c=1: 30/30/30 (floor 30); c=4: 36/36/36 (floor 32); c=8: 64/64/64 (floor 64); c=16: 128/128/128 (floor 128). Every band meets or exceeds its floor.",
+    "minimum_wall_clock_60s": "PASS -- the minimum window_ms over all 12 bands is 65188.9 ms. c=1 ran 585.0-585.9 s per replicate, 9.75x the 60 s floor.",
+    "termination_is_the_LATER_bound": "CONFIRMED, and it binds DIFFERENTLY here than on lambda. On gx10 the SAMPLE COUNT closes the window at c=1, c=8 and c=16 (counts land exactly on the floor: 30/30, 64/64, 128/128), and the 60 s WALL CLOCK closes it at c=4 (36 samples against a floor of 32, 1.12x). On lambda the wall clock closed last at EVERY band with counts overshooting ~1.8x. Both are the specified behaviour -- `whichever bound is satisfied last` -- and which one binds is a property of host speed, not of the protocol.",
+    "drain_SS4_4_7": "CONFIRMED, and correctly near-zero here. drain_ms is 0.0 at c=1 in all three replicates (one closed-loop worker has nothing in flight). It rises monotonically with c -- 0.12-0.19 ms at c=4, 0.31-0.51 ms at c=8, 0.76-0.87 ms at c=16 -- which is the right shape. The identity span_ms - window_ms == drain_ms holds to within 0.41-0.93 ms at every band. NOTE: it holds to 0.13-0.16 ms on lambda too, NOT exactly; PR #2831 quoted the c=16 figures rounded to 0.1 ms. The residual is a two-independent-clock-reads artifact of the same character on both hosts. gx10's drain is ~3000x smaller than lambda's 2734 ms at c=16 because gx10's c=16 window is sample-count-bound: it closes exactly as the 128th sample lands with the workers batch-synchronised, so there is nothing left to drain. lambda's was wall-clock-bound and closed with 16 requests mid-flight.",
+    "warmup_2c_discarded_plus_5s_quiesce": {
+      "verdict": "CONFIRMED DIRECTLY, by a server-side count -- a stronger proof than lambda's arithmetic residual",
+      "direct_proof": "The server's own /metrics counter recorded realizar_requests_total = 948 with requests_failed = 0. The receipts retain 774 samples (258 x 3). 948 - 774 = 174 requests were issued and discarded. The protocol predicts exactly 2c warmup requests per band: 3 replicates x (2 + 8 + 16 + 32) = 3 x 58 = 174. EXACT MATCH, to the request.",
+      "arithmetic_cross_check": "wall clock 2933.0 s (producer launched 00:33:37 UTC per `ps -o lstart=`, exited 01:22:30 UTC); sum of span_ms over 12 bands = 2434.8 s; residual = 498.2 s. Predicted from measured per-band latency: warmup 281.3 s + 12 x 5 s quiesce 60.0 s = 341.3 s.",
+      "the_arithmetic_overshoots_and_that_is_reported_not_explained_away": "The 498.2 s residual exceeds the 341.3 s prediction by 156.9 s (+46 %). lambda's equivalent overshoot was +10.2 s (+15 %). The prediction assumes warmup requests run at their band's steady-state latency; at c=1 that latency is 19.5 s per request, so the c=1 warmup term alone is a 39 s lever and any cold-start penalty on it is amplified. No cause is asserted here. The server-side count of 174 is the proof that the mechanism engaged; the arithmetic is a cross-check that agrees in order of magnitude and is recorded with its disagreement intact."
+    },
+    "prompt_length_band_SS4_3_1": {
+      "verdict": "PASS with 9 tokens of headroom on both edges",
+      "measured": "all 774 retained samples report prompt_tokens = 513 (min = median = max)",
+      "band": "512 +/- 8, inclusive 504..520",
+      "cross_host_note": "513 is byte-identical to lambda's 513. The +8 chat-template delta over the 505-token raw prompt therefore resolves the SAME WAY on aarch64 as on x86_64. This was the check flagged as a potential finding; it is NOT a finding -- it corroborates lambda."
+    },
+    "no_suspect_samples": "every band in every replicate records suspect: []",
+    "integrity_counts": "requested == completed in all 12 bands; timeouts 0, truncated 0, errors 0 throughout (774 sampled requests, plus 174 discarded warmup requests the server counted and the receipts correctly do not)"
+  },
+
+  "arm_a_scaling_efficiency": {
+    "formula": "scaling_efficiency(c) = (agg(c) / agg(1)) / c",
+    "status": "REPORT -- perf-matrix.yaml carries gx10/W1 as status: UNMEASURED, owner perf-gate, expires 2026-09-25. Today is 2026-09-01, so the cell reports and does not ratchet yet.",
+    "per_replicate": {
+      "c4": [1.5739, 1.5732, 1.5728],
+      "c8": [1.7022, 1.2142, 1.7039],
+      "c16": [1.6535, 1.6088, 1.6538]
+    },
+    "mean_of_N3": {"c4": 1.5733, "c8": 1.5401, "c16": 1.6387},
+    "stdev_of_N3": {"c4": 0.0006, "c8": 0.2823, "c16": 0.0259},
+    "superlinear_and_that_is_the_measurement": "Every band exceeds 1.0, i.e. gx10 delivers MORE than c times its single-client throughput at concurrency c. That is arithmetically what (agg(c)/agg(1))/c > 1 means and it is reported as measured. Its denominator is the reason: gx10's agg(1) is 6.2034 tok/s. The ratio is a statement about how far concurrency lifts THIS host off ITS OWN single-client floor -- it is comparator-free by construction (SS4.7.1) and says nothing about absolute speed.",
+    "c8_mean_is_dragged_by_one_stalled_replicate": "Excluding r2, c=8 is 1.7022 / 1.7039 -- mean 1.7031, in line with c=4 and c=16. r2's 1.2142 is the single stall event characterised below. Both figures are reported; the N=3 mean of 1.5401 is the one the gate printed and is NOT re-derived to exclude the outlier.",
+    "arm_a_was_not_silent": "#2830 records that arm_a_scaling emits NOTHING on a receipt whose only band is c=1, while the gate still returns VERDICT PASS -- so a merge-phase PASS is not by itself evidence Arm A evaluated anything. With four bands present it spoke: three REPORT ArmA lines appear in gate-merge-r1.txt, gate-merge-r2.txt and gate-merge-r3.txt, and three more in gate-release-r1.txt. That was checked in the output, not inferred from the verdict."
+  },
+
+  "per_band_aggregate_tok_per_sec": {
+    "c1": {"r1": 6.1989, "r2": 6.2031, "r3": 6.2081, "mean": 6.2034, "stdev": 0.0046, "pct": "0.07 %"},
+    "c4": {"r1": 39.0257, "r2": 39.0342, "r3": 39.0560, "mean": 39.0386, "stdev": 0.0156, "pct": "0.04 %"},
+    "c8": {"r1": 84.4169, "r2": 60.2534, "r3": 84.6242, "mean": 76.4315, "stdev": 14.0110, "pct": "18.33 %"},
+    "c16": {"r1": 163.9946, "r2": 159.6760, "r3": 164.2692, "mean": 162.6466, "stdev": 2.5763, "pct": "1.58 %"},
+    "dispersion_note": "Three of four bands are tighter than lambda's already-tight spread (0.04-1.58 % of the mean against lambda's 0.03-0.64 %). c=8 is the exception at 18.33 %, entirely from one replicate. This is a dispersion OBSERVATION on N=3, not a proposed threshold; BENCH-003 still owns the sample-size parameters.",
+    "why_c1_and_c4_are_nearly_identical_across_replicates": "tokens_total is BIT-IDENTICAL across all three replicates at c=1 (3632) and c=4 (2546): the corpus is consumed in deterministic order and the same request set is served each time. At c=8 and c=16 the prompt assignment depends on completion order and tokens_total varies (5856 / 6147 / 5856 at c=8)."
+  },
+
+  "the_one_anomaly_a_single_device_wide_stall": {
+    "where": "c=8, replicate 2 only -- 1 of the 12 bands",
+    "signature": "Exactly 8 of the run's 774 requests exceeded 2x their band's median latency. All 8 are in c=8 r2. All 8 recorded 41.46 s against that band's median of 8.65 s -- which is itself identical to r1's 8.67 s and r3's 8.65 s. The MEDIAN request in the stalled replicate was exactly as fast as in the healthy ones.",
+    "shape": "Binning the band's completed tokens into quarters of its own window gives [1576, 2471, 0, 2100]: one full quarter (25.5 s) completed ZERO tokens. All 8 concurrent workers show the same 41.46 s, so this is one device-wide stall of roughly 33 s (41.46 - 8.65) blocking every in-flight request simultaneously, not a gradual slowdown and not a per-request tail.",
+    "consequence": "That band's window stretched to 102.0 s against 69.4 / 69.2 s for r1 / r3, moving its aggregate from ~84.5 to 60.3 tok/s and Arm A at c=8 from ~1.703 to 1.214.",
+    "every_other_band_is_extremely_tight": "In the other 11 bands max/median latency is <= 1.005. c=1 medians 20.81-20.86 s, c=4 7.92-7.93 s, c=8 8.65-8.67 s, c=16 10.09 s.",
+    "no_cause_asserted": "The stall is located and quantified; it is NOT explained. Nothing in the run was adjusted in response to it and the replicate was NOT discarded or re-run -- under I-9 this cell is spent, and re-running the one replicate that came out low is precisely the adaptation the invariant forbids.",
+    "not_a_timeout": "timeouts = 0, errors = 0, truncated = 0 in that band; all 64 requests completed."
+  },
+
+  "gate_verdicts": {
+    "merge_r1": "VERDICT PASS host=gx10 phase=merge workload=W1 (rc 0)",
+    "merge_r2": "VERDICT PASS host=gx10 phase=merge workload=W1 (rc 0)",
+    "merge_r3": "VERDICT PASS host=gx10 phase=merge workload=W1 (rc 0)",
+    "release_r1": "VERDICT FAIL host=gx10 phase=release workload=W1 (rc 1) -- and FAIL is the correct verdict",
+    "cell_completeness": "PASS cells host=gx10 all bands [1, 4, 8, 16] present -- this check runs only at release phase, and it is the check a one-band receipt would have failed"
+  },
+
+  "the_three_absences_recorded_as_absent": {
+    "identical_in_shape_to_lambda": "All three are host-independent and appeared exactly as predicted.",
+    "arm_B_comparator": {
+      "gate_line": "REPORT ArmB c={1,4,8,16} UNMEASURED (Arm A still gates this cell)",
+      "why": "SS4.7.1 / I-3 / I-15: comparator_status() returns Unmeasured{owner} unconditionally because a single-lane producer cannot yield a ratio. receipt.comparator is null. No invocation of this producer can emit one, so none was invented.",
+      "owner": "perf-gate",
+      "note": "perf-matrix.yaml additionally carries a permanent NOT_APPLICABLE for gx10 band 16 against the vLLM comparator (no aarch64 vLLM build). That exception is about Arm B only and does not touch Arm A, which gates this cell."
+    },
+    "arm_D_kv_block": {
+      "gate_line_merge": "REPORT ArmD instrumentation absent: kv.bytes_used/bytes_reserved, kv.admission_rejected, kv.preempted_swap",
+      "gate_line_release": "FAIL ArmD instrumentation absent: (same fields)",
+      "why": "Server-reported and unbuilt (PERF-018, status planned). Declared in the receipt's unproduced_fields rather than estimated client-side.",
+      "receipt_declares_it": true
+    },
+    "receipt_signature": {
+      "gate_line": "FAIL ArmC-sig UNSIGNED: receipt carries no `signature` object.",
+      "why": "No keyring on gx10; PERF-007 is status planned.",
+      "this_is_the_expected_shape": "SS4.9.1 -- an unsigned receipt is a FAILURE at release, not `signature not applicable`, and this cell does not pretend otherwise."
+    }
+  },
+
+  "how_gx10_compares_to_lambda": {
+    "framing": "Reported as a measurement. No mechanism is asserted for the difference.",
+    "arm_a_mean_of_N3": {
+      "c4":  {"gx10": 1.5733, "lambda": 0.4761, "gx10_over_lambda": 3.30},
+      "c8":  {"gx10": 1.5401, "lambda": 0.4389, "gx10_over_lambda": 3.51},
+      "c16": {"gx10": 1.6387, "lambda": 0.2797, "gx10_over_lambda": 5.86}
+    },
+    "absolute_throughput_gx10_as_a_fraction_of_lambda": {
+      "c1": 0.0616, "c4": 0.2037, "c8": 0.2163, "c16": 0.3611,
+      "reading": "gx10 is far slower than lambda in absolute terms at every band, and the gap NARROWS monotonically with concurrency: 6.2 % of lambda at c=1, 36.1 % at c=16. Arm A being higher on gx10 and absolute throughput being lower are the same fact seen from two ends -- Arm A normalises by each host's OWN agg(1), and gx10's agg(1) is 6.2034 tok/s against lambda's 100.6434.",
+      "lambda_shape": "lambda's Arm A falls with c (0.476 -> 0.439 -> 0.280); gx10's is roughly flat above 1.5 (1.573 -> 1.540 -> 1.639).",
+      "one_configuration_difference_that_is_logged": "lambda auto-sized continuous batching to max_batch=11 while holding peak_in_flight 16, so part of its c=16 figure is queueing. gx10 auto-sized to max_batch=32 and is not batch-limited at c=16. This is recorded because it bears on reading the two c=16 numbers side by side; it is not offered as the explanation for the whole difference."
+    },
+    "per_request_shape_at_c1": {
+      "gx10": "513-token prompt, 121.1 generated tokens per request, 19.53 s per request, latency median 20.86 s (min 4.24 s on a 67-token completion, max 20.88 s)",
+      "lambda": "513-token prompt, ~110 generated tokens per request, ~1.10 s per request"
+    }
+  },
+
+  "relation_to_2786_gb10_shortfall": {
+    "what_2786_says": "#2786 (OPEN) records apr on gx10 at ratio_median 0.579x of ollama (apr median-of-7 105.6 tok/s, best 140.0, ollama 182.3) on STEADY-STATE GPU DECODE, single stream, with >= 0.90x as a no-collapse floor rather than a beat target. It rules out the three documented causes and calls the deficit real rather than warm-up.",
+    "these_are_different_metrics_and_are_not_conflated": "This cell's aggregate_tok_per_sec is END-TO-END: total generated tokens over wall-clock, for requests carrying a 513-token prompt, including prefill, admission, queueing and HTTP. #2786's figure is decode-phase throughput only. This run's decode_tok_per_sec is 0.00 and is DECLARED UNPRODUCED -- `--stream` is off, so there are no per-token arrival times and SS4.4.3 decode is undefined here. The 6.2034 tok/s at c=1 therefore CANNOT be compared against 105.6 tok/s, and no such comparison is made.",
+    "corroborates_or_contradicts": "NEITHER, on the metric #2786 measures -- this cell does not measure it. What can be said, as a measurement: gx10's single-stream end-to-end figure (6.20 tok/s, i.e. 6.2 % of lambda's) is the WORST regime for this host, and concurrency recovers most of that gap (36.1 % of lambda at c=16, Arm A 1.64). That direction is CONSISTENT with #2786 having measured a single-stream regime, and it is a reason to be careful about generalising a single-stream deficit to a served deployment -- but it is not evidence about #2786's decode number, and this cell supplies none.",
+    "prior_art_note": "project_qwen_bench_prior_art records the same trap from the other side: realizar LOSES at c=1 and WINS at c=8-16, so measuring only c=1 reports the worst regime as the number. This cell measures all four bands, which is why the shape is visible at all."
+  },
+
+  "defects_surfaced_by_this_run": {
+    "none_new": "No new producer or gate defect was surfaced on gx10. The two PR #2831 recorded are unchanged and host-independent: (1) --tokenizer-sha256 is silently dropped under --tokenization server_usage -- not re-exercised here, because the flag was deliberately not passed; (2) the SS4.4.4 bootstrap has no callers, so no `ci` block and no `seed` appear in any of these three receipts either, and that absence is still undeclared in unproduced_fields. Both are confirmed still present in the same binary; neither is re-filed here."
+  },
+
+  "what_the_producer_refused": "Nothing. It refused no argument, aborted no band, emitted no comparator ratio (by design, SS4.7.1), and wrote an empty stderr. Its exit STATUS was not captured -- see invocation.txt deviation 2 -- so completion is evidenced by the three receipts, the terminal `next` block in stdout and the empty stderr rather than by rc.",
+
+  "not_cited_deliberately": "#2786's 0.579x and 105.6 tok/s are quoted only to state that they measure a different quantity. They are used as a comparator NOWHERE above. No pre-flight or carried [C] figure for gx10 is cited. perf-matrix.yaml was not modified and no baseline is proposed."
+}

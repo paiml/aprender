@@ -1,0 +1,40 @@
+=== APR Serve ===
+
+Model: /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+Binding: 127.0.0.1:18090
+
+Model loading: mmap
+
+Press Ctrl+C to stop
+
+Detected format: GGUF
+Starting GGUF inference server...
+Loading GGUF model (mmap)...
+GGUF loaded: 339 tensors, 29 metadata entries
+Building quantized inference model...
+Model ready: 28 layers, vocab_size=152064, hidden_dim=3584
+gpu-layers: requested=all resolved=28 total=28 (backend=cuda)
+Enabling optimized CUDA acceleration (PAR-111)...
+  Max sequence length: 4096
+[GH-129] Early kernel preload: 44 modules compiled
+[PMAT-082] cuBLASLt FP8 JIT warmed (8224×16×8224)
+[PMAT-053] FP8 weight cache: 197 matrices cached (6742.8 MB) in 173.0ms
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[trueno#243] ✓ Manual graph: 619 kernels. first_args=Some(["0x7e09837f7e00", "0x7e0acbff6c00", "0x7e0abfff8000"]), last_args=Some(["0x7e06ae800000", "0x7e0968000000", "0x7e09837f2a00", "0xe00", "0x25200"]), current_logits_buf=0x7e06ae800000
+  Initializing GPU on device 0...
+  Pre-uploaded 0 MB weights to GPU
+CUDA optimized model ready
+  CONTINUOUS BATCHING: max_batch=11, window=0ms (PMAT-044)
+[PMAT-044] Batch scheduler started: max_batch=11, window=0ms
+
+CUDA-optimized server listening on http://127.0.0.1:18090
+
+Endpoints:
+  GET  /health              - Health check
+  GET  /metrics             - Prometheus metrics
+  POST /generate            - Text generation
+  POST /v1/completions      - OpenAI-compatible
+  POST /v1/chat/completions - Chat completions
+
+Press Ctrl+C to stop
+[trueno#243] Manual graph construction: pos=513, has_graph=false, capture_failed=false, token_count=2
