@@ -1217,9 +1217,14 @@ validate_receipt() {
   # rebinds `.` to the literal array, so `index(.)` asks whether the array contains
   # ITSELF -- always null-free, so the clause matched nothing and a run renamed `Pmat`
   # was ACCEPTED. It was caught by running the case table, not by reading the line.
+  # FAIL-CLOSED ON jq ITSELF. Assigning the substitution alone is fail-open: a jq type
+  # error prints nothing to stdout and leaves the variable empty, which reads as "no bad
+  # driver". The status is read from the command, and a non-zero jq is a REJECT.
   bad_driver=$(jq -r '[ .runs[]? | (.tool.driver.name // "<absent>") ]
       | map(select(. as $n | ["pmat","nvidia-cuda-docs","crux","cargo-mutants","antigravity"] | index($n) == null))
-      | join(", ")' "$sarif")
+      | join(", ")' "$sarif"); local jq_rc=$?
+  [ "$jq_rc" -eq 0 ] \
+    || reject B1 "findings.sarif could not be read for tool.driver.name (jq exited $jq_rc); a check that could not run is not a check that passed" || return 1
   [ -z "$bad_driver" ] \
     || reject B1 "findings.sarif carries a run whose tool.driver.name is outside { pmat, nvidia-cuda-docs, crux, cargo-mutants, antigravity }: $bad_driver; a run nothing can attribute is a run no selector reads (S4.2)" || return 1
 

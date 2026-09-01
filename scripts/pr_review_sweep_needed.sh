@@ -61,7 +61,26 @@ decide() {  # decide <base> <head>
     || { answer yes "head '$head' is not a commit"; return 0; }
 
   # Status read from the command, never from a pipeline tail.
-  files=$(git diff --name-only "$base" "$head" 2>/dev/null); rc=$?
+  # -z: NUL-delimited. `--name-only` alone renders a path containing a newline, quote
+  # or non-ASCII byte C-QUOTED -- "scripts/check_a\nb.sh" WITH the quotes -- which
+  # matches no prefix below, so a real sweep input would be silently dropped from the
+  # comparison and the sweep skipped.
+  # NOT `| tr '\0' '\n'` -- that reintroduces exactly the split it is meant to remove,
+  # because the offending paths are the ones CONTAINING a newline. The NUL stream is
+  # read as NUL-delimited records; the self-test row `quoted-path-nul` caught the tr
+  # form answering `no` for a real sweep input.
+  # RESIDUAL, stated: records are joined with newlines for the prefix loop below, so a
+  # path that itself contains a newline still splits there. That direction is safe for
+  # the PREFIX entries (a fragment under `tests/fixtures/pr-review/` still matches, so
+  # the answer stays `yes`), and for the five EXACT entries a crafted decoy could split
+  # into two non-matching halves. It cannot be reached by any real sweep input, whose
+  # names are fixed and newline-free, and closing it fully means restructuring the
+  # comparison around NUL throughout. Recorded rather than claimed shut.
+  local _f; files=""
+  while IFS= read -r -d '' _f; do files="${files}${_f}"$'\n'; done \
+      < <(git diff -z --name-only "$base" "$head" 2>/dev/null)
+  git diff --quiet "$base" "$head" 2>/dev/null; rc=$?
+  [ "$rc" -le 1 ] && rc=0
   [ "$rc" -eq 0 ] || { answer yes "git diff exited $rc"; return 0; }
 
   local f i
@@ -136,6 +155,28 @@ self_test() {
   # and the discrimination cases: without these, "always yes" reads green
   row docs-only            no  docs/readme.md
   row unrelated-source     no  src.rs
+
+  # A PATH GIT MUST C-QUOTE. Under --name-only this arrives as "scripts/...\nb.sh"
+  # WITH the surrounding quotes, matches no prefix below, and the sweep input is
+  # silently dropped. Under -z it arrives raw. The row ASSERTS the difference rather
+  # than narrating it: it builds such a path, confirms --name-only really does quote
+  # it (so the row cannot pass because the hazard vanished), and requires decide() to
+  # answer yes.
+  rows=$((rows + 1))
+  ( cd "$tmp" && printf 'x\n' > "$(printf 'tests/fixtures/pr-review/a\nb.json')" && git add -A && git commit -qm quoted ) >/dev/null 2>&1
+  if [ -d "$tmp/.git" ]; then
+    q_head=$(git -C "$tmp" rev-parse HEAD 2>/dev/null)
+    quoted=$(git -C "$tmp" diff --name-only "$base" "$q_head" 2>/dev/null | grep -c '^"' || true)
+    got=$( cd "$tmp" && decide "$base" "$q_head" 2>/dev/null )
+    if [ "${quoted:-0}" -ge 1 ] && [ "${got#needed=}" = yes ]; then
+      printf 'ok    %-28s --name-only C-quotes it; -z still answers yes\n' quoted-path-nul
+    elif [ "${quoted:-0}" -lt 1 ]; then
+      printf 'ok    %-28s SKIP: this git does not C-quote the probe path\n' quoted-path-nul
+    else
+      printf 'FAIL  %-28s C-quoted path answered %s\n' quoted-path-nul "$got"; fails=$((fails + 1))
+    fi
+    ( cd "$tmp" && git reset -q --hard "$base" )
+  fi
 
   # fail-closed rows: a question it cannot answer is `yes`
   local got

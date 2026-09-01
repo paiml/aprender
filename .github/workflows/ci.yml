@@ -1790,8 +1790,27 @@ jobs:
             echo "::notice::merge-base unavailable; running the sweep (fail-closed)"
             exit 0
           fi
+          # FAIL-CLOSED. An earlier draft assigned OUT and appended it: if the script
+          # crashed, OUT was empty, `needed` was never set, and `needed == 'yes'` is
+          # false -- so a CRASHING TRIGGER SILENTLY SKIPPED THE SWEEP. That is the
+          # fail-open shape this repository exists to remove, in the guard that gates
+          # the guard. Status is read from the command, never through a pipe, and any
+          # outcome that is not a well-formed `needed=no` runs the sweep.
+          set +e
           OUT=$(bash scripts/pr_review_sweep_needed.sh "$BASE" "${PR_HEAD_SHA}")
-          echo "$OUT" >> "$GITHUB_OUTPUT"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || [ -z "$OUT" ]; then
+            echo "needed=yes" >> "$GITHUB_OUTPUT"
+            echo "::notice::sweep trigger exited $rc with output '$OUT'; running the sweep (fail-closed)"
+            exit 0
+          fi
+          case "$OUT" in
+            needed=no)  echo "needed=no"  >> "$GITHUB_OUTPUT" ;;
+            needed=yes) echo "needed=yes" >> "$GITHUB_OUTPUT" ;;
+            *)          echo "needed=yes" >> "$GITHUB_OUTPUT"
+                        echo "::notice::sweep trigger printed an unrecognised answer '$OUT'; running the sweep (fail-closed)" ;;
+          esac
           echo "::notice::sweep trigger -> $OUT"
 
       - name: The guard's mutation set must kill 100% (§6.4, §8 fixes this at one)
