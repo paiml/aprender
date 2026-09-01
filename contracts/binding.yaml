@@ -666,7 +666,7 @@ bindings:
   status: implemented
   notes: >-
     S8, the four jidoka parameters. guard_mutation_score is REPRODUCIBLE:
-    scripts/mutate-guard.sh is committed and its DERIVED set is 223/223 over
+    scripts/mutate-guard.sh is committed and its DERIVED set is 225/225 over
     scripts/check_pr_review_receipt.sh. THE SET SIZE IS DERIVED AND CERTAIN; THE KILL
     COUNT ON THIS MERGED TREE IS PENDING, and is the `pr-review-receipt` job's Arm 3.
     215/215 was measured on PRREV-015's tree and 185/185 on PRREV-013's, and neither
