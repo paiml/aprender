@@ -28,7 +28,39 @@ is the reason two of them could each be "the parity spec" and disagree.
 This section is data, not policy. Every row is a measurement someone actually took, with the
 host, model, date and comparator pin that produced it. Nothing in §4–§7 may contradict it.
 
-### §2.1 aprender, 7B on RTX 4090
+> ## ⚠ §2.1 IS WITHDRAWN. It measured a build with batching compiled out.
+>
+> `evidence/parity-http/findings.json` records the run as
+> **`apr_build: "0.64.0 (53062e7f3), --features cuda"`, dated 2026-08-24.**
+> At that commit `with_cuda_batch_tx` sits behind `#[cfg(feature = "cuda-batch")]`, and
+> `crates/apr-cli/Cargo.toml:90` declares **`cuda-batch = ["cuda"]`** — the implication runs
+> the *wrong way*, so `--features cuda` compiled continuous batching **out**. Every request
+> took the path `cuda_chat_backend.rs:149` labels `// Fallback: direct RwLock path (serialized)`.
+>
+> It was fixed by **`a18b1aced`, 2026-08-25 20:21 — 27 hours after the measurement** — in a
+> commit titled *"continuous batching was never compiled into any build a user is told to make."*
+>
+> **The counter-measurement is committed in this tree.** `evidence/perf-gate-001-w1-lambda/`,
+> taken 2026-09-01 on `745fa8588`, same host, same model, logs
+> `CONTINUOUS BATCHING: max_batch=11` and aggregates **99.9 → 191.6 → 353.9 → 449.9**. It scales.
+>
+> | band | llama | apr @53062e7f3 (batching OFF) | apr @main | ratio then | ratio now |
+> |---|---|---|---|---|---|
+> | c=1 | 168.9 | 90.2 | 99.9 | 0.534 | 0.591 |
+> | c=4 | 484.7 | 111.9 | 191.6 | 0.231 | 0.395 |
+> | c=8 | 650.5 | 109.6 | 353.9 | 0.168 | 0.544 |
+> | c=16 | 1120.8 | 108.4 | 449.9 | **0.097** | **0.401** |
+>
+> **The gap is indicatively ~2.5×, not 10.34×.** `[U]` — the two artifacts run *different
+> workloads* (§2.1 is 128/128 single-prompt via `http_profile = "medium"`; the perf-gate
+> receipts are W1, 512/128 over 1622 prompts), so the right-hand column is indicative and not a
+> ratio. **No conclusion in this document may rest on §2.1 until a paired re-measure exists.**
+>
+> This is the failure the whole document exists to prevent — a number that did not prove the
+> mechanism engaged — and it was found by a planning agent reading the build flags, not by any
+> gate here. §6.2 gains that as its own finding.
+
+### §2.1 aprender, 7B on RTX 4090 — WITHDRAWN, retained for the record
 
 `scripts/llama_pin.toml`, measured **2026-08-25**, host `lambda` (RTX 4090, sm_89), model
 `qwen2.5-coder-7b-instruct-q4_k_m.gguf`, comparator `llama.cpp` pinned `39173bcac`, 15s warmup /
@@ -43,8 +75,9 @@ host, model, date and comparator pin that produced it. Nothing in §4–§7 may 
 
 ### §2.2 The two readings of this table, and why only one is honest
 
-**apr's aggregate throughput is flat at ~110 tok/s at every concurrency.** It does not batch;
-it serialises. Per-user decode *rises* with concurrency (1.554× at c=16) purely because each
+**apr's aggregate was flat at ~110 tok/s at every concurrency in the withdrawn run** — because
+batching was compiled out of that binary. **On `main` it scales** (99.9 → 449.9). The reasoning
+below about decode-vs-aggregate remains valid as a *rule*; the numbers that motivated it do not. Per-user decode *rises* with concurrency (1.554× at c=16) purely because each
 request gets the whole GPU in turn while llama.cpp shares it sixteen ways.
 
 > A gate that reports only per-user decode would call 0.097× aggregate a PASS.
@@ -230,6 +263,32 @@ nothing enables `aprender-gpu/metal`, its `Backend` trait has no compute method,
 no Q4_K kernel in any form. A `mini` cell run today records a CPU run as `metal`, permanently
 under I-9.
 
+### §6.1a Three findings from the final review round
+
+**(i) The counter-measurement that withdrew §2.1 is itself under-provenanced.**
+`cuda_batch_scheduler.rs:38` reads `max_batch` from the **`CUDA_MAX_BATCH` env var, default 4**.
+The 2026-09-01 run logged `max_batch=11`, and that value appears **nowhere** — not in the
+receipt, not in `invocation.txt`, not in `perf-matrix.yaml` or `llama_pin.toml`. It survives only
+in `server-startup.txt`. Batching demonstrably engaged and aggregate demonstrably scaled, so the
+withdrawal of §2.1 stands — but **that artifact is not reproducible from its own receipt**, and it
+may not become a baseline until it is. At least ten env vars change the decode path
+(`CUDA_MAX_BATCH`, `CUDA_BATCH_WINDOW_MS`, `ITERATION_SCHEDULER`, `GRAPH_DISPATCH`,
+`BATCHED_GRAPH`, `FP8_DECODE`, `CUBLAS_GEMM_THRESHOLD`, `APR_STREAM_NONBLOCKING`,
+`STAGGERED_PREFILL`, `APR_FORCE_BATCHED_PATH`) and **none is recorded in any receipt**. I-2 must
+extend to the scheduler configuration, or every receipt is a run of an unnamed configuration.
+
+**(ii) "Uncap `max_batch = 4`" fixes a limit that is not the limit.** Both execution plans
+proposed it. The active cap in the measured run was 11, set by an env var. Editing the Rust
+default would not have moved it, and forcing 16 risks OOM if 11 was chosen for KV-cache headroom
+on a 24 GB card.
+
+**(iii) The residual gap is probably not a kernel problem at all.** Above `m ≥ 4` the batched
+path routes to **cuBLAS GEMM** — NVIDIA's own kernels. If the aggregate deficit persists there,
+it is host-side: admission, tokenization, transport, or KV-cache latency. **Scoping kernel work
+before profiling would misdiagnose the bottleneck**, and §9 #3 is already discharged (ten
+coalesced/DP4A GEMV variants ship in `crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/`,
+and the batched path calls no GEMV).
+
 ### §6.2 The gate in §7 is not implementable today, and this is the blocking item
 
 Assimilated from the quorum that reviewed the rejected v3.0 plan; both verified independently
@@ -355,9 +414,9 @@ Breadth before depth is what produced eight empty cells.
 
 | # | finding | evidence | status |
 |---|---|---|---|
-| **1** | **apr does not batch.** Aggregate is flat at ~110 tok/s from c=1 to c=16 | §2.1 | the whole aggregate gap |
-| **2** | **Single-stream decode is behind**, 0.587× at 7B | §2.1 | not conceded — §2.3 |
-| **3** | M=1 GEMV memory coalescing | §2.4, 192× on a prior codebase | likely mechanism for #2 |
+| **1** | ~~apr does not batch~~ — **WITHDRAWN.** It batches on `main` (`max_batch=11`); the claim came from a build with the feature compiled out | §2.1 banner | the whole premise, retracted |
+| **2** | **Single-stream decode is behind** — 0.591× on main's indicative figure | §2.1 | still real, and now the *largest* known gap |
+| **3** | ~~M=1 GEMV coalescing~~ — **DISCHARGED.** `crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/` ships ten coalesced/DP4A GEMV variants; the 192× non-coalesced defect does not exist here. Above m≥4 the batched path routes to cuBLAS GEMM and does not call a GEMV at all | tree | the kernel lever has **no named live mechanism** |
 | **4** | The harness uses a boolean `--gpu` | §6.1 | violates I-15 |
 | **5** | `mini` declares a backend that does not exist | #2841 | violates I-16 |
 
