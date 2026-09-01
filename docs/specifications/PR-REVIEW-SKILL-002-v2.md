@@ -241,6 +241,51 @@ kill, and `guard_mutation_score` is fixed at one with no ratchet. A rule that ca
 fail alone is not a rule, it is a comment. The observed type survives as *diagnosis* in
 the surviving message, where it is genuinely useful.
 
+#### §4.3.1 The CI signer, and receipt presence as a required check (2026-09-01)
+
+**The question that produced this: "do all pull requests use the quorum?" The measured
+answer was no, and not by a little.** One receipt exists in the repository (#2795's).
+Every open pull request records `REFUSE [Q1] — the receipt is missing`. Arm 4 already
+treated that as RED and it blocked nothing, because `pr-review-receipt` is in no
+`needs:` list.
+
+Two things were missing, and the second could not be armed without the first.
+
+**1. The escrowed key had no consumer.** §4.3 says the secret half is *"escrowed in the
+repository secret `PR_REVIEW_SIGNING_KEY_B64` … so a CI signer materialises it before
+use."* That secret is real — created 2026-08-31 — and
+`grep -rn PR_REVIEW_SIGNING_KEY .github/workflows/` matched **only comments**. The
+reviewer runs where a human runs it and the secret half is deliberately not there, so
+no reviewer could produce a valid receipt at all. `scripts/pr_review_sign_receipt.sh` is
+that signer; the `pr-review-sign` job runs it and commits the signature back. It
+verifies its own output against the committed public key and deletes a signature that
+does not verify — a signature nothing can check is worse than none, because Arm 4 would
+then reject a receipt whose content was fine.
+
+**Arming presence without the signer would have been the `apr test llm` defect again**
+— a required check advertised with its own remedy structurally impossible.
+
+**2. `gate` waits on its needs; it does not read them.** Every required job is read by
+an explicit `if [ "${{ needs.X.result }}" != "success" ]` clause. Adding a job to
+`needs:` alone buys sequencing, not enforcement — a clause omitted there is a job whose
+failure the gate cannot see. `pr-review-present` therefore ships with its clause in the
+same commit.
+
+**Why a new job rather than gating `pr-review-receipt`.** That job carries two mutation
+sweeps, is allowed 150 minutes, and on 2026-09-01 **timed out at 150.85 min** under
+fleet contention. Putting it in `gate` would make every pull request wait on a 2.5-hour
+sweep. `pr-review-present` is Arm 4 and nothing else: text, minisign, one `git
+merge-base`.
+
+**The cutoff is a ratchet, not a retroactive gate.** `PR_REVIEW_CUTOFF` (2840)
+grandfathers pull requests below it: reported, counted, not failed. The receipt rate on
+the day this landed was **1 across 24 open pull requests**, and arming that
+retroactively is not a ratchet, it is an outage — this repository has already had a day
+where one armed gate blocked all nine open PRs. The cutoff is a **number and not a
+date**, for the reason `MECHANISM_PATHS` is a list and not a pattern: PR numbers only
+increase, the comparison is total, and there is no timezone in it. Both polarities are
+rows of `--self-test`, and the off-by-one (`-le` for `-lt`) is mutation-killed.
+
 ### §3.B NVIDIA CUDA documentation (triggered)
 
 Trigger: any changed path matching `crates/aprender-gpu/**`, `crates/aprender-serve/src/cuda/**`, `*cuda*`, `*ptx*`, `*cublas*`, `*fp8*`, `*nvrtc*`; or PR body/commit messages matching `sm_\d+`, `cu[A-Z]\w+`, `cuda[A-Z]\w+`, or a GPU architecture name.

@@ -2001,9 +2001,151 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
 
+  # ---------------------------------------------------------------------------
+  # THE SIGNER §4.3 NAMES AND NOTHING IMPLEMENTED.
+  #
+  # §4.3: the secret half "is held by whoever runs the reviewer ... and a copy is
+  # escrowed in the repository secret PR_REVIEW_SIGNING_KEY_B64 ... so A CI SIGNER
+  # MATERIALISES IT BEFORE USE." Measured 2026-09-01: that secret is real (created
+  # 2026-08-31) and `grep -rn PR_REVIEW_SIGNING_KEY .github/workflows/` matched only
+  # COMMENTS. An escrowed key with no consumer cannot sign anything — which is why the
+  # repository holds exactly ONE receipt and every PR records `REFUSE [Q1]`.
+  #
+  # WHY THIS EXISTS AT ALL, AND WHY THE CUTOFF BELOW DEPENDS ON IT. The review is
+  # performed by an agent, on the box a human runs it on, and the secret half is
+  # deliberately not there. So the halves are produced in two places: the agent writes
+  # the CONTENT, this attaches the SIGNATURE. Without it a reviewer CANNOT produce a
+  # valid receipt, and `pr-review-present` below would be a required check whose only
+  # remedy is impossible — the precise shape of `apr test llm`, advertised in --help
+  # and permanently unreachable because its own feature was undeclared.
+  #
+  # It pushes ONE file and never force-pushes. Forks get no secret, so it skips them
+  # rather than failing them.
+  # ---------------------------------------------------------------------------
+  pr-review-sign:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the PR head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install the tools the signer refuses to run without
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      # Self-test first, and it is hermetic: it generates its own throwaway keypair, so
+      # every branch runs WITHOUT the repository secret. Three of its eight rows are
+      # mutation-verified as independently load-bearing; the script's header records
+      # which two are diagnostics rather than enforcement, so "8 rows" is not read as
+      # "8 rules".
+      - name: "Signer case table: 8 rows on a throwaway keypair"
+        shell: bash
+        run: bash scripts/pr_review_sign_receipt.sh --self-test
+
+      - name: Sign this PR's receipt, if it has an unsigned one
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          root="evidence/pr-review/$PR_NUMBER"
+          if [ ! -d "$root" ]; then
+            echo "no receipt directory $root — nothing to sign."
+            echo "The review is still owed; the S13.11 shadow lane records its absence."
+            exit 0
+          fi
+          signed_any=0
+          # A receipt with a document and no signature is the only thing this touches.
+          while IFS= read -r rcpt; do
+            d=$(dirname "$rcpt")
+            [ -f "$rcpt.minisig" ] && { echo "already signed: $d"; continue; }
+            if [ -z "${PR_REVIEW_SIGNING_KEY_B64:-}" ]; then
+              echo "::error::$d carries an UNSIGNED receipt and PR_REVIEW_SIGNING_KEY_B64 is empty."
+              echo "::error::A receipt that cannot be signed cannot be verified by Arm 4."
+              exit 1
+            fi
+            bash scripts/pr_review_sign_receipt.sh "$d"
+            signed_any=1
+          done < <(find "$root" -name receipt.intoto.jsonl -type f)
+          echo "signed_any=$signed_any" >> "$GITHUB_ENV"
+
+      - name: Commit the signature back to the PR branch
+        if: env.signed_any == '1'
+        shell: bash
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name  "aprender-pr-review-signer"
+          git config user.email "noreply@anthropic.com"
+          git add evidence/pr-review
+          git commit -m "chore(pr-review): sign this PR's receipt (PR-REVIEW-SKILL-002 v2 §4.3 CI signer)"
+          # Never --force. A race with the author's own push fails this step and the
+          # next run signs it; a force-push would silently discard their commit.
+          git push origin "HEAD:$PR_HEAD_REF"
+
+  # ---------------------------------------------------------------------------
+  # RECEIPT PRESENCE, AS A FAST REQUIRED CHECK.
+  #
+  # Arm 4 already existed and already treated a missing receipt as RED — but it lives
+  # in `pr-review-receipt`, which carries two mutation sweeps, is allowed 150 minutes,
+  # and is in no `needs:` list. So its verdict blocked nothing, and on 2026-09-01 it
+  # TIMED OUT at 150.85 min under fleet contention. Putting THAT job in `gate` would
+  # make every pull request in the repository wait on a 2.5-hour sweep.
+  #
+  # This job is Arm 4 and nothing else: text, minisign, and one `git merge-base`. It is
+  # the one that goes in `gate`'s `needs:`.
+  #
+  # It arms FORWARD. `check_pr_review_arm4.sh` grandfathers pull requests below
+  # PR_REVIEW_CUTOFF, because the measured receipt rate on the day this landed was 1
+  # across 24 open PRs — arming it retroactively is not a ratchet, it is an outage, and
+  # this repository has already had a day where one armed gate blocked all nine open
+  # PRs.
+  # ---------------------------------------------------------------------------
+  pr-review-present:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request'
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # base_sha resolves through `git merge-base origin/main <head>`, which a
+          # shallow clone cannot answer; the script exits 2 (the BOX cannot answer)
+          # rather than 1, so a shallow checkout is never read as a missing receipt.
+          fetch-depth: 0
+
+      - name: Install the tools Arm 4 refuses to run without
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      - name: "Arm 4 case table: 10 rows, both polarities of the cutoff"
+        shell: bash
+        run: bash scripts/check_pr_review_arm4.sh --self-test
+
+      - name: This PR's own receipt, under the repository's own default key
+        shell: bash
+        run: bash scripts/check_pr_review_arm4.sh
+
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    needs: [ci, workspace-test, mutants, guard-runner-labels]
+    needs: [ci, workspace-test, mutants, guard-runner-labels, pr-review-present]
     if: always()
     steps:
       - name: Check required jobs
@@ -2031,6 +2173,25 @@ jobs:
             exit 1
           fi
           echo "mutants result: $MUT (success/skipped both pass)"
+          # Receipt presence (PR-REVIEW-SKILL-002 v2 S8 `receipt_presence`, fixed at
+          # 100% with no ratchet). Adding a job to `needs:` makes this job WAIT for it;
+          # it does not make it ENFORCE it — every other required job above is read
+          # explicitly, and a clause omitted here is a job whose failure gate cannot
+          # see. `skipped` passes for the same reason it does for mutants: the job
+          # carries `if: github.event_name == 'pull_request'` and does not run on
+          # push-to-main. Only an explicit `failure` blocks.
+          #
+          # The check itself arms FORWARD — check_pr_review_arm4.sh grandfathers pull
+          # requests below PR_REVIEW_CUTOFF — so this does not retroactively block the
+          # 24 pull requests that were open when it landed.
+          RCPT="${{ needs.pr-review-present.result }}"
+          if [ "$RCPT" = "failure" ]; then
+            echo "pr-review-present (this PR's own review receipt) failed: $RCPT"
+            echo "S6.3: a missing receipt is RED, not skipped. Run the pr-review skill on"
+            echo "this PR and commit the receipt; the pr-review-sign job signs it."
+            exit 1
+          fi
+          echo "pr-review-present result: $RCPT (success/skipped both pass)"
           echo "All required jobs passed"
 
   # Mutation testing — DIFF-SCOPED + BLOCKING on PRs (PMAT build-system audit gap #1).

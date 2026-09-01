@@ -308,7 +308,11 @@ self_test() {
     row() {
         local id=$1 want=$2 desc=$3 tree=$4 pr=$5 subject=$6; shift 6
         local got=0
-        env PR_NUMBER="$pr" PR_HEAD_SHA="$subject" "$@" \
+        # PR_REVIEW_CUTOFF=0 so every row below exercises the ENFORCING path; without
+        # it the fixture PR numbers grandfather out and six rows silently pass on the
+        # cutoff branch instead of the branch they name. A per-row override still wins:
+        # a later `env VAR=VAL` beats an earlier one.
+        env PR_NUMBER="$pr" PR_HEAD_SHA="$subject" PR_REVIEW_CUTOFF=0 "$@" \
             bash "$tree/scripts/check_pr_review_arm4.sh" >/dev/null 2>&1 || got=$?
         if [ "$got" -eq "$want" ]; then
             printf 'ok    %-28s rc=%s  %s\n' "$id" "$got" "$desc"
@@ -334,6 +338,14 @@ self_test() {
         "$repo"   999 "$tip"  PR_REVIEW_GUARD="$ST_ROOT/accept-everything.sh"
     row guard-refuses-everything  1 "A4: a refuse-everything guard must not read green either" \
         "$repo"   999 "$tip"  PR_REVIEW_GUARD="$ST_ROOT/refuse-everything.sh"
+    # THE CUTOFF, BOTH POLARITIES, over the SAME receiptless tree. A one-sided test
+    # here would be satisfied by a cutoff that grandfathers everything - which is the
+    # shape of every gate in this repository that turned out to be unable to fail.
+    row cutoff-grandfathers-below 0 "a PR BELOW the cutoff is reported, not failed" \
+        "$repo"  1000 "$tip"  PR_REVIEW_CUTOFF=2840
+    row cutoff-enforces-at-and-above 1 "a PR AT the cutoff with no receipt is RED" \
+        "$repo"  2840 "$tip"  PR_REVIEW_CUTOFF=2840
+
     row public-key-absent         1 "no .github/pr-review.pub — the branch that used to exit 0 forever" \
         "$nokey"  999 "$tip"
 
@@ -341,7 +353,7 @@ self_test() {
         echo "--- $st_fail row(s) did not produce the required verdict ---" >&2
         return 1
     fi
-    echo "--- 8/8 rows, both polarities ---"
+    echo "--- 10/10 rows, both polarities ---"
     return 0
 }
 
@@ -360,6 +372,32 @@ esac
 : "${PR_NUMBER:?PR_NUMBER is required (the pull request number)}"
 : "${PR_HEAD_SHA:?PR_HEAD_SHA is required (the tip of the PR branch)}"
 ROOT=${PR_REVIEW_EVIDENCE_ROOT:-$REPO_ROOT/evidence/pr-review}
+
+# ---------------------------------------------------------------------------
+# THE GRANDFATHER CUTOFF. `receipt_presence` is fixed at 100% with no ratchet, and on
+# 2026-09-01 the repository's actual rate was 1 receipt across 24 open pull requests.
+# Turning that into a REQUIRED check in one step would block every open PR at once -
+# not a ratchet, an outage - and this repository has already had a day where one armed
+# gate blocked all nine open PRs.
+#
+# So the rule arms forward. A pull request numbered below the cutoff is GRANDFATHERED:
+# reported, counted, and not failed. At or above it, a missing receipt is RED and the
+# check is in `gate`'s `needs:`.
+#
+# THE CUTOFF IS A NUMBER AND NOT A DATE for the reason MECHANISM_PATHS is a list and
+# not a pattern: PR numbers only increase, the comparison is total, and there is no
+# timezone in it. Raising it is a diff a reviewer can read; lowering it below an open
+# PR is the visible act of exempting that PR.
+PR_REVIEW_CUTOFF=${PR_REVIEW_CUTOFF:-2840}
+
+if [ "$PR_NUMBER" -lt "$PR_REVIEW_CUTOFF" ] 2>/dev/null; then
+    echo "$PROG: GRANDFATHERED - PR $PR_NUMBER predates the receipt cutoff ($PR_REVIEW_CUTOFF)."
+    echo "  The review is still owed and its absence is still recorded by the S13.11"
+    echo "  shadow lane, which reports REFUSE [Q1] for exactly this shape. What is"
+    echo "  suppressed here is only the BLOCK, so arming the rule does not stop 24"
+    echo "  in-flight pull requests at once."
+    exit 0
+fi
 
 echo "$PROG: Arm 4 - this PR's own receipt (PR $PR_NUMBER, head $PR_HEAD_SHA)"
 if arm4 "$ROOT" "$PR_NUMBER" "$PR_HEAD_SHA"; then

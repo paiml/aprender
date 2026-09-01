@@ -161,6 +161,26 @@ derive_shadow_rows() {
     printf '%s\n' "$n"
 }
 
+# Arm 4 rows and signer rows. Same register, same failure mode: the count lives in a
+# ci.yml step name, which is exactly where "158 tests" and the "22-row" table went stale.
+derive_arm4_rows() {
+    local root=$1 n
+    [ -f "$root/scripts/check_pr_review_arm4.sh" ] || return 1
+    n=$(grep -cE "^    row [a-z-]+ +[0-9]" "$root/scripts/check_pr_review_arm4.sh")
+    [ "$n" -gt 0 ] || return 1
+    printf '%s\n' "$n"
+}
+
+derive_signer_rows() {
+    local root=$1 n
+    [ -f "$root/scripts/pr_review_sign_receipt.sh" ] || return 1
+    # seven `row` calls plus the one hand-rolled residue check the table also counts
+    n=$(grep -cE "^    row '" "$root/scripts/pr_review_sign_receipt.sh")
+    n=$((n + 1))
+    [ "$n" -gt 0 ] || return 1
+    printf '%s\n' "$n"
+}
+
 # Publisher rows (S13.11 rung 1). Same register, same failure mode as the recorder's.
 derive_publish_rows() {
     local root=$1 n
@@ -223,6 +243,8 @@ quorum_rows|tests/pr-review-quorum.bats|1|expected @N@ q-*
 falsification_tests|contracts/pr-review-skill-v2.yaml|1|All @N@ falsification tests
 shadow_rows|.github/workflows/ci.yml|1|case table: @N@ rows
 publish_rows|.github/workflows/ci.yml|1|Publisher case table: @N@ rows
+arm4_rows|.github/workflows/ci.yml|1|Arm 4 case table: @N@ rows
+signer_rows|.github/workflows/ci.yml|1|Signer case table: @N@ rows
 '
 
 # ---------------------------------------------------------------------------
@@ -250,12 +272,16 @@ check() {
     derived[shadow_rows]=$v
     v=$(derive_publish_rows "$root") || die_env "cannot derive the publisher case-table row count"
     derived[publish_rows]=$v
+    v=$(derive_arm4_rows "$root") || die_env "cannot derive the Arm 4 case-table row count"
+    derived[arm4_rows]=$v
+    v=$(derive_signer_rows "$root") || die_env "cannot derive the signer case-table row count"
+    derived[signer_rows]=$v
 
     [ -n "$quiet" ] || {
         echo "=== the counts these files state as measured, against the tree ($PROG) ==="
         echo "derived:  mutants=${derived[mutants]}  fixture_rows=${derived[fixture_rows]}  bats_tests=${derived[bats_tests]}"
         echo "          quorum_mutants=${derived[quorum_mutants]}  quorum_rows=${derived[quorum_rows]}  quorum_bats_tests=${derived[quorum_bats_tests]}"
-        echo "          falsification_tests=${derived[falsification_tests]}  shadow_rows=${derived[shadow_rows]}  publish_rows=${derived[publish_rows]}"
+        echo "          falsification_tests=${derived[falsification_tests]}  shadow_rows=${derived[shadow_rows]}  publish_rows=${derived[publish_rows]}  arm4_rows=${derived[arm4_rows]}  signer_rows=${derived[signer_rows]}"
     }
 
     local row id file want tmpl needle got
@@ -344,7 +370,8 @@ self_test() {
                 tests/pr-review-quorum.bats scripts/mutate_quorum_arm.sh \
                 scripts/pr_review_quorum_arm.sh \
                 scripts/pr_review_shadow_record.sh \
-                scripts/pr_review_shadow_publish.sh ) \
+                scripts/pr_review_shadow_publish.sh \
+                scripts/check_pr_review_arm4.sh scripts/pr_review_sign_receipt.sh ) \
       | ( cd "$base" && tar -xf - ) || die_env "could not stage a copy of the tree"
 
     local nrows=0
