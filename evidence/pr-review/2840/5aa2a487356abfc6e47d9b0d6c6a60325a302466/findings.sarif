@@ -1,0 +1,73 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-022-missing-code",
+          "level": "warning",
+          "message": {
+            "text": "The parent commit's message and its 90-line evidence file describe a snapshot fix to scripts/mutate-guard.sh that the tree did not contain: build_tree() read $ROOT five times and snapshot_source() did not exist. Verified never committed -- absent from the pre-rebase commit and from the whole reflog."
+          },
+          "properties": {
+            "grounding": "measured",
+            "source": "sed -n '/^build_tree()/,/^}/p' scripts/mutate-guard.sh | grep -c '$ROOT' -> 5; grep -c snapshot_source -> 0; git show 498c4c250:scripts/mutate-guard.sh | grep -c snapshot_source -> 0",
+            "failure_scenario": "A concurrent edit during a sweep makes a mutant land on the wrong line and be reported KILLED for an unrelated reason, hiding a survivor -- while the commit log and the evidence file both assert the defect was fixed.",
+            "precision_class": "advisory",
+            "rationale_for_class": "S3.E is ADVISORY until 30 samples exist (S7's admission rule). The defect is real, measured and now fixed; what the receipt may not claim is blocking AUTHORITY from an arm with no measured precision."
+          }
+        },
+        {
+          "ruleId": "untracked-root-md",
+          "level": "note",
+          "message": {
+            "text": "The fallback find(1) branch of the file universe in check_no_claim_literals.sh was not widened to the repository root, so it relies on the git ls-files pathspec alone for root-level markdown."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "The find branch exists as a fallback when git ls-files returns nothing; in that state root-level .md would be missed. No such state is reachable in CI, where the tree is always a git checkout.",
+            "failure_scenario": "In a non-git export of the tree the fallback runs and root-level markdown silently leaves the claim-literal universe.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}
