@@ -216,6 +216,54 @@ nothing enables `aprender-gpu/metal`, its `Backend` trait has no compute method,
 no Q4_K kernel in any form. A `mini` cell run today records a CPU run as `metal`, permanently
 under I-9.
 
+### §6.2 The gate in §7 is not implementable today, and this is the blocking item
+
+Assimilated from the quorum that reviewed the rejected v3.0 plan; both verified independently
+against `origin/main`.
+
+**(a) The producer cannot emit a comparator ratio, by design.**
+`crates/apr-cli/src/commands/test_llm_band.rs:231`:
+
+```rust
+fn comparator_status(args: &BandArgs<'_>) -> ComparatorStatus {
+    ComparatorStatus::Unmeasured { .. }      // unconditional
+}
+```
+
+guarded by a unit test at `:717` named **"The producer must never be able to emit a comparator
+ratio."** Its doc comment is explicit: *"There is no CLI path to a measured ratio, and that is
+the point."* That was the right call under the old epic — a synthesised ratio is the fabrication
+it existed to remove — but it means **§7's gate has no producer**.
+
+**(b) `decode_tok_per_sec` is absent from every band of every committed receipt.**
+
+```
+$ python3 -c "...evidence/perf-gate-001-w1-lambda/receipt.r1.json..."
+[(1,'UNMEASURED','<ABSENT>'), (4,'UNMEASURED','<ABSENT>'),
+ (8,'UNMEASURED','<ABSENT>'), (16,'UNMEASURED','<ABSENT>')]
+```
+
+Both cells, both hosts, all replicates, all four bands. `token_times_s` is `[]` on every sample
+row, so per-token decode is not merely unaggregated — it is **not captured**.
+
+**Consequence:** the §7 gate is a specification of a check nothing can currently feed. **The
+comparator lane and decode capture are the first deliverable**, before any optimisation work,
+and they need no matrix run. The numbers in §2.1 come from `llama_pin.toml`'s standalone
+harness, not from this producer — which is why they exist at all.
+
+**(c) `perf-matrix.yaml` already encodes the rule §2.2 forbids.** `scripts/perf-matrix.yaml`
+declares Arm **B2 floor = 1.00 on every band** and `perf_gate.sh:246` implements it. That is
+exactly the "decode ≥ 1.0 everywhere" rule that would reject the continuous-batching PR (§2.2).
+**§7 supersedes it**, and the matrix must be edited in the same PR that lands this spec's gate,
+or the two definitions disagree silently.
+
+**(d) The measurement client omits `seed` and `ignore_eos` from the wire.**
+`crates/aprender-test-lib/src/llm/client.rs:436-448` rebuilds the request body with
+`seed: None, ignore_eos: None`, and both fields are `#[serde(skip_serializing_if)]`, so they are
+**omitted rather than nulled**. Every number in §2.1 was therefore taken with unseeded sampling
+and no output-length pin, on both lanes. It does not invalidate an aggregate-throughput
+comparison, but it bounds what any *determinism* or *per-token* claim from this harness can mean.
+
 ---
 
 ## §7 The gate
@@ -385,12 +433,32 @@ and the comparator-vocabulary bound.
 
 | # | item | owner | why it matters |
 |---|---|---|---|
-| **12.1** | **Noise floor σ per metric per host.** No minimum detectable effect is published, so no run can distinguish a real move from noise | perf-gate | every threshold in §4 rests on it; P-4 stays REPORTING until it lands |
+| **12.1** | **σ for `aggregate_tok_per_sec` is MEASURED — see §12.1a.** What remains unmeasured is σ for *decode* (not captured at all, §6.2b) and for the comparator lane (no producer, §6.2a) | perf-gate | the noise floor is no longer step zero; the comparator lane is |
 | 12.2 | §2.3's model-size scaling, controlled (same host, same harness, 1.5B vs 7B) | perf-gate | decides whether single-stream may ever be conceded |
 | 12.3 | Whether llama.cpp can be driven at c>1 by our client without patching it | perf-gate | I-8 is unenforceable otherwise |
 | 12.4 | Instrumentation overhead of any per-phase timing | perf-gate | unpriced; §10 declines the identity partly for this reason |
 | 12.5 | `mini`'s backend decision | #2841 | I-16 blocks the cell until resolved |
 
-**§12.1 is step zero.** Not because a threshold needs it — every rule in §4 is a paired
+### §12.1a The measured noise floor
+
+Recomputed from the six committed receipts (`N = 3`, two hosts), which are exactly I-9's protocol:
+
+| host | band | mean agg tok/s | sd | MDE (k=2, n=3) |
+|---|---|---|---|---|
+| lambda | c=1  | 100.643 | 0.635 | 0.73% |
+| lambda | c=4  | 191.663 | 0.029 | **0.02%** |
+| lambda | c=8  | 353.336 | 0.505 | 0.17% |
+| lambda | c=16 | 450.405 | 0.467 | 0.12% |
+| gx10 | c=1  | 6.203 | 0.005 | 0.09% |
+| gx10 | c=4  | 39.039 | 0.016 | 0.05% |
+| gx10 | c=8  | 76.432 | **14.011** | **21.17%** |
+| gx10 | c=16 | 162.647 | 2.576 | 1.83% |
+
+**lambda is quiet enough to gate** — a 6× lever is four orders of magnitude above its MDE.
+**gx10 c=8 is not**: 21% MDE, consistent with the device-wide stall recorded in #2833 (8 of 774
+requests at 41s against an 8.65s median). A cell whose MDE exceeds the effect it must detect is
+`UNMEASURED`, not a passing cell.
+
+**§12.1's remainder is step zero.** Not because a threshold needs it — every rule in §4 is a paired
 comparison against the same run, so no literal is required — but because without σ, a run that
 moved nothing and a run that moved everything are the same artifact.
