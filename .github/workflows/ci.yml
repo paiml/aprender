@@ -1622,7 +1622,7 @@ jobs:
   #      check_guards_are_wired.sh scans for — a guard named in a comment is not
   #      wired. GREEN and RED together, because "refuse every receipt" reads
   #      green against RED fixtures alone.
-  #   2. the 37-row fixture table (§6.3's fourteen, the twelve PRREV-008 and
+  #   2. the 40-row fixture table (§6.3's fourteen, the twelve PRREV-008 and
   #      PRREV-009 added, S3.E's nine, and PRREV-020's two) under bats, positive
   #      controls included.
   #   3. the guard's own mutation set (§6.4). §8 fixes guard_mutation_score at
@@ -1719,12 +1719,12 @@ jobs:
 
       # Arm 2. Every row of §6.3, plus the positive controls, plus the
       # must-match/must-not-match tables behind the three trigger regexes. This
-      # file is 158 tests and was reachable from NO workflow until this job — the
+      # file is 161 tests and was reachable from NO workflow until this job — the
       # dark-target class this repository has hit with benches and with 58 cgp
       # tests. Both numbers here are recomputed by check_pr_review_counts.sh; the
       # commit that wired this step wrote 65 and 22 over a file that already held
-      # 158 tests and 37 rows.
-      - name: The 37-row fixture table and both polarities of every trigger regex
+      # 161 tests and 37 rows.
+      - name: The 40-row fixture table and both polarities of every trigger regex
         shell: bash
         run: bats tests/pr-review.bats
 
@@ -1735,7 +1735,7 @@ jobs:
       # wall time has been measured: 185/185 killed in 3091s (51.5 min) at
       # --jobs 12 on a 48-core box, 2026-08-30.
       #
-      # THE SET IS 219/219 TODAY — PRREV-015 added S3.E, PRREV-020 its availability
+      # THE SET IS 223/223 TODAY — PRREV-015 added S3.E, PRREV-020 its availability
       # rule and PRREV-019 the survivors-shape rule, one `reject B<n>` site each and
       # so two mutants each. So that wall time is a
       # LOWER BOUND and not a current measurement. It is left as the number that
@@ -1855,9 +1855,297 @@ jobs:
         shell: bash
         run: bash scripts/mutate_quorum_arm.sh
 
+  # ---------------------------------------------------------------------------
+  # PR-REVIEW-SKILL-002 v2 §13.11 RUNG 1 — the shadow lane.
+  #
+  # "CI runs `--explain` on every PR and records PERMIT/REFUSE [Qn]. Merges nothing."
+  #
+  # THE RUNG'S FALSIFIER WAS RED-VERIFIED BEFORE THIS WAS WRITTEN, which is the
+  # ladder's own precondition ("a rung whose falsifier has never been seen to fail is
+  # a rung with no evidence behind it"). Rung 1's falsifier is *delete any one
+  # `refuse Q<n>` site and the corresponding q-row must turn RED*, and that is exactly
+  # what scripts/mutate_quorum_arm.sh derives and runs — one `drop` and one `flip` per
+  # site, 134/134 killed, already green as Arm 6 of `pr-review-receipt`.
+  #
+  # WHY A SEPARATE JOB AND NOT A SEVENTH ARM.
+  # `pr-review-receipt` carries two mutation sweeps and is allowed 150 minutes. A
+  # recorder appended to it would (a) produce a sample only after both sweeps, on a
+  # runner that may be an hour deep, and (b) never run at all on a PR whose Arm 4 has
+  # already failed — which is EVERY PR without a receipt, i.e. precisely the population
+  # rung 2 needs to measure. A recorder that only records when everything else passed
+  # measures the wrong thing.
+  #
+  # IT CANNOT MERGE, AND NOT ONLY BECAUSE IT PASSES --explain.
+  # `--explain` is the arm script's own guard, and one of Arm 6's 134 mutants disables
+  # it. So the capability is removed as well as unused: this is the first job in the
+  # file to set `permissions:`, and it holds `contents: read`. `gh pr merge` needs
+  # contents WRITE and cannot succeed with it. A flag is a promise; a missing scope is
+  # a fact.
+  #
+  # THE VERDICT GOES ON THE PULL REQUEST, NOT ONLY INTO A LOG.
+  # Operator instruction, 2026-09-01. A verdict visible only in a job log is a verdict
+  # nobody reads: logs expire — this repository has already lost a diagnosis that way,
+  # where a check-run annotation was the only surviving truth — and a reviewer looking
+  # at the pull request cannot see a step summary from a job they never opened. So the
+  # sample is published as a marked, idempotent comment: a push UPDATES it rather than
+  # appending, because a lane that appends is a lane people mute.
+  #
+  # IT IS NOT IN `gate`'s `needs:` AND MUST NOT BE. §13 adds zero rows to §7 — a
+  # refusal to arm is not a block, and the pull request stays exactly as green as it
+  # was. Rung 3 is where a class of PR starts merging on this signal, and it is two
+  # rungs and 30 samples away.
+  # ---------------------------------------------------------------------------
+  pr-review-shadow:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    # Text and one `gh pr view`; the arm script's own work is a receipt read. The
+    # tool install is the only slow part. 20 is not a measured number, it is a
+    # generous bound on a job with no build in it — and unlike the 150 above, a
+    # timeout here loses one sample, not an hour of runner.
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request'
+    permissions:
+      # `contents: read` is the load-bearing half: `gh pr merge` needs contents WRITE,
+      # so the merge capability is ABSENT, not merely unused by the --explain flag.
+      # `pull-requests: write` buys exactly one thing — the verdict comment below.
+      contents: read
+      pull-requests: write
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # The arm script resolves `git merge-base origin/main <head>` and walks the
+          # commits after the reviewed SHA (§13.3). A shallow clone cannot answer
+          # either, and the script exits 2 — which this job reports as a failure
+          # rather than as a quiet zero.
+          fetch-depth: 0
+
+      - name: Install the tools the receipt guard refuses to run without
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      # Self-test FIRST, for the reason every other arm gives: a recorder whose RED
+      # has never been seen is a recorder whose GREEN is a count of invocations.
+      # Five of the rows are mutation-verified as load-bearing; the rest are held by a
+      # neighbouring branch, which is stated rather than assumed. The row count is in
+      # the step name and check_pr_review_counts.sh derives it, so a row added without
+      # restating it is RED instead of invisible.
+      - name: "Shadow recorder case table: 12 rows, every way a non-sample reads as a sample"
+        shell: bash
+        run: bash scripts/pr_review_shadow_record.sh --self-test
+
+      - name: "§13.11 rung 1: record this PR's quorum verdict (merges nothing)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/shadow"
+          # Status is read straight off the script, never through a pipe
+          # (Verification Discipline #1). A REFUSE is exit 0 here — it is a SAMPLE.
+          bash scripts/pr_review_shadow_record.sh \
+            --pr "$PR_NUMBER" --head "$PR_HEAD_SHA" --out "$RUNNER_TEMP/shadow" \
+            | tee "$RUNNER_TEMP/shadow/line.txt"
+          rc=${PIPESTATUS[0]}
+          [ "$rc" -eq 0 ] || exit "$rc"
+          {
+            echo '### §13.11 rung 1 — quorum shadow sample'
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/shadow/line.txt"
+            echo '```'
+            echo
+            echo 'Shadow mode. This records a verdict and merges nothing;'
+            echo 'a refusal to arm is not a block (§13, §7 unchanged).'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The publisher has its own case table for the same reason the recorder does, and
+      # its four decision branches are mutation-verified: a publisher that never
+      # updates, one that swallows a failed write, one that skips on a missing body and
+      # one that treats an absent `gh` as a skip are all caught. Self-test first.
+      - name: "Publisher case table: 6 rows, upsert-by-marker and every silent-skip path"
+        shell: bash
+        run: bash scripts/pr_review_shadow_publish.sh --self-test
+
+      - name: Put the verdict on the pull request itself
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '**§13.11 rung 1 — quorum shadow verdict**'
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/shadow/line.txt"
+            echo '```'
+            echo
+            echo 'Shadow mode: this records a verdict and **merges nothing**. A refusal'
+            echo 'to arm is not a block (§13 adds zero rows to §7) — the pull request is'
+            echo 'exactly as green as it was.'
+          } > "$RUNNER_TEMP/shadow/comment.md"
+          bash scripts/pr_review_shadow_publish.sh \
+            --pr "$PR_NUMBER" --body-file "$RUNNER_TEMP/shadow/comment.md"
+
+      # The sample has to leave the runner or rung 2 has nothing to count. §8 wants 30
+      # before any threshold is set, and `gh run download` over this artifact name is
+      # how they are harvested.
+      - name: Upload the sample
+        if: '!cancelled()'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-review-shadow-sample
+          path: ${{ runner.temp }}/shadow/
+          retention-days: 90
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # THE SIGNER §4.3 NAMES AND NOTHING IMPLEMENTED.
+  #
+  # §4.3: the secret half "is held by whoever runs the reviewer ... and a copy is
+  # escrowed in the repository secret PR_REVIEW_SIGNING_KEY_B64 ... so A CI SIGNER
+  # MATERIALISES IT BEFORE USE." Measured 2026-09-01: that secret is real (created
+  # 2026-08-31) and `grep -rn PR_REVIEW_SIGNING_KEY .github/workflows/` matched only
+  # COMMENTS. An escrowed key with no consumer cannot sign anything — which is why the
+  # repository holds exactly ONE receipt and every PR records `REFUSE [Q1]`.
+  #
+  # WHY THIS EXISTS AT ALL, AND WHY THE CUTOFF BELOW DEPENDS ON IT. The review is
+  # performed by an agent, on the box a human runs it on, and the secret half is
+  # deliberately not there. So the halves are produced in two places: the agent writes
+  # the CONTENT, this attaches the SIGNATURE. Without it a reviewer CANNOT produce a
+  # valid receipt, and `pr-review-present` below would be a required check whose only
+  # remedy is impossible — the precise shape of `apr test llm`, advertised in --help
+  # and permanently unreachable because its own feature was undeclared.
+  #
+  # It pushes ONE file and never force-pushes. Forks get no secret, so it skips them
+  # rather than failing them.
+  # ---------------------------------------------------------------------------
+  pr-review-sign:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the PR head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install the tools the signer refuses to run without
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      # Self-test first, and it is hermetic: it generates its own throwaway keypair, so
+      # every branch runs WITHOUT the repository secret. Three of its eight rows are
+      # mutation-verified as independently load-bearing; the script's header records
+      # which two are diagnostics rather than enforcement, so "8 rows" is not read as
+      # "8 rules".
+      - name: "Signer case table: 8 rows on a throwaway keypair"
+        shell: bash
+        run: bash scripts/pr_review_sign_receipt.sh --self-test
+
+      - name: Sign this PR's receipt, if it has an unsigned one
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          root="evidence/pr-review/$PR_NUMBER"
+          if [ ! -d "$root" ]; then
+            echo "no receipt directory $root — nothing to sign."
+            echo "The review is still owed; the S13.11 shadow lane records its absence."
+            exit 0
+          fi
+          signed_any=0
+          # A receipt with a document and no signature is the only thing this touches.
+          while IFS= read -r rcpt; do
+            d=$(dirname "$rcpt")
+            [ -f "$rcpt.minisig" ] && { echo "already signed: $d"; continue; }
+            if [ -z "${PR_REVIEW_SIGNING_KEY_B64:-}" ]; then
+              echo "::error::$d carries an UNSIGNED receipt and PR_REVIEW_SIGNING_KEY_B64 is empty."
+              echo "::error::A receipt that cannot be signed cannot be verified by Arm 4."
+              exit 1
+            fi
+            bash scripts/pr_review_sign_receipt.sh "$d"
+            signed_any=1
+          done < <(find "$root" -name receipt.intoto.jsonl -type f)
+          echo "signed_any=$signed_any" >> "$GITHUB_ENV"
+
+      - name: Commit the signature back to the PR branch
+        if: env.signed_any == '1'
+        shell: bash
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name  "aprender-pr-review-signer"
+          git config user.email "noreply@anthropic.com"
+          git add evidence/pr-review
+          git commit -m "chore(pr-review): sign this PR's receipt (PR-REVIEW-SKILL-002 v2 §4.3 CI signer)"
+          # Never --force. A race with the author's own push fails this step and the
+          # next run signs it; a force-push would silently discard their commit.
+          git push origin "HEAD:$PR_HEAD_REF"
+
+  # ---------------------------------------------------------------------------
+  # RECEIPT PRESENCE, AS A FAST REQUIRED CHECK.
+  #
+  # Arm 4 already existed and already treated a missing receipt as RED — but it lives
+  # in `pr-review-receipt`, which carries two mutation sweeps, is allowed 150 minutes,
+  # and is in no `needs:` list. So its verdict blocked nothing, and on 2026-09-01 it
+  # TIMED OUT at 150.85 min under fleet contention. Putting THAT job in `gate` would
+  # make every pull request in the repository wait on a 2.5-hour sweep.
+  #
+  # This job is Arm 4 and nothing else: text, minisign, and one `git merge-base`. It is
+  # the one that goes in `gate`'s `needs:`.
+  #
+  # It arms FORWARD. `check_pr_review_arm4.sh` grandfathers pull requests below
+  # PR_REVIEW_CUTOFF, because the measured receipt rate on the day this landed was 1
+  # across 24 open PRs — arming it retroactively is not a ratchet, it is an outage, and
+  # this repository has already had a day where one armed gate blocked all nine open
+  # PRs.
+  # ---------------------------------------------------------------------------
+  pr-review-present:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request'
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # base_sha resolves through `git merge-base origin/main <head>`, which a
+          # shallow clone cannot answer; the script exits 2 (the BOX cannot answer)
+          # rather than 1, so a shallow checkout is never read as a missing receipt.
+          fetch-depth: 0
+
+      - name: Install the tools Arm 4 refuses to run without
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      - name: "Arm 4 case table: 10 rows, both polarities of the cutoff"
+        shell: bash
+        run: bash scripts/check_pr_review_arm4.sh --self-test
+
+      - name: This PR's own receipt, under the repository's own default key
+        shell: bash
+        run: bash scripts/check_pr_review_arm4.sh
+
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    needs: [ci, workspace-test, mutants, guard-runner-labels]
+    needs: [ci, workspace-test, mutants, guard-runner-labels, pr-review-present]
     if: always()
     steps:
       - name: Check required jobs
@@ -1885,6 +2173,25 @@ jobs:
             exit 1
           fi
           echo "mutants result: $MUT (success/skipped both pass)"
+          # Receipt presence (PR-REVIEW-SKILL-002 v2 S8 `receipt_presence`, fixed at
+          # 100% with no ratchet). Adding a job to `needs:` makes this job WAIT for it;
+          # it does not make it ENFORCE it — every other required job above is read
+          # explicitly, and a clause omitted here is a job whose failure gate cannot
+          # see. `skipped` passes for the same reason it does for mutants: the job
+          # carries `if: github.event_name == 'pull_request'` and does not run on
+          # push-to-main. Only an explicit `failure` blocks.
+          #
+          # The check itself arms FORWARD — check_pr_review_arm4.sh grandfathers pull
+          # requests below PR_REVIEW_CUTOFF — so this does not retroactively block the
+          # 24 pull requests that were open when it landed.
+          RCPT="${{ needs.pr-review-present.result }}"
+          if [ "$RCPT" = "failure" ]; then
+            echo "pr-review-present (this PR's own review receipt) failed: $RCPT"
+            echo "S6.3: a missing receipt is RED, not skipped. Run the pr-review skill on"
+            echo "this PR and commit the receipt; the pr-review-sign job signs it."
+            exit 1
+          fi
+          echo "pr-review-present result: $RCPT (success/skipped both pass)"
           echo "All required jobs passed"
 
   # Mutation testing — DIFF-SCOPED + BLOCKING on PRs (PMAT build-system audit gap #1).
