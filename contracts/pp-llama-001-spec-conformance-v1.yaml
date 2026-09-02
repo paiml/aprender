@@ -122,7 +122,7 @@ falsification_tests:
     test: "! MIN_ROWS=9999 bash scripts/spec_conformance.sh >/dev/null 2>&1"
     if_fails: "The guard would report OK on an empty table — a blind checker is indistinguishable from a conformant spec"
 
-  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-008
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-007
     rule: "The master describes the tree it governs, on the tree as it stands"
     prediction: "The join is green: every ARMED §6 row's cases exist, no ledger cell is spent twice, and every §12 expiry derives from its blockers"
     test: "bash scripts/spec_conformance.sh"
