@@ -417,7 +417,10 @@ on a 24 GB card.
 **(iii) The residual gap is probably not a kernel problem at all.** Above `m ≥ 4` the batched
 path routes to **cuBLAS GEMM** — NVIDIA's own kernels. If the aggregate deficit persists there,
 it is host-side: admission, tokenization, transport, or KV-cache latency. **Scoping kernel work
-before profiling would misdiagnose the bottleneck**, and §9 #4 is already discharged (ten
+before profiling would misdiagnose the bottleneck**. §9 #3b's `nsys` profile (#2697) has since
+answered it with numbers: `cuLaunchKernel` is 0.7% of CUDA API time and synchronous copies plus
+device allocations are 93.5%, so the prefill fixed cost is host-side. (An earlier draft added
+that §9 #4 was discharged — it is not; see #4.) The coalescing claim itself stands (ten
 coalesced/DP4A GEMV variants ship in `crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/`,
 and the batched path calls no GEMV).
 
@@ -689,7 +692,7 @@ Plus: every cell in `perf-matrix.yaml` present, or `UNMEASURED` with owner and e
 ### §7.1 The kernel microbenchmark gate — and why it is the cheap one
 
 **Its target kernel is named by a profile, never inherited.** §2.4's M=1 GEMV mechanism is
-**discharged** (§9 #4): the tree already ships ten coalesced/DP4A Q4_K GEMV variants, and above
+**partly discharged** (§9 #4): the tree does ship ten coalesced/DP4A Q4_K GEMV variants, and above
 `m ≥ 4` the batched path routes to cuBLAS GEMM and calls no GEMV at all. A gate on `q4k_gemv`
 would therefore protect a kernel the optimised path does not execute — the prior epic's failure
 mode under a new name.
@@ -785,11 +788,27 @@ Breadth before depth is what produced eight empty cells.
 |---|---|---|---|
 | **1** | **gx10 is at most 10.6% of its own memory roofline.** The 6.203 tok/s is the **aggregate** figure at c=1 — decode is not captured at all (§6.2b), so this is the only number that exists. At c=1 aggregate carries prefill and queue time that decode does not, so true decode is *higher* and **10.6% is a floor on the decode ratio, not the decode ratio**. Even as a floor it is less than half of PP-23's 25%, and that a physical-plausibility check must be stated on the wrong metric is itself the argument for §12.1 being step zero. Measured against a ~58 tok/s ceiling (GB10: 4.68 GB of Q4_K weights read per token at ~273 GB/s `[X]` vendor bandwidth — the invariant requires a **measured** one before this may be published). This is the only *live, sized, comparator-free* finding in this table — it needs no second server and no ratio to be true, and a ~9× headroom on the aarch64 host is the same order as the 10.34× §2.1 claimed and withdrew — except this one is a single-host reading, not a ratio between two servers | #2846; PP-23 | **OPEN — `SUSPECT_DISPATCH`.** §12.8 owes the profile |
 | **2** | ~~apr does not batch~~ — **WITHDRAWN.** It batches on `main` (`max_batch=11`); the claim came from a build with the feature compiled out | §2.1 banner | the whole premise, retracted |
-| **3** | **Single-stream decode: UNMEASURED.** The 0.591× indicative figure divides main's aggregate (99.9) by **llama.cpp's 168.9 — a number from the withdrawn 2026-08-24 run**, so it inherits the withdrawal. There is no conformant paired measurement of single-stream on any host | §2.1 banner (withdrawn) | **not conceded and not sized.** §12.2 owes the measurement; until it lands, calling this the largest gap would rest on §2.1, which the banner forbids |
+| **3** | **Single-stream decode: 0.650× — MEASURED, and this document had it as `UNMEASURED`.** #2694, open, measured 2026-08-24 by `apr test llm bench` with **one client driving both servers, streaming, c=1**: decode **103.26** vs llama.cpp **158.90** tok/s, ITL p50 9.68 vs 6.29 ms, same GGUF, same 4090. Receipt `evidence/parity-http/findings.json`. An earlier draft wrote that single-stream was "neither sized nor conceded" and that §12.2 owed the measurement — while a receipted paired measurement of exactly the shape §12.2 describes sat open in the tracker | **#2694** | **OPEN and SIZED.** §12.2 now owes *conformance*, not existence |
+| **3a** | **Prefill is 0.275× — also measured, also open.** #2693: **2,860** vs **10,399** tok/s, TTFT p50 **35.66** vs **9.81** ms, same run as #2694. Prefill is the larger single-stream gap by a wide margin and this document did not mention it | **#2693** | **OPEN.** §10's two-term decomposition exists to separate this from decode |
+| **3b** | **The prefill cost is HOST-SIDE, and that is measured too.** #2697's `nsys` profile: `cuLaunchKernel` is **0.7%** of CUDA API time (2,650 calls, 5.5 ms) while `cuStreamSynchronize` (57.4%), `cuMemcpyHtoD_v2` (32.8%, 1,018 synchronous copies) and `cuMemAlloc_v2` (3.3%, 904 device allocs) are **93.5%**. §6.1a(iii) advanced this as a *hypothesis*; #2697 had already measured it | **#2697** | **OPEN.** This is §12.8's profile, already taken |
 | **4** | **The kernel lever has a named live mechanism after all — RE-OPENED.** The 192× non-coalesced defect is genuinely absent (ten coalesced/DP4A variants ship). But *"above m≥4 the batched path routes to cuBLAS GEMM and calls no GEMV"* is **false on the decode path**: `use_cublas = m >= 4 && (Q4K\|Q6K) && CUBLAS_PREFILL != "0" && !self.is_capturing`, and decode runs **under CUDA graph capture** (`flash_decoding_graphed.rs`, `core.rs:94` "lazily created on first graph capture"). Under capture cuBLAS is never used and batched GEMV is. The deficiency is then named **in the tree, by the team**: *"Batched Q4K GEMV at M≤8 uses single warp (32 threads/block) — insufficient parallelism. Multi-warp specializations only exist for M=16/32. TODO: Add M=4 multi-warp kernel"* | `cublas_prefill/attention.rs:1089`; `cublas_prefill/mod.rs:24-38` | **OPEN, and it is §7.1's target kernel** |
-| **5** | The harness uses a boolean `--gpu` | §6.1 | violates PP-15 |
-| **6** | **`cuda-batch = ["cuda"]` — the implication still points the wrong way at `HEAD`,** so §2.1's banner reads as fixed and is not. `crates/apr-cli/Cargo.toml:90` is unchanged; the repair moved one consumer's `cfg` to `feature = "cuda"` while two live sites still branch on `cuda-batch`, and under plain `--features cuda` the `.apr` Q4K GPU serve path compiles to a hard-error stub | `crates/apr-cli/Cargo.toml:89-90`; `handlers_include_01.rs:95,:148` | **OPEN.** The defect that produced the §2.1 withdrawal is partially live |
-| **7** | `mini` declares a backend that does not exist | #2841 | violates PP-16 |
+| **5** | **P0 — batched CUDA decode emits garbage for every `m > 1`.** #2753: slots served from a batch emit a constant token to the cap, never emit a stop token, and always run to `max_tokens`, with `[PMAT-044] Batch m=3 done` in the log proving the batched path engaged. **PERF-001's 3.32× aggregate is therefore throughput of garbage tokens** | **#2753** (fix in flight: #2809) | **OPEN, P0.** See below — it bears on §2.1 |
+| **6** | The harness uses a boolean `--gpu` | §6.1 | violates PP-15 |
+| **7** | **`cuda-batch = ["cuda"]` — the implication still points the wrong way at `HEAD`,** so §2.1's banner reads as fixed and is not. `crates/apr-cli/Cargo.toml:90` is unchanged; the repair moved one consumer's `cfg` to `feature = "cuda"` while two live sites still branch on `cuda-batch`, and under plain `--features cuda` the `.apr` Q4K GPU serve path compiles to a hard-error stub | `crates/apr-cli/Cargo.toml:89-90`; `handlers_include_01.rs:95,:148` | **OPEN.** The defect that produced the §2.1 withdrawal is partially live |
+| **8** | `mini` declares a backend that does not exist | #2841 | violates PP-16 |
+
+**#5 bears on §2.1's withdrawal and does not undo it.** §2.1 was withdrawn because the measured
+binary had batching compiled out. #2753 says the batching that replaced it *emits garbage above
+`m = 1`*. Both can be true and both are: the withdrawal stands (the old number described a
+serialising build), and the aggregate figure that replaced it is not yet a figure about **correct
+output**. **No aggregate claim at `c > 1` may be published until #2753 closes** — a throughput
+number over garbage tokens is not a throughput number, and this document would otherwise have
+inherited the same defect one build later.
+
+**These four issues were all open, all measured, and none appeared in a document claiming to be
+the only spec governing inference performance and to enumerate what is known to be wrong.** That
+is the §11 failure — a live figure outside the spec that contradicts it — occurring inside the
+spec's own repository, and it is why §11's "the live overlap after this PR is one" is not yet true.
 
 **#2 and #3 are different subsystems** — scheduler and kernels. They are worked one at a time,
 because concurrent work on both confounds every run.
@@ -902,7 +921,7 @@ overstatement.
 | # | item | owner | expires | why it matters |
 |---|---|---|---|---|
 | **12.1** | σ for `aggregate_tok_per_sec` is MEASURED (§12.1a). What remains unmeasured is σ for *decode* (not captured at all, §6.2b) and for the comparator lane (no producer, §6.2a) | perf-gate | **2026-10-02** | the comparator lane, not the noise floor, is step zero |
-| 12.2 | A conformant paired single-stream measurement — the one §9 #3 is blocked on, and the one that would settle whether the deficit scales with model size (§2.3) | perf-gate | **2026-10-16** | until it exists, single-stream is neither sized nor conceded |
+| 12.2 | **A CONFORMANT paired single-stream measurement — the measurement itself already exists.** #2694/#2693 measured decode 0.650× and prefill 0.275× on 2026-08-24, one client, both servers, streaming, c=1, receipted at `evidence/parity-http/findings.json`. What is owed is a receipt that clears §7 — the legacy lane cannot produce `timeouts`, `tokenization.method` or `drain_ms` — plus the model-size question (§2.3) | perf-gate | **2026-10-16** | until it exists, single-stream is neither sized nor conceded |
 | 12.3 | **A DECISION, not a feasibility question: what *is* the comparator?** `llama_pin.toml:129-165` keeps `comparator_parallel = "default"` **on purpose**, pinning llama.cpp's auto value (the constant 4 at the pinned commit) and citing a measured falsifier — handicapping the comparator with `-b 1` manufactured a **2.39×** overstatement in apr's favour. So at c=8 and c=16 the comparator serves 4 slots *by design*, and PP-24 makes both bands permanently `admission_capped`. Half the gated bands can then never produce a verdict, and §6.1c forbids both available remedies. Somebody must choose: **llama.cpp as a user runs it** (llama_pin.toml's position, which loses PP-24 above c=4) or **llama.cpp configured to match the band** (PP-8/PP-24's position, which llama_pin.toml has already argued manufactures a flattering result) | **owner: this decision has none yet** | **2026-10-02** | this is a direct collision between an invariant and a documented, evidence-backed harness decision — §6.1b reads the missing `-np` as an omission to fix and §12.3 read it as a question to answer; it is neither |
 | 12.4 | Instrumentation overhead of any per-phase timing | perf-gate | **2026-10-16** | unpriced; §10 declines the summing identity partly for this reason |
 | 12.5 | `mini`'s backend decision | #2841 | **2026-09-25** | PP-16 blocks the cell until resolved |
@@ -939,7 +958,7 @@ the one merge-phase speed gate this document gets.
 | 2 | §12.3 the comparator-configuration **decision** | **2026-10-09** | PP-8; PP-24; §5.2's argv contract |
 | 3 | §12.1 aggregate **and** decode σ at `n ≥ 5` | **2026-10-16** | P-5's ε; §7 may not arm before it |
 | 3 | §12.10 the five unowned invariants — **PP-19 first** | **2026-10-16** | PP-19/20/23/25 |
-| 4 | §12.2 paired single-stream measurement | **2026-10-23** | §9 #3's size |
+| 4 | §12.2 a **conformant** single-stream receipt (the numbers exist: §9 #3, #3a) | **2026-10-23** | §7-clearing evidence for a gap already sized |
 | 4 | §12.4 instrumentation overhead of per-phase timing | **2026-10-23** | §10's averaged attribution |
 | — | §12.7 an automated PP-18 ancestor check | **2026-10-02** | *off the chain — a `git merge-base` call* |
 | — | §12.8 batched Q4_K GEMV at `M ∈ {4,8}` (§7.1, §9 #4) | **2026-10-02** | *off the chain — `cargo bench`, one host* |
