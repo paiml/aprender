@@ -113,10 +113,15 @@ never by date).
 
 ### Fixed — defects the spec named (§9)
 
-- **§9 #1a:** `prefill_multi_prompt` had no Blackwell guard; on `cc ≥ 120` the
-  batched scheduler now refuses it and prefills each prompt serially, through
+- **§9 #1a:** `prefill_multi_prompt` had no `cc ≥ 120` guard; the batched
+  scheduler now refuses it there and prefills each prompt serially, through
   the same pure `select_prefill_path` predicate `run_prefill` uses. The dead,
-  cc-blind `GpuProfile.batched_prefill` field is gone.
+  cc-blind `GpuProfile.batched_prefill` field is gone. The predicate is
+  numeric and named so (`SM12X_MIN_CC`, reason `sm12x default`): datacenter
+  Blackwell (sm_100/103) and Thor (sm_110) are below it and keep the batched
+  path, because the corruption is recorded on GB10 (sm_121) only — the CUDA
+  docs review arm caught the earlier "blackwell default" label as a
+  wire-visible misnomer on `/v1/effective-config`.
 - **§9 #8:** the `cuda-batch = ["cuda"]` implication ran the wrong way and the
   APR-Q4K GPU pool path was silently downgraded under `--features cuda`; the
   stub is deleted and the path is gated on `cuda` alone.
@@ -132,6 +137,16 @@ never by date).
 - **PP-21:** the band producer defaulted `commit` to the literal `UNPINNED`;
   `receipt_sig.py` now refuses any commit that is not a 40-hex sha.
 - **Audit CO-1:** the LEDGER attributed "batching compiled out" to the wrong run.
+- **PP-24 in-flight counter (cross-vendor review finding):** the CUDA batch
+  scheduler entered the counter once per initial slot and again per staggered
+  join, so `scheduler.in_flight_peak` on `/v1/effective-config` could report
+  up to `2·M−1` for a batch that never held more than `M`; recycled slots
+  were never counted at all. The counter now mirrors the scheduler's own
+  live slot count (`BatchState::m`) at every step and is zeroed when the
+  batch drains.
+- **DP4A comments corrected (CUDA docs arm):** the `has_dp4a` gate stays at
+  sm_75 (the DP4A kernels are validated from Turing), but its comments no
+  longer claim DP4A itself begins there — the PTX ISA puts it at sm_61.
 
 ### Changed
 

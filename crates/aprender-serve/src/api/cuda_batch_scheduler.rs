@@ -178,26 +178,30 @@ pub fn spawn_cuda_batch_scheduler(
 /// one that gets forgotten leaves `in_flight_now` permanently above zero — a
 /// counter that only ever rises is worse than no counter, because a reader
 /// cannot tell it from a busy server.
+///
+/// The count MIRRORS `BatchState::m`, the scheduler's own number of live
+/// slots, synced once per decode step. Counting requests as they were pulled
+/// in was measured wrong twice over (cross-vendor review of PP-24): a staggered
+/// prompt was counted in the batch it arrived with AND again when it joined,
+/// and a request taking a recycled slot was never counted at all.
 #[cfg(feature = "cuda")]
 struct BatchInFlight<'a> {
     counter: &'a crate::api::InFlightCounter,
-    held: usize,
 }
 
 #[cfg(feature = "cuda")]
 impl BatchInFlight<'_> {
-    fn enter(&mut self) {
-        self.counter.enter();
-        self.held += 1;
+    /// Publish the scheduler's live slot count as the in-flight figure.
+    fn sync(&self, live_slots: usize) {
+        self.counter.set(live_slots);
     }
 }
 
 #[cfg(feature = "cuda")]
 impl Drop for BatchInFlight<'_> {
     fn drop(&mut self) {
-        for _ in 0..self.held {
-            self.counter.leave();
-        }
+        // The batch ended on this path, whichever path it was.
+        self.counter.set(0);
     }
 }
 
@@ -330,10 +334,7 @@ fn process_cuda_batch(
     // PP-24: what this server ACTUALLY ran concurrently, as opposed to the
     // ceiling it advertises. The ladder is derived from the ceiling (known
     // before the band) and checked against this peak (known after it).
-    let mut in_flight = BatchInFlight { counter, held: 0 };
-    for _ in 0..m {
-        in_flight.enter();
-    }
+    let in_flight = BatchInFlight { counter };
 
     // PERF-041: `channel_empty` is passed as `true` because THIS scheduler does
     // not consult `rx` before taking the fast path — that omission is F-BATCH-003
@@ -457,6 +458,8 @@ fn process_cuda_batch(
     // Phase 2: Decode loop with mid-batch joins (PMAT-073/099) and slot recycling (PMAT-074)
     // Lock per step (~19ms per acquire vs ~660ms total).
     // PMAT-099: Pending staggered joins are processed one-per-step for progressive ramp-up.
+    // PP-24: the initial batch is live from here, joins or not.
+    in_flight.sync(state.m);
     while !state.all_done() && state.gen_idx < state.max_tokens_max {
         let token_ids = {
             let mut cuda_model = model.write().expect("PMAT-072: model lock poisoned");
@@ -475,7 +478,6 @@ fn process_cuda_batch(
                     });
                 match cuda_model.add_slot_to_batch(&mut state, prompt_ids, config, on_token) {
                     Ok(()) => {
-                        in_flight.enter();
                         error_senders.push(error_tx);
                     },
                     Err(e) => {
@@ -500,7 +502,6 @@ fn process_cuda_batch(
                         match cuda_model.add_slot_to_batch(&mut state, prompt_ids, config, on_token)
                         {
                             Ok(()) => {
-                                in_flight.enter();
                                 error_senders.push(error_tx);
                             },
                             Err(e) => {
@@ -512,6 +513,10 @@ fn process_cuda_batch(
                     Err(_) => break, // No pending requests
                 }
             }
+
+            // PP-24: publish what this batch actually holds, after every join
+            // and recycle path above has run and before the step decodes it.
+            in_flight.sync(state.m);
 
             // PMAT-074: Slot recycling — reuse finished slots for pending requests.
             // Check staggered pending joins first, then external channel.

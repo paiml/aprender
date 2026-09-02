@@ -13,7 +13,9 @@ use trueno_gpu::driver::CudaContext;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Q4kVariant {
-    /// Legacy single-warp (32 threads), no DP4A. Fallback for sm < 7.5.
+    /// Legacy single-warp (32 threads), no DP4A. Fallback below sm_75: DP4A
+    /// itself exists from sm_61 (PTX ISA 5.0), but the DP4A kernels here are
+    /// built and validated for Turing (sm_75) and later only.
     Legacy,
     /// Wide: 128 threads per output row.
     Wide,
@@ -116,7 +118,9 @@ impl GpuProfile {
             (major, minor)
         };
         let sm_target = format!("sm_{ptx_major}{ptx_minor}");
-        let has_dp4a = major > 7 || (major == 7 && minor >= 5); // sm_75+ (Turing)
+        // Gated at sm_75 (Turing). DP4A is sm_61+ per the PTX ISA; the DP4A
+        // kernels are validated from Turing, so sm_61..sm_72 take Legacy.
+        let has_dp4a = major > 7 || (major == 7 && minor >= 5);
         let num_sms = context.multiprocessor_count().unwrap_or(8) as u32;
 
         // Real device compute capability (e.g. 121 for GB10 Blackwell). Uses the
@@ -475,13 +479,13 @@ impl PrefillPath {
 ///
 /// §5.2 asks the server to state "the prefill path `run_prefill` will select".
 /// Reporting the path without the reason would leave a reader unable to tell an
-/// operator override from the Blackwell default — which is the difference
+/// operator override from the sm_12x default — which is the difference
 /// between a deliberate A/B run and a corrupted one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct PrefillPathChoice {
     /// The path itself.
     pub path: PrefillPath,
-    /// Why: `"env=0"`, `"env forced"`, `"blackwell default"` or `"default"`.
+    /// Why: `"env=0"`, `"env forced"`, `"sm12x default"` or `"default"`.
     pub reason: &'static str,
     /// The compute capability the decision was made against (major*10 + minor).
     pub cc: u32,
@@ -499,25 +503,32 @@ pub struct PrefillPathChoice {
 /// The rule:
 /// * `BATCHED_PREFILL=0` → serial, everywhere (the documented opt-out).
 /// * `BATCHED_PREFILL=<anything else>` → batched, everywhere. Explicit opt-in
-///   forces batched even on Blackwell, for A/B testing the KV-scatter fix.
-/// * unset → batched, EXCEPT `cc >= 120` (Blackwell), where the batched prefill
-///   path writes a corrupt KV cache and every subsequent decode step reads
-///   poisoned K/V (contracts/apr-cpu-vs-gpu-output-parity-v1.yaml,
-///   FALSIFY-CPU-GPU-009).
+///   forces batched even on sm_12x, for A/B testing the KV-scatter fix.
+/// * unset → batched, EXCEPT `cc >= 120` (the sm_12x family: RTX 50 sm_120,
+///   GB10 sm_121), where the batched prefill path writes a corrupt KV cache
+///   and every subsequent decode step reads poisoned K/V
+///   (contracts/apr-cpu-vs-gpu-output-parity-v1.yaml, FALSIFY-CPU-GPU-009).
+///
+/// The predicate is a compute-capability inequality, NOT an architecture
+/// test: datacenter Blackwell (sm_100/sm_103) and Thor (sm_110) sit below
+/// 120 and keep the batched path. The defect is recorded on GB10 only;
+/// widen on evidence, never by architecture name.
 #[must_use]
 pub fn select_prefill_path(cc: u32, batched_prefill_env: Option<&str>) -> PrefillPathChoice {
     let (path, reason) = match batched_prefill_env {
         Some("0") => (PrefillPath::Serial, "env=0"),
         Some(_) => (PrefillPath::Batched, "env forced"),
-        None if cc >= BLACKWELL_MIN_CC => (PrefillPath::Serial, "blackwell default"),
+        None if cc >= SM12X_MIN_CC => (PrefillPath::Serial, "sm12x default"),
         None => (PrefillPath::Batched, "default"),
     };
     PrefillPathChoice { path, reason, cc }
 }
 
 /// Compute capability at and above which the batched prefill path is refused
-/// by default (GB10 sm_121 and later Blackwell parts).
-pub const BLACKWELL_MIN_CC: u32 = 120;
+/// by default: the sm_12x family (RTX 50 sm_120, GB10 sm_121) and anything
+/// numerically above it. Not "Blackwell": sm_100/103/110 are Blackwell too
+/// and are below this line (§9 #1a is recorded on GB10 only).
+pub const SM12X_MIN_CC: u32 = 120;
 
 impl GpuProfile {
     /// The prefill path this profile resolved, with its reason.
@@ -685,7 +696,7 @@ mod pmat810_prefill_path_tests {
 
     /// §9 #1: the whole policy, as a table.
     ///
-    /// Every row is a case the engine can actually be in; the Blackwell rows
+    /// Every row is a case the engine can actually be in; the sm_12x rows
     /// are the ones that matter, because a `batched` answer there is the
     /// PMAT-810 KV corruption and a coherent-looking receipt over garbage
     /// tokens.
@@ -693,10 +704,10 @@ mod pmat810_prefill_path_tests {
     fn select_prefill_path_table() {
         let cases: [(u32, Option<&str>, PrefillPath, &str); 6] = [
             (89, None, PrefillPath::Batched, "default"),
-            (121, None, PrefillPath::Serial, "blackwell default"),
+            (121, None, PrefillPath::Serial, "sm12x default"),
             (89, Some("0"), PrefillPath::Serial, "env=0"),
             (121, Some("1"), PrefillPath::Batched, "env forced"),
-            (120, None, PrefillPath::Serial, "blackwell default"),
+            (120, None, PrefillPath::Serial, "sm12x default"),
             (75, Some("anything"), PrefillPath::Batched, "env forced"),
         ];
         for (cc, env, expected_path, expected_reason) in cases {
@@ -710,12 +721,21 @@ mod pmat810_prefill_path_tests {
         }
     }
 
-    /// The Blackwell boundary is `>= 120`, not `> 120`: cc 119 is a discrete
-    /// part and keeps the fast path.
+    /// The boundary is `>= 120`, not `> 120`, and it is numeric: Hopper
+    /// (sm_90), datacenter Blackwell (sm_100/sm_103) and Thor (sm_110) all
+    /// keep the batched path, because the §9 #1a corruption is recorded on
+    /// GB10 (sm_121) only. RTX 50 (sm_120) shares the family and is refused.
     #[test]
-    fn blackwell_boundary_is_inclusive_at_120() {
-        assert_eq!(select_prefill_path(119, None).path, PrefillPath::Batched);
+    fn sm12x_boundary_is_inclusive_at_120_and_numeric() {
+        for cc in [90u32, 100, 103, 110] {
+            assert_eq!(
+                select_prefill_path(cc, None).path,
+                PrefillPath::Batched,
+                "cc={cc} is below the sm_12x line and keeps the batched prefill"
+            );
+        }
         assert_eq!(select_prefill_path(120, None).path, PrefillPath::Serial);
+        assert_eq!(select_prefill_path(121, None).path, PrefillPath::Serial);
     }
 
     /// §9 #1a: the multi-prompt guard must answer with the SAME predicate, so
@@ -867,7 +887,7 @@ mod pp_llama_report_serialisation_tests {
         assert_eq!(json["prefill_path"]["path"].as_str(), Some("serial"));
         assert_eq!(
             json["prefill_path"]["reason"].as_str(),
-            Some("blackwell default")
+            Some("sm12x default")
         );
     }
 

@@ -203,6 +203,19 @@ impl InFlightCounter {
         now
     }
 
+    /// Set the in-flight count to what the scheduler ITSELF holds — the number
+    /// of slots it has live (`BatchState::m`) — and raise the peak to match.
+    ///
+    /// This is the producer the batch scheduler uses. Counting `enter`/`leave`
+    /// per request double-counted a staggered prompt (once in the batch it
+    /// arrived with, once when it joined) and never saw a recycled slot at all
+    /// (PP-24 review, cross-vendor finding); the scheduler's own slot count is
+    /// the fact, so the counter mirrors it instead of re-deriving it.
+    pub fn set(&self, active: usize) {
+        self.now.store(active, Ordering::Release);
+        self.peak.fetch_max(active, Ordering::AcqRel);
+    }
+
     /// Record a request leaving the scheduler.
     ///
     /// Saturating: an unmatched `leave` must not wrap the counter to
@@ -779,6 +792,26 @@ mod effective_config_tests {
     /// The counter's peak is a high-water mark, not the current value, and
     /// `leave` must not wrap below zero.
     #[test]
+    /// `set` mirrors the scheduler's live slot count: the peak follows the
+    /// highest value ever set, `now` follows the last one, and a set to zero
+    /// (the batch ended) leaves the peak standing.
+    #[test]
+    fn in_flight_counter_set_mirrors_the_scheduler_and_keeps_the_peak() {
+        let c = InFlightCounter::new();
+        c.set(3);
+        c.set(5);
+        c.set(2);
+        assert_eq!(c.in_flight_now(), 2);
+        assert_eq!(c.peak_in_flight(), 5);
+        c.set(0);
+        assert_eq!(c.in_flight_now(), 0);
+        assert_eq!(
+            c.peak_in_flight(),
+            5,
+            "the peak is what the band achieved, not what is left"
+        );
+    }
+
     fn in_flight_counter_tracks_peak_and_saturates() {
         let counter = InFlightCounter::new();
         assert_eq!(counter.enter(), 1);

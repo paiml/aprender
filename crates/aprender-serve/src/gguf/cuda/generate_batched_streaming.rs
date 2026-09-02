@@ -883,7 +883,7 @@ impl OwnedQuantizedModelCuda {
                 "[PMAT-810] cc={} >= {}: multi-prompt prefill refused, {num_refused} prompts \
                  prefilled serially (BATCHED_PREFILL=1 to override)",
                 self.executor.gpu_profile.cc,
-                crate::cuda::gpu_profile::BLACKWELL_MIN_CC,
+                crate::cuda::gpu_profile::SM12X_MIN_CC,
             );
             for (slot_idx, prompt, config, on_token) in slots_and_requests {
                 self.recycle_slot(state, slot_idx, prompt, config, on_token)?;
@@ -1051,7 +1051,7 @@ impl OwnedQuantizedModelCuda {
                 "[PMAT-810] cc={} >= {}: multi-prompt prefill refused, {m} prompts \
                  prefilled serially (BATCHED_PREFILL=1 to override)",
                 self.executor.gpu_profile.cc,
-                crate::cuda::gpu_profile::BLACKWELL_MIN_CC,
+                crate::cuda::gpu_profile::SM12X_MIN_CC,
             );
         }
 
@@ -1249,7 +1249,7 @@ mod x1_kvalloc_2774_source_gate {
 #[cfg(test)]
 mod pmat810_multi_prompt_guard_tests {
     use crate::cuda::gpu_profile::{
-        select_prefill_path, GpuProfile, PrefillPath, Q4kVariant, Q6kVariant, BLACKWELL_MIN_CC,
+        select_prefill_path, GpuProfile, PrefillPath, Q4kVariant, Q6kVariant, SM12X_MIN_CC,
     };
 
     /// A profile as `GpuProfile::detect` would resolve it on a card with this
@@ -1272,26 +1272,29 @@ mod pmat810_multi_prompt_guard_tests {
 
     /// §9 #1a: `prefill_and_scatter` and `recycle_slots_batch` both gate on
     /// this predicate, so a `false` here is what makes the packed multi-prompt
-    /// kernel unreachable on Blackwell and the serial per-prompt fallback run
-    /// instead.
+    /// kernel unreachable on the sm_12x family and the serial per-prompt
+    /// fallback run instead. The predicate is numeric (`cc >= 120`), so a
+    /// higher cc is refused too — by number, not by architecture name.
     #[test]
-    fn multi_prompt_prefill_is_refused_on_blackwell_by_default() {
-        for cc in [BLACKWELL_MIN_CC, 121, 130] {
+    fn multi_prompt_prefill_is_refused_on_sm12x_by_default() {
+        for cc in [SM12X_MIN_CC, 121, 130] {
             let p = profile(cc, None);
             assert!(
                 !p.multi_prompt_prefill_allowed(),
                 "cc={cc} must refuse the packed multi-prompt prefill by default"
             );
             assert_eq!(p.prefill_path().path, PrefillPath::Serial);
-            assert_eq!(p.prefill_path().reason, "blackwell default");
+            assert_eq!(p.prefill_path().reason, "sm12x default");
         }
     }
 
-    /// Discrete GPUs are untouched — the guard must not cost the fast path
-    /// where the KV scatter is known good.
+    /// Every cc below the sm_12x line keeps the packed prefill — including
+    /// datacenter Blackwell (sm_100/sm_103) and Thor (sm_110): the corruption
+    /// is recorded on GB10 only and the guard must not cost the fast path
+    /// where the KV scatter is not known bad.
     #[test]
-    fn multi_prompt_prefill_is_allowed_on_discrete_gpus() {
-        for cc in [75u32, 80, 86, 89, 90, 119] {
+    fn multi_prompt_prefill_is_allowed_below_sm12x() {
+        for cc in [75u32, 80, 86, 89, 90, 100, 103, 110] {
             assert!(
                 profile(cc, None).multi_prompt_prefill_allowed(),
                 "cc={cc} must keep the packed multi-prompt prefill"

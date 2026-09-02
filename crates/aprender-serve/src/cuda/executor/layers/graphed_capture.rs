@@ -462,7 +462,7 @@ mod pmat810_blackwell_graph_default_tests {
         assert!(CudaExecutor::resolve_decode_graph(None, 121), "sm_121 too");
         assert!(
             !CudaExecutor::resolve_decode_graph(None, 86),
-            "pre-DP4A cc keeps eager"
+            "cc 86 is below the sm_89 graph default and keeps eager"
         );
         // SKIP_CUDA_GRAPH=1 turns it off where the default says on...
         assert!(!CudaExecutor::resolve_decode_graph(Some(false), 89));
@@ -496,11 +496,11 @@ mod pmat810_blackwell_graph_default_tests {
     fn graph_default_on_for_discrete_dp4a() {
         assert!(CudaExecutor::graph_cc_default(89), "RTX 4090 sm_89");
         assert!(CudaExecutor::graph_cc_default(90), "H100 sm_90");
-        assert!(CudaExecutor::graph_cc_default(119), "just below Blackwell");
+        assert!(CudaExecutor::graph_cc_default(119), "any cc >= 89 (numeric)");
     }
 
-    /// Non-DP4A GPUs (cc<89) keep eager (pre-existing behavior; graph path needs
-    /// DP4A-era kernels).
+    /// cc < 89 keeps eager (pre-existing policy; the graph path is validated on
+    /// the sm_89+ kernels). DP4A itself is sm_61+; this line is not a DP4A test.
     #[test]
     fn graph_default_off_below_dp4a() {
         assert!(!CudaExecutor::graph_cc_default(80 - 5), "sm_75-ish boundary low");
