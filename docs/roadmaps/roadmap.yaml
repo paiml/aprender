@@ -14022,3 +14022,35 @@ roadmap:
     cross-ref (master Appendix A): master section 13. All 42 spec fields in this file now name
     docs/specifications/PP-LLAMA-001-MASTER.md; the superseded documents and their local paths are in
     evidence/parity/LEDGER.md section 13.'
+- id: PMAT-742
+  github_issue: 2851
+  item_type: task
+  title: 'PP-LLAMA-001 v3.1: land #2851 and cut 0.65.0 under the spec (batch fixes, #2849, publish
+    gate, dogfood GO, receipt)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-02 16:45:00+00:00
+  updated: 2026-09-02 17:30:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - '#2851 merged green on ci / gate + workspace-test; release batch merged; #2849 merged'
+  - 'v0.65.0 tagged and released with the parity guide attached; crates.io cascade drained; post-publish
+    verification via the crates.io API'
+  - 'docs/audits/impl-PMAT-742-receipt.md written; transcript-gate PASS'
+  notes: 'paiml-implement run; jidoka entries in .pmat/jidoka.jsonl'
+- id: PMAT-743
+  github_issue: 2851
+  item_type: bug
+  title: 'PMAT-742 jidoka: contract corpus integrity ratchet rose 444->445 on #2851 (pp-llama-001-spec-conformance-v1
+    test id 007A)'
+  status: done
+  priority: high
+  assigned_to: null
+  created: 2026-09-02 17:05:00+00:00
+  updated: 2026-09-02 17:20:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-contracts --test validate_contracts green (integrity 444); ids 001..008 contiguous
+    and unique (653f277d6)'
+  notes: 'five-whys in .pmat/jidoka.jsonl'
