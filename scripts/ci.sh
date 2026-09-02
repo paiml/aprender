@@ -38,7 +38,7 @@ echo "✅ Unit tests passed"
 
 # Step 4: Property tests
 echo "🎲 [4/7] Property tests (256 cases)..."
-if ! PROPTEST_CASES=256 cargo test --test property_tests; then
+if ! PROPTEST_CASES=256 cargo test -p aprender-core --test property_tests; then
     echo "❌ Property tests failed"
     exit 1
 fi
