@@ -1735,7 +1735,7 @@ jobs:
       # wall time has been measured: 185/185 killed in 3091s (51.5 min) at
       # --jobs 12 on a 48-core box, 2026-08-30.
       #
-      # THE SET IS 225/225 TODAY — PRREV-015 added S3.E, PRREV-020 its availability
+      # THE SET IS 233/233 TODAY — PRREV-015 added S3.E, PRREV-020 its availability
       # rule and PRREV-019 the survivors-shape rule, one `reject B<n>` site each and
       # so two mutants each. So that wall time is a
       # LOWER BOUND and not a current measurement. It is left as the number that
