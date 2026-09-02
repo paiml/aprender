@@ -13070,7 +13070,7 @@ roadmap:
   assigned_to: null
   created: &id001 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria:
   - 'All 8 host x workload cells in scripts/perf-matrix.yaml carry a measured baseline (currently 0/8;
     every cell status: UNMEASURED)'
@@ -13104,7 +13104,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13124,7 +13124,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13144,7 +13144,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13165,7 +13165,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13186,7 +13186,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13207,7 +13207,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13232,7 +13232,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13253,7 +13253,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13275,7 +13275,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13295,7 +13295,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13316,7 +13316,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13336,7 +13336,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13358,7 +13358,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13379,7 +13379,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13400,7 +13400,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13421,7 +13421,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13441,7 +13441,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13461,7 +13461,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13482,7 +13482,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13502,7 +13502,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13522,7 +13522,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13544,7 +13544,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13566,7 +13566,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13588,7 +13588,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13609,7 +13609,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13630,7 +13630,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13651,7 +13651,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13673,7 +13673,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13695,7 +13695,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13717,7 +13717,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13738,7 +13738,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13758,7 +13758,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13779,7 +13779,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13800,7 +13800,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13821,7 +13821,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13841,7 +13841,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13862,7 +13862,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13882,7 +13882,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13902,7 +13902,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13923,7 +13923,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13944,7 +13944,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/specifications/APR-PERF-GATE-001-v2.2.md
+  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
   acceptance_criteria: []
   phases: []
   subtasks: []

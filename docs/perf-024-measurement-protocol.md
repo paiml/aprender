@@ -1,7 +1,7 @@
 # PERF-024 — §4.4 measurement protocol: what was missing, and where it now lives
 
 Ticket: PERF-024, epic APR-PERF-GATE-001 (paiml/aprender#2706).
-Spec: `docs/specifications/APR-PERF-GATE-001-v2.2.md` §4.4.
+Spec: `docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md` §4.4.
 Audited against `origin/main` at `de8fbc407`.
 
 ## The thing that already existed
