@@ -1,0 +1,13 @@
+{
+ "compute_pids": [
+  {
+   "pid": 4242,
+   "used_memory_mib": 5120
+  }
+ ],
+ "foreign_pids": [],
+ "host": "fixture",
+ "memory_used_mib": 5480,
+ "probe": "nvidia-smi",
+ "when": "before"
+}

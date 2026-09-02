@@ -103,7 +103,7 @@ it worth quoting.
 > figure and a ratio against Ollama. Both are withdrawn: the harness that
 > produced them never executed the comparator, so the ratio was never measured
 > at all, and the throughput figure came from the same run. See
-> APR-PERF-GATE-001 §5.2. No replacement ratio is published — under the receipt
+> `docs/specifications/PP-LLAMA-001-MASTER.md` (formerly §5.2). No replacement ratio is published — under the receipt
 > rule a number reaches this page only with the evidence path that produced it.
 >
 > The figures are deliberately not restated here, even to disown them: a

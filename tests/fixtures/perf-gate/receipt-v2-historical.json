@@ -1,0 +1,77 @@
+{
+  "bands": [
+    {
+      "agg_ratio": 0.9,
+      "aggregate_tok_per_sec": 100.0,
+      "concurrency": 1,
+      "decode_ratio": 1.1,
+      "tokens_total": 900
+    },
+    {
+      "agg_ratio": 0.9,
+      "aggregate_tok_per_sec": 360.0,
+      "concurrency": 4,
+      "decode_ratio": 1.1,
+      "tokens_total": 900
+    },
+    {
+      "agg_ratio": 0.9,
+      "aggregate_tok_per_sec": 700.0,
+      "concurrency": 8,
+      "decode_ratio": 1.1,
+      "tokens_total": 900
+    },
+    {
+      "agg_ratio": 0.9,
+      "aggregate_tok_per_sec": 1300.0,
+      "concurrency": 16,
+      "decode_ratio": 1.1,
+      "tokens_total": 900
+    }
+  ],
+  "commit": "2222222222222222222222222222222222222222",
+  "completed": 16,
+  "drain_ms": 12.0,
+  "injector": {
+    "arrival_index": 7,
+    "stall_p95_ms": 42.0
+  },
+  "itl": {
+    "p95_w1_ms": 10.0,
+    "p95_w2_ms": 14.0
+  },
+  "kv": {
+    "admission_rejected": 0,
+    "bytes_reserved": 100,
+    "bytes_used": 50,
+    "preempted_swap": 0
+  },
+  "n": 5,
+  "provenance": {
+    "accelerator": "rtx-4090",
+    "binary_path": "/opt/pinned-binary",
+    "binary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "compute_class": "cuda",
+    "feature_set": [
+      "cuda"
+    ],
+    "host": "lambda",
+    "model": "qwen2.5-coder-7b-instruct",
+    "quantization": "q4_k_m",
+    "resolution": "apr_bin.sh"
+  },
+  "requested": 16,
+  "samples_ms": [
+    10.0,
+    11.0,
+    10.5,
+    10.2,
+    10.8
+  ],
+  "spec": "APR-PERF-GATE-001 v2.2 \u00a74.4",
+  "timeouts": 0,
+  "tokenization": {
+    "method": "hf-tokenizers"
+  },
+  "workload": "W1"
+}

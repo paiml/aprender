@@ -69,6 +69,7 @@ fn run_cpu_server(
     vocab: Vec<String>,
     mapped_model: Option<std::sync::Arc<realizar::gguf::MappedGGUFModel>>,
     config: &ServerConfig,
+    offload: Option<realizar::api::OffloadReport>,
 ) -> Result<()> {
     use realizar::api::{create_router_with_config, AppState};
 
@@ -83,7 +84,14 @@ fn run_cpu_server(
     if let Some(mapped) = mapped_model {
         state = state.with_mapped_gguf_model(mapped);
     }
-    let state = state.with_verbose(config.verbose); // GH-152: Pass verbose flag to handlers
+    let mut state = state.with_verbose(config.verbose); // GH-152: Pass verbose flag to handlers
+    // PP-14/PP-15: the resolution the loader printed, retained so
+    // `/v1/effective-config` reports it. `None` on the paths that do not know
+    // the layer count — absent, never a fabricated zero.
+    if let Some(offload) = offload {
+        state = state.with_offload_report(offload);
+    }
+    let state = state;
 
     // Create realizar's full inference router (Ollama-parity endpoints).
     // --no-cors / --no-metrics must reach the router, not stop at the banner.

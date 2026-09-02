@@ -56,9 +56,42 @@ is_allowed() {
                                   # to time itself; it derives no comparator
                                   # ratio. If it ever computes one, delete this
                                   # line rather than widening the predicate.
-    */perf000_serialization_probe.sh) return 0 ;;  # PERF-000 falsifier: measures
-                                                   # wall-clock scaling, derives no
-                                                   # tok/s and no comparator ratio
+    */check_comparator_flags.sh) return 0 ;;  # a GUARD, not a harness — the
+                                              # PP-15/PP-20 comparator-flag
+                                              # checker. Its must-match table
+                                              # contains `apr serve run m.gguf
+                                              # --gpu` and its header quotes
+                                              # "15.7 tok/s" because that is
+                                              # what a must-match fixture IS.
+                                              # Same reason as
+                                              # check_no_fabricated_baselines.sh
+                                              # below.
+    */lib/bench_receipt.py) return 0 ;;   # a RECEIPT VALIDATOR, not a harness:
+                                         # stdlib json/statistics only, no HTTP,
+                                         # no subprocess. It trips the predicate
+                                         # on PROSE (`compare-llama-bench.py`,
+                                         # `15.7 tok/s`, `7.5 SECONDS`) in the
+                                         # comments that record what it was
+                                         # written to catch — the same reason
+                                         # check_no_fabricated_baselines.sh is
+                                         # exempt two entries above.
+    */lib/perf_receipt.py) return 0 ;;    # likewise: reads receipts, prints an
+                                         # `agg_tok_s` COLUMN, and its selftest
+                                         # argv fixture names `/opt/llama-server`.
+                                         # It measures nothing; it validates what
+                                         # scripts/perf_gate.sh measured.
+    */perf041_client.py) return 0 ;;  # PERF-041 serialisation client; retired
+                                      # when PP-LLAMA-001 §12 row 7 lands.
+                                      # It is a MEASUREMENT client, not a second
+                                      # definition of the gate: it starts no
+                                      # server, derives no comparator ratio and
+                                      # reports the token-normalised index beside
+                                      # the wall-clock one precisely so a length
+                                      # divergence cannot be read as
+                                      # "serialization". The canonical client is
+                                      # `apr test llm bench`; when row 7 gives it
+                                      # the token-normalised index, delete this
+                                      # file and this line together.
     *) return 1 ;;
   esac
 }
@@ -89,16 +122,25 @@ trap 'rm -f "$COUNT_FILE"' EXIT
 # files instead of guessing. `llama-cli` and `llama-bench` are included because
 # §4.4.8 forbids driving the comparator with llama-bench at all, so a script
 # reaching for it is a competing harness by definition.
+#
+# PYTHON. The universe below was `scripts/*.sh` only, and scripts/perf041_client.py
+# — 216 lines that drive a server over HTTP and print `agg_tok_s` — sat outside
+# it, so this guard reported `count=0 baseline=0 OK` over a live Python harness.
+# A harness is a harness in any language; the two predicates therefore also
+# recognise the shapes a Python one takes: `urllib.request.urlopen` /
+# `requests.post` for the driving half, and `agg_tok_s` / `tok_s` for the rate.
 starts_server() {
-  grep -qE "serve run|llama-server|llama-cli|llama-bench|ollama (serve|run)|vllm serve|apr[[:space:]]+run|curl[^|]*(/v1/|/api/generate)" "$1" 2>/dev/null
+  grep -qE "serve run|llama-server|llama-cli|llama-bench|ollama (serve|run)|vllm serve|apr[[:space:]]+run|curl[^|]*(/v1/|/api/generate)|urllib\.request\.urlopen|requests\.(post|get)\(" "$1" 2>/dev/null
 }
-computes_rate() { grep -qE "date \+%s|tok/s|tokens?_per_sec|SECONDS" "$1" 2>/dev/null; }
+computes_rate() { grep -qE "date \+%s|tok/s|tokens?_per_sec|agg_tok_s|tok_s|SECONDS" "$1" 2>/dev/null; }
 
 # UNIVERSE: tracked UNION working tree. A `git ls-files`-only universe gives an
 # untracked harness a free pass, which is how three earlier guards were blind.
 universe() {
-  { git -C "$ROOT" ls-files 'scripts/*.sh' 'scripts/**/*.sh' 2>/dev/null || true
-    find "$ROOT/scripts" -name '*.sh' -type f 2>/dev/null | sed "s|^$ROOT/||" || true
+  { git -C "$ROOT" ls-files 'scripts/*.sh' 'scripts/**/*.sh' \
+        'scripts/*.py' 'scripts/**/*.py' 2>/dev/null || true
+    find "$ROOT/scripts" \( -name '*.sh' -o -name '*.py' \) -type f 2>/dev/null \
+      | sed "s|^$ROOT/||" || true
   } | sort -u
 }
 
@@ -158,12 +200,39 @@ selftest() {
   _row "ollama counts as a server"         detect 'ollama serve & \n SECONDS=0'
   _row "vllm counts as a server"           detect 'vllm serve m & \n echo tokens_per_sec'
   _row "plain script is ignored"           ignore 'echo hello; ls -1'
+  # THE WIDENING'S OWN ROWS. Restoring `git show 64cb68177^:scripts/gpu_2x_benchmark.sh`
+  # verbatim as scripts/*.py left the PREVIOUS guard at rc=0 "count=0 baseline=0 OK"
+  # — measured, not argued — because its universe was scripts/*.sh. These rows pin
+  # the shapes a Python harness takes so the extension cannot silently rot back.
+  _row "a python HTTP harness is detected"  detect 'import urllib.request
+urllib.request.urlopen(req)
+agg_tok_s = total / wall'
+  _row "requests.post counts as a server"   detect 'import requests
+requests.post(url, json=body)
+print("tok/s", n / dt)'
+  _row "a python report printer is ignored" ignore 'print(f"{agg_tok_s:>12.1f}")
+json.load(fh)'
+  _row "a python parser is ignored"         ignore 'import json
+rec = json.load(open(path))'
 
   # the allowlist must actually exempt, and must not exempt everything
   if is_allowed "$ROOT/scripts/perf_gate.sh"; then
     printf '  ok    %-40s expect=exempt\n' "perf_gate.sh is allowlisted"; pass=$((pass + 1))
   else
     printf '  BROKE %-40s\n' "perf_gate.sh should be allowlisted"; fail=$((fail + 1))
+  fi
+  # The two entries the deletion/widening pair added must actually exempt, or
+  # `ci / gate` reds on main the moment the universe grows (BASELINE is 0 and
+  # shrink-only, so the widening and the allowlist have to land together).
+  if is_allowed "$ROOT/scripts/perf041_client.py"; then
+    printf '  ok    %-40s expect=exempt\n' "perf041_client.py is allowlisted"; pass=$((pass + 1))
+  else
+    printf '  BROKE %-40s\n' "perf041_client.py should be allowlisted"; fail=$((fail + 1))
+  fi
+  if is_allowed "$ROOT/scripts/lib/perf_receipt.py"; then
+    printf '  ok    %-40s expect=exempt\n' "perf_receipt.py is allowlisted"; pass=$((pass + 1))
+  else
+    printf '  BROKE %-40s\n' "perf_receipt.py should be allowlisted"; fail=$((fail + 1))
   fi
   if is_allowed "$tmp/scripts/probe.sh"; then
     printf '  BROKE %-40s\n' "allowlist must not exempt everything"; fail=$((fail + 1))

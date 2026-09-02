@@ -1,0 +1,342 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.34.0",
+          "rules": [
+            {
+              "id": "PRREV-PMAT",
+              "name": "pmat quality and duplication"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "version": "mcp",
+          "rules": [
+            {
+              "id": "PRREV-CUDA",
+              "name": "device-behaviour claim vs NVIDIA docs"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-CUDA-1",
+          "level": "warning",
+          "message": {
+            "text": "`pub const BLACKWELL_MIN_CC: u32 = 120;` — 'Compute capability at and above which the batched prefill path is refused by default (GB10 sm_121 and later Blackwell parts)', consumed by `select_prefill_path` at :512 as `None if cc >= BLACKWELL_MIN_CC => (PrefillPath::Serial, \"blackwell default\")`."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/cuda/gpu_profile.rs"
+                },
+                "region": {
+                  "startLine": 520
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "CONTRADICTED. NVIDIA states the datacenter Blackwell SM100 'has a different compute capability than the one underpinning NVIDIA Blackwell GeForce RTX 50 series GPUs (SM120)' (sha 1d21f903…), the cuBLAS workspace table names both 'NVIDIA Blackwell Architecture (sm10x)' and '(sm12x)' (sha 8b7ffd4a…), and CUTLASS notes 'the Blackwell SM101 for Thor GPUs is renamed to SM110' (sha 334b4043…). So cc 100, 103 and 110 are Blackwell and all satisfy `cc < 120`. Either horn is a defect: if the batched-prefill KV corruption is architectural, the guard under-covers Blackwell and B100/B200/Thor keep the corrupting path by default; if the bug is specific to GB10/sm_121, then the wire-visible `reason` string \"blackwell default\" mislabels the decision on exactly the receipt §5.2 exists to make trustworthy. A compute-capability inequality cannot express an architecture family — the docs direct callers to ",
+            "source": "nvidia-cuda-docs://CUTLASS/quickstart#target-architecture",
+            "excerpt": "Note: The NVIDIA Blackwell SM100 architecture used in the datacenter products has a different compute capability than the one underpinning NVIDIA Blackwell GeForce RTX 50 series GPUs (SM120). As a result, kernels compiled for Blackwell SM100 architecture with arch conditional features (using `sm100a`) are not compatible with RTX 50 series GPUs.",
+            "excerpt_sha256": "1d21f9039cd44bc746e94a71b40425946c763963ccfc9705444e988494033bdc",
+            "disposition": "fixed in a765c86a5 (SM12X_MIN_CC / sm12x default / DP4A comments)"
+          }
+        },
+        {
+          "ruleId": "PRREV-CUDA-2",
+          "level": "warning",
+          "message": {
+            "text": "Test `blackwell_boundary_is_inclusive_at_120` and its doc: 'The Blackwell boundary is `>= 120`, not `> 120`: cc 119 is a discrete part and keeps the fast path.' `assert_eq!(select_prefill_path(119, None).path, PrefillPath::Batched);`"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/cuda/gpu_profile.rs"
+                },
+                "region": {
+                  "startLine": 713
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "CONTRADICTED. There is no compute capability 11.9; the capabilities the boundary actually separates are 10.x / 11.0 / 12.x (sha 4cca96aa…), and 10.x and 11.0 are Blackwell (sha 334b4043…, sha 8b7ffd4a…). The test pins the boundary against a value no device reports, so it can never fail for the real parts that sit below 120, and 'discrete part' conflates architecture with form factor — RTX 50-series (SM120) is discrete and IS refused by this predicate. Same defect at graphed_capture.rs:499 (`graph_cc_default(119)`, 'just below Blackwell').",
+            "source": "nvidia-cuda-docs://cuda-c-programming-guide/compute-capabilities#table-32-shared-memory-capacity",
+            "excerpt": "| 9.0 | 256 | 0, 8, 16, 32, 64, 100, 132, 164, 196, 228 |\n| 10.x | 256 | 0, 8, 16, 32, 64, 100, 132, 164, 196, 228 |\n| 11.0 | 256 | 0, 8, 16, 32, 64, 100, 132, 164, 196, 228 |\n| 12.x | 128 | 0, 8, 16, 32, 64, 100 |",
+            "excerpt_sha256": "4cca96aaae8da2a16850eddb98c83fe83583733b5470a1b2e92f32762cbefee9",
+            "disposition": "fixed in a765c86a5 (SM12X_MIN_CC / sm12x default / DP4A comments)"
+          }
+        },
+        {
+          "ruleId": "PRREV-CUDA-3",
+          "level": "warning",
+          "message": {
+            "text": "`for cc in [BLACKWELL_MIN_CC, 121, 130]` asserted to 'refuse the packed multi-prompt prefill by default' with reason 'blackwell default'; and at :1294 `for cc in [75u32, 80, 86, 89, 90, 119]` under the comment 'Discrete GPUs are untouched'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/gguf/cuda/generate_batched_streaming.rs"
+                },
+                "region": {
+                  "startLine": 1279
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "CONTRADICTED. cc 130 is asserted to be Blackwell; per the docs Blackwell is 10.x/11.0/12.x, and 'Beginning with devices of Compute Capability 10.0, some architecture-specific features are common to devices of more than one compute capability… part of the same family' (sha 4106e293…) — family membership is enumerated, not implied by an unbounded `>=`. Any future non-Blackwell part with cc >= 130 will emit the literal reason \"blackwell default\" on `/v1/effective-config`, which is precisely the false-provenance failure §5.2 is meant to prevent. The 'discrete GPUs' list is also wrong on its face (SM120 GeForce is discrete and is refused).",
+            "source": "nvidia-cuda-docs://cuda-c-programming-guide/compute-capabilities#family-specific-features",
+            "excerpt": "Beginning with devices of Compute Capability 10.0, some architecture-specific features are common to devices of more than one compute capability. The devices that contain these features are part of the same family and these features can also be called *family-specific* features.",
+            "excerpt_sha256": "4106e2930fcdb276d194f44713a3fb0e486d09f7163a2c149f4c4aff3a041081",
+            "disposition": "fixed in a765c86a5 (SM12X_MIN_CC / sm12x default / DP4A comments)"
+          }
+        },
+        {
+          "ruleId": "PRREV-CUDA-4",
+          "level": "warning",
+          "message": {
+            "text": "New table test asserts `!CudaExecutor::resolve_decode_graph(None, 86)` with the justification 'pre-DP4A cc keeps eager'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/cuda/executor/layers/graphed_capture.rs"
+                },
+                "region": {
+                  "startLine": 465
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "CONTRADICTED. dp4a was introduced in PTX ISA 5.0 (sha 33691c03…), the version adding sm_60/sm_61/sm_62 targets, and the dot-product-accumulate family's Target ISA note is 'Requires `sm_61` or higher' (sha b65b8b1d…). Compute capability 8.6 (Ampere GA10x) is far past that. The assertion the test makes about `graph_cc_default` is fine; the device-behaviour reason attached to it is false and will mislead the next reader tuning that cutoff.",
+            "source": "nvidia-cuda-docs://ptx-isa/changes#ptx-isa-version-5-0",
+            "excerpt": "* A new `dp4a` instruction which allows 4-way dot product with accumulate operation.",
+            "excerpt_sha256": "33691c031136b0dc6fbe3665ec8baabe2a15ade13905326faac1ae0ccf914e27",
+            "disposition": "fixed in a765c86a5 (SM12X_MIN_CC / sm12x default / DP4A comments)"
+          }
+        },
+        {
+          "ruleId": "PRREV-CUDA-5",
+          "level": "warning",
+          "message": {
+            "text": "`let has_dp4a = major > 7 || (major == 7 && minor >= 5); // sm_75+ (Turing)`, with the Q4kVariant::Legacy doc at :16 reading 'Legacy single-warp (32 threads), no DP4A. Fallback for sm < 7.5.' This value feeds `detect_q6k` (Q6K HwDp4a), `detect_hgemm_decode`, and — through `q4k` — the newly added `detect_fused_gate_up` refusal."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/cuda/gpu_profile.rs"
+                },
+                "region": {
+                  "startLine": 119
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "CONTRADICTED (pre-existing line, but load-bearing for the changed `detect_fused_gate_up`/`detect_q6k` path). DP4A requires sm_61, not sm_75 (sha b65b8b1d…, sha 33691c03…). sm_61, sm_62, sm_70 and sm_72 devices all support dp4a and are all classified `has_dp4a == false` here, so they are silently denied the Q6K HwDp4a and cuBLAS-HGEMM paths. Since this PR is specifically about making kernel-variant selection reportable and refusable, the mis-stated hardware predicate now propagates into a wire-visible `q6k`/`fused_gate_up` field.",
+            "source": "nvidia-cuda-docs://ptx-isa/instructions#integer-arithmetic-instructions-dp2a",
+            "excerpt": "Requires `sm_61` or higher.",
+            "excerpt_sha256": "b65b8b1d3304c682c26e40f57207092244aa67560c687d67621d049d0db04660",
+            "disposition": "comment corrected in a765c86a5; the sm_75 gate itself is unchanged (kernels validated from Turing)"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "version": "v1",
+          "rules": [
+            {
+              "id": "PRREV-CRUX",
+              "name": "user-facing surface coverage"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "guard case-tables",
+          "rules": [
+            {
+              "id": "PRREV-MUT",
+              "name": "guard mutation set"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.1.24",
+          "rules": [
+            {
+              "id": "PRREV-AGY",
+              "name": "cross-vendor review (advisory)"
+            },
+            {
+              "id": "PRREV-AGY-PRIOR",
+              "name": "cross-vendor finding on an earlier commit of this PR, absent on the head"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-AGY",
+          "level": "warning",
+          "message": {
+            "text": "scripts/ci.sh step 4 fails because `cargo test --test property_tests` fails with 'no test target named property_tests in default-run packages'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ""
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "CI cannot complete because the property_tests target is not in the default-run packages (the workspace root), breaking the hardcoded cargo test command in ci.sh.",
+            "source": "agy gemini-3.1-pro-high: bash scripts/ci.sh",
+            "excerpt": "bash scripts/ci.sh",
+            "excerpt_sha256": "12208895bfe2b54edff1d36a14e49d1b70a3971c43aa7bb0cb527659eabe3ec3",
+            "disposition": "agreed, pre-existing and out of scope: scripts/ci.sh is byte-identical on origin/main and reachable only via Makefile:777; filed as paiml/aprender#2852"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY",
+          "level": "warning",
+          "message": {
+            "text": "`apr serve` silently drops `ignore_eos` during deserialization because `ChatCompletionRequest` in `crates/apr-cli/src/commands/serve/types.rs` lacks the field."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/apr-cli/src/commands/serve/types.rs"
+                },
+                "region": {
+                  "startLine": 422
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "The measurement harness sends a request with `ignore_eos: true`, but `apr serve` ignores it. The generation stops early on EOS, returning fewer tokens than `n_predict`. The harness then fails the run under PP-28 because `completion_tokens != n_predict`.",
+            "source": "agy gemini-3.1-pro-high: docs/specifications/PP-LLAMA-001-MASTER.md (PP-28)",
+            "excerpt": "docs/specifications/PP-LLAMA-001-MASTER.md (PP-28)",
+            "excerpt_sha256": "738fb9654a9bb62b813f817c61356ba04150621cb7b0cdd4e98941b985fbbbb7",
+            "disposition": "agreed for the SafeTensors route (serve/safetensors.rs mounts the handler that deserialises into the field-less type; files untouched by this PR); not the measured route — the GGUF/realizar route honours ignore_eos (PERF-039) and every witness slot completed n_predict tokens; filed as paiml/aprender#2853"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "Double counting of staggered joins artificially inflates the in_flight_now metric in cuda_batch_scheduler. (found on e3ab9f90c; fixed in a765c86a5; absent on this head)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/cuda_batch_scheduler.rs"
+                },
+                "region": {
+                  "startLine": 478
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "cited",
+            "precision_class": "advisory",
+            "failure_scenario": "A batch of size M with staggering will call in_flight.enter() M times initially, then again for each staggered prompt popped from pending_joins, reporting up to 2*M - 1 concurrent requests for a batch that never exceeded M slots. Conversely, recycled slots from rx in PMAT-074 never call enter(), under-counting actual concurrency. This breaks the PP-24 concurrent ladder derivation by overstating the peak_in_flight.",
+            "source": "agy gemini-3.1-pro-high on e3ab9f90c: in_flight.enter();",
+            "excerpt": "in_flight.enter();",
+            "excerpt_sha256": "f9d948ca49073781dc09b02da70170dc2c1e678bb700e4b0db62d29ad33ce490",
+            "disposition": "run 1: 1 finding (PP-24-in-flight-double-count), cited, re-verified by the primary reviewer by reading cuda_batch_scheduler.rs, fixed in a765c86a5 (InFlightCounter::set + BatchInFlight::sync); run 2 on a765c86a5: no findings; run 3 (this block) reviews the PP-26 v3.1 amendment on top"
+          }
+        }
+      ]
+    }
+  ]
+}

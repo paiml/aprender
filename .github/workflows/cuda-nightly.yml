@@ -66,12 +66,22 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: cuda-nightly
-  cancel-in-progress: false
+# The concurrency group moved DOWN to the job (PP-19 / §5.4). A workflow-level
+# `cuda-nightly` group serialises this lane against itself and against nothing
+# else, and gx10 has a second CI consumer: silicon-nightly's aarch64-cuda-sm121
+# job, 03:30 UTC, 90-minute timeout, which had no group at all. GitHub
+# concurrency groups are REPO-WIDE, so naming the same `perf-gx10` group in both
+# workflows is what actually serialises the two — and that is only expressible
+# at job level. Enforced by scripts/check_perf_concurrency_groups.sh.
 
 jobs:
   falsifiers:
+    # PP-19: one group per HOST, never per workflow and never per ref, and
+    # cancel-in-progress false so a queued run cannot kill a measurement
+    # mid-window.
+    concurrency:
+      group: perf-gx10
+      cancel-in-progress: false
     # Run on schedule/manual-dispatch as before; on a PR run ONLY when the
     # triggering label is exactly `cuda-check` (explicit opt-in targeting).
     if: >-
@@ -92,6 +102,9 @@ jobs:
     env:
       APR_PARITY_MODEL: ${{ vars.APR_PARITY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr' }}
       CARGO_TERM_COLOR: always
+      # JOB level, not step level: the yield branch of `decide` writes a
+      # NOT_RUN marker here before any step-scoped env exists.
+      PERF041_OUT: ${{ github.workspace }}/perf041-witness
     steps:
       - name: Decide whether to run (silicon filter + yield-to-training)
         id: decide
@@ -127,12 +140,40 @@ jobs:
           fi
           if [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; then
             echo "::notice::${{ matrix.name }}: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping falsifiers tonight"
+            # A YIELDED NIGHT MUST BE VISIBLE. Every later step is skipped and
+            # the job goes GREEN, so without this line "the witness did not run"
+            # and "the witness passed" look identical from outside. The marker
+            # is what scripts/check_perf041_marker.sh reads at release, and
+            # NOT_RUN is not PASS.
+            mkdir -p "$PERF041_OUT"
+            printf '{"host":"%s","status":"NOT_RUN","reason":"yield to training (%s MiB, %s procs)","started_utc":"%s","commit":"%s","exit":null,"max_m":null,"cc":null,"sha256":null}\n' \
+              "${{ matrix.name }}" "${used:-?}" "${procs:-?}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${{ github.sha }}" \
+              > "$PERF041_OUT/marker.json"
             echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
           echo "proceed=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7
         if: steps.decide.outputs.proceed == 'true'
+
+      # PP-26's release-phase marker gate (scripts/check_perf041_marker.sh, a
+      # dogfood gate) may not be named in a REQUIRED workflow
+      # (check_no_timing_in_required.sh), yet every guard must be able to fail
+      # somewhere a workflow runs (check_guards_are_wired.sh). Its case table
+      # is GPU-free and runs here nightly.
+      #
+      # IT CARRIES THE SAME `if:` AS THE CHECKOUT ABOVE IT, AND THAT IS NOT
+      # OPTIONAL. `actions/checkout` is gated on `decide`, so on a yield night
+      # (`proceed=false`) there is NO WORKING TREE on the runner — the step
+      # would `bash` a path that does not exist, exit 127, and turn a
+      # deliberately-yielded night RED. A gate that fails because it was not
+      # given its own source is the "job did not start reads as FAILURE" shape:
+      # the verdict says the guard broke when nothing was ever run. So the
+      # guard runs on every night the lane runs, and on a yielded night the
+      # NOT_RUN marker `decide` already wrote is the record.
+      - name: PP-26 marker gate can still go RED (case table, no GPU)
+        if: steps.decide.outputs.proceed == 'true'
+        run: bash scripts/check_perf041_marker.sh --selftest
 
       - name: Preflight — CUDA device + parity model present
         if: steps.decide.outputs.proceed == 'true'
@@ -201,6 +242,90 @@ jobs:
           nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release perf053
           APR_FALSIFY_MODEL="$model" nice -n 19 cargo test -p aprender-serve --features cuda \
             --release --test falsify_stream_ordering_2767 -- --nocapture
+
+      # PP-26 / L0 CORRECTNESS: the batch-invariance witness (FALSIFY-CB-006,
+      # #2753, §9 #1a on Blackwell). PP-LLAMA-001 §7.0 puts correctness at layer
+      # L0 and says perf041 runs "nightly + release, missing marker = RED"; the
+      # probe existed and was wired to nothing.
+      #
+      # IT SITS BEFORE THE PILLAR-4 BEAT, AND CARRIES `!cancelled()`. Every other
+      # step here is `if: steps.decide.outputs.proceed == 'true'` with no
+      # `!cancelled()`, so the first red step aborts every later one — and the
+      # Pillar-4 beat has been red since 2026-08-30. A step appended after it
+      # would never execute; a step before it still needs `!cancelled()` so a red
+      # earlier falsifier cannot hide a red correctness witness. A comparator
+      # throughput ratio must never mask an L0 result (P-4: correct before fast).
+      #
+      # ENV IS RECORDED, NOT INHERITED. Deliberately NO CUBLAS_GEMM_THRESHOLD and
+      # NO FP8_DECODE: contracts/continuous-batching-v1.yaml records that pair
+      # making the m=1 REFERENCE garbage, after which perf041 exits 2 and the
+      # cause is misattributed to batching. CUDA_BATCH_WINDOW_MS is set because
+      # the scheduler's default window is 0 ms, so on a quiet box batches form
+      # only by chance — the probe writes every value into witness.json `env`.
+      - name: PP-26 - batch-invariance witness (perf041)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        env:
+          PERF041_MODEL: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+          CUDA_BATCH_WINDOW_MS: "200"
+        run: |
+          set -uo pipefail
+          # -e OFF, DELIBERATELY. GitHub runs `run:` blocks as `bash -e {0}`
+          # when no `shell:` key is given, and under -e the line
+          #   bash scripts/perf041_...sh > "$log" 2>&1; rc=$?
+          # ABORTS the step the moment the probe exits 1 or 2 — so the
+          # classification below would never run and the step would fail with no
+          # ::error:: at all, which is precisely the silence being removed here.
+          # Every command that must not fail silently is guarded explicitly.
+          set +e
+          mkdir -p "$PERF041_OUT"
+          # Built from the commit under test, like the neighbouring steps: a
+          # witness taken with a stale binary is a statement about other code.
+          nice -n 19 cargo build --release --features cuda --bin apr || {
+            echo "::error::PP-26 UNMEASURABLE (env/harness): the --features cuda build failed, so no witness could be taken"
+            exit 1
+          }
+          log="$PERF041_OUT/probe.log"
+          # Status read from the command, never through a pipe: `cmd | tee` hands
+          # back tee's status and has shipped two unreachable failure paths here.
+          bash scripts/perf041_batched_parity_probe.sh > "$log" 2>&1; rc=$?
+          cat "$log"
+          fail=0
+          # The marker is asserted INDEPENDENTLY of the exit code. A probe that
+          # exits 0 having printed nothing has witnessed nothing, and silence is
+          # the failure mode this lane exists to remove.
+          if grep -q '^PP-26-WITNESS: ' "$log"; then
+            echo "PP-26 markers: $(grep -c '^PP-26-WITNESS: ' "$log") band(s)"
+          else
+            echo "::error::PP-26 produced no '^PP-26-WITNESS: ' marker line — the witness said nothing about any band, which is INVALID-CORRECTNESS, not a pass"
+            fail=1
+          fi
+          # ENV-DEATH AND CODE-DEFECT ARE DIFFERENT REDS. Both exit 1 — an absent
+          # witness is INVALID-CORRECTNESS under PP-26 — but a guard that names a
+          # code cause for a box it could not evaluate has fired three times in
+          # this repo in one day, so the two are never merged into one message.
+          case "$rc" in
+            0) echo "PP-26 PASS: every band agreed with the m=1 reference to the declared point" ;;
+            1) echo "::error::PP-26 CODE DEFECT (#2753 / §9 #1a): a batched slot diverged from the m=1 reference before the declared point on identical greedy input"
+               fail=1 ;;
+            *) echo "::error::PP-26 UNMEASURABLE (env/harness): the probe could not decide (exit $rc) — no c>1 batch formed, the reference was not reproducible, or the model/server was absent. Not a code verdict, and not a pass."
+               fail=1 ;;
+          esac
+          exit "$fail"
+
+      # `!cancelled()` with NO proceed condition, on purpose: when `decide`
+      # yields to training it writes a NOT_RUN marker, and a yielded night is
+      # only visible if that marker leaves the runner.
+      - name: PP-26 - upload the witness
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pp26-witness-${{ matrix.name }}
+          path: |
+            ${{ github.workspace }}/perf041-witness/witness.json
+            ${{ github.workspace }}/perf041-witness/marker.json
+            ${{ github.workspace }}/perf041-witness/probe.log
+          if-no-files-found: warn
+          retention-days: 30
 
       # Pillar-4 marquee: apr decode throughput against a resident ollama.
       #

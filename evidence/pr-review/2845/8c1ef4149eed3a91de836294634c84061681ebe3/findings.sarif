@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "reviewer-precision-below-admission-bar",
+          "level": "warning",
+          "message": {
+            "text": "Pass 7 of the cross-vendor review re-raised four findings already fixed in passes 1-2 (incomplete-withdrawal, missing-archives, contradictory-parity-definition, unimplemented-matrix-update). Each was verified present in fixed form against the exact bytes the reviewer read (md5sum identical). Precision on that pass is 1 of 5 = 20%, against S7's >=90% admission bar, so those findings may not block."
+          },
+          "properties": {
+            "grounding": "measured",
+            "source": "md5sum of docs/specifications/performance-parity-llama.cpp.md against the reviewed copy; grep of each fixed clause in the current text",
+            "failure_scenario": "A reviewer below the precision bar blocks a correct change indefinitely, and the author cannot distinguish a real regression from a re-raised fixed finding without re-verifying every item by hand.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "status-review-evidence-not-linked",
+          "level": "note",
+          "message": {
+            "text": "APR-PERF-GATE-001-status-review.md S5.3 states two CI jobs were cancelled at their 150-minute cap without linking job ids."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "docs/specifications/APR-PERF-GATE-001-status-review.md S5.3",
+            "excerpt": "two jobs were CANCELLED at exactly their 150-minute cap having proved nothing",
+            "excerpt_sha256": "85cedddb1aa405a1b239d7ace93a4d2f24c455d455b4c2712c7ba06a686d1646",
+            "failure_scenario": "A reader cannot re-derive the cancellation claim, so a future reader treats a measured infrastructure event as an assertion and re-litigates it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

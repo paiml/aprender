@@ -42,6 +42,7 @@ fn test_chat_completion_response_debug() {
         brick_trace: None,
         step_trace: None,
         layer_trace: None,
+    timings: None,
     };
     let debug = format!("{:?}", resp);
     assert!(debug.contains("ChatCompletionResponse"));
@@ -69,6 +70,7 @@ fn test_chat_completion_response_with_traces() {
         }),
         step_trace: None,
         layer_trace: None,
+    timings: None,
     };
     let json = serde_json::to_string(&resp).expect("JSON serialization failed");
     assert!(json.contains("brick"));

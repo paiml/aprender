@@ -87,6 +87,19 @@ pub(crate) use ollama_handlers::{
 // handlers read it instead of substituting plausible-looking constants.
 mod model_source;
 pub use model_source::{detect_format_from_magic, gguf_qtype_name, ModelSourceInfo};
+// PP-LLAMA-001 §12 row 6 / PP-2: `GET /v1/effective-config` — what THIS
+// process resolved, read from the process. NOT `#[cfg(feature = "cuda")]`: the
+// route is unconditional and its JSON shape is identical on every build, or the
+// PP-2 must-not-fire case ("the CPU cell reports cpu") is unreachable.
+pub mod effective_config;
+// Carried on `AppState` and read by the handler; not part of the public API,
+// which reaches the same facts through `effective_config(&state)`.
+pub use effective_config::{
+    admission_ceiling_reason, build_features, compute_class_from_residency, effective_config,
+    pp14_holds, AdmissionCounter, EffectiveConfigResponse, InFlightCounter, KvReport, ModelReport,
+    OffloadReport, SchedulerReport, ServerClock, ServerReport, ADMISSION_POLICY,
+};
+pub(crate) use effective_config::{effective_config_handler, EffectiveConfigState};
 mod gpu_handlers;
 pub(crate) use gpu_handlers::{
     batch_generate_handler, batch_tokenize_handler, generate_handler,
@@ -158,10 +171,11 @@ pub struct AppState {
     #[cfg(feature = "gpu")]
     gpu_model: Option<Arc<std::sync::RwLock<crate::gpu::GpuModel>>>,
     /// Quantized model for fused Q4_K inference (IMP-100)
-    /// This is 1.37x faster than dequantized GpuModel due to reduced memory bandwidth
+    /// Faster than the dequantized GpuModel because it reads less memory per token
+    /// (IMP-100; the measured factor has no receipt under evidence/, so it is not stated here)
     quantized_model: Option<Arc<crate::gguf::OwnedQuantizedModel>>,
     /// Thread-safe cached model for HTTP serving (IMP-116)
-    /// Uses Mutex-based scheduler caching for 10.6x speedup
+    /// Uses Mutex-based scheduler caching (IMP-116; the measured speedup has no receipt under evidence/)
     #[cfg(feature = "gpu")]
     cached_model: Option<Arc<crate::gguf::OwnedQuantizedModelCachedSync>>,
     /// Dispatch metrics for adaptive CPU/GPU tracking (IMP-126)
@@ -213,6 +227,11 @@ pub struct AppState {
     /// without that knowledge — the metadata handlers then report the fields
     /// as ABSENT rather than inventing values.
     model_source: Option<Arc<ModelSourceInfo>>,
+    /// PP-LLAMA-001 §5.2: the process clock, the resolved offload, the
+    /// scheduler identity and the in-flight counter that `GET
+    /// /v1/effective-config` reports. One field rather than four so that adding
+    /// a reported fact does not mean editing sixteen struct literals.
+    effective: EffectiveConfigState,
 }
 
 impl AppState {
@@ -231,6 +250,57 @@ impl AppState {
     #[must_use]
     pub fn model_source(&self) -> Option<&ModelSourceInfo> {
         self.model_source.as_deref()
+    }
+
+    /// Attach what the loader resolved for `--gpu-layers` (PP-14, PP-15).
+    ///
+    /// Called by whatever placed the layers, next to the line that prints them,
+    /// so the endpoint reports the same resolution the operator saw and not a
+    /// second derivation of it.
+    #[must_use]
+    pub fn with_offload_report(mut self, report: effective_config::OffloadReport) -> Self {
+        self.effective.offload = Some(Arc::new(report));
+        self
+    }
+
+    /// Attach the scheduler identity and its live in-flight counter (PP-13/PP-24).
+    #[must_use]
+    pub fn with_scheduler_report(
+        mut self,
+        report: effective_config::SchedulerReport,
+        counter: Option<Arc<effective_config::InFlightCounter>>,
+    ) -> Self {
+        self.effective.scheduler = Some(Arc::new(report));
+        self.effective.in_flight = counter;
+        self
+    }
+
+    /// The `/v1/effective-config` state carried on this server.
+    #[must_use]
+    pub(crate) fn effective_config_state(&self) -> &EffectiveConfigState {
+        &self.effective
+    }
+
+    /// This server's process clock (PP-30).
+    #[must_use]
+    pub fn clock(&self) -> &Arc<effective_config::ServerClock> {
+        &self.effective.clock
+    }
+
+    /// Record one request REFUSED admission (§5.2 `kv.admission_rejected`).
+    ///
+    /// Called from the `503` return itself, not from a wrapper around it: every
+    /// site that turns a client away because the scheduler could not take the
+    /// request is an admission rejection, and a counter incremented anywhere
+    /// else would drift from the response the client actually got.
+    pub fn record_admission_rejected(&self) -> u64 {
+        self.effective.admission.record_rejected()
+    }
+
+    /// Requests refused admission since start.
+    #[must_use]
+    pub fn admission_rejected(&self) -> u64 {
+        self.effective.admission.rejected()
     }
 }
 

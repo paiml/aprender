@@ -345,6 +345,14 @@ struct CorpusMeta {
     max_tokens: Option<u32>,
     temperature: Option<f64>,
     seed: Option<u64>,
+    /// §5.1 / PP-28 — W1 pins `ignore_eos: true` so `completion_tokens ==
+    /// n_predict` on every retained sample. Without the header field the
+    /// corpus could not DECLARE the pin, so nothing could check it: a record
+    /// that quietly dropped `ignore_eos` produced a band whose work per request
+    /// was whatever the model decided to stop after, and an Arm A floor
+    /// committed over that drifts with the model's stopping behaviour rather
+    /// than with the server's throughput.
+    ignore_eos: Option<bool>,
     prompts_distinct: Option<bool>,
 }
 
@@ -395,6 +403,7 @@ fn check_record(meta: &CorpusMeta, i: usize, r: &PromptRecord) -> Result<(), Str
         r.id.map_or_else(|| format!("record {}", i + 1), |v| format!("prompt {v}"));
     agree(&who, "max_tokens", meta.max_tokens, r.max_tokens)?;
     agree(&who, "seed", meta.seed, r.seed)?;
+    agree(&who, "ignore_eos", meta.ignore_eos, r.ignore_eos)?;
     agree(
         &who,
         "target_prompt_tokens",
@@ -560,6 +569,9 @@ impl PromptRecord {
             stream: Some(false),
             seed: self.seed,
             ignore_eos: self.ignore_eos,
+            // PP-27: `LlmClient::wire_request` sets this when the request
+            // actually streams; a corpus record never asks for it.
+            stream_options: None,
         }
     }
 }
@@ -586,6 +598,9 @@ fn micro_prompt() -> ChatRequest {
         stream: Some(false),
         seed: None,
         ignore_eos: None,
+        // PP-27: set on the wire by `LlmClient::wire_request` when (and only
+        // when) the request actually streams; a profile never asks for it.
+        stream_options: None,
     }
 }
 
@@ -602,6 +617,9 @@ fn short_prompt() -> ChatRequest {
         stream: Some(false),
         seed: None,
         ignore_eos: None,
+        // PP-27: set on the wire by `LlmClient::wire_request` when (and only
+        // when) the request actually streams; a profile never asks for it.
+        stream_options: None,
     }
 }
 
@@ -625,6 +643,9 @@ fn medium_prompt() -> ChatRequest {
         stream: Some(false),
         seed: None,
         ignore_eos: None,
+        // PP-27: set on the wire by `LlmClient::wire_request` when (and only
+        // when) the request actually streams; a profile never asks for it.
+        stream_options: None,
     }
 }
 
@@ -669,6 +690,9 @@ fn long_prompt() -> ChatRequest {
         stream: Some(false),
         seed: None,
         ignore_eos: None,
+        // PP-27: set on the wire by `LlmClient::wire_request` when (and only
+        // when) the request actually streams; a profile never asks for it.
+        stream_options: None,
     }
 }
 
@@ -1029,6 +1053,7 @@ mod tests {
     //  a record's max_tokens != _meta.max_tokens      | ERR  | the prompt id
     //  a record's seed != _meta.seed                  | ERR  | the prompt id
     //  a record's temperature != _meta.temperature    | ERR  | the prompt id
+    //  a record's ignore_eos != _meta.ignore_eos      | ERR  | the prompt id
     //  a record's target_prompt_tokens disagrees      | ERR  | the prompt id
     //  two identical prompts, prompts_distinct: true  | ERR  | both records
     //  a prompt's word count != body_words + 2        | ERR  | the prompt id
@@ -1039,15 +1064,15 @@ mod tests {
     fn w1_meta(extra: &str) -> String {
         format!(
             "{{\"_meta\":{{\"count\":2,\"max_tokens\":128,\"temperature\":0.0,\"seed\":0,\
-             \"target_prompt_tokens\":512,\"tolerance_tokens\":8,\"prompts_distinct\":true\
-             {extra}}}}}\n"
+             \"ignore_eos\":true,\"target_prompt_tokens\":512,\"tolerance_tokens\":8,\
+             \"prompts_distinct\":true{extra}}}}}\n"
         )
     }
 
     fn w1_rec(id: u64, prompt: &str) -> String {
         format!(
             "{{\"id\":{id},\"max_tokens\":128,\"temperature\":0.0,\"seed\":0,\
-             \"target_prompt_tokens\":512,\"prompt\":\"{prompt}\"}}\n"
+             \"ignore_eos\":true,\"target_prompt_tokens\":512,\"prompt\":\"{prompt}\"}}\n"
         )
     }
 
@@ -1095,6 +1120,14 @@ mod tests {
                 "\"target_prompt_tokens\":512",
                 "\"target_prompt_tokens\":2048",
                 "target_prompt_tokens = 2048",
+            ),
+            // PP-28: the fourth pinned sampler field. Added with the same
+            // `agree` check as the three above, in the same table, so the
+            // must-fire and its revert-to-green are proven the same way.
+            (
+                "\"ignore_eos\":true",
+                "\"ignore_eos\":false",
+                "ignore_eos = false",
             ),
         ] {
             let bad = w1_rec(1, "beta").replace(original, mutated);
@@ -1236,6 +1269,89 @@ mod tests {
                     "Profile {profile:?} should set max_tokens"
                 );
             }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // PP-28 — `ignore_eos` is the fourth field of §5.1's sampler pin, and the
+    // one the corpus could not previously carry.
+    //
+    // Before this change `CorpusMeta` had no `ignore_eos` field, so the header
+    // could not DECLARE the pin and `check_record` could not compare against
+    // it — and no record in the committed corpus carried the field at all. A
+    // W1 band therefore ran with EOS active: each request generated whatever
+    // the model decided to stop after rather than exactly `max_tokens`, so the
+    // work per band was not pinned and `completion_tokens == n_predict` was
+    // uncheckable. `short_of_n_predict` counts exactly that, and it counts
+    // nothing if the wire never carried the flag.
+    // ---------------------------------------------------------------------
+
+    /// MUST-FIRE: a record that opts OUT of the header's pin is refused, and
+    /// the message names the record an operator would edit.
+    ///
+    /// This is the same `agree` rule `max_tokens` and `seed` already have.
+    /// Silence still constrains nothing — a header that declares no
+    /// `ignore_eos` claims nothing about it — so what is refused here is
+    /// DISAGREEMENT, which is the only shape a corpus file can be wrong in
+    /// without the reader being able to see it.
+    #[test]
+    fn corpus_without_ignore_eos_is_refused_for_w1() {
+        let unpinned = w1_rec(1, "beta").replace("\"ignore_eos\":true", "\"ignore_eos\":false");
+        assert!(
+            unpinned.contains("\"ignore_eos\":false"),
+            "fixture: {unpinned}"
+        );
+        let body = w1_meta("") + &w1_rec(0, "alpha") + &unpinned;
+        let err = parse_corpus(&body).expect_err("an unpinned record must be REFUSED");
+        assert!(err.contains("prompt 1"), "must name the prompt: {err}");
+        assert!(
+            err.contains("ignore_eos = false"),
+            "must give the value: {err}"
+        );
+        assert!(
+            err.contains("`_meta.ignore_eos` = true"),
+            "and the header's: {err}"
+        );
+
+        // REVERT -> GREEN, so the refusal binds to the mutation and not to the
+        // fixture.
+        let good = w1_meta("") + &w1_rec(0, "alpha") + &w1_rec(1, "beta");
+        parse_corpus(&good).expect("the pinned corpus loads");
+    }
+
+    /// MUST-NOT-FIRE, at file level: the corpus this repo actually ships pins
+    /// `ignore_eos` in every record AND declares it in `_meta`.
+    ///
+    /// Both halves matter. A corpus whose records carry the flag but whose
+    /// header does not declare it passes `agree` vacuously — the enforcement
+    /// only exists where the header makes a claim.
+    #[test]
+    fn committed_w1_corpus_pins_ignore_eos() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl");
+        let text = std::fs::read_to_string(&path).expect("committed corpus is readable");
+        let mut lines = text.lines();
+        let header = lines.next().expect("line 1 is the `_meta` header");
+        assert!(
+            header.contains("\"ignore_eos\":true"),
+            "`_meta` must DECLARE the pin, or `agree` enforces nothing: {}",
+            &header[..header.len().min(160)]
+        );
+
+        let reqs = load_from_file(&path).expect("committed W1 corpus must load");
+        assert_eq!(reqs.len(), 256);
+        for (i, r) in reqs.iter().enumerate() {
+            assert_eq!(
+                r.ignore_eos,
+                Some(true),
+                "record {i} does not pin ignore_eos; §5.1 W1 requires it on the wire"
+            );
+            // The other three of the four PP-28 fields, asserted here too so a
+            // regeneration that drops one is caught by the same test that owns
+            // the sampler pin.
+            assert_eq!(r.max_tokens, Some(128));
+            assert_eq!(r.temperature, Some(0.0));
+            assert_eq!(r.seed, Some(0));
         }
     }
 }

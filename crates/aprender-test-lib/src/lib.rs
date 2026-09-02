@@ -564,7 +564,7 @@ pub mod animation;
 )]
 pub mod presentar;
 
-/// APR-PERF-GATE-001 v2.2 §4.4 — the serving-performance measurement protocol
+/// PP-LLAMA-001 v3.0 (§3–§6) — the serving-performance measurement protocol
 /// and the receipt producers that write its output.
 ///
 /// Two halves that compose. `protocol`/`window`/`metrics`/`bootstrap`/`samples`

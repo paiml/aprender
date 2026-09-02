@@ -1,4 +1,87 @@
 binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence
+alimentar,alimentar convert,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:46,high
+alimentar,alimentar dedup,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:108,high
+alimentar,alimentar doctest extract,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:188,high
+alimentar,alimentar doctest merge,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:205,high
+alimentar,alimentar drift compare,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/drift.rs:77,high
+alimentar,alimentar drift detect,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/drift.rs:18,high
+alimentar,alimentar drift merge,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/drift.rs:65,high
+alimentar,alimentar drift report,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/drift.rs:36,high
+alimentar,alimentar drift sketch,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/drift.rs:48,high
+alimentar,alimentar fed manifest,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/fed.rs:20,high
+alimentar,alimentar fed plan,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/fed.rs:40,high
+alimentar,alimentar fed split,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/fed.rs:64,high
+alimentar,alimentar fed verify,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/fed.rs:84,high
+alimentar,alimentar filter-text,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:120,high
+alimentar,alimentar fim,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:88,high
+alimentar,alimentar head,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:58,high
+alimentar,alimentar hub push,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/hub.rs:88,high
+alimentar,alimentar import hf,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/hub.rs:24,high
+alimentar,alimentar import local,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/hub.rs:11,high
+alimentar,alimentar info,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:53,high
+alimentar,alimentar mix,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:71,high
+alimentar,alimentar quality check,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/quality.rs:14,high
+alimentar,alimentar quality profiles,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/quality.rs:57,high
+alimentar,alimentar quality report,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/quality.rs:31,high
+alimentar,alimentar quality score,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/quality.rs:39,high
+alimentar,alimentar registry delete,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:104,high
+alimentar,alimentar registry init,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:18,high
+alimentar,alimentar registry list,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:24,high
+alimentar,alimentar registry pull,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:66,high
+alimentar,alimentar registry push,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:35,high
+alimentar,alimentar registry search,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:83,high
+alimentar,alimentar registry show-info,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:91,high
+alimentar,alimentar repl,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:175,high
+alimentar,alimentar schema,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:66,high
+alimentar,alimentar view,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:140,high
+apr,DELETE /api/delete,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/ollama.rs:654,medium
+apr,GET /,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:257,high
+apr,GET /api/tags,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:170,high
+apr,GET /api/version,9,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:172,medium
+apr,GET /health,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:89,medium
+apr,GET /health/live,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:90,medium
+apr,GET /health/ready,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:91,medium
+apr,GET /metrics,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:116,medium
+apr,GET /metrics/dispatch,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:117,medium
+apr,GET /models,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:95,high
+apr,GET /ready,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:93,high
+apr,GET /realize/model,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:105,high
+apr,GET /tensors,6,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/safetensors.rs:164,low
+apr,GET /v1/audit/:request_id,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:146,medium
+apr,GET /v1/effective-config,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:161,high
+apr,GET /v1/gpu/status,7,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:149,medium
+apr,GET /v1/metrics,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:156,high
+apr,GET /v1/models,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:130,medium
+apr,HTTP 404 fallback route index,6,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:279,high
+apr,POST /api/chat,3,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:165,high
+apr,"POST /api/chat (stream:true, NDJSON)",3,x86_64-linux,ollama,no,3,http-apr-serve,crates/aprender-serve/src/api/ollama_handlers.rs:610 (framing :383-421),high
+apr,POST /api/embeddings,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:175,high
+apr,POST /api/generate,3,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:166,high
+apr,"POST /api/generate (stream:true, NDJSON)",3,x86_64-linux,ollama,no,3,http-apr-serve,crates/aprender-serve/src/api/ollama_handlers.rs:665 (framing :383-421),high
+apr,POST /api/pull,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/ollama.rs:650,medium
+apr,POST /api/show,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:171,high
+apr,POST /batch/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:99,high
+apr,POST /batch/tokenize,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:98,high
+apr,POST /generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:97,high
+apr,POST /metrics/dispatch/reset,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:118,medium
+apr,POST /realize/batch,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:103,high
+apr,POST /realize/embed,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:104,high
+apr,POST /realize/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:102,high
+apr,POST /realize/reload,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:106,high
+apr,POST /stream/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:100,high
+apr,POST /tokenize,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:96,high
+apr,POST /v1/batch/completions,9,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:150,medium
+apr,POST /v1/chat/completions,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:132,high
+apr,"POST /v1/chat/completions (stream:true, SSE)",4,x86_64-linux;nvidia-cuda,llama.cpp,no,3,http-apr-serve,"crates/aprender-serve/src/api/openai_handlers.rs:755-787 (stream branches crates/aprender-serve/src/api/cuda_chat_backend.rs:129,275,405,520,986; ignore_eos fail-closed 12,362,471)",high
+apr,POST /v1/chat/completions/stream,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:137,high
+apr,POST /v1/completions,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:131,high
+apr,"POST /v1/completions (stream:true, SSE)",2,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/gpu_completions_handler.rs:398 (SSE :340-378),high
+apr,POST /v1/embeddings,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:142,high
+apr,POST /v1/explain,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:145,high
+apr,POST /v1/gpu/warmup,7,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:148,medium
+apr,POST /v1/logprobs,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:183,low
+apr,POST /v1/perplexity,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:184,low
+apr,POST /v1/predict,5,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:144,high
 apr,apr attn-parity-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:989,high
 apr,apr attn-viz-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1013,high
 apr,apr audio-inspect-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:976,high
@@ -34,9 +117,14 @@ apr,apr cgp roofline,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli
 apr,apr cgp trace,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli.rs:99,low
 apr,apr cgp tui,6,x86_64-linux,NONE,no,7,qa-cgp,crates/aprender-cgp/src/cli.rs:115,low
 apr,apr chat,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:40 (ACCELERATOR_GUARD crates/apr-cli/src/dispatch_analysis.rs:1694),high
+apr,apr chat --backend cpu,6,x86_64-linux,ollama,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:85 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
+apr,apr chat --backend cuda,6,x86_64-linux;nvidia-cuda,ollama,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:85 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),medium
+apr,apr chat --backend wgpu,6,UNKNOWN,ollama,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:85 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
 apr,apr check,2,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:770,high
 apr,apr check-finite-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1033,low
 apr,apr code,2,x86_64-linux,claude-code,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:790,high
+apr,apr code --input-format json,2,x86_64-linux,claude-code,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:793 (CodeInputFormat crates/apr-cli/src/commands_enum.rs:37),high
+apr,apr code --output-format json,2,x86_64-linux,claude-code,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:787 (CodeOutputFormat crates/apr-cli/src/commands_enum.rs:25),high
 apr,apr compare-hf,9,x86_64-linux,safetensors,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:563,medium
 apr,apr compile,9,x86_64-linux,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:672,medium
 apr,apr convert,4,x86_64-linux,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:594,high
@@ -94,11 +182,28 @@ apr,apr embed-viz-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/sr
 apr,apr embeddings-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1165,high
 apr,apr encrypt,4,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/tool_commands.rs:121,high
 apr,apr eval,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:121,high
+apr,apr eval --task classify,6,x86_64-linux,scikit-learn,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1389 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task code,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1397 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task compare,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1421 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task contamination,6,x86_64-linux,huggingface-transformers,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1418 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task correlation,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1423 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task human,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1424 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task humaneval,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1400 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task mbpp,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1409 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task plan,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1425 (flag crates/apr-cli/src/extended_commands.rs:139),high
+apr,apr eval --task verify,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1422 (flag crates/apr-cli/src/extended_commands.rs:139),high
 apr,apr experiment view,6,x86_64-linux,pytorch,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1560,low
 apr,apr explain,6,x86_64-linux,safetensors,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:437,high
 apr,apr explain-token-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1058,low
 apr,apr export,6,x86_64-linux;nvidia-cuda,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:466,high
+apr,apr export --format coreml,6,x86_64-linux;nvidia-cuda,pytorch,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
+apr,apr export --format gguf,6,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
+apr,apr export --format mlx,6,x86_64-linux;nvidia-cuda,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
+apr,apr export --format onnx,6,x86_64-linux;nvidia-cuda,pytorch,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
+apr,apr export --format openvino,6,x86_64-linux;nvidia-cuda,pytorch,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
+apr,apr export --format safetensors,6,x86_64-linux;nvidia-cuda,safetensors,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
 apr,apr finetune,2,x86_64-linux,unsloth,yes,10,apr-core-commands,crates/apr-cli/src/model_ops_commands.rs:6,high
+apr,apr finetune --task classify,2,x86_64-linux,unsloth,no,10,apr-core-commands,crates/apr-cli/src/model_ops_commands.rs:48,high
 apr,apr flow,6,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:660,high
 apr,apr fp8-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:876,high
 apr,apr gbnf-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1123,high
@@ -187,6 +292,10 @@ apr,apr qa,6,x86_64-linux;nvidia-cuda,llama.cpp,yes,1,apr-lint-diag,crates/apr-c
 apr,apr qualify,4,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:678,high
 apr,apr quant-preservation-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1197,high
 apr,apr quantize,4,x86_64-linux,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:732,high
+apr,apr quantize --scheme fp16,4,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:737,high
+apr,apr quantize --scheme int4,4,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:737,high
+apr,apr quantize --scheme int8,4,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:737,high
+apr,apr quantize --scheme q4k,4,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:737,high
 apr,apr rag demo,6,x86_64-linux,huggingface-transformers,no,8,rag-eval,crates/aprender-rag-cli/src/lib.rs:107,low
 apr,apr rag eval compare,6,UNKNOWN,huggingface-transformers,no,8,rag-eval,crates/aprender-rag-cli/src/lib.rs:454,high
 apr,apr rag eval gate,6,UNKNOWN,huggingface-transformers,no,8,rag-eval,crates/aprender-rag-cli/src/lib.rs:465,high
@@ -215,11 +324,28 @@ apr,apr rosetta inspect,6,x86_64-linux,safetensors,no,10,apr-core-commands,crate
 apr,apr rosetta validate-stats,6,x86_64-linux,safetensors,no,10,apr-core-commands,crates/apr-cli/src/commands/rosetta.rs:203,low
 apr,apr rosetta verify,2,x86_64-linux,safetensors,no,10,apr-core-commands,crates/apr-cli/src/commands/rosetta.rs:86,high
 apr,apr run,2,x86_64-linux;nvidia-cuda,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:99,high
+apr,apr run --backend cpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
+apr,apr run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),medium
+apr,apr run --backend wgpu,2,UNKNOWN,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
+apr,apr run --gpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:75,high
+apr,apr run --no-gpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:84,high
+apr,apr run --stream,2,x86_64-linux;nvidia-cuda,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:117,high
+apr,apr run --task transcribe,2,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:107,high
+apr,apr run --task translate,2,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:107,high
+apr,apr run --trace-level basic,2,x86_64-linux;nvidia-cuda,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
+apr,apr run --trace-level chrome,2,x86_64-linux;nvidia-cuda,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
+apr,apr run --trace-level layer,2,x86_64-linux;nvidia-cuda,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
+apr,apr run --trace-level payload,2,x86_64-linux;nvidia-cuda,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
 apr,apr runs diff,6,x86_64-linux,pytorch,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1536,low
 apr,apr runs ls,4,x86_64-linux,pytorch,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1503,high
 apr,apr runs show,6,x86_64-linux,pytorch,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1521,low
 apr,apr serve plan,9,x86_64-linux;nvidia-cuda,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:17,medium
 apr,apr serve run,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:38,high
+apr,apr serve run --backend cpu,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
+apr,apr serve run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),medium
+apr,apr serve run --backend wgpu,4,UNKNOWN,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
+apr,apr serve run --no-cors,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:50 (router.rs:33-42),high
+apr,apr serve run --no-metrics,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (router.rs:33-42),high
 apr,apr shard,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1206,high
 apr,apr shared-cache-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1184,high
 apr,apr showcase,6,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/tool_commands.rs:5,high
@@ -235,6 +361,7 @@ apr,apr sim version,6,x86_64-linux,NONE,no,11,simulation,crates/aprender-simulat
 apr,apr stamp,2,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:617,high
 apr,apr tensors,4,x86_64-linux;nvidia-cuda,safetensors,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:341,high
 apr,apr test llm bench,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1663 (dispatch crates/apr-cli/src/commands/test_llm.rs:399),medium
+apr,apr test llm bench --band,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1778 (protocol crates/apr-cli/src/commands/test_llm_band.rs:348),medium
 apr,apr test tensor,4,x86_64-linux,NONE,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1615,high
 apr,apr tokenize apply,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:38,low
 apr,apr tokenize encode-corpus,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:131,low
@@ -245,10 +372,14 @@ apr,apr tokenize train,6,x86_64-linux,huggingface-transformers,no,10,apr-core-co
 apr,apr tool-use-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1117,high
 apr,apr trace,6,x86_64-linux,safetensors,yes,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:359,high
 apr,apr train apply,1,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:76,high
+apr,apr train apply --task classify,1,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:88,high
+apr,apr train apply --task pretrain,1,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:88,high
 apr,apr train archive,6,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:262,low
 apr,apr train cluster-status,6,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:318,low
 apr,apr train halving,4,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:232,high
 apr,apr train plan,3,x86_64-linux,pytorch,yes,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:14,high
+apr,apr train plan --task classify,3,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:30,high
+apr,apr train plan --task pretrain,3,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:30,high
 apr,apr train submit,6,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:284,low
 apr,apr train sweep,6,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:201,high
 apr,apr train watch,6,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:172,low
@@ -264,101 +395,6 @@ apr,apr zram benchmark,6,x86_64-linux,NONE,no,8,rag-eval,crates/aprender-zram-cl
 apr,apr zram create,6,x86_64-linux,NONE,no,8,rag-eval,crates/aprender-zram-cli/src/lib.rs:38,low
 apr,apr zram remove,6,x86_64-linux,NONE,no,8,rag-eval,crates/aprender-zram-cli/src/lib.rs:41,low
 apr,apr zram status,6,x86_64-linux,NONE,no,8,rag-eval,crates/aprender-zram-cli/src/lib.rs:44,low
-apr,apr chat --backend cpu,6,x86_64-linux,ollama,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:85 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
-apr,apr chat --backend cuda,6,x86_64-linux;nvidia-cuda,ollama,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:85 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),medium
-apr,apr chat --backend wgpu,6,UNKNOWN,ollama,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:85 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
-apr,apr code --input-format json,2,x86_64-linux,claude-code,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:793 (CodeInputFormat crates/apr-cli/src/commands_enum.rs:37),high
-apr,apr code --output-format json,2,x86_64-linux,claude-code,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:787 (CodeOutputFormat crates/apr-cli/src/commands_enum.rs:25),high
-apr,apr eval --task classify,6,x86_64-linux,scikit-learn,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1389 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task code,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1397 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task compare,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1421 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task contamination,6,x86_64-linux,huggingface-transformers,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1418 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task correlation,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1423 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task human,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1424 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task humaneval,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1400 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task mbpp,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1409 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task plan,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1425 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr eval --task verify,6,x86_64-linux,NONE,no,8,rag-eval,crates/apr-cli/src/dispatch_analysis.rs:1422 (flag crates/apr-cli/src/extended_commands.rs:139),high
-apr,apr export --format coreml,6,x86_64-linux;nvidia-cuda,pytorch,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
-apr,apr export --format gguf,6,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
-apr,apr export --format mlx,6,x86_64-linux;nvidia-cuda,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
-apr,apr export --format onnx,6,x86_64-linux;nvidia-cuda,pytorch,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
-apr,apr export --format openvino,6,x86_64-linux;nvidia-cuda,pytorch,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
-apr,apr export --format safetensors,6,x86_64-linux;nvidia-cuda,safetensors,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:471,high
-apr,apr finetune --task classify,2,x86_64-linux,unsloth,no,10,apr-core-commands,crates/apr-cli/src/model_ops_commands.rs:48,high
-apr,apr quantize --scheme fp16,4,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:737,high
-apr,apr quantize --scheme int4,4,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:737,high
-apr,apr quantize --scheme int8,4,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:737,high
-apr,apr quantize --scheme q4k,4,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:737,high
-apr,apr run --backend cpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
-apr,apr run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),medium
-apr,apr run --backend wgpu,2,UNKNOWN,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:154 (BACKEND_VALUES crates/apr-cli/src/commands_enum.rs:10),high
-apr,apr run --gpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:75,high
-apr,apr run --no-gpu,2,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:84,high
-apr,apr run --stream,2,x86_64-linux;nvidia-cuda,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:117,high
-apr,apr run --task transcribe,2,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:107,high
-apr,apr run --task translate,2,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:107,high
-apr,apr run --trace-level basic,2,x86_64-linux;nvidia-cuda,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
-apr,apr run --trace-level chrome,2,x86_64-linux;nvidia-cuda,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
-apr,apr run --trace-level layer,2,x86_64-linux;nvidia-cuda,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
-apr,apr run --trace-level payload,2,x86_64-linux;nvidia-cuda,NONE,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:104 (TRACE_LEVEL_VALUES crates/apr-cli/src/commands_enum.rs:17),high
-apr,apr serve run --backend cpu,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
-apr,apr serve run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),medium
-apr,apr serve run --backend wgpu,4,UNKNOWN,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
-apr,apr serve run --no-cors,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:50 (router.rs:33-42),high
-apr,apr serve run --no-metrics,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (router.rs:33-42),high
-apr,apr test llm bench --band,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1778 (protocol crates/apr-cli/src/commands/test_llm_band.rs:348),medium
-apr,apr train apply --task classify,1,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:88,high
-apr,apr train apply --task pretrain,1,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:88,high
-apr,apr train plan --task classify,3,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:30,high
-apr,apr train plan --task pretrain,3,x86_64-linux,pytorch,no,10,apr-core-commands,crates/apr-cli/src/train_commands.rs:30,high
-apr,DELETE /api/delete,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/ollama.rs:654,medium
-apr,GET /,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:252,high
-apr,GET /api/tags,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:165,high
-apr,GET /api/version,9,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:167,medium
-apr,GET /health,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:89,medium
-apr,GET /health/live,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:90,medium
-apr,GET /health/ready,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:91,medium
-apr,GET /metrics,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:116,medium
-apr,GET /metrics/dispatch,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:117,medium
-apr,GET /models,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:95,high
-apr,GET /ready,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:93,high
-apr,GET /realize/model,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:105,high
-apr,GET /tensors,6,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/safetensors.rs:164,low
-apr,GET /v1/audit/:request_id,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:146,medium
-apr,GET /v1/gpu/status,7,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:149,medium
-apr,GET /v1/metrics,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:156,high
-apr,GET /v1/models,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:130,medium
-apr,HTTP 404 fallback route index,6,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:274,high
-apr,POST /api/chat,3,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:160,high
-apr,"POST /api/chat (stream:true, NDJSON)",3,x86_64-linux,ollama,no,3,http-apr-serve,crates/aprender-serve/src/api/ollama_handlers.rs:610 (framing :383-421),high
-apr,POST /api/embeddings,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:170,high
-apr,POST /api/generate,3,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:161,high
-apr,"POST /api/generate (stream:true, NDJSON)",3,x86_64-linux,ollama,no,3,http-apr-serve,crates/aprender-serve/src/api/ollama_handlers.rs:665 (framing :383-421),high
-apr,POST /api/pull,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/ollama.rs:650,medium
-apr,POST /api/show,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:166,high
-apr,POST /batch/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:99,high
-apr,POST /batch/tokenize,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:98,high
-apr,POST /generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:97,high
-apr,POST /metrics/dispatch/reset,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:118,medium
-apr,POST /realize/batch,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:103,high
-apr,POST /realize/embed,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:104,high
-apr,POST /realize/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:102,high
-apr,POST /realize/reload,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:106,high
-apr,POST /stream/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:100,high
-apr,POST /tokenize,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:96,high
-apr,POST /v1/batch/completions,9,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:150,medium
-apr,POST /v1/chat/completions,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:132,high
-apr,"POST /v1/chat/completions (stream:true, SSE)",4,x86_64-linux;nvidia-cuda,llama.cpp,no,3,http-apr-serve,"crates/aprender-serve/src/api/openai_handlers.rs:755-787 (stream branches crates/aprender-serve/src/api/cuda_chat_backend.rs:129,275,405,520,986; ignore_eos fail-closed 12,362,471)",high
-apr,POST /v1/chat/completions/stream,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:137,high
-apr,POST /v1/completions,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:131,high
-apr,"POST /v1/completions (stream:true, SSE)",2,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/gpu_completions_handler.rs:398 (SSE :340-378),high
-apr,POST /v1/embeddings,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:142,high
-apr,POST /v1/explain,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:145,high
-apr,POST /v1/gpu/warmup,7,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:148,medium
-apr,POST /v1/logprobs,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:178,low
-apr,POST /v1/perplexity,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:179,low
-apr,POST /v1/predict,5,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:144,high
 apr,mcp:apr.bench,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/bench.rs:12,high
 apr,mcp:apr.finetune,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/finetune.rs:37,high
 apr,mcp:apr.qa,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/qa.rs:12,high
@@ -368,41 +404,6 @@ apr,mcp:apr.tensors,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprend
 apr,mcp:apr.trace,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/trace.rs:20,high
 apr,mcp:apr.validate,2,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/validate.rs:18,high
 apr,mcp:apr.version,7,UNKNOWN,claude-code,yes,0,entrypoint-and-mcp,crates/aprender-mcp/src/tools/version.rs:8,high
-alimentar,alimentar convert,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:46,high
-alimentar,alimentar dedup,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:108,high
-alimentar,alimentar doctest extract,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:188,high
-alimentar,alimentar doctest merge,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:205,high
-alimentar,alimentar drift compare,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/drift.rs:77,high
-alimentar,alimentar drift detect,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/drift.rs:18,high
-alimentar,alimentar drift merge,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/drift.rs:65,high
-alimentar,alimentar drift report,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/drift.rs:36,high
-alimentar,alimentar drift sketch,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/drift.rs:48,high
-alimentar,alimentar fed manifest,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/fed.rs:20,high
-alimentar,alimentar fed plan,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/fed.rs:40,high
-alimentar,alimentar fed split,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/fed.rs:64,high
-alimentar,alimentar fed verify,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/fed.rs:84,high
-alimentar,alimentar filter-text,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:120,high
-alimentar,alimentar fim,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:88,high
-alimentar,alimentar head,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:58,high
-alimentar,alimentar hub push,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/hub.rs:88,high
-alimentar,alimentar import hf,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/hub.rs:24,high
-alimentar,alimentar import local,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/hub.rs:11,high
-alimentar,alimentar info,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:53,high
-alimentar,alimentar mix,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:71,high
-alimentar,alimentar quality check,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/quality.rs:14,high
-alimentar,alimentar quality profiles,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/quality.rs:57,high
-alimentar,alimentar quality report,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/quality.rs:31,high
-alimentar,alimentar quality score,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/quality.rs:39,high
-alimentar,alimentar registry delete,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:104,high
-alimentar,alimentar registry init,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:18,high
-alimentar,alimentar registry list,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:24,high
-alimentar,alimentar registry pull,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:66,high
-alimentar,alimentar registry push,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:35,high
-alimentar,alimentar registry search,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:83,high
-alimentar,alimentar registry show-info,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/registry.rs:91,high
-alimentar,alimentar repl,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:175,high
-alimentar,alimentar schema,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:66,high
-alimentar,alimentar view,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:140,high
 apr-corpus-ingest,apr-corpus-ingest plan,6,UNKNOWN,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/bin/apr-corpus-ingest.rs:67,high
 apr-corpus-ingest,apr-corpus-ingest validate-contract,6,UNKNOWN,huggingface-transformers,no,0,entrypoint-and-mcp,crates/apr-cli/src/bin/apr-corpus-ingest.rs:79,high
 apr-qa,apr-qa bootstrap,6,UNKNOWN,NONE,no,7,qa-cgp,crates/aprender-qa-cli/src/cli.rs:378,high

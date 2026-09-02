@@ -154,6 +154,11 @@ fn openai_routes() -> Vec<Route> {
         ),
         // TUI monitoring API (PARITY-107)
         ("GET", "/v1/metrics", get(server_metrics_handler)),
+        // PP-LLAMA-001 §12 row 6 / PP-2: what THIS process resolved — compute
+        // class from residency, build features, offload, scheduler, KV and the
+        // CUDA block. Unconditional: a harness must be able to ask a CPU server
+        // what it is, and get `compute_class: "cpu"` rather than a 404.
+        ("GET", "/v1/effective-config", get(effective_config_handler)),
         // PMAT-923: Ollama-native HTTP API (/api/* prefix) — makes `apr serve` a
         // drop-in Ollama HTTP replacement. Both delegate to the OpenAI chat
         // generation path. Discharges OBLIG-OLLAMA-API-CHAT-GENERATE-ROUTED.
@@ -522,17 +527,19 @@ mod client_visible_reason_tests {
     }
 }
 
-/// Process-wide server start instant.
+/// Seconds since this server started.
 ///
-/// Initialised lazily on the first `/health*` hit. `Instant` is
-/// monotonic in `std` — see `std::time::Instant` docs — which
-/// discharges FALSIFY-CRUX-C-34-003 (monotonic `uptime_sec`).
-fn server_uptime_sec() -> f64 {
-    static SERVER_START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    SERVER_START
-        .get_or_init(std::time::Instant::now)
-        .elapsed()
-        .as_secs_f64()
+/// PP-30: read from the ONE process clock (`AppState::clock`), which also
+/// produces `started_utc` on `/v1/effective-config` and `created` on
+/// `/v1/models`. It used to be a private `OnceLock<Instant>` latched on the
+/// first `/health*` hit — monotonic, so FALSIFY-CRUX-C-34-003 held, but with no
+/// wall-clock counterpart a receipt could cite and disagreeing with the two
+/// OTHER "start" clocks in this crate about what "start" meant.
+///
+/// `Instant` is monotonic in `std`, which is what discharges
+/// FALSIFY-CRUX-C-34-003.
+fn server_uptime_sec(state: &AppState) -> f64 {
+    state.clock().uptime_sec()
 }
 
 /// Test-only hook: force the health handler to report `status = "loading"`.
@@ -575,7 +582,7 @@ fn build_health_response(state: &AppState) -> HealthResponse {
         version: crate::VERSION.to_string(),
         compute_mode: compute_mode.to_string(),
         model_loaded,
-        uptime_sec: server_uptime_sec(),
+        uptime_sec: server_uptime_sec(state),
     }
 }
 

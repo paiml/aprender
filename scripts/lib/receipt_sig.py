@@ -265,6 +265,18 @@ _M_NOCOMMIT = ("receipt.commit is absent or empty -- there is nothing for the "
                "staleness arm to compare, so this receipt cannot be signed")
 _M_NOHOST = ("provenance.host is absent -- an unattributed receipt cannot be "
              "signed for a host")
+# THE ABBREVIATED SHA IS THE ONE THAT LOOKS FINE. `745fa8588` is nine
+# characters; it resolves in the repository that produced it and resolves to
+# something else, or to nothing, anywhere the object is not present -- and
+# `git merge-base --is-ancestor` on an unresolvable name exits non-zero, which
+# the staleness arm would report as STALE. A signature over an ambiguous
+# reference attests to whatever that reference happens to name later, so the
+# full 40-hex form is required at the point where the claim is made.
+_M_COMMITSHA = ("receipt.commit=%r is not a 40-character lowercase hex sha. An "
+                "abbreviation resolves in the repository that made it and "
+                "nowhere else, so the commit a signature covers would depend on "
+                "who verified it")
+COMMIT_HEX_LEN = 40
 _M_KEYHOST = ("key_id %r is scoped to host %r but the receipt claims host %r "
               "-- refusing to sign another host's evidence")
 _M_KEYLEN = "key for %r is not 64 lowercase hex characters"
@@ -293,6 +305,8 @@ def _sign_target(receipt):
     commit = receipt.get("commit")
     if not isinstance(commit, str) or not commit.strip():
         raise SigError("NO-COMMIT", _M_NOCOMMIT)
+    if not _is_hex(commit.strip(), COMMIT_HEX_LEN):
+        raise SigError("COMMIT-NOT-A-SHA", _M_COMMITSHA % (commit,))
     prov = receipt.get("provenance")
     host = prov.get("host") if isinstance(prov, dict) else None
     if not isinstance(host, str) or not host.strip():
@@ -680,6 +694,15 @@ def _selftest_signer_refusals(commit):
          _SELFTEST_KEY_A, "NO-COMMIT"),
         ("sign_refuses_short_key",
          _selftest_receipt(commit), "lambda-selftest", "ab", "KEY-MALFORMED"),
+        # An abbreviated sha is the shape every evidence receipt in this tree
+        # carries today (`745fa8588`), and it signs cleanly while binding to a
+        # reference that resolves differently elsewhere.
+        ("refuses_unpinned_commit",
+         _selftest_receipt("745fa8588"), "lambda-selftest",
+         _SELFTEST_KEY_A, "COMMIT-NOT-A-SHA"),
+        ("refuses_a_branch_name_as_a_commit",
+         _selftest_receipt("main"), "lambda-selftest",
+         _SELFTEST_KEY_A, "COMMIT-NOT-A-SHA"),
     ]
     for name, receipt, key_id, key, want in rows:
         try:

@@ -122,6 +122,16 @@ pub struct ChatCompletionRequest {
     /// Stream responses
     #[serde(default)]
     pub stream: bool,
+    /// OpenAI `stream_options`, accepted so a client that sends
+    /// `{"include_usage": true}` is not rejected as malformed.
+    ///
+    /// PP-27: `usage` and `stream_mode` are emitted on EVERY stream regardless
+    /// of this field. A receipt needs the token counts of every request, and an
+    /// opt-in flag would mean a run recorded without it has no counts at all —
+    /// llama-server emits its `timings` block unconditionally for the same
+    /// reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_options: Option<StreamOptions>,
     /// Stop sequences
     #[serde(default)]
     pub stop: Option<Vec<String>>,
@@ -139,6 +149,17 @@ pub struct ChatCompletionRequest {
     /// `{"type":"function","function":{"name":"..."}}`). `"none"` skips parsing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<OpenAiToolChoice>,
+}
+
+/// OpenAI `stream_options` object.
+///
+/// Parsed and accepted; see [`ChatCompletionRequest::stream_options`] for why
+/// `include_usage` does not gate the emission.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct StreamOptions {
+    /// OpenAI's opt-in for usage on the terminal chunk.
+    #[serde(default)]
+    pub include_usage: bool,
 }
 
 /// Chat message
@@ -357,6 +378,10 @@ pub struct ChatCompletionResponse {
     /// Layer-level trace data (attention, MLP) - only present when X-Trace-Level: layer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layer_trace: Option<TraceData>,
+    /// PP-LLAMA-001 §3: server-measured phase timings, when the backend that
+    /// served this request measured them. Absent — never zero — otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timings: Option<Timings>,
 }
 
 /// Provenance of trace timing data (GH-92: truth-in-reporting)
@@ -529,8 +554,143 @@ pub struct OpenAIModel {
 }
 
 // ============================================================================
+// PP-LLAMA-001 §3 / PP-2: server-reported phase timings
+// ============================================================================
+
+/// Phase timings the SERVER measured, in llama.cpp's `timings` key names.
+///
+/// PP-LLAMA-001 §3 gates `prefill_ratio` at c=1, and a ratio needs a numerator
+/// from each lane. llama-server already emits
+/// `timings{prompt_n, prompt_ms, prompt_per_second, predicted_n, predicted_ms,
+/// predicted_per_second}`, and this crate's comparator client already parses
+/// that shape (`http_client::LlamaCppTimings`) — so the apr lane mirrors the key
+/// names exactly and ONE client parser serves both lanes.
+///
+/// Every field is measured or the whole block is absent. A backend that cannot
+/// separate prefill from decode reports `None`, never `0.0`: a zero would be
+/// read as "prefill took no time", which is a claim, and a fast one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Timings {
+    /// Prompt tokens processed in the prefill phase.
+    pub prompt_n: usize,
+    /// Wall-clock milliseconds spent in prefill.
+    pub prompt_ms: f64,
+    /// `prompt_n / prompt_ms`, absent when `prompt_ms` is not positive.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_per_second: Option<f64>,
+    /// Tokens produced in the decode phase.
+    pub predicted_n: usize,
+    /// Wall-clock milliseconds spent decoding.
+    pub predicted_ms: f64,
+    /// `predicted_n / predicted_ms`, absent when `predicted_ms` is not positive.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub predicted_per_second: Option<f64>,
+    /// Which clock produced the two durations.
+    pub clock: String,
+}
+
+/// The clock [`Timings`] is measured on.
+pub const TIMINGS_CLOCK: &str = "server std::time::Instant (CLOCK_MONOTONIC)";
+
+/// What an engine measured for one request, on its way to the handler.
+///
+/// [`Timings`] is the wire shape and needs token COUNTS the handler owns; this
+/// is the DURATION half, which only the engine can measure. Kept out of the
+/// `cuda` feature gate on purpose: the handler that receives it compiles in
+/// every build, so the channel type has to as well.
+///
+/// Both fields are `Option`: an engine that timed prefill but not decode
+/// reports exactly that.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct PhaseTimings {
+    /// Wall-clock milliseconds spent in prefill.
+    pub prefill_ms: Option<f64>,
+    /// Wall-clock milliseconds spent decoding.
+    pub decode_ms: Option<f64>,
+}
+
+impl PhaseTimings {
+    /// Pair the measured durations with the token counts the handler knows.
+    ///
+    /// Returns `None` unless BOTH phases were measured. A `timings` block whose
+    /// `prompt_ms` or `predicted_ms` is invented is worse than an absent one:
+    /// §3 gates `prefill_ratio` on exactly those numbers, and a zero would be
+    /// read as a measurement.
+    #[must_use]
+    pub fn to_timings(self, prompt_n: usize, predicted_n: usize) -> Option<Timings> {
+        Some(Timings::from_phases(
+            prompt_n,
+            self.prefill_ms?,
+            predicted_n,
+            self.decode_ms?,
+        ))
+    }
+}
+
+impl Timings {
+    /// Build from measured phase durations.
+    ///
+    /// `*_per_second` is `None` — not `0.0` — when the corresponding duration is
+    /// not strictly positive, because a rate over a zero interval is undefined
+    /// and `0.0` would be read as "infinitely slow".
+    #[must_use]
+    pub fn from_phases(
+        prompt_n: usize,
+        prompt_ms: f64,
+        predicted_n: usize,
+        predicted_ms: f64,
+    ) -> Self {
+        Self {
+            prompt_n,
+            prompt_ms,
+            prompt_per_second: rate_per_second(prompt_n, prompt_ms),
+            predicted_n,
+            predicted_ms,
+            predicted_per_second: rate_per_second(predicted_n, predicted_ms),
+            clock: TIMINGS_CLOCK.to_string(),
+        }
+    }
+}
+
+/// Tokens per second over a millisecond duration, or `None` when undefined.
+#[must_use]
+fn rate_per_second(n: usize, ms: f64) -> Option<f64> {
+    if ms > 0.0 && ms.is_finite() {
+        Some(n as f64 * 1000.0 / ms)
+    } else {
+        None
+    }
+}
+
+// ============================================================================
 // OpenAI Streaming Types (SSE)
 // ============================================================================
+
+/// Which SSE mechanism produced a stream (PP-27).
+///
+/// The two builders in this crate already embody the distinction; neither said
+/// which it was. A receipt that records `ttft` and `itl_p95` off a REPLAYED
+/// stream is recording the tokenizer's pace, not the model's — the whole
+/// generation finished before the first delta was written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamMode {
+    /// Deltas are emitted as the decode loop produces tokens.
+    Live,
+    /// Generation completed first; the deltas are a replay of the result.
+    Replayed,
+}
+
+impl StreamMode {
+    /// The wire token.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Live => "live",
+            Self::Replayed => "replayed",
+        }
+    }
+}
 
 /// Streaming chat completion chunk (SSE format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -545,6 +705,25 @@ pub struct ChatCompletionChunk {
     pub model: String,
     /// Choices array with deltas
     pub choices: Vec<ChatChunkChoice>,
+    /// PP-27: how this stream is produced, declared on the FIRST chunk.
+    ///
+    /// Absent on every later chunk, and absent entirely on a server that does
+    /// not declare it — which the harness records as `stream_mode: null`
+    /// rather than assuming `live`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_mode: Option<StreamMode>,
+    /// PP-27: token usage, carried on the TERMINAL chunk.
+    ///
+    /// OpenAI puts this behind `stream_options.include_usage`; it is emitted
+    /// unconditionally here (as llama-server does) because a receipt needs the
+    /// token count of every request, and a harness cannot retro-fit a flag onto
+    /// a run that already happened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+    /// §3: server-measured phase timings, on the TERMINAL chunk, when the
+    /// backend measured them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timings: Option<Timings>,
 }
 
 /// Streaming choice with delta
@@ -592,12 +771,28 @@ impl ChatCompletionChunk {
                 },
                 finish_reason,
             }],
+            stream_mode: None,
+            usage: None,
+            timings: None,
         }
     }
 
     /// Create initial chunk with role only
+    #[cfg(test)]
     fn initial(id: &str, model: &str) -> Self {
         Self::new(id, model, None, None)
+    }
+
+    /// PP-27: the first chunk, declaring which mechanism produces this stream.
+    ///
+    /// There is no undeclared first chunk on the streaming path any more: both
+    /// SSE builders go through this, so a stream that says nothing is a stream
+    /// from a server older than PP-27, which is exactly what
+    /// `stream_mode: null` records.
+    fn initial_with_mode(id: &str, model: &str, mode: StreamMode) -> Self {
+        let mut chunk = Self::new(id, model, None, None);
+        chunk.stream_mode = Some(mode);
+        chunk
     }
 
     /// Create content chunk
@@ -614,6 +809,25 @@ impl ChatCompletionChunk {
     /// literal cannot be reintroduced at a call site.
     fn done(id: &str, model: &str, finish: FinishReason) -> Self {
         Self::new(id, model, None, Some(finish.as_str().to_string()))
+    }
+
+    /// PP-27 / §3: the terminal chunk, carrying the token counts and — when the
+    /// backend measured them — the server-reported phase timings.
+    ///
+    /// `timings` is `Option` and stays `None` on a backend that cannot separate
+    /// prefill from decode. Reporting `0.0` there would put a fabricated
+    /// numerator into `prefill_ratio`.
+    fn done_with_usage(
+        id: &str,
+        model: &str,
+        finish: FinishReason,
+        usage: Usage,
+        timings: Option<Timings>,
+    ) -> Self {
+        let mut chunk = Self::done(id, model, finish);
+        chunk.usage = Some(usage);
+        chunk.timings = timings;
+        chunk
     }
 }
 

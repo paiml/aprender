@@ -25,12 +25,68 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use crate::perf_gate::bootstrap::{bootstrap_agg_tok_s_ci, BootstrapCi};
+use crate::perf_gate::drain::StreamMode;
 use crate::perf_gate::metrics::{BandMetrics, RequestSample};
 use crate::perf_gate::protocol::{BandConfig, ClientModel, Outcome, TokenizationBlock, REPLICATES};
 use crate::perf_gate::window::{WindowController, WindowReport};
 
+use super::client::ChatResponse;
 use super::client::{ChatRequest, LlmClient, LlmClientError};
-use super::client::{ChatResponse, Usage};
+
+/// PP-4 / PP-27 / PP-28 — the per-request facts §4.4.5's [`RequestSample`] has
+/// no field for.
+///
+/// `RequestSample` is the §4.4.5 retention shape and is written verbatim into
+/// the gzipped samples file that `perf_gate.sh` re-derives the interval from;
+/// widening it would change every retained row and invalidate the digests of
+/// every sample file already committed. These three facts belong to the same
+/// request and are carried beside it, one entry per `samples` entry, in the
+/// same order.
+///
+/// Each is `Option` because "the server did not report it" is a fact this
+/// harness records rather than fills in: PP-13 makes a harness-computed
+/// substitute for a server-reported field schema-fatal.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct RequestExtra {
+    /// PP-28 — the `n_predict` this request was ISSUED with (`max_tokens` on
+    /// the wire). Recorded at issue time, so it is known even for a request
+    /// that failed, and per-request so a ragged workload (W2) is not counted
+    /// short for being ragged.
+    pub expected_tokens: Option<u32>,
+    /// §3 `prefill` — the server's `timings.prompt_ms` for this request.
+    /// `None` when the server reported none; never a client-side estimate.
+    pub prefill_ms: Option<f64>,
+    /// PP-27 — what the server declared on this request's FIRST SSE chunk.
+    pub stream_mode: Option<StreamMode>,
+}
+
+/// PP-27 — the mode the band as a whole ran in.
+///
+/// Read from the COMPLETED requests only: a failed or timed-out request
+/// received no first chunk, and letting its absent declaration undeclare the
+/// band would mean one transport error silently moved `dec`/`ttft`/`itl` into
+/// `unproduced_fields` for a band that streamed perfectly well.
+///
+/// The rule is deliberately asymmetric. One `replayed` request makes the band
+/// replayed — a server that replayed once can replay again, and the latency
+/// figures are then a property of the replay. One UNDECLARED request makes the
+/// band undeclared, because `live` is a claim and an absent claim is not a
+/// weaker version of it.
+#[must_use]
+fn band_stream_mode(samples: &[RequestSample], extras: &[RequestExtra]) -> Option<StreamMode> {
+    let mut declared_live = false;
+    for (s, e) in samples.iter().zip(extras.iter()) {
+        if s.outcome != Outcome::Completed {
+            continue;
+        }
+        match e.stream_mode {
+            None => return None,
+            Some(StreamMode::Replayed) => return Some(StreamMode::Replayed),
+            Some(StreamMode::Live) => declared_live = true,
+        }
+    }
+    declared_live.then_some(StreamMode::Live)
+}
 
 /// One §4.4-conformant band measurement.
 #[derive(Debug, Clone)]
@@ -48,6 +104,11 @@ pub struct BandRun {
     pub window: WindowReport,
     /// §4.4.5 raw per-request samples, for retention and resampling.
     pub samples: Vec<RequestSample>,
+    /// PP-4 / PP-27 / PP-28 facts, one per `samples` entry, in the same order.
+    pub extras: Vec<RequestExtra>,
+    /// PP-27 — what the server declared over this band's completed requests.
+    /// `None` on a non-streaming run, and on a server that declared nothing.
+    pub stream_mode: Option<StreamMode>,
     /// §4.4.4 bootstrap percentile CI on `agg_tok_s`.
     pub agg_ci: Option<BootstrapCi>,
     /// Warmup requests actually completed (discarded, never in `samples`).
@@ -114,7 +175,7 @@ struct Worker {
     client: LlmClient,
     prompts: Vec<ChatRequest>,
     controller: Shared,
-    samples: Arc<Mutex<Vec<RequestSample>>>,
+    samples: Arc<Mutex<Vec<(RequestSample, RequestExtra)>>>,
     timeout: Duration,
     origin: Instant,
     stream: bool,
@@ -130,16 +191,20 @@ struct Observed {
     token_offsets: Vec<Duration>,
     generated_tokens: u32,
     prompt_tokens: u32,
-}
-
-fn usage_counts(usage: Option<&Usage>, fallback_tokens: u32) -> (u32, u32) {
-    usage.map_or((fallback_tokens, 0), |u| {
-        (u.completion_tokens, u.prompt_tokens)
-    })
+    /// §3 — the server's `timings.prompt_ms`, when it reported one.
+    prefill_ms: Option<f64>,
+    /// PP-27 — what the server declared on the first chunk.
+    stream_mode: Option<StreamMode>,
 }
 
 fn observe_blocking(response: &ChatResponse) -> Observed {
-    let (generated_tokens, prompt_tokens) = usage_counts(response.usage.as_ref(), 0);
+    // §3: every token count is the SERVER's `usage`. A response without one
+    // reports zero, and `BandInput::derive` refuses a completed request with
+    // zero generated tokens rather than crediting it to `agg`'s numerator.
+    let (generated_tokens, prompt_tokens) = response
+        .usage
+        .as_ref()
+        .map_or((0, 0), |u| (u.completion_tokens, u.prompt_tokens));
     Observed {
         // A non-streaming response has no per-token arrival information at all.
         // Empty rather than synthesised: §4.4.3's `itl_ms` and `decode_tok_s` are
@@ -148,21 +213,31 @@ fn observe_blocking(response: &ChatResponse) -> Observed {
         token_offsets: Vec::new(),
         generated_tokens,
         prompt_tokens,
+        // A blocking response carries no phase split and declares no mode.
+        prefill_ms: None,
+        stream_mode: None,
     }
 }
 
 /// Issue one request through the shared [`LlmClient`] — the same client
 /// `LoadTest`/`send_one_request` uses, so both drive one transport (§4.4.8).
+///
+/// PP-27: the token counts on the streaming path are the SERVER's, taken from
+/// the terminal chunk's `usage`. The chunk-count fallback that used to stand
+/// here — `generated_tokens = token_timestamps.len()` — is gone, and cannot
+/// come back: [`super::client::StreamedChatResponse::usage`] is not an
+/// `Option`, so a stream without terminal `usage` never produces a response to
+/// read counts from. It is an `Err`, and this function counts it as a failed
+/// request.
 async fn issue(client: &LlmClient, prompt: &ChatRequest, stream: bool) -> Option<Observed> {
     if stream {
         let streamed = client.chat_completion_stream(prompt).await.ok()?;
-        let observed_tokens = u32::try_from(streamed.token_timestamps.len()).unwrap_or(u32::MAX);
-        let (generated_tokens, prompt_tokens) =
-            usage_counts(streamed.usage.as_ref(), observed_tokens);
         return Some(Observed {
             token_offsets: streamed.token_timestamps,
-            generated_tokens,
-            prompt_tokens,
+            generated_tokens: streamed.usage.completion_tokens,
+            prompt_tokens: streamed.usage.prompt_tokens,
+            prefill_ms: streamed.timings.and_then(|t| t.prompt_ms),
+            stream_mode: streamed.stream_mode,
         });
     }
     let timed = client.send(prompt).await.ok()?;
@@ -236,14 +311,24 @@ async fn worker_loop(w: Worker) {
         let end_s = w.origin.elapsed().as_secs_f64();
 
         let drained = lock(&w.controller).complete(end_s);
-        let mut sample = match &timed_out {
-            Ok(observed) => sample_from(slot, w.id, (start_s, end_s), drained, observed.as_ref()),
-            Err(_elapsed) => sample_from(slot, w.id, (start_s, end_s), drained, None),
+        let observed = match &timed_out {
+            Ok(observed) => observed.as_ref(),
+            Err(_elapsed) => None,
         };
+        let mut sample = sample_from(slot, w.id, (start_s, end_s), drained, observed);
         if timed_out.is_err() {
             sample.outcome = Outcome::Timeout;
         }
-        lock(&w.samples).push(sample);
+        let extra = RequestExtra {
+            // PP-28: what this request ASKED for, recorded at issue time from
+            // the corpus record itself. Reading it back off the response would
+            // make the pin unfalsifiable -- the whole point is to compare what
+            // was asked with what came back.
+            expected_tokens: prompt.max_tokens,
+            prefill_ms: observed.and_then(|o| o.prefill_ms),
+            stream_mode: observed.and_then(|o| o.stream_mode),
+        };
+        lock(&w.samples).push((sample, extra));
     }
 }
 
@@ -303,7 +388,7 @@ pub async fn run_band(
     tokio::time::sleep(band.quiesce).await;
 
     let controller: Shared = Arc::new(Mutex::new(WindowController::new(band)));
-    let samples: Arc<Mutex<Vec<RequestSample>>> = Arc::new(Mutex::new(Vec::new()));
+    let samples: Arc<Mutex<Vec<(RequestSample, RequestExtra)>>> = Arc::new(Mutex::new(Vec::new()));
     let origin = Instant::now();
 
     let mut handles = Vec::with_capacity(band.concurrency);
@@ -325,11 +410,14 @@ pub async fn run_band(
 
     let window = lock(&controller).report();
     let mut collected = std::mem::take(&mut *lock(&samples));
-    collected.sort_by_key(|s| s.index);
+    collected.sort_by_key(|(s, _)| s.index);
+    let (collected, extras): (Vec<RequestSample>, Vec<RequestExtra>) =
+        collected.into_iter().unzip();
 
     let metrics = BandMetrics::from_samples(band.concurrency, &collected);
     let agg_ci = bootstrap_agg_tok_s_ci(&collected, 0.95);
     let protocol_violations = violations(band, warmup_completed, &metrics, &window);
+    let stream_mode = band_stream_mode(&collected, &extras);
 
     Ok(BandRun {
         config: band.clone(),
@@ -338,6 +426,8 @@ pub async fn run_band(
         metrics,
         window,
         samples: collected,
+        extras,
+        stream_mode,
         agg_ci,
         warmup_completed,
         protocol_violations,
@@ -473,11 +563,24 @@ mod tests {
 
     /// An SSE server that emits `tokens` chunks `gap_ms` apart, so TTFT and the
     /// inter-token gaps have known values the client must be able to recover.
+    ///
+    /// PP-27 obliges it to declare `stream_mode` on the first chunk and to
+    /// carry `usage` on the terminal one: the client REFUSES a stream that does
+    /// neither, so a probe without them would test a refusal path rather than
+    /// the recovery this test exists for. `completion_tokens` is deliberately
+    /// NOT `tokens` — the server's count and the frame count are different
+    /// quantities, and the fixture makes them differ so a regression back to
+    /// counting frames is visible.
     async fn serve_sse(mut sock: tokio::net::TcpStream, tokens: usize, gap_ms: u64) {
         consume_request(&mut sock).await;
         let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
                     Cache-Control: no-cache\r\nConnection: close\r\n\r\n";
         if sock.write_all(head.as_bytes()).await.is_err() {
+            return;
+        }
+        let first = "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}],\
+                     \"stream_mode\":\"live\"}\n\n";
+        if sock.write_all(first.as_bytes()).await.is_err() {
             return;
         }
         for i in 0..tokens {
@@ -490,10 +593,22 @@ mod tests {
             }
             let _ = sock.flush().await;
         }
+        let terminal = format!(
+            "data: {{\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"length\"}}],\
+             \"usage\":{{\"prompt_tokens\":512,\"completion_tokens\":{SERVER_COMPLETION_TOKENS},\
+             \"total_tokens\":{}}},\"timings\":{{\"prompt_n\":512,\"prompt_ms\":40.0,\
+             \"predicted_n\":{SERVER_COMPLETION_TOKENS},\"predicted_ms\":200.0}}}}\n\n",
+            512 + SERVER_COMPLETION_TOKENS
+        );
+        let _ = sock.write_all(terminal.as_bytes()).await;
         let _ = sock.write_all(b"data: [DONE]\n\n").await;
         let _ = sock.flush().await;
         let _ = sock.shutdown().await;
     }
+
+    /// What the SSE probe's terminal `usage` declares. Different from the frame
+    /// count on purpose (see [`serve_sse`]).
+    const SERVER_COMPLETION_TOKENS: u32 = 128;
 
     async fn spawn_sse_probe(tokens: usize, gap_ms: u64) -> String {
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -518,14 +633,14 @@ mod tests {
             temperature: Some(0.0),
             max_tokens: Some(128),
             stream: Some(false),
-            // #2746 added these to ChatRequest after this test module was
-            // written on a stacked branch that never saw it. None matches
-            // loadtest.rs's convention for a fixture; the PRODUCTION band
-            // path never builds a ChatRequest itself -- prompts.rs carries
-            // both fields through from the corpus (prompts.rs:206), which is
-            // what satisfies the 4.4.4 seed requirement.
-            seed: None,
-            ignore_eos: None,
+            // PP-28: the fixture carries the §5.1 pin the PRODUCTION corpus
+            // carries (`PromptRecord::into_request`, prompts.rs), because the
+            // fixture's job is to be the shape the band actually issues. With
+            // `None` here no test could notice that the streaming transport
+            // dropped both fields -- and for #2746 none did.
+            seed: Some(0),
+            ignore_eos: Some(true),
+            stream_options: None,
         }]
     }
 
@@ -790,5 +905,213 @@ mod tests {
         assert_eq!(ci.resampling_unit, "whole_request");
         let again = bootstrap_agg_tok_s_ci(&run.samples, 0.95).expect("n >= 2");
         assert_eq!(&again, ci, "the interval must re-derive from the samples");
+    }
+
+    // =====================================================================
+    // PP-27 / PP-28 — what the band records about the transport it used.
+    //
+    //  case                                        | band mode  | why
+    //  --------------------------------------------|------------|------------
+    //  every completed request declared live       | Live       | conformant
+    //  one completed request declared replayed     | Replayed   | one replay
+    //                                              |            | poisons it
+    //  one completed request declared nothing      | None       | `live` is a
+    //                                              |            | claim
+    //  a FAILED request declared nothing [BOUNDARY]| unchanged  | it got no
+    //                                              |            | first chunk
+    //  no completed request at all      [BOUNDARY] | None       | nothing to
+    //                                              |            | declare
+    // =====================================================================
+
+    fn declared(
+        index: usize,
+        outcome: Outcome,
+        mode: Option<StreamMode>,
+    ) -> (RequestSample, RequestExtra) {
+        (
+            RequestSample {
+                index,
+                worker: 0,
+                start_s: 0.0,
+                end_s: 1.0,
+                token_times_s: Vec::new(),
+                generated_tokens: 128,
+                prompt_tokens: 512,
+                outcome,
+                in_flight_at_start: 1,
+                drained: false,
+            },
+            RequestExtra {
+                expected_tokens: Some(128),
+                prefill_ms: None,
+                stream_mode: mode,
+            },
+        )
+    }
+
+    fn band_mode_of(rows: Vec<(RequestSample, RequestExtra)>) -> Option<StreamMode> {
+        let (samples, extras): (Vec<_>, Vec<_>) = rows.into_iter().unzip();
+        band_stream_mode(&samples, &extras)
+    }
+
+    #[test]
+    fn a_band_whose_every_request_declared_live_is_live() {
+        let rows = (0..4)
+            .map(|i| declared(i, Outcome::Completed, Some(StreamMode::Live)))
+            .collect();
+        assert_eq!(band_mode_of(rows), Some(StreamMode::Live));
+    }
+
+    #[test]
+    fn one_replayed_request_makes_the_band_replayed() {
+        let mut rows: Vec<_> = (0..4)
+            .map(|i| declared(i, Outcome::Completed, Some(StreamMode::Live)))
+            .collect();
+        rows[2] = declared(2, Outcome::Completed, Some(StreamMode::Replayed));
+        assert_eq!(band_mode_of(rows), Some(StreamMode::Replayed));
+    }
+
+    #[test]
+    fn one_undeclared_request_makes_the_band_undeclared() {
+        // `live` is a CLAIM. An absent claim is not a weaker version of it, and
+        // reading it as one is how a replayed band buys a latency number.
+        let mut rows: Vec<_> = (0..4)
+            .map(|i| declared(i, Outcome::Completed, Some(StreamMode::Live)))
+            .collect();
+        rows[1] = declared(1, Outcome::Completed, None);
+        assert_eq!(band_mode_of(rows), None);
+    }
+
+    #[test]
+    fn a_failed_requests_absent_declaration_does_not_undeclare_the_band() {
+        // DISCRIMINATION, and the reason the rule reads only completed
+        // requests: a request that never got a first chunk declares nothing BY
+        // CONSTRUCTION, and letting it undeclare the band would mean one
+        // transport error moved dec/ttft/itl into `unproduced_fields` for a
+        // band that streamed perfectly well.
+        let rows = vec![
+            declared(0, Outcome::Completed, Some(StreamMode::Live)),
+            declared(1, Outcome::Failed, None),
+            declared(2, Outcome::Timeout, None),
+            declared(3, Outcome::Completed, Some(StreamMode::Live)),
+        ];
+        assert_eq!(band_mode_of(rows), Some(StreamMode::Live));
+    }
+
+    #[test]
+    fn a_band_with_no_completed_request_declares_nothing() {
+        let rows = vec![declared(0, Outcome::Failed, Some(StreamMode::Live))];
+        assert_eq!(band_mode_of(rows), None);
+        assert_eq!(band_mode_of(Vec::new()), None);
+    }
+
+    /// PP-27 end to end: the mode the SERVER declared on the first chunk
+    /// reaches `BandRun`, and the per-request server prefill duration and the
+    /// issued `n_predict` reach `extras`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn the_band_records_what_the_server_declared() {
+        let url = spawn_sse_probe(6, 5).await;
+        let client = LlmClient::new(&url, "m");
+        let run = run_band(&client, &prompts(), &tiny_band(2, 8), tokenization(), true)
+            .await
+            .expect("band runs");
+
+        assert_eq!(run.stream_mode, Some(StreamMode::Live));
+        assert_eq!(run.extras.len(), run.samples.len());
+        let completed: Vec<&RequestExtra> = run
+            .samples
+            .iter()
+            .zip(run.extras.iter())
+            .filter(|(s, _)| s.outcome == Outcome::Completed)
+            .map(|(_, e)| e)
+            .collect();
+        assert!(!completed.is_empty(), "{:?}", run.metrics);
+        for e in completed {
+            assert_eq!(e.expected_tokens, Some(128), "PP-28: the issued n_predict");
+            assert_eq!(e.prefill_ms, Some(40.0), "§3: the SERVER's prompt_ms");
+            assert_eq!(e.stream_mode, Some(StreamMode::Live));
+        }
+    }
+
+    /// PP-27 — the token count is the SERVER's, not the frame count.
+    ///
+    /// The probe emits SIX content frames and declares 128 completion tokens.
+    /// Before this change `issue` fell back to `token_timestamps.len()` when
+    /// `usage` was absent, and nothing distinguished the two numbers because
+    /// the probe never sent a `usage` block at all. A regression to counting
+    /// frames reports 6 here.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn decode_uses_the_server_count_not_the_chunk_count() {
+        let url = spawn_sse_probe(6, 5).await;
+        let client = LlmClient::new(&url, "m");
+        let run = run_band(&client, &prompts(), &tiny_band(2, 8), tokenization(), true)
+            .await
+            .expect("band runs");
+        let counts: Vec<u32> = run
+            .samples
+            .iter()
+            .filter(|s| s.outcome == Outcome::Completed)
+            .map(|s| s.generated_tokens)
+            .collect();
+        assert!(!counts.is_empty(), "{:?}", run.metrics);
+        for n in counts {
+            assert_eq!(
+                n, SERVER_COMPLETION_TOKENS,
+                "the server declared {SERVER_COMPLETION_TOKENS} completion tokens; a frame count \
+                 would report 6"
+            );
+        }
+        for s in run
+            .samples
+            .iter()
+            .filter(|s| s.outcome == Outcome::Completed)
+        {
+            assert_eq!(
+                s.token_times_s.len(),
+                6,
+                "six frames were actually observed"
+            );
+            assert_eq!(
+                s.prompt_tokens, 512,
+                "§3: prompt_tokens is the server's too"
+            );
+        }
+    }
+
+    /// A server that answers a stream with no terminal `usage` fails the
+    /// REQUEST rather than yielding a band counted from frames (PP-27).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_stream_without_usage_fails_the_request_rather_than_being_counted() {
+        async fn serve_usageless(mut sock: tokio::net::TcpStream) {
+            consume_request(&mut sock).await;
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
+                        Connection: close\r\n\r\n";
+            let _ = sock.write_all(head.as_bytes()).await;
+            let _ = sock
+                .write_all(
+                    b"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a \"}}]}\n\n",
+                )
+                .await;
+            let _ = sock.write_all(b"data: [DONE]\n\n").await;
+            let _ = sock.flush().await;
+            let _ = sock.shutdown().await;
+        }
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().expect("local addr");
+        tokio::spawn(async move {
+            while let Ok((sock, _)) = listener.accept().await {
+                tokio::spawn(serve_usageless(sock));
+            }
+        });
+
+        let client = LlmClient::new(&format!("http://{addr}"), "m");
+        let run = run_band(&client, &prompts(), &tiny_band(1, 4), tokenization(), true)
+            .await
+            .expect("the band still runs; the REQUESTS fail");
+        assert_eq!(run.metrics.completed, 0, "{:?}", run.metrics);
+        assert!(run.metrics.errors > 0, "{:?}", run.metrics);
+        assert_eq!(run.stream_mode, None, "no completed request declared one");
     }
 }

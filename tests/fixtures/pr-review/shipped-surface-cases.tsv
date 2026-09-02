@@ -40,7 +40,7 @@ MATCH	crates/apr-cli/src/commands/serve/server.rs	a shipped source path; the 2.8
 MATCH	crates/aprender-core/src/lib.rs	crates/*/src/**.rs at any depth
 MATCH	src/bin/apr.rs	the root binary is shipped source too
 NO-MATCH	docs/qa/benchmark-matrix-2026-01-09.md	MEASURED OUT, not overlooked: docs/ in this repository is overwhelmingly where claims are AUDITED, and a gate whose only exit is to fabricate a comparator log is worse than the hole it closes
-NO-MATCH	docs/benchmarking-gate-spec.md	the spec that quotes "2.93x Ollama from a harness that never ran Ollama" in order to ban it — the exact false positive that removed docs/ from this scope
+NO-MATCH	docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md	the spec that quotes "2.93x Ollama from a harness that never ran Ollama" in order to ban it — the exact false positive that removed docs/ from this scope. Retargeted 2026-09-02 from docs/benchmarking-gate-spec.md, which PP-LLAMA-001 §13 archived into docs/archive/perf-2026-09-02/; the archived v2.2 spec quotes the same banned figures, so the row still exercises the same NO-MATCH reason on a path that exists
 NO-MATCH	docs/specifications/apr-perf-gate-001.md	§0.1 of that spec QUOTES 36.9x over FasterTransformer in order to ban it; excluded by check_no_claim_literals.sh for the same reason
 NO-MATCH	tests/fixtures/pr-review/comparative-claim-cases.tsv	THIS FILE. A case table full of banned ratios must not red the PR that adds it
 NO-MATCH	crates/aprender-serve/src/api/tests/native_routes_2376.rs	a test states a target, not a result

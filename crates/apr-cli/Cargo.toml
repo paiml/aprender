@@ -87,6 +87,14 @@ dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda", "entrenar/cuda", "aprender-train-distill?/cuda"]
+# PP-LLAMA-001 §9 #8: a documented COMPATIBILITY ALIAS, nothing more. No
+# `#[cfg(feature = "cuda-batch")]` remains in the tree: the implication ran
+# the wrong way (`cuda-batch = ["cuda"]` means enabling it enables cuda, not
+# the reverse), so a plain `--features cuda` build compiled a stub for the
+# APR-Q4K GPU serve path and silently downgraded to the generic per-tensor
+# allocator. Kept so existing `--features cuda-batch` invocations and the
+# root passthrough keep building, and so a receipt can still record whether
+# the binary was built with it (§2.1 INVALID-BUILD reads that entry).
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
 wgpu = ["inference"]
@@ -109,12 +117,12 @@ libc = "0.2"
 # performed. A surface and its capability must not be able to drift.
 apr-test = { workspace = true }
 # Core aprender library
-aprender = { path = "../aprender-core", version = "0.64.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
+aprender = { path = "../aprender-core", version = "0.65.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 # Provable-contracts engine — `apr beat-run` parses + evaluates BeatBenchmark contracts (PMAT-741)
 aprender-contracts = { workspace = true }
 
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
-aprender-mcp = { path = "../aprender-mcp", version = "0.64.0" }
+aprender-mcp = { path = "../aprender-mcp", version = "0.65.0" }
 async-stream = "0.3"
 provable-contracts-macros = { workspace = true }
 
@@ -125,7 +133,7 @@ batuta-common = { workspace = true }
 # Non-optional since claude-code-parity-apr M150 (outcome-parity Phase 3
 # requires apr code in default builds). GH-344: path dep via
 # .cargo/config.toml.dev-overrides; CI uses checkout+symlink.
-batuta = { version = "0.64.0", path = "../aprender-orchestrate", package = "aprender-orchestrate", default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
+batuta = { version = "0.65.0", path = "../aprender-orchestrate", package = "aprender-orchestrate", default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
 
 # Inference engine (workspace path dep — enables cuda/gpu feature forwarding)
 # GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s
@@ -216,7 +224,7 @@ pacha = { workspace = true }
 # published-crate dependency cycle the APR-MONO consolidation removed, and
 # (b) was never actually linked, so every `trueno_explain::` path in
 # commands/ptx_explain.rs failed to resolve.
-trueno-explain = { path = "../aprender-explain", version = "0.64.0", package = "aprender-explain", optional = true }
+trueno-explain = { path = "../aprender-explain", version = "0.65.0", package = "aprender-explain", optional = true }
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
 entrenar-lora = { workspace = true, optional = true }

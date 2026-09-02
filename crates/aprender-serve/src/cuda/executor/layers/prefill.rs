@@ -13,6 +13,22 @@
 use super::super::*;
 
 impl CudaExecutor {
+    /// PMAT-059: is the prefill CUDA graph enabled?
+    ///
+    /// Factored out of `prefill_all_layers_gpu` so `/v1/effective-config` can
+    /// report the SAME predicate the dispatch uses, instead of restating the
+    /// two env vars and drifting from them. Cached: the value cannot change
+    /// within a process run, and the old inline form read the environment on
+    /// every prefill.
+    #[must_use]
+    pub(crate) fn prefill_graph_enabled() -> bool {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var("PREFILL_GRAPH").as_deref() == Ok("1")
+                && std::env::var("CUBLAS_PREFILL").as_deref() != Ok("0")
+        })
+    }
+
     /// PMAT-PREFILL: Initialize workspace for batched prefill
     ///
     /// Allocates workspace buffers sized for `max_seq_len` tokens.
@@ -145,8 +161,7 @@ impl CudaExecutor {
         // PMAT-059: Prefill graph DISABLED by default — cuBLAS uses workspace-free
         // algorithms during graph capture, which are 7x slower than eager cuBLAS
         // (541ms vs 78ms for S=125 on RTX 4060L). Enable with PREFILL_GRAPH=1.
-        let graph_enabled = std::env::var("PREFILL_GRAPH").as_deref() == Ok("1")
-            && std::env::var("CUBLAS_PREFILL").as_deref() != Ok("0");
+        let graph_enabled = Self::prefill_graph_enabled();
 
         if graph_enabled {
             // PMAT-059: Always try replay first — graph_capture_failed must NOT

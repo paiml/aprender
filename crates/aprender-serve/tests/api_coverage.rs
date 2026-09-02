@@ -383,6 +383,7 @@ fn test_chat_completion_response_serialization() {
         brick_trace: None,
         layer_trace: None,
         step_trace: None,
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -1166,6 +1167,9 @@ fn test_chat_completion_chunk_serialization() {
             },
             finish_reason: None,
         }],
+        stream_mode: None,
+        usage: None,
+        timings: None,
     };
 
     let json = serde_json::to_string(&chunk).expect("should serialize");
@@ -1877,6 +1881,7 @@ fn test_chat_completion_response_multiple_choices() {
         brick_trace: None,
         layer_trace: None,
         step_trace: None,
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -1953,6 +1958,7 @@ fn test_negative_timestamp_handling() {
         brick_trace: None,
         layer_trace: None,
         step_trace: None,
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -2216,6 +2222,9 @@ fn test_chat_completion_chunk_serialization_full() {
                 finish_reason: Some("length".to_string()),
             },
         ],
+        stream_mode: None,
+        usage: None,
+        timings: None,
     };
 
     let json = serde_json::to_string(&chunk).expect("should serialize");
@@ -2238,6 +2247,9 @@ fn test_chat_completion_chunk_empty_choices() {
         created: 0,
         model: "test".to_string(),
         choices: vec![],
+        stream_mode: None,
+        usage: None,
+        timings: None,
     };
 
     let json = serde_json::to_string(&chunk).expect("should serialize");
@@ -2909,6 +2921,7 @@ fn test_chat_completion_response_long_conversation() {
         brick_trace: None,
         layer_trace: None,
         step_trace: None,
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -3795,6 +3808,7 @@ fn test_chat_completion_response_all_finish_reasons() {
         brick_trace: None,
         layer_trace: None,
         step_trace: None,
+        timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -4048,6 +4062,9 @@ fn test_chat_completion_chunk_construction_patterns() {
             },
             finish_reason: None,
         }],
+        stream_mode: None,
+        usage: None,
+        timings: None,
     };
     let json1 = serde_json::to_string(&chunk1).expect("serialize");
     assert!(json1.contains("assistant"));
@@ -4067,6 +4084,9 @@ fn test_chat_completion_chunk_construction_patterns() {
             },
             finish_reason: None,
         }],
+        stream_mode: None,
+        usage: None,
+        timings: None,
     };
     let json2 = serde_json::to_string(&chunk2).expect("serialize");
     assert!(json2.contains("Hello"));
@@ -4085,6 +4105,9 @@ fn test_chat_completion_chunk_construction_patterns() {
             },
             finish_reason: Some("stop".to_string()),
         }],
+        stream_mode: None,
+        usage: None,
+        timings: None,
     };
     let json3 = serde_json::to_string(&chunk3).expect("serialize");
     assert!(json3.contains(r#""finish_reason":"stop""#));
@@ -4422,6 +4445,7 @@ fn test_chat_completion_response_with_all_finish_reasons() {
             brick_trace: None,
             layer_trace: None,
             step_trace: None,
+            timings: None,
         };
 
         let json = serde_json::to_string(&response).expect("serialize");
@@ -4778,6 +4802,7 @@ fn test_chat_completion_response_clone() {
         brick_trace: None,
         layer_trace: None,
         step_trace: None,
+        timings: None,
     };
     let cloned = original.clone();
     assert_eq!(original.id, cloned.id);

@@ -194,6 +194,7 @@ impl CudaExecutor {
             graph_dispatch_positions: Vec::new(),
             batched_done_mask: Vec::new(),
             hgemm_batched_decode_active: false,
+            vram_used_peak: std::sync::atomic::AtomicUsize::new(0),
             context: std::mem::ManuallyDrop::new(context), // Last field — ManuallyDrop skips cuDevicePrimaryCtxRelease - dropped last
             // PMAT-779: held for the executor's whole lifetime, released last.
             #[cfg(all(test, feature = "cuda"))]

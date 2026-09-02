@@ -411,6 +411,71 @@ impl CudaExecutor {
         self.context.memory_info()
     }
 
+    /// PP-LLAMA-001 §5.2: the resolved kernel configuration, for reporting.
+    ///
+    /// A shared accessor existed only as `executor_mut()`, so the one caller
+    /// that needs to READ the profile (the effective-config endpoint, which
+    /// holds a read lock on purpose) could not reach it.
+    #[must_use]
+    pub fn gpu_profile(&self) -> &GpuProfile {
+        &self.gpu_profile
+    }
+
+    /// PP-LLAMA-001 §5.2: which CUDA graphs are enabled and which are captured.
+    ///
+    /// All three switches are read through the predicates that DECIDE with them
+    /// (`decode_graph_enabled`, `use_graph_dispatch`, `prefill_graph_enabled`)
+    /// rather than re-derived here, so the report cannot drift from the
+    /// dispatch. `decode_graph_enabled` is the predicate `graphed_fast_path`
+    /// itself branches on, env override and compute-capability default
+    /// included — not a second reading of `CUDA_GRAPH_ENABLE`, which on an
+    /// sm_89+ device would report the OPPOSITE of what runs (the env var is a
+    /// force-on, and the default for cc>=89 is already on).
+    #[must_use]
+    pub fn graph_config(&self) -> crate::cuda::gpu_profile::GraphConfig {
+        let mut batched_graph_sizes: Vec<usize> =
+            self.batched_decode_graphs.keys().copied().collect();
+        batched_graph_sizes.sort_unstable();
+        let mut prefill_graph_sizes: Vec<usize> = self.prefill_graphs.keys().copied().collect();
+        prefill_graph_sizes.sort_unstable();
+        crate::cuda::gpu_profile::GraphConfig {
+            cuda_graph_enable: self.decode_graph_enabled(),
+            graph_dispatch: self.use_graph_dispatch(),
+            prefill_graph: Self::prefill_graph_enabled(),
+            decode_graph_captured: self.decode_graph.is_some(),
+            batched_graph_sizes,
+            batched_graph_batch_size: self.batched_graph_batch_size,
+            prefill_graph_sizes,
+        }
+    }
+
+    /// PP-LLAMA-001 §5.2 / §9 #7: sample VRAM now and fold it into the peak.
+    ///
+    /// Returns `(free, total, used_peak)`. The peak is a MEASURED high-water
+    /// mark over the samples this process actually took (after preload, once
+    /// per scheduler batch, and on every effective-config GET) — which is why
+    /// it is reported as `used_peak_bytes` and the pool's `peak_usage` is
+    /// reported separately as `recorded_alloc_peak_bytes`. The pool counts only
+    /// `record_allocation` sites and is a lower bound; labelling it `vram_peak`
+    /// would under-report the 9.5 GB §9 #7 asks to account for.
+    pub fn sample_vram_used(&self) -> Option<(usize, usize, usize)> {
+        let (free, total) = self.context.memory_info().ok()?;
+        let used = total.saturating_sub(free);
+        let peak = self
+            .vram_used_peak
+            .fetch_max(used, std::sync::atomic::Ordering::AcqRel)
+            .max(used);
+        Some((free, total, peak))
+    }
+
+    /// The highest `used` VRAM this process has sampled, or `None` before the
+    /// first sample — never a fabricated zero.
+    #[must_use]
+    pub fn vram_used_peak(&self) -> Option<usize> {
+        let peak = self.vram_used_peak.load(std::sync::atomic::Ordering::Acquire);
+        (peak > 0).then_some(peak)
+    }
+
     /// Get reference to CUDA context (CORRECTNESS-002: for testing Q6K kernel directly)
     #[must_use]
     pub fn context(&self) -> &CudaContext {
